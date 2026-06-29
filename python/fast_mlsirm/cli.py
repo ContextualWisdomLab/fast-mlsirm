@@ -11,29 +11,40 @@ from .simulation import simulate
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="fast-mlsirm")
+    parser = argparse.ArgumentParser(
+        prog="fast-mlsirm",
+        description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sim = sub.add_parser("simulate")
-    sim.add_argument("--persons", type=int, default=500)
-    sim.add_argument("--dims", type=int, default=2)
-    sim.add_argument("--items-per-dim", type=int, default=8)
-    sim.add_argument("--latent-dim", type=int, default=2)
-    sim.add_argument("--phi", type=float, default=0.3)
-    sim.add_argument("--gamma", type=float, default=1.5)
-    sim.add_argument("--seed", type=int, default=1)
-    sim.add_argument("--out", required=True)
+    sim = sub.add_parser(
+        "simulate",
+        help="Simulate binary responses for the MLS2PLM model.",
+        description="Simulate binary responses for the MLS2PLM model.",
+    )
+    sim.add_argument("--persons", type=int, default=500, help="Number of persons to simulate (default: 500).")
+    sim.add_argument("--dims", type=int, default=2, help="Number of true item dimensions (default: 2).")
+    sim.add_argument("--items-per-dim", type=int, default=8, help="Number of items per dimension (default: 8).")
+    sim.add_argument("--latent-dim", type=int, default=2, help="Latent dimensionality for person traits (default: 2).")
+    sim.add_argument("--phi", type=float, default=0.3, help="Variance of item intercept factors (default: 0.3).")
+    sim.add_argument("--gamma", type=float, default=1.5, help="Variance of person trait coordinates (default: 1.5).")
+    sim.add_argument("--seed", type=int, default=1, help="Random seed for simulation (default: 1).")
+    sim.add_argument("--out", required=True, help="Directory path to save simulated output (responses, factors, etc.).")
 
-    fit_cmd = sub.add_parser("fit")
-    fit_cmd.add_argument("--responses", required=True)
-    fit_cmd.add_argument("--factors", required=True)
-    fit_cmd.add_argument("--model", default="MLS2PLM")
-    fit_cmd.add_argument("--latent-dim", type=int, default=2)
-    fit_cmd.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs")
-    fit_cmd.add_argument("--max-iter", type=int, default=100)
-    fit_cmd.add_argument("--n-restarts", type=int, default=1)
-    fit_cmd.add_argument("--seed", type=int, default=1)
-    fit_cmd.add_argument("--out", required=True)
+    fit_cmd = sub.add_parser(
+        "fit",
+        help="Fit an MLSIRM model to response data.",
+        description="Fit an MLSIRM model to response data.",
+    )
+    fit_cmd.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    fit_cmd.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
+    fit_cmd.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
+    fit_cmd.add_argument("--latent-dim", type=int, default=2, help="Latent dimensionality for person traits (default: 2).")
+    fit_cmd.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
+    fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
+    fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
+    fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
+    fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
 
     args = parser.parse_args(argv)
     if args.command == "simulate":
@@ -49,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         save_simulation(data, args.out)
+        print(f"✅ Simulation successfully saved to {args.out}")
         return 0
 
     responses = np.load(args.responses)
@@ -66,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     save_fit_result(result, args.out)
+    print(f"✅ Fit result successfully saved to {args.out}")
     return 0
 
 
