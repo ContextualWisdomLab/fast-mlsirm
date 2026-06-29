@@ -21,7 +21,7 @@ def fit(
     model = config.normalized_model()
 
     y, observed = prepare_response(responses, mask)
-    n_persons, n_items = y.shape
+    _, n_items = y.shape
     factors = np.asarray(factor_id, dtype=np.int64)
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if model in {"ULS2PLM", "ULSRM"}:
