@@ -1,7 +1,9 @@
+import pytest
+
 import numpy as np
 
 from fast_mlsirm import FitConfig, MLSIRMParams
-from fast_mlsirm.objective import neg_loglik_and_grad
+from fast_mlsirm.objective import neg_loglik_and_grad, prepare_response
 
 
 def test_missing_entries_are_excluded():
@@ -54,3 +56,30 @@ def test_gradient_matches_finite_difference():
     trial.tau += h
     got, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), trial, config)
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
+
+def test_prepare_response_errors():
+    # 1. Not a 2D matrix
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([1.0, 0.0]))
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([[[1.0]]]))
+
+    # 2. Mask shape mismatch
+    with pytest.raises(ValueError, match="mask shape must match responses"):
+        prepare_response(np.array([[1.0, 0.0]]), mask=np.array([True]))
+
+    # 3. No observed entries
+    with pytest.raises(ValueError, match="responses contain no observed entries"):
+        prepare_response(np.array([[-1.0, np.nan], [np.inf, -1.0]]))
+
+    # 4. Values not 0 or 1
+    with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
+        prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
+
+    # 5. All-missing item
+    with pytest.raises(ValueError, match="all-missing item found"):
+        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
+
+    # 6. All-missing person
+    with pytest.raises(ValueError, match="all-missing person found"):
+        prepare_response(np.array([[1.0, 0.0], [-1.0, np.nan]]))
