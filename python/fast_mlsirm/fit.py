@@ -75,7 +75,8 @@ def fit(
         if best is None or candidate.objective < best.objective:
             best = candidate
 
-    assert best is not None
+    if best is None:
+        raise RuntimeError("Fit failed to produce a valid result")
     return best
 
 
