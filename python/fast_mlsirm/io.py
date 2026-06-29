@@ -63,7 +63,8 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
-    data = np.load(path)
+    # Security: explicitly disable pickle to prevent arbitrary code execution
+    data = np.load(path, allow_pickle=False)
     return MLSIRMParams(theta=data["theta"], alpha=data["alpha"], b=data["b"], xi=data["xi"], zeta=data["zeta"], tau=float(data["tau"]))
 
 
