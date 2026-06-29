@@ -60,8 +60,12 @@ def linear_predictor(
     theta_factor = params.theta[:, factor_id]
 
     if uses_space:
-        diff = params.xi[:, None, :] - params.zeta[None, :, :]
-        distance = np.sqrt(np.sum(diff * diff, axis=2) + eps_distance)
+        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+        xi_sq = np.sum(params.xi ** 2, axis=1)
+        zeta_sq = np.sum(params.zeta ** 2, axis=1)
+        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        dist_sq = np.maximum(dist_sq, 0.0)
+        distance = np.sqrt(dist_sq + eps_distance)
         gamma = params.gamma
     else:
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
@@ -111,11 +115,16 @@ def neg_loglik_and_grad(
     grad_zeta = np.zeros_like(params.zeta)
     grad_tau = 0.0
     if uses_space:
-        diff = params.xi[:, None, :] - params.zeta[None, :, :]
         gamma = params.gamma
-        common = gamma * diff / distance[:, :, None]
-        grad_xi = -(e[:, :, None] * common).sum(axis=1)
-        grad_zeta = (e[:, :, None] * common).sum(axis=0)
+
+        # Optimized gradient computation: avoid 3D array creation, use 2D matrix multiplication instead
+        e_over_d = e / distance
+        sum_e_over_d = e_over_d.sum(axis=1, keepdims=True)
+        grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
+
+        sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
+        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+
         grad_tau = float((e * (-gamma * distance)).sum())
 
     nll += _add_penalty(params, penalty, free_alpha=free_alpha, uses_space=uses_space)
