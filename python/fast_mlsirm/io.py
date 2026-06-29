@@ -69,11 +69,11 @@ def load_params(path: str | Path) -> MLSIRMParams:
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
+    import warnings
     content = Path(path).read_text(encoding="utf-8").strip()
     if not content:
         raise ValueError("factor CSV is empty")
 
-    import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return np.loadtxt(path, delimiter=',', skiprows=1, usecols=1, dtype=np.int64, ndmin=1)
