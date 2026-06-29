@@ -76,7 +76,7 @@ def fit(
             best = candidate
 
     if best is None:
-        raise RuntimeError("Fit failed to produce a valid result")
+        raise RuntimeError("Optimization failed to find a valid fit.")
     return best
 
 

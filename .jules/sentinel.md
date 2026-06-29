@@ -1,4 +1,11 @@
-## 2024-05-15 - [Assert Removal in Python]
-**Vulnerability:** Use of `assert` in application logic (`assert best is not None` in `python/fast_mlsirm/fit.py`).
-**Learning:** Python `assert` statements are stripped when the interpreter is run with optimization (`-O`). This can cause application logic to silently skip checks and lead to undefined behaviors or security issues.
-**Prevention:** Replace `assert` with explicit `if` conditions that raise exceptions like `RuntimeError` or `ValueError` to ensure checks are enforced regardless of interpreter optimization flags.
+## 2026-06-29 - [np.load Insecure Deserialization Risk & Assertion Optimization Removal]
+**Vulnerability:**
+1. `numpy.load()` was used without explicitly specifying `allow_pickle=False`. This could lead to insecure deserialization and arbitrary code execution if a malicious pickle file is loaded (especially critical depending on the environment's NumPy version).
+2. `assert` was used for critical control flow (`assert best is not None`). Assertions are stripped out when Python is run with the `-O` optimization flag, potentially leading to undefined behavior and masking errors in production environments.
+
+**Learning:**
+Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. Relying on `assert` for necessary runtime checks is dangerous; standard exceptions like `RuntimeError` should be used instead.
+
+**Prevention:**
+- Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
+- Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.

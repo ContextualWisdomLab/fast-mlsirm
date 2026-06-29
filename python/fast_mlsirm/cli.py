@@ -63,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"✅ Simulation successfully saved to {args.out}")
         return 0
 
-    responses = np.load(args.responses)
+    # Security: explicitly disable pickle to prevent arbitrary code execution
+    responses = np.load(args.responses, allow_pickle=False)
     factors = load_factor_csv(args.factors)
     result = fit(
         responses=responses,
