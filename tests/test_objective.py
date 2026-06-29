@@ -1,7 +1,8 @@
 import numpy as np
+import pytest
 
 from fast_mlsirm import FitConfig, MLSIRMParams
-from fast_mlsirm.objective import neg_loglik_and_grad
+from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id
 
 
 def test_missing_entries_are_excluded():
@@ -54,3 +55,17 @@ def test_gradient_matches_finite_difference():
     trial.tau += h
     got, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), trial, config)
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
+
+
+def test_validate_factor_id():
+    res = validate_factor_id([0, 1, 0], n_items=3, n_dims=2)
+    assert np.array_equal(res, np.array([0, 1, 0]))
+
+    with pytest.raises(ValueError, match="factor_id length must match number of items"):
+        validate_factor_id([0, 1], n_items=3, n_dims=2)
+
+    with pytest.raises(ValueError, match="factor_id values must be in 0..n_dims-1"):
+        validate_factor_id([-1, 0, 1], n_items=3, n_dims=2)
+
+    with pytest.raises(ValueError, match="factor_id values must be in 0..n_dims-1"):
+        validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
