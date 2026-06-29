@@ -69,13 +69,24 @@ def load_params(path: str | Path) -> MLSIRMParams:
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
-    rows = Path(path).read_text(encoding="utf-8").strip().splitlines()
-    if not rows:
+    content = Path(path).read_text(encoding="utf-8").strip()
+    if not content:
         raise ValueError("factor CSV is empty")
-    return np.array([int(line.split(",")[1]) for line in rows[1:]], dtype=np.int64)
+
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return np.loadtxt(path, delimiter=',', skiprows=1, usecols=1, dtype=np.int64, ndmin=1)
 
 
 def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:
-    lines = ["item_id,factor_id"]
-    lines.extend(f"{idx},{int(factor)}" for idx, factor in enumerate(factor_id))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    item_ids = np.arange(len(factor_id))
+    data = np.column_stack((item_ids, factor_id))
+    np.savetxt(
+        path,
+        data,
+        delimiter=',',
+        header='item_id,factor_id',
+        comments='',
+        fmt='%d'
+    )
