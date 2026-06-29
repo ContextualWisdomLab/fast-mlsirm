@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not argv:
         parser.print_help()
-        return 0
+        return 2
 
     args = parser.parse_args(argv)
     if args.command == "simulate":
