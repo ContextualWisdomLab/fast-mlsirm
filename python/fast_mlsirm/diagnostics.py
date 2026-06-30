@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from .math import sigmoid, standardize
-from .objective import linear_predictor
-from .types import MLSIRMParams, RecoveryReport
+from .objective import linear_predictor, model_flags, prepare_response
+from .types import FitDiagnostics, MLSIRMParams, RecoveryReport
 
 
 def predict_proba(
@@ -20,6 +20,45 @@ def predict_proba(
         factors = factors[np.asarray(items, dtype=np.int64)]
     eta, _ = linear_predictor(sub, factors, model=model)
     return sigmoid(eta)
+
+
+def fit_diagnostics(
+    responses: np.ndarray,
+    params: MLSIRMParams,
+    factor_id: np.ndarray,
+    mask: np.ndarray | None = None,
+    model: str = "MLS2PLM",
+    parameter_count: int | None = None,
+    eps: float = 1e-12,
+) -> FitDiagnostics:
+    y, observed = prepare_response(responses, mask)
+    prob = np.clip(predict_proba(params, factor_id, model=model), eps, 1.0 - eps)
+    if prob.shape != y.shape:
+        raise ValueError("parameter dimensions must match responses and factor_id")
+
+    variance = np.maximum(prob * (1.0 - prob), eps)
+    residual = (y - prob) * observed
+    pearson_sq = np.where(observed, residual * residual / variance, 0.0)
+    n_parameters = int(parameter_count) if parameter_count is not None else _parameter_count(params, model)
+
+    itemfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=0)
+    personfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=1)
+    loglik = float(np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0).sum())
+    n_observed = int(observed.sum())
+    deviance = -2.0 * loglik
+    model_fit = {
+        "loglik": loglik,
+        "deviance": deviance,
+        "aic": 2.0 * n_parameters - 2.0 * loglik,
+        "bic": np.log(n_observed) * n_parameters - 2.0 * loglik,
+        "n_observed": float(n_observed),
+        "parameter_count": float(n_parameters),
+        "observed_mean": float(y[observed].mean()),
+        "expected_mean": float(prob[observed].mean()),
+        "mean_abs_residual": float(np.abs(residual[observed]).mean()),
+        "pearson_chisq": float(pearson_sq.sum()),
+    }
+    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit)
 
 
 def align_latent_space(
@@ -86,6 +125,41 @@ def _subset_params(params: MLSIRMParams, persons: np.ndarray | None, items: np.n
         zeta=params.zeta[i_idx],
         tau=params.tau,
     )
+
+
+def _axis_fit(
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+    variance: np.ndarray,
+    residual: np.ndarray,
+    pearson_sq: np.ndarray,
+    axis: int,
+) -> dict[str, np.ndarray]:
+    count = observed.sum(axis=axis).astype(np.float64)
+    score = (y * observed).sum(axis=axis)
+    expected = (prob * observed).sum(axis=axis)
+    raw = residual.sum(axis=axis)
+    variance_sum = (variance * observed).sum(axis=axis)
+    return {
+        "observed_count": count,
+        "score": score,
+        "expected_score": expected,
+        "raw_residual": raw,
+        "standardized_residual": raw / np.sqrt(variance_sum),
+        "infit_mnsq": (residual * residual).sum(axis=axis) / variance_sum,
+        "outfit_mnsq": pearson_sq.sum(axis=axis) / count,
+    }
+
+
+def _parameter_count(params: MLSIRMParams, model: str) -> int:
+    free_alpha, uses_space = model_flags(model)
+    count = params.theta.size + params.b.size
+    if free_alpha:
+        count += params.alpha.size
+    if uses_space:
+        count += params.xi.size + params.zeta.size + 1
+    return count
 
 
 def _bias(true: np.ndarray, estimate: np.ndarray) -> float:

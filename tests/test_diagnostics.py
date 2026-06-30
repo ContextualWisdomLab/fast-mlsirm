@@ -1,7 +1,7 @@
 import numpy as np
 
 from fast_mlsirm import MLS2PLMConfig, simulate
-from fast_mlsirm.diagnostics import predict_proba
+from fast_mlsirm.diagnostics import fit_diagnostics, predict_proba
 
 
 def test_predict_proba_matches_simulation():
@@ -47,3 +47,24 @@ def test_predict_proba_no_space():
     truth = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
     probs = predict_proba(truth, np.zeros(2, dtype=int), model="MIRT")
     assert probs is not None
+
+
+def test_fit_diagnostics_balanced_mirt_contract():
+    params = MLSIRMParams(
+        theta=np.zeros((2, 1)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=0.0,
+    )
+    responses = np.array([[1.0, 0.0], [0.0, 1.0]])
+
+    diagnostics = fit_diagnostics(responses, params, np.zeros(2, dtype=int), model="MIRT")
+
+    assert np.allclose(diagnostics.itemfit["observed_count"], [2.0, 2.0])
+    assert np.allclose(diagnostics.itemfit["infit_mnsq"], [1.0, 1.0])
+    assert np.allclose(diagnostics.itemfit["outfit_mnsq"], [1.0, 1.0])
+    assert np.allclose(diagnostics.personfit["infit_mnsq"], [1.0, 1.0])
+    assert np.isclose(diagnostics.model_fit["loglik"], 4 * np.log(0.5))
+    assert diagnostics.model_fit["parameter_count"] == 6.0
