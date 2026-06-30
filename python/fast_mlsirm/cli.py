@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 import numpy as np
 
@@ -62,6 +64,13 @@ def main(argv: list[str] | None = None) -> int:
         save_simulation(data, args.out)
         print(f"✅ Simulation successfully saved to {args.out}")
         return 0
+
+    if not Path(args.responses).exists():
+        print(f"❌ Error: Responses file '{args.responses}' not found.", file=sys.stderr)
+        return 1
+    if not Path(args.factors).exists():
+        print(f"❌ Error: Factors file '{args.factors}' not found.", file=sys.stderr)
+        return 1
 
     # Security: explicitly disable pickle to prevent arbitrary code execution
     responses = np.load(args.responses, allow_pickle=False)
