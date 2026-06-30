@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 import numpy as np
 
@@ -46,8 +47,16 @@ def main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
 
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if not argv:
+        parser.print_help()
+        return 2
+
     args = parser.parse_args(argv)
     if args.command == "simulate":
+        print(f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
         data = simulate(
             MLS2PLMConfig(
                 n_persons=args.persons,
@@ -64,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Security: explicitly disable pickle to prevent arbitrary code execution
+    print(f"⏳ Fitting {args.model} model to responses...")
     responses = np.load(args.responses, allow_pickle=False)
     factors = load_factor_csv(args.factors)
     result = fit(
