@@ -151,13 +151,14 @@ def neg_loglik_and_grad(
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
-    value = 0.5 * penalty.lambda_theta * float(np.sum(params.theta * params.theta))
-    value += 0.5 * penalty.lambda_b * float(np.sum(params.b * params.b))
+    # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
+    value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
+    value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
     if free_alpha:
         delta = params.alpha - penalty.mu_alpha
-        value += 0.5 * penalty.lambda_alpha * float(np.sum(delta * delta))
+        value += 0.5 * penalty.lambda_alpha * float(np.vdot(delta, delta))
     if uses_space:
-        value += 0.5 * penalty.lambda_xi * float(np.sum(params.xi * params.xi))
-        value += 0.5 * penalty.lambda_zeta * float(np.sum(params.zeta * params.zeta))
+        value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
+        value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
         value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
     return value
