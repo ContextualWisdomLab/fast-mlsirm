@@ -8,8 +8,9 @@ comparisons. Those paper-level posterior predictive checks require posterior
 samples or replicated response matrices.
 
 The current `fast-mlsirm` backend is a regularized JML/MAP-style optimizer,
-closer to Molenaar and Jeon (2026). Until the package has a sampler or
-posterior draw contract, fit diagnostics should be labeled as point-estimate
+closer to Molenaar and Jeon (2026). Their JML framing supports selecting the
+latent-space dimension with cross-validation. Until the package has a sampler
+or posterior draw contract, fit diagnostics should be labeled as point-estimate
 residual diagnostics, not posterior predictive model checks.
 
 ## Implemented Scope
@@ -19,8 +20,14 @@ residual diagnostics, not posterior predictive model checks.
 - item-level observed count, observed score, expected score, raw residual,
   standardized residual, infit mean-square, and outfit mean-square
 - person-level versions of the same statistics
+- factor-level versions of the same statistics for multidimensional models
 - model-level log-likelihood, deviance, AIC, BIC, observed mean, expected mean,
   mean absolute residual, and Pearson chi-square
+
+`dimensionality_diagnostics` fits candidate latent-space dimensions with
+K-fold held-out entries and reports validation log-likelihood, deviance, mean
+absolute residual, and RMSE. The selected dimension is the candidate with the
+largest held-out log-likelihood.
 
 AIC and BIC use the active stored parameter count for the selected model. They
 are descriptive for this growing-parameter JML setting and should not be

@@ -6,9 +6,9 @@ import sys
 import numpy as np
 
 from .config import FitConfig, MLS2PLMConfig
-from .diagnostics import fit_diagnostics
+from .diagnostics import dimensionality_diagnostics, fit_diagnostics
 from .fit import fit
-from .io import load_factor_csv, load_params, save_fit_diagnostics, save_fit_result, save_simulation
+from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .simulation import simulate
 
 
@@ -59,6 +59,22 @@ def main(argv: list[str] | None = None) -> int:
     diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
     diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
 
+    dim = sub.add_parser(
+        "diagnose-dimensions",
+        help="Compare latent-space dimensionality with K-fold held-out likelihood.",
+        description="Compare latent-space dimensionality with K-fold held-out likelihood.",
+    )
+    dim.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    dim.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
+    dim.add_argument("--latent-dims", default="1,2,3", help="Comma-separated latent dimensions to compare (default: 1,2,3).")
+    dim.add_argument("--folds", type=int, default=5, help="Number of validation folds (default: 5).")
+    dim.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
+    dim.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
+    dim.add_argument("--max-iter", type=int, default=100, help="Maximum iterations per fold fit (default: 100).")
+    dim.add_argument("--n-restarts", type=int, default=1, help="Random restarts per fold fit (default: 1).")
+    dim.add_argument("--seed", type=int, default=1, help="Random seed for folds and fitting (default: 1).")
+    dim.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
+
     if argv is None:
         argv = sys.argv[1:]
 
@@ -100,6 +116,38 @@ def main(argv: list[str] | None = None) -> int:
         diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
         save_fit_diagnostics(diagnostics, args.out)
         print(f"✅ Fit diagnostics successfully saved to {args.out}")
+        return 0
+
+    if args.command == "diagnose-dimensions":
+        print(f"⏳ Comparing {args.model} latent dimensions {args.latent_dims}...")
+        try:
+            responses = np.load(args.responses, allow_pickle=False)
+            factors = load_factor_csv(args.factors)
+            latent_dims = [int(value) for value in args.latent_dims.split(",")]
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+            return 1
+
+        diagnostics = dimensionality_diagnostics(
+            responses=responses,
+            factor_id=factors,
+            latent_dims=latent_dims,
+            model=args.model,
+            k_folds=args.folds,
+            seed=args.seed,
+            config=FitConfig(
+                model=args.model,
+                optimizer=args.optimizer,
+                max_iter=args.max_iter,
+                n_restarts=args.n_restarts,
+                seed=args.seed,
+            ),
+        )
+        save_dimensionality_diagnostics(diagnostics, args.out)
+        print(f"✅ Dimension diagnostics successfully saved to {args.out}")
         return 0
 
     print(f"⏳ Fitting {args.model} model to responses...")

@@ -7,7 +7,7 @@ point estimation, and true-parameter recovery checks.
 The first implementation keeps the public API small:
 
 ```python
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, fit, fit_diagnostics, recovery_report
+from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -17,9 +17,16 @@ result = fit(
 )
 report = recovery_report(data.truth, result.params)
 diagnostics = fit_diagnostics(data.Y, result.params, data.factor_id, model=result.model)
+dimensions = dimensionality_diagnostics(
+    data.Y,
+    data.factor_id,
+    latent_dims=[1, 2, 3],
+    config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=10, n_restarts=1),
+)
 
 print(report.summary)
 print(diagnostics.model_fit)
+print(dimensions.best)
 ```
 
 ## What Works Now
@@ -32,6 +39,7 @@ print(diagnostics.model_fit)
 - Adam and small L-BFGS-style optimizers without SciPy.
 - Procrustes alignment and distance-based recovery metrics.
 - Point-estimate item, person, and model fit diagnostics for fitted models.
+- K-fold held-out likelihood diagnostics for latent-space dimensionality.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
 
@@ -77,6 +85,15 @@ fast-mlsirm diagnose-fit \
   --params runs/fit_001/params.npz \
   --model MLS2PLM \
   --out runs/diagnostics_001
+
+fast-mlsirm diagnose-dimensions \
+  --responses runs/sim_001/responses.npy \
+  --factors runs/sim_001/item_factor.csv \
+  --latent-dims 1,2,3 \
+  --folds 5 \
+  --model MLS2PLM \
+  --max-iter 100 \
+  --out runs/dimensions_001
 ```
 
 ## Repository Layout

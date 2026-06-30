@@ -1,7 +1,7 @@
 import numpy as np
 
-from fast_mlsirm import MLS2PLMConfig, simulate
-from fast_mlsirm.diagnostics import fit_diagnostics, predict_proba
+from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
+from fast_mlsirm.diagnostics import dimensionality_diagnostics, fit_diagnostics, predict_proba
 
 
 def test_predict_proba_matches_simulation():
@@ -66,5 +66,23 @@ def test_fit_diagnostics_balanced_mirt_contract():
     assert np.allclose(diagnostics.itemfit["infit_mnsq"], [1.0, 1.0])
     assert np.allclose(diagnostics.itemfit["outfit_mnsq"], [1.0, 1.0])
     assert np.allclose(diagnostics.personfit["infit_mnsq"], [1.0, 1.0])
+    assert np.allclose(diagnostics.factorfit["observed_count"], [4.0])
     assert np.isclose(diagnostics.model_fit["loglik"], 4 * np.log(0.5))
     assert diagnostics.model_fit["parameter_count"] == 6.0
+
+
+def test_dimensionality_diagnostics_returns_best_candidate():
+    data = simulate(MLS2PLMConfig(n_persons=12, n_dims=2, items_per_dim=3, latent_dim=2, seed=7))
+
+    report = dimensionality_diagnostics(
+        data.Y,
+        data.factor_id,
+        latent_dims=[1, 2],
+        k_folds=2,
+        seed=5,
+        config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=1, n_restarts=1, seed=5),
+    )
+
+    assert [row["latent_dim"] for row in report.candidates] == [1.0, 2.0]
+    assert report.best in report.candidates
+    assert all(np.isfinite(row["heldout_loglik"]) for row in report.candidates)
