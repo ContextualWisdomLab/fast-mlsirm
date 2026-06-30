@@ -7,7 +7,7 @@ point estimation, and true-parameter recovery checks.
 The first implementation keeps the public API small:
 
 ```python
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, fit, recovery_report
+from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, fit, fit_diagnostics, recovery_report
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -16,8 +16,10 @@ result = fit(
     config=FitConfig(model="MLS2PLM", optimizer="adam_lbfgs", max_iter=100),
 )
 report = recovery_report(data.truth, result.params)
+diagnostics = fit_diagnostics(data.Y, result.params, data.factor_id, model=result.model)
 
 print(report.summary)
+print(diagnostics.model_fit)
 ```
 
 ## What Works Now
@@ -29,6 +31,7 @@ print(report.summary)
 - Missing response exclusion via `NaN`, `-1`, or an explicit mask.
 - Adam and small L-BFGS-style optimizers without SciPy.
 - Procrustes alignment and distance-based recovery metrics.
+- Point-estimate item, person, and model fit diagnostics for fitted models.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
 
@@ -67,6 +70,13 @@ fast-mlsirm fit \
   --optimizer adam_lbfgs \
   --max-iter 100 \
   --out runs/fit_001
+
+fast-mlsirm diagnose-fit \
+  --responses runs/sim_001/responses.npy \
+  --factors runs/sim_001/item_factor.csv \
+  --params runs/fit_001/params.npz \
+  --model MLS2PLM \
+  --out runs/diagnostics_001
 ```
 
 ## Repository Layout

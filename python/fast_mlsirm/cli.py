@@ -6,8 +6,9 @@ import sys
 import numpy as np
 
 from .config import FitConfig, MLS2PLMConfig
+from .diagnostics import fit_diagnostics
 from .fit import fit
-from .io import load_factor_csv, save_fit_result, save_simulation
+from .io import load_factor_csv, load_params, save_fit_diagnostics, save_fit_result, save_simulation
 from .simulation import simulate
 
 
@@ -47,6 +48,17 @@ def main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
 
+    diagnose = sub.add_parser(
+        "diagnose-fit",
+        help="Compute item, person, and model fit diagnostics for fitted parameters.",
+        description="Compute item, person, and model fit diagnostics for fitted parameters.",
+    )
+    diagnose.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    diagnose.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
+    diagnose.add_argument("--params", required=True, help="Path to fitted params.npz.")
+    diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
+    diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
+
     if argv is None:
         argv = sys.argv[1:]
 
@@ -72,7 +84,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"✅ Simulation successfully saved to {args.out}")
         return 0
 
-    # Security: explicitly disable pickle to prevent arbitrary code execution
+    if args.command == "diagnose-fit":
+        print(f"⏳ Computing {args.model} fit diagnostics...")
+        try:
+            responses = np.load(args.responses, allow_pickle=False)
+            factors = load_factor_csv(args.factors)
+            params = load_params(args.params)
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+            return 1
+
+        diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
+        save_fit_diagnostics(diagnostics, args.out)
+        print(f"✅ Fit diagnostics successfully saved to {args.out}")
+        return 0
+
     print(f"⏳ Fitting {args.model} model to responses...")
     try:
         responses = np.load(args.responses, allow_pickle=False)

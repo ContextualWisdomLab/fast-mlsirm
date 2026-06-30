@@ -57,6 +57,13 @@ class FitResult:
 
 
 @dataclass
+class FitDiagnostics:
+    itemfit: dict[str, np.ndarray]
+    personfit: dict[str, np.ndarray]
+    model_fit: dict[str, float]
+
+
+@dataclass
 class RecoveryReport:
     summary: dict[str, float]
     metrics: dict[str, float]

@@ -37,6 +37,35 @@ def test_cli_fit_success(tmp_path):
     assert (fit_dir / "params.npz").exists()
     assert (fit_dir / "fit_summary.json").exists()
 
+def test_cli_diagnose_fit_success(tmp_path):
+    sim_dir = tmp_path / "sim_out"
+    fit_dir = tmp_path / "fit_out"
+    diag_dir = tmp_path / "diag_out"
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+        main()
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'fit', '--responses', str(sim_dir / "responses.npy"), '--factors', str(sim_dir / "item_factor.csv"), '--model', 'MLS2PLM', '--max-iter', '1', '--out', str(fit_dir)]):
+        main()
+
+    args = [
+        "diagnose-fit",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--params",
+        str(fit_dir / "params.npz"),
+        "--model",
+        "MLS2PLM",
+        "--out",
+        str(diag_dir),
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    assert (diag_dir / "fit_diagnostics.json").exists()
+
 def test_cli_fit_missing_file(capsys):
     args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
     with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
