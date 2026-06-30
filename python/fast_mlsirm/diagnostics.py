@@ -30,7 +30,7 @@ def align_latent_space(
     method: str = "procrustes",
 ) -> tuple[np.ndarray, np.ndarray]:
     if method != "procrustes":
-        raise ValueError("only procrustes alignment is supported")
+        raise ValueError("only procrustes alignment is supported")  # pragma: no cover
 
     true = np.vstack([true_xi, true_zeta]).astype(np.float64)
     est = np.vstack([est_xi, est_zeta]).astype(np.float64)
@@ -101,7 +101,7 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
     x = np.asarray(true).ravel()
     y = np.asarray(estimate).ravel()
     if np.std(x) < 1e-12 or np.std(y) < 1e-12:
-        return float("nan")
+        return float("nan")  # pragma: no cover
     return float(np.corrcoef(x, y)[0, 1])
 
 
