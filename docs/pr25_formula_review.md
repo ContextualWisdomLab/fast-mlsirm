@@ -16,15 +16,23 @@ while PR #25 proposes an equivalent boolean-mask projection form.
 
 ## Paper And Formula Basis
 
-The MLS2PLM paper defines the response model as a multidimensional two-parameter
-logistic item response model augmented by a latent-space distance term:
+The MLS2PLM paper defines the response model as a multidimensional
+two-parameter logistic item response model augmented by a latent-space distance
+term:
 
 ```text
-logit P(Y_pi = 1) = alpha_i + beta_i * theta_p,d(i) - gamma * ||zeta_p - zeta_i||
+logit P(Y_pi = 1) = a_i^T theta_p + b_i - gamma * d(xi_p, zeta_i)
 ```
 
-The local project contract uses equivalent parameter names and positive
-reparameterizations:
+For the simple-structure case used by this package, each item loads on one
+dimension only, so the first term reduces to:
+
+```text
+a_i^T theta_p = a_i * theta_p,d(i)
+```
+
+The local project contract uses the same simple-structure form with positive
+reparameterizations for item discrimination and the distance weight:
 
 ```text
 eta_pi = exp(alpha_i) * theta_p,d(i) + b_i - exp(tau) * r_pi
