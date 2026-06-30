@@ -66,6 +66,33 @@ def test_cli_diagnose_fit_success(tmp_path):
 
     assert (diag_dir / "fit_diagnostics.json").exists()
 
+def test_cli_diagnose_dimensions_success(tmp_path):
+    sim_dir = tmp_path / "sim_out"
+    diag_dir = tmp_path / "dim_out"
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+        main()
+
+    args = [
+        "diagnose-dimensions",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--latent-dims",
+        "1",
+        "--folds",
+        "2",
+        "--max-iter",
+        "1",
+        "--out",
+        str(diag_dir),
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    assert (diag_dir / "dimension_diagnostics.json").exists()
+
 def test_cli_fit_missing_file(capsys):
     args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
     with patch.object(sys, 'argv', ['fast-mlsirm'] + args):

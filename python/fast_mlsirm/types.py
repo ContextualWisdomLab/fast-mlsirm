@@ -61,6 +61,13 @@ class FitDiagnostics:
     itemfit: dict[str, np.ndarray]
     personfit: dict[str, np.ndarray]
     model_fit: dict[str, float]
+    factorfit: dict[str, np.ndarray] | None = None
+
+
+@dataclass
+class DimensionalityDiagnostics:
+    candidates: list[dict[str, float]]
+    best: dict[str, float]
 
 
 @dataclass

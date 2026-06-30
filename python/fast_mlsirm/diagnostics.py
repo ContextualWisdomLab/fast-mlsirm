@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import replace
+
 import numpy as np
 
+from .config import FitConfig
 from .math import sigmoid, standardize
 from .objective import linear_predictor, model_flags, prepare_response
-from .types import FitDiagnostics, MLSIRMParams, RecoveryReport
+from .types import DimensionalityDiagnostics, FitDiagnostics, MLSIRMParams, RecoveryReport
 
 
 def predict_proba(
@@ -43,6 +47,7 @@ def fit_diagnostics(
 
     itemfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=0)
     personfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=1)
+    factorfit = _factor_fit(factor_id, y, observed, prob, variance, residual, pearson_sq)
     loglik = float(np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0).sum())
     n_observed = int(observed.sum())
     deviance = -2.0 * loglik
@@ -58,7 +63,54 @@ def fit_diagnostics(
         "mean_abs_residual": float(np.abs(residual[observed]).mean()),
         "pearson_chisq": float(pearson_sq.sum()),
     }
-    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit)
+    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit, factorfit=factorfit)
+
+
+def dimensionality_diagnostics(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    latent_dims: Iterable[int],
+    config: FitConfig | None = None,
+    mask: np.ndarray | None = None,
+    model: str = "MLS2PLM",
+    k_folds: int = 5,
+    seed: int = 1,
+    eps: float = 1e-12,
+) -> DimensionalityDiagnostics:
+    from .fit import fit
+
+    y, observed = prepare_response(responses, mask)
+    folds = _validation_folds(observed, k_folds, seed)
+    base = config or FitConfig(model=model)
+    candidates: list[dict[str, float]] = []
+
+    for latent_dim in _validated_latent_dims(latent_dims):
+        totals = {"loglik": 0.0, "abs_residual": 0.0, "sq_residual": 0.0, "n": 0.0}
+        for fold_idx, validation_mask in enumerate(folds):
+            train_mask = observed & ~validation_mask
+            fitted = fit(
+                y,
+                factor_id,
+                config=replace(base, model=model, latent_dim=latent_dim, seed=seed + fold_idx),
+                mask=train_mask,
+            )
+            prob = np.clip(predict_proba(fitted.params, factor_id, model=fitted.model), eps, 1.0 - eps)
+            _accumulate_heldout(totals, y, validation_mask, prob)
+
+        candidates.append(
+            {
+                "latent_dim": float(latent_dim),
+                "k_folds": float(k_folds),
+                "heldout_loglik": totals["loglik"],
+                "heldout_deviance": -2.0 * totals["loglik"],
+                "heldout_mean_abs_residual": totals["abs_residual"] / totals["n"],
+                "heldout_rmse": float(np.sqrt(totals["sq_residual"] / totals["n"])),
+                "n_heldout": totals["n"],
+            }
+        )
+
+    best = max(candidates, key=lambda row: row["heldout_loglik"])
+    return DimensionalityDiagnostics(candidates=candidates, best=best)
 
 
 def align_latent_space(
@@ -152,6 +204,50 @@ def _axis_fit(
     }
 
 
+def _factor_fit(
+    factor_id: np.ndarray,
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+    variance: np.ndarray,
+    residual: np.ndarray,
+    pearson_sq: np.ndarray,
+) -> dict[str, np.ndarray]:
+    factors = np.asarray(factor_id, dtype=np.int64)
+    if factors.shape != (y.shape[1],):
+        raise ValueError("factor_id length must match number of items")
+
+    rows = []
+    for factor in np.unique(factors):
+        cols = factors == factor
+        rows.append(
+            (
+                float(factor),
+                float(observed[:, cols].sum()),
+                float((y[:, cols] * observed[:, cols]).sum()),
+                float((prob[:, cols] * observed[:, cols]).sum()),
+                float(residual[:, cols].sum()),
+                float((variance[:, cols] * observed[:, cols]).sum()),
+                float((residual[:, cols] * residual[:, cols]).sum()),
+                float(pearson_sq[:, cols].sum()),
+            )
+        )
+
+    table = np.asarray(rows, dtype=np.float64)
+    variance_sum = table[:, 5]
+    count = table[:, 1]
+    return {
+        "factor_id": table[:, 0],
+        "observed_count": count,
+        "score": table[:, 2],
+        "expected_score": table[:, 3],
+        "raw_residual": table[:, 4],
+        "standardized_residual": table[:, 4] / np.sqrt(variance_sum),
+        "infit_mnsq": table[:, 6] / variance_sum,
+        "outfit_mnsq": table[:, 7] / count,
+    }
+
+
 def _parameter_count(params: MLSIRMParams, model: str) -> int:
     free_alpha, uses_space = model_flags(model)
     count = params.theta.size + params.b.size
@@ -160,6 +256,52 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
     if uses_space:
         count += params.xi.size + params.zeta.size + 1
     return count
+
+
+def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
+    dims = [int(value) for value in latent_dims]
+    if not dims:
+        raise ValueError("latent_dims must not be empty")
+    if any(value < 1 for value in dims):
+        raise ValueError("latent_dims must be >= 1")
+    return dims
+
+
+def _validation_folds(observed: np.ndarray, k_folds: int, seed: int) -> list[np.ndarray]:
+    if k_folds < 2:
+        raise ValueError("k_folds must be >= 2")
+
+    row_counts = observed.sum(axis=1)
+    col_counts = observed.sum(axis=0)
+    eligible = np.argwhere(observed & (row_counts[:, None] > 1) & (col_counts[None, :] > 1))
+    if len(eligible) < k_folds:
+        raise ValueError("not enough observed entries for k-fold validation")
+
+    rng = np.random.default_rng(seed)
+    splits = np.array_split(rng.permutation(len(eligible)), k_folds)
+    folds: list[np.ndarray] = []
+    for split in splits:
+        mask = np.zeros_like(observed, dtype=bool)
+        rows = eligible[split, 0]
+        cols = eligible[split, 1]
+        mask[rows, cols] = True
+        train = observed & ~mask
+        mask[train.sum(axis=1) == 0, :] = False
+        mask[:, train.sum(axis=0) == 0] = False
+        if not np.any(mask):
+            raise ValueError("fold validation set is empty; reduce k_folds")
+        folds.append(mask)
+    return folds
+
+
+def _accumulate_heldout(totals: dict[str, float], y: np.ndarray, mask: np.ndarray, prob: np.ndarray) -> None:
+    yy = y[mask]
+    pp = prob[mask]
+    residual = yy - pp
+    totals["loglik"] += float((yy * np.log(pp) + (1.0 - yy) * np.log1p(-pp)).sum())
+    totals["abs_residual"] += float(np.abs(residual).sum())
+    totals["sq_residual"] += float((residual * residual).sum())
+    totals["n"] += float(mask.sum())
 
 
 def _bias(true: np.ndarray, estimate: np.ndarray) -> float:

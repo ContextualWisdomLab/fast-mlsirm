@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .types import FitDiagnostics, FitResult, MLSIRMParams, SimulationData
+from .types import DimensionalityDiagnostics, FitDiagnostics, FitResult, MLSIRMParams, SimulationData
 
 
 def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
@@ -68,9 +68,17 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
     payload = {
         "itemfit": _arrays_to_lists(diagnostics.itemfit),
         "personfit": _arrays_to_lists(diagnostics.personfit),
+        "factorfit": _arrays_to_lists(diagnostics.factorfit or {}),
         "model_fit": diagnostics.model_fit,
     }
     (out / "fit_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_dir: str | Path) -> None:
+    out = Path(run_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    payload = {"candidates": diagnostics.candidates, "best": diagnostics.best}
+    (out / "dimension_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
