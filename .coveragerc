@@ -1,0 +1,9 @@
+[run]
+omit =
+    tests/*
+    setup.py
+    */cli.py
+    */io.py
+
+[report]
+fail_under = 80
