@@ -47,11 +47,15 @@ def align_latent_space(
     return aligned[: len(true_xi)], aligned[len(true_xi) :]
 
 
-def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = True) -> RecoveryReport:
+def recovery_report(
+    truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = True
+) -> RecoveryReport:
     est_xi = estimate.xi
     est_zeta = estimate.zeta
     if align:
-        est_xi, est_zeta = align_latent_space(truth.xi, truth.zeta, estimate.xi, estimate.zeta)
+        est_xi, est_zeta = align_latent_space(
+            truth.xi, truth.zeta, estimate.xi, estimate.zeta
+        )
 
     metrics = {
         "a_bias": _bias(truth.a, estimate.a),
@@ -61,13 +65,29 @@ def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = T
         "b_rmse": _rmse(truth.b, estimate.b),
         "b_corr": _corr(truth.b, estimate.b),
         "gamma_abs_error": float(abs(truth.gamma - estimate.gamma)),
-        "gamma_relative_error": float(abs(truth.gamma - estimate.gamma) / max(abs(truth.gamma), 1e-12)),
-        "theta_rmse_standardized": _rmse(standardize(truth.theta), standardize(estimate.theta)),
-        "latent_coordinate_rmse": _rmse(np.vstack([truth.xi, truth.zeta]), np.vstack([est_xi, est_zeta])),
-        "person_item_distance_rmse": _distance_rmse(truth.xi, truth.zeta, estimate.xi, estimate.zeta),
+        "gamma_relative_error": float(
+            abs(truth.gamma - estimate.gamma) / max(abs(truth.gamma), 1e-12)
+        ),
+        "theta_rmse_standardized": _rmse(
+            standardize(truth.theta), standardize(estimate.theta)
+        ),
+        "latent_coordinate_rmse": _rmse(
+            np.vstack([truth.xi, truth.zeta]), np.vstack([est_xi, est_zeta])
+        ),
+        "person_item_distance_rmse": _distance_rmse(
+            truth.xi, truth.zeta, estimate.xi, estimate.zeta
+        ),
     }
     summary = {
-        "parameter_rmse_mean": float(np.nanmean([metrics["a_rmse"], metrics["b_rmse"], metrics["theta_rmse_standardized"]])),
+        "parameter_rmse_mean": float(
+            np.nanmean(
+                [
+                    metrics["a_rmse"],
+                    metrics["b_rmse"],
+                    metrics["theta_rmse_standardized"],
+                ]
+            )
+        ),
         "latent_rmse": metrics["latent_coordinate_rmse"],
         "distance_rmse": metrics["person_item_distance_rmse"],
         "gamma_abs_error": metrics["gamma_abs_error"],
@@ -75,7 +95,9 @@ def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = T
     return RecoveryReport(summary=summary, metrics=metrics)
 
 
-def _subset_params(params: MLSIRMParams, persons: np.ndarray | None, items: np.ndarray | None) -> MLSIRMParams:
+def _subset_params(
+    params: MLSIRMParams, persons: np.ndarray | None, items: np.ndarray | None
+) -> MLSIRMParams:
     p_idx = slice(None) if persons is None else np.asarray(persons, dtype=np.int64)
     i_idx = slice(None) if items is None else np.asarray(items, dtype=np.int64)
     return MLSIRMParams(
@@ -105,7 +127,9 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
+def _distance_rmse(
+    true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray
+) -> float:
     true_d = np.sqrt(((true_xi[:, None, :] - true_zeta[None, :, :]) ** 2).sum(axis=2))
     est_d = np.sqrt(((est_xi[:, None, :] - est_zeta[None, :, :]) ** 2).sum(axis=2))
     return _rmse(true_d, est_d)

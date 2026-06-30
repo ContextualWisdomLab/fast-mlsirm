@@ -7,7 +7,9 @@ from .math import sigmoid, softplus
 from .types import MLSIRMParams
 
 
-def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def prepare_response(
+    responses: np.ndarray, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -61,9 +63,11 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.sum(params.xi ** 2, axis=1)
-        zeta_sq = np.sum(params.zeta ** 2, axis=1)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        xi_sq = np.sum(params.xi**2, axis=1)
+        zeta_sq = np.sum(params.zeta**2, axis=1)
+        dist_sq = (
+            xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        )
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
         gamma = params.gamma
@@ -93,7 +97,9 @@ def neg_loglik_and_grad(
 
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    eta, distance = linear_predictor(params, factors, model=model, eps_distance=config.eps_distance)
+    eta, distance = linear_predictor(
+        params, factors, model=model, eps_distance=config.eps_distance
+    )
     pi = sigmoid(eta)
     entry_loss = (softplus(eta) - y * eta) * observed
     nll = float(entry_loss.sum())
@@ -103,13 +109,12 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * a[None, :] * params.theta[:, factors]).sum(axis=0)
+        grad_alpha = a * np.sum(e * params.theta[:, factors], axis=0)
 
-    grad_theta = np.zeros_like(params.theta)
-    for d in range(params.theta.shape[1]):
-        items = factors == d
-        if np.any(items):
-            grad_theta[:, d] = (e[:, items] * a[items][None, :]).sum(axis=1)
+    # Optimized theta gradient computation: replace loop with masked matrix multiplication
+    mask = (factors[:, None] == np.arange(params.theta.shape[1])).astype(e.dtype)
+    mask *= a[:, None]
+    grad_theta = e @ mask
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)
@@ -123,7 +128,9 @@ def neg_loglik_and_grad(
         grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
 
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
-        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+        grad_zeta = gamma * (
+            np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j
+        )
 
         grad_tau = float((e * (-gamma * distance)).sum())
 
@@ -148,7 +155,9 @@ def neg_loglik_and_grad(
     return float(nll), grads, loglik
 
 
-def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
+def _add_penalty(
+    params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool
+) -> float:
     value = 0.5 * penalty.lambda_theta * float(np.sum(params.theta * params.theta))
     value += 0.5 * penalty.lambda_b * float(np.sum(params.b * params.b))
     if free_alpha:
