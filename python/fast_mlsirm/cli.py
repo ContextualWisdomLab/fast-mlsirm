@@ -69,20 +69,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "simulate":
         print(f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        data = simulate(
-            MLS2PLMConfig(
-                n_persons=args.persons,
-                n_dims=args.dims,
-                items_per_dim=args.items_per_dim,
-                latent_dim=args.latent_dim,
-                phi=args.phi,
-                gamma=args.gamma,
-                seed=args.seed,
+        try:
+            data = simulate(
+                MLS2PLMConfig(
+                    n_persons=args.persons,
+                    n_dims=args.dims,
+                    items_per_dim=args.items_per_dim,
+                    latent_dim=args.latent_dim,
+                    phi=args.phi,
+                    gamma=args.gamma,
+                    seed=args.seed,
+                )
             )
-        )
-        save_simulation(data, args.out)
-        print(f"✅ Simulation successfully saved to {args.out}")
-        return 0
+            save_simulation(data, args.out)
+            print(f"✅ Simulation successfully saved to {args.out}")
+            return 0
+        except Exception as e:
+            print(f"❌ Error: {str(e)}", file=sys.stderr)
+            return 1
 
     if args.command == "diagnose-fit":
         print(f"⏳ Computing {args.model} fit diagnostics...")
@@ -97,10 +101,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
-        save_fit_diagnostics(diagnostics, args.out)
-        print(f"✅ Fit diagnostics successfully saved to {args.out}")
-        return 0
+        try:
+            diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
+            save_fit_diagnostics(diagnostics, args.out)
+            print(f"✅ Fit diagnostics successfully saved to {args.out}")
+            return 0
+        except Exception as e:
+            print(f"❌ Error: {str(e)}", file=sys.stderr)
+            return 1
 
     print(f"⏳ Fitting {args.model} model to responses...")
     try:
@@ -113,21 +121,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
         return 1
 
-    result = fit(
-        responses=responses,
-        factor_id=factors,
-        config=FitConfig(
-            model=args.model,
-            latent_dim=args.latent_dim,
-            optimizer=args.optimizer,
-            max_iter=args.max_iter,
-            n_restarts=args.n_restarts,
-            seed=args.seed,
-        ),
-    )
-    save_fit_result(result, args.out)
-    print(f"✅ Fit result successfully saved to {args.out}")
-    return 0
+    try:
+        result = fit(
+            responses=responses,
+            factor_id=factors,
+            config=FitConfig(
+                model=args.model,
+                latent_dim=args.latent_dim,
+                optimizer=args.optimizer,
+                max_iter=args.max_iter,
+                n_restarts=args.n_restarts,
+                seed=args.seed,
+            ),
+        )
+        save_fit_result(result, args.out)
+        print(f"✅ Fit result successfully saved to {args.out}")
+        return 0
+    except Exception as e:
+        print(f"❌ Error: {str(e)}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
