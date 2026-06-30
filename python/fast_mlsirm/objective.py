@@ -19,11 +19,13 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
             raise ValueError("mask shape must match responses")
         observed &= np.isfinite(y) & (y != -1)
 
-    valid_values = y[observed]
-    if valid_values.size == 0:
+    if not np.any(observed):
         raise ValueError("responses contain no observed entries")
-    if np.any((valid_values != 0) & (valid_values != 1)):
+
+    invalid = (y != 0) & (y != 1)
+    if np.any(observed & invalid):
         raise ValueError("observed responses must be 0 or 1")
+
     if np.any(observed.sum(axis=0) == 0):
         raise ValueError("all-missing item found")
     if np.any(observed.sum(axis=1) == 0):
@@ -61,8 +63,8 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.sum(params.xi ** 2, axis=1)
-        zeta_sq = np.sum(params.zeta ** 2, axis=1)
+        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
+        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)

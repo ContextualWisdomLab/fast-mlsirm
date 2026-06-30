@@ -6,12 +6,8 @@ from .types import MLSIRMParams
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
-    out = np.empty_like(x, dtype=np.float64)
-    positive = x >= 0
-    out[positive] = 1.0 / (1.0 + np.exp(-x[positive]))
-    exp_x = np.exp(x[~positive])
-    out[~positive] = exp_x / (1.0 + exp_x)
-    return out
+    x_safe = np.clip(x, -709.0, 709.0)
+    return 1.0 / (1.0 + np.exp(-x_safe))
 
 
 def softplus(x: np.ndarray) -> np.ndarray:
