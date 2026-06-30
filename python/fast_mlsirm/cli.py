@@ -8,7 +8,12 @@ from pathlib import Path
 import numpy as np
 
 from .config import FitConfig, MLS2PLMConfig
-from .diagnostics import dimensionality_diagnostics, fit_diagnostics, response_process_fit_diagnostics
+from .diagnostics import (
+    dimensionality_diagnostics,
+    fit_diagnostics,
+    response_process_dimensionality_diagnostics,
+    response_process_fit_diagnostics,
+)
 from .fit import fit
 from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .simulation import simulate
@@ -104,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     diagnose.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
     diagnose.add_argument("--params", required=True, help="Path to fitted params.npz.")
     diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
+    diagnose.add_argument("--group-id", help="Optional .npy person group IDs for multigroup summaries.")
+    diagnose.add_argument("--cluster-id", help="Optional .npy person cluster IDs for multilevel summaries.")
     diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
     _add_json_flag(diagnose)
 
@@ -133,8 +140,27 @@ def main(argv: list[str] | None = None) -> int:
     process.add_argument("--probabilities", required=True, help="Path to probabilities .npy, either persons x items or persons x items x categories.")
     process.add_argument("--item-type", choices=["dichotomous", "polytomous"], default="polytomous", help="Item type for metadata validation.")
     process.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the probabilities.")
+    process.add_argument("--group-id", help="Optional .npy person group IDs for multigroup summaries.")
+    process.add_argument("--cluster-id", help="Optional .npy person cluster IDs for multilevel summaries.")
     process.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
     _add_json_flag(process)
+
+    candidates = sub.add_parser(
+        "diagnose-response-candidates",
+        help="Compare response-process probability candidates with held-out likelihood.",
+        description="Compare candidate category probability tensors for dimensionality or response-process checks.",
+    )
+    candidates.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    candidates.add_argument(
+        "--candidate",
+        action="append",
+        required=True,
+        help="Candidate probability file as label=path.npy. Repeat for each candidate.",
+    )
+    candidates.add_argument("--item-type", choices=["dichotomous", "polytomous"], default="polytomous", help="Item type for metadata validation.")
+    candidates.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the candidates.")
+    candidates.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
+    _add_json_flag(candidates)
 
     if argv is None:
         argv = sys.argv[1:]
@@ -182,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             responses, factors = _load_response_and_factors(args.responses, args.factors)
             params = load_params(args.params)
+            group_id = _load_optional_npy(args.group_id)
+            cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
@@ -192,7 +220,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
+        diagnostics = fit_diagnostics(
+            responses=responses,
+            params=params,
+            factor_id=factors,
+            model=args.model,
+            group_id=group_id,
+            cluster_id=cluster_id,
+        )
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
             args,
@@ -255,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             responses = np.load(args.responses, allow_pickle=False)
             probabilities = np.load(args.probabilities, allow_pickle=False)
+            group_id = _load_optional_npy(args.group_id)
+            cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
@@ -270,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
             probabilities=probabilities,
             item_type=args.item_type,
             response_process=args.response_process,
+            group_id=group_id,
+            cluster_id=cluster_id,
         )
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
@@ -282,6 +321,42 @@ def main(argv: list[str] | None = None) -> int:
                 "item_type": args.item_type,
                 "response_process": args.response_process,
                 "files": {"diagnostics": _output_file(args.out, "fit_diagnostics.json")},
+            },
+        )
+
+    if args.command == "diagnose-response-candidates":
+        _progress(args, f"⏳ Comparing {args.item_type} {args.response_process} response candidates...")
+        try:
+            responses = np.load(args.responses, allow_pickle=False)
+            candidate_probabilities = _load_candidate_probabilities(args.candidate)
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+            return 1
+
+        diagnostics = response_process_dimensionality_diagnostics(
+            responses=responses,
+            candidate_probabilities=candidate_probabilities,
+            item_type=args.item_type,
+            response_process=args.response_process,
+        )
+        save_dimensionality_diagnostics(diagnostics, args.out)
+        return _complete(
+            args,
+            f"✅ Response candidate diagnostics successfully saved to {args.out}",
+            {
+                "command": "diagnose-response-candidates",
+                "status": "ok",
+                "out": str(args.out),
+                "item_type": args.item_type,
+                "response_process": args.response_process,
+                "best_candidate": diagnostics.best["candidate_label"],
+                "files": {"diagnostics": _output_file(args.out, "dimension_diagnostics.json")},
             },
         )
 
@@ -329,6 +404,22 @@ def main(argv: list[str] | None = None) -> int:
             },
         },
     )
+
+
+def _load_optional_npy(path: str | None) -> np.ndarray | None:
+    return None if path is None else np.load(path, allow_pickle=False)
+
+
+def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
+    candidates = {}
+    for spec in specs:
+        label, path = spec.split("=", 1) if "=" in spec else (Path(spec).stem, spec)
+        if not label:
+            raise ValueError("candidate label must not be empty")
+        if label in candidates:
+            raise ValueError(f"duplicate candidate label: {label}")
+        candidates[label] = np.load(path, allow_pickle=False)
+    return candidates
 
 
 if __name__ == "__main__":

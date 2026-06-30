@@ -9,7 +9,7 @@ The first implementation keeps the public API small:
 ```python
 import numpy as np
 
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, response_process_fit_diagnostics
+from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -36,8 +36,17 @@ process_fit = response_process_fit_diagnostics(
     category_probs,
     item_type="dichotomous",
     response_process="cumulative",
+    group_id=np.arange(data.Y.shape[0]) % 2,
 )
 print(process_fit.itemfit["outfit_mnsq"])
+
+process_dimensions = response_process_dimensionality_diagnostics(
+    data.Y,
+    {"dim2": category_probs},
+    item_type="dichotomous",
+    response_process="cumulative",
+)
+print(process_dimensions.best)
 ```
 
 ## What Works Now
@@ -53,6 +62,10 @@ print(process_fit.itemfit["outfit_mnsq"])
 - K-fold held-out likelihood diagnostics for latent-space dimensionality.
 - Shared dichotomous/polytomous response-process diagnostics from category
   probabilities.
+- Multigroup and multilevel-context fit summaries from person-level group or
+  cluster IDs.
+- Response-process probability candidate comparisons for external dimensionality
+  checks.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
 
@@ -113,7 +126,17 @@ fast-mlsirm diagnose-response-process \
   --probabilities runs/model_probabilities.npy \
   --item-type polytomous \
   --response-process cumulative \
+  --group-id runs/group_id.npy \
+  --cluster-id runs/school_id.npy \
   --out runs/process_fit_001
+
+fast-mlsirm diagnose-response-candidates \
+  --responses runs/sim_001/responses.npy \
+  --candidate dim1=runs/prob_dim1.npy \
+  --candidate dim2=runs/prob_dim2.npy \
+  --item-type dichotomous \
+  --response-process ideal_point \
+  --out runs/process_dimensions_001
 ```
 
 For automation, every CLI command also accepts `--json`. In JSON mode,

@@ -42,6 +42,15 @@ Start with these references before model or fit-diagnostic work:
   Measurement with Polychotomous Item Response Models and Standardized
   Indices." British Journal of Mathematical and Statistical Psychology,
   38(1), 67-86. doi:10.1111/j.2044-8317.1985.tb00817.x.
+- Fox, J.-P., & Glas, C. A. W. (2001). "Bayesian Estimation of a
+  Multilevel IRT Model." Psychometrika, 66, 271-288.
+  doi:10.1007/BF02294839.
+- Bock, R. D., & Zimowski, M. F. (1997). "Multiple Group IRT." In W. J.
+  van der Linden & R. K. Hambleton (Eds.), Handbook of Modern Item
+  Response Theory.
+- Chalmers, R. P. (2012). "mirt: A Multidimensional Item Response Theory
+  Package for the R Environment." Journal of Statistical Software, 48(6).
+  doi:10.18637/jss.v048.i06.
 
 ## Formula Scope
 

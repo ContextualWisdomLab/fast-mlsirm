@@ -34,6 +34,9 @@ def fit_diagnostics(
     model: str = "MLS2PLM",
     parameter_count: int | None = None,
     eps: float = 1e-12,
+    *,
+    group_id: np.ndarray | None = None,
+    cluster_id: np.ndarray | None = None,
 ) -> FitDiagnostics:
     y, observed = prepare_response(responses, mask)
     prob = np.clip(predict_proba(params, factor_id, model=model), eps, 1.0 - eps)
@@ -47,6 +50,7 @@ def fit_diagnostics(
 
     itemfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=0)
     personfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=1)
+    _attach_person_strata(personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0])
     factorfit = _factor_fit(factor_id, y, observed, prob, variance, residual, pearson_sq)
     loglik = float(np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0).sum())
     n_observed = int(observed.sum())
@@ -63,7 +67,16 @@ def fit_diagnostics(
         "mean_abs_residual": float(np.abs(residual[observed]).mean()),
         "pearson_chisq": float(pearson_sq.sum()),
     }
-    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit, factorfit=factorfit)
+    return FitDiagnostics(
+        itemfit=itemfit,
+        personfit=personfit,
+        model_fit=model_fit,
+        factorfit=factorfit,
+        groupfit=_binary_stratum_fit("group_id", group_id, y, observed, prob, variance, residual, pearson_sq),
+        clusterfit=_binary_stratum_fit("cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq),
+        group_itemfit=_binary_stratum_item_fit("group_id", group_id, y, observed, prob, variance, residual, pearson_sq),
+        cluster_itemfit=_binary_stratum_item_fit("cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq),
+    )
 
 
 def dimensionality_diagnostics(
@@ -120,6 +133,9 @@ def response_process_fit_diagnostics(
     item_type: str = "polytomous",
     response_process: str = "cumulative",
     eps: float = 1e-12,
+    *,
+    group_id: np.ndarray | None = None,
+    cluster_id: np.ndarray | None = None,
 ) -> FitDiagnostics:
     _validate_response_process(item_type, response_process)
     y, observed, prob = _prepare_categorical_response(responses, probabilities, mask, eps)
@@ -133,6 +149,7 @@ def response_process_fit_diagnostics(
 
     itemfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=0)
     personfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=1)
+    _attach_person_strata(personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0])
     categoryfit = _category_fit(observed, onehot, prob, residual)
     loglik = float(entry_loglik.sum())
     n_observed = float(observed.sum())
@@ -144,7 +161,51 @@ def response_process_fit_diagnostics(
         "pearson_chisq": float(entry_chisq.sum()),
         "mean_abs_category_residual": float(np.abs(residual[observed]).mean()),
     }
-    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit, categoryfit=categoryfit)
+    return FitDiagnostics(
+        itemfit=itemfit,
+        personfit=personfit,
+        model_fit=model_fit,
+        categoryfit=categoryfit,
+        groupfit=_categorical_stratum_fit("group_id", group_id, observed, entry_loglik, entry_chisq),
+        clusterfit=_categorical_stratum_fit("cluster_id", cluster_id, observed, entry_loglik, entry_chisq),
+        group_itemfit=_categorical_stratum_item_fit("group_id", group_id, observed, entry_loglik, entry_chisq),
+        cluster_itemfit=_categorical_stratum_item_fit("cluster_id", cluster_id, observed, entry_loglik, entry_chisq),
+    )
+
+
+def response_process_dimensionality_diagnostics(
+    responses: np.ndarray,
+    candidate_probabilities: dict[str, np.ndarray],
+    mask: np.ndarray | None = None,
+    item_type: str = "polytomous",
+    response_process: str = "cumulative",
+    eps: float = 1e-12,
+) -> DimensionalityDiagnostics:
+    if not candidate_probabilities:
+        raise ValueError("candidate_probabilities must not be empty")
+
+    _validate_response_process(item_type, response_process)
+    candidates: list[dict[str, float | str]] = []
+    for idx, (label, probabilities) in enumerate(candidate_probabilities.items()):
+        y, observed, prob = _prepare_categorical_response(responses, probabilities, mask, eps)
+        _validate_category_count(item_type, prob.shape[2])
+        entry_loglik, entry_chisq, residual = _categorical_entry_stats(y, observed, prob)
+        n_observed = float(observed.sum())
+        candidates.append(
+            {
+                "candidate_index": float(idx),
+                "candidate_label": str(label),
+                "heldout_loglik": float(entry_loglik.sum()),
+                "heldout_deviance": float(-2.0 * entry_loglik.sum()),
+                "n_observed": n_observed,
+                "n_categories": float(prob.shape[2]),
+                "pearson_chisq": float(entry_chisq.sum()),
+                "mean_abs_category_residual": float(np.abs(residual[observed]).mean()),
+            }
+        )
+
+    best = max(candidates, key=lambda row: float(row["heldout_loglik"]))
+    return DimensionalityDiagnostics(candidates=candidates, best=best)
 
 
 def align_latent_space(
@@ -321,6 +382,229 @@ def _category_fit(
         "expected_score": expected.ravel(),
         "raw_residual": raw.ravel(),
         "standardized_residual": (raw / np.sqrt(np.maximum(variance, 1e-12))).ravel(),
+    }
+
+
+def _attach_person_strata(
+    personfit: dict[str, np.ndarray],
+    group_id: np.ndarray | None,
+    cluster_id: np.ndarray | None,
+    n_persons: int,
+) -> None:
+    if group_id is not None:
+        personfit["group_id"] = _person_strata(group_id, n_persons, "group_id").astype(np.float64)
+    if cluster_id is not None:
+        personfit["cluster_id"] = _person_strata(cluster_id, n_persons, "cluster_id").astype(np.float64)
+
+
+def _person_strata(values: np.ndarray, n_persons: int, name: str) -> np.ndarray:
+    strata = np.asarray(values)
+    if strata.shape != (n_persons,):
+        raise ValueError(f"{name} length must match number of persons")
+    return strata
+
+
+def _binary_stratum_fit(
+    id_name: str,
+    strata: np.ndarray | None,
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+    variance: np.ndarray,
+    residual: np.ndarray,
+    pearson_sq: np.ndarray,
+) -> dict[str, np.ndarray] | None:
+    if strata is None:
+        return None
+
+    ids = _person_strata(strata, y.shape[0], id_name)
+    loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
+    rows = []
+    for value in np.unique(ids):
+        rows.append(_binary_scope_row(float(value), ids[:, None] == value, y, observed, prob, variance, residual, pearson_sq, loglik))
+    return _binary_scope_table(id_name, rows)
+
+
+def _binary_stratum_item_fit(
+    id_name: str,
+    strata: np.ndarray | None,
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+    variance: np.ndarray,
+    residual: np.ndarray,
+    pearson_sq: np.ndarray,
+) -> dict[str, np.ndarray] | None:
+    if strata is None:
+        return None
+
+    ids = _person_strata(strata, y.shape[0], id_name)
+    loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
+    rows = []
+    for value in np.unique(ids):
+        row_mask = ids == value
+        for item in range(y.shape[1]):
+            scope = np.zeros_like(observed, dtype=bool)
+            scope[row_mask, item] = True
+            if np.any(observed & scope):
+                rows.append((float(value), float(item), *_binary_scope_row(0.0, scope, y, observed, prob, variance, residual, pearson_sq, loglik)[1:]))
+    return _binary_scope_item_table(id_name, rows)
+
+
+def _binary_scope_row(
+    id_value: float,
+    scope: np.ndarray,
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+    variance: np.ndarray,
+    residual: np.ndarray,
+    pearson_sq: np.ndarray,
+    loglik: np.ndarray,
+) -> tuple[float, ...]:
+    where = observed & scope
+    count = float(where.sum())
+    variance_sum = float((variance * where).sum())
+    raw = float((residual * where).sum())
+    chisq = float((pearson_sq * where).sum())
+    ll = float((loglik * where).sum())
+    return (
+        id_value,
+        count,
+        float((y * where).sum()),
+        float((prob * where).sum()),
+        raw,
+        raw / float(np.sqrt(max(variance_sum, 1e-12))),
+        float((residual * residual * where).sum()) / max(variance_sum, 1e-12),
+        chisq / max(count, 1.0),
+        ll,
+        -2.0 * ll,
+        chisq,
+    )
+
+
+def _binary_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+    table = np.asarray(rows, dtype=np.float64)
+    return {
+        id_name: table[:, 0],
+        "observed_count": table[:, 1],
+        "score": table[:, 2],
+        "expected_score": table[:, 3],
+        "raw_residual": table[:, 4],
+        "standardized_residual": table[:, 5],
+        "infit_mnsq": table[:, 6],
+        "outfit_mnsq": table[:, 7],
+        "loglik": table[:, 8],
+        "deviance": table[:, 9],
+        "pearson_chisq": table[:, 10],
+    }
+
+
+def _binary_scope_item_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+    table = np.asarray(rows, dtype=np.float64)
+    return {
+        id_name: table[:, 0],
+        "item_id": table[:, 1],
+        "observed_count": table[:, 2],
+        "score": table[:, 3],
+        "expected_score": table[:, 4],
+        "raw_residual": table[:, 5],
+        "standardized_residual": table[:, 6],
+        "infit_mnsq": table[:, 7],
+        "outfit_mnsq": table[:, 8],
+        "loglik": table[:, 9],
+        "deviance": table[:, 10],
+        "pearson_chisq": table[:, 11],
+    }
+
+
+def _categorical_entry_stats(
+    y: np.ndarray,
+    observed: np.ndarray,
+    prob: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    onehot = np.eye(prob.shape[2], dtype=np.float64)[y]
+    residual = (onehot - prob) * observed[:, :, None]
+    pearson = np.where(observed[:, :, None], residual * residual / prob, 0.0)
+    entry_chisq = pearson.sum(axis=2)
+    log_prob = np.log(np.take_along_axis(prob, y[:, :, None], axis=2)[:, :, 0])
+    return np.where(observed, log_prob, 0.0), entry_chisq, residual
+
+
+def _categorical_stratum_fit(
+    id_name: str,
+    strata: np.ndarray | None,
+    observed: np.ndarray,
+    entry_loglik: np.ndarray,
+    entry_chisq: np.ndarray,
+) -> dict[str, np.ndarray] | None:
+    if strata is None:
+        return None
+
+    ids = _person_strata(strata, observed.shape[0], id_name)
+    rows = []
+    for value in np.unique(ids):
+        where = observed & (ids[:, None] == value)
+        rows.append(_categorical_scope_row(float(value), where, entry_loglik, entry_chisq))
+    return _categorical_scope_table(id_name, rows)
+
+
+def _categorical_stratum_item_fit(
+    id_name: str,
+    strata: np.ndarray | None,
+    observed: np.ndarray,
+    entry_loglik: np.ndarray,
+    entry_chisq: np.ndarray,
+) -> dict[str, np.ndarray] | None:
+    if strata is None:
+        return None
+
+    ids = _person_strata(strata, observed.shape[0], id_name)
+    rows = []
+    for value in np.unique(ids):
+        row_mask = ids == value
+        for item in range(observed.shape[1]):
+            where = np.zeros_like(observed, dtype=bool)
+            where[row_mask, item] = observed[row_mask, item]
+            if np.any(where):
+                rows.append((float(value), float(item), *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[1:]))
+    return _categorical_scope_item_table(id_name, rows)
+
+
+def _categorical_scope_row(
+    id_value: float,
+    where: np.ndarray,
+    entry_loglik: np.ndarray,
+    entry_chisq: np.ndarray,
+) -> tuple[float, ...]:
+    count = float(where.sum())
+    loglik = float(entry_loglik[where].sum())
+    chisq = float(entry_chisq[where].sum())
+    return (id_value, count, loglik, -2.0 * loglik, chisq, chisq / max(count, 1.0))
+
+
+def _categorical_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+    table = np.asarray(rows, dtype=np.float64)
+    return {
+        id_name: table[:, 0],
+        "observed_count": table[:, 1],
+        "loglik": table[:, 2],
+        "deviance": table[:, 3],
+        "pearson_chisq": table[:, 4],
+        "outfit_mnsq": table[:, 5],
+    }
+
+
+def _categorical_scope_item_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+    table = np.asarray(rows, dtype=np.float64)
+    return {
+        id_name: table[:, 0],
+        "item_id": table[:, 1],
+        "observed_count": table[:, 2],
+        "loglik": table[:, 3],
+        "deviance": table[:, 4],
+        "pearson_chisq": table[:, 5],
+        "outfit_mnsq": table[:, 6],
     }
 
 
