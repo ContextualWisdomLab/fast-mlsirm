@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 import numpy as np
 
@@ -10,6 +12,49 @@ from .diagnostics import dimensionality_diagnostics, fit_diagnostics, response_p
 from .fit import fit
 from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .simulation import simulate
+
+
+def _add_json_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Write one machine-readable JSON status object to stdout.",
+    )
+
+
+def _progress(args: argparse.Namespace, message: str) -> None:
+    if not getattr(args, "json", False):
+        print(message)
+
+
+def _complete(args: argparse.Namespace, message: str, payload: dict[str, object]) -> int:
+    if getattr(args, "json", False):
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(message)
+    return 0
+
+
+def _output_file(run_dir: str, filename: str) -> str:
+    return str(Path(run_dir) / filename)
+
+
+def _load_response_and_factors(responses_path: str, factors_path: str) -> tuple[np.ndarray, np.ndarray]:
+    responses = np.load(responses_path, allow_pickle=False)
+    factors = load_factor_csv(factors_path)
+    _validate_response_and_factors(responses, factors)
+    return responses, factors
+
+
+def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -> None:
+    if responses.ndim != 2:
+        raise ValueError("responses must be a 2D persons x items array")
+    if factors.ndim != 1:
+        raise ValueError("factor_id must be a 1D item vector")
+    if factors.shape[0] != responses.shape[1]:
+        raise ValueError(
+            f"factor_id length ({factors.shape[0]}) must match response item count ({responses.shape[1]})"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     sim.add_argument("--gamma", type=float, default=1.5, help="Variance of person trait coordinates (default: 1.5).")
     sim.add_argument("--seed", type=int, default=1, help="Random seed for simulation (default: 1).")
     sim.add_argument("--out", required=True, help="Directory path to save simulated output (responses, factors, etc.).")
+    _add_json_flag(sim)
 
     fit_cmd = sub.add_parser(
         "fit",
@@ -47,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
+    _add_json_flag(fit_cmd)
 
     diagnose = sub.add_parser(
         "diagnose-fit",
@@ -58,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     diagnose.add_argument("--params", required=True, help="Path to fitted params.npz.")
     diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
     diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
+    _add_json_flag(diagnose)
 
     dim = sub.add_parser(
         "diagnose-dimensions",
@@ -74,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     dim.add_argument("--n-restarts", type=int, default=1, help="Random restarts per fold fit (default: 1).")
     dim.add_argument("--seed", type=int, default=1, help="Random seed for folds and fitting (default: 1).")
     dim.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
+    _add_json_flag(dim)
 
     process = sub.add_parser(
         "diagnose-response-process",
@@ -85,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     process.add_argument("--item-type", choices=["dichotomous", "polytomous"], default="polytomous", help="Item type for metadata validation.")
     process.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the probabilities.")
     process.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
+    _add_json_flag(process)
 
     if argv is None:
         argv = sys.argv[1:]
@@ -95,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "simulate":
-        print(f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
+        _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
         data = simulate(
             MLS2PLMConfig(
                 n_persons=args.persons,
@@ -108,17 +158,35 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         save_simulation(data, args.out)
-        print(f"✅ Simulation successfully saved to {args.out}")
-        return 0
+        return _complete(
+            args,
+            f"✅ Simulation successfully saved to {args.out}",
+            {
+                "command": "simulate",
+                "status": "ok",
+                "out": str(args.out),
+                "n_persons": int(data.Y.shape[0]),
+                "n_items": int(data.Y.shape[1]),
+                "n_dims": int(data.config.n_dims),
+                "files": {
+                    "responses": _output_file(args.out, "responses.npy"),
+                    "factors": _output_file(args.out, "item_factor.csv"),
+                    "truth": _output_file(args.out, "truth.npz"),
+                    "manifest": _output_file(args.out, "manifest.json"),
+                },
+            },
+        )
 
     if args.command == "diagnose-fit":
-        print(f"⏳ Computing {args.model} fit diagnostics...")
+        _progress(args, f"⏳ Computing {args.model} fit diagnostics...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
-            factors = load_factor_csv(args.factors)
+            responses, factors = _load_response_and_factors(args.responses, args.factors)
             params = load_params(args.params)
         except FileNotFoundError as e:
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
@@ -126,17 +194,28 @@ def main(argv: list[str] | None = None) -> int:
 
         diagnostics = fit_diagnostics(responses=responses, params=params, factor_id=factors, model=args.model)
         save_fit_diagnostics(diagnostics, args.out)
-        print(f"✅ Fit diagnostics successfully saved to {args.out}")
-        return 0
+        return _complete(
+            args,
+            f"✅ Fit diagnostics successfully saved to {args.out}",
+            {
+                "command": "diagnose-fit",
+                "status": "ok",
+                "out": str(args.out),
+                "model": args.model,
+                "files": {"diagnostics": _output_file(args.out, "fit_diagnostics.json")},
+            },
+        )
 
     if args.command == "diagnose-dimensions":
-        print(f"⏳ Comparing {args.model} latent dimensions {args.latent_dims}...")
+        _progress(args, f"⏳ Comparing {args.model} latent dimensions {args.latent_dims}...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
-            factors = load_factor_csv(args.factors)
+            responses, factors = _load_response_and_factors(args.responses, args.factors)
             latent_dims = [int(value) for value in args.latent_dims.split(",")]
         except FileNotFoundError as e:
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
@@ -158,16 +237,29 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         save_dimensionality_diagnostics(diagnostics, args.out)
-        print(f"✅ Dimension diagnostics successfully saved to {args.out}")
-        return 0
+        return _complete(
+            args,
+            f"✅ Dimension diagnostics successfully saved to {args.out}",
+            {
+                "command": "diagnose-dimensions",
+                "status": "ok",
+                "out": str(args.out),
+                "model": args.model,
+                "best_latent_dim": int(diagnostics.best["latent_dim"]),
+                "files": {"diagnostics": _output_file(args.out, "dimension_diagnostics.json")},
+            },
+        )
 
     if args.command == "diagnose-response-process":
-        print(f"⏳ Computing {args.item_type} {args.response_process} fit diagnostics...")
+        _progress(args, f"⏳ Computing {args.item_type} {args.response_process} fit diagnostics...")
         try:
             responses = np.load(args.responses, allow_pickle=False)
             probabilities = np.load(args.probabilities, allow_pickle=False)
         except FileNotFoundError as e:
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
@@ -180,15 +272,27 @@ def main(argv: list[str] | None = None) -> int:
             response_process=args.response_process,
         )
         save_fit_diagnostics(diagnostics, args.out)
-        print(f"✅ Response process diagnostics successfully saved to {args.out}")
-        return 0
+        return _complete(
+            args,
+            f"✅ Response process diagnostics successfully saved to {args.out}",
+            {
+                "command": "diagnose-response-process",
+                "status": "ok",
+                "out": str(args.out),
+                "item_type": args.item_type,
+                "response_process": args.response_process,
+                "files": {"diagnostics": _output_file(args.out, "fit_diagnostics.json")},
+            },
+        )
 
-    print(f"⏳ Fitting {args.model} model to responses...")
+    _progress(args, f"⏳ Fitting {args.model} model to responses...")
     try:
-        responses = np.load(args.responses, allow_pickle=False)
-        factors = load_factor_csv(args.factors)
+        responses, factors = _load_response_and_factors(args.responses, args.factors)
     except FileNotFoundError as e:
         print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
         return 1
     except Exception as e:
         print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
@@ -207,8 +311,24 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     save_fit_result(result, args.out)
-    print(f"✅ Fit result successfully saved to {args.out}")
-    return 0
+    return _complete(
+        args,
+        f"✅ Fit result successfully saved to {args.out}",
+        {
+            "command": "fit",
+            "status": "ok",
+            "out": str(args.out),
+            "model": result.model,
+            "optimizer": result.optimizer,
+            "objective": float(result.objective),
+            "convergence_status": result.convergence_status,
+            "n_iter": int(result.n_iter),
+            "files": {
+                "params": _output_file(args.out, "params.npz"),
+                "summary": _output_file(args.out, "fit_summary.json"),
+            },
+        },
+    )
 
 
 if __name__ == "__main__":

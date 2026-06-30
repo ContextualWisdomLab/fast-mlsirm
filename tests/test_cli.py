@@ -1,9 +1,8 @@
+import json
 import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
+
 import numpy as np
-import pytest
 
 from fast_mlsirm.cli import main
 
@@ -21,6 +20,30 @@ def test_cli_simulate_success(tmp_path):
     assert (out_dir / "responses.npy").exists()
     assert (out_dir / "item_factor.csv").exists()
 
+def test_cli_simulate_json_output(tmp_path, capsys):
+    out_dir = tmp_path / "sim_out"
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "2",
+        "--items-per-dim",
+        "2",
+        "--out",
+        str(out_dir),
+        "--json",
+    ]
+
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "simulate"
+    assert payload["status"] == "ok"
+    assert payload["n_items"] == 4
+    assert payload["files"]["responses"].endswith("responses.npy")
+
 def test_cli_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
@@ -36,6 +59,38 @@ def test_cli_fit_success(tmp_path):
 
     assert (fit_dir / "params.npz").exists()
     assert (fit_dir / "fit_summary.json").exists()
+
+def test_cli_fit_json_output(tmp_path, capsys):
+    sim_dir = tmp_path / "sim_out"
+    fit_dir = tmp_path / "fit_out"
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+        main()
+    capsys.readouterr()
+
+    args = [
+        "fit",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--model",
+        "MLS2PLM",
+        "--max-iter",
+        "1",
+        "--out",
+        str(fit_dir),
+        "--json",
+    ]
+
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "fit"
+    assert payload["status"] == "ok"
+    assert payload["model"] == "MLS2PLM"
+    assert payload["files"]["params"].endswith("params.npz")
 
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
@@ -135,7 +190,20 @@ def test_cli_fit_bad_data(tmp_path, capsys):
         assert main() == 1
 
     captured = capsys.readouterr()
-    assert "Error: Failed to load data" in captured.err
+    assert "Error: Invalid input data" in captured.err
+
+def test_cli_fit_rejects_factor_length_mismatch(tmp_path, capsys):
+    responses = tmp_path / "responses.npy"
+    factors = tmp_path / "item_factor.csv"
+    np.save(responses, np.ones((3, 2)))
+    factors.write_text("item_id,factor_id\n0,0\n", encoding="utf-8")
+
+    args = ["fit", "--responses", str(responses), "--factors", str(factors), "--out", str(tmp_path / "fit_out")]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 1
+
+    captured = capsys.readouterr()
+    assert "factor_id length (1) must match response item count (2)" in captured.err
 
 def test_main_sys_exit_on_direct_call():
     with patch('fast_mlsirm.cli.main', return_value=0):
