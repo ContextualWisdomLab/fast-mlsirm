@@ -1,11 +1,4 @@
-## 2026-06-29 - [np.load Insecure Deserialization Risk & Assertion Optimization Removal]
-**Vulnerability:**
-1. `numpy.load()` was used without explicitly specifying `allow_pickle=False`. This could lead to insecure deserialization and arbitrary code execution if a malicious pickle file is loaded (especially critical depending on the environment's NumPy version).
-2. `assert` was used for critical control flow (`assert best is not None`). Assertions are stripped out when Python is run with the `-O` optimization flag, potentially leading to undefined behavior and masking errors in production environments.
-
-**Learning:**
-Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. Relying on `assert` for necessary runtime checks is dangerous; standard exceptions like `RuntimeError` should be used instead.
-
-**Prevention:**
-- Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
-- Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.
+## 2025-02-28 - [CLI Stack Trace Leakage Prevention]
+**Vulnerability:** The CLI entrypoint (`python/fast_mlsirm/cli.py`) did not wrap its core execution in a high-level exception handler. Any error (e.g., missing file, invalid input format) would crash the program and leak the raw Python stack trace and internal file paths to the console.
+**Learning:** Even in local CLI tools, exposing raw stack traces breaks the "fail securely" principle and degrades the user experience by leaking internal implementations.
+**Prevention:** Always wrap the highest-level execution logic (like a `main()` function or CLI dispatcher) in a generic `try...except` block to catch unhandled exceptions, print a sanitized and clear error message to `stderr`, and exit with a non-zero code.
