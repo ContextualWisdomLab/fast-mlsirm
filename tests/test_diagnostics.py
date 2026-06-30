@@ -34,3 +34,16 @@ def test_predict_proba_subset_both():
     sub_items = np.array([2, 6, 7])
     probs = predict_proba(data.truth, data.factor_id, persons=sub_persons, items=sub_items)
     assert np.allclose(probs, data.probabilities[np.ix_(sub_persons, sub_items)])
+
+import pytest
+from fast_mlsirm.diagnostics import align_latent_space, predict_proba
+from fast_mlsirm.types import MLSIRMParams
+
+def test_align_latent_space_invalid_method():
+    with pytest.raises(ValueError, match="only procrustes alignment is supported"):
+        align_latent_space(np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), method="invalid")
+
+def test_predict_proba_no_space():
+    truth = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+    probs = predict_proba(truth, np.zeros(2, dtype=int), model="MIRT")
+    assert probs is not None

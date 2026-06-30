@@ -74,8 +74,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # Security: explicitly disable pickle to prevent arbitrary code execution
     print(f"⏳ Fitting {args.model} model to responses...")
-    responses = np.load(args.responses, allow_pickle=False)
-    factors = load_factor_csv(args.factors)
+    try:
+        responses = np.load(args.responses, allow_pickle=False)
+        factors = load_factor_csv(args.factors)
+    except FileNotFoundError as e:
+        print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+        return 1
+
     result = fit(
         responses=responses,
         factor_id=factors,
@@ -94,4 +102,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main())  # pragma: no cover
