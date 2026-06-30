@@ -7,7 +7,9 @@ point estimation, and true-parameter recovery checks.
 The first implementation keeps the public API small:
 
 ```python
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report
+import numpy as np
+
+from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, response_process_fit_diagnostics
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -27,6 +29,15 @@ dimensions = dimensionality_diagnostics(
 print(report.summary)
 print(diagnostics.model_fit)
 print(dimensions.best)
+
+category_probs = np.stack([1.0 - data.probabilities, data.probabilities], axis=2)
+process_fit = response_process_fit_diagnostics(
+    data.Y,
+    category_probs,
+    item_type="dichotomous",
+    response_process="cumulative",
+)
+print(process_fit.itemfit["outfit_mnsq"])
 ```
 
 ## What Works Now
@@ -40,6 +51,8 @@ print(dimensions.best)
 - Procrustes alignment and distance-based recovery metrics.
 - Point-estimate item, person, and model fit diagnostics for fitted models.
 - K-fold held-out likelihood diagnostics for latent-space dimensionality.
+- Shared dichotomous/polytomous response-process diagnostics from category
+  probabilities.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
 
@@ -94,6 +107,13 @@ fast-mlsirm diagnose-dimensions \
   --model MLS2PLM \
   --max-iter 100 \
   --out runs/dimensions_001
+
+fast-mlsirm diagnose-response-process \
+  --responses runs/sim_001/responses.npy \
+  --probabilities runs/model_probabilities.npy \
+  --item-type polytomous \
+  --response-process cumulative \
+  --out runs/process_fit_001
 ```
 
 ## Repository Layout

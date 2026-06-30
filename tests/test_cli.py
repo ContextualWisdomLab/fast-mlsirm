@@ -93,6 +93,31 @@ def test_cli_diagnose_dimensions_success(tmp_path):
 
     assert (diag_dir / "dimension_diagnostics.json").exists()
 
+def test_cli_diagnose_response_process_success(tmp_path):
+    responses = tmp_path / "responses.npy"
+    probabilities = tmp_path / "probabilities.npy"
+    out_dir = tmp_path / "process_out"
+    np.save(responses, np.array([[0, 1], [2, 1]]))
+    np.save(probabilities, np.full((2, 2, 3), 1.0 / 3.0))
+
+    args = [
+        "diagnose-response-process",
+        "--responses",
+        str(responses),
+        "--probabilities",
+        str(probabilities),
+        "--item-type",
+        "polytomous",
+        "--response-process",
+        "cumulative",
+        "--out",
+        str(out_dir),
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    assert (out_dir / "fit_diagnostics.json").exists()
+
 def test_cli_fit_missing_file(capsys):
     args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
     with patch.object(sys, 'argv', ['fast-mlsirm'] + args):

@@ -113,6 +113,40 @@ def dimensionality_diagnostics(
     return DimensionalityDiagnostics(candidates=candidates, best=best)
 
 
+def response_process_fit_diagnostics(
+    responses: np.ndarray,
+    probabilities: np.ndarray,
+    mask: np.ndarray | None = None,
+    item_type: str = "polytomous",
+    response_process: str = "cumulative",
+    eps: float = 1e-12,
+) -> FitDiagnostics:
+    _validate_response_process(item_type, response_process)
+    y, observed, prob = _prepare_categorical_response(responses, probabilities, mask, eps)
+    _validate_category_count(item_type, prob.shape[2])
+    onehot = np.eye(prob.shape[2], dtype=np.float64)[y]
+    residual = (onehot - prob) * observed[:, :, None]
+    pearson = np.where(observed[:, :, None], residual * residual / prob, 0.0)
+    entry_chisq = pearson.sum(axis=2)
+    log_prob = np.log(np.take_along_axis(prob, y[:, :, None], axis=2)[:, :, 0])
+    entry_loglik = np.where(observed, log_prob, 0.0)
+
+    itemfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=0)
+    personfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=1)
+    categoryfit = _category_fit(observed, onehot, prob, residual)
+    loglik = float(entry_loglik.sum())
+    n_observed = float(observed.sum())
+    model_fit = {
+        "loglik": loglik,
+        "deviance": -2.0 * loglik,
+        "n_observed": n_observed,
+        "n_categories": float(prob.shape[2]),
+        "pearson_chisq": float(entry_chisq.sum()),
+        "mean_abs_category_residual": float(np.abs(residual[observed]).mean()),
+    }
+    return FitDiagnostics(itemfit=itemfit, personfit=personfit, model_fit=model_fit, categoryfit=categoryfit)
+
+
 def align_latent_space(
     true_xi: np.ndarray,
     true_zeta: np.ndarray,
@@ -248,6 +282,48 @@ def _factor_fit(
     }
 
 
+def _categorical_axis_fit(
+    observed: np.ndarray,
+    entry_loglik: np.ndarray,
+    entry_chisq: np.ndarray,
+    axis: int,
+) -> dict[str, np.ndarray]:
+    count = observed.sum(axis=axis).astype(np.float64)
+    loglik = entry_loglik.sum(axis=axis)
+    chisq = entry_chisq.sum(axis=axis)
+    safe_count = np.maximum(count, 1.0)
+    return {
+        "observed_count": count,
+        "loglik": loglik,
+        "deviance": -2.0 * loglik,
+        "pearson_chisq": chisq,
+        "outfit_mnsq": chisq / safe_count,
+    }
+
+
+def _category_fit(
+    observed: np.ndarray,
+    onehot: np.ndarray,
+    prob: np.ndarray,
+    residual: np.ndarray,
+) -> dict[str, np.ndarray]:
+    observed_count = observed.sum(axis=0).astype(np.float64)
+    score = (onehot * observed[:, :, None]).sum(axis=0)
+    expected = (prob * observed[:, :, None]).sum(axis=0)
+    variance = (prob * (1.0 - prob) * observed[:, :, None]).sum(axis=0)
+    item_ids, category_ids = np.indices(score.shape)
+    raw = residual.sum(axis=0)
+    return {
+        "item_id": item_ids.ravel().astype(np.float64),
+        "category_id": category_ids.ravel().astype(np.float64),
+        "observed_count": np.repeat(observed_count, score.shape[1]),
+        "score": score.ravel(),
+        "expected_score": expected.ravel(),
+        "raw_residual": raw.ravel(),
+        "standardized_residual": (raw / np.sqrt(np.maximum(variance, 1e-12))).ravel(),
+    }
+
+
 def _parameter_count(params: MLSIRMParams, model: str) -> int:
     free_alpha, uses_space = model_flags(model)
     count = params.theta.size + params.b.size
@@ -302,6 +378,54 @@ def _accumulate_heldout(totals: dict[str, float], y: np.ndarray, mask: np.ndarra
     totals["abs_residual"] += float(np.abs(residual).sum())
     totals["sq_residual"] += float((residual * residual).sum())
     totals["n"] += float(mask.sum())
+
+
+def _validate_response_process(item_type: str, response_process: str) -> None:
+    if item_type not in {"dichotomous", "polytomous"}:
+        raise ValueError("item_type must be dichotomous or polytomous")
+    if response_process not in {"ideal_point", "cumulative"}:
+        raise ValueError("response_process must be ideal_point or cumulative")
+
+
+def _validate_category_count(item_type: str, n_categories: int) -> None:
+    if item_type == "dichotomous" and n_categories != 2:
+        raise ValueError("dichotomous diagnostics require exactly 2 categories")
+    if item_type == "polytomous" and n_categories < 3:
+        raise ValueError("polytomous diagnostics require at least 3 categories")
+
+
+def _prepare_categorical_response(
+    responses: np.ndarray,
+    probabilities: np.ndarray,
+    mask: np.ndarray | None,
+    eps: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2D matrix")
+
+    prob = np.asarray(probabilities, dtype=np.float64)
+    if prob.ndim == 2:
+        if prob.shape != y.shape:
+            raise ValueError("probabilities shape must match responses")
+        prob = np.stack([1.0 - prob, prob], axis=2)
+    if prob.ndim != 3 or prob.shape[:2] != y.shape:
+        raise ValueError("probabilities must have shape persons x items x categories")
+
+    observed = np.isfinite(y) & (y != -1) if mask is None else np.asarray(mask, dtype=bool)
+    if observed.shape != y.shape:
+        raise ValueError("mask shape must match responses")
+    observed &= np.isfinite(y) & (y != -1)
+    if not np.any(observed):
+        raise ValueError("responses contain no observed entries")
+
+    yy = np.where(observed, y, 0).astype(np.int64)
+    if np.any(observed & ((yy < 0) | (yy >= prob.shape[2]))):
+        raise ValueError("observed responses must be valid category ids")
+
+    prob = np.clip(prob, eps, 1.0)
+    prob = prob / prob.sum(axis=2, keepdims=True)
+    return yy, observed, prob
 
 
 def _bias(true: np.ndarray, estimate: np.ndarray) -> float:

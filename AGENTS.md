@@ -23,9 +23,21 @@ Start with these references before model or fit-diagnostic work:
 - Molenaar, D., & Jeon, M. (2026). "Regularized Joint Maximum Likelihood
   Estimation of Latent Space Item Response Models." Psychometrika, 91,
   335-359. doi:10.1017/psy.2025.10068.
+- Tay, L., Ali, U. S., Drasgow, F., & Williams, B. (2011). "Fitting IRT
+  Models to Dichotomous and Polytomous Data: Assessing the Relative
+  Model-Data Fit of Ideal Point and Dominance Models." Applied
+  Psychological Measurement, 35(4), 280-295. doi:10.1177/0146621610390674.
+- Roberts, J. S., Donoghue, J. R., & Laughlin, J. E. (1998). "The
+  Generalized Graded Unfolding Model: A General Parametric Item Response
+  Model for Unfolding Graded Responses." ETS Research Report Series.
+  doi:10.1002/j.2333-8504.1998.tb01781.x.
 - Orlando, M., & Thissen, D. (2000). "Likelihood-Based Item-Fit Indices
   for Dichotomous Item Response Theory Models." Applied Psychological
   Measurement, 24, 50-64.
+- Maydeu-Olivares, A., & Joe, H. (2005). "Limited- and Full-Information
+  Estimation and Goodness-of-Fit Testing in 2^n Contingency Tables."
+  Journal of the American Statistical Association, 100(471), 1009-1020.
+  doi:10.1198/016214504000002069.
 - Drasgow, F., Levine, M. V., & Williams, E. A. (1985). "Appropriateness
   Measurement with Polychotomous Item Response Models and Standardized
   Indices." British Journal of Mathematical and Statistical Psychology,

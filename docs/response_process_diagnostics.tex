@@ -1,0 +1,79 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{Response Process Diagnostics for fast-mlsirm}
+\author{ContextualWisdomLab}
+\date{2026-07-01}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+\texttt{fast-mlsirm} needs diagnostics that distinguish item type from
+response process. Dichotomous and polytomous models may use cumulative
+dominance processes or ideal-point unfolding processes. A fit statistic should
+not hide that distinction.
+
+\section{Paper Basis}
+
+The MLSIRM and MLS2PLM papers motivate posterior predictive checks over
+response summaries. Those checks require posterior draws or replicated response
+matrices. The current package uses a regularized JML/MAP optimizer, so runtime
+diagnostics should be held-out likelihood and point-estimate residual
+diagnostics until posterior samples exist.
+
+Tay et al. (2011) compare ideal-point and dominance IRT models for both
+dichotomous and polytomous data. Roberts, Donoghue, and Laughlin's generalized
+graded unfolding model gives the polytomous ideal-point direction; graded and
+partial-credit models give the cumulative direction.
+
+\section{Probability Contract}
+
+Let $Y_{pi}$ be the response for person $p$ and item $i$. A diagnostic
+aggregator receives category probabilities
+\[
+  \Pr(Y_{pi}=k) = \pi_{pik}, \qquad k=0,\dots,K_i-1.
+\]
+For dichotomous models, a matrix of success probabilities can be converted to
+\[
+  (\Pr(Y_{pi}=0), \Pr(Y_{pi}=1)) = (1-\pi_{pi}, \pi_{pi}).
+\]
+For polytomous cumulative or ideal-point models, the model-specific probability
+generator supplies the full tensor $\pi_{pik}$.
+
+\section{Diagnostics}
+
+The implemented diagnostics compute observed count, log-likelihood, deviance,
+Pearson chi-square, and outfit mean-square by item and by person. Category fit
+summaries compute observed score, expected score, raw residual, and standardized
+residual by item-category pair. Model fit reports log-likelihood, deviance,
+observed count, category count, Pearson chi-square, and mean absolute category
+residual.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+Scope & Current support & Deferred \\
+\midrule
+Dichotomous MLS2PLM & point-estimate diagnostics & posterior PPC \\
+Polytomous cumulative & probability-tensor diagnostics & GRM/GPCM fitting \\
+Polytomous ideal point & probability-tensor diagnostics & GGUM fitting \\
+Dimensionality & K-fold held-out likelihood & Bayesian model comparison \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Product Contract}
+
+The API and CLI should ask users for item type, response process, observed
+responses, and model probabilities before reporting fit. This keeps the
+diagnostic output honest: the package can aggregate fit for supplied
+probabilities now, while estimation for additional model families remains a
+separate model-design task.
+
+\end{document}
