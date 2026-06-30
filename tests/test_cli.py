@@ -12,7 +12,6 @@ def test_cli_simulate_invalid_args(monkeypatch):
 def test_cli_fit_missing_file(monkeypatch):
     argv = ["fit", "--responses", "non_existent.npy", "--factors", "whatever.csv", "--out", "out"]
 
-    # We patch stderr to capture the output directly from sys.stderr
     captured_stderr = StringIO()
     monkeypatch.setattr(sys, "stderr", captured_stderr)
 
@@ -35,11 +34,9 @@ def test_cli_fit_success(monkeypatch, tmp_path):
     out_dir = tmp_path / "sim_out"
     fit_out_dir = tmp_path / "fit_out"
 
-    # Run simulate first to generate valid data
     argv_sim = ["simulate", "--persons", "10", "--dims", "1", "--items-per-dim", "2", "--out", str(out_dir)]
     assert main(argv_sim) == 0
 
-    # Run fit with the generated data
     argv_fit = [
         "fit",
         "--responses", str(out_dir / "responses.npy"),
@@ -53,3 +50,22 @@ def test_cli_fit_success(monkeypatch, tmp_path):
     assert code == 0
     assert (fit_out_dir / "params.npz").exists()
     assert (fit_out_dir / "fit_summary.json").exists()
+
+def test_main_block():
+    import runpy
+    import fast_mlsirm.cli
+    import sys
+
+    # We test running as main
+    original_argv = sys.argv
+    sys.argv = ["fast-mlsirm", "simulate", "--persons", "1", "--dims", "1", "--items-per-dim", "1", "--out", "test_out"]
+    try:
+        with pytest.raises(SystemExit) as excinfo:
+            runpy.run_module("fast_mlsirm.cli", run_name="__main__")
+        assert excinfo.value.code == 0
+    finally:
+        sys.argv = original_argv
+        import shutil
+        import os
+        if os.path.exists("test_out"):
+            shutil.rmtree("test_out")

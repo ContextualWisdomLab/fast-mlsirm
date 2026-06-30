@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 
 from fast_mlsirm import FitConfig, MLSIRMParams
@@ -54,3 +55,48 @@ def test_gradient_matches_finite_difference():
     trial.tau += h
     got, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), trial, config)
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
+def test_prepare_response_invalid():
+    from fast_mlsirm.objective import prepare_response
+    # test not 2D
+    with pytest.raises(ValueError):
+        prepare_response(np.array([1.0, 0.0]))
+
+    # test shape mismatch mask
+    with pytest.raises(ValueError):
+        prepare_response(np.array([[1.0, 0.0]]), mask=np.array([True]))
+
+    # test no observed entries
+    with pytest.raises(ValueError):
+        prepare_response(np.array([[-1.0, np.nan]]))
+
+    # test invalid response values
+    with pytest.raises(ValueError):
+        prepare_response(np.array([[1.0, 2.0]]))
+
+    # test all missing item
+    with pytest.raises(ValueError):
+        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
+
+    # test all missing person
+    with pytest.raises(ValueError):
+        prepare_response(np.array([[-1.0, -1.0], [0.0, 1.0]]))
+
+def test_validate_factor_id_invalid():
+    from fast_mlsirm.objective import validate_factor_id
+    with pytest.raises(ValueError):
+        validate_factor_id(np.array([0, 1]), n_items=3, n_dims=2)
+    with pytest.raises(ValueError):
+        validate_factor_id(np.array([0, 2]), n_items=2, n_dims=2)
+
+def test_neg_loglik_and_grad_invalid_model():
+    from fast_mlsirm.objective import neg_loglik_and_grad
+    params = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=0.0,
+    )
+    with pytest.raises(ValueError):
+        neg_loglik_and_grad(np.array([[1.0, 0.0], [0.0, 1.0]]), np.array([0, 1]), params, FitConfig(model="ULSRM"))
