@@ -54,43 +54,47 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
 
-    args = parser.parse_args(argv)
-    if args.command == "simulate":
-        print(f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        data = simulate(
-            MLS2PLMConfig(
-                n_persons=args.persons,
-                n_dims=args.dims,
-                items_per_dim=args.items_per_dim,
-                latent_dim=args.latent_dim,
-                phi=args.phi,
-                gamma=args.gamma,
-                seed=args.seed,
+    try:
+        args = parser.parse_args(argv)
+        if args.command == "simulate":
+            print(f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
+            data = simulate(
+                MLS2PLMConfig(
+                    n_persons=args.persons,
+                    n_dims=args.dims,
+                    items_per_dim=args.items_per_dim,
+                    latent_dim=args.latent_dim,
+                    phi=args.phi,
+                    gamma=args.gamma,
+                    seed=args.seed,
+                )
             )
-        )
-        save_simulation(data, args.out)
-        print(f"✅ Simulation successfully saved to {args.out}")
-        return 0
+            save_simulation(data, args.out)
+            print(f"✅ Simulation successfully saved to {args.out}")
+            return 0
 
-    # Security: explicitly disable pickle to prevent arbitrary code execution
-    print(f"⏳ Fitting {args.model} model to responses...")
-    responses = np.load(args.responses, allow_pickle=False)
-    factors = load_factor_csv(args.factors)
-    result = fit(
-        responses=responses,
-        factor_id=factors,
-        config=FitConfig(
-            model=args.model,
-            latent_dim=args.latent_dim,
-            optimizer=args.optimizer,
-            max_iter=args.max_iter,
-            n_restarts=args.n_restarts,
-            seed=args.seed,
-        ),
-    )
-    save_fit_result(result, args.out)
-    print(f"✅ Fit result successfully saved to {args.out}")
-    return 0
+        # Security: explicitly disable pickle to prevent arbitrary code execution
+        print(f"⏳ Fitting {args.model} model to responses...")
+        responses = np.load(args.responses, allow_pickle=False)
+        factors = load_factor_csv(args.factors)
+        result = fit(
+            responses=responses,
+            factor_id=factors,
+            config=FitConfig(
+                model=args.model,
+                latent_dim=args.latent_dim,
+                optimizer=args.optimizer,
+                max_iter=args.max_iter,
+                n_restarts=args.n_restarts,
+                seed=args.seed,
+            ),
+        )
+        save_fit_result(result, args.out)
+        print(f"✅ Fit result successfully saved to {args.out}")
+        return 0
+    except Exception as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
