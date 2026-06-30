@@ -1,7 +1,7 @@
 import numpy as np
 
 from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
-from fast_mlsirm.diagnostics import dimensionality_diagnostics, fit_diagnostics, predict_proba
+from fast_mlsirm.diagnostics import dimensionality_diagnostics, fit_diagnostics, predict_proba, response_process_fit_diagnostics
 
 
 def test_predict_proba_matches_simulation():
@@ -86,3 +86,35 @@ def test_dimensionality_diagnostics_returns_best_candidate():
     assert [row["latent_dim"] for row in report.candidates] == [1.0, 2.0]
     assert report.best in report.candidates
     assert all(np.isfinite(row["heldout_loglik"]) for row in report.candidates)
+
+
+def test_response_process_fit_diagnostics_polytomous_contract():
+    responses = np.array([[0, 1], [2, 1]])
+    probabilities = np.full((2, 2, 3), 1.0 / 3.0)
+
+    diagnostics = response_process_fit_diagnostics(
+        responses,
+        probabilities,
+        item_type="polytomous",
+        response_process="cumulative",
+    )
+
+    assert np.isclose(diagnostics.model_fit["loglik"], 4 * np.log(1.0 / 3.0))
+    assert np.allclose(diagnostics.itemfit["observed_count"], [2.0, 2.0])
+    assert np.allclose(diagnostics.personfit["observed_count"], [2.0, 2.0])
+    assert diagnostics.categoryfit["item_id"].shape == (6,)
+
+
+def test_response_process_fit_diagnostics_dichotomous_matrix():
+    responses = np.array([[1, 0], [0, 1]])
+    probabilities = np.full((2, 2), 0.5)
+
+    diagnostics = response_process_fit_diagnostics(
+        responses,
+        probabilities,
+        item_type="dichotomous",
+        response_process="ideal_point",
+    )
+
+    assert np.isclose(diagnostics.model_fit["loglik"], 4 * np.log(0.5))
+    assert diagnostics.categoryfit["category_id"].shape == (4,)

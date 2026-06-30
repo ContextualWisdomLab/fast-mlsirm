@@ -29,6 +29,17 @@ K-fold held-out entries and reports validation log-likelihood, deviance, mean
 absolute residual, and RMSE. The selected dimension is the candidate with the
 largest held-out log-likelihood.
 
+`response_process_fit_diagnostics` accepts an observed response matrix and
+model-provided category probabilities. This separates response process from
+diagnostic aggregation:
+
+- dichotomous cumulative or ideal-point models can pass `N x J` success
+  probabilities or `N x J x 2` category probabilities
+- polytomous cumulative models such as GRM/GPCM and ideal-point/unfolding
+  models such as GGUM can pass `N x J x K` category probabilities
+- diagnostics aggregate item, person, category, and model fit without claiming
+  that `fast-mlsirm` currently estimates every response-process family
+
 AIC and BIC use the active stored parameter count for the selected model. They
 are descriptive for this growing-parameter JML setting and should not be
 described as Bayesian posterior predictive fit.

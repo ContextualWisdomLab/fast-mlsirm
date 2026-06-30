@@ -6,7 +6,7 @@ import sys
 import numpy as np
 
 from .config import FitConfig, MLS2PLMConfig
-from .diagnostics import dimensionality_diagnostics, fit_diagnostics
+from .diagnostics import dimensionality_diagnostics, fit_diagnostics, response_process_fit_diagnostics
 from .fit import fit
 from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .simulation import simulate
@@ -74,6 +74,17 @@ def main(argv: list[str] | None = None) -> int:
     dim.add_argument("--n-restarts", type=int, default=1, help="Random restarts per fold fit (default: 1).")
     dim.add_argument("--seed", type=int, default=1, help="Random seed for folds and fitting (default: 1).")
     dim.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
+
+    process = sub.add_parser(
+        "diagnose-response-process",
+        help="Compute dichotomous or polytomous fit diagnostics from category probabilities.",
+        description="Compute dichotomous or polytomous fit diagnostics from category probabilities.",
+    )
+    process.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    process.add_argument("--probabilities", required=True, help="Path to probabilities .npy, either persons x items or persons x items x categories.")
+    process.add_argument("--item-type", choices=["dichotomous", "polytomous"], default="polytomous", help="Item type for metadata validation.")
+    process.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the probabilities.")
+    process.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
 
     if argv is None:
         argv = sys.argv[1:]
@@ -148,6 +159,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         save_dimensionality_diagnostics(diagnostics, args.out)
         print(f"✅ Dimension diagnostics successfully saved to {args.out}")
+        return 0
+
+    if args.command == "diagnose-response-process":
+        print(f"⏳ Computing {args.item_type} {args.response_process} fit diagnostics...")
+        try:
+            responses = np.load(args.responses, allow_pickle=False)
+            probabilities = np.load(args.probabilities, allow_pickle=False)
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+            return 1
+
+        diagnostics = response_process_fit_diagnostics(
+            responses=responses,
+            probabilities=probabilities,
+            item_type=args.item_type,
+            response_process=args.response_process,
+        )
+        save_fit_diagnostics(diagnostics, args.out)
+        print(f"✅ Response process diagnostics successfully saved to {args.out}")
         return 0
 
     print(f"⏳ Fitting {args.model} model to responses...")

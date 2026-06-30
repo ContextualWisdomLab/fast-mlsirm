@@ -69,6 +69,7 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
         "itemfit": _arrays_to_lists(diagnostics.itemfit),
         "personfit": _arrays_to_lists(diagnostics.personfit),
         "factorfit": _arrays_to_lists(diagnostics.factorfit or {}),
+        "categoryfit": _arrays_to_lists(diagnostics.categoryfit or {}),
         "model_fit": diagnostics.model_fit,
     }
     (out / "fit_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

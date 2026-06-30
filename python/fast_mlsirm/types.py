@@ -62,6 +62,7 @@ class FitDiagnostics:
     personfit: dict[str, np.ndarray]
     model_fit: dict[str, float]
     factorfit: dict[str, np.ndarray] | None = None
+    categoryfit: dict[str, np.ndarray] | None = None
 
 
 @dataclass
