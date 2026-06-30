@@ -9,3 +9,10 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Prevention:**
 - Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
 - Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.
+
+## 2026-06-30 - [Missing error handling exposing stack traces]
+**Vulnerability:** The CLI `main` execution logic was missing a global exception handler. In case of user errors (e.g. invalid arguments or missing files), internal application stack traces were printed directly to `sys.stderr`, leaking internal system states and paths.
+**Learning:** Stack traces should never be exposed in production code interfaces unless explicitly enabled (e.g., via `--debug`). Unhandled exceptions in CLI commands lead to poor user experience and leak information.
+**Prevention:**
+- Always wrap main entry points for CLI applications in a `try...except` block.
+- Print generalized, user-friendly error messages (e.g., `Error: [Errno 2] No such file or directory`) instead of leaking internals to stderr.
