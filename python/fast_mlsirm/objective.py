@@ -10,24 +10,24 @@ from .types import MLSIRMParams
 def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
-        raise ValueError("responses must be a 2D matrix")  # pragma: no cover
+        raise ValueError("responses must be a 2D matrix")
     if mask is None:
         observed = np.isfinite(y) & (y != -1)
     else:
         observed = np.asarray(mask, dtype=bool)
         if observed.shape != y.shape:
-            raise ValueError("mask shape must match responses")  # pragma: no cover
+            raise ValueError("mask shape must match responses")
         observed &= np.isfinite(y) & (y != -1)
 
     valid_values = y[observed]
     if valid_values.size == 0:
-        raise ValueError("responses contain no observed entries")  # pragma: no cover
+        raise ValueError("responses contain no observed entries")
     if np.any((valid_values != 0) & (valid_values != 1)):
-        raise ValueError("observed responses must be 0 or 1")  # pragma: no cover
+        raise ValueError("observed responses must be 0 or 1")
     if np.any(observed.sum(axis=0) == 0):
-        raise ValueError("all-missing item found")  # pragma: no cover
+        raise ValueError("all-missing item found")
     if np.any(observed.sum(axis=1) == 0):
-        raise ValueError("all-missing person found")  # pragma: no cover
+        raise ValueError("all-missing person found")
 
     clean = np.where(observed, y, 0.0)
     return clean, observed
@@ -89,7 +89,7 @@ def neg_loglik_and_grad(
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
 
     if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
-        raise ValueError(f"{model} requires one trait dimension")  # pragma: no cover
+        raise ValueError(f"{model} requires one trait dimension")
 
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)

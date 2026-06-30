@@ -30,7 +30,7 @@ def align_latent_space(
     method: str = "procrustes",
 ) -> tuple[np.ndarray, np.ndarray]:
     if method != "procrustes":
-        raise ValueError("only procrustes alignment is supported")  # pragma: no cover
+        raise ValueError("only procrustes alignment is supported")
 
     true = np.vstack([true_xi, true_zeta]).astype(np.float64)
     est = np.vstack([est_xi, est_zeta]).astype(np.float64)
