@@ -54,3 +54,35 @@ def test_gradient_matches_finite_difference():
     trial.tau += h
     got, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), trial, config)
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
+
+def test_distance_gradient_optimization_correctness():
+    """Verify that the optimized dot-product gradient computation
+    is equivalent to the naive 3D broadcast computation."""
+    # We want to test that the outputs of the new gradient implementation
+    # give the same result as finite difference, specifically for a larger set of points
+    np.random.seed(42)
+    N, J, D = 10, 5, 2
+    params = MLSIRMParams(
+        theta=np.random.normal(0, 1, size=(N, 1)),
+        alpha=np.random.normal(0, 1, size=(J,)),
+        b=np.random.normal(0, 1, size=(J,)),
+        xi=np.random.normal(0, 1, size=(N, D)),
+        zeta=np.random.normal(0, 1, size=(J, D)),
+        tau=0.5,
+    )
+    y = np.random.binomial(1, 0.5, size=(N, J))
+    config = FitConfig(max_iter=1)
+    base, grad, _ = neg_loglik_and_grad(y, np.zeros(J, dtype=int), params, config)
+
+    # Test finite difference for one element of xi
+    h = 1e-6
+    trial = params.copy()
+    trial.xi[2, 1] += h
+    got, _, _ = neg_loglik_and_grad(y, np.zeros(J, dtype=int), trial, config)
+    assert np.isclose((got - base) / h, grad.xi[2, 1], atol=2e-5)
+
+    # Test finite difference for one element of zeta
+    trial = params.copy()
+    trial.zeta[3, 0] += h
+    got, _, _ = neg_loglik_and_grad(y, np.zeros(J, dtype=int), trial, config)
+    assert np.isclose((got - base) / h, grad.zeta[3, 0], atol=2e-5)

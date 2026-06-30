@@ -1,6 +1,3 @@
-## 2024-06-25 - Python 3D Array Broadcasting Bottlenecks
-**Learning:** In NumPy, broadcasting arrays to 3D for pair-wise distance or gradient computations (e.g., `params.xi[:, None, :] - params.zeta[None, :, :]`) creates huge O(N*J*D) intermediate matrices that rapidly eat up memory and cause significant slowdowns as dimensions grow.
-**Action:** Replace 3D broadcast calculations with vectorized dot products (e.g., `(a - b)^2 = a^2 + b^2 - 2ab`) for distance matrices. For gradients, algebraically rearrange sums to compute values using 2D matrix multiplications instead of creating 3D common term arrays.
 ## 2025-02-27 - [Latent Space Distance Computation]
 **Learning:** In the MLSIRM simulation, distance computation originally allocated a massive `N x J x D` 3D array (`xi[:, None, :] - zeta[None, :, :]`), causing huge memory usage and slow performance. Replacing it with a 2D dot product (`(x-y)^2 = x^2 + y^2 - 2xy`) leveraging BLAS provides massive speedups and avoids memory bloat.
 **Action:** When working with multidimensional spatial or latent models involving pairwise Euclidean distances, always avoid broadcasting differences into 3D arrays and instead use expanded quadratic forms with matrix multiplication. Remember to use `np.maximum(..., 0.0)` before square-rooting to fix floating point precision issues.
