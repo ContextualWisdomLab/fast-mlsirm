@@ -116,6 +116,29 @@ fast-mlsirm diagnose-response-process \
   --out runs/process_fit_001
 ```
 
+For automation, every CLI command also accepts `--json`. In JSON mode,
+progress text is suppressed and stdout contains one status object with the
+output directory, key metrics, and generated file paths:
+
+```bash
+fast-mlsirm simulate \
+  --persons 500 \
+  --dims 2 \
+  --items-per-dim 8 \
+  --out runs/sim_001 \
+  --json
+
+fast-mlsirm fit \
+  --responses runs/sim_001/responses.npy \
+  --factors runs/sim_001/item_factor.csv \
+  --out runs/fit_001 \
+  --json
+```
+
+`fit`, `diagnose-fit`, and `diagnose-dimensions` validate that `responses.npy`
+is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
+factor id per item before running optimization or diagnostics.
+
 ## Repository Layout
 
 ```text
