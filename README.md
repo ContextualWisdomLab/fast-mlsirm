@@ -170,8 +170,8 @@ factor id per item before running optimization or diagnostics.
 `render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
 into a standalone HTML report with model summary cards, compact tables, and
 small bar views for the most scannable fit metrics. Optional diagnostics
-sections that are absent in the source JSON render as explicit empty states
-instead of blank report areas.
+sections that are absent in the source JSON are summarized in a diagnostics
+coverage block instead of rendering as repeated blank-looking report sections.
 
 ## Repository Layout
 

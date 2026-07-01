@@ -86,21 +86,32 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
     if not isinstance(model_fit, dict):
         raise ValueError("model_fit must be an object")
 
-    sections = [
-        _metric_section("Model Fit", model_fit),
-        _table_section("Item Fit", _rows_from_columnar(payload.get("itemfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Person Fit", _rows_from_columnar(payload.get("personfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Factor Fit", _rows_from_columnar(payload.get("factorfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Category Fit", _rows_from_columnar(payload.get("categoryfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Group Fit", _rows_from_columnar(payload.get("groupfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Cluster Fit", _rows_from_columnar(payload.get("clusterfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Group Item Fit", _rows_from_columnar(payload.get("group_itemfit", {})), chart_value="outfit_mnsq"),
-        _table_section(
-            "Cluster Item Fit",
-            _rows_from_columnar(payload.get("cluster_itemfit", {})),
-            chart_value="outfit_mnsq",
-        ),
+    table_specs = [
+        ("Item Fit", "itemfit", "outfit_mnsq"),
+        ("Person Fit", "personfit", "outfit_mnsq"),
+        ("Factor Fit", "factorfit", "outfit_mnsq"),
+        ("Category Fit", "categoryfit", "outfit_mnsq"),
+        ("Group Fit", "groupfit", "outfit_mnsq"),
+        ("Cluster Fit", "clusterfit", "outfit_mnsq"),
+        ("Group Item Fit", "group_itemfit", "outfit_mnsq"),
+        ("Cluster Item Fit", "cluster_itemfit", "outfit_mnsq"),
     ]
+
+    table_sections = []
+    available = []
+    unavailable = []
+    for heading, payload_key, chart_value in table_specs:
+        rows = _rows_from_columnar(payload.get(payload_key, {}))
+        if rows:
+            available.append(heading)
+            table_sections.append(_table_section(heading, rows, chart_value=chart_value))
+        else:
+            unavailable.append(heading)
+
+    sections = [_metric_section("Model Fit", model_fit)]
+    if unavailable:
+        sections.append(_availability_section(available=available, unavailable=unavailable))
+    sections.extend(table_sections)
     return sections
 
 
@@ -155,6 +166,29 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
             f"<h2>{escape(heading)}</h2>",
             chart,
             _table(rows),
+            "</section>",
+        ]
+    )
+
+
+def _availability_section(*, available: list[str], unavailable: list[str]) -> str:
+    available_items = "\n".join(f"<li>{escape(name)}</li>" for name in available) or "<li>None</li>"
+    unavailable_items = "\n".join(f"<li>{escape(name)}</li>" for name in unavailable)
+    return "\n".join(
+        [
+            '<section class="report-section report-coverage">',
+            "<h2>Diagnostics Coverage</h2>",
+            '<div class="coverage-grid">',
+            '<div class="coverage-column">',
+            "<h3>Rendered tables</h3>",
+            f'<ul class="coverage-list">{available_items}</ul>',
+            "</div>",
+            '<div class="coverage-column">',
+            "<h3>Unavailable in source JSON</h3>",
+            f'<ul class="coverage-list coverage-list-muted">{unavailable_items}</ul>',
+            "</div>",
+            "</div>",
+            '<p class="coverage-note">Unavailable diagnostics are summarized here so the report does not render blank visual sections.</p>',
             "</section>",
         ]
     )
@@ -380,6 +414,13 @@ h2 {
   letter-spacing: 0;
 }
 
+h3 {
+  margin: 0;
+  color: #2f3437;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -423,9 +464,43 @@ h2 {
 .bar-label,
 .bar-value,
 .table-note,
+.coverage-note,
 .empty-state {
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.coverage-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coverage-list li {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f1f4ef;
+  color: #2f3437;
+  font-size: 0.82rem;
+}
+
+.coverage-list-muted li {
+  background: #fbfcfa;
+  color: var(--muted);
+}
+
+.coverage-note {
+  margin: 14px 0 0;
 }
 
 .bar-track {
