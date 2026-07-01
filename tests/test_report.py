@@ -141,6 +141,29 @@ def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
     assert "No metrics were recorded in this diagnostics file." not in html
 
 
+def test_render_coverage_omits_empty_rendered_tables_column(tmp_path):
+    source = tmp_path / "dimension_diagnostics.json"
+    out = tmp_path / "dimensions.html"
+    source.write_text(
+        json.dumps(
+            {
+                "candidates": [],
+                "best": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "Diagnostics Coverage" in html
+    assert "<h3>Rendered tables</h3>" not in html
+    assert "<li>None</li>" not in html
+    assert "<h3>No row data</h3>" in html
+    assert "<h3>No metric data</h3>" in html
+
+
 def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
     source = tmp_path / "fit_diagnostics.json"
     out = tmp_path / "report.html"
