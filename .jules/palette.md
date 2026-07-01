@@ -1,0 +1,3 @@
+## 2025-03-09 - Accessible Scrollable Tables
+**Learning:** Tables nested in `overflow-x: auto` containers (like `.table-wrap`) are inaccessible to keyboard-only users because they cannot be scrolled if they overflow their bounds, preventing access to out-of-view columns. Adding `tabindex="0"` makes the region focusable, but without a semantic role and label, screen readers simply announce it as a generic group. Adding `role="region"` and an `aria-label` (e.g. based on the section heading) provides the necessary context.
+**Action:** When implementing responsive tables with `overflow-x: auto`, always add `tabindex="0"`, `role="region"`, and a descriptive `aria-label` to the scrolling container wrapper. Pair this with a clear `:focus-visible` outline in CSS.
