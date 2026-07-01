@@ -57,6 +57,60 @@ def test_gradient_matches_finite_difference():
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
 
 
+def test_rust_backend_matches_numpy_objective():
+    params = MLSIRMParams(
+        theta=np.array([[0.2], [-0.3]], dtype=float),
+        alpha=np.array([0.1, -0.2], dtype=float),
+        b=np.array([0.3, -0.1], dtype=float),
+        xi=np.array([[0.1, 0.2], [-0.2, 0.4]], dtype=float),
+        zeta=np.array([[0.0, -0.1], [0.3, -0.4]], dtype=float),
+        tau=0.2,
+    )
+    y = np.array([[1.0, 0.0], [0.0, 1.0]])
+    mask = np.array([[True, True], [True, False]])
+    factors = np.array([0, 0])
+    config = FitConfig(max_iter=1)
+
+    numpy_obj, numpy_grad, numpy_loglik = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="numpy")
+    rust_obj, rust_grad, rust_loglik = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="rust")
+
+    assert np.isclose(rust_obj, numpy_obj)
+    assert np.isclose(rust_loglik, numpy_loglik)
+    assert np.allclose(rust_grad.theta, numpy_grad.theta)
+    assert np.allclose(rust_grad.alpha, numpy_grad.alpha)
+    assert np.allclose(rust_grad.b, numpy_grad.b)
+    assert np.allclose(rust_grad.xi, numpy_grad.xi)
+    assert np.allclose(rust_grad.zeta, numpy_grad.zeta)
+    assert np.isclose(rust_grad.tau, numpy_grad.tau)
+
+
+def test_rust_core_rejects_shape_mismatch():
+    from fast_mlsirm import _core
+
+    with pytest.raises(ValueError, match="factor_id length must match number of items"):
+        _core.neg_loglik_and_grad(
+            np.zeros((2, 2), dtype=float),
+            np.ones((2, 2), dtype=bool),
+            np.array([0], dtype=np.int64),
+            np.zeros((2, 1), dtype=float),
+            np.zeros(2, dtype=float),
+            np.zeros(2, dtype=float),
+            np.zeros((2, 1), dtype=float),
+            np.zeros((2, 1), dtype=float),
+            0.0,
+            "MLS2PLM",
+            1e-8,
+            0.01,
+            0.01,
+            0.01,
+            0.001,
+            0.001,
+            0.001,
+            0.0,
+            0.0,
+        )
+
+
 def test_validate_factor_id():
     res = validate_factor_id([0, 1, 0], n_items=3, n_dims=2)
     assert np.array_equal(res, np.array([0, 1, 0]))

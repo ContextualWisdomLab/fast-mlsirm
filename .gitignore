@@ -3,6 +3,7 @@
 .ruff_cache/
 __pycache__/
 *.py[cod]
+python/fast_mlsirm/_core*.so
 *.egg-info/
 .venv/
 venv/

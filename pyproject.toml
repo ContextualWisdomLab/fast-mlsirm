@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.10,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "fast-mlsirm"
@@ -18,8 +18,12 @@ dev = ["pytest>=8"]
 [project.scripts]
 fast-mlsirm = "fast_mlsirm.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["python"]
+[tool.maturin]
+bindings = "pyo3"
+features = ["extension-module"]
+manifest-path = "crates/fast-mlsirm-py/Cargo.toml"
+module-name = "fast_mlsirm._core"
+python-source = "python"
 
 [tool.pytest.ini_options]
 pythonpath = ["python"]

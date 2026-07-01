@@ -15,7 +15,7 @@ data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
     responses=data.Y,
     factor_id=data.factor_id,
-    config=FitConfig(model="MLS2PLM", optimizer="adam_lbfgs", max_iter=100),
+    config=FitConfig(model="MLS2PLM", optimizer="adam_lbfgs", max_iter=100, backend="auto"),
 )
 report = recovery_report(data.truth, result.params)
 diagnostics = fit_diagnostics(data.Y, result.params, data.factor_id, model=result.model)
@@ -68,7 +68,8 @@ print(process_dimensions.best)
   checks.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - CLI commands for simulation and fitting.
-- Rust core crate with the same likelihood and gradient formulas.
+- Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
+  default reference backend.
 
 ## Install
 
@@ -78,10 +79,11 @@ For local development:
 python -m pip install -e .
 ```
 
-The Python reference backend requires NumPy. The Rust crate can be tested with:
+The default backend requires NumPy. Local editable installs build the optional
+Rust extension with maturin. The Rust workspace can be tested with:
 
 ```bash
-cargo test
+cargo test --workspace
 ```
 
 ## CLI
@@ -101,6 +103,7 @@ fast-mlsirm fit \
   --responses runs/sim_001/responses.npy \
   --factors runs/sim_001/item_factor.csv \
   --model MLS2PLM \
+  --backend auto \
   --latent-dim 2 \
   --optimizer adam_lbfgs \
   --max-iter 100 \
@@ -167,6 +170,11 @@ fast-mlsirm fit \
 is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
 factor id per item before running optimization or diagnostics.
 
+`fit --backend numpy` uses the Python reference objective. `fit --backend rust`
+requires the installed `fast_mlsirm._core` extension and fails clearly if it is
+unavailable. `fit --backend auto` uses the Rust objective when available and
+falls back to NumPy otherwise.
+
 `render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
 into a standalone HTML report with model summary cards, compact tables, and
 small bar views when chartable diagnostic metrics are present. Optional fit
@@ -179,6 +187,7 @@ repeated blank-looking report sections or placeholder-only columns.
 ```text
 python/fast_mlsirm/       Python public API and reference backend
 crates/mlsirm-core/       Rust likelihood and gradient core
+crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
 ```
@@ -186,6 +195,8 @@ docs/                     PRD/TRD summary and roadmap
 ## MVP Boundary
 
 This is not a Bayesian sampler. The package intentionally starts with fast
-simulation, regularized point estimation, and recovery diagnostics. PyO3
-zero-copy bindings, block-mode Rust execution, sparse response storage, and
-benchmark automation are next-step work after the formulas and API stabilize.
+simulation, regularized point estimation, and recovery diagnostics. The current
+Rust backend keeps the same point-estimate formula contract as the NumPy
+reference path. Block-mode Rust execution, sparse response storage, benchmark
+automation, posterior predictive checking, and new ordinal response estimators
+remain future work.

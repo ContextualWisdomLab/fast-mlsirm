@@ -102,7 +102,8 @@ pub fn neg_loglik_and_grad(
             let a = alpha.exp();
             let mut dist2 = config.eps_distance;
             for k in 0..config.latent_dim {
-                let diff = params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
+                let diff =
+                    params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
                 dist2 += diff * diff;
             }
             let r = if uses_space { dist2.sqrt() } else { 0.0 };
@@ -120,8 +121,8 @@ pub fn neg_loglik_and_grad(
             if uses_space {
                 grad.tau += e * (-gamma * r);
                 for k in 0..config.latent_dim {
-                    let diff =
-                        params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
+                    let diff = params.xi[p * config.latent_dim + k]
+                        - params.zeta[i * config.latent_dim + k];
                     let common = gamma * diff / r;
                     grad.xi[p * config.latent_dim + k] += e * (-common);
                     grad.zeta[i * config.latent_dim + k] += e * common;
@@ -148,7 +149,12 @@ fn add_penalty(
     value += add_l2(&params.theta, penalty.lambda_theta, 0.0, &mut grad.theta);
     value += add_l2(&params.b, penalty.lambda_b, 0.0, &mut grad.b);
     if free_alpha {
-        value += add_l2(&params.alpha, penalty.lambda_alpha, penalty.mu_alpha, &mut grad.alpha);
+        value += add_l2(
+            &params.alpha,
+            penalty.lambda_alpha,
+            penalty.mu_alpha,
+            &mut grad.alpha,
+        );
     }
     if uses_space {
         value += add_l2(&params.xi, penalty.lambda_xi, 0.0, &mut grad.xi);

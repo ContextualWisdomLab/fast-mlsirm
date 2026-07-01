@@ -10,6 +10,7 @@ def test_fitconfig_valid():
     """Test valid FitConfig passes validation."""
     config = FitConfig()
     config.validate()  # Should not raise any exception
+    assert config.backend == "numpy"
 
 def test_mls2plmconfig_invalid_n_persons():
     with pytest.raises(ValueError, match="n_persons must be >= 1"):
@@ -75,3 +76,8 @@ def test_fitconfig_invalid_init_gamma():
 def test_fitconfig_invalid_eps_distance():
     with pytest.raises(ValueError, match="eps_distance must be > 0"):
         FitConfig(eps_distance=0.0).validate()
+
+
+def test_fitconfig_invalid_backend():
+    with pytest.raises(ValueError, match="backend must be one of"):
+        FitConfig(backend="cuda").validate()
