@@ -141,6 +141,27 @@ def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
     assert "No metrics were recorded in this diagnostics file." not in html
 
 
+def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    source.write_text(
+        json.dumps(
+            {
+                "model_fit": {"loglik": -3.2},
+                "itemfit": {"item_id": ["A"], "outfit_mnsq": [None], "observed_count": [4]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "<h2>Item Fit</h2>" in html
+    assert "<table>" in html
+    assert "No chartable values were recorded for this section." not in html
+
+
 def test_render_report_rejects_unknown_payload(tmp_path):
     source = tmp_path / "unknown.json"
     out = tmp_path / "report.html"
