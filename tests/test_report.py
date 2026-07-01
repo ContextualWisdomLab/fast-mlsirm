@@ -88,6 +88,59 @@ def test_render_dimensionality_report_summarizes_empty_candidates(tmp_path):
     assert "No rows were recorded in this section." not in html
 
 
+def test_render_report_summarizes_empty_metric_sections(tmp_path):
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    source.write_text(
+        json.dumps(
+            {
+                "model_fit": {},
+                "itemfit": {"item_id": [0], "outfit_mnsq": [1.0], "observed_count": [4]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "Diagnostics Coverage" in html
+    assert "No metric data" in html
+    assert "Diagnostics without table rows or metric values are summarized here" in html
+    no_metric_column = html[html.index("<h3>No metric data</h3>") :]
+    no_metric_column = no_metric_column[: no_metric_column.index("</div>")]
+    assert "Model Fit" in no_metric_column
+    assert "<h2>Model Fit</h2>" not in html
+    assert "No metrics were recorded in this diagnostics file." not in html
+
+
+def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
+    source = tmp_path / "dimension_diagnostics.json"
+    out = tmp_path / "dimensions.html"
+    source.write_text(
+        json.dumps(
+            {
+                "candidates": [{"latent_dim": 2.0, "heldout_loglik": -8.0}],
+                "best": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "Diagnostics Coverage" in html
+    assert "No metric data" in html
+    no_metric_column = html[html.index("<h3>No metric data</h3>") :]
+    no_metric_column = no_metric_column[: no_metric_column.index("</div>")]
+    assert "Best Candidate" in no_metric_column
+    assert "Candidate Comparison" in html
+    assert "<h2>Best Candidate</h2>" not in html
+    assert "<h2>Candidate Comparison</h2>" in html
+    assert "No metrics were recorded in this diagnostics file." not in html
+
+
 def test_render_report_rejects_unknown_payload(tmp_path):
     source = tmp_path / "unknown.json"
     out = tmp_path / "report.html"
