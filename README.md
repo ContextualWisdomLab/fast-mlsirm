@@ -79,8 +79,11 @@ For local development:
 python -m pip install -e .
 ```
 
-The default backend requires NumPy. Local editable installs build the optional
-Rust extension with maturin. The Rust workspace can be tested with:
+The default runtime backend is NumPy. Source and editable installs use maturin
+to build the optional `fast_mlsirm._core` extension, so they require a working
+Rust toolchain even if you later run with `backend="numpy"`. Installed wheels
+can still use the NumPy default, and `backend="auto"` falls back to NumPy when
+the extension is unavailable. The Rust workspace can be tested with:
 
 ```bash
 cargo test --workspace

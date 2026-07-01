@@ -58,6 +58,7 @@ def test_gradient_matches_finite_difference():
 
 
 def test_rust_backend_matches_numpy_objective():
+    pytest.importorskip("fast_mlsirm._core")
     params = MLSIRMParams(
         theta=np.array([[0.2], [-0.3]], dtype=float),
         alpha=np.array([0.1, -0.2], dtype=float),
@@ -85,6 +86,7 @@ def test_rust_backend_matches_numpy_objective():
 
 
 def test_rust_core_rejects_shape_mismatch():
+    pytest.importorskip("fast_mlsirm._core")
     from fast_mlsirm import _core
 
     with pytest.raises(ValueError, match="factor_id length must match number of items"):

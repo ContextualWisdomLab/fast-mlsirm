@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 from types import ModuleType
 
 
 VALID_BACKENDS = {"numpy", "rust", "auto"}
+CORE_MODULE = "fast_mlsirm._core"
 
 
 def normalize_backend(name: str) -> str:
@@ -33,8 +36,6 @@ def load_rust_core() -> ModuleType:
 
 
 def _load_core() -> ModuleType | None:
-    try:
-        from . import _core
-    except Exception:
+    if importlib.util.find_spec(CORE_MODULE) is None:
         return None
-    return _core
+    return importlib.import_module(CORE_MODULE)

@@ -55,7 +55,9 @@ crates/fast-mlsirm-py/
 The default Python backend is vectorized NumPy. The optional Rust backend uses
 the same core formula through a PyO3/maturin extension and can be selected with
 `FitConfig(backend="rust")`, `FitConfig(backend="auto")`, or
-`fast-mlsirm fit --backend`.
+`fast-mlsirm fit --backend`. Source and editable installs build that extension
+with maturin and therefore require a Rust toolchain; NumPy remains the default
+runtime backend after installation.
 
 ## Formula Contract
 

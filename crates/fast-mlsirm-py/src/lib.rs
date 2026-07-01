@@ -196,6 +196,12 @@ fn validate_shapes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use numpy::{PyArray1, PyArray2, PyArrayMethods};
+    use pyo3::types::PyModule;
+
+    fn zero_penalties() -> [f64; 8] {
+        [0.0; 8]
+    }
 
     #[test]
     fn parses_supported_models() {
@@ -203,6 +209,18 @@ mod tests {
         assert!(matches!(
             parse_model_type("mls2plm").unwrap(),
             ModelType::Mls2plm
+        ));
+        assert!(matches!(
+            parse_model_type("MLSRM").unwrap(),
+            ModelType::Mlsrm
+        ));
+        assert!(matches!(
+            parse_model_type("ULS2PLM").unwrap(),
+            ModelType::Uls2plm
+        ));
+        assert!(matches!(
+            parse_model_type("ULSRM").unwrap(),
+            ModelType::Ulsrm
         ));
         assert!(parse_model_type("GGUM").is_err());
     }
@@ -218,6 +236,187 @@ mod tests {
     fn validates_wrapper_shapes() {
         assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[2, 2], &[2, 2]).is_ok());
         assert!(validate_shapes(&[2, 2], &[1], &[2, 1], &[2], &[2], &[2, 2], &[2, 2]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[1, 1], &[2], &[2], &[2, 2], &[2, 2]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[1], &[2], &[2, 2], &[2, 2]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[1], &[2, 2], &[2, 2]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[1, 2], &[2, 2]).is_err());
         assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[2, 2], &[2, 3]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[2, 0], &[2], &[2], &[2, 2], &[2, 2]).is_err());
+        assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[2, 0], &[2, 0]).is_err());
+    }
+
+    #[test]
+    fn wrapper_computes_objective_without_mask() {
+        Python::initialize();
+        Python::attach(|py| {
+            let y = PyArray2::from_vec2(py, &[vec![1.0, 0.0], vec![0.0, 1.0]]).unwrap();
+            let factor_id = PyArray1::from_vec(py, vec![0_i64, 0]);
+            let theta = PyArray2::from_vec2(py, &[vec![0.2], vec![-0.3]]).unwrap();
+            let alpha = PyArray1::from_vec(py, vec![0.1, -0.2]);
+            let b = PyArray1::from_vec(py, vec![0.3, -0.1]);
+            let xi = PyArray2::from_vec2(py, &[vec![0.1, 0.2], vec![-0.2, 0.4]]).unwrap();
+            let zeta = PyArray2::from_vec2(py, &[vec![0.0, -0.1], vec![0.3, -0.4]]).unwrap();
+            let penalties = zero_penalties();
+
+            let (objective, gradients, loglik) = neg_loglik_and_grad(
+                y.readonly(),
+                None,
+                factor_id.readonly(),
+                theta.readonly(),
+                alpha.readonly(),
+                b.readonly(),
+                xi.readonly(),
+                zeta.readonly(),
+                0.2,
+                "MLS2PLM",
+                1e-8,
+                penalties[0],
+                penalties[1],
+                penalties[2],
+                penalties[3],
+                penalties[4],
+                penalties[5],
+                penalties[6],
+                penalties[7],
+            )
+            .unwrap();
+
+            assert!(objective.is_finite());
+            assert!(loglik.is_finite());
+            assert_eq!(gradients["theta"].len(), 2);
+            assert_eq!(gradients["tau"].len(), 1);
+        });
+    }
+
+    #[test]
+    fn wrapper_accepts_mask_and_registers_module() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::new(py, "_core").unwrap();
+            fast_mlsirm_core(&module).unwrap();
+            assert!(module.getattr("neg_loglik_and_grad").is_ok());
+
+            let y = PyArray2::from_vec2(py, &[vec![1.0, 0.0], vec![0.0, 1.0]]).unwrap();
+            let mask = PyArray2::from_vec2(py, &[vec![true, true], vec![true, false]]).unwrap();
+            let factor_id = PyArray1::from_vec(py, vec![0_i64, 0]);
+            let theta = PyArray2::from_vec2(py, &[vec![0.2], vec![-0.3]]).unwrap();
+            let alpha = PyArray1::from_vec(py, vec![0.1, -0.2]);
+            let b = PyArray1::from_vec(py, vec![0.3, -0.1]);
+            let xi = PyArray2::from_vec2(py, &[vec![0.1, 0.2], vec![-0.2, 0.4]]).unwrap();
+            let zeta = PyArray2::from_vec2(py, &[vec![0.0, -0.1], vec![0.3, -0.4]]).unwrap();
+            let penalties = zero_penalties();
+
+            let (objective, _, loglik) = neg_loglik_and_grad(
+                y.readonly(),
+                Some(mask.readonly()),
+                factor_id.readonly(),
+                theta.readonly(),
+                alpha.readonly(),
+                b.readonly(),
+                xi.readonly(),
+                zeta.readonly(),
+                0.2,
+                "MLS2PLM",
+                1e-8,
+                penalties[0],
+                penalties[1],
+                penalties[2],
+                penalties[3],
+                penalties[4],
+                penalties[5],
+                penalties[6],
+                penalties[7],
+            )
+            .unwrap();
+
+            assert!(objective.is_finite());
+            assert!(loglik.is_finite());
+        });
+    }
+
+    #[test]
+    fn wrapper_rejects_bad_mask_shape_and_multidim_uls() {
+        Python::initialize();
+        Python::attach(|py| {
+            let y = PyArray2::from_vec2(py, &[vec![1.0, 0.0], vec![0.0, 1.0]]).unwrap();
+            let bad_mask = PyArray2::from_vec2(py, &[vec![true, true]]).unwrap();
+            let factor_id = PyArray1::from_vec(py, vec![0_i64, 0]);
+            let bad_factor_id = PyArray1::from_vec(py, vec![0_i64]);
+            let theta = PyArray2::from_vec2(py, &[vec![0.2, 0.0], vec![-0.3, 0.1]]).unwrap();
+            let alpha = PyArray1::from_vec(py, vec![0.1, -0.2]);
+            let b = PyArray1::from_vec(py, vec![0.3, -0.1]);
+            let xi = PyArray2::from_vec2(py, &[vec![0.1, 0.2], vec![-0.2, 0.4]]).unwrap();
+            let zeta = PyArray2::from_vec2(py, &[vec![0.0, -0.1], vec![0.3, -0.4]]).unwrap();
+            let penalties = zero_penalties();
+
+            let bad_shape_result = neg_loglik_and_grad(
+                y.readonly(),
+                None,
+                bad_factor_id.readonly(),
+                theta.readonly(),
+                alpha.readonly(),
+                b.readonly(),
+                xi.readonly(),
+                zeta.readonly(),
+                0.2,
+                "MLS2PLM",
+                1e-8,
+                penalties[0],
+                penalties[1],
+                penalties[2],
+                penalties[3],
+                penalties[4],
+                penalties[5],
+                penalties[6],
+                penalties[7],
+            );
+            assert!(bad_shape_result.is_err());
+
+            let bad_mask_result = neg_loglik_and_grad(
+                y.readonly(),
+                Some(bad_mask.readonly()),
+                factor_id.readonly(),
+                theta.readonly(),
+                alpha.readonly(),
+                b.readonly(),
+                xi.readonly(),
+                zeta.readonly(),
+                0.2,
+                "MLS2PLM",
+                1e-8,
+                penalties[0],
+                penalties[1],
+                penalties[2],
+                penalties[3],
+                penalties[4],
+                penalties[5],
+                penalties[6],
+                penalties[7],
+            );
+            assert!(bad_mask_result.is_err());
+
+            let uls_result = neg_loglik_and_grad(
+                y.readonly(),
+                None,
+                factor_id.readonly(),
+                theta.readonly(),
+                alpha.readonly(),
+                b.readonly(),
+                xi.readonly(),
+                zeta.readonly(),
+                0.2,
+                "ULS2PLM",
+                1e-8,
+                penalties[0],
+                penalties[1],
+                penalties[2],
+                penalties[3],
+                penalties[4],
+                penalties[5],
+                penalties[6],
+                penalties[7],
+            );
+            assert!(uls_result.is_err());
+        });
     }
 }

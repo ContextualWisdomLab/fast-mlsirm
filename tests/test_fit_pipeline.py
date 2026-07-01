@@ -43,6 +43,7 @@ def test_auto_backend_falls_back_to_numpy_when_rust_core_missing(monkeypatch):
 
 
 def test_rust_backend_fit_smoke():
+    pytest.importorskip("fast_mlsirm._core")
     data = simulate(MLS2PLMConfig(n_persons=12, n_dims=1, items_per_dim=2, latent_dim=1, seed=31))
 
     result = fit(

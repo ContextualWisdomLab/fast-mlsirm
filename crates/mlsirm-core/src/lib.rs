@@ -267,4 +267,37 @@ mod tests {
         let finite_diff = (obj_plus - base) / h;
         assert!((finite_diff - grad.tau).abs() < 1e-5);
     }
+
+    #[test]
+    fn mask_excludes_entries() {
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let mask = vec![true, true, true, false];
+
+        let (objective, grad, loglik) =
+            neg_loglik_and_grad(&y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+
+        assert!(objective.is_finite());
+        assert!(loglik.is_finite());
+        assert_eq!(grad.theta.len(), cfg.n_persons * cfg.n_dims);
+    }
+
+    #[test]
+    fn mirt_ignores_latent_space_terms() {
+        let mut cfg = config();
+        cfg.model_type = ModelType::Mirt;
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+
+        let (objective, grad, loglik) = neg_loglik_and_grad(&y, None, &[0, 0], &p, &cfg, &penalty);
+
+        assert!(objective.is_finite());
+        assert!(loglik.is_finite());
+        assert_eq!(grad.tau, 0.0);
+        assert!(grad.xi.iter().all(|value| *value == 0.0));
+        assert!(grad.zeta.iter().all(|value| *value == 0.0));
+    }
 }
