@@ -239,6 +239,29 @@ def test_cli_diagnose_response_candidates_rejects_duplicate_label(tmp_path, caps
 
     assert "duplicate candidate label: dim1" in capsys.readouterr().err
 
+def test_cli_render_report_json_output(tmp_path, capsys):
+    diagnostics = tmp_path / "fit_diagnostics.json"
+    report = tmp_path / "report.html"
+    diagnostics.write_text(
+        json.dumps(
+            {
+                "itemfit": {"item_id": [0], "outfit_mnsq": [1.0]},
+                "personfit": {"person_id": [0], "outfit_mnsq": [1.0]},
+                "model_fit": {"loglik": -1.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = ["render-report", "--diagnostics", str(diagnostics), "--out", str(report), "--json"]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "render-report"
+    assert payload["files"]["report"].endswith("report.html")
+    assert report.exists()
+
 def test_cli_fit_missing_file(capsys):
     args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
     with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
