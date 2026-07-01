@@ -99,18 +99,18 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
 
     table_sections = []
     available = []
-    unavailable = []
+    no_row_tables = []
     for heading, payload_key, chart_value in table_specs:
         rows = _rows_from_columnar(payload.get(payload_key, {}))
         if rows:
             available.append(heading)
             table_sections.append(_table_section(heading, rows, chart_value=chart_value))
         else:
-            unavailable.append(heading)
+            no_row_tables.append(heading)
 
     sections = [_metric_section("Model Fit", model_fit)]
-    if unavailable:
-        sections.append(_availability_section(available=available, unavailable=unavailable))
+    if no_row_tables:
+        sections.append(_availability_section(available=available, no_row_tables=no_row_tables))
     sections.extend(table_sections)
     return sections
 
@@ -171,9 +171,9 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
     )
 
 
-def _availability_section(*, available: list[str], unavailable: list[str]) -> str:
+def _availability_section(*, available: list[str], no_row_tables: list[str]) -> str:
     available_items = "\n".join(f"<li>{escape(name)}</li>" for name in available) or "<li>None</li>"
-    unavailable_items = "\n".join(f"<li>{escape(name)}</li>" for name in unavailable)
+    no_row_items = "\n".join(f"<li>{escape(name)}</li>" for name in no_row_tables)
     return "\n".join(
         [
             '<section class="report-section report-coverage">',
@@ -184,11 +184,11 @@ def _availability_section(*, available: list[str], unavailable: list[str]) -> st
             f'<ul class="coverage-list">{available_items}</ul>',
             "</div>",
             '<div class="coverage-column">',
-            "<h3>Unavailable in source JSON</h3>",
-            f'<ul class="coverage-list coverage-list-muted">{unavailable_items}</ul>',
+            "<h3>No row data</h3>",
+            f'<ul class="coverage-list coverage-list-muted">{no_row_items}</ul>',
             "</div>",
             "</div>",
-            '<p class="coverage-note">Unavailable diagnostics are summarized here so the report does not render blank visual sections.</p>',
+            '<p class="coverage-note">Diagnostics without table rows are summarized here so the report does not render blank visual sections.</p>',
             "</section>",
         ]
     )

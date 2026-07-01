@@ -33,7 +33,7 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "Model Fit" in html
     assert "Item Fit" in html
     assert "Diagnostics Coverage" in html
-    assert "Unavailable in source JSON" in html
+    assert "No row data" in html
     assert "No rows were recorded in this section." not in html
     assert "No chartable values were recorded for this section." not in html
     assert "<table>" in html
