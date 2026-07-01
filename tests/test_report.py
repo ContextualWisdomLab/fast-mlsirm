@@ -33,6 +33,8 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "Model Fit" in html
     assert "Item Fit" in html
     assert "No rows were recorded in this section." in html
+    assert html.count("No rows were recorded in this section.") == 6
+    assert "No chartable values were recorded for this section." not in html
     assert "<table>" in html
 
 
@@ -43,10 +45,10 @@ def test_render_dimensionality_report_has_best_candidate(tmp_path):
         json.dumps(
             {
                 "candidates": [
-                    {"latent_dim": 1, "heldout_loglik": -12.5},
-                    {"latent_dim": 2, "heldout_loglik": -8.0},
+                    {"latent_dim": 1.0, "heldout_loglik": -12.5},
+                    {"latent_dim": 2.0, "heldout_loglik": -8.0},
                 ],
-                "best": {"latent_dim": 2, "heldout_loglik": -8.0},
+                "best": {"latent_dim": 2.0, "heldout_loglik": -8.0},
             }
         ),
         encoding="utf-8",
@@ -59,6 +61,7 @@ def test_render_dimensionality_report_has_best_candidate(tmp_path):
     assert "Best Candidate" in html
     assert "Candidate Comparison" in html
     assert "Latent Dim 2" in html
+    assert "Latent Dim 2.0" not in html
 
 
 def test_render_report_rejects_unknown_payload(tmp_path):

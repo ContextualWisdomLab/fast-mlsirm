@@ -163,6 +163,8 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
 def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     if not value_key:
         return ""
+    if not rows:
+        return ""
     values = [float(row[value_key]) for row in rows if _is_number(row.get(value_key))]
     if not values:
         return '<p class="empty-state">No chartable values were recorded for this section.</p>'
@@ -276,7 +278,7 @@ def _index_value(value: Any, index: int) -> Any:
 def _row_label(row: dict[str, Any], index: int) -> str:
     for key in ("candidate_label", "latent_dim", "item_id", "person_id", "factor_id", "category_id", "group_id", "cluster_id"):
         if key in row:
-            return f"{_label(key)} {row[key]}"
+            return f"{_label(key)} {_format_label_value(row[key])}"
     return f"Row {index + 1}"
 
 
@@ -296,6 +298,12 @@ def _format_value(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _format_label_value(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return _format_value(value)
 
 
 def _is_number(value: Any) -> bool:
