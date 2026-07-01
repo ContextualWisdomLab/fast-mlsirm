@@ -76,6 +76,8 @@ def test_cli_fit_json_output(tmp_path, capsys):
         str(sim_dir / "item_factor.csv"),
         "--model",
         "MLS2PLM",
+        "--device",
+        "cpu",
         "--max-iter",
         "1",
         "--out",
@@ -90,6 +92,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
     assert payload["command"] == "fit"
     assert payload["status"] == "ok"
     assert payload["model"] == "MLS2PLM"
+    assert payload["compute_backend"] == "cpu"
     assert payload["files"]["params"].endswith("params.npz")
 
 def test_cli_diagnose_fit_success(tmp_path):

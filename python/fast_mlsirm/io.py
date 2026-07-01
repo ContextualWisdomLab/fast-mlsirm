@@ -54,6 +54,7 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
     summary = {
         "model": result.model,
         "optimizer": result.optimizer,
+        "compute_backend": result.compute_backend,
         "objective": result.objective,
         "convergence_status": result.convergence_status,
         "n_iter": result.n_iter,

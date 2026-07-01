@@ -69,6 +69,8 @@ print(process_dimensions.best)
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
+- Optional fit-time compute backend selection (`cpu`, `cuda`, `mlx`, `opencl`)
+  for model estimation.
 
 ## Install
 
@@ -101,6 +103,7 @@ fast-mlsirm fit \
   --responses runs/sim_001/responses.npy \
   --factors runs/sim_001/item_factor.csv \
   --model MLS2PLM \
+  --device cpu \
   --latent-dim 2 \
   --optimizer adam_lbfgs \
   --max-iter 100 \

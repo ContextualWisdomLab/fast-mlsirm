@@ -15,6 +15,7 @@ def test_fit_pipeline_smoke():
     assert result.params.theta.shape == (30, 2)
     assert result.params.alpha.shape == (6,)
     assert result.params.xi.shape == (30, 2)
+    assert result.compute_backend == "cpu"
     assert np.isfinite(result.objective)
 
     report = recovery_report(data.truth, result.params)

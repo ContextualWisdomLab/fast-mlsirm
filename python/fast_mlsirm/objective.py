@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 
+from .backend import normalize_backend
 from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
@@ -56,7 +59,12 @@ def linear_predictor(
     factor_id: np.ndarray,
     model: str = "MLS2PLM",
     eps_distance: float = 1e-8,
+    compute_backend: str = "cpu",
 ) -> tuple[np.ndarray, np.ndarray]:
+    backend = normalize_backend(compute_backend)
+    if backend != "cpu":
+        return _linear_predictor_backend(params, factor_id, model=model, eps_distance=eps_distance, backend=backend)
+
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
     theta_factor = params.theta[:, factor_id]
@@ -83,8 +91,13 @@ def neg_loglik_and_grad(
     params: MLSIRMParams,
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
+    compute_backend: str = "cpu",
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
+    backend = normalize_backend(compute_backend)
+    if backend != "cpu":
+        return _neg_loglik_and_grad_backend(responses, factor_id, params, config, mask, backend)
+
     model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
@@ -148,6 +161,143 @@ def neg_loglik_and_grad(
         tau=float(grad_tau),
     )
     return float(nll), grads, loglik
+
+
+def _linear_predictor_backend(
+    params: MLSIRMParams,
+    factor_id: np.ndarray,
+    model: str,
+    eps_distance: float,
+    backend: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    xp, to_numpy = _backend_module(backend)
+    free_alpha, uses_space = model_flags(model)
+    factors = xp.asarray(np.asarray(factor_id, dtype=np.int64))
+    theta = xp.asarray(params.theta)
+    alpha = xp.asarray(params.alpha)
+    b = xp.asarray(params.b)
+    xi = xp.asarray(params.xi)
+    zeta = xp.asarray(params.zeta)
+    a = xp.exp(alpha) if free_alpha else xp.ones_like(alpha)
+    theta_factor = theta[:, factors]
+
+    if uses_space:
+        xi_sq = xp.sum(xi * xi, axis=1)
+        zeta_sq = xp.sum(zeta * zeta, axis=1)
+        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2.0 * (xi @ zeta.T)
+        dist_sq = xp.maximum(dist_sq, 0.0)
+        distance = xp.sqrt(dist_sq + eps_distance)
+        gamma = float(np.exp(params.tau))
+    else:
+        distance = xp.zeros((theta.shape[0], len(factor_id)))
+        gamma = 0.0
+
+    eta = a[None, :] * theta_factor + b[None, :] - gamma * distance
+    return to_numpy(eta), to_numpy(distance)
+
+
+def _neg_loglik_and_grad_backend(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params: MLSIRMParams,
+    config: FitConfig,
+    mask: np.ndarray | None,
+    backend: str,
+) -> tuple[float, MLSIRMParams, float]:
+    model = config.normalized_model()
+    penalty = config.penalty
+    y, observed = prepare_response(responses, mask)
+    factors_np = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
+    if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
+        raise ValueError(f"{model} requires one trait dimension")
+
+    xp, to_numpy = _backend_module(backend)
+    y_dev = xp.asarray(y)
+    observed_dev = xp.asarray(observed)
+    factors = xp.asarray(factors_np)
+    theta = xp.asarray(params.theta)
+    alpha = xp.asarray(params.alpha)
+    b = xp.asarray(params.b)
+    xi = xp.asarray(params.xi)
+    zeta = xp.asarray(params.zeta)
+
+    free_alpha, uses_space = model_flags(model)
+    a = xp.exp(alpha) if free_alpha else xp.ones_like(alpha)
+    theta_factor = theta[:, factors]
+
+    if uses_space:
+        xi_sq = xp.sum(xi * xi, axis=1)
+        zeta_sq = xp.sum(zeta * zeta, axis=1)
+        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2.0 * (xi @ zeta.T)
+        dist_sq = xp.maximum(dist_sq, 0.0)
+        distance = xp.sqrt(dist_sq + config.eps_distance)
+        gamma = float(np.exp(params.tau))
+    else:
+        distance = xp.zeros((theta.shape[0], y.shape[1]))
+        gamma = 0.0
+
+    eta = a[None, :] * theta_factor + b[None, :] - gamma * distance
+    eta_safe = xp.clip(eta, -709.0, 709.0)
+    pi = 1.0 / (1.0 + xp.exp(-eta_safe))
+    entry_loss = (xp.maximum(eta, 0.0) + xp.log1p(xp.exp(-xp.abs(eta))) - y_dev * eta) * observed_dev
+    nll = float(np.asarray(to_numpy(xp.sum(entry_loss))))
+    loglik = -nll
+
+    e = (pi - y_dev) * observed_dev
+    grad_b = xp.sum(e, axis=0)
+    grad_alpha = xp.zeros_like(alpha)
+    if free_alpha:
+        grad_alpha = xp.sum(e * a[None, :] * theta[:, factors], axis=0)
+
+    grad_theta = xp.zeros_like(theta)
+    for d in range(theta.shape[1]):
+        mask_d = factors == d
+        if float(np.asarray(to_numpy(xp.sum(mask_d)))) > 0.0:
+            grad_theta[:, d] = xp.sum(e[:, mask_d] * a[None, mask_d], axis=1)
+
+    grad_xi = xp.zeros_like(xi)
+    grad_zeta = xp.zeros_like(zeta)
+    grad_tau = 0.0
+    if uses_space:
+        e_over_d = e / distance
+        sum_e_over_d = xp.sum(e_over_d, axis=1, keepdims=True)
+        grad_xi = -gamma * (xi * sum_e_over_d - (e_over_d @ zeta))
+        sum_e_over_d_j = xp.sum(e_over_d, axis=0)[:, None]
+        grad_zeta = gamma * ((e_over_d.T @ xi) - zeta * sum_e_over_d_j)
+        grad_tau = float(np.asarray(to_numpy(xp.sum(e * (-gamma * distance)))))
+
+    nll += _add_penalty(params, penalty, free_alpha=free_alpha, uses_space=uses_space)
+    grad_theta += penalty.lambda_theta * theta
+    grad_b += penalty.lambda_b * b
+    if free_alpha:
+        grad_alpha += penalty.lambda_alpha * (alpha - penalty.mu_alpha)
+    if uses_space:
+        grad_xi += penalty.lambda_xi * xi
+        grad_zeta += penalty.lambda_zeta * zeta
+        grad_tau += penalty.lambda_tau * (params.tau - penalty.mu_tau)
+
+    grads = MLSIRMParams(
+        theta=np.asarray(to_numpy(grad_theta)),
+        alpha=np.asarray(to_numpy(grad_alpha)),
+        b=np.asarray(to_numpy(grad_b)),
+        xi=np.asarray(to_numpy(grad_xi)),
+        zeta=np.asarray(to_numpy(grad_zeta)),
+        tau=float(grad_tau),
+    )
+    return float(nll), grads, loglik
+
+
+def _backend_module(backend: str):
+    if backend == "cuda":
+        cp = importlib.import_module("cupy")
+        return cp, cp.asnumpy
+    if backend == "mlx":
+        mx = importlib.import_module("mlx.core")
+        return mx, np.asarray
+    if backend == "opencl":
+        # OpenCL execution currently uses NumPy algebra after validating backend availability.
+        return np, np.asarray
+    return np, np.asarray
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
