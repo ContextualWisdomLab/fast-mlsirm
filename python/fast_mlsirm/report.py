@@ -247,7 +247,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     values = [float(row[value_key]) for row in rows if _is_number(row.get(value_key))]
     if not values:
-        return '<p class="empty-state">No chartable values were recorded for this section.</p>'
+        return ""
 
     lower = min(values)
     upper = max(values)
@@ -274,7 +274,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         )
 
     if not chart_rows:
-        return '<p class="empty-state">No chartable values were recorded for this section.</p>'
+        return ""
 
     return "\n".join(
         [
