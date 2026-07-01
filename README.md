@@ -9,7 +9,7 @@ The first implementation keeps the public API small:
 ```python
 import numpy as np
 
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
+from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, render_diagnostics_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -66,6 +66,7 @@ print(process_dimensions.best)
   cluster IDs.
 - Response-process probability candidate comparisons for external dimensionality
   checks.
+- Standalone HTML reports for saved fit or dimensionality diagnostics.
 - CLI commands for simulation and fitting.
 - Rust core crate with the same likelihood and gradient formulas.
 
@@ -137,6 +138,10 @@ fast-mlsirm diagnose-response-candidates \
   --item-type dichotomous \
   --response-process ideal_point \
   --out runs/process_dimensions_001
+
+fast-mlsirm render-report \
+  --diagnostics runs/diagnostics_001/fit_diagnostics.json \
+  --out runs/diagnostics_001/report.html
 ```
 
 For automation, every CLI command also accepts `--json`. In JSON mode,
@@ -161,6 +166,12 @@ fast-mlsirm fit \
 `fit`, `diagnose-fit`, and `diagnose-dimensions` validate that `responses.npy`
 is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
 factor id per item before running optimization or diagnostics.
+
+`render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
+into a standalone HTML report with model summary cards, compact tables, and
+small bar views for the most scannable fit metrics. Optional diagnostics
+sections that are absent in the source JSON render as explicit empty states
+instead of blank report areas.
 
 ## Repository Layout
 

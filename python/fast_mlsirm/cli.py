@@ -16,6 +16,7 @@ from .diagnostics import (
 )
 from .fit import fit
 from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
+from .report import render_diagnostics_report
 from .simulation import simulate
 
 
@@ -161,6 +162,16 @@ def main(argv: list[str] | None = None) -> int:
     candidates.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the candidates.")
     candidates.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
     _add_json_flag(candidates)
+
+    report = sub.add_parser(
+        "render-report",
+        help="Render saved diagnostics JSON as a standalone HTML report.",
+        description="Render fit_diagnostics.json or dimension_diagnostics.json as a standalone HTML report.",
+    )
+    report.add_argument("--diagnostics", required=True, help="Path to fit_diagnostics.json or dimension_diagnostics.json.")
+    report.add_argument("--out", required=True, help="Path to write the diagnostics HTML report.")
+    report.add_argument("--title", help="Optional report title.")
+    _add_json_flag(report)
 
     if argv is None:
         argv = sys.argv[1:]
@@ -357,6 +368,31 @@ def main(argv: list[str] | None = None) -> int:
                 "response_process": args.response_process,
                 "best_candidate": diagnostics.best["candidate_label"],
                 "files": {"diagnostics": _output_file(args.out, "dimension_diagnostics.json")},
+            },
+        )
+
+    if args.command == "render-report":
+        _progress(args, f"⏳ Rendering diagnostics report from {args.diagnostics}...")
+        try:
+            report_path = render_diagnostics_report(args.diagnostics, args.out, title=args.title)
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid diagnostics data - {str(e)}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to render report - {str(e)}", file=sys.stderr)
+            return 1
+
+        return _complete(
+            args,
+            f"✅ Diagnostics report successfully saved to {report_path}",
+            {
+                "command": "render-report",
+                "status": "ok",
+                "out": str(report_path),
+                "files": {"report": str(report_path), "diagnostics": str(args.diagnostics)},
             },
         )
 
