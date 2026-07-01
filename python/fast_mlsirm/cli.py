@@ -183,18 +183,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        data = simulate(
-            MLS2PLMConfig(
-                n_persons=args.persons,
-                n_dims=args.dims,
-                items_per_dim=args.items_per_dim,
-                latent_dim=args.latent_dim,
-                phi=args.phi,
-                gamma=args.gamma,
-                seed=args.seed,
+        try:
+            data = simulate(
+                MLS2PLMConfig(
+                    n_persons=args.persons,
+                    n_dims=args.dims,
+                    items_per_dim=args.items_per_dim,
+                    latent_dim=args.latent_dim,
+                    phi=args.phi,
+                    gamma=args.gamma,
+                    seed=args.seed,
+                )
             )
-        )
-        save_simulation(data, args.out)
+            save_simulation(data, args.out)
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Simulation failed - {str(e)}", file=sys.stderr)
+            return 1
+
         return _complete(
             args,
             f"✅ Simulation successfully saved to {args.out}",
@@ -409,19 +417,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
         return 1
 
-    result = fit(
-        responses=responses,
-        factor_id=factors,
-        config=FitConfig(
-            model=args.model,
-            latent_dim=args.latent_dim,
-            optimizer=args.optimizer,
-            max_iter=args.max_iter,
-            n_restarts=args.n_restarts,
-            seed=args.seed,
-        ),
-    )
-    save_fit_result(result, args.out)
+    try:
+        result = fit(
+            responses=responses,
+            factor_id=factors,
+            config=FitConfig(
+                model=args.model,
+                latent_dim=args.latent_dim,
+                optimizer=args.optimizer,
+                max_iter=args.max_iter,
+                n_restarts=args.n_restarts,
+                seed=args.seed,
+            ),
+        )
+        save_fit_result(result, args.out)
+    except ValueError as e:
+        print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"❌ Error: Fit failed - {str(e)}", file=sys.stderr)
+        return 1
+
     return _complete(
         args,
         f"✅ Fit result successfully saved to {args.out}",
