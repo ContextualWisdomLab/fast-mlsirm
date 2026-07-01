@@ -40,6 +40,24 @@ diagnostic aggregation:
 - diagnostics aggregate item, person, category, and model fit without claiming
   that `fast-mlsirm` currently estimates every response-process family
 
+`fit_diagnostics` and `response_process_fit_diagnostics` can also receive
+person-level `group_id` and `cluster_id` arrays. These produce numeric
+multigroup and multilevel-context summaries without adding a new hierarchical
+estimator:
+
+- `groupfit` and `clusterfit` aggregate model-fit-style likelihood, deviance,
+  Pearson chi-square, and outfit mean-square by person stratum
+- `group_itemfit` and `cluster_itemfit` aggregate item fit inside each stratum
+- `personfit` echoes the supplied group or cluster ID so downstream tools can
+  filter person-level misfit by population or nesting unit
+
+`response_process_dimensionality_diagnostics` compares supplied candidate
+probability tensors with the same log-likelihood convention. Candidate labels
+can represent latent dimensionality, item type, or response process. If the
+probabilities come from held-out folds, the output is a held-out comparison;
+the function deliberately compares probabilities rather than estimating GRM,
+GPCM, GGUM, or multilevel models.
+
 AIC and BIC use the active stored parameter count for the selected model. They
 are descriptive for this growing-parameter JML setting and should not be
 described as Bayesian posterior predictive fit.
@@ -49,4 +67,7 @@ described as Bayesian posterior predictive fit.
 Posterior predictive itemfit, personfit, and model-fit checks are deferred until
 the package has posterior samples or replicated response matrices. S-X2 style
 grouped item-fit tests and p-values are also deferred because they require
-additional grouping rules and distributional calibration.
+additional grouping rules and distributional calibration. Multigroup and
+multilevel parameter estimation is also deferred; current strata outputs are
+diagnostic summaries conditional on supplied fitted probabilities or fitted
+point estimates.

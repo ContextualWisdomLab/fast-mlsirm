@@ -70,6 +70,10 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
         "personfit": _arrays_to_lists(diagnostics.personfit),
         "factorfit": _arrays_to_lists(diagnostics.factorfit or {}),
         "categoryfit": _arrays_to_lists(diagnostics.categoryfit or {}),
+        "groupfit": _arrays_to_lists(diagnostics.groupfit or {}),
+        "clusterfit": _arrays_to_lists(diagnostics.clusterfit or {}),
+        "group_itemfit": _arrays_to_lists(diagnostics.group_itemfit or {}),
+        "cluster_itemfit": _arrays_to_lists(diagnostics.cluster_itemfit or {}),
         "model_fit": diagnostics.model_fit,
     }
     (out / "fit_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

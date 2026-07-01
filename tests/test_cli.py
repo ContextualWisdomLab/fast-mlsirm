@@ -151,9 +151,13 @@ def test_cli_diagnose_dimensions_success(tmp_path):
 def test_cli_diagnose_response_process_success(tmp_path):
     responses = tmp_path / "responses.npy"
     probabilities = tmp_path / "probabilities.npy"
+    group_id = tmp_path / "group_id.npy"
+    cluster_id = tmp_path / "cluster_id.npy"
     out_dir = tmp_path / "process_out"
     np.save(responses, np.array([[0, 1], [2, 1]]))
     np.save(probabilities, np.full((2, 2, 3), 1.0 / 3.0))
+    np.save(group_id, np.array([0, 1]))
+    np.save(cluster_id, np.array([10, 20]))
 
     args = [
         "diagnose-response-process",
@@ -165,6 +169,10 @@ def test_cli_diagnose_response_process_success(tmp_path):
         "polytomous",
         "--response-process",
         "cumulative",
+        "--group-id",
+        str(group_id),
+        "--cluster-id",
+        str(cluster_id),
         "--out",
         str(out_dir),
     ]
@@ -172,6 +180,64 @@ def test_cli_diagnose_response_process_success(tmp_path):
         assert main() == 0
 
     assert (out_dir / "fit_diagnostics.json").exists()
+    payload = json.loads((out_dir / "fit_diagnostics.json").read_text(encoding="utf-8"))
+    assert payload["groupfit"]["group_id"] == [0.0, 1.0]
+    assert payload["clusterfit"]["cluster_id"] == [10.0, 20.0]
+
+def test_cli_diagnose_response_candidates_success(tmp_path):
+    responses = tmp_path / "responses.npy"
+    weak = tmp_path / "weak.npy"
+    strong = tmp_path / "strong.npy"
+    out_dir = tmp_path / "candidate_out"
+    np.save(responses, np.array([[0, 1], [1, 0]]))
+    np.save(weak, np.full((2, 2, 2), 0.5))
+    np.save(strong, np.array([[[0.8, 0.2], [0.2, 0.8]], [[0.2, 0.8], [0.8, 0.2]]]))
+
+    args = [
+        "diagnose-response-candidates",
+        "--responses",
+        str(responses),
+        "--candidate",
+        f"dim1={weak}",
+        "--candidate",
+        f"dim2={strong}",
+        "--item-type",
+        "dichotomous",
+        "--response-process",
+        "ideal_point",
+        "--out",
+        str(out_dir),
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads((out_dir / "dimension_diagnostics.json").read_text(encoding="utf-8"))
+    assert payload["best"]["candidate_label"] == "dim2"
+
+def test_cli_diagnose_response_candidates_rejects_duplicate_label(tmp_path, capsys):
+    responses = tmp_path / "responses.npy"
+    weak = tmp_path / "weak.npy"
+    out_dir = tmp_path / "candidate_out"
+    np.save(responses, np.array([[0, 1], [1, 0]]))
+    np.save(weak, np.full((2, 2, 2), 0.5))
+
+    args = [
+        "diagnose-response-candidates",
+        "--responses",
+        str(responses),
+        "--candidate",
+        f"dim1={weak}",
+        "--candidate",
+        f"dim1={weak}",
+        "--item-type",
+        "dichotomous",
+        "--out",
+        str(out_dir),
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 1
+
+    assert "duplicate candidate label: dim1" in capsys.readouterr().err
 
 def test_cli_fit_missing_file(capsys):
     args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
