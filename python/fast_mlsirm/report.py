@@ -124,10 +124,12 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
         raise ValueError("candidates must be a list")
 
     rows = [row for row in candidates if isinstance(row, dict)]
-    return [
-        _metric_section("Best Candidate", best),
-        _table_section("Candidate Comparison", rows, chart_value="heldout_loglik"),
-    ]
+    sections = [_metric_section("Best Candidate", best)]
+    if rows:
+        sections.append(_table_section("Candidate Comparison", rows, chart_value="heldout_loglik"))
+    else:
+        sections.append(_availability_section(available=[], no_row_tables=["Candidate Comparison"]))
+    return sections
 
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str:
