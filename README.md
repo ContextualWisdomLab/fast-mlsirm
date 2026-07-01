@@ -172,7 +172,7 @@ into a standalone HTML report with model summary cards, compact tables, and
 small bar views when chartable diagnostic metrics are present. Optional fit
 tables, dimensionality candidate comparisons, or metric summaries without
 values are summarized in a diagnostics coverage block instead of rendering as
-repeated blank-looking report sections.
+repeated blank-looking report sections or placeholder-only columns.
 
 ## Repository Layout
 

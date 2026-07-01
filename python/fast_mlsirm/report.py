@@ -206,9 +206,9 @@ def _availability_section(
     no_metric_sections: list[str] | None = None,
 ) -> str:
     no_metric_sections = no_metric_sections or []
-    columns = [
-        _coverage_column("Rendered tables", available or ["None"]),
-    ]
+    columns = []
+    if available:
+        columns.append(_coverage_column("Rendered tables", available))
     if no_row_tables:
         columns.append(_coverage_column("No row data", no_row_tables, muted=True))
     if no_metric_sections:
