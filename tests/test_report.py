@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from fast_mlsirm.report import render_diagnostics_report
 
 
@@ -11,8 +10,16 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     source.write_text(
         json.dumps(
             {
-                "itemfit": {"item_id": [0, 1], "outfit_mnsq": [1.0, 1.2], "observed_count": [4, 4]},
-                "personfit": {"person_id": [0, 1], "outfit_mnsq": [0.9, 1.1], "observed_count": [2, 2]},
+                "itemfit": {
+                    "item_id": [0, 1],
+                    "outfit_mnsq": [1.0, 1.2],
+                    "observed_count": [4, 4],
+                },
+                "personfit": {
+                    "person_id": [0, 1],
+                    "outfit_mnsq": [0.9, 1.1],
+                    "observed_count": [2, 2],
+                },
                 "factorfit": {},
                 "categoryfit": {},
                 "groupfit": {},

@@ -1,8 +1,8 @@
 import numpy as np
-import pytest
-
-from fast_mlsirm.math import logit, normalize_latent_positions, sigmoid, softplus, standardize
+from fast_mlsirm.math import (logit, normalize_latent_positions, sigmoid,
+                              softplus, standardize)
 from fast_mlsirm.types import MLSIRMParams
+
 
 def test_sigmoid():
     # Test basic values
@@ -37,7 +37,9 @@ def test_logit():
     # Test clipping
     p_edge = np.array([0.0, 1.0])
     res_edge = logit(p_edge, eps=1e-6)
-    expected_edge = np.log(np.array([1e-6, 1.0 - 1e-6]) / (1.0 - np.array([1e-6, 1.0 - 1e-6])))
+    expected_edge = np.log(
+        np.array([1e-6, 1.0 - 1e-6]) / (1.0 - np.array([1e-6, 1.0 - 1e-6]))
+    )
     assert np.allclose(res_edge, expected_edge)
 
 

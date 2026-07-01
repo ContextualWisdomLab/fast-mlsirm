@@ -1,9 +1,8 @@
-import pytest
-import numpy as np
-from pathlib import Path
-import json
 
+import numpy as np
+import pytest
 from fast_mlsirm.io import load_factor_csv, load_params
+
 
 def test_load_factor_csv_empty(tmp_path):
     empty_csv = tmp_path / "empty.csv"
@@ -11,6 +10,7 @@ def test_load_factor_csv_empty(tmp_path):
 
     with pytest.raises(ValueError, match="factor CSV is empty"):
         load_factor_csv(empty_csv)
+
 
 def test_load_params(tmp_path):
     params_file = tmp_path / "params.npz"
@@ -21,7 +21,7 @@ def test_load_params(tmp_path):
         b=np.zeros(4),
         xi=np.zeros((10, 2)),
         zeta=np.zeros((4, 2)),
-        tau=np.array(1.0)
+        tau=np.array(1.0),
     )
 
     params = load_params(params_file)

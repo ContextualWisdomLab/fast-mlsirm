@@ -1,13 +1,9 @@
 import numpy as np
-
 from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
 from fast_mlsirm.diagnostics import (
-    dimensionality_diagnostics,
-    fit_diagnostics,
-    predict_proba,
+    dimensionality_diagnostics, fit_diagnostics, predict_proba,
     response_process_dimensionality_diagnostics,
-    response_process_fit_diagnostics,
-)
+    response_process_fit_diagnostics)
 
 
 def test_predict_proba_matches_simulation():
@@ -38,19 +34,37 @@ def test_predict_proba_subset_both():
 
     sub_persons = np.array([1, 5, 8])
     sub_items = np.array([2, 6, 7])
-    probs = predict_proba(data.truth, data.factor_id, persons=sub_persons, items=sub_items)
+    probs = predict_proba(
+        data.truth, data.factor_id, persons=sub_persons, items=sub_items
+    )
     assert np.allclose(probs, data.probabilities[np.ix_(sub_persons, sub_items)])
 
+
 import pytest
-from fast_mlsirm.diagnostics import align_latent_space, predict_proba
+from fast_mlsirm.diagnostics import align_latent_space
 from fast_mlsirm.types import MLSIRMParams
+
 
 def test_align_latent_space_invalid_method():
     with pytest.raises(ValueError, match="only procrustes alignment is supported"):
-        align_latent_space(np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), method="invalid")
+        align_latent_space(
+            np.zeros((2, 2)),
+            np.zeros((2, 2)),
+            np.zeros((2, 2)),
+            np.zeros((2, 2)),
+            method="invalid",
+        )
+
 
 def test_predict_proba_no_space():
-    truth = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+    truth = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=1.0,
+    )
     probs = predict_proba(truth, np.zeros(2, dtype=int), model="MIRT")
     assert probs is not None
 
@@ -66,7 +80,9 @@ def test_fit_diagnostics_balanced_mirt_contract():
     )
     responses = np.array([[1.0, 0.0], [0.0, 1.0]])
 
-    diagnostics = fit_diagnostics(responses, params, np.zeros(2, dtype=int), model="MIRT")
+    diagnostics = fit_diagnostics(
+        responses, params, np.zeros(2, dtype=int), model="MIRT"
+    )
 
     assert np.allclose(diagnostics.itemfit["observed_count"], [2.0, 2.0])
     assert np.allclose(diagnostics.itemfit["infit_mnsq"], [1.0, 1.0])
@@ -104,7 +120,9 @@ def test_fit_diagnostics_strata_contract():
 
 
 def test_dimensionality_diagnostics_returns_best_candidate():
-    data = simulate(MLS2PLMConfig(n_persons=12, n_dims=2, items_per_dim=3, latent_dim=2, seed=7))
+    data = simulate(
+        MLS2PLMConfig(n_persons=12, n_dims=2, items_per_dim=3, latent_dim=2, seed=7)
+    )
 
     report = dimensionality_diagnostics(
         data.Y,
@@ -112,7 +130,9 @@ def test_dimensionality_diagnostics_returns_best_candidate():
         latent_dims=[1, 2],
         k_folds=2,
         seed=5,
-        config=FitConfig(model="MLS2PLM", optimizer="adam", max_iter=1, n_restarts=1, seed=5),
+        config=FitConfig(
+            model="MLS2PLM", optimizer="adam", max_iter=1, n_restarts=1, seed=5
+        ),
     )
 
     assert [row["latent_dim"] for row in report.candidates] == [1.0, 2.0]
@@ -183,4 +203,7 @@ def test_response_process_dimensionality_diagnostics_selects_best_candidate():
     )
 
     assert diagnostics.best["candidate_label"] == "dim2"
-    assert [row["candidate_label"] for row in diagnostics.candidates] == ["dim1", "dim2"]
+    assert [row["candidate_label"] for row in diagnostics.candidates] == [
+        "dim1",
+        "dim2",
+    ]

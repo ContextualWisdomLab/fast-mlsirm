@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from fast_mlsirm import FitConfig, MLSIRMParams
 from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id
 
@@ -15,11 +14,15 @@ def test_missing_entries_are_excluded():
         tau=0.0,
     )
     y = np.array([[1.0, -1.0], [0.0, 1.0]])
-    full_obj, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), params, FitConfig(max_iter=1))
+    full_obj, _, _ = neg_loglik_and_grad(
+        y, np.array([0, 0]), params, FitConfig(max_iter=1)
+    )
 
     y2 = np.array([[1.0, 0.0], [0.0, 1.0]])
     mask = np.array([[True, False], [True, True]])
-    mask_obj, _, _ = neg_loglik_and_grad(y2, np.array([0, 0]), params, FitConfig(max_iter=1), mask=mask)
+    mask_obj, _, _ = neg_loglik_and_grad(
+        y2, np.array([0, 0]), params, FitConfig(max_iter=1), mask=mask
+    )
     assert np.isclose(full_obj, mask_obj)
 
 
@@ -70,9 +73,10 @@ def test_validate_factor_id():
     with pytest.raises(ValueError, match="factor_id values must be in 0..n_dims-1"):
         validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
 
-import pytest
-from fast_mlsirm.objective import prepare_response, _add_penalty
+
 from fast_mlsirm.config import PenaltyConfig
+from fast_mlsirm.objective import _add_penalty, prepare_response
+
 
 def test_objective_check_responses_errors():
     with pytest.raises(ValueError, match="responses must be a 2D matrix"):
@@ -93,20 +97,49 @@ def test_objective_check_responses_errors():
     with pytest.raises(ValueError, match="all-missing person found"):
         prepare_response(np.array([[np.nan, np.nan], [1, 0]]))
 
+
 def test_objective_model_requires_one_trait():
-    from fast_mlsirm.objective import neg_loglik_and_grad
     from fast_mlsirm.config import FitConfig
-    params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+    from fast_mlsirm.objective import neg_loglik_and_grad
+
+    params = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=1.0,
+    )
 
     with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
-        neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=FitConfig(model="ULS2PLM"))
+        neg_loglik_and_grad(
+            np.zeros((2, 2)),
+            np.zeros(2, dtype=int),
+            params,
+            config=FitConfig(model="ULS2PLM"),
+        )
+
 
 def test_objective_add_penalty_uses_space():
     from fast_mlsirm.types import MLSIRMParams
-    params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+
+    params = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=1.0,
+    )
     penalty = PenaltyConfig(
-        lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0, lambda_xi=1.0, lambda_zeta=1.0, lambda_tau=1.0,
-        mu_alpha=0.0, mu_tau=0.0
+        lambda_theta=1.0,
+        lambda_b=1.0,
+        lambda_alpha=1.0,
+        lambda_xi=1.0,
+        lambda_zeta=1.0,
+        lambda_tau=1.0,
+        mu_alpha=0.0,
+        mu_tau=0.0,
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0

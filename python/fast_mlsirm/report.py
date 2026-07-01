@@ -28,7 +28,12 @@ def render_diagnostics_report(
         raise ValueError("report output path must end with .html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        _render_html(payload=payload, report_type=report_type, title=resolved_title, source_name=source.name),
+        _render_html(
+            payload=payload,
+            report_type=report_type,
+            title=resolved_title,
+            source_name=source.name,
+        ),
         encoding="utf-8",
     )
     return out
@@ -39,14 +44,22 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
         return "fit"
     if "candidates" in payload and "best" in payload:
         return "dimensions"
-    raise ValueError("unsupported diagnostics JSON: expected fit or dimensionality diagnostics")
+    raise ValueError(
+        "unsupported diagnostics JSON: expected fit or dimensionality diagnostics"
+    )
 
 
 def _default_title(report_type: str) -> str:
-    return "Fit Diagnostics Report" if report_type == "fit" else "Dimensionality Diagnostics Report"
+    return (
+        "Fit Diagnostics Report"
+        if report_type == "fit"
+        else "Dimensionality Diagnostics Report"
+    )
 
 
-def _render_html(payload: dict[str, Any], report_type: str, title: str, source_name: str) -> str:
+def _render_html(
+    payload: dict[str, Any], report_type: str, title: str, source_name: str
+) -> str:
     if report_type == "fit":
         sections = _render_fit_report(payload)
     else:
@@ -68,7 +81,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            f"<p>fast-mlsirm diagnostics</p>",
+            "<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
@@ -88,13 +101,41 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
 
     sections = [
         _metric_section("Model Fit", model_fit),
-        _table_section("Item Fit", _rows_from_columnar(payload.get("itemfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Person Fit", _rows_from_columnar(payload.get("personfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Factor Fit", _rows_from_columnar(payload.get("factorfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Category Fit", _rows_from_columnar(payload.get("categoryfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Group Fit", _rows_from_columnar(payload.get("groupfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Cluster Fit", _rows_from_columnar(payload.get("clusterfit", {})), chart_value="outfit_mnsq"),
-        _table_section("Group Item Fit", _rows_from_columnar(payload.get("group_itemfit", {})), chart_value="outfit_mnsq"),
+        _table_section(
+            "Item Fit",
+            _rows_from_columnar(payload.get("itemfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Person Fit",
+            _rows_from_columnar(payload.get("personfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Factor Fit",
+            _rows_from_columnar(payload.get("factorfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Category Fit",
+            _rows_from_columnar(payload.get("categoryfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Group Fit",
+            _rows_from_columnar(payload.get("groupfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Cluster Fit",
+            _rows_from_columnar(payload.get("clusterfit", {})),
+            chart_value="outfit_mnsq",
+        ),
+        _table_section(
+            "Group Item Fit",
+            _rows_from_columnar(payload.get("group_itemfit", {})),
+            chart_value="outfit_mnsq",
+        ),
         _table_section(
             "Cluster Item Fit",
             _rows_from_columnar(payload.get("cluster_itemfit", {})),
@@ -133,7 +174,9 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str:
             )
         )
     if not cards:
-        cards.append('<p class="empty-state">No metrics were recorded in this diagnostics file.</p>')
+        cards.append(
+            '<p class="empty-state">No metrics were recorded in this diagnostics file.</p>'
+        )
 
     return "\n".join(
         [
@@ -147,7 +190,9 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str:
     )
 
 
-def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None) -> str:
+def _table_section(
+    heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None
+) -> str:
     chart = _bar_chart(rows, chart_value) if chart_value else ""
     return "\n".join(
         [
@@ -212,14 +257,19 @@ def _table(rows: list[dict[str, Any]], *, limit: int = 12) -> str:
     columns = _columns(rows)
     body_rows = []
     for row in rows[:limit]:
-        cells = "".join(f"<td>{escape(_format_value(row.get(column, '')))}</td>" for column in columns)
+        cells = "".join(
+            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
+            for column in columns
+        )
         body_rows.append(f"<tr>{cells}</tr>")
 
     note = ""
     if len(rows) > limit:
         note = f'<p class="table-note">Showing {limit} of {len(rows)} rows.</p>'
 
-    headers = "".join(f"<th scope=\"col\">{escape(_label(column))}</th>" for column in columns)
+    headers = "".join(
+        f'<th scope="col">{escape(_label(column))}</th>' for column in columns
+    )
     return "\n".join(
         [
             '<div class="table-wrap">',
@@ -276,7 +326,16 @@ def _index_value(value: Any, index: int) -> Any:
 
 
 def _row_label(row: dict[str, Any], index: int) -> str:
-    for key in ("candidate_label", "latent_dim", "item_id", "person_id", "factor_id", "category_id", "group_id", "cluster_id"):
+    for key in (
+        "candidate_label",
+        "latent_dim",
+        "item_id",
+        "person_id",
+        "factor_id",
+        "category_id",
+        "group_id",
+        "cluster_id",
+    ):
         if key in row:
             return f"{_label(key)} {_format_label_value(row[key])}"
     return f"Row {index + 1}"
@@ -307,7 +366,11 @@ def _format_label_value(value: Any) -> str:
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
 
 
 def _css() -> str:
