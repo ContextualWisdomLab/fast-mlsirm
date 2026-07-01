@@ -10,10 +10,6 @@ name = "fast_mlsirm_core"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
-[features]
-default = []
-extension-module = ["pyo3/extension-module"]
-
 [dependencies]
 mlsirm-core = { path = "../mlsirm-core" }
 numpy = "0.29.0"

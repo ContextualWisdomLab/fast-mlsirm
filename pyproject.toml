@@ -20,7 +20,7 @@ fast-mlsirm = "fast_mlsirm.cli:main"
 
 [tool.maturin]
 bindings = "pyo3"
-features = ["extension-module"]
+features = ["pyo3/extension-module"]
 manifest-path = "crates/fast-mlsirm-py/Cargo.toml"
 module-name = "fast_mlsirm._core"
 python-source = "python"
