@@ -3,22 +3,34 @@ import sys
 from unittest.mock import patch
 
 import numpy as np
-
 from fast_mlsirm.cli import main
 
+
 def test_cli_empty_args(capsys):
-    with patch.object(sys, 'argv', ['fast-mlsirm']):
+    with patch.object(sys, "argv", ["fast-mlsirm"]):
         assert main() == 2
+
 
 def test_cli_simulate_success(tmp_path):
     out_dir = tmp_path / "sim_out"
-    args = ["simulate", "--persons", "10", "--dims", "2", "--items-per-dim", "2", "--out", str(out_dir)]
+    args = [
+        "simulate",
+        "--persons",
+        "10",
+        "--dims",
+        "2",
+        "--items-per-dim",
+        "2",
+        "--out",
+        str(out_dir),
+    ]
 
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     assert (out_dir / "responses.npy").exists()
     assert (out_dir / "item_factor.csv").exists()
+
 
 def test_cli_simulate_json_output(tmp_path, capsys):
     out_dir = tmp_path / "sim_out"
@@ -35,7 +47,7 @@ def test_cli_simulate_json_output(tmp_path, capsys):
         "--json",
     ]
 
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
@@ -44,27 +56,71 @@ def test_cli_simulate_json_output(tmp_path, capsys):
     assert payload["n_items"] == 4
     assert payload["files"]["responses"].endswith("responses.npy")
 
+
 def test_cli_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
     # Run simulation to get files
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "fast-mlsirm",
+            "simulate",
+            "--persons",
+            "10",
+            "--dims",
+            "1",
+            "--items-per-dim",
+            "2",
+            "--out",
+            str(sim_dir),
+        ],
+    ):
         main()
 
-    args = ["fit", "--responses", str(sim_dir / "responses.npy"), "--factors", str(sim_dir / "item_factor.csv"), "--model", "MLS2PLM", "--max-iter", "1", "--out", str(fit_dir)]
+    args = [
+        "fit",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--model",
+        "MLS2PLM",
+        "--max-iter",
+        "1",
+        "--out",
+        str(fit_dir),
+    ]
 
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     assert (fit_dir / "params.npz").exists()
     assert (fit_dir / "fit_summary.json").exists()
 
+
 def test_cli_fit_json_output(tmp_path, capsys):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "fast-mlsirm",
+            "simulate",
+            "--persons",
+            "10",
+            "--dims",
+            "1",
+            "--items-per-dim",
+            "2",
+            "--out",
+            str(sim_dir),
+        ],
+    ):
         main()
     capsys.readouterr()
 
@@ -83,7 +139,7 @@ def test_cli_fit_json_output(tmp_path, capsys):
         "--json",
     ]
 
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
@@ -92,15 +148,48 @@ def test_cli_fit_json_output(tmp_path, capsys):
     assert payload["model"] == "MLS2PLM"
     assert payload["files"]["params"].endswith("params.npz")
 
+
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
     diag_dir = tmp_path / "diag_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "fast-mlsirm",
+            "simulate",
+            "--persons",
+            "10",
+            "--dims",
+            "1",
+            "--items-per-dim",
+            "2",
+            "--out",
+            str(sim_dir),
+        ],
+    ):
         main()
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'fit', '--responses', str(sim_dir / "responses.npy"), '--factors', str(sim_dir / "item_factor.csv"), '--model', 'MLS2PLM', '--max-iter', '1', '--out', str(fit_dir)]):
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "fast-mlsirm",
+            "fit",
+            "--responses",
+            str(sim_dir / "responses.npy"),
+            "--factors",
+            str(sim_dir / "item_factor.csv"),
+            "--model",
+            "MLS2PLM",
+            "--max-iter",
+            "1",
+            "--out",
+            str(fit_dir),
+        ],
+    ):
         main()
 
     args = [
@@ -116,16 +205,32 @@ def test_cli_diagnose_fit_success(tmp_path):
         "--out",
         str(diag_dir),
     ]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     assert (diag_dir / "fit_diagnostics.json").exists()
+
 
 def test_cli_diagnose_dimensions_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     diag_dir = tmp_path / "dim_out"
 
-    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "fast-mlsirm",
+            "simulate",
+            "--persons",
+            "10",
+            "--dims",
+            "1",
+            "--items-per-dim",
+            "2",
+            "--out",
+            str(sim_dir),
+        ],
+    ):
         main()
 
     args = [
@@ -143,10 +248,11 @@ def test_cli_diagnose_dimensions_success(tmp_path):
         "--out",
         str(diag_dir),
     ]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     assert (diag_dir / "dimension_diagnostics.json").exists()
+
 
 def test_cli_diagnose_response_process_success(tmp_path):
     responses = tmp_path / "responses.npy"
@@ -176,13 +282,14 @@ def test_cli_diagnose_response_process_success(tmp_path):
         "--out",
         str(out_dir),
     ]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     assert (out_dir / "fit_diagnostics.json").exists()
     payload = json.loads((out_dir / "fit_diagnostics.json").read_text(encoding="utf-8"))
     assert payload["groupfit"]["group_id"] == [0.0, 1.0]
     assert payload["clusterfit"]["cluster_id"] == [10.0, 20.0]
+
 
 def test_cli_diagnose_response_candidates_success(tmp_path):
     responses = tmp_path / "responses.npy"
@@ -208,11 +315,14 @@ def test_cli_diagnose_response_candidates_success(tmp_path):
         "--out",
         str(out_dir),
     ]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
-    payload = json.loads((out_dir / "dimension_diagnostics.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        (out_dir / "dimension_diagnostics.json").read_text(encoding="utf-8")
+    )
     assert payload["best"]["candidate_label"] == "dim2"
+
 
 def test_cli_diagnose_response_candidates_rejects_duplicate_label(tmp_path, capsys):
     responses = tmp_path / "responses.npy"
@@ -234,10 +344,11 @@ def test_cli_diagnose_response_candidates_rejects_duplicate_label(tmp_path, caps
         "--out",
         str(out_dir),
     ]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 1
 
     assert "duplicate candidate label: dim1" in capsys.readouterr().err
+
 
 def test_cli_render_report_json_output(tmp_path, capsys):
     diagnostics = tmp_path / "fit_diagnostics.json"
@@ -253,8 +364,15 @@ def test_cli_render_report_json_output(tmp_path, capsys):
         encoding="utf-8",
     )
 
-    args = ["render-report", "--diagnostics", str(diagnostics), "--out", str(report), "--json"]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    args = [
+        "render-report",
+        "--diagnostics",
+        str(diagnostics),
+        "--out",
+        str(report),
+        "--json",
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 0
 
     payload = json.loads(capsys.readouterr().out)
@@ -262,24 +380,43 @@ def test_cli_render_report_json_output(tmp_path, capsys):
     assert payload["files"]["report"].endswith("report.html")
     assert report.exists()
 
+
 def test_cli_fit_missing_file(capsys):
-    args = ["fit", "--responses", "nonexistent.npy", "--factors", "nonexistent.csv", "--out", "out"]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    args = [
+        "fit",
+        "--responses",
+        "nonexistent.npy",
+        "--factors",
+        "nonexistent.csv",
+        "--out",
+        "out",
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 1
 
     captured = capsys.readouterr()
     assert "Error: Could not find file" in captured.err
 
+
 def test_cli_fit_bad_data(tmp_path, capsys):
     bad_npy = tmp_path / "bad.npy"
     bad_npy.write_bytes(b"not a numpy file")
 
-    args = ["fit", "--responses", str(bad_npy), "--factors", "nonexistent.csv", "--out", "out"]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    args = [
+        "fit",
+        "--responses",
+        str(bad_npy),
+        "--factors",
+        "nonexistent.csv",
+        "--out",
+        "out",
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 1
 
     captured = capsys.readouterr()
     assert "Error: Invalid input data" in captured.err
+
 
 def test_cli_fit_rejects_factor_length_mismatch(tmp_path, capsys):
     responses = tmp_path / "responses.npy"
@@ -287,15 +424,24 @@ def test_cli_fit_rejects_factor_length_mismatch(tmp_path, capsys):
     np.save(responses, np.ones((3, 2)))
     factors.write_text("item_id,factor_id\n0,0\n", encoding="utf-8")
 
-    args = ["fit", "--responses", str(responses), "--factors", str(factors), "--out", str(tmp_path / "fit_out")]
-    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+    args = [
+        "fit",
+        "--responses",
+        str(responses),
+        "--factors",
+        str(factors),
+        "--out",
+        str(tmp_path / "fit_out"),
+    ]
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args):
         assert main() == 1
 
     captured = capsys.readouterr()
     assert "factor_id length (1) must match response item count (2)" in captured.err
 
+
 def test_main_sys_exit_on_direct_call():
-    with patch('fast_mlsirm.cli.main', return_value=0):
+    with patch("fast_mlsirm.cli.main", return_value=0):
         # We can't easily test `if __name__ == "__main__": raise SystemExit(main())`
         # without running it as a subprocess, but coverage usually skips it or we can ignore it.
         pass

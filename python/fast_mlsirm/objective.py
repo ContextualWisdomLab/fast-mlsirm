@@ -7,7 +7,9 @@ from .math import sigmoid, softplus
 from .types import MLSIRMParams
 
 
-def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def prepare_response(
+    responses: np.ndarray, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -26,9 +28,9 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
     if np.any(observed & invalid):
         raise ValueError("observed responses must be 0 or 1")
 
-    if np.any(observed.sum(axis=0) == 0):
+    if not np.all(observed.any(axis=0)):
         raise ValueError("all-missing item found")
-    if np.any(observed.sum(axis=1) == 0):
+    if not np.all(observed.any(axis=1)):
         raise ValueError("all-missing person found")
 
     clean = np.where(observed, y, 0.0)
@@ -63,9 +65,11 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        xi_sq = np.einsum("ij,ij->i", params.xi, params.xi)
+        zeta_sq = np.einsum("ij,ij->i", params.zeta, params.zeta)
+        dist_sq = (
+            xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        )
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
         gamma = params.gamma
@@ -95,7 +99,9 @@ def neg_loglik_and_grad(
 
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    eta, distance = linear_predictor(params, factors, model=model, eps_distance=config.eps_distance)
+    eta, distance = linear_predictor(
+        params, factors, model=model, eps_distance=config.eps_distance
+    )
     pi = sigmoid(eta)
     entry_loss = (softplus(eta) - y * eta) * observed
     nll = float(entry_loss.sum())
@@ -125,7 +131,9 @@ def neg_loglik_and_grad(
         grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
 
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
-        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+        grad_zeta = gamma * (
+            np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j
+        )
 
         grad_tau = float((e * (-gamma * distance)).sum())
 
@@ -150,7 +158,9 @@ def neg_loglik_and_grad(
     return float(nll), grads, loglik
 
 
-def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
+def _add_penalty(
+    params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool
+) -> float:
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
     value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
