@@ -95,6 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
     fit_cmd.add_argument("--latent-dim", type=int, default=2, help="Latent dimensionality for person traits (default: 2).")
     fit_cmd.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
+    fit_cmd.add_argument(
+        "--device",
+        choices=["cpu", "cuda", "mlx", "opencl"],
+        default="cpu",
+        help="Compute backend for fitting (default: cpu).",
+    )
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
@@ -126,6 +132,12 @@ def main(argv: list[str] | None = None) -> int:
     dim.add_argument("--folds", type=int, default=5, help="Number of validation folds (default: 5).")
     dim.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
     dim.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
+    dim.add_argument(
+        "--device",
+        choices=["cpu", "cuda", "mlx", "opencl"],
+        default="cpu",
+        help="Compute backend for fitting (default: cpu).",
+    )
     dim.add_argument("--max-iter", type=int, default=100, help="Maximum iterations per fold fit (default: 100).")
     dim.add_argument("--n-restarts", type=int, default=1, help="Random restarts per fold fit (default: 1).")
     dim.add_argument("--seed", type=int, default=1, help="Random seed for folds and fitting (default: 1).")
@@ -280,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_iter=args.max_iter,
                 n_restarts=args.n_restarts,
                 seed=args.seed,
+                compute_backend=args.device,
             ),
         )
         save_dimensionality_diagnostics(diagnostics, args.out)
@@ -419,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             max_iter=args.max_iter,
             n_restarts=args.n_restarts,
             seed=args.seed,
+            compute_backend=args.device,
         ),
     )
     save_fit_result(result, args.out)
@@ -431,6 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             "out": str(args.out),
             "model": result.model,
             "optimizer": result.optimizer,
+            "compute_backend": result.compute_backend,
             "objective": float(result.objective),
             "convergence_status": result.convergence_status,
             "n_iter": int(result.n_iter),

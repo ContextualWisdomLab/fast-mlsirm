@@ -75,3 +75,8 @@ def test_fitconfig_invalid_init_gamma():
 def test_fitconfig_invalid_eps_distance():
     with pytest.raises(ValueError, match="eps_distance must be > 0"):
         FitConfig(eps_distance=0.0).validate()
+
+
+def test_fitconfig_invalid_compute_backend():
+    with pytest.raises(ValueError, match="compute_backend must be one of"):
+        FitConfig(compute_backend="tpu").validate()
