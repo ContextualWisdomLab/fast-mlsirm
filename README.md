@@ -83,11 +83,14 @@ The default runtime backend is NumPy. Source and editable installs use maturin
 to build the optional `fast_mlsirm._core` extension, so they require a working
 Rust toolchain even if you later run with `backend="numpy"`. Installed wheels
 can still use the NumPy default, and `backend="auto"` falls back to NumPy when
-the extension is unavailable. The Rust workspace can be tested with:
+the extension is unavailable. The core Rust workspace can be tested with:
 
 ```bash
 cargo test --workspace
 ```
+
+The PyO3 extension crate is built by maturin and exercised by the Python backend
+parity tests.
 
 ## CLI
 

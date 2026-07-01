@@ -57,7 +57,9 @@ the same core formula through a PyO3/maturin extension and can be selected with
 `FitConfig(backend="rust")`, `FitConfig(backend="auto")`, or
 `fast-mlsirm fit --backend`. Source and editable installs build that extension
 with maturin and therefore require a Rust toolchain; NumPy remains the default
-runtime backend after installation.
+runtime backend after installation. The PyO3 crate is built through maturin and
+validated through Python backend parity tests, while `cargo test --workspace`
+covers the standalone Rust core.
 
 ## Formula Contract
 
