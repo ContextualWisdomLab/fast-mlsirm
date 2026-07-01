@@ -19,11 +19,13 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
             raise ValueError("mask shape must match responses")
         observed &= np.isfinite(y) & (y != -1)
 
-    valid_values = y[observed]
-    if valid_values.size == 0:
+    if not np.any(observed):
         raise ValueError("responses contain no observed entries")
-    if np.any((valid_values != 0) & (valid_values != 1)):
+
+    invalid = (y != 0) & (y != 1)
+    if np.any(observed & invalid):
         raise ValueError("observed responses must be 0 or 1")
+
     if np.any(observed.sum(axis=0) == 0):
         raise ValueError("all-missing item found")
     if np.any(observed.sum(axis=1) == 0):
@@ -61,8 +63,8 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.sum(params.xi ** 2, axis=1)
-        zeta_sq = np.sum(params.zeta ** 2, axis=1)
+        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
+        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
@@ -105,11 +107,11 @@ def neg_loglik_and_grad(
     if free_alpha:
         grad_alpha = (e * a[None, :] * params.theta[:, factors]).sum(axis=0)
 
-    grad_theta = np.zeros_like(params.theta)
-    for d in range(params.theta.shape[1]):
-        items = factors == d
-        if np.any(items):
-            grad_theta[:, d] = (e[:, items] * a[items][None, :]).sum(axis=1)
+    # Optimized gradient computation: replace loop over dimensions with matrix multiplication
+    # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
+    I = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
+    I[np.arange(e.shape[1]), factors] = 1
+    grad_theta = (e * a[None, :]) @ I
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)
@@ -149,13 +151,14 @@ def neg_loglik_and_grad(
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
-    value = 0.5 * penalty.lambda_theta * float(np.sum(params.theta * params.theta))
-    value += 0.5 * penalty.lambda_b * float(np.sum(params.b * params.b))
+    # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
+    value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
+    value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
     if free_alpha:
         delta = params.alpha - penalty.mu_alpha
-        value += 0.5 * penalty.lambda_alpha * float(np.sum(delta * delta))
+        value += 0.5 * penalty.lambda_alpha * float(np.vdot(delta, delta))
     if uses_space:
-        value += 0.5 * penalty.lambda_xi * float(np.sum(params.xi * params.xi))
-        value += 0.5 * penalty.lambda_zeta * float(np.sum(params.zeta * params.zeta))
+        value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
+        value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
         value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
     return value

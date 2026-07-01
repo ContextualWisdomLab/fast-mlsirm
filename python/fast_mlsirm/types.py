@@ -57,6 +57,25 @@ class FitResult:
 
 
 @dataclass
+class FitDiagnostics:
+    itemfit: dict[str, np.ndarray]
+    personfit: dict[str, np.ndarray]
+    model_fit: dict[str, float]
+    factorfit: dict[str, np.ndarray] | None = None
+    categoryfit: dict[str, np.ndarray] | None = None
+    groupfit: dict[str, np.ndarray] | None = None
+    clusterfit: dict[str, np.ndarray] | None = None
+    group_itemfit: dict[str, np.ndarray] | None = None
+    cluster_itemfit: dict[str, np.ndarray] | None = None
+
+
+@dataclass
+class DimensionalityDiagnostics:
+    candidates: list[dict[str, float | str]]
+    best: dict[str, float | str]
+
+
+@dataclass
 class RecoveryReport:
     summary: dict[str, float]
     metrics: dict[str, float]

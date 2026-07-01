@@ -93,12 +93,11 @@ pub fn neg_loglik_and_grad(
     };
 
     for p in 0..config.n_persons {
-        for i in 0..config.n_items {
+        for (i, &d) in factor_id.iter().enumerate().take(config.n_items) {
             let idx = p * config.n_items + i;
             if mask.is_some_and(|m| !m[idx]) {
                 continue;
             }
-            let d = factor_id[i];
             let alpha = if free_alpha { params.alpha[i] } else { 0.0 };
             let a = alpha.exp();
             let mut dist2 = config.eps_distance;
