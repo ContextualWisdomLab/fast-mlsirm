@@ -108,9 +108,22 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
         else:
             no_row_tables.append(heading)
 
-    sections = [_metric_section("Model Fit", model_fit)]
-    if no_row_tables:
-        sections.append(_availability_section(available=available, no_row_tables=no_row_tables))
+    sections = []
+    no_metric_sections = []
+    model_section = _metric_section("Model Fit", model_fit)
+    if model_section:
+        sections.append(model_section)
+    else:
+        no_metric_sections.append("Model Fit")
+
+    if no_row_tables or no_metric_sections:
+        sections.append(
+            _availability_section(
+                available=available,
+                no_row_tables=no_row_tables,
+                no_metric_sections=no_metric_sections,
+            )
+        )
     sections.extend(table_sections)
     return sections
 
@@ -124,15 +137,28 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
         raise ValueError("candidates must be a list")
 
     rows = [row for row in candidates if isinstance(row, dict)]
-    sections = [_metric_section("Best Candidate", best)]
+    sections = []
+    no_metric_sections = []
+    best_section = _metric_section("Best Candidate", best)
+    if best_section:
+        sections.append(best_section)
+    else:
+        no_metric_sections.append("Best Candidate")
+
     if rows:
         sections.append(_table_section("Candidate Comparison", rows, chart_value="heldout_loglik"))
-    else:
-        sections.append(_availability_section(available=[], no_row_tables=["Candidate Comparison"]))
+    if not rows or no_metric_sections:
+        sections.append(
+            _availability_section(
+                available=["Candidate Comparison"] if rows else [],
+                no_row_tables=[] if rows else ["Candidate Comparison"],
+                no_metric_sections=no_metric_sections,
+            )
+        )
     return sections
 
 
-def _metric_section(heading: str, metrics: dict[str, Any]) -> str:
+def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     cards = []
     for key, value in metrics.items():
         cards.append(
@@ -146,7 +172,7 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str:
             )
         )
     if not cards:
-        cards.append('<p class="empty-state">No metrics were recorded in this diagnostics file.</p>')
+        return None
 
     return "\n".join(
         [
@@ -173,25 +199,43 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
     )
 
 
-def _availability_section(*, available: list[str], no_row_tables: list[str]) -> str:
-    available_items = "\n".join(f"<li>{escape(name)}</li>" for name in available) or "<li>None</li>"
-    no_row_items = "\n".join(f"<li>{escape(name)}</li>" for name in no_row_tables)
+def _availability_section(
+    *,
+    available: list[str],
+    no_row_tables: list[str],
+    no_metric_sections: list[str] | None = None,
+) -> str:
+    no_metric_sections = no_metric_sections or []
+    columns = [
+        _coverage_column("Rendered tables", available or ["None"]),
+    ]
+    if no_row_tables:
+        columns.append(_coverage_column("No row data", no_row_tables, muted=True))
+    if no_metric_sections:
+        columns.append(_coverage_column("No metric data", no_metric_sections, muted=True))
+
     return "\n".join(
         [
             '<section class="report-section report-coverage">',
             "<h2>Diagnostics Coverage</h2>",
             '<div class="coverage-grid">',
-            '<div class="coverage-column">',
-            "<h3>Rendered tables</h3>",
-            f'<ul class="coverage-list">{available_items}</ul>',
+            *columns,
             "</div>",
-            '<div class="coverage-column">',
-            "<h3>No row data</h3>",
-            f'<ul class="coverage-list coverage-list-muted">{no_row_items}</ul>',
-            "</div>",
-            "</div>",
-            '<p class="coverage-note">Diagnostics without table rows are summarized here so the report does not render blank visual sections.</p>',
+            '<p class="coverage-note">Diagnostics without table rows or metric values are summarized here so the report does not render blank visual sections.</p>',
             "</section>",
+        ]
+    )
+
+
+def _coverage_column(heading: str, items: list[str], *, muted: bool = False) -> str:
+    class_name = "coverage-list coverage-list-muted" if muted else "coverage-list"
+    item_markup = "\n".join(f"<li>{escape(name)}</li>" for name in items)
+    return "\n".join(
+        [
+            '<div class="coverage-column">',
+            f"<h3>{escape(heading)}</h3>",
+            f'<ul class="{class_name}">{item_markup}</ul>',
+            "</div>",
         ]
     )
 
