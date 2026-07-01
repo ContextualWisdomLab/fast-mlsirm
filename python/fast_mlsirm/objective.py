@@ -288,16 +288,23 @@ def _neg_loglik_and_grad_backend(
 
 
 def _backend_module(backend: str):
+    """Return the array module and a converter that materializes arrays to NumPy."""
     if backend == "cuda":
         cp = importlib.import_module("cupy")
         return cp, cp.asnumpy
     if backend == "mlx":
         mx = importlib.import_module("mlx.core")
-        return mx, np.asarray
+        return mx, _mlx_to_numpy
     if backend == "opencl":
-        # OpenCL execution currently uses NumPy algebra after validating backend availability.
+        # OpenCL backend runs in compatibility mode (platform/device validated at fit start)
+        # to preserve formula parity until dedicated OpenCL kernels are added.
         return np, np.asarray
     return np, np.asarray
+
+
+def _mlx_to_numpy(value):
+    # `np.asarray` triggers MLX array conversion through its numpy interop protocol.
+    return np.asarray(value)
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
