@@ -94,7 +94,7 @@ parity tests.
 
 ## Commercial Readiness
 
-The current release is supportable as commercial beta for technical teams that need
+The current release is supportable as a commercial beta for technical teams that need
 local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
 generation. It is not a regulated decision product, hosted assessment platform,
 or Bayesian posterior inference engine. See:

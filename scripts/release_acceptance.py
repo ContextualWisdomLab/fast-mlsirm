@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib.util
 import os
 import subprocess
 import sys
@@ -19,9 +20,14 @@ from pathlib import Path
 def _cli_env() -> dict[str, str]:
     env = os.environ.copy()
     repo_python = Path(__file__).resolve().parents[1] / "python"
-    existing = env.get("PYTHONPATH", "")
-    if existing:
-        env["PYTHONPATH"] = f"{existing}{os.pathsep}{repo_python}"
+    has_pkg = importlib.util.find_spec("fast_mlsirm") is not None
+    if not has_pkg:
+        existing = env.get("PYTHONPATH", "")
+        if existing:
+            env["PYTHONPATH"] = f"{existing}{os.pathsep}{repo_python}"
+        else:
+            env["PYTHONPATH"] = str(repo_python)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     return env
 
 
@@ -100,6 +106,8 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             "auto",
             "--latent-dim",
             str(args.latent_dim),
+            "--seed",
+            str(args.seed),
             "--out",
             str(fit_auto_out),
         ],
@@ -137,6 +145,8 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
                 "rust",
                 "--latent-dim",
                 str(args.latent_dim),
+                "--seed",
+                str(args.seed),
                 "--out",
                 str(fit_rust_out),
             ],
@@ -176,6 +186,8 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             str(args.folds),
             "--max-iter",
             str(args.max_iter),
+            "--seed",
+            str(args.seed),
             "--out",
             str(diag_dim_out),
         ],
@@ -190,9 +202,10 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             str(diag_fit_out / "fit_diagnostics.json"),
             "--out",
             str(report_fit_out),
+            "--json",
         ],
         "render-report-fit",
-        require_json=False,
+        require_json=True,
     )
     report["steps"].append(render_fit_payload)
 
@@ -203,9 +216,10 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
             str(diag_dim_out / "dimension_diagnostics.json"),
             "--out",
             str(report_dim_out),
+            "--json",
         ],
         "render-report-dimensions",
-        require_json=False,
+        require_json=True,
     )
     report["steps"].append(render_dim_payload)
 
