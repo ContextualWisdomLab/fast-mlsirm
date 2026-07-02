@@ -124,6 +124,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         Product Design Scope
         Data Analytics Scope
         Figma Code Connect
+        benchmark_report.html
         Go/No-Go
         """,
         "docs/buyer_demo_storyboard.md": """
@@ -143,11 +144,14 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         Driver Metrics
         Required Evidence
         roi_manifest.json
+        benchmark_report.json
         Caveats
         """,
         "examples/enterprise_demo/README.md": "enterprise demo evidence",
         "docs/superpowers/specs/2026-07-02-20b-product-readiness-design.md": "design spec",
         "docs/superpowers/plans/2026-07-02-20b-product-readiness.md": "implementation plan",
+        "docs/superpowers/specs/2026-07-02-20b-benchmark-evidence-design.md": "benchmark design spec",
+        "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md": "benchmark implementation plan",
     }
     for relative, text in docs.items():
         path = root / relative
@@ -188,6 +192,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
                 {"id": "figma_buyer_review", "status": "go"},
                 {"id": "buyer_evidence_packet", "status": "go"},
                 {"id": "buyer_evidence_html_report", "status": "go"},
+                {"id": "automated_benchmark_report", "status": "go"},
             ],
             "go_no_go": {"requires_all_checks_go": True},
         },
@@ -437,6 +442,34 @@ def _write_buyer_packet_manifest(
     return path
 
 
+def _write_benchmark_report(tmp_path: Path, *, html_sha: str | None = None, budget_ok: bool = True) -> Path:
+    html_report = tmp_path / "benchmark_report.html"
+    html_report.write_text("<!doctype html><title>Benchmark Evidence Report</title>", encoding="utf-8")
+    actual_html_sha = hashlib.sha256(html_report.read_bytes()).hexdigest()
+    report = {
+        "status": "ok" if budget_ok else "failed",
+        "runtime_budget_seconds": 120,
+        "total_duration_seconds": 0.25 if budget_ok else 121,
+        "budget_ok": budget_ok,
+        "scenario_coverage": {
+            "required_backends": ["auto", "rust"],
+            "observed_backends": ["auto", "rust"],
+            "missing_backends": [],
+        },
+        "artifact_coverage": {
+            "required": ["fit_summary.json"],
+            "present": ["fit_summary.json"],
+            "missing": [],
+            "missing_paths": [],
+        },
+        "html_report_file": str(html_report),
+        "html_report_sha256": html_sha or actual_html_sha,
+    }
+    path = tmp_path / "benchmark_report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    return path
+
+
 def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -465,6 +498,67 @@ def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     assert "buyer_packet:coverage" in check_names
     assert "buyer_packet:zip_sha256" in check_names
     assert "buyer_packet:html_report_sha256" in check_names
+
+
+def test_sales_readiness_validates_required_benchmark_report(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    benchmark_report = _write_benchmark_report(tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=str(benchmark_report),
+        require_benchmark_report=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "ok"
+    check_names = {check["name"] for check in manifest["checks"]}
+    assert "benchmark_report:runtime_budget" in check_names
+    assert "benchmark_report:html_report_sha256" in check_names
+
+
+def test_sales_readiness_fails_when_benchmark_report_sha_mismatches(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    benchmark_report = _write_benchmark_report(tmp_path, html_sha="0" * 64)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=str(benchmark_report),
+        require_benchmark_report=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "benchmark_report:html_report_sha256" in failed_names
 
 
 def test_sales_readiness_fails_when_buyer_packet_sha_mismatches(tmp_path):

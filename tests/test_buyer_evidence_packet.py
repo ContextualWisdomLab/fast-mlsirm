@@ -62,6 +62,24 @@ def _write_dist(dist: Path) -> None:
     _write(dist / "fast_mlsirm-0.1.0.tar.gz", "sdist")
 
 
+def _write_benchmark_report(tmp_path: Path) -> Path:
+    html = tmp_path / "benchmark" / "benchmark_report.html"
+    _write(html, "<!doctype html><title>Benchmark Evidence Report</title>")
+    report = tmp_path / "benchmark" / "benchmark_report.json"
+    _write(
+        report,
+        json.dumps(
+            {
+                "status": "ok",
+                "budget_ok": True,
+                "html_report_file": str(html),
+                "html_report_sha256": "abc123",
+            }
+        ),
+    )
+    return report
+
+
 def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     module = _load_packet_builder()
     repo = tmp_path / "repo"
@@ -88,6 +106,7 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert manifest["coverage"]["wheel"] is True
     assert manifest["coverage"]["sdist"] is True
     assert manifest["coverage"]["html_report"] is True
+    assert manifest["coverage"]["benchmark_report"] is False
     assert manifest["report_sha256"]
     assert manifest["zip_sha256"]
     report = Path(manifest["report_file"])
@@ -107,6 +126,36 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert "examples/enterprise_demo/product_completion_manifest.json" in names
     assert any(name.endswith(".whl") for name in names)
     assert any(name.endswith(".tar.gz") for name in names)
+
+
+def test_build_buyer_packet_can_include_benchmark_report(tmp_path):
+    module = _load_packet_builder()
+    repo = tmp_path / "repo"
+    dist = tmp_path / "dist"
+    out = tmp_path / "packet"
+    _write_repo_evidence(repo, module)
+    _write_dist(dist)
+    acceptance = _write_acceptance(tmp_path)
+    sales = tmp_path / "acceptance" / "sales_readiness_manifest.json"
+    _write(sales, json.dumps({"status": "ok"}))
+    benchmark_report = _write_benchmark_report(tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(repo),
+        acceptance=str(acceptance),
+        sales_readiness=str(sales),
+        dist=str(dist),
+        out=str(out),
+        contract_value_krw=2_000_000_000,
+        benchmark_report=str(benchmark_report),
+    )
+
+    manifest = module.build_packet(args)
+
+    assert manifest["coverage"]["benchmark_report"] is True
+    with zipfile.ZipFile(manifest["zip_file"]) as packet:
+        names = set(packet.namelist())
+    assert "benchmark/benchmark_report.json" in names
+    assert "benchmark/benchmark_report.html" in names
 
 
 def test_build_buyer_packet_fails_without_source_distribution(tmp_path):

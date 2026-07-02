@@ -15,11 +15,17 @@ Files:
 These files are checked by:
 
 ```bash
+python scripts/build_benchmark_report.py \
+  --acceptance release-acceptance/acceptance_summary.json \
+  --out release-acceptance/benchmark
+
 python scripts/sales_readiness.py \
   --acceptance release-acceptance/acceptance_summary.json \
   --dist dist \
   --require-rust \
   --require-20b-product \
+  --benchmark-report release-acceptance/benchmark/benchmark_report.json \
+  --require-benchmark-report \
   --check-import
 ```
 
@@ -31,6 +37,7 @@ python scripts/build_buyer_packet.py \
   --acceptance release-acceptance/acceptance_summary.json \
   --sales-readiness release-acceptance/sales_readiness_manifest.json \
   --dist dist \
+  --benchmark-report release-acceptance/benchmark/benchmark_report.json \
   --out buyer-evidence-packet
 ```
 

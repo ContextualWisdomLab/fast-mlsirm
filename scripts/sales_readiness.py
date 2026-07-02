@@ -42,6 +42,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "examples/enterprise_demo/product_completion_manifest.json",
     "docs/superpowers/specs/2026-07-02-20b-product-readiness-design.md",
     "docs/superpowers/plans/2026-07-02-20b-product-readiness.md",
+    "docs/superpowers/specs/2026-07-02-20b-benchmark-evidence-design.md",
+    "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -79,6 +81,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "Product Design Scope",
         "Data Analytics Scope",
         "Figma Code Connect",
+        "benchmark_report.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -98,6 +101,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "Driver Metrics",
         "Required Evidence",
         "roi_manifest.json",
+        "benchmark_report.json",
         "Caveats",
     ],
 }
@@ -140,6 +144,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "figma_buyer_review",
     "buyer_evidence_packet",
     "buyer_evidence_html_report",
+    "automated_benchmark_report",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -569,6 +574,83 @@ def _validate_buyer_packet(
     ]
 
 
+def _validate_benchmark_report(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "benchmark_report:skipped",
+                not required,
+                "benchmark report check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [_check("benchmark_report:manifest", False, f"missing benchmark report: {manifest_path}")]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [_check("benchmark_report:manifest", False, f"benchmark report is not valid JSON: {exc}")]
+    if not isinstance(payload, dict):
+        return [_check("benchmark_report:manifest_shape", False, "benchmark report must be a JSON object")]
+
+    scenario = payload.get("scenario_coverage", {})
+    missing_backends = scenario.get("missing_backends") if isinstance(scenario, dict) else None
+    artifacts = payload.get("artifact_coverage", {})
+    missing_artifacts = artifacts.get("missing") if isinstance(artifacts, dict) else None
+    missing_paths = artifacts.get("missing_paths") if isinstance(artifacts, dict) else None
+    html_file = payload.get("html_report_file")
+    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    if html_path is not None and not html_path.is_absolute():
+        html_path = manifest_path.parent / html_path
+    html_exists = html_path is not None and html_path.exists() and html_path.is_file()
+    expected_html_sha = payload.get("html_report_sha256")
+    actual_html_sha = _sha256(html_path) if html_exists else None
+    return [
+        _check(
+            "benchmark_report:status",
+            payload.get("status") == "ok",
+            "benchmark report status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "benchmark_report:runtime_budget",
+            payload.get("budget_ok") is True,
+            "benchmark report runtime is within configured budget",
+            budget_seconds=payload.get("runtime_budget_seconds"),
+            total_duration_seconds=payload.get("total_duration_seconds"),
+        ),
+        _check(
+            "benchmark_report:scenario_coverage",
+            missing_backends == [],
+            "benchmark report covers required benchmark scenario backends",
+            missing=missing_backends,
+        ),
+        _check(
+            "benchmark_report:artifact_coverage",
+            missing_artifacts == [] and missing_paths == [],
+            "benchmark report covers required benchmark artifacts",
+            missing=missing_artifacts,
+            missing_paths=missing_paths,
+        ),
+        _check(
+            "benchmark_report:html_report",
+            html_exists,
+            "benchmark HTML report exists",
+            actual=str(html_path) if html_path is not None else None,
+        ),
+        _check(
+            "benchmark_report:html_report_sha256",
+            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            "benchmark HTML report SHA256 matches manifest",
+            expected=expected_html_sha,
+            actual=actual_html_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -608,6 +690,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     repo_root = Path(args.repo_root).resolve()
     buyer_packet_manifest = getattr(args, "buyer_packet_manifest", None)
     require_buyer_packet = getattr(args, "require_buyer_packet", False)
+    benchmark_report = getattr(args, "benchmark_report", None)
+    require_benchmark_report = getattr(args, "require_benchmark_report", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -629,6 +713,13 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
                 contract_value_krw=args.contract_value_krw,
             )
         )
+    if benchmark_report or require_benchmark_report:
+        checks.extend(
+            _validate_benchmark_report(
+                Path(benchmark_report).resolve() if benchmark_report else None,
+                required=require_benchmark_report,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -639,6 +730,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "contract_value_krw": args.contract_value_krw,
         "require_20b_product": args.require_20b_product,
         "require_buyer_packet": require_buyer_packet,
+        "require_benchmark_report": require_benchmark_report,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -669,6 +761,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-buyer-packet",
         action="store_true",
         help="Fail unless --buyer-packet-manifest points to a complete buyer evidence packet.",
+    )
+    parser.add_argument("--benchmark-report", help="Optional benchmark_report.json to validate.")
+    parser.add_argument(
+        "--require-benchmark-report",
+        action="store_true",
+        help="Fail unless --benchmark-report points to a complete automated benchmark report.",
     )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(

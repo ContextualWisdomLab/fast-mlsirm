@@ -3,13 +3,13 @@
   "runtime_budget_seconds": 120,
   "scenarios": [
     {
-      "name": "small_numpy_reference",
+      "name": "small_auto_reference",
       "persons": 12,
       "dims": 1,
       "items_per_dim": 2,
       "latent_dim": 1,
-      "backend": "numpy",
-      "purpose": "Reference path acceptance smoke."
+      "backend": "auto",
+      "purpose": "Reference path acceptance smoke with resolved backend evidence."
     },
     {
       "name": "small_rust_backend",
@@ -25,7 +25,8 @@
     "fit_summary.json",
     "fit_diagnostics.json",
     "dimension_diagnostics.json",
-    "report.html"
+    "fit_report.html",
+    "dimension_report.html"
   ],
   "caveats": [
     "This is an acceptance benchmark contract, not a production performance guarantee.",

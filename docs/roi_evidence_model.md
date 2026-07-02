@@ -35,6 +35,11 @@ The product completion scorecard is represented by
 report table accessibility, the Figma buyer-review artifact, the buyer
 evidence packet, and the buyer evidence HTML review.
 
+The benchmark evidence is represented by `benchmark_report.json` generated from
+`scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
+presents runtime-budget status, total duration, command timings, backend
+coverage, required artifact coverage, and caveats.
+
 The buyer evidence packet is represented by `buyer_evidence_manifest.json`
 generated from `scripts/build_buyer_packet.py`. It records artifact coverage,
 SHA256 digests, `source_commit`, `generated_at`, and the target

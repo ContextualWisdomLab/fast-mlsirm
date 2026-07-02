@@ -27,6 +27,8 @@
   "required_evidence": [
     "release-acceptance/acceptance_summary.json",
     "release-acceptance/sales_readiness_manifest.json",
+    "release-acceptance/benchmark/benchmark_report.json",
+    "release-acceptance/benchmark/benchmark_report.html",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json"
   ],

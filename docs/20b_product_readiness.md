@@ -25,6 +25,8 @@ commit and artifact being offered:
 - Figma-ready design packet with Code Connect explicitly disabled;
 - Data Analytics evidence for ROI assumptions, KPI definitions, and benchmark
   scenarios;
+- automated benchmark evidence from `benchmark_report.json` and
+  `benchmark_report.html`;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
 - a buyer evidence completion scorecard for release acceptance, HTML report
@@ -57,6 +59,7 @@ The analytics package must define:
 - ROI driver metrics and caveats;
 - benchmark scenarios and runtime evidence expectations;
 - acceptance, reproducibility, backend, and report-completeness KPIs;
+- benchmark runtime-budget, backend-coverage, and artifact-coverage KPIs;
 - go/no-go thresholds that distinguish product evidence from sales claims.
 
 The initial analytics evidence is stored under `examples/enterprise_demo/`.
@@ -72,6 +75,9 @@ when:
 - every required product, design, analytics, and demo artifact exists;
 - ROI and benchmark manifests are parseable JSON and match the target contract
   value;
+- `scripts/build_benchmark_report.py` can create `benchmark_report.json` and
+  `benchmark_report.html`, and
+  `scripts/sales_readiness.py --require-benchmark-report` can validate them;
 - `product_completion_manifest.json` contains all required hardening checks
   with `go` status;
 - `scripts/build_buyer_packet.py` can create a buyer evidence packet and
@@ -79,6 +85,8 @@ when:
   manifest when a packet is part of the offer;
 - `buyer_evidence_report.html` summarizes coverage, contract value, source
   commit, artifact count, ZIP digest, and artifact digests for human review;
+- `benchmark_report.html` summarizes runtime budget, total duration, command
+  timings, backend coverage, required artifacts, and caveats for human review;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
 

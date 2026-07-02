@@ -36,6 +36,8 @@ artifact being offered:
 - Product Design storyboard, Figma design packet with Code Connect disabled,
   ROI model, benchmark manifest, and synthetic enterprise demo evidence are
   present when `--require-20b-product` is used.
+- `scripts/build_benchmark_report.py` produces `benchmark_report.json` and
+  `benchmark_report.html` from the exact release acceptance run.
 
 ## Customer Acceptance Evidence
 
@@ -45,6 +47,8 @@ The buyer acceptance package should include:
 - `sales_readiness_manifest.json` from the enterprise sales gate.
 - Generated fit and dimensionality diagnostics JSON files.
 - Generated standalone HTML reports for fit and dimensionality diagnostics.
+- Generated benchmark JSON and HTML reports with runtime-budget and artifact
+  coverage evidence.
 - Exact commit SHA, package version, Python version, Rust toolchain version,
   operating system, and backend used.
 - A synthetic-data reproduction path that does not expose customer response
@@ -60,9 +64,11 @@ true:
 - `python -m build` and `python -m twine check dist/*` pass.
 - `python scripts/release_acceptance.py --out release-acceptance --require-rust`
   passes.
+- `python scripts/build_benchmark_report.py --acceptance release-acceptance/acceptance_summary.json --out release-acceptance/benchmark`
+  passes.
 - `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --check-import`
   passes.
-- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --check-import`
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --check-import`
   passes for KRW 2,000,000,000 product-readiness review.
 - No release candidate changes the formula contract, diagnostics semantics, or
   estimator scope outside a model-design PR.

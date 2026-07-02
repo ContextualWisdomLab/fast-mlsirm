@@ -17,6 +17,8 @@ The demo should show a complete buyer review without customer data:
 2. **Synthetic Data**
    - Generate MLS2PLM synthetic response data.
    - Show that no buyer data is required for acceptance reproduction.
+   - Open `benchmark_report.html` to review runtime budget, command duration,
+     backend coverage, and required artifact coverage.
 3. **Fit Workflow**
    - Run fitting with `backend=auto` and explicit Rust evidence when required.
    - Show `fit_summary.json`, resolved backend, objective, log-likelihood, and
@@ -39,19 +41,22 @@ The demo should show a complete buyer review without customer data:
    - Open `buyer_evidence_report.html` to review coverage, contract value,
      source commit, artifact count, and digest evidence without reading raw
      JSON first.
+   - Show benchmark report JSON and HTML files when they are included in the
+     packet.
 
 ## Screen List For Figma
 
 The Figma prototype should contain these static screens:
 
 - `01-package-evidence`: artifact and environment checklist.
-- `02-synthetic-demo-run`: CLI/API workflow with generated files.
+- `02-synthetic-demo-run`: CLI/API workflow with generated files and benchmark
+  report evidence.
 - `03-fit-diagnostics`: itemfit, personfit, model fit, backend, and runtime
   cards.
 - `04-dimensionality-review`: candidate dimensions and selected model summary.
 - `05-report-export`: standalone HTML report review state.
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
-  standalone HTML review, and go/no-go status.
+  standalone HTML review, benchmark report files, and go/no-go status.
 
 ## Interaction Level
 
