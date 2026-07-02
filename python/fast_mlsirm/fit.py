@@ -327,14 +327,17 @@ def _lbfgs_direction(
     return q
 
 
+MAX_LINE_SEARCH_ITER = 20
+ARMIJO_CONSTANT = 1e-4
+SHRINK_FACTOR = 0.5
+
+
 def _line_search(
     objective: Callable[[np.ndarray], tuple[float, np.ndarray, float]],
     x: np.ndarray,
     direction: np.ndarray,
     obj: float,
     slope: float,
-    max_linesearch: int = 20,
-    c1: float = 1e-4,
 ) -> tuple[bool, np.ndarray, float, np.ndarray, float]:
     step = 1.0
     candidate = x.copy()
@@ -342,10 +345,10 @@ def _line_search(
     next_grad = np.zeros_like(x)
     next_loglik = float('-inf')
 
-    for _line in range(max_linesearch):
+    for _line in range(MAX_LINE_SEARCH_ITER):
         candidate = x + step * direction
         next_obj, next_grad, next_loglik = objective(candidate)
-        if np.isfinite(next_obj) and next_obj <= obj + c1 * step * slope:
+        if np.isfinite(next_obj) and next_obj <= obj + ARMIJO_CONSTANT * step * slope:
             return True, candidate, next_obj, next_grad, next_loglik
-        step *= 0.5
+        step *= SHRINK_FACTOR
     return False, candidate, next_obj, next_grad, next_loglik

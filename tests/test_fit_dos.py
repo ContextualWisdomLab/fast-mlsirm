@@ -16,7 +16,6 @@ def test_line_search_unbound():
         direction=direction,
         obj=0.0,
         slope=-1.0,
-        max_linesearch=20,
     )
     assert not accepted
     assert np.isinf(next_obj)
@@ -35,7 +34,6 @@ def test_line_search_unbound():
         direction=direction,
         obj=0.0,
         slope=-1.0,
-        max_linesearch=20,
     )
     assert not accepted
     assert np.isinf(next_obj)
