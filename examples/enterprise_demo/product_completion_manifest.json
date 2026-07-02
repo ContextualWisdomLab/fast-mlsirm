@@ -31,6 +31,12 @@
       "area": "product_design",
       "status": "go",
       "evidence": "https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem records the buyer-review journey with Code Connect disabled"
+    },
+    {
+      "id": "buyer_evidence_packet",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_buyer_packet.py creates a portable zip and buyer_evidence_manifest.json with artifact coverage and SHA256 digests"
     }
   ],
   "go_no_go": {

@@ -22,3 +22,14 @@ python scripts/sales_readiness.py \
   --require-20b-product \
   --check-import
 ```
+
+A portable buyer review packet can be generated after acceptance and sales
+readiness output exists:
+
+```bash
+python scripts/build_buyer_packet.py \
+  --acceptance release-acceptance/acceptance_summary.json \
+  --sales-readiness release-acceptance/sales_readiness_manifest.json \
+  --dist dist \
+  --out buyer-evidence-packet
+```

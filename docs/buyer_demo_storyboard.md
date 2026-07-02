@@ -33,6 +33,9 @@ The demo should show a complete buyer review without customer data:
    - Show `acceptance_summary.json`, `sales_readiness_manifest.json`,
      `roi_manifest.json`, `benchmark_manifest.json`, and
      `figma_design_packet.json`.
+   - Show `buyer_evidence_manifest.json` and
+     `fast_mlsirm_buyer_evidence_packet.zip` when the buyer wants a single
+     portable evidence bundle.
 
 ## Screen List For Figma
 
@@ -45,6 +48,8 @@ The Figma prototype should contain these static screens:
 - `04-dimensionality-review`: candidate dimensions and selected model summary.
 - `05-report-export`: standalone HTML report review state.
 - `06-procurement-packet`: required manifests and go/no-go status.
+- `06-procurement-packet`: required manifests, artifact digests, packet zip,
+  and go/no-go status.
 
 ## Interaction Level
 
@@ -57,3 +62,5 @@ review surface.
 
 The storyboard is complete when every screen maps to a real CLI/API artifact
 or a manifest checked by `scripts/sales_readiness.py --require-20b-product`.
+The procurement-packet screen also maps to `scripts/build_buyer_packet.py` and
+optional `scripts/sales_readiness.py --require-buyer-packet` validation.

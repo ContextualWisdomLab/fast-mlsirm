@@ -121,12 +121,20 @@ python scripts/sales_readiness.py \
   --require-20b-product \
   --check-import \
   --out acceptance_check/sales_readiness_manifest.json
+python scripts/build_buyer_packet.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --sales-readiness acceptance_check/sales_readiness_manifest.json \
+  --dist dist \
+  --out buyer-evidence-packet
 ```
 
 Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-both commands to pass on the exact release artifact. The 20B product gate adds
+the release acceptance and sales-readiness commands to pass on the exact
+release artifact. The 20B product gate adds
 Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
-synthetic demo evidence from `examples/enterprise_demo/`.
+synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
+command produces a portable zip plus `buyer_evidence_manifest.json` for
+procurement review.
 
 ## CLI
 

@@ -30,6 +30,9 @@ commit and artifact being offered:
 - a buyer evidence completion scorecard for release acceptance, HTML report
   CSP, CLI stack-trace safety, report table accessibility, and Figma buyer
   review coverage.
+- a portable buyer evidence packet containing distribution artifacts,
+  acceptance output, sales-readiness output, product manifests, documentation,
+  and SHA256 digests.
 
 ## Product Design Scope
 
@@ -71,6 +74,9 @@ when:
   value;
 - `product_completion_manifest.json` contains all required hardening checks
   with `go` status;
+- `scripts/build_buyer_packet.py` can create a buyer evidence packet and
+  `scripts/sales_readiness.py --require-buyer-packet` can validate the packet
+  manifest when a packet is part of the offer;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
 
@@ -80,6 +86,7 @@ This product-readiness standard does not add:
 
 - hosted SaaS tenancy, authentication, billing, or audit logs;
 - a separate library or submodule;
+- a package registry, signing service, or external artifact repository;
 - Figma Code Connect;
 - regulated clinical, hiring, educational placement, or certification claims;
 - new MLSIRM formulas, diagnostics semantics, or estimator scope.

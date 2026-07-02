@@ -10,6 +10,7 @@ high-value enterprise procurement review.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
 from pathlib import Path
@@ -137,6 +138,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "cli_stack_trace_guard",
     "report_table_accessibility",
     "figma_buyer_review",
+    "buyer_evidence_packet",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -145,6 +147,16 @@ REQUIRED_ACCEPTANCE_COMMANDS = {
     "diagnose-fit",
     "diagnose-dimensions",
     "render-report",
+}
+
+REQUIRED_BUYER_PACKET_COVERAGE = {
+    "acceptance_summary",
+    "sales_readiness_manifest",
+    "wheel",
+    "sdist",
+    "product_docs",
+    "product_manifests",
+    "acceptance_artifacts",
 }
 
 
@@ -161,6 +173,14 @@ def _read_text(path: Path) -> str:
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _project_version(repo_root: Path) -> str:
@@ -449,6 +469,84 @@ def _validate_dist(dist_dir: Path | None) -> list[dict[str, object]]:
     ]
 
 
+def _validate_buyer_packet(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+    contract_value_krw: int,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "buyer_packet:skipped",
+                not required,
+                "buyer evidence packet check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [_check("buyer_packet:manifest", False, f"missing buyer packet manifest: {manifest_path}")]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [_check("buyer_packet:manifest", False, f"buyer packet manifest is not valid JSON: {exc}")]
+    if not isinstance(payload, dict):
+        return [_check("buyer_packet:manifest_shape", False, "buyer packet manifest must be a JSON object")]
+
+    coverage = payload.get("coverage", {})
+    coverage_missing = [
+        name
+        for name in sorted(REQUIRED_BUYER_PACKET_COVERAGE)
+        if not isinstance(coverage, dict) or coverage.get(name) is not True
+    ]
+    zip_file = payload.get("zip_file")
+    zip_path = Path(str(zip_file)) if isinstance(zip_file, str) and zip_file else None
+    if zip_path is not None and not zip_path.is_absolute():
+        zip_path = manifest_path.parent / zip_path
+    zip_exists = zip_path is not None and zip_path.exists() and zip_path.is_file()
+    expected_zip_sha = payload.get("zip_sha256")
+    actual_zip_sha = _sha256(zip_path) if zip_exists else None
+    return [
+        _check(
+            "buyer_packet:status",
+            payload.get("status") == "ok",
+            "buyer packet manifest status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "buyer_packet:contract_value",
+            payload.get("contract_value_krw") == contract_value_krw,
+            "buyer packet contract value matches readiness gate",
+            expected=contract_value_krw,
+            actual=payload.get("contract_value_krw"),
+        ),
+        _check(
+            "buyer_packet:artifact_count",
+            isinstance(payload.get("artifact_count"), int) and payload["artifact_count"] > 0,
+            "buyer packet records included artifact count",
+            actual=payload.get("artifact_count"),
+        ),
+        _check(
+            "buyer_packet:coverage",
+            not coverage_missing,
+            "buyer packet includes required evidence coverage",
+            missing=coverage_missing,
+        ),
+        _check(
+            "buyer_packet:zip_file",
+            zip_exists,
+            "buyer packet zip file exists",
+            actual=str(zip_path) if zip_path is not None else None,
+        ),
+        _check(
+            "buyer_packet:zip_sha256",
+            zip_exists and isinstance(expected_zip_sha, str) and expected_zip_sha == actual_zip_sha,
+            "buyer packet zip SHA256 matches manifest",
+            expected=expected_zip_sha,
+            actual=actual_zip_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -486,6 +584,8 @@ def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, 
 
 def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     repo_root = Path(args.repo_root).resolve()
+    buyer_packet_manifest = getattr(args, "buyer_packet_manifest", None)
+    require_buyer_packet = getattr(args, "require_buyer_packet", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -499,6 +599,14 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         )
     )
     checks.extend(_validate_dist(Path(args.dist).resolve() if args.dist else None))
+    if buyer_packet_manifest or require_buyer_packet:
+        checks.extend(
+            _validate_buyer_packet(
+                Path(buyer_packet_manifest).resolve() if buyer_packet_manifest else None,
+                required=require_buyer_packet,
+                contract_value_krw=args.contract_value_krw,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -508,6 +616,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "status": "ok" if not failed else "failed",
         "contract_value_krw": args.contract_value_krw,
         "require_20b_product": args.require_20b_product,
+        "require_buyer_packet": require_buyer_packet,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -533,6 +642,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require Product Design, Figma, ROI, benchmark, and demo evidence for KRW 2B review.",
     )
     parser.add_argument("--check-import", action="store_true", help="Import installed package and optional Rust core.")
+    parser.add_argument("--buyer-packet-manifest", help="Optional buyer_evidence_manifest.json to validate.")
+    parser.add_argument(
+        "--require-buyer-packet",
+        action="store_true",
+        help="Fail unless --buyer-packet-manifest points to a complete buyer evidence packet.",
+    )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(
         "--max-acceptance-seconds",

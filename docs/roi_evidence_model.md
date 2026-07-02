@@ -32,7 +32,13 @@ The manifest must include:
 The product completion scorecard is represented by
 `examples/enterprise_demo/product_completion_manifest.json`. It must include
 `go` evidence for release acceptance, HTML report CSP, CLI stack-trace safety,
-report table accessibility, and the Figma buyer-review artifact.
+report table accessibility, the Figma buyer-review artifact, and the buyer
+evidence packet.
+
+The buyer evidence packet is represented by `buyer_evidence_manifest.json`
+generated from `scripts/build_buyer_packet.py`. It records artifact coverage,
+SHA256 digests, `source_commit`, `generated_at`, and the target
+`contract_value_krw`.
 
 ## Caveats
 
