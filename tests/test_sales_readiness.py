@@ -346,8 +346,11 @@ def test_sales_readiness_fails_when_optional_figma_url_is_not_a_design_file(tmp_
     manifest = module.run_sales_readiness(args)
 
     assert manifest["status"] == "failed"
-    failed_names = {check["name"] for check in manifest["failed_checks"]}
-    assert "20b:figma_artifact_url" in failed_names
+    figma_url_check = next(
+        check for check in manifest["failed_checks"] if check["name"] == "20b:figma_artifact_url"
+    )
+    assert "https://www.figma.com/design/" in figma_url_check["detail"]
+    assert "/board/" in figma_url_check["detail"]
 
 
 def test_sales_readiness_fails_gracefully_when_20b_json_has_wrong_shape(tmp_path):

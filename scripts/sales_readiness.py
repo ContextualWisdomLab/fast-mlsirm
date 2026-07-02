@@ -288,7 +288,10 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
                     _check(
                         "20b:figma_artifact_url",
                         isinstance(figma_url, str) and figma_url.startswith("https://www.figma.com/design/"),
-                        "optional Figma artifact URL points to a design file",
+                        (
+                            "optional Figma artifact URL must start with https://www.figma.com/design/; "
+                            "FigJam /board/ URLs do not satisfy the design-file evidence contract"
+                        ),
                         actual=figma_url,
                     )
                 )
