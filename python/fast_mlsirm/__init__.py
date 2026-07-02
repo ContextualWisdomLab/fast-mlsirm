@@ -5,7 +5,10 @@ from .report import render_diagnostics_report as render_diagnostics_report
 from .simulation import simulate as simulate
 from .types import DimensionalityDiagnostics as DimensionalityDiagnostics, FitDiagnostics as FitDiagnostics, FitResult as FitResult, MLSIRMParams as MLSIRMParams, RecoveryReport as RecoveryReport, SimulationData as SimulationData
 
+__version__ = "0.1.0"
+
 __all__ = [
+    "__version__",
     "DimensionalityDiagnostics",
     "FitConfig",
     "FitDiagnostics",

@@ -92,6 +92,18 @@ cargo test --workspace
 The PyO3 extension crate is built by maturin and exercised by the Python backend
 parity tests.
 
+## Commercial Beta Status
+
+The current release is supportable as a commercial beta for technical teams that
+need local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
+generation. It is not a regulated decision product, hosted assessment platform,
+or Bayesian posterior inference engine. See:
+
+- [Commercial beta readiness](docs/commercial_readiness.md)
+- [Security policy](SECURITY.md)
+- [Support policy](SUPPORT.md)
+- [Changelog](CHANGELOG.md)
+
 ## CLI
 
 ```bash

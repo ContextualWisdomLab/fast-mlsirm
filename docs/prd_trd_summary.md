@@ -13,6 +13,11 @@ The package is aimed at psychometrics, educational measurement, mental-health
 assessment, item diagnostics, adaptive testing research, and production-scale
 binary response scoring pipelines.
 
+For sale and support purposes, the current product is a commercial beta for
+technical users. It can be packaged, verified, and supported for the documented
+local API/CLI workflows, but it is not a regulated decision product, hosted
+platform, or full ordinal/Bayesian estimation system.
+
 ## MVP Scope
 
 Must have:
