@@ -11,6 +11,11 @@ MLSIRM/IRT teams. A high-value enterprise sale should package the software with
 clear scope, acceptance evidence, support terms, privacy boundaries, and a
 customer validation plan.
 
+For the KRW 2,000,000,000 product-readiness standard, this document is used with
+`docs/20b_product_readiness.md`, `docs/buyer_demo_storyboard.md`,
+`docs/figma_product_design_packet.md`, `docs/roi_evidence_model.md`, and
+`examples/enterprise_demo/`.
+
 ## Procurement Evidence
 
 A release candidate must provide the following evidence on the exact commit or
@@ -28,6 +33,9 @@ artifact being offered:
   artifact when Rust support is part of the offer.
 - README, security policy, support policy, changelog, commercial readiness
   checklist, and release acceptance guide are present.
+- Product Design storyboard, Figma design packet with Code Connect disabled,
+  ROI model, benchmark manifest, and synthetic enterprise demo evidence are
+  present when `--require-20b-product` is used.
 
 ## Customer Acceptance Evidence
 
@@ -54,6 +62,8 @@ true:
   passes.
 - `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --check-import`
   passes.
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --check-import`
+  passes for KRW 2,000,000,000 product-readiness review.
 - No release candidate changes the formula contract, diagnostics semantics, or
   estimator scope outside a model-design PR.
 
@@ -67,6 +77,8 @@ The KRW 2,000,000,000 sales-readiness gate does not claim:
 - Bayesian posterior inference;
 - native GRM, GPCM, or GGUM ordinal estimators;
 - sparse/block execution for very large response matrices;
+- Figma Code Connect;
+- a separately versioned library or submodule;
 - performance guarantees beyond the release evidence generated for the
   specific candidate artifact.
 

@@ -1,5 +1,6 @@
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -76,6 +77,110 @@ def _write_acceptance(tmp_path: Path, *, include_rust: bool = True) -> Path:
     return path
 
 
+def _write_required_policy_files(root: Path) -> None:
+    module = _load_sales_readiness()
+    for relative in module.REQUIRED_POLICY_FILES:
+        _touch(root / relative)
+    token_docs = {
+        "README.md": """
+        Commercial Readiness
+        Enterprise Sales Readiness
+        scripts/release_acceptance.py
+        scripts/sales_readiness.py
+        """,
+        "docs/commercial_readiness.md": """
+        Seller Acceptance Checklist
+        Enterprise Sales Gate
+        Security
+        Support
+        Release Gate
+        """,
+        "docs/enterprise_sales_readiness.md": """
+        KRW 2,000,000,000
+        Procurement Evidence
+        Customer Acceptance Evidence
+        Go/No-Go
+        Out of Scope
+        """,
+        "docs/release_acceptance.md": """
+        acceptance_summary.json
+        sales_readiness_manifest.json
+        --require-rust
+        """,
+    }
+    for relative, text in token_docs.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
+    docs = {
+        "docs/20b_product_readiness.md": """
+        KRW 2,000,000,000
+        Buyer-Facing Product Standard
+        Product Design Scope
+        Data Analytics Scope
+        Figma Code Connect
+        Go/No-Go
+        """,
+        "docs/buyer_demo_storyboard.md": """
+        Package Evidence
+        Synthetic Data
+        Fit Workflow
+        Diagnostics Workflow
+        Procurement Packet
+        """,
+        "docs/figma_product_design_packet.md": """
+        Figma Code Connect is explicitly out of scope
+        Package Evidence
+        Procurement Packet
+        figma_design_packet.json
+        """,
+        "docs/roi_evidence_model.md": """
+        Driver Metrics
+        Required Evidence
+        roi_manifest.json
+        Caveats
+        """,
+        "examples/enterprise_demo/README.md": "enterprise demo evidence",
+        "docs/superpowers/specs/2026-07-02-20b-product-readiness-design.md": "design spec",
+        "docs/superpowers/plans/2026-07-02-20b-product-readiness.md": "implementation plan",
+    }
+    for relative, text in docs.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    manifests = {
+        "examples/enterprise_demo/roi_manifest.json": {
+            "contract_value_krw": 2_000_000_000,
+            "position": "Procurement evidence model, not a valuation guarantee.",
+            "drivers": [{"name": "analyst_hours_saved"}],
+            "required_evidence": ["acceptance_summary.json"],
+            "go_no_go": {"requires_all_sales_readiness_checks_ok": True},
+        },
+        "examples/enterprise_demo/benchmark_manifest.json": {
+            "benchmark_scope": "Synthetic dense MLS2PLM release-acceptance scenarios.",
+            "runtime_budget_seconds": 120,
+            "scenarios": [{"name": "small_rust_backend"}],
+            "required_artifacts": ["fit_summary.json"],
+            "caveats": ["acceptance benchmark contract"],
+        },
+        "examples/enterprise_demo/figma_design_packet.json": {
+            "code_connect": code_connect,
+            "mode": "static_product_storyboard",
+            "source": "docs/buyer_demo_storyboard.md",
+            "frames": [{"id": "01-package-evidence"}],
+            "handoff": {"product_design_scope": "static buyer workflow"},
+        },
+    }
+    for relative, payload in manifests.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_sales_readiness_manifest_passes_with_acceptance_evidence(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -86,6 +191,7 @@ def test_sales_readiness_manifest_passes_with_acceptance_evidence(tmp_path):
         out=str(out),
         dist=None,
         require_rust=True,
+        require_20b_product=False,
         check_import=False,
         contract_value_krw=2_000_000_000,
         max_acceptance_seconds=1.0,
@@ -107,6 +213,7 @@ def test_sales_readiness_fails_when_explicit_rust_evidence_is_missing(tmp_path):
         out=str(tmp_path / "sales_readiness_manifest.json"),
         dist=None,
         require_rust=True,
+        require_20b_product=False,
         check_import=False,
         contract_value_krw=2_000_000_000,
         max_acceptance_seconds=1.0,
@@ -134,3 +241,139 @@ def test_project_version_parser_supports_python_310_fallback():
     )
 
     assert version == "0.1.0"
+
+
+def test_sales_readiness_passes_with_20b_product_evidence(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "ok"
+    assert manifest["require_20b_product"] is True
+    check_names = {check["name"] for check in manifest["checks"]}
+    assert "20b:figma_code_connect_disabled" in check_names
+
+
+def test_sales_readiness_fails_when_20b_artifact_is_missing(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    (repo_root / "docs" / "20b_product_readiness.md").unlink()
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "20b:file:docs/20b_product_readiness.md" in failed_names
+
+
+def test_sales_readiness_fails_when_figma_code_connect_is_enabled(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root, code_connect=True)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "20b:figma_code_connect_disabled" in failed_names
+
+
+def test_sales_readiness_fails_gracefully_when_20b_json_has_wrong_shape(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    (repo_root / "examples" / "enterprise_demo" / "roi_manifest.json").write_text("[]", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "20b:json_shape:examples/enterprise_demo/roi_manifest.json" in failed_names
+
+
+def test_sales_readiness_treats_required_20b_json_none_as_empty(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    path = repo_root / "examples" / "enterprise_demo" / "roi_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["drivers"] = None
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    json_field_check = next(
+        check
+        for check in manifest["failed_checks"]
+        if check["name"] == "20b:json_fields:examples/enterprise_demo/roi_manifest.json"
+    )
+    assert json_field_check["empty"] == ["drivers"]
