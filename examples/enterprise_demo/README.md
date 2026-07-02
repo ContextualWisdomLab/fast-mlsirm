@@ -23,8 +23,8 @@ python scripts/build_commercial_release.py \
 
 The commercial release builder writes `commercial_release_manifest.json` and
 `commercial_release_report.html`, then leaves the acceptance, benchmark, buyer
-packet, release index, and final gate artifacts under the same output
-directory.
+packet, release index, final gate, and procurement due-diligence artifacts
+under the same output directory.
 
 The lower-level checks can also be run manually:
 
@@ -61,10 +61,18 @@ python scripts/build_release_evidence_index.py \
   --benchmark-report release-acceptance/benchmark/benchmark_report.json \
   --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
   --out release-evidence-index
+
+python scripts/build_procurement_due_diligence.py \
+  --dist dist \
+  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
+  --out procurement-due-diligence
 ```
 
 The command writes `buyer_evidence_manifest.json`,
 `buyer_evidence_report.html`, and `fast_mlsirm_buyer_evidence_packet.zip`.
 The release evidence command writes `release_evidence_index.json` and
 `release_evidence_index.html` for dist hash, acceptance, benchmark,
-sales-readiness, and buyer-packet review.
+sales-readiness, and buyer-packet review. The procurement command writes
+`procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html` for package metadata, policy-file,
+commercial-release, GitHub snapshot, and SHA256 report review.

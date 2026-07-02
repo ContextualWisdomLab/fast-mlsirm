@@ -32,6 +32,10 @@ evidence index over the exact artifacts being offered.
   benchmark, sales-readiness, and buyer-packet evidence.
 - Single-command commercial release evidence reporting through
   `scripts/build_commercial_release.py`.
+- Procurement due-diligence reporting through
+  `scripts/build_procurement_due_diligence.py` for package metadata, policy
+  files, commercial-release evidence, GitHub snapshot state, and report
+  digest verification.
 
 ## Not Yet Supported
 
@@ -79,6 +83,13 @@ release commit:
   creates `release_evidence_index.json` and `release_evidence_index.html`.
 - `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
   passes as the final 20B evidence-integrity gate.
+- `python scripts/build_procurement_due_diligence.py --dist dist --commercial-release-manifest commercial-release/commercial_release_manifest.json --out procurement-due-diligence`
+  creates `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html` when procurement asks for
+  supply-chain and repository-state evidence outside the single-command
+  builder.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --check-import`
+  passes as the final procurement evidence-integrity gate.
 
 ## Enterprise Sales Gate
 
@@ -100,6 +111,9 @@ must be able to show:
 - a generated commercial release manifest and standalone HTML summary that
   record stage status, runtime, source commit, failed stage, artifact paths, and
   SHA256 evidence from one command.
+- a generated procurement due-diligence manifest and standalone HTML summary
+  that record distribution metadata, policy-file presence, commercial-release
+  integrity, GitHub snapshot evidence, failed checks, and report SHA256.
 
 ## Security and Support Boundaries
 

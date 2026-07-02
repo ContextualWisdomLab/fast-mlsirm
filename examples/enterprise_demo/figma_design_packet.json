@@ -32,7 +32,7 @@
     {
       "id": "06-procurement-packet",
       "title": "Procurement Packet",
-      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, and commercial release manifests"
+      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, commercial release, and procurement due-diligence manifests"
     }
   ],
   "handoff": {

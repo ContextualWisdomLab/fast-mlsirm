@@ -48,6 +48,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md",
     "docs/superpowers/specs/2026-07-03-20b-commercial-release-builder-design.md",
     "docs/superpowers/plans/2026-07-03-20b-commercial-release-builder.md",
+    "docs/superpowers/specs/2026-07-03-20b-procurement-due-diligence-design.md",
+    "docs/superpowers/plans/2026-07-03-20b-procurement-due-diligence.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -58,6 +60,7 @@ REQUIRED_DOC_TOKENS = {
         "scripts/sales_readiness.py",
         "scripts/build_release_evidence_index.py",
         "scripts/build_commercial_release.py",
+        "scripts/build_procurement_due_diligence.py",
     ],
     "docs/commercial_readiness.md": [
         "Seller Acceptance Checklist",
@@ -78,6 +81,7 @@ REQUIRED_DOC_TOKENS = {
         "sales_readiness_manifest.json",
         "release_evidence_index.json",
         "commercial_release_manifest.json",
+        "procurement_due_diligence_manifest.json",
         "--require-rust",
     ],
 }
@@ -92,6 +96,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "benchmark_report.html",
         "release_evidence_index.html",
         "commercial_release_report.html",
+        "procurement_due_diligence_report.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -157,6 +162,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "automated_benchmark_report",
     "release_evidence_index",
     "commercial_release_builder",
+    "procurement_due_diligence",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -188,6 +194,13 @@ REQUIRED_RELEASE_INDEX_COVERAGE = {
     "buyer_packet_html_report",
     "wheel",
     "sdist",
+}
+
+REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES = {
+    "package",
+    "policy",
+    "commercial_release",
+    "github",
 }
 
 
@@ -775,6 +788,103 @@ def _validate_release_evidence_index(
     ]
 
 
+def _validate_procurement_due_diligence(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+    contract_value_krw: int,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "procurement_due_diligence:skipped",
+                not required,
+                "procurement due-diligence check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [
+            _check(
+                "procurement_due_diligence:manifest",
+                False,
+                f"missing procurement due-diligence manifest: {manifest_path}",
+            )
+        ]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [
+            _check(
+                "procurement_due_diligence:manifest",
+                False,
+                f"procurement due-diligence manifest is not valid JSON: {exc}",
+            )
+        ]
+    if not isinstance(payload, dict):
+        return [
+            _check(
+                "procurement_due_diligence:manifest_shape",
+                False,
+                "procurement due-diligence manifest must be a JSON object",
+            )
+        ]
+
+    checks = payload.get("checks", [])
+    ok_categories = {
+        check.get("category")
+        for check in checks
+        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+    }
+    failed_checks = payload.get("failed_checks")
+    html_file = payload.get("html_report_file")
+    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    if html_path is not None and not html_path.is_absolute():
+        html_path = manifest_path.parent / html_path
+    html_exists = html_path is not None and html_path.exists() and html_path.is_file()
+    expected_html_sha = payload.get("html_report_sha256")
+    actual_html_sha = _sha256(html_path) if html_exists else None
+    return [
+        _check(
+            "procurement_due_diligence:status",
+            payload.get("status") == "ok",
+            "procurement due-diligence manifest status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "procurement_due_diligence:contract_value",
+            payload.get("contract_value_krw") == contract_value_krw,
+            "procurement due-diligence contract value matches readiness gate",
+            expected=contract_value_krw,
+            actual=payload.get("contract_value_krw"),
+        ),
+        _check(
+            "procurement_due_diligence:failed_checks",
+            failed_checks == [],
+            "procurement due-diligence manifest has no recorded failures",
+            failed_checks=failed_checks,
+        ),
+        _check(
+            "procurement_due_diligence:category_coverage",
+            REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES.issubset(ok_categories),
+            "procurement due-diligence covers package, policy, commercial release, and GitHub evidence",
+            missing=sorted(REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES - ok_categories),
+        ),
+        _check(
+            "procurement_due_diligence:html_report",
+            html_exists,
+            "procurement due-diligence HTML report exists",
+            actual=str(html_path) if html_path is not None else None,
+        ),
+        _check(
+            "procurement_due_diligence:html_report_sha256",
+            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            "procurement due-diligence HTML report SHA256 matches manifest",
+            expected=expected_html_sha,
+            actual=actual_html_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -818,6 +928,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     require_benchmark_report = getattr(args, "require_benchmark_report", False)
     release_evidence_index = getattr(args, "release_evidence_index", None)
     require_release_evidence_index = getattr(args, "require_release_evidence_index", False)
+    procurement_due_diligence = getattr(args, "procurement_due_diligence", None)
+    require_procurement_due_diligence = getattr(args, "require_procurement_due_diligence", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -854,6 +966,14 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
                 contract_value_krw=args.contract_value_krw,
             )
         )
+    if procurement_due_diligence or require_procurement_due_diligence:
+        checks.extend(
+            _validate_procurement_due_diligence(
+                Path(procurement_due_diligence).resolve() if procurement_due_diligence else None,
+                required=require_procurement_due_diligence,
+                contract_value_krw=args.contract_value_krw,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -866,6 +986,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_buyer_packet": require_buyer_packet,
         "require_benchmark_report": require_benchmark_report,
         "require_release_evidence_index": require_release_evidence_index,
+        "require_procurement_due_diligence": require_procurement_due_diligence,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -908,6 +1029,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-release-evidence-index",
         action="store_true",
         help="Fail unless --release-evidence-index points to a complete release evidence index.",
+    )
+    parser.add_argument("--procurement-due-diligence", help="Optional procurement_due_diligence_manifest.json to validate.")
+    parser.add_argument(
+        "--require-procurement-due-diligence",
+        action="store_true",
+        help="Fail unless --procurement-due-diligence points to complete procurement due-diligence evidence.",
     )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(

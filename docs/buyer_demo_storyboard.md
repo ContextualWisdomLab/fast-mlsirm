@@ -51,6 +51,9 @@ The demo should show a complete buyer review without customer data:
    - Open `commercial_release_report.html` to review the full stage timeline,
      failed-stage detail when present, artifact paths, and SHA256 evidence from
      the single command.
+   - Open `procurement_due_diligence_report.html` to review package metadata,
+     policy-file checks, commercial-release integrity, GitHub snapshot state,
+     failed-check detail, and report SHA256 evidence.
 
 ## Screen List For Figma
 
@@ -65,7 +68,7 @@ The Figma prototype should contain these static screens:
 - `05-report-export`: standalone HTML report review state.
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
   standalone HTML review, benchmark report files, release evidence index, and
-  commercial release report with go/no-go status.
+  commercial release report with procurement due-diligence go/no-go status.
 
 ## Interaction Level
 
@@ -83,4 +86,8 @@ optional `scripts/sales_readiness.py --require-buyer-packet` validation, plus
 `scripts/build_release_evidence_index.py` and optional
 `scripts/sales_readiness.py --require-release-evidence-index` validation. The
 top-level buyer run maps to `scripts/build_commercial_release.py`, which writes
-`commercial_release_manifest.json` and `commercial_release_report.html`.
+`commercial_release_manifest.json` and `commercial_release_report.html`, then
+runs `scripts/build_procurement_due_diligence.py` to write
+`procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html`. The final optional integrity check is
+`scripts/sales_readiness.py --require-procurement-due-diligence`.

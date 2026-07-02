@@ -31,6 +31,9 @@ commit and artifact being offered:
   `release_evidence_index.html`;
 - top-level commercial release output from `commercial_release_manifest.json`
   and `commercial_release_report.html`;
+- procurement due-diligence output from
+  `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html`;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
 - a buyer evidence completion scorecard for release acceptance, HTML report
@@ -99,6 +102,13 @@ when:
   the single buyer-facing execution path over dist build, acceptance,
   benchmark, sales-readiness, buyer packet, release index, and final gate
   stages;
+- `scripts/build_procurement_due_diligence.py` can create
+  `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html` for package metadata, policy-file,
+  commercial-release, GitHub snapshot, failed-check, and report digest review;
+- `scripts/sales_readiness.py --require-procurement-due-diligence` validates
+  the generated procurement due-diligence evidence before a release candidate
+  is positioned as procurement-complete;
 - `scripts/sales_readiness.py --require-release-evidence-index` validates the
   generated release index before a release candidate is positioned as complete;
 - the Figma design packet declares `code_connect: false`;

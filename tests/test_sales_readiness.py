@@ -91,6 +91,7 @@ def _write_required_policy_files(root: Path) -> None:
         scripts/sales_readiness.py
         scripts/build_release_evidence_index.py
         scripts/build_commercial_release.py
+        scripts/build_procurement_due_diligence.py
         """,
         "docs/commercial_readiness.md": """
         Seller Acceptance Checklist
@@ -111,6 +112,7 @@ def _write_required_policy_files(root: Path) -> None:
         sales_readiness_manifest.json
         release_evidence_index.json
         commercial_release_manifest.json
+        procurement_due_diligence_manifest.json
         --require-rust
         """,
     }
@@ -131,6 +133,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         benchmark_report.html
         release_evidence_index.html
         commercial_release_report.html
+        procurement_due_diligence_report.html
         Go/No-Go
         """,
         "docs/buyer_demo_storyboard.md": """
@@ -162,6 +165,8 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md": "release index implementation plan",
         "docs/superpowers/specs/2026-07-03-20b-commercial-release-builder-design.md": "commercial release builder design spec",
         "docs/superpowers/plans/2026-07-03-20b-commercial-release-builder.md": "commercial release builder implementation plan",
+        "docs/superpowers/specs/2026-07-03-20b-procurement-due-diligence-design.md": "procurement due diligence design spec",
+        "docs/superpowers/plans/2026-07-03-20b-procurement-due-diligence.md": "procurement due diligence implementation plan",
     }
     for relative, text in docs.items():
         path = root / relative
@@ -205,6 +210,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
                 {"id": "automated_benchmark_report", "status": "go"},
                 {"id": "release_evidence_index", "status": "go"},
                 {"id": "commercial_release_builder", "status": "go"},
+                {"id": "procurement_due_diligence", "status": "go"},
             ],
             "go_no_go": {"requires_all_checks_go": True},
         },
@@ -516,6 +522,34 @@ def _write_release_evidence_index(tmp_path: Path, *, html_sha: str | None = None
     return path
 
 
+def _write_procurement_due_diligence(
+    tmp_path: Path,
+    *,
+    html_sha: str | None = None,
+    status: str = "ok",
+) -> Path:
+    html_report = tmp_path / "procurement" / "procurement_due_diligence_report.html"
+    html_report.parent.mkdir(parents=True, exist_ok=True)
+    html_report.write_text("<!doctype html><title>Procurement Due Diligence</title>", encoding="utf-8")
+    actual_html_sha = hashlib.sha256(html_report.read_bytes()).hexdigest()
+    manifest = {
+        "status": status,
+        "contract_value_krw": 2_000_000_000,
+        "checks": [
+            {"name": "dist:wheel", "category": "package", "ok": True},
+            {"name": "policy_file:README.md", "category": "policy", "ok": True},
+            {"name": "commercial_release:status", "category": "commercial_release", "ok": True},
+            {"name": "github:snapshot", "category": "github", "ok": True},
+        ],
+        "failed_checks": [] if status == "ok" else [{"name": "status", "category": "commercial_release", "ok": False}],
+        "html_report_file": str(html_report),
+        "html_report_sha256": html_sha or actual_html_sha,
+    }
+    path = tmp_path / "procurement" / "procurement_due_diligence_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
 def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -610,6 +644,42 @@ def test_sales_readiness_validates_required_release_evidence_index(tmp_path):
     assert "release_evidence_index:html_report_sha256" in check_names
 
 
+def test_sales_readiness_validates_required_procurement_due_diligence(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    procurement = _write_procurement_due_diligence(tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=None,
+        require_benchmark_report=False,
+        release_evidence_index=None,
+        require_release_evidence_index=False,
+        procurement_due_diligence=str(procurement),
+        require_procurement_due_diligence=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "ok"
+    assert manifest["require_procurement_due_diligence"] is True
+    check_names = {check["name"] for check in manifest["checks"]}
+    assert "procurement_due_diligence:category_coverage" in check_names
+    assert "procurement_due_diligence:html_report_sha256" in check_names
+
+
 def test_sales_readiness_fails_when_benchmark_report_sha_mismatches(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -670,6 +740,40 @@ def test_sales_readiness_fails_when_release_evidence_index_sha_mismatches(tmp_pa
     assert manifest["status"] == "failed"
     failed_names = {check["name"] for check in manifest["failed_checks"]}
     assert "release_evidence_index:html_report_sha256" in failed_names
+
+
+def test_sales_readiness_fails_when_procurement_due_diligence_sha_mismatches(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    procurement = _write_procurement_due_diligence(tmp_path, html_sha="0" * 64)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=None,
+        require_benchmark_report=False,
+        release_evidence_index=None,
+        require_release_evidence_index=False,
+        procurement_due_diligence=str(procurement),
+        require_procurement_due_diligence=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "procurement_due_diligence:html_report_sha256" in failed_names
 
 
 def test_sales_readiness_fails_when_buyer_packet_sha_mismatches(tmp_path):
