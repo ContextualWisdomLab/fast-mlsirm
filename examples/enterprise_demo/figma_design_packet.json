@@ -2,6 +2,7 @@
   "code_connect": false,
   "mode": "static_product_storyboard",
   "source": "docs/buyer_demo_storyboard.md",
+  "figma_artifact_url": "https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem",
   "frames": [
     {
       "id": "01-package-evidence",

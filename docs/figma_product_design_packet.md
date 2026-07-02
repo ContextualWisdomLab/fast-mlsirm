@@ -36,11 +36,21 @@ Each frame should include:
 - the go/no-go signal;
 - the source file or command that produces the artifact.
 
+## Generated Artifact
+
+The current buyer-review design file is
+[fast-mlsirm 20B Buyer Review Screens](https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem).
+This URL is optional evidence, not a CI dependency. If the file is unavailable
+in a future environment, regenerate it from
+`examples/enterprise_demo/figma_design_packet.json`; Code Connect remains
+disabled.
+
 ## Handoff
 
 The canonical machine-readable packet is
 `examples/enterprise_demo/figma_design_packet.json`. It records the intended
-frames, source artifacts, and the explicit `code_connect: false` constraint.
+frames, source artifacts, the optional `figma_artifact_url`, and the explicit
+`code_connect: false` constraint.
 
 If a Figma MCP server is connected in a future run, create the file from this
 packet using Figma Plugin API calls after loading `figma-use` and
