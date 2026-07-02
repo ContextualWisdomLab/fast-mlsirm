@@ -7,6 +7,11 @@ understand MLSIRM/IRT workflows and can evaluate model suitability for
 their own domain. It is not positioned as a finished regulated decision product
 or as a fully managed assessment platform.
 
+For KRW 2,000,000,000 enterprise sales review, use this document together with
+`docs/enterprise_sales_readiness.md`. That higher gate requires procurement
+evidence, release artifacts, support/security scope, and a machine-readable
+`sales_readiness_manifest.json`.
+
 ## Supported Product Surface
 
 - Python API for simulation, fitting, diagnostics, recovery checks, and report
@@ -48,6 +53,27 @@ release commit:
   `docs/release_acceptance.md` are present and match shipped behavior.
 - GitHub CI includes Python tests, Rust core tests, PyO3 crate tests, package
   build validation, wheel metadata checks, and release-acceptance execution.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --check-import`
+  passes and writes `sales_readiness_manifest.json` when verifying a built
+  artifact.
+
+## Enterprise Sales Gate
+
+The KRW 2,000,000,000 sales-readiness standard is not just a smoke test. A candidate
+must be able to show:
+
+- release acceptance evidence generated from the exact artifact;
+- built wheel and source distribution files;
+- installed package import proof, including the Rust backend if sold as part of
+  the package;
+- explicit support, security, non-goal, and formula-contract boundaries;
+- a generated `sales_readiness_manifest.json` with no failed checks.
+
+## Security and Support Boundaries
+
+Security scope is documented in `SECURITY.md`. Support scope is documented in
+`SUPPORT.md`. Both files are required evidence for the enterprise sales gate and
+must match the exact package behavior being offered.
 
 ## Release Gate
 
