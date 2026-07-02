@@ -36,9 +36,7 @@ def fit(
 
     best: FitResult | None = None
     for restart in range(config.n_restarts):
-        candidate = _fit_single_restart(
-            restart, config, y, observed, factors, n_dims, model, backend
-        )
+        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model, backend)
         if best is None or candidate.objective < best.objective:
             best = candidate
 
@@ -146,9 +144,7 @@ def _make_objective(
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
-        obj, grad, loglik = neg_loglik_and_grad(
-            y, factor_id, params, config, mask=observed, backend=backend
-        )
+        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed, backend=backend)
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))
