@@ -7,7 +7,8 @@ import numpy as np
 from .backend import resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
-from .objective import model_flags, neg_loglik_and_grad, prepare_response, validate_factor_id
+from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
+                        validate_factor_id)
 from .types import FitResult, MLSIRMParams
 
 
@@ -35,7 +36,9 @@ def fit(
 
     best: FitResult | None = None
     for restart in range(config.n_restarts):
-        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model, backend)
+        candidate = _run_single_fit(
+            y, observed, factors, n_dims, config, model, restart, backend
+        )
         if best is None or candidate.objective < best.objective:
             best = candidate
 
@@ -44,18 +47,20 @@ def fit(
     return best
 
 
-def _fit_single_restart(
-    restart: int,
-    config: FitConfig,
+def _run_single_fit(
     y: np.ndarray,
     observed: np.ndarray,
     factors: np.ndarray,
     n_dims: int,
+    config: FitConfig,
     model: str,
+    restart: int,
     backend: str,
 ) -> FitResult:
     rng = np.random.default_rng(config.seed + restart)
-    params0 = _initial_params(y, observed, factors, n_dims, config.latent_dim, config, rng)
+    params0 = _initial_params(
+        y, observed, factors, n_dims, config.latent_dim, config, rng
+    )
     x0 = _pack(params0, model)
     objective = _make_objective(y, observed, factors, params0, config, backend)
 
@@ -66,14 +71,22 @@ def _fit_single_restart(
     n_iter = 0
 
     if config.optimizer in {"adam", "adam_lbfgs"}:
-        adam_iter = config.max_iter if config.optimizer == "adam" else max(1, config.max_iter // 2)
+        adam_iter = (
+            config.max_iter
+            if config.optimizer == "adam"
+            else max(1, config.max_iter // 2)
+        )
         x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
         obj_trace.extend(adam_obj)
         loglik_trace.extend(adam_loglik)
         n_iter += len(adam_obj)
 
     if config.optimizer in {"lbfgs", "adam_lbfgs"}:
-        lbfgs_iter = config.max_iter if config.optimizer == "lbfgs" else max(1, config.max_iter - n_iter)
+        lbfgs_iter = (
+            config.max_iter
+            if config.optimizer == "lbfgs"
+            else max(1, config.max_iter - n_iter)
+        )
         x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(x, objective, config, lbfgs_iter)
         obj_trace.extend(lbfgs_obj)
         loglik_trace.extend(lbfgs_loglik)
@@ -82,7 +95,9 @@ def _fit_single_restart(
     final_params = _unpack(x, params0, model)
     if model != "MIRT":
         final_params = normalize_latent_positions(final_params)
-    final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed, backend=backend)
+    final_obj, _, final_loglik = neg_loglik_and_grad(
+        y, factors, final_params, config, mask=observed, backend=backend
+    )
     obj_trace.append(final_obj)
     loglik_trace.append(final_loglik)
 
@@ -114,7 +129,9 @@ def _initial_params(
     for d in range(n_dims):
         items = factor_id == d
         denom = np.maximum(observed[:, items].sum(axis=1), 1)
-        theta[:, d] = standardize((y[:, items] * observed[:, items]).sum(axis=1) / denom)
+        theta[:, d] = standardize(
+            (y[:, items] * observed[:, items]).sum(axis=1) / denom
+        )
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
     item_means = (y * observed).sum(axis=0) / item_counts
@@ -124,7 +141,9 @@ def _initial_params(
     xi = rng.normal(0.0, 0.1, size=(n_persons, latent_dim))
     zeta = rng.normal(0.0, 0.1, size=(n_items, latent_dim))
     tau = float(np.log(config.init_gamma))
-    return normalize_latent_positions(MLSIRMParams(theta=theta, alpha=alpha, b=b, xi=xi, zeta=zeta, tau=tau))
+    return normalize_latent_positions(
+        MLSIRMParams(theta=theta, alpha=alpha, b=b, xi=xi, zeta=zeta, tau=tau)
+    )
 
 
 def _make_objective(
@@ -139,7 +158,9 @@ def _make_objective(
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
-        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed, backend=backend)
+        obj, grad, loglik = neg_loglik_and_grad(
+            y, factor_id, params, config, mask=observed, backend=backend
+        )
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))
@@ -157,7 +178,13 @@ def _pack(params: MLSIRMParams, model: str) -> np.ndarray:
         parts.append(params.alpha.ravel())
     parts.append(params.b.ravel())
     if uses_space:
-        parts.extend([params.xi.ravel(), params.zeta.ravel(), np.array([params.tau], dtype=np.float64)])
+        parts.extend(
+            [
+                params.xi.ravel(),
+                params.zeta.ravel(),
+                np.array([params.tau], dtype=np.float64),
+            ]
+        )
     return np.concatenate(parts).astype(np.float64, copy=False)
 
 
@@ -191,7 +218,14 @@ def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
         zeta = np.zeros_like(template.zeta)
         tau = -30.0
 
-    return MLSIRMParams(theta=np.array(theta), alpha=np.array(alpha), b=np.array(b), xi=np.array(xi), zeta=np.array(zeta), tau=tau)
+    return MLSIRMParams(
+        theta=np.array(theta),
+        alpha=np.array(alpha),
+        b=np.array(b),
+        xi=np.array(xi),
+        zeta=np.array(zeta),
+        tau=tau,
+    )
 
 
 def _adam(
@@ -222,7 +256,11 @@ def _adam(
         prev = obj
         m = beta1 * m + (1.0 - beta1) * grad
         v = beta2 * v + (1.0 - beta2) * (grad * grad)
-        x -= config.learning_rate * (m / (1.0 - beta1**t)) / (np.sqrt(v / (1.0 - beta2**t)) + 1e-8)
+        x -= (
+            config.learning_rate
+            * (m / (1.0 - beta1**t))
+            / (np.sqrt(v / (1.0 - beta2**t)) + 1e-8)
+        )
     return x, trace, loglik_trace, status
 
 
