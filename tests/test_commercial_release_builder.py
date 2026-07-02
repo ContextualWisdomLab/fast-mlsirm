@@ -103,6 +103,16 @@ def _fake_runner(command: list[str], _cwd: Path) -> subprocess.CompletedProcess[
             {"status": "ok", "html_report_file": str(html), "html_report_sha256": _sha256(html)},
         )
         payload = {"status": "ok", "out": str(out)}
+    elif script_name == "build_pr_queue_governance.py":
+        out = Path(_option(command, "--out"))
+        html = out / "pr_queue_governance_report.html"
+        html.parent.mkdir(parents=True, exist_ok=True)
+        html.write_text("<!doctype html><title>PR Queue Governance</title>", encoding="utf-8")
+        _write_json(
+            out / "pr_queue_governance_manifest.json",
+            {"status": "ok", "html_report_file": str(html), "html_report_sha256": _sha256(html)},
+        )
+        payload = {"status": "ok", "out": str(out)}
     else:
         raise AssertionError(f"unexpected command: {command}")
     return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -128,9 +138,12 @@ def test_commercial_release_builder_creates_manifest_and_html(tmp_path):
         "release_evidence_index",
         "final_sales_readiness",
         "procurement_due_diligence",
+        "pr_queue_governance",
     ]
     assert manifest["artifacts"]["procurement_due_diligence"]["exists"] is True
     assert manifest["artifacts"]["procurement_due_diligence_html"]["exists"] is True
+    assert manifest["artifacts"]["pr_queue_governance"]["exists"] is True
+    assert manifest["artifacts"]["pr_queue_governance_html"]["exists"] is True
     assert manifest["artifacts"]["wheel"]["exists"] is True
     assert manifest["artifacts"]["sdist"]["exists"] is True
     assert (Path(args.out) / "commercial_release_manifest.json").exists()

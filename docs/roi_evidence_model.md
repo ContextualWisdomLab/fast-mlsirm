@@ -20,6 +20,9 @@ need to decide whether the package can justify a high-value procurement review.
 - **Supply-chain confidence:** wheel/source metadata, policy files,
   commercial-release integrity, GitHub snapshot state, and report digest
   evidence present for procurement review.
+- **Queue governance confidence:** open PR review state, stale or
+  changes-requested work, release-scope conflicts, and report digest evidence
+  present for procurement review.
 
 ## Required Evidence
 
@@ -41,7 +44,9 @@ report, and the release evidence index.
 The same scorecard also requires the commercial release builder so a buyer can
 produce the full evidence set from one command, plus procurement due diligence
 so package metadata, policy files, GitHub state, commercial release evidence,
-and report SHA256 can be reviewed independently.
+and report SHA256 can be reviewed independently. It also requires PR queue
+governance so open review work, stale PRs, and release-scope conflicts are
+classified instead of hidden.
 
 The benchmark evidence is represented by `benchmark_report.json` generated from
 `scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
@@ -73,6 +78,13 @@ The procurement due-diligence evidence is represented by
 `procurement_due_diligence_report.html` presents package metadata, policy-file
 checks, commercial-release integrity, GitHub snapshot state, failed checks, and
 report SHA256 evidence for procurement review.
+
+The PR queue governance evidence is represented by
+`pr_queue_governance_manifest.json` generated from
+`scripts/build_pr_queue_governance.py`. The companion
+`pr_queue_governance_report.html` presents open PR count, reviewDecision,
+mergeStateStatus, stale and changes-requested counts, release-scope conflict
+classification, and report SHA256 evidence for procurement review.
 
 ## Caveats
 

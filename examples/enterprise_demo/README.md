@@ -23,7 +23,8 @@ python scripts/build_commercial_release.py \
 
 The commercial release builder writes `commercial_release_manifest.json` and
 `commercial_release_report.html`, then leaves the acceptance, benchmark, buyer
-packet, release index, final gate, and procurement due-diligence artifacts
+packet, release index, final gate, procurement due-diligence, and PR queue
+governance artifacts
 under the same output directory.
 
 The lower-level checks can also be run manually:
@@ -66,6 +67,9 @@ python scripts/build_procurement_due_diligence.py \
   --dist dist \
   --commercial-release-manifest commercial-release/commercial_release_manifest.json \
   --out procurement-due-diligence
+
+python scripts/build_pr_queue_governance.py \
+  --out pr-queue-governance
 ```
 
 The command writes `buyer_evidence_manifest.json`,
@@ -75,4 +79,8 @@ The release evidence command writes `release_evidence_index.json` and
 sales-readiness, and buyer-packet review. The procurement command writes
 `procurement_due_diligence_manifest.json` and
 `procurement_due_diligence_report.html` for package metadata, policy-file,
-commercial-release, GitHub snapshot, and SHA256 report review.
+commercial-release, GitHub snapshot, and SHA256 report review. The PR queue
+governance command writes `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` for open PR review state, stale and
+changes-requested counts, release-scope conflict classification, and SHA256
+report review.

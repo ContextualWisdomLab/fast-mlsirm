@@ -50,6 +50,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "docs/superpowers/plans/2026-07-03-20b-commercial-release-builder.md",
     "docs/superpowers/specs/2026-07-03-20b-procurement-due-diligence-design.md",
     "docs/superpowers/plans/2026-07-03-20b-procurement-due-diligence.md",
+    "docs/superpowers/specs/2026-07-03-20b-pr-queue-governance-design.md",
+    "docs/superpowers/plans/2026-07-03-20b-pr-queue-governance.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -61,6 +63,7 @@ REQUIRED_DOC_TOKENS = {
         "scripts/build_release_evidence_index.py",
         "scripts/build_commercial_release.py",
         "scripts/build_procurement_due_diligence.py",
+        "scripts/build_pr_queue_governance.py",
     ],
     "docs/commercial_readiness.md": [
         "Seller Acceptance Checklist",
@@ -82,6 +85,7 @@ REQUIRED_DOC_TOKENS = {
         "release_evidence_index.json",
         "commercial_release_manifest.json",
         "procurement_due_diligence_manifest.json",
+        "pr_queue_governance_manifest.json",
         "--require-rust",
     ],
 }
@@ -97,6 +101,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "release_evidence_index.html",
         "commercial_release_report.html",
         "procurement_due_diligence_report.html",
+        "pr_queue_governance_report.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -163,6 +168,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "release_evidence_index",
     "commercial_release_builder",
     "procurement_due_diligence",
+    "pr_queue_governance",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -201,6 +207,13 @@ REQUIRED_PROCUREMENT_DUE_DILIGENCE_CATEGORIES = {
     "policy",
     "commercial_release",
     "github",
+}
+
+REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES = {
+    "github",
+    "queue_state",
+    "risk_classification",
+    "release_boundary",
 }
 
 
@@ -885,6 +898,117 @@ def _validate_procurement_due_diligence(
     ]
 
 
+def _validate_pr_queue_governance(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+    contract_value_krw: int,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "pr_queue_governance:skipped",
+                not required,
+                "PR queue governance check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [
+            _check(
+                "pr_queue_governance:manifest",
+                False,
+                f"missing PR queue governance manifest: {manifest_path}",
+            )
+        ]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [
+            _check(
+                "pr_queue_governance:manifest",
+                False,
+                f"PR queue governance manifest is not valid JSON: {exc}",
+            )
+        ]
+    if not isinstance(payload, dict):
+        return [
+            _check(
+                "pr_queue_governance:manifest_shape",
+                False,
+                "PR queue governance manifest must be a JSON object",
+            )
+        ]
+
+    checks = payload.get("checks", [])
+    ok_categories = {
+        check.get("category")
+        for check in checks
+        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+    }
+    failed_checks = payload.get("failed_checks")
+    risk_counts = payload.get("risk_counts")
+    required_risk_keys = {"changes_requested", "stale", "release_scope_conflict", "review_or_check_delay"}
+    html_file = payload.get("html_report_file")
+    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    if html_path is not None and not html_path.is_absolute():
+        html_path = manifest_path.parent / html_path
+    html_exists = html_path is not None and html_path.exists() and html_path.is_file()
+    expected_html_sha = payload.get("html_report_sha256")
+    actual_html_sha = _sha256(html_path) if html_exists else None
+    return [
+        _check(
+            "pr_queue_governance:status",
+            payload.get("status") == "ok",
+            "PR queue governance manifest status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "pr_queue_governance:contract_value",
+            payload.get("contract_value_krw") == contract_value_krw,
+            "PR queue governance contract value matches readiness gate",
+            expected=contract_value_krw,
+            actual=payload.get("contract_value_krw"),
+        ),
+        _check(
+            "pr_queue_governance:failed_checks",
+            failed_checks == [],
+            "PR queue governance manifest has no recorded failures",
+            failed_checks=failed_checks,
+        ),
+        _check(
+            "pr_queue_governance:category_coverage",
+            REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES.issubset(ok_categories),
+            "PR queue governance covers GitHub snapshot, queue state, risk classification, and release boundary evidence",
+            missing=sorted(REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES - ok_categories),
+        ),
+        _check(
+            "pr_queue_governance:open_pr_count",
+            isinstance(payload.get("open_pr_count"), int) and payload["open_pr_count"] >= 0,
+            "PR queue governance records open PR count",
+            actual=payload.get("open_pr_count"),
+        ),
+        _check(
+            "pr_queue_governance:risk_counts",
+            isinstance(risk_counts, dict) and required_risk_keys.issubset(risk_counts),
+            "PR queue governance records required risk count buckets",
+            missing=sorted(required_risk_keys - set(risk_counts if isinstance(risk_counts, dict) else [])),
+        ),
+        _check(
+            "pr_queue_governance:html_report",
+            html_exists,
+            "PR queue governance HTML report exists",
+            actual=str(html_path) if html_path is not None else None,
+        ),
+        _check(
+            "pr_queue_governance:html_report_sha256",
+            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            "PR queue governance HTML report SHA256 matches manifest",
+            expected=expected_html_sha,
+            actual=actual_html_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -930,6 +1054,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     require_release_evidence_index = getattr(args, "require_release_evidence_index", False)
     procurement_due_diligence = getattr(args, "procurement_due_diligence", None)
     require_procurement_due_diligence = getattr(args, "require_procurement_due_diligence", False)
+    pr_queue_governance = getattr(args, "pr_queue_governance", None)
+    require_pr_queue_governance = getattr(args, "require_pr_queue_governance", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -974,6 +1100,14 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
                 contract_value_krw=args.contract_value_krw,
             )
         )
+    if pr_queue_governance or require_pr_queue_governance:
+        checks.extend(
+            _validate_pr_queue_governance(
+                Path(pr_queue_governance).resolve() if pr_queue_governance else None,
+                required=require_pr_queue_governance,
+                contract_value_krw=args.contract_value_krw,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -987,6 +1121,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_benchmark_report": require_benchmark_report,
         "require_release_evidence_index": require_release_evidence_index,
         "require_procurement_due_diligence": require_procurement_due_diligence,
+        "require_pr_queue_governance": require_pr_queue_governance,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -1035,6 +1170,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-procurement-due-diligence",
         action="store_true",
         help="Fail unless --procurement-due-diligence points to complete procurement due-diligence evidence.",
+    )
+    parser.add_argument("--pr-queue-governance", help="Optional pr_queue_governance_manifest.json to validate.")
+    parser.add_argument(
+        "--require-pr-queue-governance",
+        action="store_true",
+        help="Fail unless --pr-queue-governance points to complete PR queue governance evidence.",
     )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(
