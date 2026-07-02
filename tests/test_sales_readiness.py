@@ -89,6 +89,7 @@ def _write_required_policy_files(root: Path) -> None:
         Enterprise Sales Readiness
         scripts/release_acceptance.py
         scripts/sales_readiness.py
+        scripts/build_release_evidence_index.py
         """,
         "docs/commercial_readiness.md": """
         Seller Acceptance Checklist
@@ -107,6 +108,7 @@ def _write_required_policy_files(root: Path) -> None:
         "docs/release_acceptance.md": """
         acceptance_summary.json
         sales_readiness_manifest.json
+        release_evidence_index.json
         --require-rust
         """,
     }
@@ -125,6 +127,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         Data Analytics Scope
         Figma Code Connect
         benchmark_report.html
+        release_evidence_index.html
         Go/No-Go
         """,
         "docs/buyer_demo_storyboard.md": """
@@ -152,6 +155,8 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         "docs/superpowers/plans/2026-07-02-20b-product-readiness.md": "implementation plan",
         "docs/superpowers/specs/2026-07-02-20b-benchmark-evidence-design.md": "benchmark design spec",
         "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md": "benchmark implementation plan",
+        "docs/superpowers/specs/2026-07-02-20b-release-evidence-index-design.md": "release index design spec",
+        "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md": "release index implementation plan",
     }
     for relative, text in docs.items():
         path = root / relative
@@ -193,6 +198,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
                 {"id": "buyer_evidence_packet", "status": "go"},
                 {"id": "buyer_evidence_html_report", "status": "go"},
                 {"id": "automated_benchmark_report", "status": "go"},
+                {"id": "release_evidence_index", "status": "go"},
             ],
             "go_no_go": {"requires_all_checks_go": True},
         },
@@ -470,6 +476,40 @@ def _write_benchmark_report(tmp_path: Path, *, html_sha: str | None = None, budg
     return path
 
 
+def _write_release_evidence_index(tmp_path: Path, *, html_sha: str | None = None) -> Path:
+    html_report = tmp_path / "release" / "release_evidence_index.html"
+    html_report.parent.mkdir(parents=True, exist_ok=True)
+    html_report.write_text("<!doctype html><title>Release Evidence Index</title>", encoding="utf-8")
+    actual_html_sha = hashlib.sha256(html_report.read_bytes()).hexdigest()
+    manifest = {
+        "status": "ok",
+        "contract_value_krw": 2_000_000_000,
+        "coverage": {
+            "acceptance_summary": True,
+            "sales_readiness_manifest": True,
+            "benchmark_report": True,
+            "benchmark_html_report": True,
+            "buyer_packet_manifest": True,
+            "buyer_packet_zip": True,
+            "buyer_packet_html_report": True,
+            "wheel": True,
+            "sdist": True,
+        },
+        "dist": {
+            "artifacts": [
+                {"kind": "wheel", "size_bytes": 5, "sha256": "a" * 64},
+                {"kind": "sdist", "size_bytes": 5, "sha256": "b" * 64},
+            ]
+        },
+        "failures": [],
+        "html_report_file": str(html_report),
+        "html_report_sha256": html_sha or actual_html_sha,
+    }
+    path = tmp_path / "release" / "release_evidence_index.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
 def test_sales_readiness_validates_required_buyer_packet(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -531,6 +571,39 @@ def test_sales_readiness_validates_required_benchmark_report(tmp_path):
     assert "benchmark_report:html_report_sha256" in check_names
 
 
+def test_sales_readiness_validates_required_release_evidence_index(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    release_index = _write_release_evidence_index(tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=None,
+        require_benchmark_report=False,
+        release_evidence_index=str(release_index),
+        require_release_evidence_index=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "ok"
+    check_names = {check["name"] for check in manifest["checks"]}
+    assert "release_evidence_index:coverage" in check_names
+    assert "release_evidence_index:html_report_sha256" in check_names
+
+
 def test_sales_readiness_fails_when_benchmark_report_sha_mismatches(tmp_path):
     module = _load_sales_readiness()
     acceptance = _write_acceptance(tmp_path)
@@ -559,6 +632,38 @@ def test_sales_readiness_fails_when_benchmark_report_sha_mismatches(tmp_path):
     assert manifest["status"] == "failed"
     failed_names = {check["name"] for check in manifest["failed_checks"]}
     assert "benchmark_report:html_report_sha256" in failed_names
+
+
+def test_sales_readiness_fails_when_release_evidence_index_sha_mismatches(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    release_index = _write_release_evidence_index(tmp_path, html_sha="0" * 64)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=None,
+        require_buyer_packet=False,
+        benchmark_report=None,
+        require_benchmark_report=False,
+        release_evidence_index=str(release_index),
+        require_release_evidence_index=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "release_evidence_index:html_report_sha256" in failed_names
 
 
 def test_sales_readiness_fails_when_buyer_packet_sha_mismatches(tmp_path):

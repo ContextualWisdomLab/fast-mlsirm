@@ -44,6 +44,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "docs/superpowers/plans/2026-07-02-20b-product-readiness.md",
     "docs/superpowers/specs/2026-07-02-20b-benchmark-evidence-design.md",
     "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md",
+    "docs/superpowers/specs/2026-07-02-20b-release-evidence-index-design.md",
+    "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -52,6 +54,7 @@ REQUIRED_DOC_TOKENS = {
         "Enterprise Sales Readiness",
         "scripts/release_acceptance.py",
         "scripts/sales_readiness.py",
+        "scripts/build_release_evidence_index.py",
     ],
     "docs/commercial_readiness.md": [
         "Seller Acceptance Checklist",
@@ -70,6 +73,7 @@ REQUIRED_DOC_TOKENS = {
     "docs/release_acceptance.md": [
         "acceptance_summary.json",
         "sales_readiness_manifest.json",
+        "release_evidence_index.json",
         "--require-rust",
     ],
 }
@@ -82,6 +86,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "Data Analytics Scope",
         "Figma Code Connect",
         "benchmark_report.html",
+        "release_evidence_index.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -145,6 +150,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "buyer_evidence_packet",
     "buyer_evidence_html_report",
     "automated_benchmark_report",
+    "release_evidence_index",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -164,6 +170,18 @@ REQUIRED_BUYER_PACKET_COVERAGE = {
     "product_manifests",
     "acceptance_artifacts",
     "html_report",
+}
+
+REQUIRED_RELEASE_INDEX_COVERAGE = {
+    "acceptance_summary",
+    "sales_readiness_manifest",
+    "benchmark_report",
+    "benchmark_html_report",
+    "buyer_packet_manifest",
+    "buyer_packet_zip",
+    "buyer_packet_html_report",
+    "wheel",
+    "sdist",
 }
 
 
@@ -651,6 +669,106 @@ def _validate_benchmark_report(
     ]
 
 
+def _validate_release_evidence_index(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+    contract_value_krw: int,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "release_evidence_index:skipped",
+                not required,
+                "release evidence index check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [_check("release_evidence_index:manifest", False, f"missing release evidence index: {manifest_path}")]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [_check("release_evidence_index:manifest", False, f"release evidence index is not valid JSON: {exc}")]
+    if not isinstance(payload, dict):
+        return [_check("release_evidence_index:manifest_shape", False, "release evidence index must be a JSON object")]
+
+    coverage = payload.get("coverage", {})
+    coverage_missing = [
+        name
+        for name in sorted(REQUIRED_RELEASE_INDEX_COVERAGE)
+        if not isinstance(coverage, dict) or coverage.get(name) is not True
+    ]
+    dist = payload.get("dist", {})
+    artifacts = dist.get("artifacts") if isinstance(dist, dict) else None
+    dist_artifacts_ok = (
+        isinstance(artifacts, list)
+        and any(isinstance(entry, dict) and entry.get("kind") == "wheel" for entry in artifacts)
+        and any(isinstance(entry, dict) and entry.get("kind") == "sdist" for entry in artifacts)
+        and all(
+            isinstance(entry, dict)
+            and isinstance(entry.get("sha256"), str)
+            and len(entry["sha256"]) == 64
+            and isinstance(entry.get("size_bytes"), int)
+            and entry["size_bytes"] > 0
+            for entry in artifacts
+        )
+    )
+    html_file = payload.get("html_report_file")
+    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    if html_path is not None and not html_path.is_absolute():
+        html_path = manifest_path.parent / html_path
+    html_exists = html_path is not None and html_path.exists() and html_path.is_file()
+    expected_html_sha = payload.get("html_report_sha256")
+    actual_html_sha = _sha256(html_path) if html_exists else None
+    failures = payload.get("failures")
+    return [
+        _check(
+            "release_evidence_index:status",
+            payload.get("status") == "ok",
+            "release evidence index status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "release_evidence_index:contract_value",
+            payload.get("contract_value_krw") == contract_value_krw,
+            "release evidence index contract value matches readiness gate",
+            expected=contract_value_krw,
+            actual=payload.get("contract_value_krw"),
+        ),
+        _check(
+            "release_evidence_index:coverage",
+            not coverage_missing,
+            "release evidence index includes required release evidence coverage",
+            missing=coverage_missing,
+        ),
+        _check(
+            "release_evidence_index:dist_artifacts",
+            dist_artifacts_ok,
+            "release evidence index records wheel and sdist digests",
+            artifact_count=len(artifacts) if isinstance(artifacts, list) else None,
+        ),
+        _check(
+            "release_evidence_index:failures",
+            failures == [],
+            "release evidence index has no recorded failures",
+            failures=failures,
+        ),
+        _check(
+            "release_evidence_index:html_report",
+            html_exists,
+            "release evidence HTML report exists",
+            actual=str(html_path) if html_path is not None else None,
+        ),
+        _check(
+            "release_evidence_index:html_report_sha256",
+            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            "release evidence HTML report SHA256 matches manifest",
+            expected=expected_html_sha,
+            actual=actual_html_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -692,6 +810,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     require_buyer_packet = getattr(args, "require_buyer_packet", False)
     benchmark_report = getattr(args, "benchmark_report", None)
     require_benchmark_report = getattr(args, "require_benchmark_report", False)
+    release_evidence_index = getattr(args, "release_evidence_index", None)
+    require_release_evidence_index = getattr(args, "require_release_evidence_index", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -720,6 +840,14 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
                 required=require_benchmark_report,
             )
         )
+    if release_evidence_index or require_release_evidence_index:
+        checks.extend(
+            _validate_release_evidence_index(
+                Path(release_evidence_index).resolve() if release_evidence_index else None,
+                required=require_release_evidence_index,
+                contract_value_krw=args.contract_value_krw,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -731,6 +859,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_20b_product": args.require_20b_product,
         "require_buyer_packet": require_buyer_packet,
         "require_benchmark_report": require_benchmark_report,
+        "require_release_evidence_index": require_release_evidence_index,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -767,6 +896,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-benchmark-report",
         action="store_true",
         help="Fail unless --benchmark-report points to a complete automated benchmark report.",
+    )
+    parser.add_argument("--release-evidence-index", help="Optional release_evidence_index.json to validate.")
+    parser.add_argument(
+        "--require-release-evidence-index",
+        action="store_true",
+        help="Fail unless --release-evidence-index points to a complete release evidence index.",
     )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(

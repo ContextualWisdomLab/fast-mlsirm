@@ -49,6 +49,12 @@
       "area": "data_analytics",
       "status": "go",
       "evidence": "scripts/build_benchmark_report.py creates benchmark_report.json and benchmark_report.html from release acceptance timing"
+    },
+    {
+      "id": "release_evidence_index",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_release_evidence_index.py creates release_evidence_index.json and release_evidence_index.html from dist, acceptance, benchmark, sales-readiness, and buyer-packet evidence"
     }
   ],
   "go_no_go": {

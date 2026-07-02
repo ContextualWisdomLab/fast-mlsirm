@@ -65,6 +65,37 @@ The command writes `sales_readiness_manifest.json`. A candidate is ready for
 KRW 2,000,000,000 enterprise sales review only when every manifest check is
 `ok`.
 
+For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
+buyer packet, and release evidence index from the same acceptance output:
+
+```bash
+python scripts/build_benchmark_report.py \
+  --acceptance release_acceptance/acceptance_summary.json \
+  --out release_acceptance/benchmark
+
+python scripts/build_buyer_packet.py \
+  --acceptance release_acceptance/acceptance_summary.json \
+  --sales-readiness release_acceptance/sales_readiness_manifest.json \
+  --dist dist \
+  --benchmark-report release_acceptance/benchmark/benchmark_report.json \
+  --out buyer-evidence-packet
+
+python scripts/build_release_evidence_index.py \
+  --acceptance release_acceptance/acceptance_summary.json \
+  --sales-readiness release_acceptance/sales_readiness_manifest.json \
+  --dist dist \
+  --benchmark-report release_acceptance/benchmark/benchmark_report.json \
+  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
+  --out release-evidence-index
+```
+
+The release index writes `release_evidence_index.json` and
+`release_evidence_index.html`. It records the source commit, package version,
+wheel and source distribution SHA256 digests, acceptance status, benchmark
+budget status, sales-readiness status, buyer packet ZIP digest, and HTML report
+digest. A final gate can require it with
+`scripts/sales_readiness.py --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index`.
+
 ## Optional Local Mode
 
 If Rust backend is unavailable in the local environment, run without

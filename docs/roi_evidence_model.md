@@ -33,7 +33,8 @@ The product completion scorecard is represented by
 `examples/enterprise_demo/product_completion_manifest.json`. It must include
 `go` evidence for release acceptance, HTML report CSP, CLI stack-trace safety,
 report table accessibility, the Figma buyer-review artifact, the buyer
-evidence packet, and the buyer evidence HTML review.
+evidence packet, the buyer evidence HTML review, the automated benchmark
+report, and the release evidence index.
 
 The benchmark evidence is represented by `benchmark_report.json` generated from
 `scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
@@ -45,6 +46,12 @@ generated from `scripts/build_buyer_packet.py`. It records artifact coverage,
 SHA256 digests, `source_commit`, `generated_at`, and the target
 `contract_value_krw`. The companion `buyer_evidence_report.html` presents the
 same coverage and digest evidence as KPI cards and review tables.
+
+The release evidence index is represented by `release_evidence_index.json`
+generated from `scripts/build_release_evidence_index.py`. The companion
+`release_evidence_index.html` presents distribution artifact hashes, acceptance
+status, benchmark status, sales-readiness status, buyer packet digest, source
+commit, and required evidence coverage for procurement review.
 
 ## Caveats
 
