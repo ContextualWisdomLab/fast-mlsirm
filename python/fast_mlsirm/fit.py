@@ -26,6 +26,9 @@ def fit(
     _, n_items = y.shape
     factors = np.asarray(factor_id, dtype=np.int64)
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
+    if n_dims > n_items:
+        raise ValueError("factor_id implies more dimensions than items")
+
     if model in {"ULS2PLM", "ULSRM"}:
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
