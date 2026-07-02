@@ -20,5 +20,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
+      - run: cargo test --workspace
+      - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install --upgrade pip build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install --force-reinstall dist/*.whl
+      - run: python -c "import fast_mlsirm, fast_mlsirm._core as core; print(fast_mlsirm.__version__, hasattr(core, 'neg_loglik_and_grad'))"
+      - name: Run release acceptance smoke
+        run: |
+          python scripts/release_acceptance.py --out release-acceptance --require-rust --persons 12 --dims 1 --items-per-dim 2 --latent-dim 1 --latent-dims 1,2 --folds 2 --max-iter 1 --n-restarts 1
+          python - <<'PY'
+          import json
+
+          with open("release-acceptance/acceptance_summary.json", encoding="utf-8") as fh:
+              summary = json.load(fh)
+          assert summary["status"] == "ok"
+          PY
+      - name: Run enterprise sales readiness gate
+        run: |
+          python scripts/sales_readiness.py \
+            --acceptance release-acceptance/acceptance_summary.json \
+            --dist dist \
+            --require-rust \
+            --require-20b-product \
+            --check-import \
+            --out release-acceptance/sales_readiness_manifest.json
+          python - <<'PY'
+          import json
+
+          with open("release-acceptance/sales_readiness_manifest.json", encoding="utf-8") as fh:
+              manifest = json.load(fh)
+          assert manifest["status"] == "ok"
+          PY
