@@ -70,6 +70,9 @@ print(process_dimensions.best)
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
   benchmark, sales-readiness, and buyer-packet evidence to one commit.
+- Single-command commercial release evidence builder for dist, acceptance,
+  benchmark, sales-readiness, buyer packet, release index, and final gate
+  output.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -114,6 +117,17 @@ or Bayesian posterior inference engine. See:
 - [Changelog](CHANGELOG.md)
 
 Sales readiness verification uses:
+
+```bash
+python scripts/build_commercial_release.py \
+  --out commercial-release \
+  --require-rust \
+  --check-import
+```
+
+The commercial release builder writes `commercial_release_manifest.json` and
+`commercial_release_report.html` while keeping the underlying stage artifacts
+under the same output directory. The equivalent manual sequence is:
 
 ```bash
 python scripts/release_acceptance.py --out acceptance_check --require-rust
@@ -169,6 +183,8 @@ release-acceptance timing evidence. The release evidence index command produces
 `release_evidence_index.json` and `release_evidence_index.html` as a compact
 digest map over the candidate wheel, source distribution, release acceptance,
 benchmark report, sales-readiness manifest, and buyer packet.
+The commercial release builder produces the same evidence as a single buyer
+review entrypoint and records the failed stage when the gate does not pass.
 
 ## CLI
 

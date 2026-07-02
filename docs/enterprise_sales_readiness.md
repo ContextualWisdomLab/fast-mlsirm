@@ -42,6 +42,10 @@ artifact being offered:
   `release_evidence_index.json` and `release_evidence_index.html` tying the
   dist artifacts, acceptance run, benchmark report, sales-readiness manifest,
   and buyer packet to one source commit.
+- `scripts/build_commercial_release.py` produces
+  `commercial_release_manifest.json` and `commercial_release_report.html` as a
+  top-level buyer review summary over dist build, acceptance, benchmark,
+  sales-readiness, buyer packet, release index, and final gate stages.
 
 ## Customer Acceptance Evidence
 
@@ -55,6 +59,8 @@ The buyer acceptance package should include:
   coverage evidence.
 - Generated release evidence JSON and HTML reports with distribution hashes,
   source commit, acceptance status, benchmark status, and buyer packet digest.
+- Generated commercial release JSON and HTML reports with stage durations,
+  failed-stage detail, artifact paths, and SHA256 digests.
 - Exact commit SHA, package version, Python version, Rust toolchain version,
   operating system, and backend used.
 - A synthetic-data reproduction path that does not expose customer response
@@ -81,6 +87,9 @@ true:
 - `python scripts/build_release_evidence_index.py --acceptance release-acceptance/acceptance_summary.json --sales-readiness release-acceptance/sales_readiness_manifest.json --dist dist --benchmark-report release-acceptance/benchmark/benchmark_report.json --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --out release-evidence-index`
   passes and emits `release_evidence_index.json` plus
   `release_evidence_index.html`.
+- `python scripts/build_commercial_release.py --out commercial-release --require-rust --check-import`
+  passes and emits `commercial_release_manifest.json` plus
+  `commercial_release_report.html`.
 - `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
   passes as the final evidence-integrity gate.
 - No release candidate changes the formula contract, diagnostics semantics, or

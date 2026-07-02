@@ -55,6 +55,12 @@
       "area": "procurement",
       "status": "go",
       "evidence": "scripts/build_release_evidence_index.py creates release_evidence_index.json and release_evidence_index.html from dist, acceptance, benchmark, sales-readiness, and buyer-packet evidence"
+    },
+    {
+      "id": "commercial_release_builder",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_commercial_release.py creates commercial_release_manifest.json and commercial_release_report.html from the full release evidence pipeline"
     }
   ],
   "go_no_go": {

@@ -30,6 +30,8 @@ evidence index over the exact artifacts being offered.
 - Automated benchmark evidence reporting from release-acceptance timing.
 - Release evidence index reporting for dist artifact hashes, acceptance,
   benchmark, sales-readiness, and buyer-packet evidence.
+- Single-command commercial release evidence reporting through
+  `scripts/build_commercial_release.py`.
 
 ## Not Yet Supported
 
@@ -51,6 +53,10 @@ release commit:
 - `python3 -c "import fast_mlsirm, fast_mlsirm._core"` succeeds.
 - `python scripts/release_acceptance.py --out acceptance_check --require-rust` passes and
   writes `acceptance_summary.json`.
+- `python scripts/build_commercial_release.py --out commercial-release --require-rust --check-import`
+  passes and writes `commercial_release_manifest.json` plus
+  `commercial_release_report.html` when verifying the full KRW 2,000,000,000
+  buyer-review packet in one command.
 - `python scripts/build_benchmark_report.py --acceptance acceptance_check/acceptance_summary.json --out acceptance_check/benchmark`
   writes `benchmark_report.json` and `benchmark_report.html`.
 - `fit_auto`/`fit_rust` fit summaries are complete and match resolved backend
@@ -91,6 +97,9 @@ must be able to show:
   review when procurement asks for a single reviewable artifact bundle.
 - a generated release evidence index with SHA256 digests and standalone HTML
   review tying the candidate artifacts to the exact source commit.
+- a generated commercial release manifest and standalone HTML summary that
+  record stage status, runtime, source commit, failed stage, artifact paths, and
+  SHA256 evidence from one command.
 
 ## Security and Support Boundaries
 

@@ -50,7 +50,9 @@ part of the offer, the frame should also show that
 the packet. The same frame should point to `release_evidence_index.json` and
 `release_evidence_index.html` as the release-level digest map over the wheel,
 source distribution, acceptance output, benchmark evidence, sales-readiness
-manifest, and buyer packet.
+manifest, and buyer packet. The final buyer-review state should also point to
+`commercial_release_manifest.json` and `commercial_release_report.html` as the
+single-command stage summary and human review surface.
 
 ## Generated Artifact
 

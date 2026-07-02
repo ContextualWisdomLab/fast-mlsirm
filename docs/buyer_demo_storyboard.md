@@ -12,6 +12,8 @@ The demo should show a complete buyer review without customer data:
 1. **Package Evidence**
    - Show version, wheel, source distribution, Python version, Rust toolchain,
      and commit SHA.
+   - Show `commercial_release_manifest.json` as the top-level evidence index
+     for the buyer run.
    - Explain that NumPy is the reference backend and Rust/PyO3 is optional
      acceleration for the objective.
 2. **Synthetic Data**
@@ -46,6 +48,9 @@ The demo should show a complete buyer review without customer data:
    - Open `release_evidence_index.html` to review wheel/source distribution
      hashes, acceptance status, benchmark status, sales-readiness status, buyer
      packet digest, source commit, and required evidence coverage in one place.
+   - Open `commercial_release_report.html` to review the full stage timeline,
+     failed-stage detail when present, artifact paths, and SHA256 evidence from
+     the single command.
 
 ## Screen List For Figma
 
@@ -60,7 +65,7 @@ The Figma prototype should contain these static screens:
 - `05-report-export`: standalone HTML report review state.
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
   standalone HTML review, benchmark report files, release evidence index, and
-  go/no-go status.
+  commercial release report with go/no-go status.
 
 ## Interaction Level
 
@@ -76,4 +81,6 @@ or a manifest checked by `scripts/sales_readiness.py --require-20b-product`.
 The procurement-packet screen also maps to `scripts/build_buyer_packet.py` and
 optional `scripts/sales_readiness.py --require-buyer-packet` validation, plus
 `scripts/build_release_evidence_index.py` and optional
-`scripts/sales_readiness.py --require-release-evidence-index` validation.
+`scripts/sales_readiness.py --require-release-evidence-index` validation. The
+top-level buyer run maps to `scripts/build_commercial_release.py`, which writes
+`commercial_release_manifest.json` and `commercial_release_report.html`.

@@ -15,6 +15,20 @@ Files:
 These files are checked by:
 
 ```bash
+python scripts/build_commercial_release.py \
+  --out commercial-release \
+  --require-rust \
+  --check-import
+```
+
+The commercial release builder writes `commercial_release_manifest.json` and
+`commercial_release_report.html`, then leaves the acceptance, benchmark, buyer
+packet, release index, and final gate artifacts under the same output
+directory.
+
+The lower-level checks can also be run manually:
+
+```bash
 python scripts/build_benchmark_report.py \
   --acceptance release-acceptance/acceptance_summary.json \
   --out release-acceptance/benchmark
