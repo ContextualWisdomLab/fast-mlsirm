@@ -9,3 +9,13 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Prevention:**
 - Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
 - Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.
+
+## 2026-07-02 - [Add Strict CSP to HTML Reports]
+**Vulnerability:**
+The generated standalone HTML diagnostic reports lacked a Content Security Policy (CSP). While the backend handles escaping HTML input, missing a CSP violates defense-in-depth principles. If any unsanitized user data were processed or if future dynamic features were introduced without escaping, the reports could be vulnerable to Cross-Site Scripting (XSS).
+
+**Learning:**
+Even for static, offline-generated HTML reports where inputs are meant to be controlled, implementing a strict CSP is a crucial layer of security.
+
+**Prevention:**
+- Always add a strict CSP `<meta>` tag (e.g., `default-src 'none'; style-src 'unsafe-inline';`) to the `<head>` of generated standalone HTML files.
