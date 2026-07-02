@@ -318,3 +318,62 @@ def test_sales_readiness_fails_when_figma_code_connect_is_enabled(tmp_path):
     assert manifest["status"] == "failed"
     failed_names = {check["name"] for check in manifest["failed_checks"]}
     assert "20b:figma_code_connect_disabled" in failed_names
+
+
+def test_sales_readiness_fails_gracefully_when_20b_json_has_wrong_shape(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    (repo_root / "examples" / "enterprise_demo" / "roi_manifest.json").write_text("[]", encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "20b:json_shape:examples/enterprise_demo/roi_manifest.json" in failed_names
+
+
+def test_sales_readiness_treats_required_20b_json_none_as_empty(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    path = repo_root / "examples" / "enterprise_demo" / "roi_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["drivers"] = None
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    json_field_check = next(
+        check
+        for check in manifest["failed_checks"]
+        if check["name"] == "20b:json_fields:examples/enterprise_demo/roi_manifest.json"
+    )
+    assert json_field_check["empty"] == ["drivers"]

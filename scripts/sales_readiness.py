@@ -236,11 +236,22 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
         except Exception as exc:
             checks.append(_check(f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"))
             continue
+        if not isinstance(payload, dict):
+            checks.append(
+                _check(
+                    f"20b:json_shape:{relative}",
+                    False,
+                    "manifest must be a JSON object",
+                    actual_type=type(payload).__name__,
+                )
+            )
+            continue
         missing = [field for field in fields if field not in payload]
         non_empty_failures = [
             field
             for field in fields
-            if field in payload and isinstance(payload[field], (list, dict, str)) and not payload[field]
+            if field in payload
+            and (payload[field] is None or (isinstance(payload[field], (list, dict, str)) and not payload[field]))
         ]
         checks.append(
             _check(
