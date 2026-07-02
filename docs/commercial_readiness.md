@@ -1,9 +1,9 @@
-# Commercial Beta Readiness
+# Commercial Readiness
 
 ## Readiness Position
 
-`fast-mlsirm` is ready to package and sell as a commercial beta for technical
-users who understand MLSIRM/IRT workflows and can evaluate model suitability for
+`fast-mlsirm` is ready for commercial beta deployment by technical users who
+understand MLSIRM/IRT workflows and can evaluate model suitability for
 their own domain. It is not positioned as a finished regulated decision product
 or as a fully managed assessment platform.
 
@@ -30,7 +30,7 @@ or as a fully managed assessment platform.
 - Hosted dashboards, user management, billing, or enterprise administration.
 - Domain-specific clinical, employment, or educational placement decisions.
 
-## Buyer Acceptance Checklist
+## Seller Acceptance Checklist (Release Gate)
 
 Before treating a build as sale-ready, verify all items below against the exact
 release commit:
@@ -38,16 +38,16 @@ release commit:
 - `python3 -m pytest` passes.
 - `cargo test --workspace` passes.
 - `cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml` passes.
-- `python3 -m pip install -e .` builds the PyO3 extension.
-- `python3 -c "import fast_mlsirm._core"` succeeds.
-- `fast-mlsirm fit --backend rust` records `"backend": "rust"` in JSON output
-  and `fit_summary.json`.
-- `fast-mlsirm fit --backend auto` falls back to NumPy when the extension is not
-  installed.
-- README, PRD/TRD, `SECURITY.md`, `SUPPORT.md`, and `CHANGELOG.md` are present
-  and match the shipped behavior.
+- `python3 -m pip install -e .` or wheel install builds the PyO3 extension.
+- `python3 -c "import fast_mlsirm, fast_mlsirm._core"` succeeds.
+- `python scripts/release_acceptance.py --out acceptance_check --require-rust` passes and
+  writes `acceptance_summary.json`.
+- `fit_auto`/`fit_rust` fit summaries are complete and match resolved backend
+  paths.
+- README, PRD/TRD, `SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`, and
+  `docs/release_acceptance.md` are present and match shipped behavior.
 - GitHub CI includes Python tests, Rust core tests, PyO3 crate tests, package
-  build validation, wheel metadata checks, and a Rust backend CLI smoke test.
+  build validation, wheel metadata checks, and release-acceptance execution.
 
 ## Release Gate
 

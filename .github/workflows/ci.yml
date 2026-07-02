@@ -40,16 +40,13 @@ jobs:
       - run: python -m twine check dist/*
       - run: python -m pip install --force-reinstall dist/*.whl
       - run: python -c "import fast_mlsirm, fast_mlsirm._core as core; print(fast_mlsirm.__version__, hasattr(core, 'neg_loglik_and_grad'))"
-      - name: Smoke test Rust backend CLI
+      - name: Run release acceptance smoke
         run: |
-          tmpdir="$(mktemp -d)"
-          python -m fast_mlsirm.cli simulate --persons 12 --dims 1 --items-per-dim 2 --latent-dim 1 --out "$tmpdir/sim" --json
-          python -m fast_mlsirm.cli fit --responses "$tmpdir/sim/responses.npy" --factors "$tmpdir/sim/item_factor.csv" --model MLS2PLM --max-iter 1 --n-restarts 1 --backend rust --out "$tmpdir/fit" --json
-          python - <<'PY' "$tmpdir/fit/fit_summary.json"
+          python scripts/release_acceptance.py --out release-acceptance --require-rust --persons 12 --dims 1 --items-per-dim 2 --latent-dim 1 --latent-dims 1,2 --folds 2 --max-iter 1 --n-restarts 1
+          python - <<'PY'
           import json
-          import sys
 
-          with open(sys.argv[1], encoding="utf-8") as fh:
+          with open("release-acceptance/acceptance_summary.json", encoding="utf-8") as fh:
               summary = json.load(fh)
-          assert summary["backend"] == "rust"
+          assert summary["status"] == "ok"
           PY
