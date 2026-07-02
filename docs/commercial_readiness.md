@@ -26,11 +26,11 @@ evidence, and a machine-readable `sales_readiness_manifest.json`.
   `fast-mlsirm fit --backend`.
 - Dense response matrices with missing values represented by `NaN`, `-1`, or an
   explicit mask.
+- Automated benchmark evidence reporting from release-acceptance timing.
 
 ## Not Yet Supported
 
 - Sparse/block execution for very large matrices.
-- Automated benchmark reporting.
 - Posterior predictive checking and Bayesian posterior inference.
 - Native ordinal response-model estimation such as GRM, GPCM, or GGUM.
 - Hosted dashboards, user management, billing, or enterprise administration.
@@ -48,6 +48,8 @@ release commit:
 - `python3 -c "import fast_mlsirm, fast_mlsirm._core"` succeeds.
 - `python scripts/release_acceptance.py --out acceptance_check --require-rust` passes and
   writes `acceptance_summary.json`.
+- `python scripts/build_benchmark_report.py --acceptance acceptance_check/acceptance_summary.json --out acceptance_check/benchmark`
+  writes `benchmark_report.json` and `benchmark_report.html`.
 - `fit_auto`/`fit_rust` fit summaries are complete and match resolved backend
   paths.
 - README, PRD/TRD, `SECURITY.md`, `SUPPORT.md`, `CHANGELOG.md`, and
@@ -57,9 +59,9 @@ release commit:
 - `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --check-import`
   passes and writes `sales_readiness_manifest.json` when verifying a built
   artifact.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --check-import`
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --check-import`
   passes when positioning the release for KRW 2,000,000,000 procurement review.
-- `python scripts/build_buyer_packet.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --out buyer-evidence-packet`
+- `python scripts/build_buyer_packet.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --benchmark-report acceptance_check/benchmark/benchmark_report.json --out buyer-evidence-packet`
   creates `buyer_evidence_manifest.json` and
   `fast_mlsirm_buyer_evidence_packet.zip`, plus
   `buyer_evidence_report.html`, when a portable procurement packet is part of
@@ -76,7 +78,7 @@ must be able to show:
   the package;
 - explicit support, security, non-goal, and formula-contract boundaries;
 - buyer demo storyboard, Figma packet with Code Connect disabled, ROI evidence,
-  benchmark manifest, and synthetic demo package;
+  benchmark manifest, generated benchmark report, and synthetic demo package;
 - a generated `sales_readiness_manifest.json` with no failed checks.
 - a generated buyer evidence packet with SHA256 digests and standalone HTML
   review when procurement asks for a single reviewable artifact bundle.

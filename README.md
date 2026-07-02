@@ -67,6 +67,7 @@ print(process_dimensions.best)
 - Response-process probability candidate comparisons for external dimensionality
   checks.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
+- Automated benchmark evidence reports from release-acceptance timing.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -114,17 +115,23 @@ Sales readiness verification uses:
 
 ```bash
 python scripts/release_acceptance.py --out acceptance_check --require-rust
+python scripts/build_benchmark_report.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --out acceptance_check/benchmark
 python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
   --require-rust \
   --require-20b-product \
+  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
+  --require-benchmark-report \
   --check-import \
   --out acceptance_check/sales_readiness_manifest.json
 python scripts/build_buyer_packet.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --sales-readiness acceptance_check/sales_readiness_manifest.json \
   --dist dist \
+  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
   --out buyer-evidence-packet
 ```
 
@@ -134,7 +141,9 @@ release artifact. The 20B product gate adds
 Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
 synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
 command produces a portable zip, `buyer_evidence_manifest.json`, and
-`buyer_evidence_report.html` for procurement review.
+`buyer_evidence_report.html` for procurement review. The benchmark command
+produces `benchmark_report.json` and `benchmark_report.html` from the same
+release-acceptance timing evidence.
 
 ## CLI
 

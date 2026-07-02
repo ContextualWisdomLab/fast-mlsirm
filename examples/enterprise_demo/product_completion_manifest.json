@@ -43,6 +43,12 @@
       "area": "procurement",
       "status": "go",
       "evidence": "scripts/build_buyer_packet.py creates buyer_evidence_report.html for human review of coverage, digests, contract value, and source commit"
+    },
+    {
+      "id": "automated_benchmark_report",
+      "area": "data_analytics",
+      "status": "go",
+      "evidence": "scripts/build_benchmark_report.py creates benchmark_report.json and benchmark_report.html from release acceptance timing"
     }
   ],
   "go_no_go": {

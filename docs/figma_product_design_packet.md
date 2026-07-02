@@ -23,7 +23,7 @@ readiness gate. Figma Code Connect is explicitly out of scope.
 The Figma board should include one frame per storyboard screen:
 
 1. Package Evidence
-2. Synthetic Demo Run
+2. Synthetic Demo Run and Benchmark Evidence
 3. Fit Diagnostics
 4. Dimensionality Review
 5. Report Export
@@ -36,11 +36,18 @@ Each frame should include:
 - the go/no-go signal;
 - the source file or command that produces the artifact.
 
+The Synthetic Demo Run frame should point to `benchmark_report.json` and
+`benchmark_report.html` when showing runtime-budget and command-duration
+evidence.
+
 The Procurement Packet frame should include the portable packet outputs:
 `buyer_evidence_manifest.json` and
 `fast_mlsirm_buyer_evidence_packet.zip`, plus the SHA256 digest status recorded
 by the manifest. It should also point to `buyer_evidence_report.html` as the
-human-readable review surface for the same evidence.
+human-readable review surface for the same evidence. When a benchmark report is
+part of the offer, the frame should also show that
+`benchmark/benchmark_report.json` and `benchmark/benchmark_report.html` are in
+the packet.
 
 ## Generated Artifact
 

@@ -11,8 +11,8 @@
     },
     {
       "id": "02-synthetic-demo-run",
-      "title": "Synthetic Demo Run",
-      "artifact": "simulate and fit command outputs"
+      "title": "Synthetic Demo Run and Benchmark Evidence",
+      "artifact": "simulate, fit, benchmark_report.json, and benchmark_report.html"
     },
     {
       "id": "03-fit-diagnostics",
@@ -32,7 +32,7 @@
     {
       "id": "06-procurement-packet",
       "title": "Procurement Packet",
-      "artifact": "acceptance, sales, ROI, benchmark, and design manifests"
+      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, and buyer packet manifests"
     }
   ],
   "handoff": {

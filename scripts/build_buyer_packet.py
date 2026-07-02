@@ -101,11 +101,22 @@ def _collect_files(
     acceptance_path: Path,
     sales_readiness_path: Path,
     dist_dir: Path,
+    benchmark_report_path: Path | None = None,
 ) -> dict[str, Path]:
     acceptance = _read_json(acceptance_path)
     files: dict[str, Path] = {}
     _add_file(files, "acceptance/acceptance_summary.json", acceptance_path)
     _add_file(files, "sales/sales_readiness_manifest.json", sales_readiness_path)
+    if benchmark_report_path is not None:
+        benchmark_report = _read_json(benchmark_report_path)
+        _add_file(files, "benchmark/benchmark_report.json", benchmark_report_path)
+        html_report_file = benchmark_report.get("html_report_file")
+        html_report_path = Path(str(html_report_file)) if isinstance(html_report_file, str) and html_report_file else None
+        if html_report_path is not None and not html_report_path.is_absolute():
+            html_report_path = benchmark_report_path.parent / html_report_path
+        if html_report_path is None:
+            raise RuntimeError("benchmark report is missing html_report_file")
+        _add_file(files, "benchmark/benchmark_report.html", html_report_path)
 
     for path in sorted(dist_dir.glob("*.whl")):
         _add_file(files, f"dist/{path.name}", path)
@@ -141,6 +152,7 @@ def _coverage(files: dict[str, Path]) -> dict[str, bool]:
         "product_manifests": all(relative in files for relative in PRODUCT_MANIFESTS),
         "acceptance_artifacts": any(path.startswith("acceptance/artifacts/") for path in files),
         "html_report": "buyer_evidence_report.html" in files,
+        "benchmark_report": "benchmark/benchmark_report.json" in files and "benchmark/benchmark_report.html" in files,
     }
 
 
@@ -405,6 +417,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         acceptance_path=Path(args.acceptance).resolve(),
         sales_readiness_path=Path(args.sales_readiness).resolve(),
         dist_dir=Path(args.dist).resolve(),
+        benchmark_report_path=Path(args.benchmark_report).resolve() if getattr(args, "benchmark_report", None) else None,
     )
     file_entries = [
         {
@@ -438,8 +451,9 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         for archive_path, path in sorted(files.items())
     ]
     coverage = _coverage(files)
-    if not all(coverage.values()):
-        missing = [name for name, ok in coverage.items() if not ok]
+    required_coverage = {name: ok for name, ok in coverage.items() if name != "benchmark_report"}
+    if not all(required_coverage.values()):
+        missing = [name for name, ok in required_coverage.items() if not ok]
         raise RuntimeError(f"buyer evidence packet is missing required coverage: {missing}")
     manifest["coverage"] = coverage
     manifest["artifact_count"] = len(file_entries)
@@ -469,6 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dist", required=True, help="Directory containing the built wheel and sdist.")
     parser.add_argument("--out", default="buyer-evidence-packet", help="Output directory for packet files.")
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
+    parser.add_argument("--benchmark-report", help="Optional benchmark_report.json to include in the packet.")
     return parser
 
 
