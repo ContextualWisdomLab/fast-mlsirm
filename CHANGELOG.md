@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `scripts/release_acceptance.py` to execute a sales-readiness end-to-end
+  smoke: simulate, fit (auto + optional rust), diagnostics, and report rendering.
+- Added `docs/release_acceptance.md` to document acceptance inputs, outputs, and
+  pass criteria.
+
+### CI
+
+- Replaced package-only Rust smoke with release-acceptance execution in CI.
+
+### Documentation
+
+- Updated commercial-readiness and README documents to point to the acceptance
+  checklist and execution command.
+
 ## 0.1.0 - 2026-07-02
 
 ### Added
