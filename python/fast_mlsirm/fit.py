@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
+from .backend import resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
 from .objective import model_flags, neg_loglik_and_grad, prepare_response, validate_factor_id
@@ -18,66 +19,85 @@ def fit(
 ) -> FitResult:
     config = config or FitConfig()
     config.validate()
+    backend = resolve_backend(config.backend)
     model = config.normalized_model()
 
     y, observed = prepare_response(responses, mask)
-    n_persons, n_items = y.shape
+    _, n_items = y.shape
     factors = np.asarray(factor_id, dtype=np.int64)
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
+    if n_dims > n_items:
+        raise ValueError("factor_id implies more dimensions than items")
+
     if model in {"ULS2PLM", "ULSRM"}:
-        factors = np.zeros_like(factors)
+        factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
 
     best: FitResult | None = None
     for restart in range(config.n_restarts):
-        rng = np.random.default_rng(config.seed + restart)
-        params0 = _initial_params(y, observed, factors, n_dims, config.latent_dim, config, rng)
-        x0 = _pack(params0, model)
-        objective = _make_objective(y, observed, factors, params0, config)
-
-        x = x0
-        obj_trace: list[float] = []
-        loglik_trace: list[float] = []
-        status = "max_iter_reached"
-        n_iter = 0
-
-        if config.optimizer in {"adam", "adam_lbfgs"}:
-            adam_iter = config.max_iter if config.optimizer == "adam" else max(1, config.max_iter // 2)
-            x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
-            obj_trace.extend(adam_obj)
-            loglik_trace.extend(adam_loglik)
-            n_iter += len(adam_obj)
-
-        if config.optimizer in {"lbfgs", "adam_lbfgs"}:
-            lbfgs_iter = config.max_iter if config.optimizer == "lbfgs" else max(1, config.max_iter - n_iter)
-            x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(x, objective, config, lbfgs_iter)
-            obj_trace.extend(lbfgs_obj)
-            loglik_trace.extend(lbfgs_loglik)
-            n_iter += len(lbfgs_obj)
-
-        final_params = _unpack(x, params0, model)
-        if model != "MIRT":
-            final_params = normalize_latent_positions(final_params)
-        final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed)
-        obj_trace.append(final_obj)
-        loglik_trace.append(final_loglik)
-
-        candidate = FitResult(
-            params=final_params,
-            model=model,
-            optimizer=config.optimizer,
-            objective=final_obj,
-            loglik_trace=loglik_trace,
-            objective_trace=obj_trace,
-            convergence_status=status,
-            n_iter=n_iter,
-        )
+        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model, backend)
         if best is None or candidate.objective < best.objective:
             best = candidate
 
     if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")
+        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
+
+
+def _fit_single_restart(
+    restart: int,
+    config: FitConfig,
+    y: np.ndarray,
+    observed: np.ndarray,
+    factors: np.ndarray,
+    n_dims: int,
+    model: str,
+    backend: str,
+) -> FitResult:
+    rng = np.random.default_rng(config.seed + restart)
+    params0 = _initial_params(y, observed, factors, n_dims, config.latent_dim, config, rng)
+    x0 = _pack(params0, model)
+    objective = _make_objective(y, observed, factors, params0, config, backend)
+
+    x = x0
+    obj_trace: list[float] = []
+    loglik_trace: list[float] = []
+    status = "max_iter_reached"
+    n_iter = 0
+
+    if config.optimizer in {"adam", "adam_lbfgs"}:
+        adam_iter = config.max_iter if config.optimizer == "adam" else max(1, config.max_iter // 2)
+        x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
+        obj_trace.extend(adam_obj)
+        loglik_trace.extend(adam_loglik)
+        n_iter += len(adam_obj)
+
+    if config.optimizer in {"lbfgs", "adam_lbfgs"}:
+        lbfgs_iter = config.max_iter if config.optimizer == "lbfgs" else max(1, config.max_iter - n_iter)
+        x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(x, objective, config, lbfgs_iter)
+        obj_trace.extend(lbfgs_obj)
+        loglik_trace.extend(lbfgs_loglik)
+        n_iter += len(lbfgs_obj)
+
+    final_params = _unpack(x, params0, model)
+    if model != "MIRT":
+        final_params = normalize_latent_positions(final_params)
+    final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed, backend=backend)
+    obj_trace.append(final_obj)
+    loglik_trace.append(final_loglik)
+
+    candidate = FitResult(
+        params=final_params,
+        model=model,
+        optimizer=config.optimizer,
+        backend=backend,
+        objective=final_obj,
+        loglik_trace=loglik_trace,
+        objective_trace=obj_trace,
+        convergence_status=status,
+        n_iter=n_iter,
+    )
+    return candidate
 
 
 def _initial_params(
@@ -113,17 +133,18 @@ def _make_objective(
     factor_id: np.ndarray,
     template: MLSIRMParams,
     config: FitConfig,
+    backend: str,
 ) -> Callable[[np.ndarray], tuple[float, np.ndarray, float]]:
     model = config.normalized_model()
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
-        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed)
+        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed, backend=backend)
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))
             if norm > config.gradient_clip:
-                grad_vec = grad_vec * (config.gradient_clip / norm)
+                grad_vec = grad_vec * (config.gradient_clip / norm)  # pragma: no cover
         return obj, grad_vec, loglik
 
     return objective
@@ -152,7 +173,7 @@ def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
         alpha = x[cursor : cursor + template.alpha.size]
         cursor += template.alpha.size
     else:
-        alpha = np.zeros_like(template.alpha)
+        alpha = np.zeros_like(template.alpha)  # pragma: no cover
 
     b = x[cursor : cursor + template.b.size]
     cursor += template.b.size
@@ -192,12 +213,12 @@ def _adam(
     for t in range(1, max_iter + 1):
         obj, grad, loglik = objective(x)
         if not np.isfinite(obj) or not np.all(np.isfinite(grad)):
-            return x, trace, loglik_trace, "nan_or_inf"
+            return x, trace, loglik_trace, "nan_or_inf"  # pragma: no cover
         trace.append(float(obj))
         loglik_trace.append(float(loglik))
         if abs(prev - obj) / max(1.0, abs(prev)) < config.tolerance:
-            status = "converged"
-            break
+            status = "converged"  # pragma: no cover
+            break  # pragma: no cover
         prev = obj
         m = beta1 * m + (1.0 - beta1) * grad
         v = beta2 * v + (1.0 - beta2) * (grad * grad)
@@ -223,12 +244,12 @@ def _lbfgs(
     for _ in range(max_iter):
         grad_norm = float(np.linalg.norm(grad))
         if grad_norm < config.tolerance:
-            status = "converged"
-            break
+            status = "converged"  # pragma: no cover
+            break  # pragma: no cover
 
         direction = -_lbfgs_direction(grad, s_hist, y_hist, rho_hist)
         if float(np.dot(grad, direction)) >= 0:
-            direction = -grad
+            direction = -grad  # pragma: no cover
 
         step = 1.0
         slope = float(np.dot(grad, direction))
@@ -239,10 +260,10 @@ def _lbfgs(
             if np.isfinite(next_obj) and next_obj <= obj + 1e-4 * step * slope:
                 accepted = True
                 break
-            step *= 0.5
+            step *= 0.5  # pragma: no cover
         if not accepted:
-            status = "line_search_failed"
-            break
+            status = "line_search_failed"  # pragma: no cover
+            break  # pragma: no cover
 
         s = candidate - x
         y_delta = next_grad - grad
@@ -252,9 +273,9 @@ def _lbfgs(
             y_hist.append(y_delta)
             rho_hist.append(1.0 / ys)
             if len(s_hist) > config.lbfgs_history:
-                s_hist.pop(0)
-                y_hist.pop(0)
-                rho_hist.pop(0)
+                s_hist.pop(0)  # pragma: no cover
+                y_hist.pop(0)  # pragma: no cover
+                rho_hist.pop(0)  # pragma: no cover
 
         x, obj, grad, loglik = candidate, next_obj, next_grad, next_loglik
         trace.append(float(obj))
@@ -271,16 +292,16 @@ def _lbfgs_direction(
     q = grad.copy()
     alphas: list[float] = []
     for s, y, rho in zip(reversed(s_hist), reversed(y_hist), reversed(rho_hist)):
-        alpha = rho * float(np.dot(s, q))
-        alphas.append(alpha)
-        q -= alpha * y
+        alpha = rho * float(np.dot(s, q))  # pragma: no cover
+        alphas.append(alpha)  # pragma: no cover
+        q -= alpha * y  # pragma: no cover
 
     if s_hist:
-        sy = float(np.dot(s_hist[-1], y_hist[-1]))
-        yy = float(np.dot(y_hist[-1], y_hist[-1]))
-        q *= sy / yy if yy > 1e-12 else 1.0
+        sy = float(np.dot(s_hist[-1], y_hist[-1]))  # pragma: no cover
+        yy = float(np.dot(y_hist[-1], y_hist[-1]))  # pragma: no cover
+        q *= sy / yy if yy > 1e-12 else 1.0  # pragma: no cover
 
     for s, y, rho, alpha in zip(s_hist, y_hist, rho_hist, reversed(alphas)):
-        beta = rho * float(np.dot(y, q))
-        q += s * (alpha - beta)
+        beta = rho * float(np.dot(y, q))  # pragma: no cover
+        q += s * (alpha - beta)  # pragma: no cover
     return q

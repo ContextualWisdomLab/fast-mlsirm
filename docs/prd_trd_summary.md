@@ -13,6 +13,11 @@ The package is aimed at psychometrics, educational measurement, mental-health
 assessment, item diagnostics, adaptive testing research, and production-scale
 binary response scoring pipelines.
 
+For sale and support purposes, the current product is a commercial beta for
+technical users. It can be packaged, verified, and supported for the documented
+local API/CLI workflows, but it is not a regulated decision product, hosted
+platform, or full ordinal/Bayesian estimation system.
+
 ## MVP Scope
 
 Must have:
@@ -26,6 +31,8 @@ Must have:
 - Procrustes alignment and recovery reports.
 - Python API and CLI.
 - Rust core formulas for likelihood and gradient.
+- Optional PyO3/maturin binding for using the Rust likelihood and gradient from
+  Python fitting.
 
 Explicitly out of MVP:
 
@@ -45,10 +52,19 @@ python/fast_mlsirm/
 
 crates/mlsirm-core/
   model structs, stable likelihood, analytic gradients, Rust tests
+
+crates/fast-mlsirm-py/
+  PyO3 module exposed as fast_mlsirm._core
 ```
 
-The current Python backend is vectorized NumPy. The Rust crate holds the same
-core formula and is ready for a PyO3 binding once the API has stopped moving.
+The default Python backend is vectorized NumPy. The optional Rust backend uses
+the same core formula through a PyO3/maturin extension and can be selected with
+`FitConfig(backend="rust")`, `FitConfig(backend="auto")`, or
+`fast-mlsirm fit --backend`. Source and editable installs build that extension
+with maturin and therefore require a Rust toolchain; NumPy remains the default
+runtime backend after installation. The PyO3 crate is built through maturin and
+validated through Python backend parity tests, while `cargo test --workspace`
+covers the standalone Rust core.
 
 ## Formula Contract
 
@@ -72,8 +88,9 @@ and applies L2 regularization to `theta`, `xi`, `zeta`, `b`, `alpha`, and
 ## Roadmap
 
 1. Stabilize Python reference formulas and tests.
-2. Bind Rust core through PyO3/maturin.
+2. Maintain NumPy/Rust objective parity through PyO3/maturin tests.
 3. Add block-mode likelihood/gradient execution.
 4. Add benchmark harness and repeated recovery-grid runner.
 5. Add sparse/missing optimized kernels.
-6. Explore JAX/GPU and ordinal response extensions.
+6. Explore JAX/GPU and ordinal response extensions as separate model/runtime
+   design work.

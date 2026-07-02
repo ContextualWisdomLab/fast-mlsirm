@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .types import FitResult, MLSIRMParams, SimulationData
+from .types import DimensionalityDiagnostics, FitDiagnostics, FitResult, MLSIRMParams, SimulationData
 
 
 def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
@@ -54,12 +54,37 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
     summary = {
         "model": result.model,
         "optimizer": result.optimizer,
+        "backend": result.backend,
         "objective": result.objective,
         "convergence_status": result.convergence_status,
         "n_iter": result.n_iter,
         "final_loglik": result.loglik_trace[-1] if result.loglik_trace else None,
     }
     (out / "fit_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
+def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> None:
+    out = Path(run_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "itemfit": _arrays_to_lists(diagnostics.itemfit),
+        "personfit": _arrays_to_lists(diagnostics.personfit),
+        "factorfit": _arrays_to_lists(diagnostics.factorfit or {}),
+        "categoryfit": _arrays_to_lists(diagnostics.categoryfit or {}),
+        "groupfit": _arrays_to_lists(diagnostics.groupfit or {}),
+        "clusterfit": _arrays_to_lists(diagnostics.clusterfit or {}),
+        "group_itemfit": _arrays_to_lists(diagnostics.group_itemfit or {}),
+        "cluster_itemfit": _arrays_to_lists(diagnostics.cluster_itemfit or {}),
+        "model_fit": diagnostics.model_fit,
+    }
+    (out / "fit_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_dir: str | Path) -> None:
+    out = Path(run_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    payload = {"candidates": diagnostics.candidates, "best": diagnostics.best}
+    (out / "dimension_diagnostics.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
@@ -69,13 +94,28 @@ def load_params(path: str | Path) -> MLSIRMParams:
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
-    rows = Path(path).read_text(encoding="utf-8").strip().splitlines()
-    if not rows:
+    import warnings
+    content = Path(path).read_text(encoding="utf-8").strip()
+    if not content:
         raise ValueError("factor CSV is empty")
-    return np.array([int(line.split(",")[1]) for line in rows[1:]], dtype=np.int64)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return np.loadtxt(path, delimiter=',', skiprows=1, usecols=1, dtype=np.int64, ndmin=1)
 
 
 def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:
-    lines = ["item_id,factor_id"]
-    lines.extend(f"{idx},{int(factor)}" for idx, factor in enumerate(factor_id))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    item_ids = np.arange(len(factor_id))
+    data = np.column_stack((item_ids, factor_id))
+    np.savetxt(
+        path,
+        data,
+        delimiter=',',
+        header='item_id,factor_id',
+        comments='',
+        fmt='%d'
+    )
+
+
+def _arrays_to_lists(values: dict[str, np.ndarray]) -> dict[str, list[float]]:
+    return {key: np.asarray(value, dtype=float).tolist() for key, value in values.items()}
