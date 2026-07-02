@@ -52,6 +52,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "docs/superpowers/plans/2026-07-03-20b-procurement-due-diligence.md",
     "docs/superpowers/specs/2026-07-03-20b-pr-queue-governance-design.md",
     "docs/superpowers/plans/2026-07-03-20b-pr-queue-governance.md",
+    "docs/superpowers/specs/2026-07-03-20b-figma-evidence-sync-design.md",
+    "docs/superpowers/plans/2026-07-03-20b-figma-evidence-sync.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -64,6 +66,7 @@ REQUIRED_DOC_TOKENS = {
         "scripts/build_commercial_release.py",
         "scripts/build_procurement_due_diligence.py",
         "scripts/build_pr_queue_governance.py",
+        "scripts/build_figma_evidence_sync.py",
     ],
     "docs/commercial_readiness.md": [
         "Seller Acceptance Checklist",
@@ -86,6 +89,7 @@ REQUIRED_DOC_TOKENS = {
         "commercial_release_manifest.json",
         "procurement_due_diligence_manifest.json",
         "pr_queue_governance_manifest.json",
+        "figma_evidence_sync_manifest.json",
         "--require-rust",
     ],
 }
@@ -102,6 +106,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "commercial_release_report.html",
         "procurement_due_diligence_report.html",
         "pr_queue_governance_report.html",
+        "figma_evidence_sync_report.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -169,6 +174,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "commercial_release_builder",
     "procurement_due_diligence",
     "pr_queue_governance",
+    "figma_evidence_sync",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -214,6 +220,13 @@ REQUIRED_PR_QUEUE_GOVERNANCE_CATEGORIES = {
     "queue_state",
     "risk_classification",
     "release_boundary",
+}
+
+REQUIRED_FIGMA_EVIDENCE_SYNC_CATEGORIES = {
+    "figma_packet",
+    "figma_policy",
+    "figma_frames",
+    "figma_tokens",
 }
 
 
@@ -1009,6 +1022,107 @@ def _validate_pr_queue_governance(
     ]
 
 
+def _validate_figma_evidence_sync(
+    manifest_path: Path | None,
+    *,
+    required: bool,
+    contract_value_krw: int,
+) -> list[dict[str, object]]:
+    if manifest_path is None:
+        return [
+            _check(
+                "figma_evidence_sync:skipped",
+                not required,
+                "Figma evidence sync check not requested",
+            )
+        ]
+    if not manifest_path.exists():
+        return [_check("figma_evidence_sync:manifest", False, f"missing Figma evidence sync manifest: {manifest_path}")]
+    try:
+        payload = _read_json(manifest_path)
+    except Exception as exc:
+        return [_check("figma_evidence_sync:manifest", False, f"Figma evidence sync manifest is not valid JSON: {exc}")]
+    if not isinstance(payload, dict):
+        return [_check("figma_evidence_sync:manifest_shape", False, "Figma evidence sync manifest must be a JSON object")]
+
+    checks = payload.get("checks", [])
+    ok_categories = {
+        check.get("category")
+        for check in checks
+        if isinstance(check, dict) and check.get("ok") is True and isinstance(check.get("category"), str)
+    }
+    failed_checks = payload.get("failed_checks")
+    frame_coverage = payload.get("frame_coverage", {})
+    frame_missing = frame_coverage.get("missing") if isinstance(frame_coverage, dict) else None
+    token_coverage = payload.get("required_token_coverage", {})
+    token_missing = token_coverage.get("missing") if isinstance(token_coverage, dict) else None
+    html_file = payload.get("html_report_file")
+    html_path = Path(str(html_file)) if isinstance(html_file, str) and html_file else None
+    if html_path is not None and not html_path.is_absolute():
+        html_path = manifest_path.parent / html_path
+    html_exists = html_path is not None and html_path.exists() and html_path.is_file()
+    expected_html_sha = payload.get("html_report_sha256")
+    actual_html_sha = _sha256(html_path) if html_exists else None
+    return [
+        _check(
+            "figma_evidence_sync:status",
+            payload.get("status") == "ok",
+            "Figma evidence sync manifest status is ok",
+            actual=payload.get("status"),
+        ),
+        _check(
+            "figma_evidence_sync:contract_value",
+            payload.get("contract_value_krw") == contract_value_krw,
+            "Figma evidence sync contract value matches readiness gate",
+            expected=contract_value_krw,
+            actual=payload.get("contract_value_krw"),
+        ),
+        _check(
+            "figma_evidence_sync:code_connect",
+            payload.get("code_connect") is False,
+            "Figma evidence sync keeps Code Connect disabled",
+            actual=payload.get("code_connect"),
+        ),
+        _check(
+            "figma_evidence_sync:failed_checks",
+            failed_checks == [],
+            "Figma evidence sync manifest has no recorded failures",
+            failed_checks=failed_checks,
+        ),
+        _check(
+            "figma_evidence_sync:category_coverage",
+            REQUIRED_FIGMA_EVIDENCE_SYNC_CATEGORIES.issubset(ok_categories),
+            "Figma evidence sync covers packet, policy, frame, and token evidence",
+            missing=sorted(REQUIRED_FIGMA_EVIDENCE_SYNC_CATEGORIES - ok_categories),
+        ),
+        _check(
+            "figma_evidence_sync:frame_coverage",
+            frame_missing == [],
+            "Figma evidence sync covers required buyer-review frames",
+            missing=frame_missing,
+        ),
+        _check(
+            "figma_evidence_sync:required_tokens",
+            token_missing == [],
+            "Figma evidence sync covers required procurement evidence tokens",
+            missing=token_missing,
+        ),
+        _check(
+            "figma_evidence_sync:html_report",
+            html_exists,
+            "Figma evidence sync HTML report exists",
+            actual=str(html_path) if html_path is not None else None,
+        ),
+        _check(
+            "figma_evidence_sync:html_report_sha256",
+            html_exists and isinstance(expected_html_sha, str) and expected_html_sha == actual_html_sha,
+            "Figma evidence sync HTML report SHA256 matches manifest",
+            expected=expected_html_sha,
+            actual=actual_html_sha,
+        ),
+    ]
+
+
 def _validate_imports(repo_root: Path, *, require_rust: bool) -> list[dict[str, object]]:
     project_version = _project_version(repo_root)
     checks: list[dict[str, object]] = []
@@ -1056,6 +1170,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     require_procurement_due_diligence = getattr(args, "require_procurement_due_diligence", False)
     pr_queue_governance = getattr(args, "pr_queue_governance", None)
     require_pr_queue_governance = getattr(args, "require_pr_queue_governance", False)
+    figma_evidence_sync = getattr(args, "figma_evidence_sync", None)
+    require_figma_evidence_sync = getattr(args, "require_figma_evidence_sync", False)
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
@@ -1108,6 +1224,14 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
                 contract_value_krw=args.contract_value_krw,
             )
         )
+    if figma_evidence_sync or require_figma_evidence_sync:
+        checks.extend(
+            _validate_figma_evidence_sync(
+                Path(figma_evidence_sync).resolve() if figma_evidence_sync else None,
+                required=require_figma_evidence_sync,
+                contract_value_krw=args.contract_value_krw,
+            )
+        )
     if args.check_import:
         checks.extend(_validate_imports(repo_root, require_rust=args.require_rust))
 
@@ -1122,6 +1246,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "require_release_evidence_index": require_release_evidence_index,
         "require_procurement_due_diligence": require_procurement_due_diligence,
         "require_pr_queue_governance": require_pr_queue_governance,
+        "require_figma_evidence_sync": require_figma_evidence_sync,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -1176,6 +1301,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-pr-queue-governance",
         action="store_true",
         help="Fail unless --pr-queue-governance points to complete PR queue governance evidence.",
+    )
+    parser.add_argument("--figma-evidence-sync", help="Optional figma_evidence_sync_manifest.json to validate.")
+    parser.add_argument(
+        "--require-figma-evidence-sync",
+        action="store_true",
+        help="Fail unless --figma-evidence-sync points to complete Figma evidence sync evidence.",
     )
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(

@@ -32,11 +32,12 @@
     {
       "id": "06-procurement-packet",
       "title": "Procurement Packet",
-      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, commercial release, procurement due-diligence, and PR queue governance manifests"
+      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, commercial release, procurement due-diligence, PR queue governance, and Figma evidence sync manifests"
     }
   ],
   "handoff": {
     "figma_skill_path": "figma-use plus figma-generate-design when MCP is connected",
-    "product_design_scope": "static buyer workflow, no hosted dashboard"
+    "product_design_scope": "static buyer workflow, no hosted dashboard",
+    "figma_evidence_sync": "scripts/build_figma_evidence_sync.py verifies Code Connect stays disabled and required buyer evidence tokens are present"
   }
 }

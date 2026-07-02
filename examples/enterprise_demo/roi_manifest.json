@@ -32,6 +32,11 @@
       "name": "queue_governance_confidence",
       "metric": "open PR review state, stale risk, and release-scope conflict classification present",
       "evidence": "pr_queue_governance_manifest.json and pr_queue_governance_report.html record open PR count, reviewDecision, mergeStateStatus, stale and changes-requested counts, release-scope conflicts, and SHA256 report evidence"
+    },
+    {
+      "name": "design_evidence_confidence",
+      "metric": "Figma packet coverage, Code Connect-disabled status, and buyer evidence token coverage present",
+      "evidence": "figma_evidence_sync_manifest.json and figma_evidence_sync_report.html record required frame coverage, required buyer-evidence tokens, optional metadata snapshot status, and SHA256 report evidence"
     }
   ],
   "required_evidence": [
@@ -45,6 +50,8 @@
     "commercial-release/procurement-due-diligence/procurement_due_diligence_report.html",
     "commercial-release/pr-queue-governance/pr_queue_governance_manifest.json",
     "commercial-release/pr-queue-governance/pr_queue_governance_report.html",
+    "commercial-release/figma-evidence-sync/figma_evidence_sync_manifest.json",
+    "commercial-release/figma-evidence-sync/figma_evidence_sync_report.html",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json"
   ],

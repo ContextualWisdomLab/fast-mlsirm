@@ -55,6 +55,11 @@ artifact being offered:
   `pr_queue_governance_report.html` for open PR review state, stale and
   changes-requested risk counts, release-scope conflict classification, and
   report digest review.
+- `scripts/build_figma_evidence_sync.py` produces
+  `figma_evidence_sync_manifest.json` and
+  `figma_evidence_sync_report.html` for Code Connect-disabled Figma packet,
+  required buyer-evidence token coverage, optional live metadata snapshot, and
+  report digest review.
 
 ## Customer Acceptance Evidence
 
@@ -76,6 +81,9 @@ The buyer acceptance package should include:
 - Generated PR queue governance JSON and HTML reports with open PR count,
   reviewDecision, mergeStateStatus, stale and changes-requested counts,
   release-scope conflict classification, and report SHA256 digest.
+- Generated Figma evidence sync JSON and HTML reports with design packet frame
+  coverage, required buyer-evidence token coverage, Code Connect disabled
+  status, optional metadata-snapshot status, and report SHA256 digest.
 - Exact commit SHA, package version, Python version, Rust toolchain version,
   operating system, and backend used.
 - A synthetic-data reproduction path that does not expose customer response
@@ -113,7 +121,10 @@ true:
 - `python scripts/build_pr_queue_governance.py --out pr-queue-governance`
   passes and emits `pr_queue_governance_manifest.json` plus
   `pr_queue_governance_report.html`.
-- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --check-import`
+- `python scripts/build_figma_evidence_sync.py --out figma-evidence-sync`
+  passes and emits `figma_evidence_sync_manifest.json` plus
+  `figma_evidence_sync_report.html`.
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
   passes as the final procurement evidence-integrity gate.
 - No release candidate changes the formula contract, diagnostics semantics, or
   estimator scope outside a model-design PR.

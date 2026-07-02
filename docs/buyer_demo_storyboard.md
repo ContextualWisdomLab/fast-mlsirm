@@ -57,6 +57,9 @@ The demo should show a complete buyer review without customer data:
    - Open `pr_queue_governance_report.html` to review open PR review state,
      stale and changes-requested counts, release-scope conflict classification,
      and report SHA256 evidence.
+   - Open `figma_evidence_sync_report.html` to review Code Connect-disabled
+     design packet coverage, required procurement evidence tokens, optional
+     Figma metadata snapshot status, and report SHA256 evidence.
 
 ## Screen List For Figma
 
@@ -72,7 +75,7 @@ The Figma prototype should contain these static screens:
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
   standalone HTML review, benchmark report files, release evidence index, and
   commercial release report with procurement due-diligence and PR queue
-  governance go/no-go status.
+  governance go/no-go status plus Figma evidence sync status.
 
 ## Interaction Level
 
@@ -96,6 +99,10 @@ runs `scripts/build_procurement_due_diligence.py` to write
 `procurement_due_diligence_report.html`, and runs
 `scripts/build_pr_queue_governance.py` to write
 `pr_queue_governance_manifest.json` and `pr_queue_governance_report.html`.
+It then runs `scripts/build_figma_evidence_sync.py` to write
+`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html`.
 The final optional integrity checks are
 `scripts/sales_readiness.py --require-procurement-due-diligence` and
-`scripts/sales_readiness.py --require-pr-queue-governance`.
+`scripts/sales_readiness.py --require-pr-queue-governance`, plus
+`scripts/sales_readiness.py --require-figma-evidence-sync` when the design
+packet is part of the buyer review.

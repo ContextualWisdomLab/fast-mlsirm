@@ -73,6 +73,12 @@
       "area": "procurement",
       "status": "go",
       "evidence": "scripts/build_pr_queue_governance.py creates pr_queue_governance_manifest.json and pr_queue_governance_report.html for open PR review, stale/change-requested risk counts, release-scope conflict classification, and SHA256 report evidence"
+    },
+    {
+      "id": "figma_evidence_sync",
+      "area": "product_design",
+      "status": "go",
+      "evidence": "scripts/build_figma_evidence_sync.py creates figma_evidence_sync_manifest.json and figma_evidence_sync_report.html for Code Connect-disabled design packet coverage, required evidence tokens, optional Figma metadata snapshots, and SHA256 report evidence"
     }
   ],
   "go_no_go": {

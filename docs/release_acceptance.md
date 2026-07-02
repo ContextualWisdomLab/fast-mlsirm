@@ -80,7 +80,11 @@ The builder writes `commercial_release_manifest.json` and
 default to write `procurement_due_diligence_manifest.json` and
 `procurement_due_diligence_report.html`, and runs PR queue governance by
 default to write `pr_queue_governance_manifest.json` and
-`pr_queue_governance_report.html` under the same output directory. It also
+`pr_queue_governance_report.html` under the same output directory. It then
+runs Figma evidence sync by default to write
+`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html` after
+PR queue governance so the static Figma buyer-review packet is checked against
+the repo-local evidence bundle. It also
 records each stage command, duration, status, failed stage, source commit,
 contract value, artifact paths, and SHA256 digests for the same release
 candidate.
@@ -143,6 +147,19 @@ python scripts/build_pr_queue_governance.py \
 The PR queue report writes `pr_queue_governance_manifest.json` and
 `pr_queue_governance_report.html`. A final gate can require it with
 `scripts/sales_readiness.py --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance`.
+
+Figma evidence sync can also be generated as a standalone stage when a buyer
+asks whether the static design packet still reflects the same procurement
+evidence being offered:
+
+```bash
+python scripts/build_figma_evidence_sync.py \
+  --out figma-evidence-sync
+```
+
+The Figma sync report writes `figma_evidence_sync_manifest.json` and
+`figma_evidence_sync_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync`.
 
 ## Optional Local Mode
 
