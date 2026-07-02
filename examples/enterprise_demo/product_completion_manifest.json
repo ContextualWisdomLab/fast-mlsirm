@@ -37,6 +37,12 @@
       "area": "procurement",
       "status": "go",
       "evidence": "scripts/build_buyer_packet.py creates a portable zip and buyer_evidence_manifest.json with artifact coverage and SHA256 digests"
+    },
+    {
+      "id": "buyer_evidence_html_report",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_buyer_packet.py creates buyer_evidence_report.html for human review of coverage, digests, contract value, and source commit"
     }
   ],
   "go_no_go": {

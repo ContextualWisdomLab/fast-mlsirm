@@ -139,6 +139,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "report_table_accessibility",
     "figma_buyer_review",
     "buyer_evidence_packet",
+    "buyer_evidence_html_report",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -157,6 +158,7 @@ REQUIRED_BUYER_PACKET_COVERAGE = {
     "product_docs",
     "product_manifests",
     "acceptance_artifacts",
+    "html_report",
 }
 
 
@@ -505,6 +507,13 @@ def _validate_buyer_packet(
     zip_exists = zip_path is not None and zip_path.exists() and zip_path.is_file()
     expected_zip_sha = payload.get("zip_sha256")
     actual_zip_sha = _sha256(zip_path) if zip_exists else None
+    report_file = payload.get("report_file")
+    report_path = Path(str(report_file)) if isinstance(report_file, str) and report_file else None
+    if report_path is not None and not report_path.is_absolute():
+        report_path = manifest_path.parent / report_path
+    report_exists = report_path is not None and report_path.exists() and report_path.is_file()
+    expected_report_sha = payload.get("report_sha256")
+    actual_report_sha = _sha256(report_path) if report_exists else None
     return [
         _check(
             "buyer_packet:status",
@@ -543,6 +552,19 @@ def _validate_buyer_packet(
             "buyer packet zip SHA256 matches manifest",
             expected=expected_zip_sha,
             actual=actual_zip_sha,
+        ),
+        _check(
+            "buyer_packet:html_report",
+            report_exists,
+            "buyer evidence HTML review report exists",
+            actual=str(report_path) if report_path is not None else None,
+        ),
+        _check(
+            "buyer_packet:html_report_sha256",
+            report_exists and isinstance(expected_report_sha, str) and expected_report_sha == actual_report_sha,
+            "buyer evidence HTML report SHA256 matches manifest",
+            expected=expected_report_sha,
+            actual=actual_report_sha,
         ),
     ]
 

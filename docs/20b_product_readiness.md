@@ -32,7 +32,7 @@ commit and artifact being offered:
   review coverage.
 - a portable buyer evidence packet containing distribution artifacts,
   acceptance output, sales-readiness output, product manifests, documentation,
-  and SHA256 digests.
+  SHA256 digests, and a standalone HTML review report.
 
 ## Product Design Scope
 
@@ -77,6 +77,8 @@ when:
 - `scripts/build_buyer_packet.py` can create a buyer evidence packet and
   `scripts/sales_readiness.py --require-buyer-packet` can validate the packet
   manifest when a packet is part of the offer;
+- `buyer_evidence_report.html` summarizes coverage, contract value, source
+  commit, artifact count, ZIP digest, and artifact digests for human review;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
 
