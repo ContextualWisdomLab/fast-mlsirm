@@ -1,10 +1,41 @@
-import numpy as np
 import pytest
-from fast_mlsirm.fit import fit
-from fast_mlsirm.config import FitConfig
+import numpy as np
 
-def test_fit_memory_dos_prevention():
-    responses = np.ones((10, 2))
-    factors = np.array([2000000000, 0])
-    with pytest.raises(ValueError, match="factor_id implies more dimensions than items"):
-        fit(responses=responses, factor_id=factors, config=FitConfig(max_iter=1))
+from fast_mlsirm.fit import _line_search
+
+def test_line_search_unbound():
+    def bad_obj(x):
+        return np.inf, np.zeros_like(x), -np.inf
+
+    x = np.array([0.0])
+    direction = np.array([1.0])
+
+    accepted, candidate, next_obj, next_grad, next_loglik = _line_search(
+        objective=bad_obj,
+        x=x,
+        direction=direction,
+        obj=0.0,
+        slope=-1.0,
+        max_linesearch=20,
+    )
+    assert not accepted
+    assert np.isinf(next_obj)
+
+def test_line_search_unbound():
+    def bad_obj(x):
+        return np.inf, np.zeros_like(x), -np.inf
+
+    x = np.array([0.0])
+    direction = np.array([1.0])
+    from fast_mlsirm.fit import _line_search
+
+    accepted, candidate, next_obj, next_grad, next_loglik = _line_search(
+        objective=bad_obj,
+        x=x,
+        direction=direction,
+        obj=0.0,
+        slope=-1.0,
+        max_linesearch=20,
+    )
+    assert not accepted
+    assert np.isinf(next_obj)

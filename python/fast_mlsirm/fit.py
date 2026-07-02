@@ -7,8 +7,12 @@ import numpy as np
 from .backend import resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
-from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
-                        validate_factor_id)
+from .objective import (
+    model_flags,
+    neg_loglik_and_grad,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import FitResult, MLSIRMParams
 
 
@@ -329,12 +333,19 @@ def _line_search(
     direction: np.ndarray,
     obj: float,
     slope: float,
+    max_linesearch: int = 20,
+    c1: float = 1e-4,
 ) -> tuple[bool, np.ndarray, float, np.ndarray, float]:
     step = 1.0
-    for _line in range(20):
+    candidate = x.copy()
+    next_obj = float('inf')
+    next_grad = np.zeros_like(x)
+    next_loglik = float('-inf')
+
+    for _line in range(max_linesearch):
         candidate = x + step * direction
         next_obj, next_grad, next_loglik = objective(candidate)
-        if np.isfinite(next_obj) and next_obj <= obj + 1e-4 * step * slope:
+        if np.isfinite(next_obj) and next_obj <= obj + c1 * step * slope:
             return True, candidate, next_obj, next_grad, next_loglik
         step *= 0.5
     return False, candidate, next_obj, next_grad, next_loglik
