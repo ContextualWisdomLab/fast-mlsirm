@@ -17,6 +17,9 @@ need to decide whether the package can justify a high-value procurement review.
 - **Runtime confidence:** acceptance runtime and benchmark scenario status.
 - **Governance confidence:** support, security, formula-scope, and non-goal
   documentation present in the release artifact.
+- **Supply-chain confidence:** wheel/source metadata, policy files,
+  commercial-release integrity, GitHub snapshot state, and report digest
+  evidence present for procurement review.
 
 ## Required Evidence
 
@@ -36,7 +39,9 @@ report table accessibility, the Figma buyer-review artifact, the buyer
 evidence packet, the buyer evidence HTML review, the automated benchmark
 report, and the release evidence index.
 The same scorecard also requires the commercial release builder so a buyer can
-produce the full evidence set from one command.
+produce the full evidence set from one command, plus procurement due diligence
+so package metadata, policy files, GitHub state, commercial release evidence,
+and report SHA256 can be reviewed independently.
 
 The benchmark evidence is represented by `benchmark_report.json` generated from
 `scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
@@ -61,6 +66,13 @@ generated from `scripts/build_commercial_release.py`. The companion
 failed-stage detail, artifact paths, contract value, source commit, and SHA256
 evidence from dist build, acceptance, benchmark, sales-readiness, buyer packet,
 release index, and final gate stages.
+
+The procurement due-diligence evidence is represented by
+`procurement_due_diligence_manifest.json` generated from
+`scripts/build_procurement_due_diligence.py`. The companion
+`procurement_due_diligence_report.html` presents package metadata, policy-file
+checks, commercial-release integrity, GitHub snapshot state, failed checks, and
+report SHA256 evidence for procurement review.
 
 ## Caveats
 

@@ -17,5 +17,6 @@ benchmark-evidence/
 buyer-evidence-packet*/
 release-evidence-index/
 commercial-release/
+procurement-due-diligence*/
 *.npy
 *.npz

@@ -52,7 +52,10 @@ the packet. The same frame should point to `release_evidence_index.json` and
 source distribution, acceptance output, benchmark evidence, sales-readiness
 manifest, and buyer packet. The final buyer-review state should also point to
 `commercial_release_manifest.json` and `commercial_release_report.html` as the
-single-command stage summary and human review surface.
+single-command stage summary and human review surface, then to
+`procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html` as the package, policy,
+commercial-release, GitHub snapshot, and SHA256 report review surface.
 
 ## Generated Artifact
 

@@ -468,6 +468,28 @@ def _commands(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[
     return stages
 
 
+def _procurement_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[str]:
+    command = [
+        args.python,
+        str(repo_root / "scripts" / "build_procurement_due_diligence.py"),
+        "--repo-root",
+        str(repo_root),
+        "--dist",
+        str(_resolve_path(args.dist, base=repo_root).resolve()),
+        "--commercial-release-manifest",
+        str(out_dir / "commercial_release_manifest.json"),
+        "--out",
+        str(out_dir / "procurement-due-diligence"),
+        "--repo",
+        getattr(args, "repo", "ContextualWisdomLab/fast-mlsirm"),
+        "--contract-value-krw",
+        str(args.contract_value_krw),
+    ]
+    if getattr(args, "offline_github", False):
+        command.append("--offline-github")
+    return command
+
+
 def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, Any]]:
     acceptance_dir = out_dir / "release-acceptance"
     repo_root = Path(args.repo_root).resolve()
@@ -483,9 +505,17 @@ def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, A
         "release_evidence_index": _artifact(out_dir / "release-evidence-index" / "release_evidence_index.json"),
         "release_evidence_html": _artifact(out_dir / "release-evidence-index" / "release_evidence_index.html"),
         "final_sales_readiness": _artifact(acceptance_dir / "final_sales_readiness_manifest.json"),
+        "procurement_due_diligence": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_manifest.json"),
+        "procurement_due_diligence_html": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_report.html"),
         "wheel": _artifact(next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")),
         "sdist": _artifact(next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")),
     }
+
+
+def _write_outputs(manifest: dict[str, Any], manifest_path: Path, html_path: Path) -> None:
+    html_path.write_text(_render_html(manifest), encoding="utf-8")
+    manifest["html_report_sha256"] = _sha256(html_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_command) -> dict[str, Any]:
@@ -524,9 +554,21 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
         manifest["status"] = "ok" if final_status == "ok" else "failed"
         if final_status != "ok":
             manifest["failed_stage"] = "final_sales_readiness"
-    html_path.write_text(_render_html(manifest), encoding="utf-8")
-    manifest["html_report_sha256"] = _sha256(html_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    _write_outputs(manifest, manifest_path, html_path)
+    if manifest["status"] == "ok" and not getattr(args, "skip_procurement_due_diligence", False):
+        stage = _stage(
+            "procurement_due_diligence",
+            _procurement_command(args, repo_root, out_dir),
+            repo_root=repo_root,
+            runner=runner,
+        )
+        manifest["stages"].append(stage)
+        if stage["status"] != "ok":
+            manifest["status"] = "failed"
+            manifest["failed_stage"] = "procurement_due_diligence"
+        manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
+        manifest["artifacts"] = _artifacts(args, out_dir)
+        _write_outputs(manifest, manifest_path, html_path)
     return manifest
 
 
@@ -540,6 +582,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
     parser.add_argument("--check-import", action="store_true", help="Validate importability in sales readiness gates.")
     parser.add_argument("--skip-build", action="store_true", help="Use existing dist artifacts instead of running python -m build.")
+    parser.add_argument("--skip-procurement-due-diligence", action="store_true", help="Skip the procurement due-diligence evidence stage.")
+    parser.add_argument("--offline-github", action="store_true", help="Use offline GitHub snapshot mode for due diligence.")
+    parser.add_argument("--repo", default="ContextualWisdomLab/fast-mlsirm", help="GitHub repository for due-diligence snapshots.")
     return parser
 
 

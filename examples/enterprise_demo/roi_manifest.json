@@ -22,6 +22,11 @@
       "name": "governance_confidence",
       "metric": "required support, security, and formula-scope documents present",
       "evidence": "commercial, enterprise, and product-readiness documents define supported and unsupported use"
+    },
+    {
+      "name": "supply_chain_confidence",
+      "metric": "package metadata, repository state, policy files, commercial release evidence, and report digest present",
+      "evidence": "procurement_due_diligence_manifest.json and procurement_due_diligence_report.html record package, policy, GitHub snapshot, commercial-release, failed-check, and SHA256 report evidence"
     }
   ],
   "required_evidence": [
@@ -31,6 +36,8 @@
     "release-acceptance/benchmark/benchmark_report.html",
     "commercial-release/commercial_release_manifest.json",
     "commercial-release/commercial_release_report.html",
+    "commercial-release/procurement-due-diligence/procurement_due_diligence_manifest.json",
+    "commercial-release/procurement-due-diligence/procurement_due_diligence_report.html",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json"
   ],

@@ -76,9 +76,12 @@ python scripts/build_commercial_release.py \
 ```
 
 The builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html`. It also records each stage command, duration,
-status, failed stage, source commit, contract value, artifact paths, and SHA256
-digests for the same release candidate.
+`commercial_release_report.html`, then runs procurement due diligence by
+default to write `procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html` under the same output directory. It
+also records each stage command, duration, status, failed stage, source commit,
+contract value, artifact paths, and SHA256 digests for the same release
+candidate.
 
 For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
 buyer packet, and release evidence index from the same acceptance output:
@@ -110,6 +113,21 @@ wheel and source distribution SHA256 digests, acceptance status, benchmark
 budget status, sales-readiness status, buyer packet ZIP digest, and HTML report
 digest. A final gate can require it with
 `scripts/sales_readiness.py --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index`.
+
+Procurement due diligence can also be generated as a standalone stage when a
+buyer asks for package metadata, policy-file, commercial-release, and GitHub
+snapshot evidence:
+
+```bash
+python scripts/build_procurement_due_diligence.py \
+  --dist dist \
+  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
+  --out procurement-due-diligence
+```
+
+The procurement report writes `procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence`.
 
 ## Optional Local Mode
 

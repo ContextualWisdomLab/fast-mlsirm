@@ -73,6 +73,9 @@ print(process_dimensions.best)
 - Single-command commercial release evidence builder for dist, acceptance,
   benchmark, sales-readiness, buyer packet, release index, and final gate
   output.
+- Procurement due-diligence evidence reports for distribution metadata,
+  policy files, commercial-release integrity, GitHub snapshot state, and
+  SHA256-verified HTML review output.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -169,6 +172,25 @@ python scripts/sales_readiness.py \
   --require-release-evidence-index \
   --check-import \
   --out acceptance_check/final_sales_readiness_manifest.json
+python scripts/build_procurement_due_diligence.py \
+  --dist dist \
+  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
+  --out procurement-due-diligence
+python scripts/sales_readiness.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --dist dist \
+  --require-rust \
+  --require-20b-product \
+  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
+  --require-benchmark-report \
+  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
+  --require-buyer-packet \
+  --release-evidence-index release-evidence-index/release_evidence_index.json \
+  --require-release-evidence-index \
+  --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json \
+  --require-procurement-due-diligence \
+  --check-import \
+  --out acceptance_check/final_procurement_sales_readiness_manifest.json
 ```
 
 Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
@@ -185,6 +207,9 @@ digest map over the candidate wheel, source distribution, release acceptance,
 benchmark report, sales-readiness manifest, and buyer packet.
 The commercial release builder produces the same evidence as a single buyer
 review entrypoint and records the failed stage when the gate does not pass.
+It now also invokes `scripts/build_procurement_due_diligence.py` by default and
+emits `procurement_due_diligence_manifest.json` plus
+`procurement_due_diligence_report.html` under the commercial release output.
 
 ## CLI
 
