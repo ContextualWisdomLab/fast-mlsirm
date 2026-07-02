@@ -10,6 +10,16 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 - Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
 - Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.
 
+## 2026-07-02 - [Add Strict CSP to HTML Reports]
+**Vulnerability:**
+The generated standalone HTML diagnostic reports lacked a Content Security Policy (CSP). While the backend handles escaping HTML input, missing a CSP violates defense-in-depth principles. If any unsanitized user data were processed or if future dynamic features were introduced without escaping, the reports could be vulnerable to Cross-Site Scripting (XSS).
+
+**Learning:**
+Even for static, offline-generated HTML reports where inputs are meant to be controlled, implementing a strict CSP is a crucial layer of security.
+
+**Prevention:**
+- Always add a strict CSP `<meta>` tag (e.g., `default-src 'none'; style-src 'unsafe-inline';`) to the `<head>` of generated standalone HTML files.
+
 ## 2026-07-06 - [DoS via Unconstrained Array Dimension Allocation]
 **Vulnerability:** In `fast_mlsirm/fit.py`, the number of dimensions `n_dims` was calculated using the maximum value provided in user input (`factor_id.max()`). A maliciously crafted large integer in `factor_id` causes `np.zeros((n_persons, n_dims))` to attempt allocating an impossibly large array (e.g. hundreds of GiB), crashing the application via Out-Of-Memory (OOM) and causing a Denial of Service (DoS).
 **Learning:** Never trust user input to define unconstrained array dimensions, especially when derived from maximum values within the data.
