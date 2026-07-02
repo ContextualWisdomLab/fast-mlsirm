@@ -27,6 +27,9 @@ commit and artifact being offered:
   scenarios;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
+- a buyer evidence completion scorecard for release acceptance, HTML report
+  CSP, CLI stack-trace safety, report table accessibility, and Figma buyer
+  review coverage.
 
 ## Product Design Scope
 
@@ -66,6 +69,8 @@ when:
 - every required product, design, analytics, and demo artifact exists;
 - ROI and benchmark manifests are parseable JSON and match the target contract
   value;
+- `product_completion_manifest.json` contains all required hardening checks
+  with `go` status;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
 

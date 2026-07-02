@@ -29,6 +29,11 @@ The manifest must include:
 - non-empty `required_evidence`;
 - non-empty `go_no_go`.
 
+The product completion scorecard is represented by
+`examples/enterprise_demo/product_completion_manifest.json`. It must include
+`go` evidence for release acceptance, HTML report CSP, CLI stack-trace safety,
+report table accessibility, and the Figma buyer-review artifact.
+
 ## Caveats
 
 Real ROI must be recalculated with buyer-specific hourly rates, workflow

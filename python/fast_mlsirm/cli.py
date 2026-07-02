@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
@@ -450,6 +451,19 @@ def main(argv: list[str] | None = None) -> int:
             },
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("❌ Error: Interrupted by user", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
+        print(f"❌ Error: Unexpected failure - {exc}", file=sys.stderr)
+        return 1
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:

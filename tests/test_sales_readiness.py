@@ -175,6 +175,18 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
             "frames": [{"id": "01-package-evidence"}],
             "handoff": {"product_design_scope": "static buyer workflow"},
         },
+        "examples/enterprise_demo/product_completion_manifest.json": {
+            "contract_value_krw": 2_000_000_000,
+            "scorecard_version": "2026-07-02",
+            "checks": [
+                {"id": "release_acceptance", "status": "go"},
+                {"id": "html_report_csp", "status": "go"},
+                {"id": "cli_stack_trace_guard", "status": "go"},
+                {"id": "report_table_accessibility", "status": "go"},
+                {"id": "figma_buyer_review", "status": "go"},
+            ],
+            "go_no_go": {"requires_all_checks_go": True},
+        },
     }
     for relative, payload in manifests.items():
         path = root / relative
@@ -351,6 +363,37 @@ def test_sales_readiness_fails_when_optional_figma_url_is_not_a_design_file(tmp_
     )
     assert "https://www.figma.com/design/" in figma_url_check["detail"]
     assert "/board/" in figma_url_check["detail"]
+
+
+def test_sales_readiness_fails_when_completion_scorecard_is_not_go(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    path = repo_root / "examples" / "enterprise_demo" / "product_completion_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["checks"][1]["status"] = "blocked"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    scorecard_check = next(
+        check for check in manifest["failed_checks"] if check["name"] == "20b:completion_scorecard"
+    )
+    assert scorecard_check["non_go"] == ["html_report_csp"]
 
 
 def test_sales_readiness_fails_gracefully_when_20b_json_has_wrong_shape(tmp_path):
