@@ -112,7 +112,8 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * a[None, :] * params.theta[:, factors]).sum(axis=0)
+        # Optimized grad_alpha computation: skip large 3D broadcast by extracting `a` and using np.einsum
+        grad_alpha = a * np.einsum('ij,ij->j', e, params.theta[:, factors])
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
@@ -134,7 +135,8 @@ def neg_loglik_and_grad(
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
         grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
 
-        grad_tau = float((e * (-gamma * distance)).sum())
+        # Optimized grad_tau computation: replace element-wise sum with vdot to skip intermediate allocations
+        grad_tau = -gamma * float(np.vdot(e, distance))
 
     nll += _add_penalty(params, penalty, free_alpha=free_alpha, uses_space=uses_space)
     grad_theta += penalty.lambda_theta * params.theta
