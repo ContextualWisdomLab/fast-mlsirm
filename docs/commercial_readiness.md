@@ -36,6 +36,10 @@ evidence index over the exact artifacts being offered.
   `scripts/build_procurement_due_diligence.py` for package metadata, policy
   files, commercial-release evidence, GitHub snapshot state, and report
   digest verification.
+- PR queue governance reporting through
+  `scripts/build_pr_queue_governance.py` for open PR review state, stale and
+  changes-requested risk counts, release-scope conflicts, and report digest
+  verification.
 
 ## Not Yet Supported
 
@@ -88,7 +92,11 @@ release commit:
   `procurement_due_diligence_report.html` when procurement asks for
   supply-chain and repository-state evidence outside the single-command
   builder.
-- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --check-import`
+- `python scripts/build_pr_queue_governance.py --out pr-queue-governance`
+  creates `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html` when procurement asks how open PRs, stale
+  changes, review delays, and release-scope conflicts are managed.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --check-import`
   passes as the final procurement evidence-integrity gate.
 
 ## Enterprise Sales Gate
@@ -114,6 +122,9 @@ must be able to show:
 - a generated procurement due-diligence manifest and standalone HTML summary
   that record distribution metadata, policy-file presence, commercial-release
   integrity, GitHub snapshot evidence, failed checks, and report SHA256.
+- a generated PR queue governance manifest and standalone HTML summary that
+  record open PR count, review state, stale/change-requested counts,
+  release-scope conflict classification, and report SHA256.
 
 ## Security and Support Boundaries
 

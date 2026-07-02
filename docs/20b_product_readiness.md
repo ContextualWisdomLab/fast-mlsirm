@@ -34,6 +34,8 @@ commit and artifact being offered:
 - procurement due-diligence output from
   `procurement_due_diligence_manifest.json` and
   `procurement_due_diligence_report.html`;
+- PR queue governance output from `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html`;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
 - a buyer evidence completion scorecard for release acceptance, HTML report
@@ -109,6 +111,14 @@ when:
 - `scripts/sales_readiness.py --require-procurement-due-diligence` validates
   the generated procurement due-diligence evidence before a release candidate
   is positioned as procurement-complete;
+- `scripts/build_pr_queue_governance.py` can create
+  `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html` for open PR review state, stale and
+  changes-requested risk counts, release-scope conflict classification, and
+  report digest review;
+- `scripts/sales_readiness.py --require-pr-queue-governance` validates the
+  generated PR queue governance evidence before open review work is presented
+  as managed rather than ignored;
 - `scripts/sales_readiness.py --require-release-evidence-index` validates the
   generated release index before a release candidate is positioned as complete;
 - the Figma design packet declares `code_connect: false`;

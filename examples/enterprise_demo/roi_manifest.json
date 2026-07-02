@@ -27,6 +27,11 @@
       "name": "supply_chain_confidence",
       "metric": "package metadata, repository state, policy files, commercial release evidence, and report digest present",
       "evidence": "procurement_due_diligence_manifest.json and procurement_due_diligence_report.html record package, policy, GitHub snapshot, commercial-release, failed-check, and SHA256 report evidence"
+    },
+    {
+      "name": "queue_governance_confidence",
+      "metric": "open PR review state, stale risk, and release-scope conflict classification present",
+      "evidence": "pr_queue_governance_manifest.json and pr_queue_governance_report.html record open PR count, reviewDecision, mergeStateStatus, stale and changes-requested counts, release-scope conflicts, and SHA256 report evidence"
     }
   ],
   "required_evidence": [
@@ -38,6 +43,8 @@
     "commercial-release/commercial_release_report.html",
     "commercial-release/procurement-due-diligence/procurement_due_diligence_manifest.json",
     "commercial-release/procurement-due-diligence/procurement_due_diligence_report.html",
+    "commercial-release/pr-queue-governance/pr_queue_governance_manifest.json",
+    "commercial-release/pr-queue-governance/pr_queue_governance_report.html",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json"
   ],

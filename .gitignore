@@ -16,7 +16,8 @@ release-acceptance/
 benchmark-evidence/
 buyer-evidence-packet*/
 release-evidence-index/
-commercial-release/
+commercial-release*/
 procurement-due-diligence*/
+pr-queue-governance*/
 *.npy
 *.npz

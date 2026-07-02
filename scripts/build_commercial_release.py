@@ -490,6 +490,27 @@ def _procurement_command(args: argparse.Namespace, repo_root: Path, out_dir: Pat
     return command
 
 
+def _pr_queue_command(args: argparse.Namespace, repo_root: Path, out_dir: Path) -> list[str]:
+    command = [
+        args.python,
+        str(repo_root / "scripts" / "build_pr_queue_governance.py"),
+        "--repo-root",
+        str(repo_root),
+        "--out",
+        str(out_dir / "pr-queue-governance"),
+        "--repo",
+        getattr(args, "repo", "ContextualWisdomLab/fast-mlsirm"),
+        "--contract-value-krw",
+        str(args.contract_value_krw),
+        "--max-stale-days",
+        str(getattr(args, "pr_queue_max_stale_days", 14)),
+    ]
+    offline_snapshot = getattr(args, "pr_queue_offline_snapshot", None)
+    if offline_snapshot:
+        command.extend(["--offline-snapshot", str(_resolve_path(offline_snapshot, base=repo_root).resolve())])
+    return command
+
+
 def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, Any]]:
     acceptance_dir = out_dir / "release-acceptance"
     repo_root = Path(args.repo_root).resolve()
@@ -507,6 +528,8 @@ def _artifacts(args: argparse.Namespace, out_dir: Path) -> dict[str, dict[str, A
         "final_sales_readiness": _artifact(acceptance_dir / "final_sales_readiness_manifest.json"),
         "procurement_due_diligence": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_manifest.json"),
         "procurement_due_diligence_html": _artifact(out_dir / "procurement-due-diligence" / "procurement_due_diligence_report.html"),
+        "pr_queue_governance": _artifact(out_dir / "pr-queue-governance" / "pr_queue_governance_manifest.json"),
+        "pr_queue_governance_html": _artifact(out_dir / "pr-queue-governance" / "pr_queue_governance_report.html"),
         "wheel": _artifact(next(iter(sorted(dist_dir.glob("*.whl"))), dist_dir / "missing.whl")),
         "sdist": _artifact(next(iter(sorted(dist_dir.glob("*.tar.gz"))), dist_dir / "missing.tar.gz")),
     }
@@ -569,6 +592,20 @@ def build_commercial_release(args: argparse.Namespace, *, runner: Runner = _run_
         manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
         manifest["artifacts"] = _artifacts(args, out_dir)
         _write_outputs(manifest, manifest_path, html_path)
+    if manifest["status"] == "ok" and not getattr(args, "skip_pr_queue_governance", False):
+        stage = _stage(
+            "pr_queue_governance",
+            _pr_queue_command(args, repo_root, out_dir),
+            repo_root=repo_root,
+            runner=runner,
+        )
+        manifest["stages"].append(stage)
+        if stage["status"] != "ok":
+            manifest["status"] = "failed"
+            manifest["failed_stage"] = "pr_queue_governance"
+        manifest["total_duration_seconds"] = round(time.perf_counter() - started, 6)
+        manifest["artifacts"] = _artifacts(args, out_dir)
+        _write_outputs(manifest, manifest_path, html_path)
     return manifest
 
 
@@ -583,7 +620,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--check-import", action="store_true", help="Validate importability in sales readiness gates.")
     parser.add_argument("--skip-build", action="store_true", help="Use existing dist artifacts instead of running python -m build.")
     parser.add_argument("--skip-procurement-due-diligence", action="store_true", help="Skip the procurement due-diligence evidence stage.")
+    parser.add_argument("--skip-pr-queue-governance", action="store_true", help="Skip the PR queue governance evidence stage.")
     parser.add_argument("--offline-github", action="store_true", help="Use offline GitHub snapshot mode for due diligence.")
+    parser.add_argument("--pr-queue-offline-snapshot", help="Optional offline PR queue snapshot JSON for governance evidence.")
+    parser.add_argument("--pr-queue-max-stale-days", type=int, default=14, help="Age in days after which an open PR is stale.")
     parser.add_argument("--repo", default="ContextualWisdomLab/fast-mlsirm", help="GitHub repository for due-diligence snapshots.")
     return parser
 

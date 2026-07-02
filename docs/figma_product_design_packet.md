@@ -55,7 +55,10 @@ manifest, and buyer packet. The final buyer-review state should also point to
 single-command stage summary and human review surface, then to
 `procurement_due_diligence_manifest.json` and
 `procurement_due_diligence_report.html` as the package, policy,
-commercial-release, GitHub snapshot, and SHA256 report review surface.
+commercial-release, GitHub snapshot, and SHA256 report review surface. It
+should also point to `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` as the open PR review-state, stale/change
+request, release-scope conflict, and SHA256 report review surface.
 
 ## Generated Artifact
 

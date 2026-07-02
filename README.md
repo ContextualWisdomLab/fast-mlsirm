@@ -76,6 +76,9 @@ print(process_dimensions.best)
 - Procurement due-diligence evidence reports for distribution metadata,
   policy files, commercial-release integrity, GitHub snapshot state, and
   SHA256-verified HTML review output.
+- PR queue governance evidence reports for open PR review state, stale and
+  changes-requested risk counts, release-scope conflict classification, and
+  SHA256-verified HTML review output.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -176,6 +179,8 @@ python scripts/build_procurement_due_diligence.py \
   --dist dist \
   --commercial-release-manifest commercial-release/commercial_release_manifest.json \
   --out procurement-due-diligence
+python scripts/build_pr_queue_governance.py \
+  --out pr-queue-governance
 python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
@@ -189,6 +194,8 @@ python scripts/sales_readiness.py \
   --require-release-evidence-index \
   --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json \
   --require-procurement-due-diligence \
+  --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json \
+  --require-pr-queue-governance \
   --check-import \
   --out acceptance_check/final_procurement_sales_readiness_manifest.json
 ```
@@ -210,6 +217,10 @@ review entrypoint and records the failed stage when the gate does not pass.
 It now also invokes `scripts/build_procurement_due_diligence.py` by default and
 emits `procurement_due_diligence_manifest.json` plus
 `procurement_due_diligence_report.html` under the commercial release output.
+It also invokes `scripts/build_pr_queue_governance.py` by default and emits
+`pr_queue_governance_manifest.json` plus `pr_queue_governance_report.html` so
+open GitHub PRs are inventoried as managed queue evidence rather than treated
+as an unexamined release risk.
 
 ## CLI
 

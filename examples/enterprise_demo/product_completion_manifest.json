@@ -67,6 +67,12 @@
       "area": "procurement",
       "status": "go",
       "evidence": "scripts/build_procurement_due_diligence.py creates procurement_due_diligence_manifest.json and procurement_due_diligence_report.html for package metadata, policy-file, commercial-release, GitHub snapshot, and SHA256 report evidence"
+    },
+    {
+      "id": "pr_queue_governance",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_pr_queue_governance.py creates pr_queue_governance_manifest.json and pr_queue_governance_report.html for open PR review, stale/change-requested risk counts, release-scope conflict classification, and SHA256 report evidence"
     }
   ],
   "go_no_go": {

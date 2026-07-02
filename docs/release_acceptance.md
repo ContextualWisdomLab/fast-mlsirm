@@ -78,8 +78,10 @@ python scripts/build_commercial_release.py \
 The builder writes `commercial_release_manifest.json` and
 `commercial_release_report.html`, then runs procurement due diligence by
 default to write `procurement_due_diligence_manifest.json` and
-`procurement_due_diligence_report.html` under the same output directory. It
-also records each stage command, duration, status, failed stage, source commit,
+`procurement_due_diligence_report.html`, and runs PR queue governance by
+default to write `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` under the same output directory. It also
+records each stage command, duration, status, failed stage, source commit,
 contract value, artifact paths, and SHA256 digests for the same release
 candidate.
 
@@ -128,6 +130,19 @@ python scripts/build_procurement_due_diligence.py \
 The procurement report writes `procurement_due_diligence_manifest.json` and
 `procurement_due_diligence_report.html`. A final gate can require it with
 `scripts/sales_readiness.py --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence`.
+
+PR queue governance can also be generated as a standalone stage when a buyer
+asks how open PRs, review delays, stale changes, and release-scope conflicts
+are being managed:
+
+```bash
+python scripts/build_pr_queue_governance.py \
+  --out pr-queue-governance
+```
+
+The PR queue report writes `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance`.
 
 ## Optional Local Mode
 
