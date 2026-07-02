@@ -101,6 +101,10 @@ or Bayesian posterior inference engine. See:
 
 - [Commercial readiness gate](docs/commercial_readiness.md)
 - [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
+- [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
+- [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
+- [Figma product design packet](docs/figma_product_design_packet.md)
+- [ROI evidence model](docs/roi_evidence_model.md)
 - [Release acceptance guide](docs/release_acceptance.md)
 - [Security policy](SECURITY.md)
 - [Support policy](SUPPORT.md)
@@ -114,12 +118,15 @@ python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
   --require-rust \
+  --require-20b-product \
   --check-import \
   --out acceptance_check/sales_readiness_manifest.json
 ```
 
 Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-both commands to pass on the exact release artifact.
+both commands to pass on the exact release artifact. The 20B product gate adds
+Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
+synthetic demo evidence from `examples/enterprise_demo/`.
 
 ## CLI
 
@@ -225,6 +232,7 @@ crates/mlsirm-core/       Rust likelihood and gradient core
 crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
+examples/enterprise_demo/ Synthetic procurement evidence manifests
 ```
 
 ## MVP Boundary

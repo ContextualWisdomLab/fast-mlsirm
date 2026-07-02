@@ -29,6 +29,19 @@ REQUIRED_POLICY_FILES = [
     "docs/prd_trd_summary.md",
 ]
 
+REQUIRED_20B_PRODUCT_FILES = [
+    "docs/20b_product_readiness.md",
+    "docs/buyer_demo_storyboard.md",
+    "docs/figma_product_design_packet.md",
+    "docs/roi_evidence_model.md",
+    "examples/enterprise_demo/README.md",
+    "examples/enterprise_demo/roi_manifest.json",
+    "examples/enterprise_demo/benchmark_manifest.json",
+    "examples/enterprise_demo/figma_design_packet.json",
+    "docs/superpowers/specs/2026-07-02-20b-product-readiness-design.md",
+    "docs/superpowers/plans/2026-07-02-20b-product-readiness.md",
+]
+
 REQUIRED_DOC_TOKENS = {
     "README.md": [
         "Commercial Readiness",
@@ -54,6 +67,60 @@ REQUIRED_DOC_TOKENS = {
         "acceptance_summary.json",
         "sales_readiness_manifest.json",
         "--require-rust",
+    ],
+}
+
+REQUIRED_20B_DOC_TOKENS = {
+    "docs/20b_product_readiness.md": [
+        "KRW 2,000,000,000",
+        "Buyer-Facing Product Standard",
+        "Product Design Scope",
+        "Data Analytics Scope",
+        "Figma Code Connect",
+        "Go/No-Go",
+    ],
+    "docs/buyer_demo_storyboard.md": [
+        "Package Evidence",
+        "Synthetic Data",
+        "Fit Workflow",
+        "Diagnostics Workflow",
+        "Procurement Packet",
+    ],
+    "docs/figma_product_design_packet.md": [
+        "Figma Code Connect is explicitly out of scope",
+        "Package Evidence",
+        "Procurement Packet",
+        "figma_design_packet.json",
+    ],
+    "docs/roi_evidence_model.md": [
+        "Driver Metrics",
+        "Required Evidence",
+        "roi_manifest.json",
+        "Caveats",
+    ],
+}
+
+REQUIRED_20B_JSON_FIELDS = {
+    "examples/enterprise_demo/roi_manifest.json": [
+        "contract_value_krw",
+        "position",
+        "drivers",
+        "required_evidence",
+        "go_no_go",
+    ],
+    "examples/enterprise_demo/benchmark_manifest.json": [
+        "benchmark_scope",
+        "runtime_budget_seconds",
+        "scenarios",
+        "required_artifacts",
+        "caveats",
+    ],
+    "examples/enterprise_demo/figma_design_packet.json": [
+        "code_connect",
+        "mode",
+        "source",
+        "frames",
+        "handoff",
     ],
 }
 
@@ -133,6 +200,77 @@ def _validate_doc_tokens(repo_root: Path) -> list[dict[str, object]]:
                 missing=missing,
             )
         )
+    return checks
+
+
+def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) -> list[dict[str, object]]:
+    checks: list[dict[str, object]] = []
+    for relative in REQUIRED_20B_PRODUCT_FILES:
+        path = repo_root / relative
+        ok = path.exists() and path.is_file() and path.stat().st_size > 0
+        checks.append(_check(f"20b:file:{relative}", ok, "required 20B product evidence file exists"))
+
+    for relative, tokens in REQUIRED_20B_DOC_TOKENS.items():
+        path = repo_root / relative
+        if not path.exists():
+            checks.append(_check(f"20b:doc_tokens:{relative}", False, "document missing"))
+            continue
+        text = _read_text(path)
+        missing = [token for token in tokens if token not in text]
+        checks.append(
+            _check(
+                f"20b:doc_tokens:{relative}",
+                not missing,
+                "required 20B product-readiness language is present",
+                missing=missing,
+            )
+        )
+
+    for relative, fields in REQUIRED_20B_JSON_FIELDS.items():
+        path = repo_root / relative
+        if not path.exists():
+            checks.append(_check(f"20b:json:{relative}", False, "manifest missing"))
+            continue
+        try:
+            payload = _read_json(path)
+        except Exception as exc:
+            checks.append(_check(f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"))
+            continue
+        missing = [field for field in fields if field not in payload]
+        non_empty_failures = [
+            field
+            for field in fields
+            if field in payload and isinstance(payload[field], (list, dict, str)) and not payload[field]
+        ]
+        checks.append(
+            _check(
+                f"20b:json_fields:{relative}",
+                not missing and not non_empty_failures,
+                "manifest includes required non-empty fields",
+                missing=missing,
+                empty=non_empty_failures,
+            )
+        )
+
+        if relative.endswith("roi_manifest.json"):
+            checks.append(
+                _check(
+                    "20b:roi_contract_value",
+                    payload.get("contract_value_krw") == contract_value_krw,
+                    "ROI manifest contract value matches readiness gate",
+                    expected=contract_value_krw,
+                    actual=payload.get("contract_value_krw"),
+                )
+            )
+        if relative.endswith("figma_design_packet.json"):
+            checks.append(
+                _check(
+                    "20b:figma_code_connect_disabled",
+                    payload.get("code_connect") is False,
+                    "Figma design packet keeps Code Connect disabled",
+                    actual=payload.get("code_connect"),
+                )
+            )
     return checks
 
 
@@ -280,6 +418,8 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
     checks: list[dict[str, object]] = []
     checks.extend(_validate_required_files(repo_root))
     checks.extend(_validate_doc_tokens(repo_root))
+    if args.require_20b_product:
+        checks.extend(_validate_20b_product_evidence(repo_root, contract_value_krw=args.contract_value_krw))
     checks.extend(
         _validate_acceptance_summary(
             Path(args.acceptance).resolve(),
@@ -296,6 +436,7 @@ def run_sales_readiness(args: argparse.Namespace) -> dict[str, object]:
         "command": "sales_readiness",
         "status": "ok" if not failed else "failed",
         "contract_value_krw": args.contract_value_krw,
+        "require_20b_product": args.require_20b_product,
         "repo_root": str(repo_root),
         "acceptance": str(Path(args.acceptance).resolve()),
         "checks": checks,
@@ -315,6 +456,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", default="sales_readiness_manifest.json", help="Manifest output path.")
     parser.add_argument("--dist", help="Optional dist directory containing built wheel and sdist artifacts.")
     parser.add_argument("--require-rust", action="store_true", help="Require explicit Rust backend evidence.")
+    parser.add_argument(
+        "--require-20b-product",
+        action="store_true",
+        help="Require Product Design, Figma, ROI, benchmark, and demo evidence for KRW 2B review.",
+    )
     parser.add_argument("--check-import", action="store_true", help="Import installed package and optional Rust core.")
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value for this gate.")
     parser.add_argument(

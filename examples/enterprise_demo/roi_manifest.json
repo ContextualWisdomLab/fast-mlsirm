@@ -1,0 +1,39 @@
+{
+  "contract_value_krw": 2000000000,
+  "currency": "KRW",
+  "position": "Procurement evidence model, not a valuation guarantee.",
+  "drivers": [
+    {
+      "name": "analyst_hours_saved",
+      "metric": "hours avoided per release acceptance review",
+      "evidence": "release_acceptance.py reproduces simulation, fitting, diagnostics, and report generation from synthetic data"
+    },
+    {
+      "name": "engineering_hours_saved",
+      "metric": "manual packaging and backend verification steps avoided",
+      "evidence": "sales_readiness.py checks package artifacts, import proof, and Rust backend availability"
+    },
+    {
+      "name": "reproducibility",
+      "metric": "scripted evidence bundle completeness",
+      "evidence": "acceptance_summary.json and sales_readiness_manifest.json record commands, files, backend, and runtime"
+    },
+    {
+      "name": "governance_confidence",
+      "metric": "required support, security, and formula-scope documents present",
+      "evidence": "commercial, enterprise, and product-readiness documents define supported and unsupported use"
+    }
+  ],
+  "required_evidence": [
+    "release-acceptance/acceptance_summary.json",
+    "release-acceptance/sales_readiness_manifest.json",
+    "examples/enterprise_demo/benchmark_manifest.json",
+    "examples/enterprise_demo/figma_design_packet.json"
+  ],
+  "go_no_go": {
+    "synthetic_demo_required": true,
+    "customer_data_required_for_final_roi": true,
+    "regulated_use_claim_allowed": false,
+    "requires_all_sales_readiness_checks_ok": true
+  }
+}

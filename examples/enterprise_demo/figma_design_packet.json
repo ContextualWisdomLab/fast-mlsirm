@@ -1,0 +1,41 @@
+{
+  "code_connect": false,
+  "mode": "static_product_storyboard",
+  "source": "docs/buyer_demo_storyboard.md",
+  "frames": [
+    {
+      "id": "01-package-evidence",
+      "title": "Package Evidence",
+      "artifact": "dist wheel, source distribution, version, commit SHA"
+    },
+    {
+      "id": "02-synthetic-demo-run",
+      "title": "Synthetic Demo Run",
+      "artifact": "simulate and fit command outputs"
+    },
+    {
+      "id": "03-fit-diagnostics",
+      "title": "Fit Diagnostics",
+      "artifact": "fit_diagnostics.json and model fit summary"
+    },
+    {
+      "id": "04-dimensionality-review",
+      "title": "Dimensionality Review",
+      "artifact": "dimension_diagnostics.json"
+    },
+    {
+      "id": "05-report-export",
+      "title": "Report Export",
+      "artifact": "standalone HTML diagnostics report"
+    },
+    {
+      "id": "06-procurement-packet",
+      "title": "Procurement Packet",
+      "artifact": "acceptance, sales, ROI, benchmark, and design manifests"
+    }
+  ],
+  "handoff": {
+    "figma_skill_path": "figma-use plus figma-generate-design when MCP is connected",
+    "product_design_scope": "static buyer workflow, no hosted dashboard"
+  }
+}

@@ -8,9 +8,10 @@ their own domain. It is not positioned as a finished regulated decision product
 or as a fully managed assessment platform.
 
 For KRW 2,000,000,000 enterprise sales review, use this document together with
-`docs/enterprise_sales_readiness.md`. That higher gate requires procurement
-evidence, release artifacts, support/security scope, and a machine-readable
-`sales_readiness_manifest.json`.
+`docs/enterprise_sales_readiness.md` and `docs/20b_product_readiness.md`. That
+higher gate requires procurement evidence, release artifacts, support/security
+scope, Product Design and Figma packet evidence, Data Analytics ROI/benchmark
+evidence, and a machine-readable `sales_readiness_manifest.json`.
 
 ## Supported Product Surface
 
@@ -56,6 +57,8 @@ release commit:
 - `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --check-import`
   passes and writes `sales_readiness_manifest.json` when verifying a built
   artifact.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --check-import`
+  passes when positioning the release for KRW 2,000,000,000 procurement review.
 
 ## Enterprise Sales Gate
 
@@ -67,6 +70,8 @@ must be able to show:
 - installed package import proof, including the Rust backend if sold as part of
   the package;
 - explicit support, security, non-goal, and formula-contract boundaries;
+- buyer demo storyboard, Figma packet with Code Connect disabled, ROI evidence,
+  benchmark manifest, and synthetic demo package;
 - a generated `sales_readiness_manifest.json` with no failed checks.
 
 ## Security and Support Boundaries

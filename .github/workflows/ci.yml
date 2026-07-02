@@ -56,6 +56,7 @@ jobs:
             --acceptance release-acceptance/acceptance_summary.json \
             --dist dist \
             --require-rust \
+            --require-20b-product \
             --check-import \
             --out release-acceptance/sales_readiness_manifest.json
           python - <<'PY'

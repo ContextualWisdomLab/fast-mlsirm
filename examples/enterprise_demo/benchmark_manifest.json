@@ -1,0 +1,34 @@
+{
+  "benchmark_scope": "Synthetic dense MLS2PLM release-acceptance scenarios.",
+  "runtime_budget_seconds": 120,
+  "scenarios": [
+    {
+      "name": "small_numpy_reference",
+      "persons": 12,
+      "dims": 1,
+      "items_per_dim": 2,
+      "latent_dim": 1,
+      "backend": "numpy",
+      "purpose": "Reference path acceptance smoke."
+    },
+    {
+      "name": "small_rust_backend",
+      "persons": 12,
+      "dims": 1,
+      "items_per_dim": 2,
+      "latent_dim": 1,
+      "backend": "rust",
+      "purpose": "PyO3 objective import and execution proof."
+    }
+  ],
+  "required_artifacts": [
+    "fit_summary.json",
+    "fit_diagnostics.json",
+    "dimension_diagnostics.json",
+    "report.html"
+  ],
+  "caveats": [
+    "This is an acceptance benchmark contract, not a production performance guarantee.",
+    "Large sparse/block execution remains outside the current product boundary."
+  ]
+}
