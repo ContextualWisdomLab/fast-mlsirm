@@ -1,6 +1,8 @@
 import argparse
+import hashlib
 import importlib.util
 import json
+import zipfile
 from pathlib import Path
 
 
@@ -184,6 +186,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
                 {"id": "cli_stack_trace_guard", "status": "go"},
                 {"id": "report_table_accessibility", "status": "go"},
                 {"id": "figma_buyer_review", "status": "go"},
+                {"id": "buyer_evidence_packet", "status": "go"},
             ],
             "go_no_go": {"requires_all_checks_go": True},
         },
@@ -394,6 +397,89 @@ def test_sales_readiness_fails_when_completion_scorecard_is_not_go(tmp_path):
         check for check in manifest["failed_checks"] if check["name"] == "20b:completion_scorecard"
     )
     assert scorecard_check["non_go"] == ["html_report_csp"]
+
+
+def _write_buyer_packet_manifest(tmp_path: Path, *, zip_sha: str | None = None) -> Path:
+    packet_zip = tmp_path / "buyer_packet.zip"
+    with zipfile.ZipFile(packet_zip, "w") as packet:
+        packet.writestr("buyer_evidence_manifest.json", "{}")
+    actual_sha = hashlib.sha256(packet_zip.read_bytes()).hexdigest()
+    manifest = {
+        "status": "ok",
+        "contract_value_krw": 2_000_000_000,
+        "artifact_count": 12,
+        "coverage": {
+            "acceptance_summary": True,
+            "sales_readiness_manifest": True,
+            "wheel": True,
+            "sdist": True,
+            "product_docs": True,
+            "product_manifests": True,
+            "acceptance_artifacts": True,
+        },
+        "zip_file": str(packet_zip),
+        "zip_sha256": zip_sha or actual_sha,
+    }
+    path = tmp_path / "buyer_evidence_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def test_sales_readiness_validates_required_buyer_packet(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    packet_manifest = _write_buyer_packet_manifest(tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=str(packet_manifest),
+        require_buyer_packet=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "ok"
+    check_names = {check["name"] for check in manifest["checks"]}
+    assert "buyer_packet:coverage" in check_names
+    assert "buyer_packet:zip_sha256" in check_names
+
+
+def test_sales_readiness_fails_when_buyer_packet_sha_mismatches(tmp_path):
+    module = _load_sales_readiness()
+    acceptance = _write_acceptance(tmp_path)
+    repo_root = tmp_path / "repo"
+    _write_required_policy_files(repo_root)
+    _write_20b_product_files(repo_root)
+    packet_manifest = _write_buyer_packet_manifest(tmp_path, zip_sha="0" * 64)
+    args = argparse.Namespace(
+        repo_root=str(repo_root),
+        acceptance=str(acceptance),
+        out=str(tmp_path / "sales_readiness_manifest.json"),
+        dist=None,
+        require_rust=True,
+        require_20b_product=True,
+        check_import=False,
+        buyer_packet_manifest=str(packet_manifest),
+        require_buyer_packet=True,
+        contract_value_krw=2_000_000_000,
+        max_acceptance_seconds=1.0,
+    )
+
+    manifest = module.run_sales_readiness(args)
+
+    assert manifest["status"] == "failed"
+    failed_names = {check["name"] for check in manifest["failed_checks"]}
+    assert "buyer_packet:zip_sha256" in failed_names
 
 
 def test_sales_readiness_fails_gracefully_when_20b_json_has_wrong_shape(tmp_path):

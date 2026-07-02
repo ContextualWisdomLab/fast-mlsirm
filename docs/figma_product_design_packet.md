@@ -36,6 +36,11 @@ Each frame should include:
 - the go/no-go signal;
 - the source file or command that produces the artifact.
 
+The Procurement Packet frame should include the portable packet outputs:
+`buyer_evidence_manifest.json` and
+`fast_mlsirm_buyer_evidence_packet.zip`, plus the SHA256 digest status recorded
+by the manifest.
+
 ## Generated Artifact
 
 The current buyer-review design file is
