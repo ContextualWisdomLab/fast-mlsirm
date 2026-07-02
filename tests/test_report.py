@@ -37,6 +37,10 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     assert "No rows were recorded in this section." not in html
     assert "No chartable values were recorded for this section." not in html
     assert "<table>" in html
+    assert 'http-equiv="Content-Security-Policy"' in html
+    assert "default-src &#x27;none&#x27;" in html
+    assert 'role="region" aria-label="Item Fit diagnostics table" tabindex="0"' in html
+    assert "<caption>Item Fit diagnostics table</caption>" in html
 
 
 def test_render_dimensionality_report_has_best_candidate(tmp_path):
@@ -201,3 +205,24 @@ def test_render_report_requires_html_output(tmp_path):
 
     with pytest.raises(ValueError, match="must end with .html"):
         render_diagnostics_report(source, out)
+
+
+def test_render_table_region_has_keyboard_focus_style(tmp_path):
+    source = tmp_path / "dimension_diagnostics.json"
+    out = tmp_path / "dimensions.html"
+    source.write_text(
+        json.dumps(
+            {
+                "candidates": [{"latent_dim": 2.0, "heldout_loglik": -8.0}],
+                "best": {"latent_dim": 2.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert 'aria-label="Candidate Comparison diagnostics table"' in html
+    assert 'tabindex="0"' in html
+    assert ".table-wrap:focus" in html

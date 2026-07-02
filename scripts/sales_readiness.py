@@ -38,6 +38,7 @@ REQUIRED_20B_PRODUCT_FILES = [
     "examples/enterprise_demo/roi_manifest.json",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json",
+    "examples/enterprise_demo/product_completion_manifest.json",
     "docs/superpowers/specs/2026-07-02-20b-product-readiness-design.md",
     "docs/superpowers/plans/2026-07-02-20b-product-readiness.md",
 ]
@@ -122,6 +123,20 @@ REQUIRED_20B_JSON_FIELDS = {
         "frames",
         "handoff",
     ],
+    "examples/enterprise_demo/product_completion_manifest.json": [
+        "contract_value_krw",
+        "scorecard_version",
+        "checks",
+        "go_no_go",
+    ],
+}
+
+REQUIRED_COMPLETION_CHECKS = {
+    "release_acceptance",
+    "html_report_csp",
+    "cli_stack_trace_guard",
+    "report_table_accessibility",
+    "figma_buyer_review",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {
@@ -295,6 +310,38 @@ def _validate_20b_product_evidence(repo_root: Path, *, contract_value_krw: int) 
                         actual=figma_url,
                     )
                 )
+        if relative.endswith("product_completion_manifest.json"):
+            completion_checks = payload.get("checks", [])
+            completion_ids = {
+                check.get("id")
+                for check in completion_checks
+                if isinstance(check, dict) and isinstance(check.get("id"), str)
+            }
+            non_go = [
+                check.get("id")
+                for check in completion_checks
+                if isinstance(check, dict) and check.get("status") != "go"
+            ]
+            checks.append(
+                _check(
+                    "20b:completion_contract_value",
+                    payload.get("contract_value_krw") == contract_value_krw,
+                    "completion manifest contract value matches readiness gate",
+                    expected=contract_value_krw,
+                    actual=payload.get("contract_value_krw"),
+                )
+            )
+            checks.append(
+                _check(
+                    "20b:completion_scorecard",
+                    isinstance(completion_checks, list)
+                    and REQUIRED_COMPLETION_CHECKS.issubset(completion_ids)
+                    and not non_go,
+                    "completion manifest includes required go-status hardening checks",
+                    missing=sorted(REQUIRED_COMPLETION_CHECKS - completion_ids),
+                    non_go=non_go,
+                )
+            )
     return checks
 
 

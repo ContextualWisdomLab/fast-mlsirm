@@ -9,6 +9,8 @@ Files:
 - `benchmark_manifest.json`: benchmark scenario contract for acceptance runs.
 - `figma_design_packet.json`: Product Design and Figma screen packet with
   Code Connect disabled.
+- `product_completion_manifest.json`: compact go/no-go scorecard for the
+  current hardening evidence.
 
 These files are checked by:
 
