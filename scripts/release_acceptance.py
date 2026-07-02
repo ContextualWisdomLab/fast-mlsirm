@@ -14,6 +14,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -35,7 +36,9 @@ def _run_cli(args: list[str], out_label: str, *, require_json: bool = True) -> d
     command = [sys.executable, "-m", "fast_mlsirm.cli", *args]
     if require_json and "--json" not in command:
         command.append("--json")
+    started = time.perf_counter()
     completed = subprocess.run(command, capture_output=True, text=True, env=_cli_env())
+    duration_seconds = round(time.perf_counter() - started, 6)
     if completed.returncode != 0:
         stderr = completed.stderr.strip()
         stdout = completed.stdout.strip()
@@ -44,14 +47,17 @@ def _run_cli(args: list[str], out_label: str, *, require_json: bool = True) -> d
     if not raw_output:
         raise RuntimeError(f"{out_label} succeeded without JSON output")
     if not require_json:
-        return {"status": "ok", "command": out_label, "stdout": raw_output[-1]}
+        return {"status": "ok", "command": out_label, "stdout": raw_output[-1], "duration_seconds": duration_seconds}
     try:
-        return json.loads(raw_output[-1])
+        payload = json.loads(raw_output[-1])
+        payload["duration_seconds"] = duration_seconds
+        return payload
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"{out_label} produced non-JSON output: {raw_output[-1]}") from exc
 
 
 def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
+    acceptance_started = time.perf_counter()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {
@@ -245,7 +251,12 @@ def _run_acceptance(args: argparse.Namespace) -> dict[str, object]:
                 raise RuntimeError(f"expected rust artifact missing: {path}")
 
     summary_path = out_dir / "acceptance_summary.json"
-    summary_payload = {"status": "ok", "out": str(out_dir), "steps": report["steps"]}
+    summary_payload = {
+        "status": "ok",
+        "out": str(out_dir),
+        "steps": report["steps"],
+        "total_duration_seconds": round(time.perf_counter() - acceptance_started, 6),
+    }
     summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True), encoding="utf-8")
     return {"status": "ok", "out": str(out_dir), "report": str(summary_path)}
 

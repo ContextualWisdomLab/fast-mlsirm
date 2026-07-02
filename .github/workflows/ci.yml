@@ -50,3 +50,18 @@ jobs:
               summary = json.load(fh)
           assert summary["status"] == "ok"
           PY
+      - name: Run enterprise sales readiness gate
+        run: |
+          python scripts/sales_readiness.py \
+            --acceptance release-acceptance/acceptance_summary.json \
+            --dist dist \
+            --require-rust \
+            --check-import \
+            --out release-acceptance/sales_readiness_manifest.json
+          python - <<'PY'
+          import json
+
+          with open("release-acceptance/sales_readiness_manifest.json", encoding="utf-8") as fh:
+              manifest = json.load(fh)
+          assert manifest["status"] == "ok"
+          PY

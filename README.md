@@ -100,6 +100,7 @@ generation. It is not a regulated decision product, hosted assessment platform,
 or Bayesian posterior inference engine. See:
 
 - [Commercial readiness gate](docs/commercial_readiness.md)
+- [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
 - [Release acceptance guide](docs/release_acceptance.md)
 - [Security policy](SECURITY.md)
 - [Support policy](SUPPORT.md)
@@ -109,7 +110,16 @@ Sales readiness verification uses:
 
 ```bash
 python scripts/release_acceptance.py --out acceptance_check --require-rust
+python scripts/sales_readiness.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --dist dist \
+  --require-rust \
+  --check-import \
+  --out acceptance_check/sales_readiness_manifest.json
 ```
+
+Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
+both commands to pass on the exact release artifact.
 
 ## CLI
 

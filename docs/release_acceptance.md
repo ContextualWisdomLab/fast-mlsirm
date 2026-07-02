@@ -13,6 +13,7 @@ The script verifies:
 - explicit Rust fit backend when requested
 - fit and dimensionality diagnostics output
 - diagnostics report HTML rendering
+- per-step and total runtime evidence for sales-readiness review
 
 ## How to Run
 
@@ -35,6 +36,8 @@ python scripts/release_acceptance.py \
 - Exit code `0`
 - JSON result printed to stdout with `"status": "ok"`
 - `acceptance_summary.json` written under `--out` with step outputs
+- each step in `acceptance_summary.json` includes `duration_seconds`
+- `acceptance_summary.json` includes `total_duration_seconds`
 - Generated artifacts:
   - `simulate/responses.npy`
   - `fit_auto/fit_summary.json`
@@ -43,6 +46,24 @@ python scripts/release_acceptance.py \
   - `diagnostics_dimensions/dimension_diagnostics.json`
   - `fit_report.html`
   - `dimension_report.html`
+
+## Enterprise Sales Gate
+
+After building and installing the candidate package, run the enterprise sales
+readiness verifier against the release-acceptance output:
+
+```bash
+python scripts/sales_readiness.py \
+  --acceptance release_acceptance/acceptance_summary.json \
+  --dist dist \
+  --require-rust \
+  --check-import \
+  --out release_acceptance/sales_readiness_manifest.json
+```
+
+The command writes `sales_readiness_manifest.json`. A candidate is ready for
+KRW 2,000,000,000 enterprise sales review only when every manifest check is
+`ok`.
 
 ## Optional Local Mode
 
