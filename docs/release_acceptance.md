@@ -65,6 +65,21 @@ The command writes `sales_readiness_manifest.json`. A candidate is ready for
 KRW 2,000,000,000 enterprise sales review only when every manifest check is
 `ok`.
 
+For a full buyer-review evidence bundle, prefer the single commercial release
+builder:
+
+```bash
+python scripts/build_commercial_release.py \
+  --out commercial-release \
+  --require-rust \
+  --check-import
+```
+
+The builder writes `commercial_release_manifest.json` and
+`commercial_release_report.html`. It also records each stage command, duration,
+status, failed stage, source commit, contract value, artifact paths, and SHA256
+digests for the same release candidate.
+
 For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
 buyer packet, and release evidence index from the same acceptance output:
 

@@ -1,0 +1,167 @@
+import argparse
+import hashlib
+import importlib.util
+import json
+import subprocess
+import zipfile
+from pathlib import Path
+
+
+def _load_builder():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "build_commercial_release.py"
+    spec = importlib.util.spec_from_file_location("build_commercial_release", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _args(tmp_path: Path, *, skip_build: bool = True) -> argparse.Namespace:
+    return argparse.Namespace(
+        repo_root=str(tmp_path / "repo"),
+        out=str(tmp_path / "commercial-release"),
+        dist=str(tmp_path / "dist"),
+        python="python",
+        contract_value_krw=2_000_000_000,
+        require_rust=True,
+        check_import=False,
+        skip_build=skip_build,
+    )
+
+
+def _option(command: list[str], name: str) -> str:
+    return command[command.index(name) + 1]
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _fake_runner(command: list[str], _cwd: Path) -> subprocess.CompletedProcess[str]:
+    if command[1:3] == ["-m", "build"]:
+        dist = Path(_option(command, "--outdir"))
+        dist.mkdir(parents=True, exist_ok=True)
+        (dist / "fast_mlsirm-0.1.0-py3-none-any.whl").write_text("wheel", encoding="utf-8")
+        (dist / "fast_mlsirm-0.1.0.tar.gz").write_text("sdist", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, '{"status": "ok"}', "")
+
+    script_name = Path(command[1]).name
+    if script_name == "release_acceptance.py":
+        out = Path(_option(command, "--out"))
+        _write_json(out / "acceptance_summary.json", {"status": "ok", "steps": []})
+        payload = {"status": "ok", "out": str(out)}
+    elif script_name == "build_benchmark_report.py":
+        out = Path(_option(command, "--out"))
+        html = out / "benchmark_report.html"
+        html.parent.mkdir(parents=True, exist_ok=True)
+        html.write_text("<!doctype html><title>Benchmark</title>", encoding="utf-8")
+        _write_json(out / "benchmark_report.json", {"status": "ok", "html_report_sha256": _sha256(html)})
+        payload = {"status": "ok", "out": str(out)}
+    elif script_name == "sales_readiness.py":
+        out = Path(_option(command, "--out"))
+        _write_json(out, {"status": "ok", "failed_checks": []})
+        payload = {"status": "ok", "out": str(out)}
+    elif script_name == "build_buyer_packet.py":
+        out = Path(_option(command, "--out"))
+        html = out / "buyer_evidence_report.html"
+        html.parent.mkdir(parents=True, exist_ok=True)
+        html.write_text("<!doctype html><title>Buyer Evidence</title>", encoding="utf-8")
+        packet = out / "fast_mlsirm_buyer_evidence_packet.zip"
+        with zipfile.ZipFile(packet, "w") as archive:
+            archive.writestr("buyer_evidence_manifest.json", "{}")
+        _write_json(
+            out / "buyer_evidence_manifest.json",
+            {
+                "status": "ok",
+                "report_file": str(html),
+                "report_sha256": _sha256(html),
+                "zip_file": str(packet),
+                "zip_sha256": _sha256(packet),
+            },
+        )
+        payload = {"status": "ok", "out": str(out)}
+    elif script_name == "build_release_evidence_index.py":
+        out = Path(_option(command, "--out"))
+        html = out / "release_evidence_index.html"
+        html.parent.mkdir(parents=True, exist_ok=True)
+        html.write_text("<!doctype html><title>Release Evidence</title>", encoding="utf-8")
+        _write_json(out / "release_evidence_index.json", {"status": "ok", "html_report_sha256": _sha256(html)})
+        payload = {"status": "ok", "out": str(out)}
+    else:
+        raise AssertionError(f"unexpected command: {command}")
+    return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+
+def test_commercial_release_builder_creates_manifest_and_html(tmp_path):
+    module = _load_builder()
+    args = _args(tmp_path)
+    dist = Path(args.dist)
+    dist.mkdir(parents=True)
+    (dist / "fast_mlsirm-0.1.0-py3-none-any.whl").write_text("wheel", encoding="utf-8")
+    (dist / "fast_mlsirm-0.1.0.tar.gz").write_text("sdist", encoding="utf-8")
+
+    manifest = module.build_commercial_release(args, runner=_fake_runner)
+
+    assert manifest["status"] == "ok"
+    assert manifest["failed_stage"] is None
+    assert [stage["name"] for stage in manifest["stages"]] == [
+        "release_acceptance",
+        "benchmark_report",
+        "sales_readiness",
+        "buyer_packet",
+        "release_evidence_index",
+        "final_sales_readiness",
+    ]
+    assert manifest["artifacts"]["wheel"]["exists"] is True
+    assert manifest["artifacts"]["sdist"]["exists"] is True
+    assert (Path(args.out) / "commercial_release_manifest.json").exists()
+    html = (Path(args.out) / "commercial_release_report.html").read_text(encoding="utf-8")
+    assert "Content-Security-Policy" in html
+    assert "Commercial release stage table" in html
+    assert "Commercial release artifact table" in html
+
+
+def test_commercial_release_builder_stops_on_failed_stage(tmp_path):
+    module = _load_builder()
+    args = _args(tmp_path)
+
+    def failing_runner(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if Path(command[1]).name == "build_benchmark_report.py":
+            return subprocess.CompletedProcess(command, 2, "", "boom")
+        return _fake_runner(command, cwd)
+
+    manifest = module.build_commercial_release(args, runner=failing_runner)
+
+    assert manifest["status"] == "failed"
+    assert manifest["failed_stage"] == "benchmark_report"
+    assert [stage["name"] for stage in manifest["stages"]] == ["release_acceptance", "benchmark_report"]
+    assert manifest["stages"][-1]["stderr_tail"] == "boom"
+
+
+def test_build_dist_stage_writes_to_configured_dist_directory(tmp_path):
+    module = _load_builder()
+    args = _args(tmp_path, skip_build=False)
+
+    name, command = module._commands(args, Path(args.repo_root), Path(args.out))[0]
+
+    assert name == "build_dist"
+    assert command == ["python", "-m", "build", "--outdir", str(Path(args.dist).resolve())]
+
+
+def test_relative_dist_path_is_resolved_from_repo_root(tmp_path):
+    module = _load_builder()
+    repo_root = tmp_path / "repo"
+    args = _args(tmp_path, skip_build=False)
+    args.repo_root = str(repo_root)
+    args.dist = "custom-dist"
+
+    name, command = module._commands(args, repo_root.resolve(), Path(args.out))[0]
+
+    assert name == "build_dist"
+    assert command[-2:] == ["--outdir", str((repo_root / "custom-dist").resolve())]

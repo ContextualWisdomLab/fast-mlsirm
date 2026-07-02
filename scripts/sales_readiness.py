@@ -46,6 +46,8 @@ REQUIRED_20B_PRODUCT_FILES = [
     "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md",
     "docs/superpowers/specs/2026-07-02-20b-release-evidence-index-design.md",
     "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md",
+    "docs/superpowers/specs/2026-07-03-20b-commercial-release-builder-design.md",
+    "docs/superpowers/plans/2026-07-03-20b-commercial-release-builder.md",
 ]
 
 REQUIRED_DOC_TOKENS = {
@@ -55,6 +57,7 @@ REQUIRED_DOC_TOKENS = {
         "scripts/release_acceptance.py",
         "scripts/sales_readiness.py",
         "scripts/build_release_evidence_index.py",
+        "scripts/build_commercial_release.py",
     ],
     "docs/commercial_readiness.md": [
         "Seller Acceptance Checklist",
@@ -74,6 +77,7 @@ REQUIRED_DOC_TOKENS = {
         "acceptance_summary.json",
         "sales_readiness_manifest.json",
         "release_evidence_index.json",
+        "commercial_release_manifest.json",
         "--require-rust",
     ],
 }
@@ -87,6 +91,7 @@ REQUIRED_20B_DOC_TOKENS = {
         "Figma Code Connect",
         "benchmark_report.html",
         "release_evidence_index.html",
+        "commercial_release_report.html",
         "Go/No-Go",
     ],
     "docs/buyer_demo_storyboard.md": [
@@ -151,6 +156,7 @@ REQUIRED_COMPLETION_CHECKS = {
     "buyer_evidence_html_report",
     "automated_benchmark_report",
     "release_evidence_index",
+    "commercial_release_builder",
 }
 
 REQUIRED_ACCEPTANCE_COMMANDS = {

@@ -90,6 +90,7 @@ def _write_required_policy_files(root: Path) -> None:
         scripts/release_acceptance.py
         scripts/sales_readiness.py
         scripts/build_release_evidence_index.py
+        scripts/build_commercial_release.py
         """,
         "docs/commercial_readiness.md": """
         Seller Acceptance Checklist
@@ -109,6 +110,7 @@ def _write_required_policy_files(root: Path) -> None:
         acceptance_summary.json
         sales_readiness_manifest.json
         release_evidence_index.json
+        commercial_release_manifest.json
         --require-rust
         """,
     }
@@ -128,6 +130,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         Figma Code Connect
         benchmark_report.html
         release_evidence_index.html
+        commercial_release_report.html
         Go/No-Go
         """,
         "docs/buyer_demo_storyboard.md": """
@@ -157,6 +160,8 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
         "docs/superpowers/plans/2026-07-02-20b-benchmark-evidence.md": "benchmark implementation plan",
         "docs/superpowers/specs/2026-07-02-20b-release-evidence-index-design.md": "release index design spec",
         "docs/superpowers/plans/2026-07-02-20b-release-evidence-index.md": "release index implementation plan",
+        "docs/superpowers/specs/2026-07-03-20b-commercial-release-builder-design.md": "commercial release builder design spec",
+        "docs/superpowers/plans/2026-07-03-20b-commercial-release-builder.md": "commercial release builder implementation plan",
     }
     for relative, text in docs.items():
         path = root / relative
@@ -199,6 +204,7 @@ def _write_20b_product_files(root: Path, *, code_connect: bool = False) -> None:
                 {"id": "buyer_evidence_html_report", "status": "go"},
                 {"id": "automated_benchmark_report", "status": "go"},
                 {"id": "release_evidence_index", "status": "go"},
+                {"id": "commercial_release_builder", "status": "go"},
             ],
             "go_no_go": {"requires_all_checks_go": True},
         },

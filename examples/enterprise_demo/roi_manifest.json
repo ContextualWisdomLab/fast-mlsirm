@@ -16,7 +16,7 @@
     {
       "name": "reproducibility",
       "metric": "scripted evidence bundle completeness",
-      "evidence": "acceptance_summary.json and sales_readiness_manifest.json record commands, files, backend, and runtime"
+      "evidence": "commercial_release_manifest.json records commands, files, backend, runtime, failed-stage detail, and artifact digests from one buyer-review command"
     },
     {
       "name": "governance_confidence",
@@ -29,6 +29,8 @@
     "release-acceptance/sales_readiness_manifest.json",
     "release-acceptance/benchmark/benchmark_report.json",
     "release-acceptance/benchmark/benchmark_report.html",
+    "commercial-release/commercial_release_manifest.json",
+    "commercial-release/commercial_release_report.html",
     "examples/enterprise_demo/benchmark_manifest.json",
     "examples/enterprise_demo/figma_design_packet.json"
   ],

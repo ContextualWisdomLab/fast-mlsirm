@@ -35,6 +35,8 @@ The product completion scorecard is represented by
 report table accessibility, the Figma buyer-review artifact, the buyer
 evidence packet, the buyer evidence HTML review, the automated benchmark
 report, and the release evidence index.
+The same scorecard also requires the commercial release builder so a buyer can
+produce the full evidence set from one command.
 
 The benchmark evidence is represented by `benchmark_report.json` generated from
 `scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
@@ -52,6 +54,13 @@ generated from `scripts/build_release_evidence_index.py`. The companion
 `release_evidence_index.html` presents distribution artifact hashes, acceptance
 status, benchmark status, sales-readiness status, buyer packet digest, source
 commit, and required evidence coverage for procurement review.
+
+The top-level buyer review is represented by `commercial_release_manifest.json`
+generated from `scripts/build_commercial_release.py`. The companion
+`commercial_release_report.html` presents stage status, command duration,
+failed-stage detail, artifact paths, contract value, source commit, and SHA256
+evidence from dist build, acceptance, benchmark, sales-readiness, buyer packet,
+release index, and final gate stages.
 
 ## Caveats
 
