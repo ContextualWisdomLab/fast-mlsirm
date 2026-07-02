@@ -165,10 +165,10 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         cards.append(
             "\n".join(
                 [
-                    '<article class="metric-card">',
-                    f"<span>{escape(_label(key))}</span>",
-                    f"<strong>{escape(_format_value(value))}</strong>",
-                    "</article>",
+                    '<div class="metric-card">',
+                    f"<dt><span>{escape(_label(key))}</span></dt>",
+                    f"<dd><strong>{escape(_format_value(value))}</strong></dd>",
+                    "</div>",
                 ]
             )
         )
@@ -179,9 +179,9 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         [
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
-            '<div class="metrics-grid">',
+            '<dl class="metrics-grid">',
             *cards,
-            "</div>",
+            "</dl>",
             "</section>",
         ]
     )
@@ -279,7 +279,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
 
     return "\n".join(
         [
-            '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">',
+            '<div class="bar-chart" aria-hidden="true">',
             *chart_rows,
             "</div>",
         ]
@@ -477,6 +477,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+  margin: 0;
 }
 
 .metric-card {
@@ -485,6 +486,10 @@ h3 {
   border-left: 4px solid var(--coral);
   border-radius: 8px;
   background: #fafafa;
+}
+
+.metric-card dd {
+  margin: 0;
 }
 
 .metric-card span {
@@ -613,6 +618,10 @@ th {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr:hover td {
+  background: #fbfcfa;
 }
 
 .empty-state {
