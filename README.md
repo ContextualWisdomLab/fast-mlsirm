@@ -68,6 +68,8 @@ print(process_dimensions.best)
   checks.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
+- Release evidence index reports that tie dist artifact hashes, acceptance,
+  benchmark, sales-readiness, and buyer-packet evidence to one commit.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -133,6 +135,26 @@ python scripts/build_buyer_packet.py \
   --dist dist \
   --benchmark-report acceptance_check/benchmark/benchmark_report.json \
   --out buyer-evidence-packet
+python scripts/build_release_evidence_index.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --sales-readiness acceptance_check/sales_readiness_manifest.json \
+  --dist dist \
+  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
+  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
+  --out release-evidence-index
+python scripts/sales_readiness.py \
+  --acceptance acceptance_check/acceptance_summary.json \
+  --dist dist \
+  --require-rust \
+  --require-20b-product \
+  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
+  --require-benchmark-report \
+  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
+  --require-buyer-packet \
+  --release-evidence-index release-evidence-index/release_evidence_index.json \
+  --require-release-evidence-index \
+  --check-import \
+  --out acceptance_check/final_sales_readiness_manifest.json
 ```
 
 Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
@@ -143,7 +165,10 @@ synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
 command produces a portable zip, `buyer_evidence_manifest.json`, and
 `buyer_evidence_report.html` for procurement review. The benchmark command
 produces `benchmark_report.json` and `benchmark_report.html` from the same
-release-acceptance timing evidence.
+release-acceptance timing evidence. The release evidence index command produces
+`release_evidence_index.json` and `release_evidence_index.html` as a compact
+digest map over the candidate wheel, source distribution, release acceptance,
+benchmark report, sales-readiness manifest, and buyer packet.
 
 ## CLI
 

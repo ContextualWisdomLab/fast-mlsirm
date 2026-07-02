@@ -102,6 +102,7 @@ def _collect_files(
     sales_readiness_path: Path,
     dist_dir: Path,
     benchmark_report_path: Path | None = None,
+    release_evidence_index_path: Path | None = None,
 ) -> dict[str, Path]:
     acceptance = _read_json(acceptance_path)
     files: dict[str, Path] = {}
@@ -117,6 +118,17 @@ def _collect_files(
         if html_report_path is None:
             raise RuntimeError("benchmark report is missing html_report_file")
         _add_file(files, "benchmark/benchmark_report.html", html_report_path)
+
+    if release_evidence_index_path is not None:
+        release_index = _read_json(release_evidence_index_path)
+        _add_file(files, "release/release_evidence_index.json", release_evidence_index_path)
+        html_report_file = release_index.get("html_report_file")
+        html_report_path = Path(str(html_report_file)) if isinstance(html_report_file, str) and html_report_file else None
+        if html_report_path is not None and not html_report_path.is_absolute():
+            html_report_path = release_evidence_index_path.parent / html_report_path
+        if html_report_path is None:
+            raise RuntimeError("release evidence index is missing html_report_file")
+        _add_file(files, "release/release_evidence_index.html", html_report_path)
 
     for path in sorted(dist_dir.glob("*.whl")):
         _add_file(files, f"dist/{path.name}", path)
@@ -153,6 +165,9 @@ def _coverage(files: dict[str, Path]) -> dict[str, bool]:
         "acceptance_artifacts": any(path.startswith("acceptance/artifacts/") for path in files),
         "html_report": "buyer_evidence_report.html" in files,
         "benchmark_report": "benchmark/benchmark_report.json" in files and "benchmark/benchmark_report.html" in files,
+        "release_evidence_index": (
+            "release/release_evidence_index.json" in files and "release/release_evidence_index.html" in files
+        ),
     }
 
 
@@ -418,6 +433,9 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         sales_readiness_path=Path(args.sales_readiness).resolve(),
         dist_dir=Path(args.dist).resolve(),
         benchmark_report_path=Path(args.benchmark_report).resolve() if getattr(args, "benchmark_report", None) else None,
+        release_evidence_index_path=(
+            Path(args.release_evidence_index).resolve() if getattr(args, "release_evidence_index", None) else None
+        ),
     )
     file_entries = [
         {
@@ -451,7 +469,8 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         for archive_path, path in sorted(files.items())
     ]
     coverage = _coverage(files)
-    required_coverage = {name: ok for name, ok in coverage.items() if name != "benchmark_report"}
+    optional_coverage = {"benchmark_report", "release_evidence_index"}
+    required_coverage = {name: ok for name, ok in coverage.items() if name not in optional_coverage}
     if not all(required_coverage.values()):
         missing = [name for name, ok in required_coverage.items() if not ok]
         raise RuntimeError(f"buyer evidence packet is missing required coverage: {missing}")
@@ -484,6 +503,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", default="buyer-evidence-packet", help="Output directory for packet files.")
     parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
     parser.add_argument("--benchmark-report", help="Optional benchmark_report.json to include in the packet.")
+    parser.add_argument("--release-evidence-index", help="Optional release_evidence_index.json to include in the packet.")
     return parser
 
 

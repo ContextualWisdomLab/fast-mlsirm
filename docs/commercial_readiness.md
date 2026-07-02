@@ -11,7 +11,8 @@ For KRW 2,000,000,000 enterprise sales review, use this document together with
 `docs/enterprise_sales_readiness.md` and `docs/20b_product_readiness.md`. That
 higher gate requires procurement evidence, release artifacts, support/security
 scope, Product Design and Figma packet evidence, Data Analytics ROI/benchmark
-evidence, and a machine-readable `sales_readiness_manifest.json`.
+evidence, a machine-readable `sales_readiness_manifest.json`, and a release
+evidence index over the exact artifacts being offered.
 
 ## Supported Product Surface
 
@@ -27,6 +28,8 @@ evidence, and a machine-readable `sales_readiness_manifest.json`.
 - Dense response matrices with missing values represented by `NaN`, `-1`, or an
   explicit mask.
 - Automated benchmark evidence reporting from release-acceptance timing.
+- Release evidence index reporting for dist artifact hashes, acceptance,
+  benchmark, sales-readiness, and buyer-packet evidence.
 
 ## Not Yet Supported
 
@@ -66,6 +69,10 @@ release commit:
   `fast_mlsirm_buyer_evidence_packet.zip`, plus
   `buyer_evidence_report.html`, when a portable procurement packet is part of
   the offer.
+- `python scripts/build_release_evidence_index.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --benchmark-report acceptance_check/benchmark/benchmark_report.json --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --out release-evidence-index`
+  creates `release_evidence_index.json` and `release_evidence_index.html`.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
+  passes as the final 20B evidence-integrity gate.
 
 ## Enterprise Sales Gate
 
@@ -82,6 +89,8 @@ must be able to show:
 - a generated `sales_readiness_manifest.json` with no failed checks.
 - a generated buyer evidence packet with SHA256 digests and standalone HTML
   review when procurement asks for a single reviewable artifact bundle.
+- a generated release evidence index with SHA256 digests and standalone HTML
+  review tying the candidate artifacts to the exact source commit.
 
 ## Security and Support Boundaries
 

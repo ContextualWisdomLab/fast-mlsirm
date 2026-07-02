@@ -39,7 +39,18 @@ python scripts/build_buyer_packet.py \
   --dist dist \
   --benchmark-report release-acceptance/benchmark/benchmark_report.json \
   --out buyer-evidence-packet
+
+python scripts/build_release_evidence_index.py \
+  --acceptance release-acceptance/acceptance_summary.json \
+  --sales-readiness release-acceptance/sales_readiness_manifest.json \
+  --dist dist \
+  --benchmark-report release-acceptance/benchmark/benchmark_report.json \
+  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
+  --out release-evidence-index
 ```
 
 The command writes `buyer_evidence_manifest.json`,
 `buyer_evidence_report.html`, and `fast_mlsirm_buyer_evidence_packet.zip`.
+The release evidence command writes `release_evidence_index.json` and
+`release_evidence_index.html` for dist hash, acceptance, benchmark,
+sales-readiness, and buyer-packet review.

@@ -38,6 +38,10 @@ artifact being offered:
   present when `--require-20b-product` is used.
 - `scripts/build_benchmark_report.py` produces `benchmark_report.json` and
   `benchmark_report.html` from the exact release acceptance run.
+- `scripts/build_release_evidence_index.py` produces
+  `release_evidence_index.json` and `release_evidence_index.html` tying the
+  dist artifacts, acceptance run, benchmark report, sales-readiness manifest,
+  and buyer packet to one source commit.
 
 ## Customer Acceptance Evidence
 
@@ -49,6 +53,8 @@ The buyer acceptance package should include:
 - Generated standalone HTML reports for fit and dimensionality diagnostics.
 - Generated benchmark JSON and HTML reports with runtime-budget and artifact
   coverage evidence.
+- Generated release evidence JSON and HTML reports with distribution hashes,
+  source commit, acceptance status, benchmark status, and buyer packet digest.
 - Exact commit SHA, package version, Python version, Rust toolchain version,
   operating system, and backend used.
 - A synthetic-data reproduction path that does not expose customer response
@@ -70,6 +76,13 @@ true:
   passes.
 - `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --check-import`
   passes for KRW 2,000,000,000 product-readiness review.
+- `python scripts/build_buyer_packet.py --acceptance release-acceptance/acceptance_summary.json --sales-readiness release-acceptance/sales_readiness_manifest.json --dist dist --benchmark-report release-acceptance/benchmark/benchmark_report.json --out buyer-evidence-packet`
+  passes when a portable procurement packet is part of the offer.
+- `python scripts/build_release_evidence_index.py --acceptance release-acceptance/acceptance_summary.json --sales-readiness release-acceptance/sales_readiness_manifest.json --dist dist --benchmark-report release-acceptance/benchmark/benchmark_report.json --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --out release-evidence-index`
+  passes and emits `release_evidence_index.json` plus
+  `release_evidence_index.html`.
+- `python scripts/sales_readiness.py --acceptance release-acceptance/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report release-acceptance/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
+  passes as the final evidence-integrity gate.
 - No release candidate changes the formula contract, diagnostics semantics, or
   estimator scope outside a model-design PR.
 

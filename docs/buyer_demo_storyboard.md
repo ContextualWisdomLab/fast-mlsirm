@@ -43,6 +43,9 @@ The demo should show a complete buyer review without customer data:
      JSON first.
    - Show benchmark report JSON and HTML files when they are included in the
      packet.
+   - Open `release_evidence_index.html` to review wheel/source distribution
+     hashes, acceptance status, benchmark status, sales-readiness status, buyer
+     packet digest, source commit, and required evidence coverage in one place.
 
 ## Screen List For Figma
 
@@ -56,7 +59,8 @@ The Figma prototype should contain these static screens:
 - `04-dimensionality-review`: candidate dimensions and selected model summary.
 - `05-report-export`: standalone HTML report review state.
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
-  standalone HTML review, benchmark report files, and go/no-go status.
+  standalone HTML review, benchmark report files, release evidence index, and
+  go/no-go status.
 
 ## Interaction Level
 
@@ -70,4 +74,6 @@ review surface.
 The storyboard is complete when every screen maps to a real CLI/API artifact
 or a manifest checked by `scripts/sales_readiness.py --require-20b-product`.
 The procurement-packet screen also maps to `scripts/build_buyer_packet.py` and
-optional `scripts/sales_readiness.py --require-buyer-packet` validation.
+optional `scripts/sales_readiness.py --require-buyer-packet` validation, plus
+`scripts/build_release_evidence_index.py` and optional
+`scripts/sales_readiness.py --require-release-evidence-index` validation.

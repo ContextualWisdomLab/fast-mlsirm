@@ -47,7 +47,10 @@ by the manifest. It should also point to `buyer_evidence_report.html` as the
 human-readable review surface for the same evidence. When a benchmark report is
 part of the offer, the frame should also show that
 `benchmark/benchmark_report.json` and `benchmark/benchmark_report.html` are in
-the packet.
+the packet. The same frame should point to `release_evidence_index.json` and
+`release_evidence_index.html` as the release-level digest map over the wheel,
+source distribution, acceptance output, benchmark evidence, sales-readiness
+manifest, and buyer packet.
 
 ## Generated Artifact
 

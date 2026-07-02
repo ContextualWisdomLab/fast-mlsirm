@@ -27,6 +27,8 @@ commit and artifact being offered:
   scenarios;
 - automated benchmark evidence from `benchmark_report.json` and
   `benchmark_report.html`;
+- release evidence index output from `release_evidence_index.json` and
+  `release_evidence_index.html`;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
 - a buyer evidence completion scorecard for release acceptance, HTML report
@@ -87,6 +89,11 @@ when:
   commit, artifact count, ZIP digest, and artifact digests for human review;
 - `benchmark_report.html` summarizes runtime budget, total duration, command
   timings, backend coverage, required artifacts, and caveats for human review;
+- `release_evidence_index.html` summarizes exact wheel/source distribution
+  digests, acceptance status, benchmark status, sales-readiness status, buyer
+  packet digest, coverage, and source commit for human release review;
+- `scripts/sales_readiness.py --require-release-evidence-index` validates the
+  generated release index before a release candidate is positioned as complete;
 - the Figma design packet declares `code_connect: false`;
 - the package acceptance evidence still passes the normal enterprise gate.
 
