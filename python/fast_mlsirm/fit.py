@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
+from .backend import resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
 from .objective import model_flags, neg_loglik_and_grad, prepare_response, validate_factor_id
@@ -18,6 +19,7 @@ def fit(
 ) -> FitResult:
     config = config or FitConfig()
     config.validate()
+    backend = resolve_backend(config.backend)
     model = config.normalized_model()
 
     y, observed = prepare_response(responses, mask)
@@ -30,7 +32,7 @@ def fit(
 
     best: FitResult | None = None
     for restart in range(config.n_restarts):
-        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model)
+        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model, backend)
         if best is None or candidate.objective < best.objective:
             best = candidate
 
@@ -47,11 +49,12 @@ def _fit_single_restart(
     factors: np.ndarray,
     n_dims: int,
     model: str,
+    backend: str,
 ) -> FitResult:
     rng = np.random.default_rng(config.seed + restart)
     params0 = _initial_params(y, observed, factors, n_dims, config.latent_dim, config, rng)
     x0 = _pack(params0, model)
-    objective = _make_objective(y, observed, factors, params0, config)
+    objective = _make_objective(y, observed, factors, params0, config, backend)
 
     x = x0
     obj_trace: list[float] = []
@@ -76,7 +79,7 @@ def _fit_single_restart(
     final_params = _unpack(x, params0, model)
     if model != "MIRT":
         final_params = normalize_latent_positions(final_params)
-    final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed)
+    final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed, backend=backend)
     obj_trace.append(final_obj)
     loglik_trace.append(final_loglik)
 
@@ -84,6 +87,7 @@ def _fit_single_restart(
         params=final_params,
         model=model,
         optimizer=config.optimizer,
+        backend=backend,
         objective=final_obj,
         loglik_trace=loglik_trace,
         objective_trace=obj_trace,
@@ -126,12 +130,13 @@ def _make_objective(
     factor_id: np.ndarray,
     template: MLSIRMParams,
     config: FitConfig,
+    backend: str,
 ) -> Callable[[np.ndarray], tuple[float, np.ndarray, float]]:
     model = config.normalized_model()
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
-        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed)
+        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed, backend=backend)
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))

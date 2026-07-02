@@ -49,6 +49,7 @@ class FitResult:
     params: MLSIRMParams
     model: str
     optimizer: str
+    backend: str
     objective: float
     loglik_trace: list[float]
     objective_trace: list[float]
