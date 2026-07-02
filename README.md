@@ -79,6 +79,9 @@ print(process_dimensions.best)
 - PR queue governance evidence reports for open PR review state, stale and
   changes-requested risk counts, release-scope conflict classification, and
   SHA256-verified HTML review output.
+- Figma evidence sync reports that verify the static buyer-review design packet
+  still references buyer packet, release evidence index, procurement due
+  diligence, and PR queue governance evidence while Code Connect stays disabled.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -181,6 +184,8 @@ python scripts/build_procurement_due_diligence.py \
   --out procurement-due-diligence
 python scripts/build_pr_queue_governance.py \
   --out pr-queue-governance
+python scripts/build_figma_evidence_sync.py \
+  --out figma-evidence-sync
 python scripts/sales_readiness.py \
   --acceptance acceptance_check/acceptance_summary.json \
   --dist dist \
@@ -196,6 +201,8 @@ python scripts/sales_readiness.py \
   --require-procurement-due-diligence \
   --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json \
   --require-pr-queue-governance \
+  --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json \
+  --require-figma-evidence-sync \
   --check-import \
   --out acceptance_check/final_procurement_sales_readiness_manifest.json
 ```
@@ -220,7 +227,11 @@ emits `procurement_due_diligence_manifest.json` plus
 It also invokes `scripts/build_pr_queue_governance.py` by default and emits
 `pr_queue_governance_manifest.json` plus `pr_queue_governance_report.html` so
 open GitHub PRs are inventoried as managed queue evidence rather than treated
-as an unexamined release risk.
+as an unexamined release risk. It then invokes
+`scripts/build_figma_evidence_sync.py` by default and emits
+`figma_evidence_sync_manifest.json` plus `figma_evidence_sync_report.html` so
+the static Figma procurement frame is checked against the same repo-local
+buyer evidence packet without using Figma Code Connect.
 
 ## CLI
 

@@ -23,6 +23,9 @@ need to decide whether the package can justify a high-value procurement review.
 - **Queue governance confidence:** open PR review state, stale or
   changes-requested work, release-scope conflicts, and report digest evidence
   present for procurement review.
+- **Design evidence confidence:** Code Connect-disabled Figma packet, required
+  buyer-evidence tokens, optional live metadata snapshot status, and report
+  digest evidence present for procurement review.
 
 ## Required Evidence
 
@@ -47,6 +50,10 @@ so package metadata, policy files, GitHub state, commercial release evidence,
 and report SHA256 can be reviewed independently. It also requires PR queue
 governance so open review work, stale PRs, and release-scope conflicts are
 classified instead of hidden.
+It also requires Figma evidence sync so the design packet is checked against
+the same buyer packet, release evidence index, procurement due-diligence, and
+PR queue governance evidence before the Figma artifact is used in a buyer
+review.
 
 The benchmark evidence is represented by `benchmark_report.json` generated from
 `scripts/build_benchmark_report.py`. The companion `benchmark_report.html`
@@ -85,6 +92,12 @@ The PR queue governance evidence is represented by
 `pr_queue_governance_report.html` presents open PR count, reviewDecision,
 mergeStateStatus, stale and changes-requested counts, release-scope conflict
 classification, and report SHA256 evidence for procurement review.
+
+The Figma evidence sync is represented by `figma_evidence_sync_manifest.json`
+generated from `scripts/build_figma_evidence_sync.py`. The companion
+`figma_evidence_sync_report.html` presents Code Connect-disabled status,
+required frame coverage, required buyer-evidence token coverage, optional
+metadata snapshot status, and report SHA256 evidence for procurement review.
 
 ## Caveats
 
