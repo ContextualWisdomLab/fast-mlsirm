@@ -29,6 +29,8 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
 
     assert rendered == out
     html = out.read_text(encoding="utf-8")
+    assert "Content-Security-Policy" in html
+    assert "default-src 'none'" in html
     assert "Example Fit" in html
     assert "Model Fit" in html
     assert "Item Fit" in html
