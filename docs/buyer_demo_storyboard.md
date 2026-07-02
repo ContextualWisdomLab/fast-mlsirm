@@ -36,6 +36,9 @@ The demo should show a complete buyer review without customer data:
    - Show `buyer_evidence_manifest.json` and
      `fast_mlsirm_buyer_evidence_packet.zip` when the buyer wants a single
      portable evidence bundle.
+   - Open `buyer_evidence_report.html` to review coverage, contract value,
+     source commit, artifact count, and digest evidence without reading raw
+     JSON first.
 
 ## Screen List For Figma
 
@@ -47,9 +50,8 @@ The Figma prototype should contain these static screens:
   cards.
 - `04-dimensionality-review`: candidate dimensions and selected model summary.
 - `05-report-export`: standalone HTML report review state.
-- `06-procurement-packet`: required manifests and go/no-go status.
 - `06-procurement-packet`: required manifests, artifact digests, packet zip,
-  and go/no-go status.
+  standalone HTML review, and go/no-go status.
 
 ## Interaction Level
 

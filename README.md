@@ -133,8 +133,8 @@ the release acceptance and sales-readiness commands to pass on the exact
 release artifact. The 20B product gate adds
 Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
 synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
-command produces a portable zip plus `buyer_evidence_manifest.json` for
-procurement review.
+command produces a portable zip, `buyer_evidence_manifest.json`, and
+`buyer_evidence_report.html` for procurement review.
 
 ## CLI
 

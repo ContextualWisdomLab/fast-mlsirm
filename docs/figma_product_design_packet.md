@@ -39,7 +39,8 @@ Each frame should include:
 The Procurement Packet frame should include the portable packet outputs:
 `buyer_evidence_manifest.json` and
 `fast_mlsirm_buyer_evidence_packet.zip`, plus the SHA256 digest status recorded
-by the manifest.
+by the manifest. It should also point to `buyer_evidence_report.html` as the
+human-readable review surface for the same evidence.
 
 ## Generated Artifact
 

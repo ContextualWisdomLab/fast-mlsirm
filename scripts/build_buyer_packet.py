@@ -10,6 +10,7 @@ import subprocess
 import sys
 import zipfile
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -139,7 +140,256 @@ def _coverage(files: dict[str, Path]) -> dict[str, bool]:
         "product_docs": all(relative in files for relative in PRODUCT_DOCS),
         "product_manifests": all(relative in files for relative in PRODUCT_MANIFESTS),
         "acceptance_artifacts": any(path.startswith("acceptance/artifacts/") for path in files),
+        "html_report": "buyer_evidence_report.html" in files,
     }
+
+
+def _content_security_policy() -> str:
+    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "go" if value else "missing"
+    if value is None:
+        return "None"
+    return str(value)
+
+
+def _render_report_html(manifest: dict[str, Any]) -> str:
+    coverage = manifest.get("coverage", {})
+    coverage_rows = []
+    if isinstance(coverage, dict):
+        for name, ok in sorted(coverage.items()):
+            coverage_rows.append(
+                "\n".join(
+                    [
+                        "<tr>",
+                        f"<th scope=\"row\">{escape(name.replace('_', ' ').title())}</th>",
+                        f"<td>{escape(_format_value(ok))}</td>",
+                        "</tr>",
+                    ]
+                )
+            )
+    file_rows = []
+    files = manifest.get("files", [])
+    if isinstance(files, list):
+        for item in files[:25]:
+            if not isinstance(item, dict):
+                continue
+            file_rows.append(
+                "\n".join(
+                    [
+                        "<tr>",
+                        f"<th scope=\"row\">{escape(str(item.get('archive_path', '')))}</th>",
+                        f"<td>{escape(str(item.get('size_bytes', '')))}</td>",
+                        f"<td><code>{escape(str(item.get('sha256', '')))}</code></td>",
+                        "</tr>",
+                    ]
+                )
+            )
+    contract_value = manifest.get("contract_value_krw")
+    if isinstance(contract_value, int):
+        contract_value_display = f"KRW {contract_value:,}"
+    elif contract_value in (None, ""):
+        contract_value_display = ""
+    else:
+        contract_value_display = f"KRW {contract_value}"
+    cards = [
+        ("Contract Value", contract_value_display),
+        ("Artifact Count", manifest.get("artifact_count", "")),
+        ("Source Commit", manifest.get("source_commit", "")),
+        ("Packet ZIP SHA256", manifest.get("zip_sha256", "calculated after archive write")),
+    ]
+    card_markup = [
+        "\n".join(
+            [
+                '<article class="metric-card">',
+                f"<span>{escape(label)}</span>",
+                f"<strong>{escape(_format_value(value))}</strong>",
+                "</article>",
+            ]
+        )
+        for label, value in cards
+    ]
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '<meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            "<title>fast-mlsirm Buyer Evidence Review</title>",
+            "<style>",
+            _report_css(),
+            "</style>",
+            "</head>",
+            "<body>",
+            "<main>",
+            '<section class="hero">',
+            "<p>fast-mlsirm procurement packet</p>",
+            "<h1>Buyer Evidence Review</h1>",
+            f"<span>Generated: {escape(str(manifest.get('generated_at', '')))}</span>",
+            "</section>",
+            '<section class="report-section">',
+            "<h2>Decision Summary</h2>",
+            '<div class="metrics-grid">',
+            *card_markup,
+            "</div>",
+            "</section>",
+            '<section class="report-section">',
+            "<h2>Required Evidence Coverage</h2>",
+            '<div class="table-wrap" role="region" aria-label="Required evidence coverage table" tabindex="0">',
+            "<table>",
+            "<caption>Required evidence coverage table</caption>",
+            "<thead><tr><th scope=\"col\">Evidence</th><th scope=\"col\">Status</th></tr></thead>",
+            "<tbody>",
+            *coverage_rows,
+            "</tbody>",
+            "</table>",
+            "</div>",
+            "</section>",
+            '<section class="report-section">',
+            "<h2>Artifact Digest Sample</h2>",
+            '<div class="table-wrap" role="region" aria-label="Artifact digest table" tabindex="0">',
+            "<table>",
+            "<caption>Artifact digest table</caption>",
+            "<thead><tr><th scope=\"col\">Archive Path</th><th scope=\"col\">Bytes</th><th scope=\"col\">SHA256</th></tr></thead>",
+            "<tbody>",
+            *file_rows,
+            "</tbody>",
+            "</table>",
+            "</div>",
+            '<p class="note">This report summarizes procurement evidence only. It is not a valuation guarantee or regulated-use approval.</p>',
+            "</section>",
+            "</main>",
+            "</body>",
+            "</html>",
+        ]
+    )
+
+
+def _report_css() -> str:
+    return """
+:root {
+  color: #172026;
+  background: #f5f7f8;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 20px 56px;
+}
+.hero {
+  background: #12343b;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 28px;
+}
+.hero p,
+.hero h1 {
+  margin: 0;
+}
+.hero p {
+  color: #b7d7d0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hero h1 {
+  margin-top: 8px;
+  font-size: 2rem;
+}
+.hero span {
+  display: inline-block;
+  margin-top: 14px;
+  color: #dce8e5;
+}
+.report-section {
+  margin-top: 22px;
+  background: #ffffff;
+  border: 1px solid #d8e1e3;
+  border-radius: 8px;
+  padding: 22px;
+}
+.report-section h2 {
+  margin: 0 0 16px;
+  font-size: 1.16rem;
+}
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.metric-card {
+  border: 1px solid #d8e1e3;
+  border-radius: 8px;
+  padding: 14px;
+}
+.metric-card span {
+  display: block;
+  color: #5e6f76;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.metric-card strong {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d8e1e3;
+  border-radius: 8px;
+}
+.table-wrap:focus {
+  outline: 3px solid #0f766e;
+  outline-offset: 3px;
+}
+table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+}
+caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8edef;
+  text-align: left;
+  vertical-align: top;
+}
+tbody tr:last-child th,
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+code {
+  overflow-wrap: anywhere;
+}
+.note {
+  color: #5e6f76;
+  margin-bottom: 0;
+}
+"""
 
 
 def build_packet(args: argparse.Namespace) -> dict[str, Any]:
@@ -148,6 +398,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / "fast_mlsirm_buyer_evidence_packet.zip"
     manifest_path = out_dir / "buyer_evidence_manifest.json"
+    report_path = out_dir / "buyer_evidence_report.html"
 
     files = _collect_files(
         repo_root=repo_root,
@@ -155,11 +406,6 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         sales_readiness_path=Path(args.sales_readiness).resolve(),
         dist_dir=Path(args.dist).resolve(),
     )
-    coverage = _coverage(files)
-    if not all(coverage.values()):
-        missing = [name for name, ok in coverage.items() if not ok]
-        raise RuntimeError(f"buyer evidence packet is missing required coverage: {missing}")
-
     file_entries = [
         {
             "archive_path": archive_path,
@@ -169,6 +415,7 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         }
         for archive_path, path in sorted(files.items())
     ]
+    coverage = _coverage(files)
     manifest: dict[str, Any] = {
         "status": "ok",
         "command": "build_buyer_packet",
@@ -179,6 +426,26 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         "coverage": coverage,
         "files": file_entries,
     }
+    report_path.write_text(_render_report_html(manifest), encoding="utf-8")
+    files["buyer_evidence_report.html"] = report_path
+    file_entries = [
+        {
+            "archive_path": archive_path,
+            "source_path": str(path),
+            "size_bytes": path.stat().st_size,
+            "sha256": _sha256(path),
+        }
+        for archive_path, path in sorted(files.items())
+    ]
+    coverage = _coverage(files)
+    if not all(coverage.values()):
+        missing = [name for name, ok in coverage.items() if not ok]
+        raise RuntimeError(f"buyer evidence packet is missing required coverage: {missing}")
+    manifest["coverage"] = coverage
+    manifest["artifact_count"] = len(file_entries)
+    manifest["files"] = file_entries
+    manifest["report_file"] = str(report_path)
+    manifest["report_sha256"] = _sha256(report_path)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as packet:
@@ -188,6 +455,8 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
 
     manifest["zip_file"] = str(zip_path)
     manifest["zip_sha256"] = _sha256(zip_path)
+    report_path.write_text(_render_report_html(manifest), encoding="utf-8")
+    manifest["report_sha256"] = _sha256(report_path)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
 
@@ -217,6 +486,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
                 "manifest": str(Path(args.out).resolve() / "buyer_evidence_manifest.json"),
+                "report": str(Path(args.out).resolve() / "buyer_evidence_report.html"),
                 "zip": manifest["zip_file"],
             },
             indent=2,

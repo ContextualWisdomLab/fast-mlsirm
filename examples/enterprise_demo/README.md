@@ -33,3 +33,6 @@ python scripts/build_buyer_packet.py \
   --dist dist \
   --out buyer-evidence-packet
 ```
+
+The command writes `buyer_evidence_manifest.json`,
+`buyer_evidence_report.html`, and `fast_mlsirm_buyer_evidence_packet.zip`.

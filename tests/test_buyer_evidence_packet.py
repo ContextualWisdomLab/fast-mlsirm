@@ -87,10 +87,20 @@ def test_build_buyer_packet_creates_manifest_and_zip(tmp_path):
     assert manifest["contract_value_krw"] == 2_000_000_000
     assert manifest["coverage"]["wheel"] is True
     assert manifest["coverage"]["sdist"] is True
+    assert manifest["coverage"]["html_report"] is True
+    assert manifest["report_sha256"]
     assert manifest["zip_sha256"]
+    report = Path(manifest["report_file"])
+    html = report.read_text(encoding="utf-8")
+    assert "Buyer Evidence Review" in html
+    assert 'http-equiv="Content-Security-Policy"' in html
+    assert 'role="region" aria-label="Required evidence coverage table" tabindex="0"' in html
+    assert "Packet ZIP SHA256" in html
+    assert manifest["zip_sha256"] in html
     with zipfile.ZipFile(manifest["zip_file"]) as packet:
         names = set(packet.namelist())
     assert "buyer_evidence_manifest.json" in names
+    assert "buyer_evidence_report.html" in names
     assert "acceptance/acceptance_summary.json" in names
     assert "sales/sales_readiness_manifest.json" in names
     assert "docs/20b_product_readiness.md" in names

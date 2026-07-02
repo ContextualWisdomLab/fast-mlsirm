@@ -61,8 +61,9 @@ release commit:
   passes when positioning the release for KRW 2,000,000,000 procurement review.
 - `python scripts/build_buyer_packet.py --acceptance acceptance_check/acceptance_summary.json --sales-readiness acceptance_check/sales_readiness_manifest.json --dist dist --out buyer-evidence-packet`
   creates `buyer_evidence_manifest.json` and
-  `fast_mlsirm_buyer_evidence_packet.zip` when a portable procurement packet
-  is part of the offer.
+  `fast_mlsirm_buyer_evidence_packet.zip`, plus
+  `buyer_evidence_report.html`, when a portable procurement packet is part of
+  the offer.
 
 ## Enterprise Sales Gate
 
@@ -77,8 +78,8 @@ must be able to show:
 - buyer demo storyboard, Figma packet with Code Connect disabled, ROI evidence,
   benchmark manifest, and synthetic demo package;
 - a generated `sales_readiness_manifest.json` with no failed checks.
-- a generated buyer evidence packet with SHA256 digests when procurement asks
-  for a single reviewable artifact bundle.
+- a generated buyer evidence packet with SHA256 digests and standalone HTML
+  review when procurement asks for a single reviewable artifact bundle.
 
 ## Security and Support Boundaries
 
