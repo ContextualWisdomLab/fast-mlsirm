@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import FitConfig, MLSIRMParams
-from fast_mlsirm.objective import neg_loglik_and_grad, prepare_response, validate_factor_id
+from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id
 
 
 def test_missing_entries_are_excluded():
@@ -55,28 +55,6 @@ def test_gradient_matches_finite_difference():
     trial.tau += h
     got, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), trial, config)
     assert np.isclose((got - base) / h, grad.tau, atol=2e-5)
-
-
-def test_prepare_response_errors():
-    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
-        prepare_response(np.array([1.0, 0.0]))
-    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
-        prepare_response(np.array([[[1.0]]]))
-
-    with pytest.raises(ValueError, match="mask shape must match responses"):
-        prepare_response(np.array([[1.0, 0.0]]), mask=np.array([True]))
-
-    with pytest.raises(ValueError, match="responses contain no observed entries"):
-        prepare_response(np.array([[-1.0, np.nan], [np.inf, -1.0]]))
-
-    with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
-        prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
-
-    with pytest.raises(ValueError, match="all-missing item found"):
-        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
-
-    with pytest.raises(ValueError, match="all-missing person found"):
-        prepare_response(np.array([[1.0, 0.0], [-1.0, np.nan]]))
 
 
 def test_rust_backend_matches_numpy_objective():
@@ -149,8 +127,31 @@ def test_validate_factor_id():
         validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
 
 
+import pytest
+from fast_mlsirm.objective import prepare_response, _add_penalty
 from fast_mlsirm.config import PenaltyConfig
-from fast_mlsirm.objective import _add_penalty
+
+
+def test_prepare_response_errors():
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([1.0, 0.0]))
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([[[1.0]]]))
+
+    with pytest.raises(ValueError, match="mask shape must match responses"):
+        prepare_response(np.array([[1.0, 0.0]]), mask=np.array([True]))
+
+    with pytest.raises(ValueError, match="responses contain no observed entries"):
+        prepare_response(np.array([[-1.0, np.nan], [np.inf, -1.0]]))
+
+    with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
+        prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
+
+    with pytest.raises(ValueError, match="all-missing item found"):
+        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
+
+    with pytest.raises(ValueError, match="all-missing person found"):
+        prepare_response(np.array([[1.0, 0.0], [-1.0, np.nan]]))
 
 
 def test_objective_check_responses_errors():
@@ -174,6 +175,8 @@ def test_objective_check_responses_errors():
 
 
 def test_objective_model_requires_one_trait():
+    from fast_mlsirm.objective import neg_loglik_and_grad
+    from fast_mlsirm.config import FitConfig
     params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
 
     with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
@@ -181,16 +184,11 @@ def test_objective_model_requires_one_trait():
 
 
 def test_objective_add_penalty_uses_space():
+    from fast_mlsirm.types import MLSIRMParams
     params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
     penalty = PenaltyConfig(
-        lambda_theta=1.0,
-        lambda_b=1.0,
-        lambda_alpha=1.0,
-        lambda_xi=1.0,
-        lambda_zeta=1.0,
-        lambda_tau=1.0,
-        mu_alpha=0.0,
-        mu_tau=0.0,
+        lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0, lambda_xi=1.0, lambda_zeta=1.0, lambda_tau=1.0,
+        mu_alpha=0.0, mu_tau=0.0
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0
