@@ -12,8 +12,8 @@ def sigmoid(x: np.ndarray) -> np.ndarray:
 
 def softplus(x: np.ndarray) -> np.ndarray:
     # np.logaddexp(0, x) mathematically equivalent to log(1 + exp(x))
-    # and avoids intermediate array allocations.
-    return np.logaddexp(0.0, x)
+    # and avoids intermediate temporaries besides the output array allocation.
+    return np.logaddexp(x.dtype.type(0.0), x)
 
 
 def logit(p: np.ndarray | float, eps: float = 1e-6) -> np.ndarray:

@@ -8,4 +8,4 @@
 
 ## 2024-07-02 - NumPy `log1p` and `exp` intermediate array allocations
 **Learning:** In heavily mathematical Python functions like `softplus`, executing mathematical formulas exactly as written (e.g., `np.maximum(x, 0.0) + np.log1p(np.exp(-np.abs(x)))`) causes NumPy to allocate temporary arrays in memory for every intermediate operation (`np.abs`, `np.exp`, `np.log1p`, `np.maximum`). This memory overhead introduces a significant performance bottleneck.
-**Action:** Replace composite math expressions with mathematically equivalent native NumPy functions whenever possible. For example, replace manual `softplus` formulas with `np.logaddexp(0.0, x)`, which operates on the C backend directly and completely avoids intermediate array allocations, resulting in >5x speed improvements.
+**Action:** Replace composite math expressions with mathematically equivalent native NumPy functions whenever possible. For example, replace manual `softplus` formulas with `np.logaddexp(x.dtype.type(0.0), x)`, which operates on the C backend directly and avoids intermediate temporaries (besides the output array), resulting in >5x speed improvements.
