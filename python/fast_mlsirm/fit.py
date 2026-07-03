@@ -40,7 +40,9 @@ def fit(
 
     best: FitResult | None = None
     for restart in range(config.n_restarts):
-        candidate = _fit_single_restart(restart, config, y, observed, factors, n_dims, model, backend)
+        candidate = _run_single_fit(
+            y, observed, factors, n_dims, config, model, restart, backend
+        )
         if best is None or candidate.objective < best.objective:
             best = candidate
 
@@ -49,18 +51,20 @@ def fit(
     return best
 
 
-def _fit_single_restart(
-    restart: int,
-    config: FitConfig,
+def _run_single_fit(
     y: np.ndarray,
     observed: np.ndarray,
     factors: np.ndarray,
     n_dims: int,
+    config: FitConfig,
     model: str,
+    restart: int,
     backend: str,
 ) -> FitResult:
     rng = np.random.default_rng(config.seed + restart)
-    params0 = _initial_params(y, observed, factors, n_dims, config.latent_dim, config, rng)
+    params0 = _initial_params(
+        y, observed, factors, n_dims, config.latent_dim, config, rng
+    )
     x0 = _pack(params0, model)
     objective = _make_objective(y, observed, factors, params0, config, backend)
 
@@ -71,14 +75,22 @@ def _fit_single_restart(
     n_iter = 0
 
     if config.optimizer in {"adam", "adam_lbfgs"}:
-        adam_iter = config.max_iter if config.optimizer == "adam" else max(1, config.max_iter // 2)
+        adam_iter = (
+            config.max_iter
+            if config.optimizer == "adam"
+            else max(1, config.max_iter // 2)
+        )
         x, adam_obj, adam_loglik, status = _adam(x, objective, config, adam_iter)
         obj_trace.extend(adam_obj)
         loglik_trace.extend(adam_loglik)
         n_iter += len(adam_obj)
 
     if config.optimizer in {"lbfgs", "adam_lbfgs"}:
-        lbfgs_iter = config.max_iter if config.optimizer == "lbfgs" else max(1, config.max_iter - n_iter)
+        lbfgs_iter = (
+            config.max_iter
+            if config.optimizer == "lbfgs"
+            else max(1, config.max_iter - n_iter)
+        )
         x, lbfgs_obj, lbfgs_loglik, status = _lbfgs(x, objective, config, lbfgs_iter)
         obj_trace.extend(lbfgs_obj)
         loglik_trace.extend(lbfgs_loglik)
@@ -87,7 +99,9 @@ def _fit_single_restart(
     final_params = _unpack(x, params0, model)
     if model != "MIRT":
         final_params = normalize_latent_positions(final_params)
-    final_obj, _, final_loglik = neg_loglik_and_grad(y, factors, final_params, config, mask=observed, backend=backend)
+    final_obj, _, final_loglik = neg_loglik_and_grad(
+        y, factors, final_params, config, mask=observed, backend=backend
+    )
     obj_trace.append(final_obj)
     loglik_trace.append(final_loglik)
 
@@ -148,7 +162,9 @@ def _make_objective(
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
-        obj, grad, loglik = neg_loglik_and_grad(y, factor_id, params, config, mask=observed, backend=backend)
+        obj, grad, loglik = neg_loglik_and_grad(
+            y, factor_id, params, config, mask=observed, backend=backend
+        )
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:
             norm = float(np.linalg.norm(grad_vec))

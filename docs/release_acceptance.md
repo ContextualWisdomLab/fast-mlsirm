@@ -65,6 +65,30 @@ The command writes `sales_readiness_manifest.json`. A candidate is ready for
 KRW 2,000,000,000 enterprise sales review only when every manifest check is
 `ok`.
 
+For a full buyer-review evidence bundle, prefer the single commercial release
+builder:
+
+```bash
+python scripts/build_commercial_release.py \
+  --out commercial-release \
+  --require-rust \
+  --check-import
+```
+
+The builder writes `commercial_release_manifest.json` and
+`commercial_release_report.html`, then runs procurement due diligence by
+default to write `procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html`, and runs PR queue governance by
+default to write `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` under the same output directory. It then
+runs Figma evidence sync by default to write
+`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html` after
+PR queue governance so the static Figma buyer-review packet is checked against
+the repo-local evidence bundle. It also
+records each stage command, duration, status, failed stage, source commit,
+contract value, artifact paths, and SHA256 digests for the same release
+candidate.
+
 For the KRW 2,000,000,000 buyer packet flow, build the benchmark report,
 buyer packet, and release evidence index from the same acceptance output:
 
@@ -95,6 +119,47 @@ wheel and source distribution SHA256 digests, acceptance status, benchmark
 budget status, sales-readiness status, buyer packet ZIP digest, and HTML report
 digest. A final gate can require it with
 `scripts/sales_readiness.py --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index`.
+
+Procurement due diligence can also be generated as a standalone stage when a
+buyer asks for package metadata, policy-file, commercial-release, and GitHub
+snapshot evidence:
+
+```bash
+python scripts/build_procurement_due_diligence.py \
+  --dist dist \
+  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
+  --out procurement-due-diligence
+```
+
+The procurement report writes `procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence`.
+
+PR queue governance can also be generated as a standalone stage when a buyer
+asks how open PRs, review delays, stale changes, and release-scope conflicts
+are being managed:
+
+```bash
+python scripts/build_pr_queue_governance.py \
+  --out pr-queue-governance
+```
+
+The PR queue report writes `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance`.
+
+Figma evidence sync can also be generated as a standalone stage when a buyer
+asks whether the static design packet still reflects the same procurement
+evidence being offered:
+
+```bash
+python scripts/build_figma_evidence_sync.py \
+  --out figma-evidence-sync
+```
+
+The Figma sync report writes `figma_evidence_sync_manifest.json` and
+`figma_evidence_sync_report.html`. A final gate can require it with
+`scripts/sales_readiness.py --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync`.
 
 ## Optional Local Mode
 

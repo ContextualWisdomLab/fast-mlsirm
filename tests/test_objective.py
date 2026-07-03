@@ -126,9 +126,33 @@ def test_validate_factor_id():
     with pytest.raises(ValueError, match="factor_id values must be in 0..n_dims-1"):
         validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
 
+
 import pytest
 from fast_mlsirm.objective import prepare_response, _add_penalty
 from fast_mlsirm.config import PenaltyConfig
+
+
+def test_prepare_response_errors():
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([1.0, 0.0]))
+    with pytest.raises(ValueError, match="responses must be a 2D matrix"):
+        prepare_response(np.array([[[1.0]]]))
+
+    with pytest.raises(ValueError, match="mask shape must match responses"):
+        prepare_response(np.array([[1.0, 0.0]]), mask=np.array([True]))
+
+    with pytest.raises(ValueError, match="responses contain no observed entries"):
+        prepare_response(np.array([[-1.0, np.nan], [np.inf, -1.0]]))
+
+    with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
+        prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
+
+    with pytest.raises(ValueError, match="all-missing item found"):
+        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
+
+    with pytest.raises(ValueError, match="all-missing person found"):
+        prepare_response(np.array([[1.0, 0.0], [-1.0, np.nan]]))
+
 
 def test_objective_check_responses_errors():
     with pytest.raises(ValueError, match="responses must be a 2D matrix"):
@@ -149,6 +173,7 @@ def test_objective_check_responses_errors():
     with pytest.raises(ValueError, match="all-missing person found"):
         prepare_response(np.array([[np.nan, np.nan], [1, 0]]))
 
+
 def test_objective_model_requires_one_trait():
     from fast_mlsirm.objective import neg_loglik_and_grad
     from fast_mlsirm.config import FitConfig
@@ -156,6 +181,7 @@ def test_objective_model_requires_one_trait():
 
     with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
         neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=FitConfig(model="ULS2PLM"))
+
 
 def test_objective_add_penalty_uses_space():
     from fast_mlsirm.types import MLSIRMParams

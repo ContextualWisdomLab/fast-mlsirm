@@ -50,7 +50,20 @@ part of the offer, the frame should also show that
 the packet. The same frame should point to `release_evidence_index.json` and
 `release_evidence_index.html` as the release-level digest map over the wheel,
 source distribution, acceptance output, benchmark evidence, sales-readiness
-manifest, and buyer packet.
+manifest, and buyer packet. The final buyer-review state should also point to
+`commercial_release_manifest.json` and `commercial_release_report.html` as the
+single-command stage summary and human review surface, then to
+`procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html` as the package, policy,
+commercial-release, GitHub snapshot, and SHA256 report review surface. It
+should also point to `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` as the open PR review-state, stale/change
+request, release-scope conflict, and SHA256 report review surface. Finally, it
+should point to `figma_evidence_sync_manifest.json` and
+`figma_evidence_sync_report.html` as the machine and human review surfaces that
+verify this static Figma packet still mentions buyer packet, release evidence
+index, procurement due diligence, and PR queue governance evidence while Code
+Connect stays disabled.
 
 ## Generated Artifact
 
@@ -66,7 +79,9 @@ disabled.
 The canonical machine-readable packet is
 `examples/enterprise_demo/figma_design_packet.json`. It records the intended
 frames, source artifacts, the optional `figma_artifact_url`, and the explicit
-`code_connect: false` constraint.
+`code_connect: false` constraint. `scripts/build_figma_evidence_sync.py` reads
+that packet and, when available, an exported live metadata snapshot to create
+`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html`.
 
 If a Figma MCP server is connected in a future run, create the file from this
 packet using Figma Plugin API calls after loading `figma-use` and
