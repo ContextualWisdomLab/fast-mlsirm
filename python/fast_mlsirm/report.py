@@ -488,6 +488,11 @@ h3 {
   background: #fafafa;
 }
 
+.metric-card dt {
+  font-weight: normal;
+  margin: 0;
+}
+
 .metric-card dd {
   margin: 0;
 }
