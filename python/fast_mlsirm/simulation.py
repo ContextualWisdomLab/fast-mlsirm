@@ -33,7 +33,14 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
         # Optimized distance calculation using squared distance expansion to avoid 3D array memory allocation
         xi2 = np.einsum('ij,ij->i', xi, xi)[:, None]
         zeta2 = np.einsum('ij,ij->i', zeta, zeta)[None, :]
-        dist = np.sqrt(np.maximum(xi2 + zeta2 - 2 * np.dot(xi, zeta.T), 0.0))
+
+        # In-place operations to minimize temporary array allocations
+        dist = np.dot(xi, zeta.T)
+        dist *= -2.0
+        dist += xi2
+        dist += zeta2
+        np.maximum(dist, 0.0, out=dist)
+        np.sqrt(dist, out=dist)
 
     eta = a[None, :] * theta[:, factor_id] + b[None, :] - config.gamma * dist
     probabilities = sigmoid(eta.astype(np.float64)).astype(dtype)
