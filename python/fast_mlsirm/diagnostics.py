@@ -730,6 +730,11 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
 
 
 def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
-    true_d = np.sqrt(((true_xi[:, None, :] - true_zeta[None, :, :]) ** 2).sum(axis=2))
-    est_d = np.sqrt(((est_xi[:, None, :] - est_zeta[None, :, :]) ** 2).sum(axis=2))
+    # Optimized distance computation: replace O(N*J*D) 3D broadcast difference sum squared with O(N*J) 2D dot product
+    true_xi_sq = np.einsum("ij,ij->i", true_xi, true_xi)
+    true_zeta_sq = np.einsum("ij,ij->i", true_zeta, true_zeta)
+    true_d = np.sqrt(np.maximum(true_xi_sq[:, None] + true_zeta_sq[None, :] - 2 * np.dot(true_xi, true_zeta.T), 0.0))
+    est_xi_sq = np.einsum("ij,ij->i", est_xi, est_xi)
+    est_zeta_sq = np.einsum("ij,ij->i", est_zeta, est_zeta)
+    est_d = np.sqrt(np.maximum(est_xi_sq[:, None] + est_zeta_sq[None, :] - 2 * np.dot(est_xi, est_zeta.T), 0.0))
     return _rmse(true_d, est_d)

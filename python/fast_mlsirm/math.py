@@ -11,7 +11,8 @@ def sigmoid(x: np.ndarray) -> np.ndarray:
 
 
 def softplus(x: np.ndarray) -> np.ndarray:
-    return np.maximum(x, 0.0) + np.log1p(np.exp(-np.abs(x)))
+    # Optimized softplus calculation: replace np.maximum(x, 0.0) + np.log1p(np.exp(-np.abs(x))) with highly optimized C implementation np.logaddexp(0.0, x) preventing large intermediate allocations
+    return np.logaddexp(0.0, x)
 
 
 def logit(p: np.ndarray | float, eps: float = 1e-6) -> np.ndarray:
