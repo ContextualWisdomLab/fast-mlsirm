@@ -15,6 +15,21 @@ Files:
 These files are checked by:
 
 ```bash
+python scripts/build_commercial_release.py \
+  --out commercial-release \
+  --require-rust \
+  --check-import
+```
+
+The commercial release builder writes `commercial_release_manifest.json` and
+`commercial_release_report.html`, then leaves the acceptance, benchmark, buyer
+packet, release index, final gate, procurement due-diligence, and PR queue
+governance, and Figma evidence sync artifacts
+under the same output directory.
+
+The lower-level checks can also be run manually:
+
+```bash
 python scripts/build_benchmark_report.py \
   --acceptance release-acceptance/acceptance_summary.json \
   --out release-acceptance/benchmark
@@ -47,10 +62,31 @@ python scripts/build_release_evidence_index.py \
   --benchmark-report release-acceptance/benchmark/benchmark_report.json \
   --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
   --out release-evidence-index
+
+python scripts/build_procurement_due_diligence.py \
+  --dist dist \
+  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
+  --out procurement-due-diligence
+
+python scripts/build_pr_queue_governance.py \
+  --out pr-queue-governance
+
+python scripts/build_figma_evidence_sync.py \
+  --out figma-evidence-sync
 ```
 
 The command writes `buyer_evidence_manifest.json`,
 `buyer_evidence_report.html`, and `fast_mlsirm_buyer_evidence_packet.zip`.
 The release evidence command writes `release_evidence_index.json` and
 `release_evidence_index.html` for dist hash, acceptance, benchmark,
-sales-readiness, and buyer-packet review.
+sales-readiness, and buyer-packet review. The procurement command writes
+`procurement_due_diligence_manifest.json` and
+`procurement_due_diligence_report.html` for package metadata, policy-file,
+commercial-release, GitHub snapshot, and SHA256 report review. The PR queue
+governance command writes `pr_queue_governance_manifest.json` and
+`pr_queue_governance_report.html` for open PR review state, stale and
+changes-requested counts, release-scope conflict classification, and SHA256
+report review. The Figma sync command writes
+`figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html` for
+Code Connect-disabled design packet coverage, required buyer evidence tokens,
+optional metadata snapshots, and SHA256 report review.

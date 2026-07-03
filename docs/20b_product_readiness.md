@@ -29,6 +29,15 @@ commit and artifact being offered:
   `benchmark_report.html`;
 - release evidence index output from `release_evidence_index.json` and
   `release_evidence_index.html`;
+- top-level commercial release output from `commercial_release_manifest.json`
+  and `commercial_release_report.html`;
+- procurement due-diligence output from
+  `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html`;
+- PR queue governance output from `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html`;
+- Figma evidence sync output from `figma_evidence_sync_manifest.json` and
+  `figma_evidence_sync_report.html`;
 - a synthetic enterprise demo path that avoids customer response data;
 - support, security, scope, formula-contract, and non-goal boundaries.
 - a buyer evidence completion scorecard for release acceptance, HTML report
@@ -92,6 +101,34 @@ when:
 - `release_evidence_index.html` summarizes exact wheel/source distribution
   digests, acceptance status, benchmark status, sales-readiness status, buyer
   packet digest, coverage, and source commit for human release review;
+- `scripts/build_commercial_release.py` can create
+  `commercial_release_manifest.json` and `commercial_release_report.html` as
+  the single buyer-facing execution path over dist build, acceptance,
+  benchmark, sales-readiness, buyer packet, release index, and final gate
+  stages;
+- `scripts/build_procurement_due_diligence.py` can create
+  `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html` for package metadata, policy-file,
+  commercial-release, GitHub snapshot, failed-check, and report digest review;
+- `scripts/sales_readiness.py --require-procurement-due-diligence` validates
+  the generated procurement due-diligence evidence before a release candidate
+  is positioned as procurement-complete;
+- `scripts/build_pr_queue_governance.py` can create
+  `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html` for open PR review state, stale and
+  changes-requested risk counts, release-scope conflict classification, and
+  report digest review;
+- `scripts/sales_readiness.py --require-pr-queue-governance` validates the
+  generated PR queue governance evidence before open review work is presented
+  as managed rather than ignored;
+- `scripts/build_figma_evidence_sync.py` can create
+  `figma_evidence_sync_manifest.json` and
+  `figma_evidence_sync_report.html` for Code Connect-disabled design packet,
+  buyer evidence token coverage, optional Figma metadata snapshot, and report
+  digest review;
+- `scripts/sales_readiness.py --require-figma-evidence-sync` validates the
+  generated Figma evidence sync before the design packet is presented as
+  aligned with the release evidence set;
 - `scripts/sales_readiness.py --require-release-evidence-index` validates the
   generated release index before a release candidate is positioned as complete;
 - the Figma design packet declares `code_connect: false`;
