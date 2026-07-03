@@ -30,6 +30,20 @@ evidence index over the exact artifacts being offered.
 - Automated benchmark evidence reporting from release-acceptance timing.
 - Release evidence index reporting for dist artifact hashes, acceptance,
   benchmark, sales-readiness, and buyer-packet evidence.
+- Single-command commercial release evidence reporting through
+  `scripts/build_commercial_release.py`.
+- Procurement due-diligence reporting through
+  `scripts/build_procurement_due_diligence.py` for package metadata, policy
+  files, commercial-release evidence, GitHub snapshot state, and report
+  digest verification.
+- PR queue governance reporting through
+  `scripts/build_pr_queue_governance.py` for open PR review state, stale and
+  changes-requested risk counts, release-scope conflicts, and report digest
+  verification.
+- Figma evidence sync reporting through
+  `scripts/build_figma_evidence_sync.py` for Code Connect-disabled static
+  design packet coverage, required buyer-evidence tokens, optional live Figma
+  metadata snapshots, and report digest verification.
 
 ## Not Yet Supported
 
@@ -51,6 +65,10 @@ release commit:
 - `python3 -c "import fast_mlsirm, fast_mlsirm._core"` succeeds.
 - `python scripts/release_acceptance.py --out acceptance_check --require-rust` passes and
   writes `acceptance_summary.json`.
+- `python scripts/build_commercial_release.py --out commercial-release --require-rust --check-import`
+  passes and writes `commercial_release_manifest.json` plus
+  `commercial_release_report.html` when verifying the full KRW 2,000,000,000
+  buyer-review packet in one command.
 - `python scripts/build_benchmark_report.py --acceptance acceptance_check/acceptance_summary.json --out acceptance_check/benchmark`
   writes `benchmark_report.json` and `benchmark_report.html`.
 - `fit_auto`/`fit_rust` fit summaries are complete and match resolved backend
@@ -73,6 +91,21 @@ release commit:
   creates `release_evidence_index.json` and `release_evidence_index.html`.
 - `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --check-import`
   passes as the final 20B evidence-integrity gate.
+- `python scripts/build_procurement_due_diligence.py --dist dist --commercial-release-manifest commercial-release/commercial_release_manifest.json --out procurement-due-diligence`
+  creates `procurement_due_diligence_manifest.json` and
+  `procurement_due_diligence_report.html` when procurement asks for
+  supply-chain and repository-state evidence outside the single-command
+  builder.
+- `python scripts/build_pr_queue_governance.py --out pr-queue-governance`
+  creates `pr_queue_governance_manifest.json` and
+  `pr_queue_governance_report.html` when procurement asks how open PRs, stale
+  changes, review delays, and release-scope conflicts are managed.
+- `python scripts/build_figma_evidence_sync.py --out figma-evidence-sync`
+  creates `figma_evidence_sync_manifest.json` and
+  `figma_evidence_sync_report.html` when procurement asks whether the Figma
+  buyer-review packet still matches the release evidence set.
+- `python scripts/sales_readiness.py --acceptance acceptance_check/acceptance_summary.json --dist dist --require-rust --require-20b-product --benchmark-report acceptance_check/benchmark/benchmark_report.json --require-benchmark-report --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json --require-buyer-packet --release-evidence-index release-evidence-index/release_evidence_index.json --require-release-evidence-index --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json --require-procurement-due-diligence --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json --require-pr-queue-governance --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json --require-figma-evidence-sync --check-import`
+  passes as the final procurement evidence-integrity gate.
 
 ## Enterprise Sales Gate
 
@@ -91,6 +124,19 @@ must be able to show:
   review when procurement asks for a single reviewable artifact bundle.
 - a generated release evidence index with SHA256 digests and standalone HTML
   review tying the candidate artifacts to the exact source commit.
+- a generated commercial release manifest and standalone HTML summary that
+  record stage status, runtime, source commit, failed stage, artifact paths, and
+  SHA256 evidence from one command.
+- a generated procurement due-diligence manifest and standalone HTML summary
+  that record distribution metadata, policy-file presence, commercial-release
+  integrity, GitHub snapshot evidence, failed checks, and report SHA256.
+- a generated PR queue governance manifest and standalone HTML summary that
+  record open PR count, review state, stale/change-requested counts,
+  release-scope conflict classification, and report SHA256.
+- a generated Figma evidence sync manifest and standalone HTML summary that
+  record Code Connect disabled status, required frame coverage, procurement
+  evidence token coverage, optional metadata-snapshot status, and report
+  SHA256.
 
 ## Security and Support Boundaries
 
