@@ -340,7 +340,7 @@ docs/                     PRD/TRD summary and roadmap
 examples/enterprise_demo/ Synthetic procurement evidence manifests
 ```
 
-## MVP Boundary
+## Scope Boundary
 
 This is not a Bayesian sampler. The package intentionally starts with fast
 simulation, regularized point estimation, and recovery diagnostics. The current
