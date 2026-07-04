@@ -19,6 +19,7 @@ from .fit import fit
 from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .report import render_diagnostics_report
 from .simulation import simulate
+from . import __version__
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
@@ -68,6 +69,12 @@ def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -185,17 +192,21 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        data = simulate(
-            MLS2PLMConfig(
-                n_persons=args.persons,
-                n_dims=args.dims,
-                items_per_dim=args.items_per_dim,
-                latent_dim=args.latent_dim,
-                phi=args.phi,
-                gamma=args.gamma,
-                seed=args.seed,
+        try:
+            data = simulate(
+                MLS2PLMConfig(
+                    n_persons=args.persons,
+                    n_dims=args.dims,
+                    items_per_dim=args.items_per_dim,
+                    latent_dim=args.latent_dim,
+                    phi=args.phi,
+                    gamma=args.gamma,
+                    seed=args.seed,
+                )
             )
-        )
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
+            return 1
         save_simulation(data, args.out)
         return _complete(
             args,
@@ -233,14 +244,18 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = fit_diagnostics(
-            responses=responses,
-            params=params,
-            factor_id=factors,
-            model=args.model,
-            group_id=group_id,
-            cluster_id=cluster_id,
-        )
+        try:
+            diagnostics = fit_diagnostics(
+                responses=responses,
+                params=params,
+                factor_id=factors,
+                model=args.model,
+                group_id=group_id,
+                cluster_id=cluster_id,
+            )
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration/data - {str(e)}", file=sys.stderr)
+            return 1
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
             args,
@@ -269,21 +284,25 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = dimensionality_diagnostics(
-            responses=responses,
-            factor_id=factors,
-            latent_dims=latent_dims,
-            model=args.model,
-            k_folds=args.folds,
-            seed=args.seed,
-            config=FitConfig(
+        try:
+            diagnostics = dimensionality_diagnostics(
+                responses=responses,
+                factor_id=factors,
+                latent_dims=latent_dims,
                 model=args.model,
-                optimizer=args.optimizer,
-                max_iter=args.max_iter,
-                n_restarts=args.n_restarts,
+                k_folds=args.folds,
                 seed=args.seed,
-            ),
-        )
+                config=FitConfig(
+                    model=args.model,
+                    optimizer=args.optimizer,
+                    max_iter=args.max_iter,
+                    n_restarts=args.n_restarts,
+                    seed=args.seed,
+                ),
+            )
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration/data - {str(e)}", file=sys.stderr)
+            return 1
         save_dimensionality_diagnostics(diagnostics, args.out)
         return _complete(
             args,
@@ -315,14 +334,18 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = response_process_fit_diagnostics(
-            responses=responses,
-            probabilities=probabilities,
-            item_type=args.item_type,
-            response_process=args.response_process,
-            group_id=group_id,
-            cluster_id=cluster_id,
-        )
+        try:
+            diagnostics = response_process_fit_diagnostics(
+                responses=responses,
+                probabilities=probabilities,
+                item_type=args.item_type,
+                response_process=args.response_process,
+                group_id=group_id,
+                cluster_id=cluster_id,
+            )
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration/data - {str(e)}", file=sys.stderr)
+            return 1
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
             args,
@@ -352,12 +375,16 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
-        diagnostics = response_process_dimensionality_diagnostics(
-            responses=responses,
-            candidate_probabilities=candidate_probabilities,
-            item_type=args.item_type,
-            response_process=args.response_process,
-        )
+        try:
+            diagnostics = response_process_dimensionality_diagnostics(
+                responses=responses,
+                candidate_probabilities=candidate_probabilities,
+                item_type=args.item_type,
+                response_process=args.response_process,
+            )
+        except ValueError as e:
+            print(f"❌ Error: Invalid configuration/data - {str(e)}", file=sys.stderr)
+            return 1
         save_dimensionality_diagnostics(diagnostics, args.out)
         return _complete(
             args,
