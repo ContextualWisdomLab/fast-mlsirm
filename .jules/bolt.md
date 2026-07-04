@@ -5,3 +5,7 @@
 ## 2024-05-19 - NumPy Array Allocation and Advanced Vectorization
 **Learning:** `np.sum(x * x)` 패턴은 파이썬 내에서 곱셈을 위한 새로운 중간 배열을 메모리에 할당하고 이후에 그 배열의 합을 구하게 되어 성능 저하를 야기합니다. `np.vdot(x, x)` (또는 `np.einsum`)를 활용하면 중간 메모리 할당을 우회할 수 있어 속도가 비약적으로 증가합니다.
 **Action:** 거대한 배열의 크기나 요소 수와 관련된 최적화 시, `np.sum(x * x)` 대신 `np.vdot(x, x)`를 사용해 오버헤드를 방지합니다.
+
+## 2024-05-19 - Boolean Array Checks Performance
+**Learning:** `np.any(observed.sum(axis=...) == 0)` and `train.sum(axis=...) == 0` incur significant overhead due to boolean to integer casting and lack of short-circuiting.
+**Action:** Replace `sum() == 0` checks with `.any()` boolean checks like `not np.all(observed.any(axis=...))` or `~train.any(axis=...)` for a roughly 15-20x performance improvement in array missingness/zero-count checks.
