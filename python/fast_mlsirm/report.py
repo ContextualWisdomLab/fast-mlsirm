@@ -165,10 +165,10 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         cards.append(
             "\n".join(
                 [
-                    '<article class="metric-card">',
-                    f"<span>{escape(_label(key))}</span>",
-                    f"<strong>{escape(_format_value(value))}</strong>",
-                    "</article>",
+                    '<div class="metric-card">',
+                    f"<dt>{escape(_label(key))}</dt>",
+                    f"<dd>{escape(_format_value(value))}</dd>",
+                    "</div>",
                 ]
             )
         )
@@ -179,9 +179,9 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         [
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
-            '<div class="metrics-grid">',
+            '<dl class="metrics-grid">',
             *cards,
-            "</div>",
+            "</dl>",
             "</section>",
         ]
     )
@@ -265,7 +265,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                 [
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
-                    '<div class="bar-track">',
+                    '<div class="bar-track" aria-hidden="true">',
                     f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
                     "</div>",
                     f'<span class="bar-value">{escape(_format_value(value))}</span>',
@@ -487,16 +487,18 @@ h3 {
   background: #fafafa;
 }
 
-.metric-card span {
+.metric-card dt {
   display: block;
   color: var(--muted);
   font-size: 0.82rem;
+  font-weight: normal;
 }
 
-.metric-card strong {
+.metric-card dd {
   display: block;
-  margin-top: 8px;
+  margin: 8px 0 0;
   font-size: 1.45rem;
+  font-weight: bold;
   overflow-wrap: anywhere;
 }
 
@@ -574,7 +576,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }
