@@ -30,8 +30,11 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
 
     dist = 0.0
     if config.gamma > 0:
-        diff = xi[:, None, :] - zeta[None, :, :]
-        dist = np.sqrt(np.sum(diff * diff, axis=2))
+        # Optimized: Replace O(N*J*D) 3D broadcasting and np.sum(diff * diff)
+        # with 2D ops using squared norms and dot products to avoid large memory allocation overhead
+        xi_sq = np.einsum("nd,nd->n", xi, xi)[:, None]
+        zeta_sq = np.einsum("jd,jd->j", zeta, zeta)[None, :]
+        dist = np.sqrt(np.maximum(xi_sq + zeta_sq - 2 * np.dot(xi, zeta.T), 0.0))
 
     eta = a[None, :] * theta[:, factor_id] + b[None, :] - config.gamma * dist
     probabilities = sigmoid(eta.astype(np.float64)).astype(dtype)

@@ -116,9 +116,9 @@ def neg_loglik_and_grad(
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
-    I = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
-    I[np.arange(e.shape[1]), factors] = 1
-    grad_theta = (e * a[None, :]) @ I
+    I_mat = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
+    I_mat[np.arange(e.shape[1]), factors] = 1
+    grad_theta = (e * a[None, :]) @ I_mat
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)
