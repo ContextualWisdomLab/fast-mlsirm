@@ -7,5 +7,5 @@
 **Action:** 거대한 배열의 크기나 요소 수와 관련된 최적화 시, `np.sum(x * x)` 대신 `np.vdot(x, x)`를 사용해 오버헤드를 방지합니다.
 
 ## 2024-05-19 - NumPy Array Allocation and Advanced Vectorization in Basic Math
-**Learning:** `sigmoid`, `softplus` 같은 기본 활성화 함수 내부에서 `1.0 / (1.0 + np.exp(-x))`나 `np.maximum(x, 0) + np.log1p(np.exp(-np.abs(x)))`와 같은 연산은 매 과정마다 거대한 중간 배열(intermediate arrays) 복사를 야기하여 메모리 할당(allocation overhead)을 발생시킵니다.
-**Action:** 이를 해결하기 위해 `out=` 파라미터를 활용한 in-place 연산(예: `np.exp(out, out=out)`)을 사용하면 메모리 정점(Peak Memory)을 획기적으로 줄이고 실행 속도 또한 상당히 개선할 수 있습니다.
+**Learning:** `np.maximum(x, 0.0) + np.log1p(np.exp(-np.abs(x)))`와 같은 수식은 중간에 많은 임시 배열을 생성하여 메모리 할당량(Peak memory)을 크게 증가시키며, Pandas와 같은 다른 데이터 객체를 다룰 때 가독성을 훼손하는 복잡한 in-place 연산으로 우회할 경우 타입 호환성이 깨질 위험이 높습니다.
+**Action:** NumPy의 내장 C 구현체인 `np.logaddexp(0.0, x)`를 활용하면 중간 배열 생성 없이 최적화된 속도와 메모리 효율을 얻을 수 있으며 코드 가독성 또한 높일 수 있습니다.
