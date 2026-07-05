@@ -574,8 +574,8 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
-  outline: 3px solid #0f766e;
+.table-wrap:focus-visible {
+  outline: 3px solid var(--teal);
   outline-offset: 3px;
 }
 
@@ -609,6 +609,10 @@ th {
   background: #f1f4ef;
   color: #2f3437;
   font-size: 0.8rem;
+}
+
+tbody tr:hover td {
+  background: var(--bg);
 }
 
 tr:last-child td {
