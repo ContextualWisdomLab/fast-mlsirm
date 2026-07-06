@@ -193,7 +193,7 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
             chart,
-            _table(rows, heading=heading),
+            _table(rows),
             "</section>",
         ]
     )
@@ -285,7 +285,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     )
 
 
-def _table(rows: list[dict[str, Any]], *, limit: int = 12, heading: str = "") -> str:
+def _table(rows: list[dict[str, Any]], *, limit: int = 12) -> str:
     if not rows:
         return '<p class="empty-state">No rows were recorded in this section.</p>'
 
@@ -300,10 +300,9 @@ def _table(rows: list[dict[str, Any]], *, limit: int = 12, heading: str = "") ->
         note = f'<p class="table-note">Showing {limit} of {len(rows)} rows.</p>'
 
     headers = "".join(f"<th scope=\"col\">{escape(_label(column))}</th>" for column in columns)
-    aria_label = f' aria-label="{escape(heading)} data"' if heading else ' aria-label="Data table"'
     return "\n".join(
         [
-            f'<div class="table-wrap" tabindex="0" role="region"{aria_label}>',
+            '<div class="table-wrap">',
             "<table>",
             f"<thead><tr>{headers}</tr></thead>",
             "<tbody>",
@@ -567,11 +566,6 @@ h3 {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-}
-
-.table-wrap:focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: -2px;
 }
 
 table {
