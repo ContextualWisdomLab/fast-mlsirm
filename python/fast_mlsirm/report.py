@@ -69,7 +69,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            "<p>fast-mlsirm diagnostics</p>",
+            f"<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",

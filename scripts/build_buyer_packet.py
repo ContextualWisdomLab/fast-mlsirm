@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 import zipfile
 from datetime import UTC, datetime
 from html import escape

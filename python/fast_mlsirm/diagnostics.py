@@ -227,7 +227,8 @@ def align_latent_space(
 
     u, s, vt = np.linalg.svd(est_c.T @ true_c, full_matrices=False)
     rotation = u @ vt
-    denom = float(np.sum(est_c * est_c))
+    # Optimized normalization calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
+    denom = float(np.vdot(est_c, est_c))
     scale = float(np.sum(s) / denom) if denom > 1e-12 else 1.0
     aligned = scale * est_c @ rotation + true_mean
     return aligned[: len(true_xi)], aligned[len(true_xi) :]
