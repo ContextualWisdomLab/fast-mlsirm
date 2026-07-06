@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- 스크롤 가능한 테이블 컨테이너에 `:focus` 대신 `:focus-visible`을 사용하여 마우스 클릭 시 시각적으로 불필요한 아웃라인이 나타나지 않도록 개선했습니다.
+
+
 ### Added
 
 - Added `scripts/release_acceptance.py` to execute a sales-readiness end-to-end
