@@ -1,7 +1,5 @@
 import pytest
 import numpy as np
-from pathlib import Path
-import json
 
 from fast_mlsirm.io import load_factor_csv, load_params
 

@@ -69,7 +69,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            f"<p>fast-mlsirm diagnostics</p>",
+            "<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
@@ -574,7 +574,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }

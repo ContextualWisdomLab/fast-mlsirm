@@ -225,4 +225,4 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert 'aria-label="Candidate Comparison diagnostics table"' in html
     assert 'tabindex="0"' in html
-    assert ".table-wrap:focus" in html
+    assert ".table-wrap:focus-visible" in html
