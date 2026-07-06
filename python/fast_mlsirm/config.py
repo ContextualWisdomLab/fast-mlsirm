@@ -7,6 +7,10 @@ from .backend import normalize_backend
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"}
 VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
+# Estimation methods. "jmle" (penalized joint MLE) is the legacy default; "mmle"
+# (marginal MLE via EM) is robust to missing data. "em"/"bayes" are reserved
+# for future milestones (the driver raises NotImplementedError for now).
+VALID_ESTIMATORS = {"jmle", "mmle", "em", "bayes"}
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ class FitConfig:
     model: str = "MLS2PLM"
     latent_dim: int = 2
     optimizer: str = "adam_lbfgs"
+    estimator: str = "jmle"
     max_iter: int = 1000
     n_restarts: int = 5
     learning_rate: float = 0.01
@@ -82,6 +87,8 @@ class FitConfig:
             raise ValueError("latent_dim must be >= 1")
         if self.optimizer not in VALID_OPTIMIZERS:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
+        if self.estimator not in VALID_ESTIMATORS:
+            raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
         if self.max_iter < 1:
             raise ValueError("max_iter must be >= 1")
         if self.n_restarts < 1:
