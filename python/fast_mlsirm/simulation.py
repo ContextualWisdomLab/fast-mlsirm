@@ -14,11 +14,15 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
     dtype = np.float64 if config.dtype == "float64" else np.float32
     rng = np.random.default_rng(config.seed)
 
-    factor_id = np.repeat(np.arange(config.n_dims), config.items_per_dim).astype(np.int64)
+    factor_id = np.repeat(np.arange(config.n_dims), config.items_per_dim).astype(
+        np.int64
+    )
     phi = np.full((config.n_dims, config.n_dims), config.phi, dtype=dtype)
     np.fill_diagonal(phi, 1.0)
 
-    theta = rng.multivariate_normal(np.zeros(config.n_dims), phi, size=config.n_persons).astype(dtype)
+    theta = rng.multivariate_normal(
+        np.zeros(config.n_dims), phi, size=config.n_persons
+    ).astype(dtype)
 
     a = np.linspace(0.5, 2.5, config.n_items, dtype=dtype)
     b = np.linspace(0.0, 5.0, config.n_items, dtype=dtype)
@@ -30,8 +34,12 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
 
     dist = 0.0
     if config.gamma > 0:
-        diff = xi[:, None, :] - zeta[None, :, :]
-        dist = np.sqrt(np.sum(diff * diff, axis=2))
+        # Optimized pairwise distance calculation avoiding 3D array allocation
+        xi_sq = np.einsum("ij,ij->i", xi, xi)
+        zeta_sq = np.einsum("ij,ij->i", zeta, zeta)
+        dist = np.sqrt(
+            np.maximum(0.0, xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(xi, zeta.T))
+        )
 
     eta = a[None, :] * theta[:, factor_id] + b[None, :] - config.gamma * dist
     probabilities = sigmoid(eta.astype(np.float64)).astype(dtype)
@@ -45,4 +53,11 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
         zeta=zeta,
         tau=float(np.log(max(config.gamma, np.finfo(np.float64).tiny))),
     )
-    return SimulationData(Y=y, factor_id=factor_id, truth=truth, Phi=phi, probabilities=probabilities, config=config)
+    return SimulationData(
+        Y=y,
+        factor_id=factor_id,
+        truth=truth,
+        Phi=phi,
+        probabilities=probabilities,
+        config=config,
+    )
