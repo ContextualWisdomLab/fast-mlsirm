@@ -1,3 +1,4 @@
+import pytest
 import json
 import sys
 from unittest.mock import patch
@@ -9,6 +10,14 @@ from fast_mlsirm.cli import main
 def test_cli_empty_args(capsys):
     with patch.object(sys, 'argv', ['fast-mlsirm']):
         assert main() == 2
+
+
+def test_cli_version(capsys):
+    with patch.object(sys, 'argv', ['fast-mlsirm', '--version']):
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+        assert 'fast-mlsirm ' in capsys.readouterr().out
 
 def test_cli_simulate_success(tmp_path):
     out_dir = tmp_path / "sim_out"

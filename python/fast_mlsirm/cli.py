@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -68,6 +69,12 @@ def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('fast-mlsirm')}",
+        help="Show program's version number and exit.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
