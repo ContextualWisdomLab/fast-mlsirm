@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Core likelihood and gradient routines for fast-mlsirm."
-homepage = "https://github.com/ContextualWisdomLab/fast-mlsirm"
-repository = "https://github.com/ContextualWisdomLab/fast-mlsirm"
-documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/README.md"
 
 [lib]
 name = "mlsirm_core"

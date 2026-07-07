@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .backend import normalize_backend
-
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"}
 VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
@@ -68,7 +66,6 @@ class FitConfig:
     gradient_clip: float | None = 100.0
     lbfgs_history: int = 10
     verbose: int = 0
-    backend: str = "numpy"
     penalty: PenaltyConfig = PenaltyConfig()
 
     def normalized_model(self) -> str:
@@ -92,4 +89,3 @@ class FitConfig:
             raise ValueError("init_gamma must be > 0")
         if self.eps_distance <= 0:
             raise ValueError("eps_distance must be > 0")
-        normalize_backend(self.backend)

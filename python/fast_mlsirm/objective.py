@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from .backend import load_rust_core, normalize_backend, resolve_backend
 from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
@@ -20,13 +19,11 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
             raise ValueError("mask shape must match responses")
         observed &= np.isfinite(y) & (y != -1)
 
-    if not np.any(observed):
+    valid_values = y[observed]
+    if valid_values.size == 0:
         raise ValueError("responses contain no observed entries")
-
-    invalid = (y != 0) & (y != 1)
-    if np.any(observed & invalid):
+    if np.any((valid_values != 0) & (valid_values != 1)):
         raise ValueError("observed responses must be 0 or 1")
-
     if np.any(observed.sum(axis=0) == 0):
         raise ValueError("all-missing item found")
     if np.any(observed.sum(axis=1) == 0):
@@ -64,8 +61,8 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
+        xi_sq = np.sum(params.xi ** 2, axis=1)
+        zeta_sq = np.sum(params.zeta ** 2, axis=1)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
@@ -84,14 +81,8 @@ def neg_loglik_and_grad(
     params: MLSIRMParams,
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
-    backend: str = "numpy",
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
-    requested_backend = normalize_backend(backend)
-    normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
-    if normalized_backend == "rust":
-        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask)
-
     model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
@@ -114,11 +105,11 @@ def neg_loglik_and_grad(
     if free_alpha:
         grad_alpha = (e * a[None, :] * params.theta[:, factors]).sum(axis=0)
 
-    # Optimized gradient computation: replace loop over dimensions with matrix multiplication
-    # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
-    I = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
-    I[np.arange(e.shape[1]), factors] = 1
-    grad_theta = (e * a[None, :]) @ I
+    grad_theta = np.zeros_like(params.theta)
+    for d in range(params.theta.shape[1]):
+        items = factors == d
+        if np.any(items):
+            grad_theta[:, d] = (e[:, items] * a[items][None, :]).sum(axis=1)
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)
@@ -157,63 +148,14 @@ def neg_loglik_and_grad(
     return float(nll), grads, loglik
 
 
-def _neg_loglik_and_grad_rust(
-    responses: np.ndarray,
-    factor_id: np.ndarray,
-    params: MLSIRMParams,
-    config: FitConfig,
-    mask: np.ndarray | None,
-) -> tuple[float, MLSIRMParams, float]:
-    model = config.normalized_model()
-    penalty = config.penalty
-    y, observed = prepare_response(responses, mask)
-    factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
-
-    if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
-        raise ValueError(f"{model} requires one trait dimension")
-
-    core = load_rust_core()
-    objective, gradients, loglik = core.neg_loglik_and_grad(
-        np.ascontiguousarray(y, dtype=np.float64),
-        np.ascontiguousarray(observed, dtype=np.bool_),
-        np.ascontiguousarray(factors, dtype=np.int64),
-        np.ascontiguousarray(params.theta, dtype=np.float64),
-        np.ascontiguousarray(params.alpha, dtype=np.float64),
-        np.ascontiguousarray(params.b, dtype=np.float64),
-        np.ascontiguousarray(params.xi, dtype=np.float64),
-        np.ascontiguousarray(params.zeta, dtype=np.float64),
-        float(params.tau),
-        model,
-        float(config.eps_distance),
-        float(penalty.lambda_theta),
-        float(penalty.lambda_xi),
-        float(penalty.lambda_zeta),
-        float(penalty.lambda_b),
-        float(penalty.lambda_alpha),
-        float(penalty.lambda_tau),
-        float(penalty.mu_alpha),
-        float(penalty.mu_tau),
-    )
-    grads = MLSIRMParams(
-        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(params.theta.shape),
-        alpha=np.asarray(gradients["alpha"], dtype=np.float64),
-        b=np.asarray(gradients["b"], dtype=np.float64),
-        xi=np.asarray(gradients["xi"], dtype=np.float64).reshape(params.xi.shape),
-        zeta=np.asarray(gradients["zeta"], dtype=np.float64).reshape(params.zeta.shape),
-        tau=float(np.asarray(gradients["tau"], dtype=np.float64)[0]),
-    )
-    return float(objective), grads, float(loglik)
-
-
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
-    # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
-    value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
-    value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
+    value = 0.5 * penalty.lambda_theta * float(np.sum(params.theta * params.theta))
+    value += 0.5 * penalty.lambda_b * float(np.sum(params.b * params.b))
     if free_alpha:
         delta = params.alpha - penalty.mu_alpha
-        value += 0.5 * penalty.lambda_alpha * float(np.vdot(delta, delta))
+        value += 0.5 * penalty.lambda_alpha * float(np.sum(delta * delta))
     if uses_space:
-        value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
-        value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
+        value += 0.5 * penalty.lambda_xi * float(np.sum(params.xi * params.xi))
+        value += 0.5 * penalty.lambda_zeta * float(np.sum(params.zeta * params.zeta))
         value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
     return value

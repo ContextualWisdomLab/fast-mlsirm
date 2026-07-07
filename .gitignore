@@ -3,7 +3,6 @@
 .ruff_cache/
 __pycache__/
 *.py[cod]
-python/fast_mlsirm/_core*.so
 *.egg-info/
 .venv/
 venv/
@@ -11,14 +10,5 @@ dist/
 build/
 target/
 runs/
-acceptance_check/
-release-acceptance/
-benchmark-evidence/
-buyer-evidence-packet*/
-release-evidence-index/
-commercial-release*/
-figma-evidence-sync*/
-procurement-due-diligence*/
-pr-queue-governance*/
 *.npy
 *.npz
