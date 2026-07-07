@@ -199,13 +199,9 @@ def _main(argv: list[str] | None = None) -> int:
             )
             save_simulation(data, args.out)
         except ValueError as e:
-            if os.environ.get("FAST_MLSIRM_DEBUG"):
-                raise
             print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
             return 1
         except OSError as e:
-            if os.environ.get("FAST_MLSIRM_DEBUG"):
-                raise
             print(f"❌ Error: Failed to save simulation - {str(e)}", file=sys.stderr)
             return 1
 
