@@ -1,3 +1,0 @@
-## 2024-05-18 - Improve Semantic HTML for Reports
-**Learning:** Using semantic `<dl>`, `<dt>`, `<dd>` elements for key-value data structures ensures better cross-browser visual consistency and semantic meaning. Setting `aria-hidden="true"` effectively hides purely visual components (like charts) from screen readers. Changing `:focus` to `:focus-visible` ensures focus outlines appear only during keyboard navigation, improving UI for pointer users.
-**Action:** When creating semantic data reports, ensure visual consistency by explicitly resetting default `<dt>` font-weight. Also, hide visual components and charts from screen readers if the same info is accessible via text, and rely on `:focus-visible` instead of `:focus`.

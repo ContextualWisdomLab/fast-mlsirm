@@ -28,12 +28,7 @@ def render_diagnostics_report(
         raise ValueError("report output path must end with .html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        _render_html(
-            payload=payload,
-            report_type=report_type,
-            title=resolved_title,
-            source_name=source.name,
-        ),
+        _render_html(payload=payload, report_type=report_type, title=resolved_title, source_name=source.name),
         encoding="utf-8",
     )
     return out
@@ -44,22 +39,14 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
         return "fit"
     if "candidates" in payload and "best" in payload:
         return "dimensions"
-    raise ValueError(
-        "unsupported diagnostics JSON: expected fit or dimensionality diagnostics"
-    )
+    raise ValueError("unsupported diagnostics JSON: expected fit or dimensionality diagnostics")
 
 
 def _default_title(report_type: str) -> str:
-    return (
-        "Fit Diagnostics Report"
-        if report_type == "fit"
-        else "Dimensionality Diagnostics Report"
-    )
+    return "Fit Diagnostics Report" if report_type == "fit" else "Dimensionality Diagnostics Report"
 
 
-def _render_html(
-    payload: dict[str, Any], report_type: str, title: str, source_name: str
-) -> str:
+def _render_html(payload: dict[str, Any], report_type: str, title: str, source_name: str) -> str:
     if report_type == "fit":
         sections = _render_fit_report(payload)
     else:
@@ -82,7 +69,7 @@ def _render_html(
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            "<p>fast-mlsirm diagnostics</p>",
+            f"<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
@@ -118,9 +105,7 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
         rows = _rows_from_columnar(payload.get(payload_key, {}))
         if rows:
             available.append(heading)
-            table_sections.append(
-                _table_section(heading, rows, chart_value=chart_value)
-            )
+            table_sections.append(_table_section(heading, rows, chart_value=chart_value))
         else:
             no_row_tables.append(heading)
 
@@ -162,9 +147,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
         no_metric_sections.append("Best Candidate")
 
     if rows:
-        sections.append(
-            _table_section("Candidate Comparison", rows, chart_value="heldout_loglik")
-        )
+        sections.append(_table_section("Candidate Comparison", rows, chart_value="heldout_loglik"))
     if not rows or no_metric_sections:
         sections.append(
             _availability_section(
@@ -182,10 +165,10 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         cards.append(
             "\n".join(
                 [
-                    '<div class="metric-card">',
-                    f"<dt>{escape(_label(key))}</dt>",
-                    f"<dd><strong>{escape(_format_value(value))}</strong></dd>",
-                    "</div>",
+                    '<article class="metric-card">',
+                    f"<span>{escape(_label(key))}</span>",
+                    f"<strong>{escape(_format_value(value))}</strong>",
+                    "</article>",
                 ]
             )
         )
@@ -196,17 +179,15 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         [
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
-            '<dl class="metrics-grid">',
+            '<div class="metrics-grid">',
             *cards,
-            "</dl>",
+            "</div>",
             "</section>",
         ]
     )
 
 
-def _table_section(
-    heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None
-) -> str:
+def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None) -> str:
     chart = _bar_chart(rows, chart_value) if chart_value else ""
     return "\n".join(
         [
@@ -232,9 +213,7 @@ def _availability_section(
     if no_row_tables:
         columns.append(_coverage_column("No row data", no_row_tables, muted=True))
     if no_metric_sections:
-        columns.append(
-            _coverage_column("No metric data", no_metric_sections, muted=True)
-        )
+        columns.append(_coverage_column("No metric data", no_metric_sections, muted=True))
 
     return "\n".join(
         [
@@ -286,7 +265,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                 [
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
-                    '<div class="bar-track" aria-hidden="true">',
+                    '<div class="bar-track">',
                     f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
                     "</div>",
                     f'<span class="bar-value">{escape(_format_value(value))}</span>',
@@ -314,19 +293,14 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     columns = _columns(rows)
     body_rows = []
     for row in rows[:limit]:
-        cells = "".join(
-            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
-            for column in columns
-        )
+        cells = "".join(f"<td>{escape(_format_value(row.get(column, '')))}</td>" for column in columns)
         body_rows.append(f"<tr>{cells}</tr>")
 
     note = ""
     if len(rows) > limit:
         note = f'<p class="table-note">Showing {limit} of {len(rows)} rows.</p>'
 
-    headers = "".join(
-        f'<th scope="col">{escape(_label(column))}</th>' for column in columns
-    )
+    headers = "".join(f"<th scope=\"col\">{escape(_label(column))}</th>" for column in columns)
     return "\n".join(
         [
             f'<div class="table-wrap" role="region" aria-label="{escape(label)}" tabindex="0">',
@@ -384,16 +358,7 @@ def _index_value(value: Any, index: int) -> Any:
 
 
 def _row_label(row: dict[str, Any], index: int) -> str:
-    for key in (
-        "candidate_label",
-        "latent_dim",
-        "item_id",
-        "person_id",
-        "factor_id",
-        "category_id",
-        "group_id",
-        "cluster_id",
-    ):
+    for key in ("candidate_label", "latent_dim", "item_id", "person_id", "factor_id", "category_id", "group_id", "cluster_id"):
         if key in row:
             return f"{_label(key)} {_format_label_value(row[key])}"
     return f"Row {index + 1}"
@@ -424,11 +389,7 @@ def _format_label_value(value: Any) -> str:
 
 
 def _is_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _content_security_policy() -> str:
@@ -526,20 +487,15 @@ h3 {
   background: #fafafa;
 }
 
-.metric-card dt {
+.metric-card span {
   display: block;
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: normal;
 }
 
-.metric-card dd {
+.metric-card strong {
   display: block;
   margin-top: 8px;
-  margin-left: 0;
-}
-
-.metric-card dd strong {
   font-size: 1.45rem;
   overflow-wrap: anywhere;
 }
@@ -618,7 +574,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus-visible {
+.table-wrap:focus {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }
