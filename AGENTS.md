@@ -86,3 +86,40 @@ If full MLS2PLM support is desired, implement it as a separate complete model
 path instead of mutating the existing simple-structure formula in place. That
 work should update parameter shapes, simulation, likelihood, analytic gradients,
 tests, documentation, and Rust parity together.
+
+<!-- BEGIN cwl-agent-guidance -->
+## Agent guidance (CWL governance)
+
+Guidance for ANY agent (Claude, Codex, Cursor, opencode, ...) working in this repo.
+
+### Security & review gate
+
+- Every PR runs a central **Security Scan** required gate: `osv-scan` +
+  `dependency-review` (diff-scoped) and `trivy-fs` (repo-wide, CRITICAL/HIGH,
+  fixable only). It runs against every PR base, **including stacked PRs**.
+- Here that surface is dependency manifests/lockfiles: **`Cargo.lock`** and the
+  workspace crates (`crates/mlsirm-core`, `crates/fast-mlsirm-py`) for Rust, and
+  **`pyproject.toml`** (maturin/pyo3 build, `numpy` runtime dep) for Python.
+  There is no Dockerfile or k8s manifest, so expect findings to point at a
+  vulnerable crate or Python dependency.
+- A **failing `trivy-fs` is a REAL finding, not a flake.** Read the job log (it
+  prints each finding's rule id / severity / file) or the run's SARIF results,
+  then **remediate**: bump the offending crate (`cargo update -p <crate>`,
+  refresh `Cargo.lock`) or the Python dependency in `pyproject.toml`. Only for a
+  genuine false positive, add a narrow, documented `.trivyignore(.yaml)` entry.
+  Do NOT weaken or disable the gate.
+- Reproduce locally against the **merge ref**, not just the PR head, and refresh
+  the DB first: `trivy --download-db-only` then `trivy fs .` (a stale DB misses
+  findings).
+- The org `code_scanning` ruleset is intentionally **CodeQL-only** (multiple
+  code-scanning tools can't converge on one PR ref). Gating is by the Security
+  Scan **job result**, not the `code_scanning` rule — don't add tools to that rule.
+
+### Code exploration
+
+- No `.codegraph/` index exists in this repo today, so use normal search
+  (grep/find, ripgrep) to locate and understand code. If a `.codegraph/` index
+  is later added at the repo root, prefer CodeGraph
+  (`codegraph explore "<query>"`, or the code-review-graph MCP tools) BEFORE
+  grep/find — it surfaces callers/callees/impact that text search misses.
+<!-- END cwl-agent-guidance -->
