@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from fast_mlsirm.math import logit, normalize_latent_positions, sigmoid, softplus, standardize
 from fast_mlsirm.types import MLSIRMParams

@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import FitConfig, MLSIRMParams
-from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id
+from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id, prepare_response, _add_penalty
+from fast_mlsirm.config import PenaltyConfig
 
 
 def test_missing_entries_are_excluded():
@@ -125,11 +126,6 @@ def test_validate_factor_id():
 
     with pytest.raises(ValueError, match="factor_id values must be in 0..n_dims-1"):
         validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
-
-
-import pytest
-from fast_mlsirm.objective import prepare_response, _add_penalty
-from fast_mlsirm.config import PenaltyConfig
 
 
 def test_prepare_response_errors():

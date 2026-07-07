@@ -1,13 +1,16 @@
 import numpy as np
+import pytest
 
 from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
 from fast_mlsirm.diagnostics import (
+    align_latent_space,
     dimensionality_diagnostics,
     fit_diagnostics,
     predict_proba,
     response_process_dimensionality_diagnostics,
     response_process_fit_diagnostics,
 )
+from fast_mlsirm.types import MLSIRMParams
 
 
 def test_predict_proba_matches_simulation():
@@ -41,9 +44,6 @@ def test_predict_proba_subset_both():
     probs = predict_proba(data.truth, data.factor_id, persons=sub_persons, items=sub_items)
     assert np.allclose(probs, data.probabilities[np.ix_(sub_persons, sub_items)])
 
-import pytest
-from fast_mlsirm.diagnostics import align_latent_space, predict_proba
-from fast_mlsirm.types import MLSIRMParams
 
 def test_align_latent_space_invalid_method():
     with pytest.raises(ValueError, match="only procrustes alignment is supported"):
