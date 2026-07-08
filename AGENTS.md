@@ -122,4 +122,33 @@ Guidance for ANY agent (Claude, Codex, Cursor, opencode, ...) working in this re
   is later added at the repo root, prefer CodeGraph
   (`codegraph explore "<query>"`, or the code-review-graph MCP tools) BEFORE
   grep/find — it surfaces callers/callees/impact that text search misses.
+
+### This repo's role in the ecosystem
+
+**fast-mlsirm** calibrates LLM-as-a-Judge outputs and manages the quality of the
+measurement/evaluation items used in LLM-as-a-Judge; it incorporates aFIPC
+Fixed-Item Parameter Calibration and kaefa item-fit-based optimal-model search.
+
+It is one component of the ContextualWisdomLab ecosystem, which is organized
+around **naruon** — the hub: an email/PIM system that DOM-decomposes emails and
+files into a persisted knowledge graph. Each component is a **standalone program
+that must ALSO work as a git submodule** (grown separately and together):
+**waf-ids-ai-soc** (WAF/IDS/AI SOC/LB/APIM), **clearfolio** (document viewer),
+**pg-erd-cloud** (ERD tool), **contextual-orchestrator** (LLM cost/perf/upstream-LB
+gateway beyond LiteLLM), **codec-carver** (STT/omni-modal speech-video codec),
+**fast-mlsirm** (this repo — LLM-as-a-Judge calibration + evaluation-item quality
+via aFIPC FIPC + kaefa item-fit), **feelanet-adfs** (passwordless SSO —
+OIDC/SCIM/ADFS/LDAP/FIDO2/OAuth2.1, eliminate passwords), **newsdom-api**
+(PDF→DOM sidecar), and **semantic-data-portal** (upper-ontology/catalog/governance
+plane with its own graph engine).
+
+### Research grounding (attach paper PDFs)
+
+Substantive feature/process PRs should find the relevant academic papers and
+**commit their PDFs into the PR** (e.g. a `docs/papers/` or `references/`
+directory) with full citations, respecting copyright: attach the PDF only when
+redistribution is permissible; otherwise cite + link + summarize. For this repo,
+that means IRT/psychometrics literature for aFIPC/kaefa item-fit calibration and
+LLM-as-a-Judge evaluation methodology (see **Key Articles** above for the
+existing MLSIRM/MLS2PLM reference set to build on).
 <!-- END cwl-agent-guidance -->
