@@ -3,6 +3,7 @@ import sys
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from fast_mlsirm.cli import main
 
@@ -129,6 +130,46 @@ def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
     assert payload["backend"] in {"numpy", "rust"}
     summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
     assert summary["backend"] == payload["backend"]
+
+def test_cli_fit_rust_device_recorded(tmp_path, capsys):
+    pytest.importorskip("fast_mlsirm._core")
+    sim_dir = tmp_path / "sim_out"
+    fit_dir = tmp_path / "fit_out"
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+        main()
+    capsys.readouterr()
+
+    args = [
+        "fit",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--model",
+        "MLS2PLM",
+        "--max-iter",
+        "1",
+        "--backend",
+        "rust",
+        "--rust-device",
+        "gpu",
+        "--out",
+        str(fit_dir),
+        "--json",
+    ]
+
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["backend"] == "rust"
+    # "gpu" is honored when a GPU is present and otherwise falls back to CPU;
+    # either way the requested device is recorded on the result and summary.
+    assert payload["rust_device"] == "gpu"
+    summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
+    assert summary["rust_device"] == "gpu"
+
 
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"

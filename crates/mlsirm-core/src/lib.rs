@@ -1,3 +1,6 @@
+#[cfg(feature = "gpu")]
+mod gpu;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,
@@ -5,6 +8,80 @@ pub enum ModelType {
     Mlsrm,
     Uls2plm,
     Ulsrm,
+}
+
+/// Execution device for the likelihood/gradient hot path.
+///
+/// This is a sub-option of the Rust backend, not a separate compute backend
+/// axis: `Gpu`/`Auto` run the wgpu GPGPU kernels when a GPU adapter is present
+/// and otherwise fall back to the identical CPU implementation. The numerical
+/// contract is the same for every variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Device {
+    /// Always use the scalar CPU implementation.
+    Cpu,
+    /// Prefer the wgpu GPGPU path; fall back to CPU (with a warning) if no GPU.
+    Gpu,
+    /// Use the GPGPU path when a GPU is available, otherwise CPU. No warning.
+    Auto,
+}
+
+impl Device {
+    /// Parse a case-insensitive device string (`cpu` / `gpu` / `auto`).
+    pub fn parse(name: &str) -> Option<Device> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "cpu" => Some(Device::Cpu),
+            "gpu" => Some(Device::Gpu),
+            "auto" => Some(Device::Auto),
+            _ => None,
+        }
+    }
+}
+
+/// Whether a model frees the item discrimination and uses the latent space.
+///
+/// Shared between the CPU and GPGPU code paths so both agree on model algebra.
+pub(crate) fn model_exec_flags(model_type: ModelType) -> (bool, bool) {
+    let free_alpha = !matches!(model_type, ModelType::Mlsrm | ModelType::Ulsrm);
+    let uses_space = !matches!(model_type, ModelType::Mirt);
+    (free_alpha, uses_space)
+}
+
+/// Compute the negative log-likelihood and gradients on the requested device.
+///
+/// `Device::Cpu` runs the scalar reference implementation. `Device::Gpu` and
+/// `Device::Auto` attempt the wgpu GPGPU kernels and transparently fall back to
+/// the CPU implementation when no compatible GPU adapter is available (for
+/// example in CI), so the call never fails for lack of a GPU.
+pub fn neg_loglik_and_grad_device(
+    device: Device,
+    y: &[f64],
+    mask: Option<&[bool]>,
+    factor_id: &[usize],
+    params: &Params,
+    config: &ModelConfig,
+    penalty: &PenaltyConfig,
+) -> (f64, Gradients, f64) {
+    match device {
+        Device::Cpu => neg_loglik_and_grad(y, mask, factor_id, params, config, penalty),
+        Device::Gpu | Device::Auto => {
+            #[cfg(feature = "gpu")]
+            {
+                if let Some(result) =
+                    gpu::neg_loglik_and_grad_gpu(y, mask, factor_id, params, config, penalty)
+                {
+                    return result;
+                }
+                if matches!(device, Device::Gpu) {
+                    eprintln!(
+                        "fast-mlsirm: GPU device requested but no usable GPU adapter was found; \
+                         falling back to the CPU implementation."
+                    );
+                }
+            }
+            neg_loglik_and_grad(y, mask, factor_id, params, config, penalty)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -78,8 +155,7 @@ pub fn neg_loglik_and_grad(
         assert_eq!(m.len(), y.len());
     }
 
-    let free_alpha = !matches!(config.model_type, ModelType::Mlsrm | ModelType::Ulsrm);
-    let uses_space = !matches!(config.model_type, ModelType::Mirt);
+    let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let gamma = if uses_space { params.tau.exp() } else { 0.0 };
 
     let mut objective = 0.0;
@@ -136,7 +212,7 @@ pub fn neg_loglik_and_grad(
     (objective, grad, loglik)
 }
 
-fn add_penalty(
+pub(crate) fn add_penalty(
     params: &Params,
     config: &ModelConfig,
     penalty: &PenaltyConfig,
@@ -282,6 +358,49 @@ mod tests {
         assert!(objective.is_finite());
         assert!(loglik.is_finite());
         assert_eq!(grad.theta.len(), cfg.n_persons * cfg.n_dims);
+    }
+
+    #[test]
+    fn device_parse_accepts_known_names() {
+        assert_eq!(Device::parse("cpu"), Some(Device::Cpu));
+        assert_eq!(Device::parse("GPU"), Some(Device::Gpu));
+        assert_eq!(Device::parse(" Auto "), Some(Device::Auto));
+        assert_eq!(Device::parse("cuda"), None);
+    }
+
+    #[test]
+    fn device_auto_matches_cpu_on_fallback() {
+        // On machines/CI without a GPU adapter, Auto/Gpu must fall back to the
+        // CPU path and reproduce it bit-for-bit. When a GPU is present the f32
+        // kernels are exercised instead and this asserts close (not exact)
+        // agreement, which is the guarantee we make for the GPGPU path.
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let mask = vec![true, true, true, false];
+
+        let (cpu_obj, cpu_grad, cpu_ll) =
+            neg_loglik_and_grad_device(Device::Cpu, &y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+        for device in [Device::Auto, Device::Gpu] {
+            let (obj, grad, ll) =
+                neg_loglik_and_grad_device(device, &y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+            assert!(
+                (obj - cpu_obj).abs() < 1e-4,
+                "objective mismatch for {device:?}"
+            );
+            assert!((ll - cpu_ll).abs() < 1e-4, "loglik mismatch for {device:?}");
+            assert!((grad.tau - cpu_grad.tau).abs() < 1e-4);
+            for (a, b) in grad.theta.iter().zip(&cpu_grad.theta) {
+                assert!((a - b).abs() < 1e-4);
+            }
+            for (a, b) in grad.xi.iter().zip(&cpu_grad.xi) {
+                assert!((a - b).abs() < 1e-4);
+            }
+            for (a, b) in grad.zeta.iter().zip(&cpu_grad.zeta) {
+                assert!((a - b).abs() < 1e-4);
+            }
+        }
     }
 
     #[test]

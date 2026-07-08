@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .backend import normalize_backend
+from .backend import normalize_backend, normalize_device
 
 
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"}
@@ -69,6 +69,11 @@ class FitConfig:
     lbfgs_history: int = 10
     verbose: int = 0
     backend: str = "numpy"
+    # Device for the Rust backend: "cpu", "gpu", or "auto". A sub-option of the
+    # rust backend, not a separate compute-backend axis. "auto" (default) uses
+    # the wgpu GPGPU kernels when a GPU is available and otherwise falls back to
+    # the identical CPU path. Ignored when backend == "numpy".
+    rust_device: str = "auto"
     penalty: PenaltyConfig = PenaltyConfig()
 
     def normalized_model(self) -> str:
@@ -93,3 +98,4 @@ class FitConfig:
         if self.eps_distance <= 0:
             raise ValueError("eps_distance must be > 0")
         normalize_backend(self.backend)
+        normalize_device(self.rust_device)

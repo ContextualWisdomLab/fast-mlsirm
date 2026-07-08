@@ -11,3 +11,17 @@ documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/RE
 [lib]
 name = "mlsirm_core"
 path = "src/lib.rs"
+
+[dependencies]
+bytemuck = { version = "1.25.0", features = ["derive"], optional = true }
+pollster = { version = "0.4.0", optional = true }
+wgpu = { version = "30.0.0", optional = true }
+
+[features]
+# GPGPU acceleration of the neg-loglik + gradient hot path via wgpu.
+# Enabled by default so the published wheel gains GPU execution; the code
+# always falls back to the CPU implementation at runtime when no GPU adapter
+# is available (e.g. CI). Build with --no-default-features for a CPU-only
+# core with no wgpu dependency graph.
+default = ["gpu"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]

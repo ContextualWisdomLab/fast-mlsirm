@@ -322,6 +322,23 @@ requires the installed `fast_mlsirm._core` extension and fails clearly if it is
 unavailable. `fit --backend auto` uses the Rust objective when available and
 falls back to NumPy otherwise.
 
+The backend axis stays `{numpy, rust, auto}`. GPU acceleration is a *device*
+sub-option of the Rust backend rather than a separate backend, selected with
+`fit --backend rust --rust-device {auto,cpu,gpu}` (or `FitConfig(backend="rust",
+rust_device=...)`). The Rust core carries a [wgpu](https://github.com/gfx-rs/wgpu)
+(MIT/Apache-2.0) GPGPU implementation of the negative-log-likelihood and gradient
+hot path in `crates/mlsirm-core/src/gpu.rs`:
+
+- `auto` (default) runs the GPGPU kernels when a compatible GPU adapter is
+  present and otherwise falls back to the identical CPU path — no GPU required.
+- `gpu` prefers the GPU and still falls back to CPU (with a warning) when none
+  is available, so CI and GPU-less machines pass unchanged.
+- `cpu` always uses the scalar CPU reference.
+
+The GPU kernels run in single precision (WGSL has no `f64`); the CPU path is the
+`f64` reference the numerical-parity tests assert against. The resolved device is
+recorded on `FitResult.rust_device` and in `fit_summary.json`.
+
 `render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
 into a standalone HTML report with model summary cards, compact tables, and
 small bar views when chartable diagnostic metrics are present. Optional fit
