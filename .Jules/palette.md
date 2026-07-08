@@ -5,7 +5,3 @@
 ## 2025-02-18 - CLI Error Handling DX
 **Learning:** Raw stack traces from FileNotFoundError or exception in CLI tools provide poor developer experience.
 **Action:** Wrap file loading and data processing steps in CLI applications with try-except blocks to output clean, user-friendly error messages to stderr.
-
-## 2025-02-18 - CLI `simulate` Error Handling DX
-**Learning:** Raw stack traces from `ValueError` (like invalid configuration parameters) during the `simulate` CLI command provide poor developer experience.
-**Action:** Wrapped configuration validation and simulation execution steps in a try-except block to catch `ValueError` and `OSError`, outputting a clean, user-friendly error message to stderr and returning 1 to prevent raw stack traces.

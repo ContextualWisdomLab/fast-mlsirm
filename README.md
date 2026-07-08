@@ -67,21 +67,6 @@ print(process_dimensions.best)
 - Response-process probability candidate comparisons for external dimensionality
   checks.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
-- Automated benchmark evidence reports from release-acceptance timing.
-- Release evidence index reports that tie dist artifact hashes, acceptance,
-  benchmark, sales-readiness, and buyer-packet evidence to one commit.
-- Single-command commercial release evidence builder for dist, acceptance,
-  benchmark, sales-readiness, buyer packet, release index, and final gate
-  output.
-- Procurement due-diligence evidence reports for distribution metadata,
-  policy files, commercial-release integrity, GitHub snapshot state, and
-  SHA256-verified HTML review output.
-- PR queue governance evidence reports for open PR review state, stale and
-  changes-requested risk counts, release-scope conflict classification, and
-  SHA256-verified HTML review output.
-- Figma evidence sync reports that verify the static buyer-review design packet
-  still references buyer packet, release evidence index, procurement due
-  diligence, and PR queue governance evidence while Code Connect stays disabled.
 - CLI commands for simulation and fitting.
 - Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
   default reference backend.
@@ -107,131 +92,17 @@ cargo test --workspace
 The PyO3 extension crate is built by maturin and exercised by the Python backend
 parity tests.
 
-## Commercial Readiness
+## Commercial Beta Status
 
-The current release is supportable as a commercial beta for technical teams that need
-local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
+The current release is supportable as a commercial beta for technical teams that
+need local MLS2PLM simulation, point-estimate fitting, diagnostics, and report
 generation. It is not a regulated decision product, hosted assessment platform,
 or Bayesian posterior inference engine. See:
 
-- [Commercial readiness gate](docs/commercial_readiness.md)
-- [Enterprise sales readiness gate](docs/enterprise_sales_readiness.md)
-- [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
-- [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
-- [Figma product design packet](docs/figma_product_design_packet.md)
-- [ROI evidence model](docs/roi_evidence_model.md)
-- [Release acceptance guide](docs/release_acceptance.md)
+- [Commercial beta readiness](docs/commercial_readiness.md)
 - [Security policy](SECURITY.md)
 - [Support policy](SUPPORT.md)
 - [Changelog](CHANGELOG.md)
-
-Sales readiness verification uses:
-
-```bash
-python scripts/build_commercial_release.py \
-  --out commercial-release \
-  --require-rust \
-  --check-import
-```
-
-The commercial release builder writes `commercial_release_manifest.json` and
-`commercial_release_report.html` while keeping the underlying stage artifacts
-under the same output directory. The equivalent manual sequence is:
-
-```bash
-python scripts/release_acceptance.py --out acceptance_check --require-rust
-python scripts/build_benchmark_report.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --out acceptance_check/benchmark
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --check-import \
-  --out acceptance_check/sales_readiness_manifest.json
-python scripts/build_buyer_packet.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --out buyer-evidence-packet
-python scripts/build_release_evidence_index.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --sales-readiness acceptance_check/sales_readiness_manifest.json \
-  --dist dist \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --out release-evidence-index
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --check-import \
-  --out acceptance_check/final_sales_readiness_manifest.json
-python scripts/build_procurement_due_diligence.py \
-  --dist dist \
-  --commercial-release-manifest commercial-release/commercial_release_manifest.json \
-  --out procurement-due-diligence
-python scripts/build_pr_queue_governance.py \
-  --out pr-queue-governance
-python scripts/build_figma_evidence_sync.py \
-  --out figma-evidence-sync
-python scripts/sales_readiness.py \
-  --acceptance acceptance_check/acceptance_summary.json \
-  --dist dist \
-  --require-rust \
-  --require-20b-product \
-  --benchmark-report acceptance_check/benchmark/benchmark_report.json \
-  --require-benchmark-report \
-  --buyer-packet-manifest buyer-evidence-packet/buyer_evidence_manifest.json \
-  --require-buyer-packet \
-  --release-evidence-index release-evidence-index/release_evidence_index.json \
-  --require-release-evidence-index \
-  --procurement-due-diligence procurement-due-diligence/procurement_due_diligence_manifest.json \
-  --require-procurement-due-diligence \
-  --pr-queue-governance pr-queue-governance/pr_queue_governance_manifest.json \
-  --require-pr-queue-governance \
-  --figma-evidence-sync figma-evidence-sync/figma_evidence_sync_manifest.json \
-  --require-figma-evidence-sync \
-  --check-import \
-  --out acceptance_check/final_procurement_sales_readiness_manifest.json
-```
-
-Enterprise Sales Readiness for KRW 2,000,000,000 procurement review requires
-the release acceptance and sales-readiness commands to pass on the exact
-release artifact. The 20B product gate adds
-Product Design, Figma-without-Code-Connect, Data Analytics, ROI, benchmark, and
-synthetic demo evidence from `examples/enterprise_demo/`. The buyer packet
-command produces a portable zip, `buyer_evidence_manifest.json`, and
-`buyer_evidence_report.html` for procurement review. The benchmark command
-produces `benchmark_report.json` and `benchmark_report.html` from the same
-release-acceptance timing evidence. The release evidence index command produces
-`release_evidence_index.json` and `release_evidence_index.html` as a compact
-digest map over the candidate wheel, source distribution, release acceptance,
-benchmark report, sales-readiness manifest, and buyer packet.
-The commercial release builder produces the same evidence as a single buyer
-review entrypoint and records the failed stage when the gate does not pass.
-It now also invokes `scripts/build_procurement_due_diligence.py` by default and
-emits `procurement_due_diligence_manifest.json` plus
-`procurement_due_diligence_report.html` under the commercial release output.
-It also invokes `scripts/build_pr_queue_governance.py` by default and emits
-`pr_queue_governance_manifest.json` plus `pr_queue_governance_report.html` so
-open GitHub PRs are inventoried as managed queue evidence rather than treated
-as an unexamined release risk. It then invokes
-`scripts/build_figma_evidence_sync.py` by default and emits
-`figma_evidence_sync_manifest.json` plus `figma_evidence_sync_report.html` so
-the static Figma procurement frame is checked against the same repo-local
-buyer evidence packet without using Figma Code Connect.
 
 ## CLI
 
@@ -337,7 +208,6 @@ crates/mlsirm-core/       Rust likelihood and gradient core
 crates/fast-mlsirm-py/    PyO3 binding for the optional Rust backend
 tests/                    Python smoke and numerical tests
 docs/                     PRD/TRD summary and roadmap
-examples/enterprise_demo/ Synthetic procurement evidence manifests
 ```
 
 ## MVP Boundary

@@ -19,8 +19,3 @@ Even for static, offline-generated HTML reports where inputs are meant to be con
 
 **Prevention:**
 - Always add a strict CSP `<meta>` tag (e.g., `default-src 'none'; style-src 'unsafe-inline';`) to the `<head>` of generated standalone HTML files.
-
-## 2026-07-06 - [DoS via Unconstrained Array Dimension Allocation]
-**Vulnerability:** In `fast_mlsirm/fit.py`, the number of dimensions `n_dims` was calculated using the maximum value provided in user input (`factor_id.max()`). A maliciously crafted large integer in `factor_id` causes `np.zeros((n_persons, n_dims))` to attempt allocating an impossibly large array (e.g. hundreds of GiB), crashing the application via Out-Of-Memory (OOM) and causing a Denial of Service (DoS).
-**Learning:** Never trust user input to define unconstrained array dimensions, especially when derived from maximum values within the data.
-**Prevention:** Add explicit boundary checks (e.g. `n_dims > n_items`) to ensure derived dimensions remain mathematically sound and computationally feasible before memory allocation.

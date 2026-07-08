@@ -59,7 +59,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<head>",
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            f'<meta http-equiv="Content-Security-Policy" content="{escape(_content_security_policy(), quote=True)}">',
+            '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\';">',
             f"<title>{escape(title)}</title>",
             "<style>",
             _css(),
@@ -194,7 +194,7 @@ def _table_section(heading: str, rows: list[dict[str, Any]], *, chart_value: str
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
             chart,
-            _table(rows, label=f"{heading} diagnostics table"),
+            _table(rows),
             "</section>",
         ]
     )
@@ -286,7 +286,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     )
 
 
-def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
+def _table(rows: list[dict[str, Any]], *, limit: int = 12) -> str:
     if not rows:
         return '<p class="empty-state">No rows were recorded in this section.</p>'
 
@@ -303,9 +303,8 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     headers = "".join(f"<th scope=\"col\">{escape(_label(column))}</th>" for column in columns)
     return "\n".join(
         [
-            f'<div class="table-wrap" role="region" aria-label="{escape(label)}" tabindex="0">',
+            '<div class="table-wrap">',
             "<table>",
-            f"<caption>{escape(label)}</caption>",
             f"<thead><tr>{headers}</tr></thead>",
             "<tbody>",
             *body_rows,
@@ -390,10 +389,6 @@ def _format_label_value(value: Any) -> str:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
-
-
-def _content_security_policy() -> str:
-    return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
@@ -574,27 +569,10 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
-  outline: 3px solid #0f766e;
-  outline-offset: 3px;
-}
-
 table {
   width: 100%;
   border-collapse: collapse;
   min-width: 560px;
-}
-
-caption {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 th,

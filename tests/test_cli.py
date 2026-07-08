@@ -332,31 +332,6 @@ def test_cli_fit_rejects_factor_length_mismatch(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "factor_id length (1) must match response item count (2)" in captured.err
 
-def test_cli_unexpected_error_does_not_print_traceback(capsys):
-    args = ["simulate", "--persons", "10", "--dims", "1", "--items-per-dim", "1", "--out", "out"]
-    with patch.object(sys, "argv", ["fast-mlsirm"] + args), patch(
-        "fast_mlsirm.cli.simulate", side_effect=RuntimeError("internal detail")
-    ):
-        assert main() == 1
-
-    captured = capsys.readouterr()
-    assert "Unexpected failure - internal detail" in captured.err
-    assert "Traceback" not in captured.err
-
-
-def test_cli_debug_env_reraises_unexpected_error(monkeypatch):
-    args = ["simulate", "--persons", "10", "--dims", "1", "--items-per-dim", "1", "--out", "out"]
-    monkeypatch.setenv("FAST_MLSIRM_DEBUG", "1")
-    with patch.object(sys, "argv", ["fast-mlsirm"] + args), patch(
-        "fast_mlsirm.cli.simulate", side_effect=RuntimeError("internal detail")
-    ):
-        try:
-            main()
-        except RuntimeError as exc:
-            assert str(exc) == "internal detail"
-        else:
-            raise AssertionError("FAST_MLSIRM_DEBUG should re-raise unexpected CLI errors")
-
 def test_main_sys_exit_on_direct_call():
     with patch('fast_mlsirm.cli.main', return_value=0):
         # We can't easily test `if __name__ == "__main__": raise SystemExit(main())`

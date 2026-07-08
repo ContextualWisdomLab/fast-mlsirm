@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -64,7 +63,7 @@ def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -
         )
 
 
-def _main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
@@ -185,30 +184,18 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        try:
-            data = simulate(
-                MLS2PLMConfig(
-                    n_persons=args.persons,
-                    n_dims=args.dims,
-                    items_per_dim=args.items_per_dim,
-                    latent_dim=args.latent_dim,
-                    phi=args.phi,
-                    gamma=args.gamma,
-                    seed=args.seed,
-                )
+        data = simulate(
+            MLS2PLMConfig(
+                n_persons=args.persons,
+                n_dims=args.dims,
+                items_per_dim=args.items_per_dim,
+                latent_dim=args.latent_dim,
+                phi=args.phi,
+                gamma=args.gamma,
+                seed=args.seed,
             )
-            save_simulation(data, args.out)
-        except ValueError as e:
-            if os.environ.get("FAST_MLSIRM_DEBUG"):
-                raise
-            print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
-            return 1
-        except OSError as e:
-            if os.environ.get("FAST_MLSIRM_DEBUG"):
-                raise
-            print(f"❌ Error: Failed to save simulation - {str(e)}", file=sys.stderr)
-            return 1
-
+        )
+        save_simulation(data, args.out)
         return _complete(
             args,
             f"✅ Simulation successfully saved to {args.out}",
@@ -463,19 +450,6 @@ def _main(argv: list[str] | None = None) -> int:
             },
         },
     )
-
-
-def main(argv: list[str] | None = None) -> int:
-    try:
-        return _main(argv)
-    except KeyboardInterrupt:
-        print("❌ Error: Interrupted by user", file=sys.stderr)
-        return 130
-    except Exception as exc:
-        if os.environ.get("FAST_MLSIRM_DEBUG"):
-            raise
-        print(f"❌ Error: Unexpected failure - {exc}", file=sys.stderr)
-        return 1
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:
