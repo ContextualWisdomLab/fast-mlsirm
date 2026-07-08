@@ -67,17 +67,47 @@ pub fn neg_loglik_and_grad_device(
         Device::Gpu | Device::Auto => {
             #[cfg(feature = "gpu")]
             {
-                if let Some(result) =
-                    gpu::neg_loglik_and_grad_gpu(y, mask, factor_id, params, config, penalty)
-                {
-                    return result;
-                }
-                if matches!(device, Device::Gpu) {
-                    eprintln!(
-                        "fast-mlsirm: GPU device requested but no usable GPU adapter was found; \
-                         falling back to the CPU implementation."
-                    );
-                }
+                let gpu_result =
+                    gpu::neg_loglik_and_grad_gpu(y, mask, factor_id, params, config, penalty);
+                finish_device(
+                    device, gpu_result, y, mask, factor_id, params, config, penalty,
+                )
+            }
+            #[cfg(not(feature = "gpu"))]
+            neg_loglik_and_grad(y, mask, factor_id, params, config, penalty)
+        }
+    }
+}
+
+/// Resolve the outcome of a GPU device request: use the GPU result when the
+/// adapter produced one, otherwise warn (only when the GPU was explicitly
+/// requested, not for `Auto`) and fall back to the scalar CPU path.
+///
+/// This is deliberately split out of [`neg_loglik_and_grad_device`] so that both
+/// the GPU-succeeded and GPU-unavailable branches are exercised by unit tests on
+/// every machine, regardless of whether the host running the tests actually has
+/// a usable GPU adapter (a GPU-equipped host only ever takes the success branch,
+/// a GPU-less host only ever takes the fallback branch).
+#[cfg(feature = "gpu")]
+#[allow(clippy::too_many_arguments)]
+fn finish_device(
+    device: Device,
+    gpu_result: Option<(f64, Gradients, f64)>,
+    y: &[f64],
+    mask: Option<&[bool]>,
+    factor_id: &[usize],
+    params: &Params,
+    config: &ModelConfig,
+    penalty: &PenaltyConfig,
+) -> (f64, Gradients, f64) {
+    match gpu_result {
+        Some(result) => result,
+        None => {
+            if matches!(device, Device::Gpu) {
+                eprintln!(
+                    "fast-mlsirm: GPU device requested but no usable GPU adapter was found; \
+                     falling back to the CPU implementation."
+                );
             }
             neg_loglik_and_grad(y, mask, factor_id, params, config, penalty)
         }
@@ -400,6 +430,89 @@ mod tests {
             for (a, b) in grad.zeta.iter().zip(&cpu_grad.zeta) {
                 assert!((a - b).abs() < 1e-4);
             }
+        }
+    }
+
+    #[test]
+    fn device_gpu_handles_absent_mask() {
+        // Exercises the `mask: None` host-side path (dense all-observed matrix)
+        // through the device entry point. On a GPU-equipped host this drives the
+        // GPGPU kernels with the `None` mask branch; on a GPU-less host it is the
+        // CPU fallback. Either way the device result must match the CPU reference
+        // computed the same way.
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+
+        let (cpu_obj, cpu_grad, cpu_ll) =
+            neg_loglik_and_grad_device(Device::Cpu, &y, None, &[0, 0], &p, &cfg, &penalty);
+        for device in [Device::Auto, Device::Gpu] {
+            let (obj, grad, ll) =
+                neg_loglik_and_grad_device(device, &y, None, &[0, 0], &p, &cfg, &penalty);
+            assert!(
+                (obj - cpu_obj).abs() < 1e-4,
+                "objective mismatch for {device:?}"
+            );
+            assert!((ll - cpu_ll).abs() < 1e-4, "loglik mismatch for {device:?}");
+            assert!((grad.tau - cpu_grad.tau).abs() < 1e-4);
+            assert_eq!(grad.b.len(), cpu_grad.b.len());
+        }
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn finish_device_prefers_gpu_result_when_present() {
+        // When the GPU adapter produced a result, `finish_device` must return it
+        // verbatim without invoking the CPU fallback, for both Gpu and Auto.
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let sentinel = Gradients {
+            theta: vec![1.0, 2.0],
+            alpha: vec![3.0, 4.0],
+            b: vec![5.0, 6.0],
+            xi: vec![7.0, 8.0, 9.0, 10.0],
+            zeta: vec![11.0, 12.0, 13.0, 14.0],
+            tau: 42.0,
+        };
+        for device in [Device::Gpu, Device::Auto] {
+            let (obj, grad, ll) = finish_device(
+                device,
+                Some((123.0, sentinel.clone(), -7.0)),
+                &y,
+                None,
+                &[0, 0],
+                &p,
+                &cfg,
+                &penalty,
+            );
+            assert_eq!(obj, 123.0);
+            assert_eq!(ll, -7.0);
+            assert_eq!(grad.tau, 42.0);
+            assert_eq!(grad.b, vec![5.0, 6.0]);
+        }
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn finish_device_falls_back_to_cpu_when_gpu_absent() {
+        // When the GPU produced no result, `finish_device` must reproduce the CPU
+        // reference. `Device::Gpu` additionally emits the fallback warning while
+        // `Device::Auto` stays silent; both must return the CPU numbers.
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig::default();
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let mask = vec![true, true, true, false];
+        let expected = neg_loglik_and_grad(&y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+        for device in [Device::Gpu, Device::Auto] {
+            let (obj, grad, ll) =
+                finish_device(device, None, &y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+            assert_eq!(obj, expected.0);
+            assert_eq!(ll, expected.2);
+            assert_eq!(grad.tau, expected.1.tau);
         }
     }
 
