@@ -68,7 +68,10 @@ class FitConfig:
     gradient_clip: float | None = 100.0
     lbfgs_history: int = 10
     verbose: int = 0
-    backend: str = "numpy"
+    # Rust is the primary numeric path: "auto" resolves to the compiled
+    # ``fast_mlsirm._core`` (Rust/PyO3) kernel when available and transparently
+    # falls back to the pure-numpy reference implementation otherwise.
+    backend: str = "auto"
     penalty: PenaltyConfig = PenaltyConfig()
 
     def normalized_model(self) -> str:

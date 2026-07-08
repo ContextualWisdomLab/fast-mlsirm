@@ -13,7 +13,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Rust toolchain is required so the maturin build compiles the primary
+      # numeric core (fast_mlsirm._core) during the editable install; the
+      # Rust<->numpy parity gate then exercises the Rust path.
+      - uses: dtolnay/rust-toolchain@stable
       - run: python -m pip install -e .[dev]
+      - name: Verify Rust core is the resolved default backend
+        run: python -c "import fast_mlsirm._core as c; from fast_mlsirm.backend import resolve_backend; from fast_mlsirm import FitConfig; assert hasattr(c, 'neg_loglik_and_grad'); assert resolve_backend(FitConfig().backend) == 'rust'; print('rust primary OK')"
       - run: pytest
 
   rust:
