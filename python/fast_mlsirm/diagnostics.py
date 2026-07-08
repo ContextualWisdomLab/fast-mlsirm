@@ -227,7 +227,8 @@ def align_latent_space(
 
     u, s, vt = np.linalg.svd(est_c.T @ true_c, full_matrices=False)
     rotation = u @ vt
-    denom = float(np.sum(est_c * est_c))
+    # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
+    denom = float(np.vdot(est_c, est_c))
     scale = float(np.sum(s) / denom) if denom > 1e-12 else 1.0
     aligned = scale * est_c @ rotation + true_mean
     return aligned[: len(true_xi)], aligned[len(true_xi) :]
@@ -730,6 +731,15 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
 
 
 def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
-    true_d = np.sqrt(((true_xi[:, None, :] - true_zeta[None, :, :]) ** 2).sum(axis=2))
-    est_d = np.sqrt(((est_xi[:, None, :] - est_zeta[None, :, :]) ** 2).sum(axis=2))
+    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+    true_xi_sq = np.einsum('ij,ij->i', true_xi, true_xi)
+    true_zeta_sq = np.einsum('ij,ij->i', true_zeta, true_zeta)
+    true_dist_sq = true_xi_sq[:, None] + true_zeta_sq[None, :] - 2 * np.dot(true_xi, true_zeta.T)
+    true_d = np.sqrt(np.maximum(true_dist_sq, 0.0))
+
+    est_xi_sq = np.einsum('ij,ij->i', est_xi, est_xi)
+    est_zeta_sq = np.einsum('ij,ij->i', est_zeta, est_zeta)
+    est_dist_sq = est_xi_sq[:, None] + est_zeta_sq[None, :] - 2 * np.dot(est_xi, est_zeta.T)
+    est_d = np.sqrt(np.maximum(est_dist_sq, 0.0))
+
     return _rmse(true_d, est_d)

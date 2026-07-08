@@ -5,3 +5,7 @@
 ## 2024-05-19 - NumPy Array Allocation and Advanced Vectorization
 **Learning:** `np.sum(x * x)` 패턴은 파이썬 내에서 곱셈을 위한 새로운 중간 배열을 메모리에 할당하고 이후에 그 배열의 합을 구하게 되어 성능 저하를 야기합니다. `np.vdot(x, x)` (또는 `np.einsum`)를 활용하면 중간 메모리 할당을 우회할 수 있어 속도가 비약적으로 증가합니다.
 **Action:** 거대한 배열의 크기나 요소 수와 관련된 최적화 시, `np.sum(x * x)` 대신 `np.vdot(x, x)`를 사용해 오버헤드를 방지합니다.
+
+## 2026-07-08 - 3D Broadcast Allocation Optimization in Distance Calculation
+**Learning:** O(N*J*D) 3D array broadcasting (`diff = xi[:, None, :] - zeta[None, :, :]`) for Euclidean distance calculations in `simulation.py` and `diagnostics.py` creates massive intermediate memory allocations, becoming a critical bottleneck as data sizes grow.
+**Action:** Replace 3D broadcasting with a mathematically equivalent O(N*J) 2D dot-product formulation (`x^2 + y^2 - 2xy`). Use `np.einsum('ij,ij->i', x, x)` for fast squared sums and `np.dot` for the cross-term, combined with `np.maximum(..., 0.0)` for safe square roots.
