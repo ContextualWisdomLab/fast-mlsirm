@@ -288,4 +288,34 @@ mod tests {
         assert!(res.theta.iter().all(|t| t.is_finite()));
         assert!(res.theta[0].abs() < 1e-6, "all-missing person should shrink to prior mean 0");
     }
+
+    #[test]
+    fn newton_tolerates_singular_hessian_without_ridge() {
+        // An item that nobody observed carries zero Fisher information. With the
+        // ridge disabled the per-item Newton Hessian is exactly singular, so the
+        // solver must hit the `det.abs() < 1e-12` guard and break out of the
+        // Newton loop instead of dividing by (near-)zero. This exercises the
+        // singular-Hessian branch in fit_mmle_2pl.
+        let (n_persons, n_items) = (6usize, 3usize);
+        let mut y = vec![0.0_f64; n_persons * n_items];
+        let mut observed = vec![true; n_persons * n_items];
+        for p in 0..n_persons {
+            // Items 0 and 1 carry a varied, informative response pattern.
+            y[p * n_items] = (p % 2) as f64;
+            y[p * n_items + 1] = ((p / 2) % 2) as f64;
+            // Item 2 is never observed -> zero information for its Newton step.
+            observed[p * n_items + 2] = false;
+        }
+        let cfg =
+            MmleConfig { ridge_a: 0.0, ridge_b: 0.0, max_iter: 50, ..MmleConfig::default() };
+        let res = fit_mmle_2pl(&y, &observed, n_persons, n_items, &cfg);
+
+        assert!(res.a.iter().all(|v| v.is_finite()), "item slopes must stay finite");
+        assert!(res.b.iter().all(|v| v.is_finite()), "item intercepts must stay finite");
+        assert!(res.theta.iter().all(|t| t.is_finite()), "abilities must stay finite");
+        // The zero-information item keeps its initial (a = 1, b = 0) because the
+        // Newton step breaks on the singular Hessian before any update applies.
+        assert_eq!(res.a[2], 1.0, "unobserved item slope must stay at its initial value");
+        assert_eq!(res.b[2], 0.0, "unobserved item intercept must stay at its initial value");
+    }
 }
