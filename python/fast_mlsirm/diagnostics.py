@@ -730,6 +730,12 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
 
 
 def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
-    true_d = np.sqrt(((true_xi[:, None, :] - true_zeta[None, :, :]) ** 2).sum(axis=2))
-    est_d = np.sqrt(((est_xi[:, None, :] - est_zeta[None, :, :]) ** 2).sum(axis=2))
+    true_sq_xi = (true_xi * true_xi).sum(axis=1)[:, None]
+    true_sq_zeta = (true_zeta * true_zeta).sum(axis=1)[None, :]
+    true_d = np.sqrt(np.maximum(true_sq_xi - 2 * np.dot(true_xi, true_zeta.T) + true_sq_zeta, 0.0))
+
+    est_sq_xi = (est_xi * est_xi).sum(axis=1)[:, None]
+    est_sq_zeta = (est_zeta * est_zeta).sum(axis=1)[None, :]
+    est_d = np.sqrt(np.maximum(est_sq_xi - 2 * np.dot(est_xi, est_zeta.T) + est_sq_zeta, 0.0))
+
     return _rmse(true_d, est_d)
