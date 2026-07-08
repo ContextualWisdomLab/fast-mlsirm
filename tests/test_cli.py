@@ -362,3 +362,14 @@ def test_main_sys_exit_on_direct_call():
         # We can't easily test `if __name__ == "__main__": raise SystemExit(main())`
         # without running it as a subprocess, but coverage usually skips it or we can ignore it.
         pass
+
+def test_cli_version(capsys):
+    from fast_mlsirm import __version__
+    import pytest
+    with patch.object(sys, 'argv', ['fast-mlsirm', '--version']):
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+
+        captured = capsys.readouterr()
+        assert f"fast-mlsirm {__version__}" in captured.out

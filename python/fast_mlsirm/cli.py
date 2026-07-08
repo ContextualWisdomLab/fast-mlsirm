@@ -69,6 +69,13 @@ def _main(argv: list[str] | None = None) -> int:
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
     )
+    from . import __version__
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show program's version number and exit.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sim = sub.add_parser(
