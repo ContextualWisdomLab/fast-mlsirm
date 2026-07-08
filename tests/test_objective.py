@@ -1,8 +1,210 @@
+import math
+
 import numpy as np
 import pytest
 
 from fast_mlsirm import FitConfig, MLSIRMParams
-from fast_mlsirm.objective import neg_loglik_and_grad, validate_factor_id
+from fast_mlsirm.config import PenaltyConfig as _PenaltyConfig
+from fast_mlsirm.objective import model_flags, neg_loglik_and_grad, validate_factor_id
+
+
+_ZERO_PENALTY = _PenaltyConfig(
+    lambda_theta=0.0,
+    lambda_xi=0.0,
+    lambda_zeta=0.0,
+    lambda_b=0.0,
+    lambda_alpha=0.0,
+    lambda_tau=0.0,
+    mu_alpha=0.0,
+    mu_tau=0.0,
+)
+
+
+def _softplus(x: float) -> float:
+    # Numerically stable log(1 + exp(x)), matches math.py softplus.
+    return max(x, 0.0) + math.log1p(math.exp(-abs(x)))
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def _reference_neg_loglik_and_grad(y, factors, params, config):
+    """Independent closed-form reference derived directly from the MLS2PLM
+    canonical equations (docs/papers/mls2plm-canonical-equations.md).
+
+    Pure-Python triple loop with a different structure than the vectorized
+    production path, so it pins the objective, every gradient block, and every
+    summation axis to the published formula rather than to prior code.
+    """
+    free_alpha, uses_space = model_flags(config.normalized_model())
+    penalty = config.penalty
+    eps = config.eps_distance
+
+    n_persons, n_items = y.shape
+    n_traits = params.theta.shape[1]
+    latent_dim = params.xi.shape[1]
+
+    a = [math.exp(params.alpha[j]) if free_alpha else 1.0 for j in range(n_items)]
+    gamma = math.exp(params.tau) if uses_space else 0.0
+
+    nll = 0.0
+    g_theta = [[0.0] * n_traits for _ in range(n_persons)]
+    g_alpha = [0.0] * n_items
+    g_b = [0.0] * n_items
+    g_xi = [[0.0] * latent_dim for _ in range(n_persons)]
+    g_zeta = [[0.0] * latent_dim for _ in range(n_items)]
+    g_tau = 0.0
+
+    for p in range(n_persons):
+        for j in range(n_items):
+            yy = float(y[p, j])
+            if yy == -1.0 or not math.isfinite(yy):  # missing sentinel
+                continue
+            d = int(factors[j])
+            r = 0.0
+            if uses_space:
+                dist2 = eps
+                for k in range(latent_dim):
+                    diff = params.xi[p, k] - params.zeta[j, k]
+                    dist2 += diff * diff
+                r = math.sqrt(dist2)
+            eta = a[j] * params.theta[p, d] + params.b[j] - gamma * r
+            nll += _softplus(eta) - yy * eta
+            e = _sigmoid(eta) - yy
+
+            g_b[j] += e
+            if free_alpha:
+                g_alpha[j] += e * a[j] * params.theta[p, d]
+            g_theta[p][d] += e * a[j]
+            if uses_space:
+                g_tau += e * (-gamma * r)
+                for k in range(latent_dim):
+                    common = gamma * (params.xi[p, k] - params.zeta[j, k]) / r
+                    g_xi[p][k] += e * (-common)
+                    g_zeta[j][k] += e * common
+
+    # Penalty block (Molenaar & Jeon, 2026 regularized JML).
+    for p in range(n_persons):
+        for k in range(n_traits):
+            nll += 0.5 * penalty.lambda_theta * params.theta[p, k] ** 2
+            g_theta[p][k] += penalty.lambda_theta * params.theta[p, k]
+    for j in range(n_items):
+        nll += 0.5 * penalty.lambda_b * params.b[j] ** 2
+        g_b[j] += penalty.lambda_b * params.b[j]
+    if free_alpha:
+        for j in range(n_items):
+            delta = params.alpha[j] - penalty.mu_alpha
+            nll += 0.5 * penalty.lambda_alpha * delta * delta
+            g_alpha[j] += penalty.lambda_alpha * delta
+    if uses_space:
+        for p in range(n_persons):
+            for k in range(latent_dim):
+                nll += 0.5 * penalty.lambda_xi * params.xi[p, k] ** 2
+                g_xi[p][k] += penalty.lambda_xi * params.xi[p, k]
+        for j in range(n_items):
+            for k in range(latent_dim):
+                nll += 0.5 * penalty.lambda_zeta * params.zeta[j, k] ** 2
+                g_zeta[j][k] += penalty.lambda_zeta * params.zeta[j, k]
+        tau_delta = params.tau - penalty.mu_tau
+        nll += 0.5 * penalty.lambda_tau * tau_delta * tau_delta
+        g_tau += penalty.lambda_tau * tau_delta
+
+    return nll, {
+        "theta": np.asarray(g_theta),
+        "alpha": np.asarray(g_alpha),
+        "b": np.asarray(g_b),
+        "xi": np.asarray(g_xi),
+        "zeta": np.asarray(g_zeta),
+        "tau": g_tau,
+    }
+
+
+def test_neg_loglik_matches_closed_form_single_entry():
+    # Single person, single item, 2-D latent space: hand-computable pin of the
+    # canonical MLS2PLM equation eta = exp(alpha)*theta + b - exp(tau)*r.
+    params = MLSIRMParams(
+        theta=np.array([[0.5]]),
+        alpha=np.array([0.2]),
+        b=np.array([0.1]),
+        xi=np.array([[0.3, -0.1]]),
+        zeta=np.array([[-0.2, 0.4]]),
+        tau=0.1,
+    )
+    y = np.array([[1.0]])
+    factors = np.array([0])
+    config = FitConfig(max_iter=1, penalty=_ZERO_PENALTY, eps_distance=1e-8)
+
+    a = math.exp(0.2)
+    gamma = math.exp(0.1)
+    r = math.sqrt((0.3 - (-0.2)) ** 2 + (-0.1 - 0.4) ** 2 + 1e-8)
+    eta = a * 0.5 + 0.1 - gamma * r
+    expected_nll = _softplus(eta) - 1.0 * eta
+    e = _sigmoid(eta) - 1.0
+
+    nll, grad, loglik = neg_loglik_and_grad(y, factors, params, config)
+
+    assert math.isclose(nll, expected_nll, rel_tol=0.0, abs_tol=1e-12)
+    assert math.isclose(loglik, -expected_nll, rel_tol=0.0, abs_tol=1e-12)
+    assert math.isclose(float(grad.b[0]), e, abs_tol=1e-12)
+    assert math.isclose(float(grad.alpha[0]), e * a * 0.5, abs_tol=1e-12)
+    assert math.isclose(float(grad.theta[0, 0]), e * a, abs_tol=1e-12)
+    assert math.isclose(float(grad.tau), e * (-gamma * r), abs_tol=1e-12)
+    # d r / d xi = (xi - zeta)/r ; eta has -gamma*r, so grad_xi = -gamma*e*(xi-zeta)/r
+    assert math.isclose(float(grad.xi[0, 0]), -gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12)
+    assert math.isclose(float(grad.xi[0, 1]), -gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12)
+    assert math.isclose(float(grad.zeta[0, 0]), gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12)
+    assert math.isclose(float(grad.zeta[0, 1]), gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12)
+
+
+def test_neg_loglik_and_grad_matches_independent_reference():
+    # Multi-person / multi-item / multi-trait with a non-trivial factor_id and
+    # the DEFAULT (non-zero) penalty. Pins the objective and every gradient
+    # block/axis to a pure-Python reference derived from the canonical equation.
+    params = MLSIRMParams(
+        theta=np.array([[0.2, -0.3], [0.5, 0.1], [-0.4, 0.25]]),
+        alpha=np.array([0.1, -0.2, 0.05, 0.3]),
+        b=np.array([0.3, -0.1, 0.2, -0.25]),
+        xi=np.array([[0.1, 0.2], [-0.2, 0.4], [0.35, -0.15]]),
+        zeta=np.array([[0.0, -0.1], [0.3, -0.4], [-0.25, 0.2], [0.15, 0.05]]),
+        tau=0.2,
+    )
+    y = np.array(
+        [
+            [1.0, 0.0, 1.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0, 0.0],
+        ]
+    )
+    factors = np.array([0, 1, 0, 1])
+    config = FitConfig(max_iter=1)  # default penalty is non-zero
+
+    nll, grad, loglik = neg_loglik_and_grad(y, factors, params, config)
+    ref_nll, ref_grad = _reference_neg_loglik_and_grad(y, factors, params, config)
+
+    assert math.isclose(nll, ref_nll, rel_tol=0.0, abs_tol=1e-10)
+    assert math.isclose(loglik, -(ref_nll - _reference_penalty_only(params, config)), abs_tol=1e-10)
+    assert np.allclose(grad.theta, ref_grad["theta"], atol=1e-12)
+    assert np.allclose(grad.alpha, ref_grad["alpha"], atol=1e-12)
+    assert np.allclose(grad.b, ref_grad["b"], atol=1e-12)
+    assert np.allclose(grad.xi, ref_grad["xi"], atol=1e-12)
+    assert np.allclose(grad.zeta, ref_grad["zeta"], atol=1e-12)
+    assert math.isclose(float(grad.tau), ref_grad["tau"], abs_tol=1e-12)
+
+
+def _reference_penalty_only(params, config) -> float:
+    free_alpha, uses_space = model_flags(config.normalized_model())
+    penalty = config.penalty
+    value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
+    value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
+    if free_alpha:
+        delta = params.alpha - penalty.mu_alpha
+        value += 0.5 * penalty.lambda_alpha * float(np.vdot(delta, delta))
+    if uses_space:
+        value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
+        value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
+        value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
+    return value
 
 
 def test_missing_entries_are_excluded():
