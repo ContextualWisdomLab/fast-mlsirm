@@ -1,13 +1,17 @@
 import numpy as np
+import pytest
 
 from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
 from fast_mlsirm.diagnostics import (
+    _distance_rmse,
+    align_latent_space,
     dimensionality_diagnostics,
     fit_diagnostics,
     predict_proba,
     response_process_dimensionality_diagnostics,
     response_process_fit_diagnostics,
 )
+from fast_mlsirm.types import MLSIRMParams
 
 
 def test_predict_proba_matches_simulation():
@@ -41,13 +45,24 @@ def test_predict_proba_subset_both():
     probs = predict_proba(data.truth, data.factor_id, persons=sub_persons, items=sub_items)
     assert np.allclose(probs, data.probabilities[np.ix_(sub_persons, sub_items)])
 
-import pytest
-from fast_mlsirm.diagnostics import align_latent_space, predict_proba
-from fast_mlsirm.types import MLSIRMParams
+
+def test_distance_rmse_matches_broadcast_distance():
+    true_xi = np.array([[0.0, 1.0], [2.0, -1.0], [1.0, 1.5]])
+    true_zeta = np.array([[1.0, 0.5], [-0.5, 2.0]])
+    est_xi = true_xi + np.array([[0.1, -0.2], [0.0, 0.3], [-0.2, 0.1]])
+    est_zeta = true_zeta + np.array([[0.2, 0.0], [-0.1, -0.2]])
+
+    true_d = np.linalg.norm(true_xi[:, None, :] - true_zeta[None, :, :], axis=2)
+    est_d = np.linalg.norm(est_xi[:, None, :] - est_zeta[None, :, :], axis=2)
+    expected = np.sqrt(np.mean((est_d - true_d) ** 2))
+
+    assert np.isclose(_distance_rmse(true_xi, true_zeta, est_xi, est_zeta), expected)
+
 
 def test_align_latent_space_invalid_method():
     with pytest.raises(ValueError, match="only procrustes alignment is supported"):
         align_latent_space(np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), np.zeros((2, 2)), method="invalid")
+
 
 def test_predict_proba_no_space():
     truth = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
