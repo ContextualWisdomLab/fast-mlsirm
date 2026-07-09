@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__
 from .config import FitConfig, MLS2PLMConfig
 from .diagnostics import (
     dimensionality_diagnostics,
@@ -70,7 +69,6 @@ def _main(argv: list[str] | None = None) -> int:
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
     )
-    parser.add_argument("--version", action="store_true", help="Print the fast-mlsirm version and exit.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sim = sub.add_parser(
@@ -183,9 +181,6 @@ def _main(argv: list[str] | None = None) -> int:
     if not argv:
         parser.print_help()
         return 2
-    if argv == ["--version"]:
-        print(f"fast-mlsirm {__version__}")
-        return 0
 
     args = parser.parse_args(argv)
     if args.command == "simulate":

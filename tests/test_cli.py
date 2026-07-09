@@ -4,18 +4,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from fast_mlsirm import __version__
 from fast_mlsirm.cli import main
 
 def test_cli_empty_args(capsys):
     with patch.object(sys, 'argv', ['fast-mlsirm']):
         assert main() == 2
-
-
-def test_cli_version_flag(capsys):
-    assert main(["--version"]) == 0
-
-    assert capsys.readouterr().out.strip() == f"fast-mlsirm {__version__}"
 
 def test_cli_simulate_success(tmp_path):
     out_dir = tmp_path / "sim_out"
