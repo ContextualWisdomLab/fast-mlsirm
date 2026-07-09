@@ -42,7 +42,7 @@ def test_predict_proba_subset_both():
     assert np.allclose(probs, data.probabilities[np.ix_(sub_persons, sub_items)])
 
 import pytest
-from fast_mlsirm.diagnostics import align_latent_space, predict_proba
+from fast_mlsirm.diagnostics import align_latent_space
 from fast_mlsirm.types import MLSIRMParams
 
 def test_align_latent_space_invalid_method():

@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import sys
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path

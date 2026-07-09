@@ -1,0 +1,21 @@
+{
+  "best": {
+    "dimensions": 2,
+    "heldout_loglik": -100.5,
+    "aic": 205.0
+  },
+  "candidates": [
+    {
+      "candidate_label": "1D",
+      "latent_dim": 1,
+      "heldout_loglik": -150.0,
+      "aic": 302.0
+    },
+    {
+      "candidate_label": "2D",
+      "latent_dim": 2,
+      "heldout_loglik": -100.5,
+      "aic": 205.0
+    }
+  ]
+}

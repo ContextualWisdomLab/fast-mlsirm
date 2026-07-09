@@ -127,7 +127,6 @@ def test_validate_factor_id():
         validate_factor_id([0, 2, 0], n_items=3, n_dims=2)
 
 
-import pytest
 from fast_mlsirm.objective import prepare_response, _add_penalty
 from fast_mlsirm.config import PenaltyConfig
 
