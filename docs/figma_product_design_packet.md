@@ -28,6 +28,7 @@ The Figma board should include one frame per storyboard screen:
 4. Dimensionality Review
 5. Report Export
 6. Procurement Packet
+7. IRT Stability Review
 
 Each frame should include:
 
@@ -82,6 +83,10 @@ frames, source artifacts, the optional `figma_artifact_url`, and the explicit
 `code_connect: false` constraint. `scripts/build_figma_evidence_sync.py` reads
 that packet and, when available, an exported live metadata snapshot to create
 `figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html`.
+The IRT Stability Review frame should point to
+`docs/irt_stability_product_design.md` and `tests/test_irt_stability.py` so
+scientific-equation stability is represented as a real product-review surface,
+not an empty section.
 
 If a Figma MCP server is connected in a future run, create the file from this
 packet using Figma Plugin API calls after loading `figma-use` and

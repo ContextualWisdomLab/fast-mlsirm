@@ -55,7 +55,8 @@ print(process_dimensions.best)
 - `gamma=0` no-CD simulation.
 - Regularized JML/MAP-style fitting for `MIRT`, `MLSRM`, `MLS2PLM`,
   `ULSRM`, and `ULS2PLM` constraints.
-- Missing response exclusion via `NaN`, `-1`, or an explicit mask.
+- Missing response exclusion via `NaN`, `-1`, or an explicit mask, including
+  missing-by-design rows or items when at least one response is observed.
 - Adam and small L-BFGS-style optimizers without SciPy.
 - Procrustes alignment and distance-based recovery metrics.
 - Point-estimate item, person, and model fit diagnostics for fitted models.
@@ -66,6 +67,10 @@ print(process_dimensions.best)
   cluster IDs.
 - Response-process probability candidate comparisons for external dimensionality
   checks.
+- True-parameter reproduction, observed-information Hessian, vcov, standard
+  error, and second-order stability helpers.
+- Fixed item parameter linking, CAT item-information selection, and greedy ATA
+  form assembly with content min/max constraints.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
@@ -119,6 +124,7 @@ or Bayesian posterior inference engine. See:
 - [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
 - [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
 - [Figma product design packet](docs/figma_product_design_packet.md)
+- [IRT stability product design and equation contract](docs/irt_stability_product_design.md)
 - [ROI evidence model](docs/roi_evidence_model.md)
 - [Release acceptance guide](docs/release_acceptance.md)
 - [Security policy](SECURITY.md)

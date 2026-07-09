@@ -20,6 +20,7 @@ REQUIRED_FRAME_IDS = [
     "04-dimensionality-review",
     "05-report-export",
     "06-procurement-packet",
+    "07-irt-stability-review",
 ]
 
 REQUIRED_TOKENS = [

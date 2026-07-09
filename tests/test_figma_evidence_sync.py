@@ -32,6 +32,11 @@ def _write_packet(path: Path, *, code_connect: bool = False, artifact: str | Non
                 "artifact": artifact
                 or "buyer packet, release evidence index, procurement due-diligence, and PR queue governance manifests",
             },
+            {
+                "id": "07-irt-stability-review",
+                "title": "IRT Stability Review",
+                "artifact": "docs/irt_stability_product_design.md and tests/test_irt_stability.py",
+            },
         ],
         "handoff": {"product_design_scope": "static buyer workflow, no hosted dashboard"},
     }

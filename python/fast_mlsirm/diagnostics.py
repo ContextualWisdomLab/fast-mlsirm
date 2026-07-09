@@ -288,14 +288,16 @@ def _axis_fit(
     expected = (prob * observed).sum(axis=axis)
     raw = residual.sum(axis=axis)
     variance_sum = (variance * observed).sum(axis=axis)
+    safe_count = np.maximum(count, 1.0)
+    safe_variance = np.maximum(variance_sum, 1e-12)
     return {
         "observed_count": count,
         "score": score,
         "expected_score": expected,
         "raw_residual": raw,
-        "standardized_residual": raw / np.sqrt(variance_sum),
-        "infit_mnsq": (residual * residual).sum(axis=axis) / variance_sum,
-        "outfit_mnsq": pearson_sq.sum(axis=axis) / count,
+        "standardized_residual": raw / np.sqrt(safe_variance),
+        "infit_mnsq": (residual * residual).sum(axis=axis) / safe_variance,
+        "outfit_mnsq": pearson_sq.sum(axis=axis) / safe_count,
     }
 
 
@@ -331,15 +333,17 @@ def _factor_fit(
     table = np.asarray(rows, dtype=np.float64)
     variance_sum = table[:, 5]
     count = table[:, 1]
+    safe_count = np.maximum(count, 1.0)
+    safe_variance = np.maximum(variance_sum, 1e-12)
     return {
         "factor_id": table[:, 0],
         "observed_count": count,
         "score": table[:, 2],
         "expected_score": table[:, 3],
         "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(variance_sum),
-        "infit_mnsq": table[:, 6] / variance_sum,
-        "outfit_mnsq": table[:, 7] / count,
+        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
+        "infit_mnsq": table[:, 6] / safe_variance,
+        "outfit_mnsq": table[:, 7] / safe_count,
     }
 
 
