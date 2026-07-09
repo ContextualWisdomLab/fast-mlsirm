@@ -4,7 +4,6 @@ import importlib
 import importlib.util
 from types import ModuleType
 
-
 VALID_BACKENDS = {"numpy", "rust", "auto"}
 CORE_MODULE = "fast_mlsirm._core"
 
@@ -23,7 +22,9 @@ def resolve_backend(name: str) -> str:
     core = _load_core()
     if backend == "rust":
         if core is None:
-            raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
+            raise RuntimeError(
+                "Rust backend requested but fast_mlsirm._core is unavailable"
+            )
         return "rust"
     return "rust" if core is not None else "numpy"
 
@@ -31,7 +32,9 @@ def resolve_backend(name: str) -> str:
 def load_rust_core() -> ModuleType:
     core = _load_core()
     if core is None:
-        raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
+        raise RuntimeError(
+            "Rust backend requested but fast_mlsirm._core is unavailable"
+        )
     return core
 
 

@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from .backend import normalize_backend
 
-
 VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"}
 VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
 
@@ -34,7 +33,9 @@ class MLS2PLMConfig:
         if self.latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
         if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
-            raise ValueError("phi must produce a positive-definite equicorrelation matrix")
+            raise ValueError(
+                "phi must produce a positive-definite equicorrelation matrix"
+            )
         if self.gamma < 0:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:

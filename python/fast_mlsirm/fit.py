@@ -43,7 +43,9 @@ def fit(
             best = candidate
 
     if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
+        raise RuntimeError(
+            "Optimization failed to find a valid fit."
+        )  # pragma: no cover
     return best
 
 
