@@ -184,3 +184,36 @@ def test_response_process_dimensionality_diagnostics_selects_best_candidate():
 
     assert diagnostics.best["candidate_label"] == "dim2"
     assert [row["candidate_label"] for row in diagnostics.candidates] == ["dim1", "dim2"]
+
+def test_distance_rmse():
+    import numpy as np
+    from fast_mlsirm.diagnostics import _distance_rmse
+    np.random.seed(42)
+    N, J, D = 5, 4, 2
+    true_xi = np.random.randn(N, D)
+    true_zeta = np.random.randn(J, D)
+    est_xi = true_xi + np.random.randn(N, D) * 0.1
+    est_zeta = true_zeta + np.random.randn(J, D) * 0.1
+    rmse = _distance_rmse(true_xi, true_zeta, est_xi, est_zeta)
+    assert isinstance(rmse, float)
+    assert rmse >= 0.0
+
+def test_bias():
+    from fast_mlsirm.diagnostics import _bias
+    import numpy as np
+    assert _bias(np.array([1, 2, 3]), np.array([2, 3, 4])) == 1.0
+
+def test_rmse():
+    from fast_mlsirm.diagnostics import _rmse
+    import numpy as np
+    assert _rmse(np.array([1, 2, 3]), np.array([1, 2, 3])) == 0.0
+    assert _rmse(np.array([1, 2]), np.array([3, 4])) == 2.0
+
+def test_corr():
+    from fast_mlsirm.diagnostics import _corr
+    import numpy as np
+    assert _corr(np.array([1, 2, 3]), np.array([1, 2, 3])) == 1.0
+    assert _corr(np.array([1, 2, 3]), np.array([3, 2, 1])) == -1.0
+    # Test zero variance
+    import math
+    assert math.isnan(_corr(np.array([1, 1, 1]), np.array([1, 2, 3])))
