@@ -1,19 +1,17 @@
-# Reference papers
+# Reference Papers
 
-Curated, in-repo copies of openly-licensed literature that grounds the
-estimation core. Only papers under a license that permits redistribution are
-stored here; everything else is referenced by DOI in [`../../AGENTS.md`](../../AGENTS.md).
+Curated references that ground the estimation core. Store compact citations and
+canonical links here instead of vendoring PDF copies into the repository.
 
-## `wu2021-irt-stochastic-variational-inference.pdf`
+## Wu et al. 2021
 
 Wu, M., Davis, R. L., Domingue, B. W., Piech, C., & Goodman, N. (2021).
 *Modeling Item Response Theory with Stochastic Variational Inference.*
 arXiv:2108.11579. https://arxiv.org/abs/2108.11579
 
 - **License:** Creative Commons Attribution 4.0 International (CC BY 4.0),
-  https://creativecommons.org/licenses/by/4.0/. Redistributed here unmodified
-  with attribution, as the license permits.
-- **Why it is here:** it develops a *fast, scalable* estimator for item
+  https://creativecommons.org/licenses/by/4.0/.
+- **Why it is referenced:** it develops a *fast, scalable* estimator for item
   response theory by mapping the likelihood and its gradient onto
   data-parallel, accelerator-friendly computation (amortized/stochastic
   variational inference). That is exactly the numerical shape this project

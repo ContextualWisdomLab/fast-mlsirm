@@ -336,8 +336,10 @@ hot path in `crates/mlsirm-core/src/gpu.rs`:
 - `cpu` always uses the scalar CPU reference.
 
 The GPU kernels run in single precision (WGSL has no `f64`); the CPU path is the
-`f64` reference the numerical-parity tests assert against. The resolved device is
-recorded on `FitResult.rust_device` and in `fit_summary.json`.
+`f64` reference the numerical-parity tests assert against. The requested Rust
+device is recorded on `FitResult.rust_device` and in `fit_summary.json`; when
+`gpu` is explicitly requested on a machine without a compatible adapter, the
+runtime prints a warning and falls back to the CPU implementation.
 
 `render-report` turns `fit_diagnostics.json` or `dimension_diagnostics.json`
 into a standalone HTML report with model summary cards, compact tables, and

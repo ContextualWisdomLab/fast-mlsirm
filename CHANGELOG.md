@@ -10,11 +10,12 @@
   compute-backend axis. Select with `FitConfig(backend="rust", rust_device=...)`
   or `fast-mlsirm fit --backend rust --rust-device {auto,cpu,gpu}`; the GPU path
   falls back to the identical CPU implementation at runtime when no GPU adapter
-  is available. Added `FitResult.rust_device` and `fit_summary.json`
-  `rust_device` provenance, plus numerical-parity tests asserting the Rust
+  is available. Added requested-device provenance on `FitResult.rust_device`
+  and in `fit_summary.json`, plus numerical-parity tests asserting the Rust
   device paths match the NumPy reference.
-- Added `docs/papers/` with the CC BY 4.0 paper (Wu et al., 2021, arXiv:2108.11579)
-  grounding fast, accelerator-friendly IRT estimation.
+- Added `docs/papers/README.md` with a citation and canonical link for Wu et al.
+  (2021, arXiv:2108.11579), grounding fast, accelerator-friendly IRT estimation
+  without vendoring the PDF into the repository.
 - Added `scripts/release_acceptance.py` to execute a sales-readiness end-to-end
   smoke: simulate, fit (auto + optional rust), diagnostics, and report rendering.
 - Added `docs/release_acceptance.md` to document acceptance inputs, outputs, and
