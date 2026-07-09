@@ -9,3 +9,7 @@
 ## 2025-02-18 - CLI `simulate` Error Handling DX
 **Learning:** Raw stack traces from `ValueError` (like invalid configuration parameters) during the `simulate` CLI command provide poor developer experience.
 **Action:** Wrapped configuration validation and simulation execution steps in a try-except block to catch `ValueError` and `OSError`, outputting a clean, user-friendly error message to stderr and returning 1 to prevent raw stack traces.
+
+## 2025-02-18 - Scrollable Container Focus
+**Learning:** Using generic `:focus` on scrollable containers (like `tabindex="0"` for tables) creates a jarring visual outline when mouse users simply click to scroll or interact, degrading the visual experience.
+**Action:** Always use `:focus-visible` for scrollable containers to preserve required accessibility outlines for keyboard navigation while keeping it invisible for mouse clicks.
