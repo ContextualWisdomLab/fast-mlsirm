@@ -14,6 +14,12 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** In `fast_mlsirm/fit.py`, the number of dimensions `n_dims` was calculated using the maximum value provided in user input (`factor_id.max()`). A maliciously crafted large integer in `factor_id` causes `np.zeros((n_persons, n_dims))` to attempt allocating an impossibly large array (e.g. hundreds of GiB), crashing the application via Out-Of-Memory (OOM) and causing a Denial of Service (DoS).
 **Learning:** Never trust user input to define unconstrained array dimensions, especially when derived from maximum values within the data.
 **Prevention:** Add explicit boundary checks (e.g. `n_dims > n_items`) to ensure derived dimensions remain mathematically sound and computationally feasible before memory allocation.
+## 2026-06-30 - [Missing error handling exposing stack traces]
+**Vulnerability:** The CLI `main` execution logic was missing a global exception handler. In case of user errors (e.g. invalid arguments or missing files), internal application stack traces were printed directly to `sys.stderr`, leaking internal system states and paths.
+**Learning:** Stack traces should never be exposed in production code interfaces unless explicitly enabled (e.g., via `--debug`). Unhandled exceptions in CLI commands lead to poor user experience and leak information.
+**Prevention:**
+- Always wrap main entry points for CLI applications in a `try...except` block.
+- Print generalized, user-friendly error messages (e.g., `Error: [Errno 2] No such file or directory`) instead of leaking internals to stderr.
 ## 2024-07-04 - [Defense in Depth] Validate URI Schemes in Link Generation
 **Vulnerability:** A script (`scripts/build_pr_queue_governance.py`) used `escape()` to sanitize URLs placed directly in the `href` attribute of an `<a>` tag. However, `escape()` alone is insufficient to prevent XSS if the URL uses an unsafe protocol such as `javascript:` or `data:`.
 **Learning:** This is a classic case where escaping HTML special characters provides a false sense of security for URI-based injection contexts. An attacker could potentially inject a malicious script by providing an unsafe protocol.
