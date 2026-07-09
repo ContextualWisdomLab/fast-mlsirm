@@ -1,3 +1,5 @@
+import pytest
+from fast_mlsirm import __version__
 import json
 import sys
 from unittest.mock import patch
@@ -364,8 +366,8 @@ def test_main_sys_exit_on_direct_call():
         pass
 
 def test_cli_version(capsys):
-    from fast_mlsirm import __version__
-    import pytest
+
+
     with patch.object(sys, 'argv', ['fast-mlsirm', '--version']):
         with pytest.raises(SystemExit) as e:
             main()
