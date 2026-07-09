@@ -11,3 +11,8 @@
 **Learning:** When calculating values grouped by categorical dimensions (like item factors), calculating sums or means by iterating through dimensions `d in range(n_dims)` using boolean indexing `(items = factor_id == d)` is slow because numpy does not vectorize over the outer loop. Utilizing a 2D boolean mapping mask `(factor_id[:, None] == np.arange(n_dims))` and matrix multiplications `(@)` directly converts loop aggregations into fast C/BLAS optimized operations, yielding massive performance gains.
 
 **Action:** Whenever noticing an outer python loop over categorical subsets (often indices or distinct labels) that aggregates numeric array data, immediately attempt to broadcast the labels into a dense or sparse 2D boolean mask and aggregate using matrix multiplication `(@)`.
+
+**Guardrail:** If the source matrix is boolean, cast both the observation mask
+and the grouping mask to a numeric dtype before matrix multiplication; boolean
+`@` reports presence rather than numeric counts. In Python+Rust paths, keep the
+grouped numeric initializer available through the Rust core for `backend="rust"`.

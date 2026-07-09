@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import resolve_backend
+from .backend import load_rust_core, resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
@@ -59,7 +59,7 @@ def _run_single_fit(
 ) -> FitResult:
     rng = np.random.default_rng(config.seed + restart)
     params0 = _initial_params(
-        y, observed, factors, n_dims, config.latent_dim, config, rng
+        y, observed, factors, n_dims, config.latent_dim, config, rng, backend
     )
     x0 = _pack(params0, model)
     objective = _make_objective(y, observed, factors, params0, config, backend)
@@ -123,16 +123,20 @@ def _initial_params(
     latent_dim: int,
     config: FitConfig,
     rng: np.random.Generator,
+    backend: str = "numpy",
 ) -> MLSIRMParams:
     n_persons, n_items = y.shape
-    theta = np.zeros((n_persons, n_dims), dtype=np.float64)
+    if backend == "rust":
+        theta = _initial_theta_rust(y, observed, factor_id, n_dims)
+    else:
+        theta = np.zeros((n_persons, n_dims), dtype=np.float64)
+        item_mask = (factor_id[:, None] == np.arange(n_dims)).astype(np.float64)
+        observed_f = observed.astype(np.float64, copy=False)
+        denom = np.maximum(observed_f @ item_mask, 1.0)
+        x = ((y * observed_f) @ item_mask) / denom
 
-    item_mask = factor_id[:, None] == np.arange(n_dims)
-    denom = np.maximum(observed @ item_mask, 1)
-    x = ((y * observed) @ item_mask) / denom
-
-    for d in range(n_dims):
-        theta[:, d] = standardize(x[:, d])
+        for d in range(n_dims):
+            theta[:, d] = standardize(x[:, d])
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
     item_means = (y * observed).sum(axis=0) / item_counts
@@ -145,6 +149,19 @@ def _initial_params(
     return normalize_latent_positions(
         MLSIRMParams(theta=theta, alpha=alpha, b=b, xi=xi, zeta=zeta, tau=tau)
     )
+
+
+def _initial_theta_rust(
+    y: np.ndarray, observed: np.ndarray, factor_id: np.ndarray, n_dims: int
+) -> np.ndarray:
+    core = load_rust_core()
+    values = core.initial_theta(
+        np.ascontiguousarray(y, dtype=np.float64),
+        np.ascontiguousarray(observed, dtype=np.bool_),
+        np.ascontiguousarray(factor_id, dtype=np.int64),
+        int(n_dims),
+    )
+    return np.asarray(values, dtype=np.float64).reshape((y.shape[0], n_dims))
 
 
 def _make_objective(
