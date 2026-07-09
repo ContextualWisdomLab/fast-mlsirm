@@ -35,6 +35,11 @@ def fit(
     factors = validate_factor_id(factors, n_items, n_dims)
 
     if config.estimator == "mmle":
+        if model not in {"ULS2PLM", "ULSRM"}:
+            raise NotImplementedError(
+                "estimator 'mmle' currently supports only unidimensional 2PL models "
+                "(ULS2PLM/ULSRM); use 'jmle' for spatial or multidimensional models."
+            )
         return _fit_mmle(y, observed, model, config)
     if config.estimator in {"em", "bayes"}:
         raise NotImplementedError(

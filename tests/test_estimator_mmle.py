@@ -49,6 +49,12 @@ def test_reserved_estimators_raise(estimator):
         fit(y, factors, FitConfig(model="ULS2PLM", estimator=estimator), mask=mask)
 
 
+def test_mmle_rejects_spatial_models_until_supported():
+    y, factors, mask, *_ = _simulate_2pl(n_persons=50, n_items=5)
+    with pytest.raises(NotImplementedError, match="only unidimensional 2PL"):
+        fit(y, factors, FitConfig(model="MLS2PLM", estimator="mmle"), mask=mask)
+
+
 def test_invalid_estimator_rejected_by_validate():
     with pytest.raises(ValueError, match="estimator must be one of"):
         FitConfig(estimator="nope").validate()
