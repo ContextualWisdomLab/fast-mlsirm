@@ -279,7 +279,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
 
     return "\n".join(
         [
-            '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">',
+            '<div class="bar-chart" aria-hidden="true">',
             *chart_rows,
             "</div>",
         ]
@@ -617,6 +617,10 @@ th {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #fbfcfa;
 }
 
 .empty-state {

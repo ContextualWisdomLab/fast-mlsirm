@@ -230,4 +230,6 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     assert 'tabindex="0"' in html
     assert ".table-wrap:focus-visible" in html
     assert ".table-wrap:focus {" not in html
+    assert "tbody tr:hover" in html
+    assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<div class="bar-track" aria-hidden="true">' in html
