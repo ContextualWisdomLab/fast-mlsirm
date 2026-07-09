@@ -8,11 +8,10 @@
 
 ## Reporting a Vulnerability
 
-Report suspected vulnerabilities through
-https://github.com/ContextualWisdomLab/fast-mlsirm/security/advisories/new. If
-private advisories are not available to you, open a minimal public issue that
-describes the affected area without publishing exploit data or sensitive
-datasets.
+Report suspected vulnerabilities through a private GitHub security advisory for
+`ContextualWisdomLab/fast-mlsirm` when available. If private advisories are not
+available to you, open a minimal public issue that describes the affected area
+without publishing exploit data or sensitive datasets.
 
 Please include:
 
@@ -20,11 +19,6 @@ Please include:
 - operating system, Python version, and install method;
 - whether the NumPy backend, Rust backend, CLI, or report renderer is involved;
 - a minimal reproduction that does not include private response data.
-
-We acknowledge private reports within 5 business days, provide an initial
-triage decision within 10 business days, and coordinate fixes before publishing
-advisory details when user data, model integrity, or local file safety is
-affected.
 
 ## Security Boundaries
 
