@@ -30,12 +30,27 @@ def _write_packet(path: Path, *, code_connect: bool = False, artifact: str | Non
                 "id": "06-procurement-packet",
                 "title": "Procurement Packet",
                 "artifact": artifact
-                or "buyer packet, release evidence index, procurement due-diligence, and PR queue governance manifests",
+                or "buyer packet, release evidence index, procurement due-diligence, PR queue governance manifests, fixed item calibration, information architecture, wireframe, and user stories",
             },
             {
                 "id": "07-irt-stability-review",
                 "title": "IRT Stability Review",
                 "artifact": "docs/irt_stability_product_design.md and tests/test_irt_stability.py",
+            },
+            {
+                "id": "08-fixed-item-calibration",
+                "title": "Fixed-Item Calibration",
+                "artifact": "fixed item calibration diagnostics and best candidate score",
+            },
+            {
+                "id": "09-afipc-product-design-spec",
+                "title": "aFIPC Calibration IA and Screen Definition",
+                "artifact": "information architecture and screen definition",
+            },
+            {
+                "id": "10-afipc-wireframe-user-stories",
+                "title": "Fixed-Item Calibration Wireframe",
+                "artifact": "wireframe and user stories",
             },
         ],
         "handoff": {"product_design_scope": "static buyer workflow, no hosted dashboard"},
@@ -51,6 +66,10 @@ def _write_snapshot(path: Path, *, include_queue: bool = True) -> Path:
         "Procurement Packet",
         "buyer packet + release evidence index",
         "procurement due diligence evidence",
+        "fixed item calibration",
+        "information architecture",
+        "wireframe",
+        "user stories",
     ]
     if include_queue:
         texts.append("PR queue governance evidence")
