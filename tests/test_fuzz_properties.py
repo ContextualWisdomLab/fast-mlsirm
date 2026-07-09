@@ -5,7 +5,7 @@ enforced on every CI run, in addition to the longer coverage-guided Atheris
 harnesses under ``fuzz/atheris/`` and the Rust ``proptest`` harness under
 ``crates/mlsirm-core/tests/``.
 
-Hypothesis is MPL-2.0 licensed -- permissive enough for this MIT project. The
+Hypothesis is MPL-2.0 licensed and is used only as a dev/test dependency. The
 tests are skipped (not failed) when Hypothesis is not installed so a minimal
 environment still passes.
 

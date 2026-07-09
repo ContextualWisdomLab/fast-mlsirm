@@ -22,12 +22,12 @@ codegraph explore "neg_loglik_and_grad config Params ModelConfig"
 | `MLS2PLMConfig` / `FitConfig` `.validate()` | `python/fast_mlsirm/config.py` | Every CLI / API call funnels user numeric parameters through these validators. |
 | `neg_loglik_and_grad` | `crates/mlsirm-core/src/lib.rs` | The core numeric kernel — widest Rust blast radius; consumes response data + parameter vectors. |
 
-## Tools & licenses (all permissive)
+## Tools & Licenses
 
 | Tool | License | Where |
 | --- | --- | --- |
 | [Atheris](https://github.com/google/atheris) (coverage-guided) | Apache-2.0 | `fuzz/atheris/*.py` |
-| [Hypothesis](https://hypothesis.readthedocs.io/) (property-based) | MPL-2.0 | `tests/test_fuzz_properties.py` |
+| [Hypothesis](https://hypothesis.readthedocs.io/) (property-based) | MPL-2.0, test-only dev dependency | `tests/test_fuzz_properties.py` |
 | [proptest](https://github.com/proptest-rs/proptest) (property-based) | MIT / Apache-2.0 | `crates/mlsirm-core/tests/proptest_neg_loglik.rs` |
 
 ## The contract
@@ -69,7 +69,7 @@ seed corpus.
 
 ## Further reading
 
-`docs/papers/fuzzing-survey-manes-2019.pdf` — Manès et al., *The Art, Science,
-and Engineering of Fuzzing: A Survey* (IEEE TSE 2019 / arXiv:1812.00140),
+Manès et al., *The Art, Science, and Engineering of Fuzzing: A Survey*
+(IEEE TSE 2019 / arXiv:1812.00140), https://arxiv.org/abs/1812.00140,
 background on coverage-guided fuzzing as implemented by AFL / libFuzzer /
 Atheris.
