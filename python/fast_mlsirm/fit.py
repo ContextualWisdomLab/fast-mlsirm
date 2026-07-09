@@ -128,8 +128,8 @@ def _initial_params(
     theta = np.zeros((n_persons, n_dims), dtype=np.float64)
 
     item_mask = factor_id[:, None] == np.arange(n_dims)
-    denom = np.maximum(observed @ item_mask, 1)
-    x = ((y * observed) @ item_mask) / denom
+    denom = np.maximum(observed @ item_mask.astype(np.float64), 1)
+    x = ((y * observed) @ item_mask.astype(np.float64)) / denom
 
     for d in range(n_dims):
         theta[:, d] = standardize(x[:, d])
