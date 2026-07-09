@@ -136,60 +136,6 @@ pub fn neg_loglik_and_grad(
     (objective, grad, loglik)
 }
 
-pub fn initial_theta(
-    y: &[f64],
-    observed: &[bool],
-    factor_id: &[usize],
-    n_persons: usize,
-    n_items: usize,
-    n_dims: usize,
-) -> Vec<f64> {
-    assert_eq!(y.len(), n_persons * n_items);
-    assert_eq!(observed.len(), y.len());
-    assert_eq!(factor_id.len(), n_items);
-    for &factor in factor_id {
-        assert!(factor < n_dims);
-    }
-
-    let mut raw = vec![0.0; n_persons * n_dims];
-    let mut counts = vec![0usize; n_persons * n_dims];
-    for p in 0..n_persons {
-        for (i, &d) in factor_id.iter().enumerate().take(n_items) {
-            let response_idx = p * n_items + i;
-            if observed[response_idx] {
-                let theta_idx = p * n_dims + d;
-                raw[theta_idx] += y[response_idx];
-                counts[theta_idx] += 1;
-            }
-        }
-    }
-
-    for (value, count) in raw.iter_mut().zip(counts.iter()) {
-        if *count > 0 {
-            *value /= *count as f64;
-        }
-    }
-
-    let mut theta = vec![0.0; n_persons * n_dims];
-    for d in 0..n_dims {
-        let mean = (0..n_persons).map(|p| raw[p * n_dims + d]).sum::<f64>() / n_persons as f64;
-        let variance = (0..n_persons)
-            .map(|p| {
-                let delta = raw[p * n_dims + d] - mean;
-                delta * delta
-            })
-            .sum::<f64>()
-            / n_persons as f64;
-        let sd = variance.sqrt();
-        if sd.is_finite() && sd >= 1e-12 {
-            for p in 0..n_persons {
-                theta[p * n_dims + d] = (raw[p * n_dims + d] - mean) / sd;
-            }
-        }
-    }
-    theta
-}
-
 fn add_penalty(
     params: &Params,
     config: &ModelConfig,
@@ -320,34 +266,6 @@ mod tests {
         let (obj_plus, _, _) = neg_loglik_and_grad(&y, None, &[0, 0], &plus, &cfg, &penalty);
         let finite_diff = (obj_plus - base) / h;
         assert!((finite_diff - grad.tau).abs() < 1e-5);
-    }
-
-    #[test]
-    fn initial_theta_matches_standardized_group_means() {
-        let y = vec![1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0];
-        let observed = vec![true, true, false, true, true, true, false, true, true];
-        let factor_id = vec![0, 1, 1];
-
-        let theta = initial_theta(&y, &observed, &factor_id, 3, 3, 2);
-
-        let sqrt2 = 2.0_f64.sqrt();
-        let sqrt6 = 6.0_f64.sqrt();
-        let expected = vec![sqrt2, -sqrt6 / 2.0, -sqrt2 / 2.0, sqrt6 / 2.0, -sqrt2 / 2.0, 0.0];
-        for (got, want) in theta.iter().zip(expected.iter()) {
-            assert!((got - want).abs() < 1e-12);
-        }
-    }
-
-    #[test]
-    fn initial_theta_leaves_empty_dimensions_at_zero() {
-        let y = vec![1.0, 0.0, 0.0, 1.0];
-        let observed = vec![true, true, true, true];
-        let factor_id = vec![0, 1];
-
-        let theta = initial_theta(&y, &observed, &factor_id, 2, 2, 3);
-
-        assert_eq!(theta[2], 0.0);
-        assert_eq!(theta[5], 0.0);
     }
 
     #[test]
