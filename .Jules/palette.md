@@ -9,3 +9,6 @@
 ## 2025-02-18 - CLI `simulate` Error Handling DX
 **Learning:** Raw stack traces from `ValueError` (like invalid configuration parameters) during the `simulate` CLI command provide poor developer experience.
 **Action:** Wrapped configuration validation and simulation execution steps in a try-except block to catch `ValueError` and `OSError`, outputting a clean, user-friendly error message to stderr and returning 1 to prevent raw stack traces.
+## 2024-05-24 - HTML Report Table Focus and Hover UX
+**Learning:** In data-heavy static HTML reports, users interact heavily with wide tables. `tbody tr:hover` styling significantly improves readability and row tracking for mouse users. Using `:focus` on scrollable containers (`.table-wrap`) causes an obtrusive focus ring on every click, degrading UX for mouse users.
+**Action:** Always prefer `:focus-visible` over `:focus` for layout and scroll containers to maintain keyboard accessibility without penalizing mouse users. Always ensure large tables have row hover states.

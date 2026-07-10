@@ -69,7 +69,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            f"<p>fast-mlsirm diagnostics</p>",
+            "<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
@@ -258,7 +258,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         raw_value = row.get(value_key)
         if not _is_number(raw_value):
             continue
-        value = float(raw_value)
+        value = float(str(raw_value))
         width = 64.0 if span == 0 else 8.0 + ((value - lower) / span) * 92.0
         chart_rows.append(
             "\n".join(
@@ -574,7 +574,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }
@@ -613,6 +613,10 @@ th {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--bg);
 }
 
 .empty-state {
