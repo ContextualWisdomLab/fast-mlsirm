@@ -146,11 +146,10 @@ def test_prepare_response_errors():
     with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
         prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
 
-    with pytest.raises(ValueError, match="all-missing item found"):
-        prepare_response(np.array([[1.0, -1.0], [0.0, -1.0]]))
-
-    with pytest.raises(ValueError, match="all-missing person found"):
-        prepare_response(np.array([[1.0, 0.0], [-1.0, np.nan]]))
+    clean, observed = prepare_response(np.array([[1.0, -1.0], [0.0, -1.0], [-1.0, np.nan]]))
+    assert observed.sum(axis=0).tolist() == [2, 0]
+    assert observed.sum(axis=1).tolist() == [1, 1, 0]
+    assert np.array_equal(clean[2], np.array([0.0, 0.0]))
 
 
 def test_objective_check_responses_errors():
@@ -166,11 +165,10 @@ def test_objective_check_responses_errors():
     with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
         prepare_response(np.full((2, 2), 2.0))
 
-    with pytest.raises(ValueError, match="all-missing item found"):
-        prepare_response(np.array([[np.nan, 1], [np.nan, 0]]))
-
-    with pytest.raises(ValueError, match="all-missing person found"):
-        prepare_response(np.array([[np.nan, np.nan], [1, 0]]))
+    clean, observed = prepare_response(np.array([[np.nan, np.nan], [1, 0]]))
+    assert observed.sum(axis=0).tolist() == [1, 1]
+    assert observed.sum(axis=1).tolist() == [0, 2]
+    assert np.array_equal(clean[0], np.array([0.0, 0.0]))
 
 
 def test_objective_model_requires_one_trait():
