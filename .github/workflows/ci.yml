@@ -16,9 +16,10 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
-      - run: python -m pip install --require-hashes -r requirements/ci.txt
-      - run: python -m pip install --no-deps --no-build-isolation -e .
-      - run: pytest
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - run: uv sync --locked --extra dev
+      - run: uv run pytest
 
   rust:
     runs-on: ubuntu-latest
@@ -38,15 +39,36 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - run: python -m pip install --require-hashes -r requirements/package.txt
-      - run: python -m build --no-isolation
-      - run: python -m pip install --no-index --no-deps --force-reinstall dist/*.whl
-      - run: python -c "import fast_mlsirm, fast_mlsirm._core as core; print(fast_mlsirm.__version__, hasattr(core, 'neg_loglik_and_grad'))"
+      - run: uv sync --locked --extra dev
+      - run: uv run python -m build --no-isolation
+      - run: uv run python -m twine check dist/*
+      - name: Verify built wheel imports Rust extension
+        run: |
+          uv run python - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fast_mlsirm-*.whl"))
+          subprocess.run(
+              [
+                  "uv",
+                  "run",
+                  "--isolated",
+                  "--with",
+                  str(wheel),
+                  "python",
+                  "-c",
+                  "import fast_mlsirm, fast_mlsirm._core as core; print(fast_mlsirm.__version__, hasattr(core, 'neg_loglik_and_grad'))",
+              ],
+              check=True,
+          )
+          PY
       - name: Run release acceptance smoke
         run: |
-          python scripts/release_acceptance.py --out release-acceptance --require-rust --persons 12 --dims 1 --items-per-dim 2 --latent-dim 1 --latent-dims 1,2 --folds 2 --max-iter 1 --n-restarts 1
-          python - <<'PY'
+          uv run python scripts/release_acceptance.py --out release-acceptance --require-rust --persons 12 --dims 1 --items-per-dim 2 --latent-dim 1 --latent-dims 1,2 --folds 2 --max-iter 1 --n-restarts 1
+          uv run python - <<'PY'
           import json
 
           with open("release-acceptance/acceptance_summary.json", encoding="utf-8") as fh:
@@ -55,14 +77,14 @@ jobs:
           PY
       - name: Run enterprise sales readiness gate
         run: |
-          python scripts/sales_readiness.py \
+          uv run python scripts/sales_readiness.py \
             --acceptance release-acceptance/acceptance_summary.json \
             --dist dist \
             --require-rust \
             --require-20b-product \
             --check-import \
             --out release-acceptance/sales_readiness_manifest.json
-          python - <<'PY'
+          uv run python - <<'PY'
           import json
 
           with open("release-acceptance/sales_readiness_manifest.json", encoding="utf-8") as fh:

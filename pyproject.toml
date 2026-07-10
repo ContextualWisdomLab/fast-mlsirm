@@ -28,7 +28,7 @@ Issues = "https://github.com/ContextualWisdomLab/fast-mlsirm/issues"
 Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["build>=1.3", "maturin>=1.10,<2.0", "pytest>=8", "twine>=6.2,<7"]
 
 [project.scripts]
 fast-mlsirm = "fast_mlsirm.cli:main"

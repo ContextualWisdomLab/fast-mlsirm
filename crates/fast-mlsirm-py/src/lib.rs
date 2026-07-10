@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use mlsirm_core::{
-    neg_loglik_and_grad as core_neg_loglik_and_grad, ModelConfig, ModelType, Params, PenaltyConfig,
+    initial_theta as core_initial_theta, neg_loglik_and_grad as core_neg_loglik_and_grad,
+    ModelConfig, ModelType, Params, PenaltyConfig,
 };
 use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -109,10 +110,42 @@ fn neg_loglik_and_grad(
     Ok((objective, gradients, loglik))
 }
 
+#[pyfunction]
+fn initial_theta(
+    y: PyReadonlyArray2<'_, f64>,
+    observed: PyReadonlyArray2<'_, bool>,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    n_dims: usize,
+) -> PyResult<Vec<f64>> {
+    let y_shape = y.shape();
+    if observed.shape() != y_shape {
+        return Err(PyValueError::new_err("observed shape must match responses"));
+    }
+    if factor_id.shape() != [y_shape[1]] {
+        return Err(PyValueError::new_err(
+            "factor_id length must match number of items",
+        ));
+    }
+    if n_dims == 0 {
+        return Err(PyValueError::new_err("n_dims must be positive"));
+    }
+
+    let factors = convert_factor_id(factor_id.as_slice()?, n_dims)?;
+    Ok(core_initial_theta(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &factors,
+        y_shape[0],
+        y_shape[1],
+        n_dims,
+    ))
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
+    m.add_function(wrap_pyfunction!(initial_theta, m)?)?;
     Ok(())
 }
 
@@ -237,5 +270,11 @@ mod tests {
         assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[2, 2], &[2, 3]).is_err());
         assert!(validate_shapes(&[2, 2], &[2], &[2, 0], &[2], &[2], &[2, 2], &[2, 2]).is_err());
         assert!(validate_shapes(&[2, 2], &[2], &[2, 1], &[2], &[2], &[2, 0], &[2, 0]).is_err());
+    }
+
+    #[test]
+    fn converts_factor_ids_for_initial_theta_bounds() {
+        assert_eq!(convert_factor_id(&[0, 1], 2).unwrap(), vec![0, 1]);
+        assert!(convert_factor_id(&[2], 2).is_err());
     }
 }
