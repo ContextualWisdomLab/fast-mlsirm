@@ -69,7 +69,7 @@ def _render_html(payload: dict[str, Any], report_type: str, title: str, source_n
             "<main>",
             '<section class="hero">',
             '<div class="hero-copy">',
-            f"<p>fast-mlsirm diagnostics</p>",
+            "<p>fast-mlsirm diagnostics</p>",
             f"<h1>{escape(title)}</h1>",
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
@@ -165,10 +165,10 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         cards.append(
             "\n".join(
                 [
-                    '<article class="metric-card">',
-                    f"<span>{escape(_label(key))}</span>",
-                    f"<strong>{escape(_format_value(value))}</strong>",
-                    "</article>",
+                    '<div class="metric-card">',
+                    f"<dt>{escape(_label(key))}</dt>",
+                    f"<dd>{escape(_format_value(value))}</dd>",
+                    "</div>",
                 ]
             )
         )
@@ -179,9 +179,9 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
         [
             '<section class="report-section">',
             f"<h2>{escape(heading)}</h2>",
-            '<div class="metrics-grid">',
+            '<dl class="metrics-grid">',
             *cards,
-            "</div>",
+            "</dl>",
             "</section>",
         ]
     )
@@ -246,7 +246,12 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    values = [float(row[value_key]) for row in rows if _is_number(row.get(value_key))]
+    numeric_rows = [
+        (index, row, float(row[value_key]))
+        for index, row in enumerate(rows)
+        if _is_number(row.get(value_key))
+    ]
+    values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
 
@@ -254,18 +259,14 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     upper = max(values)
     span = upper - lower
     chart_rows = []
-    for index, row in enumerate(rows[:12]):
-        raw_value = row.get(value_key)
-        if not _is_number(raw_value):
-            continue
-        value = float(raw_value)
+    for index, row, value in numeric_rows[:12]:
         width = 64.0 if span == 0 else 8.0 + ((value - lower) / span) * 92.0
         chart_rows.append(
             "\n".join(
                 [
                     '<div class="bar-row">',
                     f'<span class="bar-label">{escape(_row_label(row, index))}</span>',
-                    '<div class="bar-track">',
+                    '<div class="bar-track" aria-hidden="true">',
                     f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
                     "</div>",
                     f'<span class="bar-value">{escape(_format_value(value))}</span>',
@@ -477,6 +478,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+  margin: 0;
 }
 
 .metric-card {
@@ -487,16 +489,19 @@ h3 {
   background: #fafafa;
 }
 
-.metric-card span {
+.metric-card dt {
   display: block;
   color: var(--muted);
   font-size: 0.82rem;
+  font-weight: normal;
+  margin: 0;
 }
 
-.metric-card strong {
+.metric-card dd {
   display: block;
-  margin-top: 8px;
+  margin: 8px 0 0 0;
   font-size: 1.45rem;
+  font-weight: bold;
   overflow-wrap: anywhere;
 }
 
@@ -574,7 +579,7 @@ h3 {
   border-radius: 8px;
 }
 
-.table-wrap:focus {
+.table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }
@@ -613,6 +618,10 @@ th {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #fbfcfa;
 }
 
 .empty-state {

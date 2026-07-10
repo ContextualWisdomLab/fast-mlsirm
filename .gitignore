@@ -22,3 +22,4 @@ procurement-due-diligence*/
 pr-queue-governance*/
 *.npy
 *.npz
+.codegraph/

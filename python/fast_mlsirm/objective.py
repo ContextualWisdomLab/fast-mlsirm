@@ -27,11 +27,6 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
     if np.any(observed & invalid):
         raise ValueError("observed responses must be 0 or 1")
 
-    if np.any(observed.sum(axis=0) == 0):
-        raise ValueError("all-missing item found")
-    if np.any(observed.sum(axis=1) == 0):
-        raise ValueError("all-missing person found")
-
     clean = np.where(observed, y, 0.0)
     return clean, observed
 
@@ -116,9 +111,9 @@ def neg_loglik_and_grad(
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
-    I = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
-    I[np.arange(e.shape[1]), factors] = 1
-    grad_theta = (e * a[None, :]) @ I
+    idx = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
+    idx[np.arange(e.shape[1]), factors] = 1
+    grad_theta = (e * a[None, :]) @ idx
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)

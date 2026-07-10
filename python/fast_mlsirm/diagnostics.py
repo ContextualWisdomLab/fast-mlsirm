@@ -208,6 +208,82 @@ def response_process_dimensionality_diagnostics(
     return DimensionalityDiagnostics(candidates=candidates, best=best)
 
 
+def fixed_item_calibration_diagnostics(
+    responses: np.ndarray,
+    candidate_probabilities: dict[str, np.ndarray],
+    fixed_items: np.ndarray | None = None,
+    mask: np.ndarray | None = None,
+    item_type: str = "polytomous",
+    response_process: str = "cumulative",
+    itemfit_penalty_weight: float = 1.0,
+    eps: float = 1e-12,
+) -> DimensionalityDiagnostics:
+    """Select a candidate model using fixed-item likelihood and item-fit risk."""
+    if not candidate_probabilities:
+        raise ValueError("candidate_probabilities must not be empty")
+    if itemfit_penalty_weight < 0:
+        raise ValueError("itemfit_penalty_weight must be >= 0")
+
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2D matrix")
+
+    fixed_idx = _fixed_item_indices(fixed_items, y.shape[1])
+    fixed_responses = y[:, fixed_idx]
+    if mask is None:
+        fixed_mask = None
+    else:
+        mask_arr = np.asarray(mask, dtype=bool)
+        if mask_arr.shape != y.shape:
+            raise ValueError("mask shape must match responses")
+        fixed_mask = mask_arr[:, fixed_idx]
+    observed = np.isfinite(fixed_responses) & (fixed_responses != -1)
+    if fixed_mask is not None:
+        observed &= fixed_mask
+    if not np.any(observed):
+        raise ValueError("fixed items contain no observed responses")
+
+    candidates: list[dict[str, float | str]] = []
+    for idx, (label, probabilities) in enumerate(candidate_probabilities.items()):
+        candidate_label = str(label)
+        if not candidate_label:
+            raise ValueError("candidate label must not be empty")
+
+        fixed_probabilities = _fixed_candidate_probabilities(probabilities, fixed_idx, y.shape)
+        diagnostics = response_process_fit_diagnostics(
+            fixed_responses,
+            fixed_probabilities,
+            mask=fixed_mask,
+            item_type=item_type,
+            response_process=response_process,
+            eps=eps,
+        )
+        observed_item = diagnostics.itemfit["observed_count"] > 0
+        outfit = diagnostics.itemfit["outfit_mnsq"][observed_item]
+        kaefa_penalty = float(np.abs(outfit - 1.0).mean())
+        loglik = float(diagnostics.model_fit["loglik"])
+        calibration_score = loglik - float(itemfit_penalty_weight) * kaefa_penalty
+        candidates.append(
+            {
+                "candidate_index": float(idx),
+                "candidate_label": candidate_label,
+                "fixed_item_count": float(fixed_idx.size),
+                "fixed_item_observed_count": float(diagnostics.model_fit["n_observed"]),
+                "heldout_loglik": loglik,
+                "heldout_deviance": float(diagnostics.model_fit["deviance"]),
+                "pearson_chisq": float(diagnostics.model_fit["pearson_chisq"]),
+                "mean_abs_category_residual": float(diagnostics.model_fit["mean_abs_category_residual"]),
+                "kaefa_itemfit_penalty": kaefa_penalty,
+                "max_fixed_item_outfit_mnsq": float(outfit.max()),
+                "itemfit_penalty_weight": float(itemfit_penalty_weight),
+                "calibration_score": calibration_score,
+            }
+        )
+
+    best = max(candidates, key=lambda row: float(row["calibration_score"]))
+    return DimensionalityDiagnostics(candidates=candidates, best=best)
+
+
 def align_latent_space(
     true_xi: np.ndarray,
     true_zeta: np.ndarray,
@@ -288,14 +364,16 @@ def _axis_fit(
     expected = (prob * observed).sum(axis=axis)
     raw = residual.sum(axis=axis)
     variance_sum = (variance * observed).sum(axis=axis)
+    safe_count = np.maximum(count, 1.0)
+    safe_variance = np.maximum(variance_sum, 1e-12)
     return {
         "observed_count": count,
         "score": score,
         "expected_score": expected,
         "raw_residual": raw,
-        "standardized_residual": raw / np.sqrt(variance_sum),
-        "infit_mnsq": (residual * residual).sum(axis=axis) / variance_sum,
-        "outfit_mnsq": pearson_sq.sum(axis=axis) / count,
+        "standardized_residual": raw / np.sqrt(safe_variance),
+        "infit_mnsq": (residual * residual).sum(axis=axis) / safe_variance,
+        "outfit_mnsq": pearson_sq.sum(axis=axis) / safe_count,
     }
 
 
@@ -331,15 +409,17 @@ def _factor_fit(
     table = np.asarray(rows, dtype=np.float64)
     variance_sum = table[:, 5]
     count = table[:, 1]
+    safe_count = np.maximum(count, 1.0)
+    safe_variance = np.maximum(variance_sum, 1e-12)
     return {
         "factor_id": table[:, 0],
         "observed_count": count,
         "score": table[:, 2],
         "expected_score": table[:, 3],
         "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(variance_sum),
-        "infit_mnsq": table[:, 6] / variance_sum,
-        "outfit_mnsq": table[:, 7] / count,
+        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
+        "infit_mnsq": table[:, 6] / safe_variance,
+        "outfit_mnsq": table[:, 7] / safe_count,
     }
 
 
@@ -608,6 +688,42 @@ def _categorical_scope_item_table(id_name: str, rows: list[tuple[float, ...]]) -
     }
 
 
+def _fixed_item_indices(fixed_items: np.ndarray | None, n_items: int) -> np.ndarray:
+    if fixed_items is None:
+        return np.arange(n_items, dtype=np.int64)
+
+    values = np.asarray(fixed_items)
+    if values.ndim != 1:
+        raise ValueError("fixed_items must be a 1D boolean mask or item-index vector")
+    if values.dtype == np.bool_:
+        if values.shape[0] != n_items:
+            raise ValueError("fixed_items boolean mask length must match number of items")
+        indices = np.flatnonzero(values)
+    else:
+        if not np.issubdtype(values.dtype, np.integer):
+            raise ValueError("fixed_items index vector must contain integers")
+        indices = values.astype(np.int64, copy=False)
+
+    if indices.size == 0:
+        raise ValueError("fixed_items must select at least one item")
+    if np.any((indices < 0) | (indices >= n_items)):
+        raise ValueError("fixed_items index vector contains an out-of-range item")
+    if np.unique(indices).size != indices.size:
+        raise ValueError("fixed_items index vector must not contain duplicates")
+    return indices
+
+
+def _fixed_candidate_probabilities(probabilities: np.ndarray, fixed_idx: np.ndarray, response_shape: tuple[int, int]) -> np.ndarray:
+    prob = np.asarray(probabilities)
+    if prob.ndim not in {2, 3}:
+        raise ValueError("candidate probabilities must have shape persons x items or persons x items x categories")
+    if prob.shape[:2] != response_shape:
+        raise ValueError("candidate probabilities shape must match responses")
+    if prob.ndim == 2:
+        return prob[:, fixed_idx]
+    return prob[:, fixed_idx, :]
+
+
 def _parameter_count(params: MLSIRMParams, model: str) -> int:
     free_alpha, uses_space = model_flags(model)
     count = params.theta.size + params.b.size
@@ -730,6 +846,12 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
 
 
 def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
-    true_d = np.sqrt(((true_xi[:, None, :] - true_zeta[None, :, :]) ** 2).sum(axis=2))
-    est_d = np.sqrt(((est_xi[:, None, :] - est_zeta[None, :, :]) ** 2).sum(axis=2))
+    true_sq_xi = (true_xi * true_xi).sum(axis=1)[:, None]
+    true_sq_zeta = (true_zeta * true_zeta).sum(axis=1)[None, :]
+    true_d = np.sqrt(np.maximum(true_sq_xi - 2 * np.dot(true_xi, true_zeta.T) + true_sq_zeta, 0.0))
+
+    est_sq_xi = (est_xi * est_xi).sum(axis=1)[:, None]
+    est_sq_zeta = (est_zeta * est_zeta).sum(axis=1)[None, :]
+    est_d = np.sqrt(np.maximum(est_sq_xi - 2 * np.dot(est_xi, est_zeta.T) + est_sq_zeta, 0.0))
+
     return _rmse(true_d, est_d)
