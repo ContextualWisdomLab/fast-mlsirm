@@ -10,9 +10,6 @@
   pass criteria.
 - Added `docs/enterprise_sales_readiness.md` and `scripts/sales_readiness.py`
   to produce a machine-readable enterprise procurement readiness manifest.
-- Added aFIPC-style fixed-item calibration diagnostics and
-  `diagnose-fixed-item-calibration` to select candidate probability tensors
-  with kaefa-style item-fit penalty evidence.
 
 ### CI
 
@@ -27,9 +24,6 @@
   checklist and execution command.
 - Added KRW 2,000,000,000 enterprise sales-review criteria and explicit go/no-go
   evidence requirements.
-- Updated the Figma product design packet with Information Architecture,
-  화면정의서, key screen, wireframe, and user stories for fixed-item
-  calibration review.
 
 ## 0.1.0 - 2026-07-02
 

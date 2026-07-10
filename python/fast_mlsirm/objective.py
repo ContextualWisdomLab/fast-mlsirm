@@ -27,6 +27,11 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
     if np.any(observed & invalid):
         raise ValueError("observed responses must be 0 or 1")
 
+    if np.any(observed.sum(axis=0) == 0):
+        raise ValueError("all-missing item found")
+    if np.any(observed.sum(axis=1) == 0):
+        raise ValueError("all-missing person found")
+
     clean = np.where(observed, y, 0.0)
     return clean, observed
 

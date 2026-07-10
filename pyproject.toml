@@ -43,13 +43,3 @@ python-source = "python"
 [tool.pytest.ini_options]
 pythonpath = ["python"]
 testpaths = ["tests"]
-
-[tool.interrogate]
-ignore-init-method = true
-ignore-init-module = true
-ignore-magic = true
-ignore-module = true
-fail-under = 0
-
-[tool.coverage.report]
-fail_under = 0

@@ -20,10 +20,6 @@ REQUIRED_FRAME_IDS = [
     "04-dimensionality-review",
     "05-report-export",
     "06-procurement-packet",
-    "07-irt-stability-review",
-    "08-fixed-item-calibration",
-    "09-afipc-product-design-spec",
-    "10-afipc-wireframe-user-stories",
 ]
 
 REQUIRED_TOKENS = [
@@ -31,10 +27,6 @@ REQUIRED_TOKENS = [
     "release evidence index",
     "procurement due diligence",
     "pr queue governance",
-    "fixed item calibration",
-    "information architecture",
-    "wireframe",
-    "user stories",
 ]
 
 

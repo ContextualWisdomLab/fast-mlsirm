@@ -32,32 +32,12 @@
     {
       "id": "06-procurement-packet",
       "title": "Procurement Packet",
-      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, commercial release, procurement due-diligence, PR queue governance, Figma evidence sync, fixed item calibration, information architecture, wireframe, and user stories manifests"
-    },
-    {
-      "id": "07-irt-stability-review",
-      "title": "IRT Stability Review",
-      "artifact": "docs/irt_stability_product_design.md and tests/test_irt_stability.py"
-    },
-    {
-      "id": "08-fixed-item-calibration",
-      "title": "Fixed-Item Calibration",
-      "artifact": "dimension_diagnostics.json with best_candidate, calibration_score, fixed-item counts, and kaefa item-fit penalty"
-    },
-    {
-      "id": "09-afipc-product-design-spec",
-      "title": "aFIPC Calibration IA and Screen Definition",
-      "artifact": "Information Architecture, 화면정의서, acceptance signals, and key screen contract"
-    },
-    {
-      "id": "10-afipc-wireframe-user-stories",
-      "title": "Fixed-Item Calibration Wireframe",
-      "artifact": "wireframe, user stories, Ponytail scope, and implementation evidence"
+      "artifact": "acceptance, sales, ROI, benchmark, design, benchmark report, buyer packet, release evidence index, commercial release, procurement due-diligence, PR queue governance, and Figma evidence sync manifests"
     }
   ],
   "handoff": {
     "figma_skill_path": "figma-use plus figma-generate-design when MCP is connected",
-    "product_design_scope": "static buyer workflow plus fixed-item calibration review, no hosted dashboard",
+    "product_design_scope": "static buyer workflow, no hosted dashboard",
     "figma_evidence_sync": "scripts/build_figma_evidence_sync.py verifies Code Connect stays disabled and required buyer evidence tokens are present"
   }
 }
