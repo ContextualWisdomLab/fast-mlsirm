@@ -12,6 +12,7 @@ from .config import FitConfig, MLS2PLMConfig
 from .diagnostics import (
     dimensionality_diagnostics,
     fit_diagnostics,
+    fixed_item_calibration_diagnostics,
     response_process_dimensionality_diagnostics,
     response_process_fit_diagnostics,
 )
@@ -99,7 +100,7 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
-    fit_cmd.add_argument("--backend", choices=["numpy", "rust", "auto"], default="numpy", help="Objective backend to use (default: numpy).")
+    fit_cmd.add_argument("--backend", choices=["numpy", "rust", "auto"], default="auto", help="Objective backend to use (default: auto = Rust core when available, numpy reference fallback).")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
 
@@ -164,6 +165,25 @@ def _main(argv: list[str] | None = None) -> int:
     candidates.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the candidates.")
     candidates.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
     _add_json_flag(candidates)
+
+    fixed_calibration = sub.add_parser(
+        "diagnose-fixed-item-calibration",
+        help="Select a response-process candidate using fixed-item calibration diagnostics.",
+        description="Score candidate probability tensors on fixed evaluation items with kaefa-style item-fit risk.",
+    )
+    fixed_calibration.add_argument("--responses", required=True, help="Path to the responses numpy array file (.npy).")
+    fixed_calibration.add_argument(
+        "--candidate",
+        action="append",
+        required=True,
+        help="Candidate probability file as label=path.npy. Repeat for each candidate.",
+    )
+    fixed_calibration.add_argument("--fixed-items", help="Optional .npy boolean mask or item-index vector for fixed items.")
+    fixed_calibration.add_argument("--item-type", choices=["dichotomous", "polytomous"], default="polytomous", help="Item type for metadata validation.")
+    fixed_calibration.add_argument("--response-process", choices=["ideal_point", "cumulative"], default="cumulative", help="Response process represented by the candidates.")
+    fixed_calibration.add_argument("--itemfit-penalty-weight", type=float, default=1.0, help="Weight applied to mean |outfit_mnsq - 1| in the calibration score.")
+    fixed_calibration.add_argument("--out", required=True, help="Directory path to save dimension_diagnostics.json.")
+    _add_json_flag(fixed_calibration)
 
     report = sub.add_parser(
         "render-report",
@@ -381,6 +401,46 @@ def _main(argv: list[str] | None = None) -> int:
                 "item_type": args.item_type,
                 "response_process": args.response_process,
                 "best_candidate": diagnostics.best["candidate_label"],
+                "files": {"diagnostics": _output_file(args.out, "dimension_diagnostics.json")},
+            },
+        )
+
+    if args.command == "diagnose-fixed-item-calibration":
+        _progress(args, "⏳ Scoring fixed-item calibration candidates...")
+        try:
+            responses = np.load(args.responses, allow_pickle=False)
+            candidate_probabilities = _load_candidate_probabilities(args.candidate)
+            fixed_items = _load_optional_npy(args.fixed_items)
+        except FileNotFoundError as e:
+            print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
+            return 1
+
+        diagnostics = fixed_item_calibration_diagnostics(
+            responses=responses,
+            candidate_probabilities=candidate_probabilities,
+            fixed_items=fixed_items,
+            item_type=args.item_type,
+            response_process=args.response_process,
+            itemfit_penalty_weight=args.itemfit_penalty_weight,
+        )
+        save_dimensionality_diagnostics(diagnostics, args.out)
+        return _complete(
+            args,
+            f"✅ Fixed-item calibration diagnostics successfully saved to {args.out}",
+            {
+                "command": "diagnose-fixed-item-calibration",
+                "status": "ok",
+                "out": str(args.out),
+                "item_type": args.item_type,
+                "response_process": args.response_process,
+                "best_candidate": diagnostics.best["candidate_label"],
+                "calibration_score": diagnostics.best["calibration_score"],
                 "files": {"diagnostics": _output_file(args.out, "dimension_diagnostics.json")},
             },
         )

@@ -78,6 +78,8 @@ def test_cli_fit_json_output(tmp_path, capsys):
         "MLS2PLM",
         "--max-iter",
         "1",
+        "--backend",
+        "numpy",
         "--out",
         str(fit_dir),
         "--json",
@@ -251,6 +253,54 @@ def test_cli_diagnose_response_candidates_success(tmp_path):
 
     payload = json.loads((out_dir / "dimension_diagnostics.json").read_text(encoding="utf-8"))
     assert payload["best"]["candidate_label"] == "dim2"
+
+def test_cli_diagnose_fixed_item_calibration_success(tmp_path, capsys):
+    responses = tmp_path / "responses.npy"
+    weak = tmp_path / "weak.npy"
+    strong = tmp_path / "strong.npy"
+    fixed_items = tmp_path / "fixed_items.npy"
+    out_dir = tmp_path / "fixed_calibration_out"
+    np.save(responses, np.array([[0, 1], [1, 0], [0, 1]]))
+    np.save(weak, np.full((3, 2, 2), 0.5))
+    np.save(
+        strong,
+        np.array(
+            [
+                [[0.9, 0.1], [0.1, 0.9]],
+                [[0.1, 0.9], [0.9, 0.1]],
+                [[0.9, 0.1], [0.1, 0.9]],
+            ]
+        ),
+    )
+    np.save(fixed_items, np.array([0, 1]))
+
+    args = [
+        "diagnose-fixed-item-calibration",
+        "--responses",
+        str(responses),
+        "--candidate",
+        f"weak={weak}",
+        "--candidate",
+        f"strong={strong}",
+        "--fixed-items",
+        str(fixed_items),
+        "--item-type",
+        "dichotomous",
+        "--response-process",
+        "ideal_point",
+        "--out",
+        str(out_dir),
+        "--json",
+    ]
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "diagnose-fixed-item-calibration"
+    assert payload["best_candidate"] == "strong"
+    diagnostics = json.loads((out_dir / "dimension_diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["best"]["candidate_label"] == "strong"
+    assert "calibration_score" in diagnostics["best"]
 
 def test_cli_diagnose_response_candidates_rejects_duplicate_label(tmp_path, capsys):
     responses = tmp_path / "responses.npy"

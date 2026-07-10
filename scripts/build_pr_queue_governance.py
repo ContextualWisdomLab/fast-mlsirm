@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 RISK_COUNT_KEYS = [
@@ -251,13 +252,16 @@ def _risk_counts(classified_prs: list[dict[str, Any]]) -> dict[str, int]:
     return {key: sum(1 for pr in classified_prs if pr.get(key) is True) for key in RISK_COUNT_KEYS}
 
 
-def _safe_url(url: str) -> str:
-    if not url:
+def _safe_url(url: object) -> str:
+    if not isinstance(url, str):
         return "#"
-    url_lower = url.lower().strip()
-    if url_lower.startswith("javascript:") or url_lower.startswith("data:") or url_lower.startswith("vbscript:"):
+    candidate = url.strip()
+    if not candidate:
         return "#"
-    return url
+    parsed = urlparse(candidate)
+    if parsed.scheme and parsed.scheme.lower() not in {"http", "https", "mailto"}:
+        return "#"
+    return candidate
 
 
 def _content_security_policy() -> str:
@@ -281,7 +285,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px; }
 .metric-card span { display: block; color: #5e6f76; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
 .metric-card strong { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; border: 1px solid #d8e1e3; border-radius: 8px; }
-.table-wrap:focus { outline: 3px solid #0f766e; outline-offset: 3px; }
+.table-wrap:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
 table { width: 100%; min-width: 920px; border-collapse: collapse; }
 caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #e8edef; text-align: left; vertical-align: top; }
@@ -310,7 +314,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             continue
         rows.append(
             "<tr>"
-            f"<th scope=\"row\"><a href=\"{escape(_safe_url(str(pr.get('url', ''))), quote=True)}\">#{escape(str(pr.get('number', '')))}</a></th>"
+            f"<th scope=\"row\"><a href=\"{escape(_safe_url(pr.get('url')), quote=True)}\">#{escape(str(pr.get('number', '')))}</a></th>"
             f"<td>{escape(str(pr.get('title', '')))}</td>"
             f"<td>{escape(str(pr.get('reviewDecision', '')))}</td>"
             f"<td>{escape(str(pr.get('mergeStateStatus', '')))}</td>"

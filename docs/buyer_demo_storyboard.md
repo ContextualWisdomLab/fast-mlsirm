@@ -60,6 +60,13 @@ The demo should show a complete buyer review without customer data:
    - Open `figma_evidence_sync_report.html` to review Code Connect-disabled
      design packet coverage, required procurement evidence tokens, optional
      Figma metadata snapshot status, and report SHA256 evidence.
+7. **IRT Stability Review**
+   - Show missing-by-design response handling, true-parameter reproduction,
+     Hessian/vcov/standard-error evidence, second-order status, fixed item
+     linking, CAT item selection, and ATA form assembly support.
+   - Open `docs/irt_stability_product_design.md` as the source for the
+     Information Architecture, screen definition, key screen, wireframe, and
+     user stories.
 
 ## Screen List For Figma
 
@@ -76,6 +83,8 @@ The Figma prototype should contain these static screens:
   standalone HTML review, benchmark report files, release evidence index, and
   commercial release report with procurement due-diligence and PR queue
   governance go/no-go status plus Figma evidence sync status.
+- `07-irt-stability-review`: missingness, true-parameter, Hessian/vcov/SE,
+  fixed-item linking, CAT, and ATA stability evidence.
 
 ## Interaction Level
 
@@ -101,6 +110,9 @@ runs `scripts/build_procurement_due_diligence.py` to write
 `pr_queue_governance_manifest.json` and `pr_queue_governance_report.html`.
 It then runs `scripts/build_figma_evidence_sync.py` to write
 `figma_evidence_sync_manifest.json` and `figma_evidence_sync_report.html`.
+The IRT stability review screen maps to
+`docs/irt_stability_product_design.md` and
+`tests/test_irt_stability.py`.
 The final optional integrity checks are
 `scripts/sales_readiness.py --require-procurement-due-diligence` and
 `scripts/sales_readiness.py --require-pr-queue-governance`, plus
