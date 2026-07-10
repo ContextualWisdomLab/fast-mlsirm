@@ -101,6 +101,7 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
     fit_cmd.add_argument("--backend", choices=["numpy", "rust", "auto"], default="auto", help="Objective backend to use (default: auto = Rust core when available, numpy reference fallback).")
+    fit_cmd.add_argument("--rust-device", choices=["auto", "cpu", "gpu"], default="auto", help="Execution device for the rust backend: wgpu GPGPU when available, else CPU fallback (default: auto). Ignored for the numpy backend.")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
 
@@ -495,6 +496,7 @@ def _main(argv: list[str] | None = None) -> int:
                 n_restarts=args.n_restarts,
                 seed=args.seed,
                 backend=args.backend,
+                rust_device=args.rust_device,
             ),
         )
     except ValueError as e:
@@ -514,6 +516,7 @@ def _main(argv: list[str] | None = None) -> int:
             "model": result.model,
             "optimizer": result.optimizer,
             "backend": result.backend,
+            "rust_device": result.rust_device,
             "objective": float(result.objective),
             "convergence_status": result.convergence_status,
             "n_iter": int(result.n_iter),

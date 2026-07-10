@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from .backend import resolve_backend
+from .backend import normalize_device, resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
@@ -21,6 +21,8 @@ def fit(
     config = config or FitConfig()
     config.validate()
     backend = resolve_backend(config.backend)
+    # The device is a sub-option of the rust backend; the numpy path ignores it.
+    device = normalize_device(config.rust_device) if backend == "rust" else "cpu"
     model = config.normalized_model()
 
     y, observed = prepare_response(responses, mask)
@@ -50,7 +52,7 @@ def fit(
     best: FitResult | None = None
     for restart in range(config.n_restarts):
         candidate = _run_single_fit(
-            y, observed, factors, n_dims, config, model, restart, backend
+            y, observed, factors, n_dims, config, model, restart, backend, device
         )
         if best is None or candidate.objective < best.objective:
             best = candidate
@@ -125,6 +127,7 @@ def _fit_mmle(
         model=model,
         optimizer=f"mmle_em/{'rust' if rust is not None else 'numpy'}",
         backend=config.backend,
+        rust_device=config.rust_device,
         objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
         loglik_trace=[float(v) for v in loglik_trace],
         objective_trace=[float(-v) for v in loglik_trace],
@@ -142,13 +145,14 @@ def _run_single_fit(
     model: str,
     restart: int,
     backend: str,
+    device: str,
 ) -> FitResult:
     rng = np.random.default_rng(config.seed + restart)
     params0 = _initial_params(
         y, observed, factors, n_dims, config.latent_dim, config, rng
     )
     x0 = _pack(params0, model)
-    objective = _make_objective(y, observed, factors, params0, config, backend)
+    objective = _make_objective(y, observed, factors, params0, config, backend, device)
 
     x = x0
     obj_trace: list[float] = []
@@ -182,7 +186,7 @@ def _run_single_fit(
     if model != "MIRT":
         final_params = normalize_latent_positions(final_params)
     final_obj, _, final_loglik = neg_loglik_and_grad(
-        y, factors, final_params, config, mask=observed, backend=backend
+        y, factors, final_params, config, mask=observed, backend=backend, device=device
     )
     obj_trace.append(final_obj)
     loglik_trace.append(final_loglik)
@@ -192,6 +196,7 @@ def _run_single_fit(
         model=model,
         optimizer=config.optimizer,
         backend=backend,
+        rust_device=device,
         objective=final_obj,
         loglik_trace=loglik_trace,
         objective_trace=obj_trace,
@@ -240,13 +245,14 @@ def _make_objective(
     template: MLSIRMParams,
     config: FitConfig,
     backend: str,
+    device: str,
 ) -> Callable[[np.ndarray], tuple[float, np.ndarray, float]]:
     model = config.normalized_model()
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
         params = _unpack(x, template, model)
         obj, grad, loglik = neg_loglik_and_grad(
-            y, factor_id, params, config, mask=observed, backend=backend
+            y, factor_id, params, config, mask=observed, backend=backend, device=device
         )
         grad_vec = _pack(grad, model)
         if config.gradient_clip is not None:

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use mlsirm_core::{
-    neg_loglik_and_grad as core_neg_loglik_and_grad, ModelConfig, ModelType, Params, PenaltyConfig,
+    neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
+    Params, PenaltyConfig,
 };
 use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -9,6 +10,28 @@ use pyo3::prelude::*;
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y,
+    mask,
+    factor_id,
+    theta,
+    alpha,
+    b,
+    xi,
+    zeta,
+    tau,
+    model,
+    eps_distance,
+    lambda_theta,
+    lambda_xi,
+    lambda_zeta,
+    lambda_b,
+    lambda_alpha,
+    lambda_tau,
+    mu_alpha,
+    mu_tau,
+    device = "cpu",
+))]
 fn neg_loglik_and_grad(
     y: PyReadonlyArray2<'_, f64>,
     mask: Option<PyReadonlyArray2<'_, bool>>,
@@ -29,7 +52,10 @@ fn neg_loglik_and_grad(
     lambda_tau: f64,
     mu_alpha: f64,
     mu_tau: f64,
+    device: &str,
 ) -> PyResult<(f64, HashMap<String, Vec<f64>>, f64)> {
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
     let y_shape = y.shape();
     let theta_shape = theta.shape();
     let xi_shape = xi.shape();
@@ -90,7 +116,8 @@ fn neg_loglik_and_grad(
         Some(mask_ref) => Some(mask_ref.as_slice()?.to_vec()),
         None => None,
     };
-    let (objective, grad, loglik) = core_neg_loglik_and_grad(
+    let (objective, grad, loglik) = core_neg_loglik_and_grad_device(
+        device,
         y_slice,
         mask_storage.as_deref(),
         &factors,

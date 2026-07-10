@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .backend import load_rust_core, normalize_backend, resolve_backend
+from .backend import load_rust_core, normalize_backend, normalize_device, resolve_backend
 from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
@@ -80,12 +80,14 @@ def neg_loglik_and_grad(
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
     backend: str = "numpy",
+    device: str | None = None,
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
     requested_backend = normalize_backend(backend)
     normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
     if normalized_backend == "rust":
-        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask)
+        resolved_device = normalize_device(device if device is not None else config.rust_device)
+        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask, resolved_device)
 
     model = config.normalized_model()
     penalty = config.penalty
@@ -158,6 +160,7 @@ def _neg_loglik_and_grad_rust(
     params: MLSIRMParams,
     config: FitConfig,
     mask: np.ndarray | None,
+    device: str = "cpu",
 ) -> tuple[float, MLSIRMParams, float]:
     model = config.normalized_model()
     penalty = config.penalty
@@ -188,6 +191,7 @@ def _neg_loglik_and_grad_rust(
         float(penalty.lambda_tau),
         float(penalty.mu_alpha),
         float(penalty.mu_tau),
+        device,
     )
     grads = MLSIRMParams(
         theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(params.theta.shape),

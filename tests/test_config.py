@@ -13,6 +13,17 @@ def test_fitconfig_valid():
     # Rust is the primary numeric path; the default backend is "auto" which
     # resolves to the Rust core when available and falls back to numpy.
     assert config.backend == "auto"
+    assert config.rust_device == "auto"
+
+
+def test_fitconfig_invalid_rust_device():
+    with pytest.raises(ValueError, match="rust_device must be one of"):
+        FitConfig(rust_device="cuda").validate()
+
+
+def test_fitconfig_accepts_gpu_rust_device():
+    for device in ("cpu", "gpu", "auto"):
+        FitConfig(rust_device=device).validate()
 
 def test_mls2plmconfig_invalid_n_persons():
     with pytest.raises(ValueError, match="n_persons must be >= 1"):

@@ -50,6 +50,7 @@ class FitResult:
     model: str
     optimizer: str
     backend: str
+    rust_device: str
     objective: float
     loglik_trace: list[float]
     objective_trace: list[float]

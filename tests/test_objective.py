@@ -287,6 +287,46 @@ def test_rust_backend_matches_numpy_objective():
     assert np.isclose(rust_grad.tau, numpy_grad.tau)
 
 
+@pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
+def test_rust_gpgpu_device_matches_numpy(device):
+    """The rust backend's device paths (including the GPGPU code) must agree
+    with the numpy reference. On CI without a GPU, ``gpu``/``auto`` fall back to
+    the f64 CPU implementation; on a GPU they run the f32 wgpu kernels, so the
+    tolerance is chosen to cover single-precision agreement as well."""
+    pytest.importorskip("fast_mlsirm._core")
+    rng = np.random.default_rng(7)
+    n_persons, n_items, latent_dim = 12, 6, 2
+    params = MLSIRMParams(
+        theta=rng.normal(size=(n_persons, 1)),
+        alpha=rng.normal(scale=0.2, size=n_items),
+        b=rng.normal(scale=0.3, size=n_items),
+        xi=rng.normal(scale=0.5, size=(n_persons, latent_dim)),
+        zeta=rng.normal(scale=0.5, size=(n_items, latent_dim)),
+        tau=0.15,
+    )
+    y = (rng.random((n_persons, n_items)) < 0.5).astype(float)
+    mask = np.ones((n_persons, n_items), dtype=bool)
+    mask[0, 0] = False
+    factors = np.zeros(n_items, dtype=np.int64)
+    config = FitConfig(max_iter=1)
+
+    numpy_obj, numpy_grad, numpy_loglik = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="numpy"
+    )
+    rust_obj, rust_grad, rust_loglik = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="rust", device=device
+    )
+
+    assert np.isclose(rust_obj, numpy_obj, rtol=1e-4, atol=1e-4)
+    assert np.isclose(rust_loglik, numpy_loglik, rtol=1e-4, atol=1e-4)
+    assert np.allclose(rust_grad.theta, numpy_grad.theta, rtol=1e-4, atol=1e-4)
+    assert np.allclose(rust_grad.alpha, numpy_grad.alpha, rtol=1e-4, atol=1e-4)
+    assert np.allclose(rust_grad.b, numpy_grad.b, rtol=1e-4, atol=1e-4)
+    assert np.allclose(rust_grad.xi, numpy_grad.xi, rtol=1e-4, atol=1e-4)
+    assert np.allclose(rust_grad.zeta, numpy_grad.zeta, rtol=1e-4, atol=1e-4)
+    assert np.isclose(rust_grad.tau, numpy_grad.tau, rtol=1e-4, atol=1e-4)
+
+
 def test_rust_core_rejects_shape_mismatch():
     pytest.importorskip("fast_mlsirm._core")
     from fast_mlsirm import _core

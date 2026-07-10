@@ -13,6 +13,18 @@
 
 ### Added
 
+- GPGPU acceleration of the negative-log-likelihood and gradient hot path inside
+  the Rust core via [wgpu](https://github.com/gfx-rs/wgpu) (MIT/Apache-2.0),
+  exposed as a device sub-option of the Rust backend rather than a separate
+  compute-backend axis. Select with `FitConfig(backend="rust", rust_device=...)`
+  or `fast-mlsirm fit --backend rust --rust-device {auto,cpu,gpu}`; the GPU path
+  falls back to the identical CPU implementation at runtime when no GPU adapter
+  is available. Added requested-device provenance on `FitResult.rust_device`
+  and in `fit_summary.json`, plus numerical-parity tests asserting the Rust
+  device paths match the NumPy reference.
+- Added `docs/papers/README.md` with a citation and canonical link for Wu et al.
+  (2021, arXiv:2108.11579), grounding fast, accelerator-friendly IRT estimation
+  without vendoring the PDF into the repository.
 - Added `tests/test_rust_parity.py`, a Rust<->NumPy numerical parity gate that
   asserts agreement to `1e-6` across all five model variants, multiple problem
   sizes, and masked/dense fixtures (observed difference ~1e-13).
