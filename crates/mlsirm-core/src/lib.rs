@@ -102,7 +102,8 @@ pub fn neg_loglik_and_grad(
             let a = alpha.exp();
             let mut dist2 = config.eps_distance;
             for k in 0..config.latent_dim {
-                let diff = params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
+                let diff =
+                    params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
                 dist2 += diff * diff;
             }
             let r = if uses_space { dist2.sqrt() } else { 0.0 };
@@ -120,8 +121,8 @@ pub fn neg_loglik_and_grad(
             if uses_space {
                 grad.tau += e * (-gamma * r);
                 for k in 0..config.latent_dim {
-                    let diff =
-                        params.xi[p * config.latent_dim + k] - params.zeta[i * config.latent_dim + k];
+                    let diff = params.xi[p * config.latent_dim + k]
+                        - params.zeta[i * config.latent_dim + k];
                     let common = gamma * diff / r;
                     grad.xi[p * config.latent_dim + k] += e * (-common);
                     grad.zeta[i * config.latent_dim + k] += e * common;
@@ -148,7 +149,12 @@ fn add_penalty(
     value += add_l2(&params.theta, penalty.lambda_theta, 0.0, &mut grad.theta);
     value += add_l2(&params.b, penalty.lambda_b, 0.0, &mut grad.b);
     if free_alpha {
-        value += add_l2(&params.alpha, penalty.lambda_alpha, penalty.mu_alpha, &mut grad.alpha);
+        value += add_l2(
+            &params.alpha,
+            penalty.lambda_alpha,
+            penalty.mu_alpha,
+            &mut grad.alpha,
+        );
     }
     if uses_space {
         value += add_l2(&params.xi, penalty.lambda_xi, 0.0, &mut grad.xi);
@@ -260,5 +266,100 @@ mod tests {
         let (obj_plus, _, _) = neg_loglik_and_grad(&y, None, &[0, 0], &plus, &cfg, &penalty);
         let finite_diff = (obj_plus - base) / h;
         assert!((finite_diff - grad.tau).abs() < 1e-5);
+    }
+
+    #[test]
+    fn mask_excludes_observations_from_likelihood_and_gradients() {
+        let cfg = config();
+        let p = params();
+        let penalty = PenaltyConfig {
+            lambda_theta: 0.0,
+            lambda_xi: 0.0,
+            lambda_zeta: 0.0,
+            lambda_b: 0.0,
+            lambda_alpha: 0.0,
+            lambda_tau: 0.0,
+            mu_alpha: 0.0,
+            mu_tau: 0.0,
+        };
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let mask = vec![true, false, false, true];
+
+        let (masked_obj, masked_grad, masked_loglik) =
+            neg_loglik_and_grad(&y, Some(&mask), &[0, 0], &p, &cfg, &penalty);
+
+        let first_cfg = ModelConfig {
+            n_persons: 1,
+            n_items: 1,
+            n_dims: 1,
+            latent_dim: 2,
+            model_type: ModelType::Mls2plm,
+            eps_distance: cfg.eps_distance,
+        };
+        let first_params = Params {
+            theta: vec![p.theta[0]],
+            alpha: vec![p.alpha[0]],
+            b: vec![p.b[0]],
+            xi: vec![p.xi[0], p.xi[1]],
+            zeta: vec![p.zeta[0], p.zeta[1]],
+            tau: p.tau,
+        };
+        let (first_obj, _, _) =
+            neg_loglik_and_grad(&[1.0], None, &[0], &first_params, &first_cfg, &penalty);
+
+        let second_params = Params {
+            theta: vec![p.theta[1]],
+            alpha: vec![p.alpha[1]],
+            b: vec![p.b[1]],
+            xi: vec![p.xi[2], p.xi[3]],
+            zeta: vec![p.zeta[2], p.zeta[3]],
+            tau: p.tau,
+        };
+        let (second_obj, _, _) =
+            neg_loglik_and_grad(&[1.0], None, &[0], &second_params, &first_cfg, &penalty);
+
+        assert!((masked_obj - (first_obj + second_obj)).abs() < 1e-12);
+        assert!((masked_loglik + masked_obj).abs() < 1e-12);
+        assert_eq!(masked_grad.theta.len(), cfg.n_persons * cfg.n_dims);
+    }
+
+    #[test]
+    fn mirt_omits_latent_space_and_tau_penalty_terms() {
+        let cfg = ModelConfig {
+            n_persons: 1,
+            n_items: 1,
+            n_dims: 1,
+            latent_dim: 2,
+            model_type: ModelType::Mirt,
+            eps_distance: 1e-8,
+        };
+        let p = Params {
+            theta: vec![0.5],
+            alpha: vec![0.2],
+            b: vec![-0.1],
+            xi: vec![10.0, -10.0],
+            zeta: vec![-7.0, 3.0],
+            tau: 4.0,
+        };
+        let penalty = PenaltyConfig {
+            lambda_theta: 0.0,
+            lambda_xi: 0.0,
+            lambda_zeta: 0.0,
+            lambda_b: 0.0,
+            lambda_alpha: 0.0,
+            lambda_tau: 10.0,
+            mu_alpha: 0.0,
+            mu_tau: -2.0,
+        };
+
+        let (got, grad, loglik) = neg_loglik_and_grad(&[1.0], None, &[0], &p, &cfg, &penalty);
+        let eta = 0.2_f64.exp() * 0.5 - 0.1;
+        let expected = softplus(eta) - eta;
+
+        assert!((got - expected).abs() < 1e-12);
+        assert!((loglik + expected).abs() < 1e-12);
+        assert_eq!(grad.xi, vec![0.0, 0.0]);
+        assert_eq!(grad.zeta, vec![0.0, 0.0]);
+        assert_eq!(grad.tau, 0.0);
     }
 }
