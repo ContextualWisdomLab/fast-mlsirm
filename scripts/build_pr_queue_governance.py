@@ -285,7 +285,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px; }
 .metric-card span { display: block; color: #5e6f76; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
 .metric-card strong { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; border: 1px solid #d8e1e3; border-radius: 8px; }
-.table-wrap:focus { outline: 3px solid #0f766e; outline-offset: 3px; }
+.table-wrap:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
 table { width: 100%; min-width: 920px; border-collapse: collapse; }
 caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #e8edef; text-align: left; vertical-align: top; }
