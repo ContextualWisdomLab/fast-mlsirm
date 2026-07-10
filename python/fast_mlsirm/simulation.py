@@ -31,8 +31,8 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
     dist = 0.0
     if config.gamma > 0:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', xi, xi)
-        zeta_sq = np.einsum('ij,ij->i', zeta, zeta)
+        xi_sq = (xi * xi).sum(axis=1)
+        zeta_sq = (zeta * zeta).sum(axis=1)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(xi, zeta.T)
         dist_sq = np.maximum(dist_sq, 0.0)
         dist = np.sqrt(dist_sq)
