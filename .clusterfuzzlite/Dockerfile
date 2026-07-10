@@ -9,5 +9,7 @@ RUN groupadd --gid 1001 fuzzbuilder \
     && chmod -R a+rwx /github/workspace/build-out
 
 COPY --chown=fuzzbuilder:fuzzbuilder . $SRC/fast-mlsirm
+COPY --chown=fuzzbuilder:fuzzbuilder .clusterfuzzlite/build.sh $SRC/build.sh
+RUN chmod +x $SRC/build.sh
 WORKDIR $SRC/fast-mlsirm
 USER fuzzbuilder
