@@ -212,12 +212,13 @@ def _initial_params(
 ) -> MLSIRMParams:
     n_persons, n_items = y.shape
     theta = np.zeros((n_persons, n_dims), dtype=np.float64)
+
+    item_mask = factor_id[:, None] == np.arange(n_dims)
+    denom = np.maximum(observed @ item_mask.astype(np.float64), 1)
+    x = ((y * observed) @ item_mask.astype(np.float64)) / denom
+
     for d in range(n_dims):
-        items = factor_id == d
-        denom = np.maximum(observed[:, items].sum(axis=1), 1)
-        theta[:, d] = standardize(
-            (y[:, items] * observed[:, items]).sum(axis=1) / denom
-        )
+        theta[:, d] = standardize(x[:, d])
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
     item_means = (y * observed).sum(axis=0) / item_counts
