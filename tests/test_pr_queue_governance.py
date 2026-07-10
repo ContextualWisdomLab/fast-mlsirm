@@ -152,3 +152,18 @@ def test_pr_queue_governance_fails_without_snapshot_when_offline(tmp_path):
     assert manifest["status"] == "failed"
     failed = {check["name"] for check in manifest["failed_checks"]}
     assert "github:snapshot" in failed
+
+
+def test_safe_url_allows_known_safe_schemes_and_blocks_unsafe_schemes():
+    module = _load_governance()
+
+    assert module._safe_url("https://github.com/org/repo/pull/1") == "https://github.com/org/repo/pull/1"
+    assert module._safe_url("http://example.test/report") == "http://example.test/report"
+    assert module._safe_url("mailto:security@example.test") == "mailto:security@example.test"
+    assert module._safe_url("/relative/report.html") == "/relative/report.html"
+    assert module._safe_url("javascript:alert(1)") == "#"
+    assert module._safe_url("data:text/html,<script>alert(1)</script>") == "#"
+    assert module._safe_url("vbscript:msgbox(1)") == "#"
+    assert module._safe_url("ftp://example.test/report") == "#"
+    assert module._safe_url("") == "#"
+    assert module._safe_url(None) == "#"
