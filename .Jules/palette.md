@@ -14,3 +14,7 @@
 ## 2025-02-18 - CLI `simulate` Error Handling DX
 **Learning:** Raw stack traces from `ValueError` (like invalid configuration parameters) during the `simulate` CLI command provide poor developer experience.
 **Action:** Wrapped configuration validation and simulation execution steps in a try-except block to catch `ValueError` and `OSError`, outputting a clean, user-friendly error message to stderr and returning 1 to prevent raw stack traces.
+
+## 2025-02-18 - Generic Focusable Container Focus Style
+**Learning:** Using `:focus` on generic focusable containers (like scrollable elements with `tabindex="0"`) creates visually jarring outlines for mouse users when clicked.
+**Action:** Always use `:focus-visible` instead of `:focus` for generic focusable containers to preserve required focus indicators for keyboard navigation while avoiding jarring visual artifacts for mouse users.

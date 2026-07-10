@@ -192,6 +192,29 @@ def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
     assert "No chartable values were recorded for this section." not in html
 
 
+def test_render_table_section_charts_later_numeric_rows(tmp_path):
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    item_ids = list(range(13))
+    outfit = [None] * 12 + [1.2]
+    source.write_text(
+        json.dumps(
+            {
+                "model_fit": {"loglik": -3.2},
+                "itemfit": {"item_id": item_ids, "outfit_mnsq": outfit, "observed_count": [4] * 13},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">' in html
+    assert '<span class="bar-label">Item Id 12</span>' in html
+    assert "Showing 12 of 13 rows." in html
+
+
 def test_render_report_rejects_unknown_payload(tmp_path):
     source = tmp_path / "unknown.json"
     out = tmp_path / "report.html"
