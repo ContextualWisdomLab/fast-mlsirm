@@ -30,7 +30,8 @@ def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
 
     dist = 0.0
     if config.gamma > 0:
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+        # Algebraic rewrite of ||xi - zeta||^2 (see docs/papers/mls2plm-canonical-equations.md):
+        # ||xi||^2 + ||zeta||^2 - 2 * xi·zeta avoids O(N*J*D) broadcast allocation.
         xi_sq = (xi * xi).sum(axis=1)
         zeta_sq = (zeta * zeta).sum(axis=1)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(xi, zeta.T)
