@@ -9,9 +9,12 @@
 ## Reporting a Vulnerability
 
 Report suspected vulnerabilities through a private GitHub security advisory for
-`ContextualWisdomLab/fast-mlsirm` when available. If private advisories are not
-available to you, open a minimal public issue that describes the affected area
-without publishing exploit data or sensitive datasets.
+`ContextualWisdomLab/fast-mlsirm` when available:
+https://github.com/ContextualWisdomLab/fast-mlsirm/security/advisories/new
+
+If private advisories are not available to you, open a minimal public issue that
+describes the affected area without publishing exploit data or sensitive
+datasets.
 
 Please include:
 
