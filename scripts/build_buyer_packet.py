@@ -378,7 +378,7 @@ main {
   border: 1px solid #d8e1e3;
   border-radius: 8px;
 }
-.table-wrap:focus {
+.table-wrap:focus-visible {
   outline: 3px solid #0f766e;
   outline-offset: 3px;
 }

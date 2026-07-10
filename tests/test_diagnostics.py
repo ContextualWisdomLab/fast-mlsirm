@@ -4,6 +4,7 @@ from fast_mlsirm import FitConfig, MLS2PLMConfig, simulate
 from fast_mlsirm.diagnostics import (
     dimensionality_diagnostics,
     fit_diagnostics,
+    fixed_item_calibration_diagnostics,
     predict_proba,
     response_process_dimensionality_diagnostics,
     response_process_fit_diagnostics,
@@ -184,3 +185,43 @@ def test_response_process_dimensionality_diagnostics_selects_best_candidate():
 
     assert diagnostics.best["candidate_label"] == "dim2"
     assert [row["candidate_label"] for row in diagnostics.candidates] == ["dim1", "dim2"]
+
+
+def test_fixed_item_calibration_diagnostics_selects_best_candidate():
+    responses = np.array([[0, 1, 1], [1, 0, 0], [0, 1, -1]])
+    weak = np.full((3, 3, 2), 0.5)
+    strong = np.array(
+        [
+            [[0.9, 0.1], [0.1, 0.9], [0.1, 0.9]],
+            [[0.1, 0.9], [0.9, 0.1], [0.9, 0.1]],
+            [[0.9, 0.1], [0.1, 0.9], [0.5, 0.5]],
+        ]
+    )
+
+    diagnostics = fixed_item_calibration_diagnostics(
+        responses,
+        {"weak": weak, "strong": strong},
+        fixed_items=np.array([True, True, False]),
+        item_type="dichotomous",
+        response_process="ideal_point",
+    )
+
+    assert diagnostics.best["candidate_label"] == "strong"
+    assert diagnostics.best["fixed_item_count"] == 2.0
+    assert diagnostics.best["fixed_item_observed_count"] == 6.0
+    assert np.isfinite(diagnostics.best["calibration_score"])
+    assert "kaefa_itemfit_penalty" in diagnostics.best
+
+
+def test_fixed_item_calibration_rejects_empty_fixed_observations():
+    responses = np.array([[0, -1], [1, -1]])
+    probabilities = np.full((2, 2, 2), 0.5)
+
+    with pytest.raises(ValueError, match="fixed items contain no observed responses"):
+        fixed_item_calibration_diagnostics(
+            responses,
+            {"candidate": probabilities},
+            fixed_items=np.array([1]),
+            item_type="dichotomous",
+            response_process="ideal_point",
+        )

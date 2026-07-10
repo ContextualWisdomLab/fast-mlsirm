@@ -31,6 +31,9 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Example Fit" in html
     assert "Model Fit" in html
+    assert '<dl class="metrics-grid">' in html
+    assert "<dt>Loglik</dt>" in html
+    assert "<dd>-3.2</dd>" in html
     assert "Item Fit" in html
     assert "Diagnostics Coverage" in html
     assert "No row data" in html
@@ -189,6 +192,29 @@ def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
     assert "No chartable values were recorded for this section." not in html
 
 
+def test_render_table_section_charts_later_numeric_rows(tmp_path):
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    item_ids = list(range(13))
+    outfit = [None] * 12 + [1.2]
+    source.write_text(
+        json.dumps(
+            {
+                "model_fit": {"loglik": -3.2},
+                "itemfit": {"item_id": item_ids, "outfit_mnsq": outfit, "observed_count": [4] * 13},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">' in html
+    assert '<span class="bar-label">Item Id 12</span>' in html
+    assert "Showing 12 of 13 rows." in html
+
+
 def test_render_report_rejects_unknown_payload(tmp_path):
     source = tmp_path / "unknown.json"
     out = tmp_path / "report.html"
@@ -225,4 +251,8 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert 'aria-label="Candidate Comparison diagnostics table"' in html
     assert 'tabindex="0"' in html
-    assert ".table-wrap:focus" in html
+    assert ".table-wrap:focus-visible" in html
+    assert ".table-wrap:focus {" not in html
+    assert "tbody tr:hover" in html
+    assert '<div class="bar-chart" aria-hidden="true">' in html
+    assert '<div class="bar-track" aria-hidden="true">' in html

@@ -9,7 +9,7 @@ The first implementation keeps the public API small:
 ```python
 import numpy as np
 
-from fast_mlsirm import MLS2PLMConfig, FitConfig, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, render_diagnostics_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
+from fast_mlsirm import MLS2PLMConfig, FitConfig, fixed_item_calibration_diagnostics, simulate, dimensionality_diagnostics, fit, fit_diagnostics, recovery_report, render_diagnostics_report, response_process_dimensionality_diagnostics, response_process_fit_diagnostics
 
 data = simulate(MLS2PLMConfig(seed=20260101))
 result = fit(
@@ -47,6 +47,15 @@ process_dimensions = response_process_dimensionality_diagnostics(
     response_process="cumulative",
 )
 print(process_dimensions.best)
+
+fixed_item_calibration = fixed_item_calibration_diagnostics(
+    data.Y,
+    {"dim2": category_probs},
+    fixed_items=np.arange(min(4, data.Y.shape[1])),
+    item_type="dichotomous",
+    response_process="cumulative",
+)
+print(fixed_item_calibration.best)
 ```
 
 ## What Works Now
@@ -55,7 +64,8 @@ print(process_dimensions.best)
 - `gamma=0` no-CD simulation.
 - Regularized JML/MAP-style fitting for `MIRT`, `MLSRM`, `MLS2PLM`,
   `ULSRM`, and `ULS2PLM` constraints.
-- Missing response exclusion via `NaN`, `-1`, or an explicit mask.
+- Missing response exclusion via `NaN`, `-1`, or an explicit mask, including
+  missing-by-design rows or items when at least one response is observed.
 - Adam and small L-BFGS-style optimizers without SciPy.
 - Procrustes alignment and distance-based recovery metrics.
 - Point-estimate item, person, and model fit diagnostics for fitted models.
@@ -66,6 +76,13 @@ print(process_dimensions.best)
   cluster IDs.
 - Response-process probability candidate comparisons for external dimensionality
   checks.
+- True-parameter reproduction, observed-information Hessian, vcov, standard
+  error, and second-order stability helpers.
+- Fixed item parameter linking, CAT item-information selection, and greedy ATA
+  form assembly with content min/max constraints.
+- aFIPC-style fixed-item calibration diagnostics that select candidate
+  probability tensors using fixed evaluation-item likelihood and kaefa-style
+  item-fit penalty.
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
@@ -83,8 +100,9 @@ print(process_dimensions.best)
   still references buyer packet, release evidence index, procurement due
   diligence, and PR queue governance evidence while Code Connect stays disabled.
 - CLI commands for simulation and fitting.
-- Optional Rust-backed fitting objective via PyO3/maturin, with NumPy as the
-  default reference backend.
+- Rust-backed fitting objective (neg-loglik, gradients, and distance kernels)
+  via PyO3/maturin as the primary numeric path, with a numerically-identical
+  NumPy reference backend kept for parity testing and fallback.
 
 ## Install
 
@@ -94,11 +112,13 @@ For local development:
 python -m pip install -e .
 ```
 
-The default runtime backend is NumPy. Source and editable installs use maturin
-to build the optional `fast_mlsirm._core` extension, so they require a working
-Rust toolchain even if you later run with `backend="numpy"`. Installed wheels
-can still use the NumPy default, and `backend="auto"` falls back to NumPy when
-the extension is unavailable. The core Rust workspace can be tested with:
+The default runtime backend is `"auto"`, which uses the compiled Rust core
+(`fast_mlsirm._core`) as the primary numeric path and transparently falls back
+to the NumPy reference implementation when the extension is unavailable. Source
+and editable installs use maturin to build the extension, so they require a
+working Rust toolchain; installed wheels ship the compiled core. Pass
+`backend="numpy"` to force the pure-Python reference (used for parity testing).
+The core Rust workspace can be tested with:
 
 ```bash
 cargo test --workspace
@@ -119,6 +139,7 @@ or Bayesian posterior inference engine. See:
 - [KRW 2,000,000,000 product readiness gate](docs/20b_product_readiness.md)
 - [Buyer demo storyboard](docs/buyer_demo_storyboard.md)
 - [Figma product design packet](docs/figma_product_design_packet.md)
+- [IRT stability product design and equation contract](docs/irt_stability_product_design.md)
 - [ROI evidence model](docs/roi_evidence_model.md)
 - [Release acceptance guide](docs/release_acceptance.md)
 - [Security policy](SECURITY.md)
@@ -289,6 +310,16 @@ fast-mlsirm diagnose-response-candidates \
   --response-process ideal_point \
   --out runs/process_dimensions_001
 
+fast-mlsirm diagnose-fixed-item-calibration \
+  --responses runs/sim_001/responses.npy \
+  --candidate dim1=runs/prob_dim1.npy \
+  --candidate dim2=runs/prob_dim2.npy \
+  --fixed-items runs/fixed_items.npy \
+  --item-type dichotomous \
+  --response-process ideal_point \
+  --itemfit-penalty-weight 1.0 \
+  --out runs/fixed_item_calibration_001
+
 fast-mlsirm render-report \
   --diagnostics runs/diagnostics_001/fit_diagnostics.json \
   --out runs/diagnostics_001/report.html
@@ -316,6 +347,11 @@ fast-mlsirm fit \
 `fit`, `diagnose-fit`, and `diagnose-dimensions` validate that `responses.npy`
 is a 2D persons-by-items matrix and that `item_factor.csv` has exactly one
 factor id per item before running optimization or diagnostics.
+`diagnose-fixed-item-calibration` writes `dimension_diagnostics.json` with
+`best_candidate`, `calibration_score`, fixed-item coverage counts, and
+kaefa-style item-fit penalty metrics. `--fixed-items` accepts a `.npy` boolean
+mask or item-index vector; when omitted, all items are treated as the fixed
+calibration set.
 
 `fit --backend numpy` uses the Python reference objective. `fit --backend rust`
 requires the installed `fast_mlsirm._core` extension and fails clearly if it is

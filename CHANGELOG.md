@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- Made the Rust core (`fast_mlsirm._core`) the **primary** numeric path: the
+  default `FitConfig.backend` and CLI `--backend` are now `"auto"`, resolving to
+  Rust when the compiled extension is available and falling back to the NumPy
+  reference otherwise. The verified LSIRM/MLS2PLM neg-loglik, gradient, and
+  distance-kernel formulas are ported bit-for-bit; observable outputs are
+  unchanged.
+
 ### Added
 
 - GPGPU acceleration of the negative-log-likelihood and gradient hot path inside
@@ -16,12 +25,20 @@
 - Added `docs/papers/README.md` with a citation and canonical link for Wu et al.
   (2021, arXiv:2108.11579), grounding fast, accelerator-friendly IRT estimation
   without vendoring the PDF into the repository.
+- Added `tests/test_rust_parity.py`, a Rust<->NumPy numerical parity gate that
+  asserts agreement to `1e-6` across all five model variants, multiple problem
+  sizes, and masked/dense fixtures (observed difference ~1e-13).
+- Added a Rust toolchain plus a resolved-default-backend assertion to the
+  `python` CI job so the primary Rust path is built and exercised by the suite.
 - Added `scripts/release_acceptance.py` to execute a sales-readiness end-to-end
   smoke: simulate, fit (auto + optional rust), diagnostics, and report rendering.
 - Added `docs/release_acceptance.md` to document acceptance inputs, outputs, and
   pass criteria.
 - Added `docs/enterprise_sales_readiness.md` and `scripts/sales_readiness.py`
   to produce a machine-readable enterprise procurement readiness manifest.
+- Added aFIPC-style fixed-item calibration diagnostics and
+  `diagnose-fixed-item-calibration` to select candidate probability tensors
+  with kaefa-style item-fit penalty evidence.
 
 ### CI
 
@@ -36,6 +53,9 @@
   checklist and execution command.
 - Added KRW 2,000,000,000 enterprise sales-review criteria and explicit go/no-go
   evidence requirements.
+- Updated the Figma product design packet with Information Architecture,
+  화면정의서, key screen, wireframe, and user stories for fixed-item
+  calibration review.
 
 ## 0.1.0 - 2026-07-02
 
