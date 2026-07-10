@@ -9,3 +9,9 @@
 ## 2024-07-08 - Euclidean distance optimizations
 **Learning:** Using `np.sqrt(np.sum((xi[:, None, :] - zeta[None, :, :])**2, axis=2))` to compute pairwise Euclidean distances creates a massive intermediate 3D array of shape (N, J, D), which becomes a major performance and memory bottleneck for large arrays.
 **Action:** Replace 3D broadcasting with optimized 2D dot products. Compute squared norms individually (`(xi * xi).sum(axis=1)[:, None]`, etc.) and use `np.sqrt(np.maximum(sq_xi - 2 * np.dot(xi, zeta.T) + sq_zeta, 0.0))` to compute distance while keeping memory complexity O(N*J) and using BLAS-optimized dot products.
+
+## 2024-03-10 - Vectorize looping over dimension
+
+**Learning:** When calculating values grouped by categorical dimensions (like item factors), calculating sums or means by iterating through dimensions `d in range(n_dims)` using boolean indexing `(items = factor_id == d)` is slow because numpy does not vectorize over the outer loop. Utilizing a 2D boolean mapping mask `(factor_id[:, None] == np.arange(n_dims))` and matrix multiplications `(@)` directly converts loop aggregations into fast C/BLAS optimized operations, yielding massive performance gains.
+
+**Action:** Whenever noticing an outer python loop over categorical subsets (often indices or distinct labels) that aggregates numeric array data, immediately attempt to broadcast the labels into a dense or sparse 2D boolean mask and aggregate using matrix multiplication `(@)`.

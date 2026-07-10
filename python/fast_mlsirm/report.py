@@ -246,7 +246,12 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    values = [float(row[value_key]) for row in rows if _is_number(row.get(value_key))]
+    numeric_rows = [
+        (index, row, float(row[value_key]))
+        for index, row in enumerate(rows)
+        if _is_number(row.get(value_key))
+    ]
+    values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
 
@@ -254,11 +259,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     upper = max(values)
     span = upper - lower
     chart_rows = []
-    for index, row in enumerate(rows[:12]):
-        raw_value = row.get(value_key)
-        if not _is_number(raw_value):
-            continue
-        value = float(raw_value)
+    for index, row, value in numeric_rows[:12]:
         width = 64.0 if span == 0 else 8.0 + ((value - lower) / span) * 92.0
         chart_rows.append(
             "\n".join(
