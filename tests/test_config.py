@@ -10,7 +10,9 @@ def test_fitconfig_valid():
     """Test valid FitConfig passes validation."""
     config = FitConfig()
     config.validate()  # Should not raise any exception
-    assert config.backend == "numpy"
+    # Rust is the primary numeric path; the default backend is "auto" which
+    # resolves to the Rust core when available and falls back to numpy.
+    assert config.backend == "auto"
 
 def test_mls2plmconfig_invalid_n_persons():
     with pytest.raises(ValueError, match="n_persons must be >= 1"):

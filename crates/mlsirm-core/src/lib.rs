@@ -1,3 +1,4 @@
+pub mod mmle;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,
