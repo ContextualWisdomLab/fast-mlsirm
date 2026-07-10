@@ -34,8 +34,42 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      # `cargo test --workspace` also runs the proptest fuzz harness in
+      # crates/mlsirm-core/tests/proptest_neg_loglik.rs.
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+
+  fuzz:
+    # Short, bounded coverage-guided fuzzing so PR cost stays low. The
+    # property-based Hypothesis tests already run in the `python` job (via the
+    # dev extra); this job adds the Atheris coverage-guided harnesses with a
+    # ~60s-per-target budget. Longer campaigns can be run nightly if desired.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      # pip is version-pinned so the toolchain used to resolve the fuzz extras
+      # is reproducible (OpenSSF Scorecard pinned-dependencies hardening).
+      - run: python -m pip install --upgrade "pip==26.1.2"
+      # Editable install of the repo-under-test. pip does not support
+      # --require-hashes for editable/local installs, so the fuzz extras
+      # (atheris plus test-only hypothesis) are resolved from the pinned pip
+      # above rather than a hash-locked requirements file.
+      - run: python -m pip install -e .[fuzz]
+      - name: Fuzz load_factor_csv (CSV parser)
+        run: |
+          python fuzz/atheris/fuzz_load_factor_csv.py \
+            -max_total_time=60 -timeout=25 fuzz/corpus/load_factor_csv
+      - name: Fuzz render_diagnostics_report (JSON -> HTML)
+        run: |
+          python fuzz/atheris/fuzz_render_report.py \
+            -max_total_time=60 -timeout=25 fuzz/corpus/render_report
+      - name: Fuzz config validators
+        run: |
+          python fuzz/atheris/fuzz_config.py \
+            -max_total_time=60 -timeout=25 fuzz/corpus/config
 
   package:
     runs-on: ubuntu-latest
