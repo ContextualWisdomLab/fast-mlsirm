@@ -1,3 +1,8 @@
+## 2024-07-07 - Add definition lists to Fit Report metric cards
+
+**Learning:** Key-value pairs for metrics and statistics in HTML reports must use semantic `<dl>`, `<dt>`, and `<dd>` elements to properly associate the label with its value for screen readers. Using generic `<article>` or `<div>` with `<span>` and `<strong>` separates the semantic relationship. Additionally, default `<dt>` styling varies across browsers, so explicit `font-weight` resets are necessary to maintain cross-browser visual consistency while improving semantics. Also, relying purely on mouse interactions for focused tables (`:focus`) impacts mouse users visually - `:focus-visible` ensures focus outlines appear only during keyboard navigation. Purely visual charting elements (like horizontal bar tracks) inside HTML need `aria-hidden="true"` to prevent redundant, noisy announcements for screen reader users.
+**Action:** Always prefer definition lists (`<dl>`) over generic markup for metric pairs, and explicitly reset their font-weight in CSS. Use `:focus-visible` instead of `:focus` for generic focus styles, and add `aria-hidden="true"` to decorative/visual chart tracks.
+
 ## 2025-02-18 - CLI Developer Experience
 **Learning:** Even CLI tools benefit greatly from UX improvements (Developer Experience). Adding help strings and success feedback makes the tool much more intuitive.
 **Action:** Always check if argparse/CLI tools have descriptive help texts and user feedback on success/failure.
