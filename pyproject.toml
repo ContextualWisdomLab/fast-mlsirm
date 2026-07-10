@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.10,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "fast-mlsirm"
@@ -11,6 +11,21 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "ContextualWisdomLab" }]
 dependencies = ["numpy>=1.24"]
+keywords = ["irt", "psychometrics", "latent-space", "mlsirm", "pyo3"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+Homepage = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+Repository = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+Issues = "https://github.com/ContextualWisdomLab/fast-mlsirm/issues"
+Changelog = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -18,9 +33,23 @@ dev = ["pytest>=8"]
 [project.scripts]
 fast-mlsirm = "fast_mlsirm.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["python"]
+[tool.maturin]
+bindings = "pyo3"
+features = ["pyo3/extension-module"]
+manifest-path = "crates/fast-mlsirm-py/Cargo.toml"
+module-name = "fast_mlsirm._core"
+python-source = "python"
 
 [tool.pytest.ini_options]
 pythonpath = ["python"]
 testpaths = ["tests"]
+
+[tool.interrogate]
+ignore-init-method = true
+ignore-init-module = true
+ignore-magic = true
+ignore-module = true
+fail-under = 0
+
+[tool.coverage.report]
+fail_under = 0

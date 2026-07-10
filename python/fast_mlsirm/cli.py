@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
@@ -98,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
     fit_cmd.add_argument("--seed", type=int, default=1, help="Random seed for fitting (default: 1).")
+    fit_cmd.add_argument("--backend", choices=["numpy", "rust", "auto"], default="numpy", help="Objective backend to use (default: numpy).")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
 
@@ -183,18 +185,30 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "simulate":
         _progress(args, f"⏳ Simulating {args.persons} persons and {args.dims} dimensions...")
-        data = simulate(
-            MLS2PLMConfig(
-                n_persons=args.persons,
-                n_dims=args.dims,
-                items_per_dim=args.items_per_dim,
-                latent_dim=args.latent_dim,
-                phi=args.phi,
-                gamma=args.gamma,
-                seed=args.seed,
+        try:
+            data = simulate(
+                MLS2PLMConfig(
+                    n_persons=args.persons,
+                    n_dims=args.dims,
+                    items_per_dim=args.items_per_dim,
+                    latent_dim=args.latent_dim,
+                    phi=args.phi,
+                    gamma=args.gamma,
+                    seed=args.seed,
+                )
             )
-        )
-        save_simulation(data, args.out)
+            save_simulation(data, args.out)
+        except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
+            print(f"❌ Error: Invalid configuration - {str(e)}", file=sys.stderr)
+            return 1
+        except OSError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
+            print(f"❌ Error: Failed to save simulation - {str(e)}", file=sys.stderr)
+            return 1
+
         return _complete(
             args,
             f"✅ Simulation successfully saved to {args.out}",
@@ -409,18 +423,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
         return 1
 
-    result = fit(
-        responses=responses,
-        factor_id=factors,
-        config=FitConfig(
-            model=args.model,
-            latent_dim=args.latent_dim,
-            optimizer=args.optimizer,
-            max_iter=args.max_iter,
-            n_restarts=args.n_restarts,
-            seed=args.seed,
-        ),
-    )
+    try:
+        result = fit(
+            responses=responses,
+            factor_id=factors,
+            config=FitConfig(
+                model=args.model,
+                latent_dim=args.latent_dim,
+                optimizer=args.optimizer,
+                max_iter=args.max_iter,
+                n_restarts=args.n_restarts,
+                seed=args.seed,
+                backend=args.backend,
+            ),
+        )
+    except ValueError as e:
+        print(f"❌ Error: Invalid fit configuration - {str(e)}", file=sys.stderr)
+        return 1
+    except RuntimeError as e:
+        print(f"❌ Error: Fit failed - {str(e)}", file=sys.stderr)
+        return 1
     save_fit_result(result, args.out)
     return _complete(
         args,
@@ -431,6 +453,7 @@ def main(argv: list[str] | None = None) -> int:
             "out": str(args.out),
             "model": result.model,
             "optimizer": result.optimizer,
+            "backend": result.backend,
             "objective": float(result.objective),
             "convergence_status": result.convergence_status,
             "n_iter": int(result.n_iter),
@@ -440,6 +463,19 @@ def main(argv: list[str] | None = None) -> int:
             },
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("❌ Error: Interrupted by user", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
+        print(f"❌ Error: Unexpected failure - {exc}", file=sys.stderr)
+        return 1
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .backend import load_rust_core, normalize_backend, resolve_backend
 from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
@@ -83,8 +84,14 @@ def neg_loglik_and_grad(
     params: MLSIRMParams,
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
+    backend: str = "numpy",
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
+    requested_backend = normalize_backend(backend)
+    normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
+    if normalized_backend == "rust":
+        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask)
+
     model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
@@ -148,6 +155,54 @@ def neg_loglik_and_grad(
         tau=float(grad_tau),
     )
     return float(nll), grads, loglik
+
+
+def _neg_loglik_and_grad_rust(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params: MLSIRMParams,
+    config: FitConfig,
+    mask: np.ndarray | None,
+) -> tuple[float, MLSIRMParams, float]:
+    model = config.normalized_model()
+    penalty = config.penalty
+    y, observed = prepare_response(responses, mask)
+    factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
+
+    if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
+        raise ValueError(f"{model} requires one trait dimension")
+
+    core = load_rust_core()
+    objective, gradients, loglik = core.neg_loglik_and_grad(
+        np.ascontiguousarray(y, dtype=np.float64),
+        np.ascontiguousarray(observed, dtype=np.bool_),
+        np.ascontiguousarray(factors, dtype=np.int64),
+        np.ascontiguousarray(params.theta, dtype=np.float64),
+        np.ascontiguousarray(params.alpha, dtype=np.float64),
+        np.ascontiguousarray(params.b, dtype=np.float64),
+        np.ascontiguousarray(params.xi, dtype=np.float64),
+        np.ascontiguousarray(params.zeta, dtype=np.float64),
+        float(params.tau),
+        model,
+        float(config.eps_distance),
+        float(penalty.lambda_theta),
+        float(penalty.lambda_xi),
+        float(penalty.lambda_zeta),
+        float(penalty.lambda_b),
+        float(penalty.lambda_alpha),
+        float(penalty.lambda_tau),
+        float(penalty.mu_alpha),
+        float(penalty.mu_tau),
+    )
+    grads = MLSIRMParams(
+        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(params.theta.shape),
+        alpha=np.asarray(gradients["alpha"], dtype=np.float64),
+        b=np.asarray(gradients["b"], dtype=np.float64),
+        xi=np.asarray(gradients["xi"], dtype=np.float64).reshape(params.xi.shape),
+        zeta=np.asarray(gradients["zeta"], dtype=np.float64).reshape(params.zeta.shape),
+        tau=float(np.asarray(gradients["tau"], dtype=np.float64)[0]),
+    )
+    return float(objective), grads, float(loglik)
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:

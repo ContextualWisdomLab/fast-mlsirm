@@ -1,0 +1,89 @@
+{
+  "contract_value_krw": 2000000000,
+  "scorecard_version": "2026-07-02",
+  "checks": [
+    {
+      "id": "release_acceptance",
+      "area": "reproducibility",
+      "status": "go",
+      "evidence": "scripts/release_acceptance.py produces acceptance_summary.json"
+    },
+    {
+      "id": "html_report_csp",
+      "area": "security",
+      "status": "go",
+      "evidence": "standalone diagnostics HTML includes a restrictive Content-Security-Policy meta tag"
+    },
+    {
+      "id": "cli_stack_trace_guard",
+      "area": "buyer_diagnostics",
+      "status": "go",
+      "evidence": "fast-mlsirm CLI suppresses unexpected stack traces by default and preserves FAST_MLSIRM_DEBUG=1 for developer debugging"
+    },
+    {
+      "id": "report_table_accessibility",
+      "area": "product_design",
+      "status": "go",
+      "evidence": "scrollable report tables expose a focusable region, table caption, and visible keyboard focus style"
+    },
+    {
+      "id": "figma_buyer_review",
+      "area": "product_design",
+      "status": "go",
+      "evidence": "https://www.figma.com/design/qD34PfMH8Kr41tFdqLCkem records the buyer-review journey with Code Connect disabled"
+    },
+    {
+      "id": "buyer_evidence_packet",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_buyer_packet.py creates a portable zip and buyer_evidence_manifest.json with artifact coverage and SHA256 digests"
+    },
+    {
+      "id": "buyer_evidence_html_report",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_buyer_packet.py creates buyer_evidence_report.html for human review of coverage, digests, contract value, and source commit"
+    },
+    {
+      "id": "automated_benchmark_report",
+      "area": "data_analytics",
+      "status": "go",
+      "evidence": "scripts/build_benchmark_report.py creates benchmark_report.json and benchmark_report.html from release acceptance timing"
+    },
+    {
+      "id": "release_evidence_index",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_release_evidence_index.py creates release_evidence_index.json and release_evidence_index.html from dist, acceptance, benchmark, sales-readiness, and buyer-packet evidence"
+    },
+    {
+      "id": "commercial_release_builder",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_commercial_release.py creates commercial_release_manifest.json and commercial_release_report.html from the full release evidence pipeline"
+    },
+    {
+      "id": "procurement_due_diligence",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_procurement_due_diligence.py creates procurement_due_diligence_manifest.json and procurement_due_diligence_report.html for package metadata, policy-file, commercial-release, GitHub snapshot, and SHA256 report evidence"
+    },
+    {
+      "id": "pr_queue_governance",
+      "area": "procurement",
+      "status": "go",
+      "evidence": "scripts/build_pr_queue_governance.py creates pr_queue_governance_manifest.json and pr_queue_governance_report.html for open PR review, stale/change-requested risk counts, release-scope conflict classification, and SHA256 report evidence"
+    },
+    {
+      "id": "figma_evidence_sync",
+      "area": "product_design",
+      "status": "go",
+      "evidence": "scripts/build_figma_evidence_sync.py creates figma_evidence_sync_manifest.json and figma_evidence_sync_report.html for Code Connect-disabled design packet coverage, required evidence tokens, optional Figma metadata snapshots, and SHA256 report evidence"
+    }
+  ],
+  "go_no_go": {
+    "requires_all_checks_go": true,
+    "requires_sales_readiness_gate": "scripts/sales_readiness.py --require-20b-product",
+    "caveat": "This scorecard is procurement evidence, not a sales guarantee or regulated-use approval."
+  }
+}

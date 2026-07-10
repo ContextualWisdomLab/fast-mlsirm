@@ -1,26 +1,30 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-  schedule:
-    - cron: "24 3 * * 2"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   analyze:
-    name: Analyze Python
-    runs-on: ubuntu-24.04
+    # The repository has GitHub CodeQL default setup enabled; keep this
+    # advanced workflow manual-only so it documents SAST coverage without
+    # colliding with default setup uploads on pull_request/push.
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
       security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+          - language: python
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: github/codeql-action/init@641a925cfafe92d0fdf8b239ba4053e3f8d99d6d
+      - uses: github/codeql-action/init@1ad29ea4a422cce9a242a9fae469541dcd08addc
         with:
-          languages: python
-      - uses: github/codeql-action/analyze@641a925cfafe92d0fdf8b239ba4053e3f8d99d6d
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@1ad29ea4a422cce9a242a9fae469541dcd08addc

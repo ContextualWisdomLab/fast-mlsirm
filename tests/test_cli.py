@@ -90,7 +90,45 @@ def test_cli_fit_json_output(tmp_path, capsys):
     assert payload["command"] == "fit"
     assert payload["status"] == "ok"
     assert payload["model"] == "MLS2PLM"
+    assert payload["backend"] == "numpy"
     assert payload["files"]["params"].endswith("params.npz")
+
+    summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
+    assert summary["backend"] == "numpy"
+
+
+def test_cli_fit_auto_backend_records_resolved_backend(tmp_path, capsys):
+    sim_dir = tmp_path / "sim_out"
+    fit_dir = tmp_path / "fit_out"
+
+    with patch.object(sys, 'argv', ['fast-mlsirm', 'simulate', '--persons', '10', '--dims', '1', '--items-per-dim', '2', '--out', str(sim_dir)]):
+        main()
+    capsys.readouterr()
+
+    args = [
+        "fit",
+        "--responses",
+        str(sim_dir / "responses.npy"),
+        "--factors",
+        str(sim_dir / "item_factor.csv"),
+        "--model",
+        "MLS2PLM",
+        "--max-iter",
+        "1",
+        "--backend",
+        "auto",
+        "--out",
+        str(fit_dir),
+        "--json",
+    ]
+
+    with patch.object(sys, 'argv', ['fast-mlsirm'] + args):
+        assert main() == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["backend"] in {"numpy", "rust"}
+    summary = json.loads((fit_dir / "fit_summary.json").read_text(encoding="utf-8"))
+    assert summary["backend"] == payload["backend"]
 
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
@@ -293,6 +331,31 @@ def test_cli_fit_rejects_factor_length_mismatch(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert "factor_id length (1) must match response item count (2)" in captured.err
+
+def test_cli_unexpected_error_does_not_print_traceback(capsys):
+    args = ["simulate", "--persons", "10", "--dims", "1", "--items-per-dim", "1", "--out", "out"]
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args), patch(
+        "fast_mlsirm.cli.simulate", side_effect=RuntimeError("internal detail")
+    ):
+        assert main() == 1
+
+    captured = capsys.readouterr()
+    assert "Unexpected failure - internal detail" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_debug_env_reraises_unexpected_error(monkeypatch):
+    args = ["simulate", "--persons", "10", "--dims", "1", "--items-per-dim", "1", "--out", "out"]
+    monkeypatch.setenv("FAST_MLSIRM_DEBUG", "1")
+    with patch.object(sys, "argv", ["fast-mlsirm"] + args), patch(
+        "fast_mlsirm.cli.simulate", side_effect=RuntimeError("internal detail")
+    ):
+        try:
+            main()
+        except RuntimeError as exc:
+            assert str(exc) == "internal detail"
+        else:
+            raise AssertionError("FAST_MLSIRM_DEBUG should re-raise unexpected CLI errors")
 
 def test_main_sys_exit_on_direct_call():
     with patch('fast_mlsirm.cli.main', return_value=0):

@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["crates/mlsirm-core"]
+exclude = ["crates/fast-mlsirm-py"]

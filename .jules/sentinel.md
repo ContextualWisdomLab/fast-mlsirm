@@ -9,3 +9,12 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Prevention:**
 - Always add `allow_pickle=False` to `np.load` unless explicitly required and verified.
 - Replace critical `assert` statements with `if` condition checks that raise appropriate runtime exceptions.
+
+## 2026-07-06 - [DoS via Unconstrained Array Dimension Allocation]
+**Vulnerability:** In `fast_mlsirm/fit.py`, the number of dimensions `n_dims` was calculated using the maximum value provided in user input (`factor_id.max()`). A maliciously crafted large integer in `factor_id` causes `np.zeros((n_persons, n_dims))` to attempt allocating an impossibly large array (e.g. hundreds of GiB), crashing the application via Out-Of-Memory (OOM) and causing a Denial of Service (DoS).
+**Learning:** Never trust user input to define unconstrained array dimensions, especially when derived from maximum values within the data.
+**Prevention:** Add explicit boundary checks (e.g. `n_dims > n_items`) to ensure derived dimensions remain mathematically sound and computationally feasible before memory allocation.
+## 2024-07-04 - [Defense in Depth] Validate URI Schemes in Link Generation
+**Vulnerability:** A script (`scripts/build_pr_queue_governance.py`) used `escape()` to sanitize URLs placed directly in the `href` attribute of an `<a>` tag. However, `escape()` alone is insufficient to prevent XSS if the URL uses an unsafe protocol such as `javascript:` or `data:`.
+**Learning:** This is a classic case where escaping HTML special characters provides a false sense of security for URI-based injection contexts. An attacker could potentially inject a malicious script by providing an unsafe protocol.
+**Prevention:** Always validate URI schemes and restrict them to safe protocols (e.g., `http:`, `https:`) before using them in contexts like `href` or `src`. If an unsafe scheme is detected, the URL should be neutralized (e.g., replaced with `#`). I implemented a `_safe_url` helper function to enforce this.

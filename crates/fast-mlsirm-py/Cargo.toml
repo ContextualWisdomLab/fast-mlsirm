@@ -1,0 +1,19 @@
+[package]
+name = "fast-mlsirm-py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "PyO3 bindings for the fast-mlsirm Rust core."
+homepage = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+repository = "https://github.com/ContextualWisdomLab/fast-mlsirm"
+documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/README.md"
+
+[lib]
+name = "fast_mlsirm_core"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+mlsirm-core = { path = "../mlsirm-core" }
+numpy = "0.29.0"
+pyo3 = "0.29.0"
