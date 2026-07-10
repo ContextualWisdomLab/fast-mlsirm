@@ -210,7 +210,7 @@ def test_render_table_section_charts_later_numeric_rows(tmp_path):
     render_diagnostics_report(source, out)
 
     html = out.read_text(encoding="utf-8")
-    assert '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">' in html
+    assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<span class="bar-label">Item Id 12</span>' in html
     assert "Showing 12 of 13 rows." in html
 
