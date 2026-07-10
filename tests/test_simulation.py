@@ -22,3 +22,13 @@ def test_gamma_zero_removes_distance_term():
     data = simulate(MLS2PLMConfig(n_persons=10, n_dims=2, items_per_dim=2, gamma=0.0, seed=7))
     manual_eta = data.truth.a[None, :] * data.truth.theta[:, data.factor_id] + data.truth.b[None, :]
     assert np.allclose(data.probabilities, sigmoid(manual_eta))
+
+
+def test_gamma_distance_matches_broadcast_distance():
+    gamma = 0.75
+    data = simulate(MLS2PLMConfig(n_persons=8, n_dims=2, items_per_dim=3, gamma=gamma, seed=11))
+
+    dist = np.linalg.norm(data.truth.xi[:, None, :] - data.truth.zeta[None, :, :], axis=2)
+    manual_eta = data.truth.a[None, :] * data.truth.theta[:, data.factor_id] + data.truth.b[None, :] - gamma * dist
+
+    assert np.allclose(data.probabilities, sigmoid(manual_eta))
