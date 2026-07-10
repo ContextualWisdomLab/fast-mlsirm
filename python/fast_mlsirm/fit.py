@@ -34,6 +34,19 @@ def fit(
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
 
+    if config.estimator == "mmle":
+        if model not in {"ULS2PLM", "ULSRM"}:
+            raise NotImplementedError(
+                "estimator 'mmle' currently supports only unidimensional 2PL models "
+                "(ULS2PLM/ULSRM); use 'jmle' for spatial or multidimensional models."
+            )
+        return _fit_mmle(y, observed, model, config)
+    if config.estimator in {"em", "bayes"}:
+        raise NotImplementedError(
+            f"estimator '{config.estimator}' is reserved for a future milestone; "
+            "use 'jmle' or 'mmle'."
+        )
+
     best: FitResult | None = None
     for restart in range(config.n_restarts):
         candidate = _run_single_fit(
@@ -45,6 +58,79 @@ def fit(
     if best is None:
         raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
     return best
+
+
+def _fit_mmle(
+    y: np.ndarray,
+    observed: np.ndarray,
+    model: str,
+    config: FitConfig,
+) -> FitResult:
+    """Marginal MLE (EM) — robust to missing data. Unidimensional 2PL measurement.
+
+    Uses the compiled Rust core (``fast_mlsirm._core.fit_mmle_2pl``) when present;
+    otherwise the pure-numpy reference in ``fast_mlsirm.estimators.mmle``. Both
+    integrate ability over Gauss-Hermite quadrature, so unanswered items
+    contribute nothing (missing-at-random safe) — no imputation.
+    """
+    from .estimators.mmle import fit_mmle_2pl as _py_mmle
+
+    n_persons, n_items = y.shape
+    y_filled = np.where(observed, y, 0.0).astype(np.float64)
+
+    rust = None
+    try:  # pragma: no cover - depends on the compiled extension being built
+        from . import _core  # type: ignore
+
+        rust = getattr(_core, "fit_mmle_2pl", None)
+    except Exception:  # pragma: no cover
+        rust = None
+
+    if rust is not None:  # pragma: no cover - exercised only when the ext is built
+        a, b, theta, loglik_trace, converged = rust(
+            y_filled.ravel(),
+            observed.astype(bool).ravel(),
+            int(n_persons),
+            int(n_items),
+            int(config.max_iter),
+            float(config.tolerance),
+        )
+        a = np.asarray(a, dtype=np.float64)
+        b = np.asarray(b, dtype=np.float64)
+        theta = np.asarray(theta, dtype=np.float64)
+        loglik_trace = list(loglik_trace)
+    else:
+        res = _py_mmle(
+            y_filled,
+            observed.astype(bool),
+            max_iter=config.max_iter,
+            tol=config.tolerance,
+        )
+        a = np.asarray(res["a"], dtype=np.float64)
+        b = np.asarray(res["b"], dtype=np.float64)
+        theta = np.asarray(res["theta"], dtype=np.float64)
+        loglik_trace = list(res["loglik_trace"])
+        converged = res["status"] == "converged"
+
+    params = MLSIRMParams(
+        theta=theta.reshape(n_persons, 1),
+        alpha=np.log(np.clip(a, 1e-6, None)),  # model stores alpha; a = exp(alpha)
+        b=b,
+        xi=np.zeros((n_persons, config.latent_dim)),
+        zeta=np.zeros((n_items, config.latent_dim)),
+        tau=0.0,
+    )
+    return FitResult(
+        params=params,
+        model=model,
+        optimizer=f"mmle_em/{'rust' if rust is not None else 'numpy'}",
+        backend=config.backend,
+        objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
+        loglik_trace=[float(v) for v in loglik_trace],
+        objective_trace=[float(-v) for v in loglik_trace],
+        convergence_status="converged" if converged else "max_iter_reached",
+        n_iter=len(loglik_trace),
+    )
 
 
 def _run_single_fit(
