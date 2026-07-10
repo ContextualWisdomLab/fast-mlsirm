@@ -2,8 +2,22 @@
 
 ## Unreleased
 
+### Changed
+
+- Made the Rust core (`fast_mlsirm._core`) the **primary** numeric path: the
+  default `FitConfig.backend` and CLI `--backend` are now `"auto"`, resolving to
+  Rust when the compiled extension is available and falling back to the NumPy
+  reference otherwise. The verified LSIRM/MLS2PLM neg-loglik, gradient, and
+  distance-kernel formulas are ported bit-for-bit; observable outputs are
+  unchanged.
+
 ### Added
 
+- Added `tests/test_rust_parity.py`, a Rust<->NumPy numerical parity gate that
+  asserts agreement to `1e-6` across all five model variants, multiple problem
+  sizes, and masked/dense fixtures (observed difference ~1e-13).
+- Added a Rust toolchain plus a resolved-default-backend assertion to the
+  `python` CI job so the primary Rust path is built and exercised by the suite.
 - Added `scripts/release_acceptance.py` to execute a sales-readiness end-to-end
   smoke: simulate, fit (auto + optional rust), diagnostics, and report rendering.
 - Added `docs/release_acceptance.md` to document acceptance inputs, outputs, and

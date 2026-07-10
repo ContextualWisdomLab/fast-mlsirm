@@ -78,6 +78,8 @@ def test_cli_fit_json_output(tmp_path, capsys):
         "MLS2PLM",
         "--max-iter",
         "1",
+        "--backend",
+        "numpy",
         "--out",
         str(fit_dir),
         "--json",
