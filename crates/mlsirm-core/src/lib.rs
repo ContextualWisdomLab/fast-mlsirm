@@ -1,3 +1,4 @@
+pub mod mmle;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,
@@ -340,7 +341,8 @@ mod additional_tests {
         assert_eq!(obj, 0.0);
 
         let mask_true = vec![true];
-        let (obj_mirt, _, _) = neg_loglik_and_grad(&y, Some(&mask_true), &[0], &params, &config, &penalty);
+        let (obj_mirt, _, _) =
+            neg_loglik_and_grad(&y, Some(&mask_true), &[0], &params, &config, &penalty);
         assert!(obj_mirt > 0.0);
     }
 }

@@ -16,7 +16,9 @@ def test_fit_pipeline_smoke():
     assert result.params.theta.shape == (30, 2)
     assert result.params.alpha.shape == (6,)
     assert result.params.xi.shape == (30, 2)
-    assert result.backend == "numpy"
+    # Default backend is "auto": Rust core when the extension is built,
+    # numpy reference otherwise. Both produce numerically-identical results.
+    assert result.backend in {"rust", "numpy"}
     assert np.isfinite(result.objective)
 
     report = recovery_report(data.truth, result.params)

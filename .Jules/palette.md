@@ -12,3 +12,7 @@
 ## 2024-05-24 - HTML Report Table Focus and Hover UX
 **Learning:** In data-heavy static HTML reports, users interact heavily with wide tables. `tbody tr:hover` styling significantly improves readability and row tracking for mouse users. Using `:focus` on scrollable containers (`.table-wrap`) causes an obtrusive focus ring on every click, degrading UX for mouse users.
 **Action:** Always prefer `:focus-visible` over `:focus` for layout and scroll containers to maintain keyboard accessibility without penalizing mouse users. Always ensure large tables have row hover states.
+
+## 2025-02-18 - Generic Focusable Container Focus Style
+**Learning:** Using `:focus` on generic focusable containers (like scrollable elements with `tabindex="0"`) creates visually jarring outlines for mouse users when clicked.
+**Action:** Always use `:focus-visible` instead of `:focus` for generic focusable containers to preserve required focus indicators for keyboard navigation while avoiding jarring visual artifacts for mouse users.
