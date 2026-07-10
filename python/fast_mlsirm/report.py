@@ -246,7 +246,12 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    values = [float(row[value_key]) for row in rows if _is_number(row.get(value_key))]
+    numeric_rows = [
+        (index, row, float(row[value_key]))
+        for index, row in enumerate(rows)
+        if _is_number(row.get(value_key))
+    ]
+    values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
 
@@ -254,11 +259,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
     upper = max(values)
     span = upper - lower
     chart_rows = []
-    for index, row in enumerate(rows[:12]):
-        raw_value = row.get(value_key)
-        if not _is_number(raw_value):
-            continue
-        value = float(raw_value)
+    for index, row, value in numeric_rows[:12]:
         width = 64.0 if span == 0 else 8.0 + ((value - lower) / span) * 92.0
         chart_rows.append(
             "\n".join(
@@ -279,7 +280,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
 
     return "\n".join(
         [
-            '<div class="bar-chart" role="img" aria-label="Compact diagnostics bar chart">',
+            '<div class="bar-chart" aria-hidden="true">',
             *chart_rows,
             "</div>",
         ]
@@ -477,6 +478,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+  margin: 0;
 }
 
 .metric-card {
@@ -492,11 +494,12 @@ h3 {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: normal;
+  margin: 0;
 }
 
 .metric-card dd {
   display: block;
-  margin: 8px 0 0;
+  margin: 8px 0 0 0;
   font-size: 1.45rem;
   font-weight: bold;
   overflow-wrap: anywhere;
@@ -615,6 +618,10 @@ th {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #fbfcfa;
 }
 
 .empty-state {
