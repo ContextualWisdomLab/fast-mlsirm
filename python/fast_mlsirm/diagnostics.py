@@ -762,8 +762,9 @@ def _validation_folds(observed: np.ndarray, k_folds: int, seed: int) -> list[np.
         cols = eligible[split, 1]
         mask[rows, cols] = True
         train = observed & ~mask
-        mask[train.sum(axis=1) == 0, :] = False
-        mask[:, train.sum(axis=0) == 0] = False
+        # ~train.any() is faster than train.sum() == 0 as it avoids allocating an integer array
+        mask[~train.any(axis=1), :] = False
+        mask[:, ~train.any(axis=0)] = False
         if not np.any(mask):
             raise ValueError("fold validation set is empty; reduce k_folds")
         folds.append(mask)
