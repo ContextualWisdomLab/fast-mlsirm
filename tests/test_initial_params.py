@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from fast_mlsirm.fit import _initial_params
 from fast_mlsirm.config import FitConfig

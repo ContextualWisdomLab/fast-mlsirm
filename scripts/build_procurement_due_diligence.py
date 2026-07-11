@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import sys
 import tarfile
 import zipfile
 from datetime import UTC, datetime

@@ -81,7 +81,7 @@ def _render_html(
             "</head>",
             "<body>",
             '<a href="#main-content" class="skip-link">Skip to main content</a>',
-            '<main id="main-content">',
+            '<main id="main-content" tabindex="-1">',
             '<section class="hero">',
             '<div class="hero-copy">',
             "<p>fast-mlsirm diagnostics</p>",
@@ -490,6 +490,10 @@ main {
   max-width: 1120px;
   margin: 0 auto;
   padding: 32px 20px 48px;
+}
+
+main:focus {
+  outline: none;
 }
 
 .hero {
