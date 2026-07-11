@@ -80,7 +80,8 @@ def _render_html(
             "</style>",
             "</head>",
             "<body>",
-            "<main>",
+            '<a href="#main-content" class="skip-link">Skip to main content</a>',
+            '<main id="main-content">',
             '<section class="hero">',
             '<div class="hero-copy">',
             "<p>fast-mlsirm diagnostics</p>",
@@ -464,6 +465,25 @@ body {
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--teal);
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.2s ease-in-out;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.skip-link:focus-visible {
+  top: 0;
+  outline: 3px solid #0f766e;
+  outline-offset: 2px;
 }
 
 main {
