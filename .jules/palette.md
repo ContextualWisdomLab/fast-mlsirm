@@ -7,3 +7,7 @@
 ## 2024-07-11 - Skip-to-Content Links in HTML Reports
 **Learning:** Standalone HTML reports require skip-to-content links for keyboard/screen reader users, just like standard web applications, to avoid forcing users to navigate through repetitive or non-essential visual elements at the top of the page.
 **Action:** Always include a `skip-link` right after the body tag and set `id="main-content"` on the primary content container.
+
+## 2024-07-11 - Skip-to-Content Link Target Focus
+**Learning:** Adding a `skip-link` pointing to `#main-content` is not enough for keyboard accessibility; the target `<main>` element must be programmatically focusable (`tabindex="-1"`) and its default focus outline should be removed (`outline: none;`) to ensure the user's focus correctly shifts into the main content area without displaying an unnecessary visual artifact.
+**Action:** Always add `tabindex="-1"` and `outline: none;` to the primary content container that serves as the skip link target.
