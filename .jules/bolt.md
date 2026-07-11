@@ -19,3 +19,7 @@
 ## 2025-05-18 - Replacing boolean `.sum() == 0` with `~.any()`
 **Learning:** Checking for the absence of truthy values in boolean arrays using `.sum(axis=...) == 0` causes numpy to allocate a new integer array, which is inefficient.
 **Action:** Replace `boolean_array.sum(axis=...) == 0` with `~boolean_array.any(axis=...)` to skip integer allocation and perform the check much faster.
+
+## 2025-05-19 - Intermediate allocations in distance calculations
+**Learning:** `(true_xi * true_xi).sum(axis=1)` in Euclidean distance formulas creates an unnecessary intermediate 2D array before performing the sum over the axis. This can cause performance bottlenecks across many function calls.
+**Action:** Replace `(x * x).sum(axis=1)` with `np.einsum('ij,ij->i', x, x)` when computing pairwise Euclidean distances to avoid allocating the intermediate 2D array and achieve measurable performance gains.

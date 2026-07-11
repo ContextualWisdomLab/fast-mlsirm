@@ -8,7 +8,12 @@ import numpy as np
 from .config import FitConfig
 from .math import sigmoid, standardize
 from .objective import linear_predictor, model_flags, prepare_response
-from .types import DimensionalityDiagnostics, FitDiagnostics, MLSIRMParams, RecoveryReport
+from .types import (
+    DimensionalityDiagnostics,
+    FitDiagnostics,
+    MLSIRMParams,
+    RecoveryReport,
+)
 
 
 def predict_proba(
@@ -46,13 +51,23 @@ def fit_diagnostics(
     variance = np.maximum(prob * (1.0 - prob), eps)
     residual = (y - prob) * observed
     pearson_sq = np.where(observed, residual * residual / variance, 0.0)
-    n_parameters = int(parameter_count) if parameter_count is not None else _parameter_count(params, model)
+    n_parameters = (
+        int(parameter_count)
+        if parameter_count is not None
+        else _parameter_count(params, model)
+    )
 
     itemfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=0)
     personfit = _axis_fit(y, observed, prob, variance, residual, pearson_sq, axis=1)
-    _attach_person_strata(personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0])
-    factorfit = _factor_fit(factor_id, y, observed, prob, variance, residual, pearson_sq)
-    loglik = float(np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0).sum())
+    _attach_person_strata(
+        personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0]
+    )
+    factorfit = _factor_fit(
+        factor_id, y, observed, prob, variance, residual, pearson_sq
+    )
+    loglik = float(
+        np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0).sum()
+    )
     n_observed = int(observed.sum())
     deviance = -2.0 * loglik
     model_fit = {
@@ -72,10 +87,18 @@ def fit_diagnostics(
         personfit=personfit,
         model_fit=model_fit,
         factorfit=factorfit,
-        groupfit=_binary_stratum_fit("group_id", group_id, y, observed, prob, variance, residual, pearson_sq),
-        clusterfit=_binary_stratum_fit("cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq),
-        group_itemfit=_binary_stratum_item_fit("group_id", group_id, y, observed, prob, variance, residual, pearson_sq),
-        cluster_itemfit=_binary_stratum_item_fit("cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq),
+        groupfit=_binary_stratum_fit(
+            "group_id", group_id, y, observed, prob, variance, residual, pearson_sq
+        ),
+        clusterfit=_binary_stratum_fit(
+            "cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq
+        ),
+        group_itemfit=_binary_stratum_item_fit(
+            "group_id", group_id, y, observed, prob, variance, residual, pearson_sq
+        ),
+        cluster_itemfit=_binary_stratum_item_fit(
+            "cluster_id", cluster_id, y, observed, prob, variance, residual, pearson_sq
+        ),
     )
 
 
@@ -104,10 +127,16 @@ def dimensionality_diagnostics(
             fitted = fit(
                 y,
                 factor_id,
-                config=replace(base, model=model, latent_dim=latent_dim, seed=seed + fold_idx),
+                config=replace(
+                    base, model=model, latent_dim=latent_dim, seed=seed + fold_idx
+                ),
                 mask=train_mask,
             )
-            prob = np.clip(predict_proba(fitted.params, factor_id, model=fitted.model), eps, 1.0 - eps)
+            prob = np.clip(
+                predict_proba(fitted.params, factor_id, model=fitted.model),
+                eps,
+                1.0 - eps,
+            )
             _accumulate_heldout(totals, y, validation_mask, prob)
 
         candidates.append(
@@ -138,7 +167,9 @@ def response_process_fit_diagnostics(
     cluster_id: np.ndarray | None = None,
 ) -> FitDiagnostics:
     _validate_response_process(item_type, response_process)
-    y, observed, prob = _prepare_categorical_response(responses, probabilities, mask, eps)
+    y, observed, prob = _prepare_categorical_response(
+        responses, probabilities, mask, eps
+    )
     _validate_category_count(item_type, prob.shape[2])
     onehot = np.eye(prob.shape[2], dtype=np.float64)[y]
     residual = (onehot - prob) * observed[:, :, None]
@@ -149,7 +180,9 @@ def response_process_fit_diagnostics(
 
     itemfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=0)
     personfit = _categorical_axis_fit(observed, entry_loglik, entry_chisq, axis=1)
-    _attach_person_strata(personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0])
+    _attach_person_strata(
+        personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0]
+    )
     categoryfit = _category_fit(observed, onehot, prob, residual)
     loglik = float(entry_loglik.sum())
     n_observed = float(observed.sum())
@@ -166,10 +199,18 @@ def response_process_fit_diagnostics(
         personfit=personfit,
         model_fit=model_fit,
         categoryfit=categoryfit,
-        groupfit=_categorical_stratum_fit("group_id", group_id, observed, entry_loglik, entry_chisq),
-        clusterfit=_categorical_stratum_fit("cluster_id", cluster_id, observed, entry_loglik, entry_chisq),
-        group_itemfit=_categorical_stratum_item_fit("group_id", group_id, observed, entry_loglik, entry_chisq),
-        cluster_itemfit=_categorical_stratum_item_fit("cluster_id", cluster_id, observed, entry_loglik, entry_chisq),
+        groupfit=_categorical_stratum_fit(
+            "group_id", group_id, observed, entry_loglik, entry_chisq
+        ),
+        clusterfit=_categorical_stratum_fit(
+            "cluster_id", cluster_id, observed, entry_loglik, entry_chisq
+        ),
+        group_itemfit=_categorical_stratum_item_fit(
+            "group_id", group_id, observed, entry_loglik, entry_chisq
+        ),
+        cluster_itemfit=_categorical_stratum_item_fit(
+            "cluster_id", cluster_id, observed, entry_loglik, entry_chisq
+        ),
     )
 
 
@@ -187,9 +228,13 @@ def response_process_dimensionality_diagnostics(
     _validate_response_process(item_type, response_process)
     candidates: list[dict[str, float | str]] = []
     for idx, (label, probabilities) in enumerate(candidate_probabilities.items()):
-        y, observed, prob = _prepare_categorical_response(responses, probabilities, mask, eps)
+        y, observed, prob = _prepare_categorical_response(
+            responses, probabilities, mask, eps
+        )
         _validate_category_count(item_type, prob.shape[2])
-        entry_loglik, entry_chisq, residual = _categorical_entry_stats(y, observed, prob)
+        entry_loglik, entry_chisq, residual = _categorical_entry_stats(
+            y, observed, prob
+        )
         n_observed = float(observed.sum())
         candidates.append(
             {
@@ -249,7 +294,9 @@ def fixed_item_calibration_diagnostics(
         if not candidate_label:
             raise ValueError("candidate label must not be empty")
 
-        fixed_probabilities = _fixed_candidate_probabilities(probabilities, fixed_idx, y.shape)
+        fixed_probabilities = _fixed_candidate_probabilities(
+            probabilities, fixed_idx, y.shape
+        )
         diagnostics = response_process_fit_diagnostics(
             fixed_responses,
             fixed_probabilities,
@@ -272,7 +319,9 @@ def fixed_item_calibration_diagnostics(
                 "heldout_loglik": loglik,
                 "heldout_deviance": float(diagnostics.model_fit["deviance"]),
                 "pearson_chisq": float(diagnostics.model_fit["pearson_chisq"]),
-                "mean_abs_category_residual": float(diagnostics.model_fit["mean_abs_category_residual"]),
+                "mean_abs_category_residual": float(
+                    diagnostics.model_fit["mean_abs_category_residual"]
+                ),
                 "kaefa_itemfit_penalty": kaefa_penalty,
                 "max_fixed_item_outfit_mnsq": float(outfit.max()),
                 "itemfit_penalty_weight": float(itemfit_penalty_weight),
@@ -309,11 +358,15 @@ def align_latent_space(
     return aligned[: len(true_xi)], aligned[len(true_xi) :]
 
 
-def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = True) -> RecoveryReport:
+def recovery_report(
+    truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = True
+) -> RecoveryReport:
     est_xi = estimate.xi
     est_zeta = estimate.zeta
     if align:
-        est_xi, est_zeta = align_latent_space(truth.xi, truth.zeta, estimate.xi, estimate.zeta)
+        est_xi, est_zeta = align_latent_space(
+            truth.xi, truth.zeta, estimate.xi, estimate.zeta
+        )
 
     metrics = {
         "a_bias": _bias(truth.a, estimate.a),
@@ -323,13 +376,29 @@ def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = T
         "b_rmse": _rmse(truth.b, estimate.b),
         "b_corr": _corr(truth.b, estimate.b),
         "gamma_abs_error": float(abs(truth.gamma - estimate.gamma)),
-        "gamma_relative_error": float(abs(truth.gamma - estimate.gamma) / max(abs(truth.gamma), 1e-12)),
-        "theta_rmse_standardized": _rmse(standardize(truth.theta), standardize(estimate.theta)),
-        "latent_coordinate_rmse": _rmse(np.vstack([truth.xi, truth.zeta]), np.vstack([est_xi, est_zeta])),
-        "person_item_distance_rmse": _distance_rmse(truth.xi, truth.zeta, estimate.xi, estimate.zeta),
+        "gamma_relative_error": float(
+            abs(truth.gamma - estimate.gamma) / max(abs(truth.gamma), 1e-12)
+        ),
+        "theta_rmse_standardized": _rmse(
+            standardize(truth.theta), standardize(estimate.theta)
+        ),
+        "latent_coordinate_rmse": _rmse(
+            np.vstack([truth.xi, truth.zeta]), np.vstack([est_xi, est_zeta])
+        ),
+        "person_item_distance_rmse": _distance_rmse(
+            truth.xi, truth.zeta, estimate.xi, estimate.zeta
+        ),
     }
     summary = {
-        "parameter_rmse_mean": float(np.nanmean([metrics["a_rmse"], metrics["b_rmse"], metrics["theta_rmse_standardized"]])),
+        "parameter_rmse_mean": float(
+            np.nanmean(
+                [
+                    metrics["a_rmse"],
+                    metrics["b_rmse"],
+                    metrics["theta_rmse_standardized"],
+                ]
+            )
+        ),
         "latent_rmse": metrics["latent_coordinate_rmse"],
         "distance_rmse": metrics["person_item_distance_rmse"],
         "gamma_abs_error": metrics["gamma_abs_error"],
@@ -337,7 +406,9 @@ def recovery_report(truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = T
     return RecoveryReport(summary=summary, metrics=metrics)
 
 
-def _subset_params(params: MLSIRMParams, persons: np.ndarray | None, items: np.ndarray | None) -> MLSIRMParams:
+def _subset_params(
+    params: MLSIRMParams, persons: np.ndarray | None, items: np.ndarray | None
+) -> MLSIRMParams:
     p_idx = slice(None) if persons is None else np.asarray(persons, dtype=np.int64)
     i_idx = slice(None) if items is None else np.asarray(items, dtype=np.int64)
     return MLSIRMParams(
@@ -472,9 +543,13 @@ def _attach_person_strata(
     n_persons: int,
 ) -> None:
     if group_id is not None:
-        personfit["group_id"] = _person_strata(group_id, n_persons, "group_id").astype(np.float64)
+        personfit["group_id"] = _person_strata(group_id, n_persons, "group_id").astype(
+            np.float64
+        )
     if cluster_id is not None:
-        personfit["cluster_id"] = _person_strata(cluster_id, n_persons, "cluster_id").astype(np.float64)
+        personfit["cluster_id"] = _person_strata(
+            cluster_id, n_persons, "cluster_id"
+        ).astype(np.float64)
 
 
 def _person_strata(values: np.ndarray, n_persons: int, name: str) -> np.ndarray:
@@ -501,7 +576,19 @@ def _binary_stratum_fit(
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
     rows = []
     for value in np.unique(ids):
-        rows.append(_binary_scope_row(float(value), ids[:, None] == value, y, observed, prob, variance, residual, pearson_sq, loglik))
+        rows.append(
+            _binary_scope_row(
+                float(value),
+                ids[:, None] == value,
+                y,
+                observed,
+                prob,
+                variance,
+                residual,
+                pearson_sq,
+                loglik,
+            )
+        )
     return _binary_scope_table(id_name, rows)
 
 
@@ -527,7 +614,23 @@ def _binary_stratum_item_fit(
             scope = np.zeros_like(observed, dtype=bool)
             scope[row_mask, item] = True
             if np.any(observed & scope):
-                rows.append((float(value), float(item), *_binary_scope_row(0.0, scope, y, observed, prob, variance, residual, pearson_sq, loglik)[1:]))
+                rows.append(
+                    (
+                        float(value),
+                        float(item),
+                        *_binary_scope_row(
+                            0.0,
+                            scope,
+                            y,
+                            observed,
+                            prob,
+                            variance,
+                            residual,
+                            pearson_sq,
+                            loglik,
+                        )[1:],
+                    )
+                )
     return _binary_scope_item_table(id_name, rows)
 
 
@@ -563,7 +666,9 @@ def _binary_scope_row(
     )
 
 
-def _binary_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+def _binary_scope_table(
+    id_name: str, rows: list[tuple[float, ...]]
+) -> dict[str, np.ndarray]:
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -580,7 +685,9 @@ def _binary_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str
     }
 
 
-def _binary_scope_item_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+def _binary_scope_item_table(
+    id_name: str, rows: list[tuple[float, ...]]
+) -> dict[str, np.ndarray]:
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -625,7 +732,9 @@ def _categorical_stratum_fit(
     rows = []
     for value in np.unique(ids):
         where = observed & (ids[:, None] == value)
-        rows.append(_categorical_scope_row(float(value), where, entry_loglik, entry_chisq))
+        rows.append(
+            _categorical_scope_row(float(value), where, entry_loglik, entry_chisq)
+        )
     return _categorical_scope_table(id_name, rows)
 
 
@@ -647,7 +756,15 @@ def _categorical_stratum_item_fit(
             where = np.zeros_like(observed, dtype=bool)
             where[row_mask, item] = observed[row_mask, item]
             if np.any(where):
-                rows.append((float(value), float(item), *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[1:]))
+                rows.append(
+                    (
+                        float(value),
+                        float(item),
+                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
+                            1:
+                        ],
+                    )
+                )
     return _categorical_scope_item_table(id_name, rows)
 
 
@@ -663,7 +780,9 @@ def _categorical_scope_row(
     return (id_value, count, loglik, -2.0 * loglik, chisq, chisq / max(count, 1.0))
 
 
-def _categorical_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+def _categorical_scope_table(
+    id_name: str, rows: list[tuple[float, ...]]
+) -> dict[str, np.ndarray]:
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -675,7 +794,9 @@ def _categorical_scope_table(id_name: str, rows: list[tuple[float, ...]]) -> dic
     }
 
 
-def _categorical_scope_item_table(id_name: str, rows: list[tuple[float, ...]]) -> dict[str, np.ndarray]:
+def _categorical_scope_item_table(
+    id_name: str, rows: list[tuple[float, ...]]
+) -> dict[str, np.ndarray]:
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -697,7 +818,9 @@ def _fixed_item_indices(fixed_items: np.ndarray | None, n_items: int) -> np.ndar
         raise ValueError("fixed_items must be a 1D boolean mask or item-index vector")
     if values.dtype == np.bool_:
         if values.shape[0] != n_items:
-            raise ValueError("fixed_items boolean mask length must match number of items")
+            raise ValueError(
+                "fixed_items boolean mask length must match number of items"
+            )
         indices = np.flatnonzero(values)
     else:
         if not np.issubdtype(values.dtype, np.integer):
@@ -713,10 +836,14 @@ def _fixed_item_indices(fixed_items: np.ndarray | None, n_items: int) -> np.ndar
     return indices
 
 
-def _fixed_candidate_probabilities(probabilities: np.ndarray, fixed_idx: np.ndarray, response_shape: tuple[int, int]) -> np.ndarray:
+def _fixed_candidate_probabilities(
+    probabilities: np.ndarray, fixed_idx: np.ndarray, response_shape: tuple[int, int]
+) -> np.ndarray:
     prob = np.asarray(probabilities)
     if prob.ndim not in {2, 3}:
-        raise ValueError("candidate probabilities must have shape persons x items or persons x items x categories")
+        raise ValueError(
+            "candidate probabilities must have shape persons x items or persons x items x categories"
+        )
     if prob.shape[:2] != response_shape:
         raise ValueError("candidate probabilities shape must match responses")
     if prob.ndim == 2:
@@ -743,13 +870,17 @@ def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
     return dims
 
 
-def _validation_folds(observed: np.ndarray, k_folds: int, seed: int) -> list[np.ndarray]:
+def _validation_folds(
+    observed: np.ndarray, k_folds: int, seed: int
+) -> list[np.ndarray]:
     if k_folds < 2:
         raise ValueError("k_folds must be >= 2")
 
     row_counts = observed.sum(axis=1)
     col_counts = observed.sum(axis=0)
-    eligible = np.argwhere(observed & (row_counts[:, None] > 1) & (col_counts[None, :] > 1))
+    eligible = np.argwhere(
+        observed & (row_counts[:, None] > 1) & (col_counts[None, :] > 1)
+    )
     if len(eligible) < k_folds:
         raise ValueError("not enough observed entries for k-fold validation")
 
@@ -771,7 +902,9 @@ def _validation_folds(observed: np.ndarray, k_folds: int, seed: int) -> list[np.
     return folds
 
 
-def _accumulate_heldout(totals: dict[str, float], y: np.ndarray, mask: np.ndarray, prob: np.ndarray) -> None:
+def _accumulate_heldout(
+    totals: dict[str, float], y: np.ndarray, mask: np.ndarray, prob: np.ndarray
+) -> None:
     yy = y[mask]
     pp = prob[mask]
     residual = yy - pp
@@ -813,7 +946,9 @@ def _prepare_categorical_response(
     if prob.ndim != 3 or prob.shape[:2] != y.shape:
         raise ValueError("probabilities must have shape persons x items x categories")
 
-    observed = np.isfinite(y) & (y != -1) if mask is None else np.asarray(mask, dtype=bool)
+    observed = (
+        np.isfinite(y) & (y != -1) if mask is None else np.asarray(mask, dtype=bool)
+    )
     if observed.shape != y.shape:
         raise ValueError("mask shape must match responses")
     observed &= np.isfinite(y) & (y != -1)
@@ -846,13 +981,20 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _distance_rmse(true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray) -> float:
-    true_sq_xi = (true_xi * true_xi).sum(axis=1)[:, None]
-    true_sq_zeta = (true_zeta * true_zeta).sum(axis=1)[None, :]
-    true_d = np.sqrt(np.maximum(true_sq_xi - 2 * np.dot(true_xi, true_zeta.T) + true_sq_zeta, 0.0))
+def _distance_rmse(
+    true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray
+) -> float:
+    # Optimized distance calculation: replace memory allocation in (x * x).sum(axis=1) with np.einsum
+    true_sq_xi = np.einsum("ij,ij->i", true_xi, true_xi)[:, None]
+    true_sq_zeta = np.einsum("ij,ij->i", true_zeta, true_zeta)[None, :]
+    true_d = np.sqrt(
+        np.maximum(true_sq_xi - 2 * np.dot(true_xi, true_zeta.T) + true_sq_zeta, 0.0)
+    )
 
-    est_sq_xi = (est_xi * est_xi).sum(axis=1)[:, None]
-    est_sq_zeta = (est_zeta * est_zeta).sum(axis=1)[None, :]
-    est_d = np.sqrt(np.maximum(est_sq_xi - 2 * np.dot(est_xi, est_zeta.T) + est_sq_zeta, 0.0))
+    est_sq_xi = np.einsum("ij,ij->i", est_xi, est_xi)[:, None]
+    est_sq_zeta = np.einsum("ij,ij->i", est_zeta, est_zeta)[None, :]
+    est_d = np.sqrt(
+        np.maximum(est_sq_xi - 2 * np.dot(est_xi, est_zeta.T) + est_sq_zeta, 0.0)
+    )
 
     return _rmse(true_d, est_d)
