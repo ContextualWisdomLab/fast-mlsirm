@@ -15,3 +15,7 @@
 **Learning:** When calculating values grouped by categorical dimensions (like item factors), calculating sums or means by iterating through dimensions `d in range(n_dims)` using boolean indexing `(items = factor_id == d)` is slow because numpy does not vectorize over the outer loop. Utilizing a 2D boolean mapping mask `(factor_id[:, None] == np.arange(n_dims))` and matrix multiplications `(@)` directly converts loop aggregations into fast C/BLAS optimized operations, yielding massive performance gains.
 
 **Action:** Whenever noticing an outer python loop over categorical subsets (often indices or distinct labels) that aggregates numeric array data, immediately attempt to broadcast the labels into a dense or sparse 2D boolean mask and aggregate using matrix multiplication `(@)`.
+
+## 2025-05-18 - Replacing boolean `.sum() == 0` with `~.any()`
+**Learning:** Checking for the absence of truthy values in boolean arrays using `.sum(axis=...) == 0` causes numpy to allocate a new integer array, which is inefficient.
+**Action:** Replace `boolean_array.sum(axis=...) == 0` with `~boolean_array.any(axis=...)` to skip integer allocation and perform the check much faster.
