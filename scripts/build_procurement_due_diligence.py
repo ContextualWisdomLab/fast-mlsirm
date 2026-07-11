@@ -307,6 +307,8 @@ main { max-width: 1120px; margin: 0 auto; padding: 32px 20px 56px; }
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #e8edef; text-align: left; vertical-align: top; }
+tbody tr { transition: background-color 0.15s ease-in-out; }
+tbody tr:hover { background: #fbfcfa; }
 code { overflow-wrap: anywhere; }
 .note { color: #5e6f76; margin-bottom: 0; }
 """
