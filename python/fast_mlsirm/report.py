@@ -664,6 +664,10 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+tbody tr {
+  transition: background-color 0.15s ease-in-out;
+}
+
 tbody tr:hover {
   background: #fbfcfa;
 }

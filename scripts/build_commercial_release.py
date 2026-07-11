@@ -329,6 +329,12 @@ td {
   text-align: left;
   vertical-align: top;
 }
+tbody tr {
+  transition: background-color 0.15s ease-in-out;
+}
+tbody tr:hover {
+  background: #fbfcfa;
+}
 tbody tr:last-child th,
 tbody tr:last-child td {
   border-bottom: 0;
