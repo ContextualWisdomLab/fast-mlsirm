@@ -11,3 +11,7 @@
 ## 2024-07-11 - Skip-to-Content Link Target Focus
 **Learning:** Adding a `skip-link` pointing to `#main-content` is not enough for keyboard accessibility; the target `<main>` element must be programmatically focusable (`tabindex="-1"`) and its default focus outline should be removed (`outline: none;`) to ensure the user's focus correctly shifts into the main content area without displaying an unnecessary visual artifact.
 **Action:** Always add `tabindex="-1"` and `outline: none;` to the primary content container that serves as the skip link target.
+
+## 2024-07-12 - HTML 리포트의 화면 전환 효과 최소화 (Reduced Motion)
+**Learning:** 독립형 HTML 리포트에는 시각적 부드러움을 위해 CSS 전환 효과(예: skip-link 슬라이딩, 테이블 행 호버 효과)가 포함되어 있으나, 이는 전정기관 장애가 있는 사용자에게 불편함을 줄 수 있습니다. 접근성을 완전히 확보하려면 시스템 설정에서 애니메이션 최소화(prefers-reduced-motion)를 선택한 사용자를 위해 이를 비활성화하는 미디어 쿼리가 필수적이라는 점을 배웠습니다.
+**Action:** 생성되는 HTML 리포트의 CSS에 항상 `@media (prefers-reduced-motion: reduce)` 블록을 포함하여, 접근성을 고려한 사용자 환경에서는 `transition-duration`, `animation-duration`, `scroll-behavior`가 즉시 처리되도록 적용합니다.
