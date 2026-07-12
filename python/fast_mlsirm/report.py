@@ -326,7 +326,9 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     note = ""
     described_by = ""
     if len(rows) > limit:
-        stable_hash = hashlib.md5(label.encode("utf-8")).hexdigest()[:6]
+        stable_hash = hashlib.md5(
+            label.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:6]
         note_id = f"note-{stable_hash}"
         note = f'<p id="{note_id}" class="table-note">Showing {limit} of {len(rows)} rows.</p>'
         described_by = f' aria-describedby="{note_id}"'
