@@ -109,13 +109,13 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * a[None, :] * params.theta[:, factors]).sum(axis=0)
+        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
-    # np.eye(...)[factors] creates a one-hot encoding (J x D), projecting J items onto D dimensions
+    # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
     idx = np.zeros((e.shape[1], params.theta.shape[1]), dtype=e.dtype)
-    idx[np.arange(e.shape[1]), factors] = 1
-    grad_theta = (e * a[None, :]) @ idx
+    idx[np.arange(e.shape[1]), factors] = a
+    grad_theta = e @ idx
 
     grad_xi = np.zeros_like(params.xi)
     grad_zeta = np.zeros_like(params.zeta)

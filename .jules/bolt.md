@@ -23,3 +23,6 @@
 ## 2025-05-19 - Intermediate allocations in distance calculations
 **Learning:** `(true_xi * true_xi).sum(axis=1)` in Euclidean distance formulas creates an unnecessary intermediate 2D array before performing the sum over the axis. This can cause performance bottlenecks across many function calls.
 **Action:** Replace `(x * x).sum(axis=1)` with `np.einsum('ij,ij->i', x, x)` when computing pairwise Euclidean distances to avoid allocating the intermediate 2D array and achieve measurable performance gains.
+## 2025-05-19 - Vectorized intermediate allocations during gradients
+**Learning:** Operations like `(e * a[None, :] * theta).sum(axis=0)` and `grad_theta = (e * a[None, :]) @ idx` create full-sized N x J intermediate arrays. For larger matrices, this increases memory allocation time significantly.
+**Action:** Always factor out values from sums over axes or embed operations in pre-existing broadcast arrays. For example, replace `(e * a[None, :] * theta).sum(axis=0)` with `(e * theta).sum(axis=0) * a` and replace `(e * a[None, :]) @ idx` with embedding `a` into the indicator variable `idx[np.arange(e.shape[1]), factors] = a` directly so that `e @ idx` avoids building an intermediate N x J array.
