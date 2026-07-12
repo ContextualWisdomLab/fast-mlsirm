@@ -725,4 +725,25 @@ tbody tr:hover {
     gap: 4px;
   }
 }
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  .skip-link {
+    display: none !important;
+  }
+
+  .report-section,
+  .metric-card,
+  .table-wrap {
+    break-inside: avoid;
+  }
+}
 """.strip()
