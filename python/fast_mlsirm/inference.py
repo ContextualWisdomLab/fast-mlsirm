@@ -15,9 +15,15 @@ def observed_information(
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
     backend: str | None = None,
+    device: str | None = "cpu",
     step: float = 1e-4,
 ) -> np.ndarray:
-    """Finite-difference Hessian of the penalized negative log-likelihood."""
+    """Finite-difference Hessian of the penalized negative log-likelihood.
+
+    The default Rust device is CPU so finite-difference curvature uses the f64
+    path even when model fitting defaults to ``rust_device="auto"`` on GPU hosts.
+    Pass ``device=None`` to honor ``config.rust_device`` instead.
+    """
     config = config or FitConfig()
     model = config.normalized_model()
     chosen_backend = config.backend if backend is None else backend
@@ -33,6 +39,7 @@ def observed_information(
             config=config,
             mask=mask,
             backend=chosen_backend,
+            device=device,
         )
         if not np.isfinite(value):
             raise ValueError("objective must be finite for Hessian calculation")
