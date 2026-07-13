@@ -257,12 +257,18 @@ def _main(argv: list[str] | None = None) -> int:
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
@@ -293,12 +299,18 @@ def _main(argv: list[str] | None = None) -> int:
             responses, factors = _load_response_and_factors(args.responses, args.factors)
             latent_dims = [int(value) for value in args.latent_dims.split(",")]
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
@@ -339,12 +351,18 @@ def _main(argv: list[str] | None = None) -> int:
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
@@ -376,12 +394,18 @@ def _main(argv: list[str] | None = None) -> int:
             responses = np.load(args.responses, allow_pickle=False)
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
@@ -413,12 +437,18 @@ def _main(argv: list[str] | None = None) -> int:
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
             fixed_items = _load_optional_npy(args.fixed_items)
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
             return 1
 
@@ -451,12 +481,18 @@ def _main(argv: list[str] | None = None) -> int:
         try:
             report_path = render_diagnostics_report(args.diagnostics, args.out, title=args.title)
         except FileNotFoundError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
             return 1
         except ValueError as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Invalid diagnostics data - {str(e)}", file=sys.stderr)
             return 1
         except Exception as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
             print(f"❌ Error: Failed to render report - {str(e)}", file=sys.stderr)
             return 1
 
@@ -475,12 +511,18 @@ def _main(argv: list[str] | None = None) -> int:
     try:
         responses, factors = _load_response_and_factors(args.responses, args.factors)
     except FileNotFoundError as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
         print(f"❌ Error: Could not find file - {e.filename}", file=sys.stderr)
         return 1
     except ValueError as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
         print(f"❌ Error: Invalid input data - {str(e)}", file=sys.stderr)
         return 1
     except Exception as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
         print(f"❌ Error: Failed to load data - {str(e)}", file=sys.stderr)
         return 1
 
@@ -500,9 +542,13 @@ def _main(argv: list[str] | None = None) -> int:
             ),
         )
     except ValueError as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
         print(f"❌ Error: Invalid fit configuration - {str(e)}", file=sys.stderr)
         return 1
     except RuntimeError as e:
+        if os.environ.get("FAST_MLSIRM_DEBUG"):
+            raise
         print(f"❌ Error: Fit failed - {str(e)}", file=sys.stderr)
         return 1
     save_fit_result(result, args.out)
