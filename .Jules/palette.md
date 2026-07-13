@@ -8,3 +8,6 @@
 ## 2024-10-24 - CSS Bar Chart Animation
 **Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
 **Action:** Use CSS keyframe animations for simple visual improvements in static reports.
+## 2024-11-20 - Target Container Focus Styles for Skip Links
+**Learning:** When using `skip-link` pointing to an area like `#main-content`, setting the target's `outline` to `none` via `main:focus { outline: none; }` solves the mouse-click issue but causes an accessibility failure for keyboard navigation, as it prevents the visual focus indicator from appearing when a user skips to the content using keyboard navigation.
+**Action:** Always complement `main:focus { outline: none; }` with a `main:focus-visible` rule that restores a visible outline (`outline: 3px solid #0f766e; outline-offset: 3px;`), ensuring keyboard users receive a clear visual indication of their current focus.
