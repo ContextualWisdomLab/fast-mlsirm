@@ -15,3 +15,7 @@
 ## 2024-07-12 - HTML 리포트의 화면 전환 효과 최소화 (Reduced Motion)
 **Learning:** 독립형 HTML 리포트에는 시각적 부드러움을 위해 CSS 전환 효과(예: skip-link 슬라이딩, 테이블 행 호버 효과)가 포함되어 있으나, 이는 전정기관 장애가 있는 사용자에게 불편함을 줄 수 있습니다. 접근성을 완전히 확보하려면 시스템 설정에서 애니메이션 최소화(prefers-reduced-motion)를 선택한 사용자를 위해 이를 비활성화하는 미디어 쿼리가 필수적이라는 점을 배웠습니다.
 **Action:** 생성되는 HTML 리포트의 CSS에 항상 `@media (prefers-reduced-motion: reduce)` 블록을 포함하여, 접근성을 고려한 사용자 환경에서는 `transition-duration`, `animation-duration`, `scroll-behavior`가 즉시 처리되도록 적용합니다.
+
+## 2024-07-13 - CLI Debugging Stack Traces
+**Learning:** Adding a `FAST_MLSIRM_DEBUG` bypass to user-friendly `try/except` blocks is crucial for DX. Otherwise, unexpected runtime errors during development will be swallowed into generic stderr messages, hiding the stack trace needed to actually fix the bug.
+**Action:** When adding `try-except` blocks to Python CLI subcommands to improve Developer Experience (DX) by preventing raw tracebacks for users, include a debug bypass (e.g., `if os.environ.get("FAST_MLSIRM_DEBUG"): raise`) in *all* catch blocks (including `RuntimeError` and `Exception`) to ensure tracebacks aren't swallowed during local development and debugging.
