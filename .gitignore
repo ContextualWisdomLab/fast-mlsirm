@@ -4,6 +4,7 @@
 __pycache__/
 *.py[cod]
 python/fast_mlsirm/_core*.so
+python/fast_mlsirm/*.pdb
 *.egg-info/
 .venv/
 venv/

@@ -4,6 +4,15 @@
 
 ### Changed
 
+- Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
+  the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
+  `fit(estimator="mmle")` now runs on the Rust core when the extension is built
+  (previously it always fell back to the NumPy reference). To keep the two
+  backends statistically equivalent, the Rust core's Gauss-Hermite table was
+  aligned from 21 to 41 nodes, bit-identical to the NumPy reference's default
+  `hermegauss(41)` quadrature; `tests/test_rust_parity.py` gains MMLE parity
+  tests (a/b/theta agreement at the shared EM optimum, measured ~1e-8).
+
 - Made the Rust core (`fast_mlsirm._core`) the **primary** numeric path: the
   default `FitConfig.backend` and CLI `--backend` are now `"auto"`, resolving to
   Rust when the compiled extension is available and falling back to the NumPy
