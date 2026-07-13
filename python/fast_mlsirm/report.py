@@ -641,6 +641,13 @@ h3 {
   height: 100%;
   min-width: 8px;
   background: var(--teal);
+  transform-origin: left;
+  animation: bar-grow 0.8s ease-out forwards;
+}
+
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 .table-wrap {
