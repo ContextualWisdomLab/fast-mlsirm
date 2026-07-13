@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
@@ -136,10 +137,38 @@ fn neg_loglik_and_grad(
     Ok((objective, gradients, loglik))
 }
 
+/// MMLE-EM calibration of a unidimensional 2PL (`mlsirm_core::mmle`).
+/// `y` and `observed` are row-major flattened `n_persons * n_items` arrays;
+/// cells where `observed` is false are ignored (missing-at-random safe).
+#[pyfunction]
+fn fit_mmle_2pl(
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, bool)> {
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows"))?;
+    let y_slice = y.as_slice()?;
+    let observed_slice = observed.as_slice()?;
+    if y_slice.len() != expected || observed_slice.len() != expected {
+        return Err(PyValueError::new_err(
+            "y and observed must both have length n_persons * n_items",
+        ));
+    }
+    let cfg = MmleConfig { max_iter, tol, ..MmleConfig::default() };
+    let res = core_fit_mmle_2pl(y_slice, observed_slice, n_persons, n_items, &cfg);
+    Ok((res.a, res.b, res.theta, res.loglik_trace, res.converged))
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     Ok(())
 }
 
