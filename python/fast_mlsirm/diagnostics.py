@@ -520,9 +520,10 @@ def _category_fit(
     residual: np.ndarray,
 ) -> dict[str, np.ndarray]:
     observed_count = observed.sum(axis=0).astype(np.float64)
-    score = (onehot * observed[:, :, None]).sum(axis=0)
-    expected = (prob * observed[:, :, None]).sum(axis=0)
-    variance = (prob * (1.0 - prob) * observed[:, :, None]).sum(axis=0)
+    obs_cast = observed.astype(prob.dtype, copy=False)
+    score = np.einsum("ij,ijk->jk", obs_cast, onehot)
+    expected = np.einsum("ij,ijk->jk", obs_cast, prob)
+    variance = np.einsum("ij,ijk->jk", obs_cast, prob * (1.0 - prob))
     item_ids, category_ids = np.indices(score.shape)
     raw = residual.sum(axis=0)
     return {
