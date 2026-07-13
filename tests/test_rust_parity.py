@@ -23,10 +23,11 @@ from fast_mlsirm.objective import neg_loglik_and_grad
 
 # Tight parity tolerance required by the port: Rust f64 must match the numpy
 # reference to within 1e-6 (in practice the difference is ~1e-13). This is an
-# f64 contract, so the tests pin rust_device="cpu": on GPU hosts the default
-# "auto" routes through the f32 wgpu kernels (~7e-6 error). The f32 GPU path
-# has its own 1e-4 gate in crates/mlsirm-core (device_gpu_* tests).
+# f64 contract, so the tight tests pin rust_device="cpu": on GPU hosts the
+# default "auto" routes through the f32 wgpu kernels (~7e-6 error). The f32
+# GPU/auto path has a separate 1e-4 model matrix below.
 PARITY_ATOL = 1e-6
+GPU_ATOL = 1e-4
 
 MODELS = ["MLS2PLM", "MLSRM", "MIRT", "ULS2PLM", "ULSRM"]
 
@@ -116,6 +117,35 @@ def test_rust_matches_numpy_with_mask(model: str, shape: tuple[int, int, int, in
     assert abs(r_obj - n_obj) < PARITY_ATOL
     assert abs(r_ll - n_ll) < PARITY_ATOL
     assert _max_grad_diff(r_grad, n_grad) < PARITY_ATOL
+
+
+@pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("device", ["gpu", "auto"])
+@pytest.mark.parametrize("masked", [False, True])
+def test_rust_gpu_or_auto_matches_numpy_model_matrix(
+    model: str, device: str, masked: bool
+) -> None:
+    params, factors, y, n_persons, n_items = _fixture(
+        model, (18, 9, 3, 2), seed=hash((model, device, masked, "gpu")) % 2**32
+    )
+    mask = None
+    if masked:
+        rng = np.random.default_rng(17)
+        mask = rng.random((n_persons, n_items)) < 0.8
+        mask[:, 0] = True
+        mask[0, :] = True
+    config = FitConfig(model=model, max_iter=1, rust_device=device)
+
+    n_obj, n_grad, n_ll = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="numpy"
+    )
+    r_obj, r_grad, r_ll = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="rust"
+    )
+
+    assert abs(r_obj - n_obj) < GPU_ATOL
+    assert abs(r_ll - n_ll) < GPU_ATOL
+    assert _max_grad_diff(r_grad, n_grad) < GPU_ATOL
 
 
 def test_rust_is_default_resolved_backend() -> None:

@@ -28,12 +28,13 @@ fully before making changes. In particular it defines:
 ### Setup
 
 An editable install builds the Rust extension with maturin, so a working Rust
-toolchain **must be on `PATH`** (`cargo`/`rustc`). If it isn't, maturin tries to
-download rustup and fails with an opaque SSL error behind a proxy/self-signed-cert
-network — that is a PATH problem, not a Python/PyO3 one (e.g. Windows git-bash:
-`export PATH="$HOME/.cargo/bin:$PATH"` first). Python 3.10–3.14 all work
-(version-specific wheels, no abi3); a 3.14 build failure is the PATH issue, not a
-version incompatibility.
+toolchain should be on `PATH` (`cargo`/`rustc`) for deterministic local builds.
+If cargo is absent, maturin may try to provision a temporary Rust toolchain via
+`puccinialin`; set `MATURIN_NO_INSTALL_RUST=1` when you need a fail-fast
+offline/proxy-safe build. A proxy or certificate error in that fallback is not
+proof of a Python/PyO3 incompatibility. `pyproject.toml` declares Python
+`>=3.10`; required CI currently builds and tests CPython 3.12, so broader
+interpreter claims need matching build/import/full-suite CI evidence.
 
 ```bash
 python -m pip install -e .          # builds fast_mlsirm._core via maturin

@@ -89,16 +89,19 @@ tests, documentation, and Rust parity together.
 
 ## Local build
 
-- **A Rust toolchain must be on `PATH` before the editable install.** The
-  editable install compiles `fast_mlsirm._core` with maturin, so `cargo`/`rustc`
-  must be discoverable. If they are not, maturin silently tries to *download*
-  rustup, which fails behind a proxy or self-signed-cert network with an opaque
-  SSL error — that is a PATH problem, not a Python/PyO3 problem. Ensure the
-  toolchain is on `PATH` (e.g. Windows git-bash: `export PATH="$HOME/.cargo/bin:$PATH"`),
-  then `pip install -e .[dev]`. No manual `maturin develop` step is needed.
-- **Python 3.10–3.14 are all supported** (pyo3/numpy 0.29, `extension-module`,
-  version-specific wheels — no abi3). 3.14 builds and passes the full suite; a
-  build failure on 3.14 is the PATH issue above, not a version incompatibility.
+- **Editable install is deterministic with Rust on `PATH`.** The editable
+  install compiles `fast_mlsirm._core` with maturin, so keeping `cargo`/`rustc`
+  discoverable avoids network-dependent bootstrap during PEP 517 builds. If
+  cargo is absent, maturin may try to provision a temporary Rust toolchain via
+  `puccinialin`; set `MATURIN_NO_INSTALL_RUST=1` when you need a fail-fast
+  offline/proxy-safe build. A proxy or certificate error in that fallback is not
+  proof of a Python/PyO3 incompatibility. Prefer an explicit Rust toolchain on
+  `PATH` (e.g. Windows git-bash: `export PATH="$HOME/.cargo/bin:$PATH"`), then
+  `pip install -e .[dev]`. No manual `maturin develop` step is needed.
+- **Python support claims must match evidence.** `pyproject.toml` declares
+  `requires-python = ">=3.10"`, while the required CI suite currently builds and
+  tests CPython 3.12. Treat other 3.10+ interpreters as intended support until a
+  PR adds matching build/import/full-suite CI evidence for that version.
 
 <!-- BEGIN cwl-agent-guidance -->
 ## Agent guidance (CWL governance)

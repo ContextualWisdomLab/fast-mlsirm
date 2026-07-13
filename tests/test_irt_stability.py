@@ -93,9 +93,7 @@ def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
         model="MIRT",
         max_iter=1,
         penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
-        # Finite differences with step=1e-4 amplify f32 noise from the wgpu GPU
-        # path into a failed PSD check; the Hessian must come from the f64 CPU path.
-        rust_device="cpu",
+        rust_device="auto",
     )
 
     hessian = observed_information(responses, np.zeros(2, dtype=int), params, config=config, step=1e-4)
@@ -109,6 +107,54 @@ def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
     assert np.all(np.isfinite(vcov))
     assert np.all(standard_errors > 0.0)
     assert second_order_test(np.diag([1.0, -1.0]))["passed"] is False
+
+
+def test_observed_information_defaults_rust_hessian_to_cpu_device(monkeypatch):
+    calls = []
+    params = MLSIRMParams(
+        theta=np.array([[-0.2], [0.4]]),
+        alpha=np.array([0.1, -0.3]),
+        b=np.array([0.2, 0.5]),
+        xi=np.zeros((2, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=-30.0,
+    )
+    responses = np.array([[0.0, 1.0], [1.0, 0.0]])
+    factors = np.zeros(2, dtype=int)
+
+    def fake_neg_loglik_and_grad(
+        responses,
+        factor_id,
+        candidate,
+        config=None,
+        mask=None,
+        backend="numpy",
+        device=None,
+    ):
+        calls.append((backend, device))
+        value = (
+            np.vdot(candidate.theta, candidate.theta)
+            + np.vdot(candidate.alpha, candidate.alpha)
+            + np.vdot(candidate.b, candidate.b)
+        )
+        return float(value), candidate.copy(), -float(value)
+
+    monkeypatch.setattr(
+        "fast_mlsirm.inference.neg_loglik_and_grad", fake_neg_loglik_and_grad
+    )
+
+    hessian = observed_information(
+        responses,
+        factors,
+        params,
+        config=FitConfig(model="MIRT", backend="rust", rust_device="auto"),
+        step=1e-4,
+    )
+
+    assert hessian.shape == (6, 6)
+    assert calls
+    assert {backend for backend, _ in calls} == {"rust"}
+    assert {device for _, device in calls} == {"cpu"}
 
 
 def test_fixed_item_parameter_linking_recovers_anchor_metric():
