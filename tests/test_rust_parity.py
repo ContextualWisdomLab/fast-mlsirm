@@ -120,3 +120,83 @@ def test_rust_is_default_resolved_backend() -> None:
     from fast_mlsirm.backend import resolve_backend
 
     assert resolve_backend(FitConfig().backend) == "rust"
+
+
+# ---------------------------------------------------------------------------
+# MMLE-EM parity: Rust `_core.fit_mmle_2pl` vs the NumPy reference.
+#
+# Both paths share the identical 41-node Gauss-Hermite table (the Rust
+# constants are the shortest-roundtrip output of hermegauss(41)), but the
+# NumPy reference jitters its initial `a` with seeded noise while Rust starts
+# at exactly 1.0 — so the contract is agreement at the shared EM optimum
+# (tight run: small problem, tol=1e-10), not bitwise identity.
+# ---------------------------------------------------------------------------
+
+
+def _rust_mmle():
+    _core = pytest.importorskip("fast_mlsirm._core")
+    fn = getattr(_core, "fit_mmle_2pl", None)
+    if fn is None:
+        pytest.skip("fast_mlsirm._core lacks fit_mmle_2pl")
+    return fn
+
+
+def _mmle_fixture(seed=0, n_persons=400, n_items=12, missing=0.25):
+    rng = np.random.default_rng(seed)
+    a = 0.7 + 1.3 * rng.random(n_items)
+    b = -1.5 + 3.0 * rng.random(n_items)
+    theta = rng.standard_normal(n_persons)
+    prob = 1.0 / (1.0 + np.exp(-(a[None, :] * theta[:, None] + b[None, :])))
+    y = (rng.random((n_persons, n_items)) < prob).astype(np.float64)
+    observed = rng.random((n_persons, n_items)) >= missing
+    observed[:, 0] = True
+    observed[0, :] = True
+    return np.where(observed, y, 0.0), observed
+
+
+def test_mmle_rust_matches_numpy_reference() -> None:
+    rust_mmle = _rust_mmle()
+    from fast_mlsirm.estimators.mmle import fit_mmle_2pl as numpy_mmle
+
+    y_filled, observed = _mmle_fixture()
+    n_persons, n_items = y_filled.shape
+    max_iter, tol = 2000, 1e-10
+
+    r_a, r_b, r_theta, r_trace, r_converged = rust_mmle(
+        y_filled.ravel(), observed.ravel(), n_persons, n_items, max_iter, tol
+    )
+    ref = numpy_mmle(y_filled, observed, max_iter=max_iter, tol=tol)
+
+    assert r_converged
+    assert ref["status"] == "converged"
+    # Measured agreement is ~1e-8; 1e-4 leaves headroom for other BLAS/platforms.
+    np.testing.assert_allclose(r_a, ref["a"], atol=1e-4)
+    np.testing.assert_allclose(r_b, ref["b"], atol=1e-4)
+    np.testing.assert_allclose(r_theta, ref["theta"], atol=1e-4)
+    assert abs(r_trace[-1] - ref["loglik_trace"][-1]) < 1e-4
+    assert np.corrcoef(r_a, ref["a"])[0, 1] > 0.9999
+    assert np.corrcoef(r_b, ref["b"])[0, 1] > 0.9999
+    assert np.corrcoef(r_theta, ref["theta"])[0, 1] > 0.9999
+
+
+def test_mmle_rust_rejects_length_mismatch() -> None:
+    rust_mmle = _rust_mmle()
+    with pytest.raises(ValueError):
+        rust_mmle(np.zeros(5), np.ones(5, dtype=bool), 2, 3, 10, 1e-6)
+
+
+def test_fit_mmle_dispatches_to_rust() -> None:
+    """fit(estimator="mmle") must run on the Rust core when it is available."""
+    _rust_mmle()
+    from fast_mlsirm.fit import fit
+
+    y_filled, observed = _mmle_fixture(n_persons=200, n_items=8)
+    factors = np.zeros(y_filled.shape[1], dtype=np.int64)
+    result = fit(
+        y_filled,
+        factors,
+        FitConfig(model="ULS2PLM", estimator="mmle", max_iter=300),
+        mask=observed,
+    )
+    assert result.optimizer == "mmle_em/rust"
+    assert result.convergence_status == "converged"
