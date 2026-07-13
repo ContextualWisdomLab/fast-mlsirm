@@ -5,3 +5,6 @@
 ## 2024-07-12 - Print Optimization for HTML Reports
 **Learning:** Static HTML data reports are often printed or exported to PDF, but default browser settings strip background colors, which completely hides CSS-based bar charts and removes visual grouping from metric cards.
 **Action:** Use `@media print` with `print-color-adjust: exact` to preserve data visualizations, set body background to white to save ink, hide screen-reader skip links, and apply `break-inside: avoid` on sections to prevent awkward page breaks.
+## 2024-10-24 - CSS Bar Chart Animation
+**Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
+**Action:** Use CSS keyframe animations for simple visual improvements in static reports.
