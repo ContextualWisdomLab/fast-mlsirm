@@ -131,7 +131,8 @@ def neg_loglik_and_grad(
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
         grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
 
-        grad_tau = float((e * (-gamma * distance)).sum())
+        # Optimized gradient computation: avoid intermediate array allocation by using vdot
+        grad_tau = float(-gamma * np.vdot(e, distance))
 
     nll += _add_penalty(params, penalty, free_alpha=free_alpha, uses_space=uses_space)
     grad_theta += penalty.lambda_theta * params.theta
