@@ -22,7 +22,10 @@ from fast_mlsirm import FitConfig, MLSIRMParams
 from fast_mlsirm.objective import neg_loglik_and_grad
 
 # Tight parity tolerance required by the port: Rust f64 must match the numpy
-# reference to within 1e-6 (in practice the difference is ~1e-13).
+# reference to within 1e-6 (in practice the difference is ~1e-13). This is an
+# f64 contract, so the tests pin rust_device="cpu": on GPU hosts the default
+# "auto" routes through the f32 wgpu kernels (~7e-6 error). The f32 GPU path
+# has its own 1e-4 gate in crates/mlsirm-core (device_gpu_* tests).
 PARITY_ATOL = 1e-6
 
 MODELS = ["MLS2PLM", "MLSRM", "MIRT", "ULS2PLM", "ULSRM"]
@@ -84,7 +87,7 @@ def _require_rust_core():
 @pytest.mark.parametrize("shape", SHAPES)
 def test_rust_matches_numpy_dense(model: str, shape: tuple[int, int, int, int]) -> None:
     params, factors, y, _, _ = _fixture(model, shape, seed=hash((model, shape)) % 2**32)
-    config = FitConfig(model=model, max_iter=1)
+    config = FitConfig(model=model, max_iter=1, rust_device="cpu")
 
     n_obj, n_grad, n_ll = neg_loglik_and_grad(y, factors, params, config, backend="numpy")
     r_obj, r_grad, r_ll = neg_loglik_and_grad(y, factors, params, config, backend="rust")
@@ -105,7 +108,7 @@ def test_rust_matches_numpy_with_mask(model: str, shape: tuple[int, int, int, in
     # Guarantee no all-missing row/column (rejected by prepare_response).
     mask[:, 0] = True
     mask[0, :] = True
-    config = FitConfig(model=model, max_iter=1)
+    config = FitConfig(model=model, max_iter=1, rust_device="cpu")
 
     n_obj, n_grad, n_ll = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="numpy")
     r_obj, r_grad, r_ll = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="rust")

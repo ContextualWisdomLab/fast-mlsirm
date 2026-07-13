@@ -93,6 +93,9 @@ def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
         model="MIRT",
         max_iter=1,
         penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
+        # Finite differences with step=1e-4 amplify f32 noise from the wgpu GPU
+        # path into a failed PSD check; the Hessian must come from the f64 CPU path.
+        rust_device="cpu",
     )
 
     hessian = observed_information(responses, np.zeros(2, dtype=int), params, config=config, step=1e-4)

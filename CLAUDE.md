@@ -28,7 +28,12 @@ fully before making changes. In particular it defines:
 ### Setup
 
 An editable install builds the Rust extension with maturin, so a working Rust
-toolchain is required:
+toolchain **must be on `PATH`** (`cargo`/`rustc`). If it isn't, maturin tries to
+download rustup and fails with an opaque SSL error behind a proxy/self-signed-cert
+network — that is a PATH problem, not a Python/PyO3 one (e.g. Windows git-bash:
+`export PATH="$HOME/.cargo/bin:$PATH"` first). Python 3.10–3.14 all work
+(version-specific wheels, no abi3); a 3.14 build failure is the PATH issue, not a
+version incompatibility.
 
 ```bash
 python -m pip install -e .          # builds fast_mlsirm._core via maturin
