@@ -461,36 +461,37 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
-    rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+    unique_factors = np.unique(factors)
+    # Optimized factorization: vectorize looping over dimensions using matrix multiplication
+    mask = (factors[:, None] == unique_factors[None, :])
 
-    table = np.asarray(rows, dtype=np.float64)
-    variance_sum = table[:, 5]
-    count = table[:, 1]
+    obs_sum = observed.sum(axis=0)
+    y_obs_sum = (y * observed).sum(axis=0)
+    prob_obs_sum = (prob * observed).sum(axis=0)
+    res_sum = residual.sum(axis=0)
+    var_obs_sum = (variance * observed).sum(axis=0)
+    res_sq_sum = (residual * residual).sum(axis=0)
+    pearson_sum = pearson_sq.sum(axis=0)
+
+    count = obs_sum @ mask
+    score = y_obs_sum @ mask
+    expected = prob_obs_sum @ mask
+    raw = res_sum @ mask
+    variance_sum = var_obs_sum @ mask
+    res_sq_sum_fact = res_sq_sum @ mask
+    pearson_sum_fact = pearson_sum @ mask
+
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
-        "factor_id": table[:, 0],
-        "observed_count": count,
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
-        "infit_mnsq": table[:, 6] / safe_variance,
-        "outfit_mnsq": table[:, 7] / safe_count,
+        "factor_id": unique_factors.astype(np.float64),
+        "observed_count": count.astype(np.float64),
+        "score": score.astype(np.float64),
+        "expected_score": expected.astype(np.float64),
+        "raw_residual": raw.astype(np.float64),
+        "standardized_residual": (raw / np.sqrt(safe_variance)).astype(np.float64),
+        "infit_mnsq": (res_sq_sum_fact / safe_variance).astype(np.float64),
+        "outfit_mnsq": (pearson_sum_fact / safe_count).astype(np.float64),
     }
 
 
