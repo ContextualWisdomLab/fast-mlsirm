@@ -28,7 +28,13 @@ fully before making changes. In particular it defines:
 ### Setup
 
 An editable install builds the Rust extension with maturin, so a working Rust
-toolchain is required:
+toolchain should be on `PATH` (`cargo`/`rustc`) for deterministic local builds.
+If cargo is absent, maturin may try to provision a temporary Rust toolchain via
+`puccinialin`; set `MATURIN_NO_INSTALL_RUST=1` when you need a fail-fast
+offline/proxy-safe build. A proxy or certificate error in that fallback is not
+proof of a Python/PyO3 incompatibility. `pyproject.toml` declares Python
+`>=3.10`; required CI currently builds and tests CPython 3.12, so broader
+interpreter claims need matching build/import/full-suite CI evidence.
 
 ```bash
 python -m pip install -e .          # builds fast_mlsirm._core via maturin
