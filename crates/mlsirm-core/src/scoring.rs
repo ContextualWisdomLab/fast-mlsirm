@@ -194,10 +194,13 @@ pub fn score_eap_device(
     // falls back to the exact CPU reduction when Cpu, no adapter, or the model
     // exceeds the kernel bounds (n_dims/latent_dim <= 8).
     if device != crate::Device::Cpu {
-        if let Some(gpu_out) =
-            try_score_eap_gpu(bank, prior, &grids, &tables, &resp, n_persons, n_items)
+        #[cfg(all(feature = "gpu", not(coverage)))]
         {
-            return Ok(gpu_out);
+            if let Some(gpu_out) =
+                try_score_eap_gpu(bank, prior, &grids, &tables, &resp, n_persons, n_items)
+            {
+                return Ok(gpu_out);
+            }
         }
     }
     Ok(score_eap_cpu_reduce(bank, prior, &grids, &tables, &resp, n_persons, n_items))
@@ -262,6 +265,7 @@ fn score_eap_cpu_reduce(
 
 /// Build the GPU score inputs (CSR-flattened responses) and dispatch the
 /// `score_pass` kernel; `None` on no-adapter or out-of-bounds models.
+#[cfg(all(feature = "gpu", not(coverage)))]
 #[allow(clippy::too_many_arguments)]
 fn try_score_eap_gpu(
     bank: &ItemBank<'_>,

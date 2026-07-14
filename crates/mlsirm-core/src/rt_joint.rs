@@ -1,6 +1,7 @@
-//! Joint speed-accuracy hierarchical model (van der Linden, 2007, Level 2): a
-//! person-level bivariate-normal distribution that ties ability `theta` (from an
-//! accuracy 2PL model) to speed `tau` (from the lognormal response-time model),
+//! Joint speed-accuracy hierarchical model using the person-level covariance
+//! structure of van der Linden (2007): a bivariate-normal distribution that ties
+//! ability `theta` (from an accuracy 2PL model) to speed `tau` (from the lognormal
+//! response-time model),
 //!
 //! ```text
 //! (theta_j, tau_j) ~ Normal2( 0,  [[1, rho*sigma_tau], [rho*sigma_tau, sigma_tau^2]] )
@@ -10,12 +11,13 @@
 //! independent given `(theta, tau)`. The headline quantity is `rho`, the
 //! ability-speed correlation.
 //!
-//! This is the *two-stage* (limited-information) estimator: the item parameters
-//! of both measurement models are held fixed (from their separate calibrations)
-//! and only the person covariance `(rho, sigma_tau)` is estimated, by marginal ML
-//! over a 2-D Gauss-Hermite grid. Unlike the pure response-time model, the
-//! accuracy side is logistic, so the joint marginal likelihood is not closed form
-//! and requires quadrature.
+//! The original article illustrates the framework with a normal-ogive response
+//! model and Bayesian MCMC. This crate instead provides a repository-specific
+//! *two-stage* (limited-information) marginal-ML adaptation: the item parameters
+//! of both measurement models are held fixed after separate calibration, the
+//! accuracy side is logistic, and only `(rho, sigma_tau)` is estimated over a 2-D
+//! Gauss-Hermite grid. This estimator and its closed-form covariance M-step must
+//! therefore not be attributed to the original article.
 //!
 //! Note the `rho` estimated here is *not* the attenuated correlation of the two
 //! separately-scored EAPs — those are biased toward zero by EAP shrinkage — but
@@ -36,6 +38,75 @@ fn log_sigmoid(x: f64) -> f64 {
     } else {
         x - x.exp().ln_1p()
     }
+}
+
+#[inline]
+fn covariance_q(c: f64, s11: f64, s12: f64, s22: f64, sigma_tau2: f64) -> f64 {
+    let det = sigma_tau2 - c * c;
+    if !(det.is_finite() && det > 0.0) {
+        return f64::NEG_INFINITY;
+    }
+    -0.5 * (det.ln() + (sigma_tau2 * s11 - 2.0 * c * s12 + s22) / det)
+}
+
+/// Maximize the covariance part of the expected complete-data log-likelihood
+/// when `Var(theta) = 1` and `Var(tau) = sigma_tau2` are fixed. The score
+/// equation is cubic in `c = Cov(theta, tau)`:
+///
+/// `c^3 - s12*c^2 + (sigma_tau2*(s11 - 1) + s22)*c - s12*sigma_tau2 = 0`.
+///
+/// Evaluate every real stationary point plus the positive-definiteness bounds
+/// so the fixed-variance branch remains a genuine EM M-step.
+fn maximize_fixed_variance_covariance(
+    s11: f64,
+    s12: f64,
+    s22: f64,
+    sigma_tau2: f64,
+    rho_limit: f64,
+) -> f64 {
+    let bound = rho_limit * sigma_tau2.sqrt();
+    let qa = -s12;
+    let qb = sigma_tau2 * (s11 - 1.0) + s22;
+    let qc = -s12 * sigma_tau2;
+    let p = qb - qa * qa / 3.0;
+    let q = 2.0 * qa * qa * qa / 27.0 - qa * qb / 3.0 + qc;
+    let discriminant = (q * 0.5).powi(2) + (p / 3.0).powi(3);
+    let shift = -qa / 3.0;
+    let mut candidates = vec![-bound, bound, 0.0];
+    let scale = (q * q).abs() + (p * p * p).abs() + 1.0;
+    let disc_tol = 64.0 * f64::EPSILON * scale;
+
+    if discriminant > disc_tol {
+        let root = (-0.5 * q + discriminant.sqrt()).cbrt()
+            + (-0.5 * q - discriminant.sqrt()).cbrt()
+            + shift;
+        candidates.push(root);
+    } else if discriminant >= -disc_tol {
+        let u = (-0.5 * q).cbrt();
+        candidates.push(2.0 * u + shift);
+        candidates.push(-u + shift);
+    } else {
+        let radius = 2.0 * (-p / 3.0).sqrt();
+        let cos_arg = (-0.5 * q / (-(p / 3.0).powi(3)).sqrt()).clamp(-1.0, 1.0);
+        let phi = cos_arg.acos();
+        for k in 0..3 {
+            candidates
+                .push(radius * ((phi + 2.0 * std::f64::consts::PI * k as f64) / 3.0).cos() + shift);
+        }
+    }
+
+    let mut best_c = 0.0;
+    let mut best_q = covariance_q(best_c, s11, s12, s22, sigma_tau2);
+    for candidate in candidates {
+        if candidate.is_finite() && candidate >= -bound && candidate <= bound {
+            let value = covariance_q(candidate, s11, s12, s22, sigma_tau2);
+            if value > best_q {
+                best_q = value;
+                best_c = candidate;
+            }
+        }
+    }
+    best_c
 }
 
 /// Controls for [`fit_speed_accuracy_covariance`].
@@ -77,7 +148,8 @@ pub struct SpeedAccuracyFit {
     pub tau_eap: Vec<f64>,
 }
 
-/// Estimate the van der Linden (2007) Level-2 person covariance
+/// Estimate a two-stage marginal-ML adaptation of the van der Linden (2007)
+/// person covariance
 /// `Sigma_P = [[1, rho*sigma_tau], [rho*sigma_tau, sigma_tau^2]]` by two-stage
 /// marginal ML, holding the item parameters fixed. `responses` (0/1) and `times`
 /// (`> 0` where observed) are `n_persons * n_items` row-major; `observed` masks
@@ -100,21 +172,42 @@ pub fn fit_speed_accuracy_covariance(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be positive".into());
     }
-    if responses.len() != n_persons * n_items || times.len() != n_persons * n_items {
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows".to_string())?;
+    if responses.len() != expected || times.len() != expected {
         return Err("responses and times must have length n_persons * n_items".into());
     }
     if a.len() != n_items || b.len() != n_items || alpha.len() != n_items || beta.len() != n_items {
         return Err("item-parameter vectors must have length n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != expected {
             return Err("observed must have length n_persons * n_items".into());
         }
+    }
+    if config.max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !(config.tol.is_finite() && config.tol > 0.0) {
+        return Err("tol must be positive and finite".into());
+    }
+    if !(config.rho_floor.is_finite() && config.rho_floor > 0.0 && config.rho_floor < 1.0) {
+        return Err("rho_floor must be finite and strictly between 0 and 1".into());
+    }
+    if !(config.sigma_floor.is_finite() && config.sigma_floor > 0.0) {
+        return Err("sigma_floor must be positive and finite".into());
     }
     if let Some(s) = config.fix_sigma_tau {
         if !(s.is_finite() && s > 0.0) {
             return Err("fix_sigma_tau must be positive and finite".into());
         }
+    }
+    if a.iter().chain(b).chain(beta).any(|x| !x.is_finite()) {
+        return Err("a, b, and beta must contain only finite values".into());
+    }
+    if alpha.iter().any(|x| !x.is_finite() || *x <= 0.0) {
+        return Err("alpha must contain only positive finite values".into());
     }
     let (nodes, weights) = gh_rule(config.q).ok_or_else(|| format!("unsupported q {}", config.q))?;
     let q = nodes.len();
@@ -210,11 +303,11 @@ pub fn fit_speed_accuracy_covariance(
         let s11 = acc11 / n_persons as f64;
         let s12 = acc12 / n_persons as f64;
         let s22 = acc22 / n_persons as f64;
-        let c_new = s12 / s11;
         if let Some(s) = config.fix_sigma_tau {
             sigma_tau2 = s * s;
-            c = c_new; // covariance; rho = c/s
+            c = maximize_fixed_variance_covariance(s11, s12, s22, sigma_tau2, config.rho_floor);
         } else {
+            let c_new = s12 / s11;
             let v_new = (s22 - s12 * s12 * (s11 - 1.0) / (s11 * s11)).max(config.sigma_floor);
             sigma_tau2 = v_new;
             let sig = v_new.sqrt();
@@ -317,6 +410,69 @@ mod tests {
             sbb += (yi - my).powi(2);
         }
         sab / (saa.sqrt() * sbb.sqrt())
+    }
+
+    #[test]
+    fn fixed_variance_m_step_maximizes_conditional_q() {
+        let (s11, s12, s22, sigma_tau2) = (0.8_f64, 0.1_f64, 0.2_f64, 0.09_f64);
+        let got = maximize_fixed_variance_covariance(s11, s12, s22, sigma_tau2, 0.999);
+        let naive = s12 / s11;
+        let got_q = covariance_q(got, s11, s12, s22, sigma_tau2);
+        let naive_q = covariance_q(naive, s11, s12, s22, sigma_tau2);
+        assert!(
+            got_q > naive_q + 1e-6,
+            "fixed-variance optimum {got_q} must beat S12/S11 {naive_q}"
+        );
+
+        let h = 1e-6;
+        let numeric_score = (covariance_q(got + h, s11, s12, s22, sigma_tau2)
+            - covariance_q(got - h, s11, s12, s22, sigma_tau2))
+            / (2.0 * h);
+        assert!(
+            numeric_score.abs() < 1e-6,
+            "fixed-variance score {numeric_score}"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_item_parameters_and_controls() {
+        let responses = [1.0];
+        let times = [2.0];
+        let a = [1.0];
+        let b = [0.0];
+        let beta = [1.0];
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &a,
+            &b,
+            &[0.0],
+            &beta,
+            1,
+            1,
+            SpeedAccuracyConfig::default(),
+        )
+        .unwrap_err();
+        assert!(err.contains("alpha"));
+
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &a,
+            &b,
+            &[1.0],
+            &beta,
+            1,
+            1,
+            SpeedAccuracyConfig {
+                tol: f64::NAN,
+                ..SpeedAccuracyConfig::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("tol"));
     }
 
     // Anchor A: at rho=0 the 2-D grid log-likelihood factorizes into the sum of the

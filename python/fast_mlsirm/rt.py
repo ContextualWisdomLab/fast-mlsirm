@@ -47,7 +47,7 @@ def fit_response_times(
 
     References (APA 7th ed.):
         van der Linden, W. J. (2007). A hierarchical framework for modeling speed
-            and accuracy on test items. *Psychometrika, 72*(3), 287-308.
+            and accuracy on test items. *Psychometrika, 72*(3), 287–308.
             https://doi.org/10.1007/s11336-006-1478-z
     """
     from .fitstats import _core_module
@@ -92,23 +92,26 @@ def fit_speed_accuracy(
     tol: float = 1e-6,
     fix_sigma_tau: float | None = None,
 ) -> dict:
-    """Estimate the van der Linden (2007) Level-2 joint speed-accuracy person
-    covariance (compute in Rust) -- the ability-speed correlation ``rho`` and speed
-    SD ``sigma_tau`` -- by two-stage marginal ML over a 2-D Gauss-Hermite grid, with
-    the item parameters held fixed. ``responses`` (0/1) and ``times`` (> 0) are
-    persons x items arrays sharing a missingness mask (``NaN``/non-positive =
-    missing); ``a``/``b`` are the accuracy 2PL raw slope/intercept
-    (``eta = a_i*theta + b_i``); ``alpha``/``beta`` are the lognormal time
-    discrimination/intensity (e.g. from :func:`fit_response_times`). Returns a dict
-    with ``rho``, ``sigma_tau``, ``s_theta2`` (a theta-metric diagnostic ~1), joint
-    ``theta_eap``/``tau_eap``, ``loglik``, ``n_iter``, ``converged``.
+    """Estimate a two-stage marginal-ML adaptation of the joint speed-accuracy
+    person covariance in van der Linden (2007) (compute in Rust) -- the
+    ability-speed correlation ``rho`` and speed SD ``sigma_tau`` -- over a 2-D
+    Gauss-Hermite grid with item parameters held fixed. The original article uses
+    a normal-ogive response model and Bayesian MCMC; the fixed-bank logistic 2PL
+    estimator here is a repository-specific adaptation, not an estimator reported
+    in that article. ``responses`` (0/1) and ``times`` (> 0) are persons x items
+    arrays sharing a missingness mask (``NaN``/non-positive = missing); ``a``/``b``
+    are the accuracy 2PL raw slope/intercept (``eta = a_i*theta + b_i``);
+    ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
+    :func:`fit_response_times`). Returns a dict with ``rho``, ``sigma_tau``,
+    ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
+    ``loglik``, ``n_iter``, ``converged``.
 
     ``rho`` here is the consistent marginal-ML correlation, NOT the attenuated
     correlation of the two separately-scored EAPs (which shrinks toward 0).
 
     References (APA 7th ed.):
         van der Linden, W. J. (2007). A hierarchical framework for modeling speed
-            and accuracy on test items. *Psychometrika, 72*(3), 287-308.
+            and accuracy on test items. *Psychometrika, 72*(3), 287–308.
             https://doi.org/10.1007/s11336-006-1478-z
     """
     from .fitstats import _core_module
