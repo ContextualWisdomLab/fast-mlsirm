@@ -16,6 +16,7 @@ from .fitstats import (adjusted_chi2_pairs as adjusted_chi2_pairs,
                        vuong_nonnested as vuong_nonnested)
 from .inference import oakes_standard_errors as oakes_standard_errors, observed_information as observed_information, second_order_test as second_order_test, standard_errors_from_vcov as standard_errors_from_vcov, vcov_from_hessian as vcov_from_hessian
 from .linking import link_fixed_item_parameters as link_fixed_item_parameters
+from .linking import irt_link as irt_link, IrtLinkResult as IrtLinkResult
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (ValidationVerdict as ValidationVerdict,
                          validate_judge as validate_judge)
@@ -66,6 +67,8 @@ __all__ = [
     "plausible_values",
     "residual_item_fit",
     "tcc_drift",
+    "irt_link",
+    "IrtLinkResult",
     "export_serving_bundle",
     "fit",
     "fit_diagnostics",

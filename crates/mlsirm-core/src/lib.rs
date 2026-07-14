@@ -1,5 +1,6 @@
 pub mod agreement;
 pub mod fitstats;
+pub mod linking;
 pub mod marginal;
 pub mod mmle;
 pub mod nodes;

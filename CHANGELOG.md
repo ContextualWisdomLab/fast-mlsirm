@@ -47,6 +47,17 @@
   core (`mlsirm_core::fitstats::m2_rmsea2`, kind-aware) with a NumPy reference
   held to 1e-6 parity; well-specified-vs-local-dependence calibration tests in
   both suites.
+- **IRT scale linking for common-item designs** (`fast_mlsirm.irt_link`;
+  `mlsirm_core::linking`): the moment methods (mean/mean, mean/sigma) and the
+  characteristic-curve methods of Haebara (1980) and Stocking & Lord (1983) for
+  putting a separately-calibrated new form onto the reference scale
+  (`theta_old = A·theta_new + B`), motivated by the mixed-format / multi-study
+  linking papers in the corpus (Kim & Lee 2006; Yao & Boughton 2009; Brossman &
+  Lee 2013). The characteristic-curve loss is minimized by a self-contained
+  Nelder-Mead over `(A, B)` from the mean/sigma start, integrated over a
+  standard-normal Gauss-Hermite grid. Rust compute path; recovery tests for all
+  four methods in both suites. (Complements the existing anchor-based
+  `link_fixed_item_parameters` and the FIPC serving path.)
 - **Item screening pipeline** (`fast_mlsirm.select_items`): iterative
   fit → flag → remove → refit with sparse / S-X²-BH / mean-square band /
   low-discrimination / map-isolation flags, an `l_z*` person screen, a

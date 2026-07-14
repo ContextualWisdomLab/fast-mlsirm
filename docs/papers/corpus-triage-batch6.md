@@ -11,9 +11,10 @@ dispositioned.
 | Paper(s) | Feature |
 |---|---|
 | Maydeu-Olivares & Joe (2005, 2006); Cai & Hansen (2013); Maydeu-Olivares (2013); Maydeu-Olivares & Joe (2014) | **M2 / RMSEA2 limited-information goodness-of-fit** — `mlsirm_core::fitstats::m2_rmsea2` (+ `fast_mlsirm.fitstats.m2`). Univariate + bivariate residual margins, df, χ² p-value, RMSEA2 with a 90% noncentral-χ² CI, and the bivariate SRMSR. Model-implied margins and the up-to-4th-order `Xi_2` covariance entries are exact via the local-independence factorization over the `(theta, xi)` node set (Cai-Hansen dimension reduction); `Delta_2` central-differenced; the quadratic form solved through one Cholesky of `Xi_2`. Rust compute path, NumPy parity reference (1e-6), calibration + local-dependence tests in both suites. |
+| Kolen & Brennan (2014); Haebara (1980); Stocking & Lord (1983); Kim & Lee (2006); Yao & Boughton (2009); Brossman & Lee (2013) | **IRT scale linking** — `mlsirm_core::linking` (+ `fast_mlsirm.irt_link`). Moment (mean/mean, mean/sigma) and characteristic-curve (Haebara, Stocking-Lord) coefficients for the unidimensional 2PL/1PL common-item case, via a self-contained Nelder-Mead. Rust compute path; four-method recovery tests in both suites. |
 
-`M2/RMSEA2` moves from the roadmap to done; it was the top consolidated
-roadmap item after `BIFAC2PLM` (batch 5).
+`M2/RMSEA2` and unidimensional common-item `irt_link` move from the roadmap to
+done; M2 was the top consolidated roadmap item after `BIFAC2PLM` (batch 5).
 
 ## Newly-listed head papers (first 10) — disposition
 
@@ -55,8 +56,9 @@ dispositions are warranted for the duplicated tail.
 3. **Polytomous kernels** — Muraki (1990 GPCM); Thissen, Cai & Bock (2010
    nominal model); Böckenholt et al. (2017); De Jong et al. (2008 ERS);
    Weijters et al. (2013 reversed items); Woehr & Meriac (2010 polytomous DIF).
-4. **Linking/equating + projective transforms** — Brossman & Lee (2013); Yao &
-   Boughton (2009); Kim & Lee (2006); Ip & Chen (2012 projective IRT);
-   Stocking-Lord.
+4. **Linking/equating extensions** — the unidimensional common-item case is
+   now covered by `irt_link` (moment + Haebara + Stocking-Lord); remaining:
+   multidimensional linking (Yao & Boughton 2009; Brossman & Lee 2013 MIRT
+   observed/true-score equating), Ip & Chen (2012) projective transforms.
 5. **Response-time integration** — van der Linden et al. (2010); Wise (2017
    rapid-guessing flags); Kyllonen & Zu (2016).

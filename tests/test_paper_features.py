@@ -209,3 +209,23 @@ def test_m2_rmsea2_parity_and_fit():
     assert ld.m2 > core.m2
     assert ld.rmsea2 > 0.08
     assert ld.srmsr > core.srmsr
+
+
+def test_irt_link_recovers_known_transform():
+    # separately-calibrated common-item linking (Kolen & Brennan; Haebara;
+    # Stocking-Lord): recover a known theta_old = A*theta_new + B.
+    from fast_mlsirm import irt_link
+
+    a_old = np.array([1.2, 0.8, 1.5, 1.0, 0.9, 1.3, 1.1, 0.7])
+    b_old = np.array([-0.5, 0.3, 1.0, -1.2, 0.0, 0.6, -0.8, 0.4])
+    A0, B0 = 1.3, 0.4
+    a_new = A0 * a_old
+    b_new = b_old + a_old * B0
+    for method in ("mean_mean", "mean_sigma", "haebara", "stocking_lord"):
+        r = irt_link(a_old, b_old, a_new, b_new, method=method)
+        assert abs(r.slope - A0) < 1e-3, f"{method}: slope {r.slope}"
+        assert abs(r.intercept - B0) < 1e-3, f"{method}: intercept {r.intercept}"
+    import pytest as _pytest
+
+    with _pytest.raises(Exception):
+        irt_link(a_old, b_old, a_new, b_new, method="not_a_method")

@@ -50,3 +50,60 @@ def link_fixed_item_parameters(
         linked.b[items] = source.b[items] - linked.a[items] * shift[dim]
 
     return linked, {"scale": scale, "shift": shift, "anchor_items": anchors.copy()}
+
+
+# --------------------------------------------------------------------------
+# Characteristic-curve / moment IRT scale linking for separately-calibrated
+# common-item designs (Kolen & Brennan 2014; Haebara 1980; Stocking & Lord
+# 1983). Rust core is the compute path.
+# --------------------------------------------------------------------------
+
+from dataclasses import dataclass
+
+
+@dataclass
+class IrtLinkResult:
+    slope: float       # theta_old = slope * theta_new + intercept
+    intercept: float
+    criterion: float   # characteristic-curve loss (0 for moment methods)
+    n_iter: int
+    method: str
+
+
+def irt_link(
+    a_old: np.ndarray,
+    b_old: np.ndarray,
+    a_new: np.ndarray,
+    b_new: np.ndarray,
+    method: str = "stocking_lord",
+    q_theta: int = 41,
+) -> IrtLinkResult:
+    """Link a separately-calibrated *new* form onto the *old* (reference) scale
+    from common items, returning ``theta_old = slope * theta_new + intercept``.
+
+    ``a_*`` are slopes (``exp(alpha)`` in the engine's parameterization) and
+    ``b_*`` the intercepts of the common items in the ``eta = a*theta + b``
+    form. ``method`` is one of ``mean_mean``, ``mean_sigma``, ``haebara``,
+    ``stocking_lord``; the characteristic-curve methods integrate over a
+    standard-normal Gauss-Hermite grid of ``q_theta`` nodes."""
+    from .fitstats import _core_module
+    from .estimators.marginal import _gh
+
+    core = _core_module()
+    if core is None:  # pragma: no cover
+        raise RuntimeError("irt_link requires the compiled Rust core")
+    nodes, weights = _gh(int(q_theta))
+    res = core.irt_link(
+        np.asarray(a_old, dtype=np.float64),
+        np.asarray(b_old, dtype=np.float64),
+        np.asarray(a_new, dtype=np.float64),
+        np.asarray(b_new, dtype=np.float64),
+        np.asarray(nodes, dtype=np.float64),
+        np.asarray(weights, dtype=np.float64),
+        method=str(method),
+    )
+    return IrtLinkResult(
+        slope=float(res["slope"]), intercept=float(res["intercept"]),
+        criterion=float(res["criterion"]), n_iter=int(res["n_iter"]),
+        method=str(method),
+    )

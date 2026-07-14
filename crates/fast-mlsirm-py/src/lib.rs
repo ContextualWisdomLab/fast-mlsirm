@@ -10,6 +10,8 @@ use mlsirm_core::marginal::{
     PopulationSpec, XiRuleKind,
 };
 use mlsirm_core::nodes::XiRule;
+use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
+
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
@@ -642,6 +644,41 @@ fn s_x2_stat(
     out.set_item("rms_residual", res.rms_residual)?;
     out.set_item("flagged_bh", res.flagged_bh)?;
     out.set_item("n_score_groups", res.n_score_groups)?;
+    Ok(out.into())
+}
+
+/// IRT scale linking (moment / Haebara / Stocking-Lord) for a common-item
+/// design. `theta`/`weight` are used by the characteristic-curve methods.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (a_old, b_old, a_new, b_new, theta, weight, method = "stocking_lord"))]
+fn irt_link(
+    py: Python<'_>,
+    a_old: PyReadonlyArray1<'_, f64>,
+    b_old: PyReadonlyArray1<'_, f64>,
+    a_new: PyReadonlyArray1<'_, f64>,
+    b_new: PyReadonlyArray1<'_, f64>,
+    theta: PyReadonlyArray1<'_, f64>,
+    weight: PyReadonlyArray1<'_, f64>,
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = LinkMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown linking method: {method}")))?;
+    let res = core_irt_link(
+        a_old.as_slice()?,
+        b_old.as_slice()?,
+        a_new.as_slice()?,
+        b_new.as_slice()?,
+        theta.as_slice()?,
+        weight.as_slice()?,
+        m,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", res.slope)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("criterion", res.criterion)?;
+    out.set_item("n_iter", res.n_iter)?;
     Ok(out.into())
 }
 
@@ -1366,6 +1403,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;

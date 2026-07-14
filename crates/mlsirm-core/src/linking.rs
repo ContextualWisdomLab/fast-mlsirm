@@ -1,0 +1,295 @@
+//! IRT scale linking for separately-calibrated common-item designs (Kolen &
+//! Brennan 2014, ch. 6): the moment methods (mean/mean, mean/sigma) and the
+//! characteristic-curve methods of Haebara (1980) and Stocking & Lord (1983).
+//! Motivated by the mixed-format/multi-study linking papers in the corpus
+//! (Kim & Lee 2006; Yao & Boughton 2009; Brossman & Lee 2013) — this module
+//! covers the unidimensional 2PL/1PL common-item case those procedures reduce
+//! to for the serving scale.
+//!
+//! Convention: new-form abilities relate to the old (reference) scale by
+//! `theta_old = A * theta_new + B`. Item parameters are carried in the engine's
+//! `eta = a*theta + b` form (a = slope, b = intercept). Substituting
+//! `theta_new = (theta_old - B) / A` transforms a new-form item onto the old
+//! scale as
+//!   a* = a_new / A,   b* = b_new - (a_new / A) * B
+//! (equivalently the classical `a_O = a_N/A`, `b_O = A b_N + B` on the
+//! slope/difficulty parameterization, with difficulty `-b/a`).
+
+/// Linking coefficients `theta_old = slope * theta_new + intercept`.
+#[derive(Clone, Copy, Debug)]
+pub struct LinkResult {
+    pub slope: f64,
+    pub intercept: f64,
+    /// Objective at the solution (0 for the moment methods, which are closed
+    /// form; the characteristic-curve loss for Haebara / Stocking-Lord).
+    pub criterion: f64,
+    pub n_iter: usize,
+}
+
+/// Linking method.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkMethod {
+    MeanMean,
+    MeanSigma,
+    Haebara,
+    StockingLord,
+}
+
+impl LinkMethod {
+    pub fn parse(name: &str) -> Option<LinkMethod> {
+        match name.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+            "meanmean" | "mm" => Some(LinkMethod::MeanMean),
+            "meansigma" | "ms" => Some(LinkMethod::MeanSigma),
+            "haebara" | "hb" => Some(LinkMethod::Haebara),
+            "stockinglord" | "sl" => Some(LinkMethod::StockingLord),
+            _ => None,
+        }
+    }
+}
+
+#[inline]
+fn p2pl(a: f64, b: f64, theta: f64) -> f64 {
+    1.0 / (1.0 + (-(a * theta + b)).exp())
+}
+
+fn mean(x: &[f64]) -> f64 {
+    x.iter().sum::<f64>() / x.len() as f64
+}
+
+fn sd(x: &[f64]) -> f64 {
+    let m = mean(x);
+    (x.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / x.len() as f64).sqrt()
+}
+
+/// Closed-form moment coefficients. `difficulty_i = -b_i / a_i`.
+fn moment(a_old: &[f64], b_old: &[f64], a_new: &[f64], b_new: &[f64], sigma: bool) -> (f64, f64) {
+    let d_old: Vec<f64> = a_old.iter().zip(b_old).map(|(&a, &b)| -b / a).collect();
+    let d_new: Vec<f64> = a_new.iter().zip(b_new).map(|(&a, &b)| -b / a).collect();
+    let slope = if sigma {
+        let sn = sd(&d_new);
+        if sn > 0.0 { sd(&d_old) / sn } else { 1.0 }
+    } else {
+        // mean/mean uses the discriminations: a_O = a_N / A
+        let mo = mean(a_old);
+        if mo != 0.0 { mean(a_new) / mo } else { 1.0 }
+    };
+    let intercept = mean(&d_old) - slope * mean(&d_new);
+    (slope, intercept)
+}
+
+/// Characteristic-curve objective at `(slope A, intercept B)`.
+fn cc_objective(
+    slope: f64,
+    intercept: f64,
+    a_old: &[f64],
+    b_old: &[f64],
+    a_new: &[f64],
+    b_new: &[f64],
+    theta: &[f64],
+    weight: &[f64],
+    stocking_lord: bool,
+) -> f64 {
+    if !(slope > 1e-6) || !slope.is_finite() || !intercept.is_finite() {
+        return 1e18;
+    }
+    let n_items = a_old.len();
+    let mut total = 0.0;
+    for (q, &th) in theta.iter().enumerate() {
+        if stocking_lord {
+            let mut tcc_old = 0.0;
+            let mut tcc_new = 0.0;
+            for i in 0..n_items {
+                tcc_old += p2pl(a_old[i], b_old[i], th);
+                let a_star = a_new[i] / slope;
+                let b_star = b_new[i] - a_star * intercept;
+                tcc_new += p2pl(a_star, b_star, th);
+            }
+            let d = tcc_old - tcc_new;
+            total += weight[q] * d * d;
+        } else {
+            let mut acc = 0.0;
+            for i in 0..n_items {
+                let a_star = a_new[i] / slope;
+                let b_star = b_new[i] - a_star * intercept;
+                let d = p2pl(a_old[i], b_old[i], th) - p2pl(a_star, b_star, th);
+                acc += d * d;
+            }
+            total += weight[q] * acc;
+        }
+    }
+    total
+}
+
+/// Nelder-Mead minimization of a 2-parameter objective from `x0`.
+fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, usize) {
+    // simplex vertices
+    let mut simplex = [
+        x0,
+        [x0[0] + 0.10 * (1.0 + x0[0].abs()), x0[1]],
+        [x0[0], x0[1] + 0.10 * (1.0 + x0[1].abs())],
+    ];
+    let mut fval = [
+        f(simplex[0][0], simplex[0][1]),
+        f(simplex[1][0], simplex[1][1]),
+        f(simplex[2][0], simplex[2][1]),
+    ];
+    let (alpha, gamma, rho, sigma) = (1.0, 2.0, 0.5, 0.5);
+    let mut iters = 0;
+    for it in 0..500 {
+        iters = it + 1;
+        // order vertices by value
+        let mut order = [0usize, 1, 2];
+        order.sort_by(|&i, &j| fval[i].partial_cmp(&fval[j]).unwrap());
+        let (lo, mid, hi) = (order[0], order[1], order[2]);
+        // convergence: simplex is tiny in value and span
+        let span = (fval[hi] - fval[lo]).abs();
+        if span < 1e-14 * (1.0 + fval[lo].abs()) {
+            break;
+        }
+        // centroid of the two best
+        let cen = [
+            0.5 * (simplex[lo][0] + simplex[mid][0]),
+            0.5 * (simplex[lo][1] + simplex[mid][1]),
+        ];
+        // reflection
+        let refl = [cen[0] + alpha * (cen[0] - simplex[hi][0]), cen[1] + alpha * (cen[1] - simplex[hi][1])];
+        let f_refl = f(refl[0], refl[1]);
+        if f_refl < fval[lo] {
+            // expansion
+            let exp = [cen[0] + gamma * (refl[0] - cen[0]), cen[1] + gamma * (refl[1] - cen[1])];
+            let f_exp = f(exp[0], exp[1]);
+            if f_exp < f_refl {
+                simplex[hi] = exp;
+                fval[hi] = f_exp;
+            } else {
+                simplex[hi] = refl;
+                fval[hi] = f_refl;
+            }
+        } else if f_refl < fval[mid] {
+            simplex[hi] = refl;
+            fval[hi] = f_refl;
+        } else {
+            // contraction
+            let con = [cen[0] + rho * (simplex[hi][0] - cen[0]), cen[1] + rho * (simplex[hi][1] - cen[1])];
+            let f_con = f(con[0], con[1]);
+            if f_con < fval[hi] {
+                simplex[hi] = con;
+                fval[hi] = f_con;
+            } else {
+                // shrink toward the best
+                for &v in &[mid, hi] {
+                    simplex[v] = [
+                        simplex[lo][0] + sigma * (simplex[v][0] - simplex[lo][0]),
+                        simplex[lo][1] + sigma * (simplex[v][1] - simplex[lo][1]),
+                    ];
+                    fval[v] = f(simplex[v][0], simplex[v][1]);
+                }
+            }
+        }
+    }
+    let best = (0..3).min_by(|&i, &j| fval[i].partial_cmp(&fval[j]).unwrap()).unwrap();
+    (simplex[best], fval[best], iters)
+}
+
+/// Link a separately-calibrated new form onto the old (reference) scale using
+/// common items. `theta`/`weight` are the quadrature the characteristic-curve
+/// methods integrate over (ignored by the moment methods).
+#[allow(clippy::too_many_arguments)]
+pub fn irt_link(
+    a_old: &[f64],
+    b_old: &[f64],
+    a_new: &[f64],
+    b_new: &[f64],
+    theta: &[f64],
+    weight: &[f64],
+    method: LinkMethod,
+) -> Result<LinkResult, String> {
+    let n = a_old.len();
+    if n < 2 || b_old.len() != n || a_new.len() != n || b_new.len() != n {
+        return Err("need >= 2 common items and matching-length parameter slices".into());
+    }
+    if a_old.iter().chain(a_new).any(|&a| !(a > 0.0)) {
+        return Err("slopes must be positive".into());
+    }
+    match method {
+        LinkMethod::MeanMean | LinkMethod::MeanSigma => {
+            let (slope, intercept) =
+                moment(a_old, b_old, a_new, b_new, method == LinkMethod::MeanSigma);
+            Ok(LinkResult { slope, intercept, criterion: 0.0, n_iter: 0 })
+        }
+        LinkMethod::Haebara | LinkMethod::StockingLord => {
+            if theta.len() != weight.len() || theta.is_empty() {
+                return Err("theta and weight must be non-empty and equal length".into());
+            }
+            let sl = method == LinkMethod::StockingLord;
+            // start from the mean/sigma solution
+            let (a0, b0) = moment(a_old, b_old, a_new, b_new, true);
+            let (x, crit, iters) = nelder_mead(
+                |slope, intercept| {
+                    cc_objective(slope, intercept, a_old, b_old, a_new, b_new, theta, weight, sl)
+                },
+                [a0, b0],
+            );
+            Ok(LinkResult { slope: x[0], intercept: x[1], criterion: crit, n_iter: iters })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gh21() -> (Vec<f64>, Vec<f64>) {
+        // coarse standard-normal grid (nodes, weights) sufficient for CC linking
+        let nodes: Vec<f64> = (0..41).map(|i| -4.0 + 0.2 * i as f64).collect();
+        let w: Vec<f64> = nodes
+            .iter()
+            .map(|&t| (-0.5 * t * t).exp() / (2.0 * std::f64::consts::PI).sqrt() * 0.2)
+            .collect();
+        (nodes, w)
+    }
+
+    fn recover(method: LinkMethod) {
+        // old-form items (eta form), generate a new form by a known transform
+        let a_old = vec![1.2, 0.8, 1.5, 1.0, 0.9, 1.3, 1.1, 0.7];
+        let b_old = vec![-0.5, 0.3, 1.0, -1.2, 0.0, 0.6, -0.8, 0.4];
+        let (a0, b0) = (1.3_f64, 0.4_f64); // true theta_old = 1.3*theta_new + 0.4
+        // a_new = A*a_old ; b_new = b_old + a_old*B  (inverse of the transform)
+        let a_new: Vec<f64> = a_old.iter().map(|&a| a0 * a).collect();
+        let b_new: Vec<f64> = a_old.iter().zip(&b_old).map(|(&a, &b)| b + a * b0).collect();
+        let (theta, weight) = gh21();
+        let res = irt_link(&a_old, &b_old, &a_new, &b_new, &theta, &weight, method).unwrap();
+        assert!(
+            (res.slope - a0).abs() < 1e-3 && (res.intercept - b0).abs() < 1e-3,
+            "{method:?}: recovered ({}, {}) vs (1.3, 0.4)",
+            res.slope,
+            res.intercept
+        );
+    }
+
+    #[test]
+    fn mean_sigma_recovers_transform() {
+        recover(LinkMethod::MeanSigma);
+    }
+
+    #[test]
+    fn mean_mean_recovers_transform() {
+        recover(LinkMethod::MeanMean);
+    }
+
+    #[test]
+    fn haebara_recovers_transform() {
+        recover(LinkMethod::Haebara);
+    }
+
+    #[test]
+    fn stocking_lord_recovers_transform() {
+        recover(LinkMethod::StockingLord);
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        let (theta, weight) = gh21();
+        assert!(irt_link(&[1.0], &[0.0], &[1.0], &[0.0], &theta, &weight, LinkMethod::MeanSigma).is_err());
+    }
+}
