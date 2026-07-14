@@ -28,8 +28,8 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
-    poly_information_curves as core_poly_information_curves, poly_s_x2 as core_poly_s_x2,
-    score_poly_eap as core_score_poly_eap, PolyModel,
+    poly_information_curves as core_poly_information_curves, poly_person_fit as core_poly_person_fit,
+    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 
@@ -795,6 +795,61 @@ fn fit_nominal(
     out.set_item("intercepts", fit.intercepts)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
+    Ok(out.into())
+}
+
+/// Polytomous person-fit l_z / l_z* (Rust compute path). Returns a dict with
+/// per-person `lz`, `lz_star`, `theta_eap`, and `flagged` (l_z* < threshold).
+///
+/// References (APA 7th ed.):
+///   Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
+///     measurement with polychotomous item response models and standardized
+///     indices. British Journal of Mathematical and Statistical Psychology,
+///     38(1), 67-86. https://doi.org/10.1111/j.2044-8317.1985.tb00817.x
+///   Snijders, T. A. B. (2001). Asymptotic null distribution of person fit
+///     statistics with estimated person parameter. Psychometrika, 66(3),
+///     331-342. https://doi.org/10.1007/BF02294437
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, prior_mean = 0.0, prior_sd = 1.0, flag_threshold = -1.645))]
+fn poly_person_fit(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_poly_person_fit(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        q_theta,
+        prior_mean,
+        prior_sd,
+        flag_threshold,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lz", res.lz)?;
+    out.set_item("lz_star", res.lz_star)?;
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("flagged", res.flagged)?;
     Ok(out.into())
 }
 
@@ -1799,6 +1854,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;

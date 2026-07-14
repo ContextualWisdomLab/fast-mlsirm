@@ -115,6 +115,17 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Polytomous person fit** (Drasgow, Levine & Williams, 1985; Snijders, 2001).
+  `person_fit_polytomous(responses, fit)` returns the standardized
+  log-likelihood `l_z` and its estimated-trait correction `l_z*` (per person,
+  at the EAP trait) plus `theta_eap` and a boolean `flagged`, for a fitted
+  GRM/GPCM — the ordered-category generalization of the binary l_z. Compute in
+  Rust (`mlsirm_core::poly::poly_person_fit`), reusing the poly cells with a
+  central-difference trait score. Validated by an exact reduction to the binary
+  `person_fit` l_z at `n_cat = 2` (`<1e-6`) and a 500-replication Monte-Carlo:
+  under model respondents `l_z*` is ~N(0,1) (mean −0.15, sd 1.04, Type I 0.08
+  at a 20-item test), and inconsistent responders are flagged with power 0.86.
+
 - **Nominal categories model** (Bock, 1972; Thissen, Cai & Bock, 2010).
   `fit_nominal_polytomous(responses, n_cat)` fits the unidimensional nominal
   model `P(Y=k|θ) = softmax_k(a_k·θ + c_k)` with a free scoring function `a_k`

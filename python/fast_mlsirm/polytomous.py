@@ -549,3 +549,65 @@ def fit_nominal_polytomous(
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
     )
+
+
+def person_fit_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+    prior_mean: float = 0.0,
+    prior_sd: float = 1.0,
+    flag_threshold: float = -1.645,
+) -> dict[str, np.ndarray]:
+    """Person-fit statistics for polytomous responses under a fitted GRM/GPCM
+    (compute in Rust). Returns the standardized log-likelihood ``lz`` (Drasgow,
+    Levine & Williams, 1985) and its estimated-trait correction ``lz_star``
+    (Snijders, 2001) at the EAP trait, plus ``theta_eap`` and a boolean
+    ``flagged`` (``lz_star < flag_threshold``, i.e. an aberrant / misfitting
+    response pattern). ``responses`` is persons x items of integer categories
+    with ``NaN`` for missing; ``prior_mean``/``prior_sd`` set the MAP prior used
+    in the Snijders correction. Reduces to the binary l_z at ``n_cat = 2``. Low
+    (negative) values indicate poor person fit.
+
+    References (APA 7th ed.):
+        Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
+            measurement with polychotomous item response models and standardized
+            indices. *British Journal of Mathematical and Statistical
+            Psychology, 38*(1), 67-86.
+            https://doi.org/10.1111/j.2044-8317.1985.tb00817.x
+        Snijders, T. A. B. (2001). Asymptotic null distribution of person fit
+            statistics with estimated person parameter. *Psychometrika, 66*(3),
+            331-342. https://doi.org/10.1007/BF02294437
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_person_fit"):
+        raise RuntimeError("person_fit_polytomous requires the compiled Rust core")
+
+    n_persons = y_int.shape[0]
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.poly_person_fit(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        obs_arg,
+        fit.model,
+        int(q_theta),
+        float(prior_mean),
+        float(prior_sd),
+        float(flag_threshold),
+    )
+    return {
+        "lz": np.asarray(res["lz"], dtype=np.float64),
+        "lz_star": np.asarray(res["lz_star"], dtype=np.float64),
+        "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
+        "flagged": np.asarray(res["flagged"], dtype=bool),
+    }

@@ -836,3 +836,58 @@ def test_fit_nominal_polytomous():
         fit_nominal_polytomous(y, 1)
     with pytest.raises(ValueError):
         fit_nominal_polytomous(y.astype(float) + 0.5, k)  # non-integer categories
+
+
+def test_person_fit_polytomous():
+    """Polytomous person fit l_z / l_z* (Drasgow-Levine-Williams, 1985; Snijders,
+    2001) through the public API: calibrated on a clean fit and flagging
+    inconsistent responders evaluated against that fit."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, person_fit_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_person_fit"):
+        pytest.skip("compiled core built without poly_person_fit")
+
+    rng = np.random.default_rng(5)
+    n, j, k = 1500, 20, 3
+    a = 1.0 + 0.03 * np.arange(j)
+    c = np.zeros((j, k))
+    c[:, 1] = 0.6
+    c[:, 2] = -0.6
+    scores = np.arange(k, dtype=float)
+
+    def sim_person(th):
+        return [
+            rng.choice(k, p=np.exp(category_logprobs(np.array([a[i] * th]), scores, c[i])[0]))
+            for i in range(j)
+        ]
+
+    # clean sample -> fit -> calibrated person fit
+    theta = rng.standard_normal(n)
+    y = np.array([sim_person(theta[p]) for p in range(n)])
+    fit = fit_polytomous(y, k, model="gpcm")
+    pf = person_fit_polytomous(y, fit)
+    for key in ("lz", "lz_star", "theta_eap", "flagged"):
+        assert len(pf[key]) == n
+    finite = np.isfinite(pf["lz_star"])
+    assert np.mean(pf["flagged"]) < 0.15  # Type I near nominal
+    assert abs(np.mean(pf["lz_star"][finite])) < 0.4
+    assert 0.8 < np.std(pf["lz_star"][finite]) < 1.25
+
+    # inconsistent responders (implied trait alternates +-1.6 across items) —
+    # evaluated at the SAME clean fit — are flagged
+    m = 40
+    ab = y.copy()
+    for p in range(m):
+        for i in range(j):
+            ti = 1.6 if i % 2 == 0 else -1.6
+            pr = np.exp(category_logprobs(np.array([a[i] * ti]), scores, c[i])[0])
+            ab[p, i] = rng.choice(k, p=pr)
+    pf_ab = person_fit_polytomous(ab, fit)
+    assert np.mean(pf_ab["flagged"][:m]) > 0.6
+
+    with pytest.raises(ValueError):
+        person_fit_polytomous(y[:, :-1], fit)
