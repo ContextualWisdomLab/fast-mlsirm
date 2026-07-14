@@ -93,15 +93,20 @@
 
 ### Added
 
-- **Polytomous response models (GRM / GPCM), unidimensional.** New
-  `fit_polytomous(responses, n_cat, model="grm"|"gpcm")` fits the graded
-  response model (Samejima; the default) or the generalized partial credit
-  model (Muraki) by Bock-Aitkin marginal-EM. All numerical work — the category
-  cells, the residual M-step gradient, and the Newton item update — runs in the
-  Rust core (`mlsirm_core::poly`: `grm_logprobs`/`gpcm_logprobs` +
-  `*_node_gradient` + `fit_poly_unidim`), exposed via PyO3; the NumPy
-  `category_logprobs`/`gpcm_node_gradient`/`fit_gpcm_numpy` are parity
-  references held to `<= 1e-12` (cell) / recovery agreement (fitter). GRM is
+- **Polytomous response models (GRM / GPCM), unidimensional.** A complete
+  fit -> score -> information subsystem: `fit_polytomous(responses, n_cat,
+  model="grm"|"gpcm")` fits the graded response model (Samejima; the default)
+  or the generalized partial credit model (Muraki) by Bock-Aitkin marginal-EM;
+  `score_polytomous(responses, fit)` returns EAP trait scores and posterior
+  SDs; `information_polytomous(fit, theta)` returns item and test Fisher
+  information curves. All numerical work — the category cells, the residual
+  M-step gradient, the Newton item update, the EAP reduction, and the
+  information — runs in the Rust core (`mlsirm_core::poly`:
+  `grm_logprobs`/`gpcm_logprobs` + `*_node_gradient` + `fit_poly_unidim` +
+  `score_poly_eap` + `poly_item_information`), exposed via PyO3; the NumPy
+  `category_logprobs`/`grm_category_logprobs`/`gpcm_node_gradient`/
+  `fit_gpcm_numpy` are parity references held to `<= 1e-12` (both cells) /
+  recovery agreement (fitter). GRM is
   chosen as the identification-clean default for the latent-space family — the
   single interaction term enters every cumulative logit as a shared shift, with
   no forced category scaling (design rationale and literature basis in
