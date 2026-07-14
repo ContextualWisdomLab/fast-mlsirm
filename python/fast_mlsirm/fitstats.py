@@ -1066,3 +1066,22 @@ def tcc_drift(
         )
     )
     return res
+
+
+def empirical_reliability(result) -> np.ndarray:
+    """Empirical (marginal) EAP reliability per trait dimension:
+    `Var(EAP) / (Var(EAP) + mean(SE^2))` (Stanley & Edwards 2016; Milanzi et
+    al. 2015). Only meaningful for a well-fitting model — report alongside
+    the fit statistics. Requires a marginal (MMLE) fit with posterior SDs."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("empirical_reliability requires the compiled Rust core")
+    if result.population is None or "theta_sd" not in result.population:
+        raise ValueError("empirical_reliability needs a marginal fit with theta_sd")
+    theta = np.asarray(result.params.theta, dtype=np.float64)
+    sd = np.asarray(result.population["theta_sd"], dtype=np.float64)
+    return np.asarray(
+        core.empirical_reliability(
+            theta.ravel(), sd.ravel(), int(theta.shape[0]), int(theta.shape[1])
+        )
+    )

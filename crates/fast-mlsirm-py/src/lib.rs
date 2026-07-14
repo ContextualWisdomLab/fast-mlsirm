@@ -17,6 +17,7 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::scoring::{
     bank_information as core_bank_information, cat_next_item as core_cat_next_item,
+    empirical_reliability as core_empirical_reliability,
     eapsum_tables as core_eapsum_tables, plausible_values as core_plausible_values,
     score_eap as core_score_eap, score_map as core_score_map, ItemBank, PriorSpec,
 };
@@ -1279,6 +1280,20 @@ fn tcc_drift(
     Ok(out.into())
 }
 
+
+/// Empirical (marginal) EAP reliability per trait dimension
+/// (Stanley & Edwards 2016; Milanzi et al. 2015).
+#[pyfunction]
+fn empirical_reliability(
+    theta_eap: PyReadonlyArray1<'_, f64>,
+    theta_sd: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_dims: usize,
+) -> PyResult<Vec<f64>> {
+    core_empirical_reliability(theta_eap.as_slice()?, theta_sd.as_slice()?, n_persons, n_dims)
+        .map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -1302,6 +1317,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(adjusted_chi2_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_resampling, m)?)?;
     m.add_function(wrap_pyfunction!(tcc_drift, m)?)?;
+    m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
     Ok(())
 }
 

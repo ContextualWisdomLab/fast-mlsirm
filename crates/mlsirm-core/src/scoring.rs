@@ -985,3 +985,64 @@ mod cat_pv_tests {
         assert_eq!(pv, pv2);
     }
 }
+
+
+/// Empirical (marginal) reliability of the EAP scale scores per trait
+/// dimension: `rho_d = Var(theta_hat_d) / (Var(theta_hat_d) + mean(SE_d^2))`
+/// — the observed-score variance decomposition convention reviewed by
+/// Stanley & Edwards (2016, "Reliability and model fit") and Milanzi,
+/// Molenberghs et al. (2015, manifest-vs-latent correlation functions), who
+/// caution that the coefficient is only as meaningful as the fitted model:
+/// report it alongside the fit statistics, never instead of them.
+pub fn empirical_reliability(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+) -> Result<Vec<f64>, String> {
+    if theta_eap.len() != n_persons * n_dims || theta_sd.len() != theta_eap.len() {
+        return Err("theta_eap/theta_sd must be n_persons x n_dims".into());
+    }
+    if n_persons < 2 {
+        return Err("empirical reliability needs n_persons >= 2".into());
+    }
+    let mut out = vec![f64::NAN; n_dims];
+    for d in 0..n_dims {
+        let n = n_persons as f64;
+        let mean: f64 = (0..n_persons).map(|p| theta_eap[p * n_dims + d]).sum::<f64>() / n;
+        let var: f64 = (0..n_persons)
+            .map(|p| {
+                let v = theta_eap[p * n_dims + d] - mean;
+                v * v
+            })
+            .sum::<f64>()
+            / n;
+        let mse: f64 = (0..n_persons)
+            .map(|p| theta_sd[p * n_dims + d] * theta_sd[p * n_dims + d])
+            .sum::<f64>()
+            / n;
+        if var + mse > 0.0 {
+            out[d] = var / (var + mse);
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod reliability_tests {
+    use super::*;
+
+    #[test]
+    fn empirical_reliability_tracks_signal_to_noise() {
+        // wide score spread + small SEs -> high rho; flat scores -> low rho
+        let n = 200usize;
+        let eap: Vec<f64> = (0..n).map(|p| -2.0 + 4.0 * p as f64 / n as f64).collect();
+        let sd_small = vec![0.3_f64; n];
+        let sd_large = vec![1.5_f64; n];
+        let hi = empirical_reliability(&eap, &sd_small, n, 1).unwrap()[0];
+        let lo = empirical_reliability(&eap, &sd_large, n, 1).unwrap()[0];
+        assert!(hi > 0.85, "high-information scale must be reliable: {hi}");
+        assert!(lo < hi - 0.2, "noisier scale must be less reliable: {lo} vs {hi}");
+        assert!(empirical_reliability(&eap, &sd_small, 3, 1).is_err());
+    }
+}
