@@ -35,6 +35,24 @@
     equal length, finite, integer, `0 ≤ label < k`) **before** the `uint32`
     conversion, instead of silently truncating floats or wrapping negatives.
   - Regression tests in `tests/test_security_hardening.py` cover each finding.
+- **Second-pass hardening** (Strix re-scan of PR #160, 11 findings) extends the
+  same DoS/data-poisoning guards to the paper-feature surface added in this PR:
+  - `preprocessing.irtree_expand` bounds the dense expansion
+    (`persons * items * nodes ≤ 50_000_000`) before allocating, and validates
+    `node_dims` (finite, non-negative, integer-valued) before the `int64` cast.
+  - `validation._validate_labels` rejects labels above `uint32` max before the
+    narrowing cast, and `validate_judge` requires the `human_human` baseline to
+    match the paired sample size.
+  - `inference.observed_information` caps the finite-difference Hessian at
+    `5_000` parameters (it is `O(n²)` memory **and** `O(n²)` objective calls),
+    and `oakes_standard_errors` validates `factor_id` (1-D, one-per-item,
+    finite, non-negative, integer) before deriving `n_dims`.
+  - `serving._validate_bundle` rejects tensor Gauss-Hermite grids that would
+    allocate `q_xi ** latent_dim > 1_000_000` points; `estimators.marginal`'s
+    `_xi_grid` carries the same bound for direct callers.
+  - `linking.link_fixed_item_parameters` rejects duplicate/fractional/negative/
+    non-finite anchor indices, non-2-D `theta`, non-finite item parameters, and
+    non-finite computed linking coefficients.
 
 ### Added
 

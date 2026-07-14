@@ -205,6 +205,11 @@ def _validate_bundle(bundle: Any) -> None:
     for qk in ("q_theta", "q_xi"):
         if quad.get(qk) not in {7, 11, 15, 21, 31, 41}:
             raise ValueError(f"bundle quadrature {qk} must be one of 7,11,15,21,31,41")
+    # Latent-space models score on a tensor Gauss-Hermite grid of
+    # q_xi ** latent_dim points; reject combinations that would allocate an
+    # astronomically large grid (e.g. 41**8 ~ 8e12).
+    if bundle["model"] != "MIRT" and int(quad["q_xi"]) ** latent_dim > 1_000_000:
+        raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
     items = bundle.get("items")
     if not isinstance(items, list) or len(items) != n_items:
         raise ValueError("bundle items must be a list of length n_items")

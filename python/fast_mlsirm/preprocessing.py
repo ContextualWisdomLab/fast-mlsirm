@@ -46,6 +46,14 @@ def irtree_expand(
         if np.any(vals < 0) or np.any(vals >= n_cats) or np.any(vals != np.round(vals)):
             raise ValueError(f"responses must be integer categories in 0..{n_cats - 1}")
     n_persons, n_items = y.shape
+    # Bound the dense expansion so untrusted item/node counts cannot force a
+    # multi-GB allocation (Jeon-De Boeck expansion is (persons, items*nodes)).
+    MAX_EXPANDED_ELEMENTS = 50_000_000
+    if n_persons * n_items * n_nodes > MAX_EXPANDED_ELEMENTS:
+        raise ValueError(
+            f"expanded matrix ({n_persons} x {n_items * n_nodes}) exceeds the "
+            f"{MAX_EXPANDED_ELEMENTS}-element limit"
+        )
     expanded = np.full((n_persons, n_items * n_nodes), np.nan)
     cat_idx = np.where(obs, y, 0).astype(int)
     for n in range(n_nodes):
@@ -54,8 +62,12 @@ def irtree_expand(
         expanded[:, n * n_items : (n + 1) * n_items] = node_vals
     if node_dims is None:
         node_dims = np.arange(n_nodes)
-    node_dims = np.asarray(node_dims, dtype=np.int64)
-    if node_dims.shape != (n_nodes,):
+    node_dims_arr = np.asarray(node_dims)
+    if node_dims_arr.shape != (n_nodes,):
         raise ValueError("node_dims must have one entry per tree node")
+    nd = node_dims_arr.astype(np.float64)
+    if not np.all(np.isfinite(nd)) or np.any(nd < 0) or np.any(nd != np.floor(nd)):
+        raise ValueError("node_dims must be finite non-negative integers")
+    node_dims = node_dims_arr.astype(np.int64)
     factor_id = np.repeat(node_dims, n_items)
     return expanded, factor_id

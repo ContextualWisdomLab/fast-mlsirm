@@ -152,7 +152,10 @@ def _xi_nodes(
 def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
     nodes, weights = _gh(q_xi)
     # Match the Rust ordering: axis k advances every q_xi^k nodes.
-    idx = np.arange(q_xi**latent_dim)
+    n_points = q_xi**latent_dim
+    if n_points > 1_000_000:
+        raise ValueError("q_xi ** latent_dim exceeds the tensor-grid limit; use qmc/mc")
+    idx = np.arange(n_points)
     grid = np.empty((len(idx), latent_dim))
     logw = np.zeros(len(idx))
     rem = idx.copy()

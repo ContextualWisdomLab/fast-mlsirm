@@ -33,6 +33,8 @@ def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None
     fl = arr.astype(np.float64)
     if np.any(fl < 0) or np.any(fl != np.floor(fl)):
         raise ValueError(f"{name} must be non-negative integers")
+    if np.any(fl > np.iinfo(np.uint32).max):
+        raise ValueError(f"{name} values must fit in uint32")
     if k is not None and np.any(fl >= k):
         raise ValueError(f"{name} values must be in 0..k-1")
     return arr.astype(np.uint32)
@@ -69,7 +71,9 @@ def validate_judge(
     human_v = _validate_labels(human, "human", k=int(k), n=judge_v.shape[0])
     kwargs: dict[str, Any] = {}
     if human_human is not None:
-        kwargs["human_a"] = _validate_labels(human_human[0], "human_a", k=int(k))
+        kwargs["human_a"] = _validate_labels(
+            human_human[0], "human_a", k=int(k), n=judge_v.shape[0]
+        )
         kwargs["human_b"] = _validate_labels(
             human_human[1], "human_b", k=int(k), n=kwargs["human_a"].shape[0]
         )

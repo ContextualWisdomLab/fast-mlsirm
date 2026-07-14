@@ -46,6 +46,12 @@ def observed_information(
         return float(value)
 
     n = x0.size
+    MAX_HESSIAN_DIM = 5_000
+    if n > MAX_HESSIAN_DIM:
+        raise ValueError(
+            f"observed_information supports at most {MAX_HESSIAN_DIM} parameters (got {n}); "
+            "the dense finite-difference Hessian is O(n^2) memory and O(n^2) objective calls"
+        )
     hessian = np.zeros((n, n), dtype=np.float64)
     base = objective(x0)
     eye = np.eye(n, dtype=np.float64)
@@ -130,8 +136,14 @@ def oakes_standard_errors(
     config = config or FitConfig(model=result.model, estimator="mmle")
     y, observed = prepare_response(np.asarray(responses, dtype=float), mask)
     n_persons, n_items = y.shape
-    factors = np.asarray(factor_id, dtype=np.int64)
-    n_dims = int(factors.max()) + 1
+    raw_factors = np.asarray(factor_id)
+    if raw_factors.ndim != 1 or raw_factors.shape != (n_items,):
+        raise ValueError("factor_id must be a 1-D array with one entry per item")
+    ff = raw_factors.astype(np.float64)
+    if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
+        raise ValueError("factor_id must be finite non-negative integers")
+    factors = raw_factors.astype(np.int64)
+    n_dims = int(factors.max()) + 1 if factors.size else 0
     pop = result.population or {}
     from .fit import _compact_population_labels
     if group_id is not None:

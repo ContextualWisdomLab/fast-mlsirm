@@ -173,3 +173,124 @@ def test_plausible_values_rejects_extreme_n_draws():
 def test_score_respondents_rejects_bundle_missing_items():
     with pytest.raises(ValueError):
         serving.score_respondents({"schema_version": serving.SCHEMA_VERSION}, [{}])
+
+
+# ===========================================================================
+# Strix 2nd-batch VULN-0001..0011: preprocessing / inference / linking /
+# validation / serving grid — input-validation & allocation-bound hardening.
+# ===========================================================================
+import types  # noqa: E402
+
+from fast_mlsirm.inference import observed_information, oakes_standard_errors  # noqa: E402
+from fast_mlsirm.linking import link_fixed_item_parameters  # noqa: E402
+from fast_mlsirm.preprocessing import irtree_expand  # noqa: E402
+from fast_mlsirm.types import MLSIRMParams  # noqa: E402
+from fast_mlsirm.validation import _validate_labels  # noqa: E402
+
+
+# ---- VULN-0001 (2nd): irtree_expand dense-allocation bound -----------------
+def test_irtree_expand_rejects_oversized_expansion():
+    y = np.zeros((1, 60_000))       # persons*items*nodes = 1*60000*900 = 5.4e7
+    mapping = np.zeros((900, 2))
+    with pytest.raises(ValueError, match="exceeds"):
+        irtree_expand(y, mapping)
+
+
+def test_irtree_expand_accepts_normal_shapes():
+    y = np.array([[0.0, 1.0], [1.0, 0.0]])
+    mapping = np.array([[0.0, 1.0], [1.0, 0.0]])  # 2 nodes x 2 cats
+    expanded, factor_id = irtree_expand(y, mapping)
+    assert expanded.shape == (2, 4) and factor_id.shape == (4,)
+
+
+# ---- VULN-0002 (2nd): irtree node_dims must be finite non-negative ints ----
+@pytest.mark.parametrize("bad", [np.array([0.5, 1.0]), np.array([-1.0, 0.0]),
+                                 np.array([np.nan, 0.0]), np.array([np.inf, 0.0])])
+def test_irtree_expand_rejects_bad_node_dims(bad):
+    y = np.zeros((3, 2))
+    mapping = np.zeros((2, 3))
+    with pytest.raises(ValueError):
+        irtree_expand(y, mapping, node_dims=bad)
+
+
+# ---- VULN-0003 (2nd): label values above uint32 max ------------------------
+def test_validate_labels_rejects_uint32_overflow():
+    with pytest.raises(ValueError, match="uint32"):
+        _validate_labels(np.array([0.0, 5_000_000_000.0]), "judge")
+
+
+# ---- VULN-0011: human_human baseline length must match paired labels -------
+def test_validate_judge_rejects_mismatched_human_a_length():
+    judge = np.array([0, 1, 0, 1])
+    human = np.array([0, 1, 1, 0])
+    with pytest.raises(ValueError, match="length"):
+        validate_judge(judge, human, k=2, human_human=(np.array([0, 1]),))
+
+
+# ---- VULN-0004 (2nd): oakes factor_id validated before use -----------------
+@pytest.mark.parametrize("bad", [np.array([0.0, np.nan, 1.0]),
+                                 np.array([0.0, -1.0, 1.0]),
+                                 np.array([0.5, 1.0, 2.0]),
+                                 np.zeros((2, 3))])
+def test_oakes_rejects_bad_factor_id(bad):
+    result = types.SimpleNamespace(model="MLSRM", population={}, params=None)
+    y = np.zeros((5, 3))
+    with pytest.raises(ValueError):
+        oakes_standard_errors(result, y, bad)
+
+
+# ---- VULN-0005 (2nd): observed_information bounds the dense Hessian ---------
+def test_observed_information_rejects_huge_parameter_vector():
+    p = MLSIRMParams(theta=np.zeros((6000, 1)), alpha=np.zeros(1), b=np.zeros(1),
+                     xi=np.zeros((1, 1)), zeta=np.zeros((1, 1)), tau=0.0)
+    with pytest.raises(ValueError, match="at most"):
+        observed_information(np.zeros((3, 1)), np.array([0]), p)
+
+
+# ---- VULN-0006 (2nd): serving tensor-grid explosion ------------------------
+def test_validate_bundle_rejects_grid_explosion():
+    bundle = _bundle(latent_dim=4)
+    bundle["model"] = "MLS2PLM"
+    bundle["quadrature"] = {"q_theta": 21, "q_xi": 41}  # 41**4 = 2.8e6 > 1e6
+    with pytest.raises(ValueError, match="grid limit"):
+        serving._validate_bundle(bundle)
+
+
+# ---- VULN-0007..0010: link_fixed_item_parameters anchor/param hardening -----
+def _link_ns(alpha, b, theta):
+    alpha = np.asarray(alpha, float)
+    return types.SimpleNamespace(
+        alpha=alpha, a=np.exp(alpha).reshape(-1, 1),
+        b=np.asarray(b, float), theta=np.asarray(theta, float),
+    )
+
+
+def test_link_rejects_duplicate_anchors():        # VULN-0007
+    s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
+    t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
+    with pytest.raises(ValueError, match="unique"):
+        link_fixed_item_parameters(s, t, anchor_items=np.array([0, 0]))
+
+
+def test_link_rejects_non_2d_theta():             # VULN-0008
+    s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros(2))
+    t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros(2))
+    with pytest.raises(ValueError, match="2-D"):
+        link_fixed_item_parameters(s, t, anchor_items=np.array([0, 1]))
+
+
+@pytest.mark.parametrize("alpha", [[0.0, np.inf], [0.0, np.nan]])
+def test_link_rejects_non_finite_params(alpha):   # VULN-0009
+    s = _link_ns(alpha, [0.0, 0.1], np.zeros((2, 1)))
+    t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
+    with pytest.raises(ValueError, match="finite"):
+        link_fixed_item_parameters(s, t, anchor_items=np.array([0, 1]))
+
+
+@pytest.mark.parametrize("anchors", [np.array([0.5, 1.0]), np.array([-1.0, 0.0]),
+                                     np.array([np.nan, 0.0])])
+def test_link_rejects_bad_anchor_indices(anchors):  # VULN-0010
+    s = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
+    t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
+    with pytest.raises(ValueError):
+        link_fixed_item_parameters(s, t, anchor_items=anchors)
