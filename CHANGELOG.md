@@ -81,6 +81,19 @@
   core (`mlsirm_core::fitstats::m2_rmsea2`, kind-aware) with a NumPy reference
   held to 1e-6 parity; well-specified-vs-local-dependence calibration tests in
   both suites.
+- **GPU EAP scoring kernel** (`mlsirm_core::gpu_marginal::score_eap_gpu`, WGSL
+  `score_pass`): Bock-Mislevy (1982) EAP scoring on the wgpu path, one thread
+  per person (race-free — each person owns its output slots, unlike the E-step
+  reduction), reusing the same `cell_l` binary-sparsity table decomposition.
+  Exposed as an **opt-in** device on `score_eap_device(..., Device::Gpu)` and
+  through PyO3 `score_bank_eap(..., device=...)` and
+  `serving.score_respondents(..., device="gpu")`; the default stays the exact
+  f64 CPU reduction, so precision-sensitive paths and serving parity are
+  unchanged. f32 kernel, GPU-vs-CPU parity ≤ 2e-3 verified on-device
+  (`gpu_eap_matches_cpu_reduction`); falls back to CPU with no adapter or when
+  `n_dims`/`latent_dim > 8`. Extends GPU offload from the E-step to the 31k-
+  person serving hot path (project compute policy: all math in Rust, GPU where
+  it pays).
 - **IRT scale linking for common-item designs** (`fast_mlsirm.irt_link`;
   `mlsirm_core::linking`): the moment methods (mean/mean, mean/sigma) and the
   characteristic-curve methods of Haebara (1980) and Stocking & Lord (1983) for

@@ -245,6 +245,7 @@ def score_respondents(
     mask: np.ndarray | None = None,
     method: str = "eap",
     prior: tuple[np.ndarray, np.ndarray] | None = None,
+    device: str = "cpu",
 ) -> list[dict[str, Any]]:
     """Score new respondents against a frozen bundle.
 
@@ -360,6 +361,7 @@ def score_respondents(
             q_theta=int(bundle["quadrature"]["q_theta"]),
             xi_rule="gh",
             q_xi=int(bundle["quadrature"]["q_xi"]),
+            device=str(device),
         )
         out = {
             "theta_eap": np.asarray(res["theta_eap"]).reshape(n_persons, n_dims),

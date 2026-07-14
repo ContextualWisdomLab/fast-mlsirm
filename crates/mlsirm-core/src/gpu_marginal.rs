@@ -211,6 +211,8 @@ struct GpuContext {
     pipeline_nbar: wgpu::ComputePipeline,
     pipeline_item: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    pipeline_score: wgpu::ComputePipeline,
+    score_layout: wgpu::BindGroupLayout,
 }
 
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
@@ -277,10 +279,51 @@ fn context() -> Option<&'static GpuContext> {
                     cache: None,
                 })
             };
+            let score_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("mlsirm-score"),
+                source: wgpu::ShaderSource::Wgsl(SCORE_SHADER.into()),
+            });
+            let score_entries: Vec<wgpu::BindGroupLayoutEntry> = (0..19)
+                .map(|binding| wgpu::BindGroupLayoutEntry {
+                    binding,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: if binding == 0 {
+                            wgpu::BufferBindingType::Uniform
+                        } else if binding >= 15 {
+                            wgpu::BufferBindingType::Storage { read_only: false }
+                        } else {
+                            wgpu::BufferBindingType::Storage { read_only: true }
+                        },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                })
+                .collect();
+            let score_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("mlsirm-score-layout"),
+                entries: &score_entries,
+            });
+            let score_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mlsirm-score-pl"),
+                bind_group_layouts: &[Some(&score_layout)],
+                immediate_size: 0,
+            });
+            let pipeline_score = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("score_pass"),
+                layout: Some(&score_pl),
+                module: &score_shader,
+                entry_point: Some("score_pass"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
             Some(GpuContext {
                 pipeline_lp: make("lp_pass"),
                 pipeline_nbar: make("nbar_pass"),
                 pipeline_item: make("item_pass"),
+                pipeline_score,
+                score_layout,
                 device,
                 queue,
                 layout,
@@ -543,4 +586,296 @@ pub(crate) fn e_step_gpu(
     };
 
     Some(GpuEStepOutputs { lp: lp_host, nbar, rbar, mbar })
+}
+
+
+// ---------------------------------------------------------------------------
+// GPU EAP scoring (Bock & Mislevy 1982). One thread per person, race-free:
+// each person owns its output slots, so no atomics / slot ownership (unlike
+// the E-step). Reuses the same `cell_l` binary-sparsity decomposition. f32,
+// so parity with the f64 CPU path is ~1e-4.
+// ---------------------------------------------------------------------------
+
+const SCORE_SHADER: &str = r#"
+struct SU {
+    n_persons: u32,
+    n_items: u32,
+    n_dims: u32,
+    latent_dim: u32,
+    q_t: u32,
+    n_x: u32,
+    _p0: u32,
+    _p1: u32,
+};
+
+@group(0) @binding(0) var<uniform> U: SU;
+@group(0) @binding(1) var<storage, read> logp0: array<f32>;
+@group(0) @binding(2) var<storage, read> logp1: array<f32>;
+@group(0) @binding(3) var<storage, read> c0: array<f32>;
+@group(0) @binding(4) var<storage, read> t_logw: array<f32>;
+@group(0) @binding(5) var<storage, read> x_logw: array<f32>;
+@group(0) @binding(6) var<storage, read> t_nodes: array<f32>;
+@group(0) @binding(7) var<storage, read> x_grid: array<f32>;
+@group(0) @binding(8) var<storage, read> prior_mean: array<f32>;
+@group(0) @binding(9) var<storage, read> prior_sd: array<f32>;
+@group(0) @binding(10) var<storage, read> factor_id: array<u32>;
+@group(0) @binding(11) var<storage, read> pos_off: array<u32>;
+@group(0) @binding(12) var<storage, read> pos_items: array<u32>;
+@group(0) @binding(13) var<storage, read> miss_off: array<u32>;
+@group(0) @binding(14) var<storage, read> miss_items: array<u32>;
+@group(0) @binding(15) var<storage, read_write> theta_eap: array<f32>;
+@group(0) @binding(16) var<storage, read_write> theta_sd: array<f32>;
+@group(0) @binding(17) var<storage, read_write> xi_eap: array<f32>;
+@group(0) @binding(18) var<storage, read_write> loglik: array<f32>;
+
+fn cell_l(p: u32, d: u32, t: u32, x: u32) -> f32 {
+    let cell = U.q_t * U.n_x;
+    var v = c0[d * cell + t * U.n_x + x];
+    for (var j = pos_off[p]; j < pos_off[p + 1u]; j = j + 1u) {
+        let i = pos_items[j];
+        if (factor_id[i] == d) {
+            let idx = i * cell + t * U.n_x + x;
+            v = v + logp1[idx] - logp0[idx];
+        }
+    }
+    for (var j = miss_off[p]; j < miss_off[p + 1u]; j = j + 1u) {
+        let i = miss_items[j];
+        if (factor_id[i] == d) {
+            let idx = i * cell + t * U.n_x + x;
+            v = v - logp0[idx];
+        }
+    }
+    return v;
+}
+
+@compute @workgroup_size(64)
+fn score_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = gid.x;
+    if (p >= U.n_persons) { return; }
+
+    // pass A: person log-marginal lp
+    var mx = -3.4e38;
+    var sx = 0.0;
+    for (var x = 0u; x < U.n_x; x = x + 1u) {
+        var sum_d = x_logw[x];
+        for (var d = 0u; d < U.n_dims; d = d + 1u) {
+            var m = -3.4e38;
+            var acc = 0.0;
+            for (var t = 0u; t < U.q_t; t = t + 1u) {
+                let v = t_logw[t] + cell_l(p, d, t, x);
+                if (v > m) { acc = acc * exp(m - v) + 1.0; m = v; } else { acc = acc + exp(v - m); }
+            }
+            sum_d = sum_d + (m + log(acc));
+        }
+        if (sum_d > mx) { sx = sx * exp(mx - sum_d) + 1.0; mx = sum_d; } else { sx = sx + exp(sum_d - mx); }
+    }
+    let lp = mx + log(sx);
+    loglik[p] = lp;
+
+    // pass B: posterior moments
+    var te: array<f32, 8u>;
+    var tm2: array<f32, 8u>;
+    var xe: array<f32, 8u>;
+    for (var d = 0u; d < U.n_dims; d = d + 1u) { te[d] = 0.0; tm2[d] = 0.0; }
+    for (var k = 0u; k < U.latent_dim; k = k + 1u) { xe[k] = 0.0; }
+    for (var x = 0u; x < U.n_x; x = x + 1u) {
+        var zbuf: array<f32, 8u>;
+        var sum_d = x_logw[x];
+        for (var d = 0u; d < U.n_dims; d = d + 1u) {
+            var m = -3.4e38;
+            var acc = 0.0;
+            for (var t = 0u; t < U.q_t; t = t + 1u) {
+                let v = t_logw[t] + cell_l(p, d, t, x);
+                if (v > m) { acc = acc * exp(m - v) + 1.0; m = v; } else { acc = acc + exp(v - m); }
+            }
+            let z = m + log(acc);
+            zbuf[d] = z;
+            sum_d = sum_d + z;
+        }
+        let px = exp(sum_d - lp);
+        for (var k = 0u; k < U.latent_dim; k = k + 1u) {
+            xe[k] = xe[k] + px * x_grid[x * U.latent_dim + k];
+        }
+        for (var d = 0u; d < U.n_dims; d = d + 1u) {
+            for (var t = 0u; t < U.q_t; t = t + 1u) {
+                let theta = prior_mean[d] + prior_sd[d] * t_nodes[t];
+                let pt = exp(t_logw[t] + cell_l(p, d, t, x) - zbuf[d]);
+                te[d] = te[d] + px * pt * theta;
+                tm2[d] = tm2[d] + px * pt * theta * theta;
+            }
+        }
+    }
+    for (var d = 0u; d < U.n_dims; d = d + 1u) {
+        theta_eap[p * U.n_dims + d] = te[d];
+        let vv = tm2[d] - te[d] * te[d];
+        theta_sd[p * U.n_dims + d] = sqrt(max(vv, 0.0));
+    }
+    for (var k = 0u; k < U.latent_dim; k = k + 1u) {
+        xi_eap[p * U.latent_dim + k] = xe[k];
+    }
+}
+"#;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ScoreUniforms {
+    n_persons: u32,
+    n_items: u32,
+    n_dims: u32,
+    latent_dim: u32,
+    q_t: u32,
+    n_x: u32,
+    _p0: u32,
+    _p1: u32,
+}
+
+/// Flattened inputs for `score_eap_gpu` (built CPU-side, reusing the same
+/// tables/grids/response index as the CPU scoring path).
+pub(crate) struct GpuScoreInputs<'a> {
+    pub n_persons: usize,
+    pub n_items: usize,
+    pub n_dims: usize,
+    pub latent_dim: usize,
+    pub q_t: usize,
+    pub n_x: usize,
+    pub logp0: &'a [f64],
+    pub logp1: &'a [f64],
+    pub c0: &'a [f64],
+    pub t_logw: &'a [f64],
+    pub x_logw: &'a [f64],
+    pub t_nodes: &'a [f64],
+    pub x_grid: &'a [f64],
+    pub prior_mean: &'a [f64],
+    pub prior_sd: &'a [f64],
+    pub factor_id: &'a [usize],
+    pub pos_off: &'a [u32],
+    pub pos_items: &'a [u32],
+    pub miss_off: &'a [u32],
+    pub miss_items: &'a [u32],
+}
+
+pub(crate) struct GpuScoreOutputs {
+    pub theta_eap: Vec<f64>,
+    pub theta_sd: Vec<f64>,
+    pub xi_eap: Vec<f64>,
+    pub loglik: Vec<f64>,
+}
+
+/// EAP scoring on the GPU; `None` when no adapter is present or the model
+/// exceeds the fixed kernel bounds (n_dims, latent_dim <= 8; q_t <= 41).
+pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs> {
+    let ctx = context()?;
+    if inp.n_dims > 8 || inp.latent_dim > 8 || inp.q_t > MAX_QT {
+        return None;
+    }
+    let device = &ctx.device;
+    let queue = &ctx.queue;
+    use wgpu::BufferUsages as BU;
+
+    let uniforms = ScoreUniforms {
+        n_persons: inp.n_persons as u32,
+        n_items: inp.n_items as u32,
+        n_dims: inp.n_dims as u32,
+        latent_dim: inp.latent_dim as u32,
+        q_t: inp.q_t as u32,
+        n_x: inp.n_x as u32,
+        _p0: 0,
+        _p1: 0,
+    };
+    let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
+    let logp0 = storage(device, bytemuck::cast_slice(&as_f32(inp.logp0)), BU::STORAGE);
+    let logp1 = storage(device, bytemuck::cast_slice(&as_f32(inp.logp1)), BU::STORAGE);
+    let c0 = storage(device, bytemuck::cast_slice(&as_f32(inp.c0)), BU::STORAGE);
+    let t_logw = storage(device, bytemuck::cast_slice(&as_f32(inp.t_logw)), BU::STORAGE);
+    let x_logw = storage(device, bytemuck::cast_slice(&as_f32(inp.x_logw)), BU::STORAGE);
+    let t_nodes = storage(device, bytemuck::cast_slice(&as_f32(inp.t_nodes)), BU::STORAGE);
+    let x_grid = storage(device, bytemuck::cast_slice(&as_f32(inp.x_grid)), BU::STORAGE);
+    let prior_mean = storage(device, bytemuck::cast_slice(&as_f32(inp.prior_mean)), BU::STORAGE);
+    let prior_sd = storage(device, bytemuck::cast_slice(&as_f32(inp.prior_sd)), BU::STORAGE);
+    let fid: Vec<u32> = inp.factor_id.iter().map(|&d| d as u32).collect();
+    let fid_buf = storage(device, bytemuck::cast_slice(&fid), BU::STORAGE);
+    let pos_off = storage(device, bytemuck::cast_slice(inp.pos_off), BU::STORAGE);
+    let pos_items = storage(device, bytemuck::cast_slice(inp.pos_items), BU::STORAGE);
+    let miss_off = storage(device, bytemuck::cast_slice(inp.miss_off), BU::STORAGE);
+    let miss_items = storage(device, bytemuck::cast_slice(inp.miss_items), BU::STORAGE);
+
+    let mk_out = |n: usize| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("score-out"),
+            size: (n.max(1) * 4) as u64,
+            usage: BU::STORAGE | BU::COPY_SRC,
+            mapped_at_creation: false,
+        })
+    };
+    let theta_eap = mk_out(inp.n_persons * inp.n_dims);
+    let theta_sd = mk_out(inp.n_persons * inp.n_dims);
+    let xi_eap = mk_out(inp.n_persons * inp.latent_dim);
+    let loglik = mk_out(inp.n_persons);
+
+    let entries = [
+        (0, &u_buf),
+        (1, &logp0),
+        (2, &logp1),
+        (3, &c0),
+        (4, &t_logw),
+        (5, &x_logw),
+        (6, &t_nodes),
+        (7, &x_grid),
+        (8, &prior_mean),
+        (9, &prior_sd),
+        (10, &fid_buf),
+        (11, &pos_off),
+        (12, &pos_items),
+        (13, &miss_off),
+        (14, &miss_items),
+        (15, &theta_eap),
+        (16, &theta_sd),
+        (17, &xi_eap),
+        (18, &loglik),
+    ]
+    .map(|(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
+        binding,
+        resource: buffer.as_entire_binding(),
+    });
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &ctx.score_layout,
+        entries: &entries,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        pass.set_pipeline(&ctx.pipeline_score);
+        pass.set_bind_group(0, &bg, &[]);
+        pass.dispatch_workgroups((inp.n_persons as u32).div_ceil(WORKGROUP_SIZE), 1, 1);
+    }
+    queue.submit([encoder.finish()]);
+
+    let read = |buf: &wgpu::Buffer, n: usize| -> Option<Vec<f64>> {
+        let sz = (n.max(1) * 4) as u64;
+        let rb = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("score-read"),
+            size: sz,
+            usage: BU::MAP_READ | BU::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut enc = device.create_command_encoder(&Default::default());
+        enc.copy_buffer_to_buffer(buf, 0, &rb, 0, sz);
+        queue.submit([enc.finish()]);
+        rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        let view = rb.slice(..).get_mapped_range().ok()?;
+        let floats: &[f32] = bytemuck::cast_slice(&view);
+        let host: Vec<f64> = floats.iter().take(n).map(|&v| v as f64).collect();
+        drop(view);
+        rb.unmap();
+        Some(host)
+    };
+
+    Some(GpuScoreOutputs {
+        theta_eap: read(&theta_eap, inp.n_persons * inp.n_dims)?,
+        theta_sd: read(&theta_sd, inp.n_persons * inp.n_dims)?,
+        xi_eap: read(&xi_eap, inp.n_persons * inp.latent_dim)?,
+        loglik: read(&loglik, inp.n_persons)?,
+    })
 }

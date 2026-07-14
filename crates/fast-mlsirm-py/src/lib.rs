@@ -21,7 +21,8 @@ use mlsirm_core::scoring::{
     bank_information as core_bank_information, cat_next_item as core_cat_next_item,
     empirical_reliability as core_empirical_reliability,
     eapsum_tables as core_eapsum_tables, plausible_values as core_plausible_values,
-    score_eap as core_score_eap, score_map as core_score_map, ItemBank, PriorSpec,
+    score_eap_device as core_score_eap_device, score_map as core_score_map, ItemBank,
+    PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::{
@@ -440,7 +441,7 @@ macro_rules! bank_from_args {
 #[pyo3(signature = (
     y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
     eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
-    xi_points = 256, xi_seed = 0,
+    xi_points = 256, xi_seed = 0, device = "cpu",
 ))]
 fn score_bank_eap(
     py: Python<'_>,
@@ -463,6 +464,7 @@ fn score_bank_eap(
     q_xi: usize,
     xi_points: usize,
     xi_seed: u64,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
         eps_distance, factors, bank);
@@ -471,8 +473,10 @@ fn score_bank_eap(
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
-    let res = core_score_eap(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
-        q_theta, rule)
+    let dev = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown device: {device}")))?;
+    let res = core_score_eap_device(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
+        q_theta, rule, dev)
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("theta_eap", res.theta_eap)?;

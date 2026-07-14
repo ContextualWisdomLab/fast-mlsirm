@@ -159,6 +159,23 @@ pub fn score_eap(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<EapScores, String> {
+    score_eap_device(bank, y, observed, n_persons, prior, q_theta, xi_rule, crate::Device::Cpu)
+}
+
+/// EAP scoring with an explicit compute device. `Device::Cpu` keeps the exact
+/// f64 reduction (the default); `Device::Gpu`/`Auto` offloads to the wgpu
+/// `score_pass` kernel (f32, ~1e-4) when an adapter is present, otherwise CPU.
+#[allow(clippy::too_many_arguments)]
+pub fn score_eap_device(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    device: crate::Device,
+) -> Result<EapScores, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
     if y.len() != n_persons * n_items || observed.len() != y.len() {
@@ -170,6 +187,30 @@ pub fn score_eap(
     let tables =
         build_tables(bank.alpha, bank.b, bank.zeta, bank.tau, &config, bank.factor_id, &ctx, &grids);
     let resp = index_responses(y, observed, n_persons, n_items);
+    // GPU EAP path (Bock-Mislevy on wgpu, f32) when a device is requested;
+    // falls back to the exact CPU reduction when Cpu, no adapter, or the model
+    // exceeds the kernel bounds (n_dims/latent_dim <= 8).
+    if device != crate::Device::Cpu {
+        if let Some(gpu_out) =
+            try_score_eap_gpu(bank, prior, &grids, &tables, &resp, n_persons, n_items)
+        {
+            return Ok(gpu_out);
+        }
+    }
+    Ok(score_eap_cpu_reduce(bank, prior, &grids, &tables, &resp, n_persons, n_items))
+}
+
+/// The scalar f64 CPU EAP reduction (the parity reference for `score_eap_gpu`).
+#[allow(clippy::too_many_arguments)]
+fn score_eap_cpu_reduce(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+) -> EapScores {
     let cell = grids.q_t * grids.n_x;
     let mut l_buf = vec![0.0_f64; bank.n_dims * cell];
     let mut log_zdx = vec![0.0_f64; bank.n_dims * grids.n_x];
@@ -182,7 +223,7 @@ pub fn score_eap(
     };
     for p in 0..n_persons {
         let lp = person_pass(
-            p, 0, &tables, &resp, bank.factor_id, bank.n_dims, n_items, &grids, &mut l_buf,
+            p, 0, tables, resp, bank.factor_id, bank.n_dims, n_items, grids, &mut l_buf,
             &mut log_zdx,
         );
         out.loglik[p] = lp;
@@ -212,7 +253,69 @@ pub fn score_eap(
             out.theta_sd[p * bank.n_dims + d] = (theta_m2[d] - m * m).max(0.0).sqrt();
         }
     }
-    Ok(out)
+    out
+}
+
+
+/// Build the GPU score inputs (CSR-flattened responses) and dispatch the
+/// `score_pass` kernel; `None` on no-adapter or out-of-bounds models.
+#[allow(clippy::too_many_arguments)]
+fn try_score_eap_gpu(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+) -> Option<EapScores> {
+    let mut pos_off: Vec<u32> = Vec::with_capacity(n_persons + 1);
+    let mut pos_items: Vec<u32> = Vec::new();
+    pos_off.push(0);
+    for p in 0..n_persons {
+        for &i in &resp.pos[p] {
+            pos_items.push(i as u32);
+        }
+        pos_off.push(pos_items.len() as u32);
+    }
+    let mut miss_off: Vec<u32> = Vec::with_capacity(n_persons + 1);
+    let mut miss_items: Vec<u32> = Vec::new();
+    miss_off.push(0);
+    for p in 0..n_persons {
+        for &i in &resp.miss[p] {
+            miss_items.push(i as u32);
+        }
+        miss_off.push(miss_items.len() as u32);
+    }
+    let inputs = crate::gpu_marginal::GpuScoreInputs {
+        n_persons,
+        n_items,
+        n_dims: bank.n_dims,
+        latent_dim: bank.latent_dim,
+        q_t: grids.q_t,
+        n_x: grids.n_x,
+        logp0: &tables.logp0,
+        logp1: &tables.logp1,
+        c0: &tables.c0,
+        t_logw: &grids.t_logw,
+        x_logw: &grids.x_logw,
+        t_nodes: &grids.t_nodes,
+        x_grid: &grids.x_grid,
+        prior_mean: &prior.mean,
+        prior_sd: &prior.sd,
+        factor_id: bank.factor_id,
+        pos_off: &pos_off,
+        pos_items: &pos_items,
+        miss_off: &miss_off,
+        miss_items: &miss_items,
+    };
+    let out = crate::gpu_marginal::score_eap_gpu(&inputs)?;
+    Some(EapScores {
+        theta_eap: out.theta_eap,
+        theta_sd: out.theta_sd,
+        xi_eap: out.xi_eap,
+        loglik: out.loglik,
+    })
 }
 
 #[inline]
@@ -1116,5 +1219,67 @@ mod validate_branch_tests {
         // y/observed length mismatch
         let bk = ok_bank(&a, &b, &z, &f);
         assert!(score_eap(&bk, &vec![0.0; 6], &vec![true; 6], 1, &prior, 7, rule).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod gpu_score_tests {
+    use super::*;
+    use crate::nodes::XiRule;
+
+    #[test]
+    fn gpu_eap_matches_cpu_reduction() {
+        let (n_items, n_persons, latent_dim) = (6usize, 40usize, 1usize);
+        let alpha: Vec<f64> = (0..n_items).map(|i| 0.1 * i as f64 - 0.2).collect();
+        let b: Vec<f64> = (0..n_items).map(|i| -0.5 + 0.2 * i as f64).collect();
+        let zeta: Vec<f64> =
+            (0..n_items * latent_dim).map(|i| 0.3 * (i % 3) as f64 - 0.3).collect();
+        let fid = vec![0usize; n_items];
+        let mut st = 12345u64;
+        let mut u = move || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let mut y = vec![0.0_f64; n_persons * n_items];
+        for v in y.iter_mut() {
+            *v = if u() < 0.5 { 1.0 } else { 0.0 };
+        }
+        let observed = vec![true; n_persons * n_items];
+        let bank = ItemBank {
+            alpha: &alpha,
+            b: &b,
+            zeta: &zeta,
+            tau: -0.3,
+            factor_id: &fid,
+            model_type: crate::ModelType::Mls2plm,
+            n_dims: 1,
+            latent_dim,
+            eps_distance: 1e-8,
+        };
+        let prior = PriorSpec::standard(1);
+        let grids = scoring_grids(&bank, 21, XiRule::GaussHermite { q_xi: 11 }).unwrap();
+        let ctx = prior_contexts(&prior);
+        let config = bank_model_config(&bank, n_persons, n_items);
+        let tables =
+            build_tables(bank.alpha, bank.b, bank.zeta, bank.tau, &config, bank.factor_id, &ctx, &grids);
+        let resp = index_responses(&y, &observed, n_persons, n_items);
+        let cpu = score_eap_cpu_reduce(&bank, &prior, &grids, &tables, &resp, n_persons, n_items);
+        match try_score_eap_gpu(&bank, &prior, &grids, &tables, &resp, n_persons, n_items) {
+            None => eprintln!("no GPU adapter present; skipping GPU EAP parity check"),
+            Some(gpu) => {
+                for p in 0..n_persons {
+                    assert!(
+                        (gpu.loglik[p] - cpu.loglik[p]).abs() < 2e-3,
+                        "loglik p={p}: gpu {} vs cpu {}",
+                        gpu.loglik[p],
+                        cpu.loglik[p]
+                    );
+                    assert!((gpu.theta_eap[p] - cpu.theta_eap[p]).abs() < 2e-3);
+                    assert!((gpu.theta_sd[p] - cpu.theta_sd[p]).abs() < 2e-3);
+                    assert!((gpu.xi_eap[p] - cpu.xi_eap[p]).abs() < 2e-3);
+                }
+            }
+        }
     }
 }
