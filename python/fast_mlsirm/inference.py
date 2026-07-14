@@ -133,12 +133,13 @@ def oakes_standard_errors(
     factors = np.asarray(factor_id, dtype=np.int64)
     n_dims = int(factors.max()) + 1
     pop = result.population or {}
+    from .fit import _compact_population_labels
     if group_id is not None:
-        ids = np.asarray(group_id, dtype=np.int64)
-        pop_kind, n_pop = "multigroup", int(ids.max()) + 1
+        ids, n_pop = _compact_population_labels(group_id, n_persons, "group_id")
+        pop_kind = "multigroup"
     elif cluster_id is not None:
-        ids = np.asarray(cluster_id, dtype=np.int64)
-        pop_kind, n_pop = "multilevel", int(ids.max()) + 1
+        ids, n_pop = _compact_population_labels(cluster_id, n_persons, "cluster_id")
+        pop_kind = "multilevel"
     else:
         ids, pop_kind, n_pop = None, "single", 0
     mu = np.asarray(pop.get("mu", np.zeros((0,))), dtype=np.float64).ravel()

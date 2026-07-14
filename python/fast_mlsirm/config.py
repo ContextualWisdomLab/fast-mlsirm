@@ -12,6 +12,14 @@ VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
 # for future milestones (the driver raises NotImplementedError for now).
 VALID_ESTIMATORS = {"jmle", "mmle", "em", "bayes"}
 
+# Hard upper bounds on caller-supplied sizes, to reject sparse/oversized
+# configurations that would force huge allocations before any real work
+# (defense against memory-exhaustion DoS from untrusted fit settings).
+# latent_dim: the joint grid is q_xi**latent_dim and Halton QMC supports
+# only len(_HALTON_PRIMES) = 6 axes, so 8 is already generous.
+MAX_LATENT_DIM = 8
+MAX_XI_POINTS = 1_000_000
+
 
 @dataclass(frozen=True)
 class MLS2PLMConfig:
@@ -111,8 +119,8 @@ class FitConfig:
         model = self.normalized_model()
         if model not in VALID_MODELS:
             raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
-        if self.latent_dim < 1:
-            raise ValueError("latent_dim must be >= 1")
+        if not (1 <= self.latent_dim <= MAX_LATENT_DIM):
+            raise ValueError(f"latent_dim must be between 1 and {MAX_LATENT_DIM}")
         if self.optimizer not in VALID_OPTIMIZERS:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
@@ -135,7 +143,7 @@ class FitConfig:
             raise ValueError("m_steps must be >= 1")
         if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
-        if self.xi_points < 1:
-            raise ValueError("xi_points must be >= 1")
+        if not (1 <= self.xi_points <= MAX_XI_POINTS):
+            raise ValueError(f"xi_points must be between 1 and {MAX_XI_POINTS}")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)

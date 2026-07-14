@@ -16,6 +16,28 @@ from typing import Any
 import numpy as np
 
 
+def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None) -> np.ndarray:
+    """Validate caller-supplied category labels before the uint32 conversion the
+    Rust gate expects: reject non-1-D, wrong-length, non-finite, non-integer,
+    negative, or (when ``k`` given) out-of-range values instead of silently
+    truncating/wrapping them (which would let malformed labels pass the gate)."""
+    arr = np.asarray(a)
+    if arr.ndim != 1:
+        raise ValueError(f"{name} must be a 1-D array")
+    if n is not None and arr.shape[0] != n:
+        raise ValueError(f"{name} length must match the paired labels")
+    if arr.size == 0:
+        raise ValueError(f"{name} must be non-empty")
+    if not np.all(np.isfinite(arr.astype(np.float64))):
+        raise ValueError(f"{name} must be finite")
+    fl = arr.astype(np.float64)
+    if np.any(fl < 0) or np.any(fl != np.floor(fl)):
+        raise ValueError(f"{name} must be non-negative integers")
+    if k is not None and np.any(fl >= k):
+        raise ValueError(f"{name} values must be in 0..k-1")
+    return arr.astype(np.uint32)
+
+
 @dataclass
 class ValidationVerdict:
     gates: list[dict[str, Any]]
@@ -41,15 +63,21 @@ def validate_judge(
     """
     from . import _core  # computation lives in the Rust core
 
+    if int(k) < 2:
+        raise ValueError("k (number of categories) must be >= 2")
+    judge_v = _validate_labels(judge, "judge", k=int(k))
+    human_v = _validate_labels(human, "human", k=int(k), n=judge_v.shape[0])
     kwargs: dict[str, Any] = {}
     if human_human is not None:
-        kwargs["human_a"] = np.asarray(human_human[0], dtype=np.uint32)
-        kwargs["human_b"] = np.asarray(human_human[1], dtype=np.uint32)
+        kwargs["human_a"] = _validate_labels(human_human[0], "human_a", k=int(k))
+        kwargs["human_b"] = _validate_labels(
+            human_human[1], "human_b", k=int(k), n=kwargs["human_a"].shape[0]
+        )
     if subgroup is not None:
-        kwargs["subgroup"] = np.asarray(subgroup, dtype=np.uint32)
+        kwargs["subgroup"] = _validate_labels(subgroup, "subgroup", n=judge_v.shape[0])
     res = _core.validate_scoring(
-        np.asarray(judge, dtype=np.uint32),
-        np.asarray(human, dtype=np.uint32),
+        judge_v,
+        human_v,
         int(k),
         **kwargs,
     )

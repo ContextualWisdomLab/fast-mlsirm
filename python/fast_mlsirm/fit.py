@@ -12,6 +12,27 @@ from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
 from .types import FitResult, MLSIRMParams
 
 
+def _compact_population_labels(raw, n_persons: int, name: str):
+    """Validate and compact caller-supplied population labels to contiguous
+    ``0..k-1`` ids. Rejects non-1-D, wrong-length, non-finite, non-integer, or
+    negative labels, and remaps the observed labels so the derived group/cluster
+    count is the number of *distinct* labels (<= n_persons) rather than
+    ``max(label) + 1`` -- which otherwise lets sparse ids such as ``[0, 1e9]``
+    force unbounded population allocations (memory-exhaustion DoS)."""
+    import numpy as _np
+
+    arr = _np.asarray(raw)
+    if arr.ndim != 1 or arr.shape[0] != n_persons:
+        raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
+    fl = arr.astype(_np.float64)
+    if not _np.all(_np.isfinite(fl)):
+        raise ValueError(f"{name} must be finite")
+    if _np.any(fl < 0) or _np.any(fl != _np.floor(fl)):
+        raise ValueError(f"{name} must be non-negative integers")
+    uniq, remapped = _np.unique(arr.astype(_np.int64), return_inverse=True)
+    return remapped.astype(_np.int64), int(uniq.size)
+
+
 def fit(
     responses: np.ndarray,
     factor_id: np.ndarray,
@@ -216,11 +237,11 @@ def _fit_mmle_marginal(
 
     n_persons, n_items = y.shape
     if group_id is not None:
-        ids = np.asarray(group_id, dtype=np.int64)
-        pop_kind, n_pop = "multigroup", int(ids.max()) + 1 if ids.size else 0
+        ids, n_pop = _compact_population_labels(group_id, n_persons, "group_id")
+        pop_kind = "multigroup"
     elif cluster_id is not None:
-        ids = np.asarray(cluster_id, dtype=np.int64)
-        pop_kind, n_pop = "multilevel", int(ids.max()) + 1 if ids.size else 0
+        ids, n_pop = _compact_population_labels(cluster_id, n_persons, "cluster_id")
+        pop_kind = "multilevel"
     elif anchors is not None:
         # FIPC: anchored items identify a free single population.
         ids, pop_kind, n_pop = None, "singlefree", 1

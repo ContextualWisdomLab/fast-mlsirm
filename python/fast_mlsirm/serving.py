@@ -15,11 +15,13 @@ population block (multigroup ``mu``/``sigma``, multilevel ``sigma_u``/
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from .config import MAX_LATENT_DIM, VALID_MODELS
 from .estimators.marginal import score_eap
 from .types import FitResult
 
@@ -158,12 +160,79 @@ def export_serving_bundle(
     return bundle
 
 
-def load_serving_bundle(path: str | Path) -> dict[str, Any]:
-    bundle = json.loads(Path(path).read_text(encoding="utf-8"))
+def _reject_nonfinite_json(literal: str) -> float:
+    raise ValueError(f"serving bundle contains a non-finite JSON constant {literal!r}")
+
+
+def _finite_number(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
+
+
+def _validate_bundle(bundle: Any) -> None:
+    """Validate a serving bundle's structure, sizes, and parameter finiteness
+    before it is used to score untrusted respondents. Guards against oversized
+    or inconsistent dimensions (multi-terabyte allocations / index errors) and
+    non-finite item parameters (NaN/Inf scores) reaching the scoring core."""
+    if not isinstance(bundle, dict):
+        raise ValueError("serving bundle must be a JSON object")
     if bundle.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(
             f"unsupported bundle schema_version {bundle.get('schema_version')!r}"
         )
+
+    def _pos_int(key: str, hi: int) -> int:
+        v = bundle.get(key)
+        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= hi):
+            raise ValueError(f"bundle {key} must be an integer in 1..{hi}")
+        return v
+
+    n_items = _pos_int("n_items", 100_000)
+    n_dims = _pos_int("n_dims", 64)
+    latent_dim = _pos_int("latent_dim", MAX_LATENT_DIM)
+    if bundle.get("model") not in VALID_MODELS:
+        raise ValueError(f"bundle model must be one of {sorted(VALID_MODELS)}")
+    if not _finite_number(bundle.get("tau")):
+        raise ValueError("bundle tau must be finite")
+    eps = bundle.get("eps_distance")
+    if not _finite_number(eps) or eps <= 0:
+        raise ValueError("bundle eps_distance must be a positive finite number")
+    quad = bundle.get("quadrature")
+    if not isinstance(quad, dict):
+        raise ValueError("bundle quadrature must be an object")
+    for qk in ("q_theta", "q_xi"):
+        if quad.get(qk) not in {7, 11, 15, 21, 31, 41}:
+            raise ValueError(f"bundle quadrature {qk} must be one of 7,11,15,21,31,41")
+    items = bundle.get("items")
+    if not isinstance(items, list) or len(items) != n_items:
+        raise ValueError("bundle items must be a list of length n_items")
+    seen: set = set()
+    for j, it in enumerate(items):
+        if not isinstance(it, dict):
+            raise ValueError(f"bundle item {j} must be an object")
+        code = it.get("code")
+        if not isinstance(code, str) or code in seen:
+            raise ValueError(f"bundle item {j} must have a unique string code")
+        seen.add(code)
+        fid = it.get("factor_id")
+        if not isinstance(fid, int) or isinstance(fid, bool) or not (0 <= fid < n_dims):
+            raise ValueError(f"bundle item {code!r} factor_id must be an int in 0..n_dims-1")
+        for pk in ("alpha", "b"):
+            if not _finite_number(it.get(pk)):
+                raise ValueError(f"bundle item {code!r} {pk} must be finite")
+        zeta = it.get("zeta")
+        if (
+            not isinstance(zeta, list)
+            or len(zeta) != latent_dim
+            or not all(_finite_number(z) for z in zeta)
+        ):
+            raise ValueError(f"bundle item {code!r} zeta must be {latent_dim} finite numbers")
+
+
+def load_serving_bundle(path: str | Path) -> dict[str, Any]:
+    bundle = json.loads(
+        Path(path).read_text(encoding="utf-8"), parse_constant=_reject_nonfinite_json
+    )
+    _validate_bundle(bundle)
     return bundle
 
 
@@ -188,6 +257,7 @@ def score_respondents(
     on a known team with ``mean = u_eap`` or a known group with
     ``(mu_g, sigma_g)``.
     """
+    _validate_bundle(bundle)
     items = bundle["items"]
     n_items = bundle["n_items"]
     code_to_col = {it["code"]: j for j, it in enumerate(items)}
@@ -421,6 +491,7 @@ def plausible_values(
     core = _core_module()
     if core is None:
         raise RuntimeError("plausible_values requires the compiled Rust core")
+    _validate_bundle(bundle)
     items = bundle["items"]
     n_items = bundle["n_items"]
     code_to_col = {it["code"]: j for j, it in enumerate(items)}
@@ -437,6 +508,9 @@ def plausible_values(
     else:
         y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y)
+    obs_vals = y[observed]
+    if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
+        raise ValueError("observed responses must be 0 or 1")
     mean, sd = serving_prior(bundle) if prior is None else (
         np.asarray(prior[0], dtype=float), np.asarray(prior[1], dtype=float))
     pv = core.plausible_values(

@@ -16,6 +16,27 @@ dispositioned.
 `M2/RMSEA2` and unidimensional common-item `irt_link` move from the roadmap to
 done; M2 was the top consolidated roadmap item after `BIFAC2PLM` (batch 5).
 
+## Approximate-fit cluster (newly surfaced) — covered by the M2 work
+
+The batch adds a Maydeu-Olivares approximate-fit cluster that the M2/RMSEA2
+commit already implements or directly grounds:
+
+- **Maydeu-Olivares & Joe (2014), Maydeu-Olivares (2013)** — RMSEA2 and the
+  SRMSR are exactly the approximate-fit indices `m2_rmsea2` returns.
+- **Maydeu-Olivares (2017, *Assessing the Size of Model Misfit in SEM*;
+  maydeu-olivares2017)** — the population-RMSEA / size-of-misfit framing that
+  motivates the RMSEA2 point estimate and its noncentral-χ² CI (both returned).
+- **Forero & Maydeu-Olivares (2009, limited vs full information GRM);
+  Forero, Maydeu-Olivares & Gallardo-Pujol (2009, DWLS vs ULS)** — the
+  limited-information-estimation rationale behind M2 (order-2 residual margins);
+  full DWLS/ULS *estimation* of ordinal factor models is a separate polytomous
+  roadmap item, not the fit statistic.
+- **Savalei & Rhemtulla (2013, robust test statistics with categorical data)**
+  — robust/scaled variants of the same limited-information χ²; the scaling
+  correction is a future refinement of `m2_rmsea2`.
+- **Liu & Maydeu-Olivares (2013/2014, local dependence & source of misfit)** —
+  already covered by the Chen-Thissen LD indices and Q3/GDDM diagnostics.
+
 ## Newly-listed head papers (first 10) — disposition
 
 - **Brossman & Lee (2013)** MIRT observed/true-score equating; **Yao &

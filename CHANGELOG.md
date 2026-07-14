@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Security
+
+- **Input-validation hardening at the untrusted boundaries** (Strix scan
+  findings on PR #160). All are denial-of-service / data-poisoning guards for
+  a library that may be exposed as a scoring/fitting service:
+  - Population labels (`group_id`/`cluster_id`) are now validated and
+    **compacted to contiguous ids** in `fit.py` and `inference.py`, so the
+    group/cluster count is the number of *distinct* labels (≤ `n_persons`)
+    rather than `max(label)+1` — sparse ids like `[0, 1e9]` no longer force
+    billion-row population allocations. Negative, non-integer, non-finite, and
+    wrong-length labels are rejected.
+  - `FitConfig.validate()` bounds `latent_dim` (≤ `MAX_LATENT_DIM = 8`) and
+    `xi_points` (≤ `MAX_XI_POINTS = 1_000_000`), rejecting extreme values that
+    would allocate huge latent / quadrature arrays before any computation.
+  - `load_serving_bundle` parses JSON in **strict mode** (rejects `NaN`/
+    `Infinity` literals) and runs a full `_validate_bundle` structural +
+    finiteness check (consistent `n_items`/`n_dims`/`latent_dim`, bounded
+    sizes, in-range `factor_id`, finite `alpha`/`b`/`zeta`/`tau`/`eps_distance`,
+    supported quadrature); `score_respondents` and `plausible_values` validate
+    the bundle at entry, so oversized dimensions (e.g. `n_items = 1e12`) and
+    non-finite parameters can no longer trigger multi-terabyte allocations or
+    NaN scores.
+  - `plausible_values` now enforces the binary response domain (0/1, finite)
+    that `score_respondents` already required.
+  - `validate_judge` validates judge/human/baseline/subgroup labels (1-D,
+    equal length, finite, integer, `0 ≤ label < k`) **before** the `uint32`
+    conversion, instead of silently truncating floats or wrapping negatives.
+  - Regression tests in `tests/test_security_hardening.py` cover each finding.
+
 ### Added
 
 - **Marginal (MMLE-EM) estimation for the full latent-space family.**
