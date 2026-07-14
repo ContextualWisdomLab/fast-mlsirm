@@ -26,6 +26,7 @@ from .estimators.marginal import score_eap
 from .types import FitResult
 
 SCHEMA_VERSION = 1
+MAX_DRAWS = 100_000
 
 
 def _core_module():
@@ -45,6 +46,8 @@ def serving_prior(bundle: dict) -> tuple[np.ndarray, np.ndarray]:
     (mean = u_eap) or group (mean = mu_g, sd = sigma_g).
     """
     n_dims = bundle["n_dims"]
+    if not isinstance(n_dims, int) or isinstance(n_dims, bool) or not (1 <= n_dims <= 64):
+        raise ValueError("bundle n_dims must be an integer in 1..64")
     mean = np.zeros(n_dims)
     sd = np.ones(n_dims)
     pop = bundle.get("population") or {}
@@ -492,6 +495,8 @@ def plausible_values(
     if core is None:
         raise RuntimeError("plausible_values requires the compiled Rust core")
     _validate_bundle(bundle)
+    if not (1 <= int(n_draws) <= MAX_DRAWS):
+        raise ValueError(f"n_draws must be between 1 and {MAX_DRAWS}")
     items = bundle["items"]
     n_items = bundle["n_items"]
     code_to_col = {it["code"]: j for j, it in enumerate(items)}

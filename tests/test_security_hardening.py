@@ -124,3 +124,52 @@ def test_plausible_values_rejects_non_binary_response():
     for bad in (2.0, float("inf"), float("-inf")):
         with pytest.raises(ValueError):
             serving.plausible_values(bundle, {"q0": bad}, n_draws=2)
+
+
+# ---- VULN-0004 (2nd pass): non-finite / unbounded numeric config -----------
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"learning_rate": float("nan")},
+        {"learning_rate": float("inf")},
+        {"init_gamma": float("inf")},
+        {"eps_distance": float("nan")},
+        {"tolerance": float("nan")},
+        {"gradient_clip": float("inf")},
+        {"max_iter": 10**12},
+        {"n_restarts": 10**12},
+        {"m_steps": 10**12},
+    ],
+)
+def test_config_rejects_nonfinite_or_unbounded_numerics(kw):
+    with pytest.raises(ValueError):
+        FitConfig(model="MLS2PLM", estimator="mmle", **kw).validate()
+
+
+def test_config_accepts_normal_numerics():
+    FitConfig(model="MLS2PLM", estimator="mmle", max_iter=100, n_restarts=2,
+              m_steps=4, learning_rate=0.01, tolerance=1e-6,
+              eps_distance=1e-8, init_gamma=1.0, gradient_clip=100.0).validate()
+
+
+# ---- VULN-0005 (2nd pass): n_draws / serving_prior bounds -------------------
+def test_serving_prior_rejects_extreme_n_dims():
+    bundle = _bundle()
+    bundle["n_dims"] = 2_147_483_647
+    with pytest.raises(ValueError):
+        serving.serving_prior(bundle)
+
+
+def test_plausible_values_rejects_extreme_n_draws():
+    if serving._core_module() is None:  # pragma: no cover - core built in CI
+        pytest.skip("plausible_values requires the compiled Rust core")
+    bundle = _bundle()
+    for bad in (-1, 0, 10**20):
+        with pytest.raises(ValueError):
+            serving.plausible_values(bundle, {"q0": 1}, n_draws=bad)
+
+
+# ---- VULN-0002 (confirm): malformed bundle -> ValueError, not KeyError ------
+def test_score_respondents_rejects_bundle_missing_items():
+    with pytest.raises(ValueError):
+        serving.score_respondents({"schema_version": serving.SCHEMA_VERSION}, [{}])

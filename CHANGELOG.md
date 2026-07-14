@@ -13,9 +13,14 @@
     rather than `max(label)+1` — sparse ids like `[0, 1e9]` no longer force
     billion-row population allocations. Negative, non-integer, non-finite, and
     wrong-length labels are rejected.
-  - `FitConfig.validate()` bounds `latent_dim` (≤ `MAX_LATENT_DIM = 8`) and
-    `xi_points` (≤ `MAX_XI_POINTS = 1_000_000`), rejecting extreme values that
-    would allocate huge latent / quadrature arrays before any computation.
+  - `FitConfig.validate()` bounds `latent_dim` (≤ `MAX_LATENT_DIM = 8`),
+    `xi_points` (≤ `1_000_000`), `max_iter` (≤ `100_000`), `n_restarts`
+    (≤ `1_000`), and `m_steps` (≤ `1_000`), and rejects **non-finite**
+    `learning_rate`/`init_gamma`/`eps_distance`/`tolerance`/`gradient_clip`
+    (a bare `x <= 0` comparison lets `NaN`/`Inf` through) — blocking both
+    memory/CPU exhaustion from extreme sizes and NaN-poisoned fits.
+  - `plausible_values` bounds `n_draws` (1..`MAX_DRAWS = 100_000`), and
+    `serving_prior` bounds `n_dims` (1..64) for direct callers.
   - `load_serving_bundle` parses JSON in **strict mode** (rejects `NaN`/
     `Infinity` literals) and runs a full `_validate_bundle` structural +
     finiteness check (consistent `n_items`/`n_dims`/`latent_dim`, bounded
