@@ -190,6 +190,28 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Joint speed-accuracy hierarchical model** (van der Linden, 2007, Level 2). A
+  new `mlsirm_core::rt_joint` module and the public `fit_speed_accuracy` — the
+  person-level layer that ties ability `theta` (from an accuracy 2PL model) to
+  speed `tau` (from the lognormal RT model) through a bivariate-normal person
+  distribution `(theta, tau) ~ N2(0, [[1, rho*sigma_tau], [rho*sigma_tau,
+  sigma_tau^2]])`, with the accuracy responses and log-times conditionally
+  independent given `(theta, tau)`. The headline output is `rho`, the ability-speed
+  correlation. This is the two-stage estimator: item parameters are held fixed and
+  the person covariance `(rho, sigma_tau)` is estimated by marginal ML over a 2-D
+  Gauss-Hermite grid built by Cholesky-mapping the standard nodes through
+  `Sigma_P`, with an exact constrained EM M-step (`c = S12/S11`,
+  `v = S22 - S12^2(S11-1)/S11^2`). The reported `rho` is the consistent marginal-ML
+  correlation, not the shrinkage-attenuated correlation of the two separate EAPs.
+  Compute in Rust (`rt_joint::fit_speed_accuracy_covariance`); exposed via PyO3 and
+  Python. Validated by an exact identity anchor (at `rho = 0` the 2-D grid
+  log-likelihood factorizes into the sum of the two 1-D grids to `< 1e-10`), a
+  reduction anchor (true independence returns `rho ~ 0`), monotone EM, and a
+  500-replication Monte-Carlo recovering `rho in {0, 0.5, -0.5}` with essentially
+  zero bias (bias `< 0.001`, RMSE ~0.03-0.04) and `sigma_tau` to RMSE ~0.008.
+  Deferred: the one-step full-information MMLE, 3PL guessing, and item-parameter-
+  uncertainty propagation into SE(rho).
+
 - **Lognormal response-time model** (van der Linden, 2007). A new
   `mlsirm_core::rt` module and the public `fit_response_times` — the speed-side
   analogue of the 2PL for item response *times*, opening a response-time modality

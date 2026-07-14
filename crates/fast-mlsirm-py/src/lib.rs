@@ -43,6 +43,9 @@ use mlsirm_core::poly::{
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 use mlsirm_core::rt::{fit_rt_lognormal as core_fit_rt, RtConfig};
+use mlsirm_core::rt_joint::{
+    fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig,
+};
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
@@ -1331,6 +1334,58 @@ fn fit_rt_lognormal(
     Ok(out.into())
 }
 
+/// van der Linden (2007) Level-2 joint speed-accuracy person covariance (two-stage;
+/// item params fixed). `responses` (0/1) and `times` (`> 0` where observed) are
+/// row-major `n_persons * n_items`; `a`/`b` are the 2PL raw slope/intercept,
+/// `alpha`/`beta` the lognormal time discrimination/intensity. Returns a dict with
+/// `rho`, `sigma_tau`, `s_theta2`, per-person `theta_eap`/`tau_eap`, `loglik`,
+/// `n_iter`, `converged`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (responses, times, observed, a, b, alpha, beta, n_persons, n_items, q = 21, max_iter = 500, tol = 1e-6, fix_sigma_tau = None))]
+fn fit_speed_accuracy_covariance(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    times: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    beta: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    q: usize,
+    max_iter: usize,
+    tol: f64,
+    fix_sigma_tau: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let cfg = SpeedAccuracyConfig { q, max_iter, tol, fix_sigma_tau, ..Default::default() };
+    let fit = core_fit_sa(
+        responses.as_slice()?,
+        times.as_slice()?,
+        obs,
+        a.as_slice()?,
+        b.as_slice()?,
+        alpha.as_slice()?,
+        beta.as_slice()?,
+        n_persons,
+        n_items,
+        cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("rho", fit.rho)?;
+    out.set_item("sigma_tau", fit.sigma_tau)?;
+    out.set_item("s_theta2", fit.s_theta2)?;
+    out.set_item("theta_eap", fit.theta_eap)?;
+    out.set_item("tau_eap", fit.tau_eap)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    Ok(out.into())
+}
+
 /// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -2361,6 +2416,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rt_lognormal, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_speed_accuracy_covariance, m)?)?;
     Ok(())
 }
 

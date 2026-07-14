@@ -78,3 +78,68 @@ def fit_response_times(
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
     )
+
+
+def fit_speed_accuracy(
+    responses: np.ndarray,
+    times: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    alpha: np.ndarray,
+    beta: np.ndarray,
+    q: int = 21,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+    fix_sigma_tau: float | None = None,
+) -> dict:
+    """Estimate the van der Linden (2007) Level-2 joint speed-accuracy person
+    covariance (compute in Rust) -- the ability-speed correlation ``rho`` and speed
+    SD ``sigma_tau`` -- by two-stage marginal ML over a 2-D Gauss-Hermite grid, with
+    the item parameters held fixed. ``responses`` (0/1) and ``times`` (> 0) are
+    persons x items arrays sharing a missingness mask (``NaN``/non-positive =
+    missing); ``a``/``b`` are the accuracy 2PL raw slope/intercept
+    (``eta = a_i*theta + b_i``); ``alpha``/``beta`` are the lognormal time
+    discrimination/intensity (e.g. from :func:`fit_response_times`). Returns a dict
+    with ``rho``, ``sigma_tau``, ``s_theta2`` (a theta-metric diagnostic ~1), joint
+    ``theta_eap``/``tau_eap``, ``loglik``, ``n_iter``, ``converged``.
+
+    ``rho`` here is the consistent marginal-ML correlation, NOT the attenuated
+    correlation of the two separately-scored EAPs (which shrinks toward 0).
+
+    References (APA 7th ed.):
+        van der Linden, W. J. (2007). A hierarchical framework for modeling speed
+            and accuracy on test items. *Psychometrika, 72*(3), 287-308.
+            https://doi.org/10.1007/s11336-006-1478-z
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
+        raise RuntimeError("fit_speed_accuracy requires the compiled Rust core")
+    u = np.asarray(responses, dtype=np.float64)
+    t = np.asarray(times, dtype=np.float64)
+    if u.ndim != 2 or t.shape != u.shape:
+        raise ValueError("responses and times must be matching 2-D persons x items arrays")
+    n_persons, n_items = u.shape
+    observed = np.isfinite(u) & np.isfinite(t) & (t > 0)
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    uu = np.where(observed, u, 0.0).reshape(-1)
+    tt = np.where(observed, t, 1.0).reshape(-1)
+    res = core.fit_speed_accuracy_covariance(
+        uu, tt, obs_arg,
+        np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64),
+        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
+        int(n_persons), int(n_items),
+        int(q), int(max_iter), float(tol),
+        None if fix_sigma_tau is None else float(fix_sigma_tau),
+    )
+    return {
+        "rho": float(res["rho"]),
+        "sigma_tau": float(res["sigma_tau"]),
+        "s_theta2": float(res["s_theta2"]),
+        "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
+        "tau_eap": np.asarray(res["tau_eap"], dtype=np.float64),
+        "loglik": float(res["loglik"]),
+        "n_iter": int(res["n_iter"]),
+        "converged": bool(res["converged"]),
+    }

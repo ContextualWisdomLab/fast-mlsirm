@@ -1375,3 +1375,54 @@ def test_fit_response_times():
 
     with pytest.raises(ValueError):
         fit_response_times(times.ravel())  # not 2-D
+
+
+def test_fit_speed_accuracy():
+    """Joint speed-accuracy model (van der Linden, 2007, Level 2) through the
+    public API: recovers a positive ability-speed correlation with item banks
+    fixed, and returns ~0 under true independence."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_response_times, fit_speed_accuracy
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_speed_accuracy_covariance"):
+        pytest.skip("compiled core built without fit_speed_accuracy_covariance")
+
+    rng = np.random.default_rng(7)
+    n, m = 1000, 20
+    a = 0.9 + 0.6 * (np.arange(m) % 3) / 2.0
+    b = np.linspace(-1.5, 1.5, m)
+    alpha = np.linspace(1.0, 3.0, m)
+    beta = np.linspace(3.5, 4.5, m)
+
+    def sim(rho, sig=0.3):
+        za = rng.standard_normal(n)
+        zb = rng.standard_normal(n)
+        theta = za
+        tau = rho * sig * za + sig * np.sqrt(1 - rho * rho) * zb
+        pr = 1.0 / (1.0 + np.exp(-(a[None, :] * theta[:, None] + b[None, :])))
+        resp = (rng.random((n, m)) < pr).astype(float)
+        y = beta[None, :] - tau[:, None] + rng.standard_normal((n, m)) / alpha[None, :]
+        return resp, np.exp(y)
+
+    resp, times = sim(0.5)
+    res = fit_speed_accuracy(resp, times, a, b, alpha, beta)
+    assert res["converged"]
+    assert abs(res["rho"] - 0.5) < 0.1, res["rho"]
+    assert abs(res["sigma_tau"] - 0.3) < 0.05
+    assert res["theta_eap"].shape == (n,) and res["tau_eap"].shape == (n,)
+
+    # true independence -> rho ~ 0
+    r0, t0 = sim(0.0)
+    res0 = fit_speed_accuracy(r0, t0, a, b, alpha, beta)
+    assert abs(res0["rho"]) < 0.08, res0["rho"]
+
+    # works with a fitted RT model's alpha/beta
+    rt = fit_response_times(times)
+    res_rt = fit_speed_accuracy(resp, times, a, b, rt.alpha, rt.beta)
+    assert abs(res_rt["rho"] - 0.5) < 0.15
+
+    with pytest.raises(ValueError):
+        fit_speed_accuracy(resp.ravel(), times, a, b, alpha, beta)  # not 2-D
