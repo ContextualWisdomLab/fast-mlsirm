@@ -190,6 +190,28 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Observed-score equating** (Kolen & Brennan, 2014). A new
+  `mlsirm_core::equating` module and the public `equate_observed_scores` /
+  `equate_neat` — the raw-score complement to the IRT scale linking (`irt_link`).
+  Equivalent-groups mean, linear, and equipercentile equating (percentile-rank
+  matching with the Kolen-Brennan uniform-kernel continuization, equated scores
+  kept real-valued), and the common-item non-equivalent-groups (NEAT) design via
+  chained equipercentile and frequency-estimation (post-stratification)
+  equipercentile. The attainable min/max are computed on relative-frequency
+  vectors; the frequency-estimation synthetic densities are renormalized so a
+  poorly overlapping anchor degrades toward each group's own marginal rather than
+  corrupting the cdf. Compute in Rust; exposed via PyO3 and a Python
+  `equating.py` (`EquateResult`). Validated by three exact identities — the
+  equipercentile self-equate is the identity to `< 1e-9` (including the low
+  boundary at `x = 0`), mean/linear recover a known integer-affine transform to
+  `< 1e-9`, and both NEAT methods collapse to EG equipercentile under equal
+  anchor distributions to `< 1e-9` — plus a 500-replication Monte-Carlo against a
+  deterministic Lord-Wingersky population equating: the empirical equipercentile
+  converges at the expected rate (interior RMSE 0.53 at `N = 1000` → 0.26 at
+  `N = 4000`, ratio 1.99 ≈ √4; max bias 0.068 → 0.031). Deferred (each a drop-in
+  behind the density/table interface): Tucker/Levine linear NEAT, log-linear
+  presmoothing, and Gaussian-kernel equating (von Davier et al., 2004).
+
 - **Nonparametric polytomous person fit U3poly** (Emons, 2008; van der Flier,
   1982). `u3_person_fit_polytomous(responses, n_cat)` computes van der Flier's
   `U3` person-fit statistic generalized to ordered polytomous items — a

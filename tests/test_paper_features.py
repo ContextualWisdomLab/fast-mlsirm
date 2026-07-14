@@ -1144,3 +1144,50 @@ def test_u3_person_fit_polytomous():
 
     with pytest.raises(ValueError):
         u3_person_fit_polytomous(y0, k, cutoff=float("nan"))
+
+
+def test_equate_observed_scores_and_neat():
+    """Observed-score equating (Kolen & Brennan, 2014) through the public API:
+    equipercentile self-equate is the identity, mean/linear recover a known
+    transform, and NEAT chained/FE collapse to EG equipercentile under equal
+    anchor distributions."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import equate_neat, equate_observed_scores
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_observed_scores"):
+        pytest.skip("compiled core built without equating")
+
+    rng = np.random.default_rng(5)
+    k = 40
+    x = np.clip(np.round(20 + 8 * rng.standard_normal(4000)), 0, k)
+
+    # self-equate is the identity on populated scores
+    r = equate_observed_scores(x, x, method="equipercentile", k_x=k, k_y=k)
+    g = np.bincount(x.astype(int), minlength=k + 1)
+    dev = np.abs(r.y_equivalents - r.x_scores)[g > 0]
+    assert dev.max() < 1e-9
+    assert r.design == "EG"
+
+    # mean equating recovers Y = X + 5
+    y = x + 5
+    rm = equate_observed_scores(x, y, method="mean", k_x=k, k_y=k + 5)
+    assert abs(rm.intercept - 5.0) < 1e-9 and abs(rm.slope - 1.0) < 1e-12
+
+    # NEAT collapse under equal anchor distributions (identical anchor vectors)
+    n = 6000
+    kv, kx, ky = 15, 30, 40
+    v = np.clip(np.round(7 + 3 * rng.standard_normal(n)), 0, kv)
+    xt = np.clip(np.round(1.4 * v + 4 + 4 * rng.standard_normal(n)), 0, kx)
+    yt = np.clip(np.round(2.0 * v + 6 + 5 * rng.standard_normal(n)), 0, ky)
+    eg = equate_observed_scores(xt, yt, method="equipercentile", k_x=kx, k_y=ky)
+    ch = equate_neat(xt, v, yt, v, method="chained", k_x=kx, k_y=ky, k_v=kv)
+    fe = equate_neat(xt, v, yt, v, method="frequency_estimation", k_x=kx, k_y=ky, k_v=kv, w1=0.5)
+    assert np.max(np.abs(ch.y_equivalents - eg.y_equivalents)) < 1e-9
+    assert np.max(np.abs(fe.y_equivalents - eg.y_equivalents)) < 1e-9
+    assert ch.design == "NEAT"
+
+    with pytest.raises(ValueError):
+        equate_observed_scores(x, y, method="bogus", k_x=k, k_y=k + 5)

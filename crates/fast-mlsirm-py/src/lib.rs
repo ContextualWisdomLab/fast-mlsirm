@@ -10,6 +10,10 @@ use mlsirm_core::marginal::{
     PopulationSpec, XiRuleKind,
 };
 use mlsirm_core::nodes::XiRule;
+use mlsirm_core::equating::{
+    equate_eg as core_equate_eg, equate_neat as core_equate_neat, EquateMethod, EquateResult,
+    NeatMethod,
+};
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
 
 use mlsirm_core::fitstats::{
@@ -713,6 +717,79 @@ fn irt_link(
     out.set_item("criterion", res.criterion)?;
     out.set_item("n_iter", res.n_iter)?;
     Ok(out.into())
+}
+
+fn equate_result_dict(py: Python<'_>, res: EquateResult) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("x_scores", res.x_scores)?;
+    out.set_item("y_equivalents", res.y_equivalents)?;
+    out.set_item("mu_x", res.mu_x)?;
+    out.set_item("sigma_x", res.sigma_x)?;
+    out.set_item("mu_y", res.mu_y)?;
+    out.set_item("sigma_y", res.sigma_y)?;
+    out.set_item("mu_eq", res.mu_eq)?;
+    out.set_item("sigma_eq", res.sigma_eq)?;
+    out.set_item("slope", res.slope)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("n_x", res.n_x)?;
+    out.set_item("n_y", res.n_y)?;
+    Ok(out.into())
+}
+
+/// Equivalent-groups observed-score equating of form X onto form Y (Rust compute
+/// path; Kolen & Brennan, 2014). `method` is "mean", "linear", or
+/// "equipercentile". Returns a dict with the conversion table and moments.
+#[pyfunction]
+#[pyo3(signature = (x_scores, y_scores, k_x, k_y, method = "equipercentile"))]
+fn equate_observed_scores(
+    py: Python<'_>,
+    x_scores: PyReadonlyArray1<'_, f64>,
+    y_scores: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = EquateMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
+    let res = core_equate_eg(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m)
+        .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
+}
+
+/// NEAT (common-item non-equivalent groups) observed-score equating (Rust compute
+/// path; Kolen & Brennan, 2014). Population 1 takes X + anchor V, population 2
+/// takes Y + anchor V. `method` is "chained" or "frequency_estimation"; `w1` is
+/// the population-1 synthetic weight (FE only).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_total, x_anchor, y_total, y_anchor, k_x, k_y, k_v, method = "chained", w1 = 0.5))]
+fn equate_neat(
+    py: Python<'_>,
+    x_total: PyReadonlyArray1<'_, f64>,
+    x_anchor: PyReadonlyArray1<'_, f64>,
+    y_total: PyReadonlyArray1<'_, f64>,
+    y_anchor: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    k_v: usize,
+    method: &str,
+    w1: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = NeatMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown NEAT method: {method}")))?;
+    let res = core_equate_neat(
+        x_total.as_slice()?,
+        x_anchor.as_slice()?,
+        y_total.as_slice()?,
+        y_anchor.as_slice()?,
+        k_x,
+        k_y,
+        k_v,
+        w1,
+        m,
+    )
+    .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
 }
 
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
@@ -2053,6 +2130,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;

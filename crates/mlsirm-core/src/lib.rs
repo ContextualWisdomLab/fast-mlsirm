@@ -1,4 +1,5 @@
 pub mod agreement;
+pub mod equating;
 pub mod fitstats;
 pub mod linking;
 pub mod marginal;
