@@ -190,6 +190,23 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Tucker & Levine linear NEAT equating** (Kolen & Brennan, 2014, §4.3–4.4;
+  Brennan, 2006). `equate_neat_linear` adds the linear observed-score methods for
+  the common-item non-equivalent-groups design, alongside the existing chained /
+  frequency-estimation equipercentile NEAT. Each forms synthetic-population
+  moments of the two forms (weighted by `w1`) from a group total-on-anchor slope
+  `gamma` — Tucker uses the regression slope `Cov(total, V)/Var(V)`; Levine uses
+  the congeneric effective-length ratio, which differs for an internal anchor
+  (`Var(total)/Cov`) versus an external one (`(Var(total)+Cov)/(Var(V)+Cov)`) —
+  then equates linearly. Compute in Rust (`equating::equate_neat_linear`); exposed
+  via PyO3 and Python. Validated by the exact reduction to equivalent-groups
+  linear equating under equal anchor moments (all four Tucker/Levine ×
+  internal/external variants, any `w1`, to `< 1e-9`), a hand-computed check that
+  pins the internal-vs-external Levine gamma against an independent oracle, and a
+  500-replication Monte-Carlo under a common-regression generative model
+  (equated-score interior RMSE 0.39 → 0.19 from `N = 1000` to `4000`, ratio 2.02 ≈
+  √4; max bias 0.051 → 0.034). Deferred: Levine true-score equating, Braun-Holland.
+
 - **Kernel equating + log-linear presmoothing** (von Davier, Holland & Thayer,
   2004; Holland & Thayer, 2000). Two enhancements to the equating module.
   `loglinear_smooth(counts, degree)` presmooths a score-frequency distribution by

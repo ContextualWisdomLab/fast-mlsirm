@@ -26,9 +26,10 @@
 /// X's distribution, and — for the moment methods only — the linear
 /// `slope`/`intercept` (`NaN` for equipercentile / NEAT). The `mu_x`/`sigma_x`/
 /// `mu_y`/`sigma_y` fields are the raw form marginals for EG and chained equating,
-/// but the *synthetic-population* moments for frequency estimation (which equates
-/// the post-stratified densities, not the raw marginals) — so do not compare a
-/// chained result's moments against a frequency-estimation result's field-for-field.
+/// but the *synthetic-population* moments for frequency estimation and for the
+/// Tucker/Levine linear methods (which equate synthetic populations, not the raw
+/// marginals) — so do not compare their moment fields against a chained or EG
+/// result's field-for-field.
 #[derive(Clone, Debug)]
 pub struct EquateResult {
     pub x_scores: Vec<f64>,
@@ -438,6 +439,158 @@ fn renormalize(v: &mut [f64]) {
             *x /= s;
         }
     }
+}
+
+// ===================== Tucker / Levine linear NEAT equating =====================
+
+/// Linear observed-score NEAT equating method (the linear counterpart to the
+/// chained/frequency-estimation equipercentile NEAT methods).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NeatLinearMethod {
+    /// Tucker (equal total-on-anchor regression across populations).
+    Tucker,
+    /// Levine observed-score (classical-congeneric assumption).
+    LevineObserved,
+}
+
+impl NeatLinearMethod {
+    pub fn parse(name: &str) -> Option<NeatLinearMethod> {
+        match name.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+            "tucker" | "t" => Some(NeatLinearMethod::Tucker),
+            "levine" | "levineobserved" | "l" => Some(NeatLinearMethod::LevineObserved),
+            _ => None,
+        }
+    }
+}
+
+/// Whether the anchor items count toward the total score (internal) or are a
+/// separate section (external). Affects only the Levine gamma; Tucker is
+/// anchor-kind-invariant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnchorKind {
+    Internal,
+    External,
+}
+
+impl AnchorKind {
+    pub fn parse(name: &str) -> Option<AnchorKind> {
+        match name.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+            "internal" | "int" => Some(AnchorKind::Internal),
+            "external" | "ext" => Some(AnchorKind::External),
+            _ => None,
+        }
+    }
+}
+
+/// Population moments of paired vectors `(mean_a, var_a, mean_b, var_b, cov)` with
+/// the `N`-denominator convention (matching [`moments`]).
+fn paired_moments(a: &[f64], b: &[f64]) -> (f64, f64, f64, f64, f64) {
+    let n = a.len() as f64;
+    let ma = a.iter().sum::<f64>() / n;
+    let mb = b.iter().sum::<f64>() / n;
+    let va = a.iter().map(|&x| (x - ma).powi(2)).sum::<f64>() / n;
+    let vb = b.iter().map(|&x| (x - mb).powi(2)).sum::<f64>() / n;
+    let cov = a.iter().zip(b).map(|(&x, &y)| (x - ma) * (y - mb)).sum::<f64>() / n;
+    (ma, va, mb, vb, cov)
+}
+
+/// Tucker & Levine linear observed-score equating for the NEAT (common-item
+/// non-equivalent groups) design (Kolen & Brennan, 2014, §4.3–4.4) — the linear
+/// counterpart to [`equate_neat`]'s equipercentile methods. Population 1 takes
+/// form X plus the anchor V (`x_total`, `x_anchor`); population 2 takes form Y plus
+/// the anchor V (`y_total`, `y_anchor`). Each method forms synthetic-population
+/// moments of X and Y (weighted by `w1`/`w2 = 1-w1`) using a group total-on-anchor
+/// slope `gamma`, then equates linearly. Tucker uses the regression slope
+/// `Cov(total, V)/Var(V)`; Levine uses the congeneric effective-length ratio,
+/// which differs for an `Internal` anchor (`Var(total)/Cov`) versus an `External`
+/// one (`(Var(total)+Cov)/(Var(V)+Cov)`). With equal anchor moments in the two
+/// groups all variants collapse to the equivalent-groups linear equating.
+///
+/// # References (APA 7th ed.)
+///
+/// Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking:
+///   Methods and practices* (3rd ed.). Springer.
+///   https://doi.org/10.1007/978-1-4939-0317-7
+///
+/// Brennan, R. L. (2006). *Chained linear equating* (CASMA Technical Report No. 3).
+///   Center for Advanced Studies in Measurement and Assessment, University of Iowa.
+#[allow(clippy::too_many_arguments)]
+pub fn equate_neat_linear(
+    x_total: &[f64],
+    x_anchor: &[f64],
+    y_total: &[f64],
+    y_anchor: &[f64],
+    k_x: usize,
+    k_y: usize,
+    w1: f64,
+    method: NeatLinearMethod,
+    anchor_kind: AnchorKind,
+) -> Result<EquateResult, String> {
+    if k_x == 0 || k_y == 0 {
+        return Err("k_x and k_y must be positive".into());
+    }
+    if x_total.len() != x_anchor.len() || y_total.len() != y_anchor.len() {
+        return Err("total and anchor vectors must have equal length within each group".into());
+    }
+    if x_total.is_empty() || y_total.is_empty() {
+        return Err("score vectors must be non-empty".into());
+    }
+    if !(0.0..=1.0).contains(&w1) {
+        return Err("w1 must be in [0, 1]".into());
+    }
+    if x_total.iter().chain(x_anchor).chain(y_total).chain(y_anchor).any(|v| !v.is_finite()) {
+        return Err("scores must be finite".into());
+    }
+    let (m1x, v1x, m1v, v1v, cov1) = paired_moments(x_total, x_anchor);
+    let (m2y, v2y, m2v, v2v, cov2) = paired_moments(y_total, y_anchor);
+    if v1v <= 0.0 || v2v <= 0.0 {
+        return Err("anchor variance must be positive in both groups".into());
+    }
+    let (g1, g2) = match method {
+        NeatLinearMethod::Tucker => (cov1 / v1v, cov2 / v2v),
+        NeatLinearMethod::LevineObserved => {
+            if cov1 <= 0.0 || cov2 <= 0.0 {
+                return Err("Levine equating needs a positive total-anchor covariance in both groups".into());
+            }
+            match anchor_kind {
+                AnchorKind::Internal => (v1x / cov1, v2y / cov2),
+                AnchorKind::External => {
+                    ((v1x + cov1) / (v1v + cov1), (v2y + cov2) / (v2v + cov2))
+                }
+            }
+        }
+    };
+    let w2 = 1.0 - w1;
+    let dmu = m1v - m2v;
+    let dv = v1v - v2v;
+    let mu_sx = m1x - w2 * g1 * dmu;
+    let mu_sy = m2y + w1 * g2 * dmu;
+    let var_sx = v1x - w2 * g1 * g1 * dv + w1 * w2 * g1 * g1 * dmu * dmu;
+    let var_sy = v2y + w1 * g2 * g2 * dv + w1 * w2 * g2 * g2 * dmu * dmu;
+    if var_sx <= 0.0 || var_sy <= 0.0 {
+        return Err("synthetic variance is non-positive (degenerate equating)".into());
+    }
+    let a = var_sy.sqrt() / var_sx.sqrt();
+    let b = mu_sy - a * mu_sx;
+    let y_eq: Vec<f64> = (0..=k_x).map(|x| a * x as f64 + b).collect();
+    Ok(EquateResult {
+        x_scores: (0..=k_x).map(|x| x as f64).collect(),
+        y_equivalents: y_eq,
+        mu_x: mu_sx,
+        sigma_x: var_sx.sqrt(),
+        mu_y: mu_sy,
+        sigma_y: var_sy.sqrt(),
+        // the linear conversion maps the synthetic X moments onto the synthetic Y
+        // moments exactly, so the equated-score moments are (mu_sy, sigma_sy)
+        mu_eq: mu_sy,
+        sigma_eq: var_sy.sqrt(),
+        slope: a,
+        intercept: b,
+        n_x: x_total.len(),
+        n_y: y_total.len(),
+        h_x: f64::NAN,
+        h_y: f64::NAN,
+    })
 }
 
 // ===================== log-linear presmoothing =====================
@@ -1312,6 +1465,126 @@ mod tests {
              N=4000: max|bias|={bias4:.4} RMSE={rmse4:.4}  RMSE ratio={ratio:.3} (expect ~2)"
         );
         assert!(bias1 < 0.15 && bias4 < 0.08, "bias should be small and shrink: {bias1}, {bias4}");
+        assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
+    }
+
+    // Primary anchor: with equal anchor moments (a shared anchor vector) every
+    // Tucker/Levine variant collapses to EG linear equating of X onto Y, for any
+    // w1 and anchor kind.
+    #[test]
+    fn neat_linear_collapses_to_eg_linear() {
+        let (kx, ky) = (30usize, 40usize);
+        let mut u = lcg(41);
+        let n = 4000usize;
+        // a shared anchor vector (equal anchor moments by construction) that is
+        // genuinely correlated with both totals (so Levine's covariance is positive)
+        let anchor: Vec<f64> = (0..n).map(|_| (7.0 + 3.0 * normal(&mut u)).round().clamp(0.0, 15.0)).collect();
+        let x_total: Vec<f64> =
+            anchor.iter().map(|&v| (1.5 * v + 4.0 + 3.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
+        let y_total: Vec<f64> =
+            anchor.iter().map(|&v| (1.8 * v + 6.0 + 4.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
+        let eg = equate_eg(&x_total, &y_total, kx, ky, EquateMethod::Linear).unwrap();
+        for m in [NeatLinearMethod::Tucker, NeatLinearMethod::LevineObserved] {
+            for ak in [AnchorKind::Internal, AnchorKind::External] {
+                for w1 in [0.0_f64, 0.5, 1.0] {
+                    let r = equate_neat_linear(&x_total, &anchor, &y_total, &anchor, kx, ky, w1, m, ak).unwrap();
+                    assert!(
+                        (r.slope - eg.slope).abs() < 1e-9 && (r.intercept - eg.intercept).abs() < 1e-9,
+                        "collapse {m:?}/{ak:?}/w1={w1}: slope {} vs {}, int {} vs {}",
+                        r.slope, eg.slope, r.intercept, eg.intercept
+                    );
+                    let d = (0..=kx).map(|x| (r.y_equivalents[x] - eg.y_equivalents[x]).abs()).fold(0.0, f64::max);
+                    assert!(d < 1e-9, "table mismatch: {d}");
+                }
+            }
+        }
+    }
+
+    // Pins the internal-vs-external Levine gamma (the crux) against a NumPy oracle
+    // (N-denominator moments): the three gamma branches give three distinct
+    // slope/intercept pairs.
+    #[test]
+    fn neat_linear_gamma_hand_computed() {
+        let x1 = [3.0, 5., 7., 9., 4., 6., 8., 2.];
+        let v1 = [1.0, 2., 2., 3., 1., 2., 3., 1.];
+        let y2 = [2.0, 5., 8., 11., 4., 7., 10., 1.];
+        let v2 = [2.0, 4., 4., 6., 3., 5., 6., 2.];
+        let (kx, ky, w1) = (11usize, 11usize, 0.5_f64);
+        let tk = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
+        assert!((tk.slope - 0.8006819908).abs() < 1e-8 && (tk.intercept + 3.0616870634).abs() < 1e-8, "tucker {} {}", tk.slope, tk.intercept);
+        let li = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::LevineObserved, AnchorKind::Internal).unwrap();
+        assert!((li.slope - 0.7403094687).abs() < 1e-8 && (li.intercept + 3.0252464118).abs() < 1e-8, "levine-int {} {}", li.slope, li.intercept);
+        let le = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::LevineObserved, AnchorKind::External).unwrap();
+        assert!((le.slope - 0.7550256824).abs() < 1e-8 && (le.intercept + 3.017543311).abs() < 1e-8, "levine-ext {} {}", le.slope, le.intercept);
+        // Tucker ignores the anchor kind
+        let tk2 = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::External).unwrap();
+        assert_eq!(tk.slope, tk2.slope);
+        assert_eq!(NeatLinearMethod::parse("levine"), Some(NeatLinearMethod::LevineObserved));
+        assert_eq!(AnchorKind::parse("ext"), Some(AnchorKind::External));
+        // error paths: bad w1, constant anchor (zero variance), Levine on a zero-cov anchor
+        assert!(equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, 1.5, NeatLinearMethod::Tucker, AnchorKind::Internal).is_err());
+        let const_v = [2.0_f64; 8];
+        assert!(equate_neat_linear(&x1, &const_v, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::Internal).is_err());
+    }
+
+    // Common-regression generative model (satisfies the Tucker assumption); the
+    // estimator's equated table converges to the large-N reference at ~1/sqrt(N).
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn neat_linear_monte_carlo_500() {
+        let (kt_x, kt_y, kv) = (40usize, 45usize, 15usize);
+        let (sdv, beta, tau) = (2.5_f64, 1.2_f64, 3.0_f64);
+        let gen = |u: &mut dyn FnMut() -> f64, n: usize, muv: f64, alpha: f64, kt: usize| -> (Vec<f64>, Vec<f64>) {
+            let nd = |u: &mut dyn FnMut() -> f64| {
+                let u1 = u().max(1e-12);
+                let u2 = u();
+                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+            };
+            let mut tot = vec![0.0_f64; n];
+            let mut anc = vec![0.0_f64; n];
+            for i in 0..n {
+                let v = muv + sdv * nd(u);
+                let t = alpha + beta * v + tau * nd(u);
+                anc[i] = v.round().clamp(0.0, kv as f64);
+                tot[i] = t.round().clamp(0.0, kt as f64);
+            }
+            (tot, anc)
+        };
+        // reference from a large calibration draw through the same sampler+rounding
+        let mut ur = lcg(9100);
+        let (rx, rxa) = gen(&mut ur, 2_000_000, 6.0, 5.0, kt_x);
+        let (ry, rya) = gen(&mut ur, 2_000_000, 9.0, 8.0, kt_y);
+        let e_ref = equate_neat_linear(&rx, &rxa, &ry, &rya, kt_x, kt_y, 0.5, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
+        let bias_rmse = |n: usize, seed: u64| -> (f64, f64) {
+            let mut u = lcg(seed);
+            let reps = 500usize;
+            let mut sum = vec![0.0_f64; kt_x + 1];
+            let mut sum2 = vec![0.0_f64; kt_x + 1];
+            for _ in 0..reps {
+                let (xt, xa) = gen(&mut u, n, 6.0, 5.0, kt_x);
+                let (yt, ya) = gen(&mut u, n, 9.0, 8.0, kt_y);
+                let est = equate_neat_linear(&xt, &xa, &yt, &ya, kt_x, kt_y, 0.5, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
+                for x in 0..=kt_x {
+                    let d = est.y_equivalents[x] - e_ref.y_equivalents[x];
+                    sum[x] += d;
+                    sum2[x] += d * d;
+                }
+            }
+            let lo = (kt_x as f64 * 0.05).ceil() as usize;
+            let hi = kt_x - lo;
+            let (mut mb, mut ra, mut c) = (0.0_f64, 0.0_f64, 0usize);
+            for x in lo..=hi {
+                mb = mb.max((sum[x] / reps as f64).abs());
+                ra += sum2[x] / reps as f64;
+                c += 1;
+            }
+            (mb, (ra / c as f64).sqrt())
+        };
+        let (b1, r1) = bias_rmse(1000, 111);
+        let (b4, r4) = bias_rmse(4000, 222);
+        let ratio = r1 / r4;
+        println!("[neat-linear 500] N=1000: max|bias|={b1:.4} RMSE={r1:.4}  N=4000: max|bias|={b4:.4} RMSE={r4:.4}  ratio={ratio:.3}");
+        assert!(b1 < 0.20 && b4 < 0.10, "bias should be small and shrink: {b1}, {b4}");
         assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
     }
 }

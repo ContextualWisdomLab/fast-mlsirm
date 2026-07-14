@@ -154,6 +154,55 @@ def equate_neat(
     return _build(res, str(method), "NEAT")
 
 
+def equate_neat_linear(
+    x_total: np.ndarray,
+    x_anchor: np.ndarray,
+    y_total: np.ndarray,
+    y_anchor: np.ndarray,
+    method: str = "tucker",
+    anchor_kind: str = "internal",
+    k_x: int | None = None,
+    k_y: int | None = None,
+    w1: float = 0.5,
+) -> EquateResult:
+    """Tucker & Levine linear observed-score NEAT equating (compute in Rust; Kolen
+    & Brennan, 2014, §4.3-4.4) -- the linear counterpart to :func:`equate_neat`'s
+    equipercentile methods. Population 1 takes form X plus the anchor V; population
+    2 takes form Y plus the anchor V. ``method`` is ``"tucker"`` (equal
+    total-on-anchor regression across populations) or ``"levine"`` (classical-
+    congeneric). ``anchor_kind`` is ``"internal"`` (anchor items count toward the
+    total) or ``"external"`` (separate section) and affects the Levine gamma only
+    (Tucker is anchor-kind-invariant). ``w1`` is the population-1 synthetic weight.
+    With equal anchor moments in the two groups every variant collapses to the
+    equivalent-groups linear equating. Returns an :class:`EquateResult` whose
+    ``slope``/``intercept`` are the linear conversion and whose moments are the
+    synthetic-population moments.
+
+    References (APA 7th ed.):
+        Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
+            linking: Methods and practices* (3rd ed.). Springer.
+            https://doi.org/10.1007/978-1-4939-0317-7
+        Brennan, R. L. (2006). *Chained linear equating* (CASMA Technical Report
+            No. 3). University of Iowa.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_neat_linear"):
+        raise RuntimeError("equate_neat_linear requires the compiled Rust core")
+    xt = np.asarray(x_total, dtype=np.float64).ravel()
+    xa = np.asarray(x_anchor, dtype=np.float64).ravel()
+    yt = np.asarray(y_total, dtype=np.float64).ravel()
+    ya = np.asarray(y_anchor, dtype=np.float64).ravel()
+    kx = _infer_k(xt, k_x, "k_x")
+    ky = _infer_k(yt, k_y, "k_y")
+    res = core.equate_neat_linear(
+        xt, xa, yt, ya, int(kx), int(ky),
+        method=str(method), anchor_kind=str(anchor_kind), w1=float(w1),
+    )
+    return _build(res, f"{method}-{anchor_kind}", "NEAT")
+
+
 def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
     """Univariate log-linear presmoothing of a score-frequency distribution
     (compute in Rust; Holland & Thayer, 2000; Kolen & Brennan, 2014, ch. 3): fit

@@ -12,8 +12,9 @@ use mlsirm_core::marginal::{
 use mlsirm_core::nodes::XiRule;
 use mlsirm_core::equating::{
     equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
-    equate_neat as core_equate_neat, loglinear_smooth as core_loglinear_smooth, Continuization,
-    EgSmoothOptions, EquateMethod, EquateResult, NeatMethod,
+    equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
+    loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
+    EquateMethod, EquateResult, NeatLinearMethod, NeatMethod,
 };
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
 
@@ -852,6 +853,43 @@ fn equate_neat(
         k_v,
         w1,
         m,
+    )
+    .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
+}
+
+/// Tucker & Levine linear observed-score NEAT equating (Rust compute path; Kolen
+/// & Brennan, 2014). `method` is "tucker" or "levine"; `anchor_kind` is "internal"
+/// or "external" (affects Levine only). `w1` is the population-1 synthetic weight.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_total, x_anchor, y_total, y_anchor, k_x, k_y, method = "tucker", anchor_kind = "internal", w1 = 0.5))]
+fn equate_neat_linear(
+    py: Python<'_>,
+    x_total: PyReadonlyArray1<'_, f64>,
+    x_anchor: PyReadonlyArray1<'_, f64>,
+    y_total: PyReadonlyArray1<'_, f64>,
+    y_anchor: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    method: &str,
+    anchor_kind: &str,
+    w1: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = NeatLinearMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown linear NEAT method: {method}")))?;
+    let ak = AnchorKind::parse(anchor_kind)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown anchor kind: {anchor_kind}")))?;
+    let res = core_equate_neat_linear(
+        x_total.as_slice()?,
+        x_anchor.as_slice()?,
+        y_total.as_slice()?,
+        y_anchor.as_slice()?,
+        k_x,
+        k_y,
+        w1,
+        m,
+        ak,
     )
     .map_err(PyValueError::new_err)?;
     equate_result_dict(py, res)
@@ -2197,6 +2235,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_neat_linear, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

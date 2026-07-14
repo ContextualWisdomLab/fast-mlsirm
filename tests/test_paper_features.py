@@ -1251,3 +1251,45 @@ def test_kernel_equating_and_presmoothing():
         equate_observed_scores_kernel(x, y, continuization="bogus", k_x=k, k_y=k)
     with pytest.raises(ValueError):
         equate_observed_scores_kernel(x, y, continuization="gaussian", k_x=k, k_y=k, smooth_x=-1)
+
+
+def test_equate_neat_linear_tucker_levine():
+    """Tucker & Levine linear NEAT equating (Kolen & Brennan, 2014) through the
+    public API: with equal anchor moments every variant collapses to EG linear,
+    and the internal/external Levine gamma give distinct conversions."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import equate_neat_linear, equate_observed_scores
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_neat_linear"):
+        pytest.skip("compiled core built without equate_neat_linear")
+
+    rng = np.random.default_rng(5)
+    n, kx, ky = 4000, 30, 40
+    anchor = np.clip(np.round(7 + 3 * rng.standard_normal(n)), 0, 15)
+    xt = np.clip(np.round(1.5 * anchor + 4 + 3 * rng.standard_normal(n)), 0, kx)
+    yt = np.clip(np.round(1.8 * anchor + 6 + 4 * rng.standard_normal(n)), 0, ky)
+
+    # collapse: shared anchor -> equal anchor moments -> EG linear
+    eg = equate_observed_scores(xt, yt, method="linear", k_x=kx, k_y=ky)
+    for method in ("tucker", "levine"):
+        for ak in ("internal", "external"):
+            r = equate_neat_linear(xt, anchor, yt, anchor, method=method, anchor_kind=ak, k_x=kx, k_y=ky)
+            assert abs(r.slope - eg.slope) < 1e-9 and abs(r.intercept - eg.intercept) < 1e-9
+            assert r.design == "NEAT"
+
+    # internal vs external Levine differ on a genuinely non-equivalent anchor
+    ancx = np.clip(np.round(6 + 2.5 * rng.standard_normal(n)), 0, 15)
+    ancy = np.clip(np.round(9 + 2.5 * rng.standard_normal(n)), 0, 15)  # shifted
+    xt2 = np.clip(np.round(1.2 * ancx + 5 + 3 * rng.standard_normal(n)), 0, kx)
+    yt2 = np.clip(np.round(1.2 * ancy + 8 + 3 * rng.standard_normal(n)), 0, ky)
+    li = equate_neat_linear(xt2, ancx, yt2, ancy, method="levine", anchor_kind="internal", k_x=kx, k_y=ky)
+    le = equate_neat_linear(xt2, ancx, yt2, ancy, method="levine", anchor_kind="external", k_x=kx, k_y=ky)
+    tk = equate_neat_linear(xt2, ancx, yt2, ancy, method="tucker", k_x=kx, k_y=ky)
+    assert abs(li.slope - le.slope) > 1e-6 or abs(li.intercept - le.intercept) > 1e-6
+    assert abs(tk.slope - li.slope) > 1e-6 or abs(tk.intercept - li.intercept) > 1e-6
+
+    with pytest.raises(ValueError):
+        equate_neat_linear(xt, anchor, yt, anchor, method="bogus", k_x=kx, k_y=ky)
