@@ -292,3 +292,64 @@ def equate_observed_scores_kernel(
         bandwidth_y=None if bandwidth_y is None else float(bandwidth_y),
     )
     return _build(res, f"{continuization}-kernel", "EG")
+
+
+def equating_standard_errors(
+    x_scores: np.ndarray,
+    y_scores: np.ndarray,
+    method: str = "equipercentile",
+    route: str = "bootstrap",
+    k_x: int | None = None,
+    k_y: int | None = None,
+    n_boot: int = 1000,
+    ci_level: float = 0.95,
+    seed: int = 0,
+) -> dict:
+    """Standard errors of equating (SEE) for the equivalent-groups design (compute
+    in Rust; Kolen & Brennan, 2014, ch. 7): the sampling error of the equated score
+    at each raw score point. ``route="bootstrap"`` (the default) resamples
+    examinees per group independently with replacement, re-equates ``n_boot`` times,
+    and returns the per-score bootstrap SD and a percentile CI -- it works for every
+    ``method`` (``"mean"``/``"linear"``/``"equipercentile"``). ``route="analytic"``
+    returns the closed-form delta-method (normal-theory) SEE for ``"mean"``/
+    ``"linear"`` only. Returns a dict with ``x_scores``, ``y_equivalents`` (the
+    point estimate), ``se``, ``ci_lo``, ``ci_hi`` (all length ``k_x+1``), ``n_boot``
+    (0 for the analytic route), and ``ci_level``.
+
+    References (APA 7th ed.):
+        Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
+            linking: Methods and practices* (3rd ed.). Springer.
+        Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap*.
+            Chapman & Hall.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("equating_standard_errors requires the compiled Rust core")
+    xs = np.asarray(x_scores, dtype=np.float64).ravel()
+    ys = np.asarray(y_scores, dtype=np.float64).ravel()
+    kx = _infer_k(xs, k_x, "k_x")
+    ky = _infer_k(ys, k_y, "k_y")
+    if route == "bootstrap":
+        if not hasattr(core, "bootstrap_see"):
+            raise RuntimeError("bootstrap SEE requires the compiled Rust core")
+        res = core.bootstrap_see(
+            xs, ys, int(kx), int(ky),
+            method=str(method), n_boot=int(n_boot), ci_level=float(ci_level), seed=int(seed),
+        )
+    elif route == "analytic":
+        if not hasattr(core, "analytic_see"):
+            raise RuntimeError("analytic SEE requires the compiled Rust core")
+        res = core.analytic_see(xs, ys, int(kx), int(ky), method=str(method), ci_level=float(ci_level))
+    else:
+        raise ValueError("route must be 'bootstrap' or 'analytic'")
+    return {
+        "x_scores": np.asarray(res["x_scores"], dtype=np.float64),
+        "y_equivalents": np.asarray(res["y_equivalents"], dtype=np.float64),
+        "se": np.asarray(res["se"], dtype=np.float64),
+        "ci_lo": np.asarray(res["ci_lo"], dtype=np.float64),
+        "ci_hi": np.asarray(res["ci_hi"], dtype=np.float64),
+        "n_boot": int(res["n_boot"]),
+        "ci_level": float(res["ci_level"]),
+    }

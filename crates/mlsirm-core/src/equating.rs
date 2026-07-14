@@ -593,6 +593,176 @@ pub fn equate_neat_linear(
     })
 }
 
+// ===================== standard errors of equating =====================
+
+/// Per-score-point standard errors of equating ([`bootstrap_see`] /
+/// [`analytic_see`]): the sampling error of the conversion `y_equivalents[x]`.
+pub struct SeeResult {
+    pub x_scores: Vec<f64>,
+    /// Point estimate `e_Y(x)` from equating the full original sample.
+    pub y_equivalents: Vec<f64>,
+    /// Standard error of equating at each score point.
+    pub se: Vec<f64>,
+    pub ci_lo: Vec<f64>,
+    pub ci_hi: Vec<f64>,
+    /// Bootstrap replicate count (0 for the analytic route).
+    pub n_boot: usize,
+    pub ci_level: f64,
+}
+
+/// Type-7 (linear-interpolated, NumPy-default) quantile of a pre-sorted slice.
+fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
+    let n = sorted.len();
+    if n == 1 {
+        return sorted[0];
+    }
+    let h = (n as f64 - 1.0) * p;
+    let lo = h.floor() as usize;
+    let frac = h - lo as f64;
+    if lo + 1 < n {
+        sorted[lo] + frac * (sorted[lo + 1] - sorted[lo])
+    } else {
+        sorted[n - 1]
+    }
+}
+
+/// Nonparametric bootstrap standard errors of equating for the equivalent-groups
+/// design (Kolen & Brennan, 2014, ch. 7; Efron & Tibshirani, 1993). Resamples
+/// examinees **with replacement, per group independently, at the observed sample
+/// sizes** (the two forms are given to separate random samples, so their sampling
+/// errors are independent), re-equates each of `n_boot` replicates via
+/// [`equate_eg`] unchanged, and returns the per-score bootstrap SD (divisor
+/// `n_boot - 1`) and a percentile confidence interval at `ci_level`. Works for all
+/// three EG methods, including equipercentile (which has no simple analytic SEE).
+///
+/// # References (APA 7th ed.)
+///
+/// Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking:
+///   Methods and practices* (3rd ed.). Springer.
+///
+/// Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap*.
+///   Chapman & Hall.
+#[allow(clippy::too_many_arguments)]
+pub fn bootstrap_see(
+    x_scores: &[f64],
+    y_scores: &[f64],
+    k_x: usize,
+    k_y: usize,
+    method: EquateMethod,
+    n_boot: usize,
+    ci_level: f64,
+    seed: u64,
+) -> Result<SeeResult, String> {
+    if !(0.0 < ci_level && ci_level < 1.0) {
+        return Err("ci_level must be in (0, 1)".into());
+    }
+    if n_boot < 2 {
+        return Err("n_boot must be >= 2".into());
+    }
+    let point = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
+    let (nx, ny) = (x_scores.len(), y_scores.len());
+    let ncol = k_x + 1;
+    let mut reps = vec![0.0_f64; n_boot * ncol];
+    let mut st = seed.max(1);
+    let mut u = || {
+        st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((st >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut xb = vec![0.0_f64; nx];
+    let mut yb = vec![0.0_f64; ny];
+    for b in 0..n_boot {
+        for v in xb.iter_mut() {
+            *v = x_scores[((u() * nx as f64) as usize).min(nx - 1)];
+        }
+        for v in yb.iter_mut() {
+            *v = y_scores[((u() * ny as f64) as usize).min(ny - 1)];
+        }
+        let r = equate_eg(&xb, &yb, k_x, k_y, method)?;
+        reps[b * ncol..(b + 1) * ncol].copy_from_slice(&r.y_equivalents);
+    }
+    let alpha = 1.0 - ci_level;
+    let mut se = vec![0.0_f64; ncol];
+    let mut ci_lo = vec![0.0_f64; ncol];
+    let mut ci_hi = vec![0.0_f64; ncol];
+    let mut col = vec![0.0_f64; n_boot];
+    for x in 0..ncol {
+        for b in 0..n_boot {
+            col[b] = reps[b * ncol + x];
+        }
+        let mean = col.iter().sum::<f64>() / n_boot as f64;
+        let var = col.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / (n_boot as f64 - 1.0);
+        se[x] = var.sqrt();
+        col.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ci_lo[x] = quantile_type7(&col, alpha / 2.0);
+        ci_hi[x] = quantile_type7(&col, 1.0 - alpha / 2.0);
+    }
+    Ok(SeeResult {
+        x_scores: point.x_scores,
+        y_equivalents: point.y_equivalents,
+        se,
+        ci_lo,
+        ci_hi,
+        n_boot,
+        ci_level,
+    })
+}
+
+/// Closed-form delta-method (normal-theory) standard errors of equating for the
+/// Mean and Linear equivalent-groups methods (Kolen & Brennan, 2014, ch. 7;
+/// Braun & Holland, 1982). With `z = (x - mu_x)/sigma_x`,
+/// `Var[e_Y(x)] = sigma_x^2/n_x + sigma_y^2/n_y` (Mean, constant in `x`) or
+/// `sigma_y^2 (1 + z^2/2)(1/n_x + 1/n_y)` (Linear); the interval is the
+/// asymptotic-normal `point +/- z_c * SE`. Errors on equipercentile — bootstrap
+/// that with [`bootstrap_see`]. Exact only for approximately normal score
+/// distributions.
+pub fn analytic_see(
+    x_scores: &[f64],
+    y_scores: &[f64],
+    k_x: usize,
+    k_y: usize,
+    method: EquateMethod,
+    ci_level: f64,
+) -> Result<SeeResult, String> {
+    if !(0.0 < ci_level && ci_level < 1.0) {
+        return Err("ci_level must be in (0, 1)".into());
+    }
+    if method == EquateMethod::Equipercentile {
+        return Err("analytic_see supports only Mean and Linear; use bootstrap_see for equipercentile".into());
+    }
+    let res = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
+    let (nx, ny) = (res.n_x as f64, res.n_y as f64);
+    let (sx, sy) = (res.sigma_x, res.sigma_y);
+    if sx <= 0.0 {
+        return Err("analytic SEE needs a positive SD on form X".into());
+    }
+    let z_c = crate::nodes::inv_normal_cdf(1.0 - (1.0 - ci_level) / 2.0);
+    let mut se = vec![0.0_f64; k_x + 1];
+    let mut ci_lo = vec![0.0_f64; k_x + 1];
+    let mut ci_hi = vec![0.0_f64; k_x + 1];
+    for x in 0..=k_x {
+        let var = match method {
+            EquateMethod::Mean => sx * sx / nx + sy * sy / ny,
+            EquateMethod::Linear => {
+                let z = (x as f64 - res.mu_x) / sx;
+                sy * sy * (1.0 + z * z / 2.0) * (1.0 / nx + 1.0 / ny)
+            }
+            EquateMethod::Equipercentile => unreachable!(),
+        };
+        se[x] = var.sqrt();
+        ci_lo[x] = res.y_equivalents[x] - z_c * se[x];
+        ci_hi[x] = res.y_equivalents[x] + z_c * se[x];
+    }
+    Ok(SeeResult {
+        x_scores: res.x_scores,
+        y_equivalents: res.y_equivalents,
+        se,
+        ci_lo,
+        ci_hi,
+        n_boot: 0,
+        ci_level,
+    })
+}
+
 // ===================== log-linear presmoothing =====================
 
 /// Result of [`loglinear_smooth`].
@@ -1586,5 +1756,138 @@ mod tests {
         println!("[neat-linear 500] N=1000: max|bias|={b1:.4} RMSE={r1:.4}  N=4000: max|bias|={b4:.4} RMSE={r4:.4}  ratio={ratio:.3}");
         assert!(b1 < 0.20 && b4 < 0.10, "bias should be small and shrink: {b1}, {b4}");
         assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
+    }
+
+    // helper: two near-normal EG samples of size n
+    fn see_gen(u: &mut impl FnMut() -> f64, n: usize, k: usize) -> (Vec<f64>, Vec<f64>) {
+        let xs = (0..n).map(|_| (15.0 + 5.0 * normal(u)).round().clamp(0.0, k as f64)).collect();
+        let ys = (0..n).map(|_| (16.0 + 5.0 * normal(u)).round().clamp(0.0, k as f64)).collect();
+        (xs, ys)
+    }
+
+    // A1: delta-method Linear SEE agrees with the bootstrap Linear SEE.
+    #[test]
+    fn see_analytic_linear_matches_bootstrap() {
+        let mut u = lcg(71);
+        let (k, n) = (30usize, 3000usize);
+        let (xs, ys) = see_gen(&mut u, n, k);
+        let a = analytic_see(&xs, &ys, k, k, EquateMethod::Linear, 0.95).unwrap();
+        let b = bootstrap_see(&xs, &ys, k, k, EquateMethod::Linear, 2000, 0.95, 12345).unwrap();
+        let (lo, hi) = ((k as f64 * 0.1).ceil() as usize, k - (k as f64 * 0.1).ceil() as usize);
+        let mut maxrel = 0.0_f64;
+        for x in lo..=hi {
+            if a.se[x] > 1e-6 {
+                maxrel = maxrel.max((b.se[x] - a.se[x]).abs() / a.se[x]);
+            }
+        }
+        assert!(maxrel < 0.15, "analytic vs bootstrap Linear SEE relative gap too large: {maxrel}");
+    }
+
+    // A2: Mean SEE is constant in x and equals the closed form.
+    #[test]
+    fn see_mean_is_constant() {
+        let mut u = lcg(72);
+        let (k, n) = (30usize, 2000usize);
+        let (xs, ys) = see_gen(&mut u, n, k);
+        let a = analytic_see(&xs, &ys, k, k, EquateMethod::Mean, 0.95).unwrap();
+        let (_, sx) = moments(&rel_freq(&xs, k).unwrap());
+        let (_, sy) = moments(&rel_freq(&ys, k).unwrap());
+        let expected = (sx * sx / n as f64 + sy * sy / n as f64).sqrt();
+        for x in 0..=k {
+            assert!((a.se[x] - expected).abs() < 1e-9 && (a.se[x] - a.se[0]).abs() < 1e-12, "Mean SEE not constant");
+        }
+    }
+
+    // A3/A4: bootstrap sanity (positive SE, CI brackets the estimate, ~1/sqrt(N)
+    // shrink), determinism, and the input guards.
+    #[test]
+    fn see_bootstrap_sanity_and_guards() {
+        let mut u = lcg(73);
+        let k = 20usize;
+        let (x1, y1) = see_gen(&mut u, 1000, k);
+        let (x4, y4) = see_gen(&mut u, 4000, k);
+        let b1 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 500, 0.95, 7).unwrap();
+        let b4 = bootstrap_see(&x4, &y4, k, k, EquateMethod::Equipercentile, 500, 0.95, 7).unwrap();
+        let (lo, hi) = ((k as f64 * 0.1).ceil() as usize, k - (k as f64 * 0.1).ceil() as usize);
+        for x in lo..=hi {
+            assert!(b1.se[x] > 0.0);
+            assert!(b1.ci_lo[x] <= b1.y_equivalents[x] + 1e-9 && b1.y_equivalents[x] <= b1.ci_hi[x] + 1e-9);
+        }
+        let ratio: f64 = (lo..=hi).map(|x| b1.se[x] / b4.se[x].max(1e-9)).sum::<f64>() / (hi - lo + 1) as f64;
+        assert!((1.5..=2.6).contains(&ratio), "SE should ~halve when N x4: {ratio}");
+        // determinism
+        let d1 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
+        let d2 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
+        assert_eq!(d1.se, d2.se);
+        // guards
+        assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 1, 0.95, 1).is_err());
+        assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 100, 1.5, 1).is_err());
+        assert!(analytic_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 0.95).is_err());
+    }
+
+    // The bootstrap SE approximates the TRUE sampling SD of e_Y(x) (from an outer
+    // Monte-Carlo that redraws fresh 2PL samples) within Monte-Carlo tolerance.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn see_bootstrap_monte_carlo_500() {
+        let (k_x, k_y, n) = (30usize, 40usize, 2000usize);
+        let a_x: Vec<f64> = (0..k_x).map(|i| 0.8 + 0.5 * ((i % 5) as f64 / 4.0)).collect();
+        let b_x: Vec<f64> = (0..k_x).map(|i| 1.5 - 3.0 * i as f64 / (k_x - 1) as f64).collect();
+        let a_y: Vec<f64> = (0..k_y).map(|i| 0.9 + 0.4 * ((i % 4) as f64 / 3.0)).collect();
+        let b_y: Vec<f64> = (0..k_y).map(|i| 1.8 - 3.6 * i as f64 / (k_y - 1) as f64).collect();
+        let sim = |u: &mut dyn FnMut() -> f64, a: &[f64], b: &[f64]| -> Vec<f64> {
+            (0..n)
+                .map(|_| {
+                    let th = {
+                        let u1 = u().max(1e-12);
+                        let u2 = u();
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                    };
+                    a.iter().zip(b).filter(|(&ai, &bi)| u() < 1.0 / (1.0 + (-(ai * th + bi)).exp())).count() as f64
+                })
+                .collect()
+        };
+        let run = |method: EquateMethod, label: &str| {
+            // outer MC: true SD of e_Y(x) over R fresh samples
+            let r_out = 500usize;
+            let mut uo = lcg(3300);
+            let mut vals = vec![0.0_f64; r_out * (k_x + 1)];
+            for r in 0..r_out {
+                let xs = sim(&mut uo, &a_x, &b_x);
+                let ys = sim(&mut uo, &a_y, &b_y);
+                let e = equate_eg(&xs, &ys, k_x, k_y, method).unwrap();
+                vals[r * (k_x + 1)..(r + 1) * (k_x + 1)].copy_from_slice(&e.y_equivalents);
+            }
+            let true_sd: Vec<f64> = (0..=k_x)
+                .map(|x| {
+                    let col: Vec<f64> = (0..r_out).map(|r| vals[r * (k_x + 1) + x]).collect();
+                    let m = col.iter().sum::<f64>() / r_out as f64;
+                    (col.iter().map(|&v| (v - m).powi(2)).sum::<f64>() / (r_out as f64 - 1.0)).sqrt()
+                })
+                .collect();
+            // mean bootstrap SE over n_samp fresh samples
+            let n_samp = 40usize;
+            let mut ub = lcg(9900);
+            let mut sum_se = vec![0.0_f64; k_x + 1];
+            for s_i in 0..n_samp {
+                let xs = sim(&mut ub, &a_x, &b_x);
+                let ys = sim(&mut ub, &a_y, &b_y);
+                let s = bootstrap_see(&xs, &ys, k_x, k_y, method, 300, 0.95, 41_000 + s_i as u64).unwrap();
+                for x in 0..=k_x {
+                    sum_se[x] += s.se[x];
+                }
+            }
+            let (lo, hi) = ((k_x as f64 * 0.05).ceil() as usize, k_x - (k_x as f64 * 0.05).ceil() as usize);
+            let (mut rmin, mut rmax) = (f64::INFINITY, f64::NEG_INFINITY);
+            for x in lo..=hi {
+                let ratio = (sum_se[x] / n_samp as f64) / true_sd[x].max(1e-9);
+                rmin = rmin.min(ratio);
+                rmax = rmax.max(ratio);
+            }
+            println!("[see 500] {label}: interior boot/true SD ratio in [{rmin:.3}, {rmax:.3}]");
+            assert!(rmin > 0.80 && rmax < 1.20, "{label} bootstrap SEE off true SD: [{rmin}, {rmax}]");
+        };
+        run(EquateMethod::Linear, "linear");
+        run(EquateMethod::Equipercentile, "equipercentile");
     }
 }

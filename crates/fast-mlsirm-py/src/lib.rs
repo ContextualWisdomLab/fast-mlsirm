@@ -11,10 +11,11 @@ use mlsirm_core::marginal::{
 };
 use mlsirm_core::nodes::XiRule;
 use mlsirm_core::equating::{
+    analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
     equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
     equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
     loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
-    EquateMethod, EquateResult, NeatLinearMethod, NeatMethod,
+    EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
 };
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
 
@@ -893,6 +894,64 @@ fn equate_neat_linear(
     )
     .map_err(PyValueError::new_err)?;
     equate_result_dict(py, res)
+}
+
+fn see_result_dict(py: Python<'_>, res: SeeResult) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("x_scores", res.x_scores)?;
+    out.set_item("y_equivalents", res.y_equivalents)?;
+    out.set_item("se", res.se)?;
+    out.set_item("ci_lo", res.ci_lo)?;
+    out.set_item("ci_hi", res.ci_hi)?;
+    out.set_item("n_boot", res.n_boot)?;
+    out.set_item("ci_level", res.ci_level)?;
+    Ok(out.into())
+}
+
+/// Nonparametric bootstrap standard errors of equating for the EG design (Rust
+/// compute path; Kolen & Brennan, 2014, ch. 7). Resamples examinees per group
+/// independently and re-equates; works for "mean"/"linear"/"equipercentile".
+/// Returns a dict with per-score `se`, `ci_lo`, `ci_hi`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_scores, y_scores, k_x, k_y, method = "equipercentile", n_boot = 1000, ci_level = 0.95, seed = 0))]
+fn bootstrap_see(
+    py: Python<'_>,
+    x_scores: PyReadonlyArray1<'_, f64>,
+    y_scores: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    method: &str,
+    n_boot: usize,
+    ci_level: f64,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = EquateMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
+    let res = core_bootstrap_see(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m, n_boot, ci_level, seed)
+        .map_err(PyValueError::new_err)?;
+    see_result_dict(py, res)
+}
+
+/// Closed-form delta-method standard errors of equating for the "mean"/"linear"
+/// EG methods (Rust compute path; Kolen & Brennan, 2014). Errors on
+/// equipercentile (use `bootstrap_see`).
+#[pyfunction]
+#[pyo3(signature = (x_scores, y_scores, k_x, k_y, method = "linear", ci_level = 0.95))]
+fn analytic_see(
+    py: Python<'_>,
+    x_scores: PyReadonlyArray1<'_, f64>,
+    y_scores: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    method: &str,
+    ci_level: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = EquateMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
+    let res = core_analytic_see(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m, ci_level)
+        .map_err(PyValueError::new_err)?;
+    see_result_dict(py, res)
 }
 
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
@@ -2236,6 +2295,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat_linear, m)?)?;
+    m.add_function(wrap_pyfunction!(bootstrap_see, m)?)?;
+    m.add_function(wrap_pyfunction!(analytic_see, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

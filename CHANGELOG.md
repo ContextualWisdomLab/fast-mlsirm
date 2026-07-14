@@ -190,6 +190,26 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Standard errors of equating** (Kolen & Brennan, 2014, ch. 7; Efron &
+  Tibshirani, 1993). `equating_standard_errors` reports the per-score-point
+  sampling error of the equated score for the equivalent-groups design, by two
+  routes. The nonparametric **bootstrap** (`route="bootstrap"`) resamples
+  examinees per group independently with replacement at the observed sample sizes,
+  re-equates each of `n_boot` replicates through the existing equating code, and
+  returns the per-score bootstrap SD and a percentile confidence interval — it
+  works for every method including equipercentile, which has no simple analytic
+  SEE. The **delta-method** (`route="analytic"`) returns the closed-form
+  normal-theory SE for mean equating (`sigma_x^2/n_x + sigma_y^2/n_y`, constant in
+  `x`) and linear equating (`sigma_y^2 (1 + z^2/2)(1/n_x + 1/n_y)`,
+  `z = (x-mu_x)/sigma_x`). Compute in Rust (`equating::bootstrap_see` /
+  `analytic_see`); exposed via PyO3 and Python. Validated by the analytic-Linear
+  agreeing with the bootstrap-Linear SEE within Monte-Carlo tolerance, the Mean
+  SEE being constant, a `1/sqrt(N)` shrink and seed-determinism check, and a
+  500-replication Monte-Carlo confirming the bootstrap SE recovers the *true*
+  sampling SD of `e_Y(x)` (from an outer fresh-sample Monte-Carlo) — interior
+  ratio in [0.95, 1.08] for equipercentile. Deferred: NEAT bootstrap SEE, analytic
+  equipercentile/kernel SEE.
+
 - **Tucker & Levine linear NEAT equating** (Kolen & Brennan, 2014, §4.3–4.4;
   Brennan, 2006). `equate_neat_linear` adds the linear observed-score methods for
   the common-item non-equivalent-groups design, alongside the existing chained /

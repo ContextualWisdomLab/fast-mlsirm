@@ -1293,3 +1293,44 @@ def test_equate_neat_linear_tucker_levine():
 
     with pytest.raises(ValueError):
         equate_neat_linear(xt, anchor, yt, anchor, method="bogus", k_x=kx, k_y=ky)
+
+
+def test_equating_standard_errors():
+    """Standard errors of equating (Kolen & Brennan, 2014, ch. 7) through the
+    public API: analytic and bootstrap linear SEE agree, Mean SEE is constant,
+    the CI brackets the point estimate, and equipercentile SEE is bootstrap-only."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import equating_standard_errors
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "bootstrap_see"):
+        pytest.skip("compiled core built without SEE")
+
+    rng = np.random.default_rng(7)
+    k, n = 30, 3000
+    x = np.clip(np.round(15 + 5 * rng.standard_normal(n)), 0, k)
+    y = np.clip(np.round(16 + 5 * rng.standard_normal(n)), 0, k)
+
+    a = equating_standard_errors(x, y, method="linear", route="analytic", k_x=k, k_y=k)
+    b = equating_standard_errors(x, y, method="linear", route="bootstrap", k_x=k, k_y=k, n_boot=2000, seed=1)
+    lo, hi = int(np.ceil(k * 0.1)), k - int(np.ceil(k * 0.1))
+    rel = np.abs(b["se"][lo:hi] - a["se"][lo:hi]) / a["se"][lo:hi]
+    assert rel.max() < 0.15, f"analytic vs bootstrap linear SEE: {rel.max()}"
+    # CI brackets the point estimate
+    assert np.all(b["ci_lo"][lo:hi] <= b["y_equivalents"][lo:hi] + 1e-9)
+    assert np.all(b["y_equivalents"][lo:hi] <= b["ci_hi"][lo:hi] + 1e-9)
+    assert b["n_boot"] == 2000 and abs(b["ci_level"] - 0.95) < 1e-12
+
+    # Mean SEE constant in x
+    m = equating_standard_errors(x, y, method="mean", route="analytic", k_x=k, k_y=k)
+    assert np.allclose(m["se"], m["se"][0])
+
+    # equipercentile has no analytic SEE; bootstrap works
+    ep = equating_standard_errors(x, y, method="equipercentile", route="bootstrap", k_x=k, k_y=k, n_boot=300, seed=3)
+    assert np.all(ep["se"][lo:hi] > 0) and ep["n_boot"] == 300
+    with pytest.raises(ValueError):
+        equating_standard_errors(x, y, method="equipercentile", route="analytic", k_x=k, k_y=k)
+    with pytest.raises(ValueError):
+        equating_standard_errors(x, y, method="linear", route="bogus", k_x=k, k_y=k)
