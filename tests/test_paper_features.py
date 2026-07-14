@@ -259,3 +259,36 @@ def test_category_logprobs_binary_parity_and_gpcm_monotone():
     import pytest
     with pytest.raises(ValueError):
         category_logprobs(base, [0.5, 1.0], [0.0, b])
+
+
+def test_gpcm_node_gradient_matches_finite_difference():
+    """The analytic M-step gradient of the GPCM/nominal cell (category residual,
+    score-weighted base residual, and nominal-score gradient) matches central
+    finite differences — de-risks the Rust M-step before it is written."""
+    import numpy as np
+    from fast_mlsirm.estimators.marginal import category_logprobs, gpcm_node_gradient
+
+    scores = np.array([0.0, 1.0, 2.0, 3.0])
+    intercepts = np.array([0.0, 0.2, -0.1, 0.3])
+    counts = np.array([3.0, 5.0, 2.0, 4.0])
+    base = 0.4
+
+    def q(b, ic, sc):
+        return float(np.dot(counts, category_logprobs(b, sc, ic)))
+
+    g_ic, g_base, g_sc = gpcm_node_gradient(base, scores, intercepts, counts)
+    h = 1e-6
+    for m in range(1, 4):
+        ic_p, ic_m = intercepts.copy(), intercepts.copy()
+        ic_p[m] += h
+        ic_m[m] -= h
+        assert abs((q(base, ic_p, scores) - q(base, ic_m, scores)) / (2 * h) - g_ic[m - 1]) < 1e-5
+        sc_p, sc_m = scores.copy(), scores.copy()
+        sc_p[m] += h
+        sc_m[m] -= h
+        assert abs((q(base, intercepts, sc_p) - q(base, intercepts, sc_m)) / (2 * h) - g_sc[m - 1]) < 1e-5
+    assert abs((q(base + h, intercepts, scores) - q(base - h, intercepts, scores)) / (2 * h) - g_base) < 1e-5
+
+    # residual closure
+    p = np.exp(category_logprobs(base, scores, intercepts))
+    assert abs((counts - counts.sum() * p).sum()) < 1e-12

@@ -1019,3 +1019,32 @@ def category_logprobs(base, scores, intercepts):
     m = psi.max(axis=-1, keepdims=True)
     log_z = m[..., 0] + np.log(np.exp(psi - m).sum(axis=-1))
     return psi - log_z[..., None]
+
+
+def gpcm_node_gradient(base, scores, intercepts, counts):
+    """Analytic gradient of the expected complete-data multinomial log-likelihood
+    at one quadrature node for the unified GPCM/nominal cell — the parity
+    reference for the Rust M-step (``docs/papers/gpcm-nominal-design-spec.md``).
+
+    ``counts[k]`` are the expected category counts ``r_k`` accumulated in the
+    E-step. Returns ``(g_intercepts, g_base, g_scores)``:
+
+    - ``g_intercepts[m-1] = r_m - n * P_m`` (the category residual ``resid_m``)
+      for the free intercepts ``m = 1..K-1`` (baseline 0 pinned).
+    - ``g_base = sum_k s_k * resid_k`` — the score-weighted residual ``R`` that
+      multiplies ``d base / d(alpha, zeta, tau)`` in the chain rule (so the
+      existing binary ``deta`` terms are reused verbatim).
+    - ``g_scores[m-1] = resid_m * base`` for the free nominal scores
+      ``m = 1..K-1`` (zero for GPCM, whose scores are fixed).
+
+    ``sum_k resid_k == 0`` by construction (softmax closure).
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    counts = np.asarray(counts, dtype=np.float64)
+    p = np.exp(category_logprobs(base, scores, intercepts))
+    n = counts.sum()
+    resid = counts - n * p
+    g_intercepts = resid[1:]
+    g_base = float(np.dot(scores, resid))
+    g_scores = resid[1:] * np.asarray(base, dtype=np.float64)
+    return g_intercepts, g_base, g_scores
