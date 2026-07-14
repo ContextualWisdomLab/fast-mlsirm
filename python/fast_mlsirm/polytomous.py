@@ -17,7 +17,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["PolytomousFit", "fit_polytomous", "score_polytomous", "information_polytomous"]
+__all__ = [
+    "PolytomousFit",
+    "fit_polytomous",
+    "score_polytomous",
+    "information_polytomous",
+    "PolyLsirmFit",
+    "fit_lsirm_polytomous",
+]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
 
@@ -191,3 +198,74 @@ def information_polytomous(
     )
     item_info = np.asarray(flat, dtype=np.float64).reshape(th.size, n_items)
     return {"item_info": item_info, "test_info": item_info.sum(axis=1)}
+
+
+@dataclass
+class PolyLsirmFit:
+    """Result of :func:`fit_lsirm_polytomous` — a latent-space polytomous LSIRM.
+
+    ``slope``/``cat_params`` are the item parameters; ``zeta`` is the
+    ``n_items x latent_dim`` item interaction-map positions (identified up to
+    rotation/reflection/translation — compare via distances). ``theta_eap`` /
+    ``theta_sd`` are per-person EAP trait scores and SDs; ``xi_eap`` is the
+    ``n_persons x latent_dim`` person positions.
+    """
+
+    model: str
+    slope: np.ndarray
+    cat_params: np.ndarray
+    zeta: np.ndarray
+    theta_eap: np.ndarray
+    theta_sd: np.ndarray
+    xi_eap: np.ndarray
+    loglik: float
+    n_iter: int
+
+
+def fit_lsirm_polytomous(
+    responses: np.ndarray,
+    n_cat: int,
+    latent_dim: int = 2,
+    model: str = "grm",
+    q_theta: int = 11,
+    q_xi: int = 11,
+    max_iter: int = 60,
+    tol: float = 1e-5,
+) -> PolyLsirmFit:
+    """Fit a latent-space polytomous LSIRM (GRM/GPCM cell in an interaction map)
+    by marginal EM — all compute in the Rust core (``poly_marginal``). The
+    distance weight is fixed to 1 (Go et al. 2024 identification); positions are
+    identified up to rotation/reflection/translation. ``NaN`` marks missing.
+    """
+    m = str(model).lower()
+    if m not in VALID_POLY_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    if not isinstance(n_cat, int) or n_cat < 2:
+        raise ValueError("n_cat must be an integer >= 2")
+    if not isinstance(latent_dim, int) or not (1 <= latent_dim <= 3):
+        raise ValueError("latent_dim must be an integer in 1..3")
+    if q_theta not in {7, 11, 15, 21, 31, 41} or q_xi not in {7, 11, 15, 21, 31, 41}:
+        raise ValueError("q_theta/q_xi must be one of 7, 11, 15, 21, 31, 41")
+
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_poly_lsirm"):
+        raise RuntimeError("fit_lsirm_polytomous requires the compiled Rust core")
+
+    n_persons, n_items = y_int.shape
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.fit_poly_lsirm(
+        y_int.reshape(-1), int(n_persons), int(n_items), int(n_cat), int(latent_dim),
+        obs_arg, m, int(q_theta), int(q_xi), int(max_iter), float(tol),
+    )
+    return PolyLsirmFit(
+        model=m,
+        slope=np.asarray(res["slope"], dtype=np.float64),
+        cat_params=np.asarray(res["cat_params"], dtype=np.float64),
+        zeta=np.asarray(res["zeta"], dtype=np.float64).reshape(n_items, latent_dim),
+        theta_eap=np.asarray(res["theta_eap"], dtype=np.float64),
+        theta_sd=np.asarray(res["theta_sd"], dtype=np.float64),
+        xi_eap=np.asarray(res["xi_eap"], dtype=np.float64).reshape(n_persons, latent_dim),
+        loglik=float(res["loglik"]),
+        n_iter=int(res["n_iter"]),
+    )

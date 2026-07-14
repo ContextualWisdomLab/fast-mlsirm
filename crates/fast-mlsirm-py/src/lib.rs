@@ -30,6 +30,7 @@ use mlsirm_core::poly::{
     grm_logprobs as core_grm_logprobs, poly_information_curves as core_poly_information_curves,
     score_poly_eap as core_score_poly_eap, PolyModel,
 };
+use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
@@ -820,6 +821,45 @@ fn poly_information_curves(
     .map_err(PyValueError::new_err)
 }
 
+/// Latent-space polytomous LSIRM fit (Rust compute path). Returns a dict of
+/// item parameters (`slope`, `cat_params`, `zeta`) and person scores
+/// (`theta_eap`, `theta_sd`, `xi_eap`), plus `loglik`/`n_iter`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, latent_dim, observed = None, model = "grm", q_theta = 11, q_xi = 11, max_iter = 60, tol = 1e-5))]
+fn fit_poly_lsirm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    latent_dim: usize,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    q_theta: usize,
+    q_xi: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let fit = core_fit_poly_lsirm(
+        &yv, obs, n_persons, n_items, n_cat, latent_dim, m, q_theta, q_xi, max_iter, tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", fit.slope)?;
+    out.set_item("cat_params", fit.cat_params)?;
+    out.set_item("zeta", fit.zeta)?;
+    out.set_item("theta_eap", fit.theta_eap)?;
+    out.set_item("theta_sd", fit.theta_sd)?;
+    out.set_item("xi_eap", fit.xi_eap)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    Ok(out.into())
+}
+
 /// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1561,6 +1601,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
     Ok(())
 }
 

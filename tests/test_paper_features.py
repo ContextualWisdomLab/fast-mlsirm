@@ -536,3 +536,50 @@ def test_fit_polytomous_handles_missing_data():
     assert np.corrcoef(a_true, fit.slope)[0, 1] > 0.9
     sc = score_polytomous(y, fit)
     assert sc["theta_eap"].shape == (n_persons,) and np.all(np.isfinite(sc["theta_eap"]))
+
+
+def test_fit_lsirm_polytomous_recovers_positions():
+    """The latent-space polytomous LSIRM (Rust compute) recovers item positions
+    (distance-matrix RMSE) and slopes (RMSE), and returns person scores."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_lsirm_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_lsirm"):
+        pytest.skip("compiled core without polytomous LSIRM")
+
+    rng = np.random.default_rng(4)
+    n_persons, n_items, k, ld = 1000, 6, 3, 2
+    # two separated item clusters
+    zeta_true = np.zeros((n_items, ld))
+    for i in range(n_items):
+        zeta_true[i, 0] = (-1.2 if i < n_items // 2 else 1.2) + 0.3 * rng.standard_normal()
+        zeta_true[i, 1] = 0.3 * rng.standard_normal()
+    a_true = 1.0 + 0.1 * np.arange(n_items)
+    c_true = np.zeros((n_items, k))
+    c_true[:, 1:] = np.array([0.2, -0.2])
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for p in range(n_persons):
+        theta = rng.standard_normal()
+        xi = rng.standard_normal(ld)
+        for i in range(n_items):
+            base = a_true[i] * theta - np.sqrt(1e-8 + np.sum((xi - zeta_true[i]) ** 2))
+            pr = np.exp(category_logprobs(np.array([base]), scores, c_true[i])[0])
+            y[p, i] = rng.choice(k, p=pr / pr.sum())
+
+    fit = fit_lsirm_polytomous(y, k, latent_dim=ld, model="gpcm", q_theta=7, q_xi=7, max_iter=30)
+    assert fit.zeta.shape == (n_items, ld)
+    assert fit.theta_eap.shape == (n_persons,) and fit.xi_eap.shape == (n_persons, ld)
+    assert np.all(fit.theta_sd > 0) and np.isfinite(fit.loglik)
+
+    def dmat(z):
+        return np.array([np.linalg.norm(z[i] - z[j]) for i in range(n_items) for j in range(i + 1, n_items)])
+
+    def rmse(u, v):
+        return float(np.sqrt(np.mean((u - v) ** 2)))
+
+    assert rmse(a_true, fit.slope) < 0.3, "slope RMSE"
+    assert rmse(dmat(zeta_true), dmat(fit.zeta)) < 0.7, "position distance-matrix RMSE"

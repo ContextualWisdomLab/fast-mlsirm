@@ -26,6 +26,11 @@ pub struct PolyLsirmFit {
     pub slope: Vec<f64>,
     pub cat_params: Vec<Vec<f64>>,
     pub zeta: Vec<f64>,
+    /// Per-person EAP trait score and posterior SD.
+    pub theta_eap: Vec<f64>,
+    pub theta_sd: Vec<f64>,
+    /// Per-person EAP latent position (`n_persons * latent_dim`).
+    pub xi_eap: Vec<f64>,
     pub loglik: f64,
     pub n_iter: usize,
 }
@@ -358,14 +363,74 @@ pub fn fit_poly_lsirm(
         prev_ll = ll;
     }
 
-    let slope = (0..n_items).map(|i| params[i][0].exp()).collect();
+    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
     let cat_params = (0..n_items).map(|i| params[i][1..n_cat].to_vec()).collect();
     let mut zeta = vec![0.0_f64; n_items * latent_dim];
     for i in 0..n_items {
         zeta[i * latent_dim..(i + 1) * latent_dim]
             .copy_from_slice(&params[i][n_cat..n_cat + latent_dim]);
     }
-    Ok(PolyLsirmFit { slope, cat_params, zeta, loglik: ll, n_iter: it })
+
+    // Person scores: one posterior pass at the final parameters. EAP moments of
+    // theta and xi over the (theta, xi) grid.
+    let mut item_lp = vec![vec![0.0_f64; cell * n_cat]; n_items];
+    for i in 0..n_items {
+        let a = slope[i];
+        let cat = &params[i][1..n_cat];
+        for (t, &theta_t) in theta.iter().enumerate() {
+            for x in 0..n_xi {
+                let xi = &xi_grid[x * latent_dim..(x + 1) * latent_dim];
+                let mut dist2 = eps;
+                for k in 0..latent_dim {
+                    let dd = xi[k] - zeta[i * latent_dim + k];
+                    dist2 += dd * dd;
+                }
+                let lp = poly_cell(a * theta_t - dist2.sqrt(), model, cat, n_cat);
+                let node = t * n_xi + x;
+                item_lp[i][node * n_cat..(node + 1) * n_cat].copy_from_slice(&lp);
+            }
+        }
+    }
+    let mut theta_eap = vec![0.0_f64; n_persons];
+    let mut theta_sd = vec![0.0_f64; n_persons];
+    let mut xi_eap = vec![0.0_f64; n_persons * latent_dim];
+    let mut log_node = vec![0.0_f64; cell];
+    for p in 0..n_persons {
+        for t in 0..q_t {
+            for x in 0..n_xi {
+                log_node[t * n_xi + x] = t_logw[t] + x_logw[x];
+            }
+        }
+        for i in 0..n_items {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let yc = y[p * n_items + i];
+            for node in 0..cell {
+                log_node[node] += item_lp[i][node * n_cat + yc];
+            }
+        }
+        let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0_f64;
+        for node in 0..cell {
+            denom += (log_node[node] - mx).exp();
+        }
+        let (mut m1, mut m2) = (0.0_f64, 0.0_f64);
+        for t in 0..q_t {
+            for x in 0..n_xi {
+                let post = (log_node[t * n_xi + x] - mx).exp() / denom;
+                m1 += post * theta[t];
+                m2 += post * theta[t] * theta[t];
+                for k in 0..latent_dim {
+                    xi_eap[p * latent_dim + k] += post * xi_grid[x * latent_dim + k];
+                }
+            }
+        }
+        theta_eap[p] = m1;
+        theta_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
+    }
+
+    Ok(PolyLsirmFit { slope, cat_params, zeta, theta_eap, theta_sd, xi_eap, loglik: ll, n_iter: it })
 }
 
 #[cfg(test)]
@@ -418,8 +483,10 @@ mod tests {
             (0..n_items).map(|i| vec![0.0, 0.2 - 0.05 * i as f64, -0.2 + 0.05 * i as f64]).collect();
         let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
         let mut y = vec![0usize; n_persons * n_items];
+        let mut theta_true = vec![0.0_f64; n_persons];
         for p in 0..n_persons {
             let theta = nrm!();
+            theta_true[p] = theta;
             let xi: Vec<f64> = (0..ld).map(|_| nrm!()).collect();
             for i in 0..n_items {
                 let mut dist2 = 1e-8;
@@ -457,5 +524,20 @@ mod tests {
         let dm_hat = dist_matrix(&fit.zeta, n_items, ld);
         let pos_rmse = rmse(&dm_true, &dm_hat);
         assert!(pos_rmse < 0.6, "position distance-matrix RMSE {pos_rmse}");
+        // person trait recovery: EAP is shrunk toward the prior, so correlation
+        // (association) is the appropriate metric here, not RMSE
+        let corr = {
+            let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+            let (mt, me) = (mean(&theta_true), mean(&fit.theta_eap));
+            let (mut num, mut dt, mut de) = (0.0, 0.0, 0.0);
+            for p in 0..n_persons {
+                num += (theta_true[p] - mt) * (fit.theta_eap[p] - me);
+                dt += (theta_true[p] - mt).powi(2);
+                de += (fit.theta_eap[p] - me).powi(2);
+            }
+            num / (dt.sqrt() * de.sqrt())
+        };
+        assert!(corr > 0.6, "theta EAP corr {corr}");
+        assert!(fit.theta_sd.iter().all(|s| s.is_finite() && *s > 0.0));
     }
 }
