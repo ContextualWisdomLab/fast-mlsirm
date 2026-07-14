@@ -164,3 +164,58 @@ the same fixed-parameter scoring pattern as the downstream importance-assessment
 - Full general-discrimination MLS2PLM (separate model-design PR per AGENTS.md).
 - MH-RM engine (documented alternative for `K ≥ 3`).
 - Polytomous responses; inner-product (HLSIRM-style) interaction term.
+
+## 10. Phase 2 additions (QMC/MC-EM, scoring, FIPC — implemented)
+
+Paper basis: Part II of the formula compilation (Wei & Tanner 1990; Booth &
+Hobert 1999; Jank 2005; Meng & Schilling 1996; Bock & Mislevy 1982; Thissen,
+Pommerich, Billeaud & Williams 1995; Lord & Wingersky 1984 via Cai 2015;
+Kim & Cohen 1998; Hanson & Beguin 2002; Kim 2006; Sinharay & Haberman 2014).
+
+- **Integration rules** (`nodes.rs`): the latent-space integral accepts
+  tensor Gauss-Hermite (default, `K <= 3`), Halton QMC with an optional
+  Cranley-Patterson shift (QMC-EM; `O(N^-1 (log N)^K)` error), or seeded
+  Monte Carlo (MCEM). All deterministic given their parameters, so the
+  Rust<->NumPy parity contract extends to them. `FitConfig(xi_rule=...,
+  xi_points=..., xi_seed=...)`.
+- **Scoring** (`scoring.rs`, all-Rust compute): EAP (Bock-Mislevy), MAP
+  (damped posterior Newton, observed-information SEs), and EAPsum summed-
+  score conversion tables via the Lord-Wingersky recursion run on the joint
+  `(t, x)` node set. Priors are per-dimension `N(mean_d, sd_d^2)`: standard,
+  group `(mu_g, sigma_g)`, cluster-conditional `N(u_hat_c, 1)`, or the
+  multilevel marginal `N(0, sqrt(1 + sigma_u^2))` for unknown clusters
+  (`serving_prior`). Serving exposes `method="eap"|"map"|"eapsum"` and the
+  bundle embeds the conversion tables.
+- **Fit statistics** (`fitstats.rs`, all-Rust compute): S-X2 with the
+  `rms_residual` practical-significance effect size — added after the first
+  31k-person run showed BH-significance alone removes 45/57 items (the
+  chi-square is over-powered at large N); the screening MSQ gate uses infit
+  only (outfit explodes under <1% pass rates); the `l_z*` screen threshold is
+  configurable and its MAP `r_0` correction centers on the population prior
+  mean (team intercepts / group means).
+- **FIPC** (`Anchors` + `PopulationSpec::SingleFree`): anchored items (and
+  optionally `tau`) frozen at supplied values, new items and the freed
+  population `(mu_d, sigma_d)` estimated each EM cycle — the multiple-cycle
+  prior-update variant (MWU-MEM-style) Kim (2006) found robust. PCA
+  re-alignment is skipped so the anchor orientation is inherited.
+  **Concurrent calibration** is the multigroup path plus structural
+  missingness (Hanson-Beguin common-item design) — covered by
+  `concurrent_calibration_two_forms_with_anchor_block`.
+- **Compute placement**: every numeric path (estimation, scoring, fit
+  statistics) executes in `mlsirm-core`; the Python layer is orchestration,
+  I/O, and the NumPy parity references only.
+
+## 11. Known numerical notes
+
+- Multigroup/multilevel EM moves the quadrature nodes when `(mu, sigma)` /
+  `sigma_u` update, so the quadrature APPROXIMATION of the marginal
+  log-likelihood can dip by discretization error (~1e-4 on small fixtures)
+  even though exact EM is monotone; tests allow 1e-3 absolute slack.
+- The GPU E-step accumulates in f32 (~1e-4 relative noise): convergence
+  tolerances below the noise floor never trigger — use a tolerance around
+  `1e-5 * |loglik|` or an iteration budget for GPU runs. The M-step and the
+  final EAP pass always run on the CPU in f64.
+- 2PL-LSIRM slopes are weakly identified against item positions (the
+  Bayesian original fixes `alpha_1 = 1`); the lognormal slope prior keeps
+  them finite, and slope recovery needs materially more data than easiness
+  recovery.
