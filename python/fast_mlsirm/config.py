@@ -124,37 +124,37 @@ class FitConfig:
         if model not in VALID_MODELS:
             raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
         if not (1 <= self.latent_dim <= MAX_LATENT_DIM):
-            raise ValueError(f"latent_dim must be between 1 and {MAX_LATENT_DIM}")
+            raise ValueError(f"latent_dim must be >= 1 and <= {MAX_LATENT_DIM}")
         if self.optimizer not in VALID_OPTIMIZERS:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
         if not (1 <= self.max_iter <= MAX_MAX_ITER):
-            raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
+            raise ValueError(f"max_iter must be >= 1 and <= {MAX_MAX_ITER}")
         if not (1 <= self.n_restarts <= MAX_RESTARTS):
-            raise ValueError(f"n_restarts must be between 1 and {MAX_RESTARTS}")
+            raise ValueError(f"n_restarts must be >= 1 and <= {MAX_RESTARTS}")
         # non-finite floats (NaN/Inf) slip past bare `<= 0` comparisons
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
-            raise ValueError("learning_rate must be a positive finite number")
+            raise ValueError("learning_rate must be > 0 and finite")
         if not math.isfinite(self.init_gamma) or self.init_gamma <= 0:
-            raise ValueError("init_gamma must be a positive finite number")
+            raise ValueError("init_gamma must be > 0 and finite")
         if not math.isfinite(self.eps_distance) or self.eps_distance <= 0:
-            raise ValueError("eps_distance must be a positive finite number")
+            raise ValueError("eps_distance must be > 0 and finite")
         if not math.isfinite(self.tolerance) or self.tolerance <= 0:
-            raise ValueError("tolerance must be a positive finite number")
+            raise ValueError("tolerance must be > 0 and finite")
         if self.gradient_clip is not None and (
             not math.isfinite(self.gradient_clip) or self.gradient_clip <= 0
         ):
-            raise ValueError("gradient_clip must be a positive finite number or None")
+            raise ValueError("gradient_clip must be > 0 and finite, or None")
         supported_q = {7, 11, 15, 21, 31, 41}
         for name in ("q_theta", "q_xi", "q_u"):
             if getattr(self, name) not in supported_q:
                 raise ValueError(f"{name} must be one of {sorted(supported_q)}")
         if not (1 <= self.m_steps <= MAX_M_STEPS):
-            raise ValueError(f"m_steps must be between 1 and {MAX_M_STEPS}")
+            raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")
         if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
         if not (1 <= self.xi_points <= MAX_XI_POINTS):
-            raise ValueError(f"xi_points must be between 1 and {MAX_XI_POINTS}")
+            raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
