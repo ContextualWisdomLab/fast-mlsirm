@@ -583,3 +583,40 @@ def test_fit_lsirm_polytomous_recovers_positions():
 
     assert rmse(a_true, fit.slope) < 0.3, "slope RMSE"
     assert rmse(dmat(zeta_true), dmat(fit.zeta)) < 0.7, "position distance-matrix RMSE"
+
+
+def test_polytomous_information_criteria():
+    """Kang-Cohen-Sung (2009) model-selection indices for a polytomous fit:
+    correct free-parameter count and finite, ordered indices."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, polytomous_information_criteria
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_unidim"):
+        pytest.skip("compiled core not available")
+
+    rng = np.random.default_rng(6)
+    n_persons, n_items, k = 1500, 5, 3
+    a = rng.uniform(0.9, 1.5, n_items)
+    c = np.zeros((n_items, k))
+    c[:, 1:] = rng.normal(0.0, 0.5, (n_items, k - 1))
+    theta = rng.standard_normal(n_persons)
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    fit = fit_polytomous(y, k, model="gpcm")
+    ic = polytomous_information_criteria(fit, n_persons)
+    # slope (n_items) + intercepts (n_items*(K-1)) = n_items*K
+    assert ic["n_parameters"] == n_items * k
+    for key in ("aic", "bic", "caic", "aicc", "sabic"):
+        assert np.isfinite(ic[key])
+    # BIC/CAIC penalize free parameters more heavily than AIC at N=1500
+    assert ic["aic"] < ic["bic"] < ic["caic"]
+    with pytest.raises(ValueError):
+        polytomous_information_criteria(fit, 1)

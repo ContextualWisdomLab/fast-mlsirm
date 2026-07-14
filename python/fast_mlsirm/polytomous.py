@@ -24,6 +24,7 @@ __all__ = [
     "information_polytomous",
     "PolyLsirmFit",
     "fit_lsirm_polytomous",
+    "polytomous_information_criteria",
 ]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
@@ -269,3 +270,37 @@ def fit_lsirm_polytomous(
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
     )
+
+
+def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
+    """Relative model-selection indices for a polytomous fit (Kang, Cohen &
+    Sung 2009, *Model Selection Indices for Polytomous Items*). Given a fitted
+    :class:`PolytomousFit` or :class:`PolyLsirmFit` and the calibration sample
+    size, returns ``AIC``, ``BIC``, ``CAIC``, ``AICc``, and the sample-size
+    adjusted ``SABIC`` (all "smaller is better"), plus the free-parameter count.
+
+    The parameter count is read from the fitted arrays: ``slope`` +
+    ``cat_params`` (+ item positions ``zeta`` for the latent-space model).
+    """
+    if not isinstance(n_persons, int) or n_persons < 2:
+        raise ValueError("n_persons must be an integer >= 2")
+    k = int(np.asarray(fit.slope).size + np.asarray(fit.cat_params).size)
+    zeta = getattr(fit, "zeta", None)
+    if zeta is not None:
+        k += int(np.asarray(zeta).size)
+    ll = float(fit.loglik)
+    n = int(n_persons)
+    m2ll = -2.0 * ll
+    aic = m2ll + 2.0 * k
+    bic = m2ll + k * np.log(n)
+    caic = m2ll + k * (np.log(n) + 1.0)
+    aicc = aic + (2.0 * k * (k + 1.0)) / max(n - k - 1, 1)
+    sabic = m2ll + k * np.log((n + 2.0) / 24.0)
+    return {
+        "n_parameters": k,
+        "aic": float(aic),
+        "bic": float(bic),
+        "caic": float(caic),
+        "aicc": float(aicc),
+        "sabic": float(sabic),
+    }
