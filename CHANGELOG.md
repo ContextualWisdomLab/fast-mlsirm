@@ -190,6 +190,30 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Nonparametric polytomous person fit U3poly** (Emons, 2008; van der Flier,
+  1982). `u3_person_fit_polytomous(responses, n_cat)` computes van der Flier's
+  `U3` person-fit statistic generalized to ordered polytomous items — a
+  *model-free* index: each item-step response function `P(Y_i >= m)` is estimated
+  by its sample proportion, turned into a logit weight, and a person's observed
+  weighted score is compared to the largest and smallest weighted scores
+  attainable at that person's total score (the conditioning group), giving
+  `U3 in [0, 1]` (1 = maximally popularity-inconsistent). The attainable min/max
+  bounds are computed by exact min-plus / max-plus DP (not the flat "sum of the
+  top-k weights" shortcut, which over-counts once an unused category breaks
+  within-item monotonicity). `u3_cutoff_polytomous(fit, n_persons)` returns a
+  simulated `1 - alpha` critical value by parametric bootstrap (U3poly has no
+  usable analytic null; Emons used simulated critical values). Compute in Rust
+  (`mlsirm_core::poly::u3_poly_person_fit` + `u3_poly_bootstrap_cutoff`).
+  Validated by an exact `n_cat = 2` reduction to a from-scratch van der Flier `U3`
+  (max abs diff `< 1e-10`) and a 500-replication Monte-Carlo (GPCM, `K = 5`,
+  `n = 600`): the simulated cutoff calibrates the marginal flag rate under a
+  matched population (Type I 0.052 normal / 0.054 skew) and detects careless
+  responders with power ~1.00; the per-total-score-group flag-rate deviation
+  (0.066 normal / 0.083 skew) is reported to make transparent that a single
+  pooled cutoff cannot fully condition on the total score. Complements the
+  parametric `l_z`/`l_z*` (`person_fit_polytomous`) with a distribution-free
+  screen.
+
 - **Polytomous M2 limited-information goodness-of-fit** (Maydeu-Olivares & Joe,
   2014). `m2_polytomous(responses, fit)` returns the test-level M2 statistic,
   `df`, `p_value`, RMSEA2 (with a 90% interval), and SRMSR for a fitted GRM/GPCM

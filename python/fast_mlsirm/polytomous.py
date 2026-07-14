@@ -770,3 +770,96 @@ def dif_polytomous(
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
         "effect_size": np.asarray(res["effect_size"], dtype=np.float64),
     }
+
+
+def u3_person_fit_polytomous(
+    responses: np.ndarray,
+    n_cat: int,
+    cutoff: float | None = None,
+) -> dict[str, np.ndarray]:
+    """Nonparametric polytomous person-fit U3poly (compute in Rust; Emons, 2008),
+    van der Flier's (1982) dichotomous U3 generalized to ordered polytomous items.
+    It needs NO fitted IRT model: each item-step response function ``P(Y_i >= m)``
+    is estimated by its sample proportion and turned into a logit weight, and a
+    person's observed weighted score is compared to the largest and smallest
+    weighted scores attainable at that person's total score (the conditioning
+    group). Returns per-person ``u3poly`` in ``[0, 1]`` (0 = perfectly
+    popularity-consistent, 1 = maximally aberrant; ``NaN`` where undefined),
+    ``total_score`` (the summed ordinal score over observed items), and
+    ``flagged`` (``u3poly >= cutoff``; all ``False`` when ``cutoff is None``).
+
+    ``responses`` is persons x items of integer categories with ``NaN`` for
+    missing (marginalized per person). Items must be keyed so a higher category
+    means more of the trait -- recode reverse-keyed items first. U3poly has no
+    reliable analytic null, so a critical value should come from
+    :func:`u3_cutoff_polytomous` (a simulated reference), not a normal
+    approximation; and because a single pooled cutoff cannot fully condition on
+    the total score, treat flags near the score extremes cautiously.
+
+    References (APA 7th ed.):
+        Emons, W. H. M. (2008). Nonparametric person-fit analysis of polytomous
+            item scores. *Applied Psychological Measurement, 32*(3), 224-247.
+            https://doi.org/10.1177/0146621607302479
+        van der Flier, H. (1982). Deviant response patterns and comparability of
+            test scores. *Journal of Cross-Cultural Psychology, 13*(3), 267-298.
+            https://doi.org/10.1177/0022002182013003001
+    """
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    n_persons, n_items = y_int.shape
+    core = _core_module()
+    if core is None or not hasattr(core, "u3_person_fit"):
+        raise RuntimeError("u3_person_fit_polytomous requires the compiled Rust core")
+
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.u3_person_fit(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        obs_arg,
+        None if cutoff is None else float(cutoff),
+    )
+    return {
+        "u3poly": np.asarray(res["u3poly"], dtype=np.float64),
+        "total_score": np.asarray(res["total_score"], dtype=np.int64),
+        "flagged": np.asarray(res["flagged"], dtype=bool),
+    }
+
+
+def u3_cutoff_polytomous(
+    fit: PolytomousFit,
+    n_persons: int,
+    alpha: float = 0.05,
+    n_rep: int = 200,
+    seed: int = 0,
+) -> float:
+    """Simulated ``1 - alpha`` critical value for :func:`u3_person_fit_polytomous`
+    (compute in Rust; Emons, 2008, used simulated critical values). A parametric
+    bootstrap: ``n_rep`` complete datasets of ``n_persons`` x (fitted item count)
+    are generated from the fitted GRM/GPCM ``fit`` at ``theta ~ N(0, 1)``, and the
+    empirical ``1 - alpha`` quantile of the pooled U3poly is returned. Because the
+    null distribution depends on the latent distribution, this ``N(0, 1)`` cutoff
+    is appropriate only when that population assumption is reasonable; for a skewed
+    population, calibrate against a matching simulation. The replications are
+    complete (full-length) patterns, so the cutoff is calibrated for complete
+    responders only -- do not flag persons with substantial missing data against
+    it (their U3poly comes from a shorter, coarser null).
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    core = _core_module()
+    if core is None or not hasattr(core, "u3_bootstrap_cutoff"):
+        raise RuntimeError("u3_cutoff_polytomous requires the compiled Rust core")
+    return float(
+        core.u3_bootstrap_cutoff(
+            int(n_persons),
+            int(n_items),
+            int(n_cat),
+            fit.slope.astype(np.float64),
+            fit.cat_params.reshape(-1).astype(np.float64),
+            fit.model,
+            float(alpha),
+            int(n_rep),
+            int(seed),
+        )
+    )

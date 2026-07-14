@@ -30,7 +30,9 @@ use mlsirm_core::poly::{
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves, poly_person_fit as core_poly_person_fit,
-    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
+    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap,
+    u3_poly_bootstrap_cutoff as core_u3_poly_cutoff, u3_poly_person_fit as core_u3_poly_person_fit,
+    PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 
@@ -1322,6 +1324,69 @@ fn poly_dif(
     Ok(out.into())
 }
 
+/// Nonparametric polytomous person-fit U3poly (Rust compute path). Generalizes
+/// van der Flier's U3 to ordered polytomous items via sample item-step response
+/// functions; no fitted IRT model. Returns a dict of per-person arrays
+/// (`u3poly` in [0,1], `total_score`, `flagged`); NaN where undefined. `cutoff`
+/// (see `u3_bootstrap_cutoff`) flags `u3poly >= cutoff`.
+///
+/// References (APA 7th ed.):
+///   Emons, W. H. M. (2008). Nonparametric person-fit analysis of polytomous
+///     item scores. Applied Psychological Measurement, 32(3), 224-247.
+///     https://doi.org/10.1177/0146621607302479
+#[pyfunction]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, observed = None, cutoff = None))]
+fn u3_person_fit(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    cutoff: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_u3_poly_person_fit(&yv, obs, n_persons, n_items, n_cat, cutoff)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("u3poly", res.u3poly)?;
+    out.set_item("total_score", res.total_score)?;
+    out.set_item("flagged", res.flagged)?;
+    Ok(out.into())
+}
+
+/// Simulated (1-alpha) critical value for `u3_person_fit` via a parametric
+/// bootstrap from a fitted GRM/GPCM at theta ~ N(0,1) (Rust compute path).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (n_persons, n_items, n_cat, slope, cat_params, model = "gpcm", alpha = 0.05, n_rep = 200, seed = 0))]
+fn u3_bootstrap_cutoff(
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    model: &str,
+    alpha: f64,
+    n_rep: usize,
+    seed: u64,
+) -> PyResult<f64> {
+    let m = parse_poly_model(model)?;
+    core_u3_poly_cutoff(
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        alpha,
+        n_rep,
+        seed,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// l_z / Snijders l_z* person fit at EAP estimates.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1985,6 +2050,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;

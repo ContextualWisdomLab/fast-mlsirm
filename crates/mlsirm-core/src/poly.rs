@@ -1232,6 +1232,290 @@ pub fn poly_dif_sweep(
     Ok(rows)
 }
 
+/// Per-person nonparametric polytomous person-fit result ([`u3_poly_person_fit`]).
+pub struct U3PolyResult {
+    /// Raw U3poly in `[0, 1]` (0 = popularity-consistent, 1 = maximally aberrant);
+    /// `NaN` where undefined (an interior total score whose attainable weighted
+    /// range collapses to zero).
+    pub u3poly: Vec<f64>,
+    /// `NC_p`, the person's summed ordinal score over observed items (the
+    /// conditioning group the statistic is normalized within).
+    pub total_score: Vec<usize>,
+    /// `u3poly >= cutoff` (all `false` when `cutoff` is `None` or `u3poly` is
+    /// `NaN`).
+    pub flagged: Vec<bool>,
+}
+
+/// Min-plus and max-plus convolution of a set of per-item cumulative-weight
+/// vectors `cw[i][0..=m]` (`cw[i][x] = sum_{s<=x} w_{i,s}`, `cw[i][0]=0`): returns
+/// `(max_w, min_w)` over total step counts `0..=n_items*m`, where `max_w[t]` /
+/// `min_w[t]` are the largest / smallest attainable weighted score for a response
+/// pattern whose ordinal scores sum to `t`. Both are exact DPs; the max side is
+/// **not** the flat "sum of the t largest step weights" shortcut, which
+/// over-counts when a clamped (unused) category breaks within-item monotonicity.
+fn u3_min_max_conv(cw: &[&[f64]], m: usize) -> (Vec<f64>, Vec<f64>) {
+    let total = cw.len() * m;
+    let mut max_dp = vec![f64::NEG_INFINITY; total + 1];
+    let mut min_dp = vec![f64::INFINITY; total + 1];
+    max_dp[0] = 0.0;
+    min_dp[0] = 0.0;
+    let mut reach = 0usize;
+    for ci in cw {
+        let mut nmax = vec![f64::NEG_INFINITY; total + 1];
+        let mut nmin = vec![f64::INFINITY; total + 1];
+        for t in 0..=reach {
+            let (mv, nv) = (max_dp[t], min_dp[t]);
+            if mv == f64::NEG_INFINITY {
+                continue;
+            }
+            for x in 0..=m {
+                let nt = t + x;
+                let a = mv + ci[x];
+                if a > nmax[nt] {
+                    nmax[nt] = a;
+                }
+                let b = nv + ci[x];
+                if b < nmin[nt] {
+                    nmin[nt] = b;
+                }
+            }
+        }
+        max_dp = nmax;
+        min_dp = nmin;
+        reach += m;
+    }
+    (max_dp, min_dp)
+}
+
+/// van der Flier's (1980, 1982) `U3` person-fit statistic generalized to ordered
+/// polytomous items (Emons, 2008): a *nonparametric* index that needs no fitted
+/// IRT model. Each item-step response function `P(Y_i >= m)` is estimated by its
+/// sample proportion, turned into a logit weight `w_{i,m} = ln(pi/(1-pi))`
+/// (a degenerate step with `pi in {0,1}` contributes 0), and a person's observed
+/// weighted score `W_p = sum_i sum_{m<=y_i} w_{i,m}` is compared to the largest
+/// and smallest weighted scores attainable at that person's total score `NC_p`
+/// (the conditioning group): `U3 = (maxW(NC_p) - W_p) / (maxW(NC_p) - minW(NC_p))`,
+/// in `[0, 1]` with 1 = maximally popularity-inconsistent (misfit). The min/max
+/// bounds are computed by exact DP ([`u3_min_max_conv`]). Perfect patterns
+/// (`NC_p in {0, n_items*(n_cat-1)}`) take the reference `den = 1` (statistic 0),
+/// matching the `PerFit` reference implementation; a `NaN` is returned only when
+/// an *interior* score's attainable range collapses. Items must be keyed so a
+/// higher category means more of the trait (recode reverse-keyed items first).
+/// `cutoff` (see [`u3_poly_bootstrap_cutoff`]) flags `u3poly >= cutoff`; the raw
+/// statistic has no reliable analytic reference distribution, so flagging uses a
+/// simulated critical value rather than a normal approximation.
+///
+/// # References (APA 7th ed.)
+///
+/// Emons, W. H. M. (2008). Nonparametric person-fit analysis of polytomous item
+///   scores. *Applied Psychological Measurement, 32*(3), 224–247.
+///   https://doi.org/10.1177/0146621607302479
+///
+/// van der Flier, H. (1982). Deviant response patterns and comparability of test
+///   scores. *Journal of Cross-Cultural Psychology, 13*(3), 267–298.
+///   https://doi.org/10.1177/0022002182013003001
+pub fn u3_poly_person_fit(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    cutoff: Option<f64>,
+) -> Result<U3PolyResult, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if let Some(c) = cutoff {
+        if !c.is_finite() {
+            return Err("cutoff must be finite".into());
+        }
+    }
+    let m = n_cat - 1;
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+
+    // per-item cumulative logit weights cw[i][0..=m] from sample ISRF proportions
+    let mut cw = vec![vec![0.0_f64; n_cat]; n_items];
+    for i in 0..n_items {
+        let mut freq = vec![0usize; n_cat];
+        let mut nobs = 0usize;
+        for p in 0..n_persons {
+            if is_obs(p, i) {
+                freq[y[p * n_items + i]] += 1;
+                nobs += 1;
+            }
+        }
+        // suffix counts: ge[s] = #(x >= s)
+        let mut ge = vec![0usize; n_cat + 1];
+        for c in (0..n_cat).rev() {
+            ge[c] = ge[c + 1] + freq[c];
+        }
+        let mut cum = 0.0_f64;
+        for step in 1..=m {
+            let pi = if nobs > 0 { ge[step] as f64 / nobs as f64 } else { 0.0 };
+            let w = if pi <= 0.0 || pi >= 1.0 { 0.0 } else { (pi / (1.0 - pi)).ln() };
+            cum += w;
+            cw[i][step] = cum;
+        }
+    }
+
+    // shared bounds for the complete-data path (computed once)
+    let all_cw: Vec<&[f64]> = cw.iter().map(|v| v.as_slice()).collect();
+    let (gmax, gmin) = u3_min_max_conv(&all_cw, m);
+    let full_complete = observed.is_none();
+
+    let mut u3poly = vec![0.0_f64; n_persons];
+    let mut total_score = vec![0usize; n_persons];
+    for p in 0..n_persons {
+        let complete = full_complete || (0..n_items).all(|i| is_obs(p, i));
+        let (mx, mn, total_steps, wsum, nc) = if complete {
+            let mut wsum = 0.0_f64;
+            let mut nc = 0usize;
+            for i in 0..n_items {
+                let x = y[p * n_items + i];
+                wsum += cw[i][x];
+                nc += x;
+            }
+            (gmax[nc], gmin[nc], n_items * m, wsum, nc)
+        } else {
+            // ponytail: per-person DP only on the missing path; the person's
+            // attainable range spans only their observed item-steps.
+            let obs_cw: Vec<&[f64]> =
+                (0..n_items).filter(|&i| is_obs(p, i)).map(|i| cw[i].as_slice()).collect();
+            let (pmax, pmin) = u3_min_max_conv(&obs_cw, m);
+            let mut wsum = 0.0_f64;
+            let mut nc = 0usize;
+            for &i in (0..n_items).filter(|&i| is_obs(p, i)).collect::<Vec<_>>().iter() {
+                let x = y[p * n_items + i];
+                wsum += cw[i][x];
+                nc += x;
+            }
+            let ts = obs_cw.len() * m;
+            (pmax[nc], pmin[nc], ts, wsum, nc)
+        };
+        total_score[p] = nc;
+        u3poly[p] = if total_steps == 0 {
+            // no observed item-steps => no conditioning group, statistic undefined
+            // (distinct from a complete all-min/all-max pattern, which is a real 0)
+            f64::NAN
+        } else {
+            // PerFit boundary: perfect patterns get reference den = 1 (statistic 0);
+            // an interior score whose range collapses is genuinely undefined.
+            let den = if nc == 0 || nc == total_steps { 1.0 } else { mx - mn };
+            if den > 1e-9 { (mx - wsum) / den } else { f64::NAN }
+        };
+    }
+
+    let flagged: Vec<bool> = match cutoff {
+        Some(c) => u3poly.iter().map(|&v| v.is_finite() && v >= c).collect(),
+        None => vec![false; n_persons],
+    };
+    Ok(U3PolyResult { u3poly, total_score, flagged })
+}
+
+/// Simulated critical value for [`u3_poly_person_fit`]: the empirical
+/// `1 - alpha` quantile of the raw U3poly statistic under `n_rep` complete
+/// datasets drawn from a fitted GRM/GPCM at `theta ~ N(0, 1)` (a parametric
+/// bootstrap, following Emons, 2008, who used simulated critical values because
+/// U3poly has no usable analytic null). `slope`/`cat_params` are the item bank
+/// (`cat_params` flattened `n_items * (n_cat-1)`). Because the null distribution
+/// depends on the latent distribution, a cutoff from this `N(0,1)` bootstrap is
+/// only appropriate when that population assumption is reasonable. The
+/// replications are complete (`n_items`-long) patterns, so the cutoff is
+/// calibrated for complete responders; a person with substantial missing data has
+/// a shorter, coarser null and should not be flagged against this cutoff.
+#[allow(clippy::too_many_arguments)]
+pub fn u3_poly_bootstrap_cutoff(
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    alpha: f64,
+    n_rep: usize,
+    seed: u64,
+) -> Result<f64, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+        return Err("slope/cat_params must match n_items and n_cat".into());
+    }
+    if n_persons < 1 || n_items < 1 {
+        return Err("need at least one person and item".into());
+    }
+    if !(alpha > 0.0 && alpha < 1.0) {
+        return Err("alpha must be in (0, 1)".into());
+    }
+    if n_rep < 1 {
+        return Err("n_rep must be >= 1".into());
+    }
+    let z = n_cat - 1;
+    let mut st = seed.max(1);
+    let mut u = || {
+        st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((st >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let cell = |i: usize, theta: f64| -> Vec<f64> {
+        let base = slope[i] * theta;
+        let cp = &cat_params[i * z..(i + 1) * z];
+        match model {
+            PolyModel::Gpcm => {
+                let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                let mut ic = vec![0.0_f64; n_cat];
+                ic[1..].copy_from_slice(cp);
+                gpcm_logprobs(base, &scores, &ic)
+            }
+            PolyModel::Grm => grm_logprobs(base, cp),
+        }
+    };
+    let mut pool: Vec<f64> = Vec::with_capacity(n_rep * n_persons);
+    let mut y = vec![0usize; n_persons * n_items];
+    for _rep in 0..n_rep {
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let lp = cell(i, theta);
+                let d = u();
+                let (mut acc, mut cat) = (0.0_f64, n_cat - 1);
+                for (c, l) in lp.iter().enumerate() {
+                    acc += l.exp();
+                    if d <= acc {
+                        cat = c;
+                        break;
+                    }
+                }
+                y[p * n_items + i] = cat;
+            }
+        }
+        let res = u3_poly_person_fit(&y, None, n_persons, n_items, n_cat, None)?;
+        pool.extend(res.u3poly.into_iter().filter(|v| v.is_finite()));
+    }
+    if pool.is_empty() {
+        return Err("bootstrap produced no finite U3poly values".into());
+    }
+    pool.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let np = pool.len();
+    let idx = (np as f64 - 1.0) * (1.0 - alpha);
+    let lo = idx.floor() as usize;
+    let hi = idx.ceil() as usize;
+    let q = if lo == hi { pool[lo] } else { pool[lo] + (idx - lo as f64) * (pool[hi] - pool[lo]) };
+    Ok(q)
+}
+
 /// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
@@ -2931,5 +3215,215 @@ mod tests {
         assert!((0.03..=0.075).contains(&t1), "Type I off nominal: {t1}");
         assert!((2.6..=3.4).contains(&mean_lr), "mean LR should ~ df=3: {mean_lr}");
         assert!(pow_u > 0.85 && pow_n > 0.7, "DIF power too low: uniform={pow_u} nonuniform={pow_n}");
+    }
+
+    // Hand-coded van der Flier dichotomous U3 (the trusted binary reference the
+    // polytomous U3 must reduce to at n_cat=2), with the same den=1 boundary.
+    fn u3_binary_vdf(y: &[usize], n_persons: usize, n_items: usize) -> Vec<f64> {
+        let mut w = vec![0.0_f64; n_items];
+        for i in 0..n_items {
+            let s: usize = (0..n_persons).map(|p| y[p * n_items + i]).sum();
+            let pi = s as f64 / n_persons as f64;
+            w[i] = if pi <= 0.0 || pi >= 1.0 { 0.0 } else { (pi / (1.0 - pi)).ln() };
+        }
+        let mut sorted = w.clone();
+        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap()); // descending
+        let mut topsum = vec![0.0_f64; n_items + 1];
+        let mut botsum = vec![0.0_f64; n_items + 1];
+        for s in 1..=n_items {
+            topsum[s] = topsum[s - 1] + sorted[s - 1];
+            botsum[s] = botsum[s - 1] + sorted[n_items - s];
+        }
+        let mut out = vec![0.0_f64; n_persons];
+        for p in 0..n_persons {
+            let (mut sc, mut wsum) = (0usize, 0.0_f64);
+            for i in 0..n_items {
+                if y[p * n_items + i] == 1 {
+                    sc += 1;
+                    wsum += w[i];
+                }
+            }
+            let den = if sc == 0 || sc == n_items { 1.0 } else { topsum[sc] - botsum[sc] };
+            out[p] = if den > 1e-9 { (topsum[sc] - wsum) / den } else { f64::NAN };
+        }
+        out
+    }
+
+    #[test]
+    fn poly_u3_reduces_to_binary_vdf() {
+        // At n_cat=2 the polytomous U3 must be identical to van der Flier's U3
+        // (the "reduce to a trusted binary" correctness anchor).
+        let mut u = rng(1234);
+        let (n_persons, n_items) = (400usize, 12usize);
+        let mut y = vec![0usize; n_persons * n_items];
+        for v in y.iter_mut() {
+            *v = if u() < 0.5 { 1 } else { 0 };
+        }
+        let res = u3_poly_person_fit(&y, None, n_persons, n_items, 2, None).unwrap();
+        let vdf = u3_binary_vdf(&y, n_persons, n_items);
+        let mut maxdev = 0.0_f64;
+        for p in 0..n_persons {
+            let (a, b) = (res.u3poly[p], vdf[p]);
+            if a.is_nan() && b.is_nan() {
+                continue;
+            }
+            maxdev = maxdev.max((a - b).abs());
+        }
+        assert!(maxdev < 1e-10, "U3poly(K=2) must equal vdF U3: maxdev={maxdev}");
+        // orientation: a popularity-inconsistent person scores higher than a
+        // consistent one. Build two persons on a fixed 4-item bank.
+        let ni = 4;
+        // popularities descending: item 0 easiest .. item 3 hardest
+        let mut yy = vec![0usize; 40 * ni];
+        let mut u2 = rng(99);
+        for p in 0..40 {
+            for i in 0..ni {
+                let pi = 0.8 - 0.18 * i as f64; // 0.80,0.62,0.44,0.26
+                yy[p * ni + i] = if u2() < pi { 1 } else { 0 };
+            }
+        }
+        // consistent person (easy items 1, hard 0) vs reversed (hard 1, easy 0)
+        yy[0 * ni..1 * ni].copy_from_slice(&[1, 1, 0, 0]);
+        yy[1 * ni..2 * ni].copy_from_slice(&[0, 0, 1, 1]);
+        let r2 = u3_poly_person_fit(&yy, None, 40, ni, 2, None).unwrap();
+        assert!(r2.u3poly[1] > r2.u3poly[0], "reversed person must have larger U3");
+        assert!(r2.u3poly[0] < 0.5 && r2.u3poly[1] > 0.5, "orientation off: {:?}", &r2.u3poly[..2]);
+    }
+
+    // GPCM data generator: first `n_care` persons are careless (uniform-random
+    // categories, ignoring item popularity); the rest respond from the model.
+    fn gen_u3_data(
+        slope: &[f64], cat: &[f64], n_persons: usize, n_items: usize, k: usize,
+        n_care: usize, skew: bool, seed: u64,
+    ) -> Vec<usize> {
+        let z = k - 1;
+        let mut u = rng(seed);
+        let mut y = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let careless = p < n_care;
+            let theta = if skew {
+                -(u().max(1e-12)).ln() - 1.0
+            } else {
+                let u1 = u().max(1e-12);
+                let u2 = u();
+                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+            };
+            for i in 0..n_items {
+                if careless {
+                    y[p * n_items + i] = ((u() * k as f64) as usize).min(k - 1);
+                } else {
+                    let base = slope[i] * theta;
+                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                    let mut ic = vec![0.0_f64; k];
+                    ic[1..].copy_from_slice(&cat[i * z..(i + 1) * z]);
+                    let lp = gpcm_logprobs(base, &scores, &ic);
+                    let draw = u();
+                    let (mut acc, mut c) = (0.0_f64, k - 1);
+                    for (cc, l) in lp.iter().enumerate() {
+                        acc += l.exp();
+                        if draw <= acc {
+                            c = cc;
+                            break;
+                        }
+                    }
+                    y[p * n_items + i] = c;
+                }
+            }
+        }
+        y
+    }
+
+    fn quantile_sorted(v: &mut Vec<f64>, q: f64) -> f64 {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = v.len();
+        let idx = (n as f64 - 1.0) * q;
+        let (lo, hi) = (idx.floor() as usize, idx.ceil() as usize);
+        if lo == hi { v[lo] } else { v[lo] + (idx - lo as f64) * (v[hi] - v[lo]) }
+    }
+
+    // Returns (marginal Type I, max |flag_rate - alpha| across total-score bins,
+    // power on careless responders). The cutoff is the (1-alpha) quantile of null
+    // U3poly estimated under the MATCHING latent shape from disjoint seeds.
+    fn mc_u3poly(reps: usize, n_persons: usize, skew: bool) -> (f64, f64, f64) {
+        let (n_items, k) = (20usize, 5usize);
+        let alpha = 0.05_f64;
+        let (slope, cat) = cat_bank(n_items, k);
+        let maxnc = n_items * (k - 1);
+        let so = if skew { 7 } else { 0 };
+        // cutoff from pooled null U3poly (seed base 900000, disjoint from eval)
+        let mut pool = Vec::new();
+        for b in 0..6u64 {
+            let y = gen_u3_data(&slope, &cat, n_persons, n_items, k, 0, skew, 900_000 + b * 131 + so);
+            let r = u3_poly_person_fit(&y, None, n_persons, n_items, k, None).unwrap();
+            pool.extend(r.u3poly.into_iter().filter(|v| v.is_finite()));
+        }
+        let cutoff = quantile_sorted(&mut pool, 1.0 - alpha);
+        let n_bins = 3usize;
+        let (mut bin_flag, mut bin_tot) = (vec![0usize; n_bins], vec![0usize; n_bins]);
+        let (mut t1_flag, mut t1_tot) = (0usize, 0usize);
+        let (mut pw_flag, mut pw_tot) = (0usize, 0usize);
+        let n_care = n_persons / 5; // 20% careless in the power datasets
+        for rep in 0..reps as u64 {
+            // null eval (disjoint seed base 100000)
+            let yn = gen_u3_data(&slope, &cat, n_persons, n_items, k, 0, skew, 100_000 + rep * 131 + so);
+            let rn = u3_poly_person_fit(&yn, None, n_persons, n_items, k, Some(cutoff)).unwrap();
+            for p in 0..n_persons {
+                if rn.u3poly[p].is_finite() {
+                    t1_tot += 1;
+                    if rn.flagged[p] {
+                        t1_flag += 1;
+                    }
+                    let bin = (rn.total_score[p] * n_bins / (maxnc + 1)).min(n_bins - 1);
+                    bin_tot[bin] += 1;
+                    if rn.flagged[p] {
+                        bin_flag[bin] += 1;
+                    }
+                }
+            }
+            // power eval (careless responders, seed base 200000)
+            let ya = gen_u3_data(&slope, &cat, n_persons, n_items, k, n_care, skew, 200_000 + rep * 131 + so);
+            let ra = u3_poly_person_fit(&ya, None, n_persons, n_items, k, Some(cutoff)).unwrap();
+            for p in 0..n_care {
+                if ra.u3poly[p].is_finite() {
+                    pw_tot += 1;
+                    if ra.flagged[p] {
+                        pw_flag += 1;
+                    }
+                }
+            }
+        }
+        let type1 = t1_flag as f64 / t1_tot.max(1) as f64;
+        let bin_maxdev = (0..n_bins)
+            .map(|b| (bin_flag[b] as f64 / bin_tot[b].max(1) as f64 - alpha).abs())
+            .fold(0.0_f64, f64::max);
+        let power = pw_flag as f64 / pw_tot.max(1) as f64;
+        (type1, bin_maxdev, power)
+    }
+
+    #[test]
+    fn poly_u3_type1_and_power() {
+        // Fast guard. Authoritative >=500-rep study is poly_u3_monte_carlo_500.
+        let (t1, _bindev, power) = mc_u3poly(6, 500, false);
+        println!("[u3poly] normal: Type I={t1:.3} power(careless)={power:.3}");
+        assert!((0.01..=0.12).contains(&t1), "Type I off nominal: {t1}");
+        assert!(power > 0.5, "careless-detection power too low: {power}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_u3_monte_carlo_500() {
+        let reps = 500usize;
+        let (t1n, bindev_n, pow_n) = mc_u3poly(reps, 600, false);
+        let (t1s, bindev_s, pow_s) = mc_u3poly(reps, 600, true);
+        println!(
+            "[u3poly 500] normal: Type I={t1n:.4} bin-maxdev={bindev_n:.3} power={pow_n:.3}  \
+             skew: Type I={t1s:.4} bin-maxdev={bindev_s:.3} power={pow_s:.3}"
+        );
+        // marginal Type I calibrated by the simulated cutoff; per-NC-bin deviation
+        // reported (a single pooled cutoff cannot perfectly condition on the total
+        // score — Emons 2008 uses simulated critical values for this reason).
+        assert!((0.03..=0.08).contains(&t1n), "normal Type I off nominal: {t1n}");
+        assert!(pow_n > 0.7, "normal careless power too low: {pow_n}");
+        assert!(bindev_n < 0.10, "per-score-group miscalibration too large: {bindev_n}");
     }
 }

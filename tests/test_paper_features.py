@@ -1060,3 +1060,87 @@ def test_dif_polytomous_grm_no_silent_false_negative():
     assert np.isnan(p0) or flg0, f"item 0 silently reported clean: p={p0}, flagged={flg0}"
     # a NaN p-value must be reported unflagged (never counted as significant)
     assert not (np.isnan(p0) and flg0)
+
+
+def test_u3_person_fit_polytomous():
+    """Nonparametric polytomous U3poly (Emons, 2008) through the public API:
+    correct bookkeeping, calibrated flag rate under a simulated cutoff, and
+    detection of careless responders."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import (
+        fit_polytomous,
+        u3_cutoff_polytomous,
+        u3_person_fit_polytomous,
+    )
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "u3_person_fit"):
+        pytest.skip("compiled core built without u3_person_fit")
+
+    k, j, n = 5, 20, 800
+    rng = np.random.default_rng(3)
+    a = rng.uniform(0.9, 1.5, j)
+    # spread item difficulty across the bank so items differ in popularity -- the
+    # regime where a popularity-based statistic like U3 has power (Emons, 2008)
+    bdiff = np.linspace(-1.6, 1.6, j)
+    c = np.zeros((j, k))
+    for i in range(j):
+        cum = 0.0
+        for m in range(1, k):
+            cum += bdiff[i] + (m - 1 - (k - 2) / 2) * 0.8
+            c[i, m] = -a[i] * cum
+    scores = np.arange(k, dtype=float)
+
+    def gen(n_care):
+        theta = rng.standard_normal(n)
+        y = np.zeros((n, j))
+        for p in range(n):
+            for i in range(j):
+                if p < n_care:  # careless: uniform-random category
+                    y[p, i] = rng.integers(k)
+                else:
+                    pr = np.exp(category_logprobs(a[i] * theta[p], scores, c[i]))
+                    y[p, i] = rng.choice(k, p=pr)
+        return y
+
+    # clean data -> fit a bank -> simulated cutoff -> near-nominal flag rate
+    y0 = gen(0)
+    res0 = u3_person_fit_polytomous(y0, k)
+    for key in ("u3poly", "total_score", "flagged"):
+        assert res0[key].shape == (n,)
+    finite = res0["u3poly"][np.isfinite(res0["u3poly"])]
+    assert np.all((finite >= 0.0) & (finite <= 1.0))
+    assert not res0["flagged"].any()  # no cutoff -> nothing flagged
+
+    fit = fit_polytomous(y0, k, model="gpcm")
+    cutoff = u3_cutoff_polytomous(fit, n_persons=n, alpha=0.05, n_rep=60, seed=7)
+    assert 0.0 < cutoff < 1.0
+    flagged0 = u3_person_fit_polytomous(y0, k, cutoff=cutoff)["flagged"]
+    assert flagged0.mean() < 0.15  # calibrated-ish on clean data
+
+    # inject careless responders -> they are flagged far more than clean persons
+    n_care = 120
+    y1 = gen(n_care)
+    res1 = u3_person_fit_polytomous(y1, k, cutoff=cutoff)
+    care_rate = res1["flagged"][:n_care].mean()
+    clean_rate = res1["flagged"][n_care:].mean()
+    assert care_rate > 0.6, f"careless detection too weak: {care_rate}"
+    assert care_rate > 3 * clean_rate
+
+    # K=2 stays in range and total_score bookkeeping is correct
+    yb = (rng.random((200, 10)) < 0.5).astype(float)
+    rb = u3_person_fit_polytomous(yb, 2)
+    assert np.array_equal(rb["total_score"], yb.sum(axis=1).astype(np.int64))
+
+    # an all-missing respondent has no conditioning group -> undefined (NaN),
+    # never a silent perfect fit that can't be flagged
+    ymiss = y0.copy()
+    ymiss[0, :] = np.nan
+    rm = u3_person_fit_polytomous(ymiss, k, cutoff=cutoff)
+    assert np.isnan(rm["u3poly"][0])
+    assert not rm["flagged"][0]
+
+    with pytest.raises(ValueError):
+        u3_person_fit_polytomous(y0, k, cutoff=float("nan"))
