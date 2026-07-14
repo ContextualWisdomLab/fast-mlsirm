@@ -638,17 +638,19 @@ mod tests {
             &yf, &observed, n_persons, n_items,
             &MmleConfig { max_iter: 500, tol: 1e-7, ridge_a: 1e-4, ridge_b: 1e-4, newton_iter: 25 },
         );
-        let poly = fit_poly_unidim(&yi, None, n_persons, n_items, 2, PolyModel::Gpcm, 41, 300, 1e-7)
-            .unwrap();
-        let c1: Vec<f64> = poly.cat_params.iter().map(|c| c[0]).collect();
         let rmse = |a: &[f64], b: &[f64]| {
             (a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / a.len() as f64).sqrt()
         };
-        // agreement between two independent estimators of the SAME 2PL
-        let ra = rmse(&poly.slope, &bin.a);
-        let rb = rmse(&c1, &bin.b);
-        assert!(ra < 0.1, "slope RMSE vs trusted binary MMLE: {ra} (poly {:?} vs bin {:?})", poly.slope, bin.a);
-        assert!(rb < 0.1, "intercept RMSE vs trusted binary MMLE: {rb}");
+        // BOTH cells reduce to the 2PL at K=2 (GRM is the default): each must
+        // match the trusted binary MMLE's item parameters on the same data.
+        for model in [PolyModel::Gpcm, PolyModel::Grm] {
+            let poly = fit_poly_unidim(&yi, None, n_persons, n_items, 2, model, 41, 300, 1e-7).unwrap();
+            let c1: Vec<f64> = poly.cat_params.iter().map(|c| c[0]).collect();
+            let ra = rmse(&poly.slope, &bin.a);
+            let rb = rmse(&c1, &bin.b);
+            assert!(ra < 0.1, "{model:?} slope RMSE vs trusted binary MMLE: {ra}");
+            assert!(rb < 0.1, "{model:?} intercept RMSE vs trusted binary MMLE: {rb}");
+        }
     }
 
     #[test]
@@ -789,6 +791,11 @@ mod tests {
             dh += (fit.slope[i] - mh).powi(2);
         }
         assert!(num / (da.sqrt() * dh.sqrt()) > 0.9, "slope corr under missingness");
+        // absolute agreement, not just association
+        let s_rmse = (a_true.iter().zip(&fit.slope).map(|(x, y)| (x - y).powi(2)).sum::<f64>()
+            / n_items as f64)
+            .sqrt();
+        assert!(s_rmse < 0.2, "slope RMSE under missingness {s_rmse}");
     }
 
     #[test]
