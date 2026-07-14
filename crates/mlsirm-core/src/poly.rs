@@ -384,6 +384,223 @@ pub fn fit_poly_unidim(
     Ok(PolyFit { slope, cat_params, loglik: ll, n_iter: it })
 }
 
+/// Result of [`fit_nominal`]. Per item, `scores[i]` holds the `K-1` free
+/// category scoring values `a_1..a_{K-1}` and `intercepts[i]` the `K-1` free
+/// intercepts `c_1..c_{K-1}` (the baseline category is pinned `a_0 = c_0 = 0`).
+pub struct NominalFit {
+    pub scores: Vec<Vec<f64>>,
+    pub intercepts: Vec<Vec<f64>>,
+    pub loglik: f64,
+    pub n_iter: usize,
+}
+
+/// Negative expected complete-data log-lik and gradient for one item of the
+/// nominal model. `params = [a_1..a_{K-1}, c_1..c_{K-1}]` (2(K-1) free values);
+/// the cell is `softmax_k(a_k·θ + c_k)` with `a_0 = c_0 = 0`. The gradient reuses
+/// the softmax residual `r_k − n·P_k`: `∂/∂c_k = residual_k`,
+/// `∂/∂a_k = residual_k·θ`, summed over the quadrature nodes.
+fn nominal_item_neg_ll_grad(
+    params: &[f64],
+    nodes: &[f64],
+    counts: &[Vec<f64>],
+    n_cat: usize,
+) -> (f64, Vec<f64>) {
+    let z = n_cat - 1;
+    let mut scores = vec![0.0_f64; n_cat];
+    let mut intercepts = vec![0.0_f64; n_cat];
+    for m in 0..z {
+        scores[m + 1] = params[m];
+        intercepts[m + 1] = params[z + m];
+    }
+    let mut ll = 0.0_f64;
+    let mut grad = vec![0.0_f64; 2 * z];
+    for (nd, &theta) in nodes.iter().enumerate() {
+        let lp = gpcm_logprobs(theta, &scores, &intercepts);
+        ll += counts[nd].iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+        let (g_int, _g_base, g_sc) = gpcm_node_gradient(theta, &scores, &intercepts, &counts[nd]);
+        for m in 0..z {
+            grad[m] += g_sc[m]; // d / d a_{m+1}
+            grad[z + m] += g_int[m]; // d / d c_{m+1}
+        }
+    }
+    (-ll, grad.iter().map(|v| -v).collect())
+}
+
+/// Newton M-step for one nominal item (finite-difference Hessian on the analytic
+/// gradient), mirroring [`m_step_item`].
+fn nominal_m_step(
+    mut params: Vec<f64>,
+    nodes: &[f64],
+    counts: &[Vec<f64>],
+    n_cat: usize,
+    n_newton: usize,
+) -> Vec<f64> {
+    let np = params.len();
+    for _ in 0..n_newton {
+        let (_f, g) = nominal_item_neg_ll_grad(&params, nodes, counts, n_cat);
+        let h = 1e-5;
+        let mut hess = vec![vec![0.0_f64; np]; np];
+        for j in 0..np {
+            let mut pj = params.clone();
+            pj[j] += h;
+            let (_f2, gj) = nominal_item_neg_ll_grad(&pj, nodes, counts, n_cat);
+            for r in 0..np {
+                hess[r][j] = (gj[r] - g[r]) / h;
+            }
+        }
+        for r in 0..np {
+            for c in 0..np {
+                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            }
+            hess[r][r] += 1e-8;
+        }
+        let step = solve_small(hess, g);
+        let mut max_step = 0.0_f64;
+        for j in 0..np {
+            params[j] -= step[j];
+            max_step = max_step.max(step[j].abs());
+        }
+        if max_step < 1e-9 {
+            break;
+        }
+    }
+    params
+}
+
+/// Unidimensional nominal categories model (Bock, 1972; Thissen, Cai & Bock,
+/// 2010) by Bock-Aitkin marginal MLE. Each item has a free scoring function
+/// `a_k` and intercept `c_k` per category, `P(Y=k|θ) = softmax_k(a_k·θ + c_k)`,
+/// identified by the baseline constraint `a_0 = c_0 = 0` with `θ ~ N(0,1)`. The
+/// GPCM is the special case `a_k = a·k` (integer-linear scoring), so the nominal
+/// fit nests it; parameters are identified up to a joint reflection
+/// `(a_k, θ) → (−a_k, −θ)`. `y` is `n_persons * n_items` row-major, categories
+/// `0..n_cat-1`; reuses the softmax cell and residual gradient of the GPCM path.
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D. (1972). Estimating item parameters and latent ability when
+///   responses are scored in two or more nominal categories. *Psychometrika,
+///   37*(1), 29–51. https://doi.org/10.1007/BF02291411
+///
+/// Thissen, D., Cai, L., & Bock, R. D. (2010). The nominal categories item
+///   response model. In M. L. Nering & R. Ostini (Eds.), *Handbook of
+///   polytomous item response theory models* (pp. 43–75). Routledge.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_nominal(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<NominalFit, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+    let z = n_cat - 1;
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
+    let qn = nodes.len();
+
+    // init: integer (GPCM-like) scores a_k = k; intercepts from base rates
+    let mut params = vec![vec![0.0_f64; 2 * z]; n_items];
+    for i in 0..n_items {
+        let mut freq = vec![1e-3_f64; n_cat];
+        for p in 0..n_persons {
+            if is_obs(p, i) {
+                freq[y[p * n_items + i]] += 1.0;
+            }
+        }
+        let tot: f64 = freq.iter().sum();
+        for f in freq.iter_mut() {
+            *f /= tot;
+        }
+        for m in 0..z {
+            params[i][m] = (m + 1) as f64; // a_{m+1}
+            params[i][z + m] = (freq[m + 1] / freq[0]).ln(); // c_{m+1}
+        }
+    }
+
+    let mut prev_ll = f64::NEG_INFINITY;
+    let mut ll = f64::NEG_INFINITY;
+    let mut it = 0;
+    while it < max_iter {
+        let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
+        for i in 0..n_items {
+            let mut scores = vec![0.0_f64; n_cat];
+            let mut intercepts = vec![0.0_f64; n_cat];
+            for m in 0..z {
+                scores[m + 1] = params[i][m];
+                intercepts[m + 1] = params[i][z + m];
+            }
+            for (nd, &theta) in nodes.iter().enumerate() {
+                let lp = gpcm_logprobs(theta, &scores, &intercepts);
+                item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
+            }
+        }
+        let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+        ll = 0.0;
+        let mut log_node = vec![0.0_f64; qn];
+        for p in 0..n_persons {
+            for nd in 0..qn {
+                log_node[nd] = log_w[nd];
+            }
+            for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                for nd in 0..qn {
+                    log_node[nd] += item_lp[i][nd * n_cat + yc];
+                }
+            }
+            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0_f64;
+            for nd in 0..qn {
+                denom += (log_node[nd] - mx).exp();
+            }
+            ll += mx + denom.ln();
+            for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                for nd in 0..qn {
+                    let post = (log_node[nd] - mx).exp() / denom;
+                    counts[i][nd][yc] += post;
+                }
+            }
+        }
+        for i in 0..n_items {
+            params[i] = nominal_m_step(params[i].clone(), nodes, &counts[i], n_cat, 10);
+        }
+        it += 1;
+        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
+            break;
+        }
+        prev_ll = ll;
+    }
+
+    let scores: Vec<Vec<f64>> = params.iter().map(|p| p[0..z].to_vec()).collect();
+    let intercepts: Vec<Vec<f64>> = params.iter().map(|p| p[z..2 * z].to_vec()).collect();
+    Ok(NominalFit { scores, intercepts, loglik: ll, n_iter: it })
+}
+
 /// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
@@ -1483,5 +1700,156 @@ mod tests {
         // Monte-Carlo literature), N = 2000 per replication.
         let (reps, n_persons) = (500usize, 2000usize);
         assert_recovery(&mc_gpcm_recovery(reps, n_persons), reps, n_persons);
+    }
+
+    #[test]
+    fn fit_nominal_nests_gpcm() {
+        // The nominal model contains the GPCM (scores linear in k, a_k = a*k), so
+        // fitting nominal to GPCM data must (a) reach a log-likelihood at least as
+        // high as the GPCM fit and (b) recover linear scores: a_2/a_1 ≈ 2.
+        let (n_persons, n_items, k) = (3000usize, 5usize, 3usize);
+        let mut u = rng(778899);
+        let a_gpcm: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.15 * i as f64).collect();
+        let c_gpcm: Vec<Vec<f64>> = (0..n_items)
+            .map(|i| vec![0.3 - 0.1 * i as f64, -0.4 + 0.1 * i as f64])
+            .collect();
+        let mut yi = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let base = a_gpcm[i] * theta;
+                let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                let mut ic = vec![0.0_f64; k];
+                ic[1..].copy_from_slice(&c_gpcm[i]);
+                let lp = gpcm_logprobs(base, &scores, &ic);
+                let draw = u();
+                let (mut acc, mut cat) = (0.0_f64, k - 1);
+                for (c, l) in lp.iter().enumerate() {
+                    acc += l.exp();
+                    if draw <= acc {
+                        cat = c;
+                        break;
+                    }
+                }
+                yi[p * n_items + i] = cat;
+            }
+        }
+        let gpcm =
+            fit_poly_unidim(&yi, None, n_persons, n_items, k, PolyModel::Gpcm, 41, 300, 1e-7).unwrap();
+        let nom = fit_nominal(&yi, None, n_persons, n_items, k, 41, 300, 1e-7).unwrap();
+        assert!(
+            nom.loglik >= gpcm.loglik - 0.5,
+            "nominal loglik {} should be >= GPCM {}", nom.loglik, gpcm.loglik
+        );
+        for i in 0..n_items {
+            let (a1, a2) = (nom.scores[i][0], nom.scores[i][1]);
+            assert!(
+                (a2 / a1 - 2.0).abs() < 0.4,
+                "item {i}: recovered scores not linear (a2/a1={})", a2 / a1
+            );
+        }
+    }
+
+    /// Aggregate nominal-model recovery (RMSE and mean |bias|) for the free
+    /// scores and intercepts over `reps` datasets at fixed true parameters, with
+    /// per-item sign alignment (the model is identified up to (a_k,θ)→(−a_k,−θ)).
+    fn mc_nominal_recovery(reps: usize, n_persons: usize, skew: bool) -> (f64, f64, f64, f64) {
+        let (n_items, k) = (6usize, 4usize);
+        let z = k - 1;
+        let a_true: Vec<Vec<f64>> = (0..n_items)
+            .map(|i| vec![0.9 + 0.04 * i as f64, 2.0 - 0.03 * i as f64, 2.7 + 0.05 * i as f64])
+            .collect();
+        let c_true: Vec<Vec<f64>> = (0..n_items)
+            .map(|i| vec![0.5 - 0.05 * i as f64, 0.0, -0.6 + 0.05 * i as f64])
+            .collect();
+        let (mut a_err, mut a_sq, mut c_err, mut c_sq) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        let mut cnt = 0.0_f64;
+        for rep in 0..reps {
+            let mut u = rng(31337 + rep as u64 * 131 + if skew { 9 } else { 0 });
+            let mut yi = vec![0usize; n_persons * n_items];
+            for p in 0..n_persons {
+                let theta = if skew {
+                    -(u().max(1e-12)).ln() - 1.0
+                } else {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                };
+                for i in 0..n_items {
+                    let mut scores = vec![0.0_f64; k];
+                    let mut intercepts = vec![0.0_f64; k];
+                    for m in 0..z {
+                        scores[m + 1] = a_true[i][m];
+                        intercepts[m + 1] = c_true[i][m];
+                    }
+                    let lp = gpcm_logprobs(theta, &scores, &intercepts);
+                    let draw = u();
+                    let (mut acc, mut cat) = (0.0_f64, k - 1);
+                    for (c, l) in lp.iter().enumerate() {
+                        acc += l.exp();
+                        if draw <= acc {
+                            cat = c;
+                            break;
+                        }
+                    }
+                    yi[p * n_items + i] = cat;
+                }
+            }
+            let fit = fit_nominal(&yi, None, n_persons, n_items, k, 21, 200, 1e-6).unwrap();
+            for i in 0..n_items {
+                // align the reflection sign to the truth for this item
+                let dot: f64 = (0..z).map(|m| fit.scores[i][m] * a_true[i][m]).sum();
+                let s = if dot >= 0.0 { 1.0 } else { -1.0 };
+                for m in 0..z {
+                    let ea = s * fit.scores[i][m] - a_true[i][m];
+                    a_err += ea;
+                    a_sq += ea * ea;
+                    let ec = fit.intercepts[i][m] - c_true[i][m];
+                    c_err += ec;
+                    c_sq += ec * ec;
+                    cnt += 1.0;
+                }
+            }
+        }
+        (
+            (a_sq / cnt).sqrt(),
+            (a_err / cnt).abs(),
+            (c_sq / cnt).sqrt(),
+            (c_err / cnt).abs(),
+        )
+    }
+
+    #[test]
+    fn fit_nominal_recovery_ci_guard() {
+        // Fast guard. Authoritative >=500-rep study is
+        // fit_nominal_recovery_monte_carlo_500 (ignored).
+        let (reps, n) = (12usize, 2000usize);
+        let (ar, ab, cr, cb) = mc_nominal_recovery(reps, n, false);
+        let (asr, _, csr, _) = mc_nominal_recovery(reps, n, true);
+        println!(
+            "[nominal recovery] reps={reps} N={n}  normal: score RMSE={ar:.4} |bias|={ab:.4} \
+             intercept RMSE={cr:.4} |bias|={cb:.4}  skew: score RMSE={asr:.4} intercept RMSE={csr:.4}"
+        );
+        assert!(ar < 0.25 && cr < 0.30, "normal recovery too loose: a={ar}, c={cr}");
+        assert!(ab < 0.12, "normal score bias too large: {ab}");
+        assert!(asr > ar, "skew should degrade score recovery: {asr} vs {ar}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn fit_nominal_recovery_monte_carlo_500() {
+        let (reps, n) = (500usize, 2000usize);
+        let (ar, ab, cr, cb) = mc_nominal_recovery(reps, n, false);
+        let (asr, asb, csr, _) = mc_nominal_recovery(reps, n, true);
+        println!(
+            "[nominal recovery 500] N={n}  normal: score RMSE={ar:.4} |bias|={ab:.4} \
+             intercept RMSE={cr:.4} |bias|={cb:.4}  skew: score RMSE={asr:.4} |bias|={asb:.4} \
+             intercept RMSE={csr:.4}"
+        );
+        assert!(ar < 0.15 && cr < 0.20, "normal recovery too loose: a={ar}, c={cr}");
+        assert!(ab < 0.05, "normal score bias not near zero: {ab}");
+        assert!(asr > ar + 0.03, "skew should measurably degrade recovery: {asr} vs {ar}");
     }
 }
