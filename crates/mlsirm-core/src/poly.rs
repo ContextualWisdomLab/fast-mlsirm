@@ -726,6 +726,159 @@ pub fn poly_person_fit(
     Ok(PolyPersonFit { lz, lz_star, theta_eap, flagged })
 }
 
+/// Maximum-Fisher-information next-item selection for a polytomous CAT: returns
+/// the index of the not-yet-`administered` bank item with the largest item
+/// information at the current trait estimate `theta`, or `None` if all items are
+/// administered. Reuses [`poly_item_information`].
+pub fn poly_cat_next_item(
+    theta: f64,
+    administered: &[bool],
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+) -> Option<usize> {
+    let z = n_cat - 1;
+    let mut best: Option<usize> = None;
+    let mut best_val = f64::NEG_INFINITY;
+    for i in 0..n_items {
+        if administered[i] {
+            continue;
+        }
+        let info = poly_item_information(theta, slope[i], &cat_params[i * z..(i + 1) * z], model);
+        if info > best_val {
+            best_val = info;
+            best = Some(i);
+        }
+    }
+    best
+}
+
+/// Result of [`poly_cat_simulate`] — per simulee, the final EAP trait, its
+/// posterior SD (the CAT standard error), and the number of items administered.
+pub struct PolyCatResult {
+    pub theta_eap: Vec<f64>,
+    pub theta_sd: Vec<f64>,
+    pub n_used: Vec<usize>,
+}
+
+/// Simulate a polytomous computerized adaptive test (Dodd, De Ayala & Koch,
+/// 1995) for each true trait in `true_theta`, over a fixed GRM/GPCM item bank.
+/// Items are picked by maximum Fisher information at the running EAP estimate
+/// (or at random when `adaptive = false`, a baseline), responses are generated
+/// at the simulee's true trait, and the trait + posterior SD are re-estimated
+/// after each item via [`score_poly_eap`]. Administration stops once at least
+/// `min_items` are given and the posterior SD falls below `se_threshold`, or at
+/// `max_items`. Set `se_threshold = 0` with `min_items = max_items` for a
+/// fixed-length CAT.
+///
+/// # References (APA 7th ed.)
+///
+/// Dodd, B. G., De Ayala, R. J., & Koch, W. R. (1995). Computerized adaptive
+///   testing with polytomous items. *Applied Psychological Measurement, 19*(1),
+///   5–22. https://doi.org/10.1177/014662169501900103
+#[allow(clippy::too_many_arguments)]
+pub fn poly_cat_simulate(
+    true_theta: &[f64],
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+    q_theta: usize,
+    se_threshold: f64,
+    min_items: usize,
+    max_items: usize,
+    adaptive: bool,
+    seed: u64,
+) -> Result<PolyCatResult, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+        return Err("slope/cat_params must match n_items and n_cat".into());
+    }
+    if n_items < 2 {
+        return Err("CAT needs a bank of at least 2 items".into());
+    }
+    let z = n_cat - 1;
+    let n_sim = true_theta.len();
+    let max_it = max_items.min(n_items);
+    let mut st = seed.max(1);
+    let mut u = || {
+        st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((st >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let cell = |i: usize, theta: f64| -> Vec<f64> {
+        let base = slope[i] * theta;
+        let cp = &cat_params[i * z..(i + 1) * z];
+        match model {
+            PolyModel::Gpcm => {
+                let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                let mut ic = vec![0.0_f64; n_cat];
+                ic[1..].copy_from_slice(cp);
+                gpcm_logprobs(base, &scores, &ic)
+            }
+            PolyModel::Grm => grm_logprobs(base, cp),
+        }
+    };
+    let mut theta_eap = vec![0.0_f64; n_sim];
+    let mut theta_sd = vec![0.0_f64; n_sim];
+    let mut n_used = vec![0usize; n_sim];
+    for s in 0..n_sim {
+        let tt = true_theta[s];
+        let mut administered = vec![false; n_items];
+        let mut y = vec![0usize; n_items];
+        let mut th = 0.0_f64;
+        let mut se = f64::INFINITY;
+        let mut count = 0usize;
+        while count < max_it {
+            if count >= min_items && se < se_threshold {
+                break;
+            }
+            let pick = if adaptive {
+                poly_cat_next_item(th, &administered, slope, cat_params, n_items, n_cat, model)
+            } else {
+                let remaining: Vec<usize> =
+                    (0..n_items).filter(|&i| !administered[i]).collect();
+                if remaining.is_empty() {
+                    None
+                } else {
+                    Some(remaining[((u() * remaining.len() as f64) as usize).min(remaining.len() - 1)])
+                }
+            };
+            let item = match pick {
+                Some(i) => i,
+                None => break,
+            };
+            // simulate the response at the true trait
+            let lp = cell(item, tt);
+            let draw = u();
+            let (mut acc, mut cat) = (0.0_f64, n_cat - 1);
+            for (c, l) in lp.iter().enumerate() {
+                acc += l.exp();
+                if draw <= acc {
+                    cat = c;
+                    break;
+                }
+            }
+            administered[item] = true;
+            y[item] = cat;
+            count += 1;
+            let (eap, sd) = score_poly_eap(
+                &y, Some(&administered), 1, n_items, n_cat, slope, cat_params, model, q_theta,
+            )?;
+            th = eap[0];
+            se = sd[0];
+        }
+        theta_eap[s] = th;
+        theta_sd[s] = se;
+        n_used[s] = count;
+    }
+    Ok(PolyCatResult { theta_eap, theta_sd, n_used })
+}
+
 /// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
@@ -2140,5 +2293,117 @@ mod tests {
         assert!((0.02..=0.11).contains(&t1), "Type I off nominal: {t1}");
         assert!(power > 0.7, "power too low: {power}");
         assert!(mean.abs() < 0.25 && (0.85..=1.2).contains(&sd), "l_z* not ~N(0,1): mean={mean}, sd={sd}");
+    }
+
+    /// A GPCM item bank for the CAT tests: `n_items` items with difficulties
+    /// spread across the trait range so the adaptive selector has informative
+    /// items at every ability level.
+    fn cat_bank(n_items: usize, k: usize) -> (Vec<f64>, Vec<f64>) {
+        let z = k - 1;
+        let mut slope = vec![0.0_f64; n_items];
+        let mut cat = vec![0.0_f64; n_items * z];
+        for i in 0..n_items {
+            let a = 1.0 + 0.25 * (i % 3) as f64; // 1.0 / 1.25 / 1.5, cycling
+            slope[i] = a;
+            let b = -2.2 + 4.4 * i as f64 / (n_items - 1) as f64; // spread difficulty
+            let mut cum = 0.0_f64;
+            for m in 0..z {
+                let step = b + (m as f64 - (z as f64 - 1.0) / 2.0) * 0.9;
+                cum += step;
+                cat[i * z + m] = -a * cum;
+            }
+        }
+        (slope, cat)
+    }
+
+    fn cat_rmse(eap: &[f64], true_theta: &[f64]) -> f64 {
+        let n = true_theta.len() as f64;
+        (eap.iter().zip(true_theta).map(|(e, t)| (e - t).powi(2)).sum::<f64>() / n).sqrt()
+    }
+
+    #[test]
+    fn poly_cat_recovers_and_beats_random() {
+        // Fast guard. Authoritative >=500-simulee study is
+        // poly_cat_monte_carlo_500 (ignored).
+        let (n_items, k) = (40usize, 4usize);
+        let (slope, cat) = cat_bank(n_items, k);
+        let n_sim = 300usize;
+        let mut u = rng(9001);
+        let true_theta: Vec<f64> = (0..n_sim)
+            .map(|_| {
+                let u1 = u().max(1e-12);
+                let u2 = u();
+                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+            })
+            .collect();
+        // adaptive, variable length: stop at SE < 0.30
+        let var = poly_cat_simulate(
+            &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.30, 5, 30, true, 111,
+        )
+        .unwrap();
+        let rmse_var = cat_rmse(&var.theta_eap, &true_theta);
+        let mean_items = var.n_used.iter().sum::<usize>() as f64 / n_sim as f64;
+        println!(
+            "[poly CAT] var-len(SE<.30): RMSE={rmse_var:.3} mean_items={mean_items:.1}/{n_items}"
+        );
+        assert!(rmse_var < 0.40, "CAT theta RMSE too high: {rmse_var}");
+        assert!(mean_items < 0.75 * n_items as f64, "CAT should use fewer than the bank: {mean_items}");
+        // fixed length L=12: maximum-information beats random selection
+        let adap = poly_cat_simulate(
+            &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.0, 12, 12, true, 222,
+        )
+        .unwrap();
+        let rand = poly_cat_simulate(
+            &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.0, 12, 12, false, 333,
+        )
+        .unwrap();
+        let (ra, rr) = (cat_rmse(&adap.theta_eap, &true_theta), cat_rmse(&rand.theta_eap, &true_theta));
+        println!("[poly CAT] fixed L=12: adaptive RMSE={ra:.3} random RMSE={rr:.3}");
+        assert!(ra < rr, "max-information CAT should beat random selection: {ra} vs {rr}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 simulees); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_cat_monte_carlo_500() {
+        let (n_items, k) = (40usize, 4usize);
+        let (slope, cat) = cat_bank(n_items, k);
+        let n_sim = 500usize;
+        for (label, skew) in [("normal", false), ("skew", true)] {
+            let mut u = rng(if skew { 7001 } else { 7000 });
+            let true_theta: Vec<f64> = (0..n_sim)
+                .map(|_| {
+                    if skew {
+                        -(u().max(1e-12)).ln() - 1.0
+                    } else {
+                        let u1 = u().max(1e-12);
+                        let u2 = u();
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                    }
+                })
+                .collect();
+            let var = poly_cat_simulate(
+                &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.30, 5, 30, true, 4242,
+            )
+            .unwrap();
+            let rmse = cat_rmse(&var.theta_eap, &true_theta);
+            let mean_items = var.n_used.iter().sum::<usize>() as f64 / n_sim as f64;
+            let adap = poly_cat_simulate(
+                &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.0, 12, 12, true, 5,
+            )
+            .unwrap();
+            let rand = poly_cat_simulate(
+                &true_theta, &slope, &cat, n_items, k, PolyModel::Gpcm, 21, 0.0, 12, 12, false, 6,
+            )
+            .unwrap();
+            let (ra, rr) =
+                (cat_rmse(&adap.theta_eap, &true_theta), cat_rmse(&rand.theta_eap, &true_theta));
+            println!(
+                "[poly CAT 500 θ={label}] var-len RMSE={rmse:.4} mean_items={mean_items:.2}/{n_items}  \
+                 fixed L=12: adaptive RMSE={ra:.4} random RMSE={rr:.4}"
+            );
+            assert!(rmse < 0.42, "{label} CAT RMSE too high: {rmse}");
+            assert!(mean_items < 0.7 * n_items as f64, "{label} CAT not saving items: {mean_items}");
+            assert!(ra < rr, "{label} adaptive should beat random: {ra} vs {rr}");
+        }
     }
 }
