@@ -255,6 +255,7 @@ fn m_step_item(
 #[allow(clippy::too_many_arguments)]
 pub fn fit_poly_unidim(
     y: &[usize],
+    observed: Option<&[bool]>,
     n_persons: usize,
     n_items: usize,
     n_cat: usize,
@@ -269,6 +270,12 @@ pub fn fit_poly_unidim(
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
     }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
         .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
@@ -279,7 +286,9 @@ pub fn fit_poly_unidim(
     for i in 0..n_items {
         let mut freq = vec![1e-3_f64; n_cat];
         for p in 0..n_persons {
-            freq[y[p * n_items + i]] += 1.0;
+            if is_obs(p, i) {
+                freq[y[p * n_items + i]] += 1.0;
+            }
         }
         let tot: f64 = freq.iter().sum();
         for f in freq.iter_mut() {
@@ -334,6 +343,9 @@ pub fn fit_poly_unidim(
                 log_node[nd] = log_w[nd];
             }
             for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
                 let yc = y[p * n_items + i];
                 for nd in 0..qn {
                     log_node[nd] += item_lp[i][nd * n_cat + yc];
@@ -346,6 +358,9 @@ pub fn fit_poly_unidim(
             }
             ll += mx + denom.ln();
             for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
                 let yc = y[p * n_items + i];
                 for nd in 0..qn {
                     let post = (log_node[nd] - mx).exp() / denom;
@@ -447,6 +462,7 @@ pub fn poly_information_curves(
 #[allow(clippy::too_many_arguments)]
 pub fn score_poly_eap(
     y: &[usize],
+    observed: Option<&[bool]>,
     n_persons: usize,
     n_items: usize,
     n_cat: usize,
@@ -461,9 +477,15 @@ pub fn score_poly_eap(
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
     }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
     if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
         return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
     }
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
         .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
@@ -497,6 +519,9 @@ pub fn score_poly_eap(
             log_node[nd] = log_w[nd];
         }
         for i in 0..n_items {
+            if !is_obs(p, i) {
+                continue;
+            }
             let yc = y[p * n_items + i];
             for nd in 0..qn {
                 log_node[nd] += item_lp[i][nd * n_cat + yc];
@@ -611,7 +636,7 @@ mod tests {
                 y[p * n_items + i] = cat;
             }
         }
-        let fit = fit_poly_unidim(&y, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6).unwrap();
+        let fit = fit_poly_unidim(&y, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6).unwrap();
         assert!(fit.loglik.is_finite());
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
         let (ma, mh) = (mean(&a_true), mean(&fit.slope));
@@ -658,6 +683,67 @@ mod tests {
     }
 
     #[test]
+    fn fit_poly_unidim_recovers_with_missing_data() {
+        let (n_persons, n_items, k) = (5000usize, 6usize, 3usize);
+        let mut st = 5150u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.15 * i as f64).collect();
+        let c_true: Vec<Vec<f64>> =
+            (0..n_items).map(|i| vec![0.0, 0.3 - 0.1 * i as f64, -0.2 + 0.1 * i as f64]).collect();
+        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+        let mut y = vec![0usize; n_persons * n_items];
+        let mut observed = vec![true; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                if u() < 0.25 {
+                    observed[p * n_items + i] = false; // ~25% MCAR missing
+                    continue;
+                }
+                let lp = gpcm_logprobs(a_true[i] * theta, &scores, &c_true[i]);
+                let uu = u();
+                let mut cum = 0.0_f64;
+                let mut cat = k - 1;
+                for (c, l) in lp.iter().enumerate() {
+                    cum += l.exp();
+                    if uu < cum {
+                        cat = c;
+                        break;
+                    }
+                }
+                y[p * n_items + i] = cat;
+            }
+        }
+        let fit = fit_poly_unidim(
+            &y,
+            Some(&observed),
+            n_persons,
+            n_items,
+            k,
+            PolyModel::Gpcm,
+            21,
+            80,
+            1e-6,
+        )
+        .unwrap();
+        assert!(fit.loglik.is_finite());
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (ma, mh) = (mean(&a_true), mean(&fit.slope));
+        let (mut num, mut da, mut dh) = (0.0, 0.0, 0.0);
+        for i in 0..n_items {
+            num += (a_true[i] - ma) * (fit.slope[i] - mh);
+            da += (a_true[i] - ma).powi(2);
+            dh += (fit.slope[i] - mh).powi(2);
+        }
+        assert!(num / (da.sqrt() * dh.sqrt()) > 0.9, "slope corr under missingness");
+    }
+
+    #[test]
     fn score_poly_eap_recovers_true_theta() {
         let (n_persons, n_items, k) = (3000usize, 8usize, 3usize);
         let mut st = 424242u64;
@@ -694,7 +780,7 @@ mod tests {
         // score with the TRUE item params (isolates the scorer from fit error)
         let cat_flat: Vec<f64> = c_true.iter().flat_map(|c| c[1..].iter().copied()).collect();
         let (eap, sd) =
-            score_poly_eap(&y, n_persons, n_items, k, &a_true, &cat_flat, PolyModel::Gpcm, 41)
+            score_poly_eap(&y, None, n_persons, n_items, k, &a_true, &cat_flat, PolyModel::Gpcm, 41)
                 .unwrap();
         assert!(sd.iter().all(|s| s.is_finite() && *s > 0.0));
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
@@ -740,7 +826,7 @@ mod tests {
                 y[p * n_items + i] = cat;
             }
         }
-        let fit = fit_poly_unidim(&y, n_persons, n_items, k, PolyModel::Grm, 21, 80, 1e-6).unwrap();
+        let fit = fit_poly_unidim(&y, None, n_persons, n_items, k, PolyModel::Grm, 21, 80, 1e-6).unwrap();
         assert!(fit.loglik.is_finite());
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
         let (ma, mh) = (mean(&a_true), mean(&fit.slope));

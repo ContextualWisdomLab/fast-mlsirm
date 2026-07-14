@@ -733,13 +733,14 @@ fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResu
 /// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, model = "grm", q_theta = 21, max_iter = 80, tol = 1e-6))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, observed = None, model = "grm", q_theta = 21, max_iter = 80, tol = 1e-6))]
 fn fit_poly_unidim(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
     n_persons: usize,
     n_items: usize,
     n_cat: usize,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
     model: &str,
     q_theta: usize,
     max_iter: usize,
@@ -747,7 +748,8 @@ fn fit_poly_unidim(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
     let yv = poly_responses(y.as_slice()?, n_cat)?;
-    let fit = core_fit_poly_unidim(&yv, n_persons, n_items, n_cat, m, q_theta, max_iter, tol)
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let fit = core_fit_poly_unidim(&yv, obs, n_persons, n_items, n_cat, m, q_theta, max_iter, tol)
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", fit.slope)?;
@@ -761,7 +763,7 @@ fn fit_poly_unidim(
 /// (Rust compute path). Returns a dict with `theta_eap` and `theta_sd`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, model = "grm", q_theta = 21))]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21))]
 fn score_poly_eap(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -770,13 +772,16 @@ fn score_poly_eap(
     n_cat: usize,
     slope: PyReadonlyArray1<'_, f64>,
     cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
     model: &str,
     q_theta: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
     let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
     let (eap, sd) = core_score_poly_eap(
         &yv,
+        obs,
         n_persons,
         n_items,
         n_cat,

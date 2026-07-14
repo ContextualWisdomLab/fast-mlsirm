@@ -50,6 +50,22 @@ def _core_module():
         return None
 
 
+def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, np.ndarray]:
+    """Validate polytomous responses (``NaN`` = missing) and return
+    ``(int64 categories with missing filled to 0, boolean observed mask)``."""
+    yf = np.asarray(responses, dtype=np.float64)
+    if yf.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    observed = np.isfinite(yf)
+    obs_vals = yf[observed]
+    if obs_vals.size and (
+        np.any(obs_vals != np.floor(obs_vals)) or obs_vals.min() < 0 or obs_vals.max() >= n_cat
+    ):
+        raise ValueError(f"observed responses must be integer categories in 0..{n_cat - 1}")
+    y_int = np.where(observed, yf, 0.0).astype(np.int64)
+    return y_int, observed
+
+
 def fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
@@ -61,8 +77,9 @@ def fit_polytomous(
     """Fit a unidimensional GRM or GPCM by marginal MLE (compute in Rust).
 
     ``responses`` is a persons x items array of integer categories
-    ``0..n_cat-1`` (complete data). ``model`` is ``"grm"`` (default) or
-    ``"gpcm"``. ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid.
+    ``0..n_cat-1``; ``NaN`` marks a missing response (marginalized out of the
+    likelihood). ``model`` is ``"grm"`` (default) or ``"gpcm"``.
+    ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid.
     """
     m = str(model).lower()
     if m not in VALID_POLY_MODELS:
@@ -72,25 +89,20 @@ def fit_polytomous(
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
 
-    y = np.asarray(responses)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
-    yf = y.astype(np.float64)
-    if not np.all(np.isfinite(yf)) or np.any(yf != np.floor(yf)):
-        raise ValueError("responses must be integer categories")
-    if y.min() < 0 or y.max() >= n_cat:
-        raise ValueError(f"responses must be in 0..{n_cat - 1}")
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
 
     core = _core_module()
     if core is None or not hasattr(core, "fit_poly_unidim"):
         raise RuntimeError("fit_polytomous requires the compiled Rust core")
 
-    n_persons, n_items = y.shape
+    n_persons, n_items = y_int.shape
+    obs_arg = None if observed.all() else observed.reshape(-1)
     res = core.fit_poly_unidim(
-        y.reshape(-1).astype(np.int64),
+        y_int.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_cat),
+        obs_arg,
         m,
         int(q_theta),
         int(max_iter),
@@ -120,32 +132,29 @@ def score_polytomous(
 ) -> dict[str, np.ndarray]:
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
-    a :class:`PolytomousFit` from :func:`fit_polytomous`. Returns
-    ``{"theta_eap", "theta_sd"}``.
+    a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` marks a
+    missing response. Returns ``{"theta_eap", "theta_sd"}``.
     """
-    y = np.asarray(responses)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
     n_items = fit.slope.shape[0]
-    if y.shape[1] != n_items:
-        raise ValueError("responses column count must match the fitted item count")
     n_cat = fit.cat_params.shape[1] + 1
-    yf = y.astype(np.float64)
-    if not np.all(np.isfinite(yf)) or np.any(yf != np.floor(yf)) or y.min() < 0 or y.max() >= n_cat:
-        raise ValueError(f"responses must be integer categories in 0..{n_cat - 1}")
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
 
     core = _core_module()
     if core is None or not hasattr(core, "score_poly_eap"):
         raise RuntimeError("score_polytomous requires the compiled Rust core")
 
-    n_persons = y.shape[0]
+    n_persons = y_int.shape[0]
+    obs_arg = None if observed.all() else observed.reshape(-1)
     res = core.score_poly_eap(
-        y.reshape(-1).astype(np.int64),
+        y_int.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_cat),
         fit.slope.astype(np.float64),
         fit.cat_params.reshape(-1).astype(np.float64),
+        obs_arg,
         fit.model,
         int(q_theta),
     )

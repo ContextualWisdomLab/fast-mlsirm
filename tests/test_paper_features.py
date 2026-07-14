@@ -354,7 +354,7 @@ def test_poly_cell_and_fitter_rust_numpy_parity():
         for pp in range(n_persons):
             y[pp, i] = rng.choice(k, p=p[pp])
 
-    rust_fit = _core.fit_poly_unidim(y.ravel(), n_persons, n_items, k, "gpcm", 21, 80, 1e-6)
+    rust_fit = _core.fit_poly_unidim(y.ravel(), n_persons, n_items, k, None, "gpcm", 21, 80, 1e-6)
     npy_fit = fit_gpcm_numpy(y, k)
     assert np.allclose(np.array(rust_fit["slope"]), npy_fit["a"], atol=0.05)
     assert np.isfinite(rust_fit["loglik"])
@@ -502,3 +502,37 @@ def test_information_polytomous_api():
     assert np.allclose(info["test_info"], info["item_info"].sum(axis=1))
     # information is highest in the interior for well-centered items
     assert info["test_info"].argmax() not in (0, 24)
+
+
+def test_fit_polytomous_handles_missing_data():
+    """fit_polytomous marginalizes NaN (missing) responses and still recovers
+    slopes; score_polytomous accepts partially-missing rows."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, score_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_poly_unidim"):
+        pytest.skip("compiled core not available")
+
+    rng = np.random.default_rng(21)
+    n_persons, n_items, k = 5000, 6, 3
+    a_true = rng.uniform(0.9, 1.6, n_items)
+    c_true = np.zeros((n_items, k))
+    c_true[:, 1:] = rng.normal(0.0, 0.6, (n_items, k - 1))
+    theta = rng.normal(0.0, 1.0, n_persons)
+    scores = np.arange(k, dtype=float)
+    y = np.full((n_persons, n_items), np.nan)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        for pp in range(n_persons):
+            if rng.random() < 0.25:            # ~25% MCAR missing -> stays NaN
+                continue
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    fit = fit_polytomous(y, k, model="gpcm")
+    assert np.isfinite(fit.loglik)
+    assert np.corrcoef(a_true, fit.slope)[0, 1] > 0.9
+    sc = score_polytomous(y, fit)
+    assert sc["theta_eap"].shape == (n_persons,) and np.all(np.isfinite(sc["theta_eap"]))
