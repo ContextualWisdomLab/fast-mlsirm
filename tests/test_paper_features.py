@@ -170,3 +170,42 @@ def test_bifactor_parity_and_recovery():
 
     with _pytest.raises(NotImplementedError, match="marginal estimator"):
         fit(y, fid, FitConfig(model="BIFAC2PLM", estimator="jmle"))
+
+
+def test_m2_rmsea2_parity_and_fit():
+    # M2 limited-information GOF (Maydeu-Olivares & Joe): Rust core vs the
+    # NumPy reference, plus a well-specified-vs-local-dependence contrast.
+    from fast_mlsirm import fitstats
+
+    y, fid, _a, _b = _sim_2pl(seed=5, P=1800, I=12)
+    res = fit(y, fid, FitConfig(model="MIRT", estimator="mmle", max_iter=200,
+                                backend="rust", rust_device="cpu"))
+
+    core = fitstats.m2(y, fid, res.params, "MIRT", q_theta=21)
+    ref = fitstats._m2_numpy(y, ~np.isnan(y), fid, res.params, "MIRT", 21, 11, 1e-8)
+
+    # exact structural agreement
+    assert core.n_moments == ref.n_moments == 78
+    assert core.n_parameters == ref.n_parameters == 24
+    assert core.df == ref.df == 54.0
+    assert core.n_complete == ref.n_complete == 1800
+    # numeric parity (hand Cholesky vs LAPACK solve): tight but not bit-exact
+    np.testing.assert_allclose(core.m2, ref.m2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(core.rmsea2, ref.rmsea2, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(core.srmsr, ref.srmsr, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(core.rmsea2_ci_lower, ref.rmsea2_ci_lower, atol=1e-6)
+    np.testing.assert_allclose(core.rmsea2_ci_upper, ref.rmsea2_ci_upper, atol=1e-6)
+
+    # well specified: small RMSEA2, CI brackets the point estimate
+    assert core.rmsea2 < 0.03
+    assert core.rmsea2_ci_lower <= core.rmsea2 + 1e-9 <= core.rmsea2_ci_upper + 1e-9
+
+    # inject local dependence (duplicate item) -> M2 and RMSEA2 inflate
+    y_ld = y.copy()
+    y_ld[:, 1] = y_ld[:, 0]
+    res_ld = fit(y_ld, fid, FitConfig(model="MIRT", estimator="mmle", max_iter=200,
+                                      backend="rust", rust_device="cpu"))
+    ld = fitstats.m2(y_ld, fid, res_ld.params, "MIRT", q_theta=21)
+    assert ld.m2 > core.m2
+    assert ld.rmsea2 > 0.08
+    assert ld.srmsr > core.srmsr

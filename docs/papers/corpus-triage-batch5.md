@@ -44,7 +44,10 @@ Disposition of the fifth supplied reading set (same legend as batches 3-4).
   parity at 1e-9; loading-recovery tests in both suites.
 
 ## Roadmap (consolidated; explicitly requested across batches)
-2. **M2/RMSEA2** (Maydeu-Olivares & Joe; Cai & Hansen 2013).
+
+> Superseded by `corpus-triage-batch6.md`. **M2/RMSEA2 is now implemented**
+> (`fitstats::m2_rmsea2`); the remaining items below carry forward.
+
 3. **General C-class mixture IRT** — Sawatzky et al. (2016); Carter et al.
    (2011); Zickar et al. (2004 faking classes); Finch & Pierson (2011): the
    ZI mixture generalizes (class-weighted E-step already exists); class-

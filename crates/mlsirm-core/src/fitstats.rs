@@ -1609,3 +1609,413 @@ mod ld_tests {
         assert!(res.x2_signed[pair_23].abs() < 50.0);
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// M2 limited-information goodness-of-fit (Maydeu-Olivares & Joe 2005, 2006;
+// Cai & Hansen 2013 for the hierarchical/bifactor factorization) with the
+// RMSEA2 approximate-fit index, its noncentral-chi-square confidence interval,
+// and the standardized root-mean-square residual (SRMSR; Maydeu-Olivares 2013)
+// over the bivariate margins.
+//
+// The residual vector stacks the univariate and bivariate model-vs-observed
+// margins. Both the residuals and their multinomial covariance Xi_2 are exact
+// under local independence, because every model-implied joint margin factors
+// over the quadrature nodes: pi_S = sum_c w_c * prod_{i in S} P_i(c). The
+// derivative matrix Delta_2 = d pi / d beta is taken by central differences of
+// the same node moments. The quadratic form
+//   M2 = N * e' [ Xi^-1 - Xi^-1 D (D' Xi^-1 D)^-1 D' Xi^-1 ] e
+// is evaluated through one Cholesky factorization of Xi (never an explicit
+// inverse): u = Xi^-1 e, W = Xi^-1 D, A = D'W, g = W'e, solve A z = g, then
+//   M2 = N ( e'u - g'z ).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct M2Result {
+    pub m2: f64,
+    pub df: f64,
+    pub p_value: f64,
+    pub rmsea2: f64,
+    pub rmsea2_ci_lower: f64,
+    pub rmsea2_ci_upper: f64,
+    pub srmsr: f64,
+    pub n_moments: usize,
+    pub n_parameters: usize,
+    pub n_complete: usize,
+}
+
+/// One free item parameter, addressed for the finite-difference Delta.
+#[derive(Clone, Copy)]
+enum M2Param {
+    B(usize),
+    Alpha(usize),
+    Zeta(usize, usize),
+    Tau,
+}
+
+/// In-place lower-triangular Cholesky with an adaptive ridge; leaves the factor
+/// in the lower triangle of `a` (row-major n x n) and zeros the upper triangle.
+fn cholesky_lower(a: &mut [f64], n: usize) -> Result<(), String> {
+    let diag_mean = (0..n).map(|i| a[i * n + i]).sum::<f64>() / n.max(1) as f64;
+    let base = diag_mean.abs().max(1e-12) * 1e-10;
+    let orig = a.to_vec();
+    for attempt in 0..8 {
+        if attempt > 0 {
+            a.copy_from_slice(&orig);
+            let ridge = base * (10.0_f64).powi(attempt as i32);
+            for i in 0..n {
+                a[i * n + i] += ridge;
+            }
+        }
+        let mut ok = true;
+        for j in 0..n {
+            let mut d = a[j * n + j];
+            for k in 0..j {
+                d -= a[j * n + k] * a[j * n + k];
+            }
+            if d <= 0.0 {
+                ok = false;
+                break;
+            }
+            let ljj = d.sqrt();
+            a[j * n + j] = ljj;
+            for i in (j + 1)..n {
+                let mut sdot = a[i * n + j];
+                for k in 0..j {
+                    sdot -= a[i * n + k] * a[j * n + k];
+                }
+                a[i * n + j] = sdot / ljj;
+            }
+        }
+        if ok {
+            for j in 0..n {
+                for i in 0..j {
+                    a[i * n + j] = 0.0;
+                }
+            }
+            return Ok(());
+        }
+    }
+    Err("matrix is not positive definite (degenerate margins?)".into())
+}
+
+/// Solve `L L' x = b` for the lower factor `l` (row-major n x n).
+fn chol_solve(l: &[f64], n: usize, b: &[f64]) -> Vec<f64> {
+    let mut y = vec![0.0_f64; n];
+    for i in 0..n {
+        let mut sdot = b[i];
+        for k in 0..i {
+            sdot -= l[i * n + k] * y[k];
+        }
+        y[i] = sdot / l[i * n + i];
+    }
+    let mut x = vec![0.0_f64; n];
+    for i in (0..n).rev() {
+        let mut sdot = y[i];
+        for k in (i + 1)..n {
+            sdot -= l[k * n + i] * x[k];
+        }
+        x[i] = sdot / l[i * n + i];
+    }
+    x
+}
+
+/// Central chi-square CDF via the survival function.
+#[inline]
+fn chi2_cdf(x: f64, df: f64) -> f64 {
+    1.0 - chi2_sf(x, df)
+}
+
+/// Noncentral chi-square CDF: Poisson(lam/2)-weighted mixture of central CDFs.
+fn ncchi2_cdf(x: f64, df: f64, lam: f64) -> f64 {
+    if lam <= 0.0 {
+        return chi2_cdf(x, df);
+    }
+    let half = 0.5 * lam;
+    let mut term = (-half).exp();
+    let mut sum = term * chi2_cdf(x, df);
+    for j in 1..10000 {
+        term *= half / j as f64;
+        sum += term * chi2_cdf(x, df + 2.0 * j as f64);
+        if term < 1e-15 && (j as f64) > half {
+            break;
+        }
+    }
+    sum.clamp(0.0, 1.0)
+}
+
+/// Smallest noncentrality `lam` with `ncchi2_cdf(x, df, lam) = target` (the CDF
+/// is monotone decreasing in `lam`); returns 0 if already unattainable.
+fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
+    if chi2_cdf(x, df) <= target {
+        return 0.0;
+    }
+    let mut hi = 1.0_f64;
+    while ncchi2_cdf(x, df, hi) > target && hi < 1e8 {
+        hi *= 2.0;
+    }
+    let mut lo = 0.0_f64;
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if ncchi2_cdf(x, df, mid) > target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
+/// M2 statistic (order-2 residuals), df, p-value, RMSEA2 (+ 90% CI), and the
+/// bivariate SRMSR for a fitted dichotomous item bank on the `(theta, xi)`
+/// node set. Complete cases only (M2 assumes a single sample size N).
+///
+/// ponytail: Xi is s x s (s = n + n(n-1)/2) so the build is O(s^2 * nodes) and
+/// the Cholesky O(s^3); this is a one-shot diagnostic, not a hot path. For very
+/// large banks prefer S-X2 (already streaming) and read M2 as an overall check.
+pub fn m2_rmsea2(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+) -> Result<M2Result, String> {
+    let n_items = bank.b.len();
+    if n_items < 3 {
+        return Err("M2 needs at least 3 items".into());
+    }
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
+    let kind = crate::interaction_kind(bank.model_type);
+
+    // moment layout: [0..n) univariate, then bivariate pairs (i < j)
+    let mut moment_items: Vec<Vec<usize>> = (0..n_items).map(|i| vec![i]).collect();
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            pairs.push((i, j));
+            moment_items.push(vec![i, j]);
+        }
+    }
+    let s = moment_items.len();
+
+    // free item parameters (Delta columns), matching the estimator's count
+    let mut params: Vec<M2Param> = Vec::new();
+    for i in 0..n_items {
+        params.push(M2Param::B(i));
+        if free_alpha {
+            params.push(M2Param::Alpha(i));
+        }
+        if uses_space {
+            for k in 0..bank.latent_dim {
+                params.push(M2Param::Zeta(i, k));
+            }
+        }
+    }
+    let tau_free = kind == crate::InteractionKind::Distance && uses_space;
+    if tau_free {
+        params.push(M2Param::Tau);
+    }
+    let p = params.len();
+    if s <= p {
+        return Err(format!(
+            "M2 df non-positive: {s} moments <= {p} parameters (need more items)"
+        ));
+    }
+
+    // observed margins on complete cases
+    let mut complete: Vec<usize> = Vec::with_capacity(n_persons);
+    for pp in 0..n_persons {
+        if (0..n_items).all(|i| observed[pp * n_items + i]) {
+            complete.push(pp);
+        }
+    }
+    let n_c = complete.len();
+    if n_c < p + 2 {
+        return Err(format!("too few complete cases for M2: {n_c}"));
+    }
+    let n_f = n_c as f64;
+    let mut p_obs = vec![0.0_f64; s];
+    for &pp in &complete {
+        for i in 0..n_items {
+            if y[pp * n_items + i] != 0.0 {
+                p_obs[i] += 1.0;
+            }
+        }
+        for (idx, &(i, j)) in pairs.iter().enumerate() {
+            if y[pp * n_items + i] != 0.0 && y[pp * n_items + j] != 0.0 {
+                p_obs[n_items + idx] += 1.0;
+            }
+        }
+    }
+    for v in p_obs.iter_mut() {
+        *v /= n_f;
+    }
+
+    // node probabilities at the fitted parameters + node weights
+    let (probs0, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
+    let pi_set = |probs: &[f64], set: &[usize]| -> f64 {
+        (0..cell)
+            .map(|c| {
+                let mut pr = weights[c];
+                for &m in set {
+                    pr *= probs[m * cell + c];
+                }
+                pr
+            })
+            .sum()
+    };
+    let model_moments =
+        |probs: &[f64]| -> Vec<f64> { moment_items.iter().map(|set| pi_set(probs, set)).collect() };
+    let mom0 = model_moments(&probs0);
+    let e: Vec<f64> = (0..s).map(|a| p_obs[a] - mom0[a]).collect();
+
+    // Delta_2 (s x p, row-major) by central differences of the node moments
+    let alpha0 = bank.alpha.to_vec();
+    let b0 = bank.b.to_vec();
+    let zeta0 = bank.zeta.to_vec();
+    let tau0 = bank.tau;
+    let probs_for = |alpha: &[f64], b: &[f64], zeta: &[f64], tau: f64| -> Result<Vec<f64>, String> {
+        let tb = ItemBank {
+            alpha,
+            b,
+            zeta,
+            tau,
+            factor_id: bank.factor_id,
+            model_type: bank.model_type,
+            n_dims: bank.n_dims,
+            latent_dim: bank.latent_dim,
+            eps_distance: bank.eps_distance,
+        };
+        let (pr, _w, _t, _c) = icc_nodes(&tb, prior, q_theta, xi_rule)?;
+        Ok(pr)
+    };
+    let mut delta = vec![0.0_f64; s * p];
+    let ld = bank.latent_dim;
+    for (col, param) in params.iter().enumerate() {
+        let base = match *param {
+            M2Param::B(i) => b0[i],
+            M2Param::Alpha(i) => alpha0[i],
+            M2Param::Zeta(i, k) => zeta0[i * ld + k],
+            M2Param::Tau => tau0,
+        };
+        let h = 1e-4 * (1.0 + base.abs());
+        let mut a = alpha0.clone();
+        let mut b = b0.clone();
+        let mut z = zeta0.clone();
+        let mut t = tau0;
+        match *param {
+            M2Param::B(i) => b[i] = base + h,
+            M2Param::Alpha(i) => a[i] = base + h,
+            M2Param::Zeta(i, k) => z[i * ld + k] = base + h,
+            M2Param::Tau => t = base + h,
+        }
+        let mom_plus = model_moments(&probs_for(&a, &b, &z, t)?);
+        match *param {
+            M2Param::B(i) => b[i] = base - h,
+            M2Param::Alpha(i) => a[i] = base - h,
+            M2Param::Zeta(i, k) => z[i * ld + k] = base - h,
+            M2Param::Tau => t = base - h,
+        }
+        let mom_minus = model_moments(&probs_for(&a, &b, &z, t)?);
+        let inv = 0.5 / h;
+        for row in 0..s {
+            delta[row * p + col] = (mom_plus[row] - mom_minus[row]) * inv;
+        }
+    }
+
+    // Xi_2: multinomial covariance of the stacked margins (union margins exact
+    // via the local-independence factorization)
+    let mut xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut u = moment_items[a].clone();
+            for &m in &moment_items[b] {
+                if !u.contains(&m) {
+                    u.push(m);
+                }
+            }
+            let cov = pi_set(&probs0, &u) - mom0[a] * mom0[b];
+            xi[a * s + b] = cov;
+            xi[b * s + a] = cov;
+        }
+    }
+
+    // M2 = N ( e'Xi^-1 e - (D'Xi^-1 e)'(D'Xi^-1 D)^-1 (D'Xi^-1 e) )
+    let mut l = xi;
+    cholesky_lower(&mut l, s)?;
+    let u = chol_solve(&l, s, &e); // Xi^-1 e
+    let mut w = vec![0.0_f64; s * p]; // Xi^-1 Delta
+    let mut col_b = vec![0.0_f64; s];
+    for col in 0..p {
+        for row in 0..s {
+            col_b[row] = delta[row * p + col];
+        }
+        let wc = chol_solve(&l, s, &col_b);
+        for row in 0..s {
+            w[row * p + col] = wc[row];
+        }
+    }
+    let mut amat = vec![0.0_f64; p * p]; // Delta' Xi^-1 Delta
+    let mut g = vec![0.0_f64; p]; // Delta' Xi^-1 e
+    for r in 0..p {
+        for c in 0..p {
+            let mut acc = 0.0;
+            for row in 0..s {
+                acc += delta[row * p + r] * w[row * p + c];
+            }
+            amat[r * p + c] = acc;
+        }
+        let mut gg = 0.0;
+        for row in 0..s {
+            gg += w[row * p + r] * e[row];
+        }
+        g[r] = gg;
+    }
+    let mut la = amat;
+    cholesky_lower(&mut la, p)?;
+    let z = chol_solve(&la, p, &g);
+    let quad: f64 = (0..s).map(|a| e[a] * u[a]).sum();
+    let adj: f64 = (0..p).map(|r| g[r] * z[r]).sum();
+    let m2 = (n_f * (quad - adj)).max(0.0);
+    let df = (s - p) as f64;
+    let p_value = chi2_sf(m2, df);
+    let denom = df * (n_f - 1.0);
+    let rmsea2 = ((m2 - df).max(0.0) / denom).sqrt();
+    let rmsea2_ci_lower = (nc_lambda_for(m2, df, 0.95) / denom).sqrt();
+    let rmsea2_ci_upper = (nc_lambda_for(m2, df, 0.05) / denom).sqrt();
+
+    // bivariate SRMSR over residual phi-correlations
+    let mut ssum = 0.0_f64;
+    let mut cnt = 0usize;
+    for (idx, &(i, j)) in pairs.iter().enumerate() {
+        let (pi, pj, pij) = (p_obs[i], p_obs[j], p_obs[n_items + idx]);
+        let (mi, mj, mij) = (mom0[i], mom0[j], mom0[n_items + idx]);
+        let dobs = pi * (1.0 - pi) * pj * (1.0 - pj);
+        let dmod = mi * (1.0 - mi) * mj * (1.0 - mj);
+        if dobs > 1e-12 && dmod > 1e-12 {
+            let robs = (pij - pi * pj) / dobs.sqrt();
+            let rmod = (mij - mi * mj) / dmod.sqrt();
+            ssum += (robs - rmod) * (robs - rmod);
+            cnt += 1;
+        }
+    }
+    let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
+
+    Ok(M2Result {
+        m2,
+        df,
+        p_value,
+        rmsea2,
+        rmsea2_ci_lower,
+        rmsea2_ci_upper,
+        srmsr,
+        n_moments: s,
+        n_parameters: p,
+        n_complete: n_c,
+    })
+}

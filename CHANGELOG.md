@@ -33,6 +33,20 @@
   grid (chi-square tail without SciPy), Benjamini-Hochberg FDR control,
   Drasgow `l_z` and Snijders `l_z*` person fit with the MAP `r_0` correction,
   and infit/outfit at the marginal EAPs.
+- **M2 limited-information goodness-of-fit** (`fast_mlsirm.fitstats.m2`;
+  Maydeu-Olivares & Joe 2005/2006, Cai & Hansen 2013): the M2 statistic on the
+  univariate + bivariate residual margins, its df and χ² tail p-value, the
+  RMSEA2 approximate-fit index with a 90% noncentral-χ² confidence interval,
+  and the bivariate SRMSR (Maydeu-Olivares 2013). Every model-implied margin
+  (and the up-to-4th-order entries of the multinomial residual covariance
+  `Xi_2`) is computed exactly by the local-independence factorization over the
+  `(theta, xi)` node set — `pi_S = Σ_c w_c ∏_{i∈S} P_i(c)` — the same
+  factorization the E-step already uses (Cai-Hansen); the derivative matrix
+  `Delta_2` is central-differenced from the node moments and the quadratic form
+  is evaluated through one Cholesky of `Xi_2` (never an explicit inverse). Rust
+  core (`mlsirm_core::fitstats::m2_rmsea2`, kind-aware) with a NumPy reference
+  held to 1e-6 parity; well-specified-vs-local-dependence calibration tests in
+  both suites.
 - **Item screening pipeline** (`fast_mlsirm.select_items`): iterative
   fit → flag → remove → refit with sparse / S-X²-BH / mean-square band /
   low-discrimination / map-isolation flags, an `l_z*` person screen, a

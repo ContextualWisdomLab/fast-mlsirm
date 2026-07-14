@@ -776,3 +776,96 @@ fn bifactor_recovers_general_loadings() {
     // tau is not a free parameter for the inner kind
     assert!(res.tau < -20.0, "tau must stay inert for BIFAC2PLM: {}", res.tau);
 }
+
+
+#[test]
+fn m2_calibration_and_local_dependence() {
+    use mlsirm_core::fitstats::m2_rmsea2;
+    use mlsirm_core::nodes::XiRule;
+    use mlsirm_core::scoring::{ItemBank, PriorSpec};
+
+    // unidimensional 2PL (MIRT kind: no latent-space term), fit by MMLE
+    let mut rng = Lcg(9091);
+    let (n_persons, n_items) = (2500usize, 12usize);
+    let factor_id = vec![0usize; n_items];
+    let slope: Vec<f64> = (0..n_items).map(|_| 0.8 + 0.7 * rng.next_f64()).collect();
+    let b_true: Vec<f64> = (0..n_items).map(|i| -1.4 + 0.25 * i as f64).collect();
+    let mut y = vec![0.0_f64; n_persons * n_items];
+    for p in 0..n_persons {
+        let th = rng.normal();
+        for i in 0..n_items {
+            let eta = slope[i] * th + b_true[i];
+            let prob = 1.0 / (1.0 + (-eta).exp());
+            y[p * n_items + i] = if rng.next_f64() < prob { 1.0 } else { 0.0 };
+        }
+    }
+    let observed = vec![true; n_persons * n_items];
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims: 1,
+        latent_dim: 1,
+        model_type: ModelType::Mirt,
+        eps_distance: 1e-8,
+    };
+    let mcfg = MarginalConfig { q_theta: 21, max_iter: 300, ..Default::default() };
+    let fit = |resp: &[f64]| {
+        fit_marginal(
+            resp,
+            &observed,
+            &factor_id,
+            &config,
+            &PopulationSpec::Single,
+            &mcfg,
+            &PenaltyConfig::default(),
+            Device::Cpu,
+        )
+        .expect("fit should succeed")
+    };
+    let run_m2 = |resp: &[f64], res: &mlsirm_core::marginal::MarginalResult| {
+        let bank = ItemBank {
+            alpha: &res.alpha,
+            b: &res.b,
+            zeta: &res.zeta,
+            tau: res.tau,
+            factor_id: &factor_id,
+            model_type: ModelType::Mirt,
+            n_dims: 1,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        };
+        m2_rmsea2(&bank, resp, &observed, n_persons, &PriorSpec::standard(1), 21, XiRule::GaussHermite { q_xi: 7 })
+            .expect("m2 should succeed")
+    };
+
+    // well-specified: df = (12 + 66) - 24 = 54; RMSEA2 near zero
+    let res = fit(&y);
+    let m2 = run_m2(&y, &res);
+    assert_eq!(m2.n_moments, 78);
+    assert_eq!(m2.n_parameters, 24);
+    assert_eq!(m2.df, 54.0);
+    assert!(m2.rmsea2 < 0.03, "well-specified RMSEA2 too high: {}", m2.rmsea2);
+    assert!(
+        m2.rmsea2_ci_lower <= m2.rmsea2 + 1e-9 && m2.rmsea2 <= m2.rmsea2_ci_upper + 1e-9,
+        "CI must bracket point estimate: [{}, {}] vs {}",
+        m2.rmsea2_ci_lower,
+        m2.rmsea2_ci_upper,
+        m2.rmsea2
+    );
+    assert!(m2.srmsr < 0.05, "well-specified SRMSR too high: {}", m2.srmsr);
+
+    // inject strong local dependence: item 1 becomes an exact copy of item 0
+    let mut y_ld = y.clone();
+    for p in 0..n_persons {
+        y_ld[p * n_items + 1] = y_ld[p * n_items + 0];
+    }
+    let res_ld = fit(&y_ld);
+    let m2_ld = run_m2(&y_ld, &res_ld);
+    assert!(
+        m2_ld.rmsea2 > 0.08,
+        "local dependence should inflate RMSEA2: {}",
+        m2_ld.rmsea2
+    );
+    assert!(m2_ld.m2 > m2.m2, "LD M2 must exceed well-specified M2");
+    assert!(m2_ld.srmsr > m2.srmsr, "LD SRMSR must exceed well-specified SRMSR");
+}

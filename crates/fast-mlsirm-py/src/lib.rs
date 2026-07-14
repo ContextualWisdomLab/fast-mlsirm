@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use mlsirm_core::fitstats::{
-    infit_outfit as core_infit_outfit, person_fit as core_person_fit, s_x2 as core_s_x2,
-    SX2Config,
+    infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
+    s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::marginal::{
@@ -642,6 +642,67 @@ fn s_x2_stat(
     out.set_item("rms_residual", res.rms_residual)?;
     out.set_item("flagged_bh", res.flagged_bh)?;
     out.set_item("n_score_groups", res.n_score_groups)?;
+    Ok(out.into())
+}
+
+/// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+))]
+fn m2_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let res = core_m2(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
     Ok(out.into())
 }
 
@@ -1304,6 +1365,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;
     m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;

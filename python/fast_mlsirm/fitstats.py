@@ -1085,3 +1085,250 @@ def empirical_reliability(result) -> np.ndarray:
             theta.ravel(), sd.ravel(), int(theta.shape[0]), int(theta.shape[1])
         )
     )
+
+
+# --------------------------------------------------------------------------
+# M2 limited-information goodness-of-fit (Maydeu-Olivares & Joe 2005, 2006;
+# Cai & Hansen 2013). Rust core is the compute path; the NumPy body below is
+# the parity reference and fallback.
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class M2Result:
+    m2: float
+    df: float
+    p_value: float
+    rmsea2: float
+    rmsea2_ci_lower: float
+    rmsea2_ci_upper: float
+    srmsr: float
+    n_moments: int
+    n_parameters: int
+    n_complete: int
+
+
+class _MutBank:
+    """Minimal params-like carrier for finite-difference re-evaluation."""
+
+    __slots__ = ("alpha", "b", "zeta", "tau")
+
+    def __init__(self, alpha, b, zeta, tau):
+        self.alpha = alpha
+        self.b = b
+        self.zeta = zeta
+        self.tau = tau
+
+
+def m2(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> M2Result:
+    """M2 statistic (order-2 residual margins), df, p-value, RMSEA2 with a 90%
+    noncentral-chi-square CI, and the bivariate SRMSR. Complete cases only —
+    M2 presumes a single sample size N (Maydeu-Olivares & Joe 2006)."""
+    core = _core_module()
+    y0 = np.asarray(responses, dtype=float)
+    observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(d_of_i.max()) + 1
+    if core is not None:
+        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+        res = core.m2_stat(
+            np.where(observed0, y0, 0.0).ravel(),
+            observed0.ravel(),
+            int(y0.shape[0]),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.zeros(n_dims), np.ones(n_dims),
+            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+        )
+        return M2Result(
+            m2=float(res["m2"]), df=float(res["df"]), p_value=float(res["p_value"]),
+            rmsea2=float(res["rmsea2"]),
+            rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
+            rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
+            srmsr=float(res["srmsr"]),
+            n_moments=int(res["n_moments"]), n_parameters=int(res["n_parameters"]),
+            n_complete=int(res["n_complete"]),
+        )
+    return _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
+
+
+def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
+    if lam <= 0.0:
+        return 1.0 - chi2_sf(x, df)
+    half = 0.5 * lam
+    term = math.exp(-half)
+    total = term * (1.0 - chi2_sf(x, df))
+    for j in range(1, 10000):
+        term *= half / j
+        total += term * (1.0 - chi2_sf(x, df + 2.0 * j))
+        if term < 1e-15 and j > half:
+            break
+    return min(1.0, max(0.0, total))
+
+
+def _nc_lambda_for(x: float, df: float, target: float) -> float:
+    if (1.0 - chi2_sf(x, df)) <= target:
+        return 0.0
+    hi = 1.0
+    while _ncchi2_cdf(x, df, hi) > target and hi < 1e8:
+        hi *= 2.0
+    lo = 0.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if _ncchi2_cdf(x, df, mid) > target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance):
+    model_u = model.upper()
+    free_alpha = model_u not in {"MLSRM", "ULSRM"}
+    uses_space = model_u != "MIRT"
+    n_persons, n_items = y0.shape
+    latent_dim = int(np.asarray(params.zeta).shape[1])
+    if n_items < 3:
+        raise ValueError("M2 needs at least 3 items")
+
+    # moment layout: univariate then bivariate pairs (i < j)
+    pairs = [(i, j) for i in range(n_items) for j in range(i + 1, n_items)]
+    moment_items = [[i] for i in range(n_items)] + [[i, j] for (i, j) in pairs]
+    s = len(moment_items)
+
+    # free item parameters (matching the estimator's count)
+    plist = []
+    for i in range(n_items):
+        plist.append(("b", i, 0))
+        if free_alpha:
+            plist.append(("a", i, 0))
+        if uses_space:
+            for k in range(latent_dim):
+                plist.append(("z", i, k))
+    tau_free = uses_space and model_u in {"MLS2PLM", "ULS2PLM", "MLSRM", "ULSRM"}
+    if tau_free:
+        plist.append(("t", 0, 0))
+    p = len(plist)
+    if s <= p:
+        raise ValueError(f"M2 df non-positive: {s} <= {p}")
+
+    complete = np.all(observed0, axis=1)
+    idx = np.where(complete)[0]
+    n_c = int(idx.size)
+    if n_c < p + 2:
+        raise ValueError(f"too few complete cases for M2: {n_c}")
+    yc = y0[idx]
+    p_obs = np.empty(s)
+    for i in range(n_items):
+        p_obs[i] = np.mean(yc[:, i] != 0.0)
+    for m, (i, j) in enumerate(pairs):
+        p_obs[n_items + m] = np.mean((yc[:, i] != 0.0) & (yc[:, j] != 0.0))
+
+    prior_mean = np.zeros(n_dims_of(d_of_i))
+
+    def node_probs(pp):
+        probs, t_w, x_w, _ = _icc_grid(pp, d_of_i, model, q_theta, q_xi, eps_distance, prior_mean)
+        w = np.multiply.outer(t_w, x_w).ravel()
+        return probs.reshape(n_items, -1), w
+
+    probs0, weights = node_probs(params)
+
+    def pi_set(probs, sset):
+        pr = weights.copy()
+        for m in sset:
+            pr = pr * probs[m]
+        return float(pr.sum())
+
+    def model_moments(probs):
+        return np.array([pi_set(probs, sset) for sset in moment_items])
+
+    mom0 = model_moments(probs0)
+    e = p_obs - mom0
+
+    # Delta by central differences of the node moments
+    alpha0 = np.asarray(params.alpha, dtype=float).copy()
+    b0 = np.asarray(params.b, dtype=float).copy()
+    zeta0 = np.asarray(params.zeta, dtype=float).copy()
+    tau0 = float(params.tau)
+    delta = np.zeros((s, p))
+    for col, (kind, i, k) in enumerate(plist):
+        base = {"b": b0[i], "a": alpha0[i], "z": zeta0[i, k], "t": tau0}[kind]
+        h = 1e-4 * (1.0 + abs(base))
+        a, b, z, t = alpha0.copy(), b0.copy(), zeta0.copy(), tau0
+        if kind == "b":
+            b[i] = base + h
+        elif kind == "a":
+            a[i] = base + h
+        elif kind == "z":
+            z[i, k] = base + h
+        else:
+            t = base + h
+        mp, _ = node_probs(_MutBank(a, b, z, t))
+        mom_plus = model_moments(mp)
+        a, b, z, t = alpha0.copy(), b0.copy(), zeta0.copy(), tau0
+        if kind == "b":
+            b[i] = base - h
+        elif kind == "a":
+            a[i] = base - h
+        elif kind == "z":
+            z[i, k] = base - h
+        else:
+            t = base - h
+        mm, _ = node_probs(_MutBank(a, b, z, t))
+        mom_minus = model_moments(mm)
+        delta[:, col] = (mom_plus - mom_minus) * (0.5 / h)
+
+    # Xi_2 via the local-independence factorization of union margins
+    xi = np.zeros((s, s))
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            u = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            cov = pi_set(probs0, u) - mom0[a_i] * mom0[b_i]
+            xi[a_i, b_i] = cov
+            xi[b_i, a_i] = cov
+
+    n_f = float(n_c)
+    u = np.linalg.solve(xi, e)          # Xi^-1 e
+    w = np.linalg.solve(xi, delta)      # Xi^-1 Delta
+    amat = delta.T @ w                  # Delta' Xi^-1 Delta
+    g = w.T @ e                         # Delta' Xi^-1 e
+    z = np.linalg.solve(amat, g)
+    m2v = max(0.0, n_f * (float(e @ u) - float(g @ z)))
+    df = float(s - p)
+    p_value = chi2_sf(m2v, df)
+    denom = df * (n_f - 1.0)
+    rmsea2 = math.sqrt(max(0.0, m2v - df) / denom)
+    ci_lo = math.sqrt(_nc_lambda_for(m2v, df, 0.95) / denom)
+    ci_hi = math.sqrt(_nc_lambda_for(m2v, df, 0.05) / denom)
+
+    ss, cnt = 0.0, 0
+    for m, (i, j) in enumerate(pairs):
+        pi, pj, pij = p_obs[i], p_obs[j], p_obs[n_items + m]
+        mi, mj, mij = mom0[i], mom0[j], mom0[n_items + m]
+        dobs = pi * (1 - pi) * pj * (1 - pj)
+        dmod = mi * (1 - mi) * mj * (1 - mj)
+        if dobs > 1e-12 and dmod > 1e-12:
+            robs = (pij - pi * pj) / math.sqrt(dobs)
+            rmod = (mij - mi * mj) / math.sqrt(dmod)
+            ss += (robs - rmod) ** 2
+            cnt += 1
+    srmsr = math.sqrt(ss / cnt) if cnt else float("nan")
+
+    return M2Result(
+        m2=m2v, df=df, p_value=p_value, rmsea2=rmsea2,
+        rmsea2_ci_lower=ci_lo, rmsea2_ci_upper=ci_hi, srmsr=srmsr,
+        n_moments=s, n_parameters=p, n_complete=n_c,
+    )
+
+
+def n_dims_of(d_of_i):
+    return int(np.asarray(d_of_i).max()) + 1
