@@ -99,7 +99,8 @@
   or the generalized partial credit model (Muraki) by Bock-Aitkin marginal-EM;
   `score_polytomous(responses, fit)` returns EAP trait scores and posterior
   SDs; `information_polytomous(fit, theta)` returns item and test Fisher
-  information curves. All numerical work — the category cells, the residual
+  information curves. `NaN` responses are treated as missing and marginalized
+  out of each person's likelihood and posterior. All numerical work — the category cells, the residual
   M-step gradient, the Newton item update, the EAP reduction, and the
   information — runs in the Rust core (`mlsirm_core::poly`:
   `grm_logprobs`/`gpcm_logprobs` + `*_node_gradient` + `fit_poly_unidim` +
