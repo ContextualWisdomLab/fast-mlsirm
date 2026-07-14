@@ -1077,3 +1077,44 @@ mod reliability_tests {
         assert!(empirical_reliability(&eap, &sd_small, 3, 1).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod validate_branch_tests {
+    use super::*;
+    use crate::nodes::XiRule;
+
+    fn ok_bank<'a>(alpha: &'a [f64], b: &'a [f64], zeta: &'a [f64], fid: &'a [usize]) -> ItemBank<'a> {
+        ItemBank {
+            alpha, b, zeta, tau: -30.0, factor_id: fid,
+            model_type: crate::ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
+        }
+    }
+
+    #[test]
+    fn validate_bank_rejects_malformed_banks() {
+        let y = vec![0.0; 3];
+        let obs = vec![true; 3];
+        let prior = PriorSpec::standard(1);
+        let rule = XiRule::GaussHermite { q_xi: 7 };
+        // inconsistent alpha length
+        let (a, b, z, f) = (vec![0.0; 2], vec![0.0; 3], vec![0.0; 3], vec![0usize; 3]);
+        assert!(score_eap(&ok_bank(&a, &b, &z, &f), &y, &obs, 1, &prior, 7, rule).is_err());
+        // factor_id out of range (>= n_dims)
+        let (a, b, z, f) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![5usize, 0, 0]);
+        assert!(score_eap(&ok_bank(&a, &b, &z, &f), &y, &obs, 1, &prior, 7, rule).is_err());
+        // latent_dim zero
+        let (a, b, z, f) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 0], vec![0usize; 3]);
+        let mut bk = ok_bank(&a, &b, &z, &f);
+        bk.latent_dim = 0;
+        assert!(score_eap(&bk, &y, &obs, 1, &prior, 7, rule).is_err());
+        // eps_distance non-positive
+        let (a, b, z, f) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![0usize; 3]);
+        let mut bk = ok_bank(&a, &b, &z, &f);
+        bk.eps_distance = 0.0;
+        assert!(score_eap(&bk, &y, &obs, 1, &prior, 7, rule).is_err());
+        // y/observed length mismatch
+        let bk = ok_bank(&a, &b, &z, &f);
+        assert!(score_eap(&bk, &vec![0.0; 6], &vec![true; 6], 1, &prior, 7, rule).is_err());
+    }
+}
