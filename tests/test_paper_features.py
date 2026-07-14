@@ -620,3 +620,59 @@ def test_polytomous_information_criteria():
     assert ic["aic"] < ic["bic"] < ic["caic"]
     with pytest.raises(ValueError):
         polytomous_information_criteria(fit, 1)
+
+
+def test_item_fit_polytomous_sx2():
+    """Generalized S-X² polytomous item fit (Kang & Chen, 2008, 2011) through the
+    public API: well-formed per-item output, calibration at the fitted model
+    (statistic tracks df, few false flags), and input validation."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, item_fit_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(
+        __import__("fast_mlsirm")._core, "poly_item_fit_sx2"
+    ):
+        pytest.skip("compiled core built without poly_item_fit_sx2")
+
+    rng = np.random.default_rng(11)
+    n_persons, n_items, k = 1500, 8, 4
+    a = rng.uniform(0.9, 1.5, n_items)
+    c = np.zeros((n_items, k))
+    c[:, 1:] = rng.normal(0.0, 0.6, (n_items, k - 1))
+    theta = rng.standard_normal(n_persons)
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    fit = fit_polytomous(y, k, model="gpcm")
+    res = item_fit_polytomous(y, fit, q_theta=21)
+    for key in ("statistic", "df", "p_value", "n_cells"):
+        assert res[key].shape == (n_items,)
+    assert np.all(np.isfinite(res["statistic"]))
+    # df is the retained cell count minus m = n_cat item parameters
+    assert np.array_equal(res["df"].astype(int), res["n_cells"] - k)
+    finite_p = res["p_value"][np.isfinite(res["p_value"])]
+    assert np.all((finite_p >= 0.0) & (finite_p <= 1.0))
+    # a correctly fitted model is rarely flagged (contrast: G2 flags >30%)
+    assert np.mean(finite_p < 0.05) < 0.30
+    # statistic ~ df at the fitted parameters
+    ratio = res["statistic"].sum() / res["df"].sum()
+    assert 0.6 < ratio < 1.6, f"S-X2/df ratio off: {ratio}"
+
+    # missing data (NaN) is marginalized: complete-case summed-score table
+    y_miss = y.astype(float)
+    y_miss[rng.random(y_miss.shape) < 0.05] = np.nan
+    res_miss = item_fit_polytomous(y_miss, fit)
+    assert np.all(np.isfinite(res_miss["statistic"]))
+
+    # validation
+    with pytest.raises(ValueError):
+        item_fit_polytomous(y[:, :-1], fit)                 # wrong item count
+    with pytest.raises(ValueError):
+        item_fit_polytomous(y, fit, min_expected=0.0)       # non-positive floor

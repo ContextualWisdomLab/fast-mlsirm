@@ -304,3 +304,68 @@ def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
         "aicc": float(aicc),
         "sabic": float(sabic),
     }
+
+
+def item_fit_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+    min_expected: float = 1.0,
+) -> dict[str, np.ndarray]:
+    """Generalized S-X² item-fit statistic for an ordered polytomous fit
+    (compute in Rust). Groups persons by summed score, compares observed to
+    model-expected category proportions formed from the generalized
+    Lord-Wingersky recursion, and returns per-item ``statistic``, ``df``,
+    ``p_value``, and ``n_cells`` (the retained cell count, the reference df at
+    known parameters). ``responses`` is persons x items of integer categories
+    with ``NaN`` for missing; only persons complete on every item enter the
+    summed-score table. At ``n_cat = 2`` this equals the binary Orlando-Thissen
+    S-X². ``min_expected`` is the minimum expected cell frequency below which
+    adjacent categories are collapsed.
+
+    References (APA 7th ed.):
+        Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X²
+            item fit index for polytomous IRT models. *Journal of Educational
+            Measurement, 45*(4), 391-406.
+            https://doi.org/10.1111/j.1745-3984.2008.00070.x
+        Kang, T., & Chen, T. T. (2011). Performance of the generalized S-X²
+            item fit index for the graded response model. *Asia Pacific
+            Education Review, 12*(1), 89-96.
+            https://doi.org/10.1007/s12564-010-9082-4
+        Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
+            dichotomous item response theory models. *Applied Psychological
+            Measurement, 24*(1), 50-64.
+            https://doi.org/10.1177/01466216000241003
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    if min_expected <= 0:
+        raise ValueError("min_expected must be positive")
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_item_fit_sx2"):
+        raise RuntimeError("item_fit_polytomous requires the compiled Rust core")
+
+    n_persons = y_int.shape[0]
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.poly_item_fit_sx2(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        obs_arg,
+        fit.model,
+        int(q_theta),
+        float(min_expected),
+    )
+    return {
+        "statistic": np.asarray(res["statistic"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "n_cells": np.asarray(res["n_cells"], dtype=np.int64),
+    }

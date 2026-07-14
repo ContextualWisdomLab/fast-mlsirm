@@ -28,7 +28,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
     grm_logprobs as core_grm_logprobs, poly_information_curves as core_poly_information_curves,
-    score_poly_eap as core_score_poly_eap, PolyModel,
+    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 
@@ -821,6 +821,57 @@ fn poly_information_curves(
     .map_err(PyValueError::new_err)
 }
 
+/// Generalized S-X2 polytomous item fit (Rust compute path). Returns a dict with
+/// per-item `statistic`, `df`, `p_value`, and `n_cells` (the retained cell count,
+/// the reference df at KNOWN parameters).
+///
+/// References (APA 7th ed.):
+///   Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X² item
+///     fit index for polytomous IRT models. Journal of Educational Measurement,
+///     45(4), 391-406. https://doi.org/10.1111/j.1745-3984.2008.00070.x
+///   Kang, T., & Chen, T. T. (2011). Performance of the generalized S-X² item
+///     fit index for the graded response model. Asia Pacific Education Review,
+///     12(1), 89-96. https://doi.org/10.1007/s12564-010-9082-4
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21, min_expected = 1.0))]
+fn poly_item_fit_sx2(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    q_theta: usize,
+    min_expected: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_poly_s_x2(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        q_theta,
+        min_expected,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("n_cells", res.n_cells)?;
+    Ok(out.into())
+}
+
 /// Latent-space polytomous LSIRM fit (Rust compute path). Returns a dict of
 /// item parameters (`slope`, `cat_params`, `zeta`) and person scores
 /// (`theta_eap`, `theta_sd`, `xi_eap`), plus `loglik`/`n_iter`.
@@ -1601,6 +1652,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
     Ok(())
 }

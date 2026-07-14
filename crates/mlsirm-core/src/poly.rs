@@ -574,6 +574,29 @@ pub struct PolySX2Result {
 /// At `n_cat = 2` this reduces exactly to [`crate::fitstats::s_x2`] on the same
 /// grid; all items are assumed to share `n_cat` categories (the fitter's
 /// setting). Only persons observed on every item enter the summed-score table.
+///
+/// # References (APA 7th ed.)
+///
+/// Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X² item fit
+///   index for polytomous IRT models. *Journal of Educational Measurement,
+///   45*(4), 391–406. https://doi.org/10.1111/j.1745-3984.2008.00070.x
+///
+/// Kang, T., & Chen, T. T. (2011). Performance of the generalized S-X² item fit
+///   index for the graded response model. *Asia Pacific Education Review,
+///   12*(1), 89–96. https://doi.org/10.1007/s12564-010-9082-4
+///
+/// Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
+///   dichotomous item response theory models. *Applied Psychological
+///   Measurement, 24*(1), 50–64. https://doi.org/10.1177/01466216000241003
+///
+/// Thissen, D., Pommerich, M., Billeaud, K., & Williams, V. A. (1995). Item
+///   response theory for scores on tests including polytomous items with ordered
+///   responses. *Applied Psychological Measurement, 19*(1), 39–49.
+///   https://doi.org/10.1177/014662169501900105
+///
+/// Lord, F. M., & Wingersky, M. S. (1984). Comparison of IRT true-score and
+///   equipercentile observed-score "equatings." *Applied Psychological
+///   Measurement, 8*(4), 453–461. https://doi.org/10.1177/014662168400800409
 #[allow(clippy::too_many_arguments)]
 pub fn poly_s_x2(
     y: &[usize],

@@ -115,6 +115,20 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Generalized S-X² item fit for polytomous models** (Kang & Chen, 2008, 2011).
+  `item_fit_polytomous(responses, fit)` returns the per-item summed-score
+  chi-square, `df`, `p_value`, and retained cell count for a fitted GRM/GPCM,
+  extending the binary Orlando-Thissen S-X²: persons are grouped by summed
+  score, and the model-expected category proportions come from the generalized
+  Lord-Wingersky recursion (Thissen, Pommerich, Billeaud & Williams, 1995) with
+  the leave-one-out summed-score distribution. Boundary score groups are merged
+  and adjacent categories collapsed to a minimum expected frequency. Compute in
+  Rust (`mlsirm_core::poly::poly_s_x2`), exposed via PyO3. Validated to reduce
+  **exactly** to the trusted binary `fitstats::s_x2` at `n_cat = 2` (GRM and
+  GPCM, statistic and df), and — at the true generating parameters — to track
+  its reference chi-square (`E[S-X²] ≈ Σ cells`) for both the GPCM (2008) and
+  GRM (2011) families.
+
 - **Marginal (MMLE-EM) estimation for the full latent-space family.**
   `fit(estimator="mmle")` now fits `MIRT`/`MLS2PLM`/`MLSRM` (and `ULS2PLM`/
   `ULSRM` under a population structure) by Bock-Aitkin-style marginal EM:
