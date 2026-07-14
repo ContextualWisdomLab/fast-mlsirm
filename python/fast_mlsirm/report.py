@@ -702,7 +702,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fbfcfa;
+  background: #f1f4ef;
 }
 
 .empty-state {
