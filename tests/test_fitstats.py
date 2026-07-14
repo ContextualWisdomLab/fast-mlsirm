@@ -1,0 +1,124 @@
+"""Tests for the S-X², l_z/l_z*, and item-screening additions."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fast_mlsirm.config import FitConfig
+from fast_mlsirm.fit import fit
+from fast_mlsirm.fitstats import (
+    benjamini_hochberg,
+    chi2_sf,
+    _lord_wingersky,
+    person_fit,
+    s_x2,
+    select_items,
+)
+
+
+def test_chi2_sf_reference_values():
+    # classic critical values
+    assert chi2_sf(3.841, 1) == pytest.approx(0.05, abs=1e-3)
+    assert chi2_sf(18.307, 10) == pytest.approx(0.05, abs=1e-3)
+    assert chi2_sf(0.0, 5) == 1.0
+    assert chi2_sf(1e6, 2) < 1e-12
+
+
+def test_benjamini_hochberg_known_case():
+    p = np.array([0.001, 0.008, 0.039, 0.041, 0.042, 0.06, 0.074, 0.205, 0.212, 0.216])
+    reject = benjamini_hochberg(p, q=0.05)
+    # step-up: largest k with p_(k) <= (k/m) q is k=2 (0.008 <= 0.010)
+    assert reject.sum() == 2
+    assert reject[:2].all()
+    p_with_nan = np.array([0.001, np.nan, 0.9])
+    r2 = benjamini_hochberg(p_with_nan, q=0.05)
+    assert r2[0] and not r2[2]
+
+
+def test_lord_wingersky_matches_enumeration():
+    rng = np.random.default_rng(0)
+    probs = rng.random((3, 4))  # 3 items, 4 nodes
+    f = _lord_wingersky(probs)
+    np.testing.assert_allclose(f.sum(axis=0), 1.0, atol=1e-12)
+    # brute force over the 2^3 patterns
+    expected = np.zeros((4, 4))
+    for pattern in range(8):
+        bits = [(pattern >> k) & 1 for k in range(3)]
+        prob = np.ones(4)
+        for k, bit in enumerate(bits):
+            prob *= probs[k] if bit else (1.0 - probs[k])
+        expected[sum(bits)] += prob
+    np.testing.assert_allclose(f, expected, atol=1e-12)
+
+
+def _simulate_2pl(seed=0, n_persons=800, n_items=12, bad_item=None):
+    rng = np.random.default_rng(seed)
+    a = 0.8 + 0.8 * rng.random(n_items)
+    b = -1.0 + 2.0 * rng.random(n_items)
+    theta = rng.standard_normal(n_persons)
+    eta = a[None, :] * theta[:, None] + b[None, :]
+    y = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
+    if bad_item is not None:
+        # a grossly misfitting item: response independent of theta, extreme
+        # split by an unrelated coin — S-X² should flag it
+        y[:, bad_item] = (rng.random(n_persons) < 0.5).astype(float)
+        y[theta > 0, bad_item] = 0.0  # negatively related to ability
+    fid = np.zeros(n_items, dtype=np.int64)
+    return y, fid, theta
+
+
+def _fit_mirt(y, fid):
+    cfg = FitConfig(
+        model="MIRT", estimator="mmle", max_iter=60, q_theta=15, latent_dim=1
+    )
+    return fit(y, fid, cfg)
+
+
+def test_sx2_flags_misfitting_item_and_spares_good_ones():
+    y, fid, _ = _simulate_2pl(seed=3, bad_item=5)
+    res = _fit_mirt(y, fid)
+    out = s_x2(y, fid, res.params, "MIRT", q_theta=15)
+    assert np.isfinite(out.statistic).sum() >= 10
+    assert out.flagged_bh[5], "scrambled item must be BH-flagged"
+    # most well-specified items should survive
+    others = np.delete(np.arange(y.shape[1]), 5)
+    assert out.flagged_bh[others].mean() < 0.5
+
+
+def test_person_fit_flags_random_responders():
+    y, fid, theta = _simulate_2pl(seed=4)
+    rng = np.random.default_rng(42)
+    aberrant = np.arange(25)
+    y[aberrant] = (rng.random((25, y.shape[1])) < 0.5).astype(float)
+    res = _fit_mirt(y, fid)
+    pf = person_fit(y, fid, res.params, "MIRT")
+    normal = np.arange(100, y.shape[0])
+    # aberrant persons score systematically lower on l_z*
+    assert np.nanmean(pf.lz_star[aberrant, 0]) < np.nanmean(pf.lz_star[normal, 0]) - 0.5
+    # calibration: for model-consistent persons l_z* is near standard normal
+    m = np.nanmean(pf.lz_star[normal, 0])
+    s = np.nanstd(pf.lz_star[normal, 0])
+    assert abs(m) < 0.35 and 0.6 < s < 1.6
+
+
+def test_select_items_removes_sparse_and_scrambled():
+    y, fid, _ = _simulate_2pl(seed=5, n_persons=600, n_items=12, bad_item=7)
+    y[:, 3] = 0.0
+    y[:5, 3] = 1.0  # near-zero variance: sparse flag
+    codes = [f"IT{i:02d}" for i in range(12)]
+    out = select_items(
+        y,
+        fid,
+        item_codes=codes,
+        config=FitConfig(
+            model="MIRT", estimator="mmle", max_iter=40, q_theta=15, latent_dim=1
+        ),
+        max_rounds=2,
+        min_items_per_dim=4,
+    )
+    assert "IT03" in out.removed_items, "sparse item must be removed"
+    assert "IT03" in out.removed_items and "sparse" in out.removed_items["IT03"]
+    assert len(out.kept_items) >= 4
+    assert out.final_result is not None
+    assert len(out.rounds) >= 1

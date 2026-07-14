@@ -619,3 +619,68 @@ def _pca_align(zeta: np.ndarray, xi: np.ndarray) -> None:
         if zeta[i, c] < 0.0:
             zeta[:, c] *= -1.0
             xi[:, c] *= -1.0
+
+
+def score_eap(
+    y: np.ndarray,
+    observed: np.ndarray,
+    factor_id: np.ndarray,
+    alpha: np.ndarray,
+    b: np.ndarray,
+    zeta: np.ndarray,
+    tau: float,
+    model: str = "MLS2PLM",
+    n_dims: int | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """EAP scoring of response vectors with **frozen** item parameters.
+
+    The serving-side counterpart of :func:`fit_marginal_numpy`: one E-step
+    pass under the standard `N(0, 1)` population prior, no parameter updates.
+    Returns per-person `theta_eap`, `theta_sd`, `xi_eap`, and the marginal
+    log-likelihood of each response vector.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    observed = np.asarray(observed, dtype=bool)
+    factor_id = np.asarray(factor_id, dtype=np.int64)
+    if n_dims is None:
+        n_dims = int(factor_id.max()) + 1
+    model = model.upper()
+    _, uses_space = _model_flags(model)
+    alpha = np.asarray(alpha, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    zeta = np.asarray(zeta, dtype=np.float64)
+    latent_dim = zeta.shape[1]
+    n_persons = y.shape[0]
+
+    t_nodes, t_weights = _gh(q_theta)
+    t_logw = np.log(t_weights)
+    if uses_space:
+        x_grid, x_logw = _xi_grid(q_xi, latent_dim)
+    else:
+        x_grid, x_logw = np.zeros((1, latent_dim)), np.zeros(1)
+
+    ctx = {"n_ctx": 1, "shift": np.zeros((1, n_dims)), "scale": np.ones((1, n_dims))}
+    logp1, logp0, c0 = _build_tables(
+        alpha, b, zeta, float(tau), model, factor_id, ctx, t_nodes, x_grid,
+        eps_distance, n_dims,
+    )
+    s_all = np.zeros(n_persons, dtype=np.int64)
+    y_filled = np.where(observed, y, 0.0)
+    l, log_zdx, log_lp = _person_logliks(
+        y_filled, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
+    )
+    post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
+    px = post.sum(axis=(1, 2)) / n_dims  # (P, Nx)
+    xi_eap = px @ x_grid
+    theta_eap = np.einsum("pdtx,t->pd", post, t_nodes, optimize=True)
+    theta_m2 = np.einsum("pdtx,t->pd", post, t_nodes**2, optimize=True)
+    theta_sd = np.sqrt(np.maximum(theta_m2 - theta_eap**2, 0.0))
+    return {
+        "theta_eap": theta_eap,
+        "theta_sd": theta_sd,
+        "xi_eap": xi_eap,
+        "loglik": log_lp,
+    }

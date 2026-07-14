@@ -1,0 +1,79 @@
+"""Serving-bundle export/scoring round-trip tests."""
+
+from __future__ import annotations
+
+import numpy as np
+
+from fast_mlsirm.config import FitConfig
+from fast_mlsirm.fit import fit
+from fast_mlsirm.serving import (
+    export_serving_bundle,
+    load_serving_bundle,
+    score_respondents,
+)
+
+
+def _fit_small(seed=0):
+    rng = np.random.default_rng(seed)
+    P, I, D = 300, 10, 2
+    fid = np.array([i % D for i in range(I)])
+    theta = rng.standard_normal((P, D))
+    xi = rng.standard_normal((P, 2))
+    zeta = rng.standard_normal((I, 2)) * 0.8
+    eta = theta[:, fid] + 0.3 - np.linalg.norm(xi[:, None] - zeta[None], axis=2)
+    y = (rng.random((P, I)) < 1 / (1 + np.exp(-eta))).astype(float)
+    cfg = FitConfig(model="MLS2PLM", estimator="mmle", max_iter=40, q_theta=15, q_xi=7)
+    return y, fid, fit(y, fid, cfg)
+
+
+def test_bundle_roundtrip_and_scoring(tmp_path):
+    y, fid, result = _fit_small()
+    codes = [f"IMP{i:03d}" for i in range(y.shape[1])]
+    path = tmp_path / "bundle.json"
+    bundle = export_serving_bundle(
+        result, codes, fid, path=path, q_theta=15, q_xi=7,
+        dim_names=["IMP", "OTH"],
+    )
+    loaded = load_serving_bundle(path)
+    assert loaded["schema_version"] == 1
+    assert loaded["n_items"] == y.shape[1]
+    assert loaded["items"][0]["code"] == "IMP000"
+
+    # dict payload, partial responses (like the downstream API)
+    scores = score_respondents(loaded, {"IMP000": 1, "IMP001": 0, "IMP005": True})
+    assert len(scores) == 1
+    s = scores[0]
+    assert len(s["theta"]) == loaded["n_dims"]
+    assert len(s["xi"]) == loaded["latent_dim"]
+    assert s["n_observed"] == 3
+    assert np.isfinite(s["loglik"])
+
+    # dense payload: scoring the training persons reproduces their EAPs
+    scores_all = score_respondents(loaded, y)
+    theta_served = np.array([r["theta"] for r in scores_all])
+    corr = np.corrcoef(theta_served[:, 0], result.params.theta[:, 0])[0, 1]
+    assert corr > 0.99
+
+
+def test_scoring_monotone_in_responses():
+    y, fid, result = _fit_small(seed=2)
+    codes = [f"I{i}" for i in range(y.shape[1])]
+    bundle = export_serving_bundle(result, codes, fid, q_theta=15, q_xi=7)
+    dim0_items = {codes[i]: 1 for i in range(y.shape[1]) if fid[i] == 0}
+    all_pass = score_respondents(bundle, dim0_items)[0]
+    all_fail = score_respondents(bundle, {c: 0 for c in dim0_items})[0]
+    assert all_pass["theta"][0] > all_fail["theta"][0]
+
+
+def test_scoring_rejects_bad_payloads():
+    y, fid, result = _fit_small(seed=3)
+    codes = [f"I{i}" for i in range(y.shape[1])]
+    bundle = export_serving_bundle(result, codes, fid, q_theta=15, q_xi=7)
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown item code"):
+        score_respondents(bundle, {"NOPE": 1})
+    with pytest.raises(ValueError, match="must be 0 or 1"):
+        score_respondents(bundle, {"I0": 2})
+    with pytest.raises(ValueError, match="column count"):
+        score_respondents(bundle, np.zeros((1, 3)))
