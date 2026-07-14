@@ -24,27 +24,31 @@
 //! column-mean of the posteriors. Persons are classified by their posterior mode
 //! (MAP profile) and marginal attribute probabilities (attribute EAP).
 //!
-//! Attributes are pinned by the Q-matrix columns, so `s`, `g`, `pi` and the
-//! attribute labels are identified up to the per-item monotonicity `1 - s_i > g_i`
-//! (an item is more likely correct when its attributes are mastered). There is no
-//! label switching to align (unlike the continuous latent space in `marginal.rs`).
-//! `validate` rejects all-zero Q rows (item measures nothing) and all-zero Q
-//! columns (attribute measured by no item, hence non-identified).
+//! The fixed Q-matrix names the attribute dimensions, so there is no free label
+//! switching to align (unlike the continuous latent space in `marginal.rs`). This
+//! does **not** by itself identify `s`, `g`, and `pi`: nonzero Q rows and columns
+//! are only structural sanity checks, and full DINA identifiability requires
+//! stronger Q-matrix conditions (Gu & Xu, 2019). This implementation rejects the
+//! degenerate zero-row/zero-column cases but does not certify global
+//! identifiability; callers remain responsible for an appropriate study design.
 //!
 //! Deferred (explicit non-goals): the general G-DINA/saturated CDM (de la Torre,
-//! 2011), Q-matrix estimation/validation, and higher-order structured attribute
-//! priors (de la Torre & Douglas, 2004).
+//! 2011), Q-matrix estimation or full identifiability certification, and
+//! higher-order structured attribute priors (de la Torre & Douglas, 2004).
 //!
-//! References:
+//! References (APA 7th ed.):
 //! - de la Torre, J. (2009). DINA model and parameter estimation: A didactic.
-//!   *Journal of Educational and Behavioral Statistics, 34*(1), 115-130.
+//!   *Journal of Educational and Behavioral Statistics, 34*(1), 115–130.
 //!   <https://doi.org/10.3102/1076998607309474>
+//! - Gu, Y., & Xu, G. (2019). The sufficient and necessary condition for the
+//!   identifiability and estimability of the DINA model. *Psychometrika, 84*(2),
+//!   468–483. <https://doi.org/10.1007/s11336-018-9619-8>
 //! - Junker, B. W., & Sijtsma, K. (2001). Cognitive assessment models with few
 //!   assumptions, and connections with nonparametric item response theory.
-//!   *Applied Psychological Measurement, 25*(3), 258-272.
+//!   *Applied Psychological Measurement, 25*(3), 258–272.
 //!   <https://doi.org/10.1177/01466210122032064>
 //! - Templin, J. L., & Henson, R. A. (2006). Measurement of psychological disorders
-//!   using cognitive diagnosis models. *Psychological Methods, 11*(3), 287-305.
+//!   using cognitive diagnosis models. *Psychological Methods, 11*(3), 287–305.
 //!   <https://doi.org/10.1037/1082-989X.11.3.287>
 
 /// Cognitive-diagnosis gate: `Dina` = conjunctive (AND), `Dino` = disjunctive (OR).
@@ -54,9 +58,7 @@ pub enum CdmModel {
     Dino,
 }
 
-/// EM configuration. Defaults follow the crate's marginal-ML conventions; the only
-/// tuning surface is `eps` / `mono_backoff` / `count_floor` (all safe at
-/// literature-grade slip/guess).
+/// EM configuration. Defaults follow the crate's marginal-ML conventions.
 #[derive(Clone, Copy, Debug)]
 pub struct CdmConfig {
     /// Maximum EM iterations.
@@ -118,6 +120,7 @@ fn validate(
     n_persons: usize,
     n_items: usize,
     n_attributes: usize,
+    cfg: &CdmConfig,
 ) -> Result<(), String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
@@ -127,6 +130,30 @@ fn validate(
         return Err(format!(
             "n_attributes must be in 1..=15 (L = 2^K grid + O(N*J*L) cost); got {n_attributes}"
         ));
+    }
+    if cfg.max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+        return Err("eps must be finite and in (0, 0.5)".into());
+    }
+    if !cfg.mono_backoff.is_finite() || cfg.mono_backoff <= 2.0 * cfg.eps || cfg.mono_backoff >= 1.0 {
+        return Err("mono_backoff must be finite, greater than 2 * eps, and less than 1".into());
+    }
+    if !cfg.init_slip.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_slip) {
+        return Err("init_slip must be finite and in [eps, 1 - eps]".into());
+    }
+    if !cfg.init_guess.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_guess) {
+        return Err("init_guess must be finite and in [eps, 1 - eps]".into());
+    }
+    if cfg.init_slip + cfg.init_guess >= 1.0 {
+        return Err("init_slip + init_guess must be less than 1".into());
+    }
+    if !cfg.count_floor.is_finite() || cfg.count_floor < 0.0 {
+        return Err("count_floor must be finite and non-negative".into());
     }
     // checked_mul mirrors fit_mmle_2pl: a wrapped product could otherwise pass the
     // length check and let the E-step index out of bounds on adversarial dimensions.
@@ -152,6 +179,13 @@ fn validate(
             return Err(format!("q_matrix[{idx}] must be 0 or 1; got {v}"));
         }
     }
+    // An entirely unobserved item has no likelihood contribution, so its slip and
+    // guess would merely echo the initial values while being reported as estimates.
+    for i in 0..n_items {
+        if !(0..n_persons).any(|p| observed[p * n_items + i]) {
+            return Err(format!("item {i} has no observed responses"));
+        }
+    }
     // Every Q row nonzero: an all-zero row gives qmask==0, so DINA eta == 1 and
     // DINO eta == 0 for all profiles — the item measures nothing.
     for i in 0..n_items {
@@ -160,8 +194,8 @@ fn validate(
         }
     }
     // Every Q column nonzero: an attribute measured by no item carries zero data
-    // information, so its marginal and every pi_c pair differing only in that bit
-    // are non-identified. Closes the identification claim in the module docs.
+    // information. This is necessary structural validation, not a certificate of
+    // the stronger Q-matrix conditions required for global identifiability.
     for k in 0..n_attributes {
         if !(0..n_items).any(|i| q_matrix[i * n_attributes + k] != 0) {
             return Err(format!(
@@ -266,7 +300,7 @@ pub fn fit_cdm(
     model: CdmModel,
     cfg: &CdmConfig,
 ) -> Result<CdmResult, String> {
-    validate(y, observed, q_matrix, n_persons, n_items, n_attributes)?;
+    validate(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
     let l = 1usize << n_attributes;
 
     // Per-item required-attribute bitmask (Q is fixed across EM).
@@ -296,6 +330,7 @@ pub fn fit_cdm(
     let mut pi = vec![1.0 / l as f64; l]; // deterministic uniform prior
     let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
+    let mut n_iter = 0usize;
 
     let mut post = vec![0.0f64; l];
     let mut lp1 = vec![0.0f64; n_items * 2];
@@ -313,7 +348,7 @@ pub fn fit_cdm(
         }
     };
 
-    for iter in 0..cfg.max_iter {
+    for _ in 0..cfg.max_iter {
         refresh_tables(&s, &g, &mut lp1, &mut lp0);
         for c in 0..l {
             log_pi[c] = pi[c].ln();
@@ -353,6 +388,16 @@ pub fn fit_cdm(
         }
         loglik_trace.push(total_ll);
 
+        // The likelihood just evaluated belongs to the current parameters. Stop
+        // before another M-step so the returned parameters and trace endpoint agree.
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
         // M-step: closed-form items, then population as floored, renormalized mean posterior.
         for i in 0..n_items {
             update_item(i, &i1, &r1, &i0, &r0, &mut s, &mut g, cfg);
@@ -366,11 +411,7 @@ pub fn fit_cdm(
         for c in 0..l {
             pi[c] /= z;
         }
-
-        if iter > 0 && (loglik_trace[iter] - loglik_trace[iter - 1]).abs() < cfg.tol {
-            converged = true;
-            break;
-        }
+        n_iter += 1;
     }
 
     // Final classification: one recompute pass at the converged parameters.
@@ -380,8 +421,9 @@ pub fn fit_cdm(
     }
     let mut map_profile = vec![0u32; n_persons];
     let mut attr_prob = vec![0.0f64; n_persons * n_attributes];
+    let mut final_ll = 0.0;
     for j in 0..n_persons {
-        posterior_row(
+        final_ll += posterior_row(
             j, y, observed, n_items, l, &eta, &lp1, &lp0, &log_pi, &mut post,
         );
         let mut best = 0usize;
@@ -401,8 +443,13 @@ pub fn fit_cdm(
             attr_prob[j * n_attributes + k] = p;
         }
     }
+    // A max-iteration exit occurs immediately after an M-step, so record the
+    // likelihood of those returned parameters. On convergence the final E-step
+    // already supplied the same endpoint.
+    if !converged {
+        loglik_trace.push(final_ll);
+    }
 
-    let n_iter = loglik_trace.len();
     Ok(CdmResult {
         model,
         slip: s,
@@ -738,6 +785,8 @@ mod tests {
         let res = fit_cdm(&y, &observed, &q, n, n_items, n_attr, CdmModel::Dina, &cfg).unwrap();
         assert!(!res.converged);
         assert_eq!(res.n_iter, 1);
+        assert_eq!(res.loglik_trace.len(), 2);
+        assert!(nondecreasing(&res.loglik_trace));
     }
 
     /// Malformed inputs are rejected with `Err` (covers each validate branch).
@@ -760,8 +809,31 @@ mod tests {
         assert!(bad(&vec![2u8, 0, 0, 1], &y, &obs, 2, 2, 2)); // q not in {0,1}
         assert!(bad(&vec![0u8, 0, 1, 1], &y, &obs, 2, 2, 2)); // all-zero Q row 0
         assert!(bad(&vec![1u8, 0, 1, 0], &y, &obs, 2, 2, 2)); // all-zero Q column 1
+        // Item 1 is entirely missing, so its slip/guess cannot be estimated.
+        assert!(bad(&q_ok, &y, &[true, false, true, false], 2, 2, 2));
         // A well-formed call still succeeds.
         assert!(fit_cdm(&y, &obs, &q_ok, 2, 2, 2, CdmModel::Dina, &cfg).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_config() {
+        let q = vec![1u8, 0, 0, 1];
+        let y = vec![0.0f64; 4];
+        let observed = vec![true; 4];
+        let rejected = |cfg: CdmConfig| {
+            fit_cdm(&y, &observed, &q, 2, 2, 2, CdmModel::Dina, &cfg).is_err()
+        };
+        assert!(rejected(CdmConfig { max_iter: 0, ..CdmConfig::default() }));
+        assert!(rejected(CdmConfig { tol: f64::NAN, ..CdmConfig::default() }));
+        assert!(rejected(CdmConfig { eps: 0.5, ..CdmConfig::default() }));
+        assert!(rejected(CdmConfig {
+            eps: 1e-3,
+            mono_backoff: 2e-3,
+            ..CdmConfig::default()
+        }));
+        assert!(rejected(CdmConfig { init_slip: f64::INFINITY, ..CdmConfig::default() }));
+        assert!(rejected(CdmConfig { init_slip: 0.6, init_guess: 0.4, ..CdmConfig::default() }));
+        assert!(rejected(CdmConfig { count_floor: -1.0, ..CdmConfig::default() }));
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): de la Torre (2009)-style design,

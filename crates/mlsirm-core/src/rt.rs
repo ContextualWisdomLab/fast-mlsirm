@@ -262,6 +262,8 @@ pub struct RtPersonFit {
     /// Degrees of freedom `n_j - 1`.
     pub df: Vec<usize>,
     /// Wilson-Hilferty standardization of `W` (`~ N(0,1)`; positive = aberrant).
+    /// The field name is retained for API compatibility; it is not a separate
+    /// literature statistic named `l_t`.
     pub l_t: Vec<f64>,
     /// Upper-tail p-value `P(chi2_{df} >= W)`.
     pub p_value: Vec<f64>,
@@ -276,9 +278,9 @@ pub struct RtPersonFit {
     pub item_flag: Vec<bool>,
 }
 
-/// Response-time person fit under a fitted lognormal RT model (van der Linden &
-/// Guo, 2008; Marianti et al., 2014; Sinharay, 2018). For each person the speed is
-/// profiled by per-person ML, so the sum of squared standardized log-time
+/// Sinharay's (2018) frequentist response-time person-fit statistic under a fitted
+/// lognormal RT model. For each person the speed is profiled by per-person ML, so
+/// the sum of squared standardized log-time
 /// residuals `W_j = sum_i [alpha_i (ln T_ij - (beta_i - tau_hat_j))]^2` is
 /// *exactly* `chi2(n_j - 1)` under the model — an orthogonal-projection identity,
 /// not an asymptotic approximation, so the estimated-speed correction is a clean
@@ -290,6 +292,11 @@ pub struct RtPersonFit {
 /// level. `alpha`/`beta` come from a fitted [`RtFit`]; `alpha_level` flags the
 /// aggregate `W`, `z_fast` the per-item one-sided too-fast residual.
 ///
+/// The per-item studentized ML residuals are a fixed-bank diagnostic provided by
+/// this crate. Van der Linden and Guo (2008) motivate the interpretation of
+/// unusually fast item responses, but their Bayesian leave-one-out procedure is
+/// not the statistic implemented here.
+///
 /// # References (APA 7th ed.)
 ///
 /// van der Linden, W. J., & Guo, F. (2008). Bayesian procedures for identifying
@@ -297,7 +304,7 @@ pub struct RtPersonFit {
 ///   365–384. https://doi.org/10.1007/s11336-007-9046-8
 ///
 /// Sinharay, S. (2018). A new person-fit statistic for the lognormal model for
-///   response times. *Journal of Educational Measurement, 55*(4), 457–480.
+///   response times. *Journal of Educational Measurement, 55*(4), 457–476.
 ///   https://doi.org/10.1111/jedm.12188
 #[allow(clippy::too_many_arguments)]
 pub fn rt_person_fit(
@@ -313,19 +320,31 @@ pub fn rt_person_fit(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be positive".into());
     }
-    if times.len() != n_persons * n_items {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if times.len() != n_cells {
         return Err("times must have length n_persons * n_items".into());
     }
     if alpha.len() != n_items || beta.len() != n_items {
         return Err("alpha and beta must have length n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
+    if alpha.iter().any(|a| !a.is_finite() || *a <= 0.0) {
+        return Err("alpha values must be finite and positive".into());
+    }
+    if beta.iter().any(|b| !b.is_finite()) {
+        return Err("beta values must be finite".into());
+    }
     if !(0.0 < alpha_level && alpha_level < 1.0) {
         return Err("alpha_level must be in (0, 1)".into());
+    }
+    if !z_fast.is_finite() || z_fast < 0.0 {
+        return Err("z_fast must be finite and non-negative".into());
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
 
@@ -791,6 +810,23 @@ mod tests {
         assert!(mlt.abs() < 0.4 && (0.75..=1.3).contains(&sdlt), "l_t: {mlt}/{sdlt}");
         assert!((0.01..=0.12).contains(&t1s), "skew Type I: {t1s}");
         assert!((0.01..=0.13).contains(&t1f) && pwf > 0.5, "fitted path: {t1f}/{pwf}");
+    }
+
+    #[test]
+    fn rt_person_fit_rejects_invalid_parameters_and_controls() {
+        let times = vec![1.0, 2.0, 1.5, 2.5];
+        let alpha = vec![1.0, 1.5];
+        let beta = vec![0.0, 0.5];
+        let bad = |alpha: &[f64], beta: &[f64], alpha_level: f64, z_fast: f64| {
+            rt_person_fit(&times, None, 2, 2, alpha, beta, alpha_level, z_fast).is_err()
+        };
+        assert!(bad(&[0.0, 1.5], &beta, 0.05, 1.645));
+        assert!(bad(&[f64::NAN, 1.5], &beta, 0.05, 1.645));
+        assert!(bad(&alpha, &[0.0, f64::INFINITY], 0.05, 1.645));
+        assert!(bad(&alpha, &beta, f64::NAN, 1.645));
+        assert!(bad(&alpha, &beta, 0.05, -0.1));
+        assert!(bad(&alpha, &beta, 0.05, f64::INFINITY));
+        assert!(rt_person_fit(&[], None, usize::MAX, 2, &alpha, &beta, 0.05, 1.645).is_err());
     }
 
     #[test]

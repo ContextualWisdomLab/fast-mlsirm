@@ -64,19 +64,24 @@ def fit_cdm(
     ``responses`` is a persons x items array of 0/1 (``NaN`` marks a missing cell,
     dropped under a missing-at-random assumption). ``q_matrix`` is an items x
     attributes 0/1 array; all-zero rows (an item measuring nothing) and all-zero
-    columns (an attribute measured by no item, hence non-identified) are rejected.
+    columns (an attribute measured by no item) are rejected. These checks do not
+    establish global model identifiability: DINA identifiability requires stronger
+    Q-matrix conditions (Gu & Xu, 2019), which callers must assess for their design.
 
     References (APA 7th ed.):
         de la Torre, J. (2009). DINA model and parameter estimation: A didactic.
-            *Journal of Educational and Behavioral Statistics, 34*(1), 115-130.
+            *Journal of Educational and Behavioral Statistics, 34*(1), 115–130.
             https://doi.org/10.3102/1076998607309474
+        Gu, Y., & Xu, G. (2019). The sufficient and necessary condition for the
+            identifiability and estimability of the DINA model. *Psychometrika,
+            84*(2), 468–483. https://doi.org/10.1007/s11336-018-9619-8
         Junker, B. W., & Sijtsma, K. (2001). Cognitive assessment models with few
             assumptions, and connections with nonparametric item response theory.
-            *Applied Psychological Measurement, 25*(3), 258-272.
+            *Applied Psychological Measurement, 25*(3), 258–272.
             https://doi.org/10.1177/01466210122032064
         Templin, J. L., & Henson, R. A. (2006). Measurement of psychological
             disorders using cognitive diagnosis models. *Psychological Methods,
-            11*(3), 287-305. https://doi.org/10.1037/1082-989X.11.3.287
+            11*(3), 287–305. https://doi.org/10.1037/1082-989X.11.3.287
     """
     from .fitstats import _core_module
 
