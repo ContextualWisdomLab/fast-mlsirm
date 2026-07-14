@@ -2062,6 +2062,315 @@ pub fn m2_rmsea2(
     })
 }
 
+/// Polytomous M2 / RMSEA2 limited-information goodness of fit for a fitted
+/// unidimensional GRM or GPCM, the ordered-category generalization of
+/// [`m2_rmsea2`]. Uses the CUMULATIVE marginal form: univariate
+/// `m_i(c) = P(Y_i >= c)` for `c = 1..K-1` and bivariate
+/// `m_ij(c,d) = P(Y_i >= c, Y_j >= d)` for `i < j`, `c,d = 1..K-1` — provably the
+/// same M2 statistic as Maydeu-Olivares & Joe's category-equality form (the two
+/// moment vectors differ by a fixed invertible block map `T` under which
+/// `M2 = N e'[Ξ⁻¹ − Ξ⁻¹Δ(Δ'Ξ⁻¹Δ)⁻¹Δ'Ξ⁻¹]e` is invariant), and it reduces
+/// EXACTLY to [`m2_rmsea2`] at `K = 2`. Model moments factor over the
+/// `q_theta`-node `N(0,1)` grid by local independence
+/// (`m_ij = Σ_t w_t S_i(c|t) S_j(d|t)`, `S_i(c|t) = P(Y_i >= c | θ_t)`); `Δ` is a
+/// central-difference Jacobian; the multinomial covariance `Ξ` uses the nesting
+/// rule `1{Y_i>=c}·1{Y_i>=c'} = 1{Y_i>=max(c,c')}` (max-threshold collapse). The
+/// statistic reuses the same one-Cholesky solve as the binary path. Complete
+/// cases only. `df = Q − P` with `Q = n(K-1) + C(n,2)(K-1)²`, `P = n·K`.
+///
+/// RMSEA2 uses the denominator `df·(N−1)` (as [`m2_rmsea2`] and the `mirt`
+/// package); Maydeu-Olivares & Joe (2014, Eq. 14) instead scale by `N·df` — the
+/// two differ negligibly and only in RMSEA2 and its interval, not in M2, df, or
+/// the p-value.
+///
+/// # References (APA 7th ed.)
+///
+/// Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in
+///   categorical data analysis. *Multivariate Behavioral Research, 49*(4),
+///   305–328. https://doi.org/10.1080/00273171.2014.911075
+///
+/// Maydeu-Olivares, A. (2013). Goodness-of-fit assessment of item response
+///   theory models. *Measurement: Interdisciplinary Research and Perspectives,
+///   11*(3), 71–101. https://doi.org/10.1080/15366367.2013.831680
+#[allow(clippy::too_many_arguments)]
+pub fn poly_m2(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: crate::poly::PolyModel,
+    q_theta: usize,
+) -> Result<M2Result, String> {
+    use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
+    if n_items < 3 {
+        return Err("M2 needs at least 3 items".into());
+    }
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != y.len() {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if slope.len() != n_items {
+        return Err("slope must have length n_items".into());
+    }
+    if cat_params.len() != n_items * (n_cat - 1) {
+        return Err("cat_params must have length n_items*(n_cat-1)".into());
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+
+    let z = n_cat - 1; // highest threshold index
+    // moment layout: item-major univariate (i,c), then bivariate pairs (i<j)x(c,d)
+    let mut moment_cons: Vec<Vec<(usize, usize)>> = Vec::new();
+    for i in 0..n_items {
+        for c in 1..=z {
+            moment_cons.push(vec![(i, c)]);
+        }
+    }
+    let base_biv = moment_cons.len(); // = n_items * z
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            pairs.push((i, j));
+            for c in 1..=z {
+                for d in 1..=z {
+                    moment_cons.push(vec![(i, c), (j, d)]);
+                }
+            }
+        }
+    }
+    let s = moment_cons.len(); // Q
+    let p = n_items * n_cat; // slope + (K-1) cat params per item
+    if s <= p {
+        return Err(format!(
+            "M2 df non-positive: {s} moments <= {p} parameters (need more items)"
+        ));
+    }
+
+    // complete cases (M2 assumes a single sample size N)
+    let is_obs = |pp: usize, i: usize| observed.map_or(true, |o| o[pp * n_items + i]);
+    let mut complete: Vec<usize> = Vec::with_capacity(n_persons);
+    for pp in 0..n_persons {
+        if (0..n_items).all(|i| is_obs(pp, i)) {
+            complete.push(pp);
+        }
+    }
+    let n_c = complete.len();
+    if n_c < p + 2 {
+        return Err(format!("too few complete cases for M2: {n_c}"));
+    }
+    let n_f = n_c as f64;
+
+    // observed cumulative margins
+    let mut p_hat = vec![0.0_f64; s];
+    for &pp in &complete {
+        for (a, cons) in moment_cons.iter().enumerate() {
+            if cons.iter().all(|&(i, c)| y[pp * n_items + i] >= c) {
+                p_hat[a] += 1.0;
+            }
+        }
+    }
+    for v in p_hat.iter_mut() {
+        *v /= n_f;
+    }
+
+    // cumulative-probability tensor S[(i*qn+t)*z + (c-1)] = P(Y_i >= c | theta_t)
+    let (nodes, weights) =
+        gh_rule(q_theta).ok_or_else(|| format!("unsupported quadrature size {q_theta}"))?;
+    let qn = nodes.len();
+    let build_cum = |slope: &[f64], cat_params: &[f64]| -> Vec<f64> {
+        let mut sc = vec![0.0_f64; n_items * qn * z];
+        for i in 0..n_items {
+            let a = slope[i];
+            let cp = &cat_params[i * z..(i + 1) * z];
+            for (t, &theta) in nodes.iter().enumerate() {
+                let base = a * theta;
+                let lp = match model {
+                    PolyModel::Gpcm => {
+                        let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                        let mut intercepts = vec![0.0_f64; n_cat];
+                        intercepts[1..].copy_from_slice(cp);
+                        gpcm_logprobs(base, &scores, &intercepts)
+                    }
+                    PolyModel::Grm => grm_logprobs(base, cp),
+                };
+                // P(Y>=c) = sum_{k>=c} P(Y=k), accumulated from the top category down
+                let off = (i * qn + t) * z;
+                let mut acc = 0.0_f64;
+                for c in (1..=z).rev() {
+                    acc += lp[c].exp();
+                    sc[off + (c - 1)] = acc;
+                }
+            }
+        }
+        sc
+    };
+    // model marginal over a distinct-item constraint list (local independence)
+    let cum_joint = |sc: &[f64], cons: &[(usize, usize)]| -> f64 {
+        (0..qn)
+            .map(|t| {
+                let mut pr = weights[t];
+                for &(i, c) in cons {
+                    pr *= sc[(i * qn + t) * z + (c - 1)];
+                }
+                pr
+            })
+            .sum()
+    };
+    let model_moments =
+        |sc: &[f64]| -> Vec<f64> { moment_cons.iter().map(|cons| cum_joint(sc, cons)).collect() };
+
+    let s0 = build_cum(slope, cat_params);
+    let mom0 = model_moments(&s0);
+    let e: Vec<f64> = (0..s).map(|a| p_hat[a] - mom0[a]).collect();
+
+    // guard degenerate moments (empty/boundary category => Xi singular, df invalid)
+    for (a, &m) in mom0.iter().enumerate() {
+        if m * (1.0 - m) < 1e-10 {
+            return Err(format!(
+                "degenerate moment {a} (empty/boundary category); M2 df invalid"
+            ));
+        }
+    }
+
+    // Delta (s x p) by central differences; columns per item: slope then z cat params
+    let mut params: Vec<(usize, isize)> = Vec::new(); // (item, -1 = slope else cat index)
+    for i in 0..n_items {
+        params.push((i, -1));
+        for m in 0..z as isize {
+            params.push((i, m));
+        }
+    }
+    let mut delta = vec![0.0_f64; s * p];
+    for (col, &(pi, which)) in params.iter().enumerate() {
+        let mut sl = slope.to_vec();
+        let mut cp = cat_params.to_vec();
+        let base = if which < 0 { sl[pi] } else { cp[pi * z + which as usize] };
+        let h = 1e-4 * (1.0 + base.abs());
+        if which < 0 {
+            sl[pi] = base + h;
+        } else {
+            cp[pi * z + which as usize] = base + h;
+        }
+        let mom_plus = model_moments(&build_cum(&sl, &cp));
+        if which < 0 {
+            sl[pi] = base - h;
+        } else {
+            cp[pi * z + which as usize] = base - h;
+        }
+        let mom_minus = model_moments(&build_cum(&sl, &cp));
+        let inv = 0.5 / h;
+        for row in 0..s {
+            delta[row * p + col] = (mom_plus[row] - mom_minus[row]) * inv;
+        }
+    }
+
+    // Xi: multinomial covariance of the cumulative margins. Cumulative indicators
+    // nest within an item (1{Y_i>=c}1{Y_i>=c'} = 1{Y_i>=max}), so merge the two
+    // constraint lists keeping the LARGER threshold per shared item.
+    let mut xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut merged = moment_cons[a].clone();
+            for &(j, thr) in &moment_cons[b] {
+                if let Some(slot) = merged.iter_mut().find(|(i, _)| *i == j) {
+                    slot.1 = slot.1.max(thr);
+                } else {
+                    merged.push((j, thr));
+                }
+            }
+            let cov = cum_joint(&s0, &merged) - mom0[a] * mom0[b];
+            xi[a * s + b] = cov;
+            xi[b * s + a] = cov;
+        }
+    }
+
+    // M2 = N ( e'Xi^-1 e - (D'Xi^-1 e)'(D'Xi^-1 D)^-1 (D'Xi^-1 e) )
+    let mut l = xi;
+    cholesky_lower(&mut l, s)?;
+    let u = chol_solve(&l, s, &e);
+    let mut w = vec![0.0_f64; s * p];
+    let mut col_b = vec![0.0_f64; s];
+    for col in 0..p {
+        for row in 0..s {
+            col_b[row] = delta[row * p + col];
+        }
+        let wc = chol_solve(&l, s, &col_b);
+        for row in 0..s {
+            w[row * p + col] = wc[row];
+        }
+    }
+    let mut amat = vec![0.0_f64; p * p];
+    let mut g = vec![0.0_f64; p];
+    for r in 0..p {
+        for c in 0..p {
+            let mut acc = 0.0;
+            for row in 0..s {
+                acc += delta[row * p + r] * w[row * p + c];
+            }
+            amat[r * p + c] = acc;
+        }
+        let mut gg = 0.0;
+        for row in 0..s {
+            gg += w[row * p + r] * e[row];
+        }
+        g[r] = gg;
+    }
+    let mut la = amat;
+    cholesky_lower(&mut la, p)?;
+    let zz = chol_solve(&la, p, &g);
+    let quad: f64 = (0..s).map(|a| e[a] * u[a]).sum();
+    let adj: f64 = (0..p).map(|r| g[r] * zz[r]).sum();
+    let m2 = (n_f * (quad - adj)).max(0.0);
+    let df = (s - p) as f64;
+    let p_value = chi2_sf(m2, df);
+    let denom = df * (n_f - 1.0);
+    let rmsea2 = ((m2 - df).max(0.0) / denom).sqrt();
+    let rmsea2_ci_lower = (nc_lambda_for(m2, df, 0.95) / denom).sqrt();
+    let rmsea2_ci_upper = (nc_lambda_for(m2, df, 0.05) / denom).sqrt();
+
+    // first-order (c=d=1) bivariate SRMSR
+    let uni1 = |i: usize| i * z; // (i, c=1)
+    let biv11 = |idx: usize| base_biv + idx * z * z; // (idx, c=1, d=1)
+    let (mut ssum, mut cnt) = (0.0_f64, 0usize);
+    for (idx, &(i, j)) in pairs.iter().enumerate() {
+        let (pi, pj, pij) = (p_hat[uni1(i)], p_hat[uni1(j)], p_hat[biv11(idx)]);
+        let (mi, mj, mij) = (mom0[uni1(i)], mom0[uni1(j)], mom0[biv11(idx)]);
+        let dobs = pi * (1.0 - pi) * pj * (1.0 - pj);
+        let dmod = mi * (1.0 - mi) * mj * (1.0 - mj);
+        if dobs > 1e-12 && dmod > 1e-12 {
+            let robs = (pij - pi * pj) / dobs.sqrt();
+            let rmod = (mij - mi * mj) / dmod.sqrt();
+            ssum += (robs - rmod) * (robs - rmod);
+            cnt += 1;
+        }
+    }
+    let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
+
+    Ok(M2Result {
+        m2,
+        df,
+        p_value,
+        rmsea2,
+        rmsea2_ci_lower,
+        rmsea2_ci_upper,
+        srmsr,
+        n_moments: s,
+        n_parameters: p,
+        n_complete: n_c,
+    })
+}
+
 
 #[cfg(test)]
 mod m2_branch_tests {
@@ -2159,5 +2468,151 @@ mod m2_branch_tests {
         assert!(res.m2.is_finite() && res.df == 20.0);
         assert!(res.rmsea2_ci_lower <= res.rmsea2_ci_upper + 1e-9);
         assert!(res.srmsr.is_finite());
+    }
+
+    #[test]
+    fn poly_m2_reduces_to_binary_m2() {
+        // At K=2 the polytomous M2 must equal the trusted binary m2_rmsea2 at the
+        // same parameters (both GRM and GPCM cells reduce to the 2PL). This
+        // anchors the cumulative-moment machinery, the merge-max Xi, and the
+        // Delta/Cholesky solve against already-validated code.
+        use crate::poly::PolyModel;
+        let (n_persons, n_items) = (1500usize, 6usize);
+        let mut st = 24680u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.1 * i as f64).collect();
+        let b_true: Vec<f64> = (0..n_items).map(|i| -0.5 + 0.2 * i as f64).collect();
+        let mut yf = vec![0.0_f64; n_persons * n_items];
+        let mut yi = vec![0usize; n_persons * n_items];
+        for pp in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let pr = 1.0 / (1.0 + (-(a_true[i] * th + b_true[i])).exp());
+                let v = if u() < pr { 1.0 } else { 0.0 };
+                yf[pp * n_items + i] = v;
+                yi[pp * n_items + i] = v as usize;
+            }
+        }
+        let obs = vec![true; n_persons * n_items];
+        let alpha: Vec<f64> = a_true.iter().map(|a| a.ln()).collect();
+        let zeta = vec![0.0_f64; n_items];
+        let fid = vec![0usize; n_items];
+        let bk = bank(&alpha, &b_true, &zeta, &fid);
+        let r_bin = m2_rmsea2(
+            &bk, &yf, &obs, n_persons, &PriorSpec::standard(1), 41,
+            XiRule::GaussHermite { q_xi: 1 },
+        )
+        .unwrap();
+        for model in [PolyModel::Gpcm, PolyModel::Grm] {
+            let r_poly =
+                poly_m2(&yi, Some(&obs), n_persons, n_items, 2, &a_true, &b_true, model, 41).unwrap();
+            assert_eq!(r_poly.n_moments, r_bin.n_moments, "{model:?} n_moments");
+            assert_eq!(r_poly.n_parameters, r_bin.n_parameters, "{model:?} n_parameters");
+            assert_eq!(r_poly.df, r_bin.df, "{model:?} df");
+            assert!(
+                (r_poly.m2 - r_bin.m2).abs() < 1e-4,
+                "{model:?} M2: poly {} vs binary {}", r_poly.m2, r_bin.m2
+            );
+            assert!((r_poly.p_value - r_bin.p_value).abs() < 1e-4, "{model:?} p_value");
+            assert!((r_poly.rmsea2 - r_bin.rmsea2).abs() < 1e-4, "{model:?} rmsea2");
+        }
+    }
+
+    // GPCM Monte-Carlo for M2 calibration: returns (mean M2/df, rejection rate at
+    // .05, df) over `reps` datasets simulated at fixed true parameters. Under a
+    // NORMAL theta (matching the N(0,1) quadrature) the model is correctly
+    // specified, so M2 -> chi^2(df) even at the true parameters (the residual
+    // projector removes P dimensions); under a right-SKEWED theta the N(0,1)
+    // quadrature is a population misspecification the statistic should detect.
+    fn mc_poly_m2(reps: usize, n_persons: usize, skew: bool) -> (f64, f64, f64) {
+        use crate::poly::{gpcm_logprobs, PolyModel};
+        let (n_items, k) = (5usize, 3usize);
+        let z = k - 1;
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.12 * i as f64).collect();
+        let cat_true: Vec<f64> = (0..n_items)
+            .flat_map(|i| vec![0.8 - 0.1 * i as f64, -0.8 + 0.1 * i as f64])
+            .collect();
+        let (mut ratio_sum, mut n_reject, mut df_val) = (0.0_f64, 0usize, 0.0_f64);
+        for rep in 0..reps {
+            let mut st = 909_090u64 + rep as u64 * 131 + if skew { 5 } else { 0 };
+            let mut u = || {
+                st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((st >> 11) as f64) / ((1u64 << 53) as f64)
+            };
+            let mut yi = vec![0usize; n_persons * n_items];
+            for pp in 0..n_persons {
+                let theta = if skew {
+                    -(u().max(1e-12)).ln() - 1.0
+                } else {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                };
+                for i in 0..n_items {
+                    let base = a_true[i] * theta;
+                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                    let mut ic = vec![0.0_f64; k];
+                    ic[1..].copy_from_slice(&cat_true[i * z..(i + 1) * z]);
+                    let lp = gpcm_logprobs(base, &scores, &ic);
+                    let draw = u();
+                    let (mut acc, mut cat) = (0.0_f64, k - 1);
+                    for (c, l) in lp.iter().enumerate() {
+                        acc += l.exp();
+                        if draw <= acc {
+                            cat = c;
+                            break;
+                        }
+                    }
+                    yi[pp * n_items + i] = cat;
+                }
+            }
+            let r =
+                poly_m2(&yi, None, n_persons, n_items, k, &a_true, &cat_true, PolyModel::Gpcm, 21)
+                    .unwrap();
+            ratio_sum += r.m2 / r.df;
+            if r.p_value < 0.05 {
+                n_reject += 1;
+            }
+            df_val = r.df;
+        }
+        (ratio_sum / reps as f64, n_reject as f64 / reps as f64, df_val)
+    }
+
+    #[test]
+    fn poly_m2_calibration_null_and_skew_power() {
+        // Fast CI guard. The authoritative >=500-replication study is
+        // poly_m2_monte_carlo_500 (ignored). See mc_poly_m2 for the design.
+        let (reps, n) = (20usize, 1500usize);
+        let (mn, rej_n, df) = mc_poly_m2(reps, n, false);
+        let (ms, rej_s, _) = mc_poly_m2(reps, n, true);
+        println!(
+            "[poly M2] df={df}  normal: mean(M2)/df={mn:.3} reject={rej_n:.3}  \
+             skew: mean(M2)/df={ms:.3} reject={rej_s:.3}"
+        );
+        // matched N(0,1) prior => calibrated (mean ~ df, few false rejections)
+        assert!((0.75..=1.35).contains(&mn), "normal M2/df off: {mn}");
+        assert!(rej_n < 0.25, "normal rejection too high: {rej_n}");
+        // skewed population is a misspecification M2 detects => inflated vs normal
+        assert!(ms > mn, "skew must inflate M2 vs normal: {ms} vs {mn}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_m2_monte_carlo_500() {
+        let (reps, n) = (500usize, 2000usize);
+        let (mn, rej_n, df) = mc_poly_m2(reps, n, false);
+        let (ms, rej_s, _) = mc_poly_m2(reps, n, true);
+        println!(
+            "[poly M2 500] df={df}  normal: mean(M2)/df={mn:.4} reject={rej_n:.4}  \
+             skew: mean(M2)/df={ms:.4} reject={rej_s:.4}"
+        );
+        assert!((0.9..=1.1).contains(&mn), "normal M2/df off: {mn}");
+        assert!(rej_n < 0.12, "normal Type I too high: {rej_n}");
+        assert!(ms > mn + 0.1 && rej_s > rej_n, "skew misfit not detected: {ms} vs {mn}");
     }
 }
