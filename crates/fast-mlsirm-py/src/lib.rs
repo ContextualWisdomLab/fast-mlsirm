@@ -27,7 +27,8 @@ use mlsirm_core::scoring::{
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
-    grm_logprobs as core_grm_logprobs, score_poly_eap as core_score_poly_eap, PolyModel,
+    grm_logprobs as core_grm_logprobs, poly_information_curves as core_poly_information_curves,
+    score_poly_eap as core_score_poly_eap, PolyModel,
 };
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
@@ -791,6 +792,29 @@ fn score_poly_eap(
     Ok(out.into())
 }
 
+/// Polytomous item information curves: flattened `n_theta * n_items` I_i(theta).
+#[pyfunction]
+#[pyo3(signature = (theta, slope, cat_params, n_items, n_cat, model = "grm"))]
+fn poly_information_curves(
+    theta: PyReadonlyArray1<'_, f64>,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    model: &str,
+) -> PyResult<Vec<f64>> {
+    let m = parse_poly_model(model)?;
+    core_poly_information_curves(
+        theta.as_slice()?,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        n_items,
+        n_cat,
+        m,
+    )
+    .map_err(PyValueError::new_err)
+}
+
 /// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1531,6 +1555,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     Ok(())
 }
 

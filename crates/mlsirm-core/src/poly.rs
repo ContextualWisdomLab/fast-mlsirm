@@ -369,6 +369,76 @@ pub fn fit_poly_unidim(
     Ok(PolyFit { slope, cat_params, loglik: ll, n_iter: it })
 }
 
+/// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
+/// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
+/// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
+/// `s_j = P(Y>=j)`. `cat_params` is this item's `K-1` category parameters.
+pub fn poly_item_information(
+    theta: f64,
+    slope: f64,
+    cat_params: &[f64],
+    model: PolyModel,
+) -> f64 {
+    let a = slope;
+    let base = a * theta;
+    match model {
+        PolyModel::Gpcm => {
+            let k = cat_params.len() + 1;
+            let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+            let mut intercepts = vec![0.0_f64; k];
+            intercepts[1..].copy_from_slice(cat_params);
+            let p: Vec<f64> =
+                gpcm_logprobs(base, &scores, &intercepts).iter().map(|l| l.exp()).collect();
+            let ebar: f64 = scores.iter().zip(&p).map(|(s, pp)| s * pp).sum();
+            let var: f64 = scores.iter().zip(&p).map(|(s, pp)| pp * (s - ebar).powi(2)).sum();
+            a * a * var
+        }
+        PolyModel::Grm => {
+            let kk = cat_params.len() + 1; // K
+            let p: Vec<f64> = grm_logprobs(base, cat_params).iter().map(|l| l.exp()).collect();
+            let mut v = vec![0.0_f64; kk + 1]; // v[0]=v[K]=0
+            for (j, item) in v.iter_mut().enumerate().take(kk).skip(1) {
+                let s = 1.0 / (1.0 + (-(base + cat_params[j - 1])).exp());
+                *item = s * (1.0 - s);
+            }
+            let mut info = 0.0_f64;
+            for k in 0..kk {
+                let d = v[k] - v[k + 1];
+                info += d * d / p[k].max(1e-300);
+            }
+            a * a * info
+        }
+    }
+}
+
+/// Item information curves over a trait grid: returns a flattened
+/// `n_theta * n_items` vector of `I_i(theta)` (row-major by theta). Test
+/// information is the per-theta row sum.
+#[allow(clippy::too_many_arguments)]
+pub fn poly_information_curves(
+    theta: &[f64],
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+) -> Result<Vec<f64>, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+        return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
+    }
+    let mut out = vec![0.0_f64; theta.len() * n_items];
+    for (t, &th) in theta.iter().enumerate() {
+        for i in 0..n_items {
+            let cp = &cat_params[i * (n_cat - 1)..(i + 1) * (n_cat - 1)];
+            out[t * n_items + i] = poly_item_information(th, slope[i], cp, model);
+        }
+    }
+    Ok(out)
+}
+
 /// EAP trait scores from polytomous responses given fitted item parameters
 /// (the Rust scoring companion to [`fit_poly_unidim`]). `slope[i]` is `a_i`;
 /// `cat_params` is flattened `n_items * (n_cat-1)` (GPCM intercepts or GRM
@@ -553,6 +623,38 @@ mod tests {
         }
         let corr = num / (da.sqrt() * dh.sqrt());
         assert!(corr > 0.9, "slope corr {corr}; hat={:?}", fit.slope);
+    }
+
+    #[test]
+    fn poly_item_information_matches_finite_difference() {
+        // I(theta) = sum_k (dP_k/dtheta)^2 / P_k, checked against a central FD of the cell.
+        let h = 1e-6;
+        let cases: [(PolyModel, &[f64]); 2] =
+            [(PolyModel::Gpcm, &[0.2, -0.3]), (PolyModel::Grm, &[1.1, -0.9])];
+        for (model, cat) in cases.iter().copied() {
+            let (a, theta) = (1.3_f64, 0.4_f64);
+            let cell = |t: f64| -> Vec<f64> {
+                let base = a * t;
+                match model {
+                    PolyModel::Gpcm => {
+                        let k = cat.len() + 1;
+                        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                        let mut ic = vec![0.0; k];
+                        ic[1..].copy_from_slice(cat);
+                        gpcm_logprobs(base, &scores, &ic).iter().map(|l| l.exp()).collect()
+                    }
+                    PolyModel::Grm => grm_logprobs(base, cat).iter().map(|l| l.exp()).collect(),
+                }
+            };
+            let (pp, pm, p0) = (cell(theta + h), cell(theta - h), cell(theta));
+            let mut fd_info = 0.0_f64;
+            for k in 0..p0.len() {
+                let dp = (pp[k] - pm[k]) / (2.0 * h);
+                fd_info += dp * dp / p0[k];
+            }
+            let ana = poly_item_information(theta, a, cat, model);
+            assert!((ana - fd_info).abs() < 1e-4, "{model:?}: analytic {ana} vs fd {fd_info}");
+        }
     }
 
     #[test]

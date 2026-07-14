@@ -467,3 +467,38 @@ def test_grm_cell_rust_numpy_parity():
         rust = np.array(_core.grm_cell_logprobs(float(base), thr))
         npy = grm_category_logprobs(np.array([base]), thr)[0]
         assert np.allclose(rust, npy, atol=1e-12), f"grm parity at base={base}"
+
+
+def test_information_polytomous_api():
+    """information_polytomous returns positive item/test information curves whose
+    test info equals the item-info row sum (Rust compute)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, information_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_information_curves"):
+        pytest.skip("compiled core without polytomous information")
+
+    rng = np.random.default_rng(8)
+    n_persons, n_items, k = 1500, 5, 3
+    a_true = rng.uniform(1.0, 1.5, n_items)
+    c_true = np.zeros((n_items, k))
+    c_true[:, 1:] = rng.normal(0.0, 0.4, (n_items, k - 1))
+    theta_p = rng.normal(0.0, 1.0, n_persons)
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a_true[i] * theta_p, scores, c_true[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    fit = fit_polytomous(y, k, model="gpcm")
+    grid = np.linspace(-3, 3, 25)
+    info = information_polytomous(fit, grid)
+    assert info["item_info"].shape == (25, n_items)
+    assert np.all(info["item_info"] >= 0) and np.all(info["test_info"] > 0)
+    assert np.allclose(info["test_info"], info["item_info"].sum(axis=1))
+    # information is highest in the interior for well-centered items
+    assert info["test_info"].argmax() not in (0, 24)

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["PolytomousFit", "fit_polytomous", "score_polytomous"]
+__all__ = ["PolytomousFit", "fit_polytomous", "score_polytomous", "information_polytomous"]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
 
@@ -153,3 +153,32 @@ def score_polytomous(
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
         "theta_sd": np.asarray(res["theta_sd"], dtype=np.float64),
     }
+
+
+def information_polytomous(
+    fit: PolytomousFit,
+    theta: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Item and test information curves for a fitted polytomous model (compute
+    in Rust). ``theta`` is a 1-D grid of trait values. Returns
+    ``{"item_info"` (n_theta x n_items), ``"test_info"`` (n_theta)}``.
+    """
+    th = np.asarray(theta, dtype=np.float64).ravel()
+    if th.size == 0 or not np.all(np.isfinite(th)):
+        raise ValueError("theta must be a non-empty finite 1-D grid")
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_information_curves"):
+        raise RuntimeError("information_polytomous requires the compiled Rust core")
+
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    flat = core.poly_information_curves(
+        th,
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        int(n_items),
+        int(n_cat),
+        fit.model,
+    )
+    item_info = np.asarray(flat, dtype=np.float64).reshape(th.size, n_items)
+    return {"item_info": item_info, "test_info": item_info.sum(axis=1)}
