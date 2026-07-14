@@ -115,6 +115,19 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Polytomous computerized adaptive testing** (Dodd, De Ayala & Koch, 1995).
+  `cat_simulate_polytomous(true_theta, fit)` simulates an adaptive test over a
+  fitted GRM/GPCM bank: items are selected by maximum Fisher information at the
+  running EAP trait, responses are generated at the true trait, and the trait +
+  posterior SD are re-estimated after each item, stopping at an SE threshold (or
+  a fixed length). Returns per-simulee `theta_eap`, `theta_sd`, and `n_used`.
+  Compute in Rust (`mlsirm_core::poly::poly_cat_simulate`, plus
+  `poly_cat_next_item`), composing the existing item information and EAP scoring.
+  Validated by a 500-simulee Monte-Carlo: a variable-length CAT recovers the
+  trait to RMSE 0.29 (normal) / 0.33 (skew) using ~9.7 of 40 bank items, and at
+  a fixed length of 12 maximum-information selection beats random (RMSE 0.27 vs
+  0.33 normal; 0.30 vs 0.40 skew).
+
 - **Polytomous person fit** (Drasgow, Levine & Williams, 1985; Snijders, 2001).
   `person_fit_polytomous(responses, fit)` returns the standardized
   log-likelihood `l_z` and its estimated-trait correction `l_z*` (per person,

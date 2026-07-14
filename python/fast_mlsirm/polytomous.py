@@ -611,3 +611,62 @@ def person_fit_polytomous(
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
         "flagged": np.asarray(res["flagged"], dtype=bool),
     }
+
+
+def cat_simulate_polytomous(
+    true_theta: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+    se_threshold: float = 0.3,
+    min_items: int = 5,
+    max_items: int = 30,
+    adaptive: bool = True,
+    seed: int = 0,
+) -> dict[str, np.ndarray]:
+    """Simulate a polytomous computerized adaptive test over a fitted GRM/GPCM
+    item bank (compute in Rust; Dodd, De Ayala & Koch, 1995). For each true trait
+    in ``true_theta`` it selects items by maximum Fisher information at the
+    running EAP estimate (or at random when ``adaptive=False``), generates the
+    response at the true trait, and re-estimates the trait after each item,
+    stopping once at least ``min_items`` are given and the posterior SD is below
+    ``se_threshold`` (or at ``max_items``; set ``se_threshold=0`` with
+    ``min_items == max_items`` for a fixed-length CAT). Returns per-simulee
+    ``theta_eap``, ``theta_sd`` (the final CAT standard error), and ``n_used``.
+
+    References (APA 7th ed.):
+        Dodd, B. G., De Ayala, R. J., & Koch, W. R. (1995). Computerized
+            adaptive testing with polytomous items. *Applied Psychological
+            Measurement, 19*(1), 5-22.
+            https://doi.org/10.1177/014662169501900103
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    tt = np.asarray(true_theta, dtype=np.float64).ravel()
+    if tt.size == 0 or not np.all(np.isfinite(tt)):
+        raise ValueError("true_theta must be a non-empty finite 1-D array")
+    if se_threshold < 0 or min_items < 1 or max_items < min_items:
+        raise ValueError("require se_threshold >= 0 and 1 <= min_items <= max_items")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_cat_simulate"):
+        raise RuntimeError("cat_simulate_polytomous requires the compiled Rust core")
+
+    res = core.poly_cat_simulate(
+        tt,
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        int(n_items),
+        int(n_cat),
+        fit.model,
+        int(q_theta),
+        float(se_threshold),
+        int(min_items),
+        int(max_items),
+        bool(adaptive),
+        int(seed),
+    )
+    return {
+        "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
+        "theta_sd": np.asarray(res["theta_sd"], dtype=np.float64),
+        "n_used": np.asarray(res["n_used"], dtype=np.int64),
+    }

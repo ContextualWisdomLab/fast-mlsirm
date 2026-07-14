@@ -891,3 +891,44 @@ def test_person_fit_polytomous():
 
     with pytest.raises(ValueError):
         person_fit_polytomous(y[:, :-1], fit)
+
+
+def test_cat_simulate_polytomous():
+    """Polytomous CAT (Dodd, De Ayala & Koch, 1995) through the public API:
+    recovers the trait efficiently and max-information beats random selection."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import cat_simulate_polytomous, PolytomousFit
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_cat_simulate"):
+        pytest.skip("compiled core built without poly_cat_simulate")
+
+    j, k, z = 40, 4, 3
+    slope = np.array([1.0 + 0.25 * (i % 3) for i in range(j)])
+    cat = np.zeros((j, z))
+    for i in range(j):
+        b = -2.2 + 4.4 * i / (j - 1)
+        cum = 0.0
+        for m in range(z):
+            cum += b + (m - (z - 1) / 2) * 0.9
+            cat[i, m] = -slope[i] * cum
+    fit = PolytomousFit(model="gpcm", slope=slope, cat_params=cat, loglik=0.0, n_iter=0)
+
+    tt = np.random.default_rng(0).standard_normal(400)
+    var = cat_simulate_polytomous(tt, fit, se_threshold=0.30, min_items=5, max_items=30, seed=1)
+    for key in ("theta_eap", "theta_sd", "n_used"):
+        assert var[key].shape == (tt.size,)
+    rmse = np.sqrt(np.mean((var["theta_eap"] - tt) ** 2))
+    assert rmse < 0.40
+    assert var["n_used"].mean() < 0.75 * j  # far fewer than the bank
+    assert np.all(var["n_used"] <= 30)
+
+    adap = cat_simulate_polytomous(tt, fit, se_threshold=0.0, min_items=12, max_items=12, adaptive=True, seed=2)
+    rand = cat_simulate_polytomous(tt, fit, se_threshold=0.0, min_items=12, max_items=12, adaptive=False, seed=3)
+    r_a = np.sqrt(np.mean((adap["theta_eap"] - tt) ** 2))
+    r_r = np.sqrt(np.mean((rand["theta_eap"] - tt) ** 2))
+    assert r_a < r_r  # max-information more efficient than random
+
+    with pytest.raises(ValueError):
+        cat_simulate_polytomous(tt, fit, min_items=10, max_items=5)

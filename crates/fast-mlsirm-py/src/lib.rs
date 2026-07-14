@@ -28,6 +28,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
+    poly_cat_simulate as core_poly_cat_simulate,
     poly_information_curves as core_poly_information_curves, poly_person_fit as core_poly_person_fit,
     poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
 };
@@ -850,6 +851,54 @@ fn poly_person_fit(
     out.set_item("lz_star", res.lz_star)?;
     out.set_item("theta_eap", res.theta_eap)?;
     out.set_item("flagged", res.flagged)?;
+    Ok(out.into())
+}
+
+/// Simulate a polytomous computerized adaptive test (Rust compute path). Returns
+/// a dict with per-simulee `theta_eap`, `theta_sd` (final CAT SE), and `n_used`.
+///
+/// References (APA 7th ed.):
+///   Dodd, B. G., De Ayala, R. J., & Koch, W. R. (1995). Computerized adaptive
+///     testing with polytomous items. Applied Psychological Measurement, 19(1),
+///     5-22. https://doi.org/10.1177/014662169501900103
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (true_theta, slope, cat_params, n_items, n_cat, model = "grm", q_theta = 21, se_threshold = 0.3, min_items = 5, max_items = 30, adaptive = true, seed = 0))]
+fn poly_cat_simulate(
+    py: Python<'_>,
+    true_theta: PyReadonlyArray1<'_, f64>,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    n_cat: usize,
+    model: &str,
+    q_theta: usize,
+    se_threshold: f64,
+    min_items: usize,
+    max_items: usize,
+    adaptive: bool,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let res = core_poly_cat_simulate(
+        true_theta.as_slice()?,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        n_items,
+        n_cat,
+        m,
+        q_theta,
+        se_threshold,
+        min_items,
+        max_items,
+        adaptive,
+        seed,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("theta_sd", res.theta_sd)?;
+    out.set_item("n_used", res.n_used)?;
     Ok(out.into())
 }
 
@@ -1855,6 +1904,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
