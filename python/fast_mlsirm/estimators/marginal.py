@@ -1159,3 +1159,28 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         "loglik": prev_ll if it == 0 else ll,
         "n_iter": it + 1,
     }
+
+
+def grm_category_logprobs(base, thresholds):
+    """NumPy parity reference for the Rust GRM cumulative-logit cell
+    (``mlsirm_core::poly::grm_logprobs``). ``thresholds`` are the ``K-1``
+    cumulative boundary intercepts ``beta_k`` (ordered decreasing);
+    ``P(Y >= k) = sigmoid(base + beta_k)``. Returns ``log P(Y = k)`` with the
+    category axis last (``base`` broadcasts over any leading shape).
+    """
+    base = np.asarray(base, dtype=np.float64)
+    thresholds = np.asarray(thresholds, dtype=np.float64)
+    if thresholds.ndim != 1 or thresholds.size < 1:
+        raise ValueError("thresholds must be a 1-D array of length K-1 >= 1")
+    kb = thresholds.shape[0]
+    eta = base[..., None] + thresholds                 # (..., K-1)
+    ls = -np.logaddexp(0.0, -eta)                       # log sigmoid(eta) = log P(Y>=k)
+    ls_neg = -np.logaddexp(0.0, eta)                    # log(1 - P(Y>=k))
+    out = np.empty(base.shape + (kb + 1,), dtype=np.float64)
+    out[..., 0] = ls_neg[..., 0]                        # P(Y=0)
+    for k in range(1, kb):                              # P(Y=k) = e^{ls[k-1]} - e^{ls[k]}
+        a = ls[..., k - 1]
+        b = ls[..., k]
+        out[..., k] = a + np.log1p(-np.exp(b - a))
+    out[..., kb] = ls[..., kb - 1]                      # P(Y=K-1)
+    return out

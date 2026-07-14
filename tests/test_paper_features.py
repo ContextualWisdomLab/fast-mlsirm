@@ -439,3 +439,31 @@ def test_score_polytomous_recovers_theta():
     assert sc["theta_eap"].shape == (n_persons,)
     assert np.all(sc["theta_sd"] > 0)
     assert np.corrcoef(theta_true, sc["theta_eap"])[0, 1] > 0.8
+
+
+def test_grm_cell_rust_numpy_parity():
+    """The Rust GRM cumulative-logit cell matches the NumPy reference to 1e-12,
+    and the NumPy GRM cell is a proper (normalized) log-distribution."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+
+    # NumPy self-consistency: normalization + binary reduction
+    for base in (-1.0, 0.3, 1.7):
+        lp = grm_category_logprobs(np.array([base]), np.array([1.0, -1.0]))[0]
+        assert abs(np.log(np.exp(lp).sum())) < 1e-12
+    # binary GRM (K=2): P(Y=1) = sigmoid(base + beta)
+    lp2 = grm_category_logprobs(np.array([0.4]), np.array([0.2]))[0]
+    assert abs(lp2[1] - (-np.logaddexp(0.0, -(0.4 + 0.2)))) < 1e-12
+
+    try:
+        from fast_mlsirm import _core
+    except Exception:  # pragma: no cover
+        pytest.skip("compiled core not available")
+    if not hasattr(_core, "grm_cell_logprobs"):  # pragma: no cover
+        pytest.skip("core built without grm cell")
+    thr = np.array([1.3, 0.1, -1.2])
+    for base in (-1.4, 0.0, 0.9):
+        rust = np.array(_core.grm_cell_logprobs(float(base), thr))
+        npy = grm_category_logprobs(np.array([base]), thr)[0]
+        assert np.allclose(rust, npy, atol=1e-12), f"grm parity at base={base}"
