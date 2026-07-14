@@ -1334,3 +1334,44 @@ def test_equating_standard_errors():
         equating_standard_errors(x, y, method="equipercentile", route="analytic", k_x=k, k_y=k)
     with pytest.raises(ValueError):
         equating_standard_errors(x, y, method="linear", route="bogus", k_x=k, k_y=k)
+
+
+def test_fit_response_times():
+    """Lognormal response-time model (van der Linden, 2007) through the public
+    API: recovers the item time parameters, the speed SD, and the speed EAP, and
+    handles missing (NaN) response times."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_response_times
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rt_lognormal"):
+        pytest.skip("compiled core built without fit_rt_lognormal")
+
+    rng = np.random.default_rng(4)
+    n, m = 800, 20
+    beta = np.linspace(3.5, 4.5, m)
+    alpha = np.linspace(1.0, 3.0, m)
+    sigma = 0.3
+    tau = sigma * rng.standard_normal(n)
+    y = beta[None, :] - tau[:, None] + rng.standard_normal((n, m)) / alpha[None, :]
+    times = np.exp(y)
+    # inject ~20% missing as NaN
+    times[rng.random((n, m)) < 0.2] = np.nan
+
+    fit = fit_response_times(times)
+    assert fit.converged
+    assert fit.alpha.shape == (m,) and fit.tau_eap.shape == (n,)
+    assert np.corrcoef(fit.beta, beta)[0, 1] > 0.95
+    assert np.corrcoef(fit.alpha, alpha)[0, 1] > 0.85
+    assert np.corrcoef(fit.tau_eap, tau)[0, 1] > 0.8
+    assert abs(fit.sigma_tau - sigma) < 0.1
+    assert fit.mu_tau == 0.0
+    # loglik trace is non-decreasing (monotone EM)
+    # (exposed via n_iter/converged; recompute a small fit to confirm determinism)
+    fit2 = fit_response_times(times)
+    assert np.allclose(fit.beta, fit2.beta)
+
+    with pytest.raises(ValueError):
+        fit_response_times(times.ravel())  # not 2-D

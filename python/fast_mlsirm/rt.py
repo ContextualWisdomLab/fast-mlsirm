@@ -1,0 +1,80 @@
+"""Lognormal response-time model (van der Linden, 2007): the speed-side analogue
+of the 2PL for item response *times*, estimated by marginal-ML EM in the Rust
+core."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass
+class RtFit:
+    """Fitted lognormal response-time model. ``alpha``/``beta`` are the per-item
+    time discriminations and time intensities; ``sigma_tau`` the estimated speed
+    SD (``mu_tau`` is pinned to 0 for identification); ``tau_eap``/``tau_sd`` the
+    per-person EAP speed and its posterior SD."""
+
+    alpha: np.ndarray
+    beta: np.ndarray
+    mu_tau: float
+    sigma_tau: float
+    tau_eap: np.ndarray
+    tau_sd: np.ndarray
+    loglik: float
+    n_iter: int
+    converged: bool
+
+
+def fit_response_times(
+    times: np.ndarray,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+    var_floor: float = 1e-4,
+    sigma_floor: float = 1e-4,
+    fix_sigma_tau: float | None = None,
+) -> RtFit:
+    """Fit the lognormal response-time measurement model (compute in Rust; van der
+    Linden, 2007): ``ln(T_ij) ~ Normal(beta_i - tau_j, 1/alpha_i^2)`` for person
+    ``j`` (latent speed ``tau_j``) and item ``i`` (time intensity ``beta_i``, time
+    discrimination ``alpha_i``). Item parameters and the speed SD are estimated by
+    marginal-ML EM with ``tau ~ Normal(0, sigma_tau^2)``, and speed is scored by
+    EAP. ``times`` is a persons x items array of raw response times; non-positive
+    or ``NaN`` entries are treated as missing (marginalized per person). By default
+    ``sigma_tau`` is estimated (the log-time metric identifies the speed scale);
+    pass ``fix_sigma_tau`` only to impose a deliberately standardized metric.
+
+    References (APA 7th ed.):
+        van der Linden, W. J. (2007). A hierarchical framework for modeling speed
+            and accuracy on test items. *Psychometrika, 72*(3), 287-308.
+            https://doi.org/10.1007/s11336-006-1478-z
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rt_lognormal"):
+        raise RuntimeError("fit_response_times requires the compiled Rust core")
+    t = np.asarray(times, dtype=np.float64)
+    if t.ndim != 2:
+        raise ValueError("times must be a 2-D persons x items array")
+    n_persons, n_items = t.shape
+    observed = np.isfinite(t) & (t > 0)
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    tt = np.where(observed, t, 1.0).reshape(-1)  # masked entries get a valid placeholder
+    res = core.fit_rt_lognormal(
+        tt, obs_arg, int(n_persons), int(n_items),
+        int(max_iter), float(tol), float(var_floor), float(sigma_floor),
+        None if fix_sigma_tau is None else float(fix_sigma_tau),
+    )
+    return RtFit(
+        alpha=np.asarray(res["alpha"], dtype=np.float64),
+        beta=np.asarray(res["beta"], dtype=np.float64),
+        mu_tau=float(res["mu_tau"]),
+        sigma_tau=float(res["sigma_tau"]),
+        tau_eap=np.asarray(res["tau_eap"], dtype=np.float64),
+        tau_sd=np.asarray(res["tau_sd"], dtype=np.float64),
+        loglik=float(res["loglik"]),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+    )

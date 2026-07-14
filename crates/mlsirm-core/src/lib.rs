@@ -8,6 +8,7 @@ pub mod nodes;
 pub mod poly;
 pub mod poly_marginal;
 pub mod oakes;
+pub mod rt;
 pub(crate) mod quadrature;
 pub mod scoring;
 

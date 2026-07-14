@@ -42,6 +42,7 @@ use mlsirm_core::poly::{
     PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
+use mlsirm_core::rt::{fit_rt_lognormal as core_fit_rt, RtConfig};
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
@@ -1294,6 +1295,42 @@ fn fit_poly_lsirm(
     Ok(out.into())
 }
 
+/// Lognormal response-time model (van der Linden, 2007; Rust compute path).
+/// `times` is `n_persons * n_items` row-major raw response times (`> 0` where
+/// observed). Returns a dict with item `alpha`/`beta`, `sigma_tau`, per-person
+/// `tau_eap`/`tau_sd`, `loglik`, `n_iter`, `converged`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (times, observed, n_persons, n_items, max_iter = 500, tol = 1e-6, var_floor = 1e-4, sigma_floor = 1e-4, fix_sigma_tau = None))]
+fn fit_rt_lognormal(
+    py: Python<'_>,
+    times: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    n_persons: usize,
+    n_items: usize,
+    max_iter: usize,
+    tol: f64,
+    var_floor: f64,
+    sigma_floor: f64,
+    fix_sigma_tau: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let cfg = RtConfig { max_iter, tol, var_floor, sigma_floor, fix_sigma_tau };
+    let fit = core_fit_rt(times.as_slice()?, obs, n_persons, n_items, cfg)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha", fit.alpha)?;
+    out.set_item("beta", fit.beta)?;
+    out.set_item("mu_tau", fit.mu_tau)?;
+    out.set_item("sigma_tau", fit.sigma_tau)?;
+    out.set_item("tau_eap", fit.tau_eap)?;
+    out.set_item("tau_sd", fit.tau_sd)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    Ok(out.into())
+}
+
 /// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -2323,6 +2360,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rt_lognormal, m)?)?;
     Ok(())
 }
 

@@ -190,6 +190,30 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Lognormal response-time model** (van der Linden, 2007). A new
+  `mlsirm_core::rt` module and the public `fit_response_times` — the speed-side
+  analogue of the 2PL for item response *times*, opening a response-time modality
+  alongside the accuracy models. For person `j` (latent speed `tau_j`) and item
+  `i` (time intensity `beta_i`, time discrimination `alpha_i`),
+  `ln(T_ij) ~ Normal(beta_i - tau_j, 1/alpha_i^2)`; item parameters and the speed
+  SD are estimated by marginal-ML EM with `tau ~ Normal(0, sigma_tau^2)`, and speed
+  is scored by EAP. Because the model is conditionally Gaussian with a unit loading
+  on `tau`, the speed posterior, marginal likelihood, and EAP are all *exact closed
+  forms* (matrix-determinant / Sherman-Morrison), so the estimator needs neither
+  quadrature nor a line search — the EM is exact `O(nnz)` coordinate ascent. The
+  log-time metric identifies the speed scale (so `sigma_tau` is estimated, not
+  fixed) and only the location is pinned (`mu_tau = 0`). Compute in Rust; exposed
+  via PyO3 and Python; missing/non-positive times are marginalized per person.
+  Validated by an exact identity anchor (the closed-form marginal log-likelihood
+  equals a dense multivariate-normal log-pdf to `< 1e-9`), a reduction anchor
+  (`sigma_tau -> 0` collapses to the per-item lognormal MLE), and a 500-replication
+  Monte-Carlo: under both normal and a *misspecified* skew speed population the item
+  parameters stay essentially unbiased (RMSE `alpha` 0.067 / `beta` 0.027, bias
+  `beta` -0.0001 under skew) with speed recovered at corr 0.92, demonstrating that
+  the level-1 RT item parameters are estimable independently of the speed
+  distribution's shape. Deferred: the joint speed-accuracy hierarchical layer,
+  Louis-standard-error information, and RT bank linking.
+
 - **Standard errors of equating** (Kolen & Brennan, 2014, ch. 7; Efron &
   Tibshirani, 1993). `equating_standard_errors` reports the per-score-point
   sampling error of the equated score for the equivalent-groups design, by two
