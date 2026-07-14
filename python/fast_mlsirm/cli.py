@@ -112,6 +112,16 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
 
+    score_cmd = sub.add_parser(
+        "score",
+        help="Score new respondents against a frozen serving bundle (EAP).",
+        description="Score new respondents against a frozen serving bundle (EAP, item parameters fixed).",
+    )
+    score_cmd.add_argument("--bundle", required=True, help="Path to a serving bundle JSON (see fast_mlsirm.serving.export_serving_bundle).")
+    score_cmd.add_argument("--responses", required=True, help="Responses: a JSON file (dict or list of dicts mapping item code -> 0/1) or a .npy matrix in bundle item order (NaN = missing).")
+    score_cmd.add_argument("--out", help="Optional path for the scores JSON (default: stdout).")
+    _add_json_flag(score_cmd)
+
     diagnose = sub.add_parser(
         "diagnose-fit",
         help="Compute item, person, and model fit diagnostics for fitted parameters.",
@@ -253,6 +263,40 @@ def _main(argv: list[str] | None = None) -> int:
                     "truth": _output_file(args.out, "truth.npz"),
                     "manifest": _output_file(args.out, "manifest.json"),
                 },
+            },
+        )
+
+    if args.command == "score":
+        from .serving import load_serving_bundle, score_respondents
+
+        _progress(args, "⏳ Scoring respondents against the serving bundle...")
+        try:
+            bundle = load_serving_bundle(args.bundle)
+            if args.responses.endswith(".npy"):
+                payload = np.load(args.responses, allow_pickle=False)
+            else:
+                with open(args.responses, encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            scores = score_respondents(bundle, payload)
+        except (ValueError, OSError, json.JSONDecodeError) as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
+            print(f"❌ Error: Scoring failed - {str(e)}", file=sys.stderr)
+            return 1
+        if args.out:
+            Path(args.out).write_text(
+                json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        return _complete(
+            args,
+            json.dumps(scores, ensure_ascii=False, indent=2)
+            if not args.out
+            else f"✅ Scores written to {args.out}",
+            {
+                "command": "score",
+                "status": "ok",
+                "n_scored": len(scores),
+                "scores": scores,
             },
         )
 

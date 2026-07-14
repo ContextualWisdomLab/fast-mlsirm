@@ -2,7 +2,54 @@
 
 ## Unreleased
 
+### Added
+
+- **Marginal (MMLE-EM) estimation for the full latent-space family.**
+  `fit(estimator="mmle")` now fits `MIRT`/`MLS2PLM`/`MLSRM` (and `ULS2PLM`/
+  `ULSRM` under a population structure) by Bock-Aitkin-style marginal EM:
+  person latents `(theta, xi)` are integrated over Gauss-Hermite grids —
+  tractable via the simple-structure conditional factorization — with a
+  Fisher-preconditioned GEM M-step and the Jeon et al. (2021) LSIRM priors as
+  MAP penalties (`PenaltyConfig::lsirm_prior`). Rust core
+  (`mlsirm_core::marginal`) with a NumPy mirror
+  (`fast_mlsirm.estimators.marginal`) held to 1e-9 end-of-run parity
+  (`tests/test_marginal_parity.py`); design and paper basis in
+  `docs/mmle_marginal_lsirm_design.md`.
+- **Estimation-level multigroup and multilevel population structures** for the
+  marginal estimator: `fit(..., group_id=...)` (Bock-Zimowski group trait
+  means/SDs, common items, pinned reference group) and
+  `fit(..., cluster_id=...)` (Fox-Glas random intercept, `sigma_u`/ICC
+  estimated). Results surface on `FitResult.population` and persist through
+  `save_fit_result`; the CLI `fit` command gains `--estimator`, `--group-id`,
+  `--cluster-id`, `--q-theta`, `--q-xi`, `--q-u`, and `--tolerance`.
+- **wgpu E-step kernels for the marginal estimator**
+  (`mlsirm_core::gpu_marginal`): the E-step hot path runs in f32 on the GPU
+  with the same race-free slot-ownership reduction as the JML kernels, cutting
+  a 31k-person multilevel E-step iteration from ~110 s (CPU f64) to ~5 s on a
+  laptop RTX 3050 Ti; the M-step and final EAP pass stay on the CPU in f64,
+  and hosts without an adapter fall back to the CPU path unchanged.
+- **Likelihood-based fit statistics** (`fast_mlsirm.fitstats`): Orlando-Thissen
+  S-X² via the Lord-Wingersky recursion generalized to the joint `(theta, xi)`
+  grid (chi-square tail without SciPy), Benjamini-Hochberg FDR control,
+  Drasgow `l_z` and Snijders `l_z*` person fit with the MAP `r_0` correction,
+  and infit/outfit at the marginal EAPs.
+- **Item screening pipeline** (`fast_mlsirm.select_items`): iterative
+  fit → flag → remove → refit with sparse / S-X²-BH / mean-square band /
+  low-discrimination / map-isolation flags, an `l_z*` person screen, a
+  per-dimension item floor, and a full audit trail.
+- **Serving bundle + frozen-parameter scoring** (`fast_mlsirm.serving`):
+  schema-versioned JSON bundle of the calibrated item parameters and
+  population block, and `score_respondents()` EAP scoring of new response
+  payloads with items frozen — the fixed-parameter serving pattern used by
+  the downstream importance-assessment API. `fast-mlsirm score` scores a JSON
+  payload (or `.npy` matrix) against a bundle from the command line.
+
 ### Changed
+
+- `estimator="mmle"` with a spatial/multidimensional model now fits (routed to
+  the marginal estimator) instead of raising `NotImplementedError`; plain
+  `ULS2PLM`/`ULSRM` without a population structure keep the legacy
+  unidimensional fast path and its exact previous behavior.
 
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
