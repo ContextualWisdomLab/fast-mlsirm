@@ -987,3 +987,35 @@ def score_eap(
         "xi_eap": xi_eap,
         "loglik": log_lp,
     }
+
+
+def category_logprobs(base, scores, intercepts):
+    """Unified scoring-function log category probabilities — the NumPy parity
+    reference for the forthcoming Rust GPCM/nominal cell (see
+    ``docs/papers/gpcm-nominal-design-spec.md``).
+
+    With the baseline category 0 pinned (``scores[0] = intercepts[0] = 0``),
+    ``psi_k = scores[k] * base + intercepts[k]`` and the returned value is the
+    numerically-stable ``log softmax_k(psi)``. ``base`` broadcasts over any
+    leading shape (e.g. a person x node grid); the category axis is last.
+
+    Nests the models:
+    - binary 2PL / Rasch: ``K=2``, ``scores=[0, 1]``, ``intercepts=[0, b]`` —
+      then ``logP_1 = log_sigmoid(base + b)`` exactly (the design's free
+      bit-parity check).
+    - GPCM (Muraki): ``scores = [0, 1, ..., K-1]`` fixed, ``intercepts`` free.
+    - nominal (Bock): both ``scores`` and ``intercepts`` free (category 0 pinned).
+    """
+    base = np.asarray(base, dtype=np.float64)
+    scores = np.asarray(scores, dtype=np.float64)
+    intercepts = np.asarray(intercepts, dtype=np.float64)
+    if scores.ndim != 1 or intercepts.shape != scores.shape:
+        raise ValueError("scores and intercepts must be 1-D arrays of equal length K")
+    if scores.size < 2:
+        raise ValueError("need at least K=2 categories")
+    if scores[0] != 0.0 or intercepts[0] != 0.0:
+        raise ValueError("baseline category 0 must be pinned: scores[0] = intercepts[0] = 0")
+    psi = scores * base[..., None] + intercepts  # (..., K)
+    m = psi.max(axis=-1, keepdims=True)
+    log_z = m[..., 0] + np.log(np.exp(psi - m).sum(axis=-1))
+    return psi - log_z[..., None]

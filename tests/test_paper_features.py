@@ -229,3 +229,33 @@ def test_irt_link_recovers_known_transform():
 
     with _pytest.raises(Exception):
         irt_link(a_old, b_old, a_new, b_new, method="not_a_method")
+
+
+def test_category_logprobs_binary_parity_and_gpcm_monotone():
+    """The unified GPCM/nominal cell nests binary 2PL (bit-parity check) and is
+    a proper log-softmax; GPCM scores make higher `base` favor higher categories.
+    Parity reference for the Rust polytomous kernel (design spec)."""
+    import numpy as np
+    from fast_mlsirm.estimators.marginal import category_logprobs
+
+    rng = np.random.default_rng(0)
+    base = rng.normal(size=32)
+    b = 0.3
+
+    # binary 2PL: logP_1 == log_sigmoid(base + b), logP_0 == log_sigmoid(-(base+b))
+    lp = category_logprobs(base, [0.0, 1.0], [0.0, b])
+    assert np.allclose(np.exp(lp).sum(axis=-1), 1.0, atol=1e-12)
+    eta = base + b
+    assert np.allclose(lp[:, 1], -np.logaddexp(0.0, -eta), atol=1e-12)
+    assert np.allclose(lp[:, 0], -np.logaddexp(0.0, eta), atol=1e-12)
+
+    # GPCM (scores 0,1,2): larger base shifts mass to the top category
+    lp3 = category_logprobs(np.array([-2.0, 2.0]), [0.0, 1.0, 2.0], [0.0, 0.0, 0.0])
+    assert np.allclose(np.exp(lp3).sum(axis=-1), 1.0, atol=1e-12)
+    p_top = np.exp(lp3[:, 2])
+    assert p_top[1] > p_top[0]
+
+    # baseline must be pinned
+    import pytest
+    with pytest.raises(ValueError):
+        category_logprobs(base, [0.5, 1.0], [0.0, b])
