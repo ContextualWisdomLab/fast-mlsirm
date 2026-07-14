@@ -432,3 +432,16 @@ def test_objective_add_penalty_uses_space():
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0
+
+def test_objective_rejects_invalid_eps_distance():
+    params = MLSIRMParams(theta=np.zeros((2, 1)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+    for eps in [0.0, -1.0, float('nan'), float('inf'), float('-inf')]:
+        with pytest.raises(ValueError, match="eps_distance must be finite and > 0"):
+            config = FitConfig(eps_distance=1.0)
+            object.__setattr__(config, "eps_distance", eps) # bypass frozen dataclass validation for test setup
+            neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=config, backend="numpy")
+
+        with pytest.raises(ValueError, match="eps_distance must be finite and > 0"):
+            config = FitConfig(eps_distance=1.0)
+            object.__setattr__(config, "eps_distance", eps)
+            neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=config, backend="rust")

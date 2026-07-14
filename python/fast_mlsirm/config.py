@@ -105,7 +105,8 @@ class FitConfig:
             raise ValueError("learning_rate must be > 0")
         if self.init_gamma <= 0:
             raise ValueError("init_gamma must be > 0")
-        if self.eps_distance <= 0:
-            raise ValueError("eps_distance must be > 0")
+        import math
+        if not math.isfinite(self.eps_distance) or self.eps_distance <= 0:
+            raise ValueError("eps_distance must be finite and > 0")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)

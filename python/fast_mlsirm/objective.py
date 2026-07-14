@@ -83,6 +83,9 @@ def neg_loglik_and_grad(
     device: str | None = None,
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
+    if not np.isfinite(config.eps_distance) or config.eps_distance <= 0:
+        raise ValueError("eps_distance must be finite and > 0")
+
     requested_backend = normalize_backend(backend)
     normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
     if normalized_backend == "rust":
