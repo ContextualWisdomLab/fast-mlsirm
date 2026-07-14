@@ -248,6 +248,12 @@ pub fn s_x2(
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
+    // The summed-score table is indexed by `sum(y as usize)` and sized n_d+1, so a
+    // non-dichotomous observed value would index out of bounds (panic). S-X2 is a
+    // dichotomous-item statistic; reject anything but 0/1 on observed cells.
+    if y.iter().zip(observed).any(|(&v, &o)| o && v != 0.0 && v != 1.0) {
+        return Err("s_x2 requires dichotomous (0/1) observed responses".into());
+    }
     if let Some(w) = person_weight {
         if w.len() != n_persons {
             return Err("person_weight length must match n_persons".into());
@@ -524,6 +530,11 @@ pub fn infit_outfit(
     if y.len() != n_persons * n_items || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
+    if theta.len() != n_persons * bank.n_dims || xi.len() != n_persons * bank.latent_dim {
+        return Err(
+            "theta/xi must have lengths n_persons * n_dims / n_persons * latent_dim".into(),
+        );
+    }
     let kind = crate::interaction_kind(bank.model_type);
     let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
     let _ = uses_space;
@@ -664,6 +675,37 @@ mod tests {
             .sum::<f64>()
             / finite as f64;
         assert!(mean_effect < 0.05, "effect size too large for a true model: {mean_effect}");
+    }
+
+    #[test]
+    fn sx2_rejects_non_dichotomous_responses() {
+        // A non-0/1 observed value would index the summed-score table out of bounds.
+        let (alpha, b, zeta, fid, mut y, observed, _, _) = toy_bank_data();
+        y[0] = 2.0;
+        let bank = ItemBank {
+            alpha: &alpha, b: &b, zeta: &zeta, tau: -30.0, factor_id: &fid,
+            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
+        };
+        let res = s_x2(
+            &bank, &y, &observed, 2000, &PriorSpec::standard(1),
+            &SX2Config { q_theta: 21, ..Default::default() }, None,
+        );
+        let err = res.err().expect("expected an error");
+        assert!(err.contains("dichotomous"), "got: {err}");
+    }
+
+    #[test]
+    fn infit_outfit_rejects_wrong_theta_length() {
+        let (alpha, b, zeta, fid, y, observed, _, xi) = toy_bank_data();
+        let bank = ItemBank {
+            alpha: &alpha, b: &b, zeta: &zeta, tau: -30.0, factor_id: &fid,
+            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
+        };
+        let short_theta = vec![0.0_f64; 3]; // not n_persons * n_dims
+        let err = infit_outfit(&bank, &y, &observed, 2000, &short_theta, &xi)
+            .err()
+            .expect("expected an error");
+        assert!(err.contains("theta/xi"), "got: {err}");
     }
 
     #[test]

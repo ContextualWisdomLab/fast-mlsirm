@@ -84,6 +84,12 @@
     `n_dims` derived from an untrusted `factor_id` (a shared `_validate_factor_id`
     guard); `fit.py` validates anchor/covariate array shapes and finiteness
     before the Rust marginal core.
+  - Rust-core backstops for the same audit (defense in depth, active once the
+    extension is rebuilt): `fitstats::s_x2` rejects non-dichotomous observed
+    responses (a non-0/1 value indexed the summed-score table out of bounds →
+    panic); `fitstats::infit_outfit` validates `theta`/`xi` lengths before
+    indexing; `scoring::validate_prior` rejects non-finite prior `mean`/`sd`
+    (a `NaN` `sd` passed the bare `sd <= 0` check).
 
 ### Added
 

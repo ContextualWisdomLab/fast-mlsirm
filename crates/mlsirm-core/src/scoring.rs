@@ -97,8 +97,11 @@ fn validate_prior(prior: &PriorSpec, n_dims: usize) -> Result<(), String> {
     if prior.mean.len() != n_dims || prior.sd.len() != n_dims {
         return Err("prior mean/sd must have one entry per trait dimension".into());
     }
-    if prior.sd.iter().any(|&s| s <= 0.0) {
-        return Err("prior sds must be positive".into());
+    if prior.sd.iter().any(|&s| !s.is_finite() || s <= 0.0) {
+        return Err("prior sds must be positive and finite".into());
+    }
+    if prior.mean.iter().any(|&m| !m.is_finite()) {
+        return Err("prior means must be finite".into());
     }
     Ok(())
 }
