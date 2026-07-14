@@ -1096,6 +1096,9 @@ def empirical_reliability(result) -> np.ndarray:
 
 @dataclass
 class M2Result:
+    """M2 limited-information goodness-of-fit result (statistic, df, p-value,
+    RMSEA2 with a 90% CI, bivariate SRMSR, and the moment/parameter counts)."""
+
     m2: float
     df: float
     p_value: float
@@ -1114,6 +1117,7 @@ class _MutBank:
     __slots__ = ("alpha", "b", "zeta", "tau")
 
     def __init__(self, alpha, b, zeta, tau):
+        """Hold mutable item-parameter copies for finite-difference re-evaluation."""
         self.alpha = alpha
         self.b = b
         self.zeta = zeta
@@ -1162,6 +1166,7 @@ def m2(
 
 
 def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
+    """Noncentral chi-square CDF (Poisson(lam/2)-weighted central CDFs)."""
     if lam <= 0.0:
         return 1.0 - chi2_sf(x, df)
     half = 0.5 * lam
@@ -1176,6 +1181,7 @@ def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
 
 
 def _nc_lambda_for(x: float, df: float, target: float) -> float:
+    """Smallest noncentrality with ncchi2_cdf(x, df, lam) == target (0 if unattainable)."""
     if (1.0 - chi2_sf(x, df)) <= target:
         return 0.0
     hi = 1.0
@@ -1192,6 +1198,7 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
 
 
 def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance):
+    """NumPy parity reference for :func:`m2` (Rust core is the compute path)."""
     model_u = model.upper()
     free_alpha = model_u not in {"MLSRM", "ULSRM"}
     uses_space = model_u != "MIRT"
@@ -1331,4 +1338,5 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
 
 
 def n_dims_of(d_of_i):
+    """Number of trait dimensions implied by a factor-id vector."""
     return int(np.asarray(d_of_i).max()) + 1

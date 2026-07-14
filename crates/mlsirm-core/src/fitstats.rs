@@ -2019,3 +2019,103 @@ pub fn m2_rmsea2(
         n_complete: n_c,
     })
 }
+
+
+#[cfg(test)]
+mod m2_branch_tests {
+    use super::*;
+    use crate::scoring::{ItemBank, PriorSpec};
+
+    fn bank<'a>(alpha: &'a [f64], b: &'a [f64], zeta: &'a [f64], fid: &'a [usize]) -> ItemBank<'a> {
+        ItemBank {
+            alpha,
+            b,
+            zeta,
+            tau: -30.0,
+            factor_id: fid,
+            model_type: crate::ModelType::Mirt,
+            n_dims: 1,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        }
+    }
+
+    #[test]
+    fn m2_rejects_too_few_items() {
+        let (alpha, b, zeta, fid) = (vec![0.0; 2], vec![0.0; 2], vec![0.0; 2], vec![0usize; 2]);
+        let bk = bank(&alpha, &b, &zeta, &fid);
+        let y = vec![0.0; 4];
+        let obs = vec![true; 4];
+        assert!(m2_rmsea2(&bk, &y, &obs, 2, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
+    }
+
+    #[test]
+    fn m2_rejects_length_mismatch() {
+        let (alpha, b, zeta, fid) = (vec![0.0; 4], vec![0.0; 4], vec![0.0; 4], vec![0usize; 4]);
+        let bk = bank(&alpha, &b, &zeta, &fid);
+        let y = vec![0.0; 8]; // wrong length for n_persons=3
+        let obs = vec![true; 8];
+        assert!(m2_rmsea2(&bk, &y, &obs, 3, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
+    }
+
+    #[test]
+    fn m2_rejects_nonpositive_df() {
+        // 3 MIRT items: s = 3 + 3 = 6 moments, p = 2*3 = 6 params -> df <= 0
+        let (alpha, b, zeta, fid) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![0usize; 3]);
+        let bk = bank(&alpha, &b, &zeta, &fid);
+        let n = 50usize;
+        let y = vec![1.0; n * 3];
+        let obs = vec![true; n * 3];
+        assert!(m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
+    }
+
+    #[test]
+    fn m2_rejects_too_few_complete_cases() {
+        // 8 items, but every row has a missing entry -> no complete cases
+        let (alpha, b, zeta, fid) =
+            (vec![0.0; 8], vec![0.0; 8], vec![0.0; 8], vec![0usize; 8]);
+        let bk = bank(&alpha, &b, &zeta, &fid);
+        let n = 40usize;
+        let y = vec![0.0; n * 8];
+        let mut obs = vec![true; n * 8];
+        for p in 0..n {
+            obs[p * 8] = false; // first item missing for everyone
+        }
+        assert!(m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
+    }
+
+    #[test]
+    fn m2_runs_on_small_hand_built_bank() {
+        // exercises the full body (Cholesky, Delta, Xi, CI, SRMSR) under the lib
+        // tests, not only the integration recovery test
+        let n_items = 8usize;
+        let n = 400usize;
+        let alpha = vec![0.0; n_items];
+        let b: Vec<f64> = (0..n_items).map(|i| -0.8 + 0.2 * i as f64).collect();
+        let zeta = vec![0.0; n_items];
+        let fid = vec![0usize; n_items];
+        let mut state = 4242u64;
+        let mut unif = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let mut y = vec![0.0; n * n_items];
+        for p in 0..n {
+            let u1 = unif().max(1e-12);
+            let u2 = unif();
+            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let prob = 1.0 / (1.0 + (-(th + b[i])).exp());
+                y[p * n_items + i] = if unif() < prob { 1.0 } else { 0.0 };
+            }
+        }
+        let obs = vec![true; n * n_items];
+        let bk = bank(&alpha, &b, &zeta, &fid);
+        let res = m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 21, XiRule::GaussHermite { q_xi: 7 })
+            .expect("m2 should run");
+        assert_eq!(res.n_moments, 36);
+        assert!(res.m2.is_finite() && res.df == 20.0);
+        assert!(res.rmsea2_ci_lower <= res.rmsea2_ci_upper + 1e-9);
+        assert!(res.srmsr.is_finite());
+    }
+}

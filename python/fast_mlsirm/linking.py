@@ -63,6 +63,9 @@ from dataclasses import dataclass
 
 @dataclass
 class IrtLinkResult:
+    """IRT linking coefficients (theta_old = slope*theta_new + intercept) with
+    the characteristic-curve criterion, iteration count, and method name."""
+
     slope: float       # theta_old = slope * theta_new + intercept
     intercept: float
     criterion: float   # characteristic-curve loss (0 for moment methods)
