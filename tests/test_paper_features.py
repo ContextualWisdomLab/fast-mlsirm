@@ -793,3 +793,46 @@ def test_local_dependence_polytomous():
 
     with pytest.raises(ValueError):
         local_dependence_polytomous(y[:, :-1], fit)
+
+
+def test_fit_nominal_polytomous():
+    """Nominal categories model (Thissen, Cai & Bock, 2010) through the public
+    API: correct shapes, GPCM nesting (loglik >= GPCM, linear recovered scores),
+    and input validation."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_nominal_polytomous, fit_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "fit_nominal"):
+        pytest.skip("compiled core built without fit_nominal")
+
+    rng = np.random.default_rng(9)
+    n, j, k = 2500, 5, 3
+    a = rng.uniform(0.9, 1.5, j)
+    c = np.zeros((j, k))
+    c[:, 1:] = rng.normal(0.0, 0.4, (j, k - 1))
+    theta = rng.standard_normal(n)
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n, j), dtype=int)
+    for i in range(j):
+        p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+        for pp in range(n):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    nom = fit_nominal_polytomous(y, k)
+    assert nom.scores.shape == (j, k - 1)
+    assert nom.intercepts.shape == (j, k - 1)
+    assert np.isfinite(nom.loglik)
+
+    # nests the GPCM: at least as high a loglik, and linear recovered scores
+    gp = fit_polytomous(y, k, model="gpcm")
+    assert nom.loglik >= gp.loglik - 0.5
+    ratio = nom.scores[:, 1] / nom.scores[:, 0]
+    assert np.all(np.abs(ratio - 2.0) < 0.4)  # a_k ~ a*k
+
+    with pytest.raises(ValueError):
+        fit_nominal_polytomous(y, 1)
+    with pytest.raises(ValueError):
+        fit_nominal_polytomous(y.astype(float) + 0.5, k)  # non-integer categories

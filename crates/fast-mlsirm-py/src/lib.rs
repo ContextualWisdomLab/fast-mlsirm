@@ -26,9 +26,10 @@ use mlsirm_core::scoring::{
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
-    fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
-    grm_logprobs as core_grm_logprobs, poly_information_curves as core_poly_information_curves,
-    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
+    fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
+    gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
+    poly_information_curves as core_poly_information_curves, poly_s_x2 as core_poly_s_x2,
+    score_poly_eap as core_score_poly_eap, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 
@@ -755,6 +756,43 @@ fn fit_poly_unidim(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", fit.slope)?;
     out.set_item("cat_params", fit.cat_params)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    Ok(out.into())
+}
+
+/// Unidimensional nominal categories model fit (Rust compute path). Returns a
+/// dict with `scores` and `intercepts` (each `n_items` lists of `n_cat-1` free
+/// values, baseline `a_0=c_0=0`), plus `loglik`/`n_iter`.
+///
+/// References (APA 7th ed.):
+///   Bock, R. D. (1972). Estimating item parameters and latent ability when
+///     responses are scored in two or more nominal categories. Psychometrika,
+///     37(1), 29-51. https://doi.org/10.1007/BF02291411
+///   Thissen, D., Cai, L., & Bock, R. D. (2010). The nominal categories item
+///     response model. In Handbook of polytomous item response theory models
+///     (pp. 43-75). Routledge.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, observed = None, q_theta = 21, max_iter = 200, tol = 1e-6))]
+fn fit_nominal(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let fit = core_fit_nominal(&yv, obs, n_persons, n_items, n_cat, q_theta, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("scores", fit.scores)?;
+    out.set_item("intercepts", fit.intercepts)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
     Ok(out.into())
@@ -1760,6 +1798,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_nominal, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;

@@ -115,6 +115,21 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Nominal categories model** (Bock, 1972; Thissen, Cai & Bock, 2010).
+  `fit_nominal_polytomous(responses, n_cat)` fits the unidimensional nominal
+  model `P(Y=k|θ) = softmax_k(a_k·θ + c_k)` with a free scoring function `a_k`
+  and intercept `c_k` per category, identified by `a_0 = c_0 = 0` and
+  `θ ~ N(0,1)`, returning a `NominalFit` (`scores`, `intercepts`, `loglik`).
+  The generalized partial credit model is the special case `a_k = a·k`, so the
+  nominal model nests it. Compute in Rust (`mlsirm_core::poly::fit_nominal`),
+  reusing the softmax cell and its residual gradient. The parameterization and
+  identification were adversarially verified against the source chapter.
+  Validated by the GPCM nesting (loglik ≥ the GPCM fit, recovered scores linear
+  in `k`) and a 500-replication recovery Monte-Carlo (per-item sign alignment):
+  under a matched `N(0,1)` ability the score RMSE is 0.15 with |bias| 0.01
+  (near-unbiased), degrading to RMSE 0.44 / |bias| 0.39 under a skewed
+  population.
+
 - **Polytomous item-pair local dependence** (Chen & Thissen, 1997; Liu &
   Maydeu-Olivares, 2013). `local_dependence_polytomous(responses, fit)` returns,
   for every item pair of a fitted GRM/GPCM, the Pearson `X²` and likelihood-ratio

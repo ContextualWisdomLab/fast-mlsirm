@@ -480,3 +480,72 @@ def local_dependence_polytomous(
         "max_abs_std_resid": np.asarray(res["max_abs_std_resid"], dtype=np.float64),
         "n_pair": np.asarray(res["n_pair"], dtype=np.int64),
     }
+
+
+@dataclass
+class NominalFit:
+    """Result of :func:`fit_nominal_polytomous`. ``scores`` and ``intercepts``
+    are each ``n_items x (n_cat - 1)``: the free category scoring values
+    ``a_{i,1}..a_{i,K-1}`` and intercepts ``c_{i,1}..c_{i,K-1}`` of the nominal
+    model ``P(Y=k|theta) = softmax_k(a_k*theta + c_k)`` (baseline
+    ``a_0 = c_0 = 0``). Parameters are identified up to the reflection
+    ``(a_k, theta) -> (-a_k, -theta)``.
+    """
+
+    scores: np.ndarray
+    intercepts: np.ndarray
+    loglik: float
+    n_iter: int
+
+
+def fit_nominal_polytomous(
+    responses: np.ndarray,
+    n_cat: int,
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-6,
+) -> NominalFit:
+    """Fit the unidimensional nominal categories model by marginal MLE (compute
+    in Rust; Bock, 1972; Thissen, Cai & Bock, 2010). Each item has a free scoring
+    function ``a_k`` and intercept ``c_k`` per category,
+    ``P(Y=k|theta) = softmax_k(a_k*theta + c_k)``, identified by ``a_0=c_0=0``
+    with ``theta ~ N(0,1)``. The generalized partial credit model is the special
+    case ``a_k = a*k``, so the nominal model nests it. ``responses`` is persons x
+    items of integer categories ``0..n_cat-1``; ``NaN`` marks a missing response.
+
+    References (APA 7th ed.):
+        Bock, R. D. (1972). Estimating item parameters and latent ability when
+            responses are scored in two or more nominal categories.
+            *Psychometrika, 37*(1), 29-51. https://doi.org/10.1007/BF02291411
+        Thissen, D., Cai, L., & Bock, R. D. (2010). The nominal categories item
+            response model. In *Handbook of polytomous item response theory
+            models* (pp. 43-75). Routledge.
+    """
+    if not isinstance(n_cat, int) or n_cat < 2:
+        raise ValueError("n_cat must be an integer >= 2")
+    if q_theta not in {7, 11, 15, 21, 31, 41}:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_nominal"):
+        raise RuntimeError("fit_nominal_polytomous requires the compiled Rust core")
+
+    n_persons, n_items = y_int.shape
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.fit_nominal(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        obs_arg,
+        int(q_theta),
+        int(max_iter),
+        float(tol),
+    )
+    return NominalFit(
+        scores=np.asarray(res["scores"], dtype=np.float64),
+        intercepts=np.asarray(res["intercepts"], dtype=np.float64),
+        loglik=float(res["loglik"]),
+        n_iter=int(res["n_iter"]),
+    )
