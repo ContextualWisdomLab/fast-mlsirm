@@ -98,3 +98,86 @@ def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("vcov must be a square matrix")
     return np.sqrt(np.maximum(np.diag(matrix), 0.0))
+
+
+def oakes_standard_errors(
+    result,
+    responses,
+    factor_id,
+    config=None,
+    mask=None,
+    group_id=None,
+    cluster_id=None,
+    h: float = 1e-5,
+) -> dict:
+    """Item-parameter standard errors for a marginal (MMLE) fit via Oakes'
+    identity — the estimator Pritikin (2017) recommends in the EM framework
+    (M-step Hessian at the fixed posterior plus a finite-differenced cross
+    term, one E-step per parameter). Population parameters are conditioned
+    on; anchors/zero-inflation/covariates are not supported. Runs on the CPU
+    in f64 (finite differences would drown in f32 GPU noise).
+
+    Returns ``{"labels", "se", "information"}`` with labels ``alpha:i``,
+    ``b:i``, ``zeta:i:k``, ``tau``.
+    """
+    import numpy as np
+
+    from . import _core
+    from .config import FitConfig
+    from .estimators.marginal import LSIRM_PRIOR
+    from .objective import prepare_response
+
+    config = config or FitConfig(model=result.model, estimator="mmle")
+    y, observed = prepare_response(np.asarray(responses, dtype=float), mask)
+    n_persons, n_items = y.shape
+    factors = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(factors.max()) + 1
+    pop = result.population or {}
+    if group_id is not None:
+        ids = np.asarray(group_id, dtype=np.int64)
+        pop_kind, n_pop = "multigroup", int(ids.max()) + 1
+    elif cluster_id is not None:
+        ids = np.asarray(cluster_id, dtype=np.int64)
+        pop_kind, n_pop = "multilevel", int(ids.max()) + 1
+    else:
+        ids, pop_kind, n_pop = None, "single", 0
+    mu = np.asarray(pop.get("mu", np.zeros((0,))), dtype=np.float64).ravel()
+    sigma = np.asarray(pop.get("sigma", np.ones((0,))), dtype=np.float64).ravel()
+    sigma_u = float(pop.get("sigma_u", 0.0))
+    p = result.params
+    return dict(
+        _core.oakes_standard_errors(
+            np.where(observed, y, 0.0).ravel(),
+            observed.ravel(),
+            factors,
+            int(n_persons),
+            int(n_items),
+            int(n_dims),
+            int(np.asarray(p.zeta).shape[1]),
+            result.model,
+            float(config.eps_distance),
+            np.asarray(p.alpha, dtype=np.float64),
+            np.asarray(p.b, dtype=np.float64),
+            np.asarray(p.zeta, dtype=np.float64).ravel(),
+            float(p.tau),
+            pop_kind=pop_kind,
+            pop_id=ids,
+            n_pop=int(n_pop),
+            mu=mu if mu.size else None,
+            sigma=sigma if sigma.size else None,
+            sigma_u=sigma_u,
+            q_theta=int(config.q_theta),
+            q_xi=int(config.q_xi),
+            q_u=int(config.q_u),
+            xi_rule=config.xi_rule,
+            xi_points=int(config.xi_points),
+            xi_seed=int(config.xi_seed),
+            lambda_b=LSIRM_PRIOR["lambda_b"],
+            lambda_alpha=LSIRM_PRIOR["lambda_alpha"],
+            mu_alpha=LSIRM_PRIOR["mu_alpha"],
+            lambda_zeta=LSIRM_PRIOR["lambda_zeta"],
+            lambda_tau=LSIRM_PRIOR["lambda_tau"],
+            mu_tau=LSIRM_PRIOR["mu_tau"],
+            h=float(h),
+        )
+    )

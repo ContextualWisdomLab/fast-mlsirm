@@ -9,7 +9,7 @@ from .fitstats import (benjamini_hochberg as benjamini_hochberg, chi2_sf as chi2
                        infit_outfit as infit_outfit, person_fit as person_fit,
                        s_x2 as s_x2, select_items as select_items,
                        vuong_nonnested as vuong_nonnested)
-from .inference import observed_information as observed_information, second_order_test as second_order_test, standard_errors_from_vcov as standard_errors_from_vcov, vcov_from_hessian as vcov_from_hessian
+from .inference import oakes_standard_errors as oakes_standard_errors, observed_information as observed_information, second_order_test as second_order_test, standard_errors_from_vcov as standard_errors_from_vcov, vcov_from_hessian as vcov_from_hessian
 from .linking import link_fixed_item_parameters as link_fixed_item_parameters
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (ValidationVerdict as ValidationVerdict,
@@ -47,6 +47,7 @@ __all__ = [
     "dif_analysis",
     "dimensionality_residuals",
     "irtree_expand",
+    "oakes_standard_errors",
     "validate_judge",
     "vuong_nonnested",
     "export_serving_bundle",

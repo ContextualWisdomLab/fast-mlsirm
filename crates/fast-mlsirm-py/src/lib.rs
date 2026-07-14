@@ -827,6 +827,146 @@ fn dimensionality_residuals(
     Ok(out.into())
 }
 
+/// Oakes-identity observed-information SEs for a fitted marginal model
+/// (Pritikin 2017). Population parameters are conditioned on, not
+/// differentiated.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, factor_id, n_persons, n_items, n_dims, latent_dim, model,
+    eps_distance, alpha, b, zeta, tau, pop_kind = "single", pop_id = None,
+    n_pop = 0, mu = None, sigma = None, sigma_u = 0.0, q_theta = 21, q_xi = 11,
+    q_u = 15, xi_rule = "gh", xi_points = 256, xi_seed = 0, lambda_b = 0.25,
+    lambda_alpha = 1.0, mu_alpha = 0.5, lambda_zeta = 1.0, lambda_tau = 1.0,
+    mu_tau = 0.5, h = 1e-5,
+))]
+fn oakes_standard_errors(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    latent_dim: usize,
+    model: &str,
+    eps_distance: f64,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    pop_kind: &str,
+    pop_id: Option<PyReadonlyArray1<'_, i64>>,
+    n_pop: usize,
+    mu: Option<PyReadonlyArray1<'_, f64>>,
+    sigma: Option<PyReadonlyArray1<'_, f64>>,
+    sigma_u: f64,
+    q_theta: usize,
+    q_xi: usize,
+    q_u: usize,
+    xi_rule: &str,
+    xi_points: usize,
+    xi_seed: u64,
+    lambda_b: f64,
+    lambda_alpha: f64,
+    mu_alpha: f64,
+    lambda_zeta: f64,
+    lambda_tau: f64,
+    mu_tau: f64,
+    h: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: parse_model_type(model)?,
+        eps_distance,
+    };
+    let factors = convert_factor_id(factor_id.as_slice()?, n_dims)?;
+    let ids: Option<Vec<usize>> = match &pop_id {
+        Some(arr) => Some(
+            arr.as_slice()?
+                .iter()
+                .map(|&v| {
+                    usize::try_from(v)
+                        .map_err(|_| PyValueError::new_err("population ids must be >= 0"))
+                })
+                .collect::<PyResult<Vec<usize>>>()?,
+        ),
+        None => None,
+    };
+    let pop = match pop_kind {
+        "single" => PopulationSpec::Single,
+        "singlefree" => PopulationSpec::SingleFree,
+        "multigroup" => PopulationSpec::Multigroup {
+            group_id: ids.ok_or_else(|| PyValueError::new_err("multigroup requires pop_id"))?,
+            n_groups: n_pop,
+        },
+        "multilevel" => PopulationSpec::Multilevel {
+            cluster_id: ids
+                .ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
+            n_clusters: n_pop,
+        },
+        _ => {
+            return Err(PyValueError::new_err(
+                "pop_kind must be one of ['single', 'singlefree', 'multigroup', 'multilevel']",
+            ))
+        }
+    };
+    let rule = XiRuleKind::parse(xi_rule)
+        .ok_or_else(|| PyValueError::new_err("xi_rule must be one of ['gh', 'qmc', 'mc']"))?;
+    let mcfg = MarginalConfig {
+        q_theta,
+        q_xi,
+        q_u,
+        xi_rule: rule,
+        xi_points,
+        xi_seed,
+        ..MarginalConfig::default()
+    };
+    let penalty = PenaltyConfig {
+        lambda_b,
+        lambda_alpha,
+        mu_alpha,
+        lambda_zeta,
+        lambda_tau,
+        mu_tau,
+        ..PenaltyConfig::lsirm_prior()
+    };
+    let mu_v = match &mu {
+        Some(v) => v.as_slice()?.to_vec(),
+        None => Vec::new(),
+    };
+    let sigma_v = match &sigma {
+        Some(v) => v.as_slice()?.to_vec(),
+        None => Vec::new(),
+    };
+    let res = mlsirm_core::oakes::observed_information_oakes(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &factors,
+        &config,
+        &pop,
+        &mcfg,
+        &penalty,
+        alpha.as_slice()?,
+        b.as_slice()?,
+        zeta.as_slice()?,
+        tau,
+        &mu_v,
+        &sigma_v,
+        sigma_u,
+        h,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("labels", res.labels)?;
+    out.set_item("se", res.se)?;
+    out.set_item("information", res.information)?;
+    Ok(out.into())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -842,6 +982,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;
     m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
     m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
+    m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
     Ok(())
 }
 

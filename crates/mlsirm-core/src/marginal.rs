@@ -965,6 +965,40 @@ fn e_step(
     estep
 }
 
+
+/// Crate-internal bridge for the Oakes SE module: posterior expected counts.
+pub(crate) struct EStepCounts {
+    pub(crate) nbar: Vec<f64>,
+    pub(crate) rbar: Vec<f64>,
+    pub(crate) mbar: Vec<f64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_contexts_pub(
+    pop: &PopulationSpec,
+    mu: &[f64],
+    sigma: &[f64],
+    sigma_u: f64,
+    n_dims: usize,
+    q_u: usize,
+) -> Contexts {
+    build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn e_step_pub(
+    tables: &Tables,
+    resp: &ResponseIndex,
+    factor_id: &[usize],
+    config: &ModelConfig,
+    pop: &PopulationSpec,
+    ctx: &Contexts,
+    grids: &Grids,
+) -> EStepCounts {
+    let estep = e_step(tables, resp, factor_id, config, pop, ctx, grids, None);
+    EStepCounts { nbar: estep.nbar, rbar: estep.rbar, mbar: estep.mbar }
+}
+
 /// Expected complete-data log-likelihood contribution of one item (plus its L2
 /// penalties), used by the M-step line searches.
 #[allow(clippy::too_many_arguments)]

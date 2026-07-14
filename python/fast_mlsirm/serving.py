@@ -112,6 +112,12 @@ def export_serving_bundle(
         if "sigma_u" in pop:
             out_pop["sigma_u"] = float(pop["sigma_u"])
             out_pop["icc"] = float(pop["icc"])
+        if "pi_zero" in pop:
+            # zero-inflated calibration: serving scores are conditional on the
+            # engager class; pi is reported for downstream base-rate handling
+            out_pop["pi_zero"] = float(pop["pi_zero"])
+        if "delta" in pop:
+            out_pop["covariate_delta"] = float(pop["delta"])
         bundle["population"] = out_pop
     # Summed-score EAP conversion tables (Lord-Wingersky / Thissen et al.
     # 1995) under the bundle's serving prior — the lookup-table serving path.
