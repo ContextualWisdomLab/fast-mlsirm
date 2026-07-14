@@ -416,3 +416,67 @@ def m2_polytomous(
     )
     return {k: float(v) if k not in ("n_moments", "n_parameters", "n_complete")
             else int(v) for k, v in res.items()}
+
+
+def local_dependence_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+) -> dict[str, np.ndarray]:
+    """Item-pair local-dependence diagnostics for a fitted GRM/GPCM (compute in
+    Rust; Chen & Thissen, 1997). For every item pair it compares the observed
+    ``K x K`` contingency table against the model-implied joint under local
+    independence and returns per-pair arrays: ``item_i``/``item_j`` (the pair),
+    ``x2`` (Pearson) and ``g2`` (likelihood-ratio) statistics, ``p_value`` on
+    ``chi2(df)`` with the shared ``df = (n_cat - 1) ** 2``, ``cramers_v`` effect
+    size, ``max_abs_std_resid``, and ``n_pair`` (pairwise-complete sample size).
+    A large ``x2``/``cramers_v`` on a pair flags residual association beyond the
+    fitted trait (a local-dependence violation). ``responses`` is persons x
+    items of integer categories with ``NaN`` for missing. The reference is
+    heuristic and slightly conservative (Liu & Maydeu-Olivares, 2013), so read
+    it as a diagnostic screen.
+
+    References (APA 7th ed.):
+        Chen, W.-H., & Thissen, D. (1997). Local dependence indexes for item
+            pairs using item response theory. *Journal of Educational and
+            Behavioral Statistics, 22*(3), 265-289.
+            https://doi.org/10.3102/10769986022003265
+        Liu, Y., & Maydeu-Olivares, A. (2013). Local dependence diagnostics in
+            IRT modeling of binary data. *Educational and Psychological
+            Measurement, 73*(2), 254-274.
+            https://doi.org/10.1177/0013164412453841
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_local_dependence"):
+        raise RuntimeError("local_dependence_polytomous requires the compiled Rust core")
+
+    n_persons = y_int.shape[0]
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.poly_local_dependence(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        obs_arg,
+        fit.model,
+        int(q_theta),
+    )
+    return {
+        "item_i": np.asarray(res["item_i"], dtype=np.int64),
+        "item_j": np.asarray(res["item_j"], dtype=np.int64),
+        "x2": np.asarray(res["x2"], dtype=np.float64),
+        "g2": np.asarray(res["g2"], dtype=np.float64),
+        "df": float(res["df"]),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "cramers_v": np.asarray(res["cramers_v"], dtype=np.float64),
+        "max_abs_std_resid": np.asarray(res["max_abs_std_resid"], dtype=np.float64),
+        "n_pair": np.asarray(res["n_pair"], dtype=np.int64),
+    }

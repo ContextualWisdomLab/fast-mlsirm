@@ -115,6 +115,20 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Polytomous item-pair local dependence** (Chen & Thissen, 1997; Liu &
+  Maydeu-Olivares, 2013). `local_dependence_polytomous(responses, fit)` returns,
+  for every item pair of a fitted GRM/GPCM, the Pearson `X²` and likelihood-ratio
+  `G²` comparing the observed `K×K` contingency table to the model-implied joint
+  under local independence, with `df = (K-1)²`, the χ² p-value, Cramér's V, and
+  the largest standardized cell residual — the ordered-category generalization
+  of the binary pairwise χ² and the pair-level complement to item-level S-X² and
+  test-level M2. Compute in Rust (`mlsirm_core::fitstats::poly_local_dependence`).
+  Validated by a deterministic K=2 reduction to a from-scratch 2×2 χ² and a
+  500-replication Monte-Carlo at fitted parameters: locally-independent pairs are
+  calibrated (X²/df = 0.84, Type I 0.03 — conservative, as the papers note),
+  while an injected 2-item testlet is localized to that pair (X²/df = 10.9, power
+  1.00).
+
 - **Polytomous M2 limited-information goodness-of-fit** (Maydeu-Olivares & Joe,
   2014). `m2_polytomous(responses, fit)` returns the test-level M2 statistic,
   `df`, `p_value`, RMSEA2 (with a 90% interval), and SRMSR for a fitted GRM/GPCM

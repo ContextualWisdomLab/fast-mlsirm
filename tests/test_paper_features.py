@@ -733,3 +733,63 @@ def test_m2_polytomous():
     with pytest.raises((ValueError, RuntimeError)):
         fit2 = fit_polytomous(y[:, :2], k, model="gpcm")
         m2_polytomous(y[:, :2], fit2)
+
+
+def test_local_dependence_polytomous():
+    """Item-pair local dependence (Chen & Thissen, 1997) through the public API:
+    correct per-pair bookkeeping, calibrated (few flags) for a locally
+    independent fit, and detection of an injected testlet pair."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, local_dependence_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(
+        __import__("fast_mlsirm")._core, "poly_local_dependence"
+    ):
+        pytest.skip("compiled core built without poly_local_dependence")
+
+    def sim(theta, a, c, k, testlet=None):
+        n, j = theta.size, a.size
+        y = np.zeros((n, j), dtype=int)
+        scores = np.arange(k, dtype=float)
+        for i in range(j):
+            base = a[i] * theta + (testlet if testlet is not None and i in (0, 1) else 0.0)
+            p = np.exp(category_logprobs(base, scores, c[i]))
+            for pp in range(n):
+                y[pp, i] = np.random.default_rng(300 + i * n + pp).choice(k, p=p[pp])
+        return y
+
+    rng = np.random.default_rng(4)
+    n, j, k = 1500, 5, 3
+    a = rng.uniform(0.9, 1.4, j)
+    c = np.zeros((j, k))
+    c[:, 1:] = rng.normal(0.0, 0.5, (j, k - 1))
+
+    # locally independent -> calibrated (the reference is conservative)
+    theta = rng.standard_normal(n)
+    y = sim(theta, a, c, k)
+    fit = fit_polytomous(y, k, model="gpcm")
+    ld = local_dependence_polytomous(y, fit)
+    n_pairs = j * (j - 1) // 2
+    for key in ("item_i", "item_j", "x2", "g2", "p_value", "cramers_v", "max_abs_std_resid"):
+        assert ld[key].shape == (n_pairs,)
+    assert ld["df"] == (k - 1) ** 2
+    assert np.all(ld["item_i"] < ld["item_j"])
+    assert np.all(np.isfinite(ld["x2"])) and np.all(ld["x2"] >= 0.0)
+    finite_p = ld["p_value"][np.isfinite(ld["p_value"])]
+    assert np.all((finite_p >= 0.0) & (finite_p <= 1.0))
+    assert np.mean(finite_p < 0.05) < 0.35  # few flags under local independence
+
+    # a strong shared testlet on items 0,1 -> that pair is strongly dependent
+    dep = sim(theta, a, c, k, testlet=1.5 * rng.standard_normal(n))
+    fit_d = fit_polytomous(dep, k, model="gpcm")
+    ld_d = local_dependence_polytomous(dep, fit_d)
+    pair01 = next(idx for idx in range(n_pairs)
+                  if (ld_d["item_i"][idx], ld_d["item_j"][idx]) == (0, 1))
+    assert ld_d["x2"][pair01] > np.median(ld_d["x2"])
+    assert ld_d["p_value"][pair01] < 0.05
+
+    with pytest.raises(ValueError):
+        local_dependence_polytomous(y[:, :-1], fit)

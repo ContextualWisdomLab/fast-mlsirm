@@ -27,7 +27,7 @@ from .serving import (bank_information as bank_information,
                       load_serving_bundle as load_serving_bundle,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
-from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous
+from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous
 from .simulation import simulate as simulate
 from .test_design import assemble_test_form as assemble_test_form, item_information as item_information, select_cat_item as select_cat_item
 from .types import DimensionalityDiagnostics as DimensionalityDiagnostics, FitDiagnostics as FitDiagnostics, FitResult as FitResult, MLSIRMParams as MLSIRMParams, RecoveryReport as RecoveryReport, SimulationData as SimulationData
@@ -80,6 +80,7 @@ __all__ = [
     "polytomous_information_criteria",
     "item_fit_polytomous",
     "m2_polytomous",
+    "local_dependence_polytomous",
     "PolytomousFit",
     "fit_diagnostics",
     "infit_outfit",

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
-    poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::marginal::{
@@ -1024,6 +1024,62 @@ fn poly_m2(
     Ok(out.into())
 }
 
+/// Polytomous item-pair local-dependence diagnostics (Rust compute path).
+/// Returns a dict of per-pair arrays (`item_i`, `item_j`, `x2`, `g2`, `p_value`,
+/// `cramers_v`, `max_abs_std_resid`, `n_pair`) plus the shared `df = (K-1)^2`.
+///
+/// References (APA 7th ed.):
+///   Chen, W.-H., & Thissen, D. (1997). Local dependence indexes for item pairs
+///     using item response theory. Journal of Educational and Behavioral
+///     Statistics, 22(3), 265-289. https://doi.org/10.3102/10769986022003265
+///   Liu, Y., & Maydeu-Olivares, A. (2013). Local dependence diagnostics in IRT
+///     modeling of binary data. Educational and Psychological Measurement,
+///     73(2), 254-274. https://doi.org/10.1177/0013164412453841
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21))]
+fn poly_local_dependence(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_poly_ld(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        q_theta,
+    )
+    .map_err(PyValueError::new_err)?;
+    let item_i: Vec<usize> = res.pairs.iter().map(|&(i, _)| i).collect();
+    let item_j: Vec<usize> = res.pairs.iter().map(|&(_, j)| j).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item_i", item_i)?;
+    out.set_item("item_j", item_j)?;
+    out.set_item("x2", res.x2)?;
+    out.set_item("g2", res.g2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("cramers_v", res.cramers_v)?;
+    out.set_item("max_abs_std_resid", res.max_abs_std_resid)?;
+    out.set_item("n_pair", res.n_pair)?;
+    Ok(out.into())
+}
+
 /// l_z / Snijders l_z* person fit at EAP estimates.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1685,6 +1741,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
