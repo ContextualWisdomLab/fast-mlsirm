@@ -292,3 +292,29 @@ def test_gpcm_node_gradient_matches_finite_difference():
     # residual closure
     p = np.exp(category_logprobs(base, scores, intercepts))
     assert abs((counts - counts.sum() * p).sum()) < 1e-12
+
+
+def test_fit_gpcm_numpy_recovers_known_parameters():
+    """Unidimensional GPCM MMLE-EM (the polytomous parity reference) recovers
+    known slopes and category intercepts from simulated data."""
+    import numpy as np
+    from fast_mlsirm.estimators.marginal import category_logprobs, fit_gpcm_numpy
+
+    rng = np.random.default_rng(7)
+    n_persons, n_items, k_cat = 4000, 6, 3
+    a_true = rng.uniform(0.8, 1.8, n_items)
+    c_true = np.zeros((n_items, k_cat))
+    c_true[:, 1:] = rng.normal(0.0, 1.0, (n_items, k_cat - 1))
+    theta = rng.normal(0.0, 1.0, n_persons)
+    scores = np.arange(k_cat, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k_cat, p=p[pp])
+
+    res = fit_gpcm_numpy(y, k_cat, max_iter=80)
+    assert np.isfinite(res["loglik"])
+    assert np.corrcoef(a_true, res["a"])[0, 1] > 0.9
+    assert np.max(np.abs(a_true - res["a"])) < 0.35
+    assert np.mean(np.abs(c_true[:, 1:] - res["intercepts"][:, 1:])) < 0.2

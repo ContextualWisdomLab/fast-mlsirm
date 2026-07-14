@@ -1048,3 +1048,114 @@ def gpcm_node_gradient(base, scores, intercepts, counts):
     g_base = float(np.dot(scores, resid))
     g_scores = resid[1:] * np.asarray(base, dtype=np.float64)
     return g_intercepts, g_base, g_scores
+
+
+def _gpcm_item_negll_grad(params, theta_nodes, r_counts):
+    """Per-item negative expected complete-data log-lik and its gradient over the
+    quadrature nodes. ``params = [log_a, c_1..c_{K-1}]``; ``r_counts[node, k]``
+    are the E-step expected category counts. GPCM scores ``s_k = k`` are fixed."""
+    k_cat = r_counts.shape[1]
+    scores = np.arange(k_cat, dtype=np.float64)
+    intercepts = np.concatenate([[0.0], params[1:]])
+    a = np.exp(params[0])
+    base = a * np.asarray(theta_nodes, dtype=np.float64)
+    lp = category_logprobs(base, scores, intercepts)  # (n_node, K)
+    ll = float(np.sum(r_counts * lp))
+    p = np.exp(lp)
+    n = r_counts.sum(axis=1)
+    resid = r_counts - n[:, None] * p
+    grad = np.zeros_like(params)
+    grad[1:] = resid[:, 1:].sum(axis=0)
+    grad[0] = float(np.sum((resid @ scores) * base))  # d base / d log_a = a*theta = base
+    return -ll, -grad
+
+
+def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
+    """Newton-Raphson M-step for one item (concave GPCM item likelihood), with a
+    finite-difference Hessian on the analytic gradient (K is small)."""
+    p = params0.astype(np.float64).copy()
+    for _ in range(n_newton):
+        _, g = _gpcm_item_negll_grad(p, theta_nodes, r_counts)
+        h = 1e-5
+        hess = np.zeros((p.size, p.size))
+        for j in range(p.size):
+            pj = p.copy()
+            pj[j] += h
+            _, gj = _gpcm_item_negll_grad(pj, theta_nodes, r_counts)
+            hess[:, j] = (gj - g) / h
+        hess = 0.5 * (hess + hess.T) + 1e-8 * np.eye(p.size)
+        try:
+            step = np.linalg.solve(hess, g)
+        except np.linalg.LinAlgError:
+            step = g
+        p = p - step
+        if np.max(np.abs(step)) < 1e-9:
+            break
+    return p
+
+
+def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
+    """Unidimensional GPCM (Muraki 1992) marginal MLE via Bock-Aitkin EM — the
+    NumPy parity reference for the polytomous cell of the forthcoming Rust
+    kernel (``docs/papers/gpcm-nominal-design-spec.md``). Validates the unified
+    softmax cell (:func:`category_logprobs`) and residual gradient
+    (:func:`gpcm_node_gradient`) in a full EM loop before the Rust port.
+
+    ``y`` is persons x items with integer categories ``0..n_cat-1`` (complete
+    data). ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. Returns
+    ``{"a", "alpha", "intercepts", "thresholds", "loglik", "n_iter"}`` where
+    ``a`` are slopes, ``intercepts`` the additive category intercepts (baseline
+    pinned to 0), and ``thresholds`` the Muraki step difficulties
+    ``b_{i,k} = c_{i,k-1} - c_{i,k}``.
+    """
+    y = np.asarray(y)
+    n_persons, n_items = y.shape
+    k_cat = int(n_cat)
+    if k_cat < 2:
+        raise ValueError("n_cat must be >= 2")
+    if y.min() < 0 or y.max() >= k_cat:
+        raise ValueError(f"responses must be integer categories in 0..{k_cat - 1}")
+    nodes, wts = _gh(q_theta)
+    log_prior = np.log(wts)
+    scores = np.arange(k_cat, dtype=np.float64)
+
+    params = np.zeros((n_items, k_cat))  # column 0 = log_a, columns 1.. = intercepts
+    for i in range(n_items):
+        freq = np.array([(y[:, i] == k).mean() for k in range(k_cat)]) + 1e-3
+        params[i, 1:] = np.log(freq[1:] / freq[0])
+
+    prev_ll = -np.inf
+    it = 0
+    for it in range(max_iter):
+        item_lp = [
+            category_logprobs(np.exp(params[i, 0]) * nodes, scores,
+                              np.concatenate([[0.0], params[i, 1:]]))
+            for i in range(n_items)
+        ]
+        log_node = np.zeros((n_persons, q_theta))
+        for i in range(n_items):
+            log_node += item_lp[i][:, y[:, i]].T
+        log_node += log_prior[None, :]
+        mx = log_node.max(axis=1, keepdims=True)
+        w = np.exp(log_node - mx)
+        denom = w.sum(axis=1, keepdims=True)
+        post = w / denom
+        ll = float(np.sum(mx[:, 0] + np.log(denom[:, 0])))
+        for i in range(n_items):
+            r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
+            params[i] = _gpcm_m_step_item(params[i], nodes, r)
+        if abs(ll - prev_ll) < tol * (1.0 + abs(prev_ll)):
+            break
+        prev_ll = ll
+
+    a = np.exp(params[:, 0])
+    intercepts = np.concatenate([np.zeros((n_items, 1)), params[:, 1:]], axis=1)
+    thresholds = intercepts[:, :-1] - intercepts[:, 1:]  # Muraki b_{i,k}
+    return {
+        "a": a,
+        "alpha": params[:, 0],
+        "intercepts": intercepts,
+        "thresholds": thresholds,
+        "loglik": prev_ll if it == 0 else ll,
+        "n_iter": it + 1,
+    }
