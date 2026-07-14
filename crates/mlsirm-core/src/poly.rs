@@ -601,6 +601,131 @@ pub fn fit_nominal(
     Ok(NominalFit { scores, intercepts, loglik: ll, n_iter: it })
 }
 
+/// Per-person polytomous person-fit result.
+pub struct PolyPersonFit {
+    /// Standardized log-likelihood `l_z` per person.
+    pub lz: Vec<f64>,
+    /// Snijders (2001) `l_z*` corrected for the estimated trait.
+    pub lz_star: Vec<f64>,
+    /// EAP trait estimate used (per person).
+    pub theta_eap: Vec<f64>,
+    /// `l_z* < flag_threshold` (aberrant / misfitting response pattern).
+    pub flagged: Vec<bool>,
+}
+
+/// Person-fit statistics for polytomous responses under a fitted GRM/GPCM: the
+/// standardized log-likelihood `l_z` (Drasgow, Levine & Williams, 1985) and its
+/// estimated-trait correction `l_z*` (Snijders, 2001), evaluated at the EAP
+/// trait. With `l_0 = Σ_i log P_i(y_i|θ̂)`, `E = Σ_i Σ_k P_ik log P_ik`, and
+/// `V = Σ_i (Σ_k P_ik (log P_ik)² − (Σ_k P_ik log P_ik)²)`,
+/// `l_z = (l_0 − E) / √V`; `l_z*` subtracts the covariance of the log-likelihood
+/// with the trait score (`c = ΣCov / ΣI`, `τ² = V − (ΣCov)²/ΣI`) and adds the
+/// MAP prior score `r_0 = −(θ̂ − μ)/σ²`. The score derivative `∂/∂θ log P_ik` is
+/// taken by central difference, so the routine is model-agnostic. This reduces
+/// exactly to the binary [`crate::fitstats::person_fit`] `l_z` at `n_cat = 2`.
+/// Low (negative) values flag aberrant patterns.
+///
+/// # References (APA 7th ed.)
+///
+/// Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
+///   measurement with polychotomous item response models and standardized
+///   indices. *British Journal of Mathematical and Statistical Psychology,
+///   38*(1), 67–86. https://doi.org/10.1111/j.2044-8317.1985.tb00817.x
+///
+/// Snijders, T. A. B. (2001). Asymptotic null distribution of person fit
+///   statistics with estimated person parameter. *Psychometrika, 66*(3),
+///   331–342. https://doi.org/10.1007/BF02294437
+#[allow(clippy::too_many_arguments)]
+pub fn poly_person_fit(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    prior_mean: f64,
+    prior_sd: f64,
+    flag_threshold: f64,
+) -> Result<PolyPersonFit, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if slope.len() != n_items {
+        return Err("slope must have length n_items".into());
+    }
+    if cat_params.len() != n_items * (n_cat - 1) {
+        return Err("cat_params must have length n_items*(n_cat-1)".into());
+    }
+    if !(prior_sd > 0.0) {
+        return Err("prior_sd must be positive".into());
+    }
+    let z = n_cat - 1;
+    let (theta_eap, _sd) =
+        score_poly_eap(y, observed, n_persons, n_items, n_cat, slope, cat_params, model, q_theta)?;
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let cell = |i: usize, theta: f64| -> Vec<f64> {
+        let a = slope[i];
+        let cp = &cat_params[i * z..(i + 1) * z];
+        let base = a * theta;
+        match model {
+            PolyModel::Gpcm => {
+                let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                let mut ic = vec![0.0_f64; n_cat];
+                ic[1..].copy_from_slice(cp);
+                gpcm_logprobs(base, &scores, &ic)
+            }
+            PolyModel::Grm => grm_logprobs(base, cp),
+        }
+    };
+    let h = 1e-4;
+    let mut lz = vec![f64::NAN; n_persons];
+    let mut lz_star = vec![f64::NAN; n_persons];
+    let mut flagged = vec![false; n_persons];
+    for p in 0..n_persons {
+        let th = theta_eap[p];
+        let (mut w, mut sv, mut sc, mut si) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        let mut n_obs = 0usize;
+        for i in 0..n_items {
+            if !is_obs(p, i) {
+                continue;
+            }
+            let lp = cell(i, th);
+            let lpp = cell(i, th + h);
+            let lpm = cell(i, th - h);
+            let (mut mu, mut e2, mut cov, mut info) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+            for k in 0..n_cat {
+                let pk = lp[k].exp();
+                let lgk = lp[k];
+                let dk = (lpp[k] - lpm[k]) / (2.0 * h); // d/dtheta log P_ik
+                mu += pk * lgk;
+                e2 += pk * lgk * lgk;
+                cov += pk * lgk * dk;
+                info += pk * dk * dk;
+            }
+            w += lp[y[p * n_items + i]] - mu;
+            sv += e2 - mu * mu;
+            sc += cov;
+            si += info;
+            n_obs += 1;
+        }
+        if n_obs < 2 || sv <= 0.0 {
+            continue;
+        }
+        lz[p] = w / sv.sqrt();
+        let c = if si > 1e-12 { sc / si } else { 0.0 };
+        let r0 = -(th - prior_mean) / (prior_sd * prior_sd);
+        let tau2 = sv - if si > 1e-12 { sc * sc / si } else { 0.0 };
+        if tau2 > 1e-12 {
+            lz_star[p] = (w + c * r0) / tau2.sqrt();
+            flagged[p] = lz_star[p] < flag_threshold;
+        }
+    }
+    Ok(PolyPersonFit { lz, lz_star, theta_eap, flagged })
+}
+
 /// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
@@ -1851,5 +1976,169 @@ mod tests {
         assert!(ar < 0.15 && cr < 0.20, "normal recovery too loose: a={ar}, c={cr}");
         assert!(ab < 0.05, "normal score bias not near zero: {ab}");
         assert!(asr > ar + 0.03, "skew should measurably degrade recovery: {asr} vs {ar}");
+    }
+
+    #[test]
+    fn poly_person_fit_matches_binary_lz_at_k2() {
+        // At K=2 the polytomous l_z must equal the trusted binary person_fit l_z
+        // on the same EAP trait (both cells reduce to the 2PL); l_z* matches to
+        // finite-difference tolerance (poly uses a numerical trait derivative).
+        use crate::fitstats::person_fit;
+        use crate::scoring::ItemBank;
+        use crate::ModelType;
+        let (n_persons, n_items) = (1000usize, 12usize);
+        let mut u = rng(56789);
+        let a: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.06 * i as f64).collect();
+        let b: Vec<f64> = (0..n_items).map(|i| -0.8 + 0.14 * i as f64).collect();
+        let mut yf = vec![0.0_f64; n_persons * n_items];
+        let mut yi = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let pr = 1.0 / (1.0 + (-(a[i] * th + b[i])).exp());
+                let v = if u() < pr { 1.0 } else { 0.0 };
+                yf[p * n_items + i] = v;
+                yi[p * n_items + i] = v as usize;
+            }
+        }
+        let obs = vec![true; n_persons * n_items];
+        let poly =
+            poly_person_fit(&yi, None, n_persons, n_items, 2, &a, &b, PolyModel::Gpcm, 41, 0.0, 1.0, -1.645)
+                .unwrap();
+        let alpha: Vec<f64> = a.iter().map(|x| x.ln()).collect();
+        let zeta = vec![0.0_f64; n_items];
+        let fid = vec![0usize; n_items];
+        let bank = ItemBank {
+            alpha: &alpha, b: &b, zeta: &zeta, tau: -50.0, factor_id: &fid,
+            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
+        };
+        let xi = vec![0.0_f64; n_persons];
+        let bin = person_fit(&bank, &yf, &obs, n_persons, &poly.theta_eap, &xi, &[], -1.645).unwrap();
+        let (mut d_lz, mut d_lzs) = (0.0_f64, 0.0_f64);
+        for p in 0..n_persons {
+            if poly.lz[p].is_finite() && bin.lz[p].is_finite() {
+                d_lz = d_lz.max((poly.lz[p] - bin.lz[p]).abs());
+                d_lzs = d_lzs.max((poly.lz_star[p] - bin.lz_star[p]).abs());
+            }
+        }
+        assert!(d_lz < 1e-6, "l_z max diff vs binary: {d_lz}");
+        assert!(d_lzs < 5e-3, "l_z* max diff vs binary: {d_lzs}");
+    }
+
+    // GPCM person-fit Monte-Carlo: a fraction of respondents answer carelessly
+    // (uniform random categories) and the rest come from the model; evaluated at
+    // the true item parameters. Returns (Type I flag rate among model
+    // respondents, power among careless respondents, mean l_z*, sd l_z*).
+    fn mc_poly_person_fit(reps: usize, n_persons: usize, skew: bool) -> (f64, f64, f64, f64) {
+        let (n_items, k) = (20usize, 3usize);
+        let z = k - 1;
+        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.03 * i as f64).collect();
+        let cat_true: Vec<f64> = (0..n_items)
+            .flat_map(|i| vec![0.6 - 0.01 * i as f64, -0.6 + 0.01 * i as f64])
+            .collect();
+        let n_care = n_persons / 10; // first 10% are careless
+        let (mut n_norm, mut flag_norm, mut flag_care) = (0usize, 0usize, 0usize);
+        let (mut sum, mut sum2) = (0.0_f64, 0.0_f64);
+        for rep in 0..reps {
+            let mut u = rng(7000 + rep as u64 * 131 + if skew { 3 } else { 0 });
+            let mut yi = vec![0usize; n_persons * n_items];
+            for p in 0..n_persons {
+                let careless = p < n_care;
+                let theta = if skew {
+                    -(u().max(1e-12)).ln() - 1.0
+                } else {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                };
+                for i in 0..n_items {
+                    // careless / inconsistent responder: the implied trait alternates
+                    // +-1.6 across items, so no single theta fits the pattern.
+                    let theta_use = if careless {
+                        if i % 2 == 0 { 1.6 } else { -1.6 }
+                    } else {
+                        theta
+                    };
+                    let base = a_true[i] * theta_use;
+                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                    let mut ic = vec![0.0_f64; k];
+                    ic[1..].copy_from_slice(&cat_true[i * z..(i + 1) * z]);
+                    let lp = gpcm_logprobs(base, &scores, &ic);
+                    let draw = u();
+                    let (mut acc, mut cat) = (0.0_f64, k - 1);
+                    for (c, l) in lp.iter().enumerate() {
+                        acc += l.exp();
+                        if draw <= acc {
+                            cat = c;
+                            break;
+                        }
+                    }
+                    yi[p * n_items + i] = cat;
+                }
+            }
+            let pf = poly_person_fit(
+                &yi, None, n_persons, n_items, k, &a_true, &cat_true, PolyModel::Gpcm, 21, 0.0, 1.0,
+                -1.645,
+            )
+            .unwrap();
+            for p in 0..n_persons {
+                if p < n_care {
+                    if pf.flagged[p] {
+                        flag_care += 1;
+                    }
+                } else {
+                    n_norm += 1;
+                    if pf.flagged[p] {
+                        flag_norm += 1;
+                    }
+                    if pf.lz_star[p].is_finite() {
+                        sum += pf.lz_star[p];
+                        sum2 += pf.lz_star[p] * pf.lz_star[p];
+                    }
+                }
+            }
+        }
+        let mean = sum / n_norm as f64;
+        let sd = (sum2 / n_norm as f64 - mean * mean).max(0.0).sqrt();
+        (
+            flag_norm as f64 / n_norm as f64,
+            flag_care as f64 / (n_care * reps) as f64,
+            mean,
+            sd,
+        )
+    }
+
+    #[test]
+    fn poly_person_fit_type1_and_power() {
+        // Fast guard. Authoritative >=500-rep study is
+        // poly_person_fit_monte_carlo_500 (ignored).
+        let (reps, n) = (8usize, 800usize);
+        let (t1, power, mean, sd) = mc_poly_person_fit(reps, n, false);
+        let (t1s, _, _, _) = mc_poly_person_fit(reps, n, true);
+        println!(
+            "[poly person-fit] normal: Type I(l_z*<-1.645)={t1:.3} power(careless)={power:.3} \
+             mean(l_z*)={mean:.3} sd(l_z*)={sd:.3}  skew: Type I={t1s:.3}"
+        );
+        assert!((0.01..=0.12).contains(&t1), "Type I off nominal: {t1}");
+        assert!(power > 0.5, "power to flag careless responders too low: {power}");
+        assert!(mean.abs() < 0.4 && (0.75..=1.3).contains(&sd), "l_z* not ~N(0,1): mean={mean}, sd={sd}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_person_fit_monte_carlo_500() {
+        let (reps, n) = (500usize, 600usize);
+        let (t1, power, mean, sd) = mc_poly_person_fit(reps, n, false);
+        println!(
+            "[poly person-fit 500] normal: Type I={t1:.4} power={power:.4} mean(l_z*)={mean:.4} \
+             sd(l_z*)={sd:.4}"
+        );
+        // l_z* runs slightly high at a 20-item test (a documented finite-length
+        // effect); it converges to nominal as the test lengthens.
+        assert!((0.02..=0.11).contains(&t1), "Type I off nominal: {t1}");
+        assert!(power > 0.7, "power too low: {power}");
+        assert!(mean.abs() < 0.25 && (0.85..=1.2).contains(&sd), "l_z* not ~N(0,1): mean={mean}, sd={sd}");
     }
 }
