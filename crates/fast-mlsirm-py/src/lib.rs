@@ -11,8 +11,9 @@ use mlsirm_core::marginal::{
 };
 use mlsirm_core::nodes::XiRule;
 use mlsirm_core::equating::{
-    equate_eg as core_equate_eg, equate_neat as core_equate_neat, EquateMethod, EquateResult,
-    NeatMethod,
+    equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
+    equate_neat as core_equate_neat, loglinear_smooth as core_loglinear_smooth, Continuization,
+    EgSmoothOptions, EquateMethod, EquateResult, NeatMethod,
 };
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
 
@@ -733,7 +734,71 @@ fn equate_result_dict(py: Python<'_>, res: EquateResult) -> PyResult<Py<pyo3::ty
     out.set_item("intercept", res.intercept)?;
     out.set_item("n_x", res.n_x)?;
     out.set_item("n_y", res.n_y)?;
+    out.set_item("h_x", res.h_x)?;
+    out.set_item("h_y", res.h_y)?;
     Ok(out.into())
+}
+
+/// Univariate log-linear presmoothing of a score-frequency distribution (Rust
+/// compute path; Holland & Thayer, 2000). `counts` are raw frequencies over
+/// scores 0..=k; `degree` moments are preserved. Returns a dict with the smoothed
+/// `probs`, `log_lik`, `aic`, `bic`, `moments`, `converged`, `iters`.
+#[pyfunction]
+#[pyo3(signature = (counts, degree = 6))]
+fn loglinear_smooth(
+    py: Python<'_>,
+    counts: PyReadonlyArray1<'_, f64>,
+    degree: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let fit = core_loglinear_smooth(counts.as_slice()?, degree).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("probs", fit.probs)?;
+    out.set_item("log_lik", fit.log_lik)?;
+    out.set_item("aic", fit.aic)?;
+    out.set_item("bic", fit.bic)?;
+    out.set_item("moments", fit.moments)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("iters", fit.iters)?;
+    Ok(out.into())
+}
+
+/// Equipercentile-family EG equating with optional log-linear presmoothing and a
+/// choice of continuization kernel (Rust compute path; Kolen & Brennan, 2014; von
+/// Davier et al., 2004). `continuization` is "uniform" (equipercentile) or
+/// "gaussian" (kernel). `smooth_degree_x`/`_y` presmooth each form (None = raw);
+/// `bandwidth_x`/`_y` fix the Gaussian bandwidth (None = penalty-selected).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_scores, y_scores, k_x, k_y, continuization = "uniform", smooth_degree_x = None, smooth_degree_y = None, bandwidth_x = None, bandwidth_y = None))]
+fn equate_observed_scores_ext(
+    py: Python<'_>,
+    x_scores: PyReadonlyArray1<'_, f64>,
+    y_scores: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    continuization: &str,
+    smooth_degree_x: Option<usize>,
+    smooth_degree_y: Option<usize>,
+    bandwidth_x: Option<f64>,
+    bandwidth_y: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cont = Continuization::parse(continuization)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown continuization: {continuization}")))?;
+    let res = core_equate_eg_ext(
+        x_scores.as_slice()?,
+        y_scores.as_slice()?,
+        k_x,
+        k_y,
+        EgSmoothOptions {
+            continuization: cont,
+            smooth_degree_x,
+            smooth_degree_y,
+            bandwidth_x,
+            bandwidth_y,
+        },
+    )
+    .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
 }
 
 /// Equivalent-groups observed-score equating of form X onto form Y (Rust compute
@@ -2132,6 +2197,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores, m)?)?;
     m.add_function(wrap_pyfunction!(equate_neat, m)?)?;
+    m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
+    m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;

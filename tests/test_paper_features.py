@@ -1191,3 +1191,63 @@ def test_equate_observed_scores_and_neat():
 
     with pytest.raises(ValueError):
         equate_observed_scores(x, y, method="bogus", k_x=k, k_y=k + 5)
+
+
+def test_kernel_equating_and_presmoothing():
+    """Kernel equating + log-linear presmoothing (von Davier et al., 2004;
+    Holland & Thayer, 2000) through the public API: presmoothing preserves
+    moments, uniform-kernel ext matches equipercentile, and a large bandwidth
+    drives kernel equating to linear."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import (
+        equate_observed_scores,
+        equate_observed_scores_kernel,
+        loglinear_smooth,
+    )
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_observed_scores_ext"):
+        pytest.skip("compiled core built without kernel equating")
+
+    rng = np.random.default_rng(7)
+    k = 40
+    x = np.clip(np.round(20 + 7 * rng.standard_normal(5000)), 0, k)
+    counts = np.bincount(x.astype(int), minlength=k + 1).astype(float)
+
+    # presmoothing preserves the first `degree` moments (on the u=x/k scale)
+    fit = loglinear_smooth(counts, degree=4)
+    assert fit["converged"] and abs(fit["probs"].sum() - 1.0) < 1e-12
+    g = counts / counts.sum()
+    for j, fm in enumerate(fit["moments"], start=1):
+        sm = float(((np.arange(k + 1) / k) ** j * g).sum())
+        assert abs(fm - sm) < 1e-8, f"moment {j}: {fm} vs {sm}"
+
+    # uniform-kernel ext == equipercentile
+    y = np.clip(np.round(22 + 8 * rng.standard_normal(5000)), 0, k)
+    base = equate_observed_scores(x, y, method="equipercentile", k_x=k, k_y=k)
+    uni = equate_observed_scores_kernel(x, y, continuization="uniform", k_x=k, k_y=k)
+    assert np.max(np.abs(base.y_equivalents - uni.y_equivalents)) < 1e-12
+    assert np.isnan(uni.h_x)
+
+    # large-bandwidth Gaussian kernel -> linear equating
+    lin = equate_observed_scores(x, y, method="linear", k_x=k, k_y=k)
+    ker = equate_observed_scores_kernel(
+        x, y, continuization="gaussian", k_x=k, k_y=k, bandwidth_x=1e6, bandwidth_y=1e6
+    )
+    assert np.max(np.abs(lin.y_equivalents - ker.y_equivalents)) < 1e-3
+    assert ker.h_x == 1e6
+
+    # penalty-selected bandwidth is finite and positive
+    auto = equate_observed_scores_kernel(x, y, continuization="gaussian", k_x=k, k_y=k)
+    assert np.isfinite(auto.h_x) and auto.h_x > 0
+
+    # default degree clamps to k, so short forms (k < 6) do not error
+    short = loglinear_smooth(np.array([10.0, 20.0, 30.0, 15.0, 8.0, 4.0]))  # k = 5
+    assert short["converged"] and short["probs"].shape == (6,)
+
+    with pytest.raises(ValueError):
+        equate_observed_scores_kernel(x, y, continuization="bogus", k_x=k, k_y=k)
+    with pytest.raises(ValueError):
+        equate_observed_scores_kernel(x, y, continuization="gaussian", k_x=k, k_y=k, smooth_x=-1)

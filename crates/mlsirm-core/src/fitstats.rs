@@ -848,7 +848,7 @@ pub fn vuong_nonnested(
 
 /// Complementary error function (Numerical Recipes rational approximation;
 /// |error| < 1.2e-7 — adequate for p-value reporting).
-fn erfc(x: f64) -> f64 {
+pub(crate) fn erfc(x: f64) -> f64 {
     let z = x.abs();
     let t = 1.0 / (1.0 + 0.5 * z);
     let ans = t

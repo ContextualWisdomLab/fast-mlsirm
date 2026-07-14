@@ -190,6 +190,29 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Kernel equating + log-linear presmoothing** (von Davier, Holland & Thayer,
+  2004; Holland & Thayer, 2000). Two enhancements to the equating module.
+  `loglinear_smooth(counts, degree)` presmooths a score-frequency distribution by
+  Poisson-ML log-linear fitting (on an orthonormal polynomial design over a
+  centered/scaled score, Newton with step-halving), preserving the first `degree`
+  sample moments exactly while damping sampling noise; it returns AIC/BIC so a
+  caller can select the degree, and saturated at `degree = k` it reproduces the
+  raw relative frequencies. `equate_observed_scores_kernel` adds a Gaussian-kernel
+  continuization (von Davier's `F_h(x) = Σ_j r_j Φ((x − a x_j − (1−a)μ)/(a h))`,
+  bandwidth by the penalty method) and optional per-form presmoothing to the
+  equipercentile family, behind a single extended entry point whose uniform-kernel
+  path reproduces the existing equipercentile bit-for-bit. Compute in Rust
+  (`equating::loglinear_smooth` / `equate_eg_ext`); exposed via PyO3 and Python.
+  Validated by exact-identity anchors — uniform-kernel equating equals the
+  equipercentile to `< 1e-12`; presmoothing preserves the first `T` moments to
+  `< 1e-8` and reproduces `rel_freq` when saturated; the Gaussian-kernel
+  self-equate is the identity, a large bandwidth drives kernel equating to linear
+  to `< 1e-4`, and the continuized density preserves the discrete mean and
+  variance — plus a 500-replication Monte-Carlo against the population
+  Gaussian-kernel transform (interior RMSE 0.53 → 0.26 from `N = 1000` to `4000`,
+  ratio 2.03 ≈ √4; max bias 0.049 → 0.020). Deferred: bivariate presmoothing,
+  kernel-NEAT, and analytic standard errors.
+
 - **Observed-score equating** (Kolen & Brennan, 2014). A new
   `mlsirm_core::equating` module and the public `equate_observed_scores` /
   `equate_neat` — the raw-score complement to the IRT scale linking (`irt_link`).

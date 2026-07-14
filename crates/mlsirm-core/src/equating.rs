@@ -43,6 +43,10 @@ pub struct EquateResult {
     pub intercept: f64,
     pub n_x: usize,
     pub n_y: usize,
+    /// Gaussian-kernel bandwidths actually used for form X / form Y; `NaN` for the
+    /// uniform-kernel (equipercentile) and moment methods.
+    pub h_x: f64,
+    pub h_y: f64,
 }
 
 /// Equivalent-groups equating method.
@@ -268,6 +272,8 @@ pub fn equate_eg(
         intercept,
         n_x: x_scores.len(),
         n_y: y_scores.len(),
+        h_x: f64::NAN,
+        h_y: f64::NAN,
     })
 }
 
@@ -401,6 +407,8 @@ pub fn equate_neat(
                 intercept: f64::NAN,
                 n_x: x_total.len(),
                 n_y: y_total.len(),
+                h_x: f64::NAN,
+                h_y: f64::NAN,
             });
         }
     };
@@ -418,6 +426,8 @@ pub fn equate_neat(
         intercept: f64::NAN,
         n_x: x_total.len(),
         n_y: y_total.len(),
+        h_x: f64::NAN,
+        h_y: f64::NAN,
     })
 }
 
@@ -428,6 +438,413 @@ fn renormalize(v: &mut [f64]) {
             *x /= s;
         }
     }
+}
+
+// ===================== log-linear presmoothing =====================
+
+/// Result of [`loglinear_smooth`].
+pub struct LoglinearFit {
+    /// Smoothed relative-frequency density (sums to 1).
+    pub probs: Vec<f64>,
+    /// Poisson log-likelihood (up to the `-sum ln(N_x!)` constant, so it is
+    /// comparable across degrees on the *same* data, not across datasets).
+    pub log_lik: f64,
+    pub aic: f64,
+    pub bic: f64,
+    /// Fitted raw moments on the scaled score `u = x/k`, orders `1..=degree`;
+    /// equal to the sample moments to numerical precision (the defining property).
+    pub moments: Vec<f64>,
+    pub converged: bool,
+    pub iters: usize,
+}
+
+/// Orthonormal polynomial design matrix `B` of shape `(k+1) x (degree+1)` over the
+/// scores `0..=k`: column `j` spans degree `j`, `B^T B = I`. Built by modified
+/// Gram-Schmidt on the Vandermonde of a *centered/scaled* score `u = 2x/k - 1`
+/// (raw-`x` powers are catastrophically ill-conditioned for `k` in the tens).
+fn ortho_poly_design(k: usize, degree: usize) -> Vec<Vec<f64>> {
+    let n = k + 1;
+    let t = degree + 1;
+    let u: Vec<f64> =
+        (0..n).map(|x| if k == 0 { 0.0 } else { 2.0 * x as f64 / k as f64 - 1.0 }).collect();
+    let mut cols: Vec<Vec<f64>> = (0..t).map(|j| u.iter().map(|&ui| ui.powi(j as i32)).collect()).collect();
+    for j in 0..t {
+        for i in 0..j {
+            let dot: f64 = (0..n).map(|r| cols[j][r] * cols[i][r]).sum();
+            for r in 0..n {
+                cols[j][r] -= dot * cols[i][r];
+            }
+        }
+        let norm: f64 = (0..n).map(|r| cols[j][r] * cols[j][r]).sum::<f64>().sqrt();
+        if norm > 0.0 {
+            for r in 0..n {
+                cols[j][r] /= norm;
+            }
+        }
+    }
+    (0..n).map(|r| (0..t).map(|j| cols[j][r]).collect()).collect()
+}
+
+/// Univariate log-linear presmoothing of a score-frequency distribution (Holland &
+/// Thayer, 2000; Kolen & Brennan, 2014, ch. 3): fits `log m_x = (B beta)_x` by
+/// Poisson ML, so the smoothed density preserves the first `degree` sample moments
+/// exactly while damping sampling noise. `counts` are raw frequencies over scores
+/// `0..=k` (length `k+1`); `degree` is the number of moments preserved
+/// (`degree = k` reproduces the raw relative frequencies).
+///
+/// # References (APA 7th ed.)
+///
+/// Holland, P. W., & Thayer, D. T. (2000). Univariate and bivariate loglinear
+///   models for discrete test score distributions. *Journal of Educational and
+///   Behavioral Statistics, 25*(2), 133–183. https://doi.org/10.3102/10769986025002133
+pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, String> {
+    let n_cells = counts.len();
+    if n_cells < 2 {
+        return Err("counts must cover at least two scores".into());
+    }
+    let k = n_cells - 1;
+    if degree < 1 || degree > k {
+        return Err("degree must be in 1..=k".into());
+    }
+    if counts.iter().any(|&c| !c.is_finite() || c < 0.0) {
+        return Err("counts must be finite and non-negative".into());
+    }
+    let total: f64 = counts.iter().sum();
+    if total <= 0.0 {
+        return Err("counts must sum to a positive total".into());
+    }
+    let t = degree + 1;
+    let b = ortho_poly_design(k, degree);
+    let eta_of = |beta: &[f64], x: usize| -> f64 { (0..t).map(|j| b[x][j] * beta[j]).sum() };
+    let ll = |beta: &[f64]| -> f64 {
+        (0..n_cells).map(|x| { let e = eta_of(beta, x); counts[x] * e - e.exp() }).sum()
+    };
+    let mut beta = vec![0.0_f64; t];
+    let mut converged = false;
+    let mut iters = 0usize;
+    let mut prev_ll = ll(&beta);
+    // Scale-free tolerances: the gradient B^T(counts-m) is O(N) and the
+    // log-likelihood O(N), so absolute floors would never be reached for large
+    // samples (spuriously reporting non-convergence). Test relative to the total.
+    let gtol = 1e-9 * total.max(1.0);
+    const MAX_IT: usize = 50;
+    for it in 0..MAX_IT {
+        iters = it + 1;
+        let m: Vec<f64> = (0..n_cells).map(|x| eta_of(&beta, x).exp()).collect();
+        let grad: Vec<f64> =
+            (0..t).map(|j| (0..n_cells).map(|x| b[x][j] * (counts[x] - m[x])).sum()).collect();
+        let gmax = grad.iter().fold(0.0_f64, |a, &g| a.max(g.abs()));
+        if gmax < gtol {
+            converged = true;
+            break;
+        }
+        let mut hess = vec![vec![0.0_f64; t]; t];
+        for a in 0..t {
+            for c in a..t {
+                let v: f64 = (0..n_cells).map(|x| b[x][a] * m[x] * b[x][c]).sum();
+                hess[a][c] = v;
+                hess[c][a] = v;
+            }
+        }
+        let step = crate::poly::solve_small(hess, grad);
+        let ll_tol = 1e-12 * prev_ll.abs().max(1.0);
+        let mut lambda = 1.0_f64;
+        let mut accepted = false;
+        for _ in 0..30 {
+            let trial: Vec<f64> = (0..t).map(|j| beta[j] + lambda * step[j]).collect();
+            let llt = ll(&trial);
+            if llt >= prev_ll - ll_tol {
+                beta = trial;
+                // a step with negligible relative improvement means the fit has
+                // plateaued at the optimum — treat as converged, not stalled
+                if llt - prev_ll <= ll_tol {
+                    converged = true;
+                }
+                prev_ll = llt;
+                accepted = true;
+                break;
+            }
+            lambda *= 0.5;
+        }
+        if !accepted || converged {
+            break;
+        }
+    }
+    let m: Vec<f64> = (0..n_cells).map(|x| eta_of(&beta, x).exp()).collect();
+    let msum: f64 = m.iter().sum();
+    let probs: Vec<f64> = m.iter().map(|&mx| mx / msum).collect();
+    let log_lik = ll(&beta);
+    let p = t as f64;
+    let aic = -2.0 * log_lik + 2.0 * p;
+    let bic = -2.0 * log_lik + p * total.ln();
+    let moments: Vec<f64> = (1..=degree)
+        .map(|j| {
+            (0..n_cells)
+                .map(|x| { let u = if k == 0 { 0.0 } else { x as f64 / k as f64 }; u.powi(j as i32) * probs[x] })
+                .sum()
+        })
+        .collect();
+    Ok(LoglinearFit { probs, log_lik, aic, bic, moments, converged, iters })
+}
+
+// ===================== Gaussian-kernel equating =====================
+
+/// Continuization kernel for the equipercentile family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Continuization {
+    /// Kolen-Brennan uniform kernel (linear cdf interpolation) — the default,
+    /// identical to [`equate_eg`]'s equipercentile.
+    Uniform,
+    /// Gaussian kernel (von Davier, Holland & Thayer, 2004).
+    Gaussian,
+}
+
+impl Continuization {
+    pub fn parse(name: &str) -> Option<Continuization> {
+        match name.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+            "uniform" | "kb" | "equipercentile" => Some(Continuization::Uniform),
+            "gaussian" | "kernel" | "normal" => Some(Continuization::Gaussian),
+            _ => None,
+        }
+    }
+}
+
+/// Options for [`equate_eg_ext`]: continuization kernel, optional per-form
+/// log-linear presmoothing degree, and optional fixed Gaussian bandwidths (`None`
+/// = penalty-selected).
+pub struct EgSmoothOptions {
+    pub continuization: Continuization,
+    pub smooth_degree_x: Option<usize>,
+    pub smooth_degree_y: Option<usize>,
+    pub bandwidth_x: Option<f64>,
+    pub bandwidth_y: Option<f64>,
+}
+
+fn norm_pdf(z: f64) -> f64 {
+    (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt()
+}
+fn norm_cdf(z: f64) -> f64 {
+    0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2)
+}
+fn kernel_a(sig2: f64, h: f64) -> f64 {
+    (sig2 / (sig2 + h * h)).sqrt()
+}
+fn kernel_cdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
+    let a = kernel_a(sig2, h);
+    let ah = a * h;
+    r.iter().enumerate().map(|(j, &rj)| rj * norm_cdf((x - a * j as f64 - (1.0 - a) * mu) / ah)).sum()
+}
+fn kernel_pdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
+    let a = kernel_a(sig2, h);
+    let ah = a * h;
+    r.iter().enumerate().map(|(j, &rj)| rj * norm_pdf((x - a * j as f64 - (1.0 - a) * mu) / ah) / ah).sum()
+}
+fn kernel_dpdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
+    let a = kernel_a(sig2, h);
+    let ah = a * h;
+    r.iter()
+        .enumerate()
+        .map(|(j, &rj)| {
+            let z = (x - a * j as f64 - (1.0 - a) * mu) / ah;
+            rj * (-z) * norm_pdf(z) / (ah * ah)
+        })
+        .sum()
+}
+/// `G_h^{-1}(p)` by safeguarded Newton (bisection fallback); `F_h` is strictly
+/// increasing with full support, so the root is unique.
+fn kernel_inv(r: &[f64], mu: f64, sig2: f64, h: f64, p: f64, k: usize) -> f64 {
+    let mut lo = -0.5_f64;
+    let mut hi = k as f64 + 0.5;
+    let mut guard = 0;
+    while kernel_cdf(r, mu, sig2, h, lo) > p && guard < 200 {
+        lo -= 1.0;
+        guard += 1;
+    }
+    guard = 0;
+    while kernel_cdf(r, mu, sig2, h, hi) < p && guard < 200 {
+        hi += 1.0;
+        guard += 1;
+    }
+    let mut x = 0.5 * (lo + hi);
+    for _ in 0..100 {
+        let fx = kernel_cdf(r, mu, sig2, h, x) - p;
+        if fx.abs() < 1e-10 {
+            break;
+        }
+        if fx > 0.0 {
+            hi = x;
+        } else {
+            lo = x;
+        }
+        let d = kernel_pdf(r, mu, sig2, h, x);
+        let mut xn = if d > 1e-12 { x - fx / d } else { 0.5 * (lo + hi) };
+        if !(xn > lo && xn < hi) {
+            xn = 0.5 * (lo + hi);
+        }
+        x = xn;
+    }
+    x
+}
+fn kernel_equate(
+    rx: &[f64], ry: &[f64], mu_x: f64, s2x: f64, mu_y: f64, s2y: f64, k_x: usize, k_y: usize,
+    h_x: f64, h_y: f64,
+) -> Vec<f64> {
+    (0..=k_x)
+        .map(|x| {
+            let p = kernel_cdf(rx, mu_x, s2x, h_x, x as f64);
+            kernel_inv(ry, mu_y, s2y, h_y, p, k_y)
+        })
+        .collect()
+}
+/// von Davier penalty: squared density mismatch at the score points plus a
+/// unit penalty for each local density valley (an under-smoothing signature).
+fn kernel_penalty(r: &[f64], mu: f64, sig2: f64, h: f64, k: usize) -> f64 {
+    let delta = 1e-3;
+    let mut pen = 0.0_f64;
+    for j in 0..=k {
+        let xj = j as f64;
+        let d = r[j] - kernel_pdf(r, mu, sig2, h, xj);
+        pen += d * d;
+        let a_ind = kernel_dpdf(r, mu, sig2, h, xj - delta) < 0.0;
+        let b_ind = kernel_dpdf(r, mu, sig2, h, xj + delta) > 0.0;
+        if a_ind && b_ind {
+            pen += 1.0;
+        }
+    }
+    pen
+}
+/// Penalty-optimal bandwidth: coarse grid to bracket the (non-smooth) valley
+/// indicator, then golden-section refinement to grid resolution (heuristic — any
+/// `h` preserves the mean/variance, so this only tunes smoothing, not validity).
+fn optimal_bandwidth(r: &[f64], mu: f64, sig2: f64, k: usize) -> f64 {
+    let mut lo = 0.1_f64;
+    let mut hi = 3.0_f64;
+    let n_grid = 40usize;
+    let mut best_h = lo;
+    let mut best_p = f64::INFINITY;
+    for i in 0..=n_grid {
+        let h = lo + (hi - lo) * i as f64 / n_grid as f64;
+        let p = kernel_penalty(r, mu, sig2, h, k);
+        if p < best_p {
+            best_p = p;
+            best_h = h;
+        }
+    }
+    if best_h <= lo + 1e-9 {
+        lo = 0.02;
+    }
+    if best_h >= hi - 1e-9 {
+        hi = 6.0;
+    }
+    let cell = (hi - lo) / n_grid as f64;
+    let mut a = (best_h - cell).max(lo);
+    let mut b = (best_h + cell).min(hi);
+    let gr = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let mut c = b - gr * (b - a);
+    let mut d = a + gr * (b - a);
+    let mut fc = kernel_penalty(r, mu, sig2, c, k);
+    let mut fd = kernel_penalty(r, mu, sig2, d, k);
+    for _ in 0..30 {
+        if fc < fd {
+            b = d;
+            d = c;
+            fd = fc;
+            c = b - gr * (b - a);
+            fc = kernel_penalty(r, mu, sig2, c, k);
+        } else {
+            a = c;
+            c = d;
+            fc = fd;
+            d = a + gr * (b - a);
+            fd = kernel_penalty(r, mu, sig2, d, k);
+        }
+    }
+    // The penalty is non-unimodal (a discontinuous valley indicator), so
+    // golden-section can land in a worse cell than the grid already found; keep
+    // whichever the penalty actually rates lower.
+    let h_g = 0.5 * (a + b);
+    if kernel_penalty(r, mu, sig2, h_g, k) <= best_p {
+        h_g
+    } else {
+        best_h
+    }
+}
+
+fn density(scores: &[f64], k: usize, smooth: Option<usize>) -> Result<Vec<f64>, String> {
+    let g = rel_freq(scores, k)?;
+    match smooth {
+        None => Ok(g),
+        Some(t) => {
+            let n = scores.len() as f64;
+            let counts: Vec<f64> = g.iter().map(|&p| p * n).collect();
+            Ok(loglinear_smooth(&counts, t)?.probs)
+        }
+    }
+}
+
+/// Equipercentile-family equivalent-groups equating with optional log-linear
+/// presmoothing and a choice of continuization kernel (Kolen & Brennan, 2014; von
+/// Davier, Holland & Thayer, 2004). With `Continuization::Uniform` and no
+/// smoothing this is identical to [`equate_eg`]'s equipercentile method;
+/// `Continuization::Gaussian` uses the Gaussian-kernel continuization, resolving
+/// each form's bandwidth by the penalty method unless one is fixed in `opts`.
+///
+/// # References (APA 7th ed.)
+///
+/// von Davier, A. A., Holland, P. W., & Thayer, D. T. (2004). *The kernel method
+///   of test equating*. Springer. https://doi.org/10.1007/b97446
+pub fn equate_eg_ext(
+    x_scores: &[f64],
+    y_scores: &[f64],
+    k_x: usize,
+    k_y: usize,
+    opts: EgSmoothOptions,
+) -> Result<EquateResult, String> {
+    if k_x == 0 || k_y == 0 {
+        return Err("k_x and k_y must be positive".into());
+    }
+    let gx = density(x_scores, k_x, opts.smooth_degree_x)?;
+    let gy = density(y_scores, k_y, opts.smooth_degree_y)?;
+    let (mu_x, sigma_x) = moments(&gx);
+    let (mu_y, sigma_y) = moments(&gy);
+
+    let (y_eq, h_x, h_y) = match opts.continuization {
+        // the uniform kernel ignores bandwidth entirely, so it is not validated here
+        Continuization::Uniform => (equipercentile(&gx, &gy, k_x, k_y), f64::NAN, f64::NAN),
+        Continuization::Gaussian => {
+            for (h, nm) in [(opts.bandwidth_x, "bandwidth_x"), (opts.bandwidth_y, "bandwidth_y")] {
+                if let Some(hv) = h {
+                    if !hv.is_finite() || hv <= 0.0 {
+                        return Err(format!("{nm} must be positive and finite"));
+                    }
+                }
+            }
+            let (s2x, s2y) = (sigma_x * sigma_x, sigma_y * sigma_y);
+            if s2x <= 0.0 || s2y <= 0.0 {
+                return Err("gaussian kernel equating needs a positive SD on both forms".into());
+            }
+            let hx = opts.bandwidth_x.unwrap_or_else(|| optimal_bandwidth(&gx, mu_x, s2x, k_x));
+            let hy = opts.bandwidth_y.unwrap_or_else(|| optimal_bandwidth(&gy, mu_y, s2y, k_y));
+            (kernel_equate(&gx, &gy, mu_x, s2x, mu_y, s2y, k_x, k_y, hx, hy), hx, hy)
+        }
+    };
+    let (mu_eq, sigma_eq) = weighted_moments(&y_eq, &gx);
+    Ok(EquateResult {
+        x_scores: (0..=k_x).map(|x| x as f64).collect(),
+        y_equivalents: y_eq,
+        mu_x,
+        sigma_x,
+        mu_y,
+        sigma_y,
+        mu_eq,
+        sigma_eq,
+        slope: f64::NAN,
+        intercept: f64::NAN,
+        n_x: x_scores.len(),
+        n_y: y_scores.len(),
+        h_x,
+        h_y,
+    })
 }
 
 #[cfg(test)]
@@ -681,5 +1098,220 @@ mod tests {
         // estimand; R1/R2/R3 supply the independent identification):
         assert!(bias1 < 0.15 && bias4 < 0.08, "bias should be small and shrink: {bias1}, {bias4}");
         assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): ratio={ratio}");
+    }
+
+    fn ext(cont: Continuization, sx: Option<usize>, sy: Option<usize>, hx: Option<f64>, hy: Option<f64>) -> EgSmoothOptions {
+        EgSmoothOptions {
+            continuization: cont,
+            smooth_degree_x: sx,
+            smooth_degree_y: sy,
+            bandwidth_x: hx,
+            bandwidth_y: hy,
+        }
+    }
+
+    // Anchor 1: uniform-kernel ext == existing equipercentile, bit-exact.
+    #[test]
+    fn ext_uniform_matches_equipercentile() {
+        let mut u = lcg(21);
+        let (n, kx, ky) = (3000usize, 30usize, 30usize);
+        let xs: Vec<f64> = (0..n).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
+        let ys: Vec<f64> = (0..n).map(|_| (14.0 + 7.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
+        let base = equate_eg(&xs, &ys, kx, ky, EquateMethod::Equipercentile).unwrap();
+        let e = equate_eg_ext(&xs, &ys, kx, ky, ext(Continuization::Uniform, None, None, None, None)).unwrap();
+        let d = (0..=kx).map(|x| (base.y_equivalents[x] - e.y_equivalents[x]).abs()).fold(0.0, f64::max);
+        assert!(d < 1e-12, "uniform-kernel ext must equal equipercentile: {d}");
+    }
+
+    // Anchors 2 & 3: log-linear presmoothing preserves the first T sample moments
+    // exactly (on the u=x/k scale) and, saturated at T=k, reproduces rel_freq.
+    #[test]
+    fn loglinear_preserves_moments_and_saturates() {
+        let mut u = lcg(5);
+        let k = 40usize;
+        let scores: Vec<f64> = (0..5000).map(|_| (20.0 + 7.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
+        let g = rel_freq(&scores, k).unwrap();
+        let n = scores.len() as f64;
+        let counts: Vec<f64> = g.iter().map(|&p| p * n).collect();
+        let fit = loglinear_smooth(&counts, 4).unwrap();
+        assert!(fit.converged);
+        assert!((fit.probs.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!(fit.probs.iter().all(|&p| p >= 0.0));
+        for (j, &fm) in fit.moments.iter().enumerate() {
+            let order = (j + 1) as i32;
+            let sm: f64 = (0..=k).map(|x| (x as f64 / k as f64).powi(order) * g[x]).sum();
+            assert!((fm - sm).abs() < 1e-8, "moment {order} not preserved: {fm} vs {sm}");
+        }
+        let sat = loglinear_smooth(&counts, k).unwrap();
+        let d = (0..=k).map(|x| (sat.probs[x] - g[x]).abs()).fold(0.0, f64::max);
+        assert!(d < 1e-9, "saturated loglinear must reproduce rel_freq: {d}");
+    }
+
+    // Anchors 4 & 6: Gaussian-kernel self-equate is the identity (F_h == G_h), and
+    // the continuized density preserves the discrete mean and variance.
+    #[test]
+    fn kernel_self_equate_and_mean_var() {
+        let mut u = lcg(9);
+        let k = 30usize;
+        let xs: Vec<f64> = (0..4000).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
+        let res = equate_eg_ext(&xs, &xs, k, k, ext(Continuization::Gaussian, None, None, Some(0.6), Some(0.6))).unwrap();
+        let g = rel_freq(&xs, k).unwrap();
+        let mut dmax = 0.0_f64;
+        for x in 0..=k {
+            if g[x] > 0.0 {
+                dmax = dmax.max((res.y_equivalents[x] - x as f64).abs());
+            }
+        }
+        // exact in exact arithmetic (F_h == G_h); the ~1e-8 residual is the
+        // erfc approximation (|err| < 1.2e-7) through the numeric inverse
+        assert!(dmax < 1e-6, "kernel self-equate must be identity: {dmax}");
+        assert_eq!(res.h_x, 0.6);
+        let (mu, sd) = moments(&g);
+        let sig2 = sd * sd;
+        let h = 0.8;
+        let (lo, hi, steps) = (-6.0_f64, k as f64 + 6.0, 20000usize);
+        let dx = (hi - lo) / steps as f64;
+        let (mut m0, mut m1, mut m2) = (0.0_f64, 0.0, 0.0);
+        for i in 0..steps {
+            let x = lo + (i as f64 + 0.5) * dx;
+            let fh = kernel_pdf(&g, mu, sig2, h, x);
+            m0 += fh * dx;
+            m1 += x * fh * dx;
+            m2 += x * x * fh * dx;
+        }
+        let mean = m1 / m0;
+        let var = m2 / m0 - mean * mean;
+        assert!((mean - mu).abs() < 1e-3, "kernel mean {mean} != {mu}");
+        assert!((var - sig2).abs() < 1e-2 * sig2.max(1.0), "kernel var {var} != {sig2}");
+    }
+
+    // Anchor 5: a very large bandwidth drives Gaussian-kernel equating to LINEAR.
+    #[test]
+    fn kernel_large_bandwidth_is_linear() {
+        let mut u = lcg(13);
+        let (kx, ky) = (30usize, 40usize);
+        let xs: Vec<f64> = (0..4000).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
+        let ys: Vec<f64> = (0..4000).map(|_| (22.0 + 8.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
+        let lin = equate_eg(&xs, &ys, kx, ky, EquateMethod::Linear).unwrap();
+        let ker = equate_eg_ext(&xs, &ys, kx, ky, ext(Continuization::Gaussian, None, None, Some(1e6), Some(1e6))).unwrap();
+        let d = (0..=kx).map(|x| (lin.y_equivalents[x] - ker.y_equivalents[x]).abs()).fold(0.0, f64::max);
+        assert!(d < 1e-4, "large-h kernel must match linear: {d}");
+    }
+
+    // Anchor 8: presmoothed self-equate is still the identity.
+    #[test]
+    fn presmoothed_self_equate_is_identity() {
+        let mut u = lcg(17);
+        let k = 40usize;
+        let xs: Vec<f64> = (0..3000).map(|_| (20.0 + 7.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
+        let res = equate_eg_ext(&xs, &xs, k, k, ext(Continuization::Uniform, Some(5), Some(5), None, None)).unwrap();
+        let g = density(&xs, k, Some(5)).unwrap();
+        let mut dmax = 0.0_f64;
+        for x in 0..=k {
+            if g[x] > 1e-12 {
+                dmax = dmax.max((res.y_equivalents[x] - x as f64).abs());
+            }
+        }
+        assert!(dmax < 1e-8, "presmoothed self-equate must be identity: {dmax}");
+    }
+
+    // Fix guard: on a non-unimodal penalty (bimodal density) the golden-section
+    // refinement can land in a worse cell, so optimal_bandwidth must fall back to
+    // the grid best rather than ship it.
+    #[test]
+    fn optimal_bandwidth_never_worse_than_grid() {
+        let k = 40usize;
+        let mut r = vec![0.0_f64; k + 1];
+        for j in 0..=k {
+            let d1 = (j as f64 - 8.0) / 2.0;
+            let d2 = (j as f64 - 32.0) / 2.0;
+            r[j] = (-0.5 * d1 * d1).exp() + (-0.5 * d2 * d2).exp();
+        }
+        let s: f64 = r.iter().sum();
+        for v in r.iter_mut() {
+            *v /= s;
+        }
+        let (mu, sd) = moments(&r);
+        let sig2 = sd * sd;
+        let h = optimal_bandwidth(&r, mu, sig2, k);
+        assert!(h.is_finite() && h > 0.0);
+        let pen_h = kernel_penalty(&r, mu, sig2, h, k);
+        let grid_best = (0..=40)
+            .map(|i| kernel_penalty(&r, mu, sig2, 0.1 + (3.0 - 0.1) * i as f64 / 40.0, k))
+            .fold(f64::INFINITY, f64::min);
+        assert!(pen_h <= grid_best + 1e-12, "optimal_bandwidth worse than grid: {pen_h} vs {grid_best}");
+    }
+
+    // Gaussian-kernel MC with a FIXED bandwidth shared by the population reference
+    // and the per-rep estimator, so the assertion measures density-sampling error
+    // alone (penalty-selected h would inject selection noise).
+    fn kernel_bias_rmse(
+        a_x: &[f64], b_x: &[f64], a_y: &[f64], b_y: &[f64], n: usize, reps: usize, seed: u64, h: f64,
+    ) -> (f64, f64) {
+        let (k_x, k_y) = (a_x.len(), a_y.len());
+        let (nodes, weights) = crate::quadrature::gh_rule(41).unwrap();
+        let gx_pop = pop_density(a_x, b_x, nodes, weights);
+        let gy_pop = pop_density(a_y, b_y, nodes, weights);
+        let (mux, sdx) = moments(&gx_pop);
+        let (muy, sdy) = moments(&gy_pop);
+        let e_ref = kernel_equate(&gx_pop, &gy_pop, mux, sdx * sdx, muy, sdy * sdy, k_x, k_y, h, h);
+        let mut u = lcg(seed);
+        let sim = |u: &mut dyn FnMut() -> f64, a: &[f64], b: &[f64]| -> Vec<f64> {
+            (0..n)
+                .map(|_| {
+                    let th = {
+                        let u1 = u().max(1e-12);
+                        let u2 = u();
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                    };
+                    a.iter().zip(b).filter(|(&ai, &bi)| u() < 1.0 / (1.0 + (-(ai * th + bi)).exp())).count() as f64
+                })
+                .collect()
+        };
+        let mut sum = vec![0.0_f64; k_x + 1];
+        let mut sum2 = vec![0.0_f64; k_x + 1];
+        for _ in 0..reps {
+            let xs = sim(&mut u, a_x, b_x);
+            let ys = sim(&mut u, a_y, b_y);
+            let est = equate_eg_ext(&xs, &ys, k_x, k_y, ext(Continuization::Gaussian, None, None, Some(h), Some(h))).unwrap();
+            for x in 0..=k_x {
+                let d = est.y_equivalents[x] - e_ref[x];
+                sum[x] += d;
+                sum2[x] += d * d;
+            }
+        }
+        let lo = (k_x as f64 * 0.05).ceil() as usize;
+        let hi = k_x - lo;
+        let mut max_bias = 0.0_f64;
+        let mut rmse_acc = 0.0_f64;
+        let mut cnt = 0usize;
+        for x in lo..=hi {
+            max_bias = max_bias.max((sum[x] / reps as f64).abs());
+            rmse_acc += sum2[x] / reps as f64;
+            cnt += 1;
+        }
+        (max_bias, (rmse_acc / cnt as f64).sqrt())
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn kernel_equate_monte_carlo_500() {
+        let k_x = 30usize;
+        let k_y = 40usize;
+        let a_x: Vec<f64> = (0..k_x).map(|i| 0.8 + 0.5 * ((i % 5) as f64 / 4.0)).collect();
+        let b_x: Vec<f64> = (0..k_x).map(|i| 1.5 - 3.0 * i as f64 / (k_x - 1) as f64).collect();
+        let a_y: Vec<f64> = (0..k_y).map(|i| 0.9 + 0.4 * ((i % 4) as f64 / 3.0)).collect();
+        let b_y: Vec<f64> = (0..k_y).map(|i| 1.8 - 3.6 * i as f64 / (k_y - 1) as f64).collect();
+        let reps = 500usize;
+        let h = 0.6_f64;
+        let (bias1, rmse1) = kernel_bias_rmse(&a_x, &b_x, &a_y, &b_y, 1000, reps, 5001, h);
+        let (bias4, rmse4) = kernel_bias_rmse(&a_x, &b_x, &a_y, &b_y, 4000, reps, 8001, h);
+        let ratio = rmse1 / rmse4;
+        println!(
+            "[kernel equate 500] h={h} N=1000: max|bias|={bias1:.4} RMSE={rmse1:.4}  \
+             N=4000: max|bias|={bias4:.4} RMSE={rmse4:.4}  RMSE ratio={ratio:.3} (expect ~2)"
+        );
+        assert!(bias1 < 0.15 && bias4 < 0.08, "bias should be small and shrink: {bias1}, {bias4}");
+        assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
     }
 }

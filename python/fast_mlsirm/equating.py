@@ -30,6 +30,8 @@ class EquateResult:
     intercept: float
     n_x: int
     n_y: int
+    h_x: float = float("nan")  # Gaussian-kernel bandwidths (NaN unless kernel)
+    h_y: float = float("nan")
 
 
 def _infer_k(scores: np.ndarray, k, name: str) -> int:
@@ -61,6 +63,8 @@ def _build(res, method: str, design: str) -> EquateResult:
         intercept=float(res["intercept"]),
         n_x=int(res["n_x"]),
         n_y=int(res["n_y"]),
+        h_x=float(res.get("h_x", float("nan"))),
+        h_y=float(res.get("h_y", float("nan"))),
     )
 
 
@@ -148,3 +152,94 @@ def equate_neat(
         xt, xa, yt, ya, int(kx), int(ky), int(kv), method=str(method), w1=float(w1)
     )
     return _build(res, str(method), "NEAT")
+
+
+def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
+    """Univariate log-linear presmoothing of a score-frequency distribution
+    (compute in Rust; Holland & Thayer, 2000; Kolen & Brennan, 2014, ch. 3): fit
+    ``log m_x = sum_j beta_j q_j(x)`` by Poisson ML so the smoothed density
+    preserves the first ``degree`` sample moments exactly while damping sampling
+    noise. ``counts`` are raw frequencies over scores ``0..=k`` (length ``k+1``);
+    ``degree = k`` reproduces the raw relative frequencies. Returns a dict with
+    ``probs`` (smoothed density), ``log_lik``, ``aic``, ``bic`` (comparable across
+    degrees on the same data), ``moments`` (fitted moments on the ``u = x/k`` scale,
+    orders ``1..=degree``), ``converged``, and ``iters``.
+
+    References (APA 7th ed.):
+        Holland, P. W., & Thayer, D. T. (2000). Univariate and bivariate loglinear
+            models for discrete test score distributions. *Journal of Educational
+            and Behavioral Statistics, 25*(2), 133-183.
+            https://doi.org/10.3102/10769986025002133
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "loglinear_smooth"):
+        raise RuntimeError("loglinear_smooth requires the compiled Rust core")
+    c = np.asarray(counts, dtype=np.float64).ravel()
+    # the model preserves at most k = len(counts)-1 moments; clamp so the default
+    # degree works on short forms (k < 6) instead of erroring
+    deg = max(1, min(int(degree), c.size - 1))
+    res = core.loglinear_smooth(c, deg)
+    return {
+        "probs": np.asarray(res["probs"], dtype=np.float64),
+        "log_lik": float(res["log_lik"]),
+        "aic": float(res["aic"]),
+        "bic": float(res["bic"]),
+        "moments": np.asarray(res["moments"], dtype=np.float64),
+        "converged": bool(res["converged"]),
+        "iters": int(res["iters"]),
+    }
+
+
+def equate_observed_scores_kernel(
+    x_scores: np.ndarray,
+    y_scores: np.ndarray,
+    continuization: str = "gaussian",
+    k_x: int | None = None,
+    k_y: int | None = None,
+    smooth_x: int | None = None,
+    smooth_y: int | None = None,
+    bandwidth_x: float | None = None,
+    bandwidth_y: float | None = None,
+) -> EquateResult:
+    """Equivalent-groups equating with optional log-linear presmoothing and a
+    choice of continuization kernel (compute in Rust; Kolen & Brennan, 2014; von
+    Davier, Holland & Thayer, 2004). ``continuization`` is ``"uniform"`` (the
+    Kolen-Brennan equipercentile, identical to
+    :func:`equate_observed_scores`) or ``"gaussian"`` (kernel equating).
+    ``smooth_x``/``smooth_y`` presmooth each form (``None`` = raw frequencies, each
+    ``>= 1`` when given); ``bandwidth_x``/``bandwidth_y`` fix the Gaussian bandwidth
+    (``None`` = penalty-selected). The chosen bandwidths are returned on
+    ``EquateResult.h_x``/``h_y`` (``NaN`` for the uniform kernel). This entry point
+    defaults to the Gaussian kernel (unlike the plain
+    :func:`equate_observed_scores`, whose equipercentile is the uniform kernel).
+    When presmoothing is requested the fit is assumed to converge (the Poisson
+    log-linear likelihood is concave); the result does not carry a convergence flag
+    -- use :func:`loglinear_smooth` directly if you need to inspect it.
+
+    References (APA 7th ed.):
+        von Davier, A. A., Holland, P. W., & Thayer, D. T. (2004). *The kernel
+            method of test equating*. Springer. https://doi.org/10.1007/b97446
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "equate_observed_scores_ext"):
+        raise RuntimeError("equate_observed_scores_kernel requires the compiled Rust core")
+    xs = np.asarray(x_scores, dtype=np.float64).ravel()
+    ys = np.asarray(y_scores, dtype=np.float64).ravel()
+    for nm, sv in (("smooth_x", smooth_x), ("smooth_y", smooth_y)):
+        if sv is not None and int(sv) < 1:
+            raise ValueError(f"{nm} must be >= 1")
+    kx = _infer_k(xs, k_x, "k_x")
+    ky = _infer_k(ys, k_y, "k_y")
+    res = core.equate_observed_scores_ext(
+        xs, ys, int(kx), int(ky),
+        continuization=str(continuization),
+        smooth_degree_x=None if smooth_x is None else int(smooth_x),
+        smooth_degree_y=None if smooth_y is None else int(smooth_y),
+        bandwidth_x=None if bandwidth_x is None else float(bandwidth_x),
+        bandwidth_y=None if bandwidth_y is None else float(bandwidth_y),
+    )
+    return _build(res, f"{continuization}-kernel", "EG")
