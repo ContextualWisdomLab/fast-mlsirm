@@ -1326,4 +1326,122 @@ mod tests {
             assert!(flag_rate < 0.15, "{model:?}: flag rate {flag_rate} too high for the true model");
         }
     }
+
+    #[test]
+    fn fit_poly_unidim_monte_carlo_recovery_normal_and_skew() {
+        // Monte-Carlo parameter-recovery study for the GPCM fitter, generating
+        // from the published item-parameter scheme of Kang & Chen (2008, p. 397):
+        // slopes a_i ~ lognormal(0, 0.5²) and four step difficulties b_{i,c} ~
+        // N(means −1.5, −0.5, 0.5, 1.5; SD 0.5). Two ability conditions are run —
+        // a NORMAL θ ~ N(0, 1) (the fitter's prior, so recovery is unbiased) and
+        // a right-SKEWED θ = Exp(1) − 1 (mean 0, var 1, skewness 2), a prior
+        // misspecification Kang & Chen flag as future work. Across replications
+        // we report per-parameter bias and RMSE (absolute-agreement recovery,
+        // not correlation).
+        //
+        // # References (APA 7th ed.)
+        //
+        // Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X²
+        //   item fit index for polytomous IRT models. *Journal of Educational
+        //   Measurement, 45*(4), 391–406.
+        //   https://doi.org/10.1111/j.1745-3984.2008.00070.x
+        // Muraki, E. (1992). A generalized partial credit model: Application of
+        //   an EM algorithm. *Applied Psychological Measurement, 16*(2), 159–176.
+        //   https://doi.org/10.1177/014662169201600206
+        let (n_items, k, reps, n_persons) = (5usize, 5usize, 16usize, 1500usize);
+        let z_steps = k - 1; // 4 step difficulties
+        let step_means = [-1.5_f64, -0.5, 0.5, 1.5];
+
+        // fixed "true" item bank (drawn once) from the published scheme
+        let mut bu = rng(96100);
+        let mut bnorm = || {
+            let u1 = bu().max(1e-12);
+            let u2 = bu();
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        };
+        let mut a_true = vec![0.0_f64; n_items];
+        let mut cat_true = vec![0.0_f64; n_items * z_steps]; // additive intercepts
+        for i in 0..n_items {
+            a_true[i] = (0.5 * bnorm()).exp(); // lognormal(0, 0.5²)
+            let mut cum = 0.0_f64;
+            for c in 0..z_steps {
+                let b = step_means[c] + 0.5 * bnorm(); // step difficulty
+                cum += b;
+                cat_true[i * z_steps + c] = -a_true[i] * cum; // GPCM intercept
+            }
+        }
+
+        for (cond, skew) in [("normal", false), ("skew", true)] {
+            // accumulate signed error and squared error per parameter over reps
+            let mut a_err = vec![0.0_f64; n_items];
+            let mut a_sq = vec![0.0_f64; n_items];
+            let mut c_err = vec![0.0_f64; n_items * z_steps];
+            let mut c_sq = vec![0.0_f64; n_items * z_steps];
+            for rep in 0..reps {
+                let mut u = rng(4242 + rep as u64 * 131 + if skew { 7 } else { 0 });
+                let mut yi = vec![0usize; n_persons * n_items];
+                for p in 0..n_persons {
+                    let theta = if skew {
+                        -(u().max(1e-12)).ln() - 1.0 // Exp(1) − 1: mean 0, var 1, skew 2
+                    } else {
+                        let u1 = u().max(1e-12);
+                        let u2 = u();
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                    };
+                    for i in 0..n_items {
+                        let base = a_true[i] * theta;
+                        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                        let mut ic = vec![0.0_f64; k];
+                        ic[1..].copy_from_slice(&cat_true[i * z_steps..(i + 1) * z_steps]);
+                        let lp = gpcm_logprobs(base, &scores, &ic);
+                        let draw = u();
+                        let (mut acc, mut cat) = (0.0_f64, k - 1);
+                        for (c, l) in lp.iter().enumerate() {
+                            acc += l.exp();
+                            if draw <= acc {
+                                cat = c;
+                                break;
+                            }
+                        }
+                        yi[p * n_items + i] = cat;
+                    }
+                }
+                let fit = fit_poly_unidim(
+                    &yi, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 100, 1e-6,
+                )
+                .unwrap();
+                for i in 0..n_items {
+                    let ea = fit.slope[i] - a_true[i];
+                    a_err[i] += ea;
+                    a_sq[i] += ea * ea;
+                    for c in 0..z_steps {
+                        let ec = fit.cat_params[i][c] - cat_true[i * z_steps + c];
+                        c_err[i * z_steps + c] += ec;
+                        c_sq[i * z_steps + c] += ec * ec;
+                    }
+                }
+            }
+            let r = reps as f64;
+            let rmse = |sq: &[f64]| (sq.iter().sum::<f64>() / (sq.len() as f64 * r)).sqrt();
+            let mean_bias = |er: &[f64]| er.iter().map(|e| (e / r).abs()).sum::<f64>() / er.len() as f64;
+            let (a_rmse, c_rmse) = (rmse(&a_sq), rmse(&c_sq));
+            let (a_bias, c_bias) = (mean_bias(&a_err), mean_bias(&c_err));
+            println!(
+                "[MC recovery, θ={cond}] reps={reps} N={n_persons} K={k}  \
+                 slope: RMSE={a_rmse:.4} |bias|={a_bias:.4}  \
+                 intercept: RMSE={c_rmse:.4} |bias|={c_bias:.4}"
+            );
+            assert!(a_rmse.is_finite() && c_rmse.is_finite());
+            if skew {
+                // prior misspecification: recovery holds but degrades (reported above)
+                assert!(a_rmse < 0.45, "skew slope RMSE too large: {a_rmse}");
+                assert!(c_rmse < 1.2, "skew intercept RMSE too large: {c_rmse}");
+            } else {
+                // matched prior: tight, near-unbiased recovery
+                assert!(a_rmse < 0.20, "normal slope RMSE too large: {a_rmse}");
+                assert!(c_rmse < 0.45, "normal intercept RMSE too large: {c_rmse}");
+                assert!(a_bias < 0.10, "normal slope bias too large: {a_bias}");
+            }
+        }
+    }
 }
