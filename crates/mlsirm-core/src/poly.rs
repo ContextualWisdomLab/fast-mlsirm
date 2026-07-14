@@ -114,6 +114,261 @@ pub fn gpcm_node_gradient(
     (g_intercepts, g_base, g_scores)
 }
 
+/// Polytomous response family for the unidimensional fitter.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PolyModel {
+    /// Cumulative-logit Graded Response Model (Samejima) — the LSIRM-family default.
+    Grm,
+    /// Adjacent-category softmax Generalized Partial Credit Model (Muraki).
+    Gpcm,
+}
+
+/// Result of [`fit_poly_unidim`]. `slope[i]` is item `i`'s discrimination `a_i`;
+/// `cat_params[i]` holds the `K-1` free category parameters (GPCM additive
+/// intercepts, or GRM cumulative thresholds).
+pub struct PolyFit {
+    pub slope: Vec<f64>,
+    pub cat_params: Vec<Vec<f64>>,
+    pub loglik: f64,
+    pub n_iter: usize,
+}
+
+/// Solve `H x = g` for small dense `H` (K x K) by Gauss elimination with partial
+/// pivoting. Returns `g` unchanged if singular (degenerate M-step step).
+fn solve_small(mut h: Vec<Vec<f64>>, mut g: Vec<f64>) -> Vec<f64> {
+    let n = g.len();
+    for col in 0..n {
+        let mut piv = col;
+        for r in col + 1..n {
+            if h[r][col].abs() > h[piv][col].abs() {
+                piv = r;
+            }
+        }
+        if h[piv][col].abs() < 1e-12 {
+            return g; // singular: fall back to gradient step
+        }
+        h.swap(col, piv);
+        g.swap(col, piv);
+        for r in 0..n {
+            if r == col {
+                continue;
+            }
+            let f = h[r][col] / h[col][col];
+            for c in col..n {
+                h[r][c] -= f * h[col][c];
+            }
+            g[r] -= f * g[col];
+        }
+    }
+    (0..n).map(|i| g[i] / h[i][i]).collect()
+}
+
+/// Negative expected complete-data log-lik and its gradient for one item over
+/// the quadrature nodes. `params = [log_a, cat_1..cat_{K-1}]`; `counts[node]` is
+/// the length-`K` expected category-count vector at that node.
+fn item_neg_ll_grad(
+    params: &[f64],
+    nodes: &[f64],
+    counts: &[Vec<f64>],
+    model: PolyModel,
+) -> (f64, Vec<f64>) {
+    let k = counts[0].len();
+    let a = params[0].exp();
+    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+    let mut ll = 0.0_f64;
+    let mut grad = vec![0.0_f64; params.len()];
+    for (nd, &theta) in nodes.iter().enumerate() {
+        let base = a * theta;
+        match model {
+            PolyModel::Gpcm => {
+                let mut intercepts = vec![0.0_f64; k];
+                intercepts[1..].copy_from_slice(&params[1..]);
+                let lp = gpcm_logprobs(base, &scores, &intercepts);
+                ll += counts[nd].iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+                let (g_ic, g_base, _g_sc) = gpcm_node_gradient(base, &scores, &intercepts, &counts[nd]);
+                for m in 0..k - 1 {
+                    grad[1 + m] += g_ic[m];
+                }
+                grad[0] += g_base * base; // d base / d log_a = a*theta = base
+            }
+            PolyModel::Grm => {
+                let thr = &params[1..];
+                let lp = grm_logprobs(base, thr);
+                ll += counts[nd].iter().zip(&lp).map(|(r, l)| r * l).sum::<f64>();
+                let (g_base, g_t) = grm_node_gradient(base, thr, &counts[nd]);
+                for m in 0..k - 1 {
+                    grad[1 + m] += g_t[m];
+                }
+                grad[0] += g_base * base;
+            }
+        }
+    }
+    (-ll, grad.iter().map(|v| -v).collect())
+}
+
+/// Newton M-step for one item: a few steps with a finite-difference Hessian on
+/// the analytic gradient (the parameter count `K` is small).
+fn m_step_item(
+    mut params: Vec<f64>,
+    nodes: &[f64],
+    counts: &[Vec<f64>],
+    model: PolyModel,
+    n_newton: usize,
+) -> Vec<f64> {
+    let np = params.len();
+    for _ in 0..n_newton {
+        let (_f, g) = item_neg_ll_grad(&params, nodes, counts, model);
+        let h = 1e-5;
+        let mut hess = vec![vec![0.0_f64; np]; np];
+        for j in 0..np {
+            let mut pj = params.clone();
+            pj[j] += h;
+            let (_f2, gj) = item_neg_ll_grad(&pj, nodes, counts, model);
+            for r in 0..np {
+                hess[r][j] = (gj[r] - g[r]) / h;
+            }
+        }
+        // symmetrize + ridge for a well-posed solve
+        for r in 0..np {
+            for c in 0..np {
+                hess[r][c] = 0.5 * (hess[r][c] + hess[c][r]);
+            }
+            hess[r][r] += 1e-8;
+        }
+        let step = solve_small(hess, g);
+        let mut max_step = 0.0_f64;
+        for j in 0..np {
+            params[j] -= step[j];
+            max_step = max_step.max(step[j].abs());
+        }
+        if max_step < 1e-9 {
+            break;
+        }
+    }
+    params
+}
+
+/// Unidimensional polytomous marginal MLE via Bock-Aitkin EM (no latent-space
+/// interaction) — the Rust compute path validating the [`PolyModel`] cells in a
+/// full EM loop. `y` is `n_persons * n_items`, row-major, categories `0..n_cat-1`
+/// (complete data). `theta ~ N(0,1)` on the `q_theta`-node Gauss-Hermite grid.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_poly_unidim(
+    y: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<PolyFit, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
+    let qn = nodes.len();
+
+    // init: log_a = 0; category params from base rates (GPCM) / cumulative rates (GRM)
+    let mut params = vec![vec![0.0_f64; n_cat]; n_items];
+    for i in 0..n_items {
+        let mut freq = vec![1e-3_f64; n_cat];
+        for p in 0..n_persons {
+            freq[y[p * n_items + i]] += 1.0;
+        }
+        let tot: f64 = freq.iter().sum();
+        for f in freq.iter_mut() {
+            *f /= tot;
+        }
+        match model {
+            PolyModel::Gpcm => {
+                for k in 1..n_cat {
+                    params[i][k] = (freq[k] / freq[0]).ln();
+                }
+            }
+            PolyModel::Grm => {
+                // beta_k = logit(P(Y >= k)); cumulative from the top, ordered decreasing
+                let mut cum = 0.0_f64;
+                for k in (1..n_cat).rev() {
+                    cum += freq[k];
+                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
+                    params[i][k] = (c / (1.0 - c)).ln();
+                }
+            }
+        }
+    }
+
+    let mut prev_ll = f64::NEG_INFINITY;
+    let mut ll = f64::NEG_INFINITY;
+    let mut it = 0;
+    while it < max_iter {
+        // per-item cell log-probs at each node: item_lp[i][node*n_cat + k]
+        let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
+        for i in 0..n_items {
+            let a = params[i][0].exp();
+            for (nd, &theta) in nodes.iter().enumerate() {
+                let base = a * theta;
+                let lp = match model {
+                    PolyModel::Gpcm => {
+                        let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                        let mut intercepts = vec![0.0_f64; n_cat];
+                        intercepts[1..].copy_from_slice(&params[i][1..]);
+                        gpcm_logprobs(base, &scores, &intercepts)
+                    }
+                    PolyModel::Grm => grm_logprobs(base, &params[i][1..]),
+                };
+                item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
+            }
+        }
+        // E-step: posteriors + expected counts r[i][node][k]
+        let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
+        ll = 0.0;
+        let mut log_node = vec![0.0_f64; qn];
+        for p in 0..n_persons {
+            for nd in 0..qn {
+                log_node[nd] = log_w[nd];
+            }
+            for i in 0..n_items {
+                let yc = y[p * n_items + i];
+                for nd in 0..qn {
+                    log_node[nd] += item_lp[i][nd * n_cat + yc];
+                }
+            }
+            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0_f64;
+            for nd in 0..qn {
+                denom += (log_node[nd] - mx).exp();
+            }
+            ll += mx + denom.ln();
+            for i in 0..n_items {
+                let yc = y[p * n_items + i];
+                for nd in 0..qn {
+                    let post = (log_node[nd] - mx).exp() / denom;
+                    counts[i][nd][yc] += post;
+                }
+            }
+        }
+        // M-step per item
+        for i in 0..n_items {
+            params[i] = m_step_item(params[i].clone(), nodes, &counts[i], model, 10);
+        }
+        it += 1;
+        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
+            break;
+        }
+        prev_ll = ll;
+    }
+
+    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
+    let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
+    Ok(PolyFit { slope, cat_params, loglik: ll, n_iter: it })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +426,101 @@ mod tests {
         let lo = gpcm_logprobs(-2.0, &[0.0, 1.0, 2.0], &[0.0, 0.0, 0.0]);
         let hi = gpcm_logprobs(2.0, &[0.0, 1.0, 2.0], &[0.0, 0.0, 0.0]);
         assert!(hi[2].exp() > lo[2].exp());
+    }
+
+    #[test]
+    fn fit_poly_unidim_recovers_gpcm() {
+        let (n_persons, n_items, k) = (4000usize, 6usize, 3usize);
+        let mut st = 20260714u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.8 + 0.16 * i as f64).collect();
+        let c_true: Vec<Vec<f64>> = (0..n_items)
+            .map(|i| vec![0.0, 0.3 - 0.1 * i as f64, -0.2 + 0.15 * i as f64])
+            .collect();
+        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+        let mut y = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let lp = gpcm_logprobs(a_true[i] * theta, &scores, &c_true[i]);
+                let uu = u();
+                let mut cum = 0.0_f64;
+                let mut cat = k - 1;
+                for (c, l) in lp.iter().enumerate() {
+                    cum += l.exp();
+                    if uu < cum {
+                        cat = c;
+                        break;
+                    }
+                }
+                y[p * n_items + i] = cat;
+            }
+        }
+        let fit = fit_poly_unidim(&y, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6).unwrap();
+        assert!(fit.loglik.is_finite());
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (ma, mh) = (mean(&a_true), mean(&fit.slope));
+        let (mut num, mut da, mut dh) = (0.0, 0.0, 0.0);
+        for i in 0..n_items {
+            num += (a_true[i] - ma) * (fit.slope[i] - mh);
+            da += (a_true[i] - ma).powi(2);
+            dh += (fit.slope[i] - mh).powi(2);
+        }
+        let corr = num / (da.sqrt() * dh.sqrt());
+        assert!(corr > 0.9, "slope corr {corr}; hat={:?}", fit.slope);
+    }
+
+    #[test]
+    fn fit_poly_unidim_recovers_grm() {
+        let (n_persons, n_items, k) = (4000usize, 6usize, 4usize);
+        let mut st = 99887766u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.15 * i as f64).collect();
+        // ordered-decreasing thresholds (valid GRM)
+        let thr_true: Vec<Vec<f64>> = (0..n_items).map(|_| vec![1.4, 0.1, -1.2]).collect();
+        let mut y = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let lp = grm_logprobs(a_true[i] * theta, &thr_true[i]);
+                let uu = u();
+                let mut cum = 0.0_f64;
+                let mut cat = k - 1;
+                for (c, l) in lp.iter().enumerate() {
+                    cum += l.exp();
+                    if uu < cum {
+                        cat = c;
+                        break;
+                    }
+                }
+                y[p * n_items + i] = cat;
+            }
+        }
+        let fit = fit_poly_unidim(&y, n_persons, n_items, k, PolyModel::Grm, 21, 80, 1e-6).unwrap();
+        assert!(fit.loglik.is_finite());
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (ma, mh) = (mean(&a_true), mean(&fit.slope));
+        let (mut num, mut da, mut dh) = (0.0, 0.0, 0.0);
+        for i in 0..n_items {
+            num += (a_true[i] - ma) * (fit.slope[i] - mh);
+            da += (a_true[i] - ma).powi(2);
+            dh += (fit.slope[i] - mh).powi(2);
+        }
+        let corr = num / (da.sqrt() * dh.sqrt());
+        assert!(corr > 0.9, "grm slope corr {corr}; hat={:?}", fit.slope);
+        // thresholds recovered near truth (pooled mean abs error, item 0)
+        let mae: f64 = (0..3).map(|j| (fit.cat_params[0][j] - thr_true[0][j]).abs()).sum::<f64>() / 3.0;
+        assert!(mae < 0.25, "grm threshold MAE {mae}: {:?}", fit.cat_params[0]);
     }
 
     #[test]
