@@ -544,6 +544,229 @@ pub fn score_poly_eap(
     Ok((theta_eap, theta_sd))
 }
 
+/// Per-item generalized S-X² polytomous item-fit result.
+pub struct PolySX2Result {
+    pub statistic: Vec<f64>,
+    pub df: Vec<f64>,
+    pub p_value: Vec<f64>,
+    /// Retained independent cells `Σ_g (#supercats_g − 1)` before the `−m`
+    /// parameter adjustment — the reference df when the statistic is evaluated
+    /// at KNOWN (not estimated) item parameters.
+    pub n_cells: Vec<usize>,
+}
+
+/// Generalized S-X² item fit for ordered polytomous IRT — Kang & Chen (2008)
+/// for the GPCM, Kang & Chen (2011) for the GRM — the category extension of the
+/// binary Orlando-Thissen statistic in [`crate::fitstats::s_x2`]. Persons are
+/// grouped by the summed score `k = 0..F` (`F = n_items * (n_cat-1)`); the
+/// model-expected category proportions
+/// `E_ikz = ∫ P_i(z|θ) f*ᵢ(k-z|θ) φ(θ) dθ / ∫ f(k|θ) φ(θ) dθ`
+/// use the generalized Lord-Wingersky summed-score recursion (Thissen,
+/// Pommerich, Billeaud & Williams 1995), with `f*ᵢ` the leave-one-out
+/// distribution. Groups `k < Z` collapse into the boundary group `Z`, groups
+/// `k > F−Z` into `F−Z`, and `k = 0`, `k = F` are excluded (their off-boundary
+/// cells are structurally zero); within a retained group adjacent *categories*
+/// are collapsed left-to-right to hold every expected cell frequency at or above
+/// `min_expected` (Kang & Chen's category-collapsing, feasible where score-group
+/// collapsing would erase the table). `df = Σ_g (#cells_g − 1) − m`, with
+/// `m = n_cat` estimated item parameters (slope + `K−1` category parameters).
+///
+/// At `n_cat = 2` this reduces exactly to [`crate::fitstats::s_x2`] on the same
+/// grid; all items are assumed to share `n_cat` categories (the fitter's
+/// setting). Only persons observed on every item enter the summed-score table.
+#[allow(clippy::too_many_arguments)]
+pub fn poly_s_x2(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+    min_expected: f64,
+) -> Result<PolySX2Result, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if n_items < 2 {
+        return Err("n_items must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if slope.len() != n_items {
+        return Err("slope must have length n_items".into());
+    }
+    if cat_params.len() != n_items * (n_cat - 1) {
+        return Err("cat_params must have length n_items * (n_cat - 1)".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+
+    let z = n_cat - 1; // highest category score Z
+    let f_max = n_items * z; // perfect summed score F
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let qn = nodes.len();
+
+    // per-item category probabilities at each node: probs[(i*qn + t)*n_cat + zc]
+    let mut probs = vec![0.0_f64; n_items * qn * n_cat];
+    for i in 0..n_items {
+        let a = slope[i];
+        let cp = &cat_params[i * z..(i + 1) * z];
+        for (t, &theta) in nodes.iter().enumerate() {
+            let base = a * theta;
+            let lp = match model {
+                PolyModel::Gpcm => {
+                    let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                    let mut intercepts = vec![0.0_f64; n_cat];
+                    intercepts[1..].copy_from_slice(cp);
+                    gpcm_logprobs(base, &scores, &intercepts)
+                }
+                PolyModel::Grm => grm_logprobs(base, cp),
+            };
+            let off = (i * qn + t) * n_cat;
+            for zc in 0..n_cat {
+                probs[off + zc] = lp[zc].exp();
+            }
+        }
+    }
+
+    // generalized Lord-Wingersky over an item subset: f[k*qn + t], k = 0..items*z
+    let poly_lw = |items: &[usize]| -> Vec<f64> {
+        let max_s = items.len() * z;
+        let mut dist = vec![0.0_f64; (max_s + 1) * qn];
+        for t in 0..qn {
+            dist[t] = 1.0; // score 0 has probability 1 before adding any item
+        }
+        let mut cur = 0usize;
+        for &i in items {
+            let mut next = vec![0.0_f64; (max_s + 1) * qn];
+            for s in 0..=cur {
+                for zc in 0..n_cat {
+                    let off = (i * qn) * n_cat + zc;
+                    let (drow, srow) = ((s + zc) * qn, s * qn);
+                    for t in 0..qn {
+                        next[drow + t] += dist[srow + t] * probs[off + t * n_cat];
+                    }
+                }
+            }
+            cur += z;
+            dist = next;
+        }
+        dist
+    };
+
+    let all: Vec<usize> = (0..n_items).collect();
+    let f_all = poly_lw(&all);
+    let denom: Vec<f64> = (0..=f_max)
+        .map(|k| (0..qn).map(|t| f_all[k * qn + t] * weights[t]).sum())
+        .collect();
+
+    // observed counts by total score: nk[k] and obs[(i*(F+1)+k)*n_cat + zc]
+    let complete = |p: usize| observed.map_or(true, |o| (0..n_items).all(|i| o[p * n_items + i]));
+    let mut nk = vec![0.0_f64; f_max + 1];
+    let mut obs = vec![0.0_f64; n_items * (f_max + 1) * n_cat];
+    for p in 0..n_persons {
+        if !complete(p) {
+            continue;
+        }
+        let total: usize = (0..n_items).map(|i| y[p * n_items + i]).sum();
+        nk[total] += 1.0;
+        for i in 0..n_items {
+            obs[(i * (f_max + 1) + total) * n_cat + y[p * n_items + i]] += 1.0;
+        }
+    }
+
+    let m = n_cat as f64; // slope + (K-1) category parameters
+    let n_buckets = f_max - 2 * z + 1; // groups k in [Z, F-Z] after boundary merge
+    let mut out = PolySX2Result {
+        statistic: vec![f64::NAN; n_items],
+        df: vec![f64::NAN; n_items],
+        p_value: vec![f64::NAN; n_items],
+        n_cells: vec![0; n_items],
+    };
+    if n_buckets == 0 {
+        return Ok(out);
+    }
+
+    for i in 0..n_items {
+        let rest: Vec<usize> = (0..n_items).filter(|&j| j != i).collect();
+        let f_rest = poly_lw(&rest); // f*ᵢ, scores 0..(F-z)
+        let rest_max = f_max - z;
+        // observed/expected counts per (bucket, category); k in [1, F-1]
+        let mut bo = vec![0.0_f64; n_buckets * n_cat];
+        let mut be = vec![0.0_f64; n_buckets * n_cat];
+        let mut bn = vec![0.0_f64; n_buckets];
+        for k in 1..f_max {
+            if denom[k] <= 0.0 {
+                continue;
+            }
+            let bucket = k.clamp(z, f_max - z) - z;
+            bn[bucket] += nk[k];
+            for zc in 0..n_cat {
+                bo[bucket * n_cat + zc] += obs[(i * (f_max + 1) + k) * n_cat + zc];
+                if k >= zc && k - zc <= rest_max {
+                    let kr = k - zc;
+                    let num: f64 = (0..qn)
+                        .map(|t| probs[(i * qn + t) * n_cat + zc] * f_rest[kr * qn + t] * weights[t])
+                        .sum();
+                    be[bucket * n_cat + zc] += nk[k] * num / denom[k];
+                }
+            }
+        }
+        // per bucket: collapse adjacent categories to min_expected, accumulate chi-square
+        let mut x2 = 0.0_f64;
+        let mut cells = 0usize;
+        for g in 0..n_buckets {
+            if bn[g] <= 0.0 {
+                continue;
+            }
+            let mut supers: Vec<(f64, f64)> = Vec::new();
+            let (mut ao, mut ae) = (0.0_f64, 0.0_f64);
+            for zc in 0..n_cat {
+                ao += bo[g * n_cat + zc];
+                ae += be[g * n_cat + zc];
+                if ae >= min_expected {
+                    supers.push((ao, ae));
+                    ao = 0.0;
+                    ae = 0.0;
+                }
+            }
+            if ao > 0.0 || ae > 0.0 {
+                if let Some(last) = supers.last_mut() {
+                    last.0 += ao;
+                    last.1 += ae;
+                } else {
+                    supers.push((ao, ae));
+                }
+            }
+            for &(o, e) in &supers {
+                if e > 0.0 {
+                    x2 += (o - e) * (o - e) / e;
+                }
+            }
+            cells += supers.len().saturating_sub(1);
+        }
+        out.statistic[i] = x2;
+        out.n_cells[i] = cells;
+        let df = cells as f64 - m;
+        if df >= 1.0 {
+            out.df[i] = df;
+            out.p_value[i] = crate::fitstats::chi2_sf(x2, df);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,6 +1149,158 @@ mod tests {
             sm[m] -= h;
             let fds = (q(base, &intercepts, &sp) - q(base, &intercepts, &sm)) / (2.0 * h);
             assert!((fds - g_sc[m - 1]).abs() < 1e-5);
+        }
+    }
+
+    // deterministic uniform draws for the item-fit tests
+    fn rng(seed: u64) -> impl FnMut() -> f64 {
+        let mut st = seed;
+        move || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        }
+    }
+
+    #[test]
+    fn poly_s_x2_reduces_to_binary_orlando_thissen() {
+        // At K=2 the generalized S-X² must equal the trusted binary Orlando-
+        // Thissen s_x2 (crate::fitstats) EXACTLY on the same quadrature grid:
+        // both GRM and GPCM cells reduce to the 2PL P(Y=1)=sigmoid(a*theta+b),
+        // and the summed-score recursion / expected proportions coincide. Large
+        // N + few centered items keep either statistic out of its collapsing
+        // regime, so the agreement is bit-for-bit (min_expected tiny on both).
+        use crate::fitstats::{s_x2, SX2Config};
+        use crate::nodes::XiRule;
+        use crate::scoring::{ItemBank, PriorSpec};
+        use crate::ModelType;
+        let (n_persons, n_items, q_theta) = (4000usize, 6usize, 41usize);
+        let mut u = rng(13579);
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.1 * i as f64).collect();
+        let b_true: Vec<f64> = (0..n_items).map(|i| -0.6 + 0.24 * i as f64).collect();
+        let mut yi = vec![0usize; n_persons * n_items];
+        for _p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let pr = 1.0 / (1.0 + (-(a_true[i] * theta + b_true[i])).exp());
+                yi[_p * n_items + i] = if u() < pr { 1 } else { 0 };
+            }
+        }
+        let yf: Vec<f64> = yi.iter().map(|&v| v as f64).collect();
+        let observed_bool = vec![true; n_persons * n_items];
+        let alpha: Vec<f64> = a_true.iter().map(|a| a.ln()).collect();
+        let zeta = vec![0.0_f64; n_items];
+        let fid = vec![0usize; n_items];
+        let bank = ItemBank {
+            alpha: &alpha, b: &b_true, zeta: &zeta, tau: -50.0, factor_id: &fid,
+            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
+        };
+        let bin = s_x2(
+            &bank, &yf, &observed_bool, n_persons, &PriorSpec::standard(1),
+            &SX2Config { q_theta, xi_rule: XiRule::GaussHermite { q_xi: 1 }, min_expected: 1e-9, ..Default::default() },
+            None,
+        )
+        .unwrap();
+        for model in [PolyModel::Grm, PolyModel::Gpcm] {
+            let poly = poly_s_x2(
+                &yi, None, n_persons, n_items, 2, &a_true, &b_true, model, q_theta, 1e-9,
+            )
+            .unwrap();
+            for i in 0..n_items {
+                assert!(
+                    (poly.statistic[i] - bin.statistic[i]).abs() < 1e-8,
+                    "{model:?} item {i}: poly {} vs binary {}",
+                    poly.statistic[i], bin.statistic[i]
+                );
+                assert_eq!(
+                    poly.df[i], bin.df[i],
+                    "{model:?} item {i} df: poly {:?} vs binary {:?}", poly.df[i], bin.df[i]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn poly_s_x2_is_calibrated_at_true_parameters() {
+        // Kang & Chen (2008/2011) headline: under the true model the generalized
+        // S-X² tracks its reference chi-square. Evaluated at the KNOWN generating
+        // parameters the reference df is the retained cell count (no −m estimation
+        // adjustment), so E[S-X²] ≈ Σ cells. We reproduce this — an ABSOLUTE
+        // agreement of the sampling mean with its theoretical value, the analogue
+        // of an RMSE recovery check for a fit statistic — for both GPCM (2008) and
+        // GRM (2011), which is exactly what a mis-calibrated index (e.g. Yen's
+        // Q1 / PARSCALE G², inflated to many times its df) would fail.
+        let (n_persons, n_items, n_cat, reps) = (1500usize, 8usize, 4usize, 24usize);
+        for model in [PolyModel::Gpcm, PolyModel::Grm] {
+            let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.08 * i as f64).collect();
+            let cat_true: Vec<f64> = (0..n_items)
+                .flat_map(|i| match model {
+                    // GPCM additive intercepts (any reals)
+                    PolyModel::Gpcm => vec![0.8 - 0.06 * i as f64, 0.0, -0.8 + 0.06 * i as f64],
+                    // GRM thresholds must be strictly decreasing for a valid cdf
+                    PolyModel::Grm => vec![1.1 + 0.04 * i as f64, 0.0, -1.1 - 0.04 * i as f64],
+                })
+                .collect();
+            let z = n_cat - 1;
+            let (mut stat_sum, mut cell_sum) = (0.0_f64, 0.0_f64);
+            let mut n_flagged = 0usize;
+            let mut n_tested = 0usize;
+            for r in 0..reps {
+                let mut u = rng(2024_0714 + r as u64 * 97);
+                let mut yi = vec![0usize; n_persons * n_items];
+                for p in 0..n_persons {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                    for i in 0..n_items {
+                        let base = a_true[i] * theta;
+                        let cp = &cat_true[i * z..(i + 1) * z];
+                        let lp = match model {
+                            PolyModel::Gpcm => {
+                                let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                                let mut ic = vec![0.0_f64; n_cat];
+                                ic[1..].copy_from_slice(cp);
+                                gpcm_logprobs(base, &scores, &ic)
+                            }
+                            PolyModel::Grm => grm_logprobs(base, cp),
+                        };
+                        let draw = u();
+                        let mut acc = 0.0_f64;
+                        let mut cat = n_cat - 1;
+                        for (c, l) in lp.iter().enumerate() {
+                            acc += l.exp();
+                            if draw <= acc {
+                                cat = c;
+                                break;
+                            }
+                        }
+                        yi[p * n_items + i] = cat;
+                    }
+                }
+                let res =
+                    poly_s_x2(&yi, None, n_persons, n_items, n_cat, &a_true, &cat_true, model, 21, 1.0)
+                        .unwrap();
+                for i in 0..n_items {
+                    if res.n_cells[i] >= 1 && res.statistic[i].is_finite() {
+                        stat_sum += res.statistic[i];
+                        cell_sum += res.n_cells[i] as f64;
+                        n_tested += 1;
+                        if res.p_value[i].is_finite() && res.p_value[i] < 0.05 {
+                            n_flagged += 1;
+                        }
+                    }
+                }
+            }
+            let ratio = stat_sum / cell_sum;
+            assert!(
+                (0.85..=1.15).contains(&ratio),
+                "{model:?}: mean S-X² / cells = {ratio} (stat {stat_sum}, cells {cell_sum})"
+            );
+            // df uses the −m adjustment, so p-values at true params are mildly
+            // conservative; the flag rate stays far below the >30% seen for G².
+            let flag_rate = n_flagged as f64 / n_tested as f64;
+            assert!(flag_rate < 0.15, "{model:?}: flag rate {flag_rate} too high for the true model");
         }
     }
 }
