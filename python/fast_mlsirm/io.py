@@ -61,6 +61,11 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
         "n_iter": result.n_iter,
         "final_loglik": result.loglik_trace[-1] if result.loglik_trace else None,
     }
+    if result.ic is not None:
+        summary["information_criteria"] = {
+            key: (float(v) if isinstance(v, float) else v)
+            for key, v in result.ic.items()
+        }
     if result.population is not None:
         pop = result.population
         summary["population"] = {"kind": pop["kind"]}

@@ -4,8 +4,9 @@ use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, person_fit as core_person_fit, s_x2 as core_s_x2,
     SX2Config,
 };
+use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::marginal::{
-    fit_marginal_anchored as core_fit_marginal_anchored, Anchors, MarginalConfig,
+    fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
     PopulationSpec, XiRuleKind,
 };
 use mlsirm_core::nodes::XiRule;
@@ -217,6 +218,9 @@ fn fit_mmle_2pl(
     anchor_b = None,
     anchor_zeta = None,
     anchor_tau = None,
+    zero_inflation = false,
+    covariate_w = None,
+    covariate_init_delta = 0.0,
 ))]
 fn fit_marginal(
     py: Python<'_>,
@@ -253,6 +257,9 @@ fn fit_marginal(
     anchor_b: Option<PyReadonlyArray1<'_, f64>>,
     anchor_zeta: Option<PyReadonlyArray1<'_, f64>>,
     anchor_tau: Option<f64>,
+    zero_inflation: bool,
+    covariate_w: Option<PyReadonlyArray1<'_, f64>>,
+    covariate_init_delta: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let device = Device::parse(device)
         .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
@@ -307,6 +314,7 @@ fn fit_marginal(
         xi_rule: rule,
         xi_points,
         xi_seed,
+        zero_inflation,
         ..MarginalConfig::default()
     };
     let penalty = PenaltyConfig {
@@ -334,7 +342,14 @@ fn fit_marginal(
             ))
         }
     };
-    let res = core_fit_marginal_anchored(
+    let covariate: Option<ItemCovariate> = match &covariate_w {
+        Some(w) => Some(ItemCovariate {
+            w: w.as_slice()?.to_vec(),
+            init_delta: covariate_init_delta,
+        }),
+        None => None,
+    };
+    let res = core_fit_marginal_full(
         y.as_slice()?,
         observed.as_slice()?,
         &factors,
@@ -344,6 +359,7 @@ fn fit_marginal(
         &penalty,
         device,
         anchors.as_ref(),
+        covariate.as_ref(),
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -358,6 +374,22 @@ fn fit_marginal(
     out.set_item("sigma", res.sigma)?;
     out.set_item("sigma_u", res.sigma_u)?;
     out.set_item("u_eap", res.u_eap)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("delta", res.delta)?;
+    out.set_item("pi_zero", res.pi_zero)?;
+    out.set_item("zero_responsibility", res.zero_responsibility)?;
+    if let Some(&ll) = res.loglik_trace.last() {
+        let ic = mlsirm_core::fitstats::information_criteria(ll, res.n_parameters, n_persons);
+        let icd = pyo3::types::PyDict::new(py);
+        icd.set_item("aic", ic.aic)?;
+        icd.set_item("bic", ic.bic)?;
+        icd.set_item("aicc", ic.aicc)?;
+        icd.set_item("sabic", ic.sabic)?;
+        icd.set_item("caic", ic.caic)?;
+        icd.set_item("n_parameters", ic.n_parameters)?;
+        icd.set_item("n", ic.n)?;
+        out.set_item("ic", icd)?;
+    }
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
@@ -697,6 +729,104 @@ fn infit_outfit_stat(
     Ok(out.into())
 }
 
+/// Machine-scoring validation gates (Williamson, Xi & Breyer 2012).
+#[pyfunction]
+#[pyo3(signature = (auto, human, k, human_a = None, human_b = None, subgroup = None))]
+fn validate_scoring(
+    py: Python<'_>,
+    auto: PyReadonlyArray1<'_, u32>,
+    human: PyReadonlyArray1<'_, u32>,
+    k: usize,
+    human_a: Option<PyReadonlyArray1<'_, u32>>,
+    human_b: Option<PyReadonlyArray1<'_, u32>>,
+    subgroup: Option<PyReadonlyArray1<'_, u32>>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let hh_storage = match (&human_a, &human_b) {
+        (Some(a), Some(b)) => Some((a.as_slice()?.to_vec(), b.as_slice()?.to_vec())),
+        (None, None) => None,
+        _ => {
+            return Err(PyValueError::new_err(
+                "human_a and human_b must be provided together",
+            ))
+        }
+    };
+    let sg_storage = match &subgroup {
+        Some(g) => Some(g.as_slice()?.to_vec()),
+        None => None,
+    };
+    let verdict = core_validate_scoring(
+        auto.as_slice()?,
+        human.as_slice()?,
+        k,
+        hh_storage.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+        sg_storage.as_deref(),
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    let gates = pyo3::types::PyList::empty(py);
+    for g in &verdict.gates {
+        let gd = pyo3::types::PyDict::new(py);
+        gd.set_item("name", g.name)?;
+        gd.set_item("value", g.value)?;
+        gd.set_item("threshold", g.threshold)?;
+        gd.set_item("pass", g.pass)?;
+        gates.append(gd)?;
+    }
+    out.set_item("gates", gates)?;
+    out.set_item("exact_agreement", verdict.exact_agreement)?;
+    out.set_item("adjacent_agreement", verdict.adjacent_agreement)?;
+    out.set_item("pass", verdict.pass)?;
+    Ok(out.into())
+}
+
+/// Vuong non-nested model comparison from casewise log-likelihoods
+/// (Schneider et al. 2019).
+#[pyfunction]
+#[pyo3(signature = (loglik_a, loglik_b, k_a, k_b, bic_correction = true))]
+fn vuong_nonnested(
+    py: Python<'_>,
+    loglik_a: PyReadonlyArray1<'_, f64>,
+    loglik_b: PyReadonlyArray1<'_, f64>,
+    k_a: usize,
+    k_b: usize,
+    bic_correction: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::fitstats::vuong_nonnested(
+        loglik_a.as_slice()?,
+        loglik_b.as_slice()?,
+        k_a,
+        k_b,
+        bic_correction,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("z", res.z)?;
+    out.set_item("p_two_sided", res.p_two_sided)?;
+    out.set_item("omega", res.omega)?;
+    out.set_item("mean_diff", res.mean_diff)?;
+    Ok(out.into())
+}
+
+/// Q3 / GDDM residual dimensionality diagnostics (Svetina & Levy 2014 usable
+/// subset).
+#[pyfunction]
+fn dimensionality_residuals(
+    py: Python<'_>,
+    resid: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        mlsirm_core::fitstats::dimensionality_residuals(resid.as_slice()?, n_persons, n_items)
+            .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("q3", res.q3)?;
+    out.set_item("q3_max_abs", res.q3_max_abs)?;
+    out.set_item("q3_mean_abs", res.q3_mean_abs)?;
+    out.set_item("gddm", res.gddm)?;
+    Ok(out.into())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -709,6 +839,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_scoring, m)?)?;
+    m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
+    m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
     Ok(())
 }
 

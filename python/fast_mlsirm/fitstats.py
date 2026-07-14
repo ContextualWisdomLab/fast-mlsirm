@@ -736,3 +736,193 @@ def select_items(
         rounds=rounds,
         final_result=result,
     )
+
+
+# --------------------------------------------------------------------------
+# model comparison and dimensionality residuals (Rust-core compute)
+# --------------------------------------------------------------------------
+
+
+def vuong_nonnested(
+    loglik_a: np.ndarray,
+    loglik_b: np.ndarray,
+    k_a: int,
+    k_b: int,
+    bic_correction: bool = True,
+) -> dict:
+    """Vuong test for non-nested model comparison from casewise marginal
+    log-likelihoods (Schneider, Chalmers, Debelak & Merkle 2019). Positive z
+    favors model A; ``bic_correction`` applies the Schwarz penalty."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("vuong_nonnested requires the compiled Rust core")
+    return dict(
+        core.vuong_nonnested(
+            np.asarray(loglik_a, dtype=np.float64),
+            np.asarray(loglik_b, dtype=np.float64),
+            int(k_a),
+            int(k_b),
+            bool(bic_correction),
+        )
+    )
+
+
+def dimensionality_residuals(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """Yen Q3 residual correlations and the GDDM discrepancy (the usable
+    residual-based procedures of the Svetina & Levy 2014 framework), computed
+    from EAP residuals ``y - P_hat`` in the Rust core. Large |Q3| pairs signal
+    unmodeled local dependence; GDDM near 0 supports the fitted structure."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("dimensionality_residuals requires the compiled Rust core")
+    model = model.upper()
+    free_alpha = model not in {"MLSRM", "ULSRM"}
+    uses_space = model != "MIRT"
+    y = np.asarray(responses, dtype=float)
+    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
+    eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
+    if uses_space:
+        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
+        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        eta = eta - math.exp(params.tau) * dist
+    p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
+    resid = np.where(observed, y - p, np.nan)
+    out = dict(
+        core.dimensionality_residuals(
+            resid.astype(np.float64).ravel(), int(y.shape[0]), int(y.shape[1])
+        )
+    )
+    out["q3"] = np.asarray(out["q3"])
+    return out
+
+
+# --------------------------------------------------------------------------
+# DIF analysis: group-specific item parameters + likelihood-ratio tests
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class DIFResult:
+    item_codes: list[str]
+    lr_statistic: np.ndarray
+    df: np.ndarray
+    p_value: np.ndarray
+    flagged_bh: np.ndarray
+    b_by_group: np.ndarray
+    a_by_group: np.ndarray
+    effect_size: np.ndarray
+
+
+def dif_analysis(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    group_id: np.ndarray,
+    config=None,
+    item_codes: list[str] | None = None,
+    studied_items: list[int] | None = None,
+    mask: np.ndarray | None = None,
+    fdr_q: float = 0.05,
+) -> DIFResult:
+    """Likelihood-ratio DIF screen with group-specific item parameters.
+
+    Design per Jeon, Rijmen & Rabe-Hesketh (2013; multiple-group DIF with
+    group-specific item parameters and anchored impact) and Makransky & Glas
+    (2013; MML DIF for the 2-PL with iterative purification): for each
+    studied item, the constrained multigroup fit (common item parameters,
+    group trait means/SDs free) is compared against an augmented fit in which
+    that item is split into group-specific virtual items (its ``(a, b)`` free
+    per group, all other items anchored at the constrained estimates).
+    ``LR = 2 (ll_aug - ll_con)`` with ``df = (G - 1) x params-per-item``;
+    Benjamini-Hochberg controls the FDR over studied items. The effect size
+    is the largest between-group ``b`` difference on the logit scale.
+
+    Virtual items keep the latent-space positions anchored (interaction DIF
+    would be confounded with the map; see the formula compilation, part I,
+    section 5.2).
+    """
+    from .config import FitConfig
+    from .fit import fit
+
+    y = np.asarray(responses, dtype=float)
+    if mask is not None:
+        y = np.where(np.asarray(mask, dtype=bool), y, np.nan)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    gid = np.asarray(group_id, dtype=np.int64)
+    n_groups = int(gid.max()) + 1
+    n_items = y.shape[1]
+    codes = item_codes or [f"item_{i:03d}" for i in range(n_items)]
+    studied = list(range(n_items)) if studied_items is None else list(studied_items)
+    config = config or FitConfig(model="MLS2PLM", estimator="mmle")
+    if config.estimator != "mmle":
+        raise ValueError("dif_analysis requires estimator='mmle'")
+    free_alpha = config.normalized_model() not in {"MLSRM", "ULSRM"}
+    params_per_item = 2 if free_alpha else 1
+
+    constrained = fit(y, d_of_i, config, group_id=gid)
+    ll_con = constrained.loglik_trace[-1]
+
+    lr = np.full(n_items, np.nan)
+    dof = np.full(n_items, np.nan)
+    pval = np.full(n_items, np.nan)
+    b_by_group = np.full((n_items, n_groups), np.nan)
+    a_by_group = np.full((n_items, n_groups), np.nan)
+    effect = np.full(n_items, np.nan)
+
+    for i in studied:
+        cols = [np.where(gid == g, y[:, i], np.nan) for g in range(n_groups)]
+        y_aug = np.concatenate(
+            [np.delete(y, i, axis=1)] + [c[:, None] for c in cols], axis=1
+        )
+        fid_aug = np.concatenate(
+            [np.delete(d_of_i, i), np.full(n_groups, d_of_i[i], dtype=np.int64)]
+        )
+        n_rest = n_items - 1
+        fixed = np.zeros(n_rest + n_groups, dtype=bool)
+        fixed[:n_rest] = True
+        anchors = dict(
+            fixed=fixed,
+            alpha=np.concatenate(
+                [np.delete(constrained.params.alpha, i), np.zeros(n_groups)]
+            ),
+            b=np.concatenate([np.delete(constrained.params.b, i), np.zeros(n_groups)]),
+            zeta=np.concatenate(
+                [
+                    np.delete(constrained.params.zeta, i, axis=0),
+                    np.repeat(constrained.params.zeta[i][None, :], n_groups, axis=0),
+                ],
+                axis=0,
+            ),
+            tau=float(constrained.params.tau),
+        )
+        augmented = fit(y_aug, fid_aug, config, group_id=gid, anchors=anchors)
+        ll_aug = augmented.loglik_trace[-1]
+        stat = max(0.0, 2.0 * (ll_aug - ll_con))
+        df_i = (n_groups - 1) * params_per_item
+        lr[i] = stat
+        dof[i] = df_i
+        pval[i] = chi2_sf(stat, df_i)
+        b_g = augmented.params.b[n_rest:]
+        a_g = np.exp(augmented.params.alpha[n_rest:])
+        b_by_group[i] = b_g
+        a_by_group[i] = a_g
+        effect[i] = float(np.nanmax(b_g) - np.nanmin(b_g))
+
+    return DIFResult(
+        item_codes=codes,
+        lr_statistic=lr,
+        df=dof,
+        p_value=pval,
+        flagged_bh=benjamini_hochberg(pval, fdr_q),
+        b_by_group=b_by_group,
+        a_by_group=a_by_group,
+        effect_size=effect,
+    )

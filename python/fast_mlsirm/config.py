@@ -99,6 +99,10 @@ class FitConfig:
     # Monte Carlo seed (deterministic, mirrored across backends).
     xi_points: int = 256
     xi_seed: int = 0
+    # Zero-inflated mixture (marginal estimator): a structural-zero latent
+    # class produces all-zero patterns with probability pi (estimated by EM);
+    # cf. the ZI count-model guidance of Perumean-Chaney et al. (2013).
+    zero_inflation: bool = False
 
     def normalized_model(self) -> str:
         return self.model.upper()

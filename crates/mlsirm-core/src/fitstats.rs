@@ -674,3 +674,253 @@ mod tests {
         assert!((mean_infit - 1.0).abs() < 0.25, "infit should center near 1: {mean_infit}");
     }
 }
+
+/// Information criteria for marginal (MML) fits — the standard indices whose
+/// comparative behavior for IRT model selection is studied in Kang, Cohen &
+/// Sung (2009): AIC, BIC (favored in their comparisons for dichotomous-kernel
+/// models), corrected AIC, sample-size-adjusted BIC, and consistent AIC.
+/// `n` is the number of persons (the marginal-likelihood sampling unit).
+#[derive(Clone, Copy, Debug)]
+pub struct InformationCriteria {
+    pub loglik: f64,
+    pub n_parameters: usize,
+    pub n: usize,
+    pub aic: f64,
+    pub bic: f64,
+    pub aicc: f64,
+    pub sabic: f64,
+    pub caic: f64,
+}
+
+pub fn information_criteria(loglik: f64, n_parameters: usize, n: usize) -> InformationCriteria {
+    let k = n_parameters as f64;
+    let nf = n as f64;
+    let dev = -2.0 * loglik;
+    let aic = dev + 2.0 * k;
+    InformationCriteria {
+        loglik,
+        n_parameters,
+        n,
+        aic,
+        bic: dev + k * nf.ln(),
+        aicc: if nf - k - 1.0 > 0.0 { aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0) } else { f64::NAN },
+        sabic: dev + k * ((nf + 2.0) / 24.0).ln(),
+        caic: dev + k * (nf.ln() + 1.0),
+    }
+}
+
+#[cfg(test)]
+mod ic_tests {
+    use super::*;
+
+    #[test]
+    fn information_criteria_reference_values() {
+        let ic = information_criteria(-500.0, 10, 200);
+        assert!((ic.aic - 1020.0).abs() < 1e-12);
+        assert!((ic.bic - (1000.0 + 10.0 * (200.0_f64).ln())).abs() < 1e-12);
+        assert!((ic.caic - (1000.0 + 10.0 * ((200.0_f64).ln() + 1.0))).abs() < 1e-12);
+        assert!((ic.aicc - (1020.0 + 220.0 / 189.0)).abs() < 1e-9);
+        assert!((ic.sabic - (1000.0 + 10.0 * (202.0_f64 / 24.0).ln())).abs() < 1e-9);
+        // degenerate n does not panic
+        let tiny = information_criteria(-5.0, 10, 10);
+        assert!(tiny.aicc.is_nan());
+    }
+}
+
+/// Vuong (1989) test for non-nested model comparison from casewise marginal
+/// log-likelihoods (Schneider, Chalmers, Debelak & Merkle 2019, MBR): with
+/// `m_i = l_i^A - l_i^B`, `omega^2 = Var(m)`,
+/// `z = (sum m_i - correction) / (sqrt(n) * omega)`; the Schwarz correction
+/// `(k_A - k_B)/2 * ln n` yields the BIC-adjusted variant. Positive z favors
+/// model A. The pre-test of distinguishability (`omega^2 = 0`, weighted
+/// chi-square tail) is not implemented here — inspect `omega` directly.
+#[derive(Clone, Copy, Debug)]
+pub struct VuongResult {
+    pub z: f64,
+    pub p_two_sided: f64,
+    pub omega: f64,
+    pub mean_diff: f64,
+}
+
+pub fn vuong_nonnested(
+    loglik_a: &[f64],
+    loglik_b: &[f64],
+    k_a: usize,
+    k_b: usize,
+    bic_correction: bool,
+) -> Result<VuongResult, String> {
+    if loglik_a.len() != loglik_b.len() || loglik_a.len() < 2 {
+        return Err("casewise log-likelihood vectors must be equal-length with n >= 2".into());
+    }
+    let n = loglik_a.len() as f64;
+    let m: Vec<f64> = loglik_a.iter().zip(loglik_b).map(|(&a, &b)| a - b).collect();
+    let mean = m.iter().sum::<f64>() / n;
+    let var = m.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / n;
+    if var <= 0.0 {
+        return Err("models are indistinguishable on this sample (omega^2 = 0)".into());
+    }
+    let omega = var.sqrt();
+    let correction = if bic_correction {
+        (k_a as f64 - k_b as f64) / 2.0 * n.ln()
+    } else {
+        0.0
+    };
+    let z = (m.iter().sum::<f64>() - correction) / (n.sqrt() * omega);
+    // two-sided normal tail via the complementary error function relation:
+    // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2))
+    let p = erfc(z.abs() / std::f64::consts::SQRT_2);
+    Ok(VuongResult { z, p_two_sided: p, omega, mean_diff: mean })
+}
+
+/// Complementary error function (Numerical Recipes rational approximation;
+/// |error| < 1.2e-7 — adequate for p-value reporting).
+fn erfc(x: f64) -> f64 {
+    let z = x.abs();
+    let t = 1.0 / (1.0 + 0.5 * z);
+    let ans = t
+        * (-z * z - 1.26551223
+            + t * (1.00002368
+                + t * (0.37409196
+                    + t * (0.09678418
+                        + t * (-0.18628806
+                            + t * (0.27886807
+                                + t * (-1.13520398
+                                    + t * (1.48851587
+                                        + t * (-0.82215223 + t * 0.17087277)))))))))
+        .exp();
+    if x >= 0.0 {
+        ans
+    } else {
+        2.0 - ans
+    }
+}
+
+/// Residual-based dimensionality diagnostics (Svetina & Levy 2014 framework):
+/// Yen's Q3 residual correlations and the generalized dimensionality
+/// discrepancy measure (GDDM) — the mean absolute model-based covariance
+/// residual over item pairs. `resid` is the row-major `n_persons x n_items`
+/// matrix `y - P_hat` at the EAP estimates with NaN for missing cells.
+#[derive(Clone, Debug)]
+pub struct DimResidResult {
+    /// Off-diagonal Q3 values (upper triangle, row-major pair order).
+    pub q3: Vec<f64>,
+    pub q3_max_abs: f64,
+    pub q3_mean_abs: f64,
+    pub gddm: f64,
+}
+
+pub fn dimensionality_residuals(
+    resid: &[f64],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<DimResidResult, String> {
+    if resid.len() != n_persons * n_items {
+        return Err("resid must be n_persons x n_items".into());
+    }
+    let mut q3 = Vec::with_capacity(n_items * (n_items - 1) / 2);
+    let (mut max_abs, mut sum_abs) = (0.0_f64, 0.0_f64);
+    let mut gddm_sum = 0.0_f64;
+    let mut gddm_cnt = 0.0_f64;
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            let (mut sxy, mut sxx, mut syy, mut sx, mut sy, mut n) =
+                (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+            for p in 0..n_persons {
+                let a = resid[p * n_items + i];
+                let b = resid[p * n_items + j];
+                if a.is_nan() || b.is_nan() {
+                    continue;
+                }
+                sxy += a * b;
+                sxx += a * a;
+                syy += b * b;
+                sx += a;
+                sy += b;
+                n += 1.0;
+            }
+            if n < 3.0 {
+                q3.push(f64::NAN);
+                continue;
+            }
+            let cov = sxy / n - (sx / n) * (sy / n);
+            let vx = sxx / n - (sx / n) * (sx / n);
+            let vy = syy / n - (sy / n) * (sy / n);
+            let r = if vx > 0.0 && vy > 0.0 { cov / (vx * vy).sqrt() } else { f64::NAN };
+            q3.push(r);
+            if r.is_finite() {
+                sum_abs += r.abs();
+                if r.abs() > max_abs {
+                    max_abs = r.abs();
+                }
+            }
+            // GDDM: mean absolute residual raw covariance E[e_i e_j]
+            gddm_sum += (sxy / n).abs();
+            gddm_cnt += 1.0;
+        }
+    }
+    let n_finite = q3.iter().filter(|v| v.is_finite()).count().max(1) as f64;
+    Ok(DimResidResult {
+        q3_max_abs: max_abs,
+        q3_mean_abs: sum_abs / n_finite,
+        gddm: if gddm_cnt > 0.0 { gddm_sum / gddm_cnt } else { f64::NAN },
+        q3,
+    })
+}
+
+#[cfg(test)]
+mod vuong_tests {
+    use super::*;
+
+    #[test]
+    fn vuong_favors_the_better_model() {
+        // model A consistently better by 0.2 per case, with case noise
+        let mut state = 5u64;
+        let mut unif = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let n = 400;
+        let la: Vec<f64> = (0..n).map(|_| -1.0 + 0.1 * unif()).collect();
+        let lb: Vec<f64> = la.iter().map(|&v| v - 0.2 - 0.3 * (unif() - 0.5)).collect();
+        let res = vuong_nonnested(&la, &lb, 10, 10, false).unwrap();
+        assert!(res.z > 2.0, "A must be significantly favored: z = {}", res.z);
+        assert!(res.p_two_sided < 0.05);
+        // BIC correction penalizes the bigger model
+        let res_pen = vuong_nonnested(&la, &lb, 40, 10, true).unwrap();
+        assert!(res_pen.z < res.z);
+        // identical models are rejected as indistinguishable
+        assert!(vuong_nonnested(&la, &la, 10, 10, false).is_err());
+    }
+
+    #[test]
+    fn erfc_reference_values() {
+        assert!((erfc(0.0) - 1.0).abs() < 1e-7);
+        assert!((erfc(1.959963984540054 / std::f64::consts::SQRT_2) - 0.05).abs() < 1e-4);
+    }
+
+    #[test]
+    fn q3_detects_locally_dependent_pair() {
+        // residuals: items 0 and 1 share an extra common factor
+        let mut state = 11u64;
+        let mut norm = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let u1 = (((state >> 11) as f64) / ((1u64 << 53) as f64)).max(1e-12);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let u2 = ((state >> 11) as f64) / ((1u64 << 53) as f64);
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        };
+        let (n_persons, n_items) = (600, 6);
+        let mut resid = vec![0.0_f64; n_persons * n_items];
+        for p in 0..n_persons {
+            let shared = norm();
+            for i in 0..n_items {
+                resid[p * n_items + i] =
+                    norm() * 0.4 + if i < 2 { 0.6 * shared } else { 0.0 };
+            }
+        }
+        let out = dimensionality_residuals(&resid, n_persons, n_items).unwrap();
+        assert!(out.q3[0] > 0.5, "dependent pair must show high Q3: {}", out.q3[0]);
+        assert!(out.q3_max_abs >= out.q3[0].abs());
+        assert!(out.gddm > 0.0);
+    }
+}

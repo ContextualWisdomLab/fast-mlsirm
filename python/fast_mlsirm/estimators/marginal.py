@@ -189,6 +189,7 @@ def _build_tables(
     x_grid: np.ndarray,
     eps_distance: float,
     n_dims: int,
+    offsets: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (logp1, logp0, c0) with shapes (S, I, Qt, Nx) and (S, D, Qt, Nx)."""
     free_alpha, uses_space = _model_flags(model)
@@ -198,6 +199,8 @@ def _build_tables(
     scale = ctx["scale"][:, factor_id]  # (S, I)
     theta = shift[:, :, None] + scale[:, :, None] * t_nodes[None, None, :]  # (S, I, Qt)
     eta = a[None, :, None, None] * theta[:, :, :, None] + b[None, :, None, None]
+    if offsets is not None:
+        eta = eta + offsets[:, :, None, None]
     if uses_space:
         diff = x_grid[None, :, :] - zeta[:, None, :]  # (I, Nx, K)
         dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
@@ -340,6 +343,8 @@ def fit_marginal_numpy(
     xi_points: int = 256,
     xi_seed: int = 0,
     anchors: dict | None = None,
+    zero_inflation: bool = False,
+    covariate: dict | None = None,
 ) -> dict:
     """NumPy mirror of ``mlsirm_core::marginal::fit_marginal``.
 
@@ -400,6 +405,20 @@ def fit_marginal_numpy(
     kind = pop["kind"]
     if kind == "singlefree" and anchors is None:
         raise ValueError("singlefree (FIPC) requires anchors for identification")
+    if covariate is not None:
+        if kind == "multilevel":
+            raise ValueError("item covariates with a multilevel structure are not supported")
+        n_ctx_expected = pop.get("n_groups", 1) if kind == "multigroup" else 1
+        w_cov = np.asarray(covariate["w"], dtype=np.float64).reshape(
+            n_ctx_expected, n_items
+        )
+        if n_ctx_expected == 1 and anchors is None:
+            raise ValueError(
+                "a single-context item covariate is collinear with b; use multigroup "
+                "contexts (booklets) or anchors"
+            )
+    else:
+        w_cov = None
     n_groups = (
         pop.get("n_groups", 0) if kind == "multigroup" else (1 if kind == "singlefree" else 0)
     )
@@ -419,6 +438,14 @@ def fit_marginal_numpy(
     mu = np.zeros((n_groups, n_dims))
     sigma = np.ones((n_groups, n_dims))
     sigma_u = init_sigma_u if n_clusters else 0.0
+    delta = float(covariate.get("init_delta", 0.0)) if covariate is not None else 0.0
+    all_zero = ~(np.where(observed, y, 0.0) > 0).any(axis=1)
+    if zero_inflation:
+        frac = float(all_zero.mean())
+        pi_zero = float(np.clip(0.5 * frac, 1e-4, 0.98))
+    else:
+        pi_zero = 0.0
+    zero_resp = np.zeros(n_persons)
     fixed_mask = np.zeros(n_items, dtype=bool)
     anchor_tau = None
     if anchors is not None:
@@ -437,37 +464,46 @@ def fit_marginal_numpy(
     loglik_trace: list[float] = []
     converged = False
 
+    def _zi_mix(lp_irt: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        # mixture log-marginal and IRT-class weight, elementwise over persons
+        log_pi = np.log(pi_zero) if pi_zero > 0 else -np.inf
+        log_1m = np.log1p(-pi_zero)
+        a_z = np.where(all_zero_bcast, log_pi, -np.inf)
+        b_z = log_1m + lp_irt
+        m = np.maximum(a_z, b_z)
+        lp_mix = m + np.log(np.exp(a_z - m) + np.exp(b_z - m))
+        return lp_mix, np.exp(b_z - lp_mix)
+
     for _iteration in range(max_iter):
         ctx = _build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
+        offsets = delta * w_cov if w_cov is not None else None
         logp1, logp0, c0 = _build_tables(
-            alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance, n_dims
+            alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance,
+            n_dims, offsets,
         )
         n_ctx = ctx["n_ctx"]
         nbar = np.zeros((n_ctx, n_dims, q_theta, n_x))
         rbar = np.zeros((n_ctx, n_items, q_theta, n_x))
         mbar = np.zeros((n_ctx, n_items, q_theta, n_x))
 
-        if kind in {"single", "singlefree"}:
-            s_of_person = np.zeros(n_persons, dtype=np.int64)
+        if kind in {"single", "singlefree", "multigroup"}:
+            s_of_person = (
+                group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
+            )
             l, log_zdx, log_lp = _person_logliks(
                 y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_of_person, n_dims
             )
-            loglik = float(log_lp.sum())
+            if zero_inflation:
+                all_zero_bcast = all_zero
+                lp_mix, w_irt = _zi_mix(log_lp)
+                loglik = float(lp_mix.sum())
+                zero_resp = 1.0 - w_irt
+            else:
+                loglik = float(log_lp.sum())
+                w_irt = np.ones(n_persons)
             post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
             _accumulate(
-                post, np.ones(n_persons), y, observed, factor_id, s_of_person, n_ctx,
-                nbar, rbar, mbar,
-            )
-            sum_e_v2 = 0.0
-        elif kind == "multigroup":
-            s_of_person = group_id
-            l, log_zdx, log_lp = _person_logliks(
-                y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_of_person, n_dims
-            )
-            loglik = float(log_lp.sum())
-            post = _posteriors(l, log_zdx, log_lp, t_logw, x_logw)
-            _accumulate(
-                post, np.ones(n_persons), y, observed, factor_id, s_of_person, n_ctx,
+                post, w_irt, y, observed, factor_id, s_of_person, n_ctx,
                 nbar, rbar, mbar,
             )
             sum_e_v2 = 0.0
@@ -479,6 +515,11 @@ def fit_marginal_numpy(
                     y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
                 )
                 lp_v[:, v] = lp
+            if zero_inflation:
+                all_zero_bcast = all_zero[:, None]
+                lp_v, w_irt_v = _zi_mix(lp_v)
+            else:
+                w_irt_v = np.ones_like(lp_v)
             log_cluster = np.zeros((n_clusters, n_ctx)) + ctx["u_logw"][None, :]
             np.add.at(log_cluster, cluster_id, lp_v)
             mc = log_cluster.max(axis=1, keepdims=True)
@@ -486,8 +527,10 @@ def fit_marginal_numpy(
             loglik = float(lse.sum())
             cluster_post = np.exp(log_cluster - lse[:, None])  # (C, V)
             sum_e_v2 = float((cluster_post * ctx["u_nodes"][None, :] ** 2).sum())
+            if zero_inflation:
+                zero_resp = (cluster_post[cluster_id] * (1.0 - w_irt_v)).sum(axis=1)
             for v in range(n_ctx):
-                w_outer = cluster_post[cluster_id, v]
+                w_outer = cluster_post[cluster_id, v] * w_irt_v[:, v]
                 keep = w_outer >= 1e-14
                 if not keep.any():
                     continue
@@ -501,6 +544,8 @@ def fit_marginal_numpy(
                     post, w_eff, y, observed, factor_id, s_all, n_ctx, nbar, rbar, mbar
                 )
         loglik_trace.append(loglik)
+        if zero_inflation:
+            pi_zero = float(np.clip(zero_resp.mean(), 0.0, 0.999))
 
         # --- M-step: items (Fisher-preconditioned ascent with Armijo) ---
         gamma = float(np.exp(tau))
@@ -514,9 +559,13 @@ def fit_marginal_numpy(
             r_i = rbar[:, i]
             theta_i = theta_sx[:, d]  # (S, Qt)
 
+            off_i = (
+                offsets[:, i][:, None, None] if offsets is not None else 0.0
+            )
+
             def eta_of(alpha_c: float, b_c: float, zeta_c: np.ndarray) -> np.ndarray:
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
-                e = a_c * theta_i[:, :, None] + b_c
+                e = a_c * theta_i[:, :, None] + b_c + off_i
                 if uses_space:
                     diff = x_grid - zeta_c[None, :]
                     dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
@@ -591,9 +640,11 @@ def fit_marginal_numpy(
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
+            off_all = offsets[:, :, None, None] if offsets is not None else 0.0
             eta = (
                 a_all[None, :, None, None] * theta_it[:, :, :, None]
                 + b[None, :, None, None]
+                + off_all
                 - gamma * dist[None, :, None, :]
             )
             prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
@@ -608,6 +659,7 @@ def fit_marginal_numpy(
                     e = (
                         a_all[None, :, None, None] * theta_it[:, :, :, None]
                         + b[None, :, None, None]
+                        + off_all
                         - np.exp(tau_c) * dist[None, :, None, :]
                     )
                     qv = float(
@@ -627,6 +679,51 @@ def fit_marginal_numpy(
                     cand = float(np.clip(tau + step * direction, -10.0, 5.0))
                     if total_q(cand) > cur:
                         tau = cand
+                        break
+                    step *= 0.5
+
+        # --- M-step: covariate coefficient delta (Debeer-Janssen) ---
+        if w_cov is not None:
+            gamma = float(np.exp(tau))
+            a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
+            theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
+            n_all = nbar[:, factor_id] - mbar
+            if uses_space:
+                diffz = x_grid[None, :, :] - zeta[:, None, :]
+                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                dterm = gamma * distz[None, :, None, :]
+            else:
+                dterm = 0.0
+
+            def eta_delta(delta_c: float) -> np.ndarray:
+                return (
+                    a_all[None, :, None, None] * theta_it[:, :, :, None]
+                    + b[None, :, None, None]
+                    + (delta_c * w_cov)[:, :, None, None]
+                    - dterm
+                )
+
+            eta = eta_delta(delta)
+            prob = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
+            resid = rbar - n_all * prob
+            w_bcast = w_cov[:, :, None, None]
+            grad_d = float((resid * w_bcast).sum())
+            info_d = float((n_all * prob * (1.0 - prob) * w_bcast * w_bcast).sum())
+            if info_d > 0.0:
+                direction = grad_d / info_d
+
+                def q_of_delta(delta_c: float) -> float:
+                    e = eta_delta(delta_c)
+                    return float(
+                        np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
+                    )
+
+                cur = q_of_delta(delta)
+                step = 1.0
+                for _ls in range(20):
+                    cand = float(np.clip(delta + step * direction, -10.0, 10.0))
+                    if q_of_delta(cand) > cur:
+                        delta = cand
                         break
                     step *= 0.5
 
@@ -655,8 +752,10 @@ def fit_marginal_numpy(
 
     # --- final EAP pass ---
     ctx = _build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
+    final_offsets = delta * w_cov if w_cov is not None else None
     logp1, logp0, c0 = _build_tables(
-        alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance, n_dims
+        alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance,
+        n_dims, final_offsets,
     )
     theta_eap = np.zeros((n_persons, n_dims))
     theta_m2 = np.zeros((n_persons, n_dims))
@@ -702,6 +801,37 @@ def fit_marginal_numpy(
 
     theta_sd = np.sqrt(np.maximum(theta_m2 - theta_eap**2, 0.0))
 
+    # free parameters: items (respecting anchors) + tau + population
+    per_item = 1 + int(free_alpha) + (latent_dim if uses_space else 0)
+    n_free_items = int((~fixed_mask).sum())
+    tau_free = uses_space and anchor_tau is None
+    pop_params = {
+        "single": 0,
+        "singlefree": 2 * n_dims,
+        "multigroup": 2 * n_dims * max(n_groups - 1, 0),
+        "multilevel": 1,
+    }[kind]
+    n_parameters = (
+        n_free_items * per_item
+        + int(tau_free)
+        + pop_params
+        + int(zero_inflation)
+        + int(w_cov is not None)
+    )
+    ll_final = loglik_trace[-1] if loglik_trace else float("nan")
+    k, nf = float(n_parameters), float(n_persons)
+    dev = -2.0 * ll_final
+    aic = dev + 2.0 * k
+    ic = {
+        "aic": aic,
+        "bic": dev + k * np.log(nf),
+        "aicc": aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0) if nf - k - 1.0 > 0 else float("nan"),
+        "sabic": dev + k * np.log((nf + 2.0) / 24.0),
+        "caic": dev + k * (np.log(nf) + 1.0),
+        "n_parameters": n_parameters,
+        "n": n_persons,
+    }
+
     if uses_space and anchors is None:
         # anchored calibrations inherit the anchor orientation
         _pca_align(zeta, xi_eap)
@@ -722,6 +852,10 @@ def fit_marginal_numpy(
         "n_iter": len(loglik_trace),
         "converged": converged,
         "status": "converged" if converged else "max_iter_reached",
+        "ic": ic,
+        "delta": float(delta),
+        "pi_zero": float(pi_zero),
+        "zero_responsibility": zero_resp if zero_inflation else np.zeros(0),
     }
 
 

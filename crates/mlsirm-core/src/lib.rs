@@ -1,3 +1,4 @@
+pub mod agreement;
 pub mod fitstats;
 pub mod marginal;
 pub mod mmle;

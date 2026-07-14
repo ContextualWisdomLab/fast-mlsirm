@@ -20,8 +20,15 @@ def fit(
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
     anchors: dict | None = None,
+    covariate: dict | None = None,
 ) -> FitResult:
     """Fit a latent-space model.
+
+    ``covariate`` = ``{"w": (n_groups x n_items) array, "init_delta": float}``
+    switches on a context-varying item covariate with one estimated
+    coefficient (Debeer & Janssen 2013 linear item-position effect):
+    ``eta += delta * w[group(p), i]``. Requires multigroup contexts (booklets)
+    or anchors for identification.
 
     ``group_id``/``cluster_id`` (mutually exclusive, ``estimator="mmle"`` only)
     switch on estimation-level population structures: multigroup calibration
@@ -63,6 +70,10 @@ def fit(
         raise ValueError("anchors (FIPC) require estimator='mmle'")
     if anchors is not None and cluster_id is not None:
         raise ValueError("anchors with a multilevel structure are not supported yet")
+    if covariate is not None and config.estimator != "mmle":
+        raise ValueError("item covariates require estimator='mmle'")
+    if covariate is not None and cluster_id is not None:
+        raise ValueError("item covariates with a multilevel structure are not supported")
 
     if config.estimator == "mmle":
         if (
@@ -70,6 +81,8 @@ def fit(
             and group_id is None
             and cluster_id is None
             and anchors is None
+            and covariate is None
+            and not config.zero_inflation
         ):
             # Legacy fast path: plain unidimensional 2PL margin (the latent
             # space is not estimated — unchanged public behavior). Use the
@@ -79,6 +92,7 @@ def fit(
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
             group_id=group_id, cluster_id=cluster_id, anchors=anchors,
+            covariate=covariate,
         )
     if config.estimator in {"em", "bayes"}:
         raise NotImplementedError(
@@ -185,6 +199,7 @@ def _fit_mmle_marginal(
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
     anchors: dict | None = None,
+    covariate: dict | None = None,
 ) -> FitResult:
     """Marginal EM for the latent-space family (Rust core, NumPy fallback).
 
@@ -206,6 +221,12 @@ def _fit_mmle_marginal(
         ids, pop_kind, n_pop = None, "singlefree", 1
     else:
         ids, pop_kind, n_pop = None, "single", 0
+    covariate_kwargs: dict = {}
+    if covariate is not None:
+        covariate_kwargs = dict(
+            covariate_w=np.asarray(covariate["w"], dtype=np.float64).ravel(),
+            covariate_init_delta=float(covariate.get("init_delta", 0.0)),
+        )
     anchor_kwargs: dict = {}
     if anchors is not None:
         fixed = np.asarray(anchors["fixed"], dtype=bool)
@@ -276,7 +297,9 @@ def _fit_mmle_marginal(
                 xi_rule=config.xi_rule,
                 xi_points=int(config.xi_points),
                 xi_seed=int(config.xi_seed),
+                zero_inflation=bool(config.zero_inflation),
                 **anchor_kwargs,
+                **covariate_kwargs,
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
@@ -301,6 +324,10 @@ def _fit_mmle_marginal(
         u_eap = np.asarray(res["u_eap"], dtype=np.float64)
         loglik_trace = [float(v) for v in res["loglik_trace"]]
         converged = bool(res["converged"])
+        ic = dict(res["ic"]) if "ic" in res else None
+        delta = float(res.get("delta", 0.0))
+        pi_zero = float(res.get("pi_zero", 0.0))
+        zero_resp = np.asarray(res.get("zero_responsibility", []), dtype=np.float64)
         optimizer = "mmle_marginal_em/rust"
     else:
         pop: dict = {"kind": pop_kind}
@@ -328,6 +355,8 @@ def _fit_mmle_marginal(
             xi_points=int(config.xi_points),
             xi_seed=int(config.xi_seed),
             anchors=anchors,
+            zero_inflation=bool(config.zero_inflation),
+            covariate=covariate,
         )
         alpha, b, zeta, tau = res["alpha"], res["b"], res["zeta"], res["tau"]
         theta_eap, theta_sd = res["theta_eap"], res["theta_sd"]
@@ -336,9 +365,17 @@ def _fit_mmle_marginal(
         sigma_u, u_eap = res["sigma_u"], res["u_eap"]
         loglik_trace = [float(v) for v in res["loglik_trace"]]
         converged = bool(res["converged"])
+        ic = res.get("ic")
+        delta = float(res.get("delta", 0.0))
+        pi_zero = float(res.get("pi_zero", 0.0))
+        zero_resp = np.asarray(res.get("zero_responsibility", []), dtype=np.float64)
         optimizer = "mmle_marginal_em/numpy"
 
     population: dict = {"kind": pop_kind, "theta_sd": theta_sd}
+    if config.zero_inflation:
+        population.update(pi_zero=pi_zero, zero_responsibility=zero_resp)
+    if covariate is not None:
+        population.update(delta=delta)
     if pop_kind in {"multigroup", "singlefree"}:
         population.update(mu=mu, sigma=sigma)
     elif pop_kind == "multilevel":
@@ -365,6 +402,7 @@ def _fit_mmle_marginal(
         convergence_status="converged" if converged else "max_iter_reached",
         n_iter=len(loglik_trace),
         population=population,
+        ic=ic,
     )
 
 

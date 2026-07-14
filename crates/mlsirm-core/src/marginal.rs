@@ -41,6 +41,20 @@ pub enum PopulationSpec {
     Multilevel { cluster_id: Vec<usize>, n_clusters: usize },
 }
 
+/// Context-varying item covariate with one estimated coefficient
+/// (Debeer & Janssen 2013 linear item-position effect):
+/// `eta_pi += delta * w[s(p) * n_items + i]`, `delta` estimated by a Newton
+/// coordinate in the M-step. `w` must vary within an item across contexts
+/// (e.g. booklet groups) — an item-constant covariate is collinear with `b_i`.
+#[derive(Clone, Debug)]
+pub struct ItemCovariate {
+    /// Row-major `n_ctx x n_items` covariate values (n_ctx = groups for
+    /// multigroup; must be 1 x n_items only when a single context exists).
+    pub w: Vec<f64>,
+    /// Starting value for the coefficient.
+    pub init_delta: f64,
+}
+
 /// Fixed-item anchors for FIPC (Kim 2006, the MWU-MEM-style variant: the
 /// population moments update on every EM cycle while anchored item
 /// parameters stay frozen at their supplied values).
@@ -83,6 +97,11 @@ pub struct MarginalConfig {
     pub xi_points: usize,
     /// Halton random-shift seed (0 = unshifted) / Monte Carlo seed.
     pub xi_seed: u64,
+    /// Zero-inflated mixture (cf. Perumean-Chaney et al. 2013 for the ZI
+    /// count-model template): a structural-zero latent class produces
+    /// all-zero response patterns with probability `pi`, estimated by EM;
+    /// `L_p = pi * 1[y_p == 0] + (1 - pi) * L_IRT(y_p)`.
+    pub zero_inflation: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,12 +137,41 @@ impl Default for MarginalConfig {
             xi_rule: XiRuleKind::GaussHermite,
             xi_points: 256,
             xi_seed: 0,
+            zero_inflation: false,
         }
     }
 }
 
+/// Free-parameter count of a marginal fit: item parameters (respecting
+/// anchors), the global tau, and the population parameters. Used by the
+/// information criteria (Kang, Cohen & Sung 2009).
+pub fn n_free_parameters(
+    config: &ModelConfig,
+    pop: &PopulationSpec,
+    anchors: Option<&Anchors>,
+) -> usize {
+    let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let per_item = 1 + usize::from(free_alpha) + if uses_space { config.latent_dim } else { 0 };
+    let n_free_items = match anchors {
+        Some(a) => a.fixed.iter().filter(|&&f| !f).count(),
+        None => config.n_items,
+    };
+    let tau_free = uses_space && anchors.and_then(|a| a.tau).is_none();
+    let pop_params = match pop {
+        PopulationSpec::Single => 0,
+        PopulationSpec::SingleFree => 2 * config.n_dims,
+        PopulationSpec::Multigroup { n_groups, .. } => {
+            2 * config.n_dims * n_groups.saturating_sub(1)
+        }
+        PopulationSpec::Multilevel { .. } => 1,
+    };
+    n_free_items * per_item + usize::from(tau_free) + pop_params
+}
+
 #[derive(Clone, Debug)]
 pub struct MarginalResult {
+    /// Free-parameter count (items + tau + population), for model selection.
+    pub n_parameters: usize,
     pub alpha: Vec<f64>,
     pub b: Vec<f64>,
     /// Item positions, row-major `n_items x latent_dim`, PCA-aligned.
@@ -143,6 +191,13 @@ pub struct MarginalResult {
     pub sigma_u: f64,
     /// Multilevel: EAP cluster intercepts (empty otherwise).
     pub u_eap: Vec<f64>,
+    /// Item-covariate coefficient (0 when no covariate was supplied).
+    pub delta: f64,
+    /// Zero-inflation mixing weight (0 when the mixture is disabled).
+    pub pi_zero: f64,
+    /// Posterior structural-zero responsibility per person (empty when the
+    /// mixture is disabled).
+    pub zero_responsibility: Vec<f64>,
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
@@ -284,6 +339,23 @@ pub(crate) fn build_tables(
     ctx: &Contexts,
     grids: &Grids,
 ) -> Tables {
+    build_tables_offset(alpha, b, zeta, tau, config, factor_id, ctx, grids, None)
+}
+
+/// [`build_tables`] with an optional per-(context, item) additive offset on
+/// the linear predictor (the covariate term `delta * w[s, i]`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_tables_offset(
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    config: &ModelConfig,
+    factor_id: &[usize],
+    ctx: &Contexts,
+    grids: &Grids,
+    offset: Option<&[f64]>,
+) -> Tables {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
@@ -294,23 +366,25 @@ pub(crate) fn build_tables(
     for s in 0..ctx.n_ctx {
         for i in 0..n_items {
             let d = factor_id[i];
+            let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
             let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
             for (t, &node_t) in grids.t_nodes.iter().enumerate() {
                 let theta = shift + scale * node_t;
                 for x in 0..n_x {
-                    let eta = eta_at(
-                        alpha,
-                        b,
-                        zeta,
-                        tau,
-                        free_alpha,
-                        uses_space,
-                        latent_dim,
-                        config.eps_distance,
-                        i,
-                        theta,
-                        &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
-                    );
+                    let eta = off
+                        + eta_at(
+                            alpha,
+                            b,
+                            zeta,
+                            tau,
+                            free_alpha,
+                            uses_space,
+                            latent_dim,
+                            config.eps_distance,
+                            i,
+                            theta,
+                            &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
+                        );
                     let idx = (s * n_items + i) * cell + t * n_x + x;
                     logp1[idx] = log_sigmoid(eta);
                     logp0[idx] = log_sigmoid(-eta);
@@ -416,6 +490,21 @@ pub(crate) fn person_pass(
     max + sum.ln()
 }
 
+/// Zero-inflation mixture pieces for one person-context evaluation: given the
+/// IRT-side log-marginal `lp_irt`, returns
+/// (mixture log-marginal, IRT-class posterior weight `1 - r`).
+#[inline]
+fn zi_mix(lp_irt: f64, all_zero: bool, log_pi: f64, log_1m_pi: f64) -> (f64, f64) {
+    if !all_zero {
+        return (log_1m_pi + lp_irt, 1.0);
+    }
+    let a = log_pi;
+    let b = log_1m_pi + lp_irt;
+    let m = a.max(b);
+    let lp = m + ((a - m).exp() + (b - m).exp()).ln();
+    ((lp), (b - lp).exp())
+}
+
 /// E-step accumulators (per context, on the (t, x) grid).
 struct EStep {
     /// `[ctx][dim][t][x]` expected person counts.
@@ -426,6 +515,9 @@ struct EStep {
     mbar: Vec<f64>,
     /// Marginal (unpenalized) log-likelihood.
     loglik: f64,
+    /// Zero-inflation: expected structural-zero class memberships per person
+    /// (empty when disabled).
+    zi_resp: Vec<f64>,
     /// Multilevel: `E[u_c^2 | Y]` summed over clusters (in u-node units of the
     /// standard normal, i.e. before scaling by `sigma_u`).
     sum_e_v2: f64,
@@ -505,13 +597,15 @@ fn e_step_device(
     pop: &PopulationSpec,
     ctx: &Contexts,
     grids: &Grids,
+    zi: Option<(f64, &[bool])>,
 ) -> EStep {
     match device {
-        Device::Cpu => e_step(tables, resp, factor_id, config, pop, ctx, grids),
+        Device::Cpu => e_step(tables, resp, factor_id, config, pop, ctx, grids, zi),
         Device::Gpu | Device::Auto => {
             #[cfg(all(feature = "gpu", not(coverage)))]
             {
-                match e_step_gpu_adapter(tables, resp, factor_id, config, pop, ctx, grids) {
+                match e_step_gpu_adapter(tables, resp, factor_id, config, pop, ctx, grids, zi)
+                {
                     Some(estep) => return estep,
                     None => {
                         if matches!(device, Device::Gpu) {
@@ -523,7 +617,7 @@ fn e_step_device(
                     }
                 }
             }
-            e_step(tables, resp, factor_id, config, pop, ctx, grids)
+            e_step(tables, resp, factor_id, config, pop, ctx, grids, zi)
         }
     }
 }
@@ -539,6 +633,7 @@ fn e_step_gpu_adapter(
     pop: &PopulationSpec,
     ctx: &Contexts,
     grids: &Grids,
+    zi: Option<(f64, &[bool])>,
 ) -> Option<EStep> {
     let (n_persons, n_items, n_dims) = (config.n_persons, config.n_items, config.n_dims);
     let cell = grids.q_t * grids.n_x;
@@ -617,23 +712,61 @@ fn e_step_gpu_adapter(
     let mut loglik = 0.0_f64;
     let mut sum_e_v2 = 0.0_f64;
     let n_ctx = ctx.n_ctx;
+    let (log_pi, log_1m_pi) = match zi {
+        Some((pi, _)) => (pi.ln(), (1.0 - pi).ln()),
+        None => (f64::NEG_INFINITY, 0.0),
+    };
+    let mut zi_resp = if zi.is_some() { vec![0.0_f64; n_persons] } else { Vec::new() };
     let mut w_outer_fn = |lp: &[f64]| -> Vec<f64> {
         let mut w = vec![0.0_f64; n_ctx * n_persons];
         match pop {
             PopulationSpec::Single | PopulationSpec::SingleFree => {
                 for p in 0..n_persons {
-                    loglik += lp[p * n_ctx];
-                    w[p] = 1.0;
+                    let (lp_mix, w_irt) = match zi {
+                        Some((_, all_zero)) => {
+                            zi_mix(lp[p * n_ctx], all_zero[p], log_pi, log_1m_pi)
+                        }
+                        None => (lp[p * n_ctx], 1.0),
+                    };
+                    loglik += lp_mix;
+                    if zi.is_some() {
+                        zi_resp[p] = 1.0 - w_irt;
+                    }
+                    w[p] = w_irt;
                 }
             }
             PopulationSpec::Multigroup { group_id, .. } => {
                 for p in 0..n_persons {
                     let s = group_id[p];
-                    loglik += lp[p * n_ctx + s];
-                    w[s * n_persons + p] = 1.0;
+                    let (lp_mix, w_irt) = match zi {
+                        Some((_, all_zero)) => {
+                            zi_mix(lp[p * n_ctx + s], all_zero[p], log_pi, log_1m_pi)
+                        }
+                        None => (lp[p * n_ctx + s], 1.0),
+                    };
+                    loglik += lp_mix;
+                    if zi.is_some() {
+                        zi_resp[p] = 1.0 - w_irt;
+                    }
+                    w[s * n_persons + p] = w_irt;
                 }
             }
             PopulationSpec::Multilevel { cluster_id, n_clusters } => {
+                // mixture applies per (person, u-node)
+                let mut lp_mix_v = vec![0.0_f64; n_persons * n_ctx];
+                let mut w_irt_v = vec![1.0_f64; n_persons * n_ctx];
+                for p in 0..n_persons {
+                    for v in 0..n_ctx {
+                        let (m, wi) = match zi {
+                            Some((_, all_zero)) => {
+                                zi_mix(lp[p * n_ctx + v], all_zero[p], log_pi, log_1m_pi)
+                            }
+                            None => (lp[p * n_ctx + v], 1.0),
+                        };
+                        lp_mix_v[p * n_ctx + v] = m;
+                        w_irt_v[p * n_ctx + v] = wi;
+                    }
+                }
                 let mut log_cluster = vec![0.0_f64; n_clusters * n_ctx];
                 for c in 0..*n_clusters {
                     log_cluster[c * n_ctx..(c + 1) * n_ctx].copy_from_slice(&ctx.u_logw);
@@ -641,7 +774,7 @@ fn e_step_gpu_adapter(
                 for p in 0..n_persons {
                     let c = cluster_id[p];
                     for v in 0..n_ctx {
-                        log_cluster[c * n_ctx + v] += lp[p * n_ctx + v];
+                        log_cluster[c * n_ctx + v] += lp_mix_v[p * n_ctx + v];
                     }
                 }
                 let mut post = vec![0.0_f64; n_clusters * n_ctx];
@@ -659,7 +792,11 @@ fn e_step_gpu_adapter(
                 for p in 0..n_persons {
                     let c = cluster_id[p];
                     for v in 0..n_ctx {
-                        w[v * n_persons + p] = post[c * n_ctx + v];
+                        let pw = post[c * n_ctx + v];
+                        if zi.is_some() {
+                            zi_resp[p] += pw * (1.0 - w_irt_v[p * n_ctx + v]);
+                        }
+                        w[v * n_persons + p] = pw * w_irt_v[p * n_ctx + v];
                     }
                 }
             }
@@ -674,6 +811,7 @@ fn e_step_gpu_adapter(
         rbar: out.rbar,
         mbar: out.mbar,
         loglik,
+        zi_resp,
         sum_e_v2,
         cluster_post: Vec::new(),
     })
@@ -689,6 +827,7 @@ fn e_step(
     pop: &PopulationSpec,
     ctx: &Contexts,
     grids: &Grids,
+    zi: Option<(f64, &[bool])>,
 ) -> EStep {
     let (n_persons, n_items, n_dims) = (config.n_persons, config.n_items, config.n_dims);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
@@ -698,8 +837,13 @@ fn e_step(
         rbar: vec![0.0; ctx.n_ctx * n_items * cell],
         mbar: vec![0.0; ctx.n_ctx * n_items * cell],
         loglik: 0.0,
+        zi_resp: if zi.is_some() { vec![0.0; n_persons] } else { Vec::new() },
         sum_e_v2: 0.0,
         cluster_post: Vec::new(),
+    };
+    let (log_pi, log_1m_pi) = match zi {
+        Some((pi, _)) => (pi.ln(), (1.0 - pi).ln()),
+        None => (f64::NEG_INFINITY, 0.0),
     };
     let mut l_buf = vec![0.0_f64; n_dims * cell];
     let mut log_zdx = vec![0.0_f64; n_dims * n_x];
@@ -712,9 +856,16 @@ fn e_step(
                     p, 0, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
                     &mut log_zdx,
                 );
-                estep.loglik += lp;
+                let (lp_mix, w_irt) = match zi {
+                    Some((_, all_zero)) => zi_mix(lp, all_zero[p], log_pi, log_1m_pi),
+                    None => (lp, 1.0),
+                };
+                estep.loglik += lp_mix;
+                if zi.is_some() {
+                    estep.zi_resp[p] = 1.0 - w_irt;
+                }
                 accumulate_person(
-                    p, 0, 1.0, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
+                    p, 0, w_irt, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
                     lp, &mut estep, &mut post_buf,
                 );
             }
@@ -726,9 +877,16 @@ fn e_step(
                     p, s, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
                     &mut log_zdx,
                 );
-                estep.loglik += lp;
+                let (lp_mix, w_irt) = match zi {
+                    Some((_, all_zero)) => zi_mix(lp, all_zero[p], log_pi, log_1m_pi),
+                    None => (lp, 1.0),
+                };
+                estep.loglik += lp_mix;
+                if zi.is_some() {
+                    estep.zi_resp[p] = 1.0 - w_irt;
+                }
                 accumulate_person(
-                    p, s, 1.0, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
+                    p, s, w_irt, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
                     lp, &mut estep, &mut post_buf,
                 );
             }
@@ -737,12 +895,21 @@ fn e_step(
             let q_u = ctx.n_ctx;
             // Pass 1: per-person conditional marginals log L_p(v).
             let mut lp_v = vec![0.0_f64; n_persons * q_u];
+            let mut w_irt_v = vec![1.0_f64; n_persons * q_u];
             for p in 0..n_persons {
                 for v in 0..q_u {
-                    lp_v[p * q_u + v] = person_pass(
+                    let lp_irt = person_pass(
                         p, v, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
                         &mut log_zdx,
                     );
+                    let (lp_mix, w_irt) = match zi {
+                        Some((_, all_zero)) => {
+                            zi_mix(lp_irt, all_zero[p], log_pi, log_1m_pi)
+                        }
+                        None => (lp_irt, 1.0),
+                    };
+                    lp_v[p * q_u + v] = lp_mix;
+                    w_irt_v[p * q_u + v] = w_irt;
                 }
             }
             // Cluster posteriors over u nodes.
@@ -770,11 +937,16 @@ fn e_step(
                     estep.sum_e_v2 += post * ctx.u_nodes[v] * ctx.u_nodes[v];
                 }
             }
-            // Pass 2: accumulate expected counts weighted by cluster posteriors.
+            // Pass 2: accumulate expected counts weighted by cluster posteriors
+            // (times the IRT-class responsibility under zero inflation).
             for p in 0..n_persons {
                 let c = cluster_id[p];
                 for v in 0..q_u {
-                    let w_outer = estep.cluster_post[c * q_u + v];
+                    let mut w_outer = estep.cluster_post[c * q_u + v];
+                    if zi.is_some() {
+                        estep.zi_resp[p] += w_outer * (1.0 - w_irt_v[p * q_u + v]);
+                        w_outer *= w_irt_v[p * q_u + v];
+                    }
                     if w_outer < 1e-14 {
                         continue;
                     }
@@ -808,6 +980,7 @@ fn item_q(
     config: &ModelConfig,
     factor_id: &[usize],
     penalty: &PenaltyConfig,
+    offset: Option<&[f64]>,
 ) -> f64 {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
@@ -816,6 +989,7 @@ fn item_q(
     let d = factor_id[i];
     let mut q = 0.0;
     for s in 0..ctx.n_ctx {
+        let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
         let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
         for (t, &node_t) in grids.t_nodes.iter().enumerate() {
             let theta = shift + scale * node_t;
@@ -827,19 +1001,20 @@ fn item_q(
                 if n <= 0.0 && r <= 0.0 {
                     continue;
                 }
-                let eta = eta_at(
-                    &[alpha_i],
-                    &[b_i],
-                    zeta_i,
-                    tau,
-                    free_alpha,
-                    uses_space,
-                    latent_dim,
-                    config.eps_distance,
-                    0,
-                    theta,
-                    &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
-                );
+                let eta = off
+                    + eta_at(
+                        &[alpha_i],
+                        &[b_i],
+                        zeta_i,
+                        tau,
+                        free_alpha,
+                        uses_space,
+                        latent_dim,
+                        config.eps_distance,
+                        0,
+                        theta,
+                        &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
+                    );
                 q += r * log_sigmoid(eta) + (n - r) * log_sigmoid(-eta);
             }
         }
@@ -873,6 +1048,7 @@ fn m_step_items(
     penalty: &PenaltyConfig,
     m_steps: usize,
     fixed: Option<&[bool]>,
+    offset: Option<&[f64]>,
 ) {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
@@ -887,6 +1063,7 @@ fn m_step_items(
         let mut zeta_i: Vec<f64> = zeta[i * latent_dim..(i + 1) * latent_dim].to_vec();
         let mut cur_q = item_q(
             i, alpha[i], b[i], &zeta_i, tau, estep, ctx, grids, config, factor_id, penalty,
+            offset,
         );
         for _ in 0..m_steps {
             // Analytic gradient of the expected complete-data objective, plus
@@ -899,6 +1076,7 @@ fn m_step_items(
             let (mut i_alpha, mut i_b) = (0.0_f64, 0.0_f64);
             let mut i_zeta = vec![0.0_f64; latent_dim];
             for s in 0..ctx.n_ctx {
+                let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
                 let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
                 for (t, &node_t) in grids.t_nodes.iter().enumerate() {
                     let theta = shift + scale * node_t;
@@ -913,7 +1091,7 @@ fn m_step_items(
                         let x_node = &grids.x_grid[x * latent_dim..(x + 1) * latent_dim];
                         let mut dist = 0.0;
                         let eta = {
-                            let mut e = a * theta + b[i];
+                            let mut e = off + a * theta + b[i];
                             if uses_space {
                                 let mut dist2 = config.eps_distance;
                                 for k in 0..latent_dim {
@@ -978,7 +1156,7 @@ fn m_step_items(
                     .collect();
                 let cand_q = item_q(
                     i, cand_alpha, cand_b, &cand_zeta, tau, estep, ctx, grids, config,
-                    factor_id, penalty,
+                    factor_id, penalty, offset,
                 );
                 if cand_q > cur_q + 1e-4 * step * slope {
                     b[i] = cand_b;
@@ -1014,6 +1192,7 @@ fn m_step_tau(
     config: &ModelConfig,
     factor_id: &[usize],
     penalty: &PenaltyConfig,
+    offset: Option<&[f64]>,
 ) {
     let (_, uses_space) = model_exec_flags(config.model_type);
     if !uses_space {
@@ -1034,6 +1213,7 @@ fn m_step_tau(
                 config,
                 factor_id,
                 penalty,
+                offset,
             );
         }
         // item_q already contains per-item penalties; add the tau penalty once.
@@ -1051,6 +1231,7 @@ fn m_step_tau(
         let d = factor_id[i];
         let a = if free_alpha { alpha[i].exp() } else { 1.0 };
         for s in 0..ctx.n_ctx {
+            let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
             let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
             for (t, &node_t) in grids.t_nodes.iter().enumerate() {
                 let theta = shift + scale * node_t;
@@ -1069,7 +1250,7 @@ fn m_step_tau(
                         dist2 += diff * diff;
                     }
                     let dist = dist2.sqrt();
-                    let eta = a * theta + b[i] - gamma * dist;
+                    let eta = off + a * theta + b[i] - gamma * dist;
                     let prob = sigmoid(eta);
                     let resid = r - n * prob;
                     let deta = -gamma * dist;
@@ -1091,6 +1272,104 @@ fn m_step_tau(
         let cand = (*tau + step * dir).clamp(-10.0, 5.0);
         if total_q(cand) > cur {
             *tau = cand;
+            return;
+        }
+        step *= 0.5;
+    }
+}
+
+/// Newton update for the covariate coefficient `delta` on the expected
+/// complete-data log-likelihood (`d eta / d delta = w[s, i]`); backtracked to
+/// guarantee a GEM ascent step.
+#[allow(clippy::too_many_arguments)]
+fn m_step_delta(
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    delta: &mut f64,
+    w_cov: &[f64],
+    estep: &EStep,
+    ctx: &Contexts,
+    grids: &Grids,
+    config: &ModelConfig,
+    factor_id: &[usize],
+    penalty: &PenaltyConfig,
+) {
+    let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
+    let (q_t, n_x) = (grids.q_t, grids.n_x);
+    let cell = q_t * n_x;
+    let gamma = tau.exp();
+    let eval_q = |delta_c: f64| -> f64 {
+        let offsets: Vec<f64> = w_cov.iter().map(|&w| delta_c * w).collect();
+        let mut q = 0.0;
+        for i in 0..n_items {
+            q += item_q(
+                i,
+                alpha[i],
+                b[i],
+                &zeta[i * latent_dim..(i + 1) * latent_dim],
+                tau,
+                estep,
+                ctx,
+                grids,
+                config,
+                factor_id,
+                penalty,
+                Some(&offsets),
+            );
+        }
+        q
+    };
+    let (mut grad, mut info) = (0.0_f64, 0.0_f64);
+    for i in 0..n_items {
+        let d = factor_id[i];
+        let a = if free_alpha { alpha[i].exp() } else { 1.0 };
+        for s in 0..ctx.n_ctx {
+            let w_si = w_cov[s * n_items + i];
+            if w_si == 0.0 {
+                continue;
+            }
+            let off = *delta * w_si;
+            let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
+            for (t, &node_t) in grids.t_nodes.iter().enumerate() {
+                let theta = shift + scale * node_t;
+                for x in 0..n_x {
+                    let idx = t * n_x + x;
+                    let n = estep.nbar[(s * n_dims + d) * cell + idx]
+                        - estep.mbar[(s * n_items + i) * cell + idx];
+                    let r = estep.rbar[(s * n_items + i) * cell + idx];
+                    if n <= 0.0 && r <= 0.0 {
+                        continue;
+                    }
+                    let mut eta = off + a * theta + b[i];
+                    if uses_space {
+                        let mut dist2 = config.eps_distance;
+                        for k in 0..latent_dim {
+                            let diff = grids.x_grid[x * latent_dim + k]
+                                - zeta[i * latent_dim + k];
+                            dist2 += diff * diff;
+                        }
+                        eta -= gamma * dist2.sqrt();
+                    }
+                    let prob = sigmoid(eta);
+                    grad += (r - n * prob) * w_si;
+                    info += n * prob * (1.0 - prob) * w_si * w_si;
+                }
+            }
+        }
+    }
+    if info <= 0.0 {
+        return;
+    }
+    let dir = grad / info;
+    let cur = eval_q(*delta);
+    let mut step = 1.0_f64;
+    for _ in 0..20 {
+        let cand = (*delta + step * dir).clamp(-10.0, 10.0);
+        if eval_q(cand) > cur {
+            *delta = cand;
             return;
         }
         step *= 0.5;
@@ -1319,6 +1598,23 @@ pub fn fit_marginal_anchored(
     device: Device,
     anchors: Option<&Anchors>,
 ) -> Result<MarginalResult, String> {
+    fit_marginal_full(y, observed, factor_id, config, pop, mcfg, penalty, device, anchors, None)
+}
+
+/// [`fit_marginal_anchored`] plus an optional context-varying item covariate.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_marginal_full(
+    y: &[f64],
+    observed: &[bool],
+    factor_id: &[usize],
+    config: &ModelConfig,
+    pop: &PopulationSpec,
+    mcfg: &MarginalConfig,
+    penalty: &PenaltyConfig,
+    device: Device,
+    anchors: Option<&Anchors>,
+    covariate: Option<&ItemCovariate>,
+) -> Result<MarginalResult, String> {
     validate(y, observed, factor_id, config, pop, mcfg)?;
     if let Some(a) = anchors {
         let (n_items, latent_dim) = (config.n_items, config.latent_dim);
@@ -1337,6 +1633,29 @@ pub fn fit_marginal_anchored(
         return Err(
             "PopulationSpec::SingleFree (FIPC) requires anchors for identification".into(),
         );
+    }
+    let n_ctx_expected = match pop {
+        PopulationSpec::Multigroup { n_groups, .. } => *n_groups,
+        PopulationSpec::Multilevel { .. } => 0, // covariate + multilevel unsupported
+        _ => 1,
+    };
+    if let Some(cov) = covariate {
+        if n_ctx_expected == 0 {
+            return Err("item covariates with a multilevel structure are not supported".into());
+        }
+        if cov.w.len() != n_ctx_expected * config.n_items {
+            return Err("covariate w must be n_ctx x n_items (contexts = groups)".into());
+        }
+        // identification: w must vary within at least one item across contexts
+        // OR the model must anchor b (single-context covariates are collinear
+        // with b_i).
+        if n_ctx_expected == 1 && anchors.is_none() {
+            return Err(
+                "a single-context item covariate is collinear with b; use multigroup \
+                 contexts (booklets) or anchors"
+                    .into(),
+            );
+        }
     }
     let (_, uses_space) = model_exec_flags(config.model_type);
     let (n_persons, n_items, n_dims, latent_dim) =
@@ -1422,25 +1741,54 @@ pub fn fit_marginal_anchored(
     let mut sigma_u = if n_clusters > 0 { mcfg.init_sigma_u } else { 0.0 };
 
     let resp = index_responses(y, observed, n_persons, n_items);
+    // Zero inflation: a person is a structural-zero candidate when every
+    // OBSERVED response is 0 (persons with no observations stay candidates).
+    let all_zero: Vec<bool> = (0..n_persons).map(|p| resp.pos[p].is_empty()).collect();
+    let mut pi_zero = if mcfg.zero_inflation {
+        let frac = all_zero.iter().filter(|&&z| z).count() as f64 / n_persons.max(1) as f64;
+        (0.5 * frac).clamp(1e-4, 0.98)
+    } else {
+        0.0
+    };
+    let mut zero_responsibility: Vec<f64> = Vec::new();
+    let mut delta = covariate.map(|c| c.init_delta).unwrap_or(0.0);
     let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
 
     for iteration in 0..mcfg.max_iter {
         let ctx = build_contexts(pop, &mu, &sigma, sigma_u, n_dims, mcfg.q_u);
-        let tables = build_tables(&alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids);
+        let offsets: Option<Vec<f64>> =
+            covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
+        let tables = build_tables_offset(
+            &alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids, offsets.as_deref(),
+        );
+        let zi = if mcfg.zero_inflation { Some((pi_zero, all_zero.as_slice())) } else { None };
         let estep =
-            e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids);
+            e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
         loglik_trace.push(estep.loglik);
+        if mcfg.zero_inflation {
+            let mean_resp =
+                estep.zi_resp.iter().sum::<f64>() / n_persons.max(1) as f64;
+            pi_zero = mean_resp.clamp(0.0, 0.999);
+            zero_responsibility = estep.zi_resp.clone();
+        }
 
         // M-step: items, then tau, then population parameters.
         m_step_items(
             &mut alpha, &mut b, &mut zeta, tau, &estep, &ctx, &grids, config, factor_id,
             penalty, mcfg.m_steps, anchors.map(|a| a.fixed.as_slice()),
+            offsets.as_deref(),
         );
         if anchors.and_then(|a| a.tau).is_none() {
             m_step_tau(
                 &alpha, &b, &zeta, &mut tau, &estep, &ctx, &grids, config, factor_id,
-                penalty,
+                penalty, offsets.as_deref(),
+            );
+        }
+        if let Some(cov) = covariate {
+            m_step_delta(
+                &alpha, &b, &zeta, tau, &mut delta, &cov.w, &estep, &ctx, &grids, config,
+                factor_id, penalty,
             );
         }
         match pop {
@@ -1489,7 +1837,11 @@ pub fn fit_marginal_anchored(
 
     // --- Final EAP pass with the converged parameters ---
     let ctx = build_contexts(pop, &mu, &sigma, sigma_u, n_dims, mcfg.q_u);
-    let tables = build_tables(&alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids);
+    let final_offsets: Option<Vec<f64>> =
+        covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
+    let tables = build_tables_offset(
+        &alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids, final_offsets.as_deref(),
+    );
     let cell = grids.q_t * grids.n_x;
     let mut l_buf = vec![0.0_f64; n_dims * cell];
     let mut log_zdx = vec![0.0_f64; n_dims * grids.n_x];
@@ -1588,6 +1940,9 @@ pub fn fit_marginal_anchored(
 
     let n_iter = loglik_trace.len();
     Ok(MarginalResult {
+        n_parameters: n_free_parameters(config, pop, anchors)
+            + usize::from(mcfg.zero_inflation)
+            + usize::from(covariate.is_some()),
         alpha,
         b,
         zeta,
@@ -1599,6 +1954,9 @@ pub fn fit_marginal_anchored(
         sigma,
         sigma_u,
         u_eap,
+        delta,
+        pi_zero,
+        zero_responsibility,
         loglik_trace,
         n_iter,
         converged,

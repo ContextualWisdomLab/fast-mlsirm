@@ -571,3 +571,158 @@ fn concurrent_calibration_two_forms_with_anchor_block() {
     // every item calibrated despite the structural missingness
     assert!(res.b.iter().all(|v| v.is_finite()));
 }
+
+#[test]
+fn zero_inflation_recovers_mixing_weight() {
+    let mut rng = Lcg(2027);
+    let (n_persons, n_items, n_dims, latent_dim) = (800usize, 12usize, 1usize, 1usize);
+    let mut sim = simulate(
+        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.5, &[], &[], 0.0, &[], 0,
+    );
+    // structural zeros: 30% of persons produce all-zero patterns regardless
+    let pi_true = 0.30;
+    let n_zero = (n_persons as f64 * pi_true) as usize;
+    for p in 0..n_zero {
+        for i in 0..n_items {
+            sim.y[p * n_items + i] = 0.0;
+        }
+    }
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let mcfg = MarginalConfig { zero_inflation: true, ..small_cfg() };
+    let res = fit_marginal(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::Single,
+        &mcfg,
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    )
+    .expect("ZI fit should succeed");
+    assert!(
+        res.pi_zero > 0.15 && res.pi_zero < 0.45,
+        "pi should approach ~0.30 (injected zeros + natural all-zero patterns), got {}",
+        res.pi_zero
+    );
+    // injected structural zeros carry high responsibility
+    let mean_resp_zero: f64 =
+        res.zero_responsibility[..n_zero].iter().sum::<f64>() / n_zero as f64;
+    let mean_resp_rest: f64 = res.zero_responsibility[n_zero..].iter().sum::<f64>()
+        / (n_persons - n_zero) as f64;
+    assert!(
+        mean_resp_zero > mean_resp_rest + 0.3,
+        "structural zeros must get higher responsibility: {mean_resp_zero} vs {mean_resp_rest}"
+    );
+    assert_monotone(&res.loglik_trace);
+    // without the mixture the fit runs unchanged and reports pi = 0
+    let plain = fit_marginal(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::Single,
+        &small_cfg(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    )
+    .expect("plain fit should succeed");
+    assert_eq!(plain.pi_zero, 0.0);
+    assert!(
+        res.loglik_trace.last().unwrap() > plain.loglik_trace.last().unwrap(),
+        "the mixture must improve the marginal loglik on ZI data"
+    );
+}
+
+#[test]
+fn item_position_covariate_recovers_delta() {
+    use mlsirm_core::marginal::{fit_marginal_full, ItemCovariate};
+    let mut rng = Lcg(404);
+    let (n_persons, n_items, n_dims, latent_dim) = (900usize, 12usize, 1usize, 1usize);
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    // two booklets: item i sits at position i in booklet 0, reversed in booklet 1
+    let mut w = vec![0.0_f64; 2 * n_items];
+    for i in 0..n_items {
+        w[i] = i as f64 / (n_items - 1) as f64;
+        w[n_items + i] = (n_items - 1 - i) as f64 / (n_items - 1) as f64;
+    }
+    let delta_true = -0.8; // later positions get harder (fatigue effect)
+    let mut sim = simulate(
+        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.0, &[0.0, 0.0], &group_id, 0.0,
+        &[], 0,
+    );
+    // re-simulate responses with the position effect applied
+    let mut rng2 = Lcg(405);
+    for p in 0..n_persons {
+        let booklet = group_id[p];
+        for i in 0..n_items {
+            let eta = sim.a_true[i] * sim.theta_true[p] + sim.b_true[i]
+                + delta_true * w[booklet * n_items + i];
+            let prob = 1.0 / (1.0 + (-eta).exp());
+            sim.y[p * n_items + i] = if rng2.next_f64() < prob { 1.0 } else { 0.0 };
+        }
+    }
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let cov = ItemCovariate { w, init_delta: 0.0 };
+    let res = fit_marginal_full(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::Multigroup { group_id, n_groups: 2 },
+        &small_cfg(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+        None,
+        Some(&cov),
+    )
+    .expect("covariate fit should succeed");
+    assert!(
+        (res.delta - delta_true).abs() < 0.35,
+        "position coefficient should recover ~{delta_true}, got {}",
+        res.delta
+    );
+    assert_monotone(&res.loglik_trace);
+}
+
+#[test]
+fn covariate_guards() {
+    use mlsirm_core::marginal::{fit_marginal_full, ItemCovariate};
+    let config = ModelConfig {
+        n_persons: 2,
+        n_items: 2,
+        n_dims: 1,
+        latent_dim: 1,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let cov = ItemCovariate { w: vec![0.0, 1.0], init_delta: 0.0 };
+    // single-context covariate without anchors: collinear with b -> rejected
+    let res = fit_marginal_full(
+        &[0.0, 1.0, 1.0, 0.0],
+        &[true; 4],
+        &[0, 0],
+        &config,
+        &PopulationSpec::Single,
+        &MarginalConfig::default(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+        None,
+        Some(&cov),
+    );
+    assert!(res.is_err());
+}
