@@ -2062,6 +2062,192 @@ pub fn m2_rmsea2(
     })
 }
 
+/// Per-item-pair local-dependence diagnostics (Chen & Thissen 1997).
+#[derive(Clone, Debug)]
+pub struct PolyLdResult {
+    /// Upper-triangle pair order `(i, j)`, `i < j`.
+    pub pairs: Vec<(usize, usize)>,
+    /// Pearson LD chi-square per pair.
+    pub x2: Vec<f64>,
+    /// Likelihood-ratio (G²) LD statistic per pair.
+    pub g2: Vec<f64>,
+    /// Reference degrees of freedom `(K-1)²` shared by all pairs.
+    pub df: f64,
+    /// Upper-tail p-value of `x2` on `χ²(df)`.
+    pub p_value: Vec<f64>,
+    /// Cramér's V effect size `sqrt(X² / (N(K-1)))` per pair.
+    pub cramers_v: Vec<f64>,
+    /// Largest standardized cell residual `|O-E|/sqrt(E)` per pair.
+    pub max_abs_std_resid: Vec<f64>,
+    /// Pairwise-complete sample size per pair.
+    pub n_pair: Vec<usize>,
+}
+
+/// Local-dependence diagnostics for every item pair of a fitted unidimensional
+/// GRM/GPCM (Chen & Thissen, 1997), the ordered-category generalization of the
+/// binary pairwise chi-square in [`adjusted_chi2_pairs`]. For each pair `(i,j)`
+/// it compares the observed `K×K` contingency table against the model-implied
+/// joint under local independence,
+/// `E_ab = N · Σ_t w_t P_i(a|θ_t) P_j(b|θ_t)`, reporting the Pearson `X²` and
+/// likelihood-ratio `G²` with `df = (K-1)²`, the χ² p-value, Cramér's V, and the
+/// largest standardized cell residual. Pairwise-complete cases (a person
+/// observed on both items of a pair) enter that pair's table; a pair with too
+/// few cases yields `NaN`. A significant `X²` beyond the fitted model flags
+/// residual association (a violated conditional-independence assumption).
+///
+/// # References (APA 7th ed.)
+///
+/// Chen, W.-H., & Thissen, D. (1997). Local dependence indexes for item pairs
+///   using item response theory. *Journal of Educational and Behavioral
+///   Statistics, 22*(3), 265–289. https://doi.org/10.3102/10769986022003265
+///
+/// Liu, Y., & Maydeu-Olivares, A. (2013). Local dependence diagnostics in IRT
+///   modeling of binary data. *Educational and Psychological Measurement,
+///   73*(2), 254–274. https://doi.org/10.1177/0013164412453841
+#[allow(clippy::too_many_arguments)]
+pub fn poly_local_dependence(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: crate::poly::PolyModel,
+    q_theta: usize,
+) -> Result<PolyLdResult, String> {
+    use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
+    if n_items < 2 {
+        return Err("local dependence needs at least 2 items".into());
+    }
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != y.len() {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if slope.len() != n_items {
+        return Err("slope must have length n_items".into());
+    }
+    if cat_params.len() != n_items * (n_cat - 1) {
+        return Err("cat_params must have length n_items*(n_cat-1)".into());
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+    let z = n_cat - 1;
+
+    // per-item, per-node category probabilities P_i(a | theta_t)
+    let (nodes, weights) =
+        gh_rule(q_theta).ok_or_else(|| format!("unsupported quadrature size {q_theta}"))?;
+    let qn = nodes.len();
+    let mut probs = vec![0.0_f64; n_items * qn * n_cat];
+    for i in 0..n_items {
+        let a = slope[i];
+        let cp = &cat_params[i * z..(i + 1) * z];
+        for (t, &theta) in nodes.iter().enumerate() {
+            let base = a * theta;
+            let lp = match model {
+                PolyModel::Gpcm => {
+                    let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                    let mut intercepts = vec![0.0_f64; n_cat];
+                    intercepts[1..].copy_from_slice(cp);
+                    gpcm_logprobs(base, &scores, &intercepts)
+                }
+                PolyModel::Grm => grm_logprobs(base, cp),
+            };
+            let off = (i * qn + t) * n_cat;
+            for a2 in 0..n_cat {
+                probs[off + a2] = lp[a2].exp();
+            }
+        }
+    }
+
+    let is_obs = |pp: usize, i: usize| observed.map_or(true, |o| o[pp * n_items + i]);
+    // Chen & Thissen (1997) / mirt reference: the two-way independence df,
+    // df = cells - independence-model params = K² - (2K-1) = (K-1)² (binary -> 1).
+    // With FITTED item parameters the marginal MLE absorbs the univariate margins,
+    // leaving the (K-1)² association dof; the reference is heuristic/conservative
+    // (both papers note the null is stochastically smaller than χ²), so read it as
+    // a diagnostic screen for residual association, not an exact test.
+    let df = (z * z) as f64;
+    let mut out = PolyLdResult {
+        pairs: Vec::new(),
+        x2: Vec::new(),
+        g2: Vec::new(),
+        df,
+        p_value: Vec::new(),
+        cramers_v: Vec::new(),
+        max_abs_std_resid: Vec::new(),
+        n_pair: Vec::new(),
+    };
+    let min_n = 2 * n_cat * n_cat; // enough for a non-degenerate K x K table
+
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            // model-implied joint P(Y_i=a, Y_j=b) marginalized over theta
+            let mut pj = vec![0.0_f64; n_cat * n_cat];
+            for t in 0..qn {
+                let wt = weights[t];
+                let io = (i * qn + t) * n_cat;
+                let jo = (j * qn + t) * n_cat;
+                for a in 0..n_cat {
+                    let pia = wt * probs[io + a];
+                    for b in 0..n_cat {
+                        pj[a * n_cat + b] += pia * probs[jo + b];
+                    }
+                }
+            }
+            // observed K x K counts (pairwise-complete)
+            let mut o = vec![0.0_f64; n_cat * n_cat];
+            let mut n_ij = 0usize;
+            for pp in 0..n_persons {
+                if is_obs(pp, i) && is_obs(pp, j) {
+                    o[y[pp * n_items + i] * n_cat + y[pp * n_items + j]] += 1.0;
+                    n_ij += 1;
+                }
+            }
+            out.pairs.push((i, j));
+            out.n_pair.push(n_ij);
+            if n_ij < min_n {
+                out.x2.push(f64::NAN);
+                out.g2.push(f64::NAN);
+                out.p_value.push(f64::NAN);
+                out.cramers_v.push(f64::NAN);
+                out.max_abs_std_resid.push(f64::NAN);
+                continue;
+            }
+            let nf = n_ij as f64;
+            let (mut x2, mut g2, mut maxr) = (0.0_f64, 0.0_f64, 0.0_f64);
+            for cell in 0..n_cat * n_cat {
+                let e = nf * pj[cell];
+                if e > 1e-12 {
+                    let d = o[cell] - e;
+                    x2 += d * d / e;
+                    let sr = (d / e.sqrt()).abs();
+                    if sr > maxr {
+                        maxr = sr;
+                    }
+                    if o[cell] > 0.0 {
+                        g2 += 2.0 * o[cell] * (o[cell] / e).ln();
+                    }
+                }
+            }
+            out.x2.push(x2);
+            out.g2.push(g2);
+            out.p_value.push(chi2_sf(x2, df));
+            out.cramers_v.push((x2 / (nf * z as f64)).sqrt());
+            out.max_abs_std_resid.push(maxr);
+        }
+    }
+    Ok(out)
+}
+
 /// Polytomous M2 / RMSEA2 limited-information goodness of fit for a fitted
 /// unidimensional GRM or GPCM, the ordered-category generalization of
 /// [`m2_rmsea2`]. Uses the CUMULATIVE marginal form: univariate
@@ -2614,5 +2800,211 @@ mod m2_branch_tests {
         assert!((0.9..=1.1).contains(&mn), "normal M2/df off: {mn}");
         assert!(rej_n < 0.12, "normal Type I too high: {rej_n}");
         assert!(ms > mn + 0.1 && rej_s > rej_n, "skew misfit not detected: {ms} vs {mn}");
+    }
+
+    #[test]
+    fn poly_ld_matches_direct_2x2_at_k2() {
+        // Deterministic anchor: at K=2 the polytomous LD X² for each pair must
+        // equal a from-scratch 2x2 Pearson chi-square of observed counts vs the
+        // model-implied joint on the same quadrature — validating the table
+        // assembly, the local-independence marginalization, and the chi-square.
+        use crate::poly::{gpcm_logprobs, PolyModel};
+        let (n_persons, n_items) = (600usize, 3usize);
+        let mut st = 13131u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a = vec![1.1_f64, 0.9, 1.3];
+        let b = vec![0.3_f64, -0.4, 0.1]; // K=2 GPCM intercept per item
+        let mut yi = vec![0usize; n_persons * n_items];
+        for pp in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let pr = 1.0 / (1.0 + (-(a[i] * th + b[i])).exp());
+                yi[pp * n_items + i] = if u() < pr { 1 } else { 0 };
+            }
+        }
+        let r =
+            poly_local_dependence(&yi, None, n_persons, n_items, 2, &a, &b, PolyModel::Gpcm, 41)
+                .unwrap();
+        assert_eq!(r.df, 1.0);
+        let (nodes, weights) = gh_rule(41).unwrap();
+        let pcat = |i: usize, t: usize| -> [f64; 2] {
+            let lp = gpcm_logprobs(a[i] * nodes[t], &[0.0, 1.0], &[0.0, b[i]]);
+            [lp[0].exp(), lp[1].exp()]
+        };
+        for (idx, &(i, j)) in r.pairs.iter().enumerate() {
+            let mut pj = [[0.0_f64; 2]; 2];
+            for t in 0..nodes.len() {
+                let (pi, pjj) = (pcat(i, t), pcat(j, t));
+                for aa in 0..2 {
+                    for bb in 0..2 {
+                        pj[aa][bb] += weights[t] * pi[aa] * pjj[bb];
+                    }
+                }
+            }
+            let mut o = [[0.0_f64; 2]; 2];
+            for pp in 0..n_persons {
+                o[yi[pp * n_items + i]][yi[pp * n_items + j]] += 1.0;
+            }
+            let nf = n_persons as f64;
+            let mut x2ref = 0.0_f64;
+            for aa in 0..2 {
+                for bb in 0..2 {
+                    let e = nf * pj[aa][bb];
+                    if e > 1e-12 {
+                        let d = o[aa][bb] - e;
+                        x2ref += d * d / e;
+                    }
+                }
+            }
+            assert!(
+                (r.x2[idx] - x2ref).abs() < 1e-8,
+                "pair ({i},{j}): poly {} vs direct 2x2 {}", r.x2[idx], x2ref
+            );
+        }
+    }
+
+    // GPCM Monte-Carlo for the LD X²: returns (mean X²/df over locally-INDEPENDENT
+    // pairs, their rejection rate, X²/df for the injected/target pair (0,1), its
+    // rejection rate, df). With `inject_ld` a shared specific factor couples items
+    // 0 and 1 (a testlet), which the LD X² for that pair should detect while the
+    // other pairs stay calibrated. A skewed ability is a population
+    // misspecification that inflates all pairs.
+    fn mc_poly_ld(reps: usize, n_persons: usize, skew: bool, inject_ld: bool) -> (f64, f64, f64, f64, f64) {
+        use crate::poly::{fit_poly_unidim, gpcm_logprobs, PolyModel};
+        let (n_items, k) = (5usize, 3usize);
+        let z = k - 1;
+        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.1 * i as f64).collect();
+        let cat_true: Vec<f64> = (0..n_items)
+            .flat_map(|i| vec![0.7 - 0.08 * i as f64, -0.7 + 0.08 * i as f64])
+            .collect();
+        let (mut ind_ratio, mut ind_rej, mut ind_cnt) = (0.0_f64, 0usize, 0usize);
+        let (mut ld_ratio, mut ld_rej) = (0.0_f64, 0usize);
+        let mut df_val = 0.0_f64;
+        for rep in 0..reps {
+            let mut st = 5150u64 + rep as u64 * 131 + (skew as u64) * 7 + (inject_ld as u64) * 101;
+            let mut u = || {
+                st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((st >> 11) as f64) / ((1u64 << 53) as f64)
+            };
+            let mut yi = vec![0usize; n_persons * n_items];
+            for pp in 0..n_persons {
+                let theta = if skew {
+                    -(u().max(1e-12)).ln() - 1.0
+                } else {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                };
+                // shared specific factor coupling items 0 and 1 (testlet LD)
+                let uij = if inject_ld {
+                    let u1 = u().max(1e-12);
+                    let u2 = u();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+                } else {
+                    0.0
+                };
+                for i in 0..n_items {
+                    let extra = if inject_ld && (i == 0 || i == 1) { uij } else { 0.0 };
+                    let base = a_true[i] * theta + extra;
+                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                    let mut ic = vec![0.0_f64; k];
+                    ic[1..].copy_from_slice(&cat_true[i * z..(i + 1) * z]);
+                    let lp = gpcm_logprobs(base, &scores, &ic);
+                    let draw = u();
+                    let (mut acc, mut cat) = (0.0_f64, k - 1);
+                    for (c, l) in lp.iter().enumerate() {
+                        acc += l.exp();
+                        if draw <= acc {
+                            cat = c;
+                            break;
+                        }
+                    }
+                    yi[pp * n_items + i] = cat;
+                }
+            }
+            // LD is evaluated at the FITTED parameters (the operational case): the
+            // marginal MLE absorbs the univariate margins, leaving the (K-1)²
+            // residual-association dof the statistic references.
+            let fit =
+                fit_poly_unidim(&yi, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6)
+                    .unwrap();
+            let cp_flat: Vec<f64> = fit.cat_params.iter().flatten().copied().collect();
+            let r = poly_local_dependence(
+                &yi, None, n_persons, n_items, k, &fit.slope, &cp_flat, PolyModel::Gpcm, 21,
+            )
+            .unwrap();
+            df_val = r.df;
+            for (idx, &(i, j)) in r.pairs.iter().enumerate() {
+                let ratio = r.x2[idx] / r.df;
+                let rej = r.p_value[idx] < 0.05;
+                if (i, j) == (0, 1) {
+                    ld_ratio += ratio;
+                    ld_rej += rej as usize;
+                } else if i >= 2 && j >= 2 {
+                    // pairs among the untouched items 2..; testlet-touching pairs excluded
+                    ind_ratio += ratio;
+                    ind_rej += rej as usize;
+                    ind_cnt += 1;
+                }
+            }
+        }
+        (
+            ind_ratio / ind_cnt as f64,
+            ind_rej as f64 / ind_cnt as f64,
+            ld_ratio / reps as f64,
+            ld_rej as f64 / reps as f64,
+            df_val,
+        )
+    }
+
+    #[test]
+    fn poly_ld_calibration_and_power() {
+        // Fast CI guard (fits each dataset). Authoritative >=500-rep study is
+        // poly_ld_monte_carlo_500 (ignored). "clean" = pairs among the untouched
+        // items 2.. ; "pair01" = the item pair carrying the injected testlet.
+        let (reps, n) = (20usize, 1500usize);
+        let (c0, r0, t0, _, df) = mc_poly_ld(reps, n, false, false); // null, normal ability
+        let (cl, rl, tl, tlrej, _) = mc_poly_ld(reps, n, false, true); // testlet on (0,1)
+        let (cs, rs, _, _, _) = mc_poly_ld(reps, n, true, false); // skewed ability
+        println!(
+            "[poly LD] df={df}  null: clean X2/df={c0:.3} reject={r0:.3} pair01={t0:.3}  \
+             LD: clean={cl:.3} reject={rl:.3} pair01 X2/df={tl:.3} reject={tlrej:.3}  \
+             skew: clean={cs:.3} reject={rs:.3}"
+        );
+        // null: clean pairs calibrated (the Chen-Thissen reference is conservative)
+        assert!((0.45..=1.35).contains(&c0), "null clean X2/df off: {c0}");
+        assert!(r0 < 0.15, "null rejection too high: {r0}");
+        // power: the testlet pair (0,1) is flagged; clean pairs stay calibrated
+        assert!(tl > 3.0 && tlrej > 0.6, "LD pair not detected: X2/df={tl}, reject={tlrej}");
+        assert!(cl < 1.6 && rl < 0.20, "clean pairs inflated under LD: {cl}, {rl}");
+        // a skewed ability that the N(0,1)-quadrature model cannot match inflates
+        // the pairwise residual association (a detectable distribution misfit)
+        assert!(cs > 2.0, "skew misspecification should inflate LD: {cs}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_ld_monte_carlo_500() {
+        let (reps, n) = (500usize, 2000usize);
+        let (c0, r0, _, _, df) = mc_poly_ld(reps, n, false, false);
+        let (cl, rl, tl, tlrej, _) = mc_poly_ld(reps, n, false, true);
+        println!(
+            "[poly LD 500] df={df}  null: clean X2/df={c0:.4} reject={r0:.4}  \
+             LD: clean X2/df={cl:.4} reject={rl:.4} pair01 X2/df={tl:.4} reject={tlrej:.4}"
+        );
+        assert!((0.6..=1.15).contains(&c0), "null clean X2/df off: {c0}");
+        assert!(r0 < 0.09, "null Type I not conservative: {r0}");
+        // a 2-item testlet biases the whole unidimensional fit, so clean pairs are
+        // mildly elevated, but the LD pair is localized far above them
+        assert!(cl < 1.6, "clean pairs too inflated under LD: {cl}");
+        assert!(
+            tl > 6.0 && tlrej > 0.95 && tl > 4.0 * cl,
+            "LD pair power/separation too low: pair01={tl} clean={cl} reject={tlrej}"
+        );
     }
 }
