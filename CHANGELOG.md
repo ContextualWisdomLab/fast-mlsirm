@@ -115,6 +115,19 @@
   extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
   next milestone.
 
+- **Polytomous M2 limited-information goodness-of-fit** (Maydeu-Olivares & Joe,
+  2014). `m2_polytomous(responses, fit)` returns the test-level M2 statistic,
+  `df`, `p_value`, RMSEA2 (with a 90% interval), and SRMSR for a fitted GRM/GPCM
+  — the ordered-category generalization of the binary M2 (`m2_stat`). It uses
+  the cumulative marginals `P(Y_i>=c)` and `P(Y_i>=c, Y_j>=d)` (the same M2 as
+  the paper's category-equality form) and reduces **exactly** to the binary
+  `m2_rmsea2` at `n_cat = 2`. Compute in Rust (`mlsirm_core::fitstats::poly_m2`),
+  reusing the one-Cholesky residual-projection solve. `df = n(K-1) +
+  C(n,2)(K-1)² - nK`. Validated by the exact `K=2` reduction (GRM and GPCM) and
+  a 500-replication Monte-Carlo: under a matched `N(0,1)` ability `mean(M2)/df =
+  0.99` with Type I error 0.05 (nominal), and under a skewed population `M2`
+  inflates 4× with power 1.00.
+
 - **Generalized S-X² item fit for polytomous models** (Kang & Chen, 2008, 2011).
   `item_fit_polytomous(responses, fit)` returns the per-item summed-score
   chi-square, `df`, `p_value`, and retained cell count for a fitted GRM/GPCM,

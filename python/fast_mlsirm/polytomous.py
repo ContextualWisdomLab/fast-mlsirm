@@ -369,3 +369,50 @@ def item_fit_polytomous(
         "p_value": np.asarray(res["p_value"], dtype=np.float64),
         "n_cells": np.asarray(res["n_cells"], dtype=np.int64),
     }
+
+
+def m2_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+) -> dict[str, float]:
+    """Polytomous M2 limited-information goodness-of-fit for a fitted GRM/GPCM
+    (compute in Rust). Extends the binary M2 to ordered categories via the
+    cumulative marginals ``P(Y_i >= c)`` and ``P(Y_i >= c, Y_j >= d)``; equals
+    the binary M2 at ``n_cat = 2``. ``responses`` is persons x items of integer
+    categories with ``NaN`` for missing (complete cases only enter the
+    statistic). Returns ``m2``, ``df``, ``p_value``, ``rmsea2`` and its 90%
+    interval (``rmsea2_ci_lower``/``rmsea2_ci_upper``), ``srmsr``, and the
+    ``n_moments``/``n_parameters``/``n_complete`` counts. Requires at least 3
+    items and ``n_moments > n_parameters``.
+
+    References (APA 7th ed.):
+        Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in
+            categorical data analysis. *Multivariate Behavioral Research,
+            49*(4), 305-328. https://doi.org/10.1080/00273171.2014.911075
+    """
+    n_items = fit.slope.shape[0]
+    n_cat = fit.cat_params.shape[1] + 1
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_m2"):
+        raise RuntimeError("m2_polytomous requires the compiled Rust core")
+
+    n_persons = y_int.shape[0]
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.poly_m2(
+        y_int.reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        obs_arg,
+        fit.model,
+        int(q_theta),
+    )
+    return {k: float(v) if k not in ("n_moments", "n_parameters", "n_complete")
+            else int(v) for k, v in res.items()}

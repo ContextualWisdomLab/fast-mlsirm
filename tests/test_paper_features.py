@@ -676,3 +676,60 @@ def test_item_fit_polytomous_sx2():
         item_fit_polytomous(y[:, :-1], fit)                 # wrong item count
     with pytest.raises(ValueError):
         item_fit_polytomous(y, fit, min_expected=0.0)       # non-positive floor
+
+
+def test_m2_polytomous():
+    """Polytomous M2 (Maydeu-Olivares & Joe, 2014) through the public API:
+    correct moment/df bookkeeping, a good fit for correctly-specified data, and
+    detection of a strongly misspecified (skewed-population) fit."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, m2_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_m2"):
+        pytest.skip("compiled core built without poly_m2")
+
+    def sim(theta, a, c, k):
+        n, j = theta.size, a.size
+        y = np.zeros((n, j), dtype=int)
+        scores = np.arange(k, dtype=float)
+        for i in range(j):
+            p = np.exp(category_logprobs(a[i] * theta, scores, c[i]))
+            for pp in range(n):
+                y[pp, i] = np.random.default_rng(1000 + i * n + pp).choice(k, p=p[pp])
+        return y
+
+    rng = np.random.default_rng(7)
+    n, j, k = 2000, 6, 3
+    a = rng.uniform(0.9, 1.5, j)
+    c = np.zeros((j, k))
+    c[:, 1:] = rng.normal(0.0, 0.5, (j, k - 1))
+
+    # correctly specified (normal ability) -> good fit
+    theta = rng.standard_normal(n)
+    y = sim(theta, a, c, k)
+    fit = fit_polytomous(y, k, model="gpcm")
+    res = m2_polytomous(y, fit)
+    # Q = j*(k-1) + C(j,2)*(k-1)^2 ; P = j*k ; df = Q - P
+    q = j * (k - 1) + (j * (j - 1) // 2) * (k - 1) ** 2
+    assert res["n_moments"] == q
+    assert res["n_parameters"] == j * k
+    assert res["df"] == q - j * k
+    assert np.isfinite(res["m2"]) and res["m2"] >= 0.0
+    assert 0.0 <= res["p_value"] <= 1.0
+    assert res["rmsea2_ci_lower"] <= res["rmsea2_ci_upper"] + 1e-9
+    assert res["rmsea2"] < 0.05  # well-fitting
+
+    # strongly misspecified: fit the wrong item parameters -> M2 must reject
+    bad = fit
+    bad.slope = a * 3.0  # inflate discriminations far from the truth
+    res_bad = m2_polytomous(y, bad)
+    assert res_bad["m2"] > res["m2"]
+    assert res_bad["p_value"] < 0.05
+
+    # validation: fewer than 3 items has non-positive df
+    with pytest.raises((ValueError, RuntimeError)):
+        fit2 = fit_polytomous(y[:, :2], k, model="gpcm")
+        m2_polytomous(y[:, :2], fit2)

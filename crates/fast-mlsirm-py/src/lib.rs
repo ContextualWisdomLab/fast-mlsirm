@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
-    s_x2 as core_s_x2, SX2Config,
+    poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::marginal::{
@@ -972,6 +972,58 @@ fn m2_stat(
     Ok(out.into())
 }
 
+/// Polytomous M2 limited-information goodness-of-fit (Rust compute path) for a
+/// fitted unidimensional GRM/GPCM. Returns m2, df, p_value, rmsea2 (+90% CI),
+/// srmsr, n_moments, n_parameters, n_complete.
+///
+/// References (APA 7th ed.):
+///   Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in
+///     categorical data analysis. Multivariate Behavioral Research, 49(4),
+///     305-328. https://doi.org/10.1080/00273171.2014.911075
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", q_theta = 21))]
+fn poly_m2(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_poly_m2(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        q_theta,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("m2", res.m2)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rmsea2", res.rmsea2)?;
+    out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
+    out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
+    out.set_item("srmsr", res.srmsr)?;
+    out.set_item("n_moments", res.n_moments)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("n_complete", res.n_complete)?;
+    Ok(out.into())
+}
+
 /// l_z / Snijders l_z* person fit at EAP estimates.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1632,6 +1684,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
