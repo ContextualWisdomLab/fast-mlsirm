@@ -358,3 +358,52 @@ def test_poly_cell_and_fitter_rust_numpy_parity():
     npy_fit = fit_gpcm_numpy(y, k)
     assert np.allclose(np.array(rust_fit["slope"]), npy_fit["a"], atol=0.05)
     assert np.isfinite(rust_fit["loglik"])
+
+
+def test_fit_polytomous_api_recovers_and_validates():
+    """The public fit_polytomous wrapper (Rust compute) recovers GRM parameters
+    and rejects malformed input."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous
+    from fast_mlsirm.estimators.marginal import _gh
+
+    try:
+        from fast_mlsirm import _core  # noqa: F401
+        if not hasattr(__import__("fast_mlsirm")._core, "fit_poly_unidim"):
+            pytest.skip("core built without polytomous functions")
+    except Exception:  # pragma: no cover
+        pytest.skip("compiled core not available")
+
+    from fast_mlsirm.polytomous import _core_module
+    if _core_module() is None:  # pragma: no cover
+        pytest.skip("compiled core not available")
+
+    # GRM recovery via the public API
+    rng = np.random.default_rng(3)
+    n_persons, n_items, k = 3000, 5, 4
+    a_true = rng.uniform(0.9, 1.6, n_items)
+    thr_true = np.array([1.3, 0.0, -1.3])
+    nodes, _ = _gh(21)
+    theta = rng.normal(0.0, 1.0, n_persons)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        for pp in range(n_persons):
+            eta = a_true[i] * theta[pp] + thr_true  # cumulative logits P(Y>=k)
+            cum = 1.0 / (1.0 + np.exp(-eta))
+            p = np.empty(k)
+            p[0] = 1 - cum[0]
+            p[1:k - 1] = cum[:k - 2] - cum[1:k - 1]
+            p[k - 1] = cum[k - 2]
+            y[pp, i] = rng.choice(k, p=p / p.sum())
+    fit = fit_polytomous(y, k, model="grm")
+    assert fit.model == "grm" and np.isfinite(fit.loglik)
+    assert np.corrcoef(a_true, fit.slope)[0, 1] > 0.9
+
+    # validation
+    with pytest.raises(ValueError):
+        fit_polytomous(y, k, model="nominal")       # unsupported model
+    with pytest.raises(ValueError):
+        fit_polytomous(y.astype(float) + 0.5, k)    # non-integer categories
+    with pytest.raises(ValueError):
+        fit_polytomous(y, 2)                          # category out of range

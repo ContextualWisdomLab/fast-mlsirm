@@ -93,6 +93,22 @@
 
 ### Added
 
+- **Polytomous response models (GRM / GPCM), unidimensional.** New
+  `fit_polytomous(responses, n_cat, model="grm"|"gpcm")` fits the graded
+  response model (Samejima; the default) or the generalized partial credit
+  model (Muraki) by Bock-Aitkin marginal-EM. All numerical work — the category
+  cells, the residual M-step gradient, and the Newton item update — runs in the
+  Rust core (`mlsirm_core::poly`: `grm_logprobs`/`gpcm_logprobs` +
+  `*_node_gradient` + `fit_poly_unidim`), exposed via PyO3; the NumPy
+  `category_logprobs`/`gpcm_node_gradient`/`fit_gpcm_numpy` are parity
+  references held to `<= 1e-12` (cell) / recovery agreement (fitter). GRM is
+  chosen as the identification-clean default for the latent-space family — the
+  single interaction term enters every cumulative logit as a shared shift, with
+  no forced category scaling (design rationale and literature basis in
+  `docs/papers/gpcm-nominal-design-spec.md`). The latent-space polytomous
+  extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
+  next milestone.
+
 - **Marginal (MMLE-EM) estimation for the full latent-space family.**
   `fit(estimator="mmle")` now fits `MIRT`/`MLS2PLM`/`MLSRM` (and `ULS2PLM`/
   `ULSRM` under a population structure) by Bock-Aitkin-style marginal EM:
