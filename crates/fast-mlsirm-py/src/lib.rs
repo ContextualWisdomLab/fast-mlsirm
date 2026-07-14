@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use mlsirm_core::marginal::{
+    fit_marginal as core_fit_marginal, MarginalConfig, PopulationSpec,
+};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
@@ -164,11 +167,160 @@ fn fit_mmle_2pl(
     Ok((res.a, res.b, res.theta, res.loglik_trace, res.converged))
 }
 
+/// Marginal (MMLE-EM) calibration of the latent-space model family
+/// (`mlsirm_core::marginal`). `pop_kind` is "single", "multigroup" or
+/// "multilevel"; `pop_id` carries the per-person group/cluster index (ignored
+/// for "single"). Returns a dict of the fitted quantities.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y,
+    observed,
+    factor_id,
+    n_persons,
+    n_items,
+    n_dims,
+    latent_dim,
+    model,
+    eps_distance,
+    pop_kind = "single",
+    pop_id = None,
+    n_pop = 0,
+    q_theta = 21,
+    q_xi = 11,
+    q_u = 15,
+    max_iter = 200,
+    tol = 1e-5,
+    m_steps = 4,
+    lambda_b = 0.25,
+    lambda_alpha = 1.0,
+    mu_alpha = 0.5,
+    lambda_zeta = 1.0,
+    lambda_tau = 1.0,
+    mu_tau = 0.5,
+    device = "cpu",
+))]
+fn fit_marginal(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    latent_dim: usize,
+    model: &str,
+    eps_distance: f64,
+    pop_kind: &str,
+    pop_id: Option<PyReadonlyArray1<'_, i64>>,
+    n_pop: usize,
+    q_theta: usize,
+    q_xi: usize,
+    q_u: usize,
+    max_iter: usize,
+    tol: f64,
+    m_steps: usize,
+    lambda_b: f64,
+    lambda_alpha: f64,
+    mu_alpha: f64,
+    lambda_zeta: f64,
+    lambda_tau: f64,
+    mu_tau: f64,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: parse_model_type(model)?,
+        eps_distance,
+    };
+    let factors = convert_factor_id(factor_id.as_slice()?, n_dims)?;
+    let ids: Option<Vec<usize>> = match &pop_id {
+        Some(arr) => Some(
+            arr.as_slice()?
+                .iter()
+                .map(|&v| {
+                    usize::try_from(v)
+                        .map_err(|_| PyValueError::new_err("population ids must be >= 0"))
+                })
+                .collect::<PyResult<Vec<usize>>>()?,
+        ),
+        None => None,
+    };
+    let pop = match pop_kind {
+        "single" => PopulationSpec::Single,
+        "multigroup" => PopulationSpec::Multigroup {
+            group_id: ids.ok_or_else(|| PyValueError::new_err("multigroup requires pop_id"))?,
+            n_groups: n_pop,
+        },
+        "multilevel" => PopulationSpec::Multilevel {
+            cluster_id: ids
+                .ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
+            n_clusters: n_pop,
+        },
+        _ => {
+            return Err(PyValueError::new_err(
+                "pop_kind must be one of ['single', 'multigroup', 'multilevel']",
+            ))
+        }
+    };
+    let mcfg = MarginalConfig {
+        q_theta,
+        q_xi,
+        q_u,
+        max_iter,
+        tol,
+        m_steps,
+        ..MarginalConfig::default()
+    };
+    let penalty = PenaltyConfig {
+        lambda_b,
+        lambda_alpha,
+        mu_alpha,
+        lambda_zeta,
+        lambda_tau,
+        mu_tau,
+        ..PenaltyConfig::lsirm_prior()
+    };
+    let res = core_fit_marginal(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &factors,
+        &config,
+        &pop,
+        &mcfg,
+        &penalty,
+        device,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("b", res.b)?;
+    out.set_item("zeta", res.zeta)?;
+    out.set_item("tau", res.tau)?;
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("theta_sd", res.theta_sd)?;
+    out.set_item("xi_eap", res.xi_eap)?;
+    out.set_item("mu", res.mu)?;
+    out.set_item("sigma", res.sigma)?;
+    out.set_item("sigma_u", res.sigma_u)?;
+    out.set_item("u_eap", res.u_eap)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
     Ok(())
 }
 

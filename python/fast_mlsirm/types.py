@@ -56,6 +56,10 @@ class FitResult:
     objective_trace: list[float]
     convergence_status: str
     n_iter: int
+    # Marginal (MMLE) fits: population-structure estimates and posterior SDs.
+    # Keys (present when applicable): "kind", "mu", "sigma" (multigroup),
+    # "sigma_u", "u_eap", "icc" (multilevel), "theta_sd".
+    population: dict[str, Any] | None = None
 
 
 @dataclass

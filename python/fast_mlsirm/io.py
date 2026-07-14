@@ -50,7 +50,7 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     p = result.params
-    np.savez(out / "params.npz", theta=p.theta, alpha=p.alpha, a=p.a, b=p.b, xi=p.xi, zeta=p.zeta, tau=p.tau, gamma=p.gamma)
+    arrays = dict(theta=p.theta, alpha=p.alpha, a=p.a, b=p.b, xi=p.xi, zeta=p.zeta, tau=p.tau, gamma=p.gamma)
     summary = {
         "model": result.model,
         "optimizer": result.optimizer,
@@ -61,6 +61,16 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
         "n_iter": result.n_iter,
         "final_loglik": result.loglik_trace[-1] if result.loglik_trace else None,
     }
+    if result.population is not None:
+        pop = result.population
+        summary["population"] = {"kind": pop["kind"]}
+        for key in ("mu", "sigma", "u_eap", "theta_sd"):
+            if key in pop:
+                arrays[f"pop_{key}"] = np.asarray(pop[key])
+        for key in ("sigma_u", "icc"):
+            if key in pop:
+                summary["population"][key] = float(pop[key])
+    np.savez(out / "params.npz", **arrays)
     (out / "fit_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 

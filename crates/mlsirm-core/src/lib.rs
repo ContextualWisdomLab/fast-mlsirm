@@ -1,10 +1,14 @@
+pub mod marginal;
 pub mod mmle;
+pub(crate) mod quadrature;
 
 // cargo-llvm-cov runs in CPU-only CI while enforcing 100% line coverage. Keep
 // the hardware-backed wgpu module in normal builds, and cover the deterministic
 // CPU fallback contract during coverage builds.
 #[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_marginal;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,
@@ -151,6 +155,27 @@ impl Default for PenaltyConfig {
             lambda_tau: 0.001,
             mu_alpha: 0.0,
             mu_tau: 0.0,
+        }
+    }
+}
+
+impl PenaltyConfig {
+    /// MAP penalties equal to the default LSIRM priors of Jeon et al. (2021)
+    /// and the `lsirm12pl` package: `beta_i ~ N(0, 4)`, `log alpha_i ~
+    /// N(0.5, 1)`, `zeta_i ~ MVN(0, I)`, `log gamma ~ N(0.5, 1)`. Used by the
+    /// marginal (MMLE) estimator, where the person-side penalties are moot
+    /// (persons are integrated out) and the item-side priors prevent slope
+    /// collapse and latent-space blow-up on sparse items.
+    pub fn lsirm_prior() -> Self {
+        Self {
+            lambda_theta: 0.0,
+            lambda_xi: 0.0,
+            lambda_zeta: 1.0,
+            lambda_b: 0.25,
+            lambda_alpha: 1.0,
+            lambda_tau: 1.0,
+            mu_alpha: 0.5,
+            mu_tau: 0.5,
         }
     }
 }

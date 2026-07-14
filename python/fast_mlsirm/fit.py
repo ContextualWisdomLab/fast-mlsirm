@@ -5,7 +5,7 @@ from collections.abc import Callable
 import numpy as np
 
 from .backend import normalize_device, resolve_backend
-from .config import FitConfig
+from .config import FitConfig, PenaltyConfig
 from .math import logit, normalize_latent_positions, standardize
 from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
                         validate_factor_id)
@@ -17,7 +17,17 @@ def fit(
     factor_id: np.ndarray,
     config: FitConfig | None = None,
     mask: np.ndarray | None = None,
+    group_id: np.ndarray | None = None,
+    cluster_id: np.ndarray | None = None,
 ) -> FitResult:
+    """Fit a latent-space model.
+
+    ``group_id``/``cluster_id`` (mutually exclusive, ``estimator="mmle"`` only)
+    switch on estimation-level population structures: multigroup calibration
+    (Bock & Zimowski 1997 — group-specific trait means/SDs, common items,
+    group 0 as the N(0,1) reference) and multilevel random intercepts
+    (Fox & Glas 2001 — cluster intercept SD ``sigma_u`` estimated).
+    """
     config = config or FitConfig()
     config.validate()
     backend = resolve_backend(config.backend)
@@ -36,13 +46,24 @@ def fit(
         factors = np.zeros_like(factors)  # pragma: no cover
     factors = validate_factor_id(factors, n_items, n_dims)
 
+    if group_id is not None and cluster_id is not None:
+        raise ValueError("group_id and cluster_id are mutually exclusive")
+    if (group_id is not None or cluster_id is not None) and config.estimator != "mmle":
+        raise ValueError(
+            "estimation-level multigroup/multilevel structures require estimator='mmle'"
+        )
+
     if config.estimator == "mmle":
-        if model not in {"ULS2PLM", "ULSRM"}:
-            raise NotImplementedError(
-                "estimator 'mmle' currently supports only unidimensional 2PL models "
-                "(ULS2PLM/ULSRM); use 'jmle' for spatial or multidimensional models."
-            )
-        return _fit_mmle(y, observed, model, config)
+        if model in {"ULS2PLM", "ULSRM"} and group_id is None and cluster_id is None:
+            # Legacy fast path: plain unidimensional 2PL margin (the latent
+            # space is not estimated — unchanged public behavior). Use the
+            # spatial models or a population structure for the full marginal
+            # latent-space fit.
+            return _fit_mmle(y, observed, model, config)
+        return _fit_mmle_marginal(
+            y, observed, factors, n_dims, model, config, backend, device,
+            group_id=group_id, cluster_id=cluster_id,
+        )
     if config.estimator in {"em", "bayes"}:
         raise NotImplementedError(
             f"estimator '{config.estimator}' is reserved for a future milestone; "
@@ -133,6 +154,179 @@ def _fit_mmle(
         objective_trace=[float(-v) for v in loglik_trace],
         convergence_status="converged" if converged else "max_iter_reached",
         n_iter=len(loglik_trace),
+    )
+
+
+def _fit_mmle_marginal(
+    y: np.ndarray,
+    observed: np.ndarray,
+    factors: np.ndarray,
+    n_dims: int,
+    model: str,
+    config: FitConfig,
+    backend: str,
+    device: str,
+    group_id: np.ndarray | None = None,
+    cluster_id: np.ndarray | None = None,
+) -> FitResult:
+    """Marginal EM for the latent-space family (Rust core, NumPy fallback).
+
+    Person latents are integrated out by Gauss-Hermite quadrature; item-side
+    parameters carry the LSIRM priors of Jeon et al. (2021) as MAP penalties
+    (see ``estimators/marginal.py`` / ``mlsirm-core/src/marginal.rs``).
+    """
+    from .estimators.marginal import LSIRM_PRIOR, fit_marginal_numpy
+
+    n_persons, n_items = y.shape
+    if group_id is not None:
+        ids = np.asarray(group_id, dtype=np.int64)
+        pop_kind, n_pop = "multigroup", int(ids.max()) + 1 if ids.size else 0
+    elif cluster_id is not None:
+        ids = np.asarray(cluster_id, dtype=np.int64)
+        pop_kind, n_pop = "multilevel", int(ids.max()) + 1 if ids.size else 0
+    else:
+        ids, pop_kind, n_pop = None, "single", 0
+    if ids is not None:
+        if ids.shape != (n_persons,):
+            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")
+        if ids.size and ids.min() < 0:
+            raise ValueError(f"{pop_kind} ids must be >= 0")
+
+    # MAP penalties: the paper priors, unless the caller customized the
+    # penalty config away from its (JML-oriented) defaults.
+    pen = dict(LSIRM_PRIOR)
+    if config.penalty != PenaltyConfig():
+        pen = {
+            "lambda_b": config.penalty.lambda_b,
+            "lambda_alpha": config.penalty.lambda_alpha,
+            "mu_alpha": config.penalty.mu_alpha,
+            "lambda_zeta": config.penalty.lambda_zeta,
+            "lambda_tau": config.penalty.lambda_tau,
+            "mu_tau": config.penalty.mu_tau,
+        }
+
+    rust = None
+    if backend == "rust":
+        try:  # pragma: no cover - depends on the compiled extension
+            from . import _core  # type: ignore
+
+            rust = getattr(_core, "fit_marginal", None)
+        except Exception:  # pragma: no cover
+            rust = None
+
+    y_filled = np.where(observed, y, 0.0).astype(np.float64)
+    if rust is not None:  # pragma: no cover - exercised only with the extension
+        try:
+            res = rust(
+                y_filled.ravel(),
+                observed.astype(bool).ravel(),
+                factors.astype(np.int64),
+                int(n_persons),
+                int(n_items),
+                int(n_dims),
+                int(config.latent_dim),
+                model,
+                float(config.eps_distance),
+                pop_kind=pop_kind,
+                pop_id=None if ids is None else ids,
+                n_pop=int(n_pop),
+                q_theta=int(config.q_theta),
+                q_xi=int(config.q_xi),
+                q_u=int(config.q_u),
+                max_iter=int(config.max_iter),
+                tol=float(config.tolerance),
+                m_steps=int(config.m_steps),
+                lambda_b=pen["lambda_b"],
+                lambda_alpha=pen["lambda_alpha"],
+                mu_alpha=pen["mu_alpha"],
+                lambda_zeta=pen["lambda_zeta"],
+                lambda_tau=pen["lambda_tau"],
+                mu_tau=pen["mu_tau"],
+                device=device,
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        alpha = np.asarray(res["alpha"], dtype=np.float64)
+        b = np.asarray(res["b"], dtype=np.float64)
+        zeta = np.asarray(res["zeta"], dtype=np.float64).reshape(
+            n_items, config.latent_dim
+        )
+        tau = float(res["tau"])
+        theta_eap = np.asarray(res["theta_eap"], dtype=np.float64).reshape(
+            n_persons, n_dims
+        )
+        theta_sd = np.asarray(res["theta_sd"], dtype=np.float64).reshape(
+            n_persons, n_dims
+        )
+        xi_eap = np.asarray(res["xi_eap"], dtype=np.float64).reshape(
+            n_persons, config.latent_dim
+        )
+        mu = np.asarray(res["mu"], dtype=np.float64).reshape(-1, n_dims)
+        sigma = np.asarray(res["sigma"], dtype=np.float64).reshape(-1, n_dims)
+        sigma_u = float(res["sigma_u"])
+        u_eap = np.asarray(res["u_eap"], dtype=np.float64)
+        loglik_trace = [float(v) for v in res["loglik_trace"]]
+        converged = bool(res["converged"])
+        optimizer = "mmle_marginal_em/rust"
+    else:
+        pop: dict = {"kind": "single"}
+        if pop_kind == "multigroup":
+            pop = {"kind": "multigroup", "group_id": ids, "n_groups": n_pop}
+        elif pop_kind == "multilevel":
+            pop = {"kind": "multilevel", "cluster_id": ids, "n_clusters": n_pop}
+        res = fit_marginal_numpy(
+            y_filled,
+            observed.astype(bool),
+            factors,
+            model=model,
+            n_dims=n_dims,
+            latent_dim=config.latent_dim,
+            pop=pop,
+            q_theta=config.q_theta,
+            q_xi=config.q_xi,
+            q_u=config.q_u,
+            max_iter=config.max_iter,
+            tol=config.tolerance,
+            m_steps=config.m_steps,
+            eps_distance=config.eps_distance,
+            penalty=pen,
+        )
+        alpha, b, zeta, tau = res["alpha"], res["b"], res["zeta"], res["tau"]
+        theta_eap, theta_sd = res["theta_eap"], res["theta_sd"]
+        xi_eap = res["xi_eap"]
+        mu, sigma = res["mu"], res["sigma"]
+        sigma_u, u_eap = res["sigma_u"], res["u_eap"]
+        loglik_trace = [float(v) for v in res["loglik_trace"]]
+        converged = bool(res["converged"])
+        optimizer = "mmle_marginal_em/numpy"
+
+    population: dict = {"kind": pop_kind, "theta_sd": theta_sd}
+    if pop_kind == "multigroup":
+        population.update(mu=mu, sigma=sigma)
+    elif pop_kind == "multilevel":
+        icc = sigma_u**2 / (sigma_u**2 + 1.0)
+        population.update(sigma_u=sigma_u, u_eap=u_eap, icc=icc)
+
+    params = MLSIRMParams(
+        theta=theta_eap,
+        alpha=alpha,
+        b=b,
+        xi=xi_eap,
+        zeta=zeta,
+        tau=tau,
+    )
+    return FitResult(
+        params=params,
+        model=model,
+        optimizer=optimizer,
+        backend=backend,
+        rust_device=device,
+        objective=float(-loglik_trace[-1]) if loglik_trace else float("nan"),
+        loglik_trace=loglik_trace,
+        objective_trace=[float(-v) for v in loglik_trace],
+        convergence_status="converged" if converged else "max_iter_reached",
+        n_iter=len(loglik_trace),
+        population=population,
     )
 
 

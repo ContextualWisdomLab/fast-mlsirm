@@ -83,6 +83,14 @@ class FitConfig:
     # the identical CPU path. Ignored when backend == "numpy".
     rust_device: str = "auto"
     penalty: PenaltyConfig = PenaltyConfig()
+    # Marginal (MMLE) estimator quadrature: Gauss-Hermite nodes per trait
+    # dimension, per latent-space axis (tensor grid of q_xi**latent_dim), and
+    # for the multilevel random intercept. Supported sizes: 7/11/15/21/31/41.
+    q_theta: int = 21
+    q_xi: int = 11
+    q_u: int = 15
+    # Fisher-preconditioned ascent steps per item per M-step (marginal EM).
+    m_steps: int = 4
 
     def normalized_model(self) -> str:
         return self.model.upper()
@@ -107,5 +115,11 @@ class FitConfig:
             raise ValueError("init_gamma must be > 0")
         if self.eps_distance <= 0:
             raise ValueError("eps_distance must be > 0")
+        supported_q = {7, 11, 15, 21, 31, 41}
+        for name in ("q_theta", "q_xi", "q_u"):
+            if getattr(self, name) not in supported_q:
+                raise ValueError(f"{name} must be one of {sorted(supported_q)}")
+        if self.m_steps < 1:
+            raise ValueError("m_steps must be >= 1")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)

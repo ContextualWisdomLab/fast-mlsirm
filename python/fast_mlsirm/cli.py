@@ -96,6 +96,13 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
     fit_cmd.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
     fit_cmd.add_argument("--latent-dim", type=int, default=2, help="Latent dimensionality for person traits (default: 2).")
+    fit_cmd.add_argument("--estimator", choices=["jmle", "mmle"], default="jmle", help="Estimator: penalized joint MLE, or marginal MLE via EM (persons integrated out; default: jmle).")
+    fit_cmd.add_argument("--group-id", help="Optional .npy person group IDs: estimation-level multigroup calibration (estimator=mmle; group 0 is the N(0,1) reference).")
+    fit_cmd.add_argument("--cluster-id", help="Optional .npy person cluster IDs: estimation-level multilevel random intercept (estimator=mmle).")
+    fit_cmd.add_argument("--q-theta", type=int, default=21, help="Marginal estimator: Gauss-Hermite nodes per trait dimension (default: 21).")
+    fit_cmd.add_argument("--q-xi", type=int, default=11, help="Marginal estimator: Gauss-Hermite nodes per latent-space axis (default: 11).")
+    fit_cmd.add_argument("--q-u", type=int, default=15, help="Marginal estimator: Gauss-Hermite nodes for the multilevel intercept (default: 15).")
+    fit_cmd.add_argument("--tolerance", type=float, default=1e-6, help="Convergence tolerance (default: 1e-6).")
     fit_cmd.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
@@ -534,12 +541,19 @@ def _main(argv: list[str] | None = None) -> int:
                 model=args.model,
                 latent_dim=args.latent_dim,
                 optimizer=args.optimizer,
+                estimator=args.estimator,
                 max_iter=args.max_iter,
                 n_restarts=args.n_restarts,
                 seed=args.seed,
                 backend=args.backend,
                 rust_device=args.rust_device,
+                q_theta=args.q_theta,
+                q_xi=args.q_xi,
+                q_u=args.q_u,
+                tolerance=args.tolerance,
             ),
+            group_id=_load_optional_npy(args.group_id),
+            cluster_id=_load_optional_npy(args.cluster_id),
         )
     except ValueError as e:
         if os.environ.get("FAST_MLSIRM_DEBUG"):
