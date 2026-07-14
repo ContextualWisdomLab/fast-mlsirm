@@ -1406,3 +1406,152 @@ mod batch3_tests {
         assert!(res.area_trace[0] > *res.area_trace.last().unwrap());
     }
 }
+
+
+/// Chen & Thissen (1997) local-dependence indices for item pairs: the
+/// standardized (signed) LD X2 — the pairwise 2x2 chi-square against the
+/// model-implied joint probabilities, given the sign of the observed-vs-
+/// expected association, plus the G2 variant. Values with |standardized|
+/// above ~10 (the X2 scale) or repeated same-sign clusters indicate local
+/// dependence the latent structure does not absorb.
+pub struct LdIndexResult {
+    /// Upper-triangle signed X2 per pair (row-major pair order).
+    pub x2_signed: Vec<f64>,
+    /// Upper-triangle signed G2 per pair.
+    pub g2_signed: Vec<f64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ld_indices(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+) -> Result<LdIndexResult, String> {
+    let n_items = bank.b.len();
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    let (probs, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
+    let n_pairs = n_items * (n_items - 1) / 2;
+    let mut x2_signed = Vec::with_capacity(n_pairs);
+    let mut g2_signed = Vec::with_capacity(n_pairs);
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            let (mut p11, mut p10, mut p01) = (0.0_f64, 0.0_f64, 0.0_f64);
+            for c in 0..cell {
+                let pi = probs[i * cell + c];
+                let pj = probs[j * cell + c];
+                p11 += weights[c] * pi * pj;
+                p10 += weights[c] * pi * (1.0 - pj);
+                p01 += weights[c] * (1.0 - pi) * pj;
+            }
+            let p00 = (1.0 - p11 - p10 - p01).max(1e-12);
+            let (mut o11, mut o10, mut o01, mut o00, mut n) =
+                (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+            for p in 0..n_persons {
+                if !observed[p * n_items + i] || !observed[p * n_items + j] {
+                    continue;
+                }
+                let (yi, yj) = (y[p * n_items + i], y[p * n_items + j]);
+                n += 1.0;
+                if yi == 1.0 && yj == 1.0 {
+                    o11 += 1.0;
+                } else if yi == 1.0 {
+                    o10 += 1.0;
+                } else if yj == 1.0 {
+                    o01 += 1.0;
+                } else {
+                    o00 += 1.0;
+                }
+            }
+            if n < 20.0 {
+                x2_signed.push(f64::NAN);
+                g2_signed.push(f64::NAN);
+                continue;
+            }
+            let (mut x2, mut g2) = (0.0_f64, 0.0_f64);
+            for (o, e) in [(o11, p11), (o10, p10), (o01, p01), (o00, p00)] {
+                let expc = (e * n).max(1e-9);
+                x2 += (o - expc) * (o - expc) / expc;
+                if o > 0.0 {
+                    g2 += 2.0 * o * (o / expc).ln();
+                }
+            }
+            // sign: direction of the observed-vs-expected association
+            // (positive when the pair covaries beyond the model)
+            let sign = if (o11 / n - p11) >= 0.0 { 1.0 } else { -1.0 };
+            x2_signed.push(sign * x2);
+            g2_signed.push(sign * g2);
+        }
+    }
+    Ok(LdIndexResult { x2_signed, g2_signed })
+}
+
+#[cfg(test)]
+mod ld_tests {
+    use super::*;
+    use crate::scoring::{ItemBank, PriorSpec};
+    use crate::nodes::XiRule;
+    use crate::ModelType;
+
+    #[test]
+    fn ld_indices_flag_a_dependent_pair() {
+        // simulate 1PL data, then force item 1 to copy item 0 (max LD)
+        let n_items = 6usize;
+        let n_persons = 800usize;
+        let alpha = vec![0.0; n_items];
+        let b: Vec<f64> = (0..n_items).map(|i| -1.0 + 0.4 * i as f64).collect();
+        let zeta = vec![0.0; n_items];
+        let fid = vec![0usize; n_items];
+        let mut state = 21u64;
+        let mut unif = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let mut y = vec![0.0_f64; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1: f64 = unif().max(1e-12);
+            let u2: f64 = unif();
+            let theta =
+                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let eta: f64 = theta + b[i];
+                if unif() < 1.0 / (1.0 + (-eta).exp()) {
+                    y[p * n_items + i] = 1.0;
+                }
+            }
+            y[p * n_items + 1] = y[p * n_items]; // item 1 duplicates item 0
+        }
+        let observed = vec![true; n_persons * n_items];
+        let bank = ItemBank {
+            alpha: &alpha,
+            b: &b,
+            zeta: &zeta,
+            tau: -30.0,
+            factor_id: &fid,
+            model_type: ModelType::Mirt,
+            n_dims: 1,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        };
+        let res = ld_indices(
+            &bank, &y, &observed, n_persons, &PriorSpec::standard(1), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .unwrap();
+        // pair (0,1) is the first upper-triangle entry
+        assert!(
+            res.x2_signed[0] > 50.0,
+            "duplicated pair must show large positive LD X2: {}",
+            res.x2_signed[0]
+        );
+        assert!(res.g2_signed[0] > 50.0);
+        // an unrelated pair stays modest
+        let pair_23 = (n_items - 1) + (n_items - 2) + 0; // (2,3) index in triangle
+        assert!(res.x2_signed[pair_23].abs() < 50.0);
+    }
+}
