@@ -4,6 +4,7 @@ pub mod linking;
 pub mod marginal;
 pub mod mmle;
 pub mod nodes;
+pub mod poly;
 pub mod oakes;
 pub(crate) mod quadrature;
 pub mod scoring;
