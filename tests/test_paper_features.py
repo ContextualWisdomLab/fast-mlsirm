@@ -139,3 +139,34 @@ def test_vuong_and_dimensionality_wrappers():
     assert d["q3"].shape[0] == 10 * 9 // 2
     assert d["q3_max_abs"] < 0.5
     assert d["gddm"] < 0.05
+
+
+def test_bifactor_parity_and_recovery():
+    rng = np.random.default_rng(21)
+    P, I, D = 500, 10, 2
+    fid = np.array([i % D for i in range(I)])
+    lam = 0.6 + 0.8 * rng.random(I)
+    b = np.linspace(-1, 1, I)
+    g = rng.standard_normal(P)
+    th = rng.standard_normal((P, D))
+    eta = th[:, fid] + b[None, :] + lam[None, :] * g[:, None]
+    y = (rng.random((P, I)) < 1 / (1 + np.exp(-eta))).astype(float)
+    results = {}
+    for backend in ("rust", "numpy"):
+        cfg = FitConfig(
+            model="BIFAC2PLM", estimator="mmle", max_iter=80, backend=backend,
+            rust_device="cpu", latent_dim=1, q_theta=15, q_xi=15,
+        )
+        results[backend] = fit(y, fid, cfg)
+    r, n = results["rust"], results["numpy"]
+    np.testing.assert_allclose(r.params.b, n.params.b, atol=1e-9)
+    np.testing.assert_allclose(r.params.zeta, n.params.zeta, atol=1e-9)
+    np.testing.assert_allclose(r.loglik_trace[-1], n.loglik_trace[-1], atol=1e-9)
+    # loadings track the truth
+    c = np.corrcoef(r.params.zeta[:, 0], lam)[0, 1]
+    assert abs(c) > 0.5, f"lambda recovery: {c}"
+    # jmle guard
+    import pytest as _pytest
+
+    with _pytest.raises(NotImplementedError, match="marginal estimator"):
+        fit(y, fid, FitConfig(model="BIFAC2PLM", estimator="jmle"))

@@ -291,9 +291,10 @@ pub fn score_map(
         return Err("y and observed must both have length n_persons * n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
+    let kind = crate::interaction_kind(bank.model_type);
     let (n_dims, latent_dim) = (bank.n_dims, bank.latent_dim);
     let n_par = n_dims + if uses_space { latent_dim } else { 0 };
-    let gamma = if uses_space { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
 
     let mut out = MapScores {
         theta_map: vec![0.0; n_persons * n_dims],
@@ -319,14 +320,22 @@ pub fn score_map(
             let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
             let mut eta = a * theta[d] + bank.b[i];
             let mut dist = 1.0;
-            if uses_space {
-                let mut dist2 = bank.eps_distance;
-                for k in 0..latent_dim {
-                    let diff = xi[k] - bank.zeta[i * latent_dim + k];
-                    dist2 += diff * diff;
+            match kind {
+                crate::InteractionKind::None => {}
+                crate::InteractionKind::Distance => {
+                    let mut dist2 = bank.eps_distance;
+                    for k in 0..latent_dim {
+                        let diff = xi[k] - bank.zeta[i * latent_dim + k];
+                        dist2 += diff * diff;
+                    }
+                    dist = dist2.sqrt();
+                    eta -= gamma * dist;
                 }
-                dist = dist2.sqrt();
-                eta -= gamma * dist;
+                crate::InteractionKind::Inner => {
+                    for k in 0..latent_dim {
+                        eta += bank.zeta[i * latent_dim + k] * xi[k];
+                    }
+                }
             }
             let yy = y[idx];
             lp += yy * log_sigmoid(eta) + (1.0 - yy) * log_sigmoid(-eta);
@@ -338,12 +347,24 @@ pub fn score_map(
             h[d * n_par + d] += w * a * a;
             if uses_space {
                 for k in 0..latent_dim {
-                    let u_k = -gamma * (xi[k] - bank.zeta[i * latent_dim + k]) / dist;
+                    let u_k = match kind {
+                        crate::InteractionKind::Distance => {
+                            -gamma * (xi[k] - bank.zeta[i * latent_dim + k]) / dist
+                        }
+                        crate::InteractionKind::Inner => bank.zeta[i * latent_dim + k],
+                        crate::InteractionKind::None => 0.0,
+                    };
                     g[n_dims + k] += resid * u_k;
                     h[d * n_par + n_dims + k] += w * a * u_k;
                     h[(n_dims + k) * n_par + d] += w * a * u_k;
                     for k2 in 0..latent_dim {
-                        let u_k2 = -gamma * (xi[k2] - bank.zeta[i * latent_dim + k2]) / dist;
+                        let u_k2 = match kind {
+                            crate::InteractionKind::Distance => {
+                                -gamma * (xi[k2] - bank.zeta[i * latent_dim + k2]) / dist
+                            }
+                            crate::InteractionKind::Inner => bank.zeta[i * latent_dim + k2],
+                            crate::InteractionKind::None => 0.0,
+                        };
                         h[(n_dims + k) * n_par + n_dims + k2] += w * u_k * u_k2;
                     }
                 }
@@ -718,8 +739,9 @@ pub fn bank_information(
     if theta.len() != n_points * bank.n_dims || xi.len() != n_points * bank.latent_dim {
         return Err("theta/xi shapes must match n_points".into());
     }
-    let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
-    let gamma = if uses_space { bank.tau.exp() } else { 0.0 };
+    let (free_alpha, _uses_space) = model_exec_flags(bank.model_type);
+    let kind = crate::interaction_kind(bank.model_type);
+    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
     let mut item_info = vec![0.0_f64; n_points * n_items];
     let mut test_info = vec![0.0_f64; n_points * bank.n_dims];
     for p in 0..n_points {
@@ -727,13 +749,22 @@ pub fn bank_information(
             let d = bank.factor_id[i];
             let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
             let mut eta = a * theta[p * bank.n_dims + d] + bank.b[i];
-            if uses_space {
-                let mut dist2 = bank.eps_distance;
-                for k in 0..bank.latent_dim {
-                    let diff = xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
-                    dist2 += diff * diff;
+            match kind {
+                crate::InteractionKind::None => {}
+                crate::InteractionKind::Distance => {
+                    let mut dist2 = bank.eps_distance;
+                    for k in 0..bank.latent_dim {
+                        let diff =
+                            xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
+                        dist2 += diff * diff;
+                    }
+                    eta -= gamma * dist2.sqrt();
                 }
-                eta -= gamma * dist2.sqrt();
+                crate::InteractionKind::Inner => {
+                    for k in 0..bank.latent_dim {
+                        eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
+                    }
+                }
             }
             let prob = sigmoid(eta);
             let info = item_information_4pl(a, prob, 0.0, 1.0);

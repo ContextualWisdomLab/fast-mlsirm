@@ -31,18 +31,19 @@ Disposition of the fifth supplied reading set (same legend as batches 3-4).
   Reise, Moore & Maydeu-Olivares (2011 target rotations), Toland et al.
   (2017): all reinforce the top roadmap item below.
 
-## Roadmap (consolidated; explicitly requested across batches)
+## Implemented after triage (same change set)
 
-1. **`BIFAC2PLM` bifactor / inner-product interaction kernel** — now
-   requested across three batches (Gibbons-Hedeker 1992; Cai 2011/2013/2015;
-   Reise cluster). Design settled: a second interaction kind on the existing
-   eta plumbing — `eta += dot(zeta_i, x)` (bilinear/Hoff form; equals the
-   dichotomous bifactor at `latent_dim = 1` with `lambda_i = zeta_i`) beside
-   the distance kind, reusing the conditional-factorization E-step, tables,
-   and GPU kernels unchanged (tables are precomputed on the CPU). Touch
-   points: `eta_at`/gradients (`d eta/d zeta_k = x_k`), tau gating, exec
-   flags, scoring/fitstats inline eta sites, NumPy mirror, model parsing.
-   This is the next model-design PR.
+- **`BIFAC2PLM` bifactor / inner-product interaction kind** — Gibbons &
+  Hedeker (1992); Cai, Yang & Hansen (2011); the Reise cluster.
+  `InteractionKind::{None, Distance, Inner}` now parameterizes every eta
+  site: `eta += dot(zeta_i, x)` (bilinear/Hoff form; the dichotomous
+  bifactor at `latent_dim = 1` with `lambda_i = zeta_i`), reusing the
+  conditional-factorization E-step (the Gibbons-Hedeker dimension
+  reduction), the tables, and the GPU kernels unchanged. Positive-manifold
+  loading init; tau inert; marginal estimator only (JML guards). Rust/NumPy
+  parity at 1e-9; loading-recovery tests in both suites.
+
+## Roadmap (consolidated; explicitly requested across batches)
 2. **M2/RMSEA2** (Maydeu-Olivares & Joe; Cai & Hansen 2013).
 3. **General C-class mixture IRT** — Sawatzky et al. (2016); Carter et al.
    (2011); Zickar et al. (2004 faking classes); Finch & Pierson (2011): the

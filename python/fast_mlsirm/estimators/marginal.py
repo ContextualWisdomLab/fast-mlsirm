@@ -41,6 +41,16 @@ def _model_flags(model: str) -> tuple[bool, bool]:
     return free_alpha, uses_space
 
 
+def _interaction_kind(model: str) -> str:
+    """Mirror of mlsirm_core::interaction_kind: none | distance | inner."""
+    model = model.upper()
+    if model == "MIRT":
+        return "none"
+    if model == "BIFAC2PLM":
+        return "inner"
+    return "distance"
+
+
 _HALTON_PRIMES = (2, 3, 5, 7, 11, 13)
 
 # Acklam's inverse normal CDF (same coefficients as the Rust core; parity).
@@ -201,10 +211,13 @@ def _build_tables(
     eta = a[None, :, None, None] * theta[:, :, :, None] + b[None, :, None, None]
     if offsets is not None:
         eta = eta + offsets[:, :, None, None]
-    if uses_space:
+    kind = _interaction_kind(model)
+    if kind == "distance":
         diff = x_grid[None, :, :] - zeta[:, None, :]  # (I, Nx, K)
         dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
+    elif kind == "inner":
+        eta = eta + (zeta @ x_grid.T)[None, :, None, :]
     logp1 = _log_sigmoid(eta)
     logp0 = _log_sigmoid(-eta)
     n_ctx, n_items = eta.shape[0], eta.shape[1]
@@ -393,14 +406,17 @@ def fit_marginal_numpy(
     b = np.log(prop / (1.0 - prop))
     alpha = np.zeros(n_items)
     zeta = np.zeros((n_items, latent_dim))
-    if uses_space:
+    if uses_space and _interaction_kind(model) == "inner":
+        # positive-manifold start for loadings (mirror of the Rust init)
+        zeta[:] = init_zeta_radius
+    elif uses_space:
         angle = 2.0 * np.pi * np.arange(n_items) / max(n_items, 1)
         zeta[:, 0] = init_zeta_radius * np.cos(angle)
         if latent_dim >= 2:
             zeta[:, 1] = init_zeta_radius * np.sin(angle)
         if latent_dim >= 3:
             zeta[:, 2] = init_zeta_radius * np.cos(2.0 * angle) * 0.5
-    tau = 0.0 if uses_space else -30.0
+    tau = 0.0 if _interaction_kind(model) == "distance" else -30.0
 
     kind = pop["kind"]
     if kind == "singlefree" and anchors is None:
@@ -563,13 +579,17 @@ def fit_marginal_numpy(
                 offsets[:, i][:, None, None] if offsets is not None else 0.0
             )
 
+            kind_i = _interaction_kind(model)
+
             def eta_of(alpha_c: float, b_c: float, zeta_c: np.ndarray) -> np.ndarray:
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
-                if uses_space:
+                if kind_i == "distance":
                     diff = x_grid - zeta_c[None, :]
                     dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
                     e = e - gamma * dist[None, None, :]
+                elif kind_i == "inner":
+                    e = e + (x_grid @ zeta_c)[None, None, :]
                 return e
 
             cur_q = _item_q(
@@ -593,9 +613,12 @@ def fit_marginal_numpy(
                 else:
                     g_alpha, i_alpha = 0.0, 0.0
                 if uses_space:
-                    diff = x_grid - zeta_i[None, :]
-                    dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
-                    deta_z = gamma * diff / dist[:, None]  # (Nx, K)
+                    if kind_i == "inner":
+                        deta_z = x_grid  # (Nx, K)
+                    else:
+                        diff = x_grid - zeta_i[None, :]
+                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
                         - pen["lambda_zeta"] * zeta_i
@@ -632,8 +655,8 @@ def fit_marginal_numpy(
                     break
             zeta[i] = zeta_i
 
-        # --- M-step: tau ---
-        if uses_space and anchor_tau is None:
+        # --- M-step: tau (distance kind only) ---
+        if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
             diff = x_grid[None, :, :] - zeta[:, None, :]
             dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
@@ -804,7 +827,9 @@ def fit_marginal_numpy(
     # free parameters: items (respecting anchors) + tau + population
     per_item = 1 + int(free_alpha) + (latent_dim if uses_space else 0)
     n_free_items = int((~fixed_mask).sum())
-    tau_free = uses_space and anchor_tau is None
+    tau_free = (
+        uses_space and anchor_tau is None and _interaction_kind(model) == "distance"
+    )
     pop_params = {
         "single": 0,
         "singlefree": 2 * n_dims,

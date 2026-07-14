@@ -317,6 +317,9 @@ pub(crate) struct GpuEStepInputs<'a> {
 /// Outputs of the person pass, needed by the caller to build cluster
 /// posteriors before the accumulation dispatches.
 pub(crate) struct GpuEStepOutputs {
+    /// Person log-marginals (kept for future consumers; the adapter derives
+    /// its log-likelihood inside `w_outer_fn`).
+    #[allow(dead_code)]
     pub lp: Vec<f64>,
     pub nbar: Vec<f64>,
     pub rbar: Vec<f64>,

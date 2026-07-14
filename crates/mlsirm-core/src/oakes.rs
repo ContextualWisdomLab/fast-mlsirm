@@ -38,6 +38,8 @@ pub struct OakesResult {
 struct ParamVec {
     free_alpha: bool,
     uses_space: bool,
+    /// tau occupies a slot only for the distance interaction kind.
+    tau_free: bool,
     n_items: usize,
     latent_dim: usize,
 }
@@ -47,7 +49,7 @@ impl ParamVec {
         let per_item = 1
             + usize::from(self.free_alpha)
             + if self.uses_space { self.latent_dim } else { 0 };
-        self.n_items * per_item + usize::from(self.uses_space)
+        self.n_items * per_item + usize::from(self.tau_free)
     }
 
     fn labels(&self) -> Vec<String> {
@@ -63,7 +65,7 @@ impl ParamVec {
                 }
             }
         }
-        if self.uses_space {
+        if self.tau_free {
             out.push("tau".into());
         }
         out
@@ -82,7 +84,7 @@ impl ParamVec {
                 }
             }
         }
-        if self.uses_space {
+        if self.tau_free {
             v.push(tau);
         }
         v
@@ -107,7 +109,7 @@ impl ParamVec {
                 }
             }
         }
-        let tau = if self.uses_space { v[cursor] } else { -30.0 };
+        let tau = if self.tau_free { v[cursor] } else { -30.0 };
         (alpha, b, zeta, tau)
     }
 }
@@ -137,6 +139,7 @@ fn q_gradient(
 ) -> Vec<f64> {
     let (alpha, b, zeta, tau) = pv.unpack(xi);
     let (free_alpha, uses_space) = (pv.free_alpha, pv.uses_space);
+    let kind = crate::interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
@@ -163,15 +166,24 @@ fn q_gradient(
                     }
                     let mut eta = a * theta + b[i];
                     let mut dist = 1.0;
-                    if uses_space {
-                        let mut dist2 = config.eps_distance;
-                        for k in 0..latent_dim {
-                            let diff = grids.x_grid[x * latent_dim + k]
-                                - zeta[i * latent_dim + k];
-                            dist2 += diff * diff;
+                    match kind {
+                        crate::InteractionKind::None => {}
+                        crate::InteractionKind::Distance => {
+                            let mut dist2 = config.eps_distance;
+                            for k in 0..latent_dim {
+                                let diff = grids.x_grid[x * latent_dim + k]
+                                    - zeta[i * latent_dim + k];
+                                dist2 += diff * diff;
+                            }
+                            dist = dist2.sqrt();
+                            eta -= gamma * dist;
                         }
-                        dist = dist2.sqrt();
-                        eta -= gamma * dist;
+                        crate::InteractionKind::Inner => {
+                            for k in 0..latent_dim {
+                                eta += zeta[i * latent_dim + k]
+                                    * grids.x_grid[x * latent_dim + k];
+                            }
+                        }
                     }
                     let resid = r - n * sigmoid(eta);
                     g_b += resid;
@@ -180,11 +192,23 @@ fn q_gradient(
                     }
                     if uses_space {
                         for k in 0..latent_dim {
-                            g_zeta[k] += resid * gamma
-                                * (grids.x_grid[x * latent_dim + k] - zeta[i * latent_dim + k])
-                                / dist;
+                            let deta = match kind {
+                                crate::InteractionKind::Distance => {
+                                    gamma
+                                        * (grids.x_grid[x * latent_dim + k]
+                                            - zeta[i * latent_dim + k])
+                                        / dist
+                                }
+                                crate::InteractionKind::Inner => {
+                                    grids.x_grid[x * latent_dim + k]
+                                }
+                                crate::InteractionKind::None => 0.0,
+                            };
+                            g_zeta[k] += resid * deta;
                         }
-                        g_tau += resid * (-gamma * dist);
+                        if kind == crate::InteractionKind::Distance {
+                            g_tau += resid * (-gamma * dist);
+                        }
                     }
                 }
             }
@@ -280,6 +304,8 @@ pub fn observed_information_oakes(
     let pv = ParamVec {
         free_alpha,
         uses_space,
+        tau_free: crate::interaction_kind(config.model_type)
+            == crate::InteractionKind::Distance,
         n_items: config.n_items,
         latent_dim: config.latent_dim,
     };
@@ -456,6 +482,7 @@ mod tests {
         let pv = ParamVec {
             free_alpha: true,
             uses_space: false,
+            tau_free: false,
             n_items,
             latent_dim: 1,
         };

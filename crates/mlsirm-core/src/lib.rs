@@ -21,6 +21,32 @@ pub enum ModelType {
     Mlsrm,
     Uls2plm,
     Ulsrm,
+    /// Full-information dichotomous bifactor (Gibbons & Hedeker 1992; Cai,
+    /// Yang & Hansen 2011) as the inner-product interaction kind:
+    /// `eta = a_i theta_d(i) + b_i + dot(zeta_i, x)` with `x ~ MVN(0, I)` the
+    /// general factor(s); at `latent_dim = 1`, `zeta_i` is the general-factor
+    /// loading `lambda_i`. Marginal (MMLE) estimation only.
+    Bifac2plm,
+}
+
+/// The item-person interaction kind a model places on the latent-space axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InteractionKind {
+    /// No interaction term (MIRT).
+    None,
+    /// Distance: `- exp(tau) * ||x - zeta_i||` (the LSIRM family).
+    Distance,
+    /// Inner product: `+ dot(zeta_i, x)` (bifactor / bilinear family).
+    Inner,
+}
+
+/// Interaction kind of a model (shared by every eta evaluation site).
+pub fn interaction_kind(model_type: ModelType) -> InteractionKind {
+    match model_type {
+        ModelType::Mirt => InteractionKind::None,
+        ModelType::Bifac2plm => InteractionKind::Inner,
+        _ => InteractionKind::Distance,
+    }
 }
 
 /// Execution device for the likelihood/gradient hot path.
@@ -58,6 +84,15 @@ pub(crate) fn model_exec_flags(model_type: ModelType) -> (bool, bool) {
     let free_alpha = !matches!(model_type, ModelType::Mlsrm | ModelType::Ulsrm);
     let uses_space = !matches!(model_type, ModelType::Mirt);
     (free_alpha, uses_space)
+}
+
+/// Guard for numeric paths that only implement the distance kind (the JML
+/// objective and its GPU kernels): `Bifac2plm` is marginal-only.
+pub(crate) fn assert_distance_kind(model_type: ModelType) {
+    debug_assert!(
+        !matches!(model_type, ModelType::Bifac2plm),
+        "BIFAC2PLM is supported by the marginal estimator only"
+    );
 }
 
 /// Compute the negative log-likelihood and gradients on the requested device.
@@ -213,6 +248,7 @@ pub fn neg_loglik_and_grad(
     config: &ModelConfig,
     penalty: &PenaltyConfig,
 ) -> (f64, Gradients, f64) {
+    assert_distance_kind(config.model_type);
     assert_eq!(y.len(), config.n_persons * config.n_items);
     assert_eq!(factor_id.len(), config.n_items);
     if let Some(m) = mask {

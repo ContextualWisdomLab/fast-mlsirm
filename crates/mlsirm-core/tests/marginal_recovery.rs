@@ -726,3 +726,53 @@ fn covariate_guards() {
     );
     assert!(res.is_err());
 }
+
+
+#[test]
+fn bifactor_recovers_general_loadings() {
+    // dichotomous bifactor (Gibbons-Hedeker): specifics via simple structure,
+    // general factor via the inner-product kind at latent_dim = 1
+    let mut rng = Lcg(606);
+    let (n_persons, n_items, n_dims, latent_dim) = (900usize, 12usize, 2usize, 1usize);
+    let factor_id: Vec<usize> = (0..n_items).map(|i| i % n_dims).collect();
+    let b_true: Vec<f64> = (0..n_items).map(|_| -1.0 + 2.0 * rng.next_f64()).collect();
+    let lambda_true: Vec<f64> = (0..n_items).map(|_| 0.6 + 0.9 * rng.next_f64()).collect();
+    let mut y = vec![0.0_f64; n_persons * n_items];
+    for p in 0..n_persons {
+        let g = rng.normal();
+        let th: Vec<f64> = (0..n_dims).map(|_| rng.normal()).collect();
+        for i in 0..n_items {
+            let eta = th[factor_id[i]] + b_true[i] + lambda_true[i] * g;
+            let prob = 1.0 / (1.0 + (-eta).exp());
+            y[p * n_items + i] = if rng.next_f64() < prob { 1.0 } else { 0.0 };
+        }
+    }
+    let observed = vec![true; n_persons * n_items];
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Bifac2plm,
+        eps_distance: 1e-8,
+    };
+    let res = fit_marginal(
+        &y,
+        &observed,
+        &factor_id,
+        &config,
+        &PopulationSpec::Single,
+        &MarginalConfig { q_theta: 15, q_xi: 15, max_iter: 150, ..Default::default() },
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    )
+    .expect("bifactor fit should succeed");
+    assert_monotone(&res.loglik_trace);
+    // general-factor loadings recovered up to a global sign (fixed by the
+    // alignment); check correlation with truth
+    let lam: Vec<f64> = res.zeta.clone();
+    let c = corr(&lam, &lambda_true);
+    assert!(c.abs() > 0.6, "lambda recovery too low: {c}");
+    // tau is not a free parameter for the inner kind
+    assert!(res.tau < -20.0, "tau must stay inert for BIFAC2PLM: {}", res.tau);
+}

@@ -26,7 +26,10 @@
 
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::quadrature::gh_rule;
-use crate::{model_exec_flags, Device, ModelConfig, ModelType, PenaltyConfig};
+use crate::{
+    interaction_kind, model_exec_flags, Device, InteractionKind, ModelConfig, ModelType,
+    PenaltyConfig,
+};
 
 #[derive(Clone, Debug)]
 pub enum PopulationSpec {
@@ -156,7 +159,9 @@ pub fn n_free_parameters(
         Some(a) => a.fixed.iter().filter(|&&f| !f).count(),
         None => config.n_items,
     };
-    let tau_free = uses_space && anchors.and_then(|a| a.tau).is_none();
+    let tau_free = interaction_kind(config.model_type) == InteractionKind::Distance
+        && uses_space
+        && anchors.and_then(|a| a.tau).is_none();
     let pop_params = match pop {
         PopulationSpec::Single => 0,
         PopulationSpec::SingleFree => 2 * config.n_dims,
@@ -302,13 +307,13 @@ pub(crate) struct Grids {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn eta_at(
+pub(crate) fn eta_at_kind(
     alpha: &[f64],
     b: &[f64],
     zeta: &[f64],
     tau: f64,
     free_alpha: bool,
-    uses_space: bool,
+    kind: InteractionKind,
     latent_dim: usize,
     eps_distance: f64,
     i: usize,
@@ -317,13 +322,21 @@ pub(crate) fn eta_at(
 ) -> f64 {
     let a = if free_alpha { alpha[i].exp() } else { 1.0 };
     let mut eta = a * theta + b[i];
-    if uses_space {
-        let mut dist2 = eps_distance;
-        for k in 0..latent_dim {
-            let diff = x_node[k] - zeta[i * latent_dim + k];
-            dist2 += diff * diff;
+    match kind {
+        InteractionKind::None => {}
+        InteractionKind::Distance => {
+            let mut dist2 = eps_distance;
+            for k in 0..latent_dim {
+                let diff = x_node[k] - zeta[i * latent_dim + k];
+                dist2 += diff * diff;
+            }
+            eta -= tau.exp() * dist2.sqrt();
         }
-        eta -= tau.exp() * dist2.sqrt();
+        InteractionKind::Inner => {
+            for k in 0..latent_dim {
+                eta += zeta[i * latent_dim + k] * x_node[k];
+            }
+        }
     }
     eta
 }
@@ -356,7 +369,8 @@ pub(crate) fn build_tables_offset(
     grids: &Grids,
     offset: Option<&[f64]>,
 ) -> Tables {
-    let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let (free_alpha, _uses_space) = model_exec_flags(config.model_type);
+    let kind = interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
@@ -372,13 +386,13 @@ pub(crate) fn build_tables_offset(
                 let theta = shift + scale * node_t;
                 for x in 0..n_x {
                     let eta = off
-                        + eta_at(
+                        + eta_at_kind(
                             alpha,
                             b,
                             zeta,
                             tau,
                             free_alpha,
-                            uses_space,
+                            kind,
                             latent_dim,
                             config.eps_distance,
                             i,
@@ -1017,6 +1031,7 @@ fn item_q(
     offset: Option<&[f64]>,
 ) -> f64 {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let kind = interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
@@ -1036,13 +1051,13 @@ fn item_q(
                     continue;
                 }
                 let eta = off
-                    + eta_at(
+                    + eta_at_kind(
                         &[alpha_i],
                         &[b_i],
                         zeta_i,
                         tau,
                         free_alpha,
-                        uses_space,
+                        kind,
                         latent_dim,
                         config.eps_distance,
                         0,
@@ -1085,6 +1100,7 @@ fn m_step_items(
     offset: Option<&[f64]>,
 ) {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let kind = interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
@@ -1123,17 +1139,25 @@ fn m_step_items(
                             continue;
                         }
                         let x_node = &grids.x_grid[x * latent_dim..(x + 1) * latent_dim];
-                        let mut dist = 0.0;
+                        let mut dist = 1.0;
                         let eta = {
                             let mut e = off + a * theta + b[i];
-                            if uses_space {
-                                let mut dist2 = config.eps_distance;
-                                for k in 0..latent_dim {
-                                    let diff = x_node[k] - zeta_i[k];
-                                    dist2 += diff * diff;
+                            match kind {
+                                InteractionKind::None => {}
+                                InteractionKind::Distance => {
+                                    let mut dist2 = config.eps_distance;
+                                    for k in 0..latent_dim {
+                                        let diff = x_node[k] - zeta_i[k];
+                                        dist2 += diff * diff;
+                                    }
+                                    dist = dist2.sqrt();
+                                    e -= gamma * dist;
                                 }
-                                dist = dist2.sqrt();
-                                e -= gamma * dist;
+                                InteractionKind::Inner => {
+                                    for k in 0..latent_dim {
+                                        e += zeta_i[k] * x_node[k];
+                                    }
+                                }
                             }
                             e
                         };
@@ -1149,7 +1173,13 @@ fn m_step_items(
                         }
                         if uses_space {
                             for k in 0..latent_dim {
-                                let deta = gamma * (x_node[k] - zeta_i[k]) / dist;
+                                let deta = match kind {
+                                    InteractionKind::Distance => {
+                                        gamma * (x_node[k] - zeta_i[k]) / dist
+                                    }
+                                    InteractionKind::Inner => x_node[k],
+                                    InteractionKind::None => 0.0,
+                                };
                                 g_zeta[k] += resid * deta;
                                 i_zeta[k] += info * deta * deta;
                             }
@@ -1228,8 +1258,7 @@ fn m_step_tau(
     penalty: &PenaltyConfig,
     offset: Option<&[f64]>,
 ) {
-    let (_, uses_space) = model_exec_flags(config.model_type);
-    if !uses_space {
+    if interaction_kind(config.model_type) != InteractionKind::Distance {
         return;
     }
     let total_q = |tau_c: f64| -> f64 {
@@ -1737,7 +1766,13 @@ pub fn fit_marginal_full(
         b[i] = (prop / (1.0 - prop)).ln();
     }
     let mut zeta = vec![0.0_f64; n_items * latent_dim];
-    if uses_space {
+    if uses_space && interaction_kind(config.model_type) == InteractionKind::Inner {
+        // positive-manifold start for loadings: a mixed-sign circle init can
+        // lock items into a sign-split local optimum
+        for v in zeta.iter_mut() {
+            *v = mcfg.init_zeta_radius;
+        }
+    } else if uses_space {
         for i in 0..n_items {
             let angle = 2.0 * std::f64::consts::PI * (i as f64) / (n_items.max(1) as f64);
             zeta[i * latent_dim] = mcfg.init_zeta_radius * angle.cos();
@@ -1750,7 +1785,11 @@ pub fn fit_marginal_full(
             }
         }
     }
-    let mut tau = if uses_space { 0.0 } else { -30.0 };
+    let mut tau = if interaction_kind(config.model_type) == InteractionKind::Distance {
+        0.0
+    } else {
+        -30.0
+    };
     let (n_groups, n_clusters) = match pop {
         PopulationSpec::Multigroup { n_groups, .. } => (*n_groups, 0),
         PopulationSpec::Multilevel { n_clusters, .. } => (0, *n_clusters),

@@ -75,6 +75,11 @@ def fit(
     if covariate is not None and cluster_id is not None:
         raise ValueError("item covariates with a multilevel structure are not supported")
 
+    if model == "BIFAC2PLM" and config.estimator != "mmle":
+        raise NotImplementedError(
+            "BIFAC2PLM (bifactor) is supported by the marginal estimator only; "
+            "use estimator='mmle'."
+        )
     if config.estimator == "mmle":
         if (
             model in {"ULS2PLM", "ULSRM"}

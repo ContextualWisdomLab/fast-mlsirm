@@ -1328,8 +1328,9 @@ fn parse_model_type(model: &str) -> PyResult<ModelType> {
         "MLSRM" => Ok(ModelType::Mlsrm),
         "ULS2PLM" => Ok(ModelType::Uls2plm),
         "ULSRM" => Ok(ModelType::Ulsrm),
+        "BIFAC2PLM" => Ok(ModelType::Bifac2plm),
         _ => Err(PyValueError::new_err(
-            "model must be one of ['MIRT', 'MLS2PLM', 'MLSRM', 'ULS2PLM', 'ULSRM']",
+            "model must be one of ['MIRT', 'MLS2PLM', 'MLSRM', 'ULS2PLM', 'ULSRM', 'BIFAC2PLM']",
         )),
     }
 }

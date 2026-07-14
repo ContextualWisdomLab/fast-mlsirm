@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from .backend import normalize_backend, normalize_device
 
 
-VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM"}
+VALID_MODELS = {"MIRT", "MLS2PLM", "MLSRM", "ULS2PLM", "ULSRM", "BIFAC2PLM"}
 VALID_OPTIMIZERS = {"adam", "lbfgs", "adam_lbfgs"}
 # Estimation methods. "jmle" (penalized joint MLE) is the legacy default; "mmle"
 # (marginal MLE via EM) is robust to missing data. "em"/"bayes" are reserved
