@@ -28,7 +28,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
-    poly_cat_simulate as core_poly_cat_simulate,
+    poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
     poly_information_curves as core_poly_information_curves, poly_person_fit as core_poly_person_fit,
     poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap, PolyModel,
 };
@@ -1222,6 +1222,106 @@ fn poly_local_dependence(
     Ok(out.into())
 }
 
+/// Likelihood-ratio DIF sweep for polytomous items via two-group marginal EM
+/// (Rust compute path). Fits a compact model (all items group-invariant) once,
+/// then per studied item an augmented model (that item freed per group);
+/// `LR = 2 dloglik ~ chi2((n_groups-1) * n_cat)`. Impact (genuine group ability
+/// differences) is absorbed by estimating each group's latent distribution in
+/// both models. Returns a dict of per-item arrays (`item`, `lr`, `df`,
+/// `p_value`, `flagged_bh`, `effect_size`).
+///
+/// References (APA 7th ed.):
+///   Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of differential
+///     item functioning using the parameters of item response models. In P. W.
+///     Holland & H. Wainer (Eds.), Differential item functioning (pp. 67-113).
+///     Erlbaum.
+///   Woehr, D. J., & Meriac, J. P. (2010). Using polytomous item response theory
+///     to examine differential item and test functioning. In N. T. Tippins &
+///     S. Adler (Eds.), Technology-enhanced assessment of talent (pp. 199-229).
+///     Jossey-Bass.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, group_id, n_groups, n_persons, n_items, n_cat, observed = None,
+    model = "gpcm", studied_items = None, q_theta = 21, max_iter = 200, tol = 1e-5, fdr_q = 0.05,
+))]
+fn poly_dif(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group_id: PyReadonlyArray1<'_, i64>,
+    n_groups: usize,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    studied_items: Option<PyReadonlyArray1<'_, i64>>,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+    fdr_q: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let gid: Vec<usize> = group_id
+        .as_slice()?
+        .iter()
+        .map(|&g| {
+            if g < 0 {
+                Err(PyValueError::new_err("group_id must be non-negative"))
+            } else {
+                Ok(g as usize)
+            }
+        })
+        .collect::<PyResult<_>>()?;
+    let studied_storage: Option<Vec<usize>> = match &studied_items {
+        Some(s) => Some(
+            s.as_slice()?
+                .iter()
+                .map(|&j| {
+                    if j < 0 {
+                        Err(PyValueError::new_err("studied_items must be non-negative"))
+                    } else {
+                        Ok(j as usize)
+                    }
+                })
+                .collect::<PyResult<_>>()?,
+        ),
+        None => None,
+    };
+    let rows = core_poly_dif(
+        &yv,
+        obs,
+        &gid,
+        n_groups,
+        n_persons,
+        n_items,
+        n_cat,
+        m,
+        studied_storage.as_deref(),
+        q_theta,
+        max_iter,
+        tol,
+        fdr_q,
+    )
+    .map_err(PyValueError::new_err)?;
+    let item: Vec<usize> = rows.iter().map(|r| r.item).collect();
+    let lr: Vec<f64> = rows.iter().map(|r| r.lr).collect();
+    let df: Vec<usize> = rows.iter().map(|r| r.df).collect();
+    let p_value: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let flagged: Vec<bool> = rows.iter().map(|r| r.flagged_bh).collect();
+    let effect: Vec<f64> = rows.iter().map(|r| r.effect_size).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item", item)?;
+    out.set_item("lr", lr)?;
+    out.set_item("df", df)?;
+    out.set_item("p_value", p_value)?;
+    out.set_item("flagged_bh", flagged)?;
+    out.set_item("effect_size", effect)?;
+    Ok(out.into())
+}
+
 /// l_z / Snijders l_z* person fit at EAP estimates.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -1884,6 +1984,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;

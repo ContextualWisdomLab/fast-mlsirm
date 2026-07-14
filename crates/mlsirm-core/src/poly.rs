@@ -879,6 +879,359 @@ pub fn poly_cat_simulate(
     Ok(PolyCatResult { theta_eap, theta_sd, n_used })
 }
 
+/// Result of [`fit_poly_multigroup`]. `slope`/`cat_params` are the parameters
+/// common across groups; when an item is studied, `studied_slope`/`studied_cat`
+/// hold its per-group parameters (length `n_groups`). `mu`/`sigma` are the
+/// per-group latent means/SDs (reference group 0 pinned to `N(0,1)`).
+pub struct TwoGroupPolyFit {
+    pub slope: Vec<f64>,
+    pub cat_params: Vec<Vec<f64>>,
+    pub studied_slope: Vec<f64>,
+    pub studied_cat: Vec<Vec<f64>>,
+    pub mu: Vec<f64>,
+    pub sigma: Vec<f64>,
+    pub loglik: f64,
+    pub n_iter: usize,
+}
+
+/// Multi-group polytomous marginal MLE (Bock-Zimowski population), the estimator
+/// behind the likelihood-ratio DIF test. Persons carry a `group_id` (group 0 is
+/// the reference, pinned to `N(0,1)`); each other group's latent distribution
+/// `N(mu_g, sigma_g^2)` is estimated. Items are common across groups (the
+/// anchor) except `studied_item`, whose parameters are freed per group in the
+/// augmented model (`studied_item = Some(j)`); with `studied_item = None` all
+/// items are common (the compact model). The node-shift reparameterization
+/// `theta_{g,t} = mu_g + sigma_g x_t` keeps the shared Gauss-Hermite weights, and
+/// the per-item M-step reuses [`m_step_item`] by stacking each group's nodes and
+/// expected counts (the concatenation is exactly the Bock-Zimowski pooling).
+///
+/// # References (APA 7th ed.)
+///
+/// Bock, R. D., & Zimowski, M. F. (1997). Multiple group IRT. In W. J. van der
+///   Linden & R. K. Hambleton (Eds.), *Handbook of modern item response theory*
+///   (pp. 433–448). Springer. https://doi.org/10.1007/978-1-4757-2691-6_25
+#[allow(clippy::too_many_arguments)]
+pub fn fit_poly_multigroup(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+    studied_item: Option<usize>,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> Result<TwoGroupPolyFit, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if n_groups < 2 {
+        return Err("n_groups must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if group_id.len() != n_persons {
+        return Err("group_id must have length n_persons".into());
+    }
+    if group_id.iter().any(|&g| g >= n_groups) {
+        return Err("group_id labels must be < n_groups".into());
+    }
+    // Every declared group must be populated, otherwise the `df = (n_groups-1)*
+    // n_cat` used by the LR test would count parameters no data can identify
+    // (an empty group's item params stay at init and contribute nothing to the
+    // likelihood), making the test miscalibrated. Callers with sparse labels
+    // should compact them first (the Python wrapper does).
+    let mut group_n = vec![0usize; n_groups];
+    for &g in group_id {
+        group_n[g] += 1;
+    }
+    if group_n.iter().any(|&c| c == 0) {
+        return Err("every group 0..n_groups-1 must contain at least one person".into());
+    }
+    if y.iter().any(|&v| v >= n_cat) {
+        return Err("response categories must be < n_cat".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != n_persons * n_items {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    if let Some(j) = studied_item {
+        if j >= n_items {
+            return Err("studied_item out of range".into());
+        }
+    }
+    let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
+    let qn = nodes.len();
+
+    // pooled init from all groups (same scheme as fit_poly_unidim)
+    let mut params = vec![vec![0.0_f64; n_cat]; n_items];
+    for i in 0..n_items {
+        let mut freq = vec![1e-3_f64; n_cat];
+        for p in 0..n_persons {
+            if is_obs(p, i) {
+                freq[y[p * n_items + i]] += 1.0;
+            }
+        }
+        let tot: f64 = freq.iter().sum();
+        for f in freq.iter_mut() {
+            *f /= tot;
+        }
+        match model {
+            PolyModel::Gpcm => {
+                for k in 1..n_cat {
+                    params[i][k] = (freq[k] / freq[0]).ln();
+                }
+            }
+            PolyModel::Grm => {
+                let mut cum = 0.0_f64;
+                for k in (1..n_cat).rev() {
+                    cum += freq[k];
+                    let c = cum.clamp(1e-4, 1.0 - 1e-4);
+                    params[i][k] = (c / (1.0 - c)).ln();
+                }
+            }
+        }
+    }
+    let mut studied_params: Vec<Vec<f64>> = match studied_item {
+        Some(j) => vec![params[j].clone(); n_groups],
+        None => Vec::new(),
+    };
+    let mut mu = vec![0.0_f64; n_groups];
+    let mut sigma = vec![1.0_f64; n_groups];
+
+    let mut prev_ll = f64::NEG_INFINITY;
+    let mut ll = f64::NEG_INFINITY;
+    let mut it = 0;
+    while it < max_iter {
+        // group-specific trait locations for the shared standard nodes
+        let theta: Vec<Vec<f64>> = (0..n_groups)
+            .map(|g| nodes.iter().map(|&x| mu[g] + sigma[g] * x).collect())
+            .collect();
+        // per-group cell log-probs
+        let mut item_lp = vec![vec![vec![0.0_f64; qn * n_cat]; n_items]; n_groups];
+        for g in 0..n_groups {
+            for i in 0..n_items {
+                let p_i = if Some(i) == studied_item { &studied_params[g] } else { &params[i] };
+                let a = p_i[0].exp();
+                for (t, &th) in theta[g].iter().enumerate() {
+                    let base = a * th;
+                    let lp = match model {
+                        PolyModel::Gpcm => {
+                            let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+                            let mut ic = vec![0.0_f64; n_cat];
+                            ic[1..].copy_from_slice(&p_i[1..]);
+                            gpcm_logprobs(base, &scores, &ic)
+                        }
+                        PolyModel::Grm => grm_logprobs(base, &p_i[1..]),
+                    };
+                    item_lp[g][i][t * n_cat..(t + 1) * n_cat].copy_from_slice(&lp);
+                }
+            }
+        }
+        // E-step: per-group posteriors, expected counts, and trait moments
+        let mut counts = vec![vec![vec![vec![0.0_f64; n_cat]; qn]; n_items]; n_groups];
+        let mut w_acc = vec![0.0_f64; n_groups];
+        let mut s1 = vec![0.0_f64; n_groups];
+        let mut s2 = vec![0.0_f64; n_groups];
+        ll = 0.0;
+        let mut log_node = vec![0.0_f64; qn];
+        for p in 0..n_persons {
+            let g = group_id[p];
+            for t in 0..qn {
+                log_node[t] = log_w[t];
+            }
+            for i in 0..n_items {
+                if !is_obs(p, i) {
+                    continue;
+                }
+                let yc = y[p * n_items + i];
+                for t in 0..qn {
+                    log_node[t] += item_lp[g][i][t * n_cat + yc];
+                }
+            }
+            let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0_f64;
+            for t in 0..qn {
+                denom += (log_node[t] - mx).exp();
+            }
+            ll += mx + denom.ln();
+            for t in 0..qn {
+                let post = (log_node[t] - mx).exp() / denom;
+                w_acc[g] += post;
+                s1[g] += post * theta[g][t];
+                s2[g] += post * theta[g][t] * theta[g][t];
+                for i in 0..n_items {
+                    if is_obs(p, i) {
+                        counts[g][i][t][y[p * n_items + i]] += post;
+                    }
+                }
+            }
+        }
+        // M-step, item parameters
+        for i in 0..n_items {
+            if Some(i) == studied_item {
+                for g in 0..n_groups {
+                    studied_params[g] =
+                        m_step_item(studied_params[g].clone(), &theta[g], &counts[g][i], model, 10);
+                }
+            } else {
+                let mut stacked_nodes = Vec::with_capacity(n_groups * qn);
+                let mut stacked_counts = Vec::with_capacity(n_groups * qn);
+                for g in 0..n_groups {
+                    stacked_nodes.extend_from_slice(&theta[g]);
+                    for t in 0..qn {
+                        stacked_counts.push(counts[g][i][t].clone());
+                    }
+                }
+                params[i] = m_step_item(params[i].clone(), &stacked_nodes, &stacked_counts, model, 10);
+            }
+        }
+        // M-step, focal group latent distributions (reference g=0 pinned)
+        for g in 1..n_groups {
+            if w_acc[g] > 0.0 {
+                let mean = s1[g] / w_acc[g];
+                let var = (s2[g] / w_acc[g] - mean * mean).max(0.01);
+                mu[g] = mean;
+                sigma[g] = var.sqrt().clamp(0.1, 10.0);
+            }
+        }
+        it += 1;
+        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
+            break;
+        }
+        prev_ll = ll;
+    }
+
+    let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
+    let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
+    let (studied_slope, studied_cat) = if studied_item.is_some() {
+        (
+            studied_params.iter().map(|p| p[0].exp()).collect(),
+            studied_params.iter().map(|p| p[1..].to_vec()).collect(),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    Ok(TwoGroupPolyFit { slope, cat_params, studied_slope, studied_cat, mu, sigma, loglik: ll, n_iter: it })
+}
+
+/// One studied item's likelihood-ratio DIF result.
+pub struct PolyDifRow {
+    pub item: usize,
+    pub lr: f64,
+    pub df: usize,
+    pub p_value: f64,
+    pub flagged_bh: bool,
+    /// Unsigned across-group range (>= 0) of the item's mean category-location: a
+    /// DIF magnitude, monotone in uniform DIF — a size, not a direction. `NaN` if
+    /// the augmented fit for this item did not converge to finite parameters.
+    pub effect_size: f64,
+}
+
+/// Likelihood-ratio DIF sweep for polytomous items (Thissen, Steinberg & Wainer,
+/// 1993, framework; Woehr & Meriac, 2010, for GRM/GPCM). Fits the compact model
+/// (all items common across groups) once, then, per studied item, the augmented
+/// model (that item freed per group); `LR = 2(ll_aug - ll_compact)` is compared
+/// to `chi²((n_groups-1) * n_cat)`. Because the focal latent distribution is
+/// estimated in both models, genuine group ability differences (impact) are
+/// absorbed and not misread as DIF. `studied_items = None` sweeps every item
+/// against the all-others anchor; Benjamini-Hochberg controls the FDR at
+/// `fdr_q`.
+///
+/// # References (APA 7th ed.)
+///
+/// Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of differential
+///   item functioning using the parameters of item response models. In P. W.
+///   Holland & H. Wainer (Eds.), *Differential item functioning* (pp. 67–113).
+///   Erlbaum.
+///
+/// Woehr, D. J., & Meriac, J. P. (2010). Using polytomous item response theory
+///   to examine differential item and test functioning: The case of work ethic.
+///   In N. T. Tippins & S. Adler (Eds.), *Technology-enhanced assessment of
+///   talent* (pp. 199–229). Jossey-Bass.
+#[allow(clippy::too_many_arguments)]
+pub fn poly_dif_sweep(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    group_id: &[usize],
+    n_groups: usize,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+    studied_items: Option<&[usize]>,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+    fdr_q: f64,
+) -> Result<Vec<PolyDifRow>, String> {
+    let con = fit_poly_multigroup(
+        y, observed, group_id, n_groups, n_persons, n_items, n_cat, model, None, q_theta, max_iter,
+        tol,
+    )?;
+    // A non-finite compact log-likelihood (e.g. GRM thresholds disordered on a
+    // sparse category) would make every `2*(ll_aug - ll_con)` NaN, which the
+    // `.max(0.0)` clamp below would silently turn into LR=0 / p=1 — reporting all
+    // items as clean. Fail loudly instead.
+    if !con.loglik.is_finite() {
+        return Err("compact multi-group fit did not reach a finite log-likelihood \
+                    (a group may have a rarely-used category; try model=\"gpcm\")"
+            .into());
+    }
+    let items: Vec<usize> = match studied_items {
+        Some(s) => s.to_vec(),
+        None => (0..n_items).collect(),
+    };
+    let df = (n_groups - 1) * n_cat;
+    let mut rows: Vec<PolyDifRow> = Vec::with_capacity(items.len());
+    for &j in &items {
+        if j >= n_items {
+            return Err("studied item out of range".into());
+        }
+        let aug = fit_poly_multigroup(
+            y, observed, group_id, n_groups, n_persons, n_items, n_cat, model, Some(j), q_theta,
+            max_iter, tol,
+        )?;
+        // If this item's augmented fit diverged, surface it as NaN rather than let
+        // `.max(0.0)` mask a failed fit as LR=0 (a silent "no DIF" false negative).
+        let (lr, p_value) = if aug.loglik.is_finite() {
+            let lr = (2.0 * (aug.loglik - con.loglik)).max(0.0);
+            (lr, crate::fitstats::chi2_sf(lr, df as f64))
+        } else {
+            (f64::NAN, f64::NAN)
+        };
+        let bbar: Vec<f64> = aug
+            .studied_cat
+            .iter()
+            .map(|c| c.iter().sum::<f64>() / c.len().max(1) as f64)
+            .collect();
+        let hi = bbar.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let lo = bbar.iter().cloned().fold(f64::INFINITY, f64::min);
+        rows.push(PolyDifRow {
+            item: j,
+            lr,
+            df,
+            p_value,
+            flagged_bh: false,
+            effect_size: hi - lo,
+        });
+    }
+    let pvals: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let bh = crate::fitstats::benjamini_hochberg(&pvals, fdr_q);
+    for (r, &f) in rows.iter_mut().zip(&bh) {
+        r.flagged_bh = f;
+    }
+    Ok(rows)
+}
+
 /// Fisher item information `I(theta) = sum_k (dP_k/dtheta)^2 / P_k` for one
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
@@ -2405,5 +2758,178 @@ mod tests {
             assert!(mean_items < 0.7 * n_items as f64, "{label} CAT not saving items: {mean_items}");
             assert!(ra < rr, "{label} adaptive should beat random: {ra} vs {rr}");
         }
+    }
+
+    // Two-group GPCM dataset generator for the DIF tests. group 0 = reference
+    // theta~N(0,1); group 1 = focal theta~N(0.5, 1.2^2) (impact). `dif` on item 0
+    // for the focal group: 0=none, 1=uniform (difficulty shift), 2=non-uniform
+    // (slope 1.6x). `skew` draws the focal trait from Exp(1)-1 instead.
+    fn gen_two_group_gpcm(
+        n_per_group: usize, n_items: usize, k: usize, dif: u8, skew: bool, seed: u64,
+    ) -> (Vec<usize>, Vec<usize>) {
+        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.05 * i as f64).collect();
+        let int_true: Vec<Vec<f64>> = (0..n_items)
+            .map(|i| vec![0.7 - 0.05 * i as f64, -0.7 + 0.05 * i as f64])
+            .collect();
+        let n_persons = 2 * n_per_group;
+        let mut u = rng(seed);
+        let mut yi = vec![0usize; n_persons * n_items];
+        let mut gid = vec![0usize; n_persons];
+        for p in 0..n_persons {
+            let focal = p >= n_per_group;
+            gid[p] = focal as usize;
+            let theta = if !focal {
+                let u1 = u().max(1e-12);
+                let u2 = u();
+                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+            } else if skew {
+                -(u().max(1e-12)).ln() - 1.0
+            } else {
+                let u1 = u().max(1e-12);
+                let u2 = u();
+                0.5 + 1.2 * (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+            };
+            for i in 0..n_items {
+                let (a, ints) = if i == 0 && focal && dif == 1 {
+                    let d = 0.6; // uniform: shift difficulty => intercept_k += k*a*d
+                    (
+                        a_true[0],
+                        vec![int_true[0][0] + a_true[0] * d, int_true[0][1] + 2.0 * a_true[0] * d],
+                    )
+                } else if i == 0 && focal && dif == 2 {
+                    (a_true[0] * 1.6, int_true[0].clone())
+                } else {
+                    (a_true[i], int_true[i].clone())
+                };
+                let base = a * theta;
+                let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+                let mut ic = vec![0.0_f64; k];
+                ic[1..].copy_from_slice(&ints);
+                let lp = gpcm_logprobs(base, &scores, &ic);
+                let draw = u();
+                let (mut acc, mut cat) = (0.0_f64, k - 1);
+                for (c, l) in lp.iter().enumerate() {
+                    acc += l.exp();
+                    if draw <= acc {
+                        cat = c;
+                        break;
+                    }
+                }
+                yi[p * n_items + i] = cat;
+            }
+        }
+        (yi, gid)
+    }
+
+    #[test]
+    fn poly_dif_structural_recovers_impact_and_nesting() {
+        // No DIF, but the focal group has impact N(0.5, 1.2^2): the estimator
+        // must recover the focal distribution and keep the reference pinned; the
+        // augmented (item-0-free) model must not fall below the compact one.
+        let (n_items, k) = (10usize, 3usize);
+        let (yi, gid) = gen_two_group_gpcm(1200, n_items, k, 0, false, 909);
+        let np = gid.len();
+        let con =
+            fit_poly_multigroup(&yi, None, &gid, 2, np, n_items, k, PolyModel::Gpcm, None, 21, 200, 1e-6)
+                .unwrap();
+        assert_eq!(con.mu[0], 0.0);
+        assert_eq!(con.sigma[0], 1.0);
+        assert!((con.mu[1] - 0.5).abs() < 0.15, "focal mean not recovered: {}", con.mu[1]);
+        assert!((con.sigma[1] - 1.2).abs() < 0.2, "focal sd not recovered: {}", con.sigma[1]);
+        let aug = fit_poly_multigroup(
+            &yi, None, &gid, 2, np, n_items, k, PolyModel::Gpcm, Some(0), 21, 200, 1e-6,
+        )
+        .unwrap();
+        // nesting, with tolerance-scaled slack (EM loglik lags one M-step)
+        let slack = 1e-6_f64.max(1e-6 * (1.0 + con.loglik.abs()));
+        assert!(
+            aug.loglik >= con.loglik - slack,
+            "nesting violated: ll_aug={} ll_con={}", aug.loglik, con.loglik
+        );
+        assert_eq!(aug.studied_slope.len(), 2);
+    }
+
+    #[test]
+    fn poly_dif_rejects_empty_declared_group() {
+        // Declaring a group with no persons would make df = (n_groups-1)*n_cat
+        // count parameters no data can identify (conservative, miscalibrated LR).
+        // The data uses labels {0,1}; declaring n_groups=3 leaves group 2 empty.
+        let (yi, gid) = gen_two_group_gpcm(300, 6, 3, 0, false, 4242);
+        let np = gid.len();
+        let err = fit_poly_multigroup(
+            &yi, None, &gid, 3, np, 6, 3, PolyModel::Gpcm, None, 21, 50, 1e-4,
+        );
+        assert!(err.is_err(), "empty declared group should be rejected");
+    }
+
+    // (Type I over non-DIF items, power on item 0 when DIF is present, mean LR
+    // among null items) over `reps` two-group datasets. df = (G-1)*K = K.
+    fn mc_poly_dif(reps: usize, n_per_group: usize, n_items: usize, dif: u8, skew: bool) -> (f64, f64, f64) {
+        let k = 3usize;
+        let (mut t1_rej, mut t1_cnt) = (0usize, 0usize);
+        let (mut pow_rej, mut lr_sum, mut lr_cnt) = (0usize, 0.0_f64, 0usize);
+        for rep in 0..reps {
+            let seed = 88_000 + rep as u64 * 131 + skew as u64 * 3 + dif as u64 * 7;
+            let (yi, gid) = gen_two_group_gpcm(n_per_group, n_items, k, dif, skew, seed);
+            let np = gid.len();
+            let rows = poly_dif_sweep(
+                &yi, None, &gid, 2, np, n_items, k, PolyModel::Gpcm, None, 21, 80, 1e-5, 0.05,
+            )
+            .unwrap();
+            for r in &rows {
+                let rej = r.p_value < 0.05;
+                if r.item == 0 && dif != 0 {
+                    if rej {
+                        pow_rej += 1;
+                    }
+                } else {
+                    // non-DIF items (and item 0 when dif==0) measure Type I
+                    if rej {
+                        t1_rej += 1;
+                    }
+                    t1_cnt += 1;
+                    lr_sum += r.lr;
+                    lr_cnt += 1;
+                }
+            }
+        }
+        let type1 = t1_rej as f64 / t1_cnt as f64;
+        let power = if dif != 0 { pow_rej as f64 / reps as f64 } else { 0.0 };
+        (type1, power, lr_sum / lr_cnt as f64)
+    }
+
+    #[test]
+    fn poly_dif_type1_and_power() {
+        // Fast guard (few reps => Type I lower bound is unmeasurable; mean(LR)~df
+        // is the robust cheap calibration). Authoritative >=500-rep study with a
+        // tight Type I band is poly_dif_monte_carlo_500.
+        let df = 3.0; // (G-1)*K = K = 3
+        let (t1, _, mean_lr) = mc_poly_dif(3, 400, 6, 0, false); // no DIF
+        let (t1u, pow_u, _) = mc_poly_dif(3, 400, 6, 1, false); // uniform DIF on item 0
+        println!(
+            "[poly DIF] df={df}  no-DIF: Type I={t1:.3} mean(LR)={mean_lr:.2}  \
+             uniform: Type I(others)={t1u:.3} power(item0)={pow_u:.3}"
+        );
+        assert!(t1 < 0.18, "Type I inflated: {t1}"); // lower bound needs the 500-rep test
+        assert!((df - 1.2..=df + 1.4).contains(&mean_lr), "mean LR should ~ df={df}: {mean_lr}");
+        assert!(pow_u > 0.6, "uniform DIF power too low: {pow_u}");
+        assert!(t1u < 0.2, "non-DIF items over-flagged under DIF: {t1u}");
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn poly_dif_monte_carlo_500() {
+        let reps = 500usize;
+        let (t1, _, mean_lr) = mc_poly_dif(reps, 500, 8, 0, false);
+        let (_, pow_u, _) = mc_poly_dif(reps, 500, 8, 1, false);
+        let (_, pow_n, _) = mc_poly_dif(reps, 500, 8, 2, false);
+        let (t1s, _, _) = mc_poly_dif(reps, 500, 8, 0, true);
+        println!(
+            "[poly DIF 500] df=3  no-DIF: Type I={t1:.4} mean(LR)={mean_lr:.3}  \
+             power: uniform={pow_u:.3} non-uniform={pow_n:.3}  skew: Type I={t1s:.4}"
+        );
+        assert!((0.03..=0.075).contains(&t1), "Type I off nominal: {t1}");
+        assert!((2.6..=3.4).contains(&mean_lr), "mean LR should ~ df=3: {mean_lr}");
+        assert!(pow_u > 0.85 && pow_n > 0.7, "DIF power too low: uniform={pow_u} nonuniform={pow_n}");
     }
 }

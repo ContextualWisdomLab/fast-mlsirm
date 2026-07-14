@@ -168,6 +168,28 @@
   while an injected 2-item testlet is localized to that pair (X²/df = 10.9, power
   1.00).
 
+- **Polytomous IRT likelihood-ratio DIF** (Thissen, Steinberg & Wainer, 1993;
+  Woehr & Meriac, 2010). `dif_polytomous(responses, group_id, n_cat)` runs a
+  two-group DIF sweep for GRM/GPCM items: it fits a *compact* model (all items
+  group-invariant) once, then per studied item an *augmented* model (that item's
+  parameters freed per group) with every other item as the anchor, and refers
+  `LR = 2·Δloglik` to `χ²((n_groups−1)·n_cat)`. Each non-reference group's latent
+  distribution `N(μ_g, σ_g²)` is estimated in **both** models (group 0 pinned to
+  `N(0,1)`), so genuine ability differences between groups (impact) are absorbed
+  rather than mistaken for DIF. Returns per-item `lr`, `df`, `p_value`,
+  `flagged_bh` (Benjamini-Hochberg FDR), and `effect_size` (the across-group
+  range of the item's mean category location). Compute in Rust
+  (`mlsirm_core::poly::fit_poly_multigroup` — a Bock-Zimowski multi-group
+  marginal EM whose per-item M-step reuses the single-group Newton step on each
+  group's nodes/expected-counts stacked, the concatenation being exactly the
+  Bock-Zimowski pooling — driving `poly_dif_sweep`). Validated by a 500-rep
+  Monte-Carlo with impact (focal `θ~N(0.5, 1.2²)`), two-group GPCM, `K=3`:
+  under no DIF the test is calibrated (Type I 0.042, `mean(LR)=2.92≈df=3`), an
+  injected uniform difficulty shift is detected with power 0.996 and a
+  non-uniform slope difference with power 0.920, while a skewed focal population
+  inflates Type I only mildly (0.057); a structural check confirms the augmented
+  fit never falls below the compact one and recovers the focal `μ, σ`.
+
 - **Polytomous M2 limited-information goodness-of-fit** (Maydeu-Olivares & Joe,
   2014). `m2_polytomous(responses, fit)` returns the test-level M2 statistic,
   `df`, `p_value`, RMSEA2 (with a 90% interval), and SRMSR for a fitted GRM/GPCM

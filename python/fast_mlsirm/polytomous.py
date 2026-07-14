@@ -670,3 +670,103 @@ def cat_simulate_polytomous(
         "theta_sd": np.asarray(res["theta_sd"], dtype=np.float64),
         "n_used": np.asarray(res["n_used"], dtype=np.int64),
     }
+
+
+def dif_polytomous(
+    responses: np.ndarray,
+    group_id: np.ndarray,
+    n_cat: int,
+    model: str = "gpcm",
+    studied_items: np.ndarray | None = None,
+    q_theta: int = 21,
+    max_iter: int = 200,
+    tol: float = 1e-5,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Likelihood-ratio DIF sweep for polytomous items via a two-group marginal-EM
+    fit (compute in Rust; Thissen, Steinberg & Wainer, 1993). Group 0 is the
+    reference (latent ``N(0, 1)``); each other group's latent ``N(mu_g,
+    sigma_g^2)`` is estimated, so genuine ability differences between groups
+    (impact) are absorbed rather than mistaken for DIF. It fits the *compact*
+    model (all items group-invariant) once, then per studied item the *augmented*
+    model (that item's parameters freed per group) with every other item as the
+    anchor; ``LR = 2 * (loglik_aug - loglik_compact)`` is referred to
+    ``chi2((n_groups - 1) * n_cat)``. Returns per-item arrays: ``item`` (index),
+    ``lr``, ``df``, ``p_value``, ``flagged_bh`` (Benjamini-Hochberg FDR at
+    ``fdr_q``), and ``effect_size`` (the unsigned across-group range of the item's
+    mean category location -- a DIF magnitude >= 0, monotone in uniform DIF, not a
+    direction). If an item's augmented fit fails to converge (e.g. GRM thresholds
+    disorder on a sparse focal category) its ``lr``/``p_value``/``effect_size`` are
+    ``NaN`` and it is left unflagged rather than silently reported as clean.
+
+    ``responses`` is persons x items of integer categories (``NaN`` = missing);
+    ``group_id`` is a length-persons integer array of group labels (any
+    non-negative integers; densified internally, so non-contiguous or 1-based
+    codes are fine).
+    ``studied_items`` limits the sweep to those column indices (default: all
+    items). ``model`` is ``"grm"`` or ``"gpcm"``; GPCM is recommended when focal
+    groups have sparse extreme categories (GRM thresholds can become disordered
+    on a rarely used category). This is the parametric IRT-LR approach; for an
+    observed-score alternative that needs no multi-group calibration see the
+    ordinal-logistic DIF of Zumbo (1999).
+
+    References (APA 7th ed.):
+        Thissen, D., Steinberg, L., & Wainer, H. (1993). Detection of
+            differential item functioning using the parameters of item response
+            models. In P. W. Holland & H. Wainer (Eds.), *Differential item
+            functioning* (pp. 67-113). Erlbaum.
+        Woehr, D. J., & Meriac, J. P. (2010). Using polytomous item response
+            theory to examine differential item and test functioning. In N. T.
+            Tippins & S. Adler (Eds.), *Technology-enhanced assessment of talent*
+            (pp. 199-229). Jossey-Bass.
+    """
+    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    n_persons, n_items = y_int.shape
+    gid_raw = np.asarray(group_id, dtype=np.int64).ravel()
+    if gid_raw.shape[0] != n_persons:
+        raise ValueError("group_id length must match the number of persons")
+    if gid_raw.min() < 0:
+        raise ValueError("group_id labels must be non-negative")
+    # Densify labels so n_groups equals the number of *populated* groups and the
+    # LR test's df = (n_groups - 1) * n_cat counts only groups backed by data.
+    # Without this, sparse/non-contiguous labels (e.g. {0, 2} after filtering, or
+    # 1-based codes) would leave phantom empty groups that inflate df and make the
+    # test conservative. np.unique sorts, so the smallest label stays group 0
+    # (the pinned N(0,1) reference).
+    uniq, gid = np.unique(gid_raw, return_inverse=True)
+    gid = gid.astype(np.int64)
+    n_groups = uniq.size
+    if n_groups < 2:
+        raise ValueError("DIF requires at least two groups")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "poly_dif"):
+        raise RuntimeError("dif_polytomous requires the compiled Rust core")
+
+    studied_arg = None
+    if studied_items is not None:
+        studied_arg = np.asarray(studied_items, dtype=np.int64).ravel()
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    res = core.poly_dif(
+        y_int.reshape(-1),
+        gid,
+        int(n_groups),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        obs_arg,
+        model,
+        studied_arg,
+        int(q_theta),
+        int(max_iter),
+        float(tol),
+        float(fdr_q),
+    )
+    return {
+        "item": np.asarray(res["item"], dtype=np.int64),
+        "lr": np.asarray(res["lr"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.int64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
+        "effect_size": np.asarray(res["effect_size"], dtype=np.float64),
+    }

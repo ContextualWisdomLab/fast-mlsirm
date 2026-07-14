@@ -932,3 +932,131 @@ def test_cat_simulate_polytomous():
 
     with pytest.raises(ValueError):
         cat_simulate_polytomous(tt, fit, min_items=10, max_items=5)
+
+
+def test_dif_polytomous():
+    """Two-group IRT-LR DIF for polytomous items (Thissen, Steinberg & Wainer,
+    1993) via the public API: correct bookkeeping, impact does not trigger DIF,
+    and an injected uniform difficulty shift on one item is flagged while the
+    anchor items stay clean."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import dif_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(
+        __import__("fast_mlsirm")._core, "poly_dif"
+    ):
+        pytest.skip("compiled core built without poly_dif")
+
+    k, j = 3, 8
+    n_per = 900
+    rng = np.random.default_rng(11)
+    a = rng.uniform(0.9, 1.4, j)
+    c = np.zeros((j, k))
+    c[:, 1:] = rng.normal(0.0, 0.5, (j, k - 1))
+    scores = np.arange(k, dtype=float)
+
+    def gen(dif_on_item0):
+        # group 0: theta ~ N(0,1); group 1 (focal): theta ~ N(0.5, 1.2^2) (impact)
+        th0 = rng.standard_normal(n_per)
+        th1 = 0.5 + 1.2 * rng.standard_normal(n_per)
+        theta = np.concatenate([th0, th1])
+        gid = np.concatenate([np.zeros(n_per, int), np.ones(n_per, int)])
+        y = np.zeros((2 * n_per, j), dtype=float)
+        for p in range(2 * n_per):
+            focal = gid[p] == 1
+            for i in range(j):
+                ci = c[i].copy()
+                if i == 0 and focal and dif_on_item0:
+                    # uniform DIF: shift difficulty => intercept_m += m * a * delta
+                    d = 0.7
+                    ci = ci + a[i] * d * scores
+                base = a[i] * theta[p]
+                pr = np.exp(category_logprobs(base, scores, ci))
+                y[p, i] = rng.choice(k, p=pr)
+        return y, gid
+
+    # impact but NO DIF: anchor items should be (mostly) clean, df = n_cat
+    y0, gid0 = gen(dif_on_item0=False)
+    res0 = dif_polytomous(y0, gid0, k, model="gpcm")
+    assert res0["item"].shape == (j,)
+    for key in ("lr", "df", "p_value", "flagged_bh", "effect_size"):
+        assert res0[key].shape == (j,)
+    assert np.all(res0["df"] == k)  # (G-1)*K = K
+    assert np.all(res0["lr"] >= 0.0)
+    p0 = res0["p_value"]
+    assert np.all((p0 >= 0.0) & (p0 <= 1.0))
+    assert res0["flagged_bh"].sum() <= 1  # impact alone must not manufacture DIF
+
+    # inject uniform DIF on item 0: it should be flagged with the largest effect
+    y1, gid1 = gen(dif_on_item0=True)
+    res1 = dif_polytomous(y1, gid1, k, model="gpcm")
+    assert res1["flagged_bh"][0]
+    assert res1["p_value"][0] < 0.01
+    assert res1["effect_size"][0] == res1["effect_size"].max()
+    assert res1["flagged_bh"][1:].sum() <= 1  # anchors stay clean
+
+    # studied_items subset restricts the sweep
+    sub = dif_polytomous(y1, gid1, k, model="gpcm", studied_items=np.array([0, 3]))
+    assert list(sub["item"]) == [0, 3]
+
+    # non-contiguous labels {0,2} must densify to 2 groups (df == n_cat), giving
+    # the SAME result as contiguous {0,1} -- not an inflated, conservative df.
+    gid_gap = np.where(gid1 == 1, 2, 0)
+    res_gap = dif_polytomous(y1, gid_gap, k, model="gpcm")
+    assert np.all(res_gap["df"] == k)  # not (3-1)*k = 2k
+    assert res_gap["flagged_bh"][0]  # strong DIF still detected despite label gap
+    np.testing.assert_allclose(res_gap["lr"], res1["lr"], rtol=1e-6)
+
+    with pytest.raises(ValueError):
+        dif_polytomous(y1, gid1[:-5], k)  # group_id length mismatch
+
+
+def test_dif_polytomous_grm_no_silent_false_negative():
+    """A GRM studied item whose focal group never uses a middle category can
+    disorder thresholds -> NaN loglik. The finiteness guard must surface that as
+    NaN (unflagged) rather than let the `.max(0.0)` clamp report a strongly-DIF
+    item as clean (lr=0, p=1)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import dif_polytomous
+    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "poly_dif"):
+        pytest.skip("compiled core built without poly_dif")
+
+    k, j, n_per = 4, 6, 500
+    rng = np.random.default_rng(7)
+    a = rng.uniform(1.0, 1.4, j)
+    # decreasing GRM thresholds (ordered)
+    b = np.tile(np.array([1.2, 0.0, -1.2]), (j, 1))
+
+    def draw(theta, ai, bi):
+        p = np.exp(grm_category_logprobs(ai * theta, bi))
+        return rng.choice(k, p=p)
+
+    y = np.zeros((2 * n_per, j))
+    gid = np.concatenate([np.zeros(n_per, int), np.ones(n_per, int)])
+    theta = np.concatenate([rng.standard_normal(n_per), 0.6 + rng.standard_normal(n_per)])
+    for p in range(2 * n_per):
+        focal = gid[p] == 1
+        for i in range(j):
+            if i == 0 and focal:
+                # strong DIF + squeeze a middle category out for the focal group
+                # (category 1 ~ 0 counts) so the GRM per-group M-step disorders
+                # thresholds and the fit goes non-finite -- the guard's trigger
+                y[p, i] = draw(theta[p], a[i], np.array([4.2, 4.1, -4.2]))
+            else:
+                y[p, i] = draw(theta[p], a[i], b[i])
+
+    res = dif_polytomous(y, gid, k, model="grm")
+    # item 0 must NOT be a silent clean report: either surfaced NaN, or (if the
+    # fit stayed finite) correctly flagged. A finite p>0.5 unflagged would be the
+    # masked false-negative the guard exists to prevent.
+    p0, flg0 = res["p_value"][0], res["flagged_bh"][0]
+    assert np.isnan(p0) or flg0, f"item 0 silently reported clean: p={p0}, flagged={flg0}"
+    # a NaN p-value must be reported unflagged (never counted as significant)
+    assert not (np.isnan(p0) and flg0)
