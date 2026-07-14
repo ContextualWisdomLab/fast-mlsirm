@@ -407,3 +407,35 @@ def test_fit_polytomous_api_recovers_and_validates():
         fit_polytomous(y.astype(float) + 0.5, k)    # non-integer categories
     with pytest.raises(ValueError):
         fit_polytomous(y, 2)                          # category out of range
+
+
+def test_score_polytomous_recovers_theta():
+    """fit_polytomous -> score_polytomous round-trip: EAP trait scores correlate
+    with true theta (Rust compute end to end)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, score_polytomous
+    from fast_mlsirm.estimators.marginal import category_logprobs
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "score_poly_eap"):
+        pytest.skip("compiled core without polytomous scoring")
+
+    rng = np.random.default_rng(5)
+    n_persons, n_items, k = 3000, 8, 3
+    a_true = rng.uniform(0.9, 1.6, n_items)
+    c_true = np.zeros((n_items, k))
+    c_true[:, 1:] = rng.normal(0.0, 0.6, (n_items, k - 1))
+    theta_true = rng.normal(0.0, 1.0, n_persons)
+    scores = np.arange(k, dtype=float)
+    y = np.zeros((n_persons, n_items), dtype=int)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a_true[i] * theta_true, scores, c_true[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    fit = fit_polytomous(y, k, model="gpcm")
+    sc = score_polytomous(y, fit)
+    assert sc["theta_eap"].shape == (n_persons,)
+    assert np.all(sc["theta_sd"] > 0)
+    assert np.corrcoef(theta_true, sc["theta_eap"])[0, 1] > 0.8

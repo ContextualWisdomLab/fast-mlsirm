@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["PolytomousFit", "fit_polytomous"]
+__all__ = ["PolytomousFit", "fit_polytomous", "score_polytomous"]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
 
@@ -111,3 +111,45 @@ def fit_polytomous(
         n_iter=int(res["n_iter"]),
         thresholds=thresholds,
     )
+
+
+def score_polytomous(
+    responses: np.ndarray,
+    fit: PolytomousFit,
+    q_theta: int = 21,
+) -> dict[str, np.ndarray]:
+    """EAP trait scores for polytomous responses given a fitted model (compute
+    in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
+    a :class:`PolytomousFit` from :func:`fit_polytomous`. Returns
+    ``{"theta_eap", "theta_sd"}``.
+    """
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_items = fit.slope.shape[0]
+    if y.shape[1] != n_items:
+        raise ValueError("responses column count must match the fitted item count")
+    n_cat = fit.cat_params.shape[1] + 1
+    yf = y.astype(np.float64)
+    if not np.all(np.isfinite(yf)) or np.any(yf != np.floor(yf)) or y.min() < 0 or y.max() >= n_cat:
+        raise ValueError(f"responses must be integer categories in 0..{n_cat - 1}")
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_poly_eap"):
+        raise RuntimeError("score_polytomous requires the compiled Rust core")
+
+    n_persons = y.shape[0]
+    res = core.score_poly_eap(
+        y.reshape(-1).astype(np.int64),
+        int(n_persons),
+        int(n_items),
+        int(n_cat),
+        fit.slope.astype(np.float64),
+        fit.cat_params.reshape(-1).astype(np.float64),
+        fit.model,
+        int(q_theta),
+    )
+    return {
+        "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
+        "theta_sd": np.asarray(res["theta_sd"], dtype=np.float64),
+    }

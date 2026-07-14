@@ -27,8 +27,27 @@ use mlsirm_core::scoring::{
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::poly::{
     fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
-    grm_logprobs as core_grm_logprobs, PolyModel,
+    grm_logprobs as core_grm_logprobs, score_poly_eap as core_score_poly_eap, PolyModel,
 };
+
+fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
+    match model.to_lowercase().as_str() {
+        "grm" => Ok(PolyModel::Grm),
+        "gpcm" => Ok(PolyModel::Gpcm),
+        other => Err(PyValueError::new_err(format!("model must be grm or gpcm, got {other}"))),
+    }
+}
+
+fn poly_responses(y: &[i64], n_cat: usize) -> PyResult<Vec<usize>> {
+    let mut yv = Vec::with_capacity(y.len());
+    for &v in y {
+        if v < 0 || v as usize >= n_cat {
+            return Err(PyValueError::new_err("responses must be integer categories in 0..n_cat-1"));
+        }
+        yv.push(v as usize);
+    }
+    Ok(yv)
+}
 use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
@@ -725,19 +744,8 @@ fn fit_poly_unidim(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let m = match model.to_lowercase().as_str() {
-        "grm" => PolyModel::Grm,
-        "gpcm" => PolyModel::Gpcm,
-        other => return Err(PyValueError::new_err(format!("model must be grm or gpcm, got {other}"))),
-    };
-    let ys = y.as_slice()?;
-    let mut yv = Vec::with_capacity(ys.len());
-    for &v in ys {
-        if v < 0 || v as usize >= n_cat {
-            return Err(PyValueError::new_err("responses must be integer categories in 0..n_cat-1"));
-        }
-        yv.push(v as usize);
-    }
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let fit = core_fit_poly_unidim(&yv, n_persons, n_items, n_cat, m, q_theta, max_iter, tol)
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -745,6 +753,41 @@ fn fit_poly_unidim(
     out.set_item("cat_params", fit.cat_params)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
+    Ok(out.into())
+}
+
+/// EAP trait scores from polytomous responses given fitted item parameters
+/// (Rust compute path). Returns a dict with `theta_eap` and `theta_sd`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, model = "grm", q_theta = 21))]
+fn score_poly_eap(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    model: &str,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let (eap, sd) = core_score_poly_eap(
+        &yv,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        q_theta,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", eap)?;
+    out.set_item("theta_sd", sd)?;
     Ok(out.into())
 }
 
@@ -1487,6 +1530,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
+    m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
     Ok(())
 }
 

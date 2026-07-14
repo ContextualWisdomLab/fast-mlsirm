@@ -369,6 +369,86 @@ pub fn fit_poly_unidim(
     Ok(PolyFit { slope, cat_params, loglik: ll, n_iter: it })
 }
 
+/// EAP trait scores from polytomous responses given fitted item parameters
+/// (the Rust scoring companion to [`fit_poly_unidim`]). `slope[i]` is `a_i`;
+/// `cat_params` is flattened `n_items * (n_cat-1)` (GPCM intercepts or GRM
+/// thresholds). Returns `(theta_eap, theta_sd)` per person over a `theta~N(0,1)`
+/// Gauss-Hermite grid.
+#[allow(clippy::too_many_arguments)]
+pub fn score_poly_eap(
+    y: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    q_theta: usize,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if y.len() != n_persons * n_items {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+        return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
+    }
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
+    let qn = nodes.len();
+    let scores: Vec<f64> = (0..n_cat).map(|c| c as f64).collect();
+
+    // per-item cell log-probs at each node: item_lp[i][node*n_cat + k]
+    let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
+    for i in 0..n_items {
+        let a = slope[i];
+        let cp = &cat_params[i * (n_cat - 1)..(i + 1) * (n_cat - 1)];
+        for (nd, &theta) in nodes.iter().enumerate() {
+            let base = a * theta;
+            let lp = match model {
+                PolyModel::Gpcm => {
+                    let mut intercepts = vec![0.0_f64; n_cat];
+                    intercepts[1..].copy_from_slice(cp);
+                    gpcm_logprobs(base, &scores, &intercepts)
+                }
+                PolyModel::Grm => grm_logprobs(base, cp),
+            };
+            item_lp[i][nd * n_cat..(nd + 1) * n_cat].copy_from_slice(&lp);
+        }
+    }
+
+    let mut theta_eap = vec![0.0_f64; n_persons];
+    let mut theta_sd = vec![0.0_f64; n_persons];
+    let mut log_node = vec![0.0_f64; qn];
+    for p in 0..n_persons {
+        for nd in 0..qn {
+            log_node[nd] = log_w[nd];
+        }
+        for i in 0..n_items {
+            let yc = y[p * n_items + i];
+            for nd in 0..qn {
+                log_node[nd] += item_lp[i][nd * n_cat + yc];
+            }
+        }
+        let mx = log_node.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0_f64;
+        for nd in 0..qn {
+            denom += (log_node[nd] - mx).exp();
+        }
+        let (mut m1, mut m2) = (0.0_f64, 0.0_f64);
+        for nd in 0..qn {
+            let post = (log_node[nd] - mx).exp() / denom;
+            m1 += post * nodes[nd];
+            m2 += post * nodes[nd] * nodes[nd];
+        }
+        theta_eap[p] = m1;
+        theta_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
+    }
+    Ok((theta_eap, theta_sd))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,6 +553,58 @@ mod tests {
         }
         let corr = num / (da.sqrt() * dh.sqrt());
         assert!(corr > 0.9, "slope corr {corr}; hat={:?}", fit.slope);
+    }
+
+    #[test]
+    fn score_poly_eap_recovers_true_theta() {
+        let (n_persons, n_items, k) = (3000usize, 8usize, 3usize);
+        let mut st = 424242u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.1 * i as f64).collect();
+        let c_true: Vec<Vec<f64>> =
+            (0..n_items).map(|i| vec![0.0, 0.2 - 0.05 * i as f64, -0.3 + 0.08 * i as f64]).collect();
+        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+        let mut theta_true = vec![0.0_f64; n_persons];
+        let mut y = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            theta_true[p] = theta;
+            for i in 0..n_items {
+                let lp = gpcm_logprobs(a_true[i] * theta, &scores, &c_true[i]);
+                let uu = u();
+                let mut cum = 0.0_f64;
+                let mut cat = k - 1;
+                for (c, l) in lp.iter().enumerate() {
+                    cum += l.exp();
+                    if uu < cum {
+                        cat = c;
+                        break;
+                    }
+                }
+                y[p * n_items + i] = cat;
+            }
+        }
+        // score with the TRUE item params (isolates the scorer from fit error)
+        let cat_flat: Vec<f64> = c_true.iter().flat_map(|c| c[1..].iter().copied()).collect();
+        let (eap, sd) =
+            score_poly_eap(&y, n_persons, n_items, k, &a_true, &cat_flat, PolyModel::Gpcm, 41)
+                .unwrap();
+        assert!(sd.iter().all(|s| s.is_finite() && *s > 0.0));
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (mt, me) = (mean(&theta_true), mean(&eap));
+        let (mut num, mut dt, mut de) = (0.0, 0.0, 0.0);
+        for p in 0..n_persons {
+            num += (theta_true[p] - mt) * (eap[p] - me);
+            dt += (theta_true[p] - mt).powi(2);
+            de += (eap[p] - me).powi(2);
+        }
+        let corr = num / (dt.sqrt() * de.sqrt());
+        assert!(corr > 0.8, "theta EAP corr {corr}");
     }
 
     #[test]
