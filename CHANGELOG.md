@@ -190,6 +190,27 @@
   inflates Type I only mildly (0.057); a structural check confirms the augmented
   fit never falls below the compact one and recovers the focal `μ, σ`.
 
+- **Response-time person fit** (van der Linden & Guo, 2008; Sinharay, 2018).
+  `rt_person_fit` flags aberrant response-time patterns — rapid guessing, item
+  preknowledge — under a fitted lognormal RT model. It profiles each person's speed
+  by ML, so the sum of squared standardized log-time residuals
+  `W_j = sum_i [alpha_i (ln T_ij - (beta_i - tau_hat_j))]^2` is *exactly*
+  `chi2(n_j - 1)` (an orthogonal-projection identity — the estimated-speed
+  correction is a clean loss of one degree of freedom, the RT analogue of `l_z*`,
+  with no asymptotic drift). It returns the aggregate `W`/p-value, a Wilson-Hilferty
+  standardized `l_t`, and per-item studentized residuals plus one-sided too-fast
+  flags. It detects speed *inconsistency across items*, not a uniform speed level
+  (the profile absorbs it). Compute in Rust (`rt::rt_person_fit`, reusing
+  `fitstats::chi2_sf`); exposed via PyO3 and Python. Validated by an exact identity
+  anchor (at true parameters the residuals are `N(0,1)` and `W` is `chi2(n)` with
+  known speed, `chi2(n-1)` once profiled, to within Monte-Carlo error) and a
+  500-replication Monte-Carlo: Type I sits on nominal (0.05, exact — no
+  finite-length conservatism), rapid-guessing and preknowledge responders are
+  detected with power ~1.0 under both normal and skew speed, the flag is robust to
+  the speed-distribution shape (it conditions on within-item residuals), and the
+  tampered items are recalled at ~99%. Deferred: an EAP-plug-in mode (statistically
+  inferior — it mis-calibrates the chi-square) and multivariate RT aberrance.
+
 - **Joint speed-accuracy hierarchical model** (van der Linden, 2007, Level 2). A
   new `mlsirm_core::rt_joint` module and the public `fit_speed_accuracy` — the
   person-level layer that ties ability `theta` (from an accuracy 2PL model) to

@@ -1426,3 +1426,49 @@ def test_fit_speed_accuracy():
 
     with pytest.raises(ValueError):
         fit_speed_accuracy(resp.ravel(), times, a, b, alpha, beta)  # not 2-D
+
+
+def test_rt_person_fit():
+    """RT person fit (van der Linden & Guo, 2008): W ~ chi2(n-1) with l_t ~ N(0,1)
+    on model-consistent data, and rapid-guessing responders flagged."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_response_times, rt_person_fit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rt_person_fit"):
+        pytest.skip("compiled core built without rt_person_fit")
+
+    rng = np.random.default_rng(3)
+    n, m = 2000, 20
+    beta = np.linspace(3.5, 4.5, m)
+    alpha = np.linspace(1.0, 3.0, m)
+    tau = 0.3 * rng.standard_normal(n)
+    y = beta[None, :] - tau[:, None] + rng.standard_normal((n, m)) / alpha[None, :]
+    # first 10% rapid-guess on the last 7 items
+    n_ab = n // 10
+    for p in range(n_ab):
+        y[p, -7:] = (beta[-7:] - tau[p]) - 2.5 + 0.3 * rng.standard_normal(7)
+    times = np.exp(y)
+
+    # exact calibration with the (uncontaminated) item parameters: W ~ chi2(n-1),
+    # l_t ~ N(0,1) on the clean responders, ~.05 Type I, high power
+    pf = rt_person_fit(times, alpha, beta)
+    assert pf["w"].shape == (n,) and pf["z_resid"].shape == (n, m)
+    clean = pf["l_t"][n_ab:]
+    assert abs(clean.mean()) < 0.15 and 0.8 < clean.std() < 1.25
+    assert pf["flagged"][n_ab:].mean() < 0.12
+    assert pf["flagged"][:n_ab].mean() > 0.7
+    # the tampered items are flagged too-fast (strongly negative residual)
+    assert pf["item_flag"][:n_ab, -7:].mean() > 0.7
+    assert np.all(pf["z_resid"][:n_ab, -7:] < 0)  # too-fast = negative
+
+    # with a fitted RT model (production path) the aberrant are still detected;
+    # fitting on the contaminated sample makes the clean responders conservative
+    fit = fit_response_times(times)
+    pf2 = rt_person_fit(times, fit.alpha, fit.beta)
+    assert pf2["flagged"][:n_ab].mean() > 0.6
+
+    with pytest.raises(ValueError):
+        rt_person_fit(times.ravel(), alpha, beta)  # not 2-D

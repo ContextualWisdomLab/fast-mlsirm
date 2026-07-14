@@ -42,7 +42,7 @@ use mlsirm_core::poly::{
     PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
-use mlsirm_core::rt::{fit_rt_lognormal as core_fit_rt, RtConfig};
+use mlsirm_core::rt::{fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig};
 use mlsirm_core::rt_joint::{
     fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig,
 };
@@ -1386,6 +1386,49 @@ fn fit_speed_accuracy_covariance(
     Ok(out.into())
 }
 
+/// Response-time person fit (van der Linden & Guo, 2008; Rust compute path).
+/// `times` (`> 0` where observed) is row-major `n_persons * n_items`; `alpha`/`beta`
+/// come from a fitted lognormal RT model. Returns a dict with per-person `w`
+/// (`chi2(n-1)`), `df`, `l_t`, `p_value`, `flagged`, `tau_ml`, and
+/// `n_persons*n_items` `z_resid`/`item_flag`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (times, observed, n_persons, n_items, alpha, beta, alpha_level = 0.05, z_fast = 1.645))]
+fn rt_person_fit(
+    py: Python<'_>,
+    times: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    n_persons: usize,
+    n_items: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    beta: PyReadonlyArray1<'_, f64>,
+    alpha_level: f64,
+    z_fast: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let res = core_rt_person_fit(
+        times.as_slice()?,
+        obs,
+        n_persons,
+        n_items,
+        alpha.as_slice()?,
+        beta.as_slice()?,
+        alpha_level,
+        z_fast,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("w", res.w)?;
+    out.set_item("df", res.df)?;
+    out.set_item("l_t", res.l_t)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("flagged", res.flagged)?;
+    out.set_item("tau_ml", res.tau_ml)?;
+    out.set_item("z_resid", res.z_resid)?;
+    out.set_item("item_flag", res.item_flag)?;
+    Ok(out.into())
+}
+
 /// M2 limited-information goodness-of-fit with RMSEA2 (+90% CI) and SRMSR.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -2417,6 +2460,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rt_lognormal, m)?)?;
     m.add_function(wrap_pyfunction!(fit_speed_accuracy_covariance, m)?)?;
+    m.add_function(wrap_pyfunction!(rt_person_fit, m)?)?;
     Ok(())
 }
 

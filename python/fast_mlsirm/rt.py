@@ -143,3 +143,62 @@ def fit_speed_accuracy(
         "n_iter": int(res["n_iter"]),
         "converged": bool(res["converged"]),
     }
+
+
+def rt_person_fit(
+    times: np.ndarray,
+    alpha: np.ndarray,
+    beta: np.ndarray,
+    alpha_level: float = 0.05,
+    z_fast: float = 1.645,
+) -> dict:
+    """Response-time person fit (compute in Rust; van der Linden & Guo, 2008) under
+    a fitted lognormal RT model. Profiles each person's speed by ML, so the sum of
+    squared standardized log-time residuals ``W = sum_i z_i^2`` is exactly
+    ``chi2(n_j - 1)`` under the model (a clean one-df correction for the estimated
+    speed, the RT analogue of ``l_z*``). Detects speed *inconsistency across items*
+    -- rapid guessing or item preknowledge, which appear as clusters of strongly
+    negative residuals -- but not a uniform speed level (the profile absorbs it).
+    ``times`` is a persons x items array of raw response times (``NaN``/non-positive
+    = missing); ``alpha``/``beta`` come from :func:`fit_response_times`. Returns a
+    dict with per-person ``w``, ``df``, ``l_t`` (Wilson-Hilferty standardized ~
+    ``N(0,1)``), ``p_value`` (upper-tail chi-square), ``flagged`` (``p < alpha_level``),
+    ``tau_ml`` (profiled speed), and persons x items ``z_resid`` (studentized
+    residuals; strongly negative = too fast) and ``item_flag`` (one-sided too-fast).
+
+    References (APA 7th ed.):
+        van der Linden, W. J., & Guo, F. (2008). Bayesian procedures for
+            identifying aberrant response-time patterns in adaptive testing.
+            *Psychometrika, 73*(3), 365-384.
+            https://doi.org/10.1007/s11336-007-9046-8
+        Sinharay, S. (2018). A new person-fit statistic for the lognormal model for
+            response times. *Journal of Educational Measurement, 55*(4), 457-480.
+            https://doi.org/10.1111/jedm.12188
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rt_person_fit"):
+        raise RuntimeError("rt_person_fit requires the compiled Rust core")
+    t = np.asarray(times, dtype=np.float64)
+    if t.ndim != 2:
+        raise ValueError("times must be a 2-D persons x items array")
+    n_persons, n_items = t.shape
+    observed = np.isfinite(t) & (t > 0)
+    obs_arg = None if observed.all() else observed.reshape(-1)
+    tt = np.where(observed, t, 1.0).reshape(-1)
+    res = core.rt_person_fit(
+        tt, obs_arg, int(n_persons), int(n_items),
+        np.asarray(alpha, dtype=np.float64), np.asarray(beta, dtype=np.float64),
+        float(alpha_level), float(z_fast),
+    )
+    return {
+        "w": np.asarray(res["w"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.int64),
+        "l_t": np.asarray(res["l_t"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "flagged": np.asarray(res["flagged"], dtype=bool),
+        "tau_ml": np.asarray(res["tau_ml"], dtype=np.float64),
+        "z_resid": np.asarray(res["z_resid"], dtype=np.float64).reshape(n_persons, n_items),
+        "item_flag": np.asarray(res["item_flag"], dtype=bool).reshape(n_persons, n_items),
+    }
