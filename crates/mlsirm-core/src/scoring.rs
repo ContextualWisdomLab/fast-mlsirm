@@ -688,3 +688,300 @@ mod tests {
         assert!(eapsum_tables(&bk, &neg_sd, 21, XiRule::GaussHermite { q_xi: 7 }).is_err());
     }
 }
+
+
+/// Item information of the four-parameter logistic model (Magis 2013, APM,
+/// "A note on the item information function of the four-parameter logistic
+/// model"): with `P = c + (d - c) sigmoid(eta)` and slope `a`,
+/// `I(theta) = a^2 (P - c)^2 (d - P)^2 / ((d - c)^2 P (1 - P))`.
+/// `c = 0, d = 1` reduces to the 2PL `a^2 P (1 - P)`. For the latent-space
+/// models the information is with respect to the trait direction at a fixed
+/// latent-space position.
+pub fn item_information_4pl(a: f64, p: f64, c: f64, d: f64) -> f64 {
+    if p <= 0.0 || p >= 1.0 || d <= c {
+        return 0.0;
+    }
+    let num = a * a * (p - c) * (p - c) * (d - p) * (d - p);
+    num / ((d - c) * (d - c) * p * (1.0 - p))
+}
+
+/// Per-item information at arbitrary `(theta_d, xi)` points for a frozen
+/// bank; also the per-dimension test information (sum over the dimension's
+/// items). `theta` is `n_points x n_dims`, `xi` is `n_points x latent_dim`.
+pub fn bank_information(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    let n_items = validate_bank(bank)?;
+    if theta.len() != n_points * bank.n_dims || xi.len() != n_points * bank.latent_dim {
+        return Err("theta/xi shapes must match n_points".into());
+    }
+    let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
+    let gamma = if uses_space { bank.tau.exp() } else { 0.0 };
+    let mut item_info = vec![0.0_f64; n_points * n_items];
+    let mut test_info = vec![0.0_f64; n_points * bank.n_dims];
+    for p in 0..n_points {
+        for i in 0..n_items {
+            let d = bank.factor_id[i];
+            let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
+            let mut eta = a * theta[p * bank.n_dims + d] + bank.b[i];
+            if uses_space {
+                let mut dist2 = bank.eps_distance;
+                for k in 0..bank.latent_dim {
+                    let diff = xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
+                    dist2 += diff * diff;
+                }
+                eta -= gamma * dist2.sqrt();
+            }
+            let prob = sigmoid(eta);
+            let info = item_information_4pl(a, prob, 0.0, 1.0);
+            item_info[p * n_items + i] = info;
+            test_info[p * bank.n_dims + d] += info;
+        }
+    }
+    Ok((item_info, test_info))
+}
+
+/// One step of adaptive EAP testing (Bock & Mislevy 1982; multidimensional
+/// targeting per Wang, Kuo & Chao 2010): score the responses so far by EAP,
+/// pick the trait dimension with the largest posterior SD, and return the
+/// unadministered items of that dimension ranked by information at the
+/// current EAP point.
+pub struct CatStep {
+    pub theta_eap: Vec<f64>,
+    pub theta_sd: Vec<f64>,
+    pub xi_eap: Vec<f64>,
+    pub target_dim: usize,
+    /// Unadministered item indices, best first.
+    pub ranked_items: Vec<usize>,
+    /// Information of each ranked item at the current EAP point.
+    pub ranked_info: Vec<f64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn cat_next_item(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    administered: &[bool],
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+) -> Result<CatStep, String> {
+    let n_items = validate_bank(bank)?;
+    if y.len() != n_items || administered.len() != n_items {
+        return Err("y and administered must have length n_items".into());
+    }
+    let scores = score_eap(bank, y, administered, 1, prior, q_theta, xi_rule)?;
+    let target_dim = (0..bank.n_dims)
+        .max_by(|&a, &b| {
+            scores.theta_sd[a]
+                .partial_cmp(&scores.theta_sd[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(0);
+    let (item_info, _) = bank_information(bank, &scores.theta_eap, &scores.xi_eap, 1)?;
+    let mut candidates: Vec<usize> = (0..n_items)
+        .filter(|&i| !administered[i] && bank.factor_id[i] == target_dim)
+        .collect();
+    if candidates.is_empty() {
+        candidates = (0..n_items).filter(|&i| !administered[i]).collect();
+    }
+    candidates.sort_by(|&a, &b| {
+        item_info[b].partial_cmp(&item_info[a]).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let ranked_info: Vec<f64> = candidates.iter().map(|&i| item_info[i]).collect();
+    Ok(CatStep {
+        theta_eap: scores.theta_eap,
+        theta_sd: scores.theta_sd,
+        xi_eap: scores.xi_eap,
+        target_dim,
+        ranked_items: candidates,
+        ranked_info,
+    })
+}
+
+/// Plausible values (Marsman, Maris, Bechger & Glas 2016): seeded categorical
+/// draws of `theta` from each person posterior over the scoring grid, for
+/// secondary analyses that need the ability distribution rather than point
+/// EAPs. Returns row-major `n_persons x n_draws x n_dims`.
+#[allow(clippy::too_many_arguments)]
+pub fn plausible_values(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    n_draws: usize,
+    seed: u64,
+) -> Result<Vec<f64>, String> {
+    let n_items = validate_bank(bank)?;
+    validate_prior(prior, bank.n_dims)?;
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if n_draws == 0 {
+        return Err("n_draws must be >= 1".into());
+    }
+    let grids = scoring_grids(bank, q_theta, xi_rule)?;
+    let ctx = prior_contexts(prior);
+    let config = bank_model_config(bank, n_persons, n_items);
+    let tables = build_tables(
+        bank.alpha, bank.b, bank.zeta, bank.tau, &config, bank.factor_id, &ctx, &grids,
+    );
+    let resp = index_responses(y, observed, n_persons, n_items);
+    let cell = grids.q_t * grids.n_x;
+    let mut l_buf = vec![0.0_f64; bank.n_dims * cell];
+    let mut log_zdx = vec![0.0_f64; bank.n_dims * grids.n_x];
+    let mut state = seed.max(1);
+    let mut unif = move || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut out = vec![0.0_f64; n_persons * n_draws * bank.n_dims];
+    for p in 0..n_persons {
+        let lp = person_pass(
+            p, 0, &tables, &resp, bank.factor_id, bank.n_dims, n_items, &grids, &mut l_buf,
+            &mut log_zdx,
+        );
+        let mut px = vec![0.0_f64; grids.n_x];
+        for x in 0..grids.n_x {
+            let mut lx = grids.x_logw[x] - lp;
+            for d in 0..bank.n_dims {
+                lx += log_zdx[d * grids.n_x + x];
+            }
+            px[x] = lx.exp();
+        }
+        for draw in 0..n_draws {
+            let ux = unif();
+            let mut acc = 0.0;
+            let mut x_sel = grids.n_x - 1;
+            for (x, &w) in px.iter().enumerate() {
+                acc += w;
+                if ux <= acc {
+                    x_sel = x;
+                    break;
+                }
+            }
+            for d in 0..bank.n_dims {
+                let ut = unif();
+                let mut acc_t = 0.0;
+                let mut t_sel = grids.q_t - 1;
+                for t in 0..grids.q_t {
+                    let pt = (grids.t_logw[t] + l_buf[d * cell + t * grids.n_x + x_sel]
+                        - log_zdx[d * grids.n_x + x_sel])
+                        .exp();
+                    acc_t += pt;
+                    if ut <= acc_t {
+                        t_sel = t;
+                        break;
+                    }
+                }
+                out[(p * n_draws + draw) * bank.n_dims + d] =
+                    prior.mean[d] + prior.sd[d] * grids.t_nodes[t_sel];
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod cat_pv_tests {
+    use super::*;
+    use crate::nodes::XiRule;
+    use crate::ModelType;
+
+    fn bank_fixture() -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>) {
+        let alpha = vec![0.2, -0.1, 0.4, 0.0, 0.3, -0.2, 0.1, 0.25];
+        let b = vec![0.5, -0.5, 0.0, 1.0, -1.0, 0.3, -0.3, 0.8];
+        let zeta = vec![0.0; 8];
+        let factor_id = vec![0, 1, 0, 1, 0, 1, 0, 1];
+        (alpha, b, zeta, factor_id)
+    }
+
+    #[test]
+    fn information_reduces_to_2pl_and_peaks_at_b() {
+        // 4PL formula with c=0, d=1 equals a^2 P (1-P)
+        let i1 = item_information_4pl(1.5, 0.4, 0.0, 1.0);
+        assert!((i1 - 1.5f64 * 1.5 * 0.4 * 0.6).abs() < 1e-12);
+        // guessing shrinks information (Magis 2013)
+        let i3pl = item_information_4pl(1.5, 0.4, 0.2, 1.0);
+        assert!(i3pl < i1);
+        assert_eq!(item_information_4pl(1.5, 0.0, 0.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn cat_selects_informative_item_on_target_dim() {
+        let (alpha, b, zeta, fid) = bank_fixture();
+        let bank = ItemBank {
+            alpha: &alpha,
+            b: &b,
+            zeta: &zeta,
+            tau: -30.0,
+            factor_id: &fid,
+            model_type: ModelType::Mirt,
+            n_dims: 2,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        };
+        // dim 0 already has two answers; dim 1 has none -> target dim 1
+        let y = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let administered = vec![true, false, true, false, false, false, false, false];
+        let step = cat_next_item(
+            &bank, &y, &administered, &PriorSpec::standard(2), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .unwrap();
+        assert_eq!(step.target_dim, 1, "unmeasured dimension must be targeted");
+        assert!(step.ranked_items.iter().all(|&i| fid[i] == 1 && !administered[i]));
+        // ranked by information: descending
+        for w in step.ranked_info.windows(2) {
+            assert!(w[0] >= w[1]);
+        }
+    }
+
+    #[test]
+    fn plausible_values_track_the_posterior() {
+        let (alpha, b, zeta, fid) = bank_fixture();
+        let bank = ItemBank {
+            alpha: &alpha,
+            b: &b,
+            zeta: &zeta,
+            tau: -30.0,
+            factor_id: &fid,
+            model_type: ModelType::Mirt,
+            n_dims: 2,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        };
+        // person 0 passes everything on dim 0, person 1 fails everything
+        let y = vec![
+            1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        let observed = vec![true; 16];
+        let pv = plausible_values(
+            &bank, &y, &observed, 2, &PriorSpec::standard(2), 15,
+            XiRule::GaussHermite { q_xi: 7 }, 200, 7,
+        )
+        .unwrap();
+        let mean_p0_d0: f64 =
+            (0..200).map(|r| pv[(r) * 2]).sum::<f64>() / 200.0;
+        let mean_p1_d0: f64 =
+            (0..200).map(|r| pv[(200 + r) * 2]).sum::<f64>() / 200.0;
+        assert!(
+            mean_p0_d0 > mean_p1_d0 + 0.5,
+            "PV means must separate pass-all from fail-all: {mean_p0_d0} vs {mean_p1_d0}"
+        );
+        // draws are reproducible
+        let pv2 = plausible_values(
+            &bank, &y, &observed, 2, &PriorSpec::standard(2), 15,
+            XiRule::GaussHermite { q_xi: 7 }, 200, 7,
+        )
+        .unwrap();
+        assert_eq!(pv, pv2);
+    }
+}

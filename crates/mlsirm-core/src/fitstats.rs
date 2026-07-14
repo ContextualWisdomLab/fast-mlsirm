@@ -924,3 +924,485 @@ mod vuong_tests {
         assert!(out.gddm > 0.0);
     }
 }
+
+
+/// Residual-based item fit (Haberman, Sinharay & Chon 2013): bin persons by
+/// EAP score on the item's dimension, compare observed proportions against
+/// the model ICC at the bin's mean estimate, and standardize:
+/// `z_bin = (obs - exp) / sqrt(exp (1 - exp) / n_bin)`. Reported per item as
+/// the maximum |z| over bins and its Bonferroni-adjusted normal p-value.
+/// Designed for LONG tests (the source's operational setting): with short
+/// tests EAP shrinkage biases the extreme bins and inflates the statistic —
+/// prefer S-X2 below ~25 items.
+pub struct ResidualFitResult {
+    pub max_abs_z: Vec<f64>,
+    pub p_value: Vec<f64>,
+    pub n_bins: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn residual_item_fit(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    theta: &[f64],
+    xi: &[f64],
+    n_bins: usize,
+) -> Result<ResidualFitResult, String> {
+    let (free_alpha, uses_space) = crate::model_exec_flags(bank.model_type);
+    let n_items = bank.b.len();
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if theta.len() != n_persons * bank.n_dims || xi.len() != n_persons * bank.latent_dim {
+        return Err("theta/xi shapes must match n_persons".into());
+    }
+    if n_bins < 2 {
+        return Err("n_bins must be >= 2".into());
+    }
+    let gamma = if uses_space { bank.tau.exp() } else { 0.0 };
+    let mut max_abs_z = vec![f64::NAN; n_items];
+    let mut p_value = vec![f64::NAN; n_items];
+    for i in 0..n_items {
+        let d = bank.factor_id[i];
+        // persons observed on item i, sorted by their EAP on dim d
+        let mut idx: Vec<usize> =
+            (0..n_persons).filter(|&p| observed[p * n_items + i]).collect();
+        if idx.len() < n_bins * 5 {
+            continue;
+        }
+        idx.sort_by(|&a, &b| {
+            theta[a * bank.n_dims + d]
+                .partial_cmp(&theta[b * bank.n_dims + d])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
+        let mut worst = 0.0_f64;
+        let bin_size = idx.len() / n_bins;
+        for bin in 0..n_bins {
+            let lo = bin * bin_size;
+            let hi = if bin == n_bins - 1 { idx.len() } else { (bin + 1) * bin_size };
+            let members = &idx[lo..hi];
+            if members.is_empty() {
+                continue;
+            }
+            let (mut obs_sum, mut exp_sum) = (0.0_f64, 0.0_f64);
+            for &p in members {
+                obs_sum += y[p * n_items + i];
+                let mut eta = a * theta[p * bank.n_dims + d] + bank.b[i];
+                if uses_space {
+                    let mut dist2 = bank.eps_distance;
+                    for k in 0..bank.latent_dim {
+                        let diff =
+                            xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
+                        dist2 += diff * diff;
+                    }
+                    eta -= gamma * dist2.sqrt();
+                }
+                exp_sum += 1.0 / (1.0 + (-eta).exp());
+            }
+            let n_bin = members.len() as f64;
+            let e = (exp_sum / n_bin).clamp(1e-9, 1.0 - 1e-9);
+            let z = (obs_sum / n_bin - e) / (e * (1.0 - e) / n_bin).sqrt();
+            if z.abs() > worst {
+                worst = z.abs();
+            }
+        }
+        max_abs_z[i] = worst;
+        // Bonferroni over bins on the two-sided normal tail
+        let p_one = erfc(worst / std::f64::consts::SQRT_2);
+        p_value[i] = (p_one * n_bins as f64).min(1.0);
+    }
+    Ok(ResidualFitResult { max_abs_z, p_value, n_bins })
+}
+
+/// Adjusted chi-square-to-df ratios for item pairs (Drasgow tradition;
+/// Tay & Drasgow 2012, "Adjusting the adjusted chi2/df ratio statistic for
+/// dichotomous IRT analyses"): the pairwise 2x2 table chi-square against the
+/// model-implied joint probabilities, rescaled to a reference sample size of
+/// 3000: `adj = ((chi2 - df) * 3000 / N + df) / df`. Values above ~3 flag
+/// pairwise misfit / local dependence.
+pub struct AdjustedChi2Result {
+    /// Upper-triangle pair values, row-major pair order.
+    pub ratio: Vec<f64>,
+    pub mean_ratio: f64,
+    pub max_ratio: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn adjusted_chi2_pairs(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+) -> Result<AdjustedChi2Result, String> {
+    let n_items = bank.b.len();
+    if y.len() != n_persons * n_items || observed.len() != y.len() {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    let (probs, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
+    let mut ratio = Vec::with_capacity(n_items * (n_items - 1) / 2);
+    let (mut sum, mut max, mut count) = (0.0_f64, 0.0_f64, 0usize);
+    for i in 0..n_items {
+        for j in (i + 1)..n_items {
+            // model-implied joint cell probabilities (marginal over the grid)
+            let (mut p11, mut p10, mut p01) = (0.0_f64, 0.0_f64, 0.0_f64);
+            for c in 0..cell {
+                let pi = probs[i * cell + c];
+                let pj = probs[j * cell + c];
+                p11 += weights[c] * pi * pj;
+                p10 += weights[c] * pi * (1.0 - pj);
+                p01 += weights[c] * (1.0 - pi) * pj;
+            }
+            let p00 = (1.0 - p11 - p10 - p01).max(1e-12);
+            // observed joint counts over persons observed on both items
+            let (mut o11, mut o10, mut o01, mut o00, mut n) =
+                (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+            for p in 0..n_persons {
+                if !observed[p * n_items + i] || !observed[p * n_items + j] {
+                    continue;
+                }
+                let (yi, yj) = (y[p * n_items + i], y[p * n_items + j]);
+                n += 1.0;
+                if yi == 1.0 && yj == 1.0 {
+                    o11 += 1.0;
+                } else if yi == 1.0 {
+                    o10 += 1.0;
+                } else if yj == 1.0 {
+                    o01 += 1.0;
+                } else {
+                    o00 += 1.0;
+                }
+            }
+            if n < 20.0 {
+                ratio.push(f64::NAN);
+                continue;
+            }
+            let mut chi2 = 0.0_f64;
+            for (o, e) in [(o11, p11), (o10, p10), (o01, p01), (o00, p00)] {
+                let expc = (e * n).max(1e-9);
+                chi2 += (o - expc) * (o - expc) / expc;
+            }
+            let df = 3.0;
+            let adj = ((chi2 - df) * 3000.0 / n + df) / df;
+            ratio.push(adj);
+            sum += adj;
+            if adj > max {
+                max = adj;
+            }
+            count += 1;
+        }
+    }
+    Ok(AdjustedChi2Result {
+        ratio,
+        mean_ratio: if count > 0 { sum / count as f64 } else { f64::NAN },
+        max_ratio: max,
+    })
+}
+
+/// Parametric-bootstrap person fit (Sinharay 2016, "Assessment of person fit
+/// using resampling-based approaches"): for each person, simulate replicate
+/// response vectors from the fitted model AT the person's EAP estimates,
+/// compute `l_z*` for each replicate, and report the empirical p-value
+/// `P(l_z*_rep <= l_z*_obs)` — small values flag aberrance without relying
+/// on the asymptotic N(0,1) reference (which degrades for short/sparse
+/// tests).
+#[allow(clippy::too_many_arguments)]
+pub fn person_fit_resampling(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    theta: &[f64],
+    xi: &[f64],
+    prior_mean: &[f64],
+    n_replicates: usize,
+    seed: u64,
+) -> Result<Vec<f64>, String> {
+    let (free_alpha, uses_space) = crate::model_exec_flags(bank.model_type);
+    let n_items = bank.b.len();
+    if n_replicates == 0 {
+        return Err("n_replicates must be >= 1".into());
+    }
+    let base = person_fit(bank, y, observed, n_persons, theta, xi, prior_mean, -1.645)?;
+    let gamma = if uses_space { bank.tau.exp() } else { 0.0 };
+    let mut state = seed.max(1);
+    let mut unif = move || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut p_values = vec![f64::NAN; n_persons];
+    let mut y_rep = vec![0.0_f64; n_items];
+    let mut obs_rep = vec![false; n_items];
+    for p in 0..n_persons {
+        // observed lz*: the minimum across dimensions (matches the flag rule)
+        let obs_stat = (0..bank.n_dims)
+            .map(|d| base.lz_star[p * bank.n_dims + d])
+            .filter(|v| v.is_finite())
+            .fold(f64::INFINITY, f64::min);
+        if !obs_stat.is_finite() {
+            continue;
+        }
+        let mut count_leq = 0usize;
+        let mut count_valid = 0usize;
+        for _ in 0..n_replicates {
+            for i in 0..n_items {
+                obs_rep[i] = observed[p * n_items + i];
+                if !obs_rep[i] {
+                    y_rep[i] = 0.0;
+                    continue;
+                }
+                let d = bank.factor_id[i];
+                let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
+                let mut eta = a * theta[p * bank.n_dims + d] + bank.b[i];
+                if uses_space {
+                    let mut dist2 = bank.eps_distance;
+                    for k in 0..bank.latent_dim {
+                        let diff =
+                            xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
+                        dist2 += diff * diff;
+                    }
+                    eta -= gamma * dist2.sqrt();
+                }
+                let prob = 1.0 / (1.0 + (-eta).exp());
+                y_rep[i] = if unif() < prob { 1.0 } else { 0.0 };
+            }
+            let pm: Vec<f64> = if prior_mean.is_empty() {
+                Vec::new()
+            } else {
+                prior_mean[p * bank.n_dims..(p + 1) * bank.n_dims].to_vec()
+            };
+            let rep = person_fit(
+                bank,
+                &y_rep,
+                &obs_rep,
+                1,
+                &theta[p * bank.n_dims..(p + 1) * bank.n_dims],
+                &xi[p * bank.latent_dim..(p + 1) * bank.latent_dim],
+                &pm,
+                -1.645,
+            )?;
+            let rep_stat = (0..bank.n_dims)
+                .map(|d| rep.lz_star[d])
+                .filter(|v| v.is_finite())
+                .fold(f64::INFINITY, f64::min);
+            if rep_stat.is_finite() {
+                count_valid += 1;
+                if rep_stat <= obs_stat {
+                    count_leq += 1;
+                }
+            }
+        }
+        if count_valid > 0 {
+            // add-one smoothing keeps p in (0, 1]
+            p_values[p] = (count_leq as f64 + 1.0) / (count_valid as f64 + 1.0);
+        }
+    }
+    Ok(p_values)
+}
+
+/// Stepwise test-characteristic-curve drift detection (Guo, Zheng & Chang
+/// 2015): given two calibrations of a common item set on the SAME scale
+/// (e.g. FIPC-linked), compute the weighted area between the two TCCs over
+/// the prior grid, and step-wise remove the item with the largest
+/// contribution until the remaining area falls below `threshold` — the
+/// removed items are the drift suspects.
+pub struct TccDriftResult {
+    /// Items flagged as drifted, in removal order.
+    pub drifted: Vec<usize>,
+    /// Weighted TCC area per removal round (before each removal).
+    pub area_trace: Vec<f64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn tcc_drift(
+    bank_old: &ItemBank<'_>,
+    bank_new: &ItemBank<'_>,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    threshold: f64,
+) -> Result<TccDriftResult, String> {
+    let n_items = bank_old.b.len();
+    if bank_new.b.len() != n_items {
+        return Err("both calibrations must cover the same item set".into());
+    }
+    let (p_old, weights, _t, cell) = icc_nodes(bank_old, prior, q_theta, xi_rule)?;
+    let (p_new, _w2, _t2, cell2) = icc_nodes(bank_new, prior, q_theta, xi_rule)?;
+    if cell != cell2 {
+        return Err("calibrations must share the quadrature configuration".into());
+    }
+    let mut active = vec![true; n_items];
+    let mut drifted = Vec::new();
+    let mut area_trace = Vec::new();
+    loop {
+        // weighted area between TCCs over active items
+        let mut area = 0.0_f64;
+        let mut per_item = vec![0.0_f64; n_items];
+        for c in 0..cell {
+            let mut diff_sum = 0.0_f64;
+            for i in 0..n_items {
+                if active[i] {
+                    diff_sum += p_new[i * cell + c] - p_old[i * cell + c];
+                }
+            }
+            area += weights[c] * diff_sum.abs();
+            for i in 0..n_items {
+                if active[i] {
+                    per_item[i] +=
+                        weights[c] * (p_new[i * cell + c] - p_old[i * cell + c]).abs();
+                }
+            }
+        }
+        area_trace.push(area);
+        if area <= threshold || active.iter().filter(|&&a| a).count() <= 2 {
+            break;
+        }
+        let worst = (0..n_items)
+            .filter(|&i| active[i])
+            .max_by(|&a, &b| {
+                per_item[a].partial_cmp(&per_item[b]).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+        // stop when the worst item no longer moves the needle
+        if per_item[worst] < threshold / n_items as f64 {
+            break;
+        }
+        active[worst] = false;
+        drifted.push(worst);
+    }
+    Ok(TccDriftResult { drifted, area_trace })
+}
+
+#[cfg(test)]
+mod batch3_tests {
+    use super::*;
+    use crate::scoring::{score_eap, ItemBank, PriorSpec};
+    use crate::nodes::XiRule;
+    use crate::ModelType;
+
+    fn sim_bank(
+        n_persons: usize,
+        n_items: usize,
+        seed: u64,
+    ) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>, Vec<f64>, Vec<bool>) {
+        let alpha = vec![0.0_f64; n_items];
+        let b: Vec<f64> = (0..n_items).map(|i| -1.2 + 2.4 * i as f64 / n_items as f64).collect();
+        let zeta = vec![0.0_f64; n_items];
+        let fid = vec![0usize; n_items];
+        let mut state = seed;
+        let mut unif = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let mut y = vec![0.0_f64; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1: f64 = unif().max(1e-12);
+            let u2: f64 = unif();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let eta: f64 = theta + b[i];
+                if unif() < 1.0 / (1.0 + (-eta).exp()) {
+                    y[p * n_items + i] = 1.0;
+                }
+            }
+        }
+        (alpha, b, zeta, fid, y, vec![true; n_persons * n_items])
+    }
+
+    fn mk_bank<'a>(
+        alpha: &'a [f64],
+        b: &'a [f64],
+        zeta: &'a [f64],
+        fid: &'a [usize],
+    ) -> ItemBank<'a> {
+        ItemBank {
+            alpha,
+            b,
+            zeta,
+            tau: -30.0,
+            factor_id: fid,
+            model_type: ModelType::Mirt,
+            n_dims: 1,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        }
+    }
+
+    #[test]
+    fn residual_fit_and_adjusted_chi2_calibrate_on_true_model() {
+        // long test: the residual method's design regime (EAP shrinkage is
+        // negligible); short tests belong to S-X2
+        let (alpha, b, zeta, fid, y, observed) = sim_bank(1500, 40, 99);
+        let bank = mk_bank(&alpha, &b, &zeta, &fid);
+        let eap = score_eap(
+            &bank, &y, &observed, 1500, &PriorSpec::standard(1), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .unwrap();
+        let rf = residual_item_fit(&bank, &y, &observed, 1500, &eap.theta_eap, &eap.xi_eap, 8)
+            .unwrap();
+        let finite = rf.max_abs_z.iter().filter(|v| v.is_finite()).count();
+        assert!(finite >= 35);
+        let flagged = rf.p_value.iter().filter(|&&p| p < 0.05).count();
+        assert!(flagged <= 8, "true model should rarely flag: {flagged}");
+        let adj = adjusted_chi2_pairs(
+            &bank, &y, &observed, 1500, &PriorSpec::standard(1), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .unwrap();
+        assert!(adj.mean_ratio < 3.0, "true-model mean adjusted ratio: {}", adj.mean_ratio);
+    }
+
+    #[test]
+    fn resampling_person_fit_flags_reversed_pattern() {
+        let (alpha, b, zeta, fid, mut y, observed) = sim_bank(60, 20, 5);
+        // person 0: reversed responses (passes hard, fails easy) — aberrant
+        for i in 0..20 {
+            y[i] = if b[i] < 0.0 { 1.0 } else { 0.0 };
+        }
+        let bank = mk_bank(&alpha, &b, &zeta, &fid);
+        let eap = score_eap(
+            &bank, &y, &observed, 60, &PriorSpec::standard(1), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .unwrap();
+        let pv = person_fit_resampling(
+            &bank, &y, &observed, 60, &eap.theta_eap, &eap.xi_eap, &[], 200, 11,
+        )
+        .unwrap();
+        assert!(pv[0].is_finite());
+        let median_rest = {
+            let mut rest: Vec<f64> =
+                (1..60).map(|p| pv[p]).filter(|v| v.is_finite()).collect();
+            rest.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            rest[rest.len() / 2]
+        };
+        assert!(
+            pv[0] < median_rest,
+            "aberrant person must sit low in the bootstrap null: {} vs median {}",
+            pv[0],
+            median_rest
+        );
+    }
+
+    #[test]
+    fn tcc_drift_isolates_the_shifted_item() {
+        let (alpha, b, zeta, fid, _y, _obs) = sim_bank(10, 10, 1);
+        let mut b_new = b.clone();
+        b_new[4] += 1.0; // drift on item 4
+        let bank_old = mk_bank(&alpha, &b, &zeta, &fid);
+        let bank_new = mk_bank(&alpha, &b_new, &zeta, &fid);
+        let res = tcc_drift(
+            &bank_old, &bank_new, &PriorSpec::standard(1), 21,
+            XiRule::GaussHermite { q_xi: 7 }, 1e-3,
+        )
+        .unwrap();
+        assert!(res.drifted.contains(&4), "shifted item must be flagged: {:?}", res.drifted);
+        assert!(res.area_trace[0] > *res.area_trace.last().unwrap());
+    }
+}

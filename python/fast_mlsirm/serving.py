@@ -328,3 +328,122 @@ def score_respondents(
             }
         )
     return results
+
+
+def _bundle_bank_args(bundle: dict[str, Any]) -> dict[str, Any]:
+    items = bundle["items"]
+    return dict(
+        alpha=np.array([it["alpha"] for it in items], dtype=np.float64),
+        b=np.array([it["b"] for it in items], dtype=np.float64),
+        zeta=np.array([it["zeta"] for it in items], dtype=np.float64).ravel(),
+        tau=float(bundle["tau"]),
+        factor_id=np.array([it["factor_id"] for it in items], dtype=np.int64),
+        model=bundle["model"],
+        n_dims=int(bundle["n_dims"]),
+        latent_dim=int(bundle["latent_dim"]),
+        eps_distance=float(bundle["eps_distance"]),
+    )
+
+
+def bank_information(
+    bundle: dict[str, Any], theta: np.ndarray, xi: np.ndarray | None = None
+) -> dict[str, np.ndarray]:
+    """Item/test information at the given trait points (Magis 2013 formula;
+    Lord's test-information tradition). ``theta`` is points x n_dims; ``xi``
+    defaults to the origin of the latent space."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("bank_information requires the compiled Rust core")
+    theta = np.asarray(theta, dtype=np.float64)
+    if theta.ndim == 1:
+        theta = theta[:, None]
+    n_points = theta.shape[0]
+    if xi is None:
+        xi = np.zeros((n_points, bundle["latent_dim"]))
+    res = dict(
+        core.bank_information(
+            theta.ravel(), np.asarray(xi, dtype=np.float64).ravel(), int(n_points),
+            **_bundle_bank_args(bundle),
+        )
+    )
+    return {
+        "item_info": np.asarray(res["item_info"]).reshape(n_points, bundle["n_items"]),
+        "test_info": np.asarray(res["test_info"]).reshape(n_points, bundle["n_dims"]),
+    }
+
+
+def cat_next_item(
+    bundle: dict[str, Any],
+    responses_so_far: dict[str, Any],
+    prior: tuple[np.ndarray, np.ndarray] | None = None,
+) -> dict[str, Any]:
+    """Adaptive-EAP CAT step over the frozen bank (Bock & Mislevy 1982;
+    multidimensional targeting per Wang, Kuo & Chao 2010): returns the EAP
+    state, the targeted dimension, and unadministered items ranked by
+    information. ``responses_so_far`` maps item code -> 0/1."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("cat_next_item requires the compiled Rust core")
+    items = bundle["items"]
+    n_items = bundle["n_items"]
+    code_to_col = {it["code"]: j for j, it in enumerate(items)}
+    y = np.zeros(n_items)
+    administered = np.zeros(n_items, dtype=bool)
+    for code, value in responses_so_far.items():
+        j = code_to_col.get(code)
+        if j is None:
+            raise ValueError(f"unknown item code {code!r}")
+        y[j] = float(bool(value)) if isinstance(value, bool) else float(value)
+        administered[j] = True
+    mean, sd = serving_prior(bundle) if prior is None else (
+        np.asarray(prior[0], dtype=float), np.asarray(prior[1], dtype=float))
+    res = dict(
+        core.cat_next_item(
+            y, administered, prior_mean=mean, prior_sd=sd,
+            q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
+            q_xi=int(bundle["quadrature"]["q_xi"]),
+            **_bundle_bank_args(bundle),
+        )
+    )
+    res["ranked_codes"] = [items[i]["code"] for i in res["ranked_items"]]
+    return res
+
+
+def plausible_values(
+    bundle: dict[str, Any],
+    responses: dict[str, Any] | list[dict[str, Any]] | np.ndarray,
+    n_draws: int = 5,
+    seed: int = 1,
+    prior: tuple[np.ndarray, np.ndarray] | None = None,
+) -> np.ndarray:
+    """Posterior plausible-value draws (Marsman et al. 2016) for secondary
+    analyses; returns persons x n_draws x n_dims."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("plausible_values requires the compiled Rust core")
+    items = bundle["items"]
+    n_items = bundle["n_items"]
+    code_to_col = {it["code"]: j for j, it in enumerate(items)}
+    if isinstance(responses, dict):
+        responses = [responses]
+    if isinstance(responses, list):
+        y = np.full((len(responses), n_items), np.nan)
+        for r, resp in enumerate(responses):
+            for code, value in resp.items():
+                j = code_to_col.get(code)
+                if j is None:
+                    raise ValueError(f"unknown item code {code!r}")
+                y[r, j] = float(bool(value)) if isinstance(value, bool) else float(value)
+    else:
+        y = np.asarray(responses, dtype=float)
+    observed = ~np.isnan(y)
+    mean, sd = serving_prior(bundle) if prior is None else (
+        np.asarray(prior[0], dtype=float), np.asarray(prior[1], dtype=float))
+    pv = core.plausible_values(
+        np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
+        prior_mean=mean, prior_sd=sd,
+        q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
+        q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=int(n_draws), seed=int(seed),
+        **_bundle_bank_args(bundle),
+    )
+    return np.asarray(pv).reshape(y.shape[0], n_draws, bundle["n_dims"])

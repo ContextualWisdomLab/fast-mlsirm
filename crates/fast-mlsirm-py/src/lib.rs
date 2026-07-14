@@ -10,9 +10,15 @@ use mlsirm_core::marginal::{
     PopulationSpec, XiRuleKind,
 };
 use mlsirm_core::nodes::XiRule;
+use mlsirm_core::fitstats::{
+    adjusted_chi2_pairs as core_adjusted_chi2_pairs,
+    person_fit_resampling as core_person_fit_resampling,
+    residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
+};
 use mlsirm_core::scoring::{
-    eapsum_tables as core_eapsum_tables, score_eap as core_score_eap,
-    score_map as core_score_map, ItemBank, PriorSpec,
+    bank_information as core_bank_information, cat_next_item as core_cat_next_item,
+    eapsum_tables as core_eapsum_tables, plausible_values as core_plausible_values,
+    score_eap as core_score_eap, score_map as core_score_map, ItemBank, PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::{
@@ -967,6 +973,312 @@ fn oakes_standard_errors(
     Ok(out.into())
 }
 
+
+/// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
+/// formula, c=0/d=1 logistic case; Lord test-information tradition).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    theta, xi, n_points, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance,
+))]
+fn bank_information(
+    py: Python<'_>,
+    theta: PyReadonlyArray1<'_, f64>,
+    xi: PyReadonlyArray1<'_, f64>,
+    n_points: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let (item_info, test_info) =
+        core_bank_information(&bank, theta.as_slice()?, xi.as_slice()?, n_points)
+            .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item_info", item_info)?;
+    out.set_item("test_info", test_info)?;
+    Ok(out.into())
+}
+
+/// One adaptive-EAP CAT step (Bock & Mislevy 1982; Wang, Kuo & Chao 2010).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, administered, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+))]
+fn cat_next_item(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let step = core_cat_next_item(
+        &bank, y.as_slice()?, administered.as_slice()?, &prior, q_theta, rule,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", step.theta_eap)?;
+    out.set_item("theta_sd", step.theta_sd)?;
+    out.set_item("xi_eap", step.xi_eap)?;
+    out.set_item("target_dim", step.target_dim)?;
+    out.set_item("ranked_items", step.ranked_items)?;
+    out.set_item("ranked_info", step.ranked_info)?;
+    Ok(out.into())
+}
+
+/// Posterior plausible values (Marsman et al. 2016).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0, n_draws = 5, seed = 1,
+))]
+fn plausible_values(
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+    n_draws: usize,
+    seed: u64,
+) -> PyResult<Vec<f64>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    core_plausible_values(
+        &bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior, q_theta, rule,
+        n_draws, seed,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Residual item fit (Haberman, Sinharay & Chon 2013).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, theta, xi, n_bins = 10,
+))]
+fn residual_item_fit(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    theta: PyReadonlyArray1<'_, f64>,
+    xi: PyReadonlyArray1<'_, f64>,
+    n_bins: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let res = core_residual_item_fit(
+        &bank, y.as_slice()?, observed.as_slice()?, n_persons, theta.as_slice()?,
+        xi.as_slice()?, n_bins,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("max_abs_z", res.max_abs_z)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("n_bins", res.n_bins)?;
+    Ok(out.into())
+}
+
+/// Adjusted pairwise chi2/df ratios (Tay & Drasgow 2012).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+))]
+fn adjusted_chi2_pairs(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let res = core_adjusted_chi2_pairs(
+        &bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior, q_theta, rule,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("ratio", res.ratio)?;
+    out.set_item("mean_ratio", res.mean_ratio)?;
+    out.set_item("max_ratio", res.max_ratio)?;
+    Ok(out.into())
+}
+
+/// Parametric-bootstrap person-fit p-values (Sinharay 2016).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, theta, xi, prior_mean = None, n_replicates = 200, seed = 1,
+))]
+fn person_fit_resampling(
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    theta: PyReadonlyArray1<'_, f64>,
+    xi: PyReadonlyArray1<'_, f64>,
+    prior_mean: Option<PyReadonlyArray1<'_, f64>>,
+    n_replicates: usize,
+    seed: u64,
+) -> PyResult<Vec<f64>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let pm = match &prior_mean {
+        Some(v) => v.as_slice()?.to_vec(),
+        None => Vec::new(),
+    };
+    core_person_fit_resampling(
+        &bank, y.as_slice()?, observed.as_slice()?, n_persons, theta.as_slice()?,
+        xi.as_slice()?, &pm, n_replicates, seed,
+    )
+    .map_err(PyValueError::new_err)
+}
+
+/// Stepwise TCC drift detection between two calibrations (Guo et al. 2015).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    alpha_old, b_old, zeta_old, tau_old, alpha_new, b_new, zeta_new, tau_new,
+    factor_id, model, n_dims, latent_dim, eps_distance, prior_mean, prior_sd,
+    q_theta = 21, xi_rule = "gh", q_xi = 11, xi_points = 256, xi_seed = 0,
+    threshold = 0.05,
+))]
+fn tcc_drift(
+    py: Python<'_>,
+    alpha_old: PyReadonlyArray1<'_, f64>,
+    b_old: PyReadonlyArray1<'_, f64>,
+    zeta_old: PyReadonlyArray1<'_, f64>,
+    tau_old: f64,
+    alpha_new: PyReadonlyArray1<'_, f64>,
+    b_new: PyReadonlyArray1<'_, f64>,
+    zeta_new: PyReadonlyArray1<'_, f64>,
+    tau_new: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+    threshold: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha_old, b_old, zeta_old, tau_old, factor_id, model, n_dims,
+        latent_dim, eps_distance, factors_old, bank_old);
+    bank_from_args!(alpha_new, b_new, zeta_new, tau_new, factor_id, model, n_dims,
+        latent_dim, eps_distance, factors_new, bank_new);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let res = core_tcc_drift(&bank_old, &bank_new, &prior, q_theta, rule, threshold)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("drifted", res.drifted)?;
+    out.set_item("area_trace", res.area_trace)?;
+    Ok(out.into())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -983,6 +1295,13 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vuong_nonnested, m)?)?;
     m.add_function(wrap_pyfunction!(dimensionality_residuals, m)?)?;
     m.add_function(wrap_pyfunction!(oakes_standard_errors, m)?)?;
+    m.add_function(wrap_pyfunction!(bank_information, m)?)?;
+    m.add_function(wrap_pyfunction!(cat_next_item, m)?)?;
+    m.add_function(wrap_pyfunction!(plausible_values, m)?)?;
+    m.add_function(wrap_pyfunction!(residual_item_fit, m)?)?;
+    m.add_function(wrap_pyfunction!(adjusted_chi2_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(person_fit_resampling, m)?)?;
+    m.add_function(wrap_pyfunction!(tcc_drift, m)?)?;
     Ok(())
 }
 

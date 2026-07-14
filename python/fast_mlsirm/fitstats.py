@@ -926,3 +926,143 @@ def dif_analysis(
         a_by_group=a_by_group,
         effect_size=effect,
     )
+
+
+def residual_item_fit(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    n_bins: int = 10,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """Residual-based item fit (Haberman, Sinharay & Chon 2013): max |z| over
+    EAP-score bins per item with Bonferroni normal p-values. Designed for
+    long tests; prefer S-X2 below ~25 items (EAP shrinkage bias)."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("residual_item_fit requires the compiled Rust core")
+    y = np.asarray(responses, dtype=float)
+    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = dict(
+        core.residual_item_fit(
+            np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.asarray(params.theta, dtype=np.float64).ravel(),
+            np.asarray(params.xi, dtype=np.float64).ravel(),
+            n_bins=int(n_bins),
+        )
+    )
+    res["max_abs_z"] = np.asarray(res["max_abs_z"])
+    res["p_value"] = np.asarray(res["p_value"])
+    return res
+
+
+def adjusted_chi2_pairs(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """N-adjusted pairwise chi2/df ratios (Tay & Drasgow 2012); values above
+    ~3 flag pairwise misfit / local dependence."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("adjusted_chi2_pairs requires the compiled Rust core")
+    y = np.asarray(responses, dtype=float)
+    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(d_of_i.max()) + 1
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    res = dict(
+        core.adjusted_chi2_pairs(
+            np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.zeros(n_dims), np.ones(n_dims),
+            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+        )
+    )
+    res["ratio"] = np.asarray(res["ratio"])
+    return res
+
+
+def person_fit_resampling(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    mask: np.ndarray | None = None,
+    prior_mean: np.ndarray | None = None,
+    n_replicates: int = 200,
+    seed: int = 1,
+    eps_distance: float = 1e-8,
+) -> np.ndarray:
+    """Parametric-bootstrap person-fit p-values (Sinharay 2016): empirical
+    `P(l_z*_rep <= l_z*_obs)` per person, replicates simulated at the EAP
+    estimates — robust where the asymptotic N(0,1) reference degrades."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("person_fit_resampling requires the compiled Rust core")
+    y = np.asarray(responses, dtype=float)
+    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(d_of_i.max()) + 1
+    n_persons = y.shape[0]
+    bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    pm = None
+    if prior_mean is not None:
+        pm = np.broadcast_to(
+            np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
+        ).ravel().copy()
+    pv = core.person_fit_resampling(
+        np.where(observed, y, 0.0).ravel(), observed.ravel(), int(n_persons),
+        bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+        bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+        np.asarray(params.theta, dtype=np.float64).ravel(),
+        np.asarray(params.xi, dtype=np.float64).ravel(),
+        prior_mean=pm, n_replicates=int(n_replicates), seed=int(seed),
+    )
+    return np.asarray(pv)
+
+
+def tcc_drift(
+    params_old,
+    params_new,
+    factor_id: np.ndarray,
+    model: str,
+    threshold: float = 0.05,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> dict:
+    """Stepwise TCC drift detection between two same-scale calibrations
+    (Guo, Zheng & Chang 2015): flags items whose parameter drift moves the
+    test characteristic curve, in removal order."""
+    core = _core_module()
+    if core is None:
+        raise RuntimeError("tcc_drift requires the compiled Rust core")
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    n_dims = int(d_of_i.max()) + 1
+    old = _bank_args(params_old, d_of_i, model, n_dims, eps_distance)
+    new = _bank_args(params_new, d_of_i, model, n_dims, eps_distance)
+    res = dict(
+        core.tcc_drift(
+            old["alpha"], old["b"], old["zeta"], old["tau"],
+            new["alpha"], new["b"], new["zeta"], new["tau"],
+            old["factor_id"], old["model"], old["n_dims"], old["latent_dim"],
+            old["eps_distance"], np.zeros(n_dims), np.ones(n_dims),
+            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+            threshold=float(threshold),
+        )
+    )
+    return res
