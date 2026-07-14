@@ -1472,3 +1472,81 @@ def test_rt_person_fit():
 
     with pytest.raises(ValueError):
         rt_person_fit(times.ravel(), alpha, beta)  # not 2-D
+
+
+def _sim_cdm(rng, q, s, g, profiles, model="dina"):
+    """Simulate DINA/DINO responses for the given bit-encoded true profiles."""
+    n, (n_items, k) = len(profiles), q.shape
+    y = np.empty((n, n_items))
+    for j in range(n):
+        for i in range(n_items):
+            mask = int(np.dot(q[i], 1 << np.arange(k)))
+            c = int(profiles[j])
+            eta = (c & mask) == mask if model == "dina" else (c & mask) != 0
+            p = 1.0 - s[i] if eta else g[i]
+            y[j, i] = 1.0 if rng.random() < p else 0.0
+    return y
+
+
+def test_fit_cdm_dina_recovers_and_classifies():
+    """DINA cognitive diagnosis (de la Torre, 2009): recover slip/guess and classify
+    attribute mastery under a known Q-matrix; DINO reduces to DINA on single-attribute
+    items."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_cdm, CdmFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_cdm"):
+        pytest.skip("compiled core built without fit_cdm")
+
+    rng = np.random.default_rng(11)
+    k, n_items, n = 3, 15, 1500
+    # 6 single-attribute items (2 per attribute) + pairs + one triple.
+    rows = []
+    for a in range(k):
+        rows += [[1 if t == a else 0 for t in range(k)]] * 2
+    rows += [[1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 1], [1, 1, 1], [1, 0, 1]]
+    q = np.array(rows[:n_items], dtype=np.int64)
+    s = np.full(n_items, 0.15)
+    g = np.full(n_items, 0.15)
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = _sim_cdm(rng, q, s, g, profiles)
+
+    res = fit_cdm(y, q, model="dina")
+    assert isinstance(res, CdmFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
+    assert np.all(1.0 - res.slip > res.guess)  # identification
+    assert np.sqrt(np.mean((res.slip - s) ** 2)) < 0.05
+    assert np.sqrt(np.mean((res.guess - g) ** 2)) < 0.05
+    # attribute classification agreement (marginal mastery vs truth)
+    true_bits = ((profiles[:, None] >> np.arange(k)) & 1)
+    attr_ok = (res.attribute_mastery() == true_bits).mean()
+    assert attr_ok > 0.85, attr_ok
+    # pattern-wise agreement (exact 3-bit profile)
+    assert (res.map_profile == profiles).mean() > 0.75
+    assert res.n_parameters == 2 * n_items + ((1 << k) - 1)
+    assert res.profile_bits().shape == (n, k)
+
+    # single-attribute Q => DINA and DINO share identical eta and thus identical fits.
+    q1 = np.array([[1, 0], [1, 0], [0, 1], [0, 1]], dtype=np.int64)
+    prof1 = rng.integers(0, 4, size=800)
+    y1 = _sim_cdm(rng, q1, np.full(4, 0.2), np.full(4, 0.2), prof1)
+    a = fit_cdm(y1, q1, model="dina")
+    b = fit_cdm(y1, q1, model="dino")
+    assert np.allclose(a.slip, b.slip, atol=1e-9)
+    assert np.allclose(a.guess, b.guess, atol=1e-9)
+
+    # missing-at-random cells are dropped, not imputed.
+    ym = y.copy()
+    ym[rng.random(ym.shape) < 0.15] = np.nan
+    resm = fit_cdm(ym, q, model="dina")
+    assert resm.converged and np.all(1.0 - resm.slip > resm.guess)
+
+    with pytest.raises(ValueError):
+        fit_cdm(y.ravel(), q)  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_cdm(y, q, model="rasch")  # unknown gate
+    with pytest.raises(ValueError):
+        fit_cdm(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols

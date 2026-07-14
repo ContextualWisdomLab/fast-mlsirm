@@ -32,6 +32,7 @@ use mlsirm_core::scoring::{
     PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
+use mlsirm_core::cdm::{fit_cdm as core_fit_cdm, CdmConfig, CdmModel};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -226,6 +227,67 @@ fn fit_mmle_2pl(
     let cfg = MmleConfig { max_iter, tol, ..MmleConfig::default() };
     let res = core_fit_mmle_2pl(y_slice, observed_slice, n_persons, n_items, &cfg);
     Ok((res.a, res.b, res.theta, res.loglik_trace, res.converged))
+}
+
+/// Marginal-EM fit of a DINA/DINO cognitive diagnosis model (`mlsirm_core::cdm`).
+/// `y`/`observed` are row-major `n_persons * n_items`; `q_matrix` is row-major
+/// `n_items * n_attributes` with 0/1 entries; `model` is "dina" or "dino". Returns
+/// a dict with `slip`, `guess`, `profile_prob` (`2^K`), `map_profile` (bit-encoded,
+/// per person), `attr_prob` (`n_persons * n_attributes`), `loglik_trace`, `n_iter`,
+/// `converged` and `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, model = "dina", max_iter = 500, tol = 1e-6))]
+fn fit_cdm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    q_matrix: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    model: &str,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let gate = match model {
+        "dina" | "DINA" => CdmModel::Dina,
+        "dino" | "DINO" => CdmModel::Dino,
+        other => return Err(PyValueError::new_err(format!("model must be 'dina' or 'dino'; got {other}"))),
+    };
+    let q: Vec<u8> = q_matrix
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let res = core_fit_cdm(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &q,
+        n_persons,
+        n_items,
+        n_attributes,
+        gate,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("model", model)?;
+    out.set_item("slip", res.slip)?;
+    out.set_item("guess", res.guess)?;
+    out.set_item("profile_prob", res.profile_prob)?;
+    out.set_item("map_profile", res.map_profile)?;
+    out.set_item("attr_prob", res.attr_prob)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
 }
 
 /// Marginal (MMLE-EM) calibration of the latent-space model family
@@ -2415,6 +2477,7 @@ fn empirical_reliability(
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;

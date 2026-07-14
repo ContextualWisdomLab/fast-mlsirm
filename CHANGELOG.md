@@ -93,6 +93,39 @@
 
 ### Added
 
+- **Cognitive diagnosis models: DINA and DINO** (Junker & Sijtsma, 2001; de la
+  Torre, 2009; Templin & Henson, 2006). A new discrete-attribute paradigm
+  alongside the continuous-trait family: `fit_cdm(responses, q_matrix,
+  model="dina"|"dino")` classifies each respondent's binary attribute-mastery
+  profile `alpha in {0,1}^K` against a Q-matrix of item-attribute requirements.
+  The ideal response is the conjunctive AND gate `eta = prod_k alpha_k^{q_k}`
+  (DINA — mastery of all required attributes) or the disjunctive OR gate
+  `eta = 1 - prod_k (1-alpha_k)^{q_k}` (DINO — any required attribute), and the
+  observed response adds a per-item slip `s_i = P(X=0|mastered)` and guess
+  `g_i = P(X=1|not mastered)`, `P(X=1|alpha) = (1-s_i)^{eta}(g_i)^{1-eta}`.
+  Estimation is marginal-ML EM over the `2^K` profiles with a free profile
+  distribution: the E-step posterior is accumulated over the discrete profile
+  grid (a bitwise gate test replaces the continuous quadrature), the item M-step
+  is **closed form** (`s_i = 1 - R1_i/I1_i` = expected fraction of masters
+  answering wrong; `g_i = R0_i/I0_i` = non-masters answering right; de la Torre,
+  2009, Eqs. 9-10), and the population step is a mean of the posteriors. The
+  monotonicity/identification constraint `1 - s_i > g_i` is enforced by the exact
+  constrained boundary maximiser; missing cells are dropped under MAR. Persons
+  are classified by the posterior-mode profile (`map_profile`) and marginal
+  attribute-mastery probabilities (`attr_prob`, attribute EAP). All compute runs
+  in the Rust core (`mlsirm_core::cdm::fit_cdm`) with the `2^K` profile grid
+  bit-encoded (no `N*L` storage; streaming E-step); DINA and DINO share one
+  estimator differing only in the one-line gate mask. Correctness is anchored by
+  a brute-force likelihood identity (log-space path == naive enumeration to
+  `1e-12`), a deterministic `s=g=0` limit (exact pattern recovery), a
+  DINA==DINO gate-equivalence identity on single-attribute items, and a K=1
+  reduction to a 2-class latent-class model. A de la Torre (2009)-style
+  500-replication Monte-Carlo (K=5, J=30, N=1000) recovers slip/guess with mean
+  RMSE 0.013-0.024 and negligible bias (`|bias| < 3e-4`) and attains attribute
+  classification agreement 0.99 (s=g=0.1) / 0.95 (s=g=0.2), pattern-wise 0.96 /
+  0.76. Deferred: the general G-DINA/saturated CDM, Q-matrix estimation, and
+  structured (higher-order) attribute priors.
+
 - **Polytomous response models (GRM / GPCM), unidimensional.** A complete
   fit -> score -> information subsystem: `fit_polytomous(responses, n_cat,
   model="grm"|"gpcm")` fits the graded response model (Samejima; the default)
