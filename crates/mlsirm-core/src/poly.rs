@@ -135,7 +135,7 @@ pub struct PolyFit {
 
 /// Solve `H x = g` for small dense `H` (K x K) by Gauss elimination with partial
 /// pivoting. Returns `g` unchanged if singular (degenerate M-step step).
-fn solve_small(mut h: Vec<Vec<f64>>, mut g: Vec<f64>) -> Vec<f64> {
+pub(crate) fn solve_small(mut h: Vec<Vec<f64>>, mut g: Vec<f64>) -> Vec<f64> {
     let n = g.len();
     for col in 0..n {
         let mut piv = col;
@@ -601,6 +601,54 @@ mod tests {
         let lo = gpcm_logprobs(-2.0, &[0.0, 1.0, 2.0], &[0.0, 0.0, 0.0]);
         let hi = gpcm_logprobs(2.0, &[0.0, 1.0, 2.0], &[0.0, 0.0, 0.0]);
         assert!(hi[2].exp() > lo[2].exp());
+    }
+
+    #[test]
+    fn poly_k2_matches_trusted_binary_mmle() {
+        // Cross-validation against an ALREADY-VALIDATED reference (not self-
+        // recovery): at K=2 the GPCM cell is exactly the 2PL, P(Y=1) =
+        // sigmoid(a*theta + c_1). The polytomous fitter must reproduce the
+        // repo's binary MMLE-EM (mmle::fit_mmle_2pl, NumPy-parity + real-data
+        // validated) item parameters on the same data, to a small RMSE.
+        use crate::mmle::{fit_mmle_2pl, MmleConfig};
+        let (n_persons, n_items) = (4000usize, 8usize);
+        let mut st = 271828u64;
+        let mut u = || {
+            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((st >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let a_true: Vec<f64> = (0..n_items).map(|i| 0.8 + 0.12 * i as f64).collect();
+        let b_true: Vec<f64> = (0..n_items).map(|i| -0.9 + 0.25 * i as f64).collect();
+        let mut yf = vec![0.0_f64; n_persons * n_items];
+        let mut yi = vec![0usize; n_persons * n_items];
+        for p in 0..n_persons {
+            let u1 = u().max(1e-12);
+            let u2 = u();
+            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+            for i in 0..n_items {
+                let eta = a_true[i] * theta + b_true[i];
+                let pr = 1.0 / (1.0 + (-eta).exp());
+                let v = if u() < pr { 1.0 } else { 0.0 };
+                yf[p * n_items + i] = v;
+                yi[p * n_items + i] = v as usize;
+            }
+        }
+        let observed = vec![true; n_persons * n_items];
+        let bin = fit_mmle_2pl(
+            &yf, &observed, n_persons, n_items,
+            &MmleConfig { max_iter: 500, tol: 1e-7, ridge_a: 1e-4, ridge_b: 1e-4, newton_iter: 25 },
+        );
+        let poly = fit_poly_unidim(&yi, None, n_persons, n_items, 2, PolyModel::Gpcm, 41, 300, 1e-7)
+            .unwrap();
+        let c1: Vec<f64> = poly.cat_params.iter().map(|c| c[0]).collect();
+        let rmse = |a: &[f64], b: &[f64]| {
+            (a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / a.len() as f64).sqrt()
+        };
+        // agreement between two independent estimators of the SAME 2PL
+        let ra = rmse(&poly.slope, &bin.a);
+        let rb = rmse(&c1, &bin.b);
+        assert!(ra < 0.1, "slope RMSE vs trusted binary MMLE: {ra} (poly {:?} vs bin {:?})", poly.slope, bin.a);
+        assert!(rb < 0.1, "intercept RMSE vs trusted binary MMLE: {rb}");
     }
 
     #[test]
