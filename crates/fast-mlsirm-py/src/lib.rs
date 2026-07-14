@@ -25,6 +25,10 @@ use mlsirm_core::scoring::{
     PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
+use mlsirm_core::poly::{
+    fit_poly_unidim as core_fit_poly_unidim, gpcm_logprobs as core_gpcm_logprobs,
+    grm_logprobs as core_grm_logprobs, PolyModel,
+};
 use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
@@ -683,6 +687,64 @@ fn irt_link(
     out.set_item("intercept", res.intercept)?;
     out.set_item("criterion", res.criterion)?;
     out.set_item("n_iter", res.n_iter)?;
+    Ok(out.into())
+}
+
+/// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
+/// the NumPy `category_logprobs` reference).
+#[pyfunction]
+#[pyo3(signature = (base, scores, intercepts))]
+fn gpcm_cell_logprobs(
+    base: f64,
+    scores: PyReadonlyArray1<'_, f64>,
+    intercepts: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Vec<f64>> {
+    Ok(core_gpcm_logprobs(base, scores.as_slice()?, intercepts.as_slice()?))
+}
+
+/// GRM cumulative-logit cell log-probabilities at one node.
+#[pyfunction]
+#[pyo3(signature = (base, thresholds))]
+fn grm_cell_logprobs(base: f64, thresholds: PyReadonlyArray1<'_, f64>) -> PyResult<Vec<f64>> {
+    Ok(core_grm_logprobs(base, thresholds.as_slice()?))
+}
+
+/// Unidimensional polytomous marginal-EM fit (Rust compute path). `model` is
+/// "grm" (default) or "gpcm"; `y` holds integer categories `0..n_cat-1`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, model = "grm", q_theta = 21, max_iter = 80, tol = 1e-6))]
+fn fit_poly_unidim(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    model: &str,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = match model.to_lowercase().as_str() {
+        "grm" => PolyModel::Grm,
+        "gpcm" => PolyModel::Gpcm,
+        other => return Err(PyValueError::new_err(format!("model must be grm or gpcm, got {other}"))),
+    };
+    let ys = y.as_slice()?;
+    let mut yv = Vec::with_capacity(ys.len());
+    for &v in ys {
+        if v < 0 || v as usize >= n_cat {
+            return Err(PyValueError::new_err("responses must be integer categories in 0..n_cat-1"));
+        }
+        yv.push(v as usize);
+    }
+    let fit = core_fit_poly_unidim(&yv, n_persons, n_items, n_cat, m, q_theta, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", fit.slope)?;
+    out.set_item("cat_params", fit.cat_params)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("n_iter", fit.n_iter)?;
     Ok(out.into())
 }
 
@@ -1422,6 +1484,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(person_fit_resampling, m)?)?;
     m.add_function(wrap_pyfunction!(tcc_drift, m)?)?;
     m.add_function(wrap_pyfunction!(empirical_reliability, m)?)?;
+    m.add_function(wrap_pyfunction!(gpcm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(grm_cell_logprobs, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_poly_unidim, m)?)?;
     Ok(())
 }
 

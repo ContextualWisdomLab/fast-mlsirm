@@ -318,3 +318,43 @@ def test_fit_gpcm_numpy_recovers_known_parameters():
     assert np.corrcoef(a_true, res["a"])[0, 1] > 0.9
     assert np.max(np.abs(a_true - res["a"])) < 0.35
     assert np.mean(np.abs(c_true[:, 1:] - res["intercepts"][:, 1:])) < 0.2
+
+
+def test_poly_cell_and_fitter_rust_numpy_parity():
+    """The Rust polytomous cell matches the NumPy reference bit-for-bit, and the
+    Rust unidimensional GPCM fitter agrees with the NumPy mirror on recovery."""
+    import numpy as np
+    import pytest
+    try:
+        from fast_mlsirm import _core
+    except Exception:  # pragma: no cover
+        pytest.skip("compiled core not available")
+    if not hasattr(_core, "fit_poly_unidim"):  # pragma: no cover
+        pytest.skip("core built without polytomous functions")
+    from fast_mlsirm.estimators.marginal import category_logprobs, fit_gpcm_numpy
+
+    # cell parity: same softmax formula in both languages
+    scores = np.array([0.0, 1.0, 2.0])
+    intercepts = np.array([0.0, 0.3, -0.2])
+    for base in (-1.3, 0.0, 0.75):
+        rust = np.array(_core.gpcm_cell_logprobs(float(base), scores, intercepts))
+        npy = category_logprobs(np.array([base]), scores, intercepts)[0]
+        assert np.allclose(rust, npy, atol=1e-12), f"cell parity at base={base}"
+
+    # fitter agreement: same EM/Newton, same GH grid -> same MLE
+    rng = np.random.default_rng(11)
+    n_persons, n_items, k = 2500, 5, 3
+    a_true = rng.uniform(0.8, 1.6, n_items)
+    c_true = np.zeros((n_items, k))
+    c_true[:, 1:] = rng.normal(0.0, 0.8, (n_items, k - 1))
+    theta = rng.normal(0.0, 1.0, n_persons)
+    y = np.zeros((n_persons, n_items), dtype=np.int64)
+    for i in range(n_items):
+        p = np.exp(category_logprobs(a_true[i] * theta, scores, c_true[i]))
+        for pp in range(n_persons):
+            y[pp, i] = rng.choice(k, p=p[pp])
+
+    rust_fit = _core.fit_poly_unidim(y.ravel(), n_persons, n_items, k, "gpcm", 21, 80, 1e-6)
+    npy_fit = fit_gpcm_numpy(y, k)
+    assert np.allclose(np.array(rust_fit["slope"]), npy_fit["a"], atol=0.05)
+    assert np.isfinite(rust_fit["loglik"])
