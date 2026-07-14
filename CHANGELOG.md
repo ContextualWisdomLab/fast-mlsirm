@@ -53,6 +53,37 @@
   - `linking.link_fixed_item_parameters` rejects duplicate/fractional/negative/
     non-finite anchor indices, non-2-D `theta`, non-finite item parameters, and
     non-finite computed linking coefficients.
+- **Third-pass hardening** (Strix re-scan of `b5d9d90`, 11 real findings; the
+  12th — "incomplete package release" — was a scanner artifact of its
+  PR-scope-only checkout, verified: every named module exists and
+  `import fast_mlsirm` succeeds) **plus a proactive boundary audit** that found
+  6 more Python issues Strix had not surfaced:
+  - `serving.score_respondents`/`plausible_values` bound the dense respondent
+    matrix (`rows x n_items`); `serving._validate_bundle` now bounds the
+    scoring-table product (`max(n_items, n_dims) x q_theta x q_xi**latent_dim` —
+    a 55+ GB allocation otherwise) and validates the bundle `population` block
+    (`serving_prior` computed `sqrt(1 + sigma_u**2)` on an unvalidated, fully
+    attacker-controlled `sigma_u` → `TypeError`/`OverflowError` crash or silent
+    `Inf`/`NaN` score poisoning).
+  - `linking.link_fixed_item_parameters` range-checks anchor indices on the
+    float **before** the `int64` cast (`uint64` max silently wrapped to `-1`,
+    selecting the last item) and requires a positive linking scale;
+    `linking.irt_link` validates slope/intercept finiteness and slope
+    positivity before the Nelder-Mead core (a `NaN` would panic it).
+  - `validation.validate_judge` bounds the category count `k` (drives a dense
+    `k x k` confusion matrix) and **compacts** sparse `subgroup` labels (the
+    core loops `0..max(label)+1`, an O(4e9) CPU-DoS from one sparse id).
+  - `preprocessing.irtree_expand` switched from a 50M-element ceiling (400 MB,
+    boundary-inclusive) to a 64 MiB byte budget; `config.MLS2PLMConfig.validate`
+    bounds simulation dimensions and the `n_persons x n_items` cell product;
+    `config.FitConfig.validate` bounds aggregate optimizer work
+    (`max_iter x n_restarts`); `estimators.marginal.fit_marginal_numpy` bounds
+    declared population counts (`n_groups`/`n_clusters <= n_persons`) and the
+    EM working set; `inference.observed_information` rejects non-finite `step`;
+    `inference.oakes_standard_errors` and every `fitstats` public entry bound
+    `n_dims` derived from an untrusted `factor_id` (a shared `_validate_factor_id`
+    guard); `fit.py` validates anchor/covariate array shapes and finiteness
+    before the Rust marginal core.
 
 ### Added
 

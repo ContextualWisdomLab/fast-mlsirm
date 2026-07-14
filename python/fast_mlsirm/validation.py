@@ -65,8 +65,12 @@ def validate_judge(
     """
     from . import _core  # computation lives in the Rust core
 
+    MAX_JUDGE_CATEGORIES = 1_000
     if int(k) < 2:
         raise ValueError("k (number of categories) must be >= 2")
+    if int(k) > MAX_JUDGE_CATEGORIES:
+        # k drives a dense k-by-k confusion matrix in the Rust core.
+        raise ValueError(f"k (number of categories) must be <= {MAX_JUDGE_CATEGORIES}")
     judge_v = _validate_labels(judge, "judge", k=int(k))
     human_v = _validate_labels(human, "human", k=int(k), n=judge_v.shape[0])
     kwargs: dict[str, Any] = {}
@@ -78,7 +82,11 @@ def validate_judge(
             human_human[1], "human_b", k=int(k), n=kwargs["human_a"].shape[0]
         )
     if subgroup is not None:
-        kwargs["subgroup"] = _validate_labels(subgroup, "subgroup", n=judge_v.shape[0])
+        sg = _validate_labels(subgroup, "subgroup", n=judge_v.shape[0])
+        # Compact to contiguous ids: the Rust core loops 0..max(subgroup)+1,
+        # so a sparse label (e.g. uint32 max) is an O(n_groups) CPU-DoS.
+        _uniq, sg_compact = np.unique(sg, return_inverse=True)
+        kwargs["subgroup"] = sg_compact.astype(np.uint32)
     res = _core.validate_scoring(
         judge_v,
         human_v,

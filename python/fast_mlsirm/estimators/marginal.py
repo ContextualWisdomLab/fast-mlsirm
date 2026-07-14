@@ -377,6 +377,16 @@ def fit_marginal_numpy(
     n_persons, n_items = y.shape
     if n_dims is None:
         n_dims = int(factor_id.max()) + 1
+    # Bound the dominant EM working array (persons x max(items,dims) x q_theta x
+    # n_xi_nodes) so oversized quadrature/data cannot exhaust memory (DoS).
+    MAX_MARGINAL_WORKING_SET = 100_000_000
+    _rule = str(xi_rule).lower()
+    _nx = xi_points if _rule in {'qmc', 'halton', 'mc', 'montecarlo', 'monte-carlo'} else min(int(q_xi) ** int(latent_dim), 1_000_001)
+    if n_persons * max(n_items, n_dims) * int(q_theta) * _nx > MAX_MARGINAL_WORKING_SET:
+        raise ValueError(
+            'marginal working set (persons x max(items,dims) x q_theta x n_xi) '
+            f'exceeds the {MAX_MARGINAL_WORKING_SET}-element limit'
+        )
     model = model.upper()
     free_alpha, uses_space = _model_flags(model)
     pop = pop or {"kind": "single"}
@@ -442,6 +452,9 @@ def fit_marginal_numpy(
         pop.get("n_groups", 0) if kind == "multigroup" else (1 if kind == "singlefree" else 0)
     )
     n_clusters = pop.get("n_clusters", 0) if kind == "multilevel" else 0
+    for _cnt, _nm in ((n_groups, "n_groups"), (n_clusters, "n_clusters")):
+        if _cnt and (int(_cnt) < 1 or int(_cnt) > n_persons):
+            raise ValueError(f"{_nm} ({_cnt}) must be between 1 and n_persons ({n_persons})")
     if kind == "multigroup":
         group_id = np.asarray(pop["group_id"], dtype=np.int64)
         if group_id.shape != (n_persons,) or group_id.min() < 0 or group_id.max() >= n_groups:

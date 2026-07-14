@@ -52,7 +52,12 @@ def serving_prior(bundle: dict) -> tuple[np.ndarray, np.ndarray]:
     sd = np.ones(n_dims)
     pop = bundle.get("population") or {}
     if pop.get("kind") == "multilevel" and "sigma_u" in pop:
-        sd[:] = float(np.sqrt(1.0 + pop["sigma_u"] ** 2))
+        su = pop["sigma_u"]
+        # sigma_u is attacker-controlled in an untrusted bundle: a string
+        # crashes ** with TypeError, 1e200 overflows, 1e150 poisons sd.
+        if not _finite_number(su) or su < 0 or su > 1_000.0:
+            raise ValueError("bundle population sigma_u must be a finite number in 0..1000")
+        sd[:] = float(np.sqrt(1.0 + float(su) ** 2))
     return mean, sd
 
 
@@ -210,6 +215,11 @@ def _validate_bundle(bundle: Any) -> None:
     # astronomically large grid (e.g. 41**8 ~ 8e12).
     if bundle["model"] != "MIRT" and int(quad["q_xi"]) ** latent_dim > 1_000_000:
         raise ValueError("bundle q_xi ** latent_dim exceeds the serving grid limit")
+    # The scoring core builds item-response tables of size
+    # max(n_items, n_dims) * q_theta * n_xi; bound the product (55+ GB otherwise).
+    n_xi = 1 if bundle["model"] == "MIRT" else int(quad["q_xi"]) ** latent_dim
+    if max(n_items, n_dims) * int(quad["q_theta"]) * n_xi > 50_000_000:
+        raise ValueError("bundle scoring-table size (items x q_theta x n_xi) exceeds the serving limit")
     items = bundle.get("items")
     if not isinstance(items, list) or len(items) != n_items:
         raise ValueError("bundle items must be a list of length n_items")
@@ -273,6 +283,14 @@ def score_respondents(
     if isinstance(responses, dict):
         responses = [responses]
     if isinstance(responses, list):
+        # Bound the dense respondent matrix before allocating: len(responses)
+        # and n_items are both request/bundle controlled (memory-exhaustion DoS).
+        MAX_SCORE_CELLS = 20_000_000
+        if len(responses) * n_items > MAX_SCORE_CELLS:
+            raise ValueError(
+                f"response matrix ({len(responses)} x {n_items}) exceeds the "
+                f"{MAX_SCORE_CELLS}-cell scoring limit"
+            )
         y = np.full((len(responses), n_items), np.nan)
         for r, resp in enumerate(responses):
             for code, value in resp.items():
@@ -510,6 +528,14 @@ def plausible_values(
     if isinstance(responses, dict):
         responses = [responses]
     if isinstance(responses, list):
+        # Bound the dense respondent matrix before allocating: len(responses)
+        # and n_items are both request/bundle controlled (memory-exhaustion DoS).
+        MAX_SCORE_CELLS = 20_000_000
+        if len(responses) * n_items > MAX_SCORE_CELLS:
+            raise ValueError(
+                f"response matrix ({len(responses)} x {n_items}) exceeds the "
+                f"{MAX_SCORE_CELLS}-cell scoring limit"
+            )
         y = np.full((len(responses), n_items), np.nan)
         for r, resp in enumerate(responses):
             for code, value in resp.items():

@@ -28,8 +28,8 @@ def observed_information(
     model = config.normalized_model()
     chosen_backend = config.backend if backend is None else backend
     x0 = _pack(params, model)
-    if step <= 0:
-        raise ValueError("step must be > 0")
+    if not np.isfinite(step) or step <= 0:
+        raise ValueError("step must be > 0 and finite")
 
     def objective(x: np.ndarray) -> float:
         value, _, _ = neg_loglik_and_grad(
@@ -144,6 +144,8 @@ def oakes_standard_errors(
         raise ValueError("factor_id must be finite non-negative integers")
     factors = raw_factors.astype(np.int64)
     n_dims = int(factors.max()) + 1 if factors.size else 0
+    if n_dims > n_items:
+        raise ValueError("factor_id implies more dimensions than items")
     pop = result.population or {}
     from .fit import _compact_population_labels
     if group_id is not None:

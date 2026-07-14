@@ -23,6 +23,15 @@ MAX_XI_POINTS = 1_000_000
 MAX_MAX_ITER = 100_000
 MAX_RESTARTS = 1_000
 MAX_M_STEPS = 1_000
+# Aggregate optimizer work (max_iter x n_restarts) across a single fit; the
+# per-field caps still permit 1e8 iterations together, so bound the product.
+MAX_AGGREGATE_ITERS = 10_000_000
+# Simulation config bounds: reject dimensions whose dense response matrix
+# (n_persons x n_items float64) would exhaust memory before any real work.
+MAX_SIM_PERSONS = 5_000_000
+MAX_SIM_DIMS = 1_000
+MAX_SIM_ITEMS_PER_DIM = 10_000
+MAX_SIM_CELLS = 200_000_000
 
 
 @dataclass(frozen=True)
@@ -47,6 +56,17 @@ class MLS2PLMConfig:
             raise ValueError("n_dims must be >= 1")
         if self.items_per_dim < 1:
             raise ValueError("items_per_dim must be >= 1")
+        if self.n_persons > MAX_SIM_PERSONS:
+            raise ValueError(f"n_persons must be <= {MAX_SIM_PERSONS}")
+        if self.n_dims > MAX_SIM_DIMS:
+            raise ValueError(f"n_dims must be <= {MAX_SIM_DIMS}")
+        if self.items_per_dim > MAX_SIM_ITEMS_PER_DIM:
+            raise ValueError(f"items_per_dim must be <= {MAX_SIM_ITEMS_PER_DIM}")
+        if self.n_persons * self.n_items > MAX_SIM_CELLS:
+            raise ValueError(
+                f"n_persons x n_items ({self.n_persons * self.n_items}) exceeds the "
+                f"{MAX_SIM_CELLS}-cell simulation budget"
+            )
         if self.latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
         if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
@@ -133,6 +153,11 @@ class FitConfig:
             raise ValueError(f"max_iter must be >= 1 and <= {MAX_MAX_ITER}")
         if not (1 <= self.n_restarts <= MAX_RESTARTS):
             raise ValueError(f"n_restarts must be >= 1 and <= {MAX_RESTARTS}")
+        if self.max_iter * self.n_restarts > MAX_AGGREGATE_ITERS:
+            raise ValueError(
+                f"max_iter x n_restarts ({self.max_iter * self.n_restarts}) exceeds the "
+                f"aggregate optimizer-work budget {MAX_AGGREGATE_ITERS}"
+            )
         # non-finite floats (NaN/Inf) slip past bare `<= 0` comparisons
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0 and finite")

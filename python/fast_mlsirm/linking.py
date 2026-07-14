@@ -18,11 +18,13 @@ def link_fixed_item_parameters(
     a_fl = anchors_raw.astype(np.float64)
     if not np.all(np.isfinite(a_fl)) or np.any(a_fl < 0) or np.any(a_fl != np.floor(a_fl)):
         raise ValueError("anchor_items must be finite non-negative integers")
-    anchors = anchors_raw.astype(np.int64)
+    # Range-check on the float BEFORE narrowing: uint64 max casts to -1 and
+    # would slip past an upper-bound-only int64 check as a valid last-item index.
+    if np.any(a_fl >= source.alpha.size):
+        raise ValueError("anchor_items must reference existing items")
+    anchors = a_fl.astype(np.int64)
     if anchors.size != np.unique(anchors).size:
         raise ValueError("anchor_items must be unique")
-    if np.any(anchors >= source.alpha.size):
-        raise ValueError("anchor_items must reference existing items")
     if source.alpha.shape != target.alpha.shape or source.b.shape != target.b.shape:
         raise ValueError("source and target item parameters must have matching shapes")
     if source.theta.ndim != 2 or target.theta.ndim != 2:
@@ -50,9 +52,10 @@ def link_fixed_item_parameters(
             or not np.all(np.isfinite(f_fl))
             or np.any(f_fl < 0)
             or np.any(f_fl != np.floor(f_fl))
+            or np.any(f_fl >= n_items)
         ):
             raise ValueError("factor_id must be a 1-D array of finite non-negative integers")
-        factors = f_raw.astype(np.int64)
+        factors = f_fl.astype(np.int64)
     if factors.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
     if np.any(factors >= n_dims):
@@ -71,8 +74,8 @@ def link_fixed_item_parameters(
             raise ValueError("target anchor slopes must be positive")
         scale[dim] = float(np.exp(np.mean(np.log(source.a[dim_anchors] / target_a))))
         shift[dim] = float(np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a))
-        if not (np.isfinite(scale[dim]) and np.isfinite(shift[dim])):
-            raise ValueError("non-finite linking coefficients (check anchor parameters)")
+        if not (np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])):
+            raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")
 
         items = factors == dim
         linked.theta[:, dim] = scale[dim] * source.theta[:, dim] + shift[dim]
@@ -125,12 +128,23 @@ def irt_link(
     core = _core_module()
     if core is None:  # pragma: no cover
         raise RuntimeError("irt_link requires the compiled Rust core")
+    ao = np.asarray(a_old, dtype=np.float64)
+    bo = np.asarray(b_old, dtype=np.float64)
+    an = np.asarray(a_new, dtype=np.float64)
+    bn = np.asarray(b_new, dtype=np.float64)
+    for _arr, _nm in ((ao, 'a_old'), (bo, 'b_old'), (an, 'a_new'), (bn, 'b_new')):
+        if _arr.ndim != 1 or not np.all(np.isfinite(_arr)):
+            raise ValueError(f'{_nm} must be a 1-D array of finite numbers')
+    if ao.shape != bo.shape or an.shape != bn.shape:
+        raise ValueError('slope/intercept arrays must have matching lengths')
+    if np.any(ao <= 0) or np.any(an <= 0):
+        raise ValueError('slopes (a_old/a_new) must be positive')
     nodes, weights = _gh(int(q_theta))
     res = core.irt_link(
-        np.asarray(a_old, dtype=np.float64),
-        np.asarray(b_old, dtype=np.float64),
-        np.asarray(a_new, dtype=np.float64),
-        np.asarray(b_new, dtype=np.float64),
+        ao,
+        bo,
+        an,
+        bn,
         np.asarray(nodes, dtype=np.float64),
         np.asarray(weights, dtype=np.float64),
         method=str(method),

@@ -249,18 +249,37 @@ def _fit_mmle_marginal(
         ids, pop_kind, n_pop = None, "single", 0
     covariate_kwargs: dict = {}
     if covariate is not None:
+        covariate_w = np.asarray(covariate["w"], dtype=np.float64).ravel()
+        n_ctx = int(n_pop) if pop_kind == "multigroup" else 1
+        if covariate_w.size != n_ctx * n_items:
+            raise ValueError(
+                f"covariate w must have {n_ctx} x {n_items} entries (n_contexts x n_items)"
+            )
+        if not np.all(np.isfinite(covariate_w)):
+            raise ValueError("covariate w must be finite")
         covariate_kwargs = dict(
-            covariate_w=np.asarray(covariate["w"], dtype=np.float64).ravel(),
+            covariate_w=covariate_w,
             covariate_init_delta=float(covariate.get("init_delta", 0.0)),
         )
     anchor_kwargs: dict = {}
     if anchors is not None:
         fixed = np.asarray(anchors["fixed"], dtype=bool)
+        a_alpha = np.asarray(anchors["alpha"], dtype=np.float64)
+        a_b = np.asarray(anchors["b"], dtype=np.float64)
+        a_zeta = np.asarray(anchors["zeta"], dtype=np.float64).ravel()
+        if fixed.shape != (n_items,):
+            raise ValueError(f"anchor_fixed must have shape ({n_items},)")
+        if a_alpha.shape != (n_items,) or a_b.shape != (n_items,):
+            raise ValueError(f"anchor alpha/b must have shape ({n_items},)")
+        if a_zeta.size != n_items * int(config.latent_dim):
+            raise ValueError("anchor zeta must have n_items x latent_dim entries")
+        if not (np.all(np.isfinite(a_alpha)) and np.all(np.isfinite(a_b)) and np.all(np.isfinite(a_zeta))):
+            raise ValueError("anchor alpha/b/zeta must be finite")
         anchor_kwargs = dict(
             anchor_fixed=fixed,
-            anchor_alpha=np.asarray(anchors["alpha"], dtype=np.float64),
-            anchor_b=np.asarray(anchors["b"], dtype=np.float64),
-            anchor_zeta=np.asarray(anchors["zeta"], dtype=np.float64).ravel(),
+            anchor_alpha=a_alpha,
+            anchor_b=a_b,
+            anchor_zeta=a_zeta,
             anchor_tau=None if anchors.get("tau") is None else float(anchors["tau"]),
         )
     if ids is not None:

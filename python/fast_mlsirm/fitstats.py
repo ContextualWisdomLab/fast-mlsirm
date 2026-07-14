@@ -43,6 +43,23 @@ def _core_module():
         return None
 
 
+def _validate_factor_id(factor_id):
+    """Validate an untrusted factor_id vector and return (int64 array, n_dims).
+    Bounds n_dims by the item count (len(factor_id)) so a huge dimension label
+    cannot force n_dims-sized allocations in the fit-statistics cores."""
+    fid = np.asarray(factor_id)
+    ff = fid.astype(np.float64)
+    if fid.ndim != 1:
+        raise ValueError("factor_id must be a 1-D array")
+    if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
+        raise ValueError("factor_id must be finite non-negative integers")
+    d = fid.astype(np.int64)
+    if d.size and int(d.max()) >= d.size:
+        raise ValueError("factor_id values must be in 0..n_items-1")
+    n_dims = int(d.max()) + 1 if d.size else 0
+    return d, n_dims
+
+
 def _bank_args(params, factor_id, model, n_dims, eps_distance):
     zeta = np.asarray(params.zeta, dtype=np.float64)
     return dict(
@@ -161,7 +178,7 @@ def _icc_grid(
         x_grid = np.zeros((1, params.zeta.shape[1]))
         x_w = np.ones(1)
     a = np.exp(params.alpha) if free_alpha else np.ones_like(params.alpha)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     shift = np.zeros(int(d_of_i.max()) + 1) if prior_mean is None else np.asarray(prior_mean)
     theta = shift[d_of_i][:, None] + t_nodes[None, :]  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
@@ -233,7 +250,7 @@ def s_x2(
     if core is not None and prior_mean is None:
         y0 = np.asarray(responses, dtype=float)
         observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
-        d_of_i = np.asarray(factor_id, dtype=np.int64)
+        d_of_i, _fid_ndims = _validate_factor_id(factor_id)
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.s_x2_stat(
@@ -263,7 +280,7 @@ def s_x2(
     if mask is None:
         y = np.where(observed, y, 0.0)
     n_persons, n_items = y.shape
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     weight = np.ones(n_persons) if person_weight is None else np.asarray(person_weight, float)
 
@@ -392,7 +409,7 @@ def person_fit(
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     y = np.where(observed, y, 0.0)
     n_persons, n_items = y.shape
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
     if core is not None:
@@ -487,7 +504,7 @@ def infit_outfit(
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     y = np.where(observed, y, 0.0)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     core = _core_module()
     if core is not None:
         n_persons = y.shape[0]
@@ -590,7 +607,7 @@ def select_items(
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     n_items = y.shape[1]
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     codes = item_codes or [f"item_{i:03d}" for i in range(n_items)]
     config = config or FitConfig(model="MLS2PLM", estimator="mmle")
     if config.estimator != "mmle":
@@ -787,7 +804,7 @@ def dimensionality_residuals(
     uses_space = model != "MIRT"
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
@@ -855,7 +872,7 @@ def dif_analysis(
     y = np.asarray(responses, dtype=float)
     if mask is not None:
         y = np.where(np.asarray(mask, dtype=bool), y, np.nan)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     gid = np.asarray(group_id, dtype=np.int64)
     n_groups = int(gid.max()) + 1
     n_items = y.shape[1]
@@ -945,7 +962,7 @@ def residual_item_fit(
         raise RuntimeError("residual_item_fit requires the compiled Rust core")
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
     res = dict(
@@ -980,7 +997,7 @@ def adjusted_chi2_pairs(
         raise RuntimeError("adjusted_chi2_pairs requires the compiled Rust core")
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
     res = dict(
@@ -1015,7 +1032,7 @@ def person_fit_resampling(
         raise RuntimeError("person_fit_resampling requires the compiled Rust core")
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     n_persons = y.shape[0]
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
@@ -1051,7 +1068,7 @@ def tcc_drift(
     core = _core_module()
     if core is None:
         raise RuntimeError("tcc_drift requires the compiled Rust core")
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     old = _bank_args(params_old, d_of_i, model, n_dims, eps_distance)
     new = _bank_args(params_new, d_of_i, model, n_dims, eps_distance)
@@ -1140,7 +1157,7 @@ def m2(
     core = _core_module()
     y0 = np.asarray(responses, dtype=float)
     observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     if core is not None:
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
@@ -1339,4 +1356,5 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
 
 def n_dims_of(d_of_i):
     """Number of trait dimensions implied by a factor-id vector."""
-    return int(np.asarray(d_of_i).max()) + 1
+    _d, n_dims = _validate_factor_id(d_of_i)
+    return n_dims

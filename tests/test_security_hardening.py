@@ -294,3 +294,157 @@ def test_link_rejects_bad_anchor_indices(anchors):  # VULN-0010
     t = _link_ns([0.0, 0.0], [0.0, 0.1], np.zeros((2, 1)))
     with pytest.raises(ValueError):
         link_fixed_item_parameters(s, t, anchor_items=anchors)
+
+
+# ===========================================================================
+# Strix 3rd batch (re-scan of b5d9d90): VULN-0002..0012. 0001 was a scanner
+# false positive (PR-scope-only checkout; all modules exist and import cleanly).
+# ===========================================================================
+from fast_mlsirm.config import MLS2PLMConfig  # noqa: E402
+from fast_mlsirm.estimators.marginal import fit_marginal_numpy  # noqa: E402
+import fast_mlsirm.fitstats as fitstats  # noqa: E402
+
+
+# ---- VULN-0002: unbounded respondent matrix in score_respondents -----------
+def test_score_respondents_rejects_oversized_response_rows():
+    bundle = _bundle(n_items=1000)
+    with pytest.raises(ValueError, match="scoring limit"):
+        serving.score_respondents(bundle, [{} for _ in range(21_000)])
+
+
+# ---- VULN-0003: uint64 anchor index wraps to -1 in linking -----------------
+def test_link_rejects_uint64_wraparound_anchor():
+    s = _link_ns([0.1, 0.2], [0.0, 1.0], np.zeros((2, 1)))
+    t = _link_ns([0.1, 0.2], [0.0, 1.0], np.zeros((2, 1)))
+    with pytest.raises(ValueError, match="reference existing items"):
+        link_fixed_item_parameters(s, t, anchor_items=np.array([2**64 - 1], dtype=np.uint64))
+
+
+# ---- VULN-0004: unbounded category count k in validate_judge ---------------
+def test_validate_judge_rejects_huge_k():
+    with pytest.raises(ValueError, match="must be <="):
+        validate_judge(np.array([0, 1]), np.array([0, 1]), k=1_000_000)
+
+
+# ---- VULN-0005: irtree byte budget rejects the old 50M-element boundary -----
+def test_irtree_expand_byte_budget_rejects_400mb():
+    with pytest.raises(ValueError, match="byte limit"):
+        irtree_expand(np.zeros((1, 50_000)), np.zeros((1_000, 1)))
+
+
+# ---- VULN-0006: unbounded simulation dimensions ----------------------------
+@pytest.mark.parametrize("kw", [
+    {"n_persons": 100_000, "n_dims": 100, "items_per_dim": 100},
+    {"n_persons": 10_000_000, "n_dims": 2, "items_per_dim": 8},
+])
+def test_mls2plmconfig_rejects_oversized_dims(kw):
+    with pytest.raises(ValueError):
+        MLS2PLMConfig(**kw).validate()
+
+
+# ---- VULN-0007: oversized population counts in fit_marginal_numpy -----------
+def test_fit_marginal_numpy_rejects_oversized_population():
+    with pytest.raises(ValueError, match="n_groups"):
+        fit_marginal_numpy(
+            np.array([[0.0]]), np.array([[True]]), np.array([0], dtype=np.int64),
+            model="ULS2PLM", n_dims=1, latent_dim=1,
+            pop={"kind": "multigroup", "group_id": np.array([0], dtype=np.int64),
+                 "n_groups": 1_000_000_000},
+            q_theta=7, q_xi=7, q_u=7, max_iter=1,
+        )
+
+
+# ---- VULN-0008: unbounded aggregate optimizer work -------------------------
+def test_fitconfig_rejects_aggregate_optimizer_work():
+    with pytest.raises(ValueError, match="aggregate optimizer-work"):
+        FitConfig(max_iter=100_000, n_restarts=1_000).validate()
+
+
+# ---- VULN-0009: non-finite finite-difference step --------------------------
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_observed_information_rejects_nonfinite_step(bad):
+    from fast_mlsirm.inference import observed_information
+    from fast_mlsirm.types import MLSIRMParams
+    p = MLSIRMParams(theta=np.zeros((2, 1)), alpha=np.zeros(1), b=np.zeros(1),
+                     xi=np.zeros((1, 1)), zeta=np.zeros((1, 1)), tau=0.0)
+    with pytest.raises(ValueError, match="finite"):
+        observed_information(np.zeros((2, 1)), np.array([0]), p, step=bad)
+
+
+# ---- VULN-0010: unbounded n_dims from factor_id in fit statistics ----------
+@pytest.mark.parametrize("fn", [fitstats._validate_factor_id, fitstats.n_dims_of])
+def test_fitstats_factor_id_bounds_n_dims(fn):
+    with pytest.raises(ValueError, match="0..n_items-1"):
+        fn(np.array([1_000_000_000]))
+
+
+def test_fitstats_validate_factor_id_accepts_normal():
+    d, n_dims = fitstats._validate_factor_id(np.array([0, 0, 1, 1, 2]))
+    assert n_dims == 3 and d.tolist() == [0, 0, 1, 1, 2]
+
+
+# ---- VULN-0012: unbounded QMC quadrature working set -----------------------
+def test_fit_marginal_numpy_rejects_qmc_working_set():
+    with pytest.raises(ValueError, match="working set"):
+        fit_marginal_numpy(
+            np.zeros((16, 4)), np.ones((16, 4), bool), np.array([0, 0, 0, 0], dtype=np.int64),
+            model="MLS2PLM", n_dims=1, latent_dim=2,
+            q_theta=7, q_xi=7, q_u=7, xi_rule="qmc", xi_points=1_000_000, m_steps=1, max_iter=1,
+        )
+
+
+# ===========================================================================
+# Proactive boundary audit (workflow sec-audit): findings Strix had not yet
+# surfaced — bundle table-product OOM, serving_prior sigma_u crash, irt_link
+# NaN panic, oakes n_dims, subgroup O(max+1) CPU-DoS.
+# ===========================================================================
+def _bundle_q(n_items, latent_dim, model, q_theta, q_xi, population=None):
+    b = _bundle(n_items=n_items, n_dims=1, latent_dim=latent_dim)
+    b["model"] = model
+    b["quadrature"] = {"q_theta": q_theta, "q_xi": q_xi}
+    b["population"] = population
+    return b
+
+
+@pytest.mark.parametrize("sigma_u", [1e200, 1e150, "x", float("nan")])
+def test_serving_prior_rejects_bad_sigma_u(sigma_u):
+    b = _bundle(n_items=1)
+    b["population"] = {"kind": "multilevel", "sigma_u": sigma_u}
+    with pytest.raises(ValueError, match="sigma_u"):
+        serving.serving_prior(b)
+
+
+def test_validate_bundle_rejects_oversized_scoring_tables():
+    # 20 items x q_theta 41 x q_xi^3 (41^3=68921) ~ 5.6e7 > 5e7 table cells
+    b = _bundle_q(n_items=20, latent_dim=3, model="MLS2PLM", q_theta=41, q_xi=41)
+    with pytest.raises(ValueError, match="scoring-table size"):
+        serving._validate_bundle(b)
+
+
+def test_oakes_rejects_n_dims_exceeding_items():
+    result = types.SimpleNamespace(model="MLSRM", population={}, params=None)
+    with pytest.raises(ValueError, match="more dimensions than items"):
+        oakes_standard_errors(result, np.zeros((5, 1)), np.array([7]))
+
+
+@pytest.mark.parametrize("args", [
+    (np.array([1.0, np.nan]), np.array([0.0, 0.0]), np.array([1.0, 1.0]), np.array([0.0, 0.0])),
+    (np.array([-1.0]), np.array([0.0]), np.array([1.0]), np.array([0.0])),
+])
+def test_irt_link_rejects_nonfinite_or_nonpositive(args):
+    from fast_mlsirm import linking as _lk
+    if fitstats._core_module() is None:  # pragma: no cover
+        pytest.skip("irt_link requires the compiled Rust core")
+    with pytest.raises(ValueError):
+        _lk.irt_link(*args)
+
+
+def test_validate_judge_compacts_sparse_subgroup():
+    # Sparse subgroup label (uint32 max) must NOT drive an O(max+1) core loop.
+    if serving._core_module() is None:  # pragma: no cover
+        pytest.skip("validate_judge requires the compiled Rust core")
+    v = validate_judge(
+        np.array([0, 1, 0, 1]), np.array([0, 1, 1, 0]), k=2,
+        subgroup=np.array([0, 4294967295, 0, 4294967295], dtype=np.uint32),
+    )
+    assert v is not None  # returns promptly; compaction -> 2 groups

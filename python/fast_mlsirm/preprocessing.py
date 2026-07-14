@@ -48,11 +48,14 @@ def irtree_expand(
     n_persons, n_items = y.shape
     # Bound the dense expansion so untrusted item/node counts cannot force a
     # multi-GB allocation (Jeon-De Boeck expansion is (persons, items*nodes)).
-    MAX_EXPANDED_ELEMENTS = 50_000_000
-    if n_persons * n_items * n_nodes > MAX_EXPANDED_ELEMENTS:
+    # Byte budget (not a raw element count): the dense float64 output plus
+    # per-node temporaries dominate memory; 64 MiB covers realistic IRTrees
+    # (31k x 57 x a few nodes) while blocking allocation-DoS inputs.
+    MAX_EXPANDED_BYTES = 64 * 1024 * 1024
+    if n_persons * n_items * n_nodes * 8 > MAX_EXPANDED_BYTES:
         raise ValueError(
             f"expanded matrix ({n_persons} x {n_items * n_nodes}) exceeds the "
-            f"{MAX_EXPANDED_ELEMENTS}-element limit"
+            f"{MAX_EXPANDED_BYTES}-byte limit"
         )
     expanded = np.full((n_persons, n_items * n_nodes), np.nan)
     cat_idx = np.where(obs, y, 0).astype(int)
