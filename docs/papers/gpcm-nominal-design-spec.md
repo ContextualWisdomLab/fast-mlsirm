@@ -178,3 +178,61 @@ Parity oracle = the NumPy mirror (python/fast_mlsirm/estimators/marginal.py), al
 - PHASE 3 -- Nominal. Step 7: a_i=1 via model_exec_flags; free scoring s_k with g_{s,m}=resid_m*base and R=sum s_k*resid_k; store s in Params/ItemBank/py; identification via baseline + prior + ordered init. Tests: Nominal(s=k)==GPCM, nominal recovery.
 - PHASE 4 -- Scoring + SE (NOT optional for the VOB deliverable). Step 8: scoring.rs polytomous lord_wingersky (per-item 0..K-1 category convolution, score range 0..sum(K_i-1)), gated to ordered GPCM (reject Nominal); eapsum_tables expanded score range + category probs; score_map GPCM/nominal Newton (score-weighted residual, Hessian -a^2*Var_P(s)); item_information a^2*Var_P(s); plausible_values/score_eap follow person_pass automatically. Step 9: oakes.rs SEs -- extend ParamVec.per_item to K-1 thresholds (+scoring), the category/score-weighted Q-gradient, and polytomous rbar cross-terms; fitstats.rs polytomous item-fit. SE finiteness + fit-stat tests on the recovery fit.
 - PHASE 5 -- Python reach. Step 10: PyO3 bridge fast-mlsirm-py/src/lib.rs -- plumb response_model/n_cat/cat_counts through fit_marginal->core_fit_marginal_full->ModelConfig and flat 2-D b + s in/out; estimator API + types.py + docs. Ship GPCM (covers PCM via fixed slope) as the built default; nominal shares the same softmax cell + a ~20-line distinct gradient block.
+
+---
+
+## Literature resolution of the space-scaling design fork (2026-07-14)
+
+The synthesized spec flagged that under an adjacent-category **softmax (GPCM /
+nominal)** cell a category-constant term cancels, so identification *forces* the
+latent-space interaction `I(x) = -gamma*d(z,w)` to enter category-scaled
+(`s_k * I(x)`), making the latent-space axis category-ordered. A literature
+search (alphaXiv + Consensus) resolves this:
+
+- **Jeon, Jin, Schweinberger & Baugh (2021)**, *Mapping unobserved
+  item-respondent interactions: A latent space item response model*
+  (Psychometrika; arXiv:2007.08719) — the base LSIRM adds the interaction as a
+  **single scalar** on the linear predictor:
+  `logit P(Y=1) = alpha_j + beta_i - gamma*d(z_k, w_i)`. The paper states the
+  polytomous extension is "straightforward, by replacing the logit-link ... by a
+  suitable link function ..., as in generalized linear models" — i.e. the GLM /
+  link route, NOT a bespoke softmax.
+- **Go, Kim, Park, Park, Jeon & Jin (2024/2025)**, *lsirm12pl: An R package for
+  the latent space item response model* (R Journal; arXiv:2205.06989) — the
+  authors' own package — extends LSIRM to **continuous** responses with an
+  identity link: `y = theta + beta - gamma*d(z,w) + eps`; again a single additive
+  interaction, now on the mean. They explicitly list ordinal LSIRM as
+  **in-progress future work** ("we are currently engaged in the development of ...
+  ordinal and longitudinal data"). So no published ordinal/polytomous LSIRM
+  exists yet: this is novel territory, and the original authors' intended route is
+  a link function, not a softmax.
+
+**Resolution.** For the LSIRM family the identification-clean polytomous
+extension is the **cumulative-logit Graded Response Model (Samejima 1968)**, not
+the adjacent-category GPCM softmax:
+
+    logit P(Y >= k | theta, x) = a_i*theta + beta_{i,k} - gamma*d(z_k, w_i),  k = 1..K-1
+    P(Y = k) = P(Y >= k) - P(Y >= k+1)
+
+The single interaction `-gamma*d` enters every cumulative logit as a **shared
+shift**. Cumulative-logit is NOT translation-invariant, so nothing cancels and NO
+category-scaling is forced; the space axis keeps its original person-item
+interaction-map meaning, exactly matching the binary (`-gamma*d` on the logit) and
+continuous (`-gamma*d` on the mean) cases. This is the model the original authors
+point to.
+
+- **GPCM** (adjacent-category softmax; Muraki 1992) remains a valid alternative
+  but carries the forced `s_k * I(x)` category-scaling — keep it as a documented
+  option for partial-credit scoring where score-weighting is intended, not the
+  default.
+- **Nominal** (Bock 1972; multidimensional: Revuelta 2014; Falk & Cai 2015)
+  genuinely uses category-specific scoring functions, so category-specific space
+  entry is consistent with that model's philosophy.
+
+**Implementation implication.** Target **GRM-LSIRM (cumulative-logit)** as the
+default polytomous model. The GRM cell replaces the softmax cell:
+`P(Y=k) = Phi_k - Phi_{k+1}` with `Phi_k = sigmoid(a*theta + beta_{i,k} - gamma*d)`;
+the softmax `category_logprobs`/`gpcm_node_gradient` oracle is retained for the
+GPCM/nominal options only. Which model is primary depends on the VOB response
+format: ordinal Likert / rubric levels -> GRM; partial-credit performance levels
+-> GPCM.
