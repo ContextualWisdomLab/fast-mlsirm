@@ -1327,28 +1327,37 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fit_poly_unidim_monte_carlo_recovery_normal_and_skew() {
-        // Monte-Carlo parameter-recovery study for the GPCM fitter, generating
-        // from the published item-parameter scheme of Kang & Chen (2008, p. 397):
-        // slopes a_i ~ lognormal(0, 0.5²) and four step difficulties b_{i,c} ~
-        // N(means −1.5, −0.5, 0.5, 1.5; SD 0.5). Two ability conditions are run —
-        // a NORMAL θ ~ N(0, 1) (the fitter's prior, so recovery is unbiased) and
-        // a right-SKEWED θ = Exp(1) − 1 (mean 0, var 1, skewness 2), a prior
-        // misspecification Kang & Chen flag as future work. Across replications
-        // we report per-parameter bias and RMSE (absolute-agreement recovery,
-        // not correlation).
-        //
-        // # References (APA 7th ed.)
-        //
-        // Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X²
-        //   item fit index for polytomous IRT models. *Journal of Educational
-        //   Measurement, 45*(4), 391–406.
-        //   https://doi.org/10.1111/j.1745-3984.2008.00070.x
-        // Muraki, E. (1992). A generalized partial credit model: Application of
-        //   an EM algorithm. *Applied Psychological Measurement, 16*(2), 159–176.
-        //   https://doi.org/10.1177/014662169201600206
-        let (n_items, k, reps, n_persons) = (5usize, 5usize, 16usize, 1500usize);
+    /// One ability condition's aggregate recovery: absolute-agreement RMSE and
+    /// mean |bias| for the slope and the category intercepts.
+    struct McRecovery {
+        cond: &'static str,
+        a_rmse: f64,
+        a_bias: f64,
+        c_rmse: f64,
+        c_bias: f64,
+    }
+
+    /// Monte-Carlo parameter-recovery study for the GPCM fitter, generating from
+    /// the published item-parameter scheme of Kang & Chen (2008, p. 397): slopes
+    /// `a_i ~ lognormal(0, 0.5²)` and four step difficulties `b_{i,c} ~
+    /// N(means −1.5, −0.5, 0.5, 1.5; SD 0.5)`. Two ability conditions are run —
+    /// NORMAL `θ ~ N(0, 1)` (the fitter's prior, so recovery is near-unbiased)
+    /// and right-SKEWED `θ = Exp(1) − 1` (mean 0, var 1, skewness 2), a prior
+    /// misspecification Kang & Chen flag as future work. Returns per-condition
+    /// RMSE and mean |bias| (absolute agreement, not correlation) over `reps`
+    /// replications on a fixed true item bank.
+    ///
+    /// # References (APA 7th ed.)
+    ///
+    /// Kang, T., & Chen, T. T. (2008). Performance of the generalized S-X² item
+    ///   fit index for polytomous IRT models. *Journal of Educational
+    ///   Measurement, 45*(4), 391–406.
+    ///   https://doi.org/10.1111/j.1745-3984.2008.00070.x
+    /// Muraki, E. (1992). A generalized partial credit model: Application of an
+    ///   EM algorithm. *Applied Psychological Measurement, 16*(2), 159–176.
+    ///   https://doi.org/10.1177/014662169201600206
+    fn mc_gpcm_recovery(reps: usize, n_persons: usize) -> Vec<McRecovery> {
+        let (n_items, k) = (5usize, 5usize);
         let z_steps = k - 1; // 4 step difficulties
         let step_means = [-1.5_f64, -0.5, 0.5, 1.5];
 
@@ -1371,6 +1380,7 @@ mod tests {
             }
         }
 
+        let mut out = Vec::new();
         for (cond, skew) in [("normal", false), ("skew", true)] {
             // accumulate signed error and squared error per parameter over reps
             let mut a_err = vec![0.0_f64; n_items];
@@ -1423,25 +1433,55 @@ mod tests {
             }
             let r = reps as f64;
             let rmse = |sq: &[f64]| (sq.iter().sum::<f64>() / (sq.len() as f64 * r)).sqrt();
-            let mean_bias = |er: &[f64]| er.iter().map(|e| (e / r).abs()).sum::<f64>() / er.len() as f64;
-            let (a_rmse, c_rmse) = (rmse(&a_sq), rmse(&c_sq));
-            let (a_bias, c_bias) = (mean_bias(&a_err), mean_bias(&c_err));
+            let mean_bias =
+                |er: &[f64]| er.iter().map(|e| (e / r).abs()).sum::<f64>() / er.len() as f64;
+            out.push(McRecovery {
+                cond,
+                a_rmse: rmse(&a_sq),
+                a_bias: mean_bias(&a_err),
+                c_rmse: rmse(&c_sq),
+                c_bias: mean_bias(&c_err),
+            });
+        }
+        out
+    }
+
+    fn assert_recovery(out: &[McRecovery], reps: usize, n_persons: usize) {
+        for s in out {
             println!(
-                "[MC recovery, θ={cond}] reps={reps} N={n_persons} K={k}  \
-                 slope: RMSE={a_rmse:.4} |bias|={a_bias:.4}  \
-                 intercept: RMSE={c_rmse:.4} |bias|={c_bias:.4}"
+                "[MC recovery, θ={}] reps={reps} N={n_persons}  \
+                 slope: RMSE={:.4} |bias|={:.4}  intercept: RMSE={:.4} |bias|={:.4}",
+                s.cond, s.a_rmse, s.a_bias, s.c_rmse, s.c_bias
             );
-            assert!(a_rmse.is_finite() && c_rmse.is_finite());
-            if skew {
-                // prior misspecification: recovery holds but degrades (reported above)
-                assert!(a_rmse < 0.45, "skew slope RMSE too large: {a_rmse}");
-                assert!(c_rmse < 1.2, "skew intercept RMSE too large: {c_rmse}");
+            assert!(s.a_rmse.is_finite() && s.c_rmse.is_finite());
+            if s.cond == "skew" {
+                // prior misspecification: recovery holds but degrades (reported)
+                assert!(s.a_rmse < 0.45, "skew slope RMSE too large: {}", s.a_rmse);
+                assert!(s.c_rmse < 1.2, "skew intercept RMSE too large: {}", s.c_rmse);
             } else {
                 // matched prior: tight, near-unbiased recovery
-                assert!(a_rmse < 0.20, "normal slope RMSE too large: {a_rmse}");
-                assert!(c_rmse < 0.45, "normal intercept RMSE too large: {c_rmse}");
-                assert!(a_bias < 0.10, "normal slope bias too large: {a_bias}");
+                assert!(s.a_rmse < 0.20, "normal slope RMSE too large: {}", s.a_rmse);
+                assert!(s.c_rmse < 0.45, "normal intercept RMSE too large: {}", s.c_rmse);
+                assert!(s.a_bias < 0.10, "normal slope bias too large: {}", s.a_bias);
             }
         }
+    }
+
+    #[test]
+    fn fit_poly_unidim_recovery_ci_guard() {
+        // Fast regression guard (few reps). The authoritative >=500-replication
+        // study is `fit_poly_unidim_recovery_monte_carlo_500` (ignored below);
+        // run it with: cargo test --release -- --ignored --nocapture
+        let (reps, n_persons) = (20usize, 1500usize);
+        assert_recovery(&mc_gpcm_recovery(reps, n_persons), reps, n_persons);
+    }
+
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn fit_poly_unidim_recovery_monte_carlo_500() {
+        // 500-replication recovery study (the sample size common in the IRT
+        // Monte-Carlo literature), N = 2000 per replication.
+        let (reps, n_persons) = (500usize, 2000usize);
+        assert_recovery(&mc_gpcm_recovery(reps, n_persons), reps, n_persons);
     }
 }
