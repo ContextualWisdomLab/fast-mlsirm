@@ -26,6 +26,31 @@ from .types import FitResult
 SCHEMA_VERSION = 1
 
 
+def _core_module():
+    try:
+        from . import _core  # type: ignore
+
+        return _core
+    except Exception:  # pragma: no cover
+        return None
+
+
+def serving_prior(bundle: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Default scoring prior implied by the bundle's population block:
+    N(0, 1) for single/multigroup-reference; the MARGINAL
+    N(0, sqrt(1 + sigma_u^2)) for multilevel (unknown cluster). Pass an
+    explicit prior to ``score_respondents`` to condition on a known cluster
+    (mean = u_eap) or group (mean = mu_g, sd = sigma_g).
+    """
+    n_dims = bundle["n_dims"]
+    mean = np.zeros(n_dims)
+    sd = np.ones(n_dims)
+    pop = bundle.get("population") or {}
+    if pop.get("kind") == "multilevel" and "sigma_u" in pop:
+        sd[:] = float(np.sqrt(1.0 + pop["sigma_u"] ** 2))
+    return mean, sd
+
+
 def export_serving_bundle(
     result: FitResult,
     item_codes: list[str],
@@ -70,6 +95,7 @@ def export_serving_bundle(
         "tau": float(p.tau),
         "gamma": float(np.exp(p.tau)),
         "population": None,
+        "eapsum_tables": None,
         "fit": {
             "convergence_status": result.convergence_status,
             "n_iter": result.n_iter,
@@ -87,6 +113,38 @@ def export_serving_bundle(
             out_pop["sigma_u"] = float(pop["sigma_u"])
             out_pop["icc"] = float(pop["icc"])
         bundle["population"] = out_pop
+    # Summed-score EAP conversion tables (Lord-Wingersky / Thissen et al.
+    # 1995) under the bundle's serving prior — the lookup-table serving path.
+    core = _core_module()
+    if core is not None:
+        mean, sd = serving_prior(bundle)
+        zeta = np.asarray(p.zeta, dtype=np.float64)
+        tables = core.eapsum_tables(
+            np.asarray(p.alpha, dtype=np.float64),
+            np.asarray(p.b, dtype=np.float64),
+            zeta.ravel(),
+            float(p.tau),
+            factor_id,
+            result.model,
+            int(factor_id.max()) + 1,
+            int(zeta.shape[1]),
+            float(eps_distance),
+            mean,
+            sd,
+            q_theta=int(q_theta),
+            q_xi=int(q_xi),
+        )
+        bundle["eapsum_tables"] = [
+            {
+                "dim": int(t["dim"]),
+                "dim_name": None if dim_names is None else dim_names[int(t["dim"])],
+                "n_items_dim": int(t["n_items_dim"]),
+                "score_prob": [float(v) for v in t["score_prob"]],
+                "eap": [float(v) for v in t["eap"]],
+                "sd": [float(v) for v in t["sd"]],
+            }
+            for t in tables
+        ]
     if path is not None:
         Path(path).write_text(
             json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -107,6 +165,8 @@ def score_respondents(
     bundle: dict[str, Any],
     responses: dict[str, Any] | list[dict[str, Any]] | np.ndarray,
     mask: np.ndarray | None = None,
+    method: str = "eap",
+    prior: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> list[dict[str, Any]]:
     """Score new respondents against a frozen bundle.
 
@@ -114,6 +174,13 @@ def score_respondents(
     column order = bundle item order) or one/many dicts mapping item code ->
     0/1 (missing items simply absent) — the same shape of payload the
     importance-assessment API receives.
+
+    ``method`` is "eap" (posterior mean, default), "map" (posterior mode with
+    SEs), or "eapsum" (summed-score lookup via the bundle's Lord-Wingersky
+    conversion tables — requires complete responses within each dimension).
+    ``prior`` overrides the serving prior (mean, sd per dimension): condition
+    on a known team with ``mean = u_eap`` or a known group with
+    ``(mu_g, sigma_g)``.
     """
     items = bundle["items"]
     n_items = bundle["n_items"]
@@ -143,20 +210,105 @@ def score_respondents(
     b = np.array([it["b"] for it in items])
     zeta = np.array([it["zeta"] for it in items])
     factor_id = np.array([it["factor_id"] for it in items], dtype=np.int64)
-    out = score_eap(
-        np.where(observed, y, 0.0),
-        observed,
-        factor_id,
-        alpha,
-        b,
-        zeta,
-        bundle["tau"],
-        model=bundle["model"],
-        n_dims=bundle["n_dims"],
-        q_theta=bundle["quadrature"]["q_theta"],
-        q_xi=bundle["quadrature"]["q_xi"],
-        eps_distance=bundle["eps_distance"],
+    n_dims = bundle["n_dims"]
+    mean, sd = serving_prior(bundle) if prior is None else (
+        np.asarray(prior[0], dtype=float),
+        np.asarray(prior[1], dtype=float),
     )
+
+    if method == "eapsum":
+        tables = bundle.get("eapsum_tables")
+        if not tables:
+            raise ValueError("bundle has no eapsum_tables; re-export the bundle")
+        results = []
+        for r in range(y.shape[0]):
+            theta, theta_sd = [], []
+            for t in sorted(tables, key=lambda t: t["dim"]):
+                d_items = [j for j, it in enumerate(items) if it["factor_id"] == t["dim"]]
+                if not all(observed[r, j] for j in d_items):
+                    raise ValueError(
+                        "eapsum scoring requires complete responses within each dimension"
+                    )
+                score = int(sum(y[r, j] for j in d_items))
+                theta.append(float(t["eap"][score]))
+                theta_sd.append(float(t["sd"][score]))
+            results.append(
+                {
+                    "theta": theta,
+                    "theta_sd": theta_sd,
+                    "method": "eapsum",
+                    "n_observed": int(observed[r].sum()),
+                }
+            )
+        return results
+
+    core = _core_module()
+    n_persons = y.shape[0]
+    y_filled = np.where(observed, y, 0.0)
+    if method == "map":
+        if core is None:
+            raise ValueError("MAP scoring requires the compiled Rust core")
+        res = core.score_bank_map(
+            y_filled.ravel(), observed.ravel(), int(n_persons),
+            alpha, b, zeta.ravel(), float(bundle["tau"]), factor_id,
+            bundle["model"], int(n_dims), int(bundle["latent_dim"]),
+            float(bundle["eps_distance"]), mean, sd,
+        )
+        theta_map = np.asarray(res["theta_map"]).reshape(n_persons, n_dims)
+        theta_se = np.asarray(res["theta_se"]).reshape(n_persons, n_dims)
+        xi_map = np.asarray(res["xi_map"]).reshape(n_persons, bundle["latent_dim"])
+        return [
+            {
+                "theta": [float(v) for v in theta_map[r]],
+                "theta_sd": [float(v) for v in theta_se[r]],
+                "xi": [float(v) for v in xi_map[r]],
+                "log_posterior": float(res["log_posterior"][r]),
+                "converged": bool(res["converged"][r]),
+                "method": "map",
+                "n_observed": int(observed[r].sum()),
+            }
+            for r in range(n_persons)
+        ]
+    if method != "eap":
+        raise ValueError("method must be one of ['eap', 'map', 'eapsum']")
+
+    if core is not None:
+        res = core.score_bank_eap(
+            y_filled.ravel(), observed.ravel(), int(n_persons),
+            alpha, b, zeta.ravel(), float(bundle["tau"]), factor_id,
+            bundle["model"], int(n_dims), int(bundle["latent_dim"]),
+            float(bundle["eps_distance"]), mean, sd,
+            q_theta=int(bundle["quadrature"]["q_theta"]),
+            xi_rule="gh",
+            q_xi=int(bundle["quadrature"]["q_xi"]),
+        )
+        out = {
+            "theta_eap": np.asarray(res["theta_eap"]).reshape(n_persons, n_dims),
+            "theta_sd": np.asarray(res["theta_sd"]).reshape(n_persons, n_dims),
+            "xi_eap": np.asarray(res["xi_eap"]).reshape(
+                n_persons, bundle["latent_dim"]
+            ),
+            "loglik": np.asarray(res["loglik"]),
+        }
+    else:
+        if not (np.allclose(mean, 0.0) and np.allclose(sd, 1.0)):
+            raise ValueError(
+                "non-standard scoring priors require the compiled Rust core"
+            )
+        out = score_eap(
+            y_filled,
+            observed,
+            factor_id,
+            alpha,
+            b,
+            zeta,
+            bundle["tau"],
+            model=bundle["model"],
+            n_dims=n_dims,
+            q_theta=bundle["quadrature"]["q_theta"],
+            q_xi=bundle["quadrature"]["q_xi"],
+            eps_distance=bundle["eps_distance"],
+        )
     results = []
     for r in range(y.shape[0]):
         results.append(
@@ -165,6 +317,7 @@ def score_respondents(
                 "theta_sd": [float(v) for v in out["theta_sd"][r]],
                 "xi": [float(v) for v in out["xi_eap"][r]],
                 "loglik": float(out["loglik"][r]),
+                "method": "eap",
                 "n_observed": int(observed[r].sum()),
             }
         )

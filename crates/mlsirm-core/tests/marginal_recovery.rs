@@ -116,8 +116,12 @@ fn small_cfg() -> MarginalConfig {
 }
 
 fn assert_monotone(trace: &[f64]) {
+    // Exact EM is monotone; with adaptive population nodes (multigroup /
+    // multilevel updates move the quadrature grid) the quadrature
+    // APPROXIMATION of the marginal can dip by discretization error, so allow
+    // a small absolute slack.
     for w in trace.windows(2) {
-        assert!(w[1] >= w[0] - 1e-6, "marginal loglik decreased: {} -> {}", w[0], w[1]);
+        assert!(w[1] >= w[0] - 1e-3, "marginal loglik decreased: {} -> {}", w[0], w[1]);
     }
 }
 
@@ -374,4 +378,196 @@ fn rejects_invalid_inputs() {
     assert!(
         fit_marginal(&ok_y, &ok_obs, &[0, 0], &big_k, &single, &base, &pen, Device::Cpu).is_err()
     );
+}
+
+#[test]
+fn qmc_and_mc_rules_recover_like_gauss_hermite() {
+    use mlsirm_core::marginal::XiRuleKind;
+    let mut rng = Lcg(31);
+    let (n_persons, n_items, n_dims, latent_dim) = (500usize, 14usize, 2usize, 2usize);
+    let sim =
+        simulate(&mut rng, n_persons, n_items, n_dims, latent_dim, 1.0, &[], &[], 0.0, &[], 0);
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Mls2plm,
+        eps_distance: 1e-8,
+    };
+    let fit_with = |rule: XiRuleKind, points: usize| {
+        fit_marginal(
+            &sim.y,
+            &sim.observed,
+            &sim.factor_id,
+            &config,
+            &PopulationSpec::Single,
+            &MarginalConfig {
+                q_theta: 15,
+                q_xi: 7,
+                max_iter: 60,
+                xi_rule: rule,
+                xi_points: points,
+                xi_seed: 7,
+                ..Default::default()
+            },
+            &PenaltyConfig::lsirm_prior(),
+            Device::Cpu,
+        )
+        .expect("fit should succeed")
+    };
+    let gh = fit_with(XiRuleKind::GaussHermite, 0);
+    let qmc = fit_with(XiRuleKind::Halton, 128);
+    let mc = fit_with(XiRuleKind::MonteCarlo, 256);
+    // the integration rule must not change the answer materially
+    assert!(corr(&gh.b, &qmc.b) > 0.98, "QMC b diverges from GH: {}", corr(&gh.b, &qmc.b));
+    assert!(corr(&gh.b, &mc.b) > 0.95, "MC b diverges from GH: {}", corr(&gh.b, &mc.b));
+    assert!(
+        (gh.tau.exp() - qmc.tau.exp()).abs() < 0.4,
+        "gamma mismatch GH={} QMC={}",
+        gh.tau.exp(),
+        qmc.tau.exp()
+    );
+    assert_monotone(&gh.loglik_trace);
+    // QMC/MC traces are deterministic too (fixed point sets), so still monotone
+    assert_monotone(&qmc.loglik_trace);
+    assert_monotone(&mc.loglik_trace);
+}
+
+#[test]
+fn fipc_recovers_shifted_population_with_anchors() {
+    use mlsirm_core::marginal::Anchors;
+    let mut rng = Lcg(55);
+    let (n_persons, n_items, n_dims, latent_dim) = (700usize, 12usize, 1usize, 1usize);
+    // simulate a shifted population theta ~ N(0.8, 1) WITHOUT a latent-space
+    // term: with gamma > 0 the raw b is not the identified anchor quantity
+    // (it confounds with the item's map radius), so valid anchors require a
+    // distance-free generating model here.
+    let sim = simulate(
+        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.0, &[0.8], &vec![0; n_persons],
+        0.0, &[], 0,
+    );
+    // "old calibration": treat the first 6 items' TRUE parameters as anchors
+    let mut fixed = vec![false; n_items];
+    let mut anchor_alpha = vec![0.0_f64; n_items];
+    let mut anchor_b = vec![0.0_f64; n_items];
+    let anchor_zeta = vec![0.0_f64; n_items * latent_dim]; // unknown -> only used where fixed
+    for i in 0..6 {
+        fixed[i] = true;
+        anchor_alpha[i] = sim.a_true[i].ln();
+        anchor_b[i] = sim.b_true[i];
+    }
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let anchors = Anchors {
+        fixed: fixed.clone(),
+        alpha: anchor_alpha.clone(),
+        b: anchor_b.clone(),
+        zeta: anchor_zeta,
+        tau: Some(-30.0), // anchor calibration had no usable space; freeze gamma ~ 0
+    };
+    let res = mlsirm_core::marginal::fit_marginal_anchored(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::SingleFree,
+        &small_cfg(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+        Some(&anchors),
+    )
+    .expect("FIPC fit should succeed");
+    // anchored items must not move
+    for i in 0..6 {
+        assert_eq!(res.alpha[i], anchor_alpha[i], "anchored alpha moved");
+        assert_eq!(res.b[i], anchor_b[i], "anchored b moved");
+    }
+    // the free population mean must absorb the shift
+    assert!(
+        res.mu[0] > 0.4 && res.mu[0] < 1.3,
+        "FIPC population mean should recover ~0.8, got {}",
+        res.mu[0]
+    );
+    assert_monotone(&res.loglik_trace);
+}
+
+#[test]
+fn fipc_requires_anchors_for_free_population() {
+    let config = ModelConfig {
+        n_persons: 2,
+        n_items: 2,
+        n_dims: 1,
+        latent_dim: 1,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let res = fit_marginal(
+        &[0.0, 1.0, 1.0, 0.0],
+        &[true; 4],
+        &[0, 0],
+        &config,
+        &PopulationSpec::SingleFree,
+        &MarginalConfig::default(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    );
+    assert!(res.is_err(), "SingleFree without anchors must be rejected");
+}
+
+#[test]
+fn concurrent_calibration_two_forms_with_anchor_block() {
+    // Hanson-Beguin common-item design: two groups, each sees its own unique
+    // block plus a shared anchor block; one concurrent multigroup run.
+    let mut rng = Lcg(77);
+    let (n_persons, n_items, n_dims, latent_dim) = (800usize, 15usize, 1usize, 1usize);
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    let mut sim = simulate(
+        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.8, &[0.0, 0.7], &group_id, 0.0,
+        &[], 0,
+    );
+    // items 0..5 unique to form A, 5..10 anchors, 10..15 unique to form B
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            let unique_a = i < 5;
+            let unique_b = i >= 10;
+            if (group_id[p] == 1 && unique_a) || (group_id[p] == 0 && unique_b) {
+                sim.observed[p * n_items + i] = false;
+            }
+        }
+    }
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let res = fit_marginal(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::Multigroup { group_id, n_groups: 2 },
+        &small_cfg(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    )
+    .expect("concurrent calibration should succeed");
+    assert!((res.mu[0]).abs() < 1e-12, "reference group stays pinned");
+    assert!(
+        res.mu[1] > 0.3 && res.mu[1] < 1.2,
+        "concurrent run should recover the ~0.7 group shift, got {}",
+        res.mu[1]
+    );
+    assert_monotone(&res.loglik_trace);
+    // every item calibrated despite the structural missingness
+    assert!(res.b.iter().all(|v| v.is_finite()));
 }

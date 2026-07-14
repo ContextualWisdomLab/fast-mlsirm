@@ -19,6 +19,7 @@ def fit(
     mask: np.ndarray | None = None,
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
+    anchors: dict | None = None,
 ) -> FitResult:
     """Fit a latent-space model.
 
@@ -27,6 +28,12 @@ def fit(
     (Bock & Zimowski 1997 — group-specific trait means/SDs, common items,
     group 0 as the N(0,1) reference) and multilevel random intercepts
     (Fox & Glas 2001 — cluster intercept SD ``sigma_u`` estimated).
+
+    ``anchors`` enables Fixed Item Parameter Calibration (Kim 2006, the
+    MWU-MEM-style variant): ``{"fixed": bool[I], "alpha", "b", "zeta",
+    "tau" (optional)}``. Anchored items stay frozen; without a
+    ``group_id``/``cluster_id`` the population mean/SD is freed
+    (concurrent-calibration-ready ``singlefree`` population).
     """
     config = config or FitConfig()
     config.validate()
@@ -52,9 +59,18 @@ def fit(
         raise ValueError(
             "estimation-level multigroup/multilevel structures require estimator='mmle'"
         )
+    if anchors is not None and config.estimator != "mmle":
+        raise ValueError("anchors (FIPC) require estimator='mmle'")
+    if anchors is not None and cluster_id is not None:
+        raise ValueError("anchors with a multilevel structure are not supported yet")
 
     if config.estimator == "mmle":
-        if model in {"ULS2PLM", "ULSRM"} and group_id is None and cluster_id is None:
+        if (
+            model in {"ULS2PLM", "ULSRM"}
+            and group_id is None
+            and cluster_id is None
+            and anchors is None
+        ):
             # Legacy fast path: plain unidimensional 2PL margin (the latent
             # space is not estimated — unchanged public behavior). Use the
             # spatial models or a population structure for the full marginal
@@ -62,7 +78,7 @@ def fit(
             return _fit_mmle(y, observed, model, config)
         return _fit_mmle_marginal(
             y, observed, factors, n_dims, model, config, backend, device,
-            group_id=group_id, cluster_id=cluster_id,
+            group_id=group_id, cluster_id=cluster_id, anchors=anchors,
         )
     if config.estimator in {"em", "bayes"}:
         raise NotImplementedError(
@@ -168,6 +184,7 @@ def _fit_mmle_marginal(
     device: str,
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
+    anchors: dict | None = None,
 ) -> FitResult:
     """Marginal EM for the latent-space family (Rust core, NumPy fallback).
 
@@ -184,8 +201,21 @@ def _fit_mmle_marginal(
     elif cluster_id is not None:
         ids = np.asarray(cluster_id, dtype=np.int64)
         pop_kind, n_pop = "multilevel", int(ids.max()) + 1 if ids.size else 0
+    elif anchors is not None:
+        # FIPC: anchored items identify a free single population.
+        ids, pop_kind, n_pop = None, "singlefree", 1
     else:
         ids, pop_kind, n_pop = None, "single", 0
+    anchor_kwargs: dict = {}
+    if anchors is not None:
+        fixed = np.asarray(anchors["fixed"], dtype=bool)
+        anchor_kwargs = dict(
+            anchor_fixed=fixed,
+            anchor_alpha=np.asarray(anchors["alpha"], dtype=np.float64),
+            anchor_b=np.asarray(anchors["b"], dtype=np.float64),
+            anchor_zeta=np.asarray(anchors["zeta"], dtype=np.float64).ravel(),
+            anchor_tau=None if anchors.get("tau") is None else float(anchors["tau"]),
+        )
     if ids is not None:
         if ids.shape != (n_persons,):
             raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")
@@ -243,6 +273,10 @@ def _fit_mmle_marginal(
                 lambda_tau=pen["lambda_tau"],
                 mu_tau=pen["mu_tau"],
                 device=device,
+                xi_rule=config.xi_rule,
+                xi_points=int(config.xi_points),
+                xi_seed=int(config.xi_seed),
+                **anchor_kwargs,
             )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
@@ -269,7 +303,7 @@ def _fit_mmle_marginal(
         converged = bool(res["converged"])
         optimizer = "mmle_marginal_em/rust"
     else:
-        pop: dict = {"kind": "single"}
+        pop: dict = {"kind": pop_kind}
         if pop_kind == "multigroup":
             pop = {"kind": "multigroup", "group_id": ids, "n_groups": n_pop}
         elif pop_kind == "multilevel":
@@ -290,6 +324,10 @@ def _fit_mmle_marginal(
             m_steps=config.m_steps,
             eps_distance=config.eps_distance,
             penalty=pen,
+            xi_rule=config.xi_rule,
+            xi_points=int(config.xi_points),
+            xi_seed=int(config.xi_seed),
+            anchors=anchors,
         )
         alpha, b, zeta, tau = res["alpha"], res["b"], res["zeta"], res["tau"]
         theta_eap, theta_sd = res["theta_eap"], res["theta_sd"]
@@ -301,7 +339,7 @@ def _fit_mmle_marginal(
         optimizer = "mmle_marginal_em/numpy"
 
     population: dict = {"kind": pop_kind, "theta_sd": theta_sd}
-    if pop_kind == "multigroup":
+    if pop_kind in {"multigroup", "singlefree"}:
         population.update(mu=mu, sigma=sigma)
     elif pop_kind == "multilevel":
         icc = sigma_u**2 / (sigma_u**2 + 1.0)

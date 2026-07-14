@@ -1,7 +1,17 @@
 use std::collections::HashMap;
 
+use mlsirm_core::fitstats::{
+    infit_outfit as core_infit_outfit, person_fit as core_person_fit, s_x2 as core_s_x2,
+    SX2Config,
+};
 use mlsirm_core::marginal::{
-    fit_marginal as core_fit_marginal, MarginalConfig, PopulationSpec,
+    fit_marginal_anchored as core_fit_marginal_anchored, Anchors, MarginalConfig,
+    PopulationSpec, XiRuleKind,
+};
+use mlsirm_core::nodes::XiRule;
+use mlsirm_core::scoring::{
+    eapsum_tables as core_eapsum_tables, score_eap as core_score_eap,
+    score_map as core_score_map, ItemBank, PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::{
@@ -199,6 +209,14 @@ fn fit_mmle_2pl(
     lambda_tau = 1.0,
     mu_tau = 0.5,
     device = "cpu",
+    xi_rule = "gh",
+    xi_points = 256,
+    xi_seed = 0,
+    anchor_fixed = None,
+    anchor_alpha = None,
+    anchor_b = None,
+    anchor_zeta = None,
+    anchor_tau = None,
 ))]
 fn fit_marginal(
     py: Python<'_>,
@@ -227,6 +245,14 @@ fn fit_marginal(
     lambda_tau: f64,
     mu_tau: f64,
     device: &str,
+    xi_rule: &str,
+    xi_points: usize,
+    xi_seed: u64,
+    anchor_fixed: Option<PyReadonlyArray1<'_, bool>>,
+    anchor_alpha: Option<PyReadonlyArray1<'_, f64>>,
+    anchor_b: Option<PyReadonlyArray1<'_, f64>>,
+    anchor_zeta: Option<PyReadonlyArray1<'_, f64>>,
+    anchor_tau: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let device = Device::parse(device)
         .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
@@ -253,6 +279,7 @@ fn fit_marginal(
     };
     let pop = match pop_kind {
         "single" => PopulationSpec::Single,
+        "singlefree" => PopulationSpec::SingleFree,
         "multigroup" => PopulationSpec::Multigroup {
             group_id: ids.ok_or_else(|| PyValueError::new_err("multigroup requires pop_id"))?,
             n_groups: n_pop,
@@ -268,6 +295,8 @@ fn fit_marginal(
             ))
         }
     };
+    let rule = XiRuleKind::parse(xi_rule)
+        .ok_or_else(|| PyValueError::new_err("xi_rule must be one of ['gh', 'qmc', 'mc']"))?;
     let mcfg = MarginalConfig {
         q_theta,
         q_xi,
@@ -275,6 +304,9 @@ fn fit_marginal(
         max_iter,
         tol,
         m_steps,
+        xi_rule: rule,
+        xi_points,
+        xi_seed,
         ..MarginalConfig::default()
     };
     let penalty = PenaltyConfig {
@@ -286,7 +318,23 @@ fn fit_marginal(
         mu_tau,
         ..PenaltyConfig::lsirm_prior()
     };
-    let res = core_fit_marginal(
+    let anchors: Option<Anchors> = match (&anchor_fixed, &anchor_alpha, &anchor_b, &anchor_zeta)
+    {
+        (None, None, None, None) => None,
+        (Some(f), Some(a), Some(b_arr), Some(z)) => Some(Anchors {
+            fixed: f.as_slice()?.to_vec(),
+            alpha: a.as_slice()?.to_vec(),
+            b: b_arr.as_slice()?.to_vec(),
+            zeta: z.as_slice()?.to_vec(),
+            tau: anchor_tau,
+        }),
+        _ => {
+            return Err(PyValueError::new_err(
+                "anchors require anchor_fixed, anchor_alpha, anchor_b and anchor_zeta together",
+            ))
+        }
+    };
+    let res = core_fit_marginal_anchored(
         y.as_slice()?,
         observed.as_slice()?,
         &factors,
@@ -295,6 +343,7 @@ fn fit_marginal(
         &mcfg,
         &penalty,
         device,
+        anchors.as_ref(),
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -315,12 +364,351 @@ fn fit_marginal(
     Ok(out.into())
 }
 
+fn parse_xi_rule(name: &str, q_xi: usize, xi_points: usize, xi_seed: u64) -> PyResult<XiRule> {
+    match XiRuleKind::parse(name) {
+        Some(XiRuleKind::GaussHermite) => Ok(XiRule::GaussHermite { q_xi }),
+        Some(XiRuleKind::Halton) => Ok(XiRule::Halton { n: xi_points, shift_seed: xi_seed }),
+        Some(XiRuleKind::MonteCarlo) => {
+            Ok(XiRule::MonteCarlo { n: xi_points, seed: xi_seed.max(1) })
+        }
+        None => Err(PyValueError::new_err("xi_rule must be one of ['gh', 'qmc', 'mc']")),
+    }
+}
+
+macro_rules! bank_from_args {
+    ($alpha:expr, $b:expr, $zeta:expr, $tau:expr, $factor_id:expr, $model:expr,
+     $n_dims:expr, $latent_dim:expr, $eps:expr, $factors:ident, $bank:ident) => {
+        let $factors = convert_factor_id($factor_id.as_slice()?, $n_dims)?;
+        let $bank = ItemBank {
+            alpha: $alpha.as_slice()?,
+            b: $b.as_slice()?,
+            zeta: $zeta.as_slice()?,
+            tau: $tau,
+            factor_id: &$factors,
+            model_type: parse_model_type($model)?,
+            n_dims: $n_dims,
+            latent_dim: $latent_dim,
+            eps_distance: $eps,
+        };
+    };
+}
+
+/// EAP scoring of response vectors against frozen item parameters.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0,
+))]
+fn score_bank_eap(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let res = core_score_eap(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
+        q_theta, rule)
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", res.theta_eap)?;
+    out.set_item("theta_sd", res.theta_sd)?;
+    out.set_item("xi_eap", res.xi_eap)?;
+    out.set_item("loglik", res.loglik)?;
+    Ok(out.into())
+}
+
+/// MAP scoring (posterior Newton) against frozen item parameters.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, max_iter = 100, tol = 1e-8,
+))]
+fn score_bank_map(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let res = core_score_map(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
+        max_iter, tol)
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_map", res.theta_map)?;
+    out.set_item("theta_se", res.theta_se)?;
+    out.set_item("xi_map", res.xi_map)?;
+    out.set_item("log_posterior", res.log_posterior)?;
+    out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+/// Summed-score EAP conversion tables (Lord-Wingersky / Thissen et al. 1995).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim, eps_distance,
+    prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11, xi_points = 256,
+    xi_seed = 0,
+))]
+fn eapsum_tables(
+    py: Python<'_>,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Vec<Py<pyo3::types::PyDict>>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
+    let tables = core_eapsum_tables(&bank, &prior, q_theta, rule)
+        .map_err(PyValueError::new_err)?;
+    let mut out = Vec::new();
+    for t in tables {
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("dim", t.dim)?;
+        d.set_item("n_items_dim", t.n_items_dim)?;
+        d.set_item("score_prob", t.score_prob)?;
+        d.set_item("eap", t.eap)?;
+        d.set_item("sd", t.sd)?;
+        out.push(d.into());
+    }
+    Ok(out)
+}
+
+/// Orlando-Thissen S-X2 with the large-N practical-significance effect size.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
+    xi_points = 256, xi_seed = 0, min_expected = 1.0, fdr_q = 0.05, min_effect = 0.0,
+    person_weight = None,
+))]
+fn s_x2_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    prior_mean: PyReadonlyArray1<'_, f64>,
+    prior_sd: PyReadonlyArray1<'_, f64>,
+    q_theta: usize,
+    xi_rule: &str,
+    q_xi: usize,
+    xi_points: usize,
+    xi_seed: u64,
+    min_expected: f64,
+    fdr_q: f64,
+    min_effect: f64,
+    person_weight: Option<PyReadonlyArray1<'_, f64>>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let prior = PriorSpec {
+        mean: prior_mean.as_slice()?.to_vec(),
+        sd: prior_sd.as_slice()?.to_vec(),
+    };
+    let cfg = SX2Config {
+        q_theta,
+        xi_rule: parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?,
+        min_expected,
+        fdr_q,
+        min_effect,
+    };
+    let weight_storage = match &person_weight {
+        Some(w) => Some(w.as_slice()?.to_vec()),
+        None => None,
+    };
+    let res = core_s_x2(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        &cfg,
+        weight_storage.as_deref(),
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("rms_residual", res.rms_residual)?;
+    out.set_item("flagged_bh", res.flagged_bh)?;
+    out.set_item("n_score_groups", res.n_score_groups)?;
+    Ok(out.into())
+}
+
+/// l_z / Snijders l_z* person fit at EAP estimates.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, theta, xi, prior_mean = None, flag_threshold = -1.645,
+))]
+fn person_fit_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    theta: PyReadonlyArray1<'_, f64>,
+    xi: PyReadonlyArray1<'_, f64>,
+    prior_mean: Option<PyReadonlyArray1<'_, f64>>,
+    flag_threshold: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let pm_storage = match &prior_mean {
+        Some(v) => v.as_slice()?.to_vec(),
+        None => Vec::new(),
+    };
+    let res = core_person_fit(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        theta.as_slice()?,
+        xi.as_slice()?,
+        &pm_storage,
+        flag_threshold,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lz", res.lz)?;
+    out.set_item("lz_star", res.lz_star)?;
+    out.set_item("flagged", res.flagged)?;
+    Ok(out.into())
+}
+
+/// Per-item infit/outfit mean squares at EAP estimates.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+    eps_distance, theta, xi,
+))]
+fn infit_outfit_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    alpha: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    zeta: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    model: &str,
+    n_dims: usize,
+    latent_dim: usize,
+    eps_distance: f64,
+    theta: PyReadonlyArray1<'_, f64>,
+    xi: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
+        eps_distance, factors, bank);
+    let res = core_infit_outfit(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        theta.as_slice()?,
+        xi.as_slice()?,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("infit", res.infit)?;
+    out.set_item("outfit", res.outfit)?;
+    Ok(out.into())
+}
+
 #[pymodule]
 #[pyo3(name = "_core")]
 fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(neg_loglik_and_grad, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
+    m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;
+    m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
+    m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
     Ok(())
 }
 

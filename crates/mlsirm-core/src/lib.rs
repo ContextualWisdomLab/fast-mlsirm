@@ -1,6 +1,9 @@
+pub mod fitstats;
 pub mod marginal;
 pub mod mmle;
+pub mod nodes;
 pub(crate) mod quadrature;
+pub mod scoring;
 
 // cargo-llvm-cov runs in CPU-only CI while enforcing 100% line coverage. Keep
 // the hardware-backed wgpu module in normal builds, and cover the deterministic

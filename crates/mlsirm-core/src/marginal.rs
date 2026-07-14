@@ -24,16 +24,38 @@
 //! population-moment updates. Every step is deterministic — the Rust<->NumPy
 //! parity contract for this estimator is exact algorithm equality.
 
+use crate::nodes::{build_xi_nodes, XiRule};
 use crate::quadrature::gh_rule;
 use crate::{model_exec_flags, Device, ModelConfig, ModelType, PenaltyConfig};
 
 #[derive(Clone, Debug)]
 pub enum PopulationSpec {
     Single,
+    /// One population with FREE `(mu_d, sigma_d)` — the Fixed Item Parameter
+    /// Calibration setting (Kim 2006): identification comes from anchored
+    /// items, so `fit_marginal` requires `anchors` with this variant.
+    SingleFree,
     /// `group_id[p] in 0..n_groups`; group 0 is the fixed `N(0,1)` reference.
     Multigroup { group_id: Vec<usize>, n_groups: usize },
     /// `cluster_id[p] in 0..n_clusters`.
     Multilevel { cluster_id: Vec<usize>, n_clusters: usize },
+}
+
+/// Fixed-item anchors for FIPC (Kim 2006, the MWU-MEM-style variant: the
+/// population moments update on every EM cycle while anchored item
+/// parameters stay frozen at their supplied values).
+#[derive(Clone, Debug)]
+pub struct Anchors {
+    /// `fixed[i]` freezes item `i` at the supplied values.
+    pub fixed: Vec<bool>,
+    /// Full-length arrays; only entries with `fixed[i]` are read.
+    pub alpha: Vec<f64>,
+    pub b: Vec<f64>,
+    /// Row-major `n_items x latent_dim`.
+    pub zeta: Vec<f64>,
+    /// Freeze the global `tau` (log gamma) at this value (from the anchor
+    /// calibration) instead of re-estimating it.
+    pub tau: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,6 +75,33 @@ pub struct MarginalConfig {
     pub init_zeta_radius: f64,
     /// Initial `sigma_u` (multilevel only).
     pub init_sigma_u: f64,
+    /// Latent-space integration rule: tensor Gauss-Hermite (`q_xi` per axis),
+    /// Halton QMC (QMC-EM, Jank 2005), or seeded Monte Carlo (MCEM,
+    /// Wei & Tanner 1990). `q_xi` is ignored for the QMC/MC rules.
+    pub xi_rule: XiRuleKind,
+    /// Point count for the Halton/MonteCarlo rules.
+    pub xi_points: usize,
+    /// Halton random-shift seed (0 = unshifted) / Monte Carlo seed.
+    pub xi_seed: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum XiRuleKind {
+    GaussHermite,
+    Halton,
+    MonteCarlo,
+}
+
+impl XiRuleKind {
+    /// Parse a case-insensitive rule name: gh / qmc (halton) / mc.
+    pub fn parse(name: &str) -> Option<XiRuleKind> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "gh" | "gauss-hermite" | "gausshermite" => Some(XiRuleKind::GaussHermite),
+            "qmc" | "halton" => Some(XiRuleKind::Halton),
+            "mc" | "montecarlo" | "monte-carlo" => Some(XiRuleKind::MonteCarlo),
+            _ => None,
+        }
+    }
 }
 
 impl Default for MarginalConfig {
@@ -66,6 +115,9 @@ impl Default for MarginalConfig {
             m_steps: 4,
             init_zeta_radius: 0.5,
             init_sigma_u: 0.3,
+            xi_rule: XiRuleKind::GaussHermite,
+            xi_points: 256,
+            xi_seed: 0,
         }
     }
 }
@@ -115,33 +167,15 @@ fn sigmoid(x: f64) -> f64 {
     }
 }
 
-/// Tensor-product latent-space grid: `q_xi^K` nodes with product weights.
-fn xi_grid(q_xi: usize, latent_dim: usize) -> (Vec<f64>, Vec<f64>) {
-    let (nodes, weights) = gh_rule(q_xi).expect("validated earlier");
-    let n_grid = q_xi.pow(latent_dim as u32);
-    let mut grid = vec![0.0_f64; n_grid * latent_dim];
-    let mut logw = vec![0.0_f64; n_grid];
-    for j in 0..n_grid {
-        let mut rem = j;
-        for k in 0..latent_dim {
-            let idx = rem % q_xi;
-            rem /= q_xi;
-            grid[j * latent_dim + k] = nodes[idx];
-            logw[j] += weights[idx].ln();
-        }
-    }
-    (grid, logw)
-}
-
 /// Population contexts: the trait value plugged into `eta` is
 /// `theta(t, s, d) = shift[s*D+d] + scale[s*D+d] * t`.
-struct Contexts {
-    n_ctx: usize,
-    shift: Vec<f64>,
-    scale: Vec<f64>,
+pub(crate) struct Contexts {
+    pub(crate) n_ctx: usize,
+    pub(crate) shift: Vec<f64>,
+    pub(crate) scale: Vec<f64>,
     /// Multilevel: standard-normal u nodes and log-weights; empty otherwise.
-    u_nodes: Vec<f64>,
-    u_logw: Vec<f64>,
+    pub(crate) u_nodes: Vec<f64>,
+    pub(crate) u_logw: Vec<f64>,
 }
 
 fn build_contexts(
@@ -157,6 +191,13 @@ fn build_contexts(
             n_ctx: 1,
             shift: vec![0.0; n_dims],
             scale: vec![1.0; n_dims],
+            u_nodes: Vec::new(),
+            u_logw: Vec::new(),
+        },
+        PopulationSpec::SingleFree => Contexts {
+            n_ctx: 1,
+            shift: mu.to_vec(),
+            scale: sigma.to_vec(),
             u_nodes: Vec::new(),
             u_logw: Vec::new(),
         },
@@ -190,23 +231,23 @@ fn build_contexts(
 
 /// Item-response tables and their per-dimension all-zero baseline.
 /// `logp1`/`logp0` are `[ctx][item][t][x]` flattened; `c0` is `[ctx][dim][t][x]`.
-struct Tables {
-    logp1: Vec<f64>,
-    logp0: Vec<f64>,
-    c0: Vec<f64>,
+pub(crate) struct Tables {
+    pub(crate) logp1: Vec<f64>,
+    pub(crate) logp0: Vec<f64>,
+    pub(crate) c0: Vec<f64>,
 }
 
-struct Grids {
-    t_nodes: Vec<f64>,
-    t_logw: Vec<f64>,
-    x_grid: Vec<f64>,
-    x_logw: Vec<f64>,
-    q_t: usize,
-    n_x: usize,
+pub(crate) struct Grids {
+    pub(crate) t_nodes: Vec<f64>,
+    pub(crate) t_logw: Vec<f64>,
+    pub(crate) x_grid: Vec<f64>,
+    pub(crate) x_logw: Vec<f64>,
+    pub(crate) q_t: usize,
+    pub(crate) n_x: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn eta_at(
+pub(crate) fn eta_at(
     alpha: &[f64],
     b: &[f64],
     zeta: &[f64],
@@ -233,7 +274,7 @@ fn eta_at(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_tables(
+pub(crate) fn build_tables(
     alpha: &[f64],
     b: &[f64],
     zeta: &[f64],
@@ -282,12 +323,12 @@ fn build_tables(
 }
 
 /// Per-person response index: positives and missing cells, item-major.
-struct ResponseIndex {
-    pos: Vec<Vec<usize>>,
-    miss: Vec<Vec<usize>>,
+pub(crate) struct ResponseIndex {
+    pub(crate) pos: Vec<Vec<usize>>,
+    pub(crate) miss: Vec<Vec<usize>>,
 }
 
-fn index_responses(y: &[f64], observed: &[bool], n_persons: usize, n_items: usize) -> ResponseIndex {
+pub(crate) fn index_responses(y: &[f64], observed: &[bool], n_persons: usize, n_items: usize) -> ResponseIndex {
     let mut pos = vec![Vec::new(); n_persons];
     let mut miss = vec![Vec::new(); n_persons];
     for p in 0..n_persons {
@@ -307,7 +348,7 @@ fn index_responses(y: &[f64], observed: &[bool], n_persons: usize, n_items: usiz
 /// and reduce it: returns (per-(d,x) logsumexp over t into `log_zdx`, and the
 /// person log-marginal for this context).
 #[allow(clippy::too_many_arguments)]
-fn person_pass(
+pub(crate) fn person_pass(
     p: usize,
     s: usize,
     tables: &Tables,
@@ -501,6 +542,17 @@ fn e_step_gpu_adapter(
 ) -> Option<EStep> {
     let (n_persons, n_items, n_dims) = (config.n_persons, config.n_items, config.n_dims);
     let cell = grids.q_t * grids.n_x;
+    // The logz buffer scales with n_persons * n_ctx * n_dims * n_x; refuse
+    // allocations past ~1 GiB (large QMC point sets on multilevel fits) and
+    // let the caller fall back to the CPU E-step instead of a device error.
+    let logz_bytes = n_persons
+        .saturating_mul(ctx.n_ctx)
+        .saturating_mul(n_dims)
+        .saturating_mul(grids.n_x)
+        .saturating_mul(4);
+    if logz_bytes > (1usize << 30) {
+        return None;
+    }
     // Person-major CSR lists.
     let build_csr = |lists: &[Vec<usize>]| {
         let mut off = Vec::with_capacity(lists.len() + 1);
@@ -535,7 +587,7 @@ fn e_step_gpu_adapter(
     let (item_miss_off, item_miss_persons) = invert(&resp.miss);
 
     let (all_ctx, ctx_of_person): (bool, Vec<u32>) = match pop {
-        PopulationSpec::Single => (false, vec![0u32; n_persons]),
+        PopulationSpec::Single | PopulationSpec::SingleFree => (false, vec![0u32; n_persons]),
         PopulationSpec::Multigroup { group_id, .. } => {
             (false, group_id.iter().map(|&g| g as u32).collect())
         }
@@ -568,7 +620,7 @@ fn e_step_gpu_adapter(
     let mut w_outer_fn = |lp: &[f64]| -> Vec<f64> {
         let mut w = vec![0.0_f64; n_ctx * n_persons];
         match pop {
-            PopulationSpec::Single => {
+            PopulationSpec::Single | PopulationSpec::SingleFree => {
                 for p in 0..n_persons {
                     loglik += lp[p * n_ctx];
                     w[p] = 1.0;
@@ -654,7 +706,7 @@ fn e_step(
     let mut post_buf = vec![0.0_f64; n_dims * cell];
 
     match pop {
-        PopulationSpec::Single => {
+        PopulationSpec::Single | PopulationSpec::SingleFree => {
             for p in 0..n_persons {
                 let lp = person_pass(
                     p, 0, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
@@ -820,6 +872,7 @@ fn m_step_items(
     factor_id: &[usize],
     penalty: &PenaltyConfig,
     m_steps: usize,
+    fixed: Option<&[bool]>,
 ) {
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
@@ -827,6 +880,9 @@ fn m_step_items(
     let cell = q_t * n_x;
     let gamma = tau.exp();
     for i in 0..n_items {
+        if fixed.map(|f| f[i]).unwrap_or(false) {
+            continue;
+        }
         let d = factor_id[i];
         let mut zeta_i: Vec<f64> = zeta[i * latent_dim..(i + 1) * latent_dim].to_vec();
         let mut cur_q = item_q(
@@ -1175,13 +1231,23 @@ fn validate(
     if config.n_dims == 0 || config.latent_dim == 0 {
         return Err("parameter dimensions must be positive".into());
     }
-    if config.latent_dim > 3 {
-        return Err("marginal estimator supports latent_dim <= 3 (grid quadrature)".into());
+    if config.latent_dim > 6 {
+        return Err("marginal estimator supports latent_dim <= 6".into());
+    }
+    if matches!(mcfg.xi_rule, XiRuleKind::GaussHermite) && config.latent_dim > 3 {
+        return Err(
+            "tensor Gauss-Hermite supports latent_dim <= 3; use xi_rule Halton/MonteCarlo"
+                .into(),
+        );
     }
     if config.eps_distance <= 0.0 {
         return Err("eps_distance must be positive".into());
     }
-    for q in [mcfg.q_theta, mcfg.q_xi, mcfg.q_u] {
+    let mut required_q = vec![mcfg.q_theta, mcfg.q_u];
+    if matches!(mcfg.xi_rule, XiRuleKind::GaussHermite) {
+        required_q.push(mcfg.q_xi);
+    }
+    for q in required_q {
         if gh_rule(q).is_none() {
             return Err(format!(
                 "unsupported quadrature size {q}; supported: {:?}",
@@ -1189,11 +1255,16 @@ fn validate(
             ));
         }
     }
+    if matches!(mcfg.xi_rule, XiRuleKind::Halton | XiRuleKind::MonteCarlo)
+        && mcfg.xi_points == 0
+    {
+        return Err("xi_points must be >= 1 for the Halton/MonteCarlo rules".into());
+    }
     if y.iter().zip(observed).any(|(&v, &o)| o && v != 0.0 && v != 1.0) {
         return Err("observed responses must be 0 or 1".into());
     }
     match pop {
-        PopulationSpec::Single => {}
+        PopulationSpec::Single | PopulationSpec::SingleFree => {}
         PopulationSpec::Multigroup { group_id, n_groups } => {
             if group_id.len() != config.n_persons {
                 return Err("group_id length must match n_persons".into());
@@ -1232,14 +1303,58 @@ pub fn fit_marginal(
     penalty: &PenaltyConfig,
     device: Device,
 ) -> Result<MarginalResult, String> {
+    fit_marginal_anchored(y, observed, factor_id, config, pop, mcfg, penalty, device, None)
+}
+
+/// [`fit_marginal`] with optional fixed-item anchors (FIPC, Kim 2006).
+#[allow(clippy::too_many_arguments)]
+pub fn fit_marginal_anchored(
+    y: &[f64],
+    observed: &[bool],
+    factor_id: &[usize],
+    config: &ModelConfig,
+    pop: &PopulationSpec,
+    mcfg: &MarginalConfig,
+    penalty: &PenaltyConfig,
+    device: Device,
+    anchors: Option<&Anchors>,
+) -> Result<MarginalResult, String> {
     validate(y, observed, factor_id, config, pop, mcfg)?;
+    if let Some(a) = anchors {
+        let (n_items, latent_dim) = (config.n_items, config.latent_dim);
+        if a.fixed.len() != n_items
+            || a.alpha.len() != n_items
+            || a.b.len() != n_items
+            || a.zeta.len() != n_items * latent_dim
+        {
+            return Err("anchors arrays must match n_items (zeta: n_items * latent_dim)".into());
+        }
+        if !a.fixed.iter().any(|&f| f) {
+            return Err("anchors provided but no item is fixed".into());
+        }
+    }
+    if matches!(pop, PopulationSpec::SingleFree) && anchors.is_none() {
+        return Err(
+            "PopulationSpec::SingleFree (FIPC) requires anchors for identification".into(),
+        );
+    }
     let (_, uses_space) = model_exec_flags(config.model_type);
     let (n_persons, n_items, n_dims, latent_dim) =
         (config.n_persons, config.n_items, config.n_dims, config.latent_dim);
 
     let (t_nodes, t_weights) = gh_rule(mcfg.q_theta).expect("validated");
     let (x_grid, x_logw) = if uses_space {
-        xi_grid(mcfg.q_xi, latent_dim)
+        let rule = match mcfg.xi_rule {
+            XiRuleKind::GaussHermite => XiRule::GaussHermite { q_xi: mcfg.q_xi },
+            XiRuleKind::Halton => {
+                XiRule::Halton { n: mcfg.xi_points, shift_seed: mcfg.xi_seed }
+            }
+            XiRuleKind::MonteCarlo => {
+                XiRule::MonteCarlo { n: mcfg.xi_points, seed: mcfg.xi_seed.max(1) }
+            }
+        };
+        let nodes = build_xi_nodes(rule, latent_dim)?;
+        (nodes.grid, nodes.logw)
     } else {
         // MIRT: a single dummy latent-space node at the origin with weight 1.
         (vec![0.0; latent_dim], vec![0.0])
@@ -1287,9 +1402,23 @@ pub fn fit_marginal(
         PopulationSpec::Multigroup { n_groups, .. } => (*n_groups, 0),
         PopulationSpec::Multilevel { n_clusters, .. } => (0, *n_clusters),
         PopulationSpec::Single => (0, 0),
+        PopulationSpec::SingleFree => (1, 0),
     };
     let mut mu = vec![0.0_f64; n_groups * n_dims];
     let mut sigma = vec![1.0_f64; n_groups * n_dims];
+    if let Some(a) = anchors {
+        for i in 0..n_items {
+            if a.fixed[i] {
+                alpha[i] = a.alpha[i];
+                b[i] = a.b[i];
+                zeta[i * latent_dim..(i + 1) * latent_dim]
+                    .copy_from_slice(&a.zeta[i * latent_dim..(i + 1) * latent_dim]);
+            }
+        }
+        if let Some(t) = a.tau {
+            tau = t;
+        }
+    }
     let mut sigma_u = if n_clusters > 0 { mcfg.init_sigma_u } else { 0.0 };
 
     let resp = index_responses(y, observed, n_persons, n_items);
@@ -1306,16 +1435,20 @@ pub fn fit_marginal(
         // M-step: items, then tau, then population parameters.
         m_step_items(
             &mut alpha, &mut b, &mut zeta, tau, &estep, &ctx, &grids, config, factor_id,
-            penalty, mcfg.m_steps,
+            penalty, mcfg.m_steps, anchors.map(|a| a.fixed.as_slice()),
         );
-        m_step_tau(
-            &alpha, &b, &zeta, &mut tau, &estep, &ctx, &grids, config, factor_id, penalty,
-        );
+        if anchors.and_then(|a| a.tau).is_none() {
+            m_step_tau(
+                &alpha, &b, &zeta, &mut tau, &estep, &ctx, &grids, config, factor_id,
+                penalty,
+            );
+        }
         match pop {
             PopulationSpec::Single => {}
-            PopulationSpec::Multigroup { .. } => {
+            PopulationSpec::SingleFree | PopulationSpec::Multigroup { .. } => {
                 let cell = grids.q_t * grids.n_x;
-                for g in 1..n_groups {
+                let g_start = if matches!(pop, PopulationSpec::SingleFree) { 0 } else { 1 };
+                for g in g_start..n_groups {
                     for d in 0..n_dims {
                         let (shift, scale) = (mu[g * n_dims + d], sigma[g * n_dims + d]);
                         let (mut w_sum, mut m1, mut m2) = (0.0_f64, 0.0_f64, 0.0_f64);
@@ -1401,7 +1534,7 @@ pub fn fit_marginal(
 
     for p in 0..n_persons {
         let (contexts, weights): (Vec<usize>, Vec<f64>) = match pop {
-            PopulationSpec::Single => (vec![0], vec![1.0]),
+            PopulationSpec::Single | PopulationSpec::SingleFree => (vec![0], vec![1.0]),
             PopulationSpec::Multigroup { group_id, .. } => (vec![group_id[p]], vec![1.0]),
             PopulationSpec::Multilevel { cluster_id, .. } => {
                 let c = cluster_id[p];
@@ -1447,7 +1580,9 @@ pub fn fit_marginal(
         .map(|(&m, &m2)| (m2 - m * m).max(0.0).sqrt())
         .collect();
 
-    if uses_space {
+    if uses_space && anchors.is_none() {
+        // With anchors the latent-space orientation is inherited from the
+        // anchor calibration; re-aligning would break comparability.
         pca_align(&mut zeta, &mut xi_eap, n_items, n_persons, latent_dim);
     }
 

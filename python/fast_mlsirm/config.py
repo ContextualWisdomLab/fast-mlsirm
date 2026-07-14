@@ -91,6 +91,14 @@ class FitConfig:
     q_u: int = 15
     # Fisher-preconditioned ascent steps per item per M-step (marginal EM).
     m_steps: int = 4
+    # Latent-space integration rule for the marginal estimator: "gh" (tensor
+    # Gauss-Hermite, q_xi per axis), "qmc" (Halton QMC-EM, Jank 2005) or "mc"
+    # (seeded Monte Carlo EM, Wei & Tanner 1990).
+    xi_rule: str = "gh"
+    # Point count for the qmc/mc rules; xi_seed is the Halton random shift /
+    # Monte Carlo seed (deterministic, mirrored across backends).
+    xi_points: int = 256
+    xi_seed: int = 0
 
     def normalized_model(self) -> str:
         return self.model.upper()
@@ -121,5 +129,9 @@ class FitConfig:
                 raise ValueError(f"{name} must be one of {sorted(supported_q)}")
         if self.m_steps < 1:
             raise ValueError("m_steps must be >= 1")
+        if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
+            raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
+        if self.xi_points < 1:
+            raise ValueError("xi_points must be >= 1")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)

@@ -31,6 +31,33 @@ import numpy as np
 from .estimators.marginal import _gh, _xi_grid
 
 
+def _core_module():
+    """The compiled Rust core, when built — the compute path for every
+    statistic here (the NumPy bodies below are the parity reference and
+    fallback)."""
+    try:
+        from . import _core  # type: ignore
+
+        return _core
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _bank_args(params, factor_id, model, n_dims, eps_distance):
+    zeta = np.asarray(params.zeta, dtype=np.float64)
+    return dict(
+        alpha=np.asarray(params.alpha, dtype=np.float64),
+        b=np.asarray(params.b, dtype=np.float64),
+        zeta=zeta.ravel(),
+        tau=float(params.tau),
+        factor_id=np.asarray(factor_id, dtype=np.int64),
+        model=model,
+        n_dims=int(n_dims),
+        latent_dim=int(zeta.shape[1]),
+        eps_distance=float(eps_distance),
+    )
+
+
 # --------------------------------------------------------------------------
 # chi-square survival function (regularized upper incomplete gamma), no SciPy
 # --------------------------------------------------------------------------
@@ -172,6 +199,10 @@ class SX2Result:
     p_value: np.ndarray
     flagged_bh: np.ndarray
     n_score_groups: np.ndarray
+    # N_s-weighted RMS of (O - E): the practical-significance effect size that
+    # keeps the over-powered chi-square honest at large N (Sinharay & Haberman
+    # 2014). flagged_bh requires BH significance AND rms >= min_effect.
+    rms_residual: np.ndarray | None = None
 
 
 def s_x2(
@@ -187,6 +218,7 @@ def s_x2(
     min_expected: float = 1.0,
     fdr_q: float = 0.05,
     person_weight: np.ndarray | None = None,
+    min_effect: float = 0.0,
 ) -> SX2Result:
     """Orlando-Thissen S-X² per item, summed scores within each trait dim.
 
@@ -194,7 +226,38 @@ def s_x2(
     that dimension's observed table (the summed score would not be
     comparable). ``person_weight`` (0/1) can down-weight aberrant respondents
     flagged by person fit before item decisions (design doc §6).
+    ``min_effect`` guards the BH flag with the RMS observed-minus-expected
+    effect size (practical significance at large N).
     """
+    core = _core_module()
+    if core is not None and prior_mean is None:
+        y0 = np.asarray(responses, dtype=float)
+        observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+        d_of_i = np.asarray(factor_id, dtype=np.int64)
+        n_dims = int(d_of_i.max()) + 1
+        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+        res = core.s_x2_stat(
+            np.where(observed0, y0, 0.0).ravel(),
+            observed0.ravel(),
+            int(y0.shape[0]),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.zeros(n_dims), np.ones(n_dims),
+            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+            min_expected=float(min_expected), fdr_q=float(fdr_q),
+            min_effect=float(min_effect),
+            person_weight=None
+            if person_weight is None
+            else np.asarray(person_weight, dtype=np.float64),
+        )
+        return SX2Result(
+            statistic=np.asarray(res["statistic"]),
+            df=np.asarray(res["df"]),
+            p_value=np.asarray(res["p_value"]),
+            flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
+            n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
+            rms_residual=np.asarray(res["rms_residual"]),
+        )
     y = np.asarray(responses, dtype=float)
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     if mask is None:
@@ -214,6 +277,7 @@ def s_x2(
     stat = np.full(n_items, np.nan)
     dof = np.full(n_items, np.nan)
     pval = np.full(n_items, np.nan)
+    rms = np.full(n_items, np.nan)
     n_groups_out = np.zeros(n_items, dtype=int)
 
     for d in range(n_dims):
@@ -260,6 +324,7 @@ def s_x2(
             elif acc_n > 0:
                 groups.append((acc_n, acc_r, acc_e))
             x2, n_grp = 0.0, 0
+            rss, n_tot = 0.0, 0.0
             for gn, gr, ge in groups:
                 if gn <= 0:
                     continue
@@ -268,19 +333,25 @@ def s_x2(
                     continue
                 o_prop = gr / gn
                 x2 += gn * (o_prop - e_prop) ** 2 / (e_prop * (1.0 - e_prop))
+                rss += gn * (o_prop - e_prop) ** 2
+                n_tot += gn
                 n_grp += 1
             df_i = n_grp - n_free
             stat[i] = x2
             n_groups_out[i] = n_grp
+            rms[i] = np.sqrt(rss / n_tot) if n_tot > 0 else np.nan
             if df_i >= 1:
                 dof[i] = df_i
                 pval[i] = chi2_sf(x2, df_i)
+    flagged = benjamini_hochberg(pval, fdr_q)
+    flagged &= np.where(np.isfinite(rms), rms, -np.inf) >= min_effect
     return SX2Result(
         statistic=stat,
         df=dof,
         p_value=pval,
-        flagged_bh=benjamini_hochberg(pval, fdr_q),
+        flagged_bh=flagged,
         n_score_groups=n_groups_out,
+        rms_residual=rms,
     )
 
 
@@ -323,6 +394,29 @@ def person_fit(
     n_persons, n_items = y.shape
     d_of_i = np.asarray(factor_id, dtype=np.int64)
     n_dims = int(d_of_i.max()) + 1
+    core = _core_module()
+    if core is not None:
+        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+        res = core.person_fit_stat(
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.asarray(params.theta, dtype=np.float64).ravel(),
+            np.asarray(params.xi, dtype=np.float64).ravel(),
+            prior_mean=None
+            if prior_mean is None
+            else np.broadcast_to(
+                np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
+            ).ravel().copy(),
+            flag_threshold=float(flag_threshold),
+        )
+        return PersonFitResult(
+            lz=np.asarray(res["lz"]).reshape(n_persons, n_dims),
+            lz_star=np.asarray(res["lz_star"]).reshape(n_persons, n_dims),
+            flagged=np.asarray(res["flagged"], dtype=bool),
+        )
     theta = np.asarray(params.theta, dtype=float)
     a = np.exp(params.alpha) if free_alpha else np.ones(n_items)
     shift = np.zeros((n_persons, n_dims))
@@ -394,6 +488,21 @@ def infit_outfit(
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     y = np.where(observed, y, 0.0)
     d_of_i = np.asarray(factor_id, dtype=np.int64)
+    core = _core_module()
+    if core is not None:
+        n_persons = y.shape[0]
+        n_dims = int(d_of_i.max()) + 1
+        bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+        res = core.infit_outfit_stat(
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
+            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            np.asarray(params.theta, dtype=np.float64).ravel(),
+            np.asarray(params.xi, dtype=np.float64).ravel(),
+        )
+        return {"infit": np.asarray(res["infit"]), "outfit": np.asarray(res["outfit"])}
     a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
@@ -441,12 +550,14 @@ def select_items(
     cluster_id: np.ndarray | None = None,
     min_positive: int = 20,
     fdr_q: float = 0.05,
+    sx2_min_effect: float = 0.02,
     msq_band: tuple[float, float] = (0.7, 1.3),
     min_discrimination: float = 0.35,
     isolation_z: float = 3.0,
     min_items_per_dim: int = 4,
     max_rounds: int = 5,
     min_flags_to_remove: int = 2,
+    person_flag_threshold: float = -1.645,
 ) -> ItemScreeningResult:
     """Iterative fit -> flag -> remove -> refit item screening.
 
@@ -455,8 +566,13 @@ def select_items(
     1. ``sparse``: fewer than ``min_positive`` positive (or negative)
        observed responses — removed on this flag alone (the item cannot
        support its parameters).
-    2. ``sx2``: S-X² significant after Benjamini-Hochberg at ``fdr_q``.
-    3. ``msq``: infit or outfit outside ``msq_band`` (Wright & Linacre 1994).
+    2. ``sx2``: S-X² significant after Benjamini-Hochberg at ``fdr_q`` AND a
+       practical effect (`rms_residual >= sx2_min_effect`) — chi-square power
+       grows without bound in N, so significance alone over-prunes large
+       calibrations (Sinharay & Haberman 2014).
+    3. ``msq``: **infit** outside ``msq_band`` (Wright & Linacre 1994). Outfit
+       is reported but does not gate: with very low pass rates a handful of
+       surprising responses explodes the unweighted mean square.
     4. ``low_disc``: discrimination below ``min_discrimination`` (2PL models).
     5. ``isolated``: gamma-weighted mean distance to respondents is a robust
        z-score outlier above ``isolation_z`` — the LSIRM reading of an item
@@ -498,8 +614,27 @@ def select_items(
             group_id=group_id,
             cluster_id=cluster_id,
         )
-        # person screen
-        pf = person_fit(np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model)
+        # person screen — prior means matter for the Snijders MAP correction:
+        # multilevel EAPs absorb the cluster intercepts, multigroup the group
+        # means, so r_0 must be centered accordingly.
+        prior_mean = None
+        if result.population is not None:
+            popk = result.population
+            if popk["kind"] == "multilevel" and cluster_id is not None:
+                u = np.asarray(popk["u_eap"], dtype=float)
+                prior_mean = np.repeat(
+                    u[np.asarray(cluster_id, dtype=np.int64)][:, None],
+                    int(fid_r.max()) + 1,
+                    axis=1,
+                )
+            elif popk["kind"] == "multigroup" and group_id is not None:
+                prior_mean = np.asarray(popk["mu"], dtype=float)[
+                    np.asarray(group_id, dtype=np.int64)
+                ]
+        pf = person_fit(
+            np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model,
+            prior_mean=prior_mean, flag_threshold=person_flag_threshold,
+        )
         weight = (~pf.flagged).astype(float)
         # flags
         sx2_res = s_x2(
@@ -511,6 +646,7 @@ def select_items(
             q_xi=config.q_xi,
             fdr_q=fdr_q,
             person_weight=weight,
+            min_effect=sx2_min_effect,
         )
         msq = infit_outfit(np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model)
         a_est = np.exp(result.params.alpha)
@@ -547,7 +683,9 @@ def select_items(
                 "msq": bool(
                     msq["infit"][local_i] < msq_band[0]
                     or msq["infit"][local_i] > msq_band[1]
-                    or msq["outfit"][local_i] < msq_band[0]
+                ),
+                "outfit_out": bool(
+                    msq["outfit"][local_i] < msq_band[0]
                     or msq["outfit"][local_i] > msq_band[1]
                 ),
                 "low_disc": bool(free_alpha and a_est[local_i] < min_discrimination),

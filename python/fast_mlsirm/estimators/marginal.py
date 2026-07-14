@@ -41,6 +41,104 @@ def _model_flags(model: str) -> tuple[bool, bool]:
     return free_alpha, uses_space
 
 
+_HALTON_PRIMES = (2, 3, 5, 7, 11, 13)
+
+# Acklam's inverse normal CDF (same coefficients as the Rust core; parity).
+_ACK_A = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+          1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+_ACK_B = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+          6.680131188771972e+01, -1.328068155288572e+01)
+_ACK_C = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+          -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+_ACK_D = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+          3.754408661907416e+00)
+
+
+def _inv_normal_cdf(p: float) -> float:
+    a, b, c, d = _ACK_A, _ACK_B, _ACK_C, _ACK_D
+    p_low = 0.02425
+    if p < p_low:
+        q = np.sqrt(-2.0 * np.log(p))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+        )
+    if p <= 1.0 - p_low:
+        q = p - 0.5
+        r = q * q
+        return (
+            (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+        ) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0)
+    q = np.sqrt(-2.0 * np.log(1.0 - p))
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+        (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+    )
+
+
+def _radical_inverse(i: int, base: int) -> float:
+    inv, f = 0.0, 1.0 / base
+    while i > 0:
+        inv += (i % base) * f
+        i //= base
+        f /= base
+    return inv
+
+
+def _lcg_next(state: int) -> int:
+    return (state * 6364136223846793005 + 1442695040888963407) % (1 << 64)
+
+
+def _lcg_uniform(state: int) -> tuple[float, int]:
+    state = _lcg_next(state)
+    return (state >> 11) / float(1 << 53), state
+
+
+def _normal_draw(state: int) -> tuple[float, int]:
+    u1, state = _lcg_uniform(state)
+    u2, state = _lcg_uniform(state)
+    return float(np.sqrt(-2.0 * np.log(max(u1, 1e-12))) * np.cos(2.0 * np.pi * u2)), state
+
+
+def _xi_nodes(
+    rule: str, latent_dim: int, q_xi: int, xi_points: int, xi_seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Mirror of ``mlsirm_core::nodes::build_xi_nodes``."""
+    rule = rule.lower()
+    if rule in {"gh", "gauss-hermite", "gausshermite"}:
+        if latent_dim > 3:
+            raise ValueError(
+                "tensor Gauss-Hermite supports latent_dim <= 3; use xi_rule qmc/mc"
+            )
+        return _xi_grid(q_xi, latent_dim)
+    if rule in {"qmc", "halton"}:
+        if xi_points < 1:
+            raise ValueError("xi_points must be >= 1 for the Halton/MonteCarlo rules")
+        if latent_dim > len(_HALTON_PRIMES):
+            raise ValueError(f"Halton rule supports latent_dim <= {len(_HALTON_PRIMES)}")
+        shift = np.zeros(latent_dim)
+        if xi_seed != 0:
+            state = xi_seed
+            for k in range(latent_dim):
+                shift[k], state = _lcg_uniform(state)
+        grid = np.empty((xi_points, latent_dim))
+        for j in range(xi_points):
+            for k in range(latent_dim):
+                u = _radical_inverse(j + 1, _HALTON_PRIMES[k]) + shift[k]
+                if u >= 1.0:
+                    u -= 1.0
+                grid[j, k] = _inv_normal_cdf(min(max(u, 1e-12), 1.0 - 1e-12))
+        return grid, np.full(xi_points, -np.log(xi_points))
+    if rule in {"mc", "montecarlo", "monte-carlo"}:
+        if xi_points < 1:
+            raise ValueError("xi_points must be >= 1 for the Halton/MonteCarlo rules")
+        state = max(xi_seed, 1)
+        grid = np.empty((xi_points, latent_dim))
+        for j in range(xi_points):
+            for k in range(latent_dim):
+                grid[j, k], state = _normal_draw(state)
+        return grid, np.full(xi_points, -np.log(xi_points))
+    raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
+
+
 def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
     nodes, weights = _gh(q_xi)
     # Match the Rust ordering: axis k advances every q_xi^k nodes.
@@ -66,8 +164,9 @@ def _build_contexts(
     kind = pop["kind"]
     if kind == "single":
         return {"n_ctx": 1, "shift": np.zeros((1, n_dims)), "scale": np.ones((1, n_dims))}
-    if kind == "multigroup":
-        return {"n_ctx": pop["n_groups"], "shift": mu.copy(), "scale": sigma.copy()}
+    if kind in {"multigroup", "singlefree"}:
+        # singlefree (FIPC) is a one-group multigroup with free (mu, sigma)
+        return {"n_ctx": mu.shape[0], "shift": mu.copy(), "scale": sigma.copy()}
     nodes, weights = _gh(q_u)
     return {
         "n_ctx": q_u,
@@ -237,12 +336,19 @@ def fit_marginal_numpy(
     init_sigma_u: float = 0.3,
     eps_distance: float = 1e-8,
     penalty: dict | None = None,
+    xi_rule: str = "gh",
+    xi_points: int = 256,
+    xi_seed: int = 0,
+    anchors: dict | None = None,
 ) -> dict:
     """NumPy mirror of ``mlsirm_core::marginal::fit_marginal``.
 
-    ``pop`` is ``{"kind": "single"}`` (default),
+    ``pop`` is ``{"kind": "single"}`` (default), ``{"kind": "singlefree"}``
+    (FIPC: free population mean/sd, requires ``anchors``),
     ``{"kind": "multigroup", "group_id": ..., "n_groups": ...}`` or
     ``{"kind": "multilevel", "cluster_id": ..., "n_clusters": ...}``.
+    ``anchors`` is ``{"fixed": bool[I], "alpha": ..., "b": ..., "zeta": ...,
+    "tau": float | None}`` — fixed items stay frozen (FIPC, Kim 2006).
     """
     y = np.asarray(y, dtype=np.float64)
     observed = np.asarray(observed, dtype=bool)
@@ -270,7 +376,7 @@ def fit_marginal_numpy(
     t_nodes, t_weights = _gh(q_theta)
     t_logw = np.log(t_weights)
     if uses_space:
-        x_grid, x_logw = _xi_grid(q_xi, latent_dim)
+        x_grid, x_logw = _xi_nodes(xi_rule, latent_dim, q_xi, xi_points, xi_seed)
     else:
         x_grid, x_logw = np.zeros((1, latent_dim)), np.zeros(1)
     n_x = len(x_logw)
@@ -292,7 +398,11 @@ def fit_marginal_numpy(
     tau = 0.0 if uses_space else -30.0
 
     kind = pop["kind"]
-    n_groups = pop.get("n_groups", 0) if kind == "multigroup" else 0
+    if kind == "singlefree" and anchors is None:
+        raise ValueError("singlefree (FIPC) requires anchors for identification")
+    n_groups = (
+        pop.get("n_groups", 0) if kind == "multigroup" else (1 if kind == "singlefree" else 0)
+    )
     n_clusters = pop.get("n_clusters", 0) if kind == "multilevel" else 0
     if kind == "multigroup":
         group_id = np.asarray(pop["group_id"], dtype=np.int64)
@@ -309,6 +419,20 @@ def fit_marginal_numpy(
     mu = np.zeros((n_groups, n_dims))
     sigma = np.ones((n_groups, n_dims))
     sigma_u = init_sigma_u if n_clusters else 0.0
+    fixed_mask = np.zeros(n_items, dtype=bool)
+    anchor_tau = None
+    if anchors is not None:
+        fixed_mask = np.asarray(anchors["fixed"], dtype=bool)
+        if fixed_mask.shape != (n_items,) or not fixed_mask.any():
+            raise ValueError("anchors must fix at least one item and match n_items")
+        alpha[fixed_mask] = np.asarray(anchors["alpha"], dtype=float)[fixed_mask]
+        b[fixed_mask] = np.asarray(anchors["b"], dtype=float)[fixed_mask]
+        zeta[fixed_mask] = np.asarray(anchors["zeta"], dtype=float).reshape(
+            n_items, latent_dim
+        )[fixed_mask]
+        anchor_tau = anchors.get("tau")
+        if anchor_tau is not None:
+            tau = float(anchor_tau)
 
     loglik_trace: list[float] = []
     converged = False
@@ -323,7 +447,7 @@ def fit_marginal_numpy(
         rbar = np.zeros((n_ctx, n_items, q_theta, n_x))
         mbar = np.zeros((n_ctx, n_items, q_theta, n_x))
 
-        if kind == "single":
+        if kind in {"single", "singlefree"}:
             s_of_person = np.zeros(n_persons, dtype=np.int64)
             l, log_zdx, log_lp = _person_logliks(
                 y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_of_person, n_dims
@@ -382,6 +506,8 @@ def fit_marginal_numpy(
         gamma = float(np.exp(tau))
         theta_sx = ctx["shift"][:, :, None] + ctx["scale"][:, :, None] * t_nodes[None, None, :]
         for i in range(n_items):
+            if fixed_mask[i]:
+                continue
             d = int(factor_id[i])
             zeta_i = zeta[i].copy()
             n_i = nbar[:, d] - mbar[:, i]  # (S, Qt, Nx)
@@ -458,7 +584,7 @@ def fit_marginal_numpy(
             zeta[i] = zeta_i
 
         # --- M-step: tau ---
-        if uses_space:
+        if uses_space and anchor_tau is None:
             gamma = float(np.exp(tau))
             diff = x_grid[None, :, :] - zeta[:, None, :]
             dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
@@ -505,8 +631,9 @@ def fit_marginal_numpy(
                     step *= 0.5
 
         # --- M-step: population parameters ---
-        if kind == "multigroup":
-            for g in range(1, n_groups):
+        if kind in {"multigroup", "singlefree"}:
+            g_start = 0 if kind == "singlefree" else 1
+            for g in range(g_start, n_groups):
                 for d in range(n_dims):
                     theta_g = mu[g, d] + sigma[g, d] * t_nodes  # (Qt,)
                     w = nbar[g, d]  # (Qt, Nx)
@@ -548,7 +675,7 @@ def fit_marginal_numpy(
         theta_eap[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s, optimize=True)
         theta_m2[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s**2, optimize=True)
 
-    if kind == "single":
+    if kind in {"single", "singlefree"}:
         eap_accumulate(np.zeros(n_persons, dtype=np.int64), np.ones(n_persons))
     elif kind == "multigroup":
         eap_accumulate(group_id, np.ones(n_persons))
@@ -575,7 +702,8 @@ def fit_marginal_numpy(
 
     theta_sd = np.sqrt(np.maximum(theta_m2 - theta_eap**2, 0.0))
 
-    if uses_space:
+    if uses_space and anchors is None:
+        # anchored calibrations inherit the anchor orientation
         _pca_align(zeta, xi_eap)
 
     return {

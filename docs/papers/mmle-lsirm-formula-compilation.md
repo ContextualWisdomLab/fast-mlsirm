@@ -711,3 +711,606 @@ symbols from memory): Bock–Aitkin EM update equations, Lord–Wingersky recurs
 Fox–Glas multilevel IRT, Bock–Zimowski multigroup, Reckase MIRT indices, `l_z` base. A dedicated
 **multigroup-LSIRM** paper was **not** found online — §5.2 is a construction by analogy (HLSIRM + Bock–
 Zimowski), flagged as such.
+
+---
+---
+
+# Part II — Monte Carlo / Quasi-Monte Carlo EM, IRT Scoring, and Calibration Workflows
+
+**Scope.** Implementation-ready formulas for (i) Monte Carlo EM and quasi-Monte Carlo EM E-steps
+(the practical engines for the `(1+D)`-dimensional LSIRM integral of §3.A.2), (ii) IRT scoring —
+EAP, MAP, summed-score EAP with the Lord–Wingersky recursion, and group-specific / multilevel priors,
+(iii) concurrent calibration, and (iv) fixed item parameter calibration (FIPC). Verification legend as
+in the Part I header (`[V]` / `[S]` / `[~]`).
+
+---
+
+## 13. Notation additions (Part II)
+
+| Symbol | Meaning |
+|---|---|
+| `x` (or `φ`) | missing/latent data (LSIRM: per-person `(θ_p, z_p)`; GLMM: random effects `u`) |
+| `y` | observed data; `f(y,x;ξ)` complete-data density; `ℓ_c(ξ;y,x)=log f(y,x;ξ)` |
+| `f(x\mid y;ξ)` | missing-data (conditional) distribution — the E-step target |
+| `M_k` (or `m`) | Monte Carlo sample size at EM iteration `k` |
+| `S_c(ξ)=∇_ξ ℓ_c` | complete-data score |
+| `X_q, A_q` | quadrature nodes and weights; `L_p(X_q)` person `p` likelihood at node `q` (§3.A.1) |
+| `T_i(k\mid θ)` | probability of response category `k` on item `i` (dichotomous: `T_i(1\mid θ)=P_i(θ)`) |
+| `L_n(s\mid θ)` | probability of summed score `s` over the first `n` items at fixed `θ` |
+| `g(θ)` | scoring prior; default `φ(θ)=N(0,1)`, group version `φ(θ;μ_g,σ_g²)` |
+| `φ_b(n)` | radical-inverse function in base `b` (Halton construction) |
+
+---
+
+## 14. Monte Carlo EM (MCEM)
+
+### 14.1 The MCEM E-step approximation (Wei & Tanner, 1990) `[V]`
+
+Replace the E-step expectation `Q(ξ\mid ξ^{(k)})=E[ℓ_c(ξ;y,X)\mid y,ξ^{(k)}]` by a (possibly weighted)
+Monte Carlo average. With `X_1,…,X_M` sampled (not necessarily iid) from `f(x\mid y;ξ^{(k)})`:
+$$
+\boxed{\;\hat Q(\xi\mid\xi^{(k)})=\sum_{s=1}^{M} w_s\,\ell_c(\xi;\,y,X_s)\;}
+\qquad\Big(\text{iid case: } w_s=\tfrac1M\Big),
+$$
+then M-step `ξ^{(k+1)}=\arg\max_ξ \hat Q(ξ\mid ξ^{(k)})`. (Verbatim as Eq. 19 of the MCEM review,
+arXiv:2401.00945, which is the verification source used throughout §14.) The complete-data gradient and
+Hessian are the same mixtures, so at convergence the observed information follows from **Louis (1982)**:
+generate one final large sample and estimate
+`I(ξ̂) = −E[∇²ℓ_c\mid y] − Var[S_c\mid y]` by its Monte Carlo averages. Wei & Tanner's own convergence
+recommendation: plot `ξ^{(k)}` across iterations; when the trajectory stabilizes, either stop or increase
+`M` and continue until it stabilizes again (this "increase `M` late" heuristic is the primitive form of
+every scheduling rule below).
+
+For LSIRM (§3.A.2): `x = (θ_p, z_p)_{p=1..N}`, the per-person integrals factorize, so the E-step samples
+each person's posterior independently — `N` parallel `(1+D)`-dimensional problems, never a `Q^{1+D}` grid.
+
+### 14.2 Sampling variants for the E-step
+
+**(a) Posterior sampling by MCMC (McCulloch, 1997) `[V description / S details]`.**
+For GLMMs — the model class closest to LSIRM's random-effects margin — draw `u^{(1)},…,u^{(M)}` from
+`f(u\mid y;ξ^{(k)})` with a Metropolis–Hastings chain (one-coordinate-at-a-time random walk), then use
+equal weights in `\hat Q`. McCulloch (1997, JASA 92, 162–170) compares this MCEM with a Monte Carlo
+Newton–Raphson (MCNR) and Monte Carlo maximum likelihood (MCML; Geyer, 1991): MCEM/MCNR beat MCML alone;
+MCEM-then-one-MCML-step was best. His schedule (verified): fixed `M`, increased at iterations 20 and 40 —
+i.e., a Wei–Tanner-style hand-tuned schedule.
+
+**(b) Importance sampling from a posterior approximation (Booth & Hobert, 1999) `[V use / S proposal details]`.**
+Draw iid `X_s ∼ h(x)` and weight
+$$
+w_s=\frac{\tilde w_s}{\sum_{s'}\tilde w_{s'}},\qquad
+\tilde w_s=\frac{f(X_s\mid y;\xi^{(k)})}{h(X_s)}
+\;\propto\;\frac{f(y\mid X_s;\xi^{(k)})\,g(X_s)}{h(X_s)},
+$$
+(self-normalization removes the unknown normalizing constant `f(y)`). Booth & Hobert's proposal `h` is a
+multivariate Student-`t` matched to the Laplace approximation of the posterior (mode + curvature) `[S]`.
+They also tried rejection sampling; importance sampling was faster with similar results `[V]`.
+
+**(c) Importance sampling from the prior (the "cheap" variant) `[S]`.**
+Take `h(x)=g(x)` (the latent prior, e.g. `φ(θ_p)φ_D(z_p)` for LSIRM). Then `\tilde w_s = f(y\mid X_s;ξ^{(k)})`
+— pure **likelihood weights**, no posterior approximation needed. Trade-off: weights degenerate as the
+posterior concentrates away from the prior (long tests, extreme respondents); effective sample size
+`ESS = 1/\sum_s w_s^2` should be monitored, and (b) preferred when `ESS/M` is small. This prior-sampling
+variant is what plugs most directly into a QMC point set (§15.5), because prior draws are transformations
+of uniforms.
+
+### 14.3 Automated sample-size scheduling and stopping (Booth & Hobert, 1999) `[V]`
+
+Frame iteration `k` as M-estimation of the **deterministic EM update** `\tilde ξ_k` (what EM would have
+produced from `ξ̂_{k-1}` with an exact E-step). As `M_k→∞`,
+$$
+\sqrt{M_k}\,(\hat\xi_k-\tilde\xi_k)=
+-\sqrt{M_k}\Big[\nabla^2 Q(\tilde\xi_k\mid\hat\xi_{k-1})\Big]^{-1}
+\Big[\nabla\hat Q(\tilde\xi_k\mid\hat\xi_{k-1})\Big]+o_p(1),
+$$
+so `ξ̂_k` is asymptotically normal with (estimable) sandwich covariance
+$$
+\widehat{\operatorname{Var}}(\hat\xi_k)\approx\frac{1}{M_k}
+\Big[\nabla^2\hat Q(\hat\xi_k\mid\hat\xi_{k-1})\Big]^{-1}
+\hat E\big[S_c(\hat\xi_k)S_c(\hat\xi_k)^{\!\top}\mid y\big]
+\Big[\nabla^2\hat Q(\hat\xi_k\mid\hat\xi_{k-1})\Big]^{-1}
+$$
+(no centering term: `ξ̂_k` maximizes `\hat Q`). Rules:
+
+- **Sample-size increase.** Build a `100(1-α)%` confidence ellipsoid (or componentwise intervals) for
+  `\tilde ξ_k`. If it **contains** `ξ̂_{k-1}` — the step is indistinguishable from Monte Carlo noise — set
+  $$
+  \boxed{\;M_{k+1}=M_k+\Big\lfloor \tfrac{M_k}{r}\Big\rfloor = M_k\big(1+\tfrac1r\big),\qquad r\in\{3,4,5\}\;}
+  $$
+  and proceed to the next iteration (Booth–Hobert increase *between* iterations; contrast §14.4).
+  Start with a **small** `M_1` (tens).
+- **Stopping (convergence assessment = MC error vs EM increment).** Terminate when the relative parameter
+  change is small for **three consecutive iterations**:
+  $$
+  \max_j\left|\frac{\hat\xi_{k,j}-\hat\xi_{k-1,j}}{\hat\xi_{k-1,j}+\delta_1}\right|<\delta_2,
+  \qquad \delta_1=10^{-3},\ \ \delta_2\in(2\times10^{-3},\,5\times10^{-3}).
+  $$
+  Alternative (variance components near a boundary): replace the denominator by
+  `SE(ξ̂_{k,j})+δ_1'` with tolerance `δ_2'`.
+
+### 14.4 Ascent-based MCEM (Caffo, Jank & Jones, 2005) `[V]`
+
+Quantify MC uncertainty in the **objective increment** rather than the parameter. With
+`ΔQ̂ = \hat Q(ξ̂_k\mid ξ̂_{k-1}) − \hat Q(ξ̂_{k-1}\mid ξ̂_{k-1})`,
+`\sqrt{M_k}(ΔQ̂−ΔQ) ⇝ N(0,Σ_k)`. Rules: (i) if the **lower** `(1-α)` confidence bound for `ΔQ` is not
+positive, augment the sample **at the current iteration** (add `M_k/r` points) and re-test — this
+stochastically preserves the EM ascent property; (ii) terminate when the **upper** confidence bound for
+`ΔQ` falls below a tolerance `τ` (e.g. `10^{-3}`); (iii) start the next iteration with at least the final
+`M_k`. Under importance sampling, `Σ_k` needs a Delta-method estimate (self-normalized weights).
+Empirically (verified): slightly worse than Booth–Hobert per unit compute for point estimates, better for
+the information matrix, and most of the compute lands in the final iteration — whose sample is then reused
+for Louis standard errors.
+
+### 14.5 MCEM for item factor analysis (Meng & Schilling, 1996) `[~]`
+
+For the full-information item factor model (multidimensional normal-ogive — the compensatory cousin of
+the inner-product LSIRM, §6.2), Meng & Schilling implement the MC E-step with a **Gibbs sampler**: augment
+with the underlying continuous responses and factor scores, alternate truncated-normal draws of the
+augmented responses and multivariate-normal draws of factor scores, and average complete-data sufficient
+statistics over the chain. Two MCEM implementations are given; both recover high-dimensional loadings
+where fixed-point Gauss–Hermite quadrature (Bock–Aitkin) degrades — the historical proof-of-concept that
+sampling-based E-steps break the quadrature curse for item-level models. Bridge sampling is used to
+compute observed-data likelihood ratios for monitoring. (Existence, venue, and method description verified;
+sampler equations from memory.) JASA 91(435), 1254–1267.
+
+### 14.6 Which rule to use (synthesis) `[V — review's comparisons]`
+
+- Default: **Booth–Hobert** (§14.3) with importance sampling; simplest automated rule, fast convergence.
+- If ascent guarantees / information estimates matter: **Caffo et al.** (§14.4).
+- If the posterior is only reachable by MCMC (LSIRM with `D≥2`: MH on `(θ_p,z_p)`): McCulloch-style MCEM,
+  but then the iid-based variance formulas of §14.3–14.4 need batch-means/replicate corrections — or
+  switch to MH-RM (§3.C), which was designed for exactly this and needs no growing `M_k`.
+
+---
+
+## 15. Quasi-Monte Carlo EM (QMC-EM)
+
+### 15.1 Error rates: why QMC `[S]`
+
+Plain MC has probabilistic root-`M` error: `|\hat I_M − I| = O_p(M^{-1/2})`. QMC replaces random draws by a
+deterministic **low-discrepancy** point set `{x_1,…,x_M}⊂[0,1)^K` and obeys the **Koksma–Hlawka** bound
+$$
+\Big|\frac1M\sum_{s=1}^M f(x_s)-\int_{[0,1)^K}\!f(u)\,du\Big|
+\;\le\; V_{HK}(f)\; D_M^{*},
+$$
+with `V_{HK}` the Hardy–Krause variation and `D_M^*` the star discrepancy. Halton and Sobol' sequences
+achieve
+$$
+D_M^{*}=O\!\big(M^{-1}(\log M)^{K}\big)
+\quad\Rightarrow\quad
+\text{error } O\!\big(M^{-1}(\log M)^{K}\big)\ \text{vs. MC } O(M^{-1/2}),
+$$
+i.e. nearly rate-1 for the small `K` relevant here (`K = 1+D` per person for LSIRM). (Niederreiter, 1992;
+Caflisch, 1998.) Owen-scrambled nets attain `O(M^{-3/2}(\log M)^{(K-1)/2})` RMS error for smooth `f` `[S]`.
+
+### 15.2 Halton construction (radical inverse) `[V]`
+
+Write `n` in base `b`: `n=\sum_{j\ge0} a_j(n)\,b^{\,j}`, digits `a_j∈{0,…,b-1}`. The **radical inverse**
+mirrors the digits about the radix point:
+$$
+\boxed{\;\phi_b(n)=\sum_{j\ge0} a_j(n)\,b^{-(j+1)}\;}\in[0,1).
+$$
+The `K`-dimensional **Halton point** uses the first `K` primes `b_1=2,b_2=3,b_3=5,…` (pairwise coprime
+bases are what guarantee low discrepancy):
+$$
+x_n=\big(\phi_{b_1}(n),\,\phi_{b_2}(n),\,\dots,\,\phi_{b_K}(n)\big),\qquad n=1,2,\dots,M.
+$$
+Example (verified): `n=6=110_2 → φ_2(6)=0.011_2=3/8`. For `K ≳ 10` use Sobol' or leaped/scrambled Halton
+instead — plain Halton's high-base coordinates correlate badly `[S]`.
+
+### 15.3 Randomized QMC (RQMC): getting an error estimate back `[V rationale / S formulas]`
+
+Deterministic QMC has no internal error estimate — fatal for the automated rules of §14.3–14.4, which is
+precisely the problem Jank (2005) solves `[V]`: randomize the point set, run `R` independent
+randomizations, and use the between-replicate variance.
+
+- **Random shift (Cranley–Patterson) `[S]`:** draw one `U∼\text{Unif}[0,1)^K`, set
+  $$
+  \tilde x_n=(x_n+U)\bmod 1\ \ (\text{componentwise}),\qquad n=1,\dots,M.
+  $$
+  Each `\tilde x_n` is marginally uniform ⇒ the RQMC estimator is **unbiased**; the point set keeps its
+  low discrepancy.
+- **Random-start Halton / digit scrambling (Owen) `[S]`:** randomize the starting index or apply random
+  permutations to the digits `a_j(n)` per base; scrambling additionally buys the `M^{-3/2}` rate for
+  smooth integrands.
+- **Error estimate `[S]`:** with `R` independent randomizations (`R` small, 5–25) yielding estimates
+  `\hat I^{(1)},…,\hat I^{(R)}`,
+  $$
+  \hat I_{RQMC}=\frac1R\sum_r \hat I^{(r)},\qquad
+  \widehat{\operatorname{Var}}(\hat I_{RQMC})=\frac{1}{R(R-1)}\sum_{r}\big(\hat I^{(r)}-\hat I_{RQMC}\big)^2 .
+  $$
+  This variance plugs directly into the Booth–Hobert ellipsoid / Caffo bounds, replacing the iid formulas.
+
+### 15.4 Uniform → Gaussian: inverse-normal transform
+
+QMC points must pass through `Φ^{-1}` **coordinatewise** (never Box–Muller, which scrambles the
+low-discrepancy structure `[S]`): `z_n=Φ^{-1}(\tilde x_n)`, then map to the sampling density, e.g. prior
+draws `θ = μ + σ z` or `(θ_p,z_p) = m_{Lap} + C_{Lap}^{1/2} z` for the Laplace-matched proposal of §14.2(b).
+
+**Acklam's algorithm for `Φ^{-1}(p)` `[V — all coefficients verified]`.** Max relative error
+`1.15×10^{-9}`. Break-points `p_{low}=0.02425`, `p_{high}=1-p_{low}`.
+
+- Central region `p∈[p_{low},p_{high}]`: with `q=p-\tfrac12`, `r=q^2`,
+  $$
+  \Phi^{-1}(p)\approx\frac{(((((a_1r+a_2)r+a_3)r+a_4)r+a_5)r+a_6)\,q}{((((b_1r+b_2)r+b_3)r+b_4)r+b_5)r+1}.
+  $$
+- Lower tail `0<p<p_{low}`: with `q=\sqrt{-2\ln p}`,
+  $$
+  \Phi^{-1}(p)\approx\frac{(((((c_1q+c_2)q+c_3)q+c_4)q+c_5)q+c_6)}{(((d_1q+d_2)q+d_3)q+d_4)q+1};
+  $$
+  upper tail `p>p_{high}`: same with `q=\sqrt{-2\ln(1-p)}` and overall sign flipped.
+
+| | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| `a` | −3.969683028665376e+01 | 2.209460984245205e+02 | −2.759285104469687e+02 | 1.383577518672690e+02 | −3.066479806614716e+01 | 2.506628277459239e+00 |
+| `b` | −5.447609879822406e+01 | 1.615858368580409e+02 | −1.556989798598866e+02 | 6.680131188771972e+01 | −1.328068155288572e+01 | — |
+| `c` | −7.784894002430293e−03 | −3.223964580411365e−01 | −2.400758277161838e+00 | −2.549732539343734e+00 | 4.374664141464968e+00 | 2.938163982698783e+00 |
+| `d` | 7.784695709041462e−03 | 3.224671290700398e−01 | 2.445134137142996e+00 | 3.754408661907416e+00 | — | — |
+
+Optional full-double-precision polish (one Halley step) `[S]`:
+`e=Φ(x)-p`, `u=e\sqrt{2\pi}\,e^{x^2/2}`, `x \leftarrow x-u/(1+xu/2)`.
+
+**Beasley–Springer–Moro (BSM) `[S]`:** the alternative used throughout computational finance —
+Beasley–Springer rational approximation on the center, Moro's Chebyshev-in-`\log(-\log)` tails; the
+standard coefficient tables live in Glasserman (2004, *Monte Carlo Methods in Financial Engineering*,
+§2.3.2) and Moro (1995, *Risk* 8(2)). Accuracy ≈ `3×10^{-9}` absolute; Acklam is the simpler drop-in.
+
+### 15.5 The QMC-EM recipe (Jank, 2005) `[V design / S assembled steps]`
+
+Jank (2005, CSDA 48, 685–701): take the automated MCEM of §14.3 and swap the iid uniforms for RQMC.
+Verified findings: RQMC-EM is "much more efficient than ordinary Monte Carlo … with fixed computational
+effort, even after dividing this computational budget among multiple independent runs … to facilitate
+variance estimation."
+
+Per EM iteration `k`, for each person `p` (LSIRM: `K=1+D`):
+
+1. Generate the Halton (or Sobol') points `x_1,…,x_{M_k}∈[0,1)^K` (§15.2) — **reuse the same base set
+   across iterations**; only the randomization changes.
+2. Randomize `R` times: shifts `U^{(1)},…,U^{(R)}` → `\tilde x_n^{(r)}` (§15.3).
+3. Transform: `z_n^{(r)}=Φ^{-1}(\tilde x_n^{(r)})` (§15.4), map to draws of `(θ_p,z_p)` from the proposal
+   `h` (prior, §14.2(c), or Laplace-matched, §14.2(b)).
+4. Importance weights `w` as in §14.2; form `\hat Q^{(r)}`, average to `\hat Q`, and estimate the MC error
+   from the spread of the `R` replicates (§15.3).
+5. Apply the Booth–Hobert ellipsoid rule with the RQMC variance: grow `M_k` by `(1+1/r)` when the update
+   drowns in MC error; stop on the three-consecutive relative-change rule (§14.3). Because the RQMC error
+   decays ≈`M^{-1}` instead of `M^{-1/2}`, the schedule reaches the same tolerance with far smaller `M`.
+
+**QMC inside IRT/GLMM likelihoods `[V existence]`:** Pan & Thompson (2007, CSDA 51, 5765–5775) use
+randomized QMC point sets to approximate the GLMM marginal likelihood directly (the same integral as an
+IRT random-effects margin) and report efficiency gains over GHQ/MC; González et al.'s work on QMC for IRT
+connects the same grid idea to latent-trait models. No LSIRM-specific QMC paper was found — §15.5 is the
+assembly, flagged as such.
+
+### 15.6 Cross-reference: MH-RM vs (Q)MC-EM `[S synthesis]`
+
+MH-RM (§3.C; Cai, 2010) attacks the same integral by **averaging over iterations** (Robbins–Monro gains
+`ε_t=1/t`, `Σε_t=∞`, `Σε_t²<∞`) with `M≈1` draw per iteration; (Q)MC-EM attacks it by making each
+iteration's integral accurate. Rule of thumb: MH-RM when only MCMC sampling is available and the parameter
+count is large (full LSIRM); QMC-EM when iid/importance sampling from a good proposal is possible and
+high-precision EM steps (e.g. for FIPC's few free parameters, §18) are wanted.
+
+---
+
+## 16. IRT scoring — exact estimators
+
+Throughout: response pattern `y=(y_1,…,y_n)`, pattern likelihood
+`L(y\mid θ)=∏_i T_i(y_i\mid θ)`, scoring prior `g(θ)` (items fixed at calibrated values).
+
+### 16.1 EAP (Bock & Mislevy, 1982) `[~ — description verified; formulas standard]`
+
+Posterior mean and SD by quadrature (`Q` equally-spaced or Gauss–Hermite points; Bock–Mislevy: evaluation
+is non-iterative, likelihoods accumulate by summing log terms item by item):
+$$
+\hat\theta^{EAP}=\frac{\sum_{q=1}^{Q}X_q\,L(y\mid X_q)\,A_q}{\sum_{q=1}^{Q}L(y\mid X_q)\,A_q},
+\qquad
+PSD=\sqrt{\frac{\sum_{q}(X_q-\hat\theta^{EAP})^2\,L(y\mid X_q)\,A_q}{\sum_{q}L(y\mid X_q)\,A_q}} .
+$$
+`A_q` = prior weights (`g(X_q)` normalized, or GH weights). PSD is used interchangeably with the SE
+(verified claim of the paper). Exists for every pattern (incl. all-0/all-1); shrinks toward the prior mean.
+
+### 16.2 MAP (Bayes modal) `[S]`
+
+Maximize `\ell_{post}(θ)=\log L(y\mid θ)+\log g(θ)` by Newton–Raphson:
+$$
+\theta^{(t+1)}=\theta^{(t)}-\frac{\ell_{post}'(\theta^{(t)})}{\ell_{post}''(\theta^{(t)})},
+\qquad
+SE(\hat\theta^{MAP})=\Big[-\ell_{post}''(\hat\theta^{MAP})\Big]^{-1/2}.
+$$
+For the logistic 2PL with `g=N(μ,σ²)`:
+`\ell_{post}'(θ)=\sum_i a_i\,(y_i-P_i(θ))-(θ-μ)/σ²` and (exactly, since `∂P_i/∂θ = a_iP_iQ_i`)
+`\ell_{post}''(θ)=-\sum_i a_i^2P_i(θ)Q_i(θ)-1/σ²`, so
+$$
+SE(\hat\theta^{MAP})=\Big[\textstyle\sum_i a_i^2P_iQ_i+\sigma^{-2}\Big]^{-1/2}
+=\big[I(\hat\theta)+\sigma^{-2}\big]^{-1/2}.
+$$
+(For 3PL/polytomous the observed Hessian depends on `y`; use the observed one, not `I(θ)`.) Multidimensional:
+same Newton step with gradient/Hessian vectors; `SE` from the negative inverse Hessian's diagonal.
+
+### 16.3 Summed-score EAP — "EAPsum" (Thissen, Pommerich, Billeaud & Williams, 1995; Cai, 2015) `[V]`
+
+**Lord & Wingersky (1984) recursion — exact statement `[V, verbatim from Cai 2015, Eq. 8]`.**
+Let `L_n(s\mid θ)` be the summed-score likelihood over items `1..n`. Initialize
+`L_1(0\mid θ)=T_1(0\mid θ)`, `L_1(1\mid θ)=T_1(1\mid θ)`. For `i=2,…,n`:
+$$
+\boxed{\;
+\begin{aligned}
+L_i(0\mid\theta)&=L_{i-1}(0\mid\theta)\,T_i(0\mid\theta),\\
+L_i(s\mid\theta)&=L_{i-1}(s\mid\theta)\,T_i(0\mid\theta)+L_{i-1}(s-1\mid\theta)\,T_i(1\mid\theta),
+\quad s=1,\dots,i-1,\\
+L_i(i\mid\theta)&=L_{i-1}(i-1\mid\theta)\,T_i(1\mid\theta).
+\end{aligned}\;}
+$$
+(Identical to Part I §7.1's `f_r^{(n)}`; now verified verbatim.) **Polytomous generalization**
+(Thissen et al., 1995) `[S statement / V existence]`: item `i` with categories `k=0,…,m_i` scored `k`:
+$$
+L_i(s\mid\theta)=\sum_{k=0}^{m_i} T_i(k\mid\theta)\,L_{i-1}(s-k\mid\theta),
+$$
+zero terms for `s-k` out of range; total cost `O\big(n\cdot S_{max}\cdot\max m_i\big)` per `θ` node.
+
+**Summed-score posterior and EAP `[V, Cai 2015 Eqs. 4–7]`.** Write `L(s\mid θ)=L_n(s\mid θ)`:
+$$
+p(s)=\int L(s\mid\theta)\,g(\theta)\,d\theta,\qquad
+p(\theta\mid s)=\frac{L(s\mid\theta)\,g(\theta)}{p(s)},
+$$
+$$
+\boxed{\;
+EAP(s)=E(\theta\mid s)=\frac{1}{p(s)}\int\theta\,L(s\mid\theta)\,g(\theta)\,d\theta,\qquad
+SD(s)=\sqrt{\frac{1}{p(s)}\int\theta^2L(s\mid\theta)\,g(\theta)\,d\theta-\big[EAP(s)\big]^2}\;}
+$$
+all integrals by the same quadrature as §16.1 (`∫ → Σ_q`, `g(θ)dθ → A_q`).
+
+**Score-conversion-table serving pattern `[V — Cai 2015; mirt::fscores(method="EAPsum")]`.**
+Because `EAP(s)` depends only on `s`, precompute once per (form × prior) the table
+`{s ↦ (EAP(s), SD(s), p(s))}` for `s=0,…,S_{max}`; scoring is then an `O(1)` lookup — no per-respondent
+IRT computation, the standard operational pattern for reported scale scores. `Σ_s p(s)=1` is a free
+self-check of the recursion. In `mirt`, `fscores(method="EAPsum", full.scores=FALSE)` returns exactly this
+table; custom priors enter via `mean`/`cov` (or `custom_den`) — the hook for §16.4. Missing data: a table
+presumes a fixed item set; respondents with omits need pattern-EAP (§16.1) or a table for their sub-form.
+
+### 16.4 Group-specific and multilevel priors in scoring `[S]`
+
+**Multiple group (Bock & Zimowski, 1997 margin, §5.1).** Replace `g(θ)` by the examinee's group density
+`φ(θ;μ_g,σ_g²)` everywhere in §16.1–16.3:
+$$
+\hat\theta^{EAP}_{p}= \frac{\sum_q X_q\,L(y_p\mid X_q)\,\phi(X_q;\mu_g,\sigma_g^2)}
+{\sum_q L(y_p\mid X_q)\,\phi(X_q;\mu_g,\sigma_g^2)},
+$$
+and one EAPsum table **per group** (same `L(s\mid θ)`, different prior — recompute only the weights).
+This is the correct Bayes score when group membership is known and `(μ_g,σ_g)` were estimated in
+calibration; ignoring it biases scores of off-reference groups toward the reference mean.
+
+**Multilevel (random intercept; §4.2 model).** `θ_{pc}=μ+u_c+e_{pc}`, `u_c∼N(0,σ_u²)`, `e_{pc}∼N(0,σ_e²)`,
+cluster `c=c(p)`:
+- **Cluster unknown / marginal scoring:** integrate `u_c` out ⇒ prior `θ_{pc}∼N(μ,\ σ_u²+σ_e²)`;
+  with the usual `σ_e²=1` normalization this is the `N(μ,\,1+σ_u²)` prior — wider, so less shrinkage.
+- **Cluster effect known / conditional scoring:** given `û_c` (posterior mean of the cluster effect from
+  the calibration run), use `θ_{pc}∼N(μ+û_c,\ σ_e²)` — a shifted, **narrower** prior that borrows strength
+  from clustermates (school-conditioned EAP). The choice is consequential: conditional scoring shrinks a
+  student toward *their school's* mean, marginal scoring toward the *grand* mean; report which is used.
+- LSIRM/HLSIRM analogue: score `(θ_p,z_p)` jointly with prior `N(α_{(k)},σ²_{(k)})×MVN(z_{(k)},Ψ_z)`
+  (conditional) or with the school-latents integrated out (marginal), via the same MC/QMC machinery of
+  §14–15 since the posterior is `(1+D)`-dimensional.
+
+---
+
+## 17. Concurrent calibration (multiple forms, common-item design)
+
+### 17.1 Definition `[S formulation / V descriptions]`
+
+Groups/forms `g=1,…,G` share **anchor** (common) items; each form also has unique items. Stack all data in
+one response matrix with **structural missingness** — item `i` not presented to person `p` contributes
+nothing (not-presented ≠ wrong). One MML run estimates all item parameters **and** the group densities
+jointly on a single scale:
+$$
+L\big(\{a_i,b_i,c_i\}_{i=1}^{I},\{\mu_g,\sigma_g\}_{g=2}^{G}\big)
+=\prod_{g=1}^{G}\prod_{p\in g}\ \int \prod_{i\in \mathcal I_p} T_i(y_{pi}\mid\theta)\;
+\phi(\theta;\mu_g,\sigma_g^2)\,d\theta,
+$$
+`\mathcal I_p` = items actually presented to `p`; identification `μ_1=0, σ_1=1` (reference group), all
+other `(μ_g,σ_g)` **freed** — fixing them at `(0,1)` would misestimate anchors when populations differ.
+Anchor items appear in `\mathcal I_p` for several groups; that overlap is the only thing tying the scale.
+E-step = §3.A.1 with group-specific weights `A_q^{(g)}` from `φ(θ;μ_g,σ_g²)` (Part I §5.1 likelihood);
+M-step pools expected counts `\bar r_{iq}, \bar N_q` **across groups** for anchors; group updates by
+posterior moments (same equations as §18.3). This is `mirt::multipleGroup` with anchor equality
+constraints + freed group means/variances, or BILOG-MG/IRTPRO multigroup runs.
+
+### 17.2 Evidence: concurrent vs separate + linking `[V]`
+
+- **Hanson & Béguin (2002, APM 26, 3–24):** simulation, common-item nonequivalent groups, 2PL/3PL.
+  Concurrent calibration **generally produced lower error** in anchor-parameter recovery than separate
+  calibration followed by Stocking–Lord/Haebara/moment linking — because anchors are estimated from
+  **both** groups' responses at once. Caveat retained from their discussion: the advantage assumes the IRT
+  model fits; separate calibration is more robust to (and more diagnostic of) multidimensionality and
+  parameter drift, since linking can be checked item by item.
+- **Kim & Cohen (1998, APM 22, 131–143):** with **few** common items, separate estimation with
+  characteristic-curve (Stocking–Lord) linking gave **smaller** RMSD for `a` and `b` than concurrent;
+  with **larger** anchor sets the methods were similar.
+- Working rule: prefer concurrent when the anchor set is healthy (≳15–20 items or ≳20% of the form),
+  model fit is acceptable, and drift screening (Part I §5.1 DIF logic on anchors) is done first; fall back
+  to separate + Stocking–Lord with a thin or suspect anchor.
+
+---
+
+## 18. Fixed Item Parameter Calibration (FIPC)
+
+### 18.1 Setup `[V]`
+
+New-form data only. Partition items: **fixed** set `F` (anchors, parameters frozen at their old-scale
+values — this *is* the linking; no transformation is computed) and **free** set `E` (new items). Estimate
+(i) new-item parameters and (ii) the new population density `g_{new}(θ)` — at minimum `(μ_{new},σ_{new})`
+— by MML on the fixed items' scale. Kang & Petersen (2012, APER 13, 311–321) `[V]`: FIPC is the third
+standard linking route beside concurrent and separate+linking, and its adequacy **hinges on implementation**
+— BILOG-MG's default never updates the prior (an NWU method), PARSCALE updates it repeatedly (MWU).
+
+### 18.2 The five Kim (2006) variants `[V — variant definitions and findings]`
+
+Two design axes: how often the **prior weights** (latent density estimate) are updated, and how many
+**EM cycles** run.
+
+| Variant | Prior-weight updates | EM cycles | Mechanics |
+|---|---|---|---|
+| NWU-OEM | never (prior stays `N(0,1)`/initial) | 1 | one E-step **using only the fixed items**, one M-step for new items (Wainer–Mislevy OEM logic) |
+| NWU-MEM | never | many | E-steps use **all** items; M-steps update new items only; prior frozen |
+| OWU-OEM | once | 1 | first E-step (fixed items) re-estimates the prior weights; second E-step + single M-step for new items |
+| OWU-MEM | once | many | as OWU-OEM, then full EM cycles with the once-updated, then-frozen prior |
+| MWU-MEM | **every cycle** | many | full EM; prior weights re-estimated from the posterior at each cycle |
+
+Verified findings: only **MWU-MEM** recovered item parameters and the ability scale properly under all
+tested new-population densities (`N(0,1)`, `N(0.5,1.2²)`, `N(1,1.4²)`); the other four under-estimated
+(some severely) once the new population departed from `N(0,1)`. NWU-MEM/OWU-MEM were adequate only at
+`N(0,1)`. ⇒ **Implement MWU-MEM.** `mirt::fixedCalib(method = "MWU-MEM")` implements all five with an
+**empirical-histogram** density update `[V]`; Kim (2020, JEM 57, 10.1111/jedm.12230) extends two variants
+to the bifactor model `[V existence]`. An "aFIPC" variant was **not** found online (see verification
+summary).
+
+### 18.3 Exact MWU-MEM recipe in a Bock–Aitkin EM `[S update equations / V architecture]`
+
+Quadrature nodes `X_q` fixed on the **old scale**. Prior weights `A_q^{(0)}` initialized from `N(0,1)`
+(or the old calibration's density). Cycle `t`:
+
+1. **E-step (all items).** Posterior node weights per person, using fixed values for `i∈F` and current
+   estimates for `i∈E`:
+   $$
+   P^{(t)}(X_q\mid y_p)=\frac{L_p(X_q)\,A_q^{(t)}}{\sum_{q'}L_p(X_{q'})\,A_{q'}^{(t)}},\qquad
+   \bar N_q=\sum_p P^{(t)}(X_q\mid y_p),\quad \bar r_{iq}=\sum_p y_{pi}\,P^{(t)}(X_q\mid y_p).
+   $$
+2. **M-step (free items only).** Solve the §3.A.1 weighted-binomial likelihood equations for `i∈E`;
+   **skip every `i∈F`** (their gradient contributions are simply never applied).
+3. **Prior update (the "WU").** Empirical-histogram update, optionally summarized by moments:
+   $$
+   A_q^{(t+1)}=\frac{\bar N_q}{N},\qquad
+   \hat\mu^{(t+1)}=\sum_q X_q\,A_q^{(t+1)},\qquad
+   \hat\sigma^{2\,(t+1)}=\sum_q\big(X_q-\hat\mu^{(t+1)}\big)^2 A_q^{(t+1)}.
+   $$
+   Keep the discrete `A_q` (empirical histogram, Mislevy 1984; what `mirt::fixedCalib` does `[V]`) or refit
+   `A_q^{(t+1)} ∝ φ(X_q;\hatμ,\hatσ²)` (normal-constrained update). **Do not** restandardize to `N(0,1)` —
+   the whole point is that `(μ,σ)` drift to the new population while `F` pins the scale.
+4. Iterate 1–3 to joint convergence of new-item parameters and `(μ̂,σ̂)` (or `{A_q}`). The other four
+   variants are obtained by freezing step 3 always (NWU), after one execution (OWU), and/or truncating to
+   one cycle (OEM).
+
+Report `(μ̂_{new},σ̂_{new})` — it is the population-drift estimate — and screen `F` for drift beforehand
+(misfitting anchors corrupt the scale exactly as in §17.2).
+
+---
+
+## 19. Algorithm quick-reference (Part II)
+
+| Task | Recipe |
+|---|---|
+| MCEM E-step | `\hat Q=\sum_s w_s\,\ell_c(\xi;y,X_s)`; `w_s∝f(y\mid X_s)g(X_s)/h(X_s)` self-normalized |
+| MC size rule (B–H) | CI for EM update ∋ previous estimate ⇒ `M←M(1+1/r)`, `r∈{3,4,5}` |
+| MCEM stop (B–H) | `max_j\|Δξ_j\|/(\|ξ_j\|+10^{-3})<(2\text{–}5)\times10^{-3}` × 3 consecutive |
+| Ascent rule (Caffo) | grow `M` until lower CB(`ΔQ`) > 0; stop when upper CB(`ΔQ`) < `τ` |
+| Halton point | `x_n=(φ_2(n),φ_3(n),φ_5(n),…)`, `φ_b(n)=Σ a_j b^{-(j+1)}` |
+| RQMC | `\tilde x_n=(x_n+U)\bmod 1`; `R` shifts ⇒ between-replicate variance |
+| Uniform→normal | Acklam `Φ^{-1}` (coeffs §15.4), never Box–Muller with QMC |
+| EAP | `Σ_qX_qL(y\mid X_q)A_q/Σ_qL(y\mid X_q)A_q`; PSD analog |
+| MAP | Newton on `\log L+\log g`; `SE=[-\ell_{post}'']^{-1/2}` |
+| EAPsum | LW recursion → `L(s\midθ)`; `EAP(s)=∫θL(s\midθ)g/∫L(s\midθ)g`; serve as `s→(EAP,SD)` table |
+| Multigroup score | swap `g(θ)→φ(θ;μ_g,σ_g²)`; one conversion table per group |
+| Multilevel score | marginal prior `N(μ,1+σ_u²)` vs conditional `N(μ+\hat u_c,σ_e²)` |
+| Concurrent cal. | one MML run, structural missingness, anchors shared, `μ_1=0,σ_1=1`, other `(μ_g,σ_g)` free |
+| FIPC (MWU-MEM) | anchors frozen in M-step; new items free; `A_q←\bar N_q/N` (⇒ `μ̂,σ̂²`) every cycle |
+
+---
+
+## 20. Part II citations
+
+**Verified online in this compilation `[V]`:**
+
+- Wei, G. C. G., & Tanner, M. A. (1990). *A Monte Carlo implementation of the EM algorithm and the poor
+  man's data augmentation algorithms.* **JASA, 85**(411), 699–704. DOI: 10.1080/01621459.1990.10474930.
+  — `\hat Q` mixture E-step; convergence-by-plot + increase-`M` heuristic (verified via arXiv:2401.00945).
+- Booth, J. G., & Hobert, J. P. (1999). *Maximizing generalized linear mixed model likelihoods with an
+  automated Monte Carlo EM algorithm.* **JRSS-B, 61**(1), 265–285. DOI: 10.1111/1467-9868.00176. —
+  M-estimation CI, `M(1+1/r)` rule, both stopping rules with `δ` values (verified via arXiv:2401.00945).
+- Caffo, B. S., Jank, W., & Jones, G. L. (2005). *Ascent-based Monte Carlo expectation–maximization.*
+  **JRSS-B, 67**(2), 235–251. DOI: 10.1111/j.1467-9868.2005.00499.x. — ascent rules (verified via review).
+- McCulloch, C. E. (1997). *Maximum likelihood algorithms for generalized linear mixed models.*
+  **JASA, 92**(437), 162–170. DOI: 10.1080/01621459.1997.10473613. — MCEM/MCNR/MCML comparison.
+- Meng, X.-L., & Schilling, S. (1996). *Fitting full-information item factor models and an empirical
+  investigation of bridge sampling.* **JASA, 91**(435), 1254–1267. DOI: 10.1080/01621459.1996.10476995.
+  — Gibbs-based MC E-step for item factor analysis (method description verified; sampler details `[S]`).
+- Jank, W. (2005). *Quasi-Monte Carlo sampling to improve the efficiency of Monte Carlo EM.*
+  **Computational Statistics & Data Analysis, 48**(4), 685–701. DOI: 10.1016/j.csda.2004.03.019.
+  (Online 2004.) — RQMC-in-MCEM design and efficiency finding verified; assembled recipe steps `[S]`.
+- Pan, J., & Thompson, R. (2007). *Quasi-Monte Carlo estimation in generalized linear mixed models.*
+  **Computational Statistics & Data Analysis, 51**(12), 5765–5775. DOI: 10.1016/j.csda.2006.10.003.
+- Acklam, P. J. (2002). *An algorithm for computing the inverse normal cumulative distribution function.*
+  (Web algorithm; coefficients verified via stackedboxes.org mirror.) Max rel. error `1.15×10^{-9}`.
+- Halton radical-inverse construction — verified via the standard reference description (Wikipedia,
+  "Halton sequence"), incl. the `φ_2(6)=3/8` worked example.
+- Bock, R. D., & Mislevy, R. J. (1982). *Adaptive EAP estimation of ability in a microcomputer
+  environment.* **Applied Psychological Measurement, 6**(4), 431–444. DOI: 10.1177/014662168200600405.
+  — existence/description verified (posterior mean & PSD by quadrature, non-iterative); formulas `[S]` → `[~]`.
+- Thissen, D., Pommerich, M., Billeaud, K., & Williams, V. S. L. (1995). *Item response theory for scores
+  on tests including polytomous items with ordered responses.* **Applied Psychological Measurement,
+  19**(1), 39–49. DOI: 10.1177/014662169501900105. — summed-score EAP scope verified; also the reference
+  cited by `mirt::fscores(method="EAPsum")` `[V]`.
+- Cai, L. (2015). *Lord–Wingersky algorithm version 2.0 for hierarchical item factor models with
+  applications in test scoring, scale alignment, and model fit testing.* **Psychometrika, 80**(2),
+  535–559. DOI: 10.1007/s11336-014-9411-3. — LW recursion, `p(s)`, `p(θ|s)`, `E(θ|s)`, `V(θ|s)`, and
+  conversion-table use verified **verbatim** (PMC4366368). (Version 2.5: Huang & Cai, 2021,
+  **Psychometrika, 86**, DOI: 10.1007/s11336-021-09785-y.)
+- Kim, S., & Cohen, A. S. (1998). *A comparison of linking and concurrent calibration under item response
+  theory.* **Applied Psychological Measurement, 22**(2), 131–143. DOI: 10.1177/01466216980222003. —
+  few-anchor result verified.
+- Hanson, B. A., & Béguin, A. A. (2002). *Obtaining a common scale for item response theory item
+  parameters using separate versus concurrent estimation in the common-item equating design.*
+  **Applied Psychological Measurement, 26**(1), 3–24. DOI: 10.1177/0146621602026001001. — concurrent-
+  lower-error finding verified.
+- Kim, S. (2006). *A comparative study of IRT fixed parameter calibration methods.* **Journal of
+  Educational Measurement, 43**(4), 355–381. DOI: 10.1111/j.1745-3984.2006.00021.x. — five variants and
+  MWU-MEM superiority verified; also via `mirt::fixedCalib` docs `[V]`.
+- Kang, T., & Petersen, N. S. (2012). *Linking item parameters to a base scale.* **Asia Pacific Education
+  Review, 13**, 311–321. DOI: 10.1007/s12564-011-9197-2. — FIPC-vs-concurrent-vs-separate framing and the
+  BILOG-MG(NWU)/PARSCALE(MWU) implementation note verified.
+- Kim, S. (2020). *Two IRT fixed parameter calibration methods for the bifactor model.* **Journal of
+  Educational Measurement, 57**(2). DOI: 10.1111/jedm.12230. — existence verified.
+- Ruth, W. (2024). *A review of Monte Carlo-based versions of the EM algorithm.* arXiv:2401.00945. —
+  the fetched verification source for §14 (its Eq. 19, 21–25 quoted above).
+
+**Standard results reproduced from memory (source cited) `[S]`:**
+
+- Louis, T. A. (1982). *Finding the observed information matrix when using the EM algorithm.*
+  **JRSS-B, 44**(2), 226–233. — information identity in §14.1.
+- Chan, K. S., & Ledolter, J. (1995). *Monte Carlo EM estimation for time series models involving counts.*
+  **JASA, 90**(429), 242–252. — pilot-study scheduling alternative (described in the review `[V]`).
+- Niederreiter, H. (1992). *Random Number Generation and Quasi-Monte Carlo Methods.* SIAM. — Koksma–Hlawka,
+  `O(M^{-1}(\log M)^K)` discrepancy of Halton/Sobol'.
+- Caflisch, R. E. (1998). *Monte Carlo and quasi-Monte Carlo methods.* **Acta Numerica, 7**, 1–49. —
+  rates summary.
+- Cranley, R., & Patterson, T. N. L. (1976). *Randomization of number theoretic methods for multiple
+  integration.* **SIAM J. Numer. Anal., 13**(6), 904–914. — random shift.
+- L'Ecuyer, P., & Lemieux, C. (2002). *Recent advances in randomized quasi-Monte Carlo methods.* In
+  *Modeling Uncertainty* (pp. 419–474). Springer. — RQMC variance estimation (cited for this by the review `[V]`).
+- Owen, A. B. (1997). *Scrambled net variance for integrals of smooth functions.* **Ann. Statist., 25**(4),
+  1541–1562. — scrambling rate.
+- Glasserman, P. (2004). *Monte Carlo Methods in Financial Engineering.* Springer, §2.3.2; and
+  Moro, B. (1995). *The full Monte.* **Risk, 8**(2), 57–58. — where the Beasley–Springer–Moro inverse-normal
+  coefficients live (Beasley & Springer, 1977, *Applied Statistics, 26*, 118–121, Algorithm AS 111).
+- Mislevy, R. J. (1984). *Estimating latent distributions.* **Psychometrika, 49**(3), 359–381.
+  DOI: 10.1007/BF02306026. — empirical-histogram / posterior-moment latent density updates (§17–18).
+- Samejima, F. (1969). *Estimation of latent ability using a response pattern of graded scores.*
+  **Psychometrika Monograph 17**. — Bayes modal (MAP) scoring lineage; Newton/SE form is standard.
+- Thissen, D., & Wainer, H. (Eds.) (2001). *Test Scoring.* Erlbaum, ch. 4. — EAPsum / conversion-table
+  serving practice.
+
+---
+
+### Part II verification summary
+
+Verified verbatim or by direct description online: Wei–Tanner `\hat Q` (review Eq. 19); Booth–Hobert
+asymptotic-normality expansion, sandwich variance, `M(1+1/r)` rule with `r∈{3,4,5}`, and both stopping
+rules incl. `δ` values (review Eqs. 21–25); Caffo et al. ascent rules; McCulloch (1997) design; Meng–
+Schilling method description; Jank (2005) RQMC-EM design + efficiency claim; Halton radical inverse;
+Acklam coefficients/break-points/error; LW recursion and all four EAPsum equations (Cai 2015, PMC);
+mirt EAPsum/fixedCalib behavior; Kim–Cohen and Hanson–Béguin findings; Kim (2006) five FIPC variants and
+MWU-MEM result; Kang–Petersen implementation note; all Part II DOIs (Crossref). From memory `[S]`:
+Booth–Hobert *t*-proposal details; prior-sampling IS weights/ESS; Koksma–Hlawka and QMC/scrambling rates;
+Cranley–Patterson shift and replicate-variance formulas; BSM coefficient location; EAP/MAP formulas
+(Bock–Mislevy description verified, equations standard); multigroup/multilevel scoring priors incl.
+`1+σ_u²`; concurrent-calibration likelihood; FIPC §18.3 update equations (architecture verified via mirt).
+**Not verifiable online:** an "aFIPC" method (no such variant located); any LSIRM- or IRT-specific QMC-EM
+paper (closest: Pan & Thompson 2007 GLMM; §15.5 is an assembly, flagged); exact sampler equations of
+Meng–Schilling and exact Jank pseudo-code (paywalled — designs verified via secondary sources).

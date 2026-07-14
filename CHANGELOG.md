@@ -44,6 +44,40 @@
   the downstream importance-assessment API. `fast-mlsirm score` scores a JSON
   payload (or `.npy` matrix) against a bundle from the command line.
 
+- **QMC-EM and MC-EM integration rules** for the marginal estimator
+  (`FitConfig(xi_rule="qmc"|"mc", xi_points=..., xi_seed=...)`): the
+  latent-space integral runs on Halton low-discrepancy points (randomized-QMC
+  shift optional; Jank 2005) or seeded Monte Carlo draws (Wei & Tanner 1990;
+  Meng & Schilling 1996) instead of the tensor Gauss-Hermite grid — enabling
+  `latent_dim > 3` and better error scaling per node. Both constructions are
+  deterministic and bit-mirrored across the Rust/NumPy backends.
+- **Rust scoring module** (`mlsirm_core::scoring`, exposed via
+  `_core.score_bank_eap` / `score_bank_map` / `eapsum_tables`): EAP
+  (Bock & Mislevy 1982), MAP (posterior Newton with observed-information
+  SEs), and summed-score EAP conversion tables via the Lord-Wingersky
+  recursion (Thissen et al. 1995; Cai 2015), all under per-dimension
+  `N(mean_d, sd_d^2)` priors that cover single, multigroup
+  (`mu_g, sigma_g`) and multilevel populations (conditional
+  `N(u_hat_c, 1)` or marginal `N(0, sqrt(1 + sigma_u^2))`).
+  `score_respondents(..., method="eap"|"map"|"eapsum", prior=...)` and the
+  bundle's embedded `eapsum_tables` expose these to serving.
+- **Fit statistics moved to the Rust core** (`mlsirm_core::fitstats`): S-X²,
+  Benjamini-Hochberg, `l_z`/`l_z*`, infit/outfit now compute in Rust
+  (`fast_mlsirm.fitstats` delegates; the NumPy bodies remain the parity
+  reference/fallback). S-X² gains the `rms_residual` practical-significance
+  effect size (Sinharay & Haberman 2014) and `select_items` gates its flag on
+  `sx2_min_effect`; the mean-square gate now uses infit only (outfit is
+  reported, not gating — it explodes under very low pass rates); the person
+  screen threshold is configurable and the Snijders `r_0` correction is
+  centered on the population prior mean (cluster intercepts / group means).
+- **Fixed Item Parameter Calibration** (`fit(..., anchors=...)`): anchored
+  items stay frozen (optionally `tau` too) while new items and a freed
+  population mean/SD are estimated — the multiple-cycle prior-update (MWU-MEM
+  style) variant Kim (2006) found robust; latent-space orientation inherits
+  from the anchors (no PCA re-alignment). **Concurrent calibration** is the
+  existing multigroup path with structural missingness (Hanson & Béguin
+  2002), covered by a dedicated recovery test.
+
 ### Changed
 
 - `estimator="mmle"` with a spatial/multidimensional model now fits (routed to
