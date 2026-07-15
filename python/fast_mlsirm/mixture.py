@@ -67,7 +67,7 @@ def fit_mixture(
         Rost, J., & von Davier, M. (1995). Mixture distribution Rasch models. In G. H.
             Fischer & I. W. Molenaar (Eds.), *Rasch models: Foundations, recent
             developments, and applications* (pp. 257–268). Springer.
-            https://doi.org/10.1007/978-1-4612-4230-7
+            https://doi.org/10.1007/978-1-4612-4230-7_14
         Frick, H., Strobl, C., Leisch, F., & Zeileis, A. (2012). Flexible Rasch
             mixture models with package psychomix. *Journal of Statistical Software,
             48*(7), 1–25. https://doi.org/10.18637/jss.v048.i07

@@ -40,7 +40,7 @@
 //! - Rost, J., & von Davier, M. (1995). Mixture distribution Rasch models. In G. H.
 //!   Fischer & I. W. Molenaar (Eds.), *Rasch models: Foundations, recent developments,
 //!   and applications* (pp. 257–268). Springer.
-//!   <https://doi.org/10.1007/978-1-4612-4230-7>
+//!   <https://doi.org/10.1007/978-1-4612-4230-7_14>
 //! - Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of item
 //!   parameters. *Psychometrika, 46*(4), 443–459. <https://doi.org/10.1007/BF02293801>
 //! - Frick, H., Strobl, C., Leisch, F., & Zeileis, A. (2012). Flexible Rasch mixture
