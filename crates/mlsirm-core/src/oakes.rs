@@ -17,6 +17,17 @@
 //! penalized (MAP) curvature is used, matching the estimator's objective.
 //! Anchors, zero inflation and covariates are not supported here. E-steps run
 //! on the CPU in f64 — finite differences would drown in the f32 GPU noise.
+//!
+//! # References
+//!
+//! Oakes, D. (1999). Direct calculation of the information matrix via the EM
+//! algorithm. *Journal of the Royal Statistical Society Series B: Statistical
+//! Methodology, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+//!
+//! Pritikin, J. N. (2017). A comparison of parameter covariance estimation
+//! methods for item response models in an expectation-maximization framework.
+//! *Cogent Psychology, 4*(1), Article 1279435.
+//! https://doi.org/10.1080/23311908.2017.1279435
 
 use crate::marginal::{
     build_contexts_pub as build_contexts, build_tables, e_step_pub as e_step, index_responses,
@@ -228,7 +239,7 @@ fn q_gradient(
             }
         }
     }
-    if uses_space {
+    if pv.tau_free {
         g[cursor] = g_tau - penalty.lambda_tau * (tau - penalty.mu_tau);
     }
     g
@@ -521,5 +532,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn inner_product_q_gradient_does_not_write_a_tau_slot() {
+        let pv = ParamVec {
+            free_alpha: true,
+            uses_space: true,
+            tau_free: false,
+            n_items: 1,
+            latent_dim: 1,
+        };
+        let counts = EStepCounts {
+            nbar: vec![1.0],
+            rbar: vec![0.5],
+            mbar: vec![0.0],
+        };
+        let ctx = Contexts {
+            n_ctx: 1,
+            shift: vec![0.0],
+            scale: vec![1.0],
+            u_nodes: Vec::new(),
+            u_logw: Vec::new(),
+        };
+        let grids = Grids {
+            t_nodes: vec![0.0],
+            t_logw: vec![0.0],
+            x_grid: vec![0.25],
+            x_logw: vec![0.0],
+            q_t: 1,
+            n_x: 1,
+        };
+        let config = ModelConfig {
+            n_persons: 1,
+            n_items: 1,
+            n_dims: 1,
+            latent_dim: 1,
+            model_type: ModelType::Bifac2plm,
+            eps_distance: 1e-8,
+        };
+
+        let gradient = q_gradient(
+            &pv,
+            &[0.0, 0.0, 0.1],
+            &counts,
+            &ctx,
+            &grids,
+            &config,
+            &[0],
+            &PenaltyConfig::lsirm_prior(),
+        );
+
+        assert_eq!(gradient.len(), pv.len());
+        assert!(gradient.iter().all(|value| value.is_finite()));
     }
 }
