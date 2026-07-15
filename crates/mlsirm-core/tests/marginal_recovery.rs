@@ -405,7 +405,8 @@ fn qmc_and_mc_rules_recover_like_gauss_hermite() {
             &MarginalConfig {
                 q_theta: 15,
                 q_xi: 7,
-                max_iter: 60,
+                max_iter: 70,
+                tol: 5e-2,
                 xi_rule: rule,
                 xi_points: points,
                 xi_seed: 7,
@@ -419,6 +420,23 @@ fn qmc_and_mc_rules_recover_like_gauss_hermite() {
     let gh = fit_with(XiRuleKind::GaussHermite, 0);
     let qmc = fit_with(XiRuleKind::Halton, 128);
     let mc = fit_with(XiRuleKind::MonteCarlo, 256);
+    for (name, fit) in [("GH", &gh), ("QMC", &qmc), ("MC", &mc)] {
+        let final_change = fit.loglik_trace[fit.loglik_trace.len() - 1]
+            - fit.loglik_trace[fit.loglik_trace.len() - 2];
+        assert!(
+            fit.converged,
+            "{name} did not converge in {} M-steps; final likelihood change={final_change}",
+            fit.n_iter
+        );
+        assert!(
+            (0.0..5e-2).contains(&final_change),
+            "{name} final likelihood change {final_change} did not meet tolerance 0.05"
+        );
+        eprintln!(
+            "[{name}] converged=true reason=tolerance_met n_iter={}/70 final_change={final_change} tolerance=0.05",
+            fit.n_iter
+        );
+    }
     // the integration rule must not change the answer materially
     assert!(corr(&gh.b, &qmc.b) > 0.98, "QMC b diverges from GH: {}", corr(&gh.b, &qmc.b));
     assert!(corr(&gh.b, &mc.b) > 0.95, "MC b diverges from GH: {}", corr(&gh.b, &mc.b));
@@ -519,6 +537,57 @@ fn fipc_requires_anchors_for_free_population() {
         Device::Cpu,
     );
     assert!(res.is_err(), "SingleFree without anchors must be rejected");
+}
+
+#[test]
+fn fipc_rejects_unidentified_and_nonfinite_anchor_contracts() {
+    use mlsirm_core::marginal::{fit_marginal_anchored, Anchors};
+    let config = ModelConfig {
+        n_persons: 2,
+        n_items: 4,
+        n_dims: 2,
+        latent_dim: 1,
+        model_type: ModelType::Mirt,
+        eps_distance: 1e-8,
+    };
+    let y = [0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0];
+    let factor_id = [0, 0, 1, 1];
+    let mut anchors = Anchors {
+        fixed: vec![true, true, false, false],
+        alpha: vec![0.0; 4],
+        b: vec![0.0; 4],
+        zeta: vec![0.0; 4],
+        tau: None,
+    };
+    let err = fit_marginal_anchored(
+        &y,
+        &[true; 8],
+        &factor_id,
+        &config,
+        &PopulationSpec::SingleFree,
+        &MarginalConfig::default(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+        Some(&anchors),
+    )
+    .unwrap_err();
+    assert!(err.contains("at least two fixed anchor items"), "{err}");
+
+    anchors.fixed.fill(true);
+    anchors.tau = Some(f64::NAN);
+    let err = fit_marginal_anchored(
+        &y,
+        &[true; 8],
+        &factor_id,
+        &config,
+        &PopulationSpec::SingleFree,
+        &MarginalConfig::default(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+        Some(&anchors),
+    )
+    .unwrap_err();
+    assert!(err.contains("anchor tau must be finite"), "{err}");
 }
 
 #[test]

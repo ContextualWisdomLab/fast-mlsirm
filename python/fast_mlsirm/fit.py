@@ -61,7 +61,9 @@ def fit(
     MWU-MEM-style variant): ``{"fixed": bool[I], "alpha", "b", "zeta",
     "tau" (optional)}``. Anchored items stay frozen; without a
     ``group_id``/``cluster_id`` the population mean/SD is freed
-    (concurrent-calibration-ready ``singlefree`` population).
+    (concurrent-calibration-ready ``singlefree`` population). This
+    implementation requires at least two fixed items per simple-structure
+    trait dimension, a necessary guard for estimating both its mean and SD.
     """
     config = config or FitConfig()
     config.validate()
@@ -275,12 +277,22 @@ def _fit_mmle_marginal(
             raise ValueError("anchor zeta must have n_items x latent_dim entries")
         if not (np.all(np.isfinite(a_alpha)) and np.all(np.isfinite(a_b)) and np.all(np.isfinite(a_zeta))):
             raise ValueError("anchor alpha/b/zeta must be finite")
+        fixed_per_dim = np.bincount(factors[fixed], minlength=n_dims)
+        if pop_kind == "singlefree" and np.any(fixed_per_dim < 2):
+            d = int(np.flatnonzero(fixed_per_dim < 2)[0])
+            raise ValueError(
+                "singlefree (FIPC) requires at least two fixed anchor items per "
+                f"trait dimension; dimension {d} has {int(fixed_per_dim[d])}"
+            )
+        anchor_tau = None if anchors.get("tau") is None else float(anchors["tau"])
+        if anchor_tau is not None and not np.isfinite(anchor_tau):
+            raise ValueError("anchor tau must be finite")
         anchor_kwargs = dict(
             anchor_fixed=fixed,
             anchor_alpha=a_alpha,
             anchor_b=a_b,
             anchor_zeta=a_zeta,
-            anchor_tau=None if anchors.get("tau") is None else float(anchors["tau"]),
+            anchor_tau=anchor_tau,
         )
     if ids is not None:
         if ids.shape != (n_persons,):

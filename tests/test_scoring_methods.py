@@ -91,21 +91,29 @@ def test_serving_prior_widens_for_multilevel_bundles():
 
 @pytest.mark.parametrize("rule", ["qmc", "mc"])
 def test_qmc_mc_rules_parity_between_backends(rule):
-    y, fid = _simulate(seed=5, P=200, I=10)
+    y, fid = _simulate(seed=5, P=100, I=8)
     results = {}
     for backend in ("rust", "numpy"):
         cfg = FitConfig(
             model="MLS2PLM",
             estimator="mmle",
-            max_iter=12,
+            max_iter=150,
+            tolerance=1e-2,
             backend=backend,
             rust_device="cpu",
-            q_theta=15,
+            q_theta=11,
             xi_rule=rule,
-            xi_points=48,
+            xi_points=32,
             xi_seed=9,
         )
         results[backend] = fit(y, fid, cfg)
+        trace = np.asarray(results[backend].loglik_trace)
+        final_change = float(trace[-1] - trace[-2])
+        assert results[backend].convergence_status == "converged"
+        assert results[backend].n_iter < cfg.max_iter
+        assert np.all(np.isfinite(trace))
+        assert np.all(np.diff(trace) >= -1e-9)
+        assert 0.0 <= final_change < cfg.tolerance
     np.testing.assert_allclose(
         results["rust"].params.b, results["numpy"].params.b, atol=1e-9
     )
@@ -155,3 +163,29 @@ def test_fipc_guards():
         fit(y, fid, FitConfig(model="MLS2PLM", estimator="mmle", max_iter=3), anchors=anchors)
     with pytest.raises(ValueError, match="require estimator"):
         fit(y, fid, FitConfig(model="MLS2PLM", estimator="jmle"), anchors=anchors)
+
+
+@pytest.mark.parametrize("backend", ["rust", "numpy"])
+def test_fipc_rejects_unidentified_and_nonfinite_anchor_contracts(backend):
+    y, fid = _simulate(seed=17, P=80, I=6)
+    base = dict(
+        fixed=np.array([True, True, False, False, False, False]),
+        alpha=np.zeros(6),
+        b=np.zeros(6),
+        zeta=np.zeros((6, 2)),
+    )
+    cfg = FitConfig(
+        model="MLS2PLM",
+        estimator="mmle",
+        backend=backend,
+        rust_device="cpu",
+        max_iter=3,
+    )
+    with pytest.raises(ValueError, match="at least two fixed anchor items"):
+        fit(y, fid, cfg, anchors=base)
+
+    finite = dict(base)
+    finite["fixed"] = np.ones(6, dtype=bool)
+    finite["tau"] = np.nan
+    with pytest.raises(ValueError, match="anchor tau must be finite"):
+        fit(y, fid, cfg, anchors=finite)

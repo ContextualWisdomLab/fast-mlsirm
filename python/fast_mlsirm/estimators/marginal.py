@@ -484,6 +484,14 @@ def fit_marginal_numpy(
         fixed_mask = np.asarray(anchors["fixed"], dtype=bool)
         if fixed_mask.shape != (n_items,) or not fixed_mask.any():
             raise ValueError("anchors must fix at least one item and match n_items")
+        if kind == "singlefree":
+            fixed_per_dim = np.bincount(factor_id[fixed_mask], minlength=n_dims)
+            if np.any(fixed_per_dim < 2):
+                d = int(np.flatnonzero(fixed_per_dim < 2)[0])
+                raise ValueError(
+                    "singlefree (FIPC) requires at least two fixed anchor items per "
+                    f"trait dimension; dimension {d} has {int(fixed_per_dim[d])}"
+                )
         alpha[fixed_mask] = np.asarray(anchors["alpha"], dtype=float)[fixed_mask]
         b[fixed_mask] = np.asarray(anchors["b"], dtype=float)[fixed_mask]
         zeta[fixed_mask] = np.asarray(anchors["zeta"], dtype=float).reshape(
@@ -492,6 +500,8 @@ def fit_marginal_numpy(
         anchor_tau = anchors.get("tau")
         if anchor_tau is not None:
             tau = float(anchor_tau)
+            if not np.isfinite(tau):
+                raise ValueError("anchor tau must be finite")
 
     loglik_trace: list[float] = []
     converged = False
@@ -864,6 +874,8 @@ def fit_marginal_numpy(
                     final_cluster_post[cluster_id] * (1.0 - final_w_irt_v)
                 ).sum(axis=1)
         loglik_trace.append(final_loglik)
+        if len(loglik_trace) > 1 and abs(loglik_trace[-1] - loglik_trace[-2]) < tol:
+            converged = True
 
     theta_eap = np.zeros((n_persons, n_dims))
     theta_m2 = np.zeros((n_persons, n_dims))

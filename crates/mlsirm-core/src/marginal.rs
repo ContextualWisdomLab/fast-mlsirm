@@ -1652,6 +1652,9 @@ pub fn fit_marginal(
 }
 
 /// [`fit_marginal`] with optional fixed-item anchors (FIPC, Kim 2006).
+/// A single-free population must supply at least two fixed items for every
+/// simple-structure trait dimension; this is a necessary identification guard
+/// for estimating both that dimension's mean and standard deviation.
 #[allow(clippy::too_many_arguments)]
 pub fn fit_marginal_anchored(
     y: &[f64],
@@ -1693,6 +1696,37 @@ pub fn fit_marginal_full(
         }
         if !a.fixed.iter().any(|&f| f) {
             return Err("anchors provided but no item is fixed".into());
+        }
+        for i in 0..n_items {
+            if a.fixed[i]
+                && (!a.alpha[i].is_finite()
+                    || !a.b[i].is_finite()
+                    || !a.zeta[i * latent_dim..(i + 1) * latent_dim]
+                        .iter()
+                        .all(|v| v.is_finite()))
+            {
+                return Err("fixed anchor alpha/b/zeta values must be finite".into());
+            }
+        }
+        if a.tau.is_some_and(|tau| !tau.is_finite()) {
+            return Err("fixed anchor tau must be finite".into());
+        }
+        if matches!(pop, PopulationSpec::SingleFree) {
+            let mut fixed_per_dim = vec![0usize; config.n_dims];
+            for (i, &fixed) in a.fixed.iter().enumerate() {
+                if fixed {
+                    fixed_per_dim[factor_id[i]] += 1;
+                }
+            }
+            if let Some((d, &count)) = fixed_per_dim
+                .iter()
+                .enumerate()
+                .find(|(_, count)| **count < 2)
+            {
+                return Err(format!(
+                    "PopulationSpec::SingleFree requires at least two fixed anchor items per trait dimension; dimension {d} has {count}"
+                ));
+            }
         }
     }
     if matches!(pop, PopulationSpec::SingleFree) && anchors.is_none() {
@@ -1932,6 +1966,10 @@ pub fn fit_marginal_full(
         let final_estep =
             e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
         loglik_trace.push(final_estep.loglik);
+        let n = loglik_trace.len();
+        if n > 1 && (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < mcfg.tol {
+            converged = true;
+        }
         if mcfg.zero_inflation {
             zero_responsibility = final_estep.zi_resp;
         }
