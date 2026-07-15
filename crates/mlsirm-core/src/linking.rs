@@ -14,6 +14,24 @@
 //!   a* = a_new / A,   b* = b_new - (a_new / A) * B
 //! (equivalently the classical `a_O = a_N/A`, `b_O = A b_N + B` on the
 //! slope/difficulty parameterization, with difficulty `-b/a`).
+//!
+//! # References (APA 7th ed.)
+//!
+//! Haebara, T. (1980). Equating logistic ability scales by a weighted least
+//! squares method. *Japanese Psychological Research, 22*(3), 144–149.
+//! https://doi.org/10.4992/psycholres1954.22.144
+//!
+//! Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
+//! linking: Methods and practices* (3rd ed.). Springer.
+//! https://doi.org/10.1007/978-1-4939-0317-7
+//!
+//! Stocking, M. L., & Lord, F. M. (1983). Developing a common metric in item
+//! response theory. *Applied Psychological Measurement, 7*(2), 201–210.
+//! https://doi.org/10.1177/014662168300700208
+
+const NM_MAX_ITER: usize = 500;
+const NM_OBJECTIVE_RTOL: f64 = 1e-14;
+const NM_PARAMETER_RTOL: f64 = 1e-10;
 
 /// Linking coefficients `theta_old = slope * theta_new + intercept`.
 #[derive(Clone, Copy, Debug)]
@@ -24,6 +42,16 @@ pub struct LinkResult {
     /// form; the characteristic-curve loss for Haebara / Stocking-Lord).
     pub criterion: f64,
     pub n_iter: usize,
+    /// `true` for a closed-form moment solution or when both Nelder–Mead
+    /// simplex stopping criteria are met.
+    pub converged: bool,
+    /// `closed_form`, `tolerance_met`, or `max_iter_reached`.
+    pub termination_reason: &'static str,
+    pub max_iter: usize,
+    pub final_objective_span: f64,
+    pub objective_tolerance: f64,
+    pub final_parameter_span: f64,
+    pub parameter_tolerance: f64,
 }
 
 /// Linking method.
@@ -62,19 +90,33 @@ fn sd(x: &[f64]) -> f64 {
 }
 
 /// Closed-form moment coefficients. `difficulty_i = -b_i / a_i`.
-fn moment(a_old: &[f64], b_old: &[f64], a_new: &[f64], b_new: &[f64], sigma: bool) -> (f64, f64) {
+fn moment(
+    a_old: &[f64],
+    b_old: &[f64],
+    a_new: &[f64],
+    b_new: &[f64],
+    sigma: bool,
+) -> Result<(f64, f64), String> {
     let d_old: Vec<f64> = a_old.iter().zip(b_old).map(|(&a, &b)| -b / a).collect();
     let d_new: Vec<f64> = a_new.iter().zip(b_new).map(|(&a, &b)| -b / a).collect();
     let slope = if sigma {
-        let sn = sd(&d_new);
-        if sn > 0.0 { sd(&d_old) / sn } else { 1.0 }
+        let (so, sn) = (sd(&d_old), sd(&d_new));
+        if !(so > 0.0 && sn > 0.0) {
+            return Err(
+                "mean/sigma linking requires non-zero difficulty spread on both scales".into(),
+            );
+        }
+        so / sn
     } else {
         // mean/mean uses the discriminations: a_O = a_N / A
         let mo = mean(a_old);
-        if mo != 0.0 { mean(a_new) / mo } else { 1.0 }
+        mean(a_new) / mo
     };
     let intercept = mean(&d_old) - slope * mean(&d_new);
-    (slope, intercept)
+    if !(slope.is_finite() && slope > 0.0 && intercept.is_finite()) {
+        return Err("linking coefficients must be finite with a positive slope".into());
+    }
+    Ok((slope, intercept))
 }
 
 /// Characteristic-curve objective at `(slope A, intercept B)`.
@@ -120,8 +162,46 @@ fn cc_objective(
     total
 }
 
-/// Nelder-Mead minimization of a 2-parameter objective from `x0`.
-fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, usize) {
+#[derive(Clone, Copy, Debug)]
+struct NelderMeadResult {
+    x: [f64; 2],
+    objective: f64,
+    n_iter: usize,
+    converged: bool,
+    final_objective_span: f64,
+    objective_tolerance: f64,
+    final_parameter_span: f64,
+    parameter_tolerance: f64,
+}
+
+fn simplex_diagnostics(
+    simplex: &[[f64; 2]; 3],
+    fval: &[f64; 3],
+    best: usize,
+    worst: usize,
+) -> (f64, f64, f64, f64) {
+    let objective_span = (fval[worst] - fval[best]).abs();
+    let parameter_span = simplex
+        .iter()
+        .map(|vertex| {
+            (vertex[0] - simplex[best][0])
+                .abs()
+                .max((vertex[1] - simplex[best][1]).abs())
+        })
+        .fold(0.0, f64::max);
+    let objective_tolerance = NM_OBJECTIVE_RTOL * (1.0 + fval[best].abs());
+    let parameter_scale = simplex[best][0].abs().max(simplex[best][1].abs());
+    let parameter_tolerance = NM_PARAMETER_RTOL * (1.0 + parameter_scale);
+    (
+        objective_span,
+        objective_tolerance,
+        parameter_span,
+        parameter_tolerance,
+    )
+}
+
+/// Nelder–Mead minimization of a 2-parameter objective from `x0`.
+fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> NelderMeadResult {
     // simplex vertices
     let mut simplex = [
         x0,
@@ -135,15 +215,17 @@ fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, us
     ];
     let (alpha, gamma, rho, sigma) = (1.0, 2.0, 0.5, 0.5);
     let mut iters = 0;
-    for it in 0..500 {
+    let mut converged = false;
+    for it in 0..NM_MAX_ITER {
         iters = it + 1;
         // order vertices by value
         let mut order = [0usize, 1, 2];
-        order.sort_by(|&i, &j| fval[i].partial_cmp(&fval[j]).unwrap());
+        order.sort_by(|&i, &j| fval[i].total_cmp(&fval[j]));
         let (lo, mid, hi) = (order[0], order[1], order[2]);
-        // convergence: simplex is tiny in value and span
-        let span = (fval[hi] - fval[lo]).abs();
-        if span < 1e-14 * (1.0 + fval[lo].abs()) {
+        let (objective_span, objective_tolerance, parameter_span, parameter_tolerance) =
+            simplex_diagnostics(&simplex, &fval, lo, hi);
+        if objective_span <= objective_tolerance && parameter_span <= parameter_tolerance {
+            converged = true;
             break;
         }
         // centroid of the two best
@@ -152,11 +234,17 @@ fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, us
             0.5 * (simplex[lo][1] + simplex[mid][1]),
         ];
         // reflection
-        let refl = [cen[0] + alpha * (cen[0] - simplex[hi][0]), cen[1] + alpha * (cen[1] - simplex[hi][1])];
+        let refl = [
+            cen[0] + alpha * (cen[0] - simplex[hi][0]),
+            cen[1] + alpha * (cen[1] - simplex[hi][1]),
+        ];
         let f_refl = f(refl[0], refl[1]);
         if f_refl < fval[lo] {
             // expansion
-            let exp = [cen[0] + gamma * (refl[0] - cen[0]), cen[1] + gamma * (refl[1] - cen[1])];
+            let exp = [
+                cen[0] + gamma * (refl[0] - cen[0]),
+                cen[1] + gamma * (refl[1] - cen[1]),
+            ];
             let f_exp = f(exp[0], exp[1]);
             if f_exp < f_refl {
                 simplex[hi] = exp;
@@ -170,7 +258,10 @@ fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, us
             fval[hi] = f_refl;
         } else {
             // contraction
-            let con = [cen[0] + rho * (simplex[hi][0] - cen[0]), cen[1] + rho * (simplex[hi][1] - cen[1])];
+            let con = [
+                cen[0] + rho * (simplex[hi][0] - cen[0]),
+                cen[1] + rho * (simplex[hi][1] - cen[1]),
+            ];
             let f_con = f(con[0], con[1]);
             if f_con < fval[hi] {
                 simplex[hi] = con;
@@ -187,8 +278,21 @@ fn nelder_mead<F: Fn(f64, f64) -> f64>(f: F, x0: [f64; 2]) -> ([f64; 2], f64, us
             }
         }
     }
-    let best = (0..3).min_by(|&i, &j| fval[i].partial_cmp(&fval[j]).unwrap()).unwrap();
-    (simplex[best], fval[best], iters)
+    let mut order = [0usize, 1, 2];
+    order.sort_by(|&i, &j| fval[i].total_cmp(&fval[j]));
+    let (best, worst) = (order[0], order[2]);
+    let (final_objective_span, objective_tolerance, final_parameter_span, parameter_tolerance) =
+        simplex_diagnostics(&simplex, &fval, best, worst);
+    NelderMeadResult {
+        x: simplex[best],
+        objective: fval[best],
+        n_iter: iters,
+        converged,
+        final_objective_span,
+        objective_tolerance,
+        final_parameter_span,
+        parameter_tolerance,
+    }
 }
 
 /// Link a separately-calibrated new form onto the old (reference) scale using
@@ -208,29 +312,91 @@ pub fn irt_link(
     if n < 2 || b_old.len() != n || a_new.len() != n || b_new.len() != n {
         return Err("need >= 2 common items and matching-length parameter slices".into());
     }
-    if a_old.iter().chain(a_new).any(|&a| !(a > 0.0)) {
-        return Err("slopes must be positive".into());
+    if a_old
+        .iter()
+        .chain(a_new)
+        .any(|&a| !a.is_finite() || a <= 0.0)
+    {
+        return Err("slopes must be positive and finite".into());
+    }
+    if b_old.iter().chain(b_new).any(|b| !b.is_finite()) {
+        return Err("intercepts must be finite".into());
     }
     match method {
         LinkMethod::MeanMean | LinkMethod::MeanSigma => {
             let (slope, intercept) =
-                moment(a_old, b_old, a_new, b_new, method == LinkMethod::MeanSigma);
-            Ok(LinkResult { slope, intercept, criterion: 0.0, n_iter: 0 })
+                moment(a_old, b_old, a_new, b_new, method == LinkMethod::MeanSigma)?;
+            Ok(LinkResult {
+                slope,
+                intercept,
+                criterion: 0.0,
+                n_iter: 0,
+                converged: true,
+                termination_reason: "closed_form",
+                max_iter: 0,
+                final_objective_span: 0.0,
+                objective_tolerance: 0.0,
+                final_parameter_span: 0.0,
+                parameter_tolerance: 0.0,
+            })
         }
         LinkMethod::Haebara | LinkMethod::StockingLord => {
             if theta.len() != weight.len() || theta.is_empty() {
                 return Err("theta and weight must be non-empty and equal length".into());
             }
+            if theta.iter().any(|value| !value.is_finite()) {
+                return Err("theta nodes must be finite".into());
+            }
+            if weight
+                .iter()
+                .any(|value| !value.is_finite() || *value < 0.0)
+            {
+                return Err("quadrature weights must be finite and non-negative".into());
+            }
+            let weight_sum: f64 = weight.iter().sum();
+            if !(weight_sum.is_finite() && weight_sum > 0.0) {
+                return Err("quadrature weights must have a finite positive sum".into());
+            }
+            let normalized_weight: Vec<f64> =
+                weight.iter().map(|value| value / weight_sum).collect();
             let sl = method == LinkMethod::StockingLord;
-            // start from the mean/sigma solution
-            let (a0, b0) = moment(a_old, b_old, a_new, b_new, true);
-            let (x, crit, iters) = nelder_mead(
+            // Prefer the mean/sigma start, but mean/mean remains identifiable
+            // when one difficulty distribution has zero spread.
+            let (a0, b0) = moment(a_old, b_old, a_new, b_new, true)
+                .or_else(|_| moment(a_old, b_old, a_new, b_new, false))?;
+            let optimization = nelder_mead(
                 |slope, intercept| {
-                    cc_objective(slope, intercept, a_old, b_old, a_new, b_new, theta, weight, sl)
+                    cc_objective(
+                        slope,
+                        intercept,
+                        a_old,
+                        b_old,
+                        a_new,
+                        b_new,
+                        theta,
+                        &normalized_weight,
+                        sl,
+                    )
                 },
                 [a0, b0],
             );
-            Ok(LinkResult { slope: x[0], intercept: x[1], criterion: crit, n_iter: iters })
+            Ok(LinkResult {
+                slope: optimization.x[0],
+                intercept: optimization.x[1],
+                criterion: optimization.objective,
+                n_iter: optimization.n_iter,
+                converged: optimization.converged,
+                termination_reason: if optimization.converged {
+                    "tolerance_met"
+                } else {
+                    "max_iter_reached"
+                },
+                max_iter: NM_MAX_ITER,
+                final_objective_span: optimization.final_objective_span,
+                objective_tolerance: optimization.objective_tolerance,
+                final_parameter_span: optimization.final_parameter_span,
+                parameter_tolerance: optimization.parameter_tolerance,
+            })
         }
     }
 }
@@ -254,9 +420,13 @@ mod tests {
         let a_old = vec![1.2, 0.8, 1.5, 1.0, 0.9, 1.3, 1.1, 0.7];
         let b_old = vec![-0.5, 0.3, 1.0, -1.2, 0.0, 0.6, -0.8, 0.4];
         let (a0, b0) = (1.3_f64, 0.4_f64); // true theta_old = 1.3*theta_new + 0.4
-        // a_new = A*a_old ; b_new = b_old + a_old*B  (inverse of the transform)
+                                           // a_new = A*a_old ; b_new = b_old + a_old*B  (inverse of the transform)
         let a_new: Vec<f64> = a_old.iter().map(|&a| a0 * a).collect();
-        let b_new: Vec<f64> = a_old.iter().zip(&b_old).map(|(&a, &b)| b + a * b0).collect();
+        let b_new: Vec<f64> = a_old
+            .iter()
+            .zip(&b_old)
+            .map(|(&a, &b)| b + a * b0)
+            .collect();
         let (theta, weight) = gh21();
         let res = irt_link(&a_old, &b_old, &a_new, &b_new, &theta, &weight, method).unwrap();
         assert!(
@@ -265,6 +435,19 @@ mod tests {
             res.slope,
             res.intercept
         );
+        assert!(res.converged, "{method:?}: {res:?}");
+        match method {
+            LinkMethod::MeanMean | LinkMethod::MeanSigma => {
+                assert_eq!(res.termination_reason, "closed_form");
+                assert_eq!(res.n_iter, 0);
+            }
+            LinkMethod::Haebara | LinkMethod::StockingLord => {
+                assert_eq!(res.termination_reason, "tolerance_met");
+                assert!(res.n_iter < res.max_iter);
+                assert!(res.final_objective_span <= res.objective_tolerance);
+                assert!(res.final_parameter_span <= res.parameter_tolerance);
+            }
+        }
     }
 
     #[test]
@@ -290,10 +473,18 @@ mod tests {
     #[test]
     fn rejects_bad_input() {
         let (theta, weight) = gh21();
-        assert!(irt_link(&[1.0], &[0.0], &[1.0], &[0.0], &theta, &weight, LinkMethod::MeanSigma).is_err());
+        assert!(irt_link(
+            &[1.0],
+            &[0.0],
+            &[1.0],
+            &[0.0],
+            &theta,
+            &weight,
+            LinkMethod::MeanSigma
+        )
+        .is_err());
     }
 }
-
 
 #[cfg(test)]
 mod branch_tests {
@@ -317,15 +508,23 @@ mod branch_tests {
     }
 
     #[test]
-    fn moment_handles_zero_spread() {
-        // identical new-form difficulties -> sd(d_new) = 0 -> slope falls back to 1
+    fn mean_sigma_rejects_zero_spread() {
+        // sd(d_new) = 0 makes the mean/sigma scale coefficient unidentified.
         let a_old = vec![1.0, 1.0, 1.0];
         let b_old = vec![-0.3, 0.1, 0.5];
         let a_new = vec![1.0, 1.0, 1.0];
         let b_new = vec![0.0, 0.0, 0.0]; // all difficulties 0
         let (nodes, w) = (vec![-1.0, 0.0, 1.0], vec![0.25, 0.5, 0.25]);
-        let r = irt_link(&a_old, &b_old, &a_new, &b_new, &nodes, &w, LinkMethod::MeanSigma).unwrap();
-        assert!((r.slope - 1.0).abs() < 1e-12);
+        assert!(irt_link(
+            &a_old,
+            &b_old,
+            &a_new,
+            &b_new,
+            &nodes,
+            &w,
+            LinkMethod::MeanSigma,
+        )
+        .is_err());
     }
 
     #[test]
@@ -336,15 +535,25 @@ mod branch_tests {
         let w = vec![1.0];
         // slope <= 1e-6 and non-finite intercept both return the 1e18 penalty
         assert_eq!(cc_objective(0.0, 0.0, &a, &b, &a, &b, &th, &w, true), 1e18);
-        assert_eq!(cc_objective(1.0, f64::NAN, &a, &b, &a, &b, &th, &w, false), 1e18);
+        assert_eq!(
+            cc_objective(1.0, f64::NAN, &a, &b, &a, &b, &th, &w, false),
+            1e18
+        );
     }
 
     #[test]
     fn nelder_mead_minimizes_nonsmooth() {
         // a non-smooth V forces contraction/shrink steps, not just reflection
-        let (x, fv, iters) = nelder_mead(|a, b| (a - 2.0).abs() + 3.0 * (b + 1.0).abs(), [8.0, 8.0]);
-        assert!((x[0] - 2.0).abs() < 1e-3 && (x[1] + 1.0).abs() < 1e-3, "x = {x:?}");
-        assert!(fv < 1e-3 && iters > 1);
+        let result = nelder_mead(|a, b| (a - 2.0).abs() + 3.0 * (b + 1.0).abs(), [8.0, 8.0]);
+        assert!(
+            (result.x[0] - 2.0).abs() < 1e-3 && (result.x[1] + 1.0).abs() < 1e-3,
+            "x = {:?}",
+            result.x
+        );
+        assert!(result.objective < 1e-3 && result.n_iter > 1);
+        assert!(result.converged, "{result:?}");
+        assert!(result.final_objective_span <= result.objective_tolerance);
+        assert!(result.final_parameter_span <= result.parameter_tolerance);
     }
 
     #[test]
@@ -357,5 +566,38 @@ mod branch_tests {
         // empty / mismatched grid for a characteristic-curve method
         assert!(irt_link(&a, &b, &a, &b, &[], &[], LinkMethod::Haebara).is_err());
         assert!(irt_link(&a, &b, &a, &b, &nodes, &[0.5], LinkMethod::StockingLord).is_err());
+
+        let nan_intercept = vec![-0.3, f64::NAN, 0.5];
+        assert!(irt_link(&a, &nan_intercept, &a, &b, &nodes, &w, LinkMethod::MeanMean,).is_err());
+        assert!(irt_link(
+            &a,
+            &b,
+            &a,
+            &b,
+            &nodes,
+            &[0.25, f64::NAN, 0.25],
+            LinkMethod::StockingLord,
+        )
+        .is_err());
+        assert!(irt_link(
+            &a,
+            &b,
+            &a,
+            &b,
+            &nodes,
+            &[0.25, -0.1, 0.25],
+            LinkMethod::Haebara,
+        )
+        .is_err());
+        assert!(irt_link(
+            &a,
+            &b,
+            &a,
+            &b,
+            &nodes,
+            &[0.0, 0.0, 0.0],
+            LinkMethod::Haebara,
+        )
+        .is_err());
     }
 }

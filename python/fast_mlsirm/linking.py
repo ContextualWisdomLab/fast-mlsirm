@@ -97,13 +97,20 @@ from dataclasses import dataclass
 @dataclass
 class IrtLinkResult:
     """IRT linking coefficients (theta_old = slope*theta_new + intercept) with
-    the characteristic-curve criterion, iteration count, and method name."""
+    the characteristic-curve criterion and explicit termination evidence."""
 
     slope: float       # theta_old = slope * theta_new + intercept
     intercept: float
     criterion: float   # characteristic-curve loss (0 for moment methods)
     n_iter: int
     method: str
+    converged: bool = True
+    termination_reason: str = "closed_form"
+    max_iter: int = 0
+    final_objective_span: float = 0.0
+    objective_tolerance: float = 0.0
+    final_parameter_span: float = 0.0
+    parameter_tolerance: float = 0.0
 
 
 def irt_link(
@@ -121,7 +128,25 @@ def irt_link(
     ``b_*`` the intercepts of the common items in the ``eta = a*theta + b``
     form. ``method`` is one of ``mean_mean``, ``mean_sigma``, ``haebara``,
     ``stocking_lord``; the characteristic-curve methods integrate over a
-    standard-normal Gauss-Hermite grid of ``q_theta`` nodes."""
+    standard-normal Gauss-Hermite grid of ``q_theta`` nodes. Mean/sigma
+    linking requires non-zero common-item difficulty spread on both scales.
+    Characteristic-curve results expose both the objective and parameter
+    simplex stopping criteria; inspect ``converged`` before using a result.
+
+    References
+    ----------
+    Haebara, T. (1980). Equating logistic ability scales by a weighted least
+    squares method. *Japanese Psychological Research, 22*(3), 144–149.
+    https://doi.org/10.4992/psycholres1954.22.144
+
+    Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
+    linking: Methods and practices* (3rd ed.). Springer.
+    https://doi.org/10.1007/978-1-4939-0317-7
+
+    Stocking, M. L., & Lord, F. M. (1983). Developing a common metric in item
+    response theory. *Applied Psychological Measurement, 7*(2), 201–210.
+    https://doi.org/10.1177/014662168300700208
+    """
     from .fitstats import _core_module
     from .estimators.marginal import _gh
 
@@ -135,10 +160,12 @@ def irt_link(
     for _arr, _nm in ((ao, 'a_old'), (bo, 'b_old'), (an, 'a_new'), (bn, 'b_new')):
         if _arr.ndim != 1 or not np.all(np.isfinite(_arr)):
             raise ValueError(f'{_nm} must be a 1-D array of finite numbers')
-    if ao.shape != bo.shape or an.shape != bn.shape:
+    if ao.shape != bo.shape or an.shape != bn.shape or ao.shape != an.shape:
         raise ValueError('slope/intercept arrays must have matching lengths')
     if np.any(ao <= 0) or np.any(an <= 0):
         raise ValueError('slopes (a_old/a_new) must be positive')
+    if isinstance(q_theta, (bool, np.bool_)) or not isinstance(q_theta, (int, np.integer)):
+        raise ValueError('q_theta must be an integer quadrature size')
     nodes, weights = _gh(int(q_theta))
     res = core.irt_link(
         ao,
@@ -153,4 +180,11 @@ def irt_link(
         slope=float(res["slope"]), intercept=float(res["intercept"]),
         criterion=float(res["criterion"]), n_iter=int(res["n_iter"]),
         method=str(method),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        max_iter=int(res["max_iter"]),
+        final_objective_span=float(res["final_objective_span"]),
+        objective_tolerance=float(res["objective_tolerance"]),
+        final_parameter_span=float(res["final_parameter_span"]),
+        parameter_tolerance=float(res["parameter_tolerance"]),
     )

@@ -1421,6 +1421,13 @@ fn irt_link(
     out.set_item("intercept", res.intercept)?;
     out.set_item("criterion", res.criterion)?;
     out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("max_iter", res.max_iter)?;
+    out.set_item("final_objective_span", res.final_objective_span)?;
+    out.set_item("objective_tolerance", res.objective_tolerance)?;
+    out.set_item("final_parameter_span", res.final_parameter_span)?;
+    out.set_item("parameter_tolerance", res.parameter_tolerance)?;
     Ok(out.into())
 }
 

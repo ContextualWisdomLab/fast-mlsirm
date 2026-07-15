@@ -660,10 +660,29 @@ def test_irt_link_recovers_known_transform():
         r = irt_link(a_old, b_old, a_new, b_new, method=method)
         assert abs(r.slope - A0) < 1e-3, f"{method}: slope {r.slope}"
         assert abs(r.intercept - B0) < 1e-3, f"{method}: intercept {r.intercept}"
+        assert r.converged
+        if method in {"haebara", "stocking_lord"}:
+            assert r.termination_reason == "tolerance_met"
+            assert r.n_iter < r.max_iter
+            assert r.final_objective_span <= r.objective_tolerance
+            assert r.final_parameter_span <= r.parameter_tolerance
+        else:
+            assert r.termination_reason == "closed_form"
+            assert r.n_iter == r.max_iter == 0
     import pytest as _pytest
 
     with _pytest.raises(Exception):
         irt_link(a_old, b_old, a_new, b_new, method="not_a_method")
+    with _pytest.raises(ValueError, match="non-zero difficulty spread"):
+        irt_link(
+            np.ones(3),
+            np.array([-0.5, 0.0, 0.5]),
+            np.ones(3),
+            np.zeros(3),
+            method="mean_sigma",
+        )
+    with _pytest.raises(ValueError, match="integer quadrature size"):
+        irt_link(a_old, b_old, a_new, b_new, q_theta=21.5)
 
 
 def test_category_logprobs_binary_parity_and_gpcm_monotone():
