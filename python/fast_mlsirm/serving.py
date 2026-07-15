@@ -475,10 +475,27 @@ def cat_next_item(
     responses_so_far: dict[str, Any],
     prior: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> dict[str, Any]:
-    """Adaptive-EAP CAT step over the frozen bank (Bock & Mislevy 1982;
-    multidimensional targeting per Wang, Kuo & Chao 2010): returns the EAP
-    state, the targeted dimension, and unadministered items ranked by
-    information. ``responses_so_far`` maps item code -> 0/1."""
+    """Run one adaptive-EAP CAT step over the frozen bank.
+
+    Bock and Mislevy (1982) support the noniterative EAP score, while Wang et
+    al. (2010) describe multidimensional CAT with information-based item
+    selection. Selecting the dimension with the largest posterior SD is a
+    repository policy, not a procedure prescribed by either source.
+    ``responses_so_far`` maps item code to 0/1.
+
+    References
+    ----------
+    Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability
+    in a microcomputer environment. *Applied Psychological Measurement,
+    6*(4), 431–444. https://doi.org/10.1177/014662168200600405
+
+    Wang, C.-S., Kuo, C.-L., & Chao, C.-Y. (2010). A multidimensional
+    computerized adaptive testing system for enhancing the Chinese as second
+    language proficiency test. In N. E. Mastorakis, V. Mladenov, Z. Bojkovic,
+    & S. Kartalopoulos (Eds.), *Selected topics in education and educational
+    technology* (pp. 245–252). WSEAS Press.
+    """
+    _validate_bundle(bundle)
     core = _core_module()
     if core is None:
         raise RuntimeError("cat_next_item requires the compiled Rust core")
@@ -491,7 +508,10 @@ def cat_next_item(
         j = code_to_col.get(code)
         if j is None:
             raise ValueError(f"unknown item code {code!r}")
-        y[j] = float(bool(value)) if isinstance(value, bool) else float(value)
+        response = float(bool(value)) if isinstance(value, bool) else float(value)
+        if not np.isfinite(response) or response not in (0.0, 1.0):
+            raise ValueError("administered responses must be 0 or 1")
+        y[j] = response
         administered[j] = True
     mean, sd = serving_prior(bundle) if prior is None else (
         np.asarray(prior[0], dtype=float), np.asarray(prior[1], dtype=float))
@@ -514,8 +534,18 @@ def plausible_values(
     seed: int = 1,
     prior: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> np.ndarray:
-    """Posterior plausible-value draws (Marsman et al. 2016) for secondary
-    analyses; returns persons x n_draws x n_dims."""
+    """Draw posterior plausible values for secondary analyses.
+
+    The fixed item bank and discrete quadrature-grid sampler are repository
+    choices; this function does not propagate item-parameter uncertainty.
+    Returns persons x n_draws x n_dims.
+
+    References
+    ----------
+    Marsman, M., Maris, G., Bechger, T., & Glas, C. (2016). What can we learn
+    from plausible values? *Psychometrika, 81*(2), 274–289.
+    https://doi.org/10.1007/s11336-016-9497-x
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("plausible_values requires the compiled Rust core")

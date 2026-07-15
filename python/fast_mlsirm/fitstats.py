@@ -1212,9 +1212,24 @@ def tcc_drift(
 
 def empirical_reliability(result) -> np.ndarray:
     """Empirical (marginal) EAP reliability per trait dimension:
-    `Var(EAP) / (Var(EAP) + mean(SE^2))` (Stanley & Edwards 2016; Milanzi et
-    al. 2015). Only meaningful for a well-fitting model — report alongside
-    the fit statistics. Requires a marginal (MMLE) fit with posterior SDs."""
+    `Var(EAP) / (Var(EAP) + mean(SE^2))`.
+
+    This follows the posterior variance decomposition in Bechger et al.
+    (2003). Reliability does not establish model fit (Stanley & Edwards,
+    2016), so report it alongside the fit statistics. Requires a marginal
+    (MMLE) fit with posterior SDs.
+
+    References
+    ----------
+    Bechger, T. M., Maris, G., Verstralen, H. H. F. M., & Béguin, A. A.
+    (2003). Using classical test theory in combination with item response
+    theory. *Applied Psychological Measurement, 27*(5), 319–334.
+    https://doi.org/10.1177/0146621603257518
+
+    Stanley, L. M., & Edwards, M. C. (2016). Reliability and model fit.
+    *Educational and Psychological Measurement, 76*(6), 976–985.
+    https://doi.org/10.1177/0013164416638900
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("empirical_reliability requires the compiled Rust core")

@@ -2959,7 +2959,21 @@ fn bank_information(
     Ok(out.into())
 }
 
-/// One adaptive-EAP CAT step (Bock & Mislevy 1982; Wang, Kuo & Chao 2010).
+/// One adaptive-EAP CAT step. Bock and Mislevy (1982) support EAP scoring;
+/// Wang et al. (2010) support multidimensional CAT with information selection.
+/// Largest-posterior-SD dimension targeting is a repository policy.
+///
+/// # References
+///
+/// Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
+/// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
+/// 431–444. <https://doi.org/10.1177/014662168200600405>
+///
+/// Wang, C.-S., Kuo, C.-L., & Chao, C.-Y. (2010). A multidimensional
+/// computerized adaptive testing system for enhancing the Chinese as second
+/// language proficiency test. In N. E. Mastorakis, V. Mladenov, Z. Bojkovic,
+/// & S. Kartalopoulos (Eds.), *Selected topics in education and educational
+/// technology* (pp. 245–252). WSEAS Press.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
@@ -3009,7 +3023,14 @@ fn cat_next_item(
     Ok(out.into())
 }
 
-/// Posterior plausible values (Marsman et al. 2016).
+/// Posterior plausible values (Marsman et al., 2016), sampled on the
+/// repository's fixed-bank quadrature grid without item-parameter uncertainty.
+///
+/// # References
+///
+/// Marsman, M., Maris, G., Bechger, T., & Glas, C. (2016). What can we learn
+/// from plausible values? *Psychometrika, 81*(2), 274–289.
+/// <https://doi.org/10.1007/s11336-016-9497-x>
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
@@ -3231,8 +3252,20 @@ fn tcc_drift(
 }
 
 
-/// Empirical (marginal) EAP reliability per trait dimension
-/// (Stanley & Edwards 2016; Milanzi et al. 2015).
+/// Empirical (marginal) EAP reliability per trait dimension from the posterior
+/// variance decomposition of Bechger et al. (2003); report it alongside model
+/// fit as advised by Stanley and Edwards (2016).
+///
+/// # References
+///
+/// Bechger, T. M., Maris, G., Verstralen, H. H. F. M., & Béguin, A. A. (2003).
+/// Using classical test theory in combination with item response theory.
+/// *Applied Psychological Measurement, 27*(5), 319–334.
+/// <https://doi.org/10.1177/0146621603257518>
+///
+/// Stanley, L. M., & Edwards, M. C. (2016). Reliability and model fit.
+/// *Educational and Psychological Measurement, 76*(6), 976–985.
+/// <https://doi.org/10.1177/0013164416638900>
 #[pyfunction]
 fn empirical_reliability(
     theta_eap: PyReadonlyArray1<'_, f64>,

@@ -885,11 +885,25 @@ pub fn bank_information(
     Ok((item_info, test_info))
 }
 
-/// One step of adaptive EAP testing (Bock & Mislevy 1982; multidimensional
-/// targeting per Wang, Kuo & Chao 2010): score the responses so far by EAP,
-/// pick the trait dimension with the largest posterior SD, and return the
-/// unadministered items of that dimension ranked by information at the
-/// current EAP point.
+/// One step of adaptive EAP testing: score the responses so far by EAP, pick
+/// the trait dimension with the largest posterior SD, and return the
+/// unadministered items of that dimension ranked by information at the current
+/// EAP point. Bock and Mislevy (1982) support the noniterative EAP scoring, and
+/// Wang et al. (2010) describe multidimensional CAT with information-based item
+/// selection. Choosing the largest-posterior-SD dimension is a repository
+/// policy, not a procedure prescribed by either source.
+///
+/// # References
+///
+/// Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
+/// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
+/// 431–444. <https://doi.org/10.1177/014662168200600405>
+///
+/// Wang, C.-S., Kuo, C.-L., & Chao, C.-Y. (2010). A multidimensional
+/// computerized adaptive testing system for enhancing the Chinese as second
+/// language proficiency test. In N. E. Mastorakis, V. Mladenov, Z. Bojkovic,
+/// & S. Kartalopoulos (Eds.), *Selected topics in education and educational
+/// technology* (pp. 245–252). WSEAS Press.
 pub struct CatStep {
     pub theta_eap: Vec<f64>,
     pub theta_sd: Vec<f64>,
@@ -913,6 +927,14 @@ pub fn cat_next_item(
     let n_items = validate_bank(bank)?;
     if y.len() != n_items || administered.len() != n_items {
         return Err("y and administered must have length n_items".into());
+    }
+    if y.iter()
+        .zip(administered)
+        .any(|(&value, &is_administered)| {
+            is_administered && (!value.is_finite() || (value != 0.0 && value != 1.0))
+        })
+    {
+        return Err("administered responses must be 0 or 1".into());
     }
     let scores = score_eap(bank, y, administered, 1, prior, q_theta, xi_rule)?;
     let target_dim = (0..bank.n_dims)
@@ -943,10 +965,18 @@ pub fn cat_next_item(
     })
 }
 
-/// Plausible values (Marsman, Maris, Bechger & Glas 2016): seeded categorical
-/// draws of `theta` from each person posterior over the scoring grid, for
-/// secondary analyses that need the ability distribution rather than point
-/// EAPs. Returns row-major `n_persons x n_draws x n_dims`.
+/// Plausible values (Marsman et al., 2016): seeded categorical draws of `theta`
+/// from each person posterior over the scoring grid, for secondary analyses
+/// that need the ability distribution rather than point EAPs. The fixed item
+/// bank and discrete quadrature-grid sampler are repository implementation
+/// choices; this routine does not propagate item-parameter uncertainty.
+/// Returns row-major `n_persons x n_draws x n_dims`.
+///
+/// # References
+///
+/// Marsman, M., Maris, G., Bechger, T., & Glas, C. (2016). What can we learn
+/// from plausible values? *Psychometrika, 81*(2), 274–289.
+/// <https://doi.org/10.1007/s11336-016-9497-x>
 #[allow(clippy::too_many_arguments)]
 pub fn plausible_values(
     bank: &ItemBank<'_>,
@@ -1082,6 +1112,19 @@ mod cat_pv_tests {
         for w in step.ranked_info.windows(2) {
             assert!(w[0] >= w[1]);
         }
+        let mut invalid_y = y.clone();
+        invalid_y[0] = 2.0;
+        assert!(cat_next_item(
+            &bank, &invalid_y, &administered, &PriorSpec::standard(2), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .is_err());
+        invalid_y[0] = f64::NAN;
+        assert!(cat_next_item(
+            &bank, &invalid_y, &administered, &PriorSpec::standard(2), 15,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .is_err());
     }
 
     #[test]
@@ -1129,12 +1172,21 @@ mod cat_pv_tests {
 
 
 /// Empirical (marginal) reliability of the EAP scale scores per trait
-/// dimension: `rho_d = Var(theta_hat_d) / (Var(theta_hat_d) + mean(SE_d^2))`
-/// — the observed-score variance decomposition convention reviewed by
-/// Stanley & Edwards (2016, "Reliability and model fit") and Milanzi,
-/// Molenberghs et al. (2015, manifest-vs-latent correlation functions), who
-/// caution that the coefficient is only as meaningful as the fitted model:
+/// dimension: `rho_d = Var(theta_hat_d) / (Var(theta_hat_d) + mean(SE_d^2))`.
+/// This follows the posterior variance decomposition in Bechger et al. (2003).
+/// Because reliability does not establish model fit (Stanley & Edwards, 2016),
 /// report it alongside the fit statistics, never instead of them.
+///
+/// # References
+///
+/// Bechger, T. M., Maris, G., Verstralen, H. H. F. M., & Béguin, A. A. (2003).
+/// Using classical test theory in combination with item response theory.
+/// *Applied Psychological Measurement, 27*(5), 319–334.
+/// <https://doi.org/10.1177/0146621603257518>
+///
+/// Stanley, L. M., & Edwards, M. C. (2016). Reliability and model fit.
+/// *Educational and Psychological Measurement, 76*(6), 976–985.
+/// <https://doi.org/10.1177/0013164416638900>
 pub fn empirical_reliability(
     theta_eap: &[f64],
     theta_sd: &[f64],
@@ -1146,6 +1198,15 @@ pub fn empirical_reliability(
     }
     if n_persons < 2 {
         return Err("empirical reliability needs n_persons >= 2".into());
+    }
+    if n_dims == 0 {
+        return Err("empirical reliability needs n_dims >= 1".into());
+    }
+    if theta_eap.iter().any(|value| !value.is_finite()) {
+        return Err("theta_eap values must be finite".into());
+    }
+    if theta_sd.iter().any(|&value| !value.is_finite() || value < 0.0) {
+        return Err("theta_sd values must be finite and non-negative".into());
     }
     let mut out = vec![f64::NAN; n_dims];
     for d in 0..n_dims {
@@ -1185,6 +1246,10 @@ mod reliability_tests {
         assert!(hi > 0.85, "high-information scale must be reliable: {hi}");
         assert!(lo < hi - 0.2, "noisier scale must be less reliable: {lo} vs {hi}");
         assert!(empirical_reliability(&eap, &sd_small, 3, 1).is_err());
+        assert!(empirical_reliability(&[], &[], 2, 0).is_err());
+        assert!(empirical_reliability(&[0.0, f64::NAN], &[0.3, 0.3], 2, 1).is_err());
+        assert!(empirical_reliability(&[0.0, 1.0], &[-0.3, 0.3], 2, 1).is_err());
+        assert!(empirical_reliability(&[0.0, 1.0], &[0.3, f64::INFINITY], 2, 1).is_err());
     }
 }
 

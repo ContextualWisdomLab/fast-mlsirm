@@ -126,6 +126,14 @@ def test_plausible_values_rejects_non_binary_response():
             serving.plausible_values(bundle, {"q0": bad}, n_draws=2)
 
 
+@pytest.mark.parametrize("bad", [2.0, float("nan"), float("inf"), float("-inf")])
+def test_cat_next_item_rejects_non_binary_response(bad):
+    if serving._core_module() is None:  # pragma: no cover - core is built in CI
+        pytest.skip("cat_next_item requires the compiled Rust core")
+    with pytest.raises(ValueError, match="responses must be 0 or 1"):
+        serving.cat_next_item(_bundle(), {"q0": bad})
+
+
 # ---- VULN-0004 (2nd pass): non-finite / unbounded numeric config -----------
 @pytest.mark.parametrize(
     "kw",
