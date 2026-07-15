@@ -34,6 +34,7 @@ use mlsirm_core::scoring::{
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina,
+    gdina_wald_selection as core_gdina_wald_selection,
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
@@ -404,6 +405,59 @@ fn validate_q_matrix(
     out.set_item("flagged", res.flagged)?;
     out.set_item("n_attributes", res.n_attributes)?;
     out.set_item("epsilon", res.epsilon)?;
+    Ok(out.into())
+}
+
+/// Item-level CDM model selection by the Wald test (de la Torre, 2011;
+/// `mlsirm_core::cdm::gdina_wald_selection`). `y`/`observed` are row-major
+/// `n_persons * n_items`; `q_matrix` row-major `n_items * n_attributes` (0/1).
+/// Each item's saturated G-DINA is Wald-tested against the reduced DINA and A-CDM
+/// models; `alpha` is the test level. Returns a dict with `models` (candidate
+/// names), `wald_stat`/`wald_df`/`p_value` (row-major `n_items * n_models`),
+/// `selected` (per item: model index or -1 for the saturated G-DINA), `alpha`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, alpha = 0.05, max_iter = 500, tol = 1e-6))]
+fn gdina_wald_selection(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    q_matrix: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let q: Vec<u8> = q_matrix
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let res = core_gdina_wald_selection(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &q,
+        n_persons,
+        n_items,
+        n_attributes,
+        alpha,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("models", res.models)?;
+    out.set_item("wald_stat", res.wald_stat)?;
+    out.set_item("wald_df", res.wald_df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("selected", res.selected)?;
+    out.set_item("alpha", res.alpha)?;
     Ok(out.into())
 }
 
@@ -2899,6 +2953,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(validate_q_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(gdina_wald_selection, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

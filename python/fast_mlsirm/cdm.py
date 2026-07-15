@@ -321,3 +321,102 @@ def validate_q_matrix(
         flagged=np.asarray(res["flagged"], dtype=bool),
         epsilon=float(res["epsilon"]),
     )
+
+
+@dataclass
+class WaldModelSelection:
+    """Result of item-level CDM model selection by the Wald test (de la Torre, 2011).
+
+    ``models`` names the candidate reduced models (parsimony order). ``wald_stat``,
+    ``wald_df`` and ``p_value`` are items x models arrays of the Wald statistic,
+    degrees of freedom, and upper-tail p-value (``NaN``/0 where a test is undefined,
+    i.e. an item requiring fewer than two attributes). ``selected`` is per item the
+    index into ``models`` of the chosen reduced model, or ``-1`` for the saturated
+    G-DINA."""
+
+    models: list
+    wald_stat: np.ndarray
+    wald_df: np.ndarray
+    p_value: np.ndarray
+    selected: np.ndarray
+    alpha: float
+
+
+def gdina_wald_selection(
+    responses: np.ndarray,
+    q_matrix: np.ndarray,
+    alpha: float = 0.05,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> WaldModelSelection:
+    """Item-level CDM model selection by the Wald test (compute in Rust; de la Torre, 2011).
+
+    For each item the saturated G-DINA is compared with reduced models that are exact
+    linear restrictions of its identity-link parameters ``delta`` (the intercept,
+    main effects, and interactions of the reduced attribute-mastery classes):
+
+    * **DINA** (conjunctive): only the intercept and the top-order interaction free.
+    * **A-CDM** (additive): all interaction terms zero (intercept + main effects).
+
+    The Wald statistic ``W = delta_R' Sigma_R^{-1} delta_R ~ chi^2(df)`` tests whether
+    the restricted coordinates are jointly zero; ``Sigma_delta = M^{-1} Var(P) M^{-T}``
+    is the delta-method covariance with ``Var(P_l) = P_l(1-P_l)/I_l`` (complete-data /
+    expected information). Per item the fewest-parameter model with ``p > alpha`` is
+    selected; if all reduced models are rejected, the saturated G-DINA is kept.
+
+    Note: the complete-data covariance uses expected rather than observed information,
+    so the test is mildly liberal (Type I slightly above ``alpha``); the gap shrinks
+    with sample size and item discrimination and with strong attribute identification.
+    DINO (a general linear restriction) and LLM / R-RUM (additive on other links) are
+    deferred.
+
+    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
+    MAR); ``q_matrix`` is an items x attributes 0/1 array.
+
+    References (APA 7th ed.):
+        de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+            76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+        Ma, W., Iaconangelo, C., & de la Torre, J. (2016). Model similarity, model
+            selection, and attribute classification. *Applied Psychological
+            Measurement, 40*(3), 200-217. https://doi.org/10.1177/0146621615621717
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "gdina_wald_selection"):
+        raise RuntimeError("gdina_wald_selection requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(q_matrix)
+    if q.ndim != 2:
+        raise ValueError("q_matrix must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_matrix must have one row per item")
+    n_attributes = q.shape[1]
+
+    observed = np.isfinite(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.gdina_wald_selection(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        float(alpha),
+        int(max_iter),
+        float(tol),
+    )
+    models = list(res["models"])
+    n_models = len(models)
+    return WaldModelSelection(
+        models=models,
+        wald_stat=np.asarray(res["wald_stat"], dtype=np.float64).reshape(n_items, n_models),
+        wald_df=np.asarray(res["wald_df"], dtype=np.int64).reshape(n_items, n_models),
+        p_value=np.asarray(res["p_value"], dtype=np.float64).reshape(n_items, n_models),
+        selected=np.asarray(res["selected"], dtype=np.int64),
+        alpha=float(res["alpha"]),
+    )

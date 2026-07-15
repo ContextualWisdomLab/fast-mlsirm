@@ -2067,6 +2067,61 @@ def test_validate_q_matrix_corrects_misspecification():
         validate_q_matrix(y, truth, epsilon=1.5)  # epsilon out of range
 
 
+def test_gdina_wald_selection_classifies_items():
+    """Item-level Wald model selection (de la Torre, 2011): a conjunctive (DINA)
+    item is classified DINA, an additive item A-CDM, and an item with both main
+    effects and an interaction keeps the saturated G-DINA."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import gdina_wald_selection, WaldModelSelection
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "gdina_wald_selection"):
+        pytest.skip("compiled core built without gdina_wald_selection")
+
+    rng = np.random.default_rng(2011)
+    k, n = 2, 5000
+    # 5 single-attribute items per attribute (identification) + 3 pair items:
+    # one DINA, one additive (A-CDM), one saturated (mains + interaction).
+    rows = [[1, 0]] * 5 + [[0, 1]] * 5 + [[1, 1], [1, 1], [1, 1]]
+    q = np.array(rows, dtype=np.int64)
+    n_items = q.shape[0]
+    # per reduced-class truth [none, a0, a1, both]
+    truth_pair = {10: [0.15, 0.15, 0.15, 0.85],  # DINA
+                  11: [0.10, 0.45, 0.45, 0.80],  # A-CDM (additive)
+                  12: [0.10, 0.35, 0.35, 0.90]}  # saturated
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = np.empty((n, n_items))
+    for j in range(n):
+        c = int(profiles[j])
+        for i in range(n_items):
+            if i < 10:
+                a = i // 5  # attribute of this single item
+                p = 0.85 if (c >> a) & 1 else 0.15
+            else:
+                l = (c & 1) + 2 * ((c >> 1) & 1)  # reduced class for a {0,1} item
+                p = truth_pair[i][l]
+            y[j, i] = 1.0 if rng.random() < p else 0.0
+
+    res = gdina_wald_selection(y, q, alpha=0.05)
+    assert isinstance(res, WaldModelSelection)
+    assert res.models == ["dina", "acdm"]
+    assert res.selected[10] == 0   # DINA
+    assert res.selected[11] == 1   # A-CDM
+    assert res.selected[12] == -1  # saturated G-DINA
+    # single-attribute items carry no test (df 0), keep saturated
+    assert np.all(res.selected[:10] == -1)
+    assert np.all(res.wald_df[:10] == 0)
+    # the tested pair items have the right degrees of freedom (K=2)
+    assert res.wald_df[10, 0] == 2 and res.wald_df[10, 1] == 1  # DINA df=2, A-CDM df=1
+
+    with pytest.raises(ValueError):
+        gdina_wald_selection(y.ravel(), q)  # responses not 2-D
+    with pytest.raises(ValueError):
+        gdina_wald_selection(y, q, alpha=0.0)  # alpha out of range
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

@@ -1066,6 +1066,228 @@ pub fn validate_q_matrix(
     })
 }
 
+/// Result of [`gdina_wald_selection`] (de la Torre, 2011). Per item, each candidate
+/// reduced model is Wald-tested against the saturated G-DINA, and `selected` names
+/// the most parsimonious model not rejected at level `alpha`.
+#[derive(Clone, Debug)]
+pub struct WaldSelectionResult {
+    /// Candidate reduced models, in increasing parameter count (parsimony order).
+    pub models: Vec<String>,
+    /// Wald statistic per `(item, model)`, row-major `n_items * n_models`; `NaN`
+    /// where the test is undefined (an item requiring `< 2` attributes).
+    pub wald_stat: Vec<f64>,
+    /// Degrees of freedom per `(item, model)`, row-major (`0` when undefined).
+    pub wald_df: Vec<usize>,
+    /// Upper-tail p-value per `(item, model)`, row-major (`NaN` where undefined).
+    pub p_value: Vec<f64>,
+    /// Selected model index into `models` per item, or `-1` for the saturated
+    /// G-DINA (all reduced models rejected, or the item requires `< 2` attributes).
+    pub selected: Vec<i64>,
+    pub alpha: f64,
+}
+
+/// Item-level cognitive-diagnosis model selection by the Wald test (de la Torre,
+/// 2011). For each item the saturated G-DINA is compared with reduced models that
+/// are exact linear restrictions of its identity-link parameters `delta = M^{-1} P`
+/// (`P` the `2^{K_i}` reduced-class success probabilities, `M[l][S] = [S subseteq l]`
+/// the subset-sum design; see [`fit_gdina`]):
+///
+/// - **DINA** (purely conjunctive): only the intercept `delta_0` and the top
+///   interaction `delta_{1..K}` are free; the middle `2^{K_i} - 2` coordinates are 0.
+/// - **A-CDM** (additive): all interaction coordinates (`|S| >= 2`) are 0, leaving
+///   the intercept and `K_i` main effects.
+///
+/// The Wald statistic for the restriction `R delta = 0` (with `R` the selection of
+/// the restricted coordinates, `df = rank(R)`) is
+/// `W = delta_R^T Sigma_R^{-1} delta_R ~ chi^2(df)` under the reduced model, where
+/// `Sigma_R` is the corresponding *block* of `Sigma_delta`. The identity link is
+/// linear, so `Sigma_delta = M^{-1} Var(P_hat) M^{-T}`; under the complete-data model
+/// each `P_hat_l = R_l / I_l` is a binomial proportion over the disjoint persons of
+/// reduced class `l`, so `Var(P_hat) = diag(P_l (1 - P_l) / I_l)` is *exact* there
+/// (`I_l` = expected count in reduced class `l`). This estimator uses complete-data
+/// (expected) rather than observed information; by the missing-information principle
+/// `I_complete >= I_observed`, so `Sigma_delta` is under-estimated and the test is
+/// mildly **liberal** (Type I `>=` alpha), the gap shrinking with `N` and with item
+/// discrimination (small slip/guess). Per item the fewest-parameter model with
+/// `p > alpha` is selected; if all reduced models are rejected, the saturated G-DINA.
+///
+/// `y`/`observed` are row-major `N*J`; `q_matrix` row-major `J*K` (0/1). Deferred:
+/// DINO (a general linear restriction, not a coordinate one) and LLM / R-RUM (which
+/// are additive on the log-odds / log link, needing a nonlinear-restriction Wald
+/// test), plus the incomplete-data (observed-information) covariance.
+///
+/// References (APA 7th ed.):
+///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+///     76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+///   Ma, W., Iaconangelo, C., & de la Torre, J. (2016). Model similarity, model
+///     selection, and attribute classification. *Applied Psychological Measurement,
+///     40*(3), 200-217. https://doi.org/10.1177/0146621615621717
+#[allow(clippy::too_many_arguments)]
+pub fn gdina_wald_selection(
+    y: &[f64],
+    observed: &[bool],
+    q_matrix: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    alpha: f64,
+    cfg: &CdmConfig,
+) -> Result<WaldSelectionResult, String> {
+    if !(alpha > 0.0 && alpha < 1.0) {
+        return Err("alpha must be in (0, 1)".into());
+    }
+    let l_full = 1usize << n_attributes;
+
+    // Saturated G-DINA under the given Q (also validates y/observed/q shapes+config).
+    let res = fit_gdina(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+
+    // Reduced-class index tables (mirror fit_gdina), then one posterior pass to
+    // recover the expected reduced-class counts I_l (the Var(P_l) denominators).
+    let mut qmask = vec![0usize; n_items];
+    for i in 0..n_items {
+        for k in 0..n_attributes {
+            if q_matrix[i * n_attributes + k] != 0 {
+                qmask[i] |= 1 << k;
+            }
+        }
+    }
+    let total = res.item_off[n_items];
+    let mut red = vec![0u16; n_items * l_full];
+    for i in 0..n_items {
+        for c in 0..l_full {
+            red[i * l_full + c] = reduce_class(c, qmask[i]) as u16;
+        }
+    }
+    let mut log_p1 = vec![0.0f64; total];
+    let mut log_p0 = vec![0.0f64; total];
+    for x in 0..total {
+        let pc = res.item_prob[x].clamp(cfg.eps, 1.0 - cfg.eps);
+        log_p1[x] = pc.ln();
+        log_p0[x] = (1.0 - pc).ln();
+    }
+    let log_pi: Vec<f64> = res.profile_prob.iter().map(|v| v.max(cfg.eps).ln()).collect();
+    let mut icount = vec![0.0f64; total]; // I_l, CSR layout matching item_prob
+    let mut post = vec![0.0f64; l_full];
+    for j in 0..n_persons {
+        posterior_row_gdina(
+            j, y, observed, n_items, l_full, &red, &log_p1, &log_p0, &res.item_off, &log_pi,
+            &mut post,
+        );
+        for i in 0..n_items {
+            let idx = j * n_items + i;
+            if observed[idx] {
+                for c in 0..l_full {
+                    icount[res.item_off[i] + red[i * l_full + c] as usize] += post[c];
+                }
+            }
+        }
+    }
+
+    let models = vec!["dina".to_string(), "acdm".to_string()];
+    let n_models = models.len();
+    let mut wald_stat = vec![f64::NAN; n_items * n_models];
+    let mut wald_df = vec![0usize; n_items * n_models];
+    let mut p_value = vec![f64::NAN; n_items * n_models];
+    let mut selected = vec![-1i64; n_items];
+
+    for i in 0..n_items {
+        let k = res.k_required[i] as usize;
+        if k < 2 {
+            continue; // no interactions: DINA = A-CDM = saturated, nothing to test
+        }
+        let off = res.item_off[i];
+        let w = res.item_off[i + 1] - off; // 2^k
+        let p = &res.item_prob[off..off + w];
+        let delta = &res.item_delta[off..off + w];
+        let ic = &icount[off..off + w];
+
+        // Sigma_delta = sum_l v_l c_l c_l^T, c_l = M^{-1} e_l (Mobius applied to the
+        // l-th unit vector = column l of M^{-1}), v_l = P_l(1-P_l) / I_l. An empty
+        // reduced class (I_l ~ 0) is floored so its variance is finite-but-huge,
+        // making any delta touching it effectively untestable (conservative) rather
+        // than NaN.
+        let mut sigma = vec![vec![0.0f64; w]; w];
+        for l in 0..w {
+            // Floor at count_floor (an empty class -> huge, conservative variance)
+            // and additionally at a strictly positive constant so a wholly-unobserved
+            // item under a `count_floor == 0` config cannot divide by zero.
+            let denom = ic[l].max(cfg.count_floor).max(1e-12);
+            let v = p[l] * (1.0 - p[l]) / denom;
+            if v <= 0.0 {
+                continue;
+            }
+            let mut c = vec![0.0f64; w];
+            c[l] = 1.0;
+            mobius_inverse_inplace(&mut c, k as u32);
+            for a in 0..w {
+                let ca = c[a];
+                if ca == 0.0 {
+                    continue;
+                }
+                let vca = v * ca;
+                for b in 0..w {
+                    sigma[a][b] += vca * c[b];
+                }
+            }
+        }
+
+        let full = w - 1;
+        // Restriction coordinate sets in the subset-index layout.
+        let restriction = |model: usize| -> Vec<usize> {
+            (0..w)
+                .filter(|&s| match model {
+                    0 => s != 0 && s != full,           // DINA: middle coordinates
+                    _ => (s as u32).count_ones() >= 2,  // A-CDM: interaction coordinates
+                })
+                .collect()
+        };
+
+        for m in 0..n_models {
+            let idx = restriction(m);
+            let df = idx.len();
+            wald_df[i * n_models + m] = df;
+            if df == 0 {
+                continue;
+            }
+            // Sigma_R block + delta_R subvector; relative ridge for a well-posed solve.
+            let mut sr = vec![vec![0.0f64; df]; df];
+            let mut dr = vec![0.0f64; df];
+            let mut diag_sum = 0.0f64;
+            for (a, &sa) in idx.iter().enumerate() {
+                dr[a] = delta[sa];
+                for (b, &sb) in idx.iter().enumerate() {
+                    sr[a][b] = sigma[sa][sb];
+                }
+                diag_sum += sr[a][a];
+            }
+            let ridge = 1e-9 * (diag_sum / df as f64).max(1e-300);
+            for a in 0..df {
+                sr[a][a] += ridge;
+            }
+            // W = delta_R^T Sigma_R^{-1} delta_R: solve Sigma_R x = delta_R.
+            let x = crate::poly::solve_small(sr, dr.clone());
+            let wstat = (0..df).map(|a| dr[a] * x[a]).sum::<f64>().max(0.0);
+            wald_stat[i * n_models + m] = wstat;
+            p_value[i * n_models + m] = crate::fitstats::chi2_sf(wstat, df as f64);
+        }
+
+        // Fewest-parameter reduced model not rejected (candidates already ordered
+        // DINA then A-CDM); else keep the saturated G-DINA (selected stays -1).
+        for m in 0..n_models {
+            if wald_df[i * n_models + m] == 0 {
+                continue;
+            }
+            let pv = p_value[i * n_models + m];
+            if pv.is_finite() && pv > alpha {
+                selected[i] = m as i64;
+                break;
+            }
+        }
+    }
+
+    Ok(WaldSelectionResult { models, wald_stat, wald_df, p_value, selected, alpha })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2156,6 +2378,277 @@ mod tests {
             assert!(sum_qrec / r > 0.80, "q-vector recovery {} skew={skew}", sum_qrec / r);
             assert!(sum_tpr / r > 0.90, "attribute TPR {} skew={skew}", sum_tpr / r);
             assert!(sum_fpr / r < 0.10, "attribute FPR {} skew={skew}", sum_fpr / r);
+        }
+    }
+
+    // ----- CDM item-level Wald model selection (de la Torre, 2011) tests -----
+
+    /// K=2 Q with `n_single` single-attribute items per attribute (strong attribute
+    /// identification keeps the complete-data Wald covariance accurate) plus
+    /// `n_pair` two-attribute items (the ones the Wald test evaluates). The first
+    /// `2*n_single` items are singletons; the pair items follow.
+    fn wald_q2(n_single: usize, n_pair: usize) -> (Vec<u8>, usize) {
+        let k = 2usize;
+        let mut rows: Vec<[u8; 2]> = Vec::new();
+        for _ in 0..n_single {
+            rows.push([1, 0]);
+        }
+        for _ in 0..n_single {
+            rows.push([0, 1]);
+        }
+        for _ in 0..n_pair {
+            rows.push([1, 1]);
+        }
+        let n_items = rows.len();
+        let mut q = vec![0u8; n_items * k];
+        for (i, r) in rows.iter().enumerate() {
+            q[i * k] = r[0];
+            q[i * k + 1] = r[1];
+        }
+        (q, n_items)
+    }
+
+    /// CSR truth table for the K=2 scenario. Single items are 2PL-like (low/high);
+    /// pair items follow `kind`: DINA (conjunctive), A-CDM (additive), or "sat"
+    /// (main effects AND interaction, so neither reduced model fits).
+    fn wald_truth(
+        q: &[u8],
+        n_items: usize,
+        kind: &str,
+    ) -> (Vec<usize>, Vec<usize>, Vec<f64>) {
+        let (item_off, qmask, kreq) = gdina_layout(q, n_items, 2);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let a = item_off[i];
+            if kreq[i] == 1 {
+                truth[a] = 0.15;
+                truth[a + 1] = 0.85;
+            } else {
+                // reduce_class layout: [none, a0, a1, both]
+                let (p00, p10, p01, p11) = match kind {
+                    "dina" => (0.15, 0.15, 0.15, 0.85), // conjunctive
+                    "acdm" => (0.10, 0.45, 0.45, 0.80), // additive 0.1 + .35a0 + .35a1
+                    _ => (0.10, 0.35, 0.35, 0.90),      // main effects + interaction
+                };
+                truth[a] = p00;
+                truth[a + 1] = p10;
+                truth[a + 2] = p01;
+                truth[a + 3] = p11;
+            }
+        }
+        (item_off, qmask, truth)
+    }
+
+    /// DINA-generated pair items are classified as DINA (the conjunctive reduced
+    /// model is not rejected while the additive one is).
+    #[test]
+    fn wald_dina_data_selects_dina() {
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 5000usize;
+        let first_pair = 10usize;
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "dina");
+        let mut rng = Lcg(4011);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        assert_eq!(res.models, vec!["dina".to_string(), "acdm".to_string()]);
+        let pair_dina = (first_pair..n_items).filter(|&i| res.selected[i] == 0).count();
+        assert!(pair_dina >= 7, "DINA selected for {pair_dina}/8 pair items");
+        // single-attribute items are trivial (df=0) -> saturated, NaN stats
+        for i in 0..first_pair {
+            assert_eq!(res.selected[i], -1);
+            assert!(res.wald_stat[i * 2].is_nan());
+        }
+    }
+
+    /// Additive-generated pair items are classified as A-CDM (additive not rejected,
+    /// conjunctive DINA rejected).
+    #[test]
+    fn wald_acdm_data_selects_acdm() {
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 5000usize;
+        let first_pair = 10usize;
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "acdm");
+        let mut rng = Lcg(2027);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        let pair_acdm = (first_pair..n_items).filter(|&i| res.selected[i] == 1).count();
+        assert!(pair_acdm >= 7, "A-CDM selected for {pair_acdm}/8 pair items");
+    }
+
+    /// Items with both main effects and an interaction reject every reduced model,
+    /// so the saturated G-DINA is kept.
+    #[test]
+    fn wald_saturated_data_selects_saturated() {
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 5000usize;
+        let first_pair = 10usize;
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "sat");
+        let mut rng = Lcg(9091);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        let pair_sat = (first_pair..n_items).filter(|&i| res.selected[i] == -1).count();
+        assert!(pair_sat >= 7, "saturated kept for {pair_sat}/8 pair items");
+        // both reduced models carry a positive, finite Wald statistic
+        for i in first_pair..n_items {
+            for m in 0..2 {
+                assert!(res.wald_stat[i * 2 + m].is_finite() && res.wald_stat[i * 2 + m] >= 0.0);
+                assert!(res.p_value[i * 2 + m].is_finite());
+            }
+        }
+    }
+
+    /// Degrees of freedom are exactly the restriction sizes: DINA df = 2^K-2,
+    /// A-CDM df = 2^K-1-K, for K=2 and K=3 items.
+    #[test]
+    fn wald_degrees_of_freedom() {
+        // K=3 Q: single items (identification) + one triple item to read df off.
+        let k = 3usize;
+        let mut rows: Vec<[u8; 3]> = Vec::new();
+        for a in 0..3 {
+            for _ in 0..3 {
+                let mut r = [0u8; 3];
+                r[a] = 1;
+                rows.push(r);
+            }
+        }
+        rows.push([1, 1, 1]); // one K=3 item
+        let n_items = rows.len();
+        let mut q = vec![0u8; n_items * k];
+        for (i, r) in rows.iter().enumerate() {
+            q[i * k..i * k + k].copy_from_slice(r);
+        }
+        let n = 3000usize;
+        let (item_off, qmask, _kr) = gdina_layout(&q, n_items, k);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let a = item_off[i];
+            let w = item_off[i + 1] - a;
+            for l in 0..w {
+                truth[a + l] = 0.15 + 0.7 * (l.count_ones() as f64) / (w.trailing_zeros() as f64);
+            }
+        }
+        let mut rng = Lcg(31337);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, k, 0.05, &CdmConfig::default())
+                .unwrap();
+        let triple = n_items - 1;
+        assert_eq!(res.wald_df[triple * 2], (1 << k) - 2, "DINA df"); // 6
+        assert_eq!(res.wald_df[triple * 2 + 1], (1 << k) - 1 - k, "A-CDM df"); // 4
+        // single-attribute items: no test (df=0), saturated
+        assert_eq!(res.wald_df[0], 0);
+        assert_eq!(res.selected[0], -1);
+    }
+
+    #[test]
+    fn wald_rejects_malformed() {
+        let (q, n_items) = wald_q2(2, 2);
+        let n = 10usize;
+        let y = vec![0.0f64; n * n_items];
+        let obs = vec![true; n * n_items];
+        // alpha out of (0,1)
+        assert!(gdina_wald_selection(&y, &obs, &q, n, n_items, 2, 0.0, &CdmConfig::default()).is_err());
+        assert!(gdina_wald_selection(&y, &obs, &q, n, n_items, 2, 1.0, &CdmConfig::default()).is_err());
+        // shape errors are delegated to fit_gdina's validate
+        assert!(gdina_wald_selection(&y[..5], &obs, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+            .is_err());
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): Type I error (reject the TRUE
+    /// reduced model ~ alpha) and power (reject a false, over-restrictive model),
+    /// under uniform and correlated/skew attribute distributions.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_wald_type1_power_500() {
+        let reps = 500usize;
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 3000usize;
+        let first_pair = 10usize;
+        let k = 2usize;
+        let bk = [-0.4f64, 0.4];
+        let lambda = 1.5f64;
+        let draw_profiles = |rng: &mut Lcg, skew: bool| -> Vec<usize> {
+            (0..n)
+                .map(|_| {
+                    if skew {
+                        let theta = -(rng.next_f64().max(1e-12)).ln() - 1.0;
+                        let mut c = 0usize;
+                        for a in 0..k {
+                            let pk = 1.0 / (1.0 + (-lambda * (theta - bk[a])).exp());
+                            if rng.next_f64() < pk {
+                                c |= 1 << a;
+                            }
+                        }
+                        c
+                    } else {
+                        rng.profile(1 << k)
+                    }
+                })
+                .collect()
+        };
+
+        for &skew in [false, true].iter() {
+            let (mut type1_acdm, mut type1_dina, mut power_dina) = (0.0f64, 0.0f64, 0.0f64);
+            let mut den = 0.0f64;
+            for rep in 0..reps {
+                let mut rng = Lcg(
+                    0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03),
+                );
+                // A-CDM truth: Type I of the A-CDM test + power of the (false) DINA test.
+                let (io_a, qm_a, tr_a) = wald_truth(&q, n_items, "acdm");
+                let prof = draw_profiles(&mut rng, skew);
+                let y = simulate_gdina(&qm_a, &io_a, &tr_a, &prof, n_items, &mut rng);
+                let obs = vec![true; n * n_items];
+                let ra =
+                    gdina_wald_selection(&y, &obs, &q, n, n_items, k, 0.05, &CdmConfig::default())
+                        .unwrap();
+                // DINA truth: Type I of the DINA test.
+                let (io_d, qm_d, tr_d) = wald_truth(&q, n_items, "dina");
+                let prof2 = draw_profiles(&mut rng, skew);
+                let y2 = simulate_gdina(&qm_d, &io_d, &tr_d, &prof2, n_items, &mut rng);
+                let rd =
+                    gdina_wald_selection(&y2, &obs, &q, n, n_items, k, 0.05, &CdmConfig::default())
+                        .unwrap();
+                for i in first_pair..n_items {
+                    // A-CDM test index 1, DINA test index 0
+                    if ra.p_value[i * 2 + 1] < 0.05 {
+                        type1_acdm += 1.0;
+                    }
+                    if ra.p_value[i * 2] < 0.05 {
+                        power_dina += 1.0; // DINA is false under A-CDM truth
+                    }
+                    if rd.p_value[i * 2] < 0.05 {
+                        type1_dina += 1.0;
+                    }
+                    den += 1.0;
+                }
+            }
+            println!(
+                "[wald MC skew={skew}] reps={reps} TypeI(acdm)={:.3} TypeI(dina)={:.3} power(dina|acdm)={:.3}",
+                type1_acdm / den,
+                type1_dina / den,
+                power_dina / den
+            );
+            // Complete-data covariance is mildly liberal; allow up to ~2.5x nominal.
+            assert!(type1_acdm / den < 0.13, "A-CDM Type I {}", type1_acdm / den);
+            assert!(type1_dina / den < 0.13, "DINA Type I {}", type1_dina / den);
+            assert!(power_dina / den > 0.95, "DINA power {}", power_dina / den);
         }
     }
 }
