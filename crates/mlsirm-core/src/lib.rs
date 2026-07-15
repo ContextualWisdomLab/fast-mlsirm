@@ -14,9 +14,9 @@ pub mod rt_joint;
 pub(crate) mod quadrature;
 pub mod scoring;
 
-// cargo-llvm-cov runs in CPU-only CI while enforcing 100% line coverage. Keep
-// the hardware-backed wgpu module in normal builds, and cover the deterministic
-// CPU fallback contract during coverage builds.
+// cargo-llvm-cov runs in CPU-only CI against the repository-owned line-coverage
+// baseline. Keep the hardware-backed wgpu module in normal builds, and cover
+// the deterministic CPU fallback contract during coverage builds.
 #[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]

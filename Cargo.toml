@@ -2,3 +2,9 @@
 resolver = "2"
 members = ["crates/mlsirm-core"]
 exclude = ["crates/fast-mlsirm-py"]
+
+# Repository-owned OpenCode coverage ratchet. The current PR merge tree reports
+# 90.06% Rust line coverage; keep the required floor explicit and do not lower
+# it when adding code without corresponding tests.
+[workspace.metadata.opencode.coverage]
+minimum_lines = 90
