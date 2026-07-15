@@ -5,6 +5,7 @@ pub mod fitstats;
 pub mod linking;
 pub mod lltm;
 pub mod marginal;
+pub mod mixed;
 pub mod mixture;
 pub mod mmle;
 pub mod nodes;

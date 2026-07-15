@@ -35,6 +35,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, CdmConfig, CdmModel};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
+use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -1521,6 +1522,124 @@ fn fit_poly_lsirm(
     Ok(out.into())
 }
 
+/// Per-item mixed-format marginal MLE (Rust multithreaded CPU path).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y,
+    n_persons,
+    n_items,
+    item_models,
+    n_categories,
+    observed = None,
+    latent_dim = 2,
+    q_theta = 21,
+    q_xi = 7,
+    max_iter = 100,
+    tol = 1e-5,
+    n_threads = 0
+))]
+fn fit_mixed_items(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    item_models: Vec<String>,
+    n_categories: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    latent_dim: usize,
+    q_theta: usize,
+    q_xi: usize,
+    max_iter: usize,
+    tol: f64,
+    n_threads: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let raw_y = y.as_slice()?;
+    let expected_len = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflow"))?;
+    if raw_y.len() != expected_len {
+        return Err(PyValueError::new_err(
+            "y must have length n_persons * n_items",
+        ));
+    }
+    if item_models.len() != n_items {
+        return Err(PyValueError::new_err(
+            "item_models length must match n_items",
+        ));
+    }
+    let raw_categories = n_categories.as_slice()?;
+    if raw_categories.len() != n_items {
+        return Err(PyValueError::new_err(
+            "n_categories length must match n_items",
+        ));
+    }
+    let yv = raw_y
+        .iter()
+        .map(|&value| {
+            if value < 0 {
+                Err(PyValueError::new_err(
+                    "responses must be non-negative integer categories",
+                ))
+            } else {
+                Ok(value as usize)
+            }
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let specs = item_models
+        .iter()
+        .zip(raw_categories)
+        .enumerate()
+        .map(|(item, (model, &n_cat))| {
+            if n_cat < 2 {
+                return Err(PyValueError::new_err(format!(
+                    "item {item}: n_categories must be >= 2"
+                )));
+            }
+            let kind = MixedItemKind::parse(model).map_err(PyValueError::new_err)?;
+            Ok(MixedItemSpec {
+                kind,
+                n_categories: n_cat as usize,
+            })
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let mask = observed
+        .as_ref()
+        .map(|values| values.as_slice())
+        .transpose()?;
+    let fit = core_fit_mixed_items(
+        &yv, mask, n_persons, n_items, &specs, latent_dim, q_theta, q_xi, max_iter, tol, n_threads,
+    )
+    .map_err(PyValueError::new_err)?;
+
+    let out = pyo3::types::PyDict::new(py);
+    let items = pyo3::types::PyList::empty(py);
+    for estimate in fit.items {
+        let item = pyo3::types::PyDict::new(py);
+        item.set_item("model", estimate.kind.as_str())?;
+        item.set_item("n_categories", estimate.n_categories)?;
+        item.set_item("slope", estimate.slope)?;
+        item.set_item("intercepts", estimate.intercepts)?;
+        item.set_item("thresholds", estimate.thresholds)?;
+        item.set_item("scores", estimate.scores)?;
+        item.set_item("location", estimate.location)?;
+        item.set_item("zeta", estimate.zeta)?;
+        items.append(item)?;
+    }
+    out.set_item("items", items)?;
+    out.set_item("theta_eap", fit.theta_eap)?;
+    out.set_item("theta_sd", fit.theta_sd)?;
+    out.set_item("xi_eap", fit.xi_eap)?;
+    out.set_item("latent_dim", fit.latent_dim)?;
+    out.set_item("loglik", fit.loglik)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
+    out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("n_threads", fit.n_threads)?;
+    Ok(out.into())
+}
+
 /// Lognormal response-time model (van der Linden, 2007; Rust compute path).
 /// `times` is `n_persons * n_items` row-major raw response times (`> 0` where
 /// observed). Returns a dict with item `alpha`/`beta`, `sigma_tau`, per-person
@@ -2693,6 +2812,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mixed_items, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rt_lognormal, m)?)?;
     m.add_function(wrap_pyfunction!(fit_speed_accuracy_covariance, m)?)?;
     m.add_function(wrap_pyfunction!(rt_person_fit, m)?)?;
