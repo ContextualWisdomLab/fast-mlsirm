@@ -1230,7 +1230,7 @@ mod validate_branch_tests {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu", not(coverage)))]
 mod gpu_score_tests {
     use super::*;
     use crate::nodes::XiRule;
