@@ -76,17 +76,34 @@ pub fn fit_rsm(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    if n_persons < 1 || n_items < 1 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
+    if max_iter < 1 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and > 0".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
     for (idx, &c) in y.iter().enumerate() {
         if observed.map_or(true, |o| o[idx]) && c >= n_cat {
             return Err("response category out of range 0..n_cat-1".into());
+        }
+    }
+    for i in 0..n_items {
+        if !(0..n_persons).any(|p| observed.map_or(true, |o| o[p * n_items + i])) {
+            return Err(format!("item {i} has no observed responses"));
         }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
@@ -545,6 +562,12 @@ mod tests {
         assert!(fit_rsm(&[0, 1, 2], None, 1, 2, 3, 21, 10, 1e-6).is_err()); // wrong len
         assert!(fit_rsm(&[0, 9], None, 1, 2, 3, 21, 10, 1e-6).is_err()); // category out of range
         assert!(fit_rsm(&[0, 1, 0, 1], None, 2, 2, 2, 99, 10, 1e-6).is_err()); // bad q
+        assert!(fit_rsm(&[], None, 0, 1, 2, 21, 10, 1e-6).is_err()); // no persons
+        assert!(fit_rsm(&[], None, 1, 0, 2, 21, 10, 1e-6).is_err()); // no items
+        assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, 0, 1e-6).is_err()); // no iterations
+        assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, 10, f64::INFINITY).is_err());
+        let observed = [true, false, true, false];
+        assert!(fit_rsm(&[0, 0, 1, 0], Some(&observed), 2, 2, 2, 21, 10, 1e-6).is_err());
     }
 
     #[test]

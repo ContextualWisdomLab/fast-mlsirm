@@ -60,15 +60,45 @@ def fit_rsm(
     if core is None or not hasattr(core, "fit_rsm"):
         raise RuntimeError("fit_rsm requires the compiled Rust core")
 
+    if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
+        raise ValueError("n_cat must be an integer >= 2")
+    if n_cat is not None and n_cat < 2:
+        raise ValueError("n_cat must be an integer >= 2")
+    if q_theta not in {7, 11, 15, 21, 31, 41}:
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
+        raise ValueError("max_iter must be an integer >= 1")
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0")
+
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
-    observed = np.isfinite(y)
+    if n_persons < 1 or n_items < 1:
+        raise ValueError("responses must contain at least one person and one item")
+    missing = np.isnan(y)
+    if np.any(~missing & ~np.isfinite(y)):
+        raise ValueError("observed responses must be finite integer categories")
+    observed = ~missing
+    obs_values = y[observed]
+    if obs_values.size and (
+        np.any(obs_values != np.floor(obs_values)) or np.any(obs_values < 0)
+    ):
+        raise ValueError("observed responses must be non-negative integer categories")
     if n_cat is None:
-        if not observed.any():
+        if obs_values.size == 0:
             raise ValueError("responses has no observed values")
-        n_cat = int(np.nanmax(y)) + 1
+        n_cat = int(obs_values.max()) + 1
+        if n_cat < 2:
+            raise ValueError("responses must contain at least two categories")
+    if obs_values.size and np.any(obs_values >= n_cat):
+        raise ValueError(
+            f"observed responses must be integer categories in 0..{n_cat - 1}"
+        )
+    missing_items = np.flatnonzero(~observed.any(axis=0))
+    if missing_items.size:
+        raise ValueError(f"item {int(missing_items[0])} has no observed responses")
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
     res = core.fit_rsm(
         yy,

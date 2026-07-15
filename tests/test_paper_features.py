@@ -2420,6 +2420,40 @@ def test_fit_rsm_recovers_shared_thresholds():
         fit_rsm(y.ravel())  # not 2-D
 
 
+def test_fit_rsm_rejects_unidentified_or_malformed_inputs():
+    """RSM must not report convergence for data that cannot identify a fit."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_rsm
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rsm"):
+        pytest.skip("compiled core built without fit_rsm")
+
+    valid = np.array([[0.0, 1.0], [1.0, 0.0]])
+    with pytest.raises(ValueError, match="at least one person"):
+        fit_rsm(np.empty((0, 2)), n_cat=2)
+    with pytest.raises(ValueError, match="at least one person"):
+        fit_rsm(np.empty((2, 0)), n_cat=2)
+    with pytest.raises(ValueError, match="integer categories"):
+        fit_rsm(np.array([[0.2, 1.0], [1.0, 0.0]]), n_cat=2)
+    with pytest.raises(ValueError, match="finite integer categories"):
+        fit_rsm(np.array([[0.0, np.inf], [1.0, 0.0]]), n_cat=2)
+    with pytest.raises(ValueError, match="item 1 has no observed responses"):
+        fit_rsm(np.array([[0.0, np.nan], [1.0, np.nan]]), n_cat=2)
+    with pytest.raises(ValueError, match="max_iter"):
+        fit_rsm(valid, n_cat=2, max_iter=0)
+    with pytest.raises(ValueError, match="tol"):
+        fit_rsm(valid, n_cat=2, tol=np.inf)
+
+    unfinished = fit_rsm(valid, n_cat=2, max_iter=1)
+    assert not unfinished.converged
+    assert unfinished.n_iter == 1
+    assert len(unfinished.loglik_trace) == 2
+    assert np.all(np.isfinite(unfinished.loglik_trace))
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""
