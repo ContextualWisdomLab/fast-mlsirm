@@ -2744,6 +2744,57 @@ def test_fit_rsm_rejects_unidentified_or_malformed_inputs():
     assert np.all(np.isfinite(unfinished.loglik_trace))
 
 
+def test_fit_compensatory_mirt_recovers_loadings():
+    """Compensatory MIRT (Reckase, 2009): recover a confirmatory 2-dimensional loading
+    pattern (dim0-only, dim1-only, and BOTH-loading items) including a genuinely NEGATIVE
+    loading, plus the per-dimension trait EAP; and reject a rotationally-degenerate
+    (all-ones) pattern."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_compensatory_mirt, CompMirtFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_compensatory_mirt"):
+        pytest.skip("compiled core built without fit_compensatory_mirt")
+
+    rng = np.random.default_rng(2009)
+    n, n_dims = 4000, 2
+    pattern = np.array([[1, 0]] * 4 + [[0, 1]] * 4 + [[1, 1]] * 3, dtype=np.int64)
+    n_items = pattern.shape[0]
+    loading = np.zeros((n_items, n_dims))
+    loading[:4, 0] = [1.2, 0.8, 1.5, -0.9]  # dim0-only, incl. a negative loading
+    loading[4:8, 1] = [1.0, 1.3, 0.7, 1.1]  # dim1-only
+    loading[8:] = [[0.9, 1.1], [1.2, -0.7], [0.8, 0.9]]  # both, incl. a negative cross-loading
+    intercept = np.linspace(-0.8, 0.8, n_items)
+    theta = rng.standard_normal((n, n_dims))
+    p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    res = fit_compensatory_mirt(y, pattern, q=21)
+    assert isinstance(res, CompMirtFit) and res.converged
+    assert res.loading.shape == (n_items, n_dims) and res.n_dims == 2
+    # off-pattern entries are exactly zero
+    assert np.all(res.loading[pattern == 0] == 0.0)
+    assert np.sqrt(np.mean((res.loading - loading) ** 2)) < 0.13
+    # negative loadings recovered with the correct sign (needs the symmetric clamp)
+    assert res.loading[3, 0] < -0.5
+    assert res.loading[9, 1] < -0.3
+    # per-dimension trait recovery (positive correlation; a sign/swap bug -> near 0 or negative)
+    for d in range(n_dims):
+        c = np.corrcoef(res.theta[:, d], theta[:, d])[0, 1]
+        assert c > 0.7, f"dim {d} theta corr {c}"
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # EM monotone
+
+    # a rotationally-degenerate all-ones pattern is rejected (no pure anchor per dimension)
+    with pytest.raises(ValueError):
+        fit_compensatory_mirt(y, np.ones((n_items, n_dims), dtype=np.int64))
+    # missing (MAR) handled
+    ymiss = y.copy()
+    ymiss[0, 0] = np.nan
+    assert fit_compensatory_mirt(ymiss, pattern, q=15).converged
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

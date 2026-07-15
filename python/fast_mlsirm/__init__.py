@@ -25,6 +25,7 @@ from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_sp
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
+from .mirt import fit_compensatory_mirt as fit_compensatory_mirt, CompMirtFit as CompMirtFit
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -112,6 +113,8 @@ __all__ = [
     "MixtureFit",
     "fit_crm",
     "CrmFit",
+    "fit_compensatory_mirt",
+    "CompMirtFit",
     "fit_rsm",
     "RsmFit",
     "fit_mixed_items",

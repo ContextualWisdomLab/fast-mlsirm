@@ -2241,6 +2241,7 @@ const SEQ_MAX_CAT: usize = 50;
 /// stop sentinel `s_{M+1} = 0` makes `1 - s_{M+1} = 1`, so it must not be routed through
 /// any eps clamp). The `M + 1` probabilities telescope to 1 for any `s in [0, 1]^M`, so
 /// the sequential form is a valid multinomial for free (no simplex projection needed).
+#[cfg(test)]
 pub(crate) fn seq_category_probs(steps: &[f64]) -> Vec<f64> {
     let m = steps.len();
     let mut probs = vec![0.0f64; m + 1];

@@ -93,6 +93,39 @@
 
 ### Added
 
+- **Orthogonal confirmatory compensatory multidimensional 2PL (MIRT)** (Reckase, 2009;
+  Bock, Gibbons, & Muraki, 1988). `fit_compensatory_mirt(responses, loading_pattern)` fits
+  a general COMPENSATORY multidimensional 2PL in which an item may load FREELY on several
+  latent dimensions, which trade off ADDITIVELY inside a single logit:
+  `P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta_j ~ MVN(0, I_D)`,
+  where `S_i` is item `i`'s loading set from a 0/1 confirmatory pattern (items x dimensions).
+  This is Reckase's compensatory M2PL / the full-information item factor model, distinct from
+  the existing simple-structure `Mirt` (one dimension per item) and the orthogonal bifactor
+  (one primary + one general per item): arbitrary within-item cross-loadings break the
+  simple-structure quadrature factorization, so it is a dedicated estimator (standalone
+  `mlsirm_core::mirt`) with the full `q^D` product Gauss-Hermite grid (`D <= 3`). Estimated by
+  marginal-ML EM: the E-step is streamed per person (no `N x q^D` posterior materialized), and
+  each item M-step is an `(n_i + 1)`-dimensional Newton generalizing `fit_mmle_2pl`'s 2x2 — the
+  ridged, positive-definite `-Hessian` block solved by Gaussian elimination with a backtracking
+  line search that keeps the marginal loglik monotone. Loadings are **not** constrained
+  non-negative (reverse-keyed and suppressor cross-loadings are representable); the
+  per-dimension sign is fixed by a reflection anchor. **Scope:** ORTHOGONAL traits
+  (`theta ~ MVN(0, I)`) — correlated traits `theta ~ MVN(0, Sigma)` and `D > 3` (needing
+  coarser GH or QMC) are documented deferred extensions. Identification is enforced by
+  `validate`: every dimension must have a PURE single-loading anchor item, so
+  rotationally-degenerate patterns (e.g. all-ones) are rejected rather than returning a point
+  on a non-identified ridge. Verified with the N(0,I) grid-moment identities, a DETERMINISTIC
+  finite-difference anchor pinning the full item gradient AND the off-diagonal cross-Hessian
+  (the local->pattern-dimension map) to `< 1e-4`, an exact reduction to `fit_mmle_2pl` at `D=1`
+  (`gh_rule(41)` is the same grid; loadings/intercepts agree to `< 1e-2`), and a non-trivial
+  `D=2` recovery with asymmetric loadings INCLUDING genuinely negative ones (recovered with
+  correct sign). A 500-replication Monte-Carlo (`D in {2,3}`, `N = 3000/2000`, confirmatory
+  pattern with pure anchors + cross-loaders) recovers the loadings essentially UNBIASED under
+  the correctly-specified normal trait (loading RMSE ~0.10 at `D=2` / ~0.12 at `D=3`, bias
+  ~0.006) and shows the expected mild loading attenuation under a per-dimension-standardized
+  right-skew trait (shape misspecification; RMSE ~0.12/0.16, bias ~-0.06/-0.10), with
+  per-dimension trait EAP correlation ~0.67-0.72 and 100% convergence, EM monotone every
+  replication. Exposed to Python as `fit_compensatory_mirt` / `CompMirtFit`.
 - **Shared-Q sequential G-DINA for polytomous responses** (Ma & de la Torre, 2016;
   Tutz, 1990). `fit_seq_gdina(responses, q_matrix)` fits ordered polytomous cognitive
   diagnosis by the sequential (continuation-ratio) model: each ordered *step*

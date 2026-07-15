@@ -39,6 +39,7 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
+use mlsirm_core::mirt::{fit_compensatory_mirt as core_fit_compensatory_mirt, MirtConfig};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
@@ -676,6 +677,62 @@ fn fit_ho_gdina(
 /// `theta ~ N(0,1)`. Returns a dict with `slope`, `intercept`, `resid_sd`,
 /// `discrimination` (`= slope/resid_sd`), `difficulty` (`= -intercept/slope`),
 /// `theta` (per-person EAP), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+/// Orthogonal confirmatory compensatory multidimensional 2PL (Reckase, 2009; Bock,
+/// Gibbons, & Muraki, 1988; `mlsirm_core::mirt::fit_compensatory_mirt`). Each item may
+/// load FREELY on several ORTHOGONAL latent dimensions `theta ~ MVN(0, I_D)`, which trade
+/// off additively in the logit: `P(X=1) = sigmoid(sum_d L_id a_id theta_d + b_i)`.
+/// `loading_pattern` is a row-major `n_items * n_dims` 0/1 pattern; each dimension needs a
+/// pure single-loading anchor item (identification; the all-ones pattern is rejected).
+/// Correlated traits are a deferred extension. Returns a dict with `loading` (row-major
+/// `n_items * n_dims`, `0` off-pattern), `intercept`, `theta` (`n_persons * n_dims` EAP),
+/// `n_dims`, `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, max_iter = 500, tol = 1e-6))]
+fn fit_compensatory_mirt(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    loading_pattern: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    q: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let pattern: Vec<u8> = loading_pattern
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = MirtConfig { max_iter, tol, q, ..MirtConfig::default() };
+    let res = core_fit_compensatory_mirt(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("loading", res.loading)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("n_dims", res.n_dims)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (responses, observed, n_persons, n_items, q_theta = 41, max_iter = 500, tol = 1e-6))]
@@ -3304,6 +3361,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ho_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_seq_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_compensatory_mirt, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
