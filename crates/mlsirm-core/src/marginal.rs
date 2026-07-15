@@ -84,7 +84,7 @@ pub struct MarginalConfig {
     /// Gauss-Hermite nodes for the multilevel random intercept.
     pub q_u: usize,
     pub max_iter: usize,
-    /// Convergence: absolute change of the penalized marginal log-likelihood.
+    /// Convergence: absolute change of the marginal log-likelihood.
     pub tol: f64,
     /// Gradient-ascent steps per item per M-step.
     pub m_steps: usize,
@@ -1827,8 +1827,9 @@ pub fn fit_marginal_full(
     let mut delta = covariate.map(|c| c.init_delta).unwrap_or(0.0);
     let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
+    let mut n_iter = 0usize;
 
-    for iteration in 0..mcfg.max_iter {
+    for _ in 0..mcfg.max_iter {
         let ctx = build_contexts(pop, &mu, &sigma, sigma_u, n_dims, mcfg.q_u);
         let offsets: Option<Vec<f64>> =
             covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
@@ -1840,10 +1841,24 @@ pub fn fit_marginal_full(
             e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
         loglik_trace.push(estep.loglik);
         if mcfg.zero_inflation {
+            zero_responsibility = estep.zi_resp.clone();
+        }
+
+        // The likelihood just evaluated belongs to the current parameters.
+        // Stop before another M-step so the returned model, trace endpoint,
+        // information criteria, and zero-inflation responsibilities agree.
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < mcfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
+        if mcfg.zero_inflation {
             let mean_resp =
                 estep.zi_resp.iter().sum::<f64>() / n_persons.max(1) as f64;
             pi_zero = mean_resp.clamp(0.0, 0.999);
-            zero_responsibility = estep.zi_resp.clone();
         }
 
         // M-step: items, then tau, then population parameters.
@@ -1899,13 +1914,7 @@ pub fn fit_marginal_full(
                 }
             }
         }
-        if iteration > 0 {
-            let delta = (loglik_trace[iteration] - loglik_trace[iteration - 1]).abs();
-            if delta < mcfg.tol {
-                converged = true;
-                break;
-            }
-        }
+        n_iter += 1;
     }
 
     // --- Final EAP pass with the converged parameters ---
@@ -1915,6 +1924,15 @@ pub fn fit_marginal_full(
     let tables = build_tables_offset(
         &alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids, final_offsets.as_deref(),
     );
+    if !converged {
+        let zi = if mcfg.zero_inflation { Some((pi_zero, all_zero.as_slice())) } else { None };
+        let final_estep =
+            e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
+        loglik_trace.push(final_estep.loglik);
+        if mcfg.zero_inflation {
+            zero_responsibility = final_estep.zi_resp;
+        }
+    }
     let cell = grids.q_t * grids.n_x;
     let mut l_buf = vec![0.0_f64; n_dims * cell];
     let mut log_zdx = vec![0.0_f64; n_dims * grids.n_x];
@@ -2011,7 +2029,6 @@ pub fn fit_marginal_full(
         pca_align(&mut zeta, &mut xi_eap, n_items, n_persons, latent_dim);
     }
 
-    let n_iter = loglik_trace.len();
     Ok(MarginalResult {
         n_parameters: n_free_parameters(config, pop, anchors)
             + usize::from(mcfg.zero_inflation)
@@ -2050,5 +2067,83 @@ mod xirule_parse_tests {
         assert_eq!(XiRuleKind::parse("mc"), Some(XiRuleKind::MonteCarlo));
         assert_eq!(XiRuleKind::parse("monte-carlo"), Some(XiRuleKind::MonteCarlo));
         assert_eq!(XiRuleKind::parse("nope"), None);
+    }
+}
+
+#[cfg(test)]
+mod em_endpoint_tests {
+    use super::{fit_marginal, fit_marginal_anchored, Anchors, MarginalConfig, PopulationSpec};
+    use crate::{Device, ModelConfig, ModelType, PenaltyConfig};
+
+    #[test]
+    fn trace_endpoint_matches_returned_parameters_after_max_iter() {
+        let n_persons = 8;
+        let n_items = 3;
+        let y = vec![
+            0.0, 0.0, 0.0, // person 0
+            0.0, 0.0, 1.0, // person 1
+            0.0, 1.0, 0.0, // person 2
+            0.0, 1.0, 1.0, // person 3
+            1.0, 0.0, 0.0, // person 4
+            1.0, 0.0, 1.0, // person 5
+            1.0, 1.0, 0.0, // person 6
+            1.0, 1.0, 1.0, // person 7
+        ];
+        let observed = vec![true; n_persons * n_items];
+        let factor_id = vec![0; n_items];
+        let config = ModelConfig {
+            n_persons,
+            n_items,
+            n_dims: 1,
+            latent_dim: 1,
+            model_type: ModelType::Mirt,
+            eps_distance: 1e-8,
+        };
+        let mcfg = MarginalConfig {
+            q_theta: 7,
+            q_xi: 7,
+            q_u: 7,
+            max_iter: 1,
+            m_steps: 2,
+            ..MarginalConfig::default()
+        };
+        let result = fit_marginal(
+            &y,
+            &observed,
+            &factor_id,
+            &config,
+            &PopulationSpec::Single,
+            &mcfg,
+            &PenaltyConfig::default(),
+            Device::Cpu,
+        )
+        .unwrap();
+        let anchors = Anchors {
+            fixed: vec![true; n_items],
+            alpha: result.alpha.clone(),
+            b: result.b.clone(),
+            zeta: result.zeta.clone(),
+            tau: Some(result.tau),
+        };
+        let reevaluated = fit_marginal_anchored(
+            &y,
+            &observed,
+            &factor_id,
+            &config,
+            &PopulationSpec::Single,
+            &mcfg,
+            &PenaltyConfig::default(),
+            Device::Cpu,
+            Some(&anchors),
+        )
+        .unwrap();
+
+        assert_eq!(result.n_iter, 1);
+        assert!(
+            (result.loglik_trace.last().unwrap() - reevaluated.loglik_trace[0]).abs() < 1e-10,
+            "trace endpoint must be the likelihood of the returned parameters: {:?} vs {:?}",
+            result.loglik_trace,
+            reevaluated.loglik_trace
+        );
     }
 }
