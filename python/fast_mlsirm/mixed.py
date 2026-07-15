@@ -13,12 +13,24 @@ import numpy as np
 
 
 _ALIASES = {
+    "rasch": "rasch",
+    "1pl": "rasch",
     "2pl": "2pl",
     "binary": "2pl",
     "dichotomous": "2pl",
+    "3pl": "3pl",
+    "3plu": "3plu",
+    "upper_3pl": "3plu",
+    "4pl": "4pl",
+    "cll": "cll",
+    "complementary_log_log": "cll",
     "grm": "grm",
     "graded": "grm",
+    "pcm": "pcm",
+    "partial_credit": "pcm",
     "gpcm": "gpcm",
+    "sequential": "sequential",
+    "tutz": "tutz",
     "nominal": "nominal",
     "nrm": "nominal",
     "ideal": "ideal",
@@ -43,6 +55,8 @@ class MixedItemParameters:
     scores: np.ndarray
     location: float | None
     zeta: np.ndarray
+    lower_asymptote: float | None = None
+    upper_asymptote: float | None = None
 
 
 @dataclass(frozen=True)
@@ -132,17 +146,25 @@ def fit_mixed_items(
     """Fit one item bank containing heterogeneous response families by MMLE.
 
     ``item_models`` is either one model name recycled over all columns or one
-    name per item. Supported canonical names are ``"2pl"``, ``"grm"``,
-    ``"gpcm"``, ``"nominal"``, ``"ideal"``, ``"ggum"``, ``"lsirm"``,
-    ``"lsirm_grm"``, and ``"lsirm_gpcm"``. Items may have different category
-    counts. ``NaN`` denotes missingness unless an explicit boolean ``mask`` is
-    supplied.
+    name per item. Supported canonical names are ``"rasch"``, ``"2pl"``,
+    ``"3pl"``, ``"3plu"``, ``"4pl"``, ``"cll"``, ``"grm"``, ``"pcm"``,
+    ``"gpcm"``, ``"sequential"``, ``"tutz"``, ``"nominal"``, ``"ideal"``,
+    ``"ggum"``, ``"lsirm"``, ``"lsirm_grm"``, and ``"lsirm_gpcm"``. Items
+    may have different category counts. ``NaN`` denotes missingness unless an
+    explicit boolean ``mask`` is supplied.
 
     Every family retains its own conditional response probability. The shared
     trait is fixed to ``N(0, 1)`` for scale identification. Dominance slopes are
     positive; nominal baseline category score/intercept are fixed to zero;
-    ordered GRM/GGUM thresholds use positive gap parameters. Ideal-point items
-    use ``exp(-0.5 * (a * (theta - b))**2)``. LSIRM items alone use
+    ordered GRM/GGUM thresholds use positive gap parameters. ``rasch`` and
+    ``pcm`` fix the slope to one on the standard-normal trait scale. The 3PL,
+    upper-3PL, and 4PL asymptotes are transformed so that they remain in the
+    unit interval (and the 4PL lower bound is strictly below its upper bound).
+    Sequential cells use continuation-ratio transition logits and report their
+    transition constants in ``intercepts``; ``tutz`` fixes their common slope
+    to one. ``cll`` is the one-parameter complementary log-log cell.
+    Ideal-point items use
+    ``exp(-0.5 * (a * (theta - b))**2)``. LSIRM items alone use
     ``-||xi-zeta||`` with fixed distance weight one; all LSIRM items share the
     same standard-normal latent-space coordinate, while non-spatial items are
     constant on that integration axis.
@@ -168,6 +190,10 @@ def fit_mixed_items(
     coefficients multinomial logit model. *Applied Psychological Measurement,
     21*(1), 1–23. https://doi.org/10.1177/0146621697211001
 
+    Barton, M. A., & Lord, F. M. (1981). An upper asymptote for the
+    three-parameter logistic item-response model. *ETS Research Report Series,
+    1981*(1), i–8. https://doi.org/10.1002/j.2333-8504.1981.tb01255.x
+
     Bock, R. D. (1972). Estimating item parameters and latent ability when
     responses are scored in two or more nominal categories. *Psychometrika,
     37*(1), 29–51. https://doi.org/10.1007/BF02291411
@@ -175,6 +201,14 @@ def fit_mixed_items(
     Chalmers, R. P. (2012). mirt: A multidimensional item response theory package
     for the R environment. *Journal of Statistical Software, 48*(6), 1–29.
     https://doi.org/10.18637/jss.v048.i06
+
+    Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
+    unobserved item-respondent interactions: A latent space item response model
+    with interaction map. *Psychometrika, 86*(2), 378–403.
+    https://doi.org/10.1007/s11336-021-09762-5
+
+    Masters, G. N. (1982). A Rasch model for partial credit scoring.
+    *Psychometrika, 47*(2), 149–174. https://doi.org/10.1007/BF02296272
 
     Maydeu-Olivares, A., Hernández, A., & McDonald, R. P. (2006). A
     multidimensional ideal point item response theory model for binary data.
@@ -186,10 +220,15 @@ def fit_mixed_items(
     unfolding graded responses. *ETS Research Report Series, 1998*(2), i–53.
     https://doi.org/10.1002/j.2333-8504.1998.tb01781.x
 
-    Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
-    unobserved item-respondent interactions: A latent space item response model
-    with interaction map. *Psychometrika, 86*(2), 378–403.
-    https://doi.org/10.1007/s11336-021-09762-5
+    Shim, H., Bonifay, W., & Wiedermann, W. (2023). Parsimonious asymmetric
+    item response theory modeling with the complementary log-log link.
+    *Behavior Research Methods, 55*(1), 200–219.
+    https://doi.org/10.3758/s13428-022-01824-5
+
+    Tutz, G. (1990). Sequential item response models with an ordered response.
+    *British Journal of Mathematical and Statistical Psychology, 43*(1),
+    39–55. https://doi.org/10.1111/j.2044-8317.1990.tb00925.x
+
     """
     y_float = np.asarray(responses, dtype=np.float64)
     if y_float.ndim != 2:
@@ -254,6 +293,16 @@ def fit_mixed_items(
             thresholds=np.asarray(item["thresholds"], dtype=np.float64),
             scores=np.asarray(item["scores"], dtype=np.float64),
             location=None if item["location"] is None else float(item["location"]),
+            lower_asymptote=(
+                None
+                if item["lower_asymptote"] is None
+                else float(item["lower_asymptote"])
+            ),
+            upper_asymptote=(
+                None
+                if item["upper_asymptote"] is None
+                else float(item["upper_asymptote"])
+            ),
             zeta=np.asarray(item["zeta"], dtype=np.float64),
         )
         for item in result["items"]

@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pytest
 
-from fast_mlsirm import fit_mixed_items, fit_polytomous
+from fast_mlsirm import MixedItemParameters, fit_mixed_items, fit_polytomous
 
 
 def _draw_rows(rng: np.random.Generator, probabilities: np.ndarray) -> np.ndarray:
@@ -48,6 +48,36 @@ def _dominance_bank(seed: int = 42, n_persons: int = 400):
     probabilities = np.exp(logits)
     probabilities /= probabilities.sum(axis=1, keepdims=True)
     y[:, 3] = _draw_rows(rng, probabilities)
+    return y, theta
+
+
+def _expanded_family_bank(seed: int = 142, n_persons: int = 800):
+    rng = np.random.default_rng(seed)
+    theta = rng.normal(size=n_persons)
+    y = np.empty((n_persons, 8), dtype=float)
+
+    y[:, 0] = rng.random(n_persons) < 1.0 / (1.0 + np.exp(-(theta - 0.2)))
+
+    logits = theta[:, None] * np.arange(3) + np.asarray([0.0, 0.1, -0.7])
+    logits -= logits.max(axis=1, keepdims=True)
+    probabilities = np.exp(logits)
+    probabilities /= probabilities.sum(axis=1, keepdims=True)
+    y[:, 1] = _draw_rows(rng, probabilities)
+
+    core = 1.0 / (1.0 + np.exp(-(1.2 * theta - 0.3)))
+    y[:, 2] = rng.random(n_persons) < 0.12 + 0.88 * core
+    y[:, 3] = rng.random(n_persons) < 0.88 * core
+    y[:, 4] = rng.random(n_persons) < 0.10 + 0.78 * core
+
+    for column, slope in [(5, 1.15), (6, 1.0)]:
+        q1 = 1.0 / (1.0 + np.exp(-(slope * theta + 0.5)))
+        q2 = 1.0 / (1.0 + np.exp(-(slope * theta - 0.6)))
+        y[:, column] = _draw_rows(
+            rng,
+            np.column_stack([1.0 - q1, q1 * (1.0 - q2), q1 * q2]),
+        )
+
+    y[:, 7] = rng.random(n_persons) < -np.expm1(-np.exp(theta - 0.25))
     return y, theta
 
 
@@ -99,6 +129,36 @@ def test_mixed_dominance_bank_converges_and_cpu_threads_are_equivalent():
             parallel_item.thresholds, serial_item.thresholds, atol=2e-7
         )
         np.testing.assert_allclose(parallel_item.scores, serial_item.scores, atol=2e-7)
+
+
+def test_expanded_response_families_jointly_converge_with_valid_constraints():
+    y, theta = _expanded_family_bank()
+    models = ["rasch", "pcm", "3pl", "3plu", "4pl", "sequential", "tutz", "cll"]
+    fit = fit_mixed_items(
+        y,
+        models,
+        [2, 3, 2, 2, 2, 3, 3, 2],
+        q_theta=11,
+        max_iter=100,
+        tol=1e-6,
+        n_threads=2,
+        require_convergence=True,
+    )
+
+    _assert_actual_convergence(fit, tol=1e-6, max_iter=100)
+    assert [item.model for item in fit.items] == models
+    assert fit.items[0].slope == 1.0
+    assert fit.items[1].slope == 1.0
+    assert fit.items[6].slope == 1.0
+    assert fit.items[7].slope == 1.0
+    assert fit.items[5].intercepts.shape == (2,)
+    assert fit.items[6].intercepts.shape == (2,)
+    for index in [2, 3, 4]:
+        lower = fit.items[index].lower_asymptote
+        upper = fit.items[index].upper_asymptote
+        assert lower is not None and upper is not None
+        assert 0.0 <= lower < upper <= 1.0
+    assert np.corrcoef(theta, fit.theta_eap)[0, 1] > 0.65
 
 
 def test_homogeneous_two_pl_matches_existing_gpcm_binary_cell():
@@ -187,11 +247,19 @@ def test_mixed_lsirm_and_nonspatial_items_share_one_fitted_population():
 
 def test_every_response_family_dispatches_without_hiding_iteration_exhaustion():
     rng = np.random.default_rng(3)
-    categories = [2, 3, 3, 4, 2, 4, 2, 3, 3]
+    categories = [2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 2, 4, 2, 3, 3]
     models = [
+        "rasch",
         "2pl",
+        "3pl",
+        "3plu",
+        "4pl",
+        "cll",
         "grm",
+        "pcm",
         "gpcm",
+        "sequential",
+        "tutz",
         "nominal",
         "ideal",
         "ggum",
@@ -222,6 +290,15 @@ def test_every_response_family_dispatches_without_hiding_iteration_exhaustion():
     assert len(fit.loglik_trace) == 2
     assert [item.model for item in fit.items] == models
     assert np.all(np.isfinite(fit.theta_eap))
+
+
+def test_item_parameter_constructor_preserves_pre_asymptote_positional_contract():
+    empty = np.empty(0, dtype=float)
+    item = MixedItemParameters("2pl", 2, 1.0, empty, empty, empty, None, empty)
+
+    assert item.zeta is empty
+    assert item.lower_asymptote is None
+    assert item.upper_asymptote is None
 
 
 def test_mixed_input_contract_and_required_convergence():

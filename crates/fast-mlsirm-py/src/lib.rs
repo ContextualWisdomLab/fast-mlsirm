@@ -1623,6 +1623,8 @@ fn fit_mixed_items(
         item.set_item("thresholds", estimate.thresholds)?;
         item.set_item("scores", estimate.scores)?;
         item.set_item("location", estimate.location)?;
+        item.set_item("lower_asymptote", estimate.lower_asymptote)?;
+        item.set_item("upper_asymptote", estimate.upper_asymptote)?;
         item.set_item("zeta", estimate.zeta)?;
         items.append(item)?;
     }

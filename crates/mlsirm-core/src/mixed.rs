@@ -16,9 +16,21 @@
 //! coefficients multinomial logit model. *Applied Psychological Measurement,
 //! 21*(1), 1–23. https://doi.org/10.1177/0146621697211001
 //!
+//! Barton, M. A., & Lord, F. M. (1981). An upper asymptote for the
+//! three-parameter logistic item-response model. *ETS Research Report Series,
+//! 1981*(1), i–8. https://doi.org/10.1002/j.2333-8504.1981.tb01255.x
+//!
 //! Bock, R. D. (1972). Estimating item parameters and latent ability when
 //! responses are scored in two or more nominal categories. *Psychometrika,
 //! 37*(1), 29–51. https://doi.org/10.1007/BF02291411
+//!
+//! Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
+//! unobserved item-respondent interactions: A latent space item response model
+//! with interaction map. *Psychometrika, 86*(2), 378–403.
+//! https://doi.org/10.1007/s11336-021-09762-5
+//!
+//! Masters, G. N. (1982). A Rasch model for partial credit scoring.
+//! *Psychometrika, 47*(2), 149–174. https://doi.org/10.1007/BF02296272
 //!
 //! Maydeu-Olivares, A., Hernández, A., & McDonald, R. P. (2006). A
 //! multidimensional ideal point item response theory model for binary data.
@@ -30,10 +42,14 @@
 //! unfolding graded responses. *ETS Research Report Series, 1998*(2), i–53.
 //! https://doi.org/10.1002/j.2333-8504.1998.tb01781.x
 //!
-//! Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). Mapping
-//! unobserved item-respondent interactions: A latent space item response model
-//! with interaction map. *Psychometrika, 86*(2), 378–403.
-//! https://doi.org/10.1007/s11336-021-09762-5
+//! Shim, H., Bonifay, W., & Wiedermann, W. (2023). Parsimonious asymmetric
+//! item response theory modeling with the complementary log-log link.
+//! *Behavior Research Methods, 55*(1), 200–219.
+//! https://doi.org/10.3758/s13428-022-01824-5
+//!
+//! Tutz, G. (1990). Sequential item response models with an ordered response.
+//! *British Journal of Mathematical and Statistical Psychology, 43*(1),
+//! 39–55. https://doi.org/10.1111/j.2044-8317.1990.tb00925.x
 
 use std::thread;
 
@@ -41,9 +57,17 @@ use crate::poly::{gpcm_logprobs, grm_logprobs, solve_small};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MixedItemKind {
+    Rasch,
     TwoPl,
+    ThreePl,
+    ThreePlUpper,
+    FourPl,
+    Cll,
     Grm,
+    Pcm,
     Gpcm,
+    Sequential,
+    Tutz,
     Nominal,
     Ideal,
     Ggum,
@@ -55,9 +79,17 @@ pub enum MixedItemKind {
 impl MixedItemKind {
     pub fn parse(value: &str) -> Result<Self, String> {
         match value.trim().to_ascii_lowercase().as_str() {
+            "rasch" | "1pl" => Ok(Self::Rasch),
             "2pl" | "dichotomous" | "binary" => Ok(Self::TwoPl),
+            "3pl" => Ok(Self::ThreePl),
+            "3plu" | "upper_3pl" => Ok(Self::ThreePlUpper),
+            "4pl" => Ok(Self::FourPl),
+            "cll" | "complementary_log_log" => Ok(Self::Cll),
             "grm" | "graded" => Ok(Self::Grm),
+            "pcm" | "partial_credit" => Ok(Self::Pcm),
             "gpcm" => Ok(Self::Gpcm),
+            "sequential" => Ok(Self::Sequential),
+            "tutz" => Ok(Self::Tutz),
             "nominal" | "nrm" => Ok(Self::Nominal),
             "ideal" | "ideal_point" => Ok(Self::Ideal),
             "ggum" => Ok(Self::Ggum),
@@ -65,16 +97,24 @@ impl MixedItemKind {
             "lsirm_grm" => Ok(Self::LsirmGrm),
             "lsirm_gpcm" => Ok(Self::LsirmGpcm),
             other => Err(format!(
-                "unsupported mixed item model {other:?}; expected one of: 2pl, grm, gpcm, nominal, ideal, ggum, lsirm, lsirm_grm, lsirm_gpcm"
+                "unsupported mixed item model {other:?}; expected one of: rasch, 2pl, 3pl, 3plu, 4pl, cll, grm, pcm, gpcm, sequential, tutz, nominal, ideal, ggum, lsirm, lsirm_grm, lsirm_gpcm"
             )),
         }
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Rasch => "rasch",
             Self::TwoPl => "2pl",
+            Self::ThreePl => "3pl",
+            Self::ThreePlUpper => "3plu",
+            Self::FourPl => "4pl",
+            Self::Cll => "cll",
             Self::Grm => "grm",
+            Self::Pcm => "pcm",
             Self::Gpcm => "gpcm",
+            Self::Sequential => "sequential",
+            Self::Tutz => "tutz",
             Self::Nominal => "nominal",
             Self::Ideal => "ideal",
             Self::Ggum => "ggum",
@@ -86,6 +126,38 @@ impl MixedItemKind {
 
     fn is_spatial(self) -> bool {
         matches!(self, Self::Lsirm | Self::LsirmGrm | Self::LsirmGpcm)
+    }
+
+    fn has_free_slope(self) -> bool {
+        matches!(
+            self,
+            Self::TwoPl
+                | Self::ThreePl
+                | Self::ThreePlUpper
+                | Self::FourPl
+                | Self::Grm
+                | Self::Gpcm
+                | Self::Sequential
+                | Self::Ideal
+                | Self::Ggum
+                | Self::Lsirm
+                | Self::LsirmGrm
+                | Self::LsirmGpcm
+        )
+    }
+
+    fn requires_binary(self) -> bool {
+        matches!(
+            self,
+            Self::Rasch
+                | Self::TwoPl
+                | Self::ThreePl
+                | Self::ThreePlUpper
+                | Self::FourPl
+                | Self::Cll
+                | Self::Ideal
+                | Self::Lsirm
+        )
     }
 }
 
@@ -104,6 +176,8 @@ pub struct MixedItemEstimate {
     pub thresholds: Vec<f64>,
     pub scores: Vec<f64>,
     pub location: Option<f64>,
+    pub lower_asymptote: Option<f64>,
+    pub upper_asymptote: Option<f64>,
     pub zeta: Vec<f64>,
 }
 
@@ -226,6 +300,52 @@ fn softmax_log(scores: &[f64]) -> Vec<f64> {
     scores.iter().map(|v| v - m - z.ln()).collect()
 }
 
+fn logistic(value: f64) -> f64 {
+    if value >= 0.0 {
+        1.0 / (1.0 + (-value).exp())
+    } else {
+        let exp_value = value.exp();
+        exp_value / (1.0 + exp_value)
+    }
+}
+
+fn logit(probability: f64) -> f64 {
+    let probability = probability.clamp(1e-6, 1.0 - 1e-6);
+    (probability / (1.0 - probability)).ln()
+}
+
+fn binary_logprobs(probability: f64) -> Vec<f64> {
+    let probability = probability.clamp(1e-15, 1.0 - 1e-15);
+    vec![(-probability).ln_1p(), probability.ln()]
+}
+
+fn asymptotes(kind: MixedItemKind, params: &[f64]) -> (f64, f64) {
+    match kind {
+        MixedItemKind::ThreePl => (logistic(params[2]), 1.0),
+        MixedItemKind::ThreePlUpper => (0.0, logistic(params[2])),
+        MixedItemKind::FourPl => {
+            let lower = logistic(params[2]);
+            let upper = lower + (1.0 - lower) * logistic(params[3]);
+            (lower, upper)
+        }
+        _ => (0.0, 1.0),
+    }
+}
+
+fn sequential_logprobs(base: f64, transitions: &[f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(transitions.len() + 1);
+    let mut reached = 0.0;
+    for &intercept in transitions {
+        let eta = base + intercept;
+        let log_pass = -logaddexp(0.0, -eta);
+        let log_stop = -logaddexp(0.0, eta);
+        out.push(reached + log_stop);
+        reached += log_pass;
+    }
+    out.push(reached);
+    out
+}
+
 fn distance(xi: &[f64], zeta: &[f64]) -> f64 {
     let d2 = xi
         .iter()
@@ -244,13 +364,33 @@ fn item_logprobs(
 ) -> Vec<f64> {
     let k = spec.n_categories;
     match spec.kind {
+        MixedItemKind::Rasch => {
+            let probability = logistic(theta - params[0]);
+            binary_logprobs(probability)
+        }
         MixedItemKind::TwoPl => {
             let a = params[0].clamp(-5.0, 4.0).exp();
             gpcm_logprobs(a * theta, &[0.0, 1.0], &[0.0, params[1]])
         }
+        MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper | MixedItemKind::FourPl => {
+            let a = params[0].clamp(-5.0, 4.0).exp();
+            let core = logistic(a * theta + params[1]);
+            let (lower, upper) = asymptotes(spec.kind, params);
+            binary_logprobs(lower + (upper - lower) * core)
+        }
+        MixedItemKind::Cll => {
+            let exp_eta = (theta - params[0]).clamp(-40.0, 40.0).exp();
+            binary_logprobs(-(-exp_eta).exp_m1())
+        }
         MixedItemKind::Grm => {
             let a = params[0].clamp(-5.0, 4.0).exp();
             grm_logprobs(a * theta, &ordered_values(&params[1..]))
+        }
+        MixedItemKind::Pcm => {
+            let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
+            let mut intercepts = vec![0.0; k];
+            intercepts[1..].copy_from_slice(&params[..k - 1]);
+            gpcm_logprobs(theta, &scores, &intercepts)
         }
         MixedItemKind::Gpcm => {
             let a = params[0].clamp(-5.0, 4.0).exp();
@@ -267,6 +407,11 @@ fn item_logprobs(
             intercepts[1..].copy_from_slice(&params[c..2 * c]);
             gpcm_logprobs(theta, &scores, &intercepts)
         }
+        MixedItemKind::Sequential => {
+            let a = params[0].clamp(-5.0, 4.0).exp();
+            sequential_logprobs(a * theta, &params[1..])
+        }
+        MixedItemKind::Tutz => sequential_logprobs(theta, params),
         MixedItemKind::Ideal => {
             let a = params[0].clamp(-5.0, 4.0).exp();
             let z = a * (theta - params[1]);
@@ -314,8 +459,13 @@ fn item_logprobs(
 
 fn parameter_count(spec: &MixedItemSpec, latent_dim: usize) -> usize {
     match spec.kind {
+        MixedItemKind::Rasch | MixedItemKind::Cll => 1,
         MixedItemKind::TwoPl | MixedItemKind::Ideal => 2,
+        MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper => 3,
+        MixedItemKind::FourPl => 4,
         MixedItemKind::Grm | MixedItemKind::Gpcm => spec.n_categories,
+        MixedItemKind::Pcm | MixedItemKind::Tutz => spec.n_categories - 1,
+        MixedItemKind::Sequential => spec.n_categories,
         MixedItemKind::Nominal => 2 * (spec.n_categories - 1),
         MixedItemKind::Ggum => 2 + spec.n_categories - 1,
         MixedItemKind::Lsirm | MixedItemKind::LsirmGrm | MixedItemKind::LsirmGpcm => {
@@ -334,8 +484,41 @@ fn initial_params(
     let k = spec.n_categories;
     let mut p = vec![0.0; parameter_count(spec, latent_dim)];
     match spec.kind {
+        MixedItemKind::Rasch => {
+            p[0] = (freq[0] / freq[1]).ln();
+        }
         MixedItemKind::TwoPl | MixedItemKind::Lsirm => {
             p[1] = (freq[1] / freq[0]).ln();
+        }
+        MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper | MixedItemKind::FourPl => {
+            let observed = freq[1].clamp(1e-4, 1.0 - 1e-4);
+            let lower = if matches!(spec.kind, MixedItemKind::ThreePl | MixedItemKind::FourPl) {
+                0.05
+            } else {
+                0.0
+            };
+            let upper = if matches!(
+                spec.kind,
+                MixedItemKind::ThreePlUpper | MixedItemKind::FourPl
+            ) {
+                0.95
+            } else {
+                1.0
+            };
+            p[1] = logit((observed - lower) / (upper - lower));
+            match spec.kind {
+                MixedItemKind::ThreePl => p[2] = logit(lower),
+                MixedItemKind::ThreePlUpper => p[2] = logit(upper),
+                MixedItemKind::FourPl => {
+                    p[2] = logit(lower);
+                    p[3] = logit((upper - lower) / (1.0 - lower));
+                }
+                _ => unreachable!(),
+            }
+        }
+        MixedItemKind::Cll => {
+            let probability = freq[1].clamp(1e-6, 1.0 - 1e-6);
+            p[0] = -(-(-probability).ln_1p()).ln();
         }
         MixedItemKind::Grm | MixedItemKind::LsirmGrm => {
             let mut thresholds = vec![0.0; k - 1];
@@ -347,6 +530,11 @@ fn initial_params(
             }
             p[1..k].copy_from_slice(&ordered_raw(&thresholds));
         }
+        MixedItemKind::Pcm => {
+            for category in 1..k {
+                p[category - 1] = (freq[category] / freq[0]).ln();
+            }
+        }
         MixedItemKind::Gpcm | MixedItemKind::LsirmGpcm => {
             for category in 1..k {
                 p[category] = (freq[category] / freq[0]).ln();
@@ -357,6 +545,20 @@ fn initial_params(
             for category in 1..k {
                 p[category - 1] = category as f64;
                 p[c + category - 1] = (freq[category] / freq[0]).ln();
+            }
+        }
+        MixedItemKind::Sequential => {
+            for transition in 1..k {
+                let reached: f64 = freq[transition - 1..].iter().sum();
+                let passed: f64 = freq[transition..].iter().sum();
+                p[transition] = logit(passed / reached);
+            }
+        }
+        MixedItemKind::Tutz => {
+            for transition in 1..k {
+                let reached: f64 = freq[transition - 1..].iter().sum();
+                let passed: f64 = freq[transition..].iter().sum();
+                p[transition - 1] = logit(passed / reached);
             }
         }
         MixedItemKind::Ideal => {
@@ -542,7 +744,7 @@ fn clamp_params(spec: &MixedItemSpec, values: &mut [f64], latent_dim: usize) {
     for value in values.iter_mut() {
         *value = value.clamp(-12.0, 12.0);
     }
-    if !matches!(spec.kind, MixedItemKind::Nominal) {
+    if spec.kind.has_free_slope() {
         values[0] = values[0].clamp(-5.0, 4.0);
     }
     if spec.kind.is_spatial() {
@@ -550,6 +752,21 @@ fn clamp_params(spec: &MixedItemSpec, values: &mut [f64], latent_dim: usize) {
         for value in &mut values[start..] {
             *value = value.clamp(-6.0, 6.0);
         }
+    }
+}
+
+fn symmetrize_and_ridge(hessian: &mut [Vec<f64>], ridge: f64) {
+    let mut row = 0;
+    while row < hessian.len() {
+        let mut col = row + 1;
+        while col < hessian.len() {
+            let average = 0.5 * (hessian[row][col] + hessian[col][row]);
+            hessian[row][col] = average;
+            hessian[col][row] = average;
+            col += 1;
+        }
+        hessian[row][row] += ridge;
+        row += 1;
     }
 }
 
@@ -579,12 +796,7 @@ fn m_step_item(
                 hessian[row][j] = (next_grad[row] - grad[row]) / h;
             }
         }
-        for row in 0..n {
-            for col in 0..n {
-                hessian[row][col] = 0.5 * (hessian[row][col] + hessian[col][row]);
-            }
-            hessian[row][row] += 1e-4;
-        }
+        symmetrize_and_ridge(&mut hessian, 1e-4);
         let mut step = solve_small(hessian, grad.clone());
         if !step.iter().all(|s| s.is_finite())
             || grad.iter().zip(&step).map(|(g, s)| g * s).sum::<f64>() <= 0.0
@@ -671,16 +883,37 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
         thresholds: Vec::new(),
         scores: Vec::new(),
         location: None,
+        lower_asymptote: None,
+        upper_asymptote: None,
         zeta: Vec::new(),
     };
     match spec.kind {
+        MixedItemKind::Rasch => {
+            out.slope = Some(1.0);
+            out.location = Some(params[0]);
+        }
         MixedItemKind::TwoPl => {
             out.slope = Some(params[0].exp());
             out.intercepts = vec![params[1]];
         }
+        MixedItemKind::ThreePl | MixedItemKind::ThreePlUpper | MixedItemKind::FourPl => {
+            out.slope = Some(params[0].exp());
+            out.intercepts = vec![params[1]];
+            let (lower, upper) = asymptotes(spec.kind, params);
+            out.lower_asymptote = Some(lower);
+            out.upper_asymptote = Some(upper);
+        }
+        MixedItemKind::Cll => {
+            out.slope = Some(1.0);
+            out.location = Some(params[0]);
+        }
         MixedItemKind::Grm => {
             out.slope = Some(params[0].exp());
             out.thresholds = ordered_values(&params[1..]);
+        }
+        MixedItemKind::Pcm => {
+            out.slope = Some(1.0);
+            out.intercepts = params.to_vec();
         }
         MixedItemKind::Gpcm => {
             out.slope = Some(params[0].exp());
@@ -690,6 +923,14 @@ fn public_estimate(spec: &MixedItemSpec, params: &[f64], latent_dim: usize) -> M
             let c = k - 1;
             out.scores = params[..c].to_vec();
             out.intercepts = params[c..2 * c].to_vec();
+        }
+        MixedItemKind::Sequential => {
+            out.slope = Some(params[0].exp());
+            out.intercepts = params[1..].to_vec();
+        }
+        MixedItemKind::Tutz => {
+            out.slope = Some(1.0);
+            out.intercepts = params.to_vec();
         }
         MixedItemKind::Ideal => {
             out.slope = Some(params[0].exp());
@@ -803,11 +1044,7 @@ pub fn fit_mixed_items(
         if spec.n_categories < 2 {
             return Err(format!("item {item}: n_categories must be >= 2"));
         }
-        if matches!(
-            spec.kind,
-            MixedItemKind::TwoPl | MixedItemKind::Ideal | MixedItemKind::Lsirm
-        ) && spec.n_categories != 2
-        {
+        if spec.kind.requires_binary() && spec.n_categories != 2 {
             return Err(format!(
                 "item {item}: {} requires exactly 2 categories",
                 spec.kind.as_str()
@@ -816,7 +1053,7 @@ pub fn fit_mixed_items(
         let mut seen = vec![false; spec.n_categories];
         for person in 0..n_persons {
             let index = person * n_items + item;
-            if observed.map_or(true, |m| m[index]) {
+            if observed.is_none_or(|m| m[index]) {
                 let response = y[index];
                 if response >= spec.n_categories {
                     return Err(format!(
@@ -850,8 +1087,8 @@ pub fn fit_mixed_items(
     .clamp(1, n_persons.max(1));
 
     let mut params = Vec::with_capacity(n_items);
-    for item in 0..n_items {
-        let mut freq = vec![1e-3; specs[item].n_categories];
+    for (item, spec) in specs.iter().enumerate() {
+        let mut freq = vec![1e-3; spec.n_categories];
         for person in 0..n_persons {
             let index = person * n_items + item;
             if observed[index] {
@@ -862,13 +1099,7 @@ pub fn fit_mixed_items(
         for value in &mut freq {
             *value /= total;
         }
-        params.push(initial_params(
-            &specs[item],
-            &freq,
-            item,
-            n_items,
-            grid.latent_dim,
-        ));
+        params.push(initial_params(spec, &freq, item, n_items, grid.latent_dim));
     }
 
     let mut tables = build_tables(specs, &params, &grid);
@@ -946,9 +1177,17 @@ mod tests {
     #[test]
     fn every_mixed_cell_normalizes() {
         let cases = [
+            (MixedItemKind::Rasch, 2),
             (MixedItemKind::TwoPl, 2),
+            (MixedItemKind::ThreePl, 2),
+            (MixedItemKind::ThreePlUpper, 2),
+            (MixedItemKind::FourPl, 2),
+            (MixedItemKind::Cll, 2),
             (MixedItemKind::Grm, 4),
+            (MixedItemKind::Pcm, 4),
             (MixedItemKind::Gpcm, 4),
+            (MixedItemKind::Sequential, 4),
+            (MixedItemKind::Tutz, 4),
             (MixedItemKind::Nominal, 4),
             (MixedItemKind::Ideal, 2),
             (MixedItemKind::Ggum, 4),
@@ -979,12 +1218,57 @@ mod tests {
     #[test]
     fn binary_cells_match_their_defining_formulas() {
         let theta = 0.4;
+        let rasch = MixedItemSpec {
+            kind: MixedItemKind::Rasch,
+            n_categories: 2,
+        };
+        let lp = item_logprobs(&rasch, &[-0.3], theta, &[], 0);
+        assert!((lp[1].exp() - logistic(theta + 0.3)).abs() < 1e-12);
+
         let two = MixedItemSpec {
             kind: MixedItemKind::TwoPl,
             n_categories: 2,
         };
         let lp = item_logprobs(&two, &[1.2_f64.ln(), -0.3], theta, &[], 0);
         let expected = 1.0 / (1.0 + (-(1.2 * theta - 0.3)).exp());
+        assert!((lp[1].exp() - expected).abs() < 1e-12);
+
+        let three = MixedItemSpec {
+            kind: MixedItemKind::ThreePl,
+            n_categories: 2,
+        };
+        let raw_lower = logit(0.2);
+        let lp = item_logprobs(&three, &[1.2_f64.ln(), -0.3, raw_lower], theta, &[], 0);
+        let expected = 0.2 + 0.8 * logistic(1.2 * theta - 0.3);
+        assert!((lp[1].exp() - expected).abs() < 1e-12);
+
+        let upper = MixedItemSpec {
+            kind: MixedItemKind::ThreePlUpper,
+            n_categories: 2,
+        };
+        let lp = item_logprobs(&upper, &[1.2_f64.ln(), -0.3, logit(0.85)], theta, &[], 0);
+        let expected = 0.85 * logistic(1.2 * theta - 0.3);
+        assert!((lp[1].exp() - expected).abs() < 1e-12);
+
+        let four = MixedItemSpec {
+            kind: MixedItemKind::FourPl,
+            n_categories: 2,
+        };
+        let raw_gap = logit((0.85 - 0.2) / (1.0 - 0.2));
+        let params = [1.2_f64.ln(), -0.3, raw_lower, raw_gap];
+        let lp = item_logprobs(&four, &params, theta, &[], 0);
+        let expected = 0.2 + 0.65 * logistic(1.2 * theta - 0.3);
+        assert!((lp[1].exp() - expected).abs() < 1e-12);
+        let estimate = public_estimate(&four, &params, 0);
+        assert!((estimate.lower_asymptote.unwrap() - 0.2).abs() < 1e-12);
+        assert!((estimate.upper_asymptote.unwrap() - 0.85).abs() < 1e-12);
+
+        let cll = MixedItemSpec {
+            kind: MixedItemKind::Cll,
+            n_categories: 2,
+        };
+        let lp = item_logprobs(&cll, &[-0.3], theta, &[], 0);
+        let expected = 1.0 - (-(theta + 0.3).exp()).exp();
         assert!((lp[1].exp() - expected).abs() < 1e-12);
 
         let ideal = MixedItemSpec {
@@ -994,6 +1278,86 @@ mod tests {
         let lp = item_logprobs(&ideal, &[1.5_f64.ln(), -0.2], theta, &[], 0);
         let expected = (-0.5 * (1.5 * (theta + 0.2)).powi(2)).exp();
         assert!((lp[1].exp() - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn partial_credit_and_sequential_cells_match_definitions() {
+        let theta = 0.35;
+        let pcm = MixedItemSpec {
+            kind: MixedItemKind::Pcm,
+            n_categories: 3,
+        };
+        let pcm_lp = item_logprobs(&pcm, &[0.2, -0.4], theta, &[], 0);
+        let expected = gpcm_logprobs(theta, &[0.0, 1.0, 2.0], &[0.0, 0.2, -0.4]);
+        for (got, want) in pcm_lp.iter().zip(expected) {
+            assert!((*got - want).abs() < 1e-12);
+        }
+
+        let sequential = MixedItemSpec {
+            kind: MixedItemKind::Sequential,
+            n_categories: 3,
+        };
+        let params = [1.4_f64.ln(), 0.2, -0.5];
+        let lp = item_logprobs(&sequential, &params, theta, &[], 0);
+        let q1 = logistic(1.4 * theta + 0.2);
+        let q2 = logistic(1.4 * theta - 0.5);
+        let expected = [1.0 - q1, q1 * (1.0 - q2), q1 * q2];
+        for (got, want) in lp.iter().map(|v| v.exp()).zip(expected) {
+            assert!((got - want).abs() < 1e-12);
+        }
+        let estimate = public_estimate(&sequential, &params, 0);
+        assert_eq!(estimate.intercepts, vec![0.2, -0.5]);
+
+        let tutz = MixedItemSpec {
+            kind: MixedItemKind::Tutz,
+            n_categories: 3,
+        };
+        let lp = item_logprobs(&tutz, &[0.2, -0.5], theta, &[], 0);
+        let q1 = logistic(theta + 0.2);
+        let q2 = logistic(theta - 0.5);
+        let expected = [1.0 - q1, q1 * (1.0 - q2), q1 * q2];
+        for (got, want) in lp.iter().map(|v| v.exp()).zip(expected) {
+            assert!((got - want).abs() < 1e-12);
+        }
+        let estimate = public_estimate(&tutz, &[0.2, -0.5], 0);
+        assert_eq!(estimate.intercepts, vec![0.2, -0.5]);
+    }
+
+    #[test]
+    fn new_family_aliases_and_public_constraints_are_explicit() {
+        let aliases = [
+            ("1pl", MixedItemKind::Rasch, "rasch"),
+            ("partial_credit", MixedItemKind::Pcm, "pcm"),
+            ("upper_3pl", MixedItemKind::ThreePlUpper, "3plu"),
+            ("complementary_log_log", MixedItemKind::Cll, "cll"),
+            ("sequential", MixedItemKind::Sequential, "sequential"),
+            ("tutz", MixedItemKind::Tutz, "tutz"),
+        ];
+        for (alias, kind, canonical) in aliases {
+            assert_eq!(MixedItemKind::parse(alias).unwrap(), kind);
+            assert_eq!(kind.as_str(), canonical);
+        }
+        assert!(MixedItemKind::parse("not-a-family").is_err());
+
+        let four = MixedItemSpec {
+            kind: MixedItemKind::FourPl,
+            n_categories: 2,
+        };
+        let mut extreme = [8.0, 20.0, -20.0, 20.0];
+        clamp_params(&four, &mut extreme, 0);
+        assert_eq!(extreme[0], 4.0);
+        assert_eq!(extreme[1], 12.0);
+        let estimate = public_estimate(&four, &extreme, 0);
+        let lower = estimate.lower_asymptote.unwrap();
+        let upper = estimate.upper_asymptote.unwrap();
+        assert!(0.0 < lower && lower < upper && upper < 1.0);
+    }
+
+    #[test]
+    fn numeric_hessian_is_symmetrized_without_order_bias() {
+        let mut hessian = vec![vec![2.0, 4.0], vec![8.0, 6.0]];
+        symmetrize_and_ridge(&mut hessian, 0.25);
+        assert_eq!(hessian, vec![vec![2.25, 6.0], vec![6.0, 6.25]]);
     }
 
     #[test]
