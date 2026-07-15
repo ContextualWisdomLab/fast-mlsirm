@@ -93,6 +93,24 @@
 
 ### Added
 
+- **Rating Scale Model** (Andrich, 1978). `fit_rsm(responses)` fits the Rasch-family
+  polytomous model for items on a common rating scale (e.g. Likert): every item has
+  its own location `delta_i`, but the `K-1` category thresholds `tau_k` are *shared
+  across all items* — `ln[P(X=k)/P(X=k-1)] = theta - delta_i - tau_k`, `theta ~
+  N(0,1)`. This is a constrained partial-credit model (the PCM/GPCM in `poly.rs` /
+  `mixed.rs` have item-specific thresholds); at `K=2` it reduces exactly to the Rasch
+  model. Implemented as the GPCM cell with slope 1 and the structured intercept
+  `-k*delta_i - sum_{m<=k} tau_m` (reusing `poly::gpcm_logprobs`), fit by marginal-ML
+  EM with a monotone ECM M-step: a per-item Newton for the locations, then a joint
+  Newton for the shared thresholds aggregated over items — both with a backtracking
+  line search that guarantees the marginal likelihood ascends — followed by
+  re-centering the thresholds to sum to zero (the model is invariant under
+  `tau -> tau - c`, `delta -> delta - c`). A 500-replication Monte-Carlo study (J=12,
+  K=5, N=1000) recovers the item locations and the shared thresholds tightly and the
+  trait with correlation > 0.85 under both a normal and a skewed trait distribution.
+  New `mlsirm_core::rsm` module; exposed to Python through PyO3 as `fit_rsm` with the
+  `RsmFit` wrapper.
+
 - **Continuous Response Model** (Samejima, 1973) — the library's first estimator
   for a *continuous* bounded response (all other models are binary, polytomous,
   response-time, or cognitive-diagnosis). `fit_crm(responses)` fits Samejima's CRM,

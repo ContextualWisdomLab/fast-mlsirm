@@ -39,6 +39,7 @@ use mlsirm_core::cdm::{
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
+use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
@@ -572,6 +573,45 @@ fn fit_crm(
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_delta", res.final_delta)?;
     out.set_item("stopping_tolerance", res.stopping_tolerance)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Rating Scale Model fit (Andrich, 1978; `mlsirm_core::rsm::fit_rsm`). `y`/`observed`
+/// are row-major `n_persons * n_items` with categories `0..n_cat-1`. Every item has
+/// its own location, but the `n_cat-1` category thresholds are shared across items:
+/// `ln[P(k)/P(k-1)] = theta - item_location_i - threshold_k`, `theta ~ N(0,1)`.
+/// Returns a dict with `item_location` (`n_items`), `thresholds` (`n_cat-1`, centered),
+/// `theta` (per-person EAP), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, n_persons, n_items, n_cat, q_theta = 41, max_iter = 500, tol = 1e-6))]
+fn fit_rsm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .map(|&v| if v >= 0 { Ok(v as usize) } else { Err(PyValueError::new_err("y must be non-negative category indices")) })
+        .collect::<PyResult<_>>()?;
+    let obs = observed.as_slice()?;
+    let res = core_fit_rsm(&yy, Some(obs), n_persons, n_items, n_cat, q_theta, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item_location", res.item_location)?;
+    out.set_item("thresholds", res.thresholds)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -3076,6 +3116,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gdina_wald_selection, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

@@ -2373,6 +2373,53 @@ def test_fit_crm_recovers_continuous_responses():
         fit_crm(missing_item)
 
 
+def test_fit_rsm_recovers_shared_thresholds():
+    """Rating Scale Model (Andrich, 1978): recover item locations and the shared
+    category thresholds (centered) plus the trait; K=2 reduces to Rasch."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_rsm, RsmFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rsm"):
+        pytest.skip("compiled core built without fit_rsm")
+
+    rng = np.random.default_rng(1978)
+    n_items, n_cat, n = 12, 5, 2500
+    delta_true = -1.2 + 0.2 * np.arange(n_items)
+    tau_true = np.array([0.9, 0.2, -0.3, -0.8])  # sums to 0
+    theta = rng.standard_normal(n)
+
+    def draw(th, d):
+        # cumulative psi_k = k*th - k*d - sum_{m<=k} tau
+        tk = np.concatenate([[0.0], np.cumsum(tau_true)])
+        psi = np.arange(n_cat) * th - np.arange(n_cat) * d - tk
+        p = np.exp(psi - psi.max())
+        p /= p.sum()
+        return rng.choice(n_cat, p=p)
+
+    y = np.array([[draw(theta[j], delta_true[i]) for i in range(n_items)] for j in range(n)],
+                 dtype=float)
+
+    res = fit_rsm(y)
+    assert isinstance(res, RsmFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
+    assert res.n_parameters == n_items + n_cat - 2
+    assert abs(res.thresholds.sum()) < 1e-6  # centered
+    assert np.sqrt(np.mean((res.item_location - delta_true) ** 2)) < 0.15
+    assert np.sqrt(np.mean((res.thresholds - tau_true) ** 2)) < 0.12
+    assert np.corrcoef(res.theta, theta)[0, 1] > 0.85
+
+    # missing-at-random
+    ym = y.copy()
+    ym[rng.random(ym.shape) < 0.15] = np.nan
+    assert fit_rsm(ym).converged
+
+    with pytest.raises(ValueError):
+        fit_rsm(y.ravel())  # not 2-D
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

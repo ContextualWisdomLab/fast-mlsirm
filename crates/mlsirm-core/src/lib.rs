@@ -13,6 +13,7 @@ pub mod nodes;
 pub mod poly;
 pub mod poly_marginal;
 pub mod oakes;
+pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
 pub(crate) mod quadrature;
