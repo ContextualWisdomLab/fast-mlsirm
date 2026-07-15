@@ -647,6 +647,23 @@ class ItemScreeningResult:
     final_result: object
 
 
+def _require_converged_screening_fit(result, config, stage: str) -> None:
+    status = str(result.convergence_status).strip().lower()
+    if status == "converged":
+        return
+
+    trace = result.loglik_trace
+    last_delta = (
+        abs(float(trace[-1]) - float(trace[-2])) if len(trace) >= 2 else float("nan")
+    )
+    raise RuntimeError(
+        "select_items requires converged parameters before "
+        f"{stage}; status={status or 'unknown'}, n_iter={result.n_iter}, "
+        f"max_iter={config.max_iter}, last_loglik_delta={last_delta:.6g}, "
+        f"tolerance={config.tolerance:.6g}"
+    )
+
+
 def select_items(
     responses: np.ndarray,
     factor_id: np.ndarray,
@@ -689,7 +706,9 @@ def select_items(
     flag 1 alone). Persons flagged by ``l_z* < -1.645`` are excluded from the
     flagging statistics (not from the final fit). Dimensions never drop below
     ``min_items_per_dim`` items — the worst offenders are retained with a
-    note. The final refit uses all surviving items.
+    note. The final refit uses all surviving items. Every screening fit and
+    the final refit must report convergence; unfinished fits raise with their
+    iteration and stopping evidence instead of producing inferential flags.
     """
     from .config import FitConfig
     from .fit import fit
@@ -702,11 +721,14 @@ def select_items(
     config = config or FitConfig(model="MLS2PLM", estimator="mmle")
     if config.estimator != "mmle":
         raise ValueError("select_items requires estimator='mmle'")
+    if max_rounds < 1:
+        raise ValueError("max_rounds must be >= 1")
 
     active = np.ones(n_items, dtype=bool)
     rounds: list[ItemScreeningRound] = []
     removed: dict[str, list[str]] = {}
     result = None
+    fitted_active = None
 
     for round_index in range(max_rounds):
         idx = np.flatnonzero(active)
@@ -721,6 +743,8 @@ def select_items(
             group_id=group_id,
             cluster_id=cluster_id,
         )
+        fitted_active = active.copy()
+        _require_converged_screening_fit(result, config, "inferential screening")
         # person screen — prior means matter for the Snijders MAP correction:
         # multilevel EAPs absorb the cluster intercepts, multigroup the group
         # means, so r_0 must be centered accordingly.
@@ -836,6 +860,18 @@ def select_items(
         if not removed_codes:
             break
         active = kept_after
+
+    if fitted_active is None or not np.array_equal(fitted_active, active):
+        idx = np.flatnonzero(active)
+        obs_r = observed[:, idx]
+        result = fit(
+            np.where(obs_r, y[:, idx], np.nan),
+            d_of_i[idx],
+            config,
+            group_id=group_id,
+            cluster_id=cluster_id,
+        )
+        _require_converged_screening_fit(result, config, "the final refit")
 
     return ItemScreeningResult(
         kept_items=[codes[g] for g in np.flatnonzero(active)],

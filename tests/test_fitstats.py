@@ -112,7 +112,12 @@ def test_select_items_removes_sparse_and_scrambled():
         fid,
         item_codes=codes,
         config=FitConfig(
-            model="MIRT", estimator="mmle", max_iter=40, q_theta=15, latent_dim=1
+            model="MIRT",
+            estimator="mmle",
+            max_iter=100,
+            tolerance=1e-3,
+            q_theta=15,
+            latent_dim=1,
         ),
         max_rounds=2,
         min_items_per_dim=4,
@@ -121,4 +126,28 @@ def test_select_items_removes_sparse_and_scrambled():
     assert "IT03" in out.removed_items and "sparse" in out.removed_items["IT03"]
     assert len(out.kept_items) >= 4
     assert out.final_result is not None
+    assert out.final_result.convergence_status == "converged"
+    assert len(out.final_result.params.b) == len(out.kept_items)
     assert len(out.rounds) >= 1
+
+
+def test_select_items_rejects_nonconverged_fit():
+    y, fid, _ = _simulate_2pl(seed=19, n_persons=150, n_items=6)
+    with pytest.raises(
+        RuntimeError,
+        match=r"status=max_iter_reached, n_iter=1, max_iter=1, .*tolerance=1e-12",
+    ):
+        select_items(
+            y,
+            fid,
+            config=FitConfig(
+                model="MIRT",
+                estimator="mmle",
+                max_iter=1,
+                tolerance=1e-12,
+                q_theta=11,
+                latent_dim=1,
+            ),
+            max_rounds=1,
+            min_items_per_dim=4,
+        )
