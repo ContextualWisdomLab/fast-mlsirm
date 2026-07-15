@@ -49,6 +49,7 @@ def fit_diagnostics(
     m2_q_xi: int = 11,
     estimator: str | None = None,
     population: dict[str, Any] | None = None,
+    convergence_status: str | None = None,
 ) -> FitDiagnostics:
     """Compute item, person, and model diagnostics for binary responses.
 
@@ -58,9 +59,18 @@ def fit_diagnostics(
     requested. Multiple-group MMLE additionally needs ``population['mu']`` and
     ``population['sigma']``; multilevel MMLE needs ``population['sigma_u']``.
     Clustered data use a between-cluster covariance rather than an iid M2.
+    When the calibration convergence status is available, pass it so
+    inferential fit indices cannot be computed from an unfinished fit.
     """
     if include_m2 and estimator is None:
         raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+    if include_m2 and convergence_status is not None:
+        status = str(convergence_status).strip().lower()
+        if status != "converged":
+            raise ValueError(
+                "limited-information diagnostics require converged parameters; "
+                f"the fitted model did not converge (status={status or 'unknown'})"
+            )
     if include_m2 and group_id is not None and cluster_id is not None:
         raise ValueError("M2 accepts group_id or cluster_id, not both")
     y, observed = prepare_response(responses, mask)

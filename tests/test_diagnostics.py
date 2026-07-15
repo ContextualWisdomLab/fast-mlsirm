@@ -151,6 +151,28 @@ def test_fit_diagnostics_requires_estimator_and_population_for_structured_m2():
         )
 
 
+def test_fit_diagnostics_rejects_nonconverged_parameters_for_m2():
+    params = MLSIRMParams(
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+
+    with pytest.raises(ValueError, match="did not converge.*max_iter_reached"):
+        fit_diagnostics(
+            np.zeros((4, 3)),
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            include_m2=True,
+            estimator="mmle",
+            convergence_status="max_iter_reached",
+        )
+
+
 def test_dimensionality_diagnostics_returns_best_candidate():
     data = simulate(MLS2PLMConfig(n_persons=12, n_dims=2, items_per_dim=3, latent_dim=2, seed=7))
 

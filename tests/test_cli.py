@@ -202,6 +202,58 @@ def test_cli_diagnose_fit_success(tmp_path):
 
     assert (diag_dir / "fit_diagnostics.json").exists()
 
+
+def test_cli_limited_information_rejects_saved_nonconverged_fit(tmp_path, capsys):
+    responses = tmp_path / "responses.npy"
+    factors = tmp_path / "item_factor.csv"
+    params = tmp_path / "params.npz"
+    out_dir = tmp_path / "diag_out"
+    np.save(responses, np.zeros((4, 3)))
+    factors.write_text("item_id,factor_id\n0,0\n1,0\n2,0\n", encoding="utf-8")
+    np.savez(
+        params,
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+    (tmp_path / "fit_summary.json").write_text(
+        json.dumps(
+            {
+                "optimizer": "mmle_em/numpy",
+                "convergence_status": "max_iter_reached",
+                "n_iter": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = [
+        "diagnose-fit",
+        "--responses",
+        str(responses),
+        "--factors",
+        str(factors),
+        "--params",
+        str(params),
+        "--model",
+        "MIRT",
+        "--limited-information",
+        "--out",
+        str(out_dir),
+    ]
+
+    with patch("fast_mlsirm.cli.fit_diagnostics") as diagnostics, patch(
+        "fast_mlsirm.cli.save_fit_diagnostics"
+    ), patch.object(sys, "argv", ["fast-mlsirm"] + args):
+        assert main() == 1
+
+    diagnostics.assert_not_called()
+    assert "did not converge" in capsys.readouterr().err
+    assert not out_dir.exists()
+
+
 def test_cli_diagnose_dimensions_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     diag_dir = tmp_path / "dim_out"

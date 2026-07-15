@@ -30,15 +30,23 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _load_fit_context(params_path: str | Path) -> tuple[str | None, dict | None]:
-    """Recover estimator/population metadata saved beside ``params.npz``."""
+def _load_fit_context(
+    params_path: str | Path,
+) -> tuple[str | None, dict | None, str | None]:
+    """Recover estimator, population, and convergence metadata beside params."""
     path = Path(params_path)
     summary_path = path.with_name("fit_summary.json")
     if not summary_path.exists():
-        return None, None
+        return None, None, None
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     optimizer = str(summary.get("optimizer", "")).lower()
     estimator = "mmle" if optimizer.startswith("mmle") else "jmle" if optimizer else None
+    raw_status = summary.get("convergence_status")
+    convergence_status = (
+        str(raw_status).strip().lower() if raw_status is not None else None
+    )
+    if not convergence_status:
+        convergence_status = None
     population = summary.get("population")
     if population is not None:
         population = dict(population)
@@ -47,7 +55,7 @@ def _load_fit_context(params_path: str | Path) -> tuple[str | None, dict | None]
                 population["mu"] = np.asarray(arrays["pop_mu"], dtype=float)
             if "pop_sigma" in arrays:
                 population["sigma"] = np.asarray(arrays["pop_sigma"], dtype=float)
-    return estimator, population
+    return estimator, population, convergence_status
 
 
 def _progress(args: argparse.Namespace, message: str) -> None:
@@ -338,9 +346,19 @@ def _main(argv: list[str] | None = None) -> int:
         try:
             responses, factors = _load_response_and_factors(args.responses, args.factors)
             params = load_params(args.params)
-            saved_estimator, population = _load_fit_context(args.params)
+            saved_estimator, population, convergence_status = _load_fit_context(args.params)
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
+            if (
+                args.limited_information
+                and convergence_status is not None
+                and convergence_status != "converged"
+            ):
+                raise ValueError(
+                    "limited-information diagnostics require converged parameters; "
+                    "the fitted model did not converge "
+                    f"(status={convergence_status})"
+                )
         except FileNotFoundError as e:
             if os.environ.get("FAST_MLSIRM_DEBUG"):
                 raise
@@ -367,6 +385,7 @@ def _main(argv: list[str] | None = None) -> int:
             include_m2=args.limited_information,
             estimator=args.estimator or saved_estimator,
             population=population,
+            convergence_status=convergence_status,
         )
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
