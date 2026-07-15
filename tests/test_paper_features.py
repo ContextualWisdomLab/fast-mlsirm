@@ -1197,6 +1197,39 @@ def test_m2_polytomous():
         m2_polytomous(y[:, :2], fit2)
 
 
+def test_m2_polytomous_rejects_nonconverged_calibration():
+    """Finite parameters are not sufficient evidence for M2 inference."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_polytomous, m2_polytomous
+    from fast_mlsirm.polytomous import _core_module
+
+    if _core_module() is None or not hasattr(
+        __import__("fast_mlsirm")._core, "poly_m2"
+    ):
+        pytest.skip("compiled core built without poly_m2")
+
+    rng = np.random.default_rng(20260716)
+    y = rng.integers(0, 3, size=(240, 6))
+    fit = fit_polytomous(
+        y,
+        3,
+        model="gpcm",
+        q_theta=11,
+        max_iter=1,
+        tol=1e-12,
+    )
+
+    assert fit.converged is False
+    assert fit.termination_reason == "max_iter"
+    assert fit.n_iter == 1
+    assert fit.final_delta > fit.stopping_tolerance
+    assert np.all(np.isfinite(fit.slope))
+    assert np.all(np.isfinite(fit.cat_params))
+    with pytest.raises(RuntimeError, match="requires a converged fit"):
+        m2_polytomous(y, fit, q_theta=11)
+
+
 def test_local_dependence_polytomous():
     """Item-pair local dependence (Chen & Thissen, 1997) through the public API:
     correct per-pair bookkeeping, calibrated (few flags) for a locally

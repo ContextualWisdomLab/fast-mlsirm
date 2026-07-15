@@ -416,7 +416,9 @@ def m2_polytomous(
     interval (``rmsea2_ci_lower``/``rmsea2_ci_upper``), ``srmsr``, and
     ``cfi``/``tli`` from a complete-independence M2 baseline (``null_m2`` and
     ``null_df``), plus the ``n_moments``/``n_parameters``/``n_complete``
-    counts. Requires at least 3 items and ``n_moments > n_parameters``.
+    counts. Requires at least 3 items and ``n_moments > n_parameters``. A fit
+    carrying a known non-converged status is rejected because the reference
+    distribution and derived fit indices require a completed calibration.
 
     References (APA 7th ed.):
         Cai, L., Chung, S. W., & Lee, T. (2023). Incremental model fit assessment
@@ -428,6 +430,17 @@ def m2_polytomous(
             categorical data analysis. *Multivariate Behavioral Research,
             49*(4), 305-328. https://doi.org/10.1080/00273171.2014.911075
     """
+    if hasattr(fit, "converged") and not bool(fit.converged):
+        reason = getattr(fit, "termination_reason", "unknown")
+        n_iter = getattr(fit, "n_iter", "unknown")
+        final_delta = getattr(fit, "final_delta", float("nan"))
+        stopping_tolerance = getattr(fit, "stopping_tolerance", float("nan"))
+        raise RuntimeError(
+            "m2_polytomous requires a converged fit; "
+            f"termination_reason={reason}, n_iter={n_iter}, "
+            f"final_delta={final_delta}, stopping_tolerance={stopping_tolerance}"
+        )
+
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
     y_int, observed = _poly_int_and_mask(responses, n_cat)
