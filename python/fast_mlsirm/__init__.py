@@ -26,6 +26,7 @@ from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, G
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
+from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (ValidationVerdict as ValidationVerdict,
                          validate_judge as validate_judge)
@@ -102,6 +103,8 @@ __all__ = [
     "MixedItemParameters",
     "fit_lltm",
     "LltmFit",
+    "fit_testlet",
+    "TestletFit",
     "export_serving_bundle",
     "fit",
     "fit_polytomous",

@@ -16,6 +16,7 @@ pub mod rt;
 pub mod rt_joint;
 pub(crate) mod quadrature;
 pub mod scoring;
+pub mod testlet;
 
 // cargo-llvm-cov runs in CPU-only CI against the repository-owned line-coverage
 // baseline. Keep the hardware-backed wgpu module in normal builds, and cover

@@ -2075,3 +2075,48 @@ def test_fit_lltm_recovers_basic_parameters():
     with pytest.raises(ValueError):
         # rows sum to a constant + intercept => rank-deficient design, rejected
         fit_lltm(y, np.ones((j, 1)))
+
+
+def test_fit_testlet_recovers_local_dependence():
+    """Testlet model (Bradlow, Wainer, & Wang, 1999): recover the per-testlet variance
+    (local dependence), and confirm sigma^2=0 reduces to the ordinary Rasch/2PL fit."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_testlet, TestletFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_testlet"):
+        pytest.skip("compiled core built without fit_testlet")
+
+    rng = np.random.default_rng(1999)
+    n, per, d = 800, 8, 2
+    j = per * d
+    tid = np.repeat(np.arange(d), per)  # contiguous testlets
+    sig2 = np.array([0.6, 0.3])
+    beta = np.tile(np.linspace(-1.5, 1.5, per), d)  # Rasch: b = -beta (a=1)
+    theta = rng.standard_normal(n)
+    gamma = rng.standard_normal((n, d)) * np.sqrt(sig2)[None, :]
+    y = np.empty((n, j))
+    for p in range(n):
+        eta = theta[p] + beta - gamma[p, tid]
+        y[p] = (rng.random(j) < 1 / (1 + np.exp(-eta))).astype(float)
+
+    res = fit_testlet(y, tid, model="rasch")
+    assert isinstance(res, TestletFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert np.all(res.a == 1.0)  # Rasch
+    assert res.sigma2.shape == (d,)
+    # the strong-LD testlet is recovered as clearly larger than the weak one
+    assert res.sigma2[0] > 0.35 and res.sigma2[0] > res.sigma2[1]
+    assert np.sqrt(np.mean((res.sigma2 - sig2) ** 2)) < 0.2
+
+    # sigma^2 pinned to 0 => ordinary Rasch (no local dependence modeled)
+    res0 = fit_testlet(y, tid, model="rasch", estimate_sigma=False, init_sigma2=0.0)
+    assert np.all(res0.sigma2 == 0.0)
+    assert res0.n_parameters == j  # fixed variances are not free parameters
+
+    with pytest.raises(ValueError):
+        fit_testlet(y.ravel(), tid)  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_testlet(y, tid, model="graded")  # unknown model

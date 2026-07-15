@@ -93,6 +93,38 @@
 
 ### Added
 
+- **Testlet response model** (Bradlow, Wainer, & Wang, 1999; Wang, Bradlow, &
+  Wainer, 2002). `fit_testlet(responses, testlet_id, model="rasch"|"2pl")` models the
+  local dependence induced when items share a common stimulus (a reading passage): each
+  item in testlet `d` carries a person-specific random effect `gamma_{j,d} ~ N(0,
+  sigma^2_d)`, so `P(X=1) = sigmoid(a_i(theta_j - b_i - gamma_{j,d(i)}))`. The per-testlet
+  variance `sigma^2_d` is the estimand of interest — a large value flags strong
+  within-bundle dependence; all `sigma^2_d = 0` is the ordinary conditional-independence
+  2PL/Rasch model. A dedicated estimator (not the general bifactor): because each item
+  depends on `theta` and exactly one testlet effect, the marginal likelihood **factors**
+  into a `theta`-outer / per-testlet-`gamma`-inner nested Gauss-Hermite quadrature whose
+  per-person cost is independent of the number of testlets `D` (vs the bifactor's
+  exponential `D`-dimensional grid), and it reports `sigma^2_d` directly rather than only
+  per-item loadings. The item M-step reuses `fit_mmle_2pl`'s Newton on the effective node
+  `t_g - sigma_d*u_h`; the closed-form variance update `sigma^2_d <- sigma^2_d * mean_j
+  E[u_d^2 | y_j]` is accelerated with SQUAREM (Varadhan & Roland, 2008; monotone, with a
+  plain-EM fallback) to tame the slow variance-component convergence. Singleton testlets
+  (whose variance is non-identified) are pinned to 0. Compute lives in
+  `mlsirm_core::testlet::fit_testlet`; the shared Newton and Gauss-Hermite table make the
+  `sigma^2 -> 0` case reduce **bit-exactly** to `fit_mmle_2pl` (the reduction anchor,
+  asserted `< 1e-12`). Also anchored: a no-spurious-LD check (pure-2PL data recovers
+  `sigma^2 ~ 0`), a strong-LD recovery with a log-likelihood gain over the naive 2PL fit,
+  singleton pinning, and a monotone-ascent guard. A Bradlow-Wainer-Wang-style
+  500-replication Monte-Carlo (Rasch testlet, N=1000, D=4) under normal and skewed
+  ability recovers the testlet variances near-unbiasedly (RMSE ~0.093, `|bias| <= 0.007`)
+  and the item difficulties (RMSE ~0.09), with every replication converging. Exposed via
+  PyO3 as `fit_testlet` with the
+  `TestletFit` Python wrapper. (In the 2PL testlet the discrimination `a_i` and the
+  testlet SD `sigma_d` both scale the dependence via `a_i*sigma_d` and separate only
+  weakly, so the Rasch testlet is the well-identified default.) Deferred: polytomous and
+  3PL testlets, covariate/second-order structure, and the original paper's fully-Bayesian
+  MCMC estimator.
+
 - **Linear Logistic Test Model (LLTM)** (Fischer, 1973). An *explanatory* Rasch
   model: `fit_lltm(responses, q_design)` decomposes each item's easiness (the package's
   additive sign convention; Fischer difficulty is its negative) into a
