@@ -1605,6 +1605,11 @@ fn fit_nominal(
     out.set_item("intercepts", fit.intercepts)?;
     out.set_item("loglik", fit.loglik)?;
     out.set_item("n_iter", fit.n_iter)?;
+    out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
+    out.set_item("final_delta", fit.final_delta)?;
+    out.set_item("stopping_tolerance", fit.stopping_tolerance)?;
     Ok(out.into())
 }
 

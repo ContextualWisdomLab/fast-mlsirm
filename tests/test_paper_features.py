@@ -1287,6 +1287,12 @@ def test_fit_nominal_polytomous():
     assert nom.scores.shape == (j, k - 1)
     assert nom.intercepts.shape == (j, k - 1)
     assert np.isfinite(nom.loglik)
+    assert nom.converged
+    assert nom.termination_reason == "tolerance"
+    assert nom.loglik_trace.shape == (nom.n_iter + 1,)
+    assert nom.loglik == nom.loglik_trace[-1]
+    assert nom.final_delta <= nom.stopping_tolerance
+    assert np.all(np.diff(nom.loglik_trace) >= -1e-10)
 
     # nests the GPCM: at least as high a loglik, and linear recovered scores
     gp = fit_polytomous(y, k, model="gpcm")
@@ -1298,6 +1304,28 @@ def test_fit_nominal_polytomous():
         fit_nominal_polytomous(y, 1)
     with pytest.raises(ValueError):
         fit_nominal_polytomous(y.astype(float) + 0.5, k)  # non-integer categories
+
+    unfinished = fit_nominal_polytomous(y[:50], k, max_iter=1, tol=1e-12)
+    assert not unfinished.converged
+    assert unfinished.termination_reason == "max_iter"
+    assert unfinished.n_iter == 1
+    assert unfinished.loglik_trace.shape == (2,)
+    assert unfinished.loglik == unfinished.loglik_trace[-1]
+    assert np.isfinite(unfinished.final_delta)
+    assert unfinished.final_delta > unfinished.stopping_tolerance
+
+    malformed = (
+        np.empty((0, j)),
+        np.empty((n, 0)),
+        np.column_stack((y[:, 0], np.full(n, np.nan))),
+        np.where(np.arange(y.size).reshape(y.shape) == 0, np.inf, y),
+    )
+    for bad in malformed:
+        with pytest.raises(ValueError):
+            fit_nominal_polytomous(bad, k)
+    for kwargs in ({"max_iter": 0}, {"tol": np.inf}, {"tol": -1.0}):
+        with pytest.raises(ValueError):
+            fit_nominal_polytomous(y, k, **kwargs)
 
 
 def test_person_fit_polytomous():

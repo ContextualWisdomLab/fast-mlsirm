@@ -71,7 +71,9 @@ def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, n
     yf = np.asarray(responses, dtype=np.float64)
     if yf.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    observed = np.isfinite(yf)
+    if np.any(np.isinf(yf)):
+        raise ValueError("responses may only use NaN for missing values")
+    observed = ~np.isnan(yf)
     obs_vals = yf[observed]
     if obs_vals.size and (
         np.any(obs_vals != np.floor(obs_vals)) or obs_vals.min() < 0 or obs_vals.max() >= n_cat
@@ -531,6 +533,13 @@ class NominalFit:
     intercepts: np.ndarray
     loglik: float
     n_iter: int
+    converged: bool = False
+    termination_reason: str = "not_fitted"
+    loglik_trace: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    final_delta: float = np.nan
+    stopping_tolerance: float = np.nan
 
 
 def fit_nominal_polytomous(
@@ -547,11 +556,15 @@ def fit_nominal_polytomous(
     with ``theta ~ N(0,1)``. The generalized partial credit model is the special
     case ``a_k = a*k``, so the nominal model nests it. ``responses`` is persons x
     items of integer categories ``0..n_cat-1``; ``NaN`` marks a missing response.
+    As a repository-level convergence contract, the returned trace evaluates the
+    observed-data log-likelihood at every returned parameter state;
+    ``converged=False`` with ``termination_reason="max_iter"`` distinguishes an
+    exhausted iteration budget from tolerance-based convergence.
 
     References (APA 7th ed.):
         Bock, R. D. (1972). Estimating item parameters and latent ability when
             responses are scored in two or more nominal categories.
-            *Psychometrika, 37*(1), 29-51. https://doi.org/10.1007/BF02291411
+            *Psychometrika, 37*(1), 29–51. https://doi.org/10.1007/BF02291411
         Thissen, D., Cai, L., & Bock, R. D. (2010). The nominal categories item
             response model. In *Handbook of polytomous item response theory
             models* (pp. 43-75). Routledge.
@@ -560,8 +573,21 @@ def fit_nominal_polytomous(
         raise ValueError("n_cat must be an integer >= 2")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if (
+        isinstance(max_iter, bool)
+        or not isinstance(max_iter, (int, np.integer))
+        or max_iter < 1
+    ):
+        raise ValueError("max_iter must be an integer >= 1")
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if y_int.shape[0] == 0 or y_int.shape[1] == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    missing_items = np.flatnonzero(~observed.any(axis=0))
+    if missing_items.size:
+        raise ValueError(f"items with no observed responses: {missing_items.tolist()}")
     core = _core_module()
     if core is None or not hasattr(core, "fit_nominal"):
         raise RuntimeError("fit_nominal_polytomous requires the compiled Rust core")
@@ -583,6 +609,11 @@ def fit_nominal_polytomous(
         intercepts=np.asarray(res["intercepts"], dtype=np.float64),
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
     )
 
 

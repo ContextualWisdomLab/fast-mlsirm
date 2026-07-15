@@ -269,9 +269,7 @@ fn m_step_item(
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
             let (candidate_f, _) = item_neg_ll_grad(&candidate, nodes, counts, model);
-            if candidate_f.is_finite()
-                && candidate_f <= f0 - 1e-4 * alpha * directional
-            {
+            if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
                 break;
@@ -436,7 +434,9 @@ pub fn fit_poly_unidim(
             }
         }
         if !ll.is_finite() {
-            return Err(format!("non-finite observed-data log-likelihood at iteration {it}"));
+            return Err(format!(
+                "non-finite observed-data log-likelihood at iteration {it}"
+            ));
         }
         loglik_trace.push(ll);
         if loglik_trace.len() >= 2 {
@@ -491,6 +491,11 @@ pub struct NominalFit {
     pub intercepts: Vec<Vec<f64>>,
     pub loglik: f64,
     pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub loglik_trace: Vec<f64>,
+    pub final_delta: f64,
+    pub stopping_tolerance: f64,
 }
 
 /// Negative expected complete-data log-lik and gradient for one item of the
@@ -536,7 +541,11 @@ fn nominal_m_step(
 ) -> Vec<f64> {
     let np = params.len();
     for _ in 0..n_newton {
-        let (_f, g) = nominal_item_neg_ll_grad(&params, nodes, counts, n_cat);
+        let (f0, g) = nominal_item_neg_ll_grad(&params, nodes, counts, n_cat);
+        let grad_norm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+            break;
+        }
         let h = 1e-5;
         let mut hess = vec![vec![0.0_f64; np]; np];
         for j in 0..np {
@@ -553,13 +562,39 @@ fn nominal_m_step(
             }
             hess[r][r] += 1e-8;
         }
-        let step = solve_small(hess, g);
-        let mut max_step = 0.0_f64;
-        for j in 0..np {
-            params[j] -= step[j];
-            max_step = max_step.max(step[j].abs());
+        let mut step = solve_small(hess, g.clone());
+        let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
+        if !step.iter().all(|s| s.is_finite()) || directional <= 0.0 {
+            step = g.clone();
+            directional = grad_norm * grad_norm;
         }
-        if max_step < 1e-9 {
+        let mut max_step = step.iter().map(|s| s.abs()).fold(0.0_f64, f64::max);
+        if max_step > 2.0 {
+            for s in &mut step {
+                *s *= 2.0 / max_step;
+            }
+            directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum();
+            max_step = 2.0;
+        }
+        let mut alpha = 1.0_f64;
+        let mut accepted = false;
+        for _ in 0..25 {
+            let candidate: Vec<f64> = params
+                .iter()
+                .zip(&step)
+                .map(|(value, direction)| value - alpha * direction)
+                .collect();
+            let (candidate_f, _) = nominal_item_neg_ll_grad(&candidate, nodes, counts, n_cat);
+            if candidate_f.is_finite()
+                && candidate_f <= f0 - 1e-4 * alpha * directional
+            {
+                params = candidate;
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if !accepted || alpha * max_step < 1e-9 {
             break;
         }
     }
@@ -595,22 +630,43 @@ pub fn fit_nominal(
     max_iter: usize,
     tol: f64,
 ) -> Result<NominalFit, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    if max_iter == 0 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and > 0".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_owned())?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
     let z = n_cat - 1;
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            if is_obs(p, i) && y[p * n_items + i] >= n_cat {
+                return Err("observed response categories must be < n_cat".into());
+            }
+        }
+    }
+    for i in 0..n_items {
+        if !(0..n_persons).any(|p| is_obs(p, i)) {
+            return Err(format!("item {i} has no observed responses"));
+        }
+    }
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
         .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
@@ -635,10 +691,13 @@ pub fn fit_nominal(
         }
     }
 
-    let mut prev_ll = f64::NEG_INFINITY;
-    let mut ll = f64::NEG_INFINITY;
     let mut it = 0;
-    while it < max_iter {
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
         let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
         for i in 0..n_items {
             let mut scores = vec![0.0_f64; n_cat];
@@ -653,7 +712,7 @@ pub fn fit_nominal(
             }
         }
         let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
-        ll = 0.0;
+        let mut ll = 0.0;
         let mut log_node = vec![0.0_f64; qn];
         for p in 0..n_persons {
             for nd in 0..qn {
@@ -685,19 +744,50 @@ pub fn fit_nominal(
                 }
             }
         }
+        if !ll.is_finite() {
+            return Err(format!("non-finite observed-data log-likelihood at iteration {it}"));
+        }
+        loglik_trace.push(ll);
+        if loglik_trace.len() >= 2 {
+            let previous = loglik_trace[loglik_trace.len() - 2];
+            final_delta = ll - previous;
+            stopping_tolerance = tol * (1.0 + previous.abs());
+            let monotonic_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+            if final_delta < -monotonic_tolerance {
+                return Err(format!(
+                    "EM observed-data log-likelihood decreased at iteration {it}: \
+                     delta={final_delta:.6e}, monotonic_tolerance={monotonic_tolerance:.6e}"
+                ));
+            }
+            if final_delta <= stopping_tolerance {
+                converged = true;
+                termination_reason = "tolerance".to_owned();
+                break;
+            }
+        }
+        if it == max_iter {
+            break;
+        }
         for i in 0..n_items {
             params[i] = nominal_m_step(params[i].clone(), nodes, &counts[i], n_cat, 10);
         }
         it += 1;
-        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
-            break;
-        }
-        prev_ll = ll;
     }
 
+    let ll = *loglik_trace.last().expect("EM trace is never empty");
     let scores: Vec<Vec<f64>> = params.iter().map(|p| p[0..z].to_vec()).collect();
     let intercepts: Vec<Vec<f64>> = params.iter().map(|p| p[z..2 * z].to_vec()).collect();
-    Ok(NominalFit { scores, intercepts, loglik: ll, n_iter: it })
+    Ok(NominalFit {
+        scores,
+        intercepts,
+        loglik: ll,
+        n_iter: it,
+        converged,
+        termination_reason,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
+    })
 }
 
 /// Per-person polytomous person-fit result.
@@ -2795,6 +2885,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn fit_nominal_reports_convergence_and_rejects_invalid_controls() {
+        let (n_persons, n_items, n_cat) = (60usize, 3usize, 3usize);
+        let y: Vec<usize> = (0..n_persons)
+            .flat_map(|p| (0..n_items).map(move |i| (p + i) % n_cat))
+            .collect();
+        let fit = fit_nominal(&y, None, n_persons, n_items, n_cat, 21, 1, 1e-12).unwrap();
+        assert!(!fit.converged);
+        assert_eq!(fit.termination_reason, "max_iter");
+        assert_eq!(fit.n_iter, 1);
+        assert_eq!(fit.loglik_trace.len(), fit.n_iter + 1);
+        assert_eq!(fit.loglik, *fit.loglik_trace.last().unwrap());
+        assert!(fit.final_delta.is_finite());
+        assert!(fit.final_delta > fit.stopping_tolerance);
+        assert!(fit.loglik_trace.windows(2).all(|pair| pair[1] >= pair[0] - 1e-10));
+
+        assert!(fit_nominal(&[], None, 0, n_items, n_cat, 21, 10, 1e-6).is_err());
+        assert!(fit_nominal(&y, None, n_persons, n_items, n_cat, 21, 0, 1e-6).is_err());
+        assert!(
+            fit_nominal(&y, None, n_persons, n_items, n_cat, 21, 10, f64::INFINITY).is_err()
+        );
+        let observed: Vec<bool> = (0..n_persons)
+            .flat_map(|_| (0..n_items).map(|i| i != 1))
+            .collect();
+        assert!(
+            fit_nominal(&y, Some(&observed), n_persons, n_items, n_cat, 21, 10, 1e-6).is_err()
+        );
+    }
+
     /// Aggregate nominal-model recovery (RMSE and mean |bias|) for the free
     /// scores and intercepts over `reps` datasets at fixed true parameters, with
     /// per-item sign alignment (the model is identified up to (a_k,θ)→(−a_k,−θ)).
@@ -2841,6 +2960,15 @@ mod tests {
                 }
             }
             let fit = fit_nominal(&yi, None, n_persons, n_items, k, 21, 200, 1e-6).unwrap();
+            assert!(
+                fit.converged,
+                "nominal recovery replicate {rep} did not converge: reason={} n_iter={} \
+                 final_delta={:.6e} tolerance={:.6e}",
+                fit.termination_reason,
+                fit.n_iter,
+                fit.final_delta,
+                fit.stopping_tolerance
+            );
             for i in 0..n_items {
                 // align the reflection sign to the truth for this item
                 let dot: f64 = (0..z).map(|m| fit.scores[i][m] * a_true[i][m]).sum();
