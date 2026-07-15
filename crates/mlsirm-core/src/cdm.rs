@@ -841,7 +841,8 @@ pub struct QValidationResult {
 /// to identify the attributes). `y`/`observed` are row-major `N*J` (missing
 /// dropped, MAR); `provisional_q` is row-major `J*K`, entries 0/1, each item
 /// loading at least one attribute. Cost is `O(J * 4^K)` for the exhaustive
-/// q-vector search, so `K` is capped at 10.
+/// q-vector search, so `K` is capped at 10. Validation returns an error rather
+/// than computing PVAF from an unconverged provisional G-DINA calibration.
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
@@ -888,6 +889,21 @@ pub fn validate_q_matrix(
     // Fit the structural G-DINA under the provisional Q (identifies the attribute
     // labels; also validates y/observed shapes and the config).
     let res = fit_gdina(y, observed, provisional_q, n_persons, n_items, n_attributes, cfg)?;
+    if !res.converged {
+        let final_delta = res
+            .loglik_trace
+            .windows(2)
+            .last()
+            .map(|w| (w[1] - w[0]).abs())
+            .unwrap_or(f64::INFINITY);
+        return Err(format!(
+            concat!(
+                "G-DINA calibration did not converge after {} of {} M-steps: ",
+                "final |delta loglik| = {:.6e} (tol = {:.6e})"
+            ),
+            res.n_iter, cfg.max_iter, final_delta, cfg.tol
+        ));
+    }
 
     // Recover each item's SATURATED IRF over all 2^K full classes and the class
     // weights pi_c from one posterior pass at the fitted parameters. The provisional
@@ -2279,6 +2295,40 @@ mod tests {
         assert!(
             validate_q_matrix(&y, &obs, &[2, 0, 1, 1, 0, 1], n, 3, 2, 0.95, &CdmConfig::default())
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn qval_rejects_nonconverged_calibration() {
+        let n = 8usize;
+        let y = vec![
+            0.0, 0.0, 0.0, // 00
+            0.0, 1.0, 0.0, // 01
+            1.0, 0.0, 0.0, // 10
+            1.0, 1.0, 1.0, // 11
+            0.0, 0.0, 0.0, // repeated response patterns keep every item observed
+            0.0, 1.0, 0.0,
+            1.0, 0.0, 0.0,
+            1.0, 1.0, 1.0,
+        ];
+        let observed = vec![true; y.len()];
+        let q = vec![1, 0, 0, 1, 1, 1];
+        let cfg = CdmConfig {
+            max_iter: 1,
+            tol: 1e-12,
+            ..CdmConfig::default()
+        };
+
+        let err =
+            validate_q_matrix(&y, &observed, &q, n, 3, 2, 0.95, &cfg).unwrap_err();
+        assert!(err.contains("did not converge"), "unexpected error: {err}");
+        assert!(
+            err.contains("1 of 1 M-steps"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("tol = 1.000000e-12"),
+            "unexpected error: {err}"
         );
     }
 

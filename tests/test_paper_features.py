@@ -2065,6 +2065,11 @@ def test_validate_q_matrix_corrects_misspecification():
         validate_q_matrix(y.ravel(), truth)  # responses not 2-D
     with pytest.raises(ValueError):
         validate_q_matrix(y, truth, epsilon=1.5)  # epsilon out of range
+    with pytest.raises(
+        ValueError,
+        match=r"G-DINA calibration did not converge after 1 of 1 M-steps",
+    ):
+        validate_q_matrix(y, truth, max_iter=1, tol=1e-12)
 
 
 def test_gdina_wald_selection_classifies_items():

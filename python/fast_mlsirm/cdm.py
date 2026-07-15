@@ -273,7 +273,9 @@ def validate_q_matrix(
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
     MAR); ``provisional_q`` is an items x attributes 0/1 array, each item loading at
-    least one attribute (``K`` up to 10). ``epsilon`` is the PVAF cutoff.
+    least one attribute (``K`` up to 10). ``epsilon`` is the PVAF cutoff. A
+    nonconverged provisional G-DINA calibration raises ``ValueError`` instead of
+    producing PVAF suggestions from an unfinished fit.
 
     References (APA 7th ed.):
         de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
