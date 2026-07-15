@@ -5,6 +5,7 @@ core."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 
 import numpy as np
 
@@ -91,6 +92,7 @@ def fit_speed_accuracy(
     max_iter: int = 500,
     tol: float = 1e-6,
     fix_sigma_tau: float | None = None,
+    require_convergence: bool = False,
 ) -> dict:
     """Estimate a two-stage marginal-ML adaptation of the joint speed-accuracy
     person covariance in van der Linden (2007) (compute in Rust) -- the
@@ -104,7 +106,9 @@ def fit_speed_accuracy(
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
     :func:`fit_response_times`). Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
-    ``loglik``, ``n_iter``, ``converged``.
+    ``loglik``, ``loglik_trace``, ``n_iter``, ``converged``,
+    ``termination_reason``, and ``final_loglik_change``. Non-convergence emits
+    ``RuntimeWarning``; set ``require_convergence=True`` to raise instead.
 
     ``rho`` here is the consistent marginal-ML correlation, NOT the attenuated
     correlation of the two separately-scored EAPs (which shrinks toward 0).
@@ -136,16 +140,29 @@ def fit_speed_accuracy(
         int(q), int(max_iter), float(tol),
         None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
-    return {
+    fit = {
         "rho": float(res["rho"]),
         "sigma_tau": float(res["sigma_tau"]),
         "s_theta2": float(res["s_theta2"]),
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
         "tau_eap": np.asarray(res["tau_eap"], dtype=np.float64),
         "loglik": float(res["loglik"]),
+        "loglik_trace": np.asarray(res["loglik_trace"], dtype=np.float64),
         "n_iter": int(res["n_iter"]),
         "converged": bool(res["converged"]),
+        "termination_reason": str(res["termination_reason"]),
+        "final_loglik_change": float(res["final_loglik_change"]),
     }
+    if not fit["converged"]:
+        message = (
+            "joint speed-accuracy calibration did not converge: "
+            f"reason={fit['termination_reason']}, iterations={fit['n_iter']}/{max_iter}, "
+            f"final_loglik_change={fit['final_loglik_change']:.12g}, tolerance={tol:.12g}"
+        )
+        if require_convergence:
+            raise RuntimeError(message)
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+    return fit
 
 
 def rt_person_fit(

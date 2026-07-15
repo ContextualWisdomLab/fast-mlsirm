@@ -1794,8 +1794,11 @@ fn fit_speed_accuracy_covariance(
     out.set_item("theta_eap", fit.theta_eap)?;
     out.set_item("tau_eap", fit.tau_eap)?;
     out.set_item("loglik", fit.loglik)?;
+    out.set_item("loglik_trace", fit.loglik_trace)?;
     out.set_item("n_iter", fit.n_iter)?;
     out.set_item("converged", fit.converged)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("final_loglik_change", fit.final_loglik_change)?;
     Ok(out.into())
 }
 

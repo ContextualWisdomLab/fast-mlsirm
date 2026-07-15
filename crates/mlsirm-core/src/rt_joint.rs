@@ -143,6 +143,8 @@ pub struct SpeedAccuracyFit {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    pub termination_reason: String,
+    pub final_loglik_change: f64,
     /// Joint-posterior EAP ability / speed (borrow strength through `rho`).
     pub theta_eap: Vec<f64>,
     pub tau_eap: Vec<f64>,
@@ -299,6 +301,10 @@ pub fn fit_speed_accuracy_covariance(
             }
         }
         trace.push(loglik);
+        if it > 0 && (trace[it] - trace[it - 1]).abs() < config.tol {
+            converged = true;
+            break;
+        }
         // M-step (exact constrained maximizer, sigma_theta^2 == 1)
         let s11 = acc11 / n_persons as f64;
         let s12 = acc12 / n_persons as f64;
@@ -318,11 +324,6 @@ pub fn fit_speed_accuracy_covariance(
         let sig = sigma_tau2.sqrt();
         let rho = (c / sig).clamp(-config.rho_floor, config.rho_floor);
         c = rho * sig;
-
-        if it > 0 && (trace[it] - trace[it - 1]).abs() < config.tol {
-            converged = true;
-            break;
-        }
     }
 
     // final pass: EAPs + loglik at converged Sigma_P
@@ -366,7 +367,14 @@ pub fn fit_speed_accuracy_covariance(
         theta_eap[p] = te;
         tau_eap[p] = ts;
     }
-    trace.push(final_ll);
+    if trace.last().is_none_or(|last| last.to_bits() != final_ll.to_bits()) {
+        trace.push(final_ll);
+    }
+    let final_loglik_change = trace
+        .windows(2)
+        .last()
+        .map_or(f64::INFINITY, |pair| (pair[1] - pair[0]).abs());
+    let termination_reason = if converged { "converged" } else { "max_iter_reached" };
     let sigma_tau = sigma_tau2.sqrt();
     let rho = c / sigma_tau;
     Ok(SpeedAccuracyFit {
@@ -377,6 +385,8 @@ pub fn fit_speed_accuracy_covariance(
         loglik_trace: trace,
         n_iter,
         converged,
+        termination_reason: termination_reason.to_string(),
+        final_loglik_change,
         theta_eap,
         tau_eap,
     })
@@ -570,8 +580,24 @@ mod tests {
         // Anchor D: recovery at rho=0.5
         let fit = sim_and_fit(11, 1000, 0.5, 0.3);
         assert!(fit.converged);
+        assert_eq!(fit.termination_reason, "converged");
         let max_drop = fit.loglik_trace.windows(2).map(|w| w[0] - w[1]).fold(f64::NEG_INFINITY, f64::max);
-        eprintln!("[joint] trace len={} first={:.4} last={:.4} max_drop={:.3e}", fit.loglik_trace.len(), fit.loglik_trace[0], fit.loglik_trace.last().unwrap(), max_drop);
+        let final_delta = fit.final_loglik_change;
+        eprintln!(
+            "[joint] converged={} n_iter={} trace len={} first={:.4} last={:.4} final_delta={:.12e} tol={:.12e} max_drop={:.3e}",
+            fit.converged,
+            fit.n_iter,
+            fit.loglik_trace.len(),
+            fit.loglik_trace[0],
+            fit.loglik_trace.last().unwrap(),
+            final_delta,
+            SpeedAccuracyConfig::default().tol,
+            max_drop
+        );
+        assert!(
+            final_delta < SpeedAccuracyConfig::default().tol,
+            "converged fit final delta {final_delta} exceeds tolerance"
+        );
         assert!(
             fit.loglik_trace.windows(2).all(|w| w[1] >= w[0] - 1e-6 * w[0].abs().max(1.0)),
             "loglik must be monotone (max drop {max_drop:.3e})"
@@ -580,7 +606,37 @@ mod tests {
         assert!((fit.sigma_tau - 0.3).abs() < 0.05, "sigma_tau {}", fit.sigma_tau);
         // Anchor B: true independence -> rho ~= 0
         let fit0 = sim_and_fit(12, 1000, 0.0, 0.3);
+        assert!(fit0.converged);
+        assert_eq!(fit0.termination_reason, "converged");
+        assert!(fit0.final_loglik_change < SpeedAccuracyConfig::default().tol);
         assert!(fit0.rho.abs() < 0.08, "rho at independence should be ~0: {}", fit0.rho);
+    }
+
+    #[test]
+    fn joint_reports_max_iter_nonconvergence() {
+        let ni = 4usize;
+        let n = 20usize;
+        let responses: Vec<f64> = (0..n * ni).map(|idx| ((idx + idx / ni) % 2) as f64).collect();
+        let times: Vec<f64> = (0..n * ni).map(|idx| 2.0 + (idx % ni) as f64 * 0.1).collect();
+        let fit = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &vec![1.0; ni],
+            &vec![0.0; ni],
+            &vec![1.5; ni],
+            &vec![1.0; ni],
+            n,
+            ni,
+            SpeedAccuracyConfig { q: 7, max_iter: 1, ..SpeedAccuracyConfig::default() },
+        )
+        .unwrap();
+        assert!(!fit.converged);
+        assert_eq!(fit.termination_reason, "max_iter_reached");
+        assert_eq!(fit.n_iter, 1);
+        assert_eq!(fit.loglik_trace.len(), 2);
+        assert!(fit.final_loglik_change.is_finite());
+        assert!(fit.final_loglik_change >= SpeedAccuracyConfig::default().tol);
     }
 
     #[test]
@@ -591,6 +647,14 @@ mod tests {
             let (mut sr, mut br, mut ss, mut bs, mut absr) = (0.0, 0.0, 0.0, 0.0, 0.0);
             for r in 0..reps {
                 let fit = sim_and_fit(200 + r as u64, 800, rho_true, 0.3);
+                assert!(
+                    fit.converged,
+                    "replication {r} at rho={rho_true} exhausted {} iterations; final delta={}",
+                    fit.n_iter,
+                    fit.final_loglik_change
+                );
+                assert_eq!(fit.termination_reason, "converged");
+                assert!(fit.final_loglik_change < SpeedAccuracyConfig::default().tol);
                 sr += (fit.rho - rho_true).powi(2);
                 br += fit.rho - rho_true;
                 ss += (fit.sigma_tau - 0.3).powi(2);

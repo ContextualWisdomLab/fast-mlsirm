@@ -1761,6 +1761,12 @@ def test_fit_speed_accuracy():
     resp, times = sim(0.5)
     res = fit_speed_accuracy(resp, times, a, b, alpha, beta)
     assert res["converged"]
+    assert res["termination_reason"] == "converged"
+    assert res["n_iter"] < 500
+    assert res["final_loglik_change"] < 1e-6
+    assert np.isfinite(res["loglik_trace"]).all()
+    assert np.all(np.diff(res["loglik_trace"]) >= -1e-6 * np.maximum(np.abs(res["loglik_trace"][:-1]), 1))
+    assert res["loglik"] == res["loglik_trace"][-1]
     assert abs(res["rho"] - 0.5) < 0.1, res["rho"]
     assert abs(res["sigma_tau"] - 0.3) < 0.05
     assert res["theta_eap"].shape == (n,) and res["tau_eap"].shape == (n,)
@@ -1768,12 +1774,47 @@ def test_fit_speed_accuracy():
     # true independence -> rho ~ 0
     r0, t0 = sim(0.0)
     res0 = fit_speed_accuracy(r0, t0, a, b, alpha, beta)
+    assert res0["converged"]
+    assert res0["termination_reason"] == "converged"
+    assert res0["final_loglik_change"] < 1e-6
     assert abs(res0["rho"]) < 0.08, res0["rho"]
 
     # works with a fitted RT model's alpha/beta
     rt = fit_response_times(times)
     res_rt = fit_speed_accuracy(resp, times, a, b, rt.alpha, rt.beta)
+    assert res_rt["converged"]
+    assert res_rt["termination_reason"] == "converged"
+    assert res_rt["final_loglik_change"] < 1e-6
     assert abs(res_rt["rho"] - 0.5) < 0.15
+
+    with pytest.warns(RuntimeWarning, match="max_iter_reached"):
+        res_nc = fit_speed_accuracy(
+            resp,
+            times,
+            a,
+            b,
+            alpha,
+            beta,
+            q=7,
+            max_iter=1,
+        )
+    assert not res_nc["converged"]
+    assert res_nc["termination_reason"] == "max_iter_reached"
+    assert res_nc["n_iter"] == 1
+    assert res_nc["final_loglik_change"] >= 1e-6
+
+    with pytest.raises(RuntimeError, match="max_iter_reached"):
+        fit_speed_accuracy(
+            resp,
+            times,
+            a,
+            b,
+            alpha,
+            beta,
+            q=7,
+            max_iter=1,
+            require_convergence=True,
+        )
 
     with pytest.raises(ValueError):
         fit_speed_accuracy(resp.ravel(), times, a, b, alpha, beta)  # not 2-D
