@@ -114,13 +114,13 @@ def test_marginal_parity_theta_sd():
     )
 
 
-def test_marginal_gpu_agrees_with_cpu_loosely():
-    # f32 GPU E-step vs f64 CPU reference. On adapters-less hosts (CI) the
-    # auto device falls back to the CPU path and this compares CPU vs CPU.
+def test_marginal_gpu_agrees_with_cpu_loosely(capfd):
+    # Compare an explicit f32 GPU E-step with the f64 CPU reference. An auto
+    # request can silently fall back to CPU and would not prove GPU parity.
     y, fid = _simulate(seed=6)
     cluster_id = np.arange(len(y)) % 10
     results = {}
-    for device in ("cpu", "auto"):
+    for device in ("cpu", "gpu"):
         cfg = FitConfig(
             model="MLS2PLM",
             estimator="mmle",
@@ -132,10 +132,17 @@ def test_marginal_gpu_agrees_with_cpu_loosely():
             q_u=11,
         )
         results[device] = fit(y, fid, cfg, cluster_id=cluster_id)
-    r, g = results["cpu"], results["auto"]
+    device_stderr = capfd.readouterr().err
+    if "no usable GPU adapter was found" in device_stderr:
+        pytest.skip("no usable GPU adapter; explicit GPU request fell back to CPU")
+
+    r, g = results["cpu"], results["gpu"]
     np.testing.assert_allclose(g.params.b, r.params.b, atol=1e-3)
     np.testing.assert_allclose(g.params.zeta, r.params.zeta, atol=5e-3)
     np.testing.assert_allclose(g.params.theta, r.params.theta, atol=1e-3)
     np.testing.assert_allclose(
         g.population["sigma_u"], r.population["sigma_u"], atol=1e-3
+    )
+    np.testing.assert_allclose(
+        g.loglik_trace[-1], r.loglik_trace[-1], rtol=1e-6, atol=2e-4
     )
