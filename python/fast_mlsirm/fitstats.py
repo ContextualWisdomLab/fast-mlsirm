@@ -160,12 +160,14 @@ def _icc_grid(
     q_xi: int = 11,
     eps_distance: float = 1e-8,
     prior_mean: np.ndarray | None = None,
+    prior_sd: np.ndarray | None = None,
 ):
     """Item ICCs on the joint (t, x) grid.
 
     Returns (probs (I, Qt, Nx), node weights (Qt,), (Nx,), theta nodes (Qt,)).
-    ``prior_mean`` optionally shifts the trait prior per dimension (D,) — used
-    for multigroup/multilevel populations where theta_d ~ N(mean_d, 1).
+    ``prior_mean`` and ``prior_sd`` optionally transform the trait prior per
+    dimension (D,) — used for multigroup/multilevel populations where
+    theta_d ~ N(mean_d, sd_d^2).
     """
     model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}
@@ -180,7 +182,12 @@ def _icc_grid(
     a = np.exp(params.alpha) if free_alpha else np.ones_like(params.alpha)
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     shift = np.zeros(int(d_of_i.max()) + 1) if prior_mean is None else np.asarray(prior_mean)
-    theta = shift[d_of_i][:, None] + t_nodes[None, :]  # (I, Qt)
+    scale = np.ones(int(d_of_i.max()) + 1) if prior_sd is None else np.asarray(prior_sd)
+    if shift.shape != scale.shape or np.any(~np.isfinite(shift)):
+        raise ValueError("prior_mean/prior_sd must be finite vectors with matching dimensions")
+    if np.any(~np.isfinite(scale)) or np.any(scale <= 0.0):
+        raise ValueError("prior_sd must contain finite positive values")
+    theta = shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
     if uses_space:
         diff = x_grid[None, :, :] - params.zeta[:, None, :]
@@ -188,6 +195,89 @@ def _icc_grid(
         eta = eta - math.exp(params.tau) * dist[:, None, :]
     probs = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     return probs, t_w, x_w, t_nodes
+
+
+def _factorized_trait_moments(
+    probs: np.ndarray,
+    trait_weights: np.ndarray,
+    space_weights: np.ndarray,
+    factor_id: np.ndarray,
+    item_sets: list[list[int]],
+) -> np.ndarray:
+    """Integrate simple-structure margins over independent trait dimensions.
+
+    ``probs`` has shape ``(items, trait_nodes, space_nodes)``. Items on the
+    same factor share a trait node; distinct factors are integrated
+    independently conditional on the common latent-space node.
+    """
+    probs = np.asarray(probs, dtype=float)
+    trait_weights = np.asarray(trait_weights, dtype=float)
+    space_weights = np.asarray(space_weights, dtype=float)
+    d_of_i = np.asarray(factor_id, dtype=np.int64)
+    if probs.ndim != 3 or probs.shape[1:] != (
+        trait_weights.size,
+        space_weights.size,
+    ):
+        raise ValueError("probability grid does not match quadrature weights")
+    out = np.empty(len(item_sets), dtype=float)
+    for row, item_set in enumerate(item_sets):
+        item_set = np.asarray(item_set, dtype=np.int64)
+        conditional = np.ones(space_weights.size, dtype=float)
+        for dimension in np.unique(d_of_i[item_set]):
+            items = item_set[d_of_i[item_set] == dimension]
+            conditional *= trait_weights @ np.prod(probs[items], axis=0)
+        out[row] = float(space_weights @ conditional)
+    return out
+
+
+def _icc_multilevel_grid(
+    params,
+    factor_id: np.ndarray,
+    model: str,
+    sigma_u: float,
+    q_u: int,
+    q_theta: int,
+    q_xi: int,
+    eps_distance: float,
+):
+    """ICC grids conditional on one shared cluster-intercept quadrature."""
+    d_of_i, n_dims = _validate_factor_id(factor_id)
+    u_nodes, u_weights = _gh(q_u)
+    grids = []
+    trait_weights = space_weights = None
+    for node in u_nodes:
+        probs, trait_weights, space_weights, _ = _icc_grid(
+            params,
+            d_of_i,
+            model,
+            q_theta,
+            q_xi,
+            eps_distance,
+            np.full(n_dims, sigma_u * node),
+            np.ones(n_dims),
+        )
+        grids.append(probs)
+    return np.stack(grids), u_weights, trait_weights, space_weights
+
+
+def _factorized_multilevel_moments(
+    probs: np.ndarray,
+    cluster_weights: np.ndarray,
+    trait_weights: np.ndarray,
+    space_weights: np.ndarray,
+    factor_id: np.ndarray,
+    item_sets: list[list[int]],
+) -> np.ndarray:
+    """Integrate margins over shared cluster and independent residual traits."""
+    conditional = np.stack(
+        [
+            _factorized_trait_moments(
+                grid, trait_weights, space_weights, factor_id, item_sets
+            )
+            for grid in probs
+        ]
+    )
+    return np.asarray(cluster_weights, dtype=float) @ conditional
 
 
 def _lord_wingersky(probs: np.ndarray) -> np.ndarray:
@@ -1112,8 +1202,11 @@ def empirical_reliability(result) -> np.ndarray:
 
 @dataclass
 class M2Result:
-    """M2 limited-information goodness-of-fit result (statistic, df, p-value,
-    RMSEA2 with a 90% CI, bivariate SRMSR, and the moment/parameter counts)."""
+    """M2 limited-information goodness-of-fit result.
+
+    Includes RMSEA2 with a 90% CI, bivariate SRMSR, and CFI/TLIRT computed
+    against a fitted complete-independence (zero-factor) M2 baseline.
+    """
 
     m2: float
     df: float
@@ -1122,9 +1215,28 @@ class M2Result:
     rmsea2_ci_lower: float
     rmsea2_ci_upper: float
     srmsr: float
+    null_m2: float
+    null_df: float
+    cfi: float
+    tli: float
     n_moments: int
     n_parameters: int
     n_complete: int
+    estimator: str = "mmle"
+    inference_valid: bool = True
+    inference_note: str = ""
+    n_groups: int = 1
+    n_clusters: int | None = None
+
+    @property
+    def rmsea(self) -> float:
+        """Conventional label for this M2-based RMSEA2 estimate."""
+        return self.rmsea2
+
+    @property
+    def srmr(self) -> float:
+        """Conventional alias for the returned bivariate SRMSR."""
+        return self.srmsr
 
 
 class _MutBank:
@@ -1149,15 +1261,87 @@ def m2(
     q_theta: int = 21,
     q_xi: int = 11,
     eps_distance: float = 1e-8,
+    *,
+    estimator: str = "mmle",
+    prior_mean: np.ndarray | None = None,
+    prior_sd: np.ndarray | None = None,
 ) -> M2Result:
-    """M2 statistic (order-2 residual margins), df, p-value, RMSEA2 with a 90%
-    noncentral-chi-square CI, and the bivariate SRMSR. Complete cases only —
-    M2 presumes a single sample size N (Maydeu-Olivares & Joe 2006)."""
-    core = _core_module()
+    """M2 statistic and approximate/incremental fit indices.
+
+    Returns RMSEA2 with a 90% noncentral-chi-square CI, bivariate SRMSR, and
+    CFI/TLIRT from a complete-independence M2 baseline. Complete cases only —
+    M2 presumes a single sample size N (Maydeu-Olivares & Joe, 2006; Cai &
+    Chung, 2022). ``estimator="cmle"`` selects the conditional Rasch M2 when
+    ``model="MIRT"`` has fixed unit discriminations. ``estimator="jmle"``
+    computes a clearly labelled post-hoc marginal discrepancy using the
+    supplied (or empirical Gaussian) evaluation distribution; its chi-square
+    p-value and RMSEA confidence interval are suppressed because ordinary JMLE
+    is not a fixed-dimensional consistent estimator.
+
+    References
+    ----------
+    Cai, L., & Chung, S. W. (2022). Incremental model fit assessment in the
+    case of categorical data: Tucker-Lewis index for item response theory
+    modeling. *Prevention Science, 23*, 455–467.
+    https://doi.org/10.1007/s11121-021-01253-4
+
+    Maydeu-Olivares, A., & Joe, H. (2006). Limited information goodness-of-fit
+    testing in multidimensional contingency tables. *Psychometrika, 71*(4),
+    713–732. https://doi.org/10.1007/s11336-005-1295-9
+
+    Haberman, S. J. (2004). *Joint and conditional maximum likelihood
+    estimation for the Rasch model for binary responses* (Research Report No.
+    RR-04-20). Educational Testing Service.
+    https://doi.org/10.1002/j.2333-8504.2004.tb01947.x
+    """
+    estimator = str(estimator).lower()
+    if estimator not in {"mmle", "jmle", "cmle"}:
+        raise ValueError("estimator must be one of: mmle, jmle, cmle")
     y0 = np.asarray(responses, dtype=float)
+    if y0.ndim != 2:
+        raise ValueError("responses must be a persons-by-items matrix")
     observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed0.shape != y0.shape:
+        raise ValueError("mask must match responses")
+    values = y0[observed0]
+    if np.any(~np.isfinite(values)) or np.any((values != 0.0) & (values != 1.0)):
+        raise ValueError("observed responses must be finite binary values")
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    if d_of_i.shape[0] != y0.shape[1]:
+        raise ValueError("factor_id length must match the number of items")
     n_dims = int(d_of_i.max()) + 1
+    if prior_mean is None:
+        if estimator == "jmle" and hasattr(params, "theta"):
+            theta = np.asarray(params.theta, dtype=float)
+            prior_mean = np.mean(theta, axis=0)
+        else:
+            prior_mean = np.zeros(n_dims)
+    if prior_sd is None:
+        if estimator == "jmle" and hasattr(params, "theta"):
+            theta = np.asarray(params.theta, dtype=float)
+            prior_sd = np.std(theta, axis=0, ddof=1)
+        else:
+            prior_sd = np.ones(n_dims)
+    prior_mean = np.asarray(prior_mean, dtype=float)
+    prior_sd = np.asarray(prior_sd, dtype=float)
+    if prior_mean.shape != (n_dims,) or prior_sd.shape != (n_dims,):
+        raise ValueError(f"prior_mean/prior_sd must both have shape ({n_dims},)")
+    if np.any(~np.isfinite(prior_mean)) or np.any(~np.isfinite(prior_sd)):
+        raise ValueError("prior_mean/prior_sd must be finite")
+    if np.any(prior_sd <= 0.0):
+        raise ValueError("prior_sd must be positive")
+
+    if estimator == "cmle":
+        if model.upper() != "MIRT" or not np.allclose(
+            np.asarray(params.alpha, dtype=float), 0.0, atol=1e-10, rtol=0.0
+        ):
+            raise ValueError(
+                "CMLE M2 is defined here only for the non-spatial Rasch model: "
+                "model='MIRT' with every alpha fixed at 0 (discrimination 1)"
+            )
+        return m2_cmle_rasch(y0, np.asarray(params.b, dtype=float), observed0)
+
+    core = _core_module()
     if core is not None:
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.m2_stat(
@@ -1166,19 +1350,211 @@ def m2(
             int(y0.shape[0]),
             bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
             bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            np.zeros(n_dims), np.ones(n_dims),
+            prior_mean, prior_sd,
             q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
         )
-        return M2Result(
+        result = M2Result(
             m2=float(res["m2"]), df=float(res["df"]), p_value=float(res["p_value"]),
             rmsea2=float(res["rmsea2"]),
             rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
             rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
             srmsr=float(res["srmsr"]),
+            null_m2=float(res["null_m2"]), null_df=float(res["null_df"]),
+            cfi=float(res["cfi"]), tli=float(res["tli"]),
             n_moments=int(res["n_moments"]), n_parameters=int(res["n_parameters"]),
             n_complete=int(res["n_complete"]),
         )
-    return _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
+    else:
+        result = _m2_numpy(
+            y0, observed0, d_of_i, params, model, q_theta, q_xi,
+            eps_distance, prior_mean, prior_sd,
+        )
+    if estimator == "mmle":
+        return result
+    result.estimator = estimator
+    result.inference_valid = False
+    result.inference_note = (
+        "post-hoc marginal M2 discrepancy only; JMLE does not establish "
+        "the chi-square reference distribution for this evaluation population"
+    )
+    result.p_value = float("nan")
+    result.rmsea2_ci_lower = float("nan")
+    result.rmsea2_ci_upper = float("nan")
+    return result
+
+
+def _log_elementary_symmetric(log_weights: np.ndarray) -> np.ndarray:
+    """Log elementary-symmetric polynomials of all orders."""
+    out = np.full(log_weights.size + 1, -np.inf, dtype=float)
+    out[0] = 0.0
+    used = 0
+    for log_weight in log_weights:
+        used += 1
+        for order in range(used, 0, -1):
+            out[order] = np.logaddexp(out[order], log_weight + out[order - 1])
+    return out
+
+
+def _rasch_conditional_set_probabilities(
+    item_easiness: np.ndarray, item_sets: list[list[int]]
+) -> np.ndarray:
+    """P(all items in each set are 1 | raw score) under the Rasch model."""
+    b = np.asarray(item_easiness, dtype=float)
+    b = b - b.mean()
+    n_items = b.size
+    denominator = _log_elementary_symmetric(b)
+    out = np.zeros((n_items + 1, len(item_sets)), dtype=float)
+    all_items = np.arange(n_items)
+    for col, item_set in enumerate(item_sets):
+        selected = np.asarray(item_set, dtype=np.int64)
+        keep = np.ones(n_items, dtype=bool)
+        keep[selected] = False
+        numerator = _log_elementary_symmetric(b[all_items[keep]])
+        selected_log_weight = float(b[selected].sum()) if selected.size else 0.0
+        order = selected.size
+        for score in range(order, n_items + 1):
+            remaining_score = score - order
+            if remaining_score < numerator.size and np.isfinite(denominator[score]):
+                out[score, col] = math.exp(
+                    selected_log_weight + numerator[remaining_score] - denominator[score]
+                )
+    return out
+
+
+def m2_cmle_rasch(
+    responses: np.ndarray,
+    item_easiness: np.ndarray,
+    mask: np.ndarray | None = None,
+) -> M2Result:
+    """M2 for binary Rasch item parameters estimated by CMLE.
+
+    Conditioning on each person's raw score eliminates ability. The empirical
+    raw-score distribution supplies the remaining nuisance distribution, and
+    its ``I`` free probabilities are included in the M2 derivative matrix.
+    Item easiness is represented by ``I - 1`` contrasts because a common shift
+    cancels from the conditional likelihood. Haberman (2004) supports the
+    conditional-estimation and identifiability pieces; combining that nuisance
+    parameterization with the Maydeu-Olivares--Joe tangent-space M2 projection
+    is this repository's implementation, not a method attributed to Haberman.
+
+    References
+    ----------
+    Haberman, S. J. (2004). *Joint and conditional maximum likelihood
+    estimation for the Rasch model for binary responses* (Research Report No.
+    RR-04-20). Educational Testing Service.
+    https://doi.org/10.1002/j.2333-8504.2004.tb01947.x
+
+    Maydeu-Olivares, A., & Joe, H. (2006). Limited information goodness-of-fit
+    testing in multidimensional contingency tables. *Psychometrika, 71*(4),
+    713–732. https://doi.org/10.1007/s11336-005-1295-9
+    """
+    y0 = np.asarray(responses, dtype=float)
+    if y0.ndim != 2:
+        raise ValueError("responses must be a persons-by-items matrix")
+    observed = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed.shape != y0.shape:
+        raise ValueError("mask must match responses")
+    complete = np.all(observed, axis=1)
+    y = y0[complete]
+    if y.shape[0] == 0 or np.any((y != 0.0) & (y != 1.0)):
+        raise ValueError("CMLE M2 needs complete binary response rows")
+    b = np.asarray(item_easiness, dtype=float)
+    n_items = y.shape[1]
+    if b.shape != (n_items,) or np.any(~np.isfinite(b)):
+        raise ValueError(f"item_easiness must be a finite vector of length {n_items}")
+    if n_items < 5:
+        raise ValueError("CMLE M2 needs at least 5 items for positive degrees of freedom")
+
+    scores = y.sum(axis=1).astype(np.int64)
+    score_counts = np.bincount(scores, minlength=n_items + 1)
+    if np.any(score_counts == 0):
+        missing = np.flatnonzero(score_counts == 0).tolist()
+        raise ValueError(
+            "CMLE M2 needs every raw-score category represented; missing scores "
+            f"{missing}"
+        )
+    n = y.shape[0]
+    score_prob = score_counts.astype(float) / n
+    pairs = [(i, j) for i in range(n_items) for j in range(i + 1, n_items)]
+    moment_items = [[i] for i in range(n_items)] + [[i, j] for i, j in pairs]
+    s = len(moment_items)
+    z_rows = np.empty((n, s), dtype=float)
+    z_rows[:, :n_items] = y
+    for index, (i, j) in enumerate(pairs):
+        z_rows[:, n_items + index] = y[:, i] * y[:, j]
+    p_obs = z_rows.mean(axis=0)
+
+    conditional = _rasch_conditional_set_probabilities(b, moment_items)
+    model_moments = score_prob @ conditional
+    p_item = n_items - 1
+    p_score = n_items
+    delta = np.zeros((s, p_item + p_score), dtype=float)
+    for col in range(p_item):
+        h = 1e-4 * (1.0 + abs(b[col]) + abs(b[-1]))
+        plus, minus = b.copy(), b.copy()
+        plus[col] += h
+        plus[-1] -= h
+        minus[col] -= h
+        minus[-1] += h
+        delta[:, col] = (
+            score_prob @ _rasch_conditional_set_probabilities(plus, moment_items)
+            - score_prob @ _rasch_conditional_set_probabilities(minus, moment_items)
+        ) * (0.5 / h)
+    reference_score = n_items
+    for score in range(n_items):
+        delta[:, p_item + score] = conditional[score] - conditional[reference_score]
+
+    cache: dict[tuple[int, ...], float] = {}
+
+    def set_probability(item_set):
+        key = tuple(sorted(item_set))
+        if key not in cache:
+            values = _rasch_conditional_set_probabilities(b, [list(key)])[:, 0]
+            cache[key] = float(score_prob @ values)
+        return cache[key]
+
+    xi = np.empty((s, s), dtype=float)
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            cov = set_probability(union) - model_moments[a_i] * model_moments[b_i]
+            xi[a_i, b_i] = xi[b_i, a_i] = cov
+    p = delta.shape[1]
+    if s <= p or n < p + 2:
+        raise ValueError(f"CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})")
+    m2_value = _projected_m2_numpy(p_obs - model_moments, delta, xi, float(n))
+
+    null_mom, null_delta, null_xi = _m2_null_components(p_obs, moment_items)
+    null_m2 = _projected_m2_numpy(
+        p_obs - null_mom, null_delta, null_xi, float(n)
+    )
+    df = float(s - p)
+    null_df = float(s - n_items)
+    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
+        m2_value, df, null_m2, null_df, n
+    )
+    ss = 0.0
+    count = 0
+    for index, (i, j) in enumerate(pairs):
+        pi, pj, pij = p_obs[i], p_obs[j], p_obs[n_items + index]
+        mi, mj, mij = model_moments[i], model_moments[j], model_moments[n_items + index]
+        dobs = pi * (1.0 - pi) * pj * (1.0 - pj)
+        dmod = mi * (1.0 - mi) * mj * (1.0 - mj)
+        if dobs > 1e-12 and dmod > 1e-12:
+            ss += (
+                (pij - pi * pj) / math.sqrt(dobs)
+                - (mij - mi * mj) / math.sqrt(dmod)
+            ) ** 2
+            count += 1
+    return M2Result(
+        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper,
+        srmsr=math.sqrt(ss / count) if count else float("nan"),
+        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
+        n_moments=s, n_parameters=p, n_complete=n,
+        estimator="cmle",
+        inference_note="conditional Rasch M2 with empirical raw-score nuisance distribution",
+    )
 
 
 def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
@@ -1213,7 +1589,10 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
     return 0.5 * (lo + hi)
 
 
-def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance):
+def _m2_numpy(
+    y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance,
+    prior_mean=None, prior_sd=None,
+):
     """NumPy parity reference for :func:`m2` (Rust core is the compute path)."""
     model_u = model.upper()
     free_alpha = model_u not in {"MLSRM", "ULSRM"}
@@ -1256,23 +1635,39 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
     for m, (i, j) in enumerate(pairs):
         p_obs[n_items + m] = np.mean((yc[:, i] != 0.0) & (yc[:, j] != 0.0))
 
-    prior_mean = np.zeros(n_dims_of(d_of_i))
+    if prior_mean is None:
+        prior_mean = np.zeros(n_dims_of(d_of_i))
+    if prior_sd is None:
+        prior_sd = np.ones(n_dims_of(d_of_i))
 
     def node_probs(pp):
-        probs, t_w, x_w, _ = _icc_grid(pp, d_of_i, model, q_theta, q_xi, eps_distance, prior_mean)
-        w = np.multiply.outer(t_w, x_w).ravel()
-        return probs.reshape(n_items, -1), w
+        probs, t_w, x_w, _ = _icc_grid(
+            pp, d_of_i, model, q_theta, q_xi, eps_distance,
+            prior_mean, prior_sd,
+        )
+        return probs, t_w, x_w
 
-    probs0, weights = node_probs(params)
+    probs0, trait_weights, space_weights = node_probs(params)
 
     def pi_set(probs, sset):
-        pr = weights.copy()
-        for m in sset:
-            pr = pr * probs[m]
-        return float(pr.sum())
+        return float(
+            _factorized_trait_moments(
+                probs,
+                trait_weights,
+                space_weights,
+                d_of_i,
+                [sset],
+            )[0]
+        )
 
     def model_moments(probs):
-        return np.array([pi_set(probs, sset) for sset in moment_items])
+        return _factorized_trait_moments(
+            probs,
+            trait_weights,
+            space_weights,
+            d_of_i,
+            moment_items,
+        )
 
     mom0 = model_moments(probs0)
     e = p_obs - mom0
@@ -1295,7 +1690,7 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
             z[i, k] = base + h
         else:
             t = base + h
-        mp, _ = node_probs(_MutBank(a, b, z, t))
+        mp, _, _ = node_probs(_MutBank(a, b, z, t))
         mom_plus = model_moments(mp)
         a, b, z, t = alpha0.copy(), b0.copy(), zeta0.copy(), tau0
         if kind == "b":
@@ -1306,7 +1701,7 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
             z[i, k] = base - h
         else:
             t = base - h
-        mm, _ = node_probs(_MutBank(a, b, z, t))
+        mm, _, _ = node_probs(_MutBank(a, b, z, t))
         mom_minus = model_moments(mm)
         delta[:, col] = (mom_plus - mom_minus) * (0.5 / h)
 
@@ -1320,12 +1715,7 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
             xi[b_i, a_i] = cov
 
     n_f = float(n_c)
-    u = np.linalg.solve(xi, e)          # Xi^-1 e
-    w = np.linalg.solve(xi, delta)      # Xi^-1 Delta
-    amat = delta.T @ w                  # Delta' Xi^-1 Delta
-    g = w.T @ e                         # Delta' Xi^-1 e
-    z = np.linalg.solve(amat, g)
-    m2v = max(0.0, n_f * (float(e @ u) - float(g @ z)))
+    m2v = _projected_m2_numpy(e, delta, xi, n_f)
     df = float(s - p)
     p_value = chi2_sf(m2v, df)
     denom = df * (n_f - 1.0)
@@ -1346,10 +1736,538 @@ def _m2_numpy(y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance)
             cnt += 1
     srmsr = math.sqrt(ss / cnt) if cnt else float("nan")
 
+    null_mom = np.array(
+        [np.prod([p_obs[i] for i in sset]) for sset in moment_items], dtype=float
+    )
+    null_e = p_obs - null_mom
+    null_delta = np.zeros((s, n_items), dtype=float)
+    for row, sset in enumerate(moment_items):
+        for col in sset:
+            null_delta[row, col] = np.prod(
+                [p_obs[i] for i in sset if i != col], dtype=float
+            )
+    null_xi = np.zeros((s, s), dtype=float)
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            union_moment = np.prod([p_obs[i] for i in union], dtype=float)
+            cov = union_moment - null_mom[a_i] * null_mom[b_i]
+            null_xi[a_i, b_i] = cov
+            null_xi[b_i, a_i] = cov
+    null_m2 = _projected_m2_numpy(null_e, null_delta, null_xi, n_f)
+    null_df = float(s - n_items)
+    if null_m2 > m2v and null_m2 > null_df:
+        cfi = float(np.clip(1.0 - (m2v - df) / (null_m2 - null_df), 0.0, 1.0))
+        tli = float(
+            (null_m2 / null_df - m2v / df) / (null_m2 / null_df - 1.0)
+        )
+    else:
+        cfi = tli = float("nan")
+
     return M2Result(
         m2=m2v, df=df, p_value=p_value, rmsea2=rmsea2,
         rmsea2_ci_lower=ci_lo, rmsea2_ci_upper=ci_hi, srmsr=srmsr,
+        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
         n_moments=s, n_parameters=p, n_complete=n_c,
+    )
+
+
+def _projected_m2_numpy(
+    residual: np.ndarray,
+    delta: np.ndarray,
+    xi: np.ndarray,
+    n: float,
+) -> float:
+    """Evaluate the projected M2 quadratic form without explicit inverses."""
+    xi_residual = np.linalg.solve(xi, residual)
+    xi_delta = np.linalg.solve(xi, delta)
+    information = delta.T @ xi_delta
+    score = xi_delta.T @ residual
+    adjustment = np.linalg.solve(information, score)
+    return max(
+        0.0,
+        n * (float(residual @ xi_residual) - float(score @ adjustment)),
+    )
+
+
+def _m2_group_components(
+    y0,
+    observed0,
+    d_of_i,
+    params,
+    model,
+    q_theta,
+    q_xi,
+    eps_distance,
+    prior_mean,
+    prior_sd,
+    shared_sigma_u=None,
+    q_u=11,
+):
+    """Build one population's M2 moments, derivatives, and covariance."""
+    model_u = model.upper()
+    free_alpha = model_u not in {"MLSRM", "ULSRM"}
+    uses_space = model_u != "MIRT"
+    n_items = y0.shape[1]
+    latent_dim = int(np.asarray(params.zeta).shape[1])
+    pairs = [(i, j) for i in range(n_items) for j in range(i + 1, n_items)]
+    moment_items = [[i] for i in range(n_items)] + [[i, j] for i, j in pairs]
+    s = len(moment_items)
+
+    plist = []
+    for i in range(n_items):
+        plist.append(("b", i, 0))
+        if free_alpha:
+            plist.append(("a", i, 0))
+        if uses_space:
+            plist.extend(("z", i, k) for k in range(latent_dim))
+    tau_free = uses_space and model_u in {"MLS2PLM", "ULS2PLM", "MLSRM", "ULSRM"}
+    if tau_free:
+        plist.append(("t", 0, 0))
+
+    complete = np.all(observed0, axis=1)
+    idx = np.flatnonzero(complete)
+    if idx.size < 2:
+        raise ValueError("each population needs at least two complete cases for M2")
+    yc = (np.asarray(y0[idx]) != 0.0).astype(float)
+    z_rows = np.empty((idx.size, s), dtype=float)
+    z_rows[:, :n_items] = yc
+    for m, (i, j) in enumerate(pairs):
+        z_rows[:, n_items + m] = yc[:, i] * yc[:, j]
+    p_obs = z_rows.mean(axis=0)
+
+    prior_mean = np.asarray(prior_mean, dtype=float)
+    prior_sd = np.asarray(prior_sd, dtype=float)
+
+    if shared_sigma_u is None:
+
+        def node_probs(pp, mean=prior_mean, sd=prior_sd, sigma_u=None):
+            probs, t_w, x_w, _ = _icc_grid(
+                pp, d_of_i, model, q_theta, q_xi, eps_distance, mean, sd
+            )
+            return probs, None, t_w, x_w
+
+    else:
+
+        def node_probs(pp, mean=None, sd=None, sigma_u=shared_sigma_u):
+            return _icc_multilevel_grid(
+                pp,
+                d_of_i,
+                model,
+                float(sigma_u),
+                int(q_u),
+                q_theta,
+                q_xi,
+                eps_distance,
+            )
+
+    probs0, cluster_weights, trait_weights, space_weights = node_probs(params)
+
+    def moments(probs, item_sets=moment_items):
+        if cluster_weights is None:
+            return _factorized_trait_moments(
+                probs, trait_weights, space_weights, d_of_i, item_sets
+            )
+        return _factorized_multilevel_moments(
+            probs,
+            cluster_weights,
+            trait_weights,
+            space_weights,
+            d_of_i,
+            item_sets,
+        )
+
+    mom0 = moments(probs0)
+    alpha0 = np.asarray(params.alpha, dtype=float).copy()
+    b0 = np.asarray(params.b, dtype=float).copy()
+    zeta0 = np.asarray(params.zeta, dtype=float).copy()
+    tau0 = float(params.tau)
+    delta_item = np.zeros((s, len(plist)), dtype=float)
+    for col, (kind, i, k) in enumerate(plist):
+        base = {"b": b0[i], "a": alpha0[i], "z": zeta0[i, k], "t": tau0}[kind]
+        h = 1e-4 * (1.0 + abs(base))
+        a, b, z, t = alpha0.copy(), b0.copy(), zeta0.copy(), tau0
+        if kind == "b":
+            b[i] = base + h
+        elif kind == "a":
+            a[i] = base + h
+        elif kind == "z":
+            z[i, k] = base + h
+        else:
+            t = base + h
+        plus = moments(node_probs(_MutBank(a, b, z, t))[0])
+        a, b, z, t = alpha0.copy(), b0.copy(), zeta0.copy(), tau0
+        if kind == "b":
+            b[i] = base - h
+        elif kind == "a":
+            a[i] = base - h
+        elif kind == "z":
+            z[i, k] = base - h
+        else:
+            t = base - h
+        minus = moments(node_probs(_MutBank(a, b, z, t))[0])
+        delta_item[:, col] = (plus - minus) * (0.5 / h)
+
+    n_dims = prior_mean.size
+    delta_population = np.zeros((s, 2 * n_dims), dtype=float)
+    if shared_sigma_u is None:
+        for d in range(n_dims):
+            h = 1e-4 * (1.0 + abs(prior_mean[d]))
+            plus_mean, minus_mean = prior_mean.copy(), prior_mean.copy()
+            plus_mean[d] += h
+            minus_mean[d] -= h
+            delta_population[:, d] = (
+                moments(node_probs(params, plus_mean, prior_sd)[0])
+                - moments(node_probs(params, minus_mean, prior_sd)[0])
+            ) * (0.5 / h)
+
+            h = min(1e-4 * (1.0 + prior_sd[d]), 0.25 * prior_sd[d])
+            plus_sd, minus_sd = prior_sd.copy(), prior_sd.copy()
+            plus_sd[d] += h
+            minus_sd[d] -= h
+            delta_population[:, n_dims + d] = (
+                moments(node_probs(params, prior_mean, plus_sd)[0])
+                - moments(node_probs(params, prior_mean, minus_sd)[0])
+            ) * (0.5 / h)
+        delta_shared = None
+    else:
+        h = 1e-4 * (1.0 + abs(float(shared_sigma_u)))
+        lower = max(0.0, float(shared_sigma_u) - h)
+        upper = float(shared_sigma_u) + h
+        delta_shared = (
+            moments(node_probs(params, sigma_u=upper)[0])
+            - moments(node_probs(params, sigma_u=lower)[0])
+        ) / (upper - lower)
+
+    def pi_set(item_set):
+        return float(moments(probs0, [item_set])[0])
+
+    xi = np.empty((s, s), dtype=float)
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            cov = pi_set(union) - mom0[a_i] * mom0[b_i]
+            xi[a_i, b_i] = xi[b_i, a_i] = cov
+
+    ss = 0.0
+    count = 0
+    for m, (i, j) in enumerate(pairs):
+        pi, pj, pij = p_obs[i], p_obs[j], p_obs[n_items + m]
+        mi, mj, mij = mom0[i], mom0[j], mom0[n_items + m]
+        dobs = pi * (1.0 - pi) * pj * (1.0 - pj)
+        dmod = mi * (1.0 - mi) * mj * (1.0 - mj)
+        if dobs > 1e-12 and dmod > 1e-12:
+            robs = (pij - pi * pj) / math.sqrt(dobs)
+            rmod = (mij - mi * mj) / math.sqrt(dmod)
+            ss += (robs - rmod) ** 2
+            count += 1
+
+    return {
+        "idx": idx,
+        "n": int(idx.size),
+        "p_obs": p_obs,
+        "mom": mom0,
+        "residual": p_obs - mom0,
+        "delta_item": delta_item,
+        "delta_population": delta_population,
+        "delta_shared": delta_shared,
+        "xi": xi,
+        "z_rows": z_rows,
+        "moment_items": moment_items,
+        "srmsr": math.sqrt(ss / count) if count else float("nan"),
+        "n_items": n_items,
+    }
+
+
+def _m2_null_components(p_obs, moment_items):
+    """Complete-independence moments, derivatives, and model covariance."""
+    n_items = len([items for items in moment_items if len(items) == 1])
+    s = len(moment_items)
+    moments = np.array(
+        [np.prod([p_obs[i] for i in item_set], dtype=float) for item_set in moment_items]
+    )
+    delta = np.zeros((s, n_items), dtype=float)
+    for row, item_set in enumerate(moment_items):
+        for col in item_set:
+            delta[row, col] = np.prod(
+                [p_obs[i] for i in item_set if i != col], dtype=float
+            )
+    xi = np.empty((s, s), dtype=float)
+    for a_i in range(s):
+        for b_i in range(a_i, s):
+            union = list(dict.fromkeys(moment_items[a_i] + moment_items[b_i]))
+            union_moment = np.prod([p_obs[i] for i in union], dtype=float)
+            cov = union_moment - moments[a_i] * moments[b_i]
+            xi[a_i, b_i] = xi[b_i, a_i] = cov
+    return moments, delta, xi
+
+
+def _block_diag(matrices):
+    """Dense block diagonal for the modest one-shot M2 covariance matrices."""
+    size = sum(matrix.shape[0] for matrix in matrices)
+    out = np.zeros((size, size), dtype=float)
+    offset = 0
+    for matrix in matrices:
+        width = matrix.shape[0]
+        out[offset : offset + width, offset : offset + width] = matrix
+        offset += width
+    return out
+
+
+def _m2_indices(m2_value, df, null_m2, null_df, n):
+    """Common p-value, RMSEA2, interval, CFI, and TLIRT calculations."""
+    p_value = chi2_sf(m2_value, df)
+    denom = df * (float(n) - 1.0)
+    rmsea = math.sqrt(max(0.0, m2_value - df) / denom)
+    ci_lower = math.sqrt(_nc_lambda_for(m2_value, df, 0.95) / denom)
+    ci_upper = math.sqrt(_nc_lambda_for(m2_value, df, 0.05) / denom)
+    if null_m2 > m2_value and null_m2 > null_df:
+        cfi = float(np.clip(1.0 - (m2_value - df) / (null_m2 - null_df), 0.0, 1.0))
+        tli = float(
+            (null_m2 / null_df - m2_value / df) / (null_m2 / null_df - 1.0)
+        )
+    else:
+        cfi = tli = float("nan")
+    return p_value, rmsea, ci_lower, ci_upper, cfi, tli
+
+
+def m2_multigroup(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    group_id: np.ndarray,
+    population_mean: np.ndarray,
+    population_sd: np.ndarray,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> M2Result:
+    """Multiple-group M2 with common item columns and group population columns.
+
+    Group residuals and covariances are stacked using their own complete-case
+    sample sizes. Common item parameters occupy one shared derivative block;
+    non-reference group means and SDs occupy group-specific blocks, matching
+    the multiple-group construction used by ``mirt::M2``.
+
+    References
+    ----------
+    Chalmers, R. P. (2012). mirt: A multidimensional item response theory
+    package for the R environment. *Journal of Statistical Software, 48*(6),
+    1–29. https://doi.org/10.18637/jss.v048.i06
+
+    Maydeu-Olivares, A., & Joe, H. (2006). Limited information goodness-of-fit
+    testing in multidimensional contingency tables. *Psychometrika, 71*(4),
+    713–732. https://doi.org/10.1007/s11336-005-1295-9
+    """
+    y0 = np.asarray(responses, dtype=float)
+    if y0.ndim != 2:
+        raise ValueError("responses must be a persons-by-items matrix")
+    observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed0.shape != y0.shape:
+        raise ValueError("mask must match responses")
+    values = y0[observed0]
+    if np.any(~np.isfinite(values)) or np.any((values != 0.0) & (values != 1.0)):
+        raise ValueError("observed responses must be finite binary values")
+    from .fit import _compact_population_labels
+
+    compact, n_groups = _compact_population_labels(group_id, y0.shape[0], "group_id")
+    d_of_i, _ = _validate_factor_id(factor_id)
+    if d_of_i.shape[0] != y0.shape[1]:
+        raise ValueError("factor_id length must match the number of items")
+    n_dims = n_dims_of(d_of_i)
+    means = np.asarray(population_mean, dtype=float)
+    sds = np.asarray(population_sd, dtype=float)
+    expected = (n_groups, n_dims)
+    if means.shape != expected or sds.shape != expected:
+        raise ValueError(f"population_mean/population_sd must have shape {expected}")
+    if np.any(~np.isfinite(means)) or np.any(~np.isfinite(sds)) or np.any(sds <= 0.0):
+        raise ValueError("population means must be finite and SDs finite and positive")
+
+    components = []
+    for group in range(n_groups):
+        take = compact == group
+        components.append(
+            _m2_group_components(
+                y0[take], observed0[take], d_of_i, params, model,
+                q_theta, q_xi, eps_distance, means[group], sds[group],
+            )
+        )
+    s = components[0]["residual"].size
+    p_item = components[0]["delta_item"].shape[1]
+    p = p_item + 2 * n_dims * (n_groups - 1)
+    if n_groups * s <= p:
+        raise ValueError(f"multigroup M2 df non-positive: {n_groups * s} <= {p}")
+
+    residual = np.zeros(n_groups * s, dtype=float)
+    delta = np.zeros((n_groups * s, p), dtype=float)
+    xi_blocks = []
+    null_delta = np.zeros((n_groups * s, n_groups * y0.shape[1]), dtype=float)
+    null_xi_blocks = []
+    null_residual = np.zeros(n_groups * s, dtype=float)
+    for group, component in enumerate(components):
+        rows = slice(group * s, (group + 1) * s)
+        root_n = math.sqrt(component["n"])
+        residual[rows] = root_n * component["residual"]
+        delta[rows, :p_item] = root_n * component["delta_item"]
+        if group > 0:
+            start = p_item + (group - 1) * 2 * n_dims
+            delta[rows, start : start + 2 * n_dims] = (
+                root_n * component["delta_population"]
+            )
+        xi_blocks.append(component["xi"])
+
+        null_mom, null_d, null_xi = _m2_null_components(
+            component["p_obs"], component["moment_items"]
+        )
+        null_residual[rows] = root_n * (component["p_obs"] - null_mom)
+        cols = slice(group * y0.shape[1], (group + 1) * y0.shape[1])
+        null_delta[rows, cols] = root_n * null_d
+        null_xi_blocks.append(null_xi)
+
+    m2_value = _projected_m2_numpy(residual, delta, _block_diag(xi_blocks), 1.0)
+    null_m2 = _projected_m2_numpy(
+        null_residual, null_delta, _block_diag(null_xi_blocks), 1.0
+    )
+    df = float(n_groups * s - p)
+    null_df = float(n_groups * s - n_groups * y0.shape[1])
+    n_complete = sum(component["n"] for component in components)
+    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
+        m2_value, df, null_m2, null_df, n_complete
+    )
+    srmsr = math.sqrt(
+        sum(component["n"] * component["srmsr"] ** 2 for component in components)
+        / n_complete
+    )
+    return M2Result(
+        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper, srmsr=srmsr,
+        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
+        n_moments=n_groups * s, n_parameters=p, n_complete=n_complete,
+        n_groups=n_groups,
+    )
+
+
+def _cluster_moment_covariance(z_rows, model_moments, cluster_id):
+    """Between-cluster covariance estimate of sqrt(N) marginal proportions."""
+    labels = np.asarray(cluster_id)
+    _, compact = np.unique(labels, return_inverse=True)
+    n_clusters = int(compact.max()) + 1
+    s = z_rows.shape[1]
+    if n_clusters <= s:
+        raise ValueError(
+            f"cluster-robust M2 needs more clusters than moments ({n_clusters} <= {s})"
+        )
+    totals = np.zeros((n_clusters, s), dtype=float)
+    residual_rows = z_rows - np.asarray(model_moments, dtype=float)
+    np.add.at(totals, compact, residual_rows)
+    centered = totals - totals.mean(axis=0)
+    return (
+        (n_clusters / (n_clusters - 1.0)) * (centered.T @ centered) / z_rows.shape[0],
+        n_clusters,
+    )
+
+
+def m2_multilevel(
+    responses: np.ndarray,
+    factor_id: np.ndarray,
+    params,
+    model: str,
+    cluster_id: np.ndarray,
+    sigma_u: float,
+    mask: np.ndarray | None = None,
+    q_theta: int = 21,
+    q_u: int = 11,
+    q_xi: int = 11,
+    eps_distance: float = 1e-8,
+) -> M2Result:
+    """Cluster-robust M2 for the fitted random-intercept marginal model.
+
+    The fitted scalar random intercept is integrated as one shared quadrature
+    variable across every trait dimension, preserving the induced
+    cross-dimension covariance. Residual traits remain independent conditional
+    on that intercept. The covariance of the observed first- and second-order
+    proportions is estimated from between-cluster totals. This follows the
+    complex-sample limited-information covariance construction of Jamil et al.
+    (2025), rather than treating persons in the same cluster as iid.
+    Jamil et al. study an aggregated PML setting, not this repository's
+    disaggregated random-intercept MMLE; the shared-intercept integration and
+    its combination with their cluster-total covariance are therefore stated
+    as a repository implementation choice.
+
+    References
+    ----------
+    Jamil, H., Moustaki, I., & Skinner, C. (2025). Pairwise likelihood
+    estimation and limited-information goodness-of-fit test statistics for
+    binary factor analysis models under complex survey sampling. *British
+    Journal of Mathematical and Statistical Psychology, 78*(1), 258–285.
+    https://doi.org/10.1111/bmsp.12358
+    """
+    y0 = np.asarray(responses, dtype=float)
+    if y0.ndim != 2:
+        raise ValueError("responses must be a persons-by-items matrix")
+    observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed0.shape != y0.shape:
+        raise ValueError("mask must match responses")
+    values = y0[observed0]
+    if np.any(~np.isfinite(values)) or np.any((values != 0.0) & (values != 1.0)):
+        raise ValueError("observed responses must be finite binary values")
+    from .fit import _compact_population_labels
+
+    clusters, _ = _compact_population_labels(cluster_id, y0.shape[0], "cluster_id")
+    sigma_u = float(sigma_u)
+    if not np.isfinite(sigma_u) or sigma_u < 0.0:
+        raise ValueError("sigma_u must be finite and non-negative")
+    d_of_i, _ = _validate_factor_id(factor_id)
+    if d_of_i.shape[0] != y0.shape[1]:
+        raise ValueError("factor_id length must match the number of items")
+    n_dims = n_dims_of(d_of_i)
+    component = _m2_group_components(
+        y0, observed0, d_of_i, params, model, q_theta, q_xi,
+        eps_distance, np.zeros(n_dims), np.ones(n_dims),
+        shared_sigma_u=sigma_u, q_u=q_u,
+    )
+    complete_clusters = clusters[component["idx"]]
+    target_xi, n_clusters = _cluster_moment_covariance(
+        component["z_rows"], component["mom"], complete_clusters
+    )
+    delta = np.column_stack((component["delta_item"], component["delta_shared"]))
+    p = delta.shape[1]
+    s = component["residual"].size
+    if s <= p:
+        raise ValueError(f"multilevel M2 df non-positive: {s} <= {p}")
+    m2_value = _projected_m2_numpy(
+        component["residual"], delta, target_xi, float(component["n"])
+    )
+
+    null_mom, null_delta, _ = _m2_null_components(
+        component["p_obs"], component["moment_items"]
+    )
+    null_xi, _ = _cluster_moment_covariance(
+        component["z_rows"], null_mom, complete_clusters
+    )
+    null_m2 = _projected_m2_numpy(
+        component["p_obs"] - null_mom,
+        null_delta,
+        null_xi,
+        float(component["n"]),
+    )
+    df = float(s - p)
+    null_df = float(s - component["n_items"])
+    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
+        m2_value, df, null_m2, null_df, component["n"]
+    )
+    return M2Result(
+        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper,
+        srmsr=component["srmsr"], null_m2=null_m2, null_df=null_df,
+        cfi=cfi, tli=tli, n_moments=s, n_parameters=p,
+        n_complete=component["n"], n_clusters=n_clusters,
+        inference_note=(
+            "cluster-robust limited-information M2; interpret incremental indices "
+            "against the cluster-robust independence baseline"
+        ),
     )
 
 

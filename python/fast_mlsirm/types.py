@@ -69,7 +69,7 @@ class FitResult:
 class FitDiagnostics:
     itemfit: dict[str, np.ndarray]
     personfit: dict[str, np.ndarray]
-    model_fit: dict[str, float]
+    model_fit: dict[str, Any]
     factorfit: dict[str, np.ndarray] | None = None
     categoryfit: dict[str, np.ndarray] | None = None
     groupfit: dict[str, np.ndarray] | None = None

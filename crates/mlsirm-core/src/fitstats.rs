@@ -1681,6 +1681,14 @@ pub struct M2Result {
     pub rmsea2_ci_lower: f64,
     pub rmsea2_ci_upper: f64,
     pub srmsr: f64,
+    /// M2 for the fitted complete-independence (zero-factor) baseline model.
+    pub null_m2: f64,
+    /// Degrees of freedom for the complete-independence baseline model.
+    pub null_df: f64,
+    /// Comparative fit index based on target and null-model M2 statistics.
+    pub cfi: f64,
+    /// Tucker-Lewis index for IRT (TLIRT) based on target and null-model M2.
+    pub tli: f64,
     pub n_moments: usize,
     pub n_parameters: usize,
     pub n_complete: usize,
@@ -1762,6 +1770,53 @@ fn chol_solve(l: &[f64], n: usize, b: &[f64]) -> Vec<f64> {
     x
 }
 
+/// Evaluate the M2 projected quadratic form without forming either inverse.
+fn projected_m2(
+    e: &[f64],
+    delta: &[f64],
+    mut xi: Vec<f64>,
+    n_moments: usize,
+    n_parameters: usize,
+    n: f64,
+) -> Result<f64, String> {
+    let s = n_moments;
+    let p = n_parameters;
+    cholesky_lower(&mut xi, s)?;
+    let u = chol_solve(&xi, s, e); // Xi^-1 e
+    let mut w = vec![0.0_f64; s * p]; // Xi^-1 Delta
+    let mut col_b = vec![0.0_f64; s];
+    for col in 0..p {
+        for row in 0..s {
+            col_b[row] = delta[row * p + col];
+        }
+        let wc = chol_solve(&xi, s, &col_b);
+        for row in 0..s {
+            w[row * p + col] = wc[row];
+        }
+    }
+    let mut amat = vec![0.0_f64; p * p]; // Delta' Xi^-1 Delta
+    let mut g = vec![0.0_f64; p]; // Delta' Xi^-1 e
+    for r in 0..p {
+        for c in 0..p {
+            let mut acc = 0.0;
+            for row in 0..s {
+                acc += delta[row * p + r] * w[row * p + c];
+            }
+            amat[r * p + c] = acc;
+        }
+        let mut gg = 0.0;
+        for row in 0..s {
+            gg += w[row * p + r] * e[row];
+        }
+        g[r] = gg;
+    }
+    cholesky_lower(&mut amat, p)?;
+    let z = chol_solve(&amat, p, &g);
+    let quad: f64 = (0..s).map(|a| e[a] * u[a]).sum();
+    let adj: f64 = (0..p).map(|r| g[r] * z[r]).sum();
+    Ok((n * (quad - adj)).max(0.0))
+}
+
 /// Central chi-square CDF via the survival function.
 #[inline]
 fn chi2_cdf(x: f64, df: f64) -> f64 {
@@ -1806,6 +1861,59 @@ fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
         }
     }
     0.5 * (lo + hi)
+}
+
+/// Integrate simple-structure item-set margins over independent trait
+/// dimensions conditional on the common latent-space node. `icc_nodes` stores
+/// one trait axis because each item loads on one factor; products spanning
+/// distinct factors must therefore be integrated separately, not evaluated at
+/// the same trait node.
+fn factorized_trait_moments(
+    probs: &[f64],
+    weights: &[f64],
+    q_theta: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    item_sets: &[Vec<usize>],
+) -> Vec<f64> {
+    let n_x = weights.len() / q_theta;
+    let cell = weights.len();
+    let mut trait_weights = vec![0.0_f64; q_theta];
+    let mut space_weights = vec![0.0_f64; n_x];
+    for t in 0..q_theta {
+        for x in 0..n_x {
+            let weight = weights[t * n_x + x];
+            trait_weights[t] += weight;
+            space_weights[x] += weight;
+        }
+    }
+    item_sets
+        .iter()
+        .map(|set| {
+            let mut total = 0.0_f64;
+            for x in 0..n_x {
+                let mut conditional = 1.0_f64;
+                for d in 0..n_dims {
+                    if !set.iter().any(|&item| factor_id[item] == d) {
+                        continue;
+                    }
+                    let mut margin = 0.0_f64;
+                    for t in 0..q_theta {
+                        let mut product = 1.0_f64;
+                        for &item in set {
+                            if factor_id[item] == d {
+                                product *= probs[item * cell + t * n_x + x];
+                            }
+                        }
+                        margin += trait_weights[t] * product;
+                    }
+                    conditional *= margin;
+                }
+                total += space_weights[x] * conditional;
+            }
+            total
+        })
+        .collect()
 }
 
 /// M2 statistic (order-2 residuals), df, p-value, RMSEA2 (+ 90% CI), and the
@@ -1899,20 +2007,27 @@ pub fn m2_rmsea2(
     }
 
     // node probabilities at the fitted parameters + node weights
-    let (probs0, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
-    let pi_set = |probs: &[f64], set: &[usize]| -> f64 {
-        (0..cell)
-            .map(|c| {
-                let mut pr = weights[c];
-                for &m in set {
-                    pr *= probs[m * cell + c];
-                }
-                pr
-            })
-            .sum()
+    let (probs0, weights, _theta, _cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
+    let model_moments = |probs: &[f64]| -> Vec<f64> {
+        factorized_trait_moments(
+            probs,
+            &weights,
+            q_theta,
+            bank.factor_id,
+            bank.n_dims,
+            &moment_items,
+        )
     };
-    let model_moments =
-        |probs: &[f64]| -> Vec<f64> { moment_items.iter().map(|set| pi_set(probs, set)).collect() };
+    let pi_set = |probs: &[f64], set: &[usize]| -> f64 {
+        factorized_trait_moments(
+            probs,
+            &weights,
+            q_theta,
+            bank.factor_id,
+            bank.n_dims,
+            &[set.to_vec()],
+        )[0]
+    };
     let mom0 = model_moments(&probs0);
     let e: Vec<f64> = (0..s).map(|a| p_obs[a] - mom0[a]).collect();
 
@@ -1988,42 +2103,7 @@ pub fn m2_rmsea2(
     }
 
     // M2 = N ( e'Xi^-1 e - (D'Xi^-1 e)'(D'Xi^-1 D)^-1 (D'Xi^-1 e) )
-    let mut l = xi;
-    cholesky_lower(&mut l, s)?;
-    let u = chol_solve(&l, s, &e); // Xi^-1 e
-    let mut w = vec![0.0_f64; s * p]; // Xi^-1 Delta
-    let mut col_b = vec![0.0_f64; s];
-    for col in 0..p {
-        for row in 0..s {
-            col_b[row] = delta[row * p + col];
-        }
-        let wc = chol_solve(&l, s, &col_b);
-        for row in 0..s {
-            w[row * p + col] = wc[row];
-        }
-    }
-    let mut amat = vec![0.0_f64; p * p]; // Delta' Xi^-1 Delta
-    let mut g = vec![0.0_f64; p]; // Delta' Xi^-1 e
-    for r in 0..p {
-        for c in 0..p {
-            let mut acc = 0.0;
-            for row in 0..s {
-                acc += delta[row * p + r] * w[row * p + c];
-            }
-            amat[r * p + c] = acc;
-        }
-        let mut gg = 0.0;
-        for row in 0..s {
-            gg += w[row * p + r] * e[row];
-        }
-        g[r] = gg;
-    }
-    let mut la = amat;
-    cholesky_lower(&mut la, p)?;
-    let z = chol_solve(&la, p, &g);
-    let quad: f64 = (0..s).map(|a| e[a] * u[a]).sum();
-    let adj: f64 = (0..p).map(|r| g[r] * z[r]).sum();
-    let m2 = (n_f * (quad - adj)).max(0.0);
+    let m2 = projected_m2(&e, &delta, xi, s, p, n_f)?;
     let df = (s - p) as f64;
     let p_value = chi2_sf(m2, df);
     let denom = df * (n_f - 1.0);
@@ -2048,6 +2128,59 @@ pub fn m2_rmsea2(
     }
     let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
 
+    // Fit a zero-factor / complete-independence baseline to the same complete
+    // cases. Its free item margins reproduce the observed univariate margins;
+    // all higher-order moments are products of those margins. The analytic
+    // Jacobian below uses the margins themselves as the parameterization (the
+    // projected statistic is invariant to a full-rank reparameterization).
+    let null_p = n_items;
+    let null_mom: Vec<f64> = moment_items
+        .iter()
+        .map(|set| set.iter().map(|&i| p_obs[i]).product())
+        .collect();
+    let null_e: Vec<f64> = (0..s).map(|a| p_obs[a] - null_mom[a]).collect();
+    let mut null_delta = vec![0.0_f64; s * null_p];
+    for (row, set) in moment_items.iter().enumerate() {
+        for &col in set {
+            let derivative: f64 = set
+                .iter()
+                .filter(|&&i| i != col)
+                .map(|&i| p_obs[i])
+                .product();
+            null_delta[row * null_p + col] = derivative;
+        }
+    }
+    let mut null_xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut union = moment_items[a].clone();
+            for &item in &moment_items[b] {
+                if !union.contains(&item) {
+                    union.push(item);
+                }
+            }
+            let union_moment: f64 = union.iter().map(|&i| p_obs[i]).product();
+            let cov = union_moment - null_mom[a] * null_mom[b];
+            null_xi[a * s + b] = cov;
+            null_xi[b * s + a] = cov;
+        }
+    }
+    let null_m2 = projected_m2(&null_e, &null_delta, null_xi, s, null_p, n_f)?;
+    let null_df = (s - null_p) as f64;
+    let cfi_denom = null_m2 - null_df;
+    let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
+        (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
+    } else {
+        f64::NAN
+    };
+    let null_ratio = null_m2 / null_df;
+    let tli_denom = null_ratio - 1.0;
+    let tli = if null_m2 > m2 && tli_denom.abs() > 1e-12 {
+        (null_ratio - m2 / df) / tli_denom
+    } else {
+        f64::NAN
+    };
+
     Ok(M2Result {
         m2,
         df,
@@ -2056,6 +2189,10 @@ pub fn m2_rmsea2(
         rmsea2_ci_lower,
         rmsea2_ci_upper,
         srmsr,
+        null_m2,
+        null_df,
+        cfi,
+        tli,
         n_moments: s,
         n_parameters: p,
         n_complete: n_c,
@@ -2482,42 +2619,7 @@ pub fn poly_m2(
     }
 
     // M2 = N ( e'Xi^-1 e - (D'Xi^-1 e)'(D'Xi^-1 D)^-1 (D'Xi^-1 e) )
-    let mut l = xi;
-    cholesky_lower(&mut l, s)?;
-    let u = chol_solve(&l, s, &e);
-    let mut w = vec![0.0_f64; s * p];
-    let mut col_b = vec![0.0_f64; s];
-    for col in 0..p {
-        for row in 0..s {
-            col_b[row] = delta[row * p + col];
-        }
-        let wc = chol_solve(&l, s, &col_b);
-        for row in 0..s {
-            w[row * p + col] = wc[row];
-        }
-    }
-    let mut amat = vec![0.0_f64; p * p];
-    let mut g = vec![0.0_f64; p];
-    for r in 0..p {
-        for c in 0..p {
-            let mut acc = 0.0;
-            for row in 0..s {
-                acc += delta[row * p + r] * w[row * p + c];
-            }
-            amat[r * p + c] = acc;
-        }
-        let mut gg = 0.0;
-        for row in 0..s {
-            gg += w[row * p + r] * e[row];
-        }
-        g[r] = gg;
-    }
-    let mut la = amat;
-    cholesky_lower(&mut la, p)?;
-    let zz = chol_solve(&la, p, &g);
-    let quad: f64 = (0..s).map(|a| e[a] * u[a]).sum();
-    let adj: f64 = (0..p).map(|r| g[r] * zz[r]).sum();
-    let m2 = (n_f * (quad - adj)).max(0.0);
+    let m2 = projected_m2(&e, &delta, xi, s, p, n_f)?;
     let df = (s - p) as f64;
     let p_value = chi2_sf(m2, df);
     let denom = df * (n_f - 1.0);
@@ -2543,6 +2645,67 @@ pub fn poly_m2(
     }
     let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
 
+    // Complete-independence baseline. Each item's K-1 cumulative margins are
+    // free and reproduce the observed univariate cumulative margins; joint
+    // cumulative moments factor across items. This is the polytomous analogue
+    // of the zero-factor baseline used by the dichotomous M2 path.
+    let null_p = n_items * z;
+    let null_mom: Vec<f64> = moment_cons
+        .iter()
+        .map(|cons| {
+            cons.iter()
+                .map(|&(i, c)| p_hat[i * z + (c - 1)])
+                .product()
+        })
+        .collect();
+    let null_e: Vec<f64> = (0..s).map(|a| p_hat[a] - null_mom[a]).collect();
+    let mut null_delta = vec![0.0_f64; s * null_p];
+    for (row, cons) in moment_cons.iter().enumerate() {
+        for &(item, threshold) in cons {
+            let derivative: f64 = cons
+                .iter()
+                .filter(|&&(i, c)| i != item || c != threshold)
+                .map(|&(i, c)| p_hat[i * z + (c - 1)])
+                .product();
+            null_delta[row * null_p + item * z + (threshold - 1)] = derivative;
+        }
+    }
+    let mut null_xi = vec![0.0_f64; s * s];
+    for a in 0..s {
+        for b in a..s {
+            let mut merged = moment_cons[a].clone();
+            for &(item, threshold) in &moment_cons[b] {
+                if let Some(slot) = merged.iter_mut().find(|(i, _)| *i == item) {
+                    slot.1 = slot.1.max(threshold);
+                } else {
+                    merged.push((item, threshold));
+                }
+            }
+            let union_moment: f64 = merged
+                .iter()
+                .map(|&(i, c)| p_hat[i * z + (c - 1)])
+                .product();
+            let cov = union_moment - null_mom[a] * null_mom[b];
+            null_xi[a * s + b] = cov;
+            null_xi[b * s + a] = cov;
+        }
+    }
+    let null_m2 = projected_m2(&null_e, &null_delta, null_xi, s, null_p, n_f)?;
+    let null_df = (s - null_p) as f64;
+    let cfi_denom = null_m2 - null_df;
+    let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
+        (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
+    } else {
+        f64::NAN
+    };
+    let null_ratio = null_m2 / null_df;
+    let tli_denom = null_ratio - 1.0;
+    let tli = if null_m2 > m2 && tli_denom.abs() > 1e-12 {
+        (null_ratio - m2 / df) / tli_denom
+    } else {
+        f64::NAN
+    };
+
     Ok(M2Result {
         m2,
         df,
@@ -2551,6 +2714,10 @@ pub fn poly_m2(
         rmsea2_ci_lower,
         rmsea2_ci_upper,
         srmsr,
+        null_m2,
+        null_df,
+        cfi,
+        tli,
         n_moments: s,
         n_parameters: p,
         n_complete: n_c,
@@ -2575,6 +2742,23 @@ mod m2_branch_tests {
             latent_dim: 1,
             eps_distance: 1e-8,
         }
+    }
+
+    #[test]
+    fn m2_factorizes_independent_trait_dimensions() {
+        let probs = vec![0.2, 0.8, 0.3, 0.7];
+        let weights = vec![0.5, 0.5];
+        let sets = vec![vec![0, 1]];
+        let moments = factorized_trait_moments(
+            &probs,
+            &weights,
+            2,
+            &[0, 1],
+            2,
+            &sets,
+        );
+        assert!((moments[0] - 0.25).abs() < 1e-14);
+        assert!((moments[0] - 0.31).abs() > 1e-3, "must not share one trait node");
     }
 
     #[test]

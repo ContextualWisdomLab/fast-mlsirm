@@ -281,8 +281,34 @@ def test_m2_rmsea2_parity_and_fit():
     np.testing.assert_allclose(core.m2, ref.m2, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(core.rmsea2, ref.rmsea2, rtol=1e-6, atol=1e-8)
     np.testing.assert_allclose(core.srmsr, ref.srmsr, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(core.null_m2, ref.null_m2, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(core.cfi, ref.cfi, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(core.tli, ref.tli, rtol=1e-6, atol=1e-8)
     np.testing.assert_allclose(core.rmsea2_ci_lower, ref.rmsea2_ci_lower, atol=1e-6)
     np.testing.assert_allclose(core.rmsea2_ci_upper, ref.rmsea2_ci_upper, atol=1e-6)
+    assert core.null_df == ref.null_df == 66.0
+    assert core.rmsea == core.rmsea2
+    assert core.srmr == core.srmsr
+    expected_cfi = np.clip(
+        1.0 - (core.m2 - core.df) / (core.null_m2 - core.null_df), 0.0, 1.0
+    )
+    expected_tli = (
+        (core.null_m2 / core.null_df) - (core.m2 / core.df)
+    ) / ((core.null_m2 / core.null_df) - 1.0)
+    np.testing.assert_allclose(core.cfi, expected_cfi, atol=1e-12)
+    np.testing.assert_allclose(core.tli, expected_tli, atol=1e-12)
+
+    # The main diagnostics path exposes the global indices only when explicitly
+    # requested, keeping the O(s^3) M2 solve out of ordinary JML diagnostics.
+    from fast_mlsirm import fit_diagnostics
+
+    diag = fit_diagnostics(
+        y, res.params, fid, model="MIRT", include_m2=True, estimator="mmle"
+    )
+    for key in ("m2", "rmsea", "srmr", "cfi", "tli", "null_m2"):
+        assert key in diag.model_fit and np.isfinite(diag.model_fit[key])
+    np.testing.assert_allclose(diag.model_fit["rmsea"], core.rmsea2, atol=1e-12)
+    np.testing.assert_allclose(diag.model_fit["srmr"], core.srmsr, atol=1e-12)
 
     # well specified: small RMSEA2, CI brackets the point estimate
     assert core.rmsea2 < 0.03
@@ -297,6 +323,229 @@ def test_m2_rmsea2_parity_and_fit():
     assert ld.m2 > core.m2
     assert ld.rmsea2 > 0.08
     assert ld.srmsr > core.srmsr
+    assert ld.cfi < core.cfi
+    assert ld.tli < core.tli
+
+    # JMLE/CMLE estimates may still be inspected against an explicit marginal
+    # evaluation population, but ordinary chi-square inference is not claimed.
+    descriptive = fitstats.m2(
+        y, fid, res.params, "MIRT", q_theta=21, estimator="jmle"
+    )
+    assert np.isfinite(descriptive.m2)
+    assert not descriptive.inference_valid
+    assert np.isnan(descriptive.p_value)
+    assert np.isnan(descriptive.rmsea2_ci_lower)
+
+
+def test_m2_multigroup_and_multilevel_structures():
+    """Population structure changes M2 moments/covariance, not just labels."""
+    from fast_mlsirm import fit_diagnostics, m2_multigroup, m2_multilevel
+    from fast_mlsirm.types import MLSIRMParams
+
+    rng = np.random.default_rng(123)
+    n_items = 10
+    n_per_group = 700
+    factor_id = np.zeros(n_items, dtype=np.int64)
+    alpha = np.log(np.linspace(0.8, 1.4, n_items))
+    b = np.linspace(-1.0, 1.0, n_items)
+    group_id = np.repeat(np.arange(2), n_per_group)
+    means = np.array([[0.0], [0.6]])
+    sds = np.array([[1.0], [1.2]])
+    theta = means[group_id, 0] + sds[group_id, 0] * rng.standard_normal(group_id.size)
+    prob = 1.0 / (1.0 + np.exp(-(theta[:, None] * np.exp(alpha) + b)))
+    responses = (rng.random(prob.shape) < prob).astype(float)
+    params = MLSIRMParams(
+        theta=np.zeros((responses.shape[0], 1)),
+        alpha=alpha,
+        b=b,
+        xi=np.zeros((responses.shape[0], 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=0.0,
+    )
+    group_fit = m2_multigroup(
+        responses, factor_id, params, "MIRT", group_id, means, sds
+    )
+    assert group_fit.n_groups == 2
+    assert group_fit.n_parameters == 2 * n_items + 2
+    assert group_fit.df == 88.0
+    assert group_fit.null_df == 90.0
+    assert np.isfinite(group_fit.m2)
+    assert np.isfinite(group_fit.cfi)
+    with pytest.raises(ValueError, match="non-negative integers"):
+        m2_multigroup(
+            responses,
+            factor_id,
+            params,
+            "MIRT",
+            group_id.astype(float) + 0.25,
+            means,
+            sds,
+        )
+    with pytest.raises(ValueError, match="mask must match"):
+        m2_multigroup(
+            responses,
+            factor_id,
+            params,
+            "MIRT",
+            group_id,
+            means,
+            sds,
+            mask=np.ones((1, 1), dtype=bool),
+        )
+    group_diagnostics = fit_diagnostics(
+        responses,
+        params,
+        factor_id,
+        model="MIRT",
+        group_id=group_id,
+        include_m2=True,
+        estimator="mmle",
+        population={"kind": "multigroup", "mu": means, "sigma": sds},
+    )
+    np.testing.assert_allclose(group_diagnostics.model_fit["m2"], group_fit.m2)
+    assert group_diagnostics.model_fit["m2_n_groups"] == 2.0
+
+    locally_dependent = responses.copy()
+    locally_dependent[:, 1] = locally_dependent[:, 0]
+    group_ld = m2_multigroup(
+        locally_dependent, factor_id, params, "MIRT", group_id, means, sds
+    )
+    assert group_ld.m2 > group_fit.m2
+    assert group_ld.cfi < group_fit.cfi
+    assert group_ld.tli < group_fit.tli
+
+    # Random-intercept data: the effective covariance comes from independent
+    # cluster totals. There must be more clusters than retained M2 moments.
+    n_items = 8
+    n_clusters = 70
+    cluster_size = 12
+    sigma_u = 0.7
+    cluster_id = np.repeat(np.arange(n_clusters), cluster_size)
+    alpha = np.log(np.linspace(0.9, 1.3, n_items))
+    b = np.linspace(-0.8, 0.8, n_items)
+    u = np.repeat(sigma_u * rng.standard_normal(n_clusters), cluster_size)
+    theta = rng.standard_normal(cluster_id.size) + u
+    prob = 1.0 / (1.0 + np.exp(-(theta[:, None] * np.exp(alpha) + b)))
+    responses = (rng.random(prob.shape) < prob).astype(float)
+    params = MLSIRMParams(
+        theta=np.zeros((responses.shape[0], 1)),
+        alpha=alpha,
+        b=b,
+        xi=np.zeros((responses.shape[0], 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=0.0,
+    )
+    cluster_fit = m2_multilevel(
+        responses, np.zeros(n_items, dtype=np.int64), params, "MIRT",
+        cluster_id, sigma_u,
+    )
+    assert cluster_fit.n_clusters == n_clusters
+    assert cluster_fit.n_parameters == 2 * n_items + 1
+    assert cluster_fit.df == 19.0
+    assert np.isfinite(cluster_fit.m2)
+    assert np.isfinite(cluster_fit.p_value)
+    assert "cluster-robust" in cluster_fit.inference_note
+    cluster_diagnostics = fit_diagnostics(
+        responses,
+        params,
+        np.zeros(n_items, dtype=np.int64),
+        model="MIRT",
+        cluster_id=cluster_id,
+        include_m2=True,
+        estimator="mmle",
+        population={"kind": "multilevel", "sigma_u": sigma_u},
+    )
+    np.testing.assert_allclose(cluster_diagnostics.model_fit["m2"], cluster_fit.m2)
+    assert cluster_diagnostics.model_fit["m2_n_clusters"] == float(n_clusters)
+
+
+def test_m2_multilevel_integrates_one_shared_intercept_across_dimensions():
+    """The scalar cluster effect induces cross-factor covariance."""
+    from fast_mlsirm.fitstats import _m2_group_components
+    from fast_mlsirm.types import MLSIRMParams
+
+    factor_id = np.array([0, 0, 1, 1], dtype=np.int64)
+    responses = np.zeros((20, 4), dtype=float)
+    params = MLSIRMParams(
+        theta=np.zeros((20, 2)),
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        xi=np.zeros((20, 1)),
+        zeta=np.zeros((4, 1)),
+        tau=0.0,
+    )
+    common = dict(
+        y0=responses,
+        observed0=np.ones_like(responses, dtype=bool),
+        d_of_i=factor_id,
+        params=params,
+        model="MIRT",
+        q_theta=15,
+        q_xi=7,
+        eps_distance=1e-8,
+        prior_mean=np.zeros(2),
+        prior_sd=np.ones(2),
+    )
+    independent = _m2_group_components(**common)
+    shared = _m2_group_components(**common, shared_sigma_u=0.8, q_u=15)
+
+    # Pair order after four univariate moments is (0,1), (0,2), ... .
+    cross_factor_pair = 5
+    assert abs(independent["mom"][cross_factor_pair] - 0.25) < 1e-12
+    assert shared["mom"][cross_factor_pair] > independent["mom"][cross_factor_pair]
+    assert np.any(np.abs(shared["delta_shared"]) > 1e-8)
+
+
+def test_m2_cmle_rasch_conditions_out_person_ability():
+    """CMLE M2 uses raw-score conditional moments, not a Gaussian prior."""
+    from fast_mlsirm import m2
+    from fast_mlsirm.types import MLSIRMParams
+
+    rng = np.random.default_rng(9)
+    n_persons, n_items = 3000, 8
+    b = np.linspace(-1.3, 1.3, n_items)
+    theta = rng.standard_normal(n_persons)
+    prob = 1.0 / (1.0 + np.exp(-(theta[:, None] + b)))
+    responses = (rng.random(prob.shape) < prob).astype(float)
+    assert np.all(np.bincount(responses.sum(axis=1).astype(int), minlength=n_items + 1) > 0)
+    params = MLSIRMParams(
+        theta=theta[:, None],
+        alpha=np.zeros(n_items),
+        b=b,
+        xi=np.zeros((n_persons, 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=0.0,
+    )
+    result = m2(
+        responses,
+        np.zeros(n_items, dtype=np.int64),
+        params,
+        "MIRT",
+        estimator="cmle",
+    )
+    assert result.estimator == "cmle"
+    assert result.inference_valid
+    assert result.n_parameters == (n_items - 1) + n_items
+    assert result.df == 21.0
+    assert result.p_value > 0.05
+    assert result.rmsea2 < 0.02
+
+    non_rasch = MLSIRMParams(
+        theta=params.theta,
+        alpha=np.full(n_items, 0.1),
+        b=b,
+        xi=params.xi,
+        zeta=params.zeta,
+        tau=0.0,
+    )
+    with pytest.raises(ValueError, match="Rasch"):
+        m2(
+            responses,
+            np.zeros(n_items, dtype=np.int64),
+            non_rasch,
+            "MIRT",
+            estimator="cmle",
+        )
 
 
 def test_irt_link_recovers_known_transform():
@@ -805,10 +1054,22 @@ def test_m2_polytomous():
     assert res["n_moments"] == q
     assert res["n_parameters"] == j * k
     assert res["df"] == q - j * k
+    assert res["null_df"] == q - j * (k - 1)
     assert np.isfinite(res["m2"]) and res["m2"] >= 0.0
     assert 0.0 <= res["p_value"] <= 1.0
     assert res["rmsea2_ci_lower"] <= res["rmsea2_ci_upper"] + 1e-9
     assert res["rmsea2"] < 0.05  # well-fitting
+    assert res["null_m2"] > res["m2"]
+    expected_cfi = np.clip(
+        1.0 - (res["m2"] - res["df"]) / (res["null_m2"] - res["null_df"]),
+        0.0,
+        1.0,
+    )
+    expected_tli = (
+        res["null_m2"] / res["null_df"] - res["m2"] / res["df"]
+    ) / (res["null_m2"] / res["null_df"] - 1.0)
+    np.testing.assert_allclose(res["cfi"], expected_cfi, atol=1e-12)
+    np.testing.assert_allclose(res["tli"], expected_tli, atol=1e-12)
 
     # strongly misspecified: fit the wrong item parameters -> M2 must reject
     bad = fit
@@ -816,6 +1077,8 @@ def test_m2_polytomous():
     res_bad = m2_polytomous(y, bad)
     assert res_bad["m2"] > res["m2"]
     assert res_bad["p_value"] < 0.05
+    assert res_bad["cfi"] < res["cfi"]
+    assert res_bad["tli"] < res["tli"]
 
     # validation: fewer than 3 items has non-positive df
     with pytest.raises((ValueError, RuntimeError)):

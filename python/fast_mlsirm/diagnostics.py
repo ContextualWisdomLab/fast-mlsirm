@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import replace
+from typing import Any
 
 import numpy as np
 
@@ -42,7 +43,26 @@ def fit_diagnostics(
     *,
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
+    include_m2: bool = False,
+    m2_q_theta: int = 21,
+    m2_q_u: int = 11,
+    m2_q_xi: int = 11,
+    estimator: str | None = None,
+    population: dict[str, Any] | None = None,
 ) -> FitDiagnostics:
+    """Compute item, person, and model diagnostics for binary responses.
+
+    Set ``include_m2=True`` for M2 limited-information global fit, including
+    M2-based RMSEA, bivariate SRMR/SRMSR, and CFI/TLIRT against a fitted
+    complete-independence baseline. Pass the actual ``estimator`` when M2 is
+    requested. Multiple-group MMLE additionally needs ``population['mu']`` and
+    ``population['sigma']``; multilevel MMLE needs ``population['sigma_u']``.
+    Clustered data use a between-cluster covariance rather than an iid M2.
+    """
+    if include_m2 and estimator is None:
+        raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+    if include_m2 and group_id is not None and cluster_id is not None:
+        raise ValueError("M2 accepts group_id or cluster_id, not both")
     y, observed = prepare_response(responses, mask)
     prob = np.clip(predict_proba(params, factor_id, model=model), eps, 1.0 - eps)
     if prob.shape != y.shape:
@@ -82,6 +102,87 @@ def fit_diagnostics(
         "mean_abs_residual": float(np.abs(residual[observed]).mean()),
         "pearson_chisq": float(pearson_sq.sum()),
     }
+    if include_m2:
+        from .fitstats import m2, m2_multigroup, m2_multilevel
+
+        estimator_name = str(estimator).lower()
+        if group_id is not None:
+            if estimator_name != "mmle":
+                raise ValueError("multiple-group M2 currently requires estimator='mmle'")
+            if population is None or "mu" not in population or "sigma" not in population:
+                raise ValueError("multiple-group M2 requires population mu and sigma")
+            limited = m2_multigroup(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                group_id=group_id,
+                population_mean=population["mu"],
+                population_sd=population["sigma"],
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_xi=m2_q_xi,
+            )
+        elif cluster_id is not None:
+            if estimator_name != "mmle":
+                raise ValueError("multilevel M2 currently requires estimator='mmle'")
+            if population is None or "sigma_u" not in population:
+                raise ValueError("multilevel M2 requires population sigma_u")
+            limited = m2_multilevel(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                cluster_id=cluster_id,
+                sigma_u=population["sigma_u"],
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_u=m2_q_u,
+                q_xi=m2_q_xi,
+            )
+        else:
+            prior_mean = prior_sd = None
+            if population is not None and "mu" in population and "sigma" in population:
+                mu = np.asarray(population["mu"], dtype=float)
+                sigma = np.asarray(population["sigma"], dtype=float)
+                if mu.shape[0] == 1 and sigma.shape[0] == 1:
+                    prior_mean, prior_sd = mu[0], sigma[0]
+            limited = m2(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_xi=m2_q_xi,
+                estimator=estimator_name,
+                prior_mean=prior_mean,
+                prior_sd=prior_sd,
+            )
+        model_fit.update(
+            {
+                "m2": limited.m2,
+                "m2_df": limited.df,
+                "m2_p_value": limited.p_value,
+                "rmsea": limited.rmsea2,
+                "rmsea2": limited.rmsea2,
+                "rmsea_ci_lower": limited.rmsea2_ci_lower,
+                "rmsea_ci_upper": limited.rmsea2_ci_upper,
+                "srmr": limited.srmsr,
+                "srmsr": limited.srmsr,
+                "cfi": limited.cfi,
+                "tli": limited.tli,
+                "null_m2": limited.null_m2,
+                "null_m2_df": limited.null_df,
+                "m2_n_complete": float(limited.n_complete),
+                "m2_inference_valid": limited.inference_valid,
+                "m2_inference_note": limited.inference_note,
+                "m2_n_groups": float(limited.n_groups),
+                "m2_n_clusters": (
+                    float(limited.n_clusters) if limited.n_clusters is not None else float("nan")
+                ),
+            }
+        )
     return FitDiagnostics(
         itemfit=itemfit,
         personfit=personfit,

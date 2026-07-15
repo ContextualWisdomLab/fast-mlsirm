@@ -1707,6 +1707,10 @@ fn m2_stat(
     out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
     out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
     out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
     out.set_item("n_moments", res.n_moments)?;
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("n_complete", res.n_complete)?;
@@ -1715,7 +1719,7 @@ fn m2_stat(
 
 /// Polytomous M2 limited-information goodness-of-fit (Rust compute path) for a
 /// fitted unidimensional GRM/GPCM. Returns m2, df, p_value, rmsea2 (+90% CI),
-/// srmsr, n_moments, n_parameters, n_complete.
+/// srmsr, null-model M2/df, CFI/TLIRT, and the bookkeeping counts.
 ///
 /// References (APA 7th ed.):
 ///   Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in
@@ -1759,6 +1763,10 @@ fn poly_m2(
     out.set_item("rmsea2_ci_lower", res.rmsea2_ci_lower)?;
     out.set_item("rmsea2_ci_upper", res.rmsea2_ci_upper)?;
     out.set_item("srmsr", res.srmsr)?;
+    out.set_item("null_m2", res.null_m2)?;
+    out.set_item("null_df", res.null_df)?;
+    out.set_item("cfi", res.cfi)?;
+    out.set_item("tli", res.tli)?;
     out.set_item("n_moments", res.n_moments)?;
     out.set_item("n_parameters", res.n_parameters)?;
     out.set_item("n_complete", res.n_complete)?;

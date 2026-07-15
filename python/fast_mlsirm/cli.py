@@ -30,6 +30,26 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _load_fit_context(params_path: str | Path) -> tuple[str | None, dict | None]:
+    """Recover estimator/population metadata saved beside ``params.npz``."""
+    path = Path(params_path)
+    summary_path = path.with_name("fit_summary.json")
+    if not summary_path.exists():
+        return None, None
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    optimizer = str(summary.get("optimizer", "")).lower()
+    estimator = "mmle" if optimizer.startswith("mmle") else "jmle" if optimizer else None
+    population = summary.get("population")
+    if population is not None:
+        population = dict(population)
+        with np.load(path, allow_pickle=False) as arrays:
+            if "pop_mu" in arrays:
+                population["mu"] = np.asarray(arrays["pop_mu"], dtype=float)
+            if "pop_sigma" in arrays:
+                population["sigma"] = np.asarray(arrays["pop_sigma"], dtype=float)
+    return estimator, population
+
+
 def _progress(args: argparse.Namespace, message: str) -> None:
     if not getattr(args, "json", False):
         print(message)
@@ -131,8 +151,21 @@ def _main(argv: list[str] | None = None) -> int:
     diagnose.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
     diagnose.add_argument("--params", required=True, help="Path to fitted params.npz.")
     diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
+    diagnose.add_argument(
+        "--estimator",
+        choices=["jmle", "cmle", "mmle"],
+        help="Estimator used for calibration; inferred from fit_summary.json when omitted.",
+    )
     diagnose.add_argument("--group-id", help="Optional .npy person group IDs for multigroup summaries.")
     diagnose.add_argument("--cluster-id", help="Optional .npy person cluster IDs for multilevel summaries.")
+    diagnose.add_argument(
+        "--limited-information",
+        action="store_true",
+        help=(
+            "Also compute M2, RMSEA, SRMR, CFI, and TLI. Multiple-group fits "
+            "use stacked moments; multilevel fits use cluster-robust covariance."
+        ),
+    )
     diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
     _add_json_flag(diagnose)
 
@@ -305,6 +338,7 @@ def _main(argv: list[str] | None = None) -> int:
         try:
             responses, factors = _load_response_and_factors(args.responses, args.factors)
             params = load_params(args.params)
+            saved_estimator, population = _load_fit_context(args.params)
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
@@ -330,6 +364,9 @@ def _main(argv: list[str] | None = None) -> int:
             model=args.model,
             group_id=group_id,
             cluster_id=cluster_id,
+            include_m2=args.limited_information,
+            estimator=args.estimator or saved_estimator,
+            population=population,
         )
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(

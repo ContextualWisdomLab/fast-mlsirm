@@ -119,6 +119,38 @@ def test_fit_diagnostics_strata_contract():
     assert np.allclose(diagnostics.clusterfit["cluster_id"], [10.0, 20.0])
 
 
+def test_fit_diagnostics_requires_estimator_and_population_for_structured_m2():
+    params = MLSIRMParams(
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+    responses = np.zeros((4, 3))
+
+    with pytest.raises(ValueError, match="actual estimator"):
+        fit_diagnostics(
+            responses,
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            group_id=np.array([0, 0, 1, 1]),
+            include_m2=True,
+        )
+    with pytest.raises(ValueError, match="population mu and sigma"):
+        fit_diagnostics(
+            responses,
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            group_id=np.array([0, 0, 1, 1]),
+            include_m2=True,
+            estimator="mmle",
+        )
+
+
 def test_dimensionality_diagnostics_returns_best_candidate():
     data = simulate(MLS2PLMConfig(n_persons=12, n_dims=2, items_per_dim=3, latent_dim=2, seed=7))
 

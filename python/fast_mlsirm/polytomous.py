@@ -382,11 +382,17 @@ def m2_polytomous(
     the binary M2 at ``n_cat = 2``. ``responses`` is persons x items of integer
     categories with ``NaN`` for missing (complete cases only enter the
     statistic). Returns ``m2``, ``df``, ``p_value``, ``rmsea2`` and its 90%
-    interval (``rmsea2_ci_lower``/``rmsea2_ci_upper``), ``srmsr``, and the
-    ``n_moments``/``n_parameters``/``n_complete`` counts. Requires at least 3
-    items and ``n_moments > n_parameters``.
+    interval (``rmsea2_ci_lower``/``rmsea2_ci_upper``), ``srmsr``, and
+    ``cfi``/``tli`` from a complete-independence M2 baseline (``null_m2`` and
+    ``null_df``), plus the ``n_moments``/``n_parameters``/``n_complete``
+    counts. Requires at least 3 items and ``n_moments > n_parameters``.
 
     References (APA 7th ed.):
+        Cai, L., & Chung, S. W. (2022). Incremental model fit assessment in the
+            case of categorical data: Tucker-Lewis index for item response
+            theory modeling. *Prevention Science, 23*, 455-467.
+            https://doi.org/10.1007/s11121-021-01253-4
+
         Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in
             categorical data analysis. *Multivariate Behavioral Research,
             49*(4), 305-328. https://doi.org/10.1080/00273171.2014.911075
