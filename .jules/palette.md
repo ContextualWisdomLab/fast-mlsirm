@@ -19,3 +19,7 @@
 ## 2024-07-13 - CLI Debugging Stack Traces
 **Learning:** Adding a `FAST_MLSIRM_DEBUG` bypass to user-friendly `try/except` blocks is crucial for DX. Otherwise, unexpected runtime errors during development will be swallowed into generic stderr messages, hiding the stack trace needed to actually fix the bug.
 **Action:** When adding `try-except` blocks to Python CLI subcommands to improve Developer Experience (DX) by preventing raw tracebacks for users, include a debug bypass (e.g., `if os.environ.get("FAST_MLSIRM_DEBUG"): raise`) in *all* catch blocks (including `RuntimeError` and `Exception`) to ensure tracebacks aren't swallowed during local development and debugging.
+
+## 2024-07-14 - Skip-to-Content Link Target Focus Outline
+**Learning:** While `outline: none;` on the target `<main>` element prevents an unsightly visual artifact when a mouse user clicks inside it, it completely breaks keyboard accessibility by removing the focus indicator when a screen reader or keyboard user tabs into it via the skip-link.
+**Action:** When implementing a programmatically focusable container (like a skip-link target), ensure `outline: none;` (or `:focus { outline: none; }`) is always paired with a visible outline using the `:focus-visible` pseudo-class so that keyboard navigation remains accessible without compromising mouse interaction.
