@@ -569,6 +569,9 @@ fn fit_crm(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_delta", res.final_delta)?;
+    out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }

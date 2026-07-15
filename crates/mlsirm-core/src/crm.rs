@@ -25,7 +25,9 @@
 //!
 //! Only the continuous-response data type is new; the quadrature, EM bookkeeping,
 //! and identification (`theta ~ N(0,1)` fixes the scale) mirror the crate's other
-//! marginal-ML fits.
+//! marginal-ML fits. Convergence requires a finite, non-decreasing observed-data
+//! log-likelihood and a signed final increment no larger than
+//! `tol * (1 + |previous log-likelihood|)` (Dempster et al., 1977; Wu, 1983).
 //!
 //! # References (APA 7th ed.)
 //! Samejima, F. (1973). Homogeneous case of the continuous response model.
@@ -33,6 +35,13 @@
 //! Wang, T., & Zeng, L. (1998). Item parameter estimation for a continuous response
 //!   model using an EM algorithm. *Applied Psychological Measurement, 22*(4),
 //!   333-344. https://doi.org/10.1177/014662169802200402
+//! Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood from
+//!   incomplete data via the EM algorithm. *Journal of the Royal Statistical Society:
+//!   Series B (Methodological), 39*(1), 1-22.
+//!   https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+//! Wu, C. F. J. (1983). On the convergence properties of the EM algorithm.
+//!   *The Annals of Statistics, 11*(1), 95-103.
+//!   https://doi.org/10.1214/aos/1176346060
 
 /// Fitted continuous response model (Samejima, 1973). `slope`/`intercept`/`resid_sd`
 /// are the working `(a_i, d_i, sigma_i)` of the logit-normal form; `discrimination`
@@ -50,6 +59,12 @@ pub struct CrmResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Why fitting stopped: `"tolerance"` or `"max_iter"`.
+    pub termination_reason: String,
+    /// Signed final observed-data log-likelihood increment.
+    pub final_delta: f64,
+    /// Effective observed-data log-likelihood increment required for convergence.
+    pub stopping_tolerance: f64,
     /// `3 * n_items` (slope, intercept, residual sd per item).
     pub n_parameters: usize,
 }
@@ -69,19 +84,38 @@ pub fn fit_crm(
     max_iter: usize,
     tol: f64,
 ) -> Result<CrmResult, String> {
-    if responses.len() != n_persons * n_items {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must both be positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if responses.len() != expected {
         return Err("responses must have length n_persons * n_items".into());
     }
-    if observed.len() != n_persons * n_items {
+    if observed.len() != expected {
         return Err("observed must have length n_persons * n_items".into());
     }
+    let mut item_observed = vec![0usize; n_items];
     for (idx, &z) in responses.iter().enumerate() {
         if observed[idx] && (!z.is_finite() || z <= 0.0 || z >= 1.0) {
             return Err("observed responses must lie in the open interval (0, 1)".into());
         }
+        if observed[idx] {
+            item_observed[idx % n_items] += 1;
+        }
     }
-    let (nodes, weights) =
-        crate::quadrature::gh_rule(q_theta).ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    if let Some(item) = item_observed.iter().position(|&count| count == 0) {
+        return Err(format!("item {item} has no observed responses"));
+    }
+    let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
+        .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
     let q = nodes.len();
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let eps = 1e-6;
@@ -172,12 +206,24 @@ pub fn fit_crm(
                 }
             }
         }
+        if !total_ll.is_finite() {
+            return Err("CRM observed-data log-likelihood became non-finite".into());
+        }
         loglik_trace.push(total_ll);
 
         // Converge check before the M-step so returned params match the trace endpoint.
         if loglik_trace.len() > 1 {
             let n = loglik_trace.len();
-            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < tol {
+            let previous = loglik_trace[n - 2];
+            let delta = loglik_trace[n - 1] - previous;
+            let stopping_tolerance = tol * (1.0 + previous.abs());
+            let monotone_slack = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+            if delta < -monotone_slack {
+                return Err(format!(
+                    "CRM EM log-likelihood decreased by {delta:e}, beyond numerical slack {monotone_slack:e}"
+                ));
+            }
+            if delta <= stopping_tolerance {
                 converged = true;
                 break;
             }
@@ -192,6 +238,11 @@ pub fn fit_crm(
             let ai = (sxth[i] * s1[i] - sth[i] * sx[i]) / det;
             let di = (sthth[i] * sx[i] - sth[i] * sxth[i]) / det;
             let resid = (sxx[i] - ai * sxth[i] - di * sx[i]) / s1[i];
+            if !ai.is_finite() || !di.is_finite() || !resid.is_finite() {
+                return Err(format!(
+                    "CRM M-step produced non-finite values for item {i}"
+                ));
+            }
             a[i] = ai;
             d[i] = di;
             sigma[i] = resid.max(eps * eps).sqrt();
@@ -238,15 +289,43 @@ pub fn fit_crm(
         }
         theta[j] = m;
     }
-    if !converged {
-        loglik_trace.push(final_ll);
+    if !final_ll.is_finite() {
+        return Err("CRM final observed-data log-likelihood is non-finite".into());
     }
+    if !converged {
+        let previous = *loglik_trace
+            .last()
+            .ok_or_else(|| "CRM produced an empty log-likelihood trace".to_string())?;
+        let delta = final_ll - previous;
+        let stopping_tolerance = tol * (1.0 + previous.abs());
+        let monotone_slack = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+        if delta < -monotone_slack {
+            return Err(format!(
+                "CRM EM final log-likelihood decreased by {delta:e}, beyond numerical slack {monotone_slack:e}"
+            ));
+        }
+        loglik_trace.push(final_ll);
+        if delta <= stopping_tolerance {
+            converged = true;
+        }
+    }
+
+    let final_delta = loglik_trace[loglik_trace.len() - 1] - loglik_trace[loglik_trace.len() - 2];
+    let stopping_tolerance = tol * (1.0 + loglik_trace[loglik_trace.len() - 2].abs());
+    let termination_reason = if converged { "tolerance" } else { "max_iter" };
 
     let discrimination: Vec<f64> = (0..n_items).map(|i| a[i] / sigma[i]).collect();
     // Samejima difficulty b = -d/a is undefined for a non-discriminating item
     // (slope ~ 0); report NaN there rather than a misleading blow-up.
-    let difficulty: Vec<f64> =
-        (0..n_items).map(|i| if a[i].abs() > 1e-6 { -d[i] / a[i] } else { f64::NAN }).collect();
+    let difficulty: Vec<f64> = (0..n_items)
+        .map(|i| {
+            if a[i].abs() > 1e-6 {
+                -d[i] / a[i]
+            } else {
+                f64::NAN
+            }
+        })
+        .collect();
 
     Ok(CrmResult {
         slope: a,
@@ -258,7 +337,12 @@ pub fn fit_crm(
         loglik_trace,
         n_iter,
         converged,
-        n_parameters: 3 * n_items,
+        termination_reason: termination_reason.to_string(),
+        final_delta,
+        stopping_tolerance,
+        n_parameters: 3usize
+            .checked_mul(n_items)
+            .ok_or_else(|| "3 * n_items overflows usize".to_string())?,
     })
 }
 
@@ -269,7 +353,10 @@ mod tests {
     struct Lcg(u64);
     impl Lcg {
         fn f64(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
         }
         fn normal(&mut self) -> f64 {
@@ -353,7 +440,10 @@ mod tests {
         assert!((dd - sx / s1).abs() < 1e-12);
         let resid = (sxx - a * sxth - dd * sx) / s1;
         // residual = mean((X - a*theta - d)^2)
-        let direct: f64 = (0..3).map(|k| (xv[k] - a * th[k] - dd).powi(2)).sum::<f64>() / 3.0;
+        let direct: f64 = (0..3)
+            .map(|k| (xv[k] - a * th[k] - dd).powi(2))
+            .sum::<f64>()
+            / 3.0;
         assert!((resid - direct).abs() < 1e-12, "{resid} vs {direct}");
     }
 
@@ -370,21 +460,40 @@ mod tests {
         let observed = vec![true; n * n_items];
         let res = fit_crm(&z, &observed, n, n_items, 41, 500, 1e-7).unwrap();
         assert!(res.converged);
+        assert_eq!(res.termination_reason, "tolerance");
+        assert!(res.final_delta <= res.stopping_tolerance);
+        assert_eq!(res.n_iter + 1, res.loglik_trace.len());
         for w in res.loglik_trace.windows(2) {
             assert!(w[1] >= w[0] - 1e-6, "loglik decreased {} -> {}", w[0], w[1]);
         }
         assert_eq!(res.n_parameters, 3 * n_items);
-        assert!(rmse(&res.slope, &a_true) < 0.15, "a RMSE {}", rmse(&res.slope, &a_true));
-        assert!(rmse(&res.intercept, &d_true) < 0.1, "d RMSE {}", rmse(&res.intercept, &d_true));
-        assert!(rmse(&res.resid_sd, &sigma_true) < 0.1, "sigma RMSE {}", rmse(&res.resid_sd, &sigma_true));
+        assert!(
+            rmse(&res.slope, &a_true) < 0.15,
+            "a RMSE {}",
+            rmse(&res.slope, &a_true)
+        );
+        assert!(
+            rmse(&res.intercept, &d_true) < 0.1,
+            "d RMSE {}",
+            rmse(&res.intercept, &d_true)
+        );
+        assert!(
+            rmse(&res.resid_sd, &sigma_true) < 0.1,
+            "sigma RMSE {}",
+            rmse(&res.resid_sd, &sigma_true)
+        );
         assert!(res.slope.iter().all(|&x| x > 0.0)); // reflection convention
-        // Samejima re-parameterization recovers the generating discrimination/difficulty.
+                                                     // Samejima re-parameterization recovers the generating discrimination/difficulty.
         let alpha_true: Vec<f64> = (0..n_items).map(|i| a_true[i] / sigma_true[i]).collect();
         let b_true: Vec<f64> = (0..n_items).map(|i| -d_true[i] / a_true[i]).collect();
         assert!(rmse(&res.discrimination, &alpha_true) < 0.3, "alpha RMSE");
         assert!(rmse(&res.difficulty, &b_true) < 0.2, "b RMSE");
         // trait recovery (continuous responses are information-rich)
-        assert!(corr(&res.theta, &thetas) > 0.9, "theta corr {}", corr(&res.theta, &thetas));
+        assert!(
+            corr(&res.theta, &thetas) > 0.9,
+            "theta corr {}",
+            corr(&res.theta, &thetas)
+        );
     }
 
     #[test]
@@ -402,6 +511,11 @@ mod tests {
             }
         }
         let res = fit_crm(&z, &observed, n, n_items, 21, 400, 1e-6).unwrap();
+        assert!(
+            res.converged,
+            "{} after {} iterations",
+            res.termination_reason, res.n_iter
+        );
         assert!(res.loglik_trace.iter().all(|v| v.is_finite()));
         assert!(res.resid_sd.iter().all(|&s| s > 0.0));
     }
@@ -411,6 +525,25 @@ mod tests {
         assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 3, 21, 10, 1e-6).is_err()); // wrong len
         assert!(fit_crm(&[0.5, 1.5], &[true, true], 1, 2, 21, 10, 1e-6).is_err()); // out of (0,1)
         assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 99, 10, 1e-6).is_err()); // bad q
+        assert!(fit_crm(&[], &[], 0, 2, 21, 10, 1e-6).is_err()); // no persons
+        assert!(fit_crm(&[], &[], 2, 0, 21, 10, 1e-6).is_err()); // no items
+        assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 0, 1e-6).is_err()); // no iterations
+        assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 10, f64::NAN).is_err());
+        assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 10, 0.0).is_err());
+        assert!(fit_crm(&[0.5, 0.5], &[true, false], 1, 2, 21, 10, 1e-6).is_err());
+        assert!(fit_crm(&[], &[], usize::MAX, 2, 21, 10, 1e-6).is_err());
+    }
+
+    #[test]
+    fn crm_reports_iteration_limit_without_false_success() {
+        let z = [0.2, 0.7, 0.4, 0.8, 0.6, 0.3, 0.9, 0.5];
+        let observed = [true; 8];
+        let res = fit_crm(&z, &observed, 4, 2, 21, 1, 1e-12).unwrap();
+        assert!(!res.converged);
+        assert_eq!(res.termination_reason, "max_iter");
+        assert_eq!(res.n_iter, 1);
+        assert_eq!(res.loglik_trace.len(), 2);
+        assert!(res.final_delta > res.stopping_tolerance);
     }
 
     #[test]
@@ -424,15 +557,21 @@ mod tests {
             let (mut ra, mut rd, mut rs, mut ba, mut nconv, mut tcorr) =
                 (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0usize, 0.0f64);
             for rep in 0..reps {
-                let mut rng = Lcg(
-                    0x5DEECE66Du64
-                        .wrapping_mul(rep as u64 + 1)
-                        .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15),
-                );
+                let mut rng = Lcg(0x5DEECE66Du64
+                    .wrapping_mul(rep as u64 + 1)
+                    .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15));
                 let (z, thetas) =
                     simulate_crm(&a_true, &d_true, &sigma_true, n, n_items, skew, &mut rng);
                 let observed = vec![true; n * n_items];
                 let res = fit_crm(&z, &observed, n, n_items, 41, 500, 1e-6).unwrap();
+                assert!(
+                    res.converged,
+                    "CRM did not converge: skew={skew} rep={rep} reason={} n_iter={} final_delta={} tol={}",
+                    res.termination_reason,
+                    res.n_iter,
+                    res.final_delta,
+                    res.stopping_tolerance
+                );
                 if res.converged {
                     nconv += 1;
                 }

@@ -29,6 +29,9 @@ class CrmFit:
     n_iter: int
     converged: bool
     n_parameters: int
+    termination_reason: str = "unknown"
+    final_delta: float = float("nan")
+    stopping_tolerance: float = float("nan")
 
 
 def fit_crm(
@@ -53,6 +56,10 @@ def fit_crm(
     (values are clamped to ``[eps, 1-eps]`` before the logit transform; ``NaN`` marks a
     missing cell, dropped under a missing-at-random assumption). The trait is
     identified up to a global sign, resolved so the mean slope is non-negative.
+    Convergence requires a finite, non-decreasing observed-data log-likelihood and
+    a signed final increment no larger than ``tol * (1 + abs(previous_loglik))``;
+    the returned fit records the termination reason and effective stopping metric
+    (Dempster et al., 1977; Wu, 1983).
 
     References (APA 7th ed.):
         Samejima, F. (1973). Homogeneous case of the continuous response model.
@@ -60,6 +67,13 @@ def fit_crm(
         Wang, T., & Zeng, L. (1998). Item parameter estimation for a continuous
             response model using an EM algorithm. *Applied Psychological Measurement,
             22*(4), 333-344. https://doi.org/10.1177/014662169802200402
+        Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
+            from incomplete data via the EM algorithm. *Journal of the Royal
+            Statistical Society: Series B (Methodological), 39*(1), 1-22.
+            https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+        Wu, C. F. J. (1983). On the convergence properties of the EM algorithm.
+            *The Annals of Statistics, 11*(1), 95-103.
+            https://doi.org/10.1214/aos/1176346060
     """
     from .fitstats import _core_module
 
@@ -71,6 +85,12 @@ def fit_crm(
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    if max_iter <= 0:
+        raise ValueError("max_iter must be positive")
+    if not np.isfinite(tol) or tol <= 0.0:
+        raise ValueError("tol must be finite and positive")
 
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.5).reshape(-1)
@@ -94,4 +114,7 @@ def fit_crm(
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
+        termination_reason=str(res["termination_reason"]),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
     )

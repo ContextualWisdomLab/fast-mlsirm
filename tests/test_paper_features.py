@@ -2329,6 +2329,9 @@ def test_fit_crm_recovers_continuous_responses():
 
     res = fit_crm(z)
     assert isinstance(res, CrmFit) and res.converged
+    assert res.termination_reason == "tolerance"
+    assert res.final_delta <= res.stopping_tolerance
+    assert res.n_iter + 1 == len(res.loglik_trace)
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
     assert res.n_parameters == 3 * n_items
     assert np.all(res.slope > 0)  # reflection convention
@@ -2341,6 +2344,12 @@ def test_fit_crm_recovers_continuous_responses():
     # trait recovery
     assert np.corrcoef(res.theta, theta)[0, 1] > 0.9
 
+    limited = fit_crm(z, max_iter=1, tol=1e-12)
+    assert not limited.converged
+    assert limited.termination_reason == "max_iter"
+    assert limited.n_iter == 1
+    assert limited.final_delta > limited.stopping_tolerance
+
     # missing-at-random handling
     zm = z.copy()
     zm[rng.random(zm.shape) < 0.15] = np.nan
@@ -2350,6 +2359,18 @@ def test_fit_crm_recovers_continuous_responses():
         fit_crm(z.ravel())  # responses not 2-D
     with pytest.raises(ValueError):
         fit_crm(np.full((4, 3), 1.5))  # outside (0,1)
+    with pytest.raises(ValueError, match="at least one person"):
+        fit_crm(np.empty((0, 3)))
+    with pytest.raises(ValueError, match="at least one person"):
+        fit_crm(np.empty((3, 0)))
+    with pytest.raises(ValueError, match="max_iter"):
+        fit_crm(z, max_iter=0)
+    with pytest.raises(ValueError, match="tol"):
+        fit_crm(z, tol=np.nan)
+    with pytest.raises(ValueError, match="no observed responses"):
+        missing_item = z.copy()
+        missing_item[:, 0] = np.nan
+        fit_crm(missing_item)
 
 
 def test_fit_mixture_recovers_two_class_rasch():
