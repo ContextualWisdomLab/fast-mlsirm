@@ -124,6 +124,42 @@ def test_dif_analysis_detects_injected_shift():
     assert not res.flagged_bh[2] or res.p_value[2] > res.p_value[3]
 
 
+def test_dif_analysis_compacts_sparse_group_labels(monkeypatch):
+    """Equivalent group partitions must have identical DIF bookkeeping."""
+    import importlib
+    from types import SimpleNamespace
+
+    fit_module = importlib.import_module("fast_mlsirm.fit")
+    seen_group_ids = []
+
+    def fake_fit(y, factor_id, config, group_id=None, anchors=None, **_kwargs):
+        seen_group_ids.append(np.asarray(group_id).copy())
+        n_items = y.shape[1]
+        return SimpleNamespace(
+            params=SimpleNamespace(
+                alpha=np.zeros(n_items),
+                b=np.arange(n_items, dtype=float),
+                zeta=np.zeros((n_items, 1)),
+                tau=0.0,
+            ),
+            loglik_trace=[1.0 if anchors is not None else 0.0],
+        )
+
+    monkeypatch.setattr(fit_module, "fit", fake_fit)
+    y = np.array([[0.0, 1.0], [1.0, 0.0]])
+    result = dif_analysis(
+        y,
+        np.zeros(2, dtype=np.int64),
+        np.array([10, 20]),
+        studied_items=[0],
+    )
+
+    assert result.df[0] == 2.0
+    assert result.b_by_group.shape == (2, 2)
+    assert result.effect_size[0] == 1.0
+    assert all(np.array_equal(gid, [0, 1]) for gid in seen_group_ids)
+
+
 def test_vuong_and_dimensionality_wrappers():
     y, fid, *_ = _sim_2pl(seed=13, P=400, I=10)
     cfg = FitConfig(model="ULSRM", estimator="mmle", max_iter=40, latent_dim=1,

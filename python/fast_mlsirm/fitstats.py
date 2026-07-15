@@ -867,15 +867,14 @@ def dif_analysis(
     section 5.2).
     """
     from .config import FitConfig
-    from .fit import fit
+    from .fit import _compact_population_labels, fit
 
     y = np.asarray(responses, dtype=float)
     if mask is not None:
         y = np.where(np.asarray(mask, dtype=bool), y, np.nan)
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
-    gid = np.asarray(group_id, dtype=np.int64)
-    n_groups = int(gid.max()) + 1
-    n_items = y.shape[1]
+    n_persons, n_items = y.shape
+    gid, n_groups = _compact_population_labels(group_id, n_persons, "group_id")
     codes = item_codes or [f"item_{i:03d}" for i in range(n_items)]
     studied = list(range(n_items)) if studied_items is None else list(studied_items)
     config = config or FitConfig(model="MLS2PLM", estimator="mmle")
