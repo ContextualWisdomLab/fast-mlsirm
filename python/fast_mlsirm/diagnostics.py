@@ -431,10 +431,16 @@ def _axis_fit(
     axis: int,
 ) -> dict[str, np.ndarray]:
     count = observed.sum(axis=axis).astype(np.float64)
-    score = (y * observed).sum(axis=axis)
-    expected = (prob * observed).sum(axis=axis)
+    obs_f = observed.astype(prob.dtype, copy=False)
+    einsum_path = "ij,ij->j" if axis == 0 else "ij,ij->i"
+
+    # ⚡ Bolt optimization: Use np.einsum instead of (A * B).sum()
+    # This avoids allocating a massive intermediate N x J array for element-wise multiplication
+    score = np.einsum(einsum_path, y, obs_f)
+    expected = np.einsum(einsum_path, prob, obs_f)
     raw = residual.sum(axis=axis)
-    variance_sum = (variance * observed).sum(axis=axis)
+    variance_sum = np.einsum(einsum_path, variance, obs_f)
+    infit_sum = np.einsum(einsum_path, residual, residual)
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
@@ -443,7 +449,7 @@ def _axis_fit(
         "expected_score": expected,
         "raw_residual": raw,
         "standardized_residual": raw / np.sqrt(safe_variance),
-        "infit_mnsq": (residual * residual).sum(axis=axis) / safe_variance,
+        "infit_mnsq": infit_sum / safe_variance,
         "outfit_mnsq": pearson_sq.sum(axis=axis) / safe_count,
     }
 
@@ -461,19 +467,35 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
+    unique_factors = np.unique(factors)
+    mask = factors[:, None] == unique_factors[None, :]
+    mask_f = mask.astype(np.float64, copy=False)
+    obs_f = observed.astype(prob.dtype, copy=False)
+
+    # ⚡ Bolt optimization: Vectorize loop aggregation
+    # Instead of slicing and reducing for each factor in a Python loop, we compute
+    # the column-wise sum using einsum (avoiding intermediate array allocations)
+    # and use matrix multiplication (@) with a boolean mask to aggregate over factors in C.
+    obs_sum = observed.sum(axis=0) @ mask_f
+    y_obs_sum = np.einsum("ij,ij->j", y, obs_f) @ mask_f
+    prob_obs_sum = np.einsum("ij,ij->j", prob, obs_f) @ mask_f
+    resid_sum = residual.sum(axis=0) @ mask_f
+    var_obs_sum = np.einsum("ij,ij->j", variance, obs_f) @ mask_f
+    resid_sq_sum = np.einsum("ij,ij->j", residual, residual) @ mask_f
+    pearson_sq_sum = pearson_sq.sum(axis=0) @ mask_f
+
     rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
+    for i, factor in enumerate(unique_factors):
         rows.append(
             (
                 float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
+                float(obs_sum[i]),
+                float(y_obs_sum[i]),
+                float(prob_obs_sum[i]),
+                float(resid_sum[i]),
+                float(var_obs_sum[i]),
+                float(resid_sq_sum[i]),
+                float(pearson_sq_sum[i]),
             )
         )
 
