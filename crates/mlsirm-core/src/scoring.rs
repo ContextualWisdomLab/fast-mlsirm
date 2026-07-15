@@ -73,7 +73,7 @@ pub struct EapSumTable {
     pub sd: Vec<f64>,
 }
 
-fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
+pub(crate) fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     let n_items = bank.b.len();
     if bank.alpha.len() != n_items
         || bank.factor_id.len() != n_items
@@ -93,7 +93,7 @@ fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     Ok(n_items)
 }
 
-fn validate_prior(prior: &PriorSpec, n_dims: usize) -> Result<(), String> {
+pub(crate) fn validate_prior(prior: &PriorSpec, n_dims: usize) -> Result<(), String> {
     if prior.mean.len() != n_dims || prior.sd.len() != n_dims {
         return Err("prior mean/sd must have one entry per trait dimension".into());
     }

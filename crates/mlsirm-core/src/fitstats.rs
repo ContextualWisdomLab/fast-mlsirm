@@ -16,10 +16,10 @@
 //! - Chi-square upper tail via the regularized upper incomplete gamma
 //!   (no external dependencies).
 
-use crate::scoring::{lord_wingersky, ItemBank, PriorSpec};
+use crate::model_exec_flags;
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::quadrature::gh_rule;
-use crate::model_exec_flags;
+use crate::scoring::{lord_wingersky, validate_bank, validate_prior, ItemBank, PriorSpec};
 
 /// Regularized upper incomplete gamma `Q(a, x)` (Numerical Recipes 6.2).
 fn gammainc_upper_reg(a: f64, x: f64) -> f64 {
@@ -1510,6 +1510,12 @@ mod batch3_tests {
 /// expected association, plus the G2 variant. Values with |standardized|
 /// above ~10 (the X2 scale) or repeated same-sign clusters indicate local
 /// dependence the latent structure does not absorb.
+///
+/// # References (APA 7th ed.)
+///
+/// Chen, W.-H., & Thissen, D. (1997). Local dependence indexes for item pairs
+/// using item response theory. *Journal of Educational and Behavioral
+/// Statistics, 22*(3), 265–289. https://doi.org/10.3102/10769986022003265
 pub struct LdIndexResult {
     /// Upper-triangle signed X2 per pair (row-major pair order).
     pub x2_signed: Vec<f64>,
@@ -1527,9 +1533,21 @@ pub fn ld_indices(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<LdIndexResult, String> {
-    let n_items = bank.b.len();
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
+    let n_items = validate_bank(bank)?;
+    validate_prior(prior, bank.n_dims)?;
+    if n_items < 2 {
+        return Err("local-dependence indices need at least 2 items".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if y.iter().zip(observed).any(|(&value, &is_observed)| {
+        is_observed && (!value.is_finite() || (value != 0.0 && value != 1.0))
+    }) {
+        return Err("observed responses must be 0 or 1".into());
     }
     let (probs, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
     let n_pairs = n_items * (n_items - 1) / 2;
@@ -1590,9 +1608,82 @@ pub fn ld_indices(
 #[cfg(test)]
 mod ld_tests {
     use super::*;
-    use crate::scoring::{ItemBank, PriorSpec};
     use crate::nodes::XiRule;
+    use crate::scoring::{ItemBank, PriorSpec};
     use crate::ModelType;
+
+    fn two_item_bank<'a>(
+        alpha: &'a [f64],
+        b: &'a [f64],
+        zeta: &'a [f64],
+        fid: &'a [usize],
+    ) -> ItemBank<'a> {
+        ItemBank {
+            alpha,
+            b,
+            zeta,
+            tau: -30.0,
+            factor_id: fid,
+            model_type: ModelType::Mirt,
+            n_dims: 1,
+            latent_dim: 1,
+            eps_distance: 1e-8,
+        }
+    }
+
+    #[test]
+    fn ld_indices_reject_non_binary_observed_responses() {
+        let alpha = vec![0.0; 2];
+        let b = vec![0.0; 2];
+        let zeta = vec![0.0; 2];
+        let fid = vec![0usize; 2];
+        let bank = two_item_bank(&alpha, &b, &zeta, &fid);
+        let observed = vec![true; 40];
+
+        for invalid in [2.0, f64::NAN] {
+            let mut y = vec![0.0; 40];
+            y[0] = invalid;
+            assert!(
+                ld_indices(
+                    &bank,
+                    &y,
+                    &observed,
+                    20,
+                    &PriorSpec::standard(1),
+                    7,
+                    XiRule::GaussHermite { q_xi: 7 },
+                )
+                .is_err(),
+                "observed response {invalid:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn ld_indices_returns_error_for_malformed_prior() {
+        let alpha = vec![0.0; 2];
+        let b = vec![0.0; 2];
+        let zeta = vec![0.0; 2];
+        let fid = vec![0usize; 2];
+        let bank = two_item_bank(&alpha, &b, &zeta, &fid);
+        let y = vec![0.0; 40];
+        let observed = vec![true; 40];
+        let malformed = PriorSpec {
+            mean: Vec::new(),
+            sd: Vec::new(),
+        };
+
+        assert!(ld_indices(
+            &bank,
+            &y,
+            &observed,
+            20,
+            &malformed,
+            7,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .is_err());
+    }
 
     #[test]
     fn ld_indices_flag_a_dependent_pair() {
