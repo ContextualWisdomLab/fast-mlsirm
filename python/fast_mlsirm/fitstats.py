@@ -1265,6 +1265,9 @@ def m2(
     estimator: str = "mmle",
     prior_mean: np.ndarray | None = None,
     prior_sd: np.ndarray | None = None,
+    estimate_population: bool = False,
+    fixed_items: np.ndarray | None = None,
+    tau_fixed: bool = False,
 ) -> M2Result:
     """M2 statistic and approximate/incremental fit indices.
 
@@ -1278,11 +1281,21 @@ def m2(
     p-value and RMSEA confidence interval are suppressed because ordinary JMLE
     is not a fixed-dimensional consistent estimator.
 
+    Set ``estimate_population=True`` when ``prior_mean`` and ``prior_sd`` were
+    estimated in the calibration (the single-free population used by FIPC).
+    Those ``2 * n_dims`` nuisance columns then enter both the M2 projection and
+    its degrees of freedom. ``fixed_items`` marks item rows whose calibration
+    parameters were anchored rather than estimated; ``tau_fixed`` similarly
+    excludes an anchored spatial-distance coefficient. These are estimator
+    bookkeeping choices of this package: the M2 reference requires the
+    derivative matrix and degrees of freedom to contain the parameters that
+    were actually estimated (Maydeu-Olivares & Joe, 2006).
+
     References
     ----------
-    Cai, L., & Chung, S. W. (2022). Incremental model fit assessment in the
-    case of categorical data: Tucker-Lewis index for item response theory
-    modeling. *Prevention Science, 23*, 455–467.
+    Cai, L., Chung, S. W., & Lee, T. (2023). Incremental model fit assessment
+    in the case of categorical data: Tucker–Lewis index for item response
+    theory modeling. *Prevention Science, 24*(3), 455–466.
     https://doi.org/10.1007/s11121-021-01253-4
 
     Maydeu-Olivares, A., & Joe, H. (2006). Limited information goodness-of-fit
@@ -1297,6 +1310,12 @@ def m2(
     estimator = str(estimator).lower()
     if estimator not in {"mmle", "jmle", "cmle"}:
         raise ValueError("estimator must be one of: mmle, jmle, cmle")
+    if (
+        estimate_population or fixed_items is not None or tau_fixed
+    ) and estimator != "mmle":
+        raise ValueError(
+            "structured calibration metadata requires estimator='mmle'"
+        )
     y0 = np.asarray(responses, dtype=float)
     if y0.ndim != 2:
         raise ValueError("responses must be a persons-by-items matrix")
@@ -1340,6 +1359,23 @@ def m2(
                 "model='MIRT' with every alpha fixed at 0 (discrimination 1)"
             )
         return m2_cmle_rasch(y0, np.asarray(params.b, dtype=float), observed0)
+
+    if estimate_population or fixed_items is not None or tau_fixed:
+        return _m2_single_population(
+            y0,
+            observed0,
+            d_of_i,
+            params,
+            model,
+            q_theta,
+            q_xi,
+            eps_distance,
+            prior_mean,
+            prior_sd,
+            estimate_population=estimate_population,
+            fixed_items=fixed_items,
+            tau_fixed=tau_fixed,
+        )
 
     core = _core_module()
     if core is not None:
@@ -1803,6 +1839,8 @@ def _m2_group_components(
     prior_sd,
     shared_sigma_u=None,
     q_u=11,
+    fixed_items=None,
+    tau_fixed=False,
 ):
     """Build one population's M2 moments, derivatives, and covariance."""
     model_u = model.upper()
@@ -1814,15 +1852,27 @@ def _m2_group_components(
     moment_items = [[i] for i in range(n_items)] + [[i, j] for i, j in pairs]
     s = len(moment_items)
 
+    if fixed_items is None:
+        fixed = np.zeros(n_items, dtype=bool)
+    else:
+        fixed_raw = np.asarray(fixed_items)
+        if fixed_raw.shape != (n_items,):
+            raise ValueError(f"fixed_items must have shape ({n_items},)")
+        if not np.all((fixed_raw == 0) | (fixed_raw == 1)):
+            raise ValueError("fixed_items must contain only boolean values")
+        fixed = fixed_raw.astype(bool)
+
     plist = []
     for i in range(n_items):
+        if fixed[i]:
+            continue
         plist.append(("b", i, 0))
         if free_alpha:
             plist.append(("a", i, 0))
         if uses_space:
             plist.extend(("z", i, k) for k in range(latent_dim))
     tau_free = uses_space and model_u in {"MLS2PLM", "ULS2PLM", "MLSRM", "ULSRM"}
-    if tau_free:
+    if tau_free and not tau_fixed:
         plist.append(("t", 0, 0))
 
     complete = np.all(observed0, axis=1)
@@ -2029,6 +2079,87 @@ def _m2_indices(m2_value, df, null_m2, null_df, n):
     else:
         cfi = tli = float("nan")
     return p_value, rmsea, ci_lower, ci_upper, cfi, tli
+
+
+def _m2_single_population(
+    y0,
+    observed0,
+    d_of_i,
+    params,
+    model,
+    q_theta,
+    q_xi,
+    eps_distance,
+    prior_mean,
+    prior_sd,
+    *,
+    estimate_population,
+    fixed_items,
+    tau_fixed,
+):
+    """Single-population M2 with the calibration's actual free columns."""
+    component = _m2_group_components(
+        y0,
+        observed0,
+        d_of_i,
+        params,
+        model,
+        q_theta,
+        q_xi,
+        eps_distance,
+        prior_mean,
+        prior_sd,
+        fixed_items=fixed_items,
+        tau_fixed=tau_fixed,
+    )
+    columns = [component["delta_item"]]
+    if estimate_population:
+        columns.append(component["delta_population"])
+    delta = np.column_stack(columns)
+    s, p = delta.shape
+    if s <= p:
+        raise ValueError(f"M2 df non-positive: {s} <= {p}")
+    if component["n"] < p + 2:
+        raise ValueError(f"too few complete cases for M2: {component['n']}")
+
+    m2_value = _projected_m2_numpy(
+        component["residual"], delta, component["xi"], float(component["n"])
+    )
+    null_mom, null_delta, null_xi = _m2_null_components(
+        component["p_obs"], component["moment_items"]
+    )
+    null_m2 = _projected_m2_numpy(
+        component["p_obs"] - null_mom,
+        null_delta,
+        null_xi,
+        float(component["n"]),
+    )
+    df = float(s - p)
+    null_df = float(s - component["n_items"])
+    p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
+        m2_value, df, null_m2, null_df, component["n"]
+    )
+    return M2Result(
+        m2=m2_value,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower,
+        rmsea2_ci_upper=ci_upper,
+        srmsr=component["srmsr"],
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=s,
+        n_parameters=p,
+        n_complete=component["n"],
+        inference_note=(
+            "single-population MMLE M2 with estimated mean/SD nuisance columns"
+            if estimate_population
+            else "single-population MMLE M2 with fixed calibration columns excluded"
+        ),
+    )
 
 
 def m2_multigroup(

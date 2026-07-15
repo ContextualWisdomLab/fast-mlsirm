@@ -428,6 +428,11 @@ def _fit_mmle_marginal(
     elif pop_kind == "multilevel":
         icc = sigma_u**2 / (sigma_u**2 + 1.0)
         population.update(sigma_u=sigma_u, u_eap=u_eap, icc=icc)
+    if anchors is not None:
+        population.update(
+            fixed_items=np.asarray(anchors["fixed"], dtype=bool).copy(),
+            tau_fixed=anchors.get("tau") is not None,
+        )
 
     params = MLSIRMParams(
         theta=theta_eap,

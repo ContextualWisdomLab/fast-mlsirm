@@ -337,6 +337,104 @@ def test_m2_rmsea2_parity_and_fit():
     assert np.isnan(descriptive.rmsea2_ci_lower)
 
 
+def test_m2_singlefree_uses_only_estimated_calibration_columns():
+    """FIPC M2 counts free-population columns and excludes anchored items."""
+    from fast_mlsirm import fit_diagnostics
+    from fast_mlsirm import fitstats
+    from fast_mlsirm.types import MLSIRMParams
+
+    rng = np.random.default_rng(2718)
+    n_persons, n_items = 1600, 8
+    factor_id = np.zeros(n_items, dtype=np.int64)
+    alpha = np.log(np.linspace(0.8, 1.4, n_items))
+    b = np.linspace(-1.0, 1.0, n_items)
+    population_mean = np.array([0.4])
+    population_sd = np.array([1.2])
+    theta = population_mean[0] + population_sd[0] * rng.standard_normal(n_persons)
+    probability = 1.0 / (
+        1.0 + np.exp(-(theta[:, None] * np.exp(alpha)[None, :] + b[None, :]))
+    )
+    responses = (rng.random(probability.shape) < probability).astype(float)
+    params = MLSIRMParams(
+        theta=theta[:, None],
+        alpha=alpha,
+        b=b,
+        xi=np.zeros((n_persons, 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=0.0,
+    )
+    fixed_items = np.arange(n_items) < 3
+
+    ordinary = fitstats.m2(
+        responses,
+        factor_id,
+        params,
+        "MIRT",
+        prior_mean=population_mean,
+        prior_sd=population_sd,
+    )
+    singlefree = fitstats.m2(
+        responses,
+        factor_id,
+        params,
+        "MIRT",
+        prior_mean=population_mean,
+        prior_sd=population_sd,
+        estimate_population=True,
+        fixed_items=fixed_items,
+    )
+
+    # Ordinary 2PL estimates 2I item columns. FIPC fixes three item rows and
+    # instead estimates the population mean and SD: 2*(8-3) + 2 = 12.
+    assert ordinary.n_parameters == 16
+    assert singlefree.n_parameters == 12
+    assert singlefree.n_moments == 36
+    assert singlefree.df == 24.0
+    assert np.isfinite(singlefree.m2)
+    assert np.isfinite(singlefree.p_value)
+    assert "estimated mean/SD" in singlefree.inference_note
+
+    diagnostics = fit_diagnostics(
+        responses,
+        params,
+        factor_id,
+        model="MIRT",
+        include_m2=True,
+        estimator="mmle",
+        convergence_status="converged",
+        population={
+            "kind": "singlefree",
+            "mu": population_mean[None, :],
+            "sigma": population_sd[None, :],
+            "fixed_items": fixed_items,
+            "tau_fixed": False,
+        },
+    )
+    assert diagnostics.model_fit["m2_df"] == 24.0
+    assert diagnostics.model_fit["m2"] == singlefree.m2
+
+    with pytest.raises(ValueError, match="fixed_items must have shape"):
+        fitstats.m2(
+            responses,
+            factor_id,
+            params,
+            "MIRT",
+            prior_mean=population_mean,
+            prior_sd=population_sd,
+            estimate_population=True,
+            fixed_items=np.zeros(n_items - 1, dtype=bool),
+        )
+    with pytest.raises(ValueError, match="requires estimator='mmle'"):
+        fitstats.m2(
+            responses,
+            factor_id,
+            params,
+            "MIRT",
+            estimator="jmle",
+            fixed_items=fixed_items,
+        )
+
+
 def test_m2_multigroup_and_multilevel_structures():
     """Population structure changes M2 moments/covariance, not just labels."""
     from fast_mlsirm import fit_diagnostics, m2_multigroup, m2_multilevel

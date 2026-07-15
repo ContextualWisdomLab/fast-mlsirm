@@ -388,9 +388,9 @@ def m2_polytomous(
     counts. Requires at least 3 items and ``n_moments > n_parameters``.
 
     References (APA 7th ed.):
-        Cai, L., & Chung, S. W. (2022). Incremental model fit assessment in the
-            case of categorical data: Tucker-Lewis index for item response
-            theory modeling. *Prevention Science, 23*, 455-467.
+        Cai, L., Chung, S. W., & Lee, T. (2023). Incremental model fit assessment
+            in the case of categorical data: Tucker–Lewis index for item response
+            theory modeling. *Prevention Science, 24*(3), 455–466.
             https://doi.org/10.1007/s11121-021-01253-4
 
         Maydeu-Olivares, A., & Joe, H. (2014). Assessing approximate fit in

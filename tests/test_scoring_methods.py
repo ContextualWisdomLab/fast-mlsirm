@@ -138,6 +138,8 @@ def test_fipc_public_api_freezes_anchors_and_frees_population():
     np.testing.assert_allclose(np.exp(result.params.alpha[:6]), a_true[:6])
     pop = result.population
     assert pop["kind"] == "singlefree"
+    np.testing.assert_array_equal(pop["fixed_items"], anchors["fixed"])
+    assert pop["tau_fixed"]
     assert 0.4 < pop["mu"][0, 0] < 1.3, f"FIPC mean should recover ~0.8: {pop['mu']}"
 
 

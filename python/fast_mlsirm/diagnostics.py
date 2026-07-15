@@ -168,6 +168,17 @@ def fit_diagnostics(
                 estimator=estimator_name,
                 prior_mean=prior_mean,
                 prior_sd=prior_sd,
+                estimate_population=(
+                    population is not None and population.get("kind") == "singlefree"
+                ),
+                fixed_items=(
+                    None if population is None else population.get("fixed_items")
+                ),
+                tau_fixed=(
+                    False
+                    if population is None
+                    else bool(population.get("tau_fixed", False))
+                ),
             )
         model_fit.update(
             {
