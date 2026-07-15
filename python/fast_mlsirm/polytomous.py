@@ -13,7 +13,7 @@ adjacent-category) is available for partial-credit scoring.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -46,6 +46,13 @@ class PolytomousFit:
     cat_params: np.ndarray
     loglik: float
     n_iter: int
+    converged: bool = False
+    termination_reason: str = "not_fitted"
+    loglik_trace: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    final_delta: float = np.nan
+    stopping_tolerance: float = np.nan
     thresholds: np.ndarray | None = None
 
 
@@ -87,7 +94,20 @@ def fit_polytomous(
     ``responses`` is a persons x items array of integer categories
     ``0..n_cat-1``; ``NaN`` marks a missing response (marginalized out of the
     likelihood). ``model`` is ``"grm"`` (default) or ``"gpcm"``.
-    ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid.
+    ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The returned
+    convergence fields describe the observed-data likelihood at the returned
+    parameter state; reaching ``max_iter`` is reported as nonconvergence.
+
+    References
+    ----------
+    Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood
+    from incomplete data via the EM algorithm. *Journal of the Royal
+    Statistical Society: Series B (Methodological), 39*(1), 1–22.
+    https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+
+    Wu, C. F. J. (1983). On the convergence properties of the EM algorithm.
+    *The Annals of Statistics, 11*(1), 95–103.
+    https://doi.org/10.1214/aos/1176346060
     """
     m = str(model).lower()
     if m not in VALID_POLY_MODELS:
@@ -96,6 +116,10 @@ def fit_polytomous(
         raise ValueError("n_cat must be an integer >= 2")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
+        raise ValueError("max_iter must be an integer >= 1")
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
 
@@ -129,6 +153,11 @@ def fit_polytomous(
         cat_params=cat_params,
         loglik=float(res["loglik"]),
         n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        final_delta=float(res["final_delta"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
         thresholds=thresholds,
     )
 

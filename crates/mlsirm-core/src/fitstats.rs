@@ -3117,6 +3117,16 @@ mod m2_branch_tests {
             let fit =
                 fit_poly_unidim(&yi, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6)
                     .unwrap();
+            assert!(
+                fit.converged,
+                "polytomous LD replicate {rep} did not converge: reason={}, \
+                 n_iter={}/{}, delta={:.6e}, tolerance={:.6e}",
+                fit.termination_reason,
+                fit.n_iter,
+                80,
+                fit.final_delta,
+                fit.stopping_tolerance
+            );
             let cp_flat: Vec<f64> = fit.cat_params.iter().flatten().copied().collect();
             let r = poly_local_dependence(
                 &yi, None, n_persons, n_items, k, &fit.slope, &cp_flat, PolyModel::Gpcm, 21,

@@ -833,6 +833,15 @@ def test_fit_polytomous_api_recovers_and_validates():
             y[pp, i] = rng.choice(k, p=p / p.sum())
     fit = fit_polytomous(y, k, model="grm")
     assert fit.model == "grm" and np.isfinite(fit.loglik)
+    assert fit.converged
+    assert fit.termination_reason == "tolerance"
+    assert fit.n_iter < 80
+    assert fit.loglik_trace.shape == (fit.n_iter + 1,)
+    assert fit.loglik == fit.loglik_trace[-1]
+    assert fit.final_delta >= -32 * np.finfo(float).eps * (
+        1 + abs(fit.loglik_trace[-2])
+    )
+    assert fit.final_delta <= fit.stopping_tolerance
     assert np.corrcoef(a_true, fit.slope)[0, 1] > 0.9
 
     # validation
@@ -842,6 +851,10 @@ def test_fit_polytomous_api_recovers_and_validates():
         fit_polytomous(y.astype(float) + 0.5, k)    # non-integer categories
     with pytest.raises(ValueError):
         fit_polytomous(y, 2)                          # category out of range
+    with pytest.raises(ValueError):
+        fit_polytomous(y, k, max_iter=0)
+    with pytest.raises(ValueError):
+        fit_polytomous(y, k, tol=np.nan)
 
 
 def test_score_polytomous_recovers_theta():

@@ -125,12 +125,19 @@ pub enum PolyModel {
 
 /// Result of [`fit_poly_unidim`]. `slope[i]` is item `i`'s discrimination `a_i`;
 /// `cat_params[i]` holds the `K-1` free category parameters (GPCM additive
-/// intercepts, or GRM cumulative thresholds).
+/// intercepts, or GRM cumulative thresholds). `n_iter` counts completed M-steps;
+/// therefore `loglik_trace` contains `n_iter + 1` observed-data likelihoods and
+/// its endpoint is evaluated at the returned parameters.
 pub struct PolyFit {
     pub slope: Vec<f64>,
     pub cat_params: Vec<Vec<f64>>,
     pub loglik: f64,
     pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub loglik_trace: Vec<f64>,
+    pub final_delta: f64,
+    pub stopping_tolerance: f64,
 }
 
 /// Solve `H x = g` for small dense `H` (K x K) by Gauss elimination with partial
@@ -217,7 +224,11 @@ fn m_step_item(
 ) -> Vec<f64> {
     let np = params.len();
     for _ in 0..n_newton {
-        let (_f, g) = item_neg_ll_grad(&params, nodes, counts, model);
+        let (f0, g) = item_neg_ll_grad(&params, nodes, counts, model);
+        let grad_norm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if !f0.is_finite() || !grad_norm.is_finite() || grad_norm < 1e-9 {
+            break;
+        }
         let h = 1e-5;
         let mut hess = vec![vec![0.0_f64; np]; np];
         for j in 0..np {
@@ -235,13 +246,39 @@ fn m_step_item(
             }
             hess[r][r] += 1e-8;
         }
-        let step = solve_small(hess, g);
-        let mut max_step = 0.0_f64;
-        for j in 0..np {
-            params[j] -= step[j];
-            max_step = max_step.max(step[j].abs());
+        let mut step = solve_small(hess, g.clone());
+        let mut directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum::<f64>();
+        if !step.iter().all(|s| s.is_finite()) || directional <= 0.0 {
+            step = g.clone();
+            directional = grad_norm * grad_norm;
         }
-        if max_step < 1e-9 {
+        let mut max_step = step.iter().map(|s| s.abs()).fold(0.0_f64, f64::max);
+        if max_step > 2.0 {
+            for s in &mut step {
+                *s *= 2.0 / max_step;
+            }
+            directional = g.iter().zip(&step).map(|(gi, si)| gi * si).sum();
+            max_step = 2.0;
+        }
+        let mut alpha = 1.0_f64;
+        let mut accepted = false;
+        for _ in 0..25 {
+            let candidate: Vec<f64> = params
+                .iter()
+                .zip(&step)
+                .map(|(value, direction)| value - alpha * direction)
+                .collect();
+            let (candidate_f, _) = item_neg_ll_grad(&candidate, nodes, counts, model);
+            if candidate_f.is_finite()
+                && candidate_f <= f0 - 1e-4 * alpha * directional
+            {
+                params = candidate;
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if !accepted || alpha * max_step < 1e-9 {
             break;
         }
     }
@@ -252,6 +289,24 @@ fn m_step_item(
 /// interaction) — the Rust compute path validating the [`PolyModel`] cells in a
 /// full EM loop. `y` is `n_persons * n_items`, row-major, categories `0..n_cat-1`
 /// (complete data). `theta ~ N(0,1)` on the `q_theta`-node Gauss-Hermite grid.
+///
+/// Convergence is checked on the observed-data log likelihood evaluated at the
+/// same parameters that are returned. The M-step uses backtracking so that a
+/// Newton proposal must improve its expected complete-data objective; a small
+/// negative observed-data increment beyond floating-point roundoff is treated as
+/// an algorithm error rather than as convergence (Dempster et al., 1977; Wu,
+/// 1983).
+///
+/// # References
+///
+/// Dempster, A. P., Laird, N. M., & Rubin, D. B. (1977). Maximum likelihood from
+/// incomplete data via the EM algorithm. *Journal of the Royal Statistical
+/// Society: Series B (Methodological), 39*(1), 1–22.
+/// https://doi.org/10.1111/j.2517-6161.1977.tb01600.x
+///
+/// Wu, C. F. J. (1983). On the convergence properties of the EM algorithm. *The
+/// Annals of Statistics, 11*(1), 95–103.
+/// https://doi.org/10.1214/aos/1176346060
 #[allow(clippy::too_many_arguments)]
 pub fn fit_poly_unidim(
     y: &[usize],
@@ -264,8 +319,17 @@ pub fn fit_poly_unidim(
     max_iter: usize,
     tol: f64,
 ) -> Result<PolyFit, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and > 0".into());
     }
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
@@ -312,10 +376,13 @@ pub fn fit_poly_unidim(
         }
     }
 
-    let mut prev_ll = f64::NEG_INFINITY;
-    let mut ll = f64::NEG_INFINITY;
     let mut it = 0;
-    while it < max_iter {
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
         // per-item cell log-probs at each node: item_lp[i][node*n_cat + k]
         let mut item_lp = vec![vec![0.0_f64; qn * n_cat]; n_items];
         for i in 0..n_items {
@@ -336,7 +403,7 @@ pub fn fit_poly_unidim(
         }
         // E-step: posteriors + expected counts r[i][node][k]
         let mut counts = vec![vec![vec![0.0_f64; n_cat]; qn]; n_items];
-        ll = 0.0;
+        let mut ll = 0.0;
         let mut log_node = vec![0.0_f64; qn];
         for p in 0..n_persons {
             for nd in 0..qn {
@@ -368,20 +435,52 @@ pub fn fit_poly_unidim(
                 }
             }
         }
-        // M-step per item
+        if !ll.is_finite() {
+            return Err(format!("non-finite observed-data log-likelihood at iteration {it}"));
+        }
+        loglik_trace.push(ll);
+        if loglik_trace.len() >= 2 {
+            let previous = loglik_trace[loglik_trace.len() - 2];
+            final_delta = ll - previous;
+            stopping_tolerance = tol * (1.0 + previous.abs());
+            let monotonic_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+            if final_delta < -monotonic_tolerance {
+                return Err(format!(
+                    "EM observed-data log-likelihood decreased at iteration {it}: \
+                     delta={final_delta:.6e}, monotonic_tolerance={monotonic_tolerance:.6e}"
+                ));
+            }
+            if final_delta <= stopping_tolerance {
+                converged = true;
+                termination_reason = "tolerance".to_owned();
+                break;
+            }
+        }
+        if it == max_iter {
+            break;
+        }
+        // M-step per item. The next loop evaluates the observed likelihood at
+        // these exact parameters before either convergence or max_iter return.
         for i in 0..n_items {
             params[i] = m_step_item(params[i].clone(), nodes, &counts[i], model, 10);
         }
         it += 1;
-        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
-            break;
-        }
-        prev_ll = ll;
     }
 
+    let ll = *loglik_trace.last().expect("EM trace is never empty");
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
     let cat_params: Vec<Vec<f64>> = params.iter().map(|p| p[1..].to_vec()).collect();
-    Ok(PolyFit { slope, cat_params, loglik: ll, n_iter: it })
+    Ok(PolyFit {
+        slope,
+        cat_params,
+        loglik: ll,
+        n_iter: it,
+        converged,
+        termination_reason,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
+    })
 }
 
 /// Result of [`fit_nominal`]. Per item, `scores[i]` holds the `K-1` free
@@ -2066,6 +2165,25 @@ mod tests {
         }
         let fit = fit_poly_unidim(&y, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6).unwrap();
         assert!(fit.loglik.is_finite());
+        assert!(fit.converged, "termination={}", fit.termination_reason);
+        assert_eq!(fit.termination_reason, "tolerance");
+        assert!(fit.n_iter < 80);
+        assert_eq!(fit.loglik_trace.len(), fit.n_iter + 1);
+        assert_eq!(fit.loglik, *fit.loglik_trace.last().unwrap());
+        let previous = fit.loglik_trace[fit.loglik_trace.len() - 2];
+        let monotonic_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+        assert!(fit.final_delta >= -monotonic_tolerance);
+        assert!(fit.final_delta <= fit.stopping_tolerance);
+
+        let limited = fit_poly_unidim(
+            &y, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 1, 1e-12,
+        )
+        .unwrap();
+        assert!(!limited.converged);
+        assert_eq!(limited.termination_reason, "max_iter");
+        assert_eq!(limited.n_iter, 1);
+        assert_eq!(limited.loglik_trace.len(), 2);
+        assert_eq!(limited.loglik, *limited.loglik_trace.last().unwrap());
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
         let (ma, mh) = (mean(&a_true), mean(&fit.slope));
         let (mut num, mut da, mut dh) = (0.0, 0.0, 0.0);
@@ -2552,6 +2670,16 @@ mod tests {
                     &yi, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 100, 1e-6,
                 )
                 .unwrap();
+                assert!(
+                    fit.converged,
+                    "GPCM recovery replicate {rep} ({cond}) did not converge: \
+                     reason={}, n_iter={}/{}, delta={:.6e}, tolerance={:.6e}",
+                    fit.termination_reason,
+                    fit.n_iter,
+                    100,
+                    fit.final_delta,
+                    fit.stopping_tolerance
+                );
                 for i in 0..n_items {
                     let ea = fit.slope[i] - a_true[i];
                     a_err[i] += ea;
