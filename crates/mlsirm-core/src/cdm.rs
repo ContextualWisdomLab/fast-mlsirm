@@ -1468,7 +1468,10 @@ fn newton_attr_2pl(mut a: f64, mut d: f64, r: &[f64], w: &[f64], newton_iter: us
         // Backtrack on the unpenalized EM auxiliary function so the numerical ridge
         // cannot make the reported marginal log-likelihood move backwards.
         for _ in 0..30 {
-            let cand_a = (old_a - step * da).clamp(1e-3, 10.0);
+            // A zero loading is the independent-attribute boundary of the
+            // higher-order model. Keep the identification anchor non-negative,
+            // but do not exclude that valid boundary with an arbitrary epsilon.
+            let cand_a = (old_a - step * da).clamp(0.0, 10.0);
             let cand_d = old_d - step * dd;
             let cand_q = q_value(cand_a, cand_d);
             if cand_q.is_finite() && cand_q >= old_q - 1e-12 {
@@ -1801,6 +1804,14 @@ pub struct HoGdinaResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Stable public reason for termination: `tolerance_met` or `max_iter_reached`.
+    pub termination_reason: &'static str,
+    /// Last observed-data log-likelihood increment at the returned parameters.
+    pub final_loglik_change: f64,
+    /// Last scale-free increment `|delta log L| / (1 + |log L_previous|)`.
+    pub final_relative_loglik_change: f64,
+    /// Requested relative log-likelihood stopping tolerance.
+    pub stopping_tolerance: f64,
     /// `sum_i 2^{K_i} + 2*K`.
     pub n_parameters: usize,
 }
@@ -1822,6 +1833,9 @@ pub struct HoGdinaResult {
 /// [`fit_ho_cdm`]. Identification mirrors [`fit_ho_cdm`] (`theta ~ N(0,1)` fixes the
 /// scale, `a_k` anchored non-negative, higher-order parameters identified for
 /// `K >= 3`) and [`fit_gdina`] (the Q-matrix must identify the saturated item probs).
+/// This implementation stops on the scale-free observed-data likelihood change
+/// `|delta log L| / (1 + |log L_previous|) < tol`; this numerical rule is a package
+/// choice rather than a claim from the cited Bayesian source estimator.
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
@@ -1841,6 +1855,9 @@ pub fn fit_ho_gdina(
 ) -> Result<HoGdinaResult, String> {
     use crate::mmle::{log_sigmoid, GH_NODES, GH_WEIGHTS};
     validate(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+    if n_attributes < 3 {
+        return Err("higher-order G-DINA requires at least 3 attributes for identified structural parameters".into());
+    }
     let l = 1usize << n_attributes;
     let q = GH_NODES.len();
     let log_w: Vec<f64> = GH_WEIGHTS.iter().map(|w| w.ln()).collect();
@@ -1995,7 +2012,9 @@ pub fn fit_ho_gdina(
 
         if loglik_trace.len() > 1 {
             let n = loglik_trace.len();
-            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+            let delta = loglik_trace[n - 1] - loglik_trace[n - 2];
+            let relative_delta = delta.abs() / (1.0 + loglik_trace[n - 2].abs());
+            if relative_delta < cfg.tol {
                 converged = true;
                 break;
             }
@@ -2074,6 +2093,17 @@ pub fn fit_ho_gdina(
     if !converged {
         loglik_trace.push(final_ll);
     }
+    let final_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| pair[1] - pair[0])
+        .unwrap_or(f64::NAN);
+    let final_relative_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| (pair[1] - pair[0]).abs() / (1.0 + pair[0].abs()))
+        .unwrap_or(f64::NAN);
+    let termination_reason = if converged { "tolerance_met" } else { "max_iter_reached" };
 
     // Identity-link parameters delta = M^{-1} p, per item slice.
     let mut item_delta = p.clone();
@@ -2096,6 +2126,10 @@ pub fn fit_ho_gdina(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason,
+        final_loglik_change,
+        final_relative_loglik_change,
+        stopping_tolerance: cfg.tol,
         n_parameters: total + 2 * n_attributes,
     })
 }
@@ -4024,6 +4058,25 @@ mod tests {
         let observed = vec![true; n * n_items];
         let res = fit_ho_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
         let pi_true = ho_pi_from_params(&a_true, &d_true, n_attr);
+        assert!(
+            res.converged,
+            "termination={} n_iter={} relative_change={} tolerance={} attr_slope={:?}",
+            res.termination_reason,
+            res.n_iter,
+            res.final_relative_loglik_change,
+            res.stopping_tolerance,
+            res.attr_slope
+        );
+        assert_eq!(res.termination_reason, "tolerance_met");
+        assert!(res.final_relative_loglik_change < res.stopping_tolerance);
+        assert!(nondecreasing(&res.loglik_trace));
+        println!(
+            "[HO-GDINA independent] n_iter={} delta_loglik={:.3e} relative_delta={:.3e} tol={:.1e}",
+            res.n_iter,
+            res.final_loglik_change,
+            res.final_relative_loglik_change,
+            res.stopping_tolerance
+        );
         assert!(rmse(&res.profile_prob, &pi_true) < 0.03, "pi RMSE {}", rmse(&res.profile_prob, &pi_true));
     }
 
@@ -4061,6 +4114,33 @@ mod tests {
         let cfg = CdmConfig::default();
         assert!(fit_ho_gdina(&[0.0], &[true], &[1, 1], 1, 2, 1, &cfg).is_err()); // y length mismatch
         assert!(fit_ho_gdina(&[0.0, 1.0], &[true, true], &[0, 0, 0, 0], 1, 2, 2, &cfg).is_err()); // all-zero Q row
+        let err = fit_ho_gdina(
+            &[0.0, 1.0, 1.0, 0.0],
+            &[true; 4],
+            &[1, 0, 0, 1],
+            2,
+            2,
+            2,
+            &cfg,
+        )
+        .unwrap_err();
+        assert!(err.contains("at least 3 attributes"), "{err}");
+
+        let one_step = fit_ho_gdina(
+            &y,
+            &observed,
+            &q,
+            n,
+            n_items,
+            n_attr,
+            &CdmConfig { max_iter: 1, tol: 1e-12, ..CdmConfig::default() },
+        )
+        .unwrap();
+        assert!(!one_step.converged);
+        assert_eq!(one_step.n_iter, 1);
+        assert_eq!(one_step.termination_reason, "max_iter_reached");
+        assert!(one_step.final_loglik_change.is_finite());
+        assert!(one_step.final_relative_loglik_change.is_finite());
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): higher-order G-DINA recovery of the
@@ -4122,6 +4202,7 @@ mod tests {
                 ra,
                 attr
             );
+            assert_eq!(nconv, reps, "nonconverged replications: {} of {reps} (skew={skew})", reps - nconv);
             assert!(wp < 0.04, "wRMSE(p) {wp} skew={skew}");
             assert!(attr > 0.90, "attribute agreement {attr} skew={skew}");
         }

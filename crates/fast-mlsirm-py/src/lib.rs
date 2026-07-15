@@ -537,7 +537,8 @@ fn fit_ho_cdm(
 /// n_attributes` (0/1). Returns a dict with the ragged CSR `item_off`, `item_prob`,
 /// `item_delta`, `k_required`; `attr_slope`/`attr_intercept` (K); `profile_prob`
 /// (implied, 2^K); `theta`; `map_profile`; `attr_prob` (`N*K`); `loglik_trace`,
-/// `n_iter`, `converged`, `n_parameters`.
+/// `n_iter`, `converged`, `termination_reason`, `final_loglik_change`,
+/// `final_relative_loglik_change`, `stopping_tolerance`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, max_iter = 500, tol = 1e-6))]
@@ -586,6 +587,10 @@ fn fit_ho_gdina(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("final_relative_loglik_change", res.final_relative_loglik_change)?;
+    out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }

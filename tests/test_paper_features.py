@@ -2424,6 +2424,8 @@ def test_fit_ho_gdina_recovers_saturated_and_structure():
 
     res = fit_ho_gdina(y, q)
     assert isinstance(res, HoGdinaFit) and res.converged
+    assert res.termination_reason == "tolerance_met"
+    assert res.final_relative_loglik_change < res.stopping_tolerance
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)
     assert np.all(res.attr_slope > 0)  # anchored non-negative
     assert abs(res.profile_prob.sum() - 1.0) < 1e-9
@@ -2440,6 +2442,22 @@ def test_fit_ho_gdina_recovers_saturated_and_structure():
 
     with pytest.raises(ValueError):
         fit_ho_gdina(y.ravel(), q)  # not 2-D
+    with pytest.raises(ValueError, match="at least 3 attributes"):
+        fit_ho_gdina(y[:, :2], np.eye(2, dtype=np.int64))
+    for bad in (np.inf, -np.inf):
+        malformed = y.copy()
+        malformed[0, 0] = bad
+        with pytest.raises(ValueError, match="only 0, 1, or NaN"):
+            fit_ho_gdina(malformed, q)
+
+    limited = y[:100].copy()
+    limited[0, 0] = np.nan
+    unfinished = fit_ho_gdina(limited, q, max_iter=1, tol=1e-12)
+    assert not unfinished.converged
+    assert unfinished.n_iter == 1
+    assert unfinished.termination_reason == "max_iter_reached"
+    assert np.isfinite(unfinished.final_loglik_change)
+    assert np.isfinite(unfinished.final_relative_loglik_change)
 
 
 def test_fit_crm_recovers_continuous_responses():

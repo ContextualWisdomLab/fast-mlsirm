@@ -9,6 +9,14 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return the flattened values/mask for 0/1 data with NaN-only missingness."""
+    if np.isinf(y).any():
+        raise ValueError("responses must contain only 0, 1, or NaN (missing)")
+    observed = ~np.isnan(y)
+    return np.where(observed, y, 0.0).reshape(-1), observed.reshape(-1)
+
+
 @dataclass
 class CdmFit:
     """Fitted DINA/DINO cognitive diagnosis model.
@@ -100,11 +108,10 @@ def fit_cdm(
         raise ValueError("q_matrix must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.fit_cdm(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -203,11 +210,10 @@ def fit_gdina(
         raise ValueError("q_matrix must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.fit_gdina(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -303,11 +309,10 @@ def validate_q_matrix(
         raise ValueError("provisional_q must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.validate_q_matrix(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -408,11 +413,10 @@ def gdina_wald_selection(
         raise ValueError("q_matrix must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.gdina_wald_selection(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -514,11 +518,10 @@ def fit_ho_cdm(
         raise ValueError("q_matrix must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_cdm(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -569,6 +572,10 @@ class HoGdinaFit:
     loglik_trace: np.ndarray
     n_iter: int
     converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    final_relative_loglik_change: float
+    stopping_tolerance: float
     n_parameters: int
 
     def item_prob_row(self, i: int) -> np.ndarray:
@@ -596,10 +603,14 @@ def fit_ho_gdina(
     EM over the joint ``(alpha, theta)`` grid: the saturated item M-step marginalizes
     the trait out, and the structural step is ``K`` independent 2PL calibrations of
     attribute mastery on the trait. The higher-order parameters are identified for
-    ``K >= 3``; ``attr_slope`` is anchored non-negative.
+    ``K >= 3``; fits with fewer attributes are rejected rather than returning
+    unidentified structural parameters. ``attr_slope`` is anchored non-negative.
 
-    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
-    ``q_matrix`` is an items x attributes 0/1 array.
+    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR;
+    positive/negative infinity is invalid); ``q_matrix`` is an items x attributes 0/1
+    array. Convergence uses the scale-free observed-data likelihood change
+    ``abs(delta log L) / (1 + abs(log L_previous)) < tol``; the raw and relative
+    terminal changes and the stable termination reason are returned explicitly.
 
     References (APA 7th ed.):
         de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
@@ -625,11 +636,10 @@ def fit_ho_gdina(
         raise ValueError("q_matrix must have one row per item")
     n_attributes = q.shape[1]
 
-    observed = np.isfinite(y)
-    yy = np.where(observed, y, 0.0).reshape(-1)
+    yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_gdina(
         yy,
-        observed.reshape(-1),
+        observed,
         q.astype(np.int64).reshape(-1),
         int(n_persons),
         int(n_items),
@@ -651,5 +661,9 @@ def fit_ho_gdina(
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        final_relative_loglik_change=float(res["final_relative_loglik_change"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
