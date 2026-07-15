@@ -1240,8 +1240,9 @@ Report `(μ̂_{new},σ̂_{new})` — it is the population-drift estimate — and
   (Web algorithm; coefficients verified via stackedboxes.org mirror.) Max rel. error `1.15×10^{-9}`.
 - Halton radical-inverse construction — verified via the standard reference description (Wikipedia,
   "Halton sequence"), incl. the `φ_2(6)=3/8` worked example.
-- Bock, R. D., & Mislevy, R. J. (1982). *Adaptive EAP estimation of ability in a microcomputer
-  environment.* **Applied Psychological Measurement, 6**(4), 431–444. DOI: 10.1177/014662168200600405.
+- Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in a microcomputer
+  environment. *Applied Psychological Measurement, 6*(4), 431–444.
+  https://doi.org/10.1177/014662168200600405
   — existence/description verified (posterior mean & PSD by quadrature, non-iterative); formulas `[S]` → `[~]`.
 - Thissen, D., Pommerich, M., Billeaud, K., & Williams, V. S. L. (1995). *Item response theory for scores
   on tests including polytomous items with ordered responses.* **Applied Psychological Measurement,
