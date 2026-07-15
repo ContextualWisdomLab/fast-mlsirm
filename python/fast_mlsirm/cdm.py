@@ -428,3 +428,112 @@ def gdina_wald_selection(
         selected=np.asarray(res["selected"], dtype=np.int64),
         alpha=float(res["alpha"]),
     )
+
+
+@dataclass
+class HoCdmFit:
+    """Fitted higher-order DINA/DINO model (de la Torre & Douglas, 2004).
+
+    A continuous higher-order trait ``theta ~ N(0,1)`` structures attribute mastery,
+    ``P(alpha_k=1 | theta) = sigmoid(attr_slope_k * theta + attr_intercept_k)``, with
+    attributes conditionally independent given ``theta``. ``slip``/``guess`` are the
+    per-item DINA parameters; ``profile_prob`` the implied ``2^K`` class distribution;
+    ``theta`` the per-person EAP trait; ``map_profile``/``attr_prob`` the per-person
+    MAP profile and marginal attribute mastery. The higher-order parameters are a
+    genuine (identified) restriction only for ``K >= 3``."""
+
+    model: str
+    slip: np.ndarray
+    guess: np.ndarray
+    attr_slope: np.ndarray
+    attr_intercept: np.ndarray
+    profile_prob: np.ndarray
+    theta: np.ndarray
+    map_profile: np.ndarray
+    attr_prob: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    n_parameters: int
+
+    def attribute_mastery(self) -> np.ndarray:
+        """Hard 0/1 attribute-mastery classification (``attr_prob >= 0.5``)."""
+        return (self.attr_prob >= 0.5).astype(np.int64)
+
+
+def fit_ho_cdm(
+    responses: np.ndarray,
+    q_matrix: np.ndarray,
+    model: str = "dina",
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> HoCdmFit:
+    """Fit the higher-order DINA/DINO model (compute in Rust; de la Torre & Douglas, 2004).
+
+    Unlike :func:`fit_cdm` (which estimates a free ``2^K`` class distribution), the
+    attribute-mastery distribution here is *structured* by a continuous higher-order
+    trait ``theta ~ N(0,1)``: ``P(alpha_k=1 | theta) = sigmoid(a_k theta + d_k)``, with
+    attributes conditionally independent given ``theta``. This replaces ``2^K - 1`` free
+    class probabilities with ``2K`` interpretable attribute parameters. The item part
+    (slip/guess, DINA or DINO gate) is unchanged. Estimated by marginal-ML EM over the
+    joint ``(alpha, theta)`` grid; the structural step is ``K`` independent 2PL
+    calibrations of attribute mastery on the trait.
+
+    The observed-data likelihood depends on ``(a_k, d_k)`` only through the implied
+    class distribution, so the higher-order parameters are identified only for
+    ``K >= 3``; at ``K <= 2`` only ``profile_prob`` and the attribute classification
+    are identified. ``attr_slope`` is anchored non-negative.
+
+    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
+    ``q_matrix`` is an items x attributes 0/1 array; ``model`` is ``"dina"`` or ``"dino"``.
+
+    References (APA 7th ed.):
+        de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
+            cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
+            https://doi.org/10.1007/BF02295640
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_ho_cdm"):
+        raise RuntimeError("fit_ho_cdm requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(q_matrix)
+    if q.ndim != 2:
+        raise ValueError("q_matrix must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_matrix must have one row per item")
+    n_attributes = q.shape[1]
+
+    observed = np.isfinite(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.fit_ho_cdm(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        str(model),
+        int(max_iter),
+        float(tol),
+    )
+    return HoCdmFit(
+        model=str(res["model"]),
+        slip=np.asarray(res["slip"], dtype=np.float64),
+        guess=np.asarray(res["guess"], dtype=np.float64),
+        attr_slope=np.asarray(res["attr_slope"], dtype=np.float64),
+        attr_intercept=np.asarray(res["attr_intercept"], dtype=np.float64),
+        profile_prob=np.asarray(res["profile_prob"], dtype=np.float64),
+        theta=np.asarray(res["theta"], dtype=np.float64),
+        map_profile=np.asarray(res["map_profile"], dtype=np.int64),
+        attr_prob=np.asarray(res["attr_prob"], dtype=np.float64).reshape(n_persons, n_attributes),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        n_parameters=int(res["n_parameters"]),
+    )

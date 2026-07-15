@@ -93,6 +93,28 @@
 
 ### Added
 
+- **Higher-order structured attribute prior for cognitive diagnosis** (de la Torre
+  & Douglas, 2004). `fit_ho_cdm(responses, q_matrix, model="dina"|"dino")` fits a
+  DINA/DINO model whose `2^K` attribute-class distribution, instead of being free
+  (as in `fit_cdm`), is *structured* by a continuous higher-order trait
+  `theta ~ N(0,1)`: `P(alpha_k=1 | theta) = sigmoid(a_k theta + d_k)` with attributes
+  conditionally independent given the trait. This replaces the `2^K - 1` free class
+  probabilities with `2K` interpretable attribute parameters (slope `a_k`,
+  intercept `d_k`). Estimated by marginal-ML EM over the joint `(alpha, theta)` grid:
+  the item slip/guess M-step is unchanged, and the population update becomes `K`
+  independent 2PL calibrations of attribute mastery on the trait (reusing the
+  `fit_mmle_2pl` Newton with expected node counts). The implied class distribution,
+  per-person trait EAP, MAP profile, and marginal attribute mastery are returned.
+  The observed-data likelihood depends on `(a_k, d_k)` only through the implied class
+  distribution, so the higher-order parameters are a genuine, identified restriction
+  only for `K >= 3` (at `K <= 2` only the class distribution and the attribute
+  classification are identified); `attr_slope` is anchored non-negative. A
+  500-replication Monte-Carlo study (higher-order DINA, K=3, N=1000) recovers the
+  attribute parameters and classification under both a correctly-specified normal
+  trait and a mis-specified skewed trait. Extends `mlsirm_core::cdm` — reuses the
+  DINA gate, `update_item`, and `mmle::GH_NODES`/`GH_WEIGHTS`. Exposed to Python
+  through PyO3 as `fit_ho_cdm` with the `HoCdmFit` wrapper.
+
 - **Item-level cognitive-diagnosis model selection by the Wald test** (de la
   Torre, 2011). `gdina_wald_selection(responses, q_matrix, alpha=0.05)` tests, for
   each item, whether the saturated G-DINA can be replaced by a more parsimonious

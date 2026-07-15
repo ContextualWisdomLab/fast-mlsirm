@@ -2132,6 +2132,64 @@ def test_gdina_wald_selection_classifies_items():
         gdina_wald_selection(y, q, max_iter=1, tol=1e-12)
 
 
+def test_fit_ho_cdm_recovers_higher_order_structure():
+    """Higher-order DINA (de la Torre & Douglas, 2004): a continuous trait structures
+    attribute mastery; recover the attribute slopes/intercepts, slip/guess, and
+    classification, and confirm the slope-zero reduction to independent attributes."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_ho_cdm, HoCdmFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_ho_cdm"):
+        pytest.skip("compiled core built without fit_ho_cdm")
+
+    rng = np.random.default_rng(2004)
+    k, n = 3, 4000
+    # 4 single-attribute items per attribute + 3 pair items (all attributes identified)
+    rows = []
+    for a in range(k):
+        for _ in range(4):
+            rows.append([1 if t == a else 0 for t in range(k)])
+    rows += [[1, 1, 0], [0, 1, 1], [1, 0, 1]]
+    q = np.array(rows, dtype=np.int64)
+    n_items = q.shape[0]
+    a_true = np.array([1.2, 1.5, 0.9])
+    d_true = np.array([0.3, -0.5, 0.6])
+    s, g = np.full(n_items, 0.12), np.full(n_items, 0.12)
+
+    theta = rng.standard_normal(n)
+    alpha = (rng.random((n, k)) < 1.0 / (1.0 + np.exp(-(theta[:, None] * a_true + d_true)))).astype(int)
+    codes = (alpha * (1 << np.arange(k))).sum(1)
+    y = np.empty((n, n_items))
+    for j in range(n):
+        c = int(codes[j])
+        for i in range(n_items):
+            mask = int(np.dot(q[i], 1 << np.arange(k)))
+            eta = (c & mask) == mask
+            p = 1.0 - s[i] if eta else g[i]
+            y[j, i] = 1.0 if rng.random() < p else 0.0
+
+    res = fit_ho_cdm(y, q, model="dina")
+    assert isinstance(res, HoCdmFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
+    assert res.n_parameters == 2 * n_items + 2 * k
+    assert abs(res.profile_prob.sum() - 1.0) < 1e-9
+    assert np.all(res.attr_slope > 0)  # anchored non-negative
+    assert np.sqrt(np.mean((res.slip - s) ** 2)) < 0.05
+    assert np.sqrt(np.mean((res.attr_slope - a_true) ** 2)) < 0.4  # identified at K=3
+    assert np.sqrt(np.mean((res.attr_intercept - d_true) ** 2)) < 0.3
+    # attribute classification agreement
+    est = res.attribute_mastery()
+    assert (est == alpha).mean() > 0.85
+
+    with pytest.raises(ValueError):
+        fit_ho_cdm(y.ravel(), q)  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_ho_cdm(y, q, model="rasch")  # unknown gate
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""
