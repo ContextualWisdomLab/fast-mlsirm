@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.config import FitConfig
+from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
 
 
@@ -93,6 +94,51 @@ def test_marginal_handles_missing_data():
     result = fit(y, fid, _cfg(max_iter=40))
     assert np.all(np.isfinite(result.params.theta))
     assert result.n_iter > 0
+
+
+def test_numpy_trace_endpoint_matches_returned_parameters_after_max_iter():
+    y = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0],
+        ]
+    )
+    observed = np.ones_like(y, dtype=bool)
+    factor_id = np.zeros(y.shape[1], dtype=np.int64)
+    fit_kwargs = {
+        "model": "MIRT",
+        "n_dims": 1,
+        "latent_dim": 1,
+        "pop": {"kind": "single"},
+        "q_theta": 7,
+        "q_xi": 7,
+        "q_u": 7,
+        "max_iter": 1,
+        "m_steps": 2,
+    }
+    result = fit_marginal_numpy(y, observed, factor_id, **fit_kwargs)
+    anchors = {
+        "fixed": np.ones(y.shape[1], dtype=bool),
+        "alpha": result["alpha"].copy(),
+        "b": result["b"].copy(),
+        "zeta": result["zeta"].copy(),
+        "tau": result["tau"],
+    }
+    reevaluated = fit_marginal_numpy(
+        y, observed, factor_id, anchors=anchors, **fit_kwargs
+    )
+
+    assert result["n_iter"] == 1
+    assert len(result["loglik_trace"]) == 2
+    np.testing.assert_allclose(
+        result["loglik_trace"][-1], reevaluated["loglik_trace"][0], atol=1e-10
+    )
 
 
 def test_marginal_rejects_invalid_quadrature():

@@ -495,6 +495,7 @@ def fit_marginal_numpy(
 
     loglik_trace: list[float] = []
     converged = False
+    n_iter = 0
 
     def _zi_mix(lp_irt: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         # mixture log-marginal and IRT-class weight, elementwise over persons
@@ -576,6 +577,14 @@ def fit_marginal_numpy(
                     post, w_eff, y, observed, factor_id, s_all, n_ctx, nbar, rbar, mbar
                 )
         loglik_trace.append(loglik)
+
+        # The likelihood just evaluated belongs to the current parameters.
+        # Stop before another M-step so the returned model, trace endpoint,
+        # information criteria, and zero-inflation responsibilities agree.
+        if len(loglik_trace) > 1 and abs(loglik_trace[-1] - loglik_trace[-2]) < tol:
+            converged = True
+            break
+
         if zero_inflation:
             pi_zero = float(np.clip(zero_resp.mean(), 0.0, 0.999))
 
@@ -784,10 +793,7 @@ def fit_marginal_numpy(
         elif kind == "multilevel" and n_clusters:
             e_v2 = sum_e_v2 / n_clusters
             sigma_u = float(np.clip(np.sqrt(sigma_u * sigma_u * e_v2), 0.0, 10.0))
-
-        if len(loglik_trace) > 1 and abs(loglik_trace[-1] - loglik_trace[-2]) < tol:
-            converged = True
-            break
+        n_iter += 1
 
     # --- final EAP pass ---
     ctx = _build_contexts(pop, mu, sigma, sigma_u, n_dims, q_u)
@@ -796,6 +802,66 @@ def fit_marginal_numpy(
         alpha, b, zeta, tau, model, factor_id, ctx, t_nodes, x_grid, eps_distance,
         n_dims, final_offsets,
     )
+    if not converged:
+        if kind in {"single", "singlefree", "multigroup"}:
+            s_of_person = (
+                group_id if kind == "multigroup" else np.zeros(n_persons, dtype=np.int64)
+            )
+            _, _, final_log_lp = _person_logliks(
+                y,
+                observed,
+                factor_id,
+                logp1,
+                logp0,
+                c0,
+                t_logw,
+                x_logw,
+                s_of_person,
+                n_dims,
+            )
+            if zero_inflation:
+                all_zero_bcast = all_zero
+                final_lp_mix, final_w_irt = _zi_mix(final_log_lp)
+                final_loglik = float(final_lp_mix.sum())
+                zero_resp = 1.0 - final_w_irt
+            else:
+                final_loglik = float(final_log_lp.sum())
+        else:
+            final_lp_v = np.empty((n_persons, ctx["n_ctx"]))
+            for v in range(ctx["n_ctx"]):
+                s_all = np.full(n_persons, v, dtype=np.int64)
+                _, _, final_lp = _person_logliks(
+                    y,
+                    observed,
+                    factor_id,
+                    logp1,
+                    logp0,
+                    c0,
+                    t_logw,
+                    x_logw,
+                    s_all,
+                    n_dims,
+                )
+                final_lp_v[:, v] = final_lp
+            if zero_inflation:
+                all_zero_bcast = all_zero[:, None]
+                final_lp_v, final_w_irt_v = _zi_mix(final_lp_v)
+            final_log_cluster = (
+                np.zeros((n_clusters, ctx["n_ctx"])) + ctx["u_logw"][None, :]
+            )
+            np.add.at(final_log_cluster, cluster_id, final_lp_v)
+            final_mc = final_log_cluster.max(axis=1, keepdims=True)
+            final_lse = np.squeeze(final_mc, axis=1) + np.log(
+                np.exp(final_log_cluster - final_mc).sum(axis=1)
+            )
+            final_loglik = float(final_lse.sum())
+            if zero_inflation:
+                final_cluster_post = np.exp(final_log_cluster - final_lse[:, None])
+                zero_resp = (
+                    final_cluster_post[cluster_id] * (1.0 - final_w_irt_v)
+                ).sum(axis=1)
+        loglik_trace.append(final_loglik)
+
     theta_eap = np.zeros((n_persons, n_dims))
     theta_m2 = np.zeros((n_persons, n_dims))
     xi_eap = np.zeros((n_persons, latent_dim))
@@ -890,7 +956,7 @@ def fit_marginal_numpy(
         "sigma_u": float(sigma_u),
         "u_eap": u_eap,
         "loglik_trace": loglik_trace,
-        "n_iter": len(loglik_trace),
+        "n_iter": n_iter,
         "converged": converged,
         "status": "converged" if converged else "max_iter_reached",
         "ic": ic,

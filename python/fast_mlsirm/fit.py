@@ -368,6 +368,7 @@ def _fit_mmle_marginal(
         sigma_u = float(res["sigma_u"])
         u_eap = np.asarray(res["u_eap"], dtype=np.float64)
         loglik_trace = [float(v) for v in res["loglik_trace"]]
+        n_iter = int(res["n_iter"])
         converged = bool(res["converged"])
         ic = dict(res["ic"]) if "ic" in res else None
         delta = float(res.get("delta", 0.0))
@@ -409,6 +410,7 @@ def _fit_mmle_marginal(
         mu, sigma = res["mu"], res["sigma"]
         sigma_u, u_eap = res["sigma_u"], res["u_eap"]
         loglik_trace = [float(v) for v in res["loglik_trace"]]
+        n_iter = int(res["n_iter"])
         converged = bool(res["converged"])
         ic = res.get("ic")
         delta = float(res.get("delta", 0.0))
@@ -445,7 +447,7 @@ def _fit_mmle_marginal(
         loglik_trace=loglik_trace,
         objective_trace=[float(-v) for v in loglik_trace],
         convergence_status="converged" if converged else "max_iter_reached",
-        n_iter=len(loglik_trace),
+        n_iter=n_iter,
         population=population,
         ic=ic,
     )
