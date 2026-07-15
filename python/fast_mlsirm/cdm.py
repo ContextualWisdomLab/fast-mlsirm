@@ -542,3 +542,114 @@ def fit_ho_cdm(
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+
+@dataclass
+class HoGdinaFit:
+    """Fitted higher-order G-DINA model (de la Torre & Douglas, 2004; de la Torre, 2011).
+
+    The saturated G-DINA item model (ragged CSR: item ``i`` has ``2 ** k_required[i]``
+    reduced-class success probabilities at ``item_prob[item_off[i]:item_off[i+1]]``,
+    with the identity-link ``item_delta``) under a higher-order structural attribute
+    prior ``P(alpha_k=1 | theta) = sigmoid(attr_slope_k*theta + attr_intercept_k)``,
+    ``theta ~ N(0,1)``. ``profile_prob`` is the implied ``2^K`` class distribution;
+    ``theta``/``map_profile``/``attr_prob`` the per-person trait EAP, MAP profile, and
+    marginal attribute mastery."""
+
+    item_off: np.ndarray
+    item_prob: np.ndarray
+    item_delta: np.ndarray
+    k_required: np.ndarray
+    attr_slope: np.ndarray
+    attr_intercept: np.ndarray
+    profile_prob: np.ndarray
+    theta: np.ndarray
+    map_profile: np.ndarray
+    attr_prob: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    n_parameters: int
+
+    def item_prob_row(self, i: int) -> np.ndarray:
+        """Success probabilities of item ``i``'s ``2 ** K_i`` reduced classes."""
+        return self.item_prob[self.item_off[i] : self.item_off[i + 1]]
+
+
+def fit_ho_gdina(
+    responses: np.ndarray,
+    q_matrix: np.ndarray,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> HoGdinaFit:
+    """Fit the higher-order G-DINA model (compute in Rust; de la Torre & Douglas, 2004;
+    de la Torre, 2011).
+
+    Combines the saturated G-DINA item model (each item's reduced attribute-mastery
+    classes get a free success probability, as in :func:`fit_gdina`) with a
+    higher-order structural attribute prior in which a continuous trait
+    ``theta ~ N(0,1)`` drives mastery, ``P(alpha_k=1 | theta) = sigmoid(a_k theta +
+    d_k)``, with attributes conditionally independent given ``theta`` (as in
+    :func:`fit_ho_cdm`). It generalizes :func:`fit_ho_cdm` (which restricts the item
+    model to DINA slip/guess) and constrains :func:`fit_gdina`'s free class
+    distribution to the ``2K``-parameter structured family. Estimated by marginal-ML
+    EM over the joint ``(alpha, theta)`` grid: the saturated item M-step marginalizes
+    the trait out, and the structural step is ``K`` independent 2PL calibrations of
+    attribute mastery on the trait. The higher-order parameters are identified for
+    ``K >= 3``; ``attr_slope`` is anchored non-negative.
+
+    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
+    ``q_matrix`` is an items x attributes 0/1 array.
+
+    References (APA 7th ed.):
+        de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
+            cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
+            https://doi.org/10.1007/BF02295640
+        de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+            76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_ho_gdina"):
+        raise RuntimeError("fit_ho_gdina requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(q_matrix)
+    if q.ndim != 2:
+        raise ValueError("q_matrix must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_matrix must have one row per item")
+    n_attributes = q.shape[1]
+
+    observed = np.isfinite(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.fit_ho_gdina(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        int(max_iter),
+        float(tol),
+    )
+    return HoGdinaFit(
+        item_off=np.asarray(res["item_off"], dtype=np.int64),
+        item_prob=np.asarray(res["item_prob"], dtype=np.float64),
+        item_delta=np.asarray(res["item_delta"], dtype=np.float64),
+        k_required=np.asarray(res["k_required"], dtype=np.int64),
+        attr_slope=np.asarray(res["attr_slope"], dtype=np.float64),
+        attr_intercept=np.asarray(res["attr_intercept"], dtype=np.float64),
+        profile_prob=np.asarray(res["profile_prob"], dtype=np.float64),
+        theta=np.asarray(res["theta"], dtype=np.float64),
+        map_profile=np.asarray(res["map_profile"], dtype=np.int64),
+        attr_prob=np.asarray(res["attr_prob"], dtype=np.float64).reshape(n_persons, n_attributes),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        n_parameters=int(res["n_parameters"]),
+    )

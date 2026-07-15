@@ -2366,6 +2366,62 @@ def test_fit_ho_cdm_recovers_higher_order_structure():
         fit_ho_cdm(y, q, model="rasch")  # unknown gate
 
 
+def test_fit_ho_gdina_recovers_saturated_and_structure():
+    """Higher-order G-DINA (de la Torre & Douglas, 2004; de la Torre, 2011): a free
+    saturated item fit of DINA-patterned data recovers the DINA identity-link delta
+    and the higher-order attribute parameters."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_ho_gdina, HoGdinaFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_ho_gdina"):
+        pytest.skip("compiled core built without fit_ho_gdina")
+
+    rng = np.random.default_rng(2011)
+    k, n = 3, 3000
+    rows = [[1, 0, 0], [0, 1, 0], [0, 0, 1]] * 3  # 9 singles
+    rows += [[1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0, 1, 1]]  # 5 pairs
+    rows += [[1, 1, 1]]  # 1 triple
+    q = np.array(rows, dtype=np.int64)
+    n_items = q.shape[0]
+    s, g = 0.15, 0.2
+    a_true = np.array([1.2, 1.5, 0.9])
+    d_true = np.array([0.3, -0.5, 0.6])
+
+    theta = rng.standard_normal(n)
+    alpha = (rng.random((n, k)) < 1.0 / (1.0 + np.exp(-(theta[:, None] * a_true + d_true)))).astype(int)
+    codes = (alpha * (1 << np.arange(k))).sum(1)
+    y = np.empty((n, n_items))
+    for j in range(n):
+        c = int(codes[j])
+        for i in range(n_items):
+            mask = int(np.dot(q[i], 1 << np.arange(k)))
+            eta = (c & mask) == mask  # DINA gate
+            p = (1.0 - s) if eta else g
+            y[j, i] = 1.0 if rng.random() < p else 0.0
+
+    res = fit_ho_gdina(y, q)
+    assert isinstance(res, HoGdinaFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert np.all(res.attr_slope > 0)  # anchored non-negative
+    assert abs(res.profile_prob.sum() - 1.0) < 1e-9
+    # the triple item's identity-link delta shows the DINA pattern (intercept + top)
+    triple = n_items - 1
+    dl = res.item_delta[res.item_off[triple] : res.item_off[triple + 1]]
+    assert abs(dl[0] - g) < 0.06 and abs(dl[-1] - ((1.0 - s) - g)) < 0.06
+    assert np.all(np.abs(dl[1:-1]) < 0.06)
+    # higher-order parameter recovery (identified at K=3)
+    assert np.sqrt(np.mean((res.attr_slope - a_true) ** 2)) < 0.45
+    # attribute classification
+    est = (res.attr_prob >= 0.5).astype(int)
+    assert (est == alpha).mean() > 0.9
+
+    with pytest.raises(ValueError):
+        fit_ho_gdina(y.ravel(), q)  # not 2-D
+
+
 def test_fit_crm_recovers_continuous_responses():
     """Continuous Response Model (Samejima, 1973): recover the item slope/intercept/
     residual-sd and the Samejima discrimination/difficulty from continuous bounded

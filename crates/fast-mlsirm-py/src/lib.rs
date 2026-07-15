@@ -34,7 +34,7 @@ use mlsirm_core::scoring::{
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
-    gdina_wald_selection as core_gdina_wald_selection,
+    fit_ho_gdina as core_fit_ho_gdina, gdina_wald_selection as core_gdina_wald_selection,
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
@@ -517,6 +517,66 @@ fn fit_ho_cdm(
     out.set_item("model", model)?;
     out.set_item("slip", res.slip)?;
     out.set_item("guess", res.guess)?;
+    out.set_item("attr_slope", res.attr_slope)?;
+    out.set_item("attr_intercept", res.attr_intercept)?;
+    out.set_item("profile_prob", res.profile_prob)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("map_profile", res.map_profile)?;
+    out.set_item("attr_prob", res.attr_prob)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Higher-order G-DINA fit (de la Torre & Douglas, 2004 x de la Torre, 2011;
+/// `mlsirm_core::cdm::fit_ho_gdina`). The saturated G-DINA item model under a
+/// higher-order structural attribute prior `theta ~ N(0,1)`. `y`/`observed` are
+/// row-major `n_persons * n_items` (0/1); `q_matrix` row-major `n_items *
+/// n_attributes` (0/1). Returns a dict with the ragged CSR `item_off`, `item_prob`,
+/// `item_delta`, `k_required`; `attr_slope`/`attr_intercept` (K); `profile_prob`
+/// (implied, 2^K); `theta`; `map_profile`; `attr_prob` (`N*K`); `loglik_trace`,
+/// `n_iter`, `converged`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, max_iter = 500, tol = 1e-6))]
+fn fit_ho_gdina(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    q_matrix: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let q: Vec<u8> = q_matrix
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let res = core_fit_ho_gdina(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &q,
+        n_persons,
+        n_items,
+        n_attributes,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item_off", res.item_off)?;
+    out.set_item("item_prob", res.item_prob)?;
+    out.set_item("item_delta", res.item_delta)?;
+    out.set_item("k_required", res.k_required)?;
     out.set_item("attr_slope", res.attr_slope)?;
     out.set_item("attr_intercept", res.attr_intercept)?;
     out.set_item("profile_prob", res.profile_prob)?;
@@ -3120,6 +3180,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_q_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(gdina_wald_selection, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_ho_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;

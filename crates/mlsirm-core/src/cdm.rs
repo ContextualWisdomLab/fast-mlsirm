@@ -1781,6 +1781,325 @@ pub fn fit_ho_cdm(
     })
 }
 
+/// Result of [`fit_ho_gdina`] (higher-order G-DINA). Combines the saturated per-item
+/// reduced-class probabilities of [`fit_gdina`] (CSR-laid-out) with the higher-order
+/// structural attribute parameters of [`fit_ho_cdm`].
+#[derive(Clone, Debug)]
+pub struct HoGdinaResult {
+    pub item_off: Vec<usize>,
+    pub item_prob: Vec<f64>,
+    pub item_delta: Vec<f64>,
+    pub k_required: Vec<u32>,
+    /// Higher-order attribute slope `a_k` and intercept `d_k`, length `K`.
+    pub attr_slope: Vec<f64>,
+    pub attr_intercept: Vec<f64>,
+    /// Implied marginal class probabilities `pi_c` (length `2^K`).
+    pub profile_prob: Vec<f64>,
+    pub theta: Vec<f64>,
+    pub map_profile: Vec<u32>,
+    pub attr_prob: Vec<f64>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    /// `sum_i 2^{K_i} + 2*K`.
+    pub n_parameters: usize,
+}
+
+/// Fit the higher-order G-DINA model by marginal-ML EM over the joint
+/// `(alpha_c, theta_q)` grid: the saturated G-DINA item model of [`fit_gdina`] (each
+/// reduced attribute-mastery class of each item gets a free success probability)
+/// under the higher-order structural attribute prior of [`fit_ho_cdm`] (a continuous
+/// trait `theta ~ N(0,1)` drives mastery, `P(alpha_k=1|theta) = sigmoid(a_k theta +
+/// d_k)`, attributes conditionally independent given `theta`). This is the
+/// higher-order form of the general G-DINA framework: it generalizes [`fit_ho_cdm`]
+/// (which restricts the item model to DINA slip/guess) and constrains [`fit_gdina`]'s
+/// free class distribution to the `2K`-parameter structured family.
+///
+/// The item response is conditionally independent of `theta` given `alpha`, so the
+/// saturated item M-step `p_il = R_il / I_il` marginalizes `theta` out (it uses only
+/// the marginal class posterior), exactly as [`fit_gdina`]; the structural M-step is
+/// `K` independent 2PL calibrations of attribute mastery on `theta`, exactly as
+/// [`fit_ho_cdm`]. Identification mirrors [`fit_ho_cdm`] (`theta ~ N(0,1)` fixes the
+/// scale, `a_k` anchored non-negative, higher-order parameters identified for
+/// `K >= 3`) and [`fit_gdina`] (the Q-matrix must identify the saturated item probs).
+///
+/// References (APA 7th ed.):
+///   de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
+///     cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
+///     https://doi.org/10.1007/BF02295640
+///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+///     76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+#[allow(clippy::too_many_arguments)]
+pub fn fit_ho_gdina(
+    y: &[f64],
+    observed: &[bool],
+    q_matrix: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<HoGdinaResult, String> {
+    use crate::mmle::{log_sigmoid, GH_NODES, GH_WEIGHTS};
+    validate(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+    let l = 1usize << n_attributes;
+    let q = GH_NODES.len();
+    let log_w: Vec<f64> = GH_WEIGHTS.iter().map(|w| w.ln()).collect();
+
+    // Saturated-item CSR layout (verbatim from fit_gdina).
+    let mut qmask = vec![0usize; n_items];
+    let mut k_required = vec![0u32; n_items];
+    for i in 0..n_items {
+        let mut mask = 0usize;
+        for k in 0..n_attributes {
+            if q_matrix[i * n_attributes + k] != 0 {
+                mask |= 1 << k;
+            }
+        }
+        qmask[i] = mask;
+        k_required[i] = mask.count_ones();
+    }
+    let mut item_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        item_off[i + 1] = item_off[i] + (1usize << k_required[i]);
+    }
+    let total = item_off[n_items];
+    let mut red = vec![0u16; n_items * l];
+    for i in 0..n_items {
+        for c in 0..l {
+            red[i * l + c] = reduce_class(c, qmask[i]) as u16;
+        }
+    }
+    let mut p = vec![0.0f64; total];
+    for i in 0..n_items {
+        let ki = k_required[i] as f64;
+        for li in 0..(item_off[i + 1] - item_off[i]) {
+            let frac = (li.count_ones() as f64) / ki;
+            p[item_off[i] + li] = cfg.init_guess + (1.0 - cfg.init_slip - cfg.init_guess) * frac;
+        }
+    }
+
+    // Higher-order structural parameters (verbatim from fit_ho_cdm).
+    let mut a = vec![1.0f64; n_attributes];
+    let mut d = vec![0.0f64; n_attributes];
+    let structural_table = |a: &[f64], d: &[f64]| -> Vec<f64> {
+        let mut logp = vec![0.0f64; n_attributes * q];
+        let mut log1mp = vec![0.0f64; n_attributes * q];
+        for k in 0..n_attributes {
+            for (qi, &node) in GH_NODES.iter().enumerate() {
+                let z = a[k] * node + d[k];
+                logp[k * q + qi] = log_sigmoid(z);
+                log1mp[k * q + qi] = log_sigmoid(-z);
+            }
+        }
+        let mut logpa = vec![0.0f64; l * q];
+        for c in 0..l {
+            for qi in 0..q {
+                let mut lp = 0.0f64;
+                for k in 0..n_attributes {
+                    lp += if (c >> k) & 1 == 1 { logp[k * q + qi] } else { log1mp[k * q + qi] };
+                }
+                logpa[c * q + qi] = lp;
+            }
+        }
+        logpa
+    };
+
+    let mut log_p1 = vec![0.0f64; total];
+    let mut log_p0 = vec![0.0f64; total];
+    let refresh_p = |p: &[f64], log_p1: &mut [f64], log_p0: &mut [f64]| {
+        for x in 0..total {
+            let pc = p[x].clamp(cfg.eps, 1.0 - cfg.eps);
+            log_p1[x] = pc.ln();
+            log_p0[x] = (1.0 - pc).ln();
+        }
+    };
+
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+    let mut post = vec![0.0f64; l * q];
+    let mut pc = vec![0.0f64; l]; // marginal class posterior scratch
+
+    for _ in 0..cfg.max_iter {
+        refresh_p(&p, &mut log_p1, &mut log_p0);
+        let logpa = structural_table(&a, &d);
+
+        let mut ii = vec![0.0f64; total];
+        let mut rr = vec![0.0f64; total];
+        let mut wq = vec![0.0f64; q];
+        let mut rkq = vec![0.0f64; n_attributes * q];
+        let mut total_ll = 0.0;
+        for j in 0..n_persons {
+            for c in 0..l {
+                let mut ll = 0.0f64;
+                for i in 0..n_items {
+                    let idx = j * n_items + i;
+                    if observed[idx] {
+                        let cell = item_off[i] + red[i * l + c] as usize;
+                        let yy = y[idx];
+                        ll += yy * log_p1[cell] + (1.0 - yy) * log_p0[cell];
+                    }
+                }
+                for qi in 0..q {
+                    post[c * q + qi] = ll + logpa[c * q + qi] + log_w[qi];
+                }
+            }
+            let mx = post.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0f64;
+            for v in post.iter() {
+                denom += (v - mx).exp();
+            }
+            total_ll += mx + denom.ln();
+            for v in post.iter_mut() {
+                *v = (*v - mx).exp() / denom;
+            }
+            // marginal class posterior (theta integrated out) -> saturated item counts
+            for c in 0..l {
+                let mut s = 0.0f64;
+                for v in &post[c * q..c * q + q] {
+                    s += v;
+                }
+                pc[c] = s;
+            }
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let yy = y[idx];
+                    for c in 0..l {
+                        let cell = item_off[i] + red[i * l + c] as usize;
+                        ii[cell] += pc[c];
+                        rr[cell] += yy * pc[c];
+                    }
+                }
+            }
+            // structural node mass + masters (same as fit_ho_cdm)
+            for qi in 0..q {
+                let mut wnode = 0.0f64;
+                for c in 0..l {
+                    let pv = post[c * q + qi];
+                    wnode += pv;
+                    let mut cc = c;
+                    let mut k = 0;
+                    while cc != 0 {
+                        if cc & 1 == 1 {
+                            rkq[k * q + qi] += pv;
+                        }
+                        cc >>= 1;
+                        k += 1;
+                    }
+                }
+                wq[qi] += wnode;
+            }
+        }
+        loglik_trace.push(total_ll);
+
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
+        // M-step: saturated item probs (closed form) then per-attribute 2PL Newton.
+        for x in 0..total {
+            if ii[x] > cfg.count_floor {
+                p[x] = (rr[x] / ii[x]).clamp(cfg.eps, 1.0 - cfg.eps);
+            }
+        }
+        for k in 0..n_attributes {
+            let (ak, dk) = newton_attr_2pl(a[k], d[k], &rkq[k * q..(k + 1) * q], &wq, 25);
+            a[k] = ak;
+            d[k] = dk;
+        }
+        n_iter += 1;
+    }
+
+    // Final classification / theta pass at the returned parameters.
+    refresh_p(&p, &mut log_p1, &mut log_p0);
+    let logpa = structural_table(&a, &d);
+    let mut map_profile = vec![0u32; n_persons];
+    let mut attr_prob = vec![0.0f64; n_persons * n_attributes];
+    let mut theta = vec![0.0f64; n_persons];
+    let mut final_ll = 0.0;
+    for j in 0..n_persons {
+        for c in 0..l {
+            let mut ll = 0.0f64;
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let cell = item_off[i] + red[i * l + c] as usize;
+                    let yy = y[idx];
+                    ll += yy * log_p1[cell] + (1.0 - yy) * log_p0[cell];
+                }
+            }
+            for qi in 0..q {
+                post[c * q + qi] = ll + logpa[c * q + qi] + log_w[qi];
+            }
+        }
+        let mx = post.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0f64;
+        for v in post.iter() {
+            denom += (v - mx).exp();
+        }
+        final_ll += mx + denom.ln();
+        for v in post.iter_mut() {
+            *v = (*v - mx).exp() / denom;
+        }
+        let (mut best, mut best_p) = (0usize, f64::NEG_INFINITY);
+        for c in 0..l {
+            let mut cpost = 0.0f64;
+            for v in &post[c * q..c * q + q] {
+                cpost += v;
+            }
+            if cpost > best_p {
+                best_p = cpost;
+                best = c;
+            }
+            for k in 0..n_attributes {
+                if (c >> k) & 1 == 1 {
+                    attr_prob[j * n_attributes + k] += cpost;
+                }
+            }
+        }
+        map_profile[j] = best as u32;
+        for qi in 0..q {
+            let mut wnode = 0.0f64;
+            for c in 0..l {
+                wnode += post[c * q + qi];
+            }
+            theta[j] += wnode * GH_NODES[qi];
+        }
+    }
+    if !converged {
+        loglik_trace.push(final_ll);
+    }
+
+    // Identity-link parameters delta = M^{-1} p, per item slice.
+    let mut item_delta = p.clone();
+    for i in 0..n_items {
+        mobius_inverse_inplace(&mut item_delta[item_off[i]..item_off[i + 1]], k_required[i]);
+    }
+    let profile_prob = ho_pi_from_params(&a, &d, n_attributes);
+
+    Ok(HoGdinaResult {
+        item_off,
+        item_prob: p,
+        item_delta,
+        k_required,
+        attr_slope: a,
+        attr_intercept: d,
+        profile_prob,
+        theta,
+        map_profile,
+        attr_prob,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters: total + 2 * n_attributes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3553,6 +3872,257 @@ mod tests {
             let (a_bound, d_bound) = if skew { (0.45, 0.25) } else { (0.32, 0.15) };
             assert!(ra < a_bound, "RMSE(a) {ra} skew={skew}");
             assert!(rd < d_bound, "RMSE(d) {rd} skew={skew}");
+            assert!(attr > 0.90, "attribute agreement {attr} skew={skew}");
+        }
+    }
+
+    // ----- Higher-order G-DINA (de la Torre & Douglas, 2004 x de la Torre, 2011) -----
+
+    /// Simulate higher-order G-DINA data: theta -> attribute mastery via
+    /// sigmoid(a_k theta + d_k), then draw responses from the SATURATED per-reduced-
+    /// class truth table (CSR, indexed by reduce_class), returning (y, profiles, thetas).
+    #[allow(clippy::too_many_arguments)]
+    fn simulate_ho_gdina(
+        a: &[f64],
+        d: &[f64],
+        qmask: &[usize],
+        item_off: &[usize],
+        truth_p: &[f64],
+        n: usize,
+        n_items: usize,
+        n_attr: usize,
+        skew: bool,
+        rng: &mut Lcg,
+    ) -> (Vec<f64>, Vec<usize>, Vec<f64>) {
+        let mut y = vec![0.0f64; n * n_items];
+        let mut profiles = vec![0usize; n];
+        let mut thetas = vec![0.0f64; n];
+        for j in 0..n {
+            let theta = if skew {
+                let mut cc = 0.0;
+                for _ in 0..3 {
+                    let z = rng.normal();
+                    cc += z * z;
+                }
+                (cc - 3.0) / (6.0_f64).sqrt()
+            } else {
+                rng.normal()
+            };
+            thetas[j] = theta;
+            let mut c = 0usize;
+            for k in 0..n_attr {
+                let pk = 1.0 / (1.0 + (-(a[k] * theta + d[k])).exp());
+                if rng.next_f64() < pk {
+                    c |= 1 << k;
+                }
+            }
+            profiles[j] = c;
+            for i in 0..n_items {
+                let l = reduce_class(c, qmask[i]);
+                y[j * n_items + i] = rng.bern(truth_p[item_off[i] + l]);
+            }
+        }
+        (y, profiles, thetas)
+    }
+
+    /// A canonical K=3 Q: single-attribute items (identification) + pair + triple.
+    fn hogdina_q3() -> Vec<u8> {
+        let k = 3usize;
+        let mut q = vec![0u8; 15 * k];
+        let rows: [&[usize]; 15] = [
+            &[0], &[1], &[2], &[0], &[1], &[2], &[0], &[1], &[2], // 9 singles
+            &[0, 1], &[1, 2], &[0, 2], &[0, 1], &[1, 2], // 5 pairs
+            &[0, 1, 2], // 1 triple
+        ];
+        for (i, r) in rows.iter().enumerate() {
+            for &at in *r {
+                q[i * k + at] = 1;
+            }
+        }
+        q
+    }
+
+    /// NON-TRIVIAL anchor: HO structure with SATURATED item probs set to the DINA
+    /// pattern (g off-top, 1-s at top). The free saturated fit recovers those probs
+    /// (so the item-level identity-link delta shows the DINA pattern) and the
+    /// higher-order (a, d).
+    #[test]
+    fn ho_gdina_recovers_dina_pattern() {
+        let (n_attr, n_items, n) = (3usize, 15usize, 3000usize);
+        let q = hogdina_q3();
+        let (item_off, qmask, _kreq) = gdina_layout(&q, n_items, n_attr);
+        let (s, g) = (0.15f64, 0.2f64);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a0, b0) = (item_off[i], item_off[i + 1]);
+            for l in a0..b0 {
+                truth[l] = g;
+            }
+            truth[b0 - 1] = 1.0 - s; // DINA: only the all-mastered reduced class is high
+        }
+        let a_true = vec![1.2f64, 1.5, 0.9];
+        let d_true = vec![0.3f64, -0.5, 0.6];
+        let mut rng = Lcg(20242011);
+        let (y, profiles, thetas) =
+            simulate_ho_gdina(&a_true, &d_true, &qmask, &item_off, &truth, n, n_items, n_attr, false, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_ho_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.converged && nondecreasing(&res.loglik_trace));
+        assert!(res.n_parameters == item_off[n_items] + 2 * n_attr);
+        // saturated item probs recover the DINA pattern
+        assert!(rmse(&res.item_prob, &truth) < 0.04, "item p RMSE {}", rmse(&res.item_prob, &truth));
+        // identity-link delta: intercept ~ g, top interaction ~ (1-s)-g, interior ~ 0
+        for i in 0..n_items {
+            let (a0, b0) = (item_off[i], item_off[i + 1]);
+            let dl = &res.item_delta[a0..b0];
+            assert!((dl[0] - g).abs() < 0.06, "delta0 item {i}");
+            assert!((dl[b0 - a0 - 1] - ((1.0 - s) - g)).abs() < 0.06, "delta_full item {i}");
+            for l in 1..(b0 - a0 - 1) {
+                assert!(dl[l].abs() < 0.06, "interior delta item {i} idx {l}");
+            }
+        }
+        // higher-order recovery (identified at K=3) + trait + classification
+        assert!(rmse(&res.attr_slope, &a_true) < 0.45, "a RMSE {}", rmse(&res.attr_slope, &a_true));
+        assert!(res.attr_slope.iter().all(|&x| x > 0.0));
+        assert!(attribute_agreement(&res.attr_prob, &profiles, n, n_attr) > 0.9);
+        let tc = {
+            let corr = |x: &[f64], y: &[f64]| {
+                let nn = x.len() as f64;
+                let (mx, my) = (x.iter().sum::<f64>() / nn, y.iter().sum::<f64>() / nn);
+                let (mut sxy, mut sx, mut sy) = (0.0, 0.0, 0.0);
+                for i in 0..x.len() {
+                    sxy += (x[i] - mx) * (y[i] - my);
+                    sx += (x[i] - mx).powi(2);
+                    sy += (y[i] - my).powi(2);
+                }
+                sxy / (sx.sqrt() * sy.sqrt())
+            };
+            corr(&res.theta, &thetas)
+        };
+        assert!(tc > 0.55, "theta corr {tc}");
+    }
+
+    /// Independent-attribute data (all slopes 0) -> the implied class distribution
+    /// recovers the independent-attribute product (K=3; the identified quantity).
+    #[test]
+    fn ho_gdina_independent_recovers_pi() {
+        let (n_attr, n_items, n) = (3usize, 15usize, 3000usize);
+        let q = hogdina_q3();
+        let (item_off, qmask, _kr) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a0, b0) = (item_off[i], item_off[i + 1]);
+            for (li, l) in (a0..b0).enumerate() {
+                truth[l] = 0.15 + 0.7 * (li.count_ones() as f64) / (b0 - a0).trailing_zeros() as f64;
+            }
+        }
+        let a_true = vec![0.0f64; n_attr];
+        let d_true = vec![0.4f64, -0.3, 0.2];
+        let mut rng = Lcg(7777);
+        let (y, _p, _t) =
+            simulate_ho_gdina(&a_true, &d_true, &qmask, &item_off, &truth, n, n_items, n_attr, false, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_ho_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        let pi_true = ho_pi_from_params(&a_true, &d_true, n_attr);
+        assert!(rmse(&res.profile_prob, &pi_true) < 0.03, "pi RMSE {}", rmse(&res.profile_prob, &pi_true));
+    }
+
+    #[test]
+    fn ho_gdina_handles_missing_and_validates() {
+        let (n_attr, n_items, n) = (3usize, 15usize, 1000usize);
+        let q = hogdina_q3();
+        let (item_off, qmask, _kr) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a0, b0) = (item_off[i], item_off[i + 1]);
+            for l in a0..b0 {
+                truth[l] = 0.2;
+            }
+            truth[b0 - 1] = 0.85;
+        }
+        let mut rng = Lcg(99);
+        let (mut y, _p, _t) = simulate_ho_gdina(
+            &[1.0, 1.0, 1.0], &[0.0, 0.0, 0.0], &qmask, &item_off, &truth, n, n_items, n_attr, false, &mut rng,
+        );
+        let mut observed = vec![true; n * n_items];
+        for o in observed.iter_mut() {
+            if rng.next_f64() < 0.15 {
+                *o = false;
+            }
+        }
+        for (idx, o) in observed.iter().enumerate() {
+            if !o {
+                y[idx] = 0.0;
+            }
+        }
+        let res = fit_ho_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.loglik_trace.iter().all(|v| v.is_finite()));
+        // malformed
+        let cfg = CdmConfig::default();
+        assert!(fit_ho_gdina(&[0.0], &[true], &[1, 1], 1, 2, 1, &cfg).is_err()); // y length mismatch
+        assert!(fit_ho_gdina(&[0.0, 1.0], &[true, true], &[0, 0, 0, 0], 1, 2, 2, &cfg).is_err()); // all-zero Q row
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): higher-order G-DINA recovery of the
+    /// saturated item probabilities and the higher-order parameters under a normal and
+    /// a skewed (mis-specified prior) trait distribution.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_ho_gdina_recovery_500() {
+        let (n_attr, n_items, n, reps) = (3usize, 15usize, 1500usize, 500usize);
+        let q = hogdina_q3();
+        let (item_off, qmask, kreq) = gdina_layout(&q, n_items, n_attr);
+        // additive saturated truth: p_il = 0.15 + 0.7 * popcount(l)/K_i
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a0, b0) = (item_off[i], item_off[i + 1]);
+            for (li, l) in (a0..b0).enumerate() {
+                truth[l] = 0.15 + 0.7 * (li.count_ones() as f64) / kreq[i] as f64;
+            }
+        }
+        let a_true = vec![1.2f64, 1.5, 0.9];
+        let d_true = vec![0.3f64, -0.5, 0.6];
+        for &skew in [false, true].iter() {
+            let (mut wp, mut ra, mut attr, mut nconv) = (0.0f64, 0.0f64, 0.0f64, 0usize);
+            for rep in 0..reps {
+                let mut rng = Lcg(
+                    0x27BB2EE687B0B0FDu64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15),
+                );
+                let (y, profiles, _t) =
+                    simulate_ho_gdina(&a_true, &d_true, &qmask, &item_off, &truth, n, n_items, n_attr, skew, &mut rng);
+                let observed = vec![true; n * n_items];
+                let res =
+                    fit_ho_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+                if res.converged {
+                    nconv += 1;
+                }
+                // mass-weighted RMSE(p) so near-empty classes don't dominate
+                let mut mass = vec![0.0f64; item_off[n_items]];
+                for &c in &profiles {
+                    for i in 0..n_items {
+                        mass[item_off[i] + reduce_class(c, qmask[i])] += 1.0;
+                    }
+                }
+                let (mut num, mut den) = (0.0f64, 0.0f64);
+                for x in 0..item_off[n_items] {
+                    let e = res.item_prob[x] - truth[x];
+                    num += mass[x] * e * e;
+                    den += mass[x];
+                }
+                wp += (num / den).sqrt() / reps as f64;
+                ra += rmse(&res.attr_slope, &a_true) / reps as f64;
+                attr += attribute_agreement(&res.attr_prob, &profiles, n, n_attr) / reps as f64;
+            }
+            println!(
+                "[HO-GDINA MC skew={skew}] reps={reps} conv={:.2} wRMSE(p)={:.4} RMSE(a)={:.3} attr-agree={:.3}",
+                nconv as f64 / reps as f64,
+                wp,
+                ra,
+                attr
+            );
+            assert!(wp < 0.04, "wRMSE(p) {wp} skew={skew}");
             assert!(attr > 0.90, "attribute agreement {attr} skew={skew}");
         }
     }

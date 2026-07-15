@@ -93,6 +93,29 @@
 
 ### Added
 
+- **Higher-order G-DINA** (de la Torre & Douglas, 2004; de la Torre, 2011).
+  `fit_ho_gdina(responses, q_matrix)` fits the saturated G-DINA item model (each
+  item's reduced attribute-mastery classes get a free success probability) under a
+  *higher-order structural attribute prior*: a continuous trait `theta ~ N(0,1)`
+  drives mastery, `P(alpha_k=1 | theta) = sigmoid(a_k theta + d_k)`, with attributes
+  conditionally independent given the trait. It generalizes `fit_ho_cdm` (which
+  restricts the item model to DINA slip/guess) and constrains `fit_gdina`'s free
+  class distribution to the `2K`-parameter structured family. Estimated by
+  marginal-ML EM over the joint `(alpha, theta)` grid: because the item response is
+  conditionally independent of the trait given the attributes, the saturated item
+  M-step `p_il = R_il/I_il` marginalizes the trait out exactly (reusing `fit_gdina`'s
+  closed form), and the structural step is `K` independent 2PL calibrations of
+  attribute mastery on the trait (reusing `fit_ho_cdm`'s Newton). The higher-order
+  parameters are identified for `K >= 3`. Validated by a non-trivial anchor (a free
+  saturated fit of DINA-patterned data recovers the DINA identity-link `delta`
+  *and* the higher-order parameters), an independent-attribute pi-recovery check, and
+  a 500-replication Monte-Carlo study (K=3, N=1500) — the saturated item
+  probabilities recover with mass-weighted RMSE ~0.02 and attribute agreement > 0.9
+  under both a normal and a skewed trait distribution. Extends `mlsirm_core::cdm`
+  (reuses `reduce_class`, `mobius_inverse_inplace`, `newton_attr_2pl`,
+  `ho_pi_from_params`). Exposed to Python through PyO3 as `fit_ho_gdina` with the
+  `HoGdinaFit` wrapper.
+
 - **Rating Scale Model** (Andrich, 1978). `fit_rsm(responses)` fits the Rasch-family
   polytomous model for items on a common rating scale (e.g. Likert): every item has
   its own location `delta_i`, but the `K-1` category thresholds `tau_k` are *shared
