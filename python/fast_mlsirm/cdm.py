@@ -675,3 +675,135 @@ def fit_ho_gdina(
         stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+
+@dataclass
+class SeqGdinaFit:
+    """Fitted shared-Q sequential (continuation-ratio) G-DINA (Ma & de la Torre, 2016).
+
+    Ordered polytomous cognitive diagnosis. Item ``i`` has ``M_i = max_cat[i]`` ordered
+    steps over ``2 ** k_required[i]`` reduced attribute classes (ragged, CLASS-MAJOR CSR):
+    ``step_prob[s_off[i] + l*M_i + (k-1)] = s_ik(l) = P(X_i >= k | X_i >= k-1, class l)``
+    for step ``k in 1..=M_i`` and reduced class ``l``; the implied category probabilities
+    are ``cat_prob[cat_off[i] + l*(M_i+1) + x] = P(X_i = x | class l)`` for ``x in 0..=M_i``.
+    ``profile_prob`` is the free ``2^K`` class distribution; ``map_profile``/``attr_prob``
+    the per-person MAP profile and marginal attribute mastery.
+
+    Restriction: every step of an item uses the SAME item Q-vector (shared-Q) — a
+    restriction of Ma & de la Torre's general per-step ``q_ik`` model (step-distinct
+    attributes are a deferred non-goal). Supply each item's Q-vector as the union of its
+    steps' required attributes."""
+
+    s_off: np.ndarray
+    step_prob: np.ndarray
+    cat_off: np.ndarray
+    cat_prob: np.ndarray
+    max_cat: np.ndarray
+    k_required: np.ndarray
+    profile_prob: np.ndarray
+    map_profile: np.ndarray
+    attr_prob: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    n_parameters: int
+
+    def item_step_prob(self, i: int) -> np.ndarray:
+        """Step (continuation) probabilities of item ``i`` as a ``2**K_i x M_i`` array
+        (row = reduced class ``l``, column = step ``k-1``)."""
+        m = int(self.max_cat[i])
+        return self.step_prob[self.s_off[i] : self.s_off[i + 1]].reshape(-1, m)
+
+    def item_cat_prob(self, i: int) -> np.ndarray:
+        """Category probabilities of item ``i`` as a ``2**K_i x (M_i+1)`` array
+        (row = reduced class ``l``, column = category ``x``)."""
+        m1 = int(self.max_cat[i]) + 1
+        return self.cat_prob[self.cat_off[i] : self.cat_off[i + 1]].reshape(-1, m1)
+
+
+def fit_seq_gdina(
+    responses: np.ndarray,
+    q_matrix: np.ndarray,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> SeqGdinaFit:
+    """Fit the shared-Q sequential G-DINA for ordered polytomous responses (compute in
+    Rust; Ma & de la Torre, 2016).
+
+    Each ordered category of an item is reached through a sequence of *steps*: the
+    continuation probability ``s_ik(l) = P(X_i >= k | X_i >= k-1, reduced class l)`` is a
+    saturated G-DINA over the item's reduced attribute-mastery classes, and the category
+    probabilities are the sequential decomposition ``P(X_i = k | l) = (prod_{v<=k}
+    s_iv(l))(1 - s_{i,k+1}(l))`` (stop sentinel ``s_{i,M_i+1} = 0``). The population is a
+    free profile distribution (as in :func:`fit_gdina`); estimation is marginal-ML EM with
+    the closed-form saturated step ``s_ik(l) = (expected count reaching >= k) / (expected
+    count reaching >= k-1)`` in reduced class ``l``. With one step per item (binary data)
+    it reduces exactly to :func:`fit_gdina`.
+
+    **Restriction (shared item Q-vector).** Every step of item ``i`` is a saturated G-DINA
+    over the SAME required attributes (row ``i`` of ``q_matrix``). This is a restriction of
+    Ma & de la Torre's (2016) general per-step ``q_ik`` model, whose headline feature is
+    *step-distinct* attribute requirements. Per-step Q-vectors are a deferred non-goal;
+    supply each item's Q-vector as the UNION of its steps' required attributes.
+
+    ``responses`` is a persons x items array of ordered integer categories ``0..M_i``
+    (``NaN`` = missing, dropped under MAR); ``M_i`` (the number of steps) is derived as the
+    maximum observed category of item ``i``, and an item whose observed maximum is 0 (never
+    leaves the base category) is rejected. ``q_matrix`` is an items x attributes 0/1 array.
+
+    References (APA 7th ed.):
+        Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for
+            polytomous responses. *British Journal of Mathematical and Statistical
+            Psychology, 69*(3), 253-275. https://doi.org/10.1111/bmsp.12070
+        Tutz, G. (1990). Sequential item response models with an ordered response.
+            *British Journal of Mathematical and Statistical Psychology, 43*(1), 39-55.
+            https://doi.org/10.1111/j.2044-8317.1990.tb00925.x
+        de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+            76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_seq_gdina"):
+        raise RuntimeError("fit_seq_gdina requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(q_matrix)
+    if q.ndim != 2:
+        raise ValueError("q_matrix must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_matrix must have one row per item")
+    n_attributes = q.shape[1]
+    if np.isinf(y).any():
+        raise ValueError("responses must be finite ordered categories or NaN (missing)")
+
+    observed = ~np.isnan(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.fit_seq_gdina(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        int(max_iter),
+        float(tol),
+    )
+    return SeqGdinaFit(
+        s_off=np.asarray(res["s_off"], dtype=np.int64),
+        step_prob=np.asarray(res["step_prob"], dtype=np.float64),
+        cat_off=np.asarray(res["cat_off"], dtype=np.int64),
+        cat_prob=np.asarray(res["cat_prob"], dtype=np.float64),
+        max_cat=np.asarray(res["max_cat"], dtype=np.int64),
+        k_required=np.asarray(res["k_required"], dtype=np.int64),
+        profile_prob=np.asarray(res["profile_prob"], dtype=np.float64),
+        map_profile=np.asarray(res["map_profile"], dtype=np.int64),
+        attr_prob=np.asarray(res["attr_prob"], dtype=np.float64).reshape(n_persons, n_attributes),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        n_parameters=int(res["n_parameters"]),
+    )

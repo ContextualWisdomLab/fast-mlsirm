@@ -2475,6 +2475,96 @@ def test_fit_ho_gdina_recovers_saturated_and_structure():
     assert np.isfinite(unfinished.final_relative_loglik_change)
 
 
+def test_fit_seq_gdina_recovers_polytomous_and_reduces_to_gdina():
+    """Shared-Q sequential G-DINA (Ma & de la Torre, 2016): recover the ordered-category
+    step and category probabilities of a polytomous item, and confirm that binary data
+    (one step per item) reduces exactly to :func:`fit_gdina`. The M=2 truth is additive
+    on neither trivial link — its two step tables are distinct and asymmetric, so the
+    ordered structure (not a degenerate collapse) is what is recovered."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_seq_gdina, SeqGdinaFit, fit_gdina
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_seq_gdina"):
+        pytest.skip("compiled core built without fit_seq_gdina")
+
+    rng = np.random.default_rng(2016)
+    k, n = 2, 6000
+    # 4 single-attribute items per attribute (M=1 identification) + 4 pair M=2 items.
+    rows = [[1, 0]] * 4 + [[0, 1]] * 4 + [[1, 1]] * 4
+    q = np.array(rows, dtype=np.int64)
+    n_items = q.shape[0]
+    # per reduced-class step tables (class-major [00,10,01,11]); asymmetric, increasing.
+    pair_s1 = {0: 0.25, 1: 0.55, 2: 0.50, 3: 0.85}
+    pair_s2 = {0: 0.15, 1: 0.30, 2: 0.25, 3: 0.70}
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = np.zeros((n, n_items))
+    for j in range(n):
+        c = int(profiles[j])
+        for i in range(n_items):
+            if i < 8:
+                a = i // 4
+                p = 0.85 if (c >> a) & 1 else 0.15
+                y[j, i] = 1.0 if rng.random() < p else 0.0
+            else:
+                l = (c & 1) + 2 * ((c >> 1) & 1)
+                cat = 0
+                if rng.random() < pair_s1[l]:
+                    cat = 1
+                    if rng.random() < pair_s2[l]:
+                        cat = 2
+                y[j, i] = float(cat)
+
+    res = fit_seq_gdina(y, q)
+    assert isinstance(res, SeqGdinaFit) and res.converged
+    assert res.max_cat.tolist() == [1] * 8 + [2] * 4  # M_i derived from data
+    assert abs(res.profile_prob.sum() - 1.0) < 1e-9
+    # category probabilities sum to 1 per (item, reduced class)
+    for i in range(n_items):
+        cp = res.item_cat_prob(i)
+        assert cp.shape == (1 << int(res.k_required[i]), int(res.max_cat[i]) + 1)
+        assert np.allclose(cp.sum(axis=1), 1.0, atol=1e-9)
+    # recover the pair items' category probabilities (stable, model-predicted quantity)
+    for i in range(8, n_items):
+        cp = res.item_cat_prob(i)  # 4 classes x 3 categories
+        for l in range(4):
+            s1, s2 = pair_s1[l], pair_s2[l]
+            truth = np.array([1 - s1, s1 * (1 - s2), s1 * s2])
+            assert np.max(np.abs(cp[l] - truth)) < 0.04, f"item{i} class{l}: {cp[l]} vs {truth}"
+    # attribute classification
+    est = (res.attr_prob >= 0.5).astype(int)
+    alpha = ((profiles[:, None] >> np.arange(k)) & 1)
+    assert (est == alpha).mean() > 0.9
+
+    # Binary data (M_i = 1 for all items) reduces to fit_gdina bit-for-bit.
+    ybin = (y[:, :8] > 0).astype(float)
+    qbin = q[:8]
+    sq1 = fit_seq_gdina(ybin, qbin)
+    g1 = fit_gdina(ybin, qbin)
+    assert sq1.max_cat.tolist() == [1] * 8
+    assert np.allclose(sq1.step_prob, g1.item_prob, atol=1e-12)
+    assert len(sq1.loglik_trace) == len(g1.loglik_trace)
+    assert np.allclose(sq1.loglik_trace, g1.loglik_trace, atol=1e-12)
+
+    # Validation: an item stuck at category 0 (measures nothing) is rejected; a
+    # non-integer category is rejected; missing (NaN) is allowed.
+    with pytest.raises(ValueError):
+        fit_seq_gdina(y.ravel(), q)  # not 2-D
+    yzero = y.copy()
+    yzero[:, 8] = 0.0
+    with pytest.raises(ValueError, match="never leaves category 0"):
+        fit_seq_gdina(yzero, q)
+    ybad = y.copy()
+    ybad[0, 8] = 1.5
+    with pytest.raises(ValueError, match="non-negative integer category"):
+        fit_seq_gdina(ybad, q)
+    ymiss = y.copy()
+    ymiss[0, 0] = np.nan
+    assert fit_seq_gdina(ymiss, q).converged
+
+
 def test_fit_crm_recovers_continuous_responses():
     """Continuous Response Model (Samejima, 1973): recover the item slope/intercept/
     residual-sd and the Samejima discrimination/difficulty from continuous bounded

@@ -2182,6 +2182,512 @@ pub fn fit_ho_gdina(
     })
 }
 
+/// Result of [`fit_seq_gdina`] (Ma & de la Torre, 2016): the shared-Q sequential
+/// (continuation-ratio) G-DINA for ordered polytomous responses.
+///
+/// Ragged, CLASS-MAJOR CSR. Item `i` has `M_i = max_cat[i]` ordered steps over
+/// `2^{K_i}` reduced attribute classes:
+///   `step_prob[s_off[i] + l * M_i + (k-1)] = s_ik(l) = P(X_i >= k | X_i >= k-1, class l)`
+/// for step `k in 1..=M_i` and reduced class `l`; the implied category probabilities are
+///   `cat_prob[cat_off[i] + l * (M_i + 1) + x] = P(X_i = x | class l)` for `x in 0..=M_i`.
+#[derive(Clone, Debug)]
+pub struct SeqGdinaResult {
+    /// Per-item step-prob block offsets into `step_prob` (length `n_items + 1`).
+    pub s_off: Vec<usize>,
+    /// Continuation probabilities `s_ik(l)`, class-major ragged (see struct doc).
+    pub step_prob: Vec<f64>,
+    /// Per-item category-prob block offsets into `cat_prob` (length `n_items + 1`).
+    pub cat_off: Vec<usize>,
+    /// Implied category probabilities `P(X_i = x | class l)`, class-major ragged.
+    pub cat_prob: Vec<f64>,
+    /// Maximum observed category `M_i` (number of ordered steps) per item.
+    pub max_cat: Vec<u32>,
+    /// Required-attribute count `K_i` per item.
+    pub k_required: Vec<u32>,
+    /// Free profile distribution `pi_c` (length `2^K`, sums to 1).
+    pub profile_prob: Vec<f64>,
+    /// Bit-encoded MAP profile per person.
+    pub map_profile: Vec<u32>,
+    /// Marginal `P(alpha_jk = 1 | X_j)`, row-major `N x K`.
+    pub attr_prob: Vec<f64>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    /// `sum_i M_i * 2^{K_i}` step probs `+ (2^K - 1)` free profile probs.
+    pub n_parameters: usize,
+}
+
+/// Category cap for the sequential G-DINA: an ordered item may have at most this many
+/// categories (`0..=SEQ_MAX_CAT`). Bounds the ragged `(M_i + 1) * 2^{K_i}` allocation
+/// against an adversarial category label, mirroring the `K <= 15` cap on the profile grid.
+const SEQ_MAX_CAT: usize = 50;
+
+/// Sequential category probabilities from a single reduced class's step (continuation)
+/// probabilities `s = [s_1, .., s_M]` (Ma & de la Torre, 2016; Tutz, 1990):
+/// `P(X=0) = 1 - s_1`, `P(X=k) = (prod_{v<=k} s_v)(1 - s_{k+1})` for `1 <= k < M`, and
+/// `P(X=M) = prod_{v<=M} s_v` (the top category has NO trailing continuation factor — the
+/// stop sentinel `s_{M+1} = 0` makes `1 - s_{M+1} = 1`, so it must not be routed through
+/// any eps clamp). The `M + 1` probabilities telescope to 1 for any `s in [0, 1]^M`, so
+/// the sequential form is a valid multinomial for free (no simplex projection needed).
+pub(crate) fn seq_category_probs(steps: &[f64]) -> Vec<f64> {
+    let m = steps.len();
+    let mut probs = vec![0.0f64; m + 1];
+    let mut cum = 1.0f64; // prod_{v < k} s_v
+    for k in 1..=m {
+        let sk = steps[k - 1];
+        probs[k - 1] = cum * (1.0 - sk); // P(X = k-1) = (prod_{v<k} s_v)(1 - s_k)
+        cum *= sk;
+    }
+    probs[m] = cum; // P(X = M) = prod_{v<=M} s_v (no trailing 1 - s_{M+1} factor)
+    probs
+}
+
+/// Log category probabilities for one reduced class, written into `out` (length
+/// `steps.len() + 1`). This is the production E-step transform: the same sequential
+/// decomposition as [`seq_category_probs`] in log space, with the `M` real step probs
+/// eps-clamped for numerical stability and the top-category stop sentinel exact (never
+/// clamped, no trailing factor). `exp(out)` equals `seq_category_probs(steps)` for
+/// interior `steps` (a test pins this against hand-computed literals).
+#[inline]
+fn seq_category_logprobs_into(steps: &[f64], eps: f64, out: &mut [f64]) {
+    let m = steps.len();
+    let mut cum = 0.0f64; // sum_{v<k} ln s_v
+    for k in 1..=m {
+        let sk = steps[k - 1].clamp(eps, 1.0 - eps);
+        out[k - 1] = cum + (1.0 - sk).ln(); // ln P(X = k-1)
+        cum += sk.ln();
+    }
+    out[m] = cum; // ln P(X = M), sentinel s_{M+1}=0 => no trailing factor
+}
+
+/// Scatter one weighted response `x` into a reduced class's per-step at-risk (`I`) and
+/// advanced (`R`) count cells (`i_cells`/`r_cells` length `M`, contiguous per class). Step
+/// `k` is *at risk* when `x >= k-1` and *advanced* when `x >= k`, so `I[k-1] += w` for
+/// `k <= x+1` and `R[k-1] += w` for `k <= x`. This is the sequential factorization's
+/// Bernoulli bookkeeping: conditional on reaching category `k-1`, advancing to `>= k` is
+/// `Bernoulli(s_ik)`, independent across steps, so the saturated MLE is `s_ik = R/I`.
+#[inline]
+fn seq_scatter_counts(x: usize, w: f64, m: usize, i_cells: &mut [f64], r_cells: &mut [f64]) {
+    let kmax = m.min(x + 1); // steps with x >= k-1 (at risk); x < k-1 for larger k
+    for k in 1..=kmax {
+        i_cells[k - 1] += w;
+        if k <= x {
+            r_cells[k - 1] += w; // advanced past step k (x >= k)
+        }
+    }
+}
+
+/// Validate polytomous sequential-CDM input and return the per-item maximum observed
+/// category `M_i` (the number of ordered steps). Unlike [`validate`], responses are
+/// ordered integers `0..=M_i` (not just 0/1); `M_i` is *derived from the data* (max
+/// observed category), and an item whose observed max is `< 1` (never leaves category 0)
+/// measures nothing and is rejected, mirroring the all-zero-Q-row and unobserved-item
+/// rejections. A zero-frequency *interior* category is NOT rejected: in a
+/// continuation-ratio model it simply means `s_{i,k+1}(l) ~ 1` and is legitimate.
+#[allow(clippy::too_many_arguments)]
+fn validate_seq_gdina(
+    y: &[f64],
+    observed: &[bool],
+    q_matrix: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<Vec<u32>, String> {
+    if n_persons < 1 || n_items < 1 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
+    if !(1..=15).contains(&n_attributes) {
+        return Err(format!(
+            "n_attributes must be in 1..=15 (L = 2^K grid + O(N*J*L) cost); got {n_attributes}"
+        ));
+    }
+    if cfg.max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+        return Err("eps must be finite and in (0, 0.5)".into());
+    }
+    if !cfg.init_slip.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_slip) {
+        return Err("init_slip must be finite and in [eps, 1 - eps]".into());
+    }
+    if !cfg.init_guess.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_guess) {
+        return Err("init_guess must be finite and in [eps, 1 - eps]".into());
+    }
+    if cfg.init_slip + cfg.init_guess >= 1.0 {
+        return Err("init_slip + init_guess must be less than 1".into());
+    }
+    if !cfg.count_floor.is_finite() || cfg.count_floor < 0.0 {
+        return Err("count_floor must be finite and non-negative".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells || observed.len() != n_cells {
+        return Err("y and observed must have length n_persons * n_items".into());
+    }
+    let n_q = n_items
+        .checked_mul(n_attributes)
+        .ok_or_else(|| "n_items * n_attributes overflows usize".to_string())?;
+    if q_matrix.len() != n_q {
+        return Err("q_matrix must have length n_items * n_attributes".into());
+    }
+    for (idx, &v) in y.iter().enumerate() {
+        if observed[idx] && (!v.is_finite() || v < 0.0 || v.fract() != 0.0) {
+            return Err(format!(
+                "y[{idx}] must be a non-negative integer category where observed; got {v}"
+            ));
+        }
+    }
+    for (idx, &v) in q_matrix.iter().enumerate() {
+        if v != 0 && v != 1 {
+            return Err(format!("q_matrix[{idx}] must be 0 or 1; got {v}"));
+        }
+    }
+    // Per item: at least one observed response, and a maximum observed category >= 1
+    // (an item stuck at category 0 measures nothing). M_i = max observed category.
+    let mut max_cat = vec![0u32; n_items];
+    for i in 0..n_items {
+        let mut any = false;
+        let mut mi = 0u32;
+        for p in 0..n_persons {
+            let idx = p * n_items + i;
+            if observed[idx] {
+                any = true;
+                mi = mi.max(y[idx] as u32);
+            }
+        }
+        if !any {
+            return Err(format!("item {i} has no observed responses"));
+        }
+        if mi < 1 {
+            return Err(format!(
+                "item {i} never leaves category 0 (max observed category 0; measures nothing)"
+            ));
+        }
+        if mi as usize > SEQ_MAX_CAT {
+            return Err(format!(
+                "item {i} max category {mi} exceeds SEQ_MAX_CAT = {SEQ_MAX_CAT}"
+            ));
+        }
+        max_cat[i] = mi;
+    }
+    for i in 0..n_items {
+        if !(0..n_attributes).any(|k| q_matrix[i * n_attributes + k] != 0) {
+            return Err(format!("q_matrix row {i} is all-zero (item measures no attribute)"));
+        }
+    }
+    for k in 0..n_attributes {
+        if !(0..n_items).any(|i| q_matrix[i * n_attributes + k] != 0) {
+            return Err(format!(
+                "q_matrix column {k} is all-zero (attribute measured by no item)"
+            ));
+        }
+    }
+    Ok(max_cat)
+}
+
+/// Fit the **shared-Q sequential (continuation-ratio) G-DINA** for ordered polytomous
+/// responses (Ma & de la Torre, 2016) by marginal-ML EM over the `2^K` attribute
+/// profiles.
+///
+/// For item `i` with maximum observed category `M_i`, each ordered *step*
+/// `k in 1..=M_i` has a free continuation probability that is a saturated G-DINA over the
+/// item's `2^{K_i}` reduced attribute classes:
+/// `s_ik(l) = P(X_i >= k | X_i >= k-1, reduced class l)`. The category probabilities are
+/// the sequential decomposition `P(X_i = k | l) = (prod_{v<=k} s_iv(l))(1 - s_{i,k+1}(l))`
+/// with the stop sentinel `s_{i,M_i+1} = 0`. The population is a free profile distribution
+/// `pi_c` (as in [`fit_gdina`]; the higher-order structural prior is the alternative
+/// offered by [`fit_ho_cdm`]/[`fit_ho_gdina`]).
+///
+/// **Scope (restriction).** This is the *shared item-level Q-vector* sequential G-DINA:
+/// every step of item `i` is a saturated G-DINA over the SAME required attributes (Q row
+/// `i`), each with its own step-specific probability table. It is a restriction of the
+/// general per-step (per-category) `q_ik` model of Ma & de la Torre (2016), whose headline
+/// feature is *step-distinct* attribute requirements (e.g. step 1 needs attribute A, step 2
+/// needs A and B). Per-step Q-vectors are a deferred non-goal; supply the item Q-vector as
+/// the UNION of every step's required attributes so no step depends on an attribute outside
+/// it (any step that truly needs only a subset is still representable — its table is flat in
+/// the irrelevant attribute).
+///
+/// Estimation reuses the CDM machinery: the closed-form saturated M-step
+/// `s_ik(l) = R_ik(l) / I_ik(l)` where `R = expected count reaching category >= k` and
+/// `I = expected count reaching >= k-1` in reduced class `l` (the sequential likelihood
+/// factorizes into independent per-step Bernoullis on the at-risk set, so this ratio is the
+/// exact complete-data MLE — [`fit_gdina`]'s saturated step on continuation counts). An
+/// unreached step in a reduced class (`I ~ 0`) keeps its previous value (`count_floor`
+/// guard) — that cell is non-identified and inert, since only response patterns that cross
+/// the step depend on it. With `M_i = 1` for every item the model is exactly [`fit_gdina`].
+///
+/// `y`/`observed` are row-major `N*J` (`y` holds ordered integer categories `0..=M_i` where
+/// observed; `M_i` is derived as the maximum observed category); `q_matrix` is row-major
+/// `J*K` (0/1). Missing cells are dropped (MAR). Returns `Err` on malformed input.
+///
+/// References (APA 7th ed.):
+///   Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for
+///     polytomous responses. *British Journal of Mathematical and Statistical Psychology,
+///     69*(3), 253-275. https://doi.org/10.1111/bmsp.12070
+///   Tutz, G. (1990). Sequential item response models with an ordered response. *British
+///     Journal of Mathematical and Statistical Psychology, 43*(1), 39-55.
+///     https://doi.org/10.1111/j.2044-8317.1990.tb00925.x
+///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
+///     179-199. https://doi.org/10.1007/s11336-011-9207-7
+#[allow(clippy::too_many_arguments)]
+pub fn fit_seq_gdina(
+    y: &[f64],
+    observed: &[bool],
+    q_matrix: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<SeqGdinaResult, String> {
+    let max_cat = validate_seq_gdina(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+    let l_full = 1usize << n_attributes;
+
+    // Per-item required-attribute bitmask and K_i.
+    let mut qmask = vec![0usize; n_items];
+    let mut k_required = vec![0u32; n_items];
+    for i in 0..n_items {
+        let mut mask = 0usize;
+        for k in 0..n_attributes {
+            if q_matrix[i * n_attributes + k] != 0 {
+                mask |= 1 << k;
+            }
+        }
+        qmask[i] = mask;
+        k_required[i] = mask.count_ones();
+    }
+
+    // Ragged CLASS-MAJOR CSR: item i owns M_i * 2^{K_i} step probs (class l, step k at
+    // s_off[i] + l*M_i + (k-1)) and (M_i+1) * 2^{K_i} category log-probs.
+    let mut s_off = vec![0usize; n_items + 1];
+    let mut cat_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        let rw = 1usize << k_required[i];
+        let m = max_cat[i] as usize;
+        s_off[i + 1] = s_off[i] + m * rw;
+        cat_off[i + 1] = cat_off[i] + (m + 1) * rw;
+    }
+    let total_steps = s_off[n_items];
+    let total_cats = cat_off[n_items];
+
+    // Reduced-class index of every (item, full-profile) pair.
+    let mut red = vec![0u16; n_items * l_full];
+    for i in 0..n_items {
+        for c in 0..l_full {
+            red[i * l_full + c] = reduce_class(c, qmask[i]) as u16;
+        }
+    }
+
+    // Monotone init: each step's probability rises with the count of mastered required
+    // attributes, from init_guess (none) to 1 - init_slip (all). At M_i = 1 this is exactly
+    // fit_gdina's `p` init, which (with the shared refresh/M-step below) makes M=1 reduce to
+    // fit_gdina bit-for-bit.
+    let mut s = vec![0.0f64; total_steps];
+    for i in 0..n_items {
+        let ki = k_required[i] as f64; // >= 1
+        let rw = 1usize << k_required[i];
+        let m = max_cat[i] as usize;
+        for l in 0..rw {
+            let frac = (l.count_ones() as f64) / ki;
+            let val = cfg.init_guess + (1.0 - cfg.init_slip - cfg.init_guess) * frac;
+            for k in 0..m {
+                s[s_off[i] + l * m + k] = val;
+            }
+        }
+    }
+    let mut pi = vec![1.0 / l_full as f64; l_full];
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+
+    let mut post = vec![0.0f64; l_full];
+    let mut clp = vec![0.0f64; total_cats]; // category log-probs, class-major
+    let mut log_pi = vec![0.0f64; l_full];
+
+    // Fill category log-probs from step probs: clp[cat_off[i] + l*(M+1) + x] = ln P(X=x|l).
+    // The M_i real step probs are eps-clamped; the stop sentinel is NOT clamped (top
+    // category = cumulative log-product with no trailing 1 - s_{M+1} factor).
+    let refresh = |s: &[f64], clp: &mut [f64]| {
+        for i in 0..n_items {
+            let rw = 1usize << k_required[i];
+            let m = max_cat[i] as usize;
+            let (so, co) = (s_off[i], cat_off[i]);
+            for l in 0..rw {
+                let (sbase, cbase) = (so + l * m, co + l * (m + 1));
+                seq_category_logprobs_into(
+                    &s[sbase..sbase + m],
+                    cfg.eps,
+                    &mut clp[cbase..cbase + (m + 1)],
+                );
+            }
+        }
+    };
+
+    for _ in 0..cfg.max_iter {
+        refresh(&s, &mut clp);
+        for c in 0..l_full {
+            log_pi[c] = pi[c].ln();
+        }
+
+        let mut i_acc = vec![0.0f64; total_steps];
+        let mut r_acc = vec![0.0f64; total_steps];
+        let mut pi_new = vec![0.0f64; l_full];
+        let mut total_ll = 0.0f64;
+        for j in 0..n_persons {
+            // E-step posterior over the 2^K profiles using the category log-probs.
+            for c in 0..l_full {
+                let mut acc = log_pi[c];
+                for i in 0..n_items {
+                    let idx = j * n_items + i;
+                    if observed[idx] {
+                        let m1 = max_cat[i] as usize + 1;
+                        let l = red[i * l_full + c] as usize;
+                        let x = y[idx] as usize;
+                        acc += clp[cat_off[i] + l * m1 + x];
+                    }
+                }
+                post[c] = acc;
+            }
+            let mmax = post[..l_full].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0f64;
+            for c in 0..l_full {
+                denom += (post[c] - mmax).exp();
+            }
+            for c in 0..l_full {
+                post[c] = (post[c] - mmax).exp() / denom;
+            }
+            total_ll += mmax + denom.ln();
+
+            for c in 0..l_full {
+                pi_new[c] += post[c];
+            }
+            // M-step counts: scatter each response into its at-risk/advanced step cells.
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let m = max_cat[i] as usize;
+                    let x = y[idx] as usize;
+                    let so = s_off[i];
+                    for c in 0..l_full {
+                        let l = red[i * l_full + c] as usize;
+                        let base = so + l * m;
+                        seq_scatter_counts(
+                            x,
+                            post[c],
+                            m,
+                            &mut i_acc[base..base + m],
+                            &mut r_acc[base..base + m],
+                        );
+                    }
+                }
+            }
+        }
+        loglik_trace.push(total_ll);
+
+        // Converged-check before the M-step: returned params match the trace endpoint.
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
+        // M-step: saturated per-step closed form s_ik(l) = R/I. Empty at-risk cell keeps
+        // its previous value (non-identified, inert). Box 0<=s<=1 is free (0<=R<=I).
+        for x in 0..total_steps {
+            if i_acc[x] > cfg.count_floor {
+                s[x] = (r_acc[x] / i_acc[x]).clamp(cfg.eps, 1.0 - cfg.eps);
+            }
+        }
+        let nf = n_persons as f64;
+        let mut z = 0.0f64;
+        for c in 0..l_full {
+            pi[c] = (pi_new[c] / nf).max(cfg.eps);
+            z += pi[c];
+        }
+        for c in 0..l_full {
+            pi[c] /= z;
+        }
+        n_iter += 1;
+    }
+
+    // Classification pass + category probabilities from the final step probs.
+    refresh(&s, &mut clp);
+    for c in 0..l_full {
+        log_pi[c] = pi[c].ln();
+    }
+    let mut map_profile = vec![0u32; n_persons];
+    let mut attr_prob = vec![0.0f64; n_persons * n_attributes];
+    let mut final_ll = 0.0f64;
+    for j in 0..n_persons {
+        for c in 0..l_full {
+            let mut acc = log_pi[c];
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let m1 = max_cat[i] as usize + 1;
+                    let l = red[i * l_full + c] as usize;
+                    let x = y[idx] as usize;
+                    acc += clp[cat_off[i] + l * m1 + x];
+                }
+            }
+            post[c] = acc;
+        }
+        let mmax = post[..l_full].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0f64;
+        for c in 0..l_full {
+            denom += (post[c] - mmax).exp();
+        }
+        for c in 0..l_full {
+            post[c] = (post[c] - mmax).exp() / denom;
+        }
+        final_ll += mmax + denom.ln();
+        let mut best = 0usize;
+        for c in 1..l_full {
+            if post[c] > post[best] {
+                best = c;
+            }
+        }
+        map_profile[j] = best as u32;
+        for k in 0..n_attributes {
+            let mut pk = 0.0;
+            for c in 0..l_full {
+                if (c >> k) & 1 == 1 {
+                    pk += post[c];
+                }
+            }
+            attr_prob[j * n_attributes + k] = pk;
+        }
+    }
+    if !converged {
+        loglik_trace.push(final_ll);
+    }
+
+    let cat_prob: Vec<f64> = clp.iter().map(|v| v.exp()).collect();
+
+    Ok(SeqGdinaResult {
+        s_off,
+        step_prob: s,
+        cat_off,
+        cat_prob,
+        max_cat,
+        k_required,
+        profile_prob: pi,
+        map_profile,
+        attr_prob,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters: total_steps + (l_full - 1),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4362,6 +4868,478 @@ mod tests {
             assert_eq!(nconv, reps, "nonconverged replications: {} of {reps} (skew={skew})", reps - nconv);
             assert!(wp < 0.04, "wRMSE(p) {wp} skew={skew}");
             assert!(attr > 0.90, "attribute agreement {attr} skew={skew}");
+        }
+    }
+
+    // ----- Sequential G-DINA polytomous CDM (Ma & de la Torre, 2016) -----
+
+    /// Deterministic anchor A (category-probability identity): step probs [a, b] give
+    /// P(0)=1-a, P(1)=a(1-b), P(2)=a*b, summing to 1 — catches a product-direction or
+    /// trailing-factor (sentinel) off-by-one with no Monte-Carlo noise.
+    #[test]
+    fn seq_category_probs_matches_identity() {
+        let (a, b) = (0.7, 0.3); // a != b, both != 0.5 (non-centered)
+        let p = seq_category_probs(&[a, b]);
+        assert!((p[0] - (1.0 - a)).abs() < 1e-12, "P(0)");
+        assert!((p[1] - a * (1.0 - b)).abs() < 1e-12, "P(1)");
+        assert!((p[2] - a * b).abs() < 1e-12, "P(2) top has no trailing factor");
+        assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-12, "sum to 1");
+        // M=1 collapses to Bernoulli.
+        let p1 = seq_category_probs(&[0.8]);
+        assert!((p1[0] - 0.2).abs() < 1e-12 && (p1[1] - 0.8).abs() < 1e-12);
+        // M=3 telescopes to 1 for an asymmetric table.
+        let p3 = seq_category_probs(&[0.6, 0.4, 0.3]);
+        assert!((p3.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!((p3[3] - 0.6 * 0.4 * 0.3).abs() < 1e-12);
+        // The PRODUCTION log transform (used by the estimator's E-step refresh) exp-matches
+        // the literal-anchored reference for interior steps — so the two implementations
+        // cannot harbour a shared, mutually-hidden bug.
+        for steps in [vec![0.7, 0.3], vec![0.6, 0.4, 0.3], vec![0.9]] {
+            let mut lp = vec![0.0f64; steps.len() + 1];
+            seq_category_logprobs_into(&steps, 1e-9, &mut lp);
+            let pr = seq_category_probs(&steps);
+            for (a, b) in lp.iter().zip(&pr) {
+                assert!((a.exp() - b).abs() < 1e-12, "log transform {a} vs {b}");
+            }
+        }
+    }
+
+    /// Deterministic anchor B (at-risk / advanced counts): responses {0,1,1,2} in one
+    /// reduced class give I=[4,3], R=[3,1], so s_1=3/4, s_2=1/3 — nails the {>=k}/{>=k-1}
+    /// denominator subsetting that a fit/RMSE test cannot reliably expose.
+    #[test]
+    fn seq_scatter_counts_at_risk_denominator() {
+        let mut ii = vec![0.0f64; 2];
+        let mut rr = vec![0.0f64; 2];
+        for &x in &[0usize, 1, 1, 2] {
+            seq_scatter_counts(x, 1.0, 2, &mut ii, &mut rr);
+        }
+        assert_eq!(ii, vec![4.0, 3.0]); // at risk: step1 (x>=0)=4, step2 (x>=1)=3
+        assert_eq!(rr, vec![3.0, 1.0]); // advanced: step1 (x>=1)=3, step2 (x>=2)=1
+        assert!((rr[0] / ii[0] - 0.75).abs() < 1e-12); // s_1 = 3/4
+        assert!((rr[1] / ii[1] - 1.0 / 3.0).abs() < 1e-12); // s_2 = 1/3
+    }
+
+    /// Binary data (M_i = 1 for every item) reduces the sequential G-DINA to fit_gdina
+    /// BIT-FOR-BIT: identical monotone init, identical E-step logprobs (ln s / ln(1-s)),
+    /// identical closed-form ratio, so the whole loglik trace and the step/success probs
+    /// agree to machine precision.
+    #[test]
+    fn seq_gdina_reduces_to_gdina_at_m1() {
+        let (q, n_items) = wald_q2(3, 3);
+        let n = 800usize;
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "acdm");
+        let mut rng = Lcg(424242);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = CdmConfig::default();
+        let g = fit_gdina(&y, &observed, &q, n, n_items, 2, &cfg).unwrap();
+        let sq = fit_seq_gdina(&y, &observed, &q, n, n_items, 2, &cfg).unwrap();
+        assert_eq!(sq.max_cat, vec![1u32; n_items], "all items binary -> M_i = 1");
+        assert_eq!(sq.step_prob.len(), g.item_prob.len());
+        assert_eq!(sq.loglik_trace.len(), g.loglik_trace.len(), "same iteration count");
+        assert_eq!(sq.n_iter, g.n_iter);
+        assert_eq!(sq.converged, g.converged);
+        for (a, b) in sq.loglik_trace.iter().zip(&g.loglik_trace) {
+            assert!((a - b).abs() < 1e-12, "loglik trace {a} vs {b}");
+        }
+        for (a, b) in sq.step_prob.iter().zip(&g.item_prob) {
+            assert!((a - b).abs() < 1e-12, "step prob {a} vs {b}");
+        }
+        // P(X=1|l) == fit_gdina p_il, P(X=0|l) == 1 - p_il.
+        for i in 0..n_items {
+            let rw = 1usize << sq.k_required[i];
+            for l in 0..rw {
+                let p1 = sq.cat_prob[sq.cat_off[i] + l * 2 + 1];
+                let p0 = sq.cat_prob[sq.cat_off[i] + l * 2];
+                let pg = g.item_prob[g.item_off[i] + l];
+                assert!((p1 - pg).abs() < 1e-12 && (p0 - (1.0 - pg)).abs() < 1e-12);
+            }
+        }
+    }
+
+    /// Draw ordered polytomous responses from per-item, per-class step tables, using the
+    /// SAME class-major reduce_class layout the estimator recovers (spec-fix: matched
+    /// classes). Sequential draw: advance while Bernoulli(s_k) succeeds, stop at first fail.
+    fn simulate_seq_gdina(
+        qmask: &[usize],
+        s_off: &[usize],
+        max_cat: &[u32],
+        truth_steps: &[f64],
+        profiles: &[usize],
+        n_items: usize,
+        rng: &mut Lcg,
+    ) -> Vec<f64> {
+        let n = profiles.len();
+        let mut y = vec![0.0f64; n * n_items];
+        for j in 0..n {
+            for i in 0..n_items {
+                let m = max_cat[i] as usize;
+                let l = reduce_class(profiles[j], qmask[i]);
+                let base = s_off[i] + l * m;
+                let mut cat = 0usize;
+                for k in 1..=m {
+                    if rng.next_f64() < truth_steps[base + (k - 1)] {
+                        cat = k;
+                    } else {
+                        break;
+                    }
+                }
+                y[j * n_items + i] = cat as f64;
+            }
+        }
+        y
+    }
+
+    /// K=2 design: `n_single` single-attribute M=1 items per attribute (identification) +
+    /// `n_pair` two-attribute M=2 polytomous items with an ASYMMETRIC, mastery-increasing
+    /// step table. Returns (q, qmask, s_off, max_cat, truth_steps).
+    #[allow(clippy::type_complexity)]
+    fn seq_design(
+        n_single: usize,
+        n_pair: usize,
+    ) -> (Vec<u8>, Vec<usize>, Vec<usize>, Vec<u32>, Vec<f64>) {
+        let k = 2usize;
+        let mut q: Vec<u8> = Vec::new();
+        for _ in 0..n_single {
+            q.extend_from_slice(&[1, 0]);
+        }
+        for _ in 0..n_single {
+            q.extend_from_slice(&[0, 1]);
+        }
+        for _ in 0..n_pair {
+            q.extend_from_slice(&[1, 1]);
+        }
+        let n_items = 2 * n_single + n_pair;
+        let mut qmask = vec![0usize; n_items];
+        let mut kreq = vec![0u32; n_items];
+        for i in 0..n_items {
+            qmask[i] = qmask_of(&q, i, k);
+            kreq[i] = qmask[i].count_ones();
+        }
+        let mut max_cat = vec![1u32; n_items];
+        for m in max_cat.iter_mut().skip(2 * n_single) {
+            *m = 2;
+        }
+        let mut s_off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            s_off[i + 1] = s_off[i] + (max_cat[i] as usize) * (1usize << kreq[i]);
+        }
+        let mut truth = vec![0.0f64; s_off[n_items]];
+        for i in 0..(2 * n_single) {
+            // M=1, K=1: [non-master, master]
+            truth[s_off[i]] = 0.20;
+            truth[s_off[i] + 1] = 0.85;
+        }
+        // M=2, K=2, class-major [l*2 + (k-1)]; asymmetric (s1 != s2), mastery-increasing.
+        let pair = [[0.25, 0.15], [0.55, 0.30], [0.50, 0.25], [0.85, 0.70]];
+        for i in (2 * n_single)..n_items {
+            let base = s_off[i];
+            for (l, row) in pair.iter().enumerate() {
+                truth[base + l * 2] = row[0];
+                truth[base + l * 2 + 1] = row[1];
+            }
+        }
+        (q, qmask, s_off, max_cat, truth)
+    }
+
+    /// Non-trivial ordered recovery: fit the shared-Q sequential G-DINA on M=2 polytomous
+    /// data with distinct, asymmetric per-class step tables and recover the step and
+    /// category probabilities plus attribute classification.
+    #[test]
+    fn seq_gdina_recovers_polytomous_steps() {
+        let k = 2usize;
+        let (n_single, n_pair) = (5usize, 5usize);
+        let (q, qmask, s_off, max_cat, truth) = seq_design(n_single, n_pair);
+        let n_items = 2 * n_single + n_pair;
+        let n = 5000usize;
+        let mut rng = Lcg(20160716);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate_seq_gdina(&qmask, &s_off, &max_cat, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_seq_gdina(&y, &observed, &q, n, n_items, k, &CdmConfig::default()).unwrap();
+        assert_eq!(res.max_cat, max_cat, "derived max categories");
+        assert_eq!(res.s_off, s_off, "step layout");
+        let rm = rmse(&res.step_prob, &truth);
+        assert!(rm < 0.05, "step-prob RMSE {rm}");
+        // Category-prob recovery for the pair items (the stable, PRIMARY quantity).
+        let pair = [[0.25, 0.15], [0.55, 0.30], [0.50, 0.25], [0.85, 0.70]];
+        for i in (2 * n_single)..n_items {
+            let m1 = max_cat[i] as usize + 1;
+            for (l, row) in pair.iter().enumerate() {
+                let tc = seq_category_probs(row);
+                for (x, &tcx) in tc.iter().enumerate().take(m1) {
+                    let est = res.cat_prob[res.cat_off[i] + l * m1 + x];
+                    assert!((est - tcx).abs() < 0.04, "cat i{i} l{l} x{x}: {est} vs {tcx}");
+                }
+            }
+        }
+        // Attribute classification agreement.
+        let mut correct = 0usize;
+        for j in 0..n {
+            for kk in 0..k {
+                let est = (res.attr_prob[j * k + kk] >= 0.5) as usize;
+                if est == ((profiles[j] >> kk) & 1) {
+                    correct += 1;
+                }
+            }
+        }
+        let acc = correct as f64 / (n * k) as f64;
+        assert!(acc > 0.85, "attribute accuracy {acc}");
+    }
+
+    /// Missing (MAR) is dropped; malformed input is rejected — including the sequential
+    /// pitfall of an item stuck at category 0 (measures nothing), while a zero-frequency
+    /// INTERIOR category is accepted (legitimate under a continuation-ratio model).
+    #[test]
+    fn seq_gdina_handles_missing_and_validates() {
+        let k = 2usize;
+        let (n_single, n_pair) = (3usize, 2usize);
+        let (q, qmask, s_off, max_cat, truth) = seq_design(n_single, n_pair);
+        let n_items = 2 * n_single + n_pair;
+        let n = 400usize;
+        let mut rng = Lcg(77);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate_seq_gdina(&qmask, &s_off, &max_cat, &truth, &profiles, n_items, &mut rng);
+        let cfg = CdmConfig::default();
+        // Valid fit with a few missing cells.
+        let mut observed = vec![true; n * n_items];
+        observed[0] = false;
+        observed[n_items + 1] = false;
+        let res = fit_seq_gdina(&y, &observed, &q, n, n_items, k, &cfg).unwrap();
+        assert!(!res.loglik_trace.is_empty());
+        let all_obs = vec![true; n * n_items];
+        // Non-integer category.
+        let mut ybad = y.clone();
+        ybad[10] = 1.5;
+        assert!(fit_seq_gdina(&ybad, &all_obs, &q, n, n_items, k, &cfg).is_err());
+        // Negative category.
+        let mut yneg = y.clone();
+        yneg[10] = -1.0;
+        assert!(fit_seq_gdina(&yneg, &all_obs, &q, n, n_items, k, &cfg).is_err());
+        // A pair item stuck at category 0 (never leaves 0) -> rejected.
+        let mut yzero = y.clone();
+        for j in 0..n {
+            yzero[j * n_items + 2 * n_single] = 0.0;
+        }
+        assert!(fit_seq_gdina(&yzero, &all_obs, &q, n, n_items, k, &cfg).is_err());
+        // Shape mismatch.
+        assert!(fit_seq_gdina(&y[..y.len() - 1], &all_obs, &q, n, n_items, k, &cfg).is_err());
+        // A zero-frequency INTERIOR category must NOT be rejected: force item (2*n_single)
+        // to skip category 1 (only 0 and 2 observed) — still a valid sequential item.
+        let mut yskip = y.clone();
+        let it = 2 * n_single;
+        for j in 0..n {
+            let v = yskip[j * n_items + it];
+            yskip[j * n_items + it] = if v >= 1.0 { 2.0 } else { 0.0 };
+        }
+        // max observed category is 2 (some persons reach 2), interior cat 1 has 0 freq.
+        assert!(fit_seq_gdina(&yskip, &all_obs, &q, n, n_items, k, &cfg).is_ok());
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): recover the sequential G-DINA step and
+    /// category probabilities under BOTH a normal and a right-skew higher-order attribute
+    /// distribution (fitting a free pi_c). Primary hard assertion is the category-prob
+    /// RMSE (the stable, model-predicted quantity); the step RMSE is weighted by realized
+    /// AT-RISK mass (top steps are inherently noisier) and reported as secondary.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_seq_gdina_recovery_500() {
+        let reps = 500usize;
+        let k = 3usize;
+        let n = 2500usize;
+        // 3 single M=1 items per attribute (identification) + M=2 and M=3 polytomous items.
+        let mut q: Vec<u8> = Vec::new();
+        for a in 0..k {
+            for _ in 0..3 {
+                let mut r = vec![0u8; k];
+                r[a] = 1;
+                q.extend_from_slice(&r);
+            }
+        }
+        // polytomous items on attribute pairs/triples.
+        let poly_q: [&[usize]; 4] = [&[0, 1], &[0, 2], &[1, 2], &[0, 1, 2]];
+        let poly_m: [u32; 4] = [2, 2, 3, 3]; // include M=3 (>=2 interior steps)
+        for pq in poly_q.iter() {
+            let mut r = vec![0u8; k];
+            for &a in pq.iter() {
+                r[a] = 1;
+            }
+            q.extend_from_slice(&r);
+        }
+        let n_items = 3 * k + poly_q.len();
+        let mut qmask = vec![0usize; n_items];
+        let mut kreq = vec![0u32; n_items];
+        for i in 0..n_items {
+            qmask[i] = qmask_of(&q, i, k);
+            kreq[i] = qmask[i].count_ones();
+        }
+        let mut max_cat = vec![1u32; n_items];
+        for (j, &m) in poly_m.iter().enumerate() {
+            max_cat[3 * k + j] = m;
+        }
+        let mut s_off = vec![0usize; n_items + 1];
+        let mut cat_off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            s_off[i + 1] = s_off[i] + (max_cat[i] as usize) * (1usize << kreq[i]);
+            cat_off[i + 1] = cat_off[i] + (max_cat[i] as usize + 1) * (1usize << kreq[i]);
+        }
+        // Truth step tables: mastery-increasing (more mastered required attrs -> higher
+        // continuation at every step), step decreasing in k (higher categories harder).
+        let mut truth = vec![0.0f64; s_off[n_items]];
+        for i in 0..n_items {
+            let m = max_cat[i] as usize;
+            let rw = 1usize << kreq[i];
+            let ki = kreq[i] as f64;
+            for l in 0..rw {
+                let frac = l.count_ones() as f64 / ki; // fraction of required attrs mastered
+                for kk in 0..m {
+                    // step 1 base ~0.30..0.90; each higher step -0.12; +mastery.
+                    let base = 0.30 + 0.55 * frac - 0.12 * kk as f64;
+                    truth[s_off[i] + l * m + kk] = base.clamp(0.08, 0.92);
+                }
+            }
+        }
+        // Strong single-attribute M=1 identification items (guess 0.12, mastery 0.90) so
+        // the profile posterior is sharp; the polytomous items carry the recovery target.
+        for i in 0..(3 * k) {
+            truth[s_off[i]] = 0.12;
+            truth[s_off[i] + 1] = 0.90;
+        }
+        // Higher-order attribute parameters (2PL): theta -> mastery.
+        let a_ho = vec![1.2f64; k];
+        let d_ho: Vec<f64> = (0..k).map(|kk| 0.4 - 0.4 * kk as f64).collect();
+
+        for &skew in [false, true].iter() {
+            let (mut wnum, mut wden) = (0.0f64, 0.0f64);
+            let (mut cat_se, mut cat_cells) = (0.0f64, 0.0f64);
+            let (mut attr_ok, mut attr_tot) = (0.0f64, 0.0f64);
+            let mut nconv = 0usize;
+            let mut min_atrisk = f64::INFINITY;
+            for rep in 0..reps {
+                let mut rng = Lcg(
+                    0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03),
+                );
+                let profiles: Vec<usize> = (0..n)
+                    .map(|_| {
+                        let theta = if skew {
+                            // standardized shifted chi-square(3): mean 0, var 1, right-skew.
+                            let mut cc = 0.0;
+                            for _ in 0..3 {
+                                let z = rng.normal();
+                                cc += z * z;
+                            }
+                            (cc - 3.0) / 6.0_f64.sqrt()
+                        } else {
+                            rng.normal()
+                        };
+                        let mut c = 0usize;
+                        for kk in 0..k {
+                            let p = 1.0 / (1.0 + (-(a_ho[kk] * theta + d_ho[kk])).exp());
+                            if rng.next_f64() < p {
+                                c |= 1 << kk;
+                            }
+                        }
+                        c
+                    })
+                    .collect();
+                let y =
+                    simulate_seq_gdina(&qmask, &s_off, &max_cat, &truth, &profiles, n_items, &mut rng);
+                let observed = vec![true; n * n_items];
+                let res =
+                    fit_seq_gdina(&y, &observed, &q, n, n_items, k, &CdmConfig::default()).unwrap();
+                if res.converged {
+                    nconv += 1;
+                }
+                assert_eq!(res.max_cat, max_cat, "derived M_i matches design (rep {rep})");
+                // Invariants: every step/category prob finite in (0,1); category probs sum to 1.
+                for &sp in &res.step_prob {
+                    assert!(sp.is_finite() && sp > 0.0 && sp < 1.0, "step prob {sp}");
+                }
+                for i in 0..n_items {
+                    let m1 = max_cat[i] as usize + 1;
+                    let rw = 1usize << kreq[i];
+                    for l in 0..rw {
+                        let mut s = 0.0;
+                        for x in 0..m1 {
+                            let p = res.cat_prob[res.cat_off[i] + l * m1 + x];
+                            assert!(p.is_finite() && p >= 0.0, "cat prob {p}");
+                            s += p;
+                        }
+                        assert!((s - 1.0).abs() < 1e-9, "category simplex {s}");
+                    }
+                }
+                // Realized at-risk mass I_ik(l) from true profiles, for step weighting.
+                let mut atrisk = vec![0.0f64; s_off[n_items]];
+                let mut advanced = vec![0.0f64; s_off[n_items]];
+                for j in 0..n {
+                    for i in 0..n_items {
+                        let m = max_cat[i] as usize;
+                        let l = reduce_class(profiles[j], qmask[i]);
+                        let base = s_off[i] + l * m;
+                        let x = y[j * n_items + i] as usize;
+                        seq_scatter_counts(
+                            x,
+                            1.0,
+                            m,
+                            &mut atrisk[base..base + m],
+                            &mut advanced[base..base + m],
+                        );
+                    }
+                }
+                for cell in 0..s_off[n_items] {
+                    let w = atrisk[cell];
+                    if w > 0.0 {
+                        min_atrisk = min_atrisk.min(w);
+                        let e = res.step_prob[cell] - truth[cell];
+                        wnum += w * e * e;
+                        wden += w;
+                    }
+                }
+                // Category-prob RMSE vs the model-implied truth (primary, stable).
+                for i in 0..n_items {
+                    let m = max_cat[i] as usize;
+                    let m1 = m + 1;
+                    let rw = 1usize << kreq[i];
+                    for l in 0..rw {
+                        let tsteps = &truth[s_off[i] + l * m..s_off[i] + l * m + m];
+                        let tc = seq_category_probs(tsteps);
+                        for x in 0..m1 {
+                            let e = res.cat_prob[res.cat_off[i] + l * m1 + x] - tc[x];
+                            cat_se += e * e;
+                            cat_cells += 1.0;
+                        }
+                    }
+                }
+                for j in 0..n {
+                    for kk in 0..k {
+                        let est = (res.attr_prob[j * k + kk] >= 0.5) as usize;
+                        if est == ((profiles[j] >> kk) & 1) {
+                            attr_ok += 1.0;
+                        }
+                        attr_tot += 1.0;
+                    }
+                }
+            }
+            let wrmse_step = (wnum / wden).sqrt();
+            let rmse_cat = (cat_se / cat_cells).sqrt();
+            let attr = attr_ok / attr_tot;
+            let conv = nconv as f64 / reps as f64;
+            println!(
+                "[seq-gdina MC skew={skew}] reps={reps} conv={conv:.3} \
+                 wRMSE(step|at-risk)={wrmse_step:.4} RMSE(cat)={rmse_cat:.4} \
+                 attr={attr:.3} min_at_risk_mass={min_atrisk:.1}"
+            );
+            // Category probs are the stable primary target; step probs (esp. top steps
+            // starved under skew, min at-risk mass reported above) are looser and
+            // at-risk-weighted. Thresholds calibrated to this K=3, M in {2,3} design.
+            assert!(rmse_cat < 0.03, "category-prob RMSE {rmse_cat} skew={skew}");
+            assert!(wrmse_step < 0.05, "at-risk-weighted step RMSE {wrmse_step} skew={skew}");
+            assert!(attr > 0.92, "attribute agreement {attr} skew={skew}");
+            assert!(conv > 0.9, "convergence rate {conv} skew={skew}");
         }
     }
 }

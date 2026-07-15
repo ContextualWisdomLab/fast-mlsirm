@@ -93,6 +93,40 @@
 
 ### Added
 
+- **Shared-Q sequential G-DINA for polytomous responses** (Ma & de la Torre, 2016;
+  Tutz, 1990). `fit_seq_gdina(responses, q_matrix)` fits ordered polytomous cognitive
+  diagnosis by the sequential (continuation-ratio) model: each ordered *step*
+  `k in 1..=M_i` of item `i` has a continuation probability `s_ik(l) = P(X_i >= k | X_i
+  >= k-1, reduced class l)` that is a saturated G-DINA over the item's `2^{K_i}` reduced
+  attribute classes, and the category probabilities are the sequential decomposition
+  `P(X_i = k | l) = (prod_{v<=k} s_iv(l))(1 - s_{i,k+1}(l))` with the stop sentinel
+  `s_{i,M_i+1} = 0` (top category has no trailing factor — never eps-clamped, so its
+  probability carries no spurious bias). Because the sequential likelihood factorizes
+  into independent per-step Bernoullis on the at-risk set, the M-step is the closed-form
+  saturated ratio `s_ik(l) = R_ik(l)/I_ik(l)` with `R` = expected count reaching category
+  `>= k` and `I` = expected count reaching `>= k-1` — exactly `fit_gdina`'s saturated step
+  on continuation counts. The population is a free profile distribution `pi_c`; `M_i` is
+  derived as each item's maximum observed category (an item stuck at category 0 is
+  rejected; a zero-frequency *interior* category is fine — it just means `s_{i,k+1} ~ 1`).
+  With one step per item (binary data) it reduces to `fit_gdina` **bit-for-bit** (shared
+  monotone init, identical E-step logprobs and closed-form ratio; a regression test
+  asserts the whole loglik trace and step probs agree to `< 1e-12`). Deterministic anchors
+  pin the sequential core with no Monte-Carlo noise: the category-probability identity
+  (`P(0)=1-a, P(1)=a(1-b), P(2)=a*b`, non-centered) and the at-risk-count identity
+  (responses `{0,1,1,2}` -> `s_1 = 3/4, s_2 = 1/3`, exercising the `{>=k}/{>=k-1}`
+  denominator). A 500-replication Monte-Carlo (K=3, mix of M=2/M=3 items, N=2500, under
+  BOTH a normal and a right-skew higher-order attribute distribution) recovers the model
+  with category-probability RMSE ~0.020, at-risk-mass-weighted step RMSE ~0.020, and
+  attribute-classification agreement ~0.97 — essentially identical across the normal and
+  skew conditions, because the free `pi_c` nests the higher-order-implied distribution
+  (no prior misspecification). **Scope:** this is the *shared item-level Q-vector*
+  sequential G-DINA — every step of an item is a saturated G-DINA over the SAME required
+  attributes; it is a restriction of Ma & de la Torre's general per-step (`q_ik`) model,
+  whose step-distinct attribute requirements are a deferred non-goal (supply each item's
+  Q-vector as the union of its steps' attributes). Compute lives in
+  `mlsirm_core::cdm::fit_seq_gdina` (reuses `reduce_class`, the profile-grid posterior,
+  and the saturated closed-form ratio); exposed to Python as `fit_seq_gdina` with the
+  `SeqGdinaFit` wrapper (`item_step_prob` / `item_cat_prob` ragged accessors).
 - **Higher-order G-DINA** (de la Torre & Douglas, 2004; de la Torre, 2011).
   `fit_ho_gdina(responses, q_matrix)` fits the saturated G-DINA item model (each
   item's reduced attribute-mastery classes get a free success probability) under a
