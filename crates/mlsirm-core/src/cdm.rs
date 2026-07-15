@@ -1387,7 +1387,17 @@ fn ho_pi_from_params(attr_slope: &[f64], attr_intercept: &[f64], n_attributes: u
 /// expected node counts `r[q]` (masters) and `w[q]` (total) at the Gauss-Hermite
 /// nodes. Arithmetically identical to `fit_mmle_2pl`'s inner `(a, b)` Newton.
 fn newton_attr_2pl(mut a: f64, mut d: f64, r: &[f64], w: &[f64], newton_iter: usize) -> (f64, f64) {
-    use crate::mmle::{sigmoid_stable, GH_NODES};
+    use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES};
+    let q_value = |aa: f64, dd: f64| -> f64 {
+        GH_NODES
+            .iter()
+            .enumerate()
+            .map(|(qi, &node)| {
+                let z = aa * node + dd;
+                r[qi] * log_sigmoid(z) + (w[qi] - r[qi]) * log_sigmoid(-z)
+            })
+            .sum()
+    };
     for _ in 0..newton_iter {
         let (mut g_a, mut g_d, mut h_aa, mut h_dd, mut h_ad) = (0.0, 0.0, 0.0, 0.0, 0.0);
         for (qi, &node) in GH_NODES.iter().enumerate() {
@@ -1410,17 +1420,39 @@ fn newton_attr_2pl(mut a: f64, mut d: f64, r: &[f64], w: &[f64], newton_iter: us
         }
         let da = (h_dd * g_a - h_ad * g_d) / det;
         let dd = (h_aa * g_d - h_ad * g_a) / det;
-        a = (a - da).clamp(1e-3, 10.0);
-        d -= dd;
-        if da.abs() + dd.abs() < 1e-8 {
+        let (old_a, old_d) = (a, d);
+        let old_q = q_value(old_a, old_d);
+        let mut step = 1.0f64;
+        let mut accepted = false;
+        // Near-separated expected counts can make an undamped Newton step overshoot.
+        // Backtrack on the unpenalized EM auxiliary function so the numerical ridge
+        // cannot make the reported marginal log-likelihood move backwards.
+        for _ in 0..30 {
+            let cand_a = (old_a - step * da).clamp(1e-3, 10.0);
+            let cand_d = old_d - step * dd;
+            let cand_q = q_value(cand_a, cand_d);
+            if cand_q.is_finite() && cand_q >= old_q - 1e-12 {
+                a = cand_a;
+                d = cand_d;
+                accepted = true;
+                break;
+            }
+            step *= 0.5;
+        }
+        if !accepted {
+            break;
+        }
+        if (a - old_a).abs() + (d - old_d).abs() < 1e-8 {
             break;
         }
     }
     (a, d)
 }
 
-/// Fit the higher-order DINA/DINO model (de la Torre & Douglas, 2004) by marginal
-/// EM over the joint `(alpha_c, theta_q)` grid. A continuous higher-order trait
+/// Fit the higher-order DINA/DINO model of de la Torre and Douglas (2004) using this
+/// crate's marginal EM over the joint `(alpha_c, theta_q)` grid. The source paper
+/// estimates the model by Bayesian MCMC; quadrature EM is the implementation choice
+/// here, not an algorithm claimed by that paper. A continuous higher-order trait
 /// `theta ~ N(0,1)` structures attribute mastery,
 /// `P(alpha_k = 1 | theta) = sigmoid(a_k theta + d_k)` with attributes conditionally
 /// independent given `theta`, so the `2^K` class distribution is a `2K`-parameter
@@ -3326,6 +3358,48 @@ mod tests {
         assert!(rm.loglik_trace.iter().all(|v| v.is_finite()));
     }
 
+    /// Full structural Newton steps used to make the observed log-likelihood fall
+    /// (seed 12) and could then satisfy `abs(delta) < tol` on a negative change,
+    /// falsely reporting convergence (seed 6).
+    #[test]
+    fn ho_structural_newton_preserves_em_ascent() {
+        let (n_attr, n_items, n) = (3usize, 9usize, 40usize);
+        let q = vec![
+            1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1,
+            1, 0, 1,
+        ];
+        let item_prob = [0.1f64, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+        for (seed, max_iter) in [(12u64, 100usize), (6, 500)] {
+            let mut rng = Lcg(seed);
+            let mut y = vec![0.0; n * n_items];
+            for j in 0..n {
+                for i in 0..n_items {
+                    y[j * n_items + i] = rng.bern(item_prob[i]);
+                }
+            }
+            let observed = vec![true; y.len()];
+            let cfg = CdmConfig { max_iter, ..CdmConfig::default() };
+            let res = fit_ho_cdm(
+                &y, &observed, &q, n, n_items, n_attr, CdmModel::Dina, &cfg,
+            )
+            .unwrap();
+            assert!(
+                nondecreasing(&res.loglik_trace),
+                "higher-order GEM lowered log-likelihood for seed {seed}: {:?}",
+                res.loglik_trace
+            );
+            if seed == 6 {
+                let delta = res.loglik_trace[res.loglik_trace.len() - 1]
+                    - res.loglik_trace[res.loglik_trace.len() - 2];
+                assert!(res.converged, "safeguarded seed-6 fit did not converge");
+                assert!(
+                    (0.0..cfg.tol).contains(&delta),
+                    "convergence must be a non-negative improvement below tol; delta={delta:e}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn ho_validate_rejects_malformed() {
         let cfg = CdmConfig::default();
@@ -3372,22 +3446,28 @@ mod tests {
                         .unwrap();
                 if res.converged {
                     nconv += 1;
+                    ra += rmse(&res.attr_slope, &a_true);
+                    rd += rmse(&res.attr_intercept, &d_true);
+                    ba += bias(&res.attr_slope, &a_true);
+                    bd += bias(&res.attr_intercept, &d_true);
+                    attr += attribute_agreement(&res.attr_prob, &profiles, n, n_attr);
                 }
-                ra += rmse(&res.attr_slope, &a_true) / reps as f64;
-                rd += rmse(&res.attr_intercept, &d_true) / reps as f64;
-                ba += bias(&res.attr_slope, &a_true) / reps as f64;
-                bd += bias(&res.attr_intercept, &d_true) / reps as f64;
-                attr += attribute_agreement(&res.attr_prob, &profiles, n, n_attr) / reps as f64;
             }
+            let conv_rate = nconv as f64 / reps as f64;
+            assert!(
+                conv_rate >= 0.95,
+                "higher-order MC convergence rate {conv_rate:.3} below 0.95 for skew={skew}"
+            );
+            let den = nconv as f64;
+            ra /= den;
+            rd /= den;
+            ba /= den;
+            bd /= den;
+            attr /= den;
             println!(
-                "[HO-DINA MC skew={skew}] reps={reps} conv={:.2} RMSE(a)={:.3} RMSE(d)={:.3} \
-                 bias(a)={:.3} bias(d)={:.3} attr-agree={:.3}",
-                nconv as f64 / reps as f64,
-                ra,
-                rd,
-                ba,
-                bd,
-                attr
+                "[HO-DINA MC skew={skew}] reps={reps} converged={nconv} ({conv_rate:.3}) \
+                 RMSE(a)={ra:.3} RMSE(d)={rd:.3} bias(a)={ba:.3} bias(d)={bd:.3} \
+                 attr-agree={attr:.3}"
             );
             // The trait prior is fixed N(0,1); under a skewed true trait the
             // structural slope/intercept degrade (prior mis-specification, as in 2PL

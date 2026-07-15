@@ -477,7 +477,9 @@ def fit_ho_cdm(
     class probabilities with ``2K`` interpretable attribute parameters. The item part
     (slip/guess, DINA or DINO gate) is unchanged. Estimated by marginal-ML EM over the
     joint ``(alpha, theta)`` grid; the structural step is ``K`` independent 2PL
-    calibrations of attribute mastery on the trait.
+    calibrations of attribute mastery on the trait. De la Torre and Douglas (2004)
+    introduced the higher-order model and estimated it by Bayesian MCMC; the
+    quadrature-EM estimator is this package's implementation choice.
 
     The observed-data likelihood depends on ``(a_k, d_k)`` only through the implied
     class distribution, so the higher-order parameters are identified only for
