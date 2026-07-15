@@ -75,9 +75,12 @@ pub struct EapSumTable {
 
 pub(crate) fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     let n_items = bank.b.len();
+    let expected_zeta = n_items
+        .checked_mul(bank.latent_dim)
+        .ok_or_else(|| "n_items * latent_dim overflows usize".to_string())?;
     if bank.alpha.len() != n_items
         || bank.factor_id.len() != n_items
-        || bank.zeta.len() != n_items * bank.latent_dim
+        || bank.zeta.len() != expected_zeta
     {
         return Err("item bank arrays have inconsistent lengths".into());
     }
@@ -87,10 +90,41 @@ pub(crate) fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     if bank.n_dims == 0 || bank.latent_dim == 0 {
         return Err("parameter dimensions must be positive".into());
     }
-    if bank.eps_distance <= 0.0 {
-        return Err("eps_distance must be positive".into());
+    if bank
+        .alpha
+        .iter()
+        .chain(bank.b)
+        .chain(bank.zeta)
+        .any(|v| !v.is_finite())
+        || !bank.tau.is_finite()
+    {
+        return Err("item bank parameters must be finite".into());
+    }
+    if !bank.eps_distance.is_finite() || bank.eps_distance <= 0.0 {
+        return Err("eps_distance must be positive and finite".into());
     }
     Ok(n_items)
+}
+
+fn validate_dichotomous_responses(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<(), String> {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells || observed.len() != n_cells {
+        return Err("y and observed must both have length n_persons * n_items".into());
+    }
+    if y.iter()
+        .zip(observed)
+        .any(|(&value, &is_observed)| is_observed && value != 0.0 && value != 1.0)
+    {
+        return Err("observed responses must be 0 or 1".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_prior(prior: &PriorSpec, n_dims: usize) -> Result<(), String> {
@@ -181,9 +215,7 @@ pub fn score_eap_device(
 ) -> Result<EapScores, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
-    }
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     let grids = scoring_grids(bank, q_theta, xi_rule)?;
     let ctx = prior_contexts(prior);
     let config = bank_model_config(bank, n_persons, n_items);
@@ -397,9 +429,7 @@ pub fn score_map(
 ) -> Result<MapScores, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
-    }
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
     let (n_dims, latent_dim) = (bank.n_dims, bank.latent_dim);
@@ -991,9 +1021,7 @@ pub fn plausible_values(
 ) -> Result<Vec<f64>, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
-    }
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     if n_draws == 0 {
         return Err("n_draws must be >= 1".into());
     }
@@ -1291,6 +1319,39 @@ mod validate_branch_tests {
         // y/observed length mismatch
         let bk = ok_bank(&a, &b, &z, &f);
         assert!(score_eap(&bk, &vec![0.0; 6], &vec![true; 6], 1, &prior, 7, rule).is_err());
+
+        // Public Rust scoring must reject non-finite calibrated parameters rather
+        // than returning an apparently successful result filled with NaNs.
+        let mut bad_b = b.clone();
+        bad_b[0] = f64::NAN;
+        assert!(score_eap(&ok_bank(&a, &bad_b, &z, &f), &y, &obs, 1, &prior, 7, rule).is_err());
+        let mut bk = ok_bank(&a, &b, &z, &f);
+        bk.tau = f64::INFINITY;
+        assert!(score_eap(&bk, &y, &obs, 1, &prior, 7, rule).is_err());
+        let mut bk = ok_bank(&a, &b, &z, &f);
+        bk.eps_distance = f64::NAN;
+        assert!(score_eap(&bk, &y, &obs, 1, &prior, 7, rule).is_err());
+
+        // Observed responses are dichotomous. NaN and other categories were
+        // previously classified as zero by index_responses.
+        for bad in [f64::NAN, f64::INFINITY, -1.0, 2.0] {
+            let mut bad_y = y.clone();
+            bad_y[0] = bad;
+            assert!(score_eap(&ok_bank(&a, &b, &z, &f), &bad_y, &obs, 1, &prior, 7, rule).is_err());
+        }
+
+        // Adversarial dimensions must return an error instead of overflowing
+        // n_persons * n_items in a debug-build panic.
+        assert!(score_eap(
+            &ok_bank(&a, &b, &z, &f),
+            &[],
+            &[],
+            usize::MAX,
+            &prior,
+            7,
+            rule
+        )
+        .is_err());
     }
 }
 
