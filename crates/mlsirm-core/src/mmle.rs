@@ -15,7 +15,7 @@
 /// (weights divided by their sum), so this table is bit-identical to the
 /// default quadrature of the NumPy reference in
 /// `python/fast_mlsirm/estimators/mmle.py` — the Rust<->NumPy parity contract.
-const GH_NODES: [f64; 41] = [
+pub(crate) const GH_NODES: [f64; 41] = [
     -11.614937254337464,
     -10.647536786319334,
     -9.843433249157995,
@@ -58,7 +58,7 @@ const GH_NODES: [f64; 41] = [
     10.647536786319334,
     11.614937254337464,
 ];
-const GH_WEIGHTS: [f64; 41] = [
+pub(crate) const GH_WEIGHTS: [f64; 41] = [
     2.2578639565831077e-30,
     8.308558938782659e-26,
     2.7468912285223205e-22,
@@ -128,7 +128,7 @@ impl Default for MmleConfig {
 }
 
 #[inline]
-fn log_sigmoid(x: f64) -> f64 {
+pub(crate) fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
         -(-x).exp().ln_1p()
     } else {
@@ -137,7 +137,7 @@ fn log_sigmoid(x: f64) -> f64 {
 }
 
 #[inline]
-fn sigmoid_stable(x: f64) -> f64 {
+pub(crate) fn sigmoid_stable(x: f64) -> f64 {
     if x >= 0.0 {
         1.0 / (1.0 + (-x).exp())
     } else {

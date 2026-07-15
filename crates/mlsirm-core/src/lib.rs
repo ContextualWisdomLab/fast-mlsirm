@@ -4,6 +4,7 @@ pub mod equating;
 pub mod fitstats;
 pub mod linking;
 pub mod marginal;
+pub mod mixture;
 pub mod mmle;
 pub mod nodes;
 pub mod poly;

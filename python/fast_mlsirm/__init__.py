@@ -20,6 +20,7 @@ from .linking import irt_link as irt_link, IrtLinkResult as IrtLinkResult
 from .equating import equate_observed_scores as equate_observed_scores, equate_neat as equate_neat, EquateResult as EquateResult, equate_observed_scores_kernel as equate_observed_scores_kernel, loglinear_smooth as loglinear_smooth, equate_neat_linear as equate_neat_linear, equating_standard_errors as equating_standard_errors
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit
+from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (ValidationVerdict as ValidationVerdict,
                          validate_judge as validate_judge)
@@ -88,6 +89,8 @@ __all__ = [
     "CdmFit",
     "fit_gdina",
     "GdinaFit",
+    "fit_mixture",
+    "MixtureFit",
     "export_serving_bundle",
     "fit",
     "fit_polytomous",

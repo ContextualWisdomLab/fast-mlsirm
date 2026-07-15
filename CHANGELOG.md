@@ -93,6 +93,36 @@
 
 ### Added
 
+- **Mixed Rasch / mixture IRT** (Rost, 1990; Rost & von Davier, 1995). A new
+  paradigm for unobserved population heterogeneity: `fit_mixture(responses,
+  n_classes, model="rasch"|"2pl")` models the population as a mixture of `C` latent
+  classes, each with its OWN item parameters and a mixing weight `pi_c`, detecting
+  qualitatively different response strategies a single-class model cannot represent.
+  Within a class, responses follow a Rasch (discrimination fixed at 1) or 2PL model
+  with `theta ~ N(0,1)`, estimated by marginal-ML EM: the E-step forms the joint
+  posterior over (class, ability node) via one max-shift log-sum-exp over the `C·Q`
+  Gauss-Hermite grid; the per-class item M-step reuses the exact penalized Newton
+  step of `fit_mmle_2pl` (weighted by the class responsibility); the mixing weights
+  update to the mean posterior class membership. Because the mixture likelihood is
+  multimodal, `n_starts > 1` runs random restarts (start 0 is a deterministic warm
+  start) and keeps the highest-likelihood fit; classes are returned in a canonical
+  order (mixing weight descending, ties by mean difficulty ascending) to tame label
+  switching. Compute lives in `mlsirm_core::mixture::fit_mixture`; the shared Newton /
+  Gauss-Hermite table with `fit_mmle_2pl` makes the `C = 1` case reduce **bit-exactly**
+  to the verified single-class 2PL estimator — the reduction anchor, asserted to
+  `< 1e-12`. Also anchored: a two-class difficulty-reversal recovery (the canonical
+  Rost two-strategy structure), permutation-matched, plus a monotone-ascent guard. A
+  500-replication Monte-Carlo (C=2, J=15, N=1500, reversal truth) under normal and
+  skewed ability recovers the class difficulties (permutation-matched RMSE), mixing
+  proportions, and class membership (MAP accuracy + label-invariant Adjusted Rand
+  Index; Hubert & Arabie, 1985). Exposed via PyO3 as `fit_mixture` with the
+  `MixtureFit` Python wrapper. This is the marginal-ML / `N(0,1)` operationalization
+  (Rost & von Davier, 1995; psychomix, Frick et al., 2012) — item contrasts
+  equivalent to Rost's (1990) conditional-ML form under a different location
+  convention. Deferred: free per-class ability variance, automatic model selection
+  over `C` (AIC/BIC/ICL from the returned `n_parameters`/`loglik_trace`), and
+  concomitant-variable mixing.
+
 - **Generalized DINA (G-DINA), the saturated cognitive-diagnosis framework**
   (de la Torre, 2011). `fit_gdina(responses, q_matrix)` fits the general model of
   which DINA, DINO, A-CDM, LLM, and R-RUM are constrained special cases. For an

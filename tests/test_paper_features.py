@@ -1625,3 +1625,62 @@ def test_fit_gdina_recovers_saturated_and_reduces_to_dina():
         fit_gdina(y.ravel(), q)  # responses not 2-D
     with pytest.raises(ValueError):
         fit_gdina(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols
+
+
+def test_fit_mixture_recovers_two_class_rasch():
+    """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
+    difficulty reversal (a single-class model cannot fit both orderings)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_mixture, MixtureFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mixture"):
+        pytest.skip("compiled core built without fit_mixture")
+
+    rng = np.random.default_rng(1990)
+    n, j, pi_true = 1500, 15, 0.6
+    b0 = np.linspace(-2.0, 2.0, j)
+    # class 0: b0; class 1: -b0 (reversal). theta ~ N(0,1).
+    cls = (rng.random(n) >= pi_true).astype(int)  # 0 w.p. pi_true
+    theta = rng.standard_normal(n)
+    y = np.empty((n, j))
+    for p in range(n):
+        b = b0 if cls[p] == 0 else -b0
+        y[p] = (rng.random(j) < 1 / (1 + np.exp(-(theta[p] + b)))).astype(float)
+
+    res = fit_mixture(y, n_classes=2, model="rasch", n_starts=8, seed=123)
+    assert isinstance(res, MixtureFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert res.a.shape == (2, j) and np.allclose(res.a, 1.0)  # Rasch: a == 1
+    assert res.n_parameters == 2 * j + 1  # 2 classes * J difficulties + (C-1)
+
+    # permutation-match the two fitted classes to (b0, -b0) by difficulty SSE
+    b_true = np.stack([b0, -b0])
+    sse = lambda perm: float(np.sum((res.b[list(perm)] - b_true) ** 2))
+    perm = (0, 1) if sse((0, 1)) <= sse((1, 0)) else (1, 0)
+    brmse = np.sqrt(np.mean((res.b[list(perm)] - b_true) ** 2))
+    assert brmse < 0.25, f"matched b RMSE {brmse}"
+    assert abs(res.pi[perm[0]] - pi_true) < 0.06, f"pi {res.pi[perm[0]]}"
+
+    # Adjusted Rand Index (label-invariant) between MAP class and truth
+    def ari(a, b):
+        from itertools import product
+        ka, kb = a.max() + 1, b.max() + 1
+        tab = np.zeros((ka, kb))
+        for x, yv in zip(a, b):
+            tab[x, yv] += 1
+        c2 = lambda m: m * (m - 1) / 2
+        idx = sum(c2(tab[i, k]) for i, k in product(range(ka), range(kb)))
+        sa = sum(c2(tab[i].sum()) for i in range(ka))
+        sb = sum(c2(tab[:, k].sum()) for k in range(kb))
+        exp = sa * sb / c2(len(a))
+        return (idx - exp) / (0.5 * (sa + sb) - exp)
+
+    assert ari(res.map_class, cls) > 0.35, "class recovery (ARI) too low"
+
+    with pytest.raises(ValueError):
+        fit_mixture(y.ravel(), n_classes=2)  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_mixture(y, n_classes=2, model="graded")  # unknown within-class model

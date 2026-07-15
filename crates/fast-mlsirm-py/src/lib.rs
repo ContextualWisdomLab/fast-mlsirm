@@ -33,6 +33,7 @@ use mlsirm_core::scoring::{
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, CdmConfig, CdmModel};
+use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -339,6 +340,59 @@ fn fit_gdina(
     out.set_item("profile_prob", res.profile_prob)?;
     out.set_item("map_profile", res.map_profile)?;
     out.set_item("attr_prob", res.attr_prob)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
+/// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
+/// "2pl". `n_classes` latent classes each get their own item parameters. Returns a dict
+/// with `a`/`b` (class-major `C*J`), `pi` (`C`), `class_posterior` (`N*C`), `map_class`
+/// (`N`), `theta` (`N`), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, n_persons, n_items, n_classes, model = "rasch", n_starts = 1, max_iter = 500, tol = 1e-6, seed = 0x2545F491))]
+fn fit_mixture(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    n_classes: usize,
+    model: &str,
+    n_starts: usize,
+    max_iter: usize,
+    tol: f64,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let within = match model {
+        "rasch" | "Rasch" | "RASCH" => MixtureModel::Rasch,
+        "2pl" | "2PL" | "twopl" | "TwoPl" => MixtureModel::TwoPl,
+        other => return Err(PyValueError::new_err(format!("model must be 'rasch' or '2pl'; got {other}"))),
+    };
+    let cfg = MixtureConfig { max_iter, tol, n_starts, seed, ..MixtureConfig::default() };
+    let res = core_fit_mixture(
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        n_items,
+        n_classes,
+        within,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("model", model)?;
+    out.set_item("n_classes", res.n_classes)?;
+    out.set_item("a", res.a)?;
+    out.set_item("b", res.b)?;
+    out.set_item("pi", res.pi)?;
+    out.set_item("class_posterior", res.class_posterior)?;
+    out.set_item("map_class", res.map_class)?;
+    out.set_item("theta", res.theta)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
@@ -2535,6 +2589,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;
