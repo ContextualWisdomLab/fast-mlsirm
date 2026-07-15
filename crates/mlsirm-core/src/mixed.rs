@@ -9,6 +9,9 @@
 //! in the random-coefficients multinomial-logit framework and `mirt`'s per-item
 //! `itemtype` contract. The ideal-point, GGUM, nominal, and LSIRM formulas are
 //! not blended into a surrogate common formula.
+//! GGUM observed-category probabilities pair the two subjective categories
+//! `z` and `M-z` and use the model's symmetric threshold sequence (Roberts et
+//! al., 2000).
 //!
 //! # References
 //!
@@ -41,6 +44,11 @@
 //! graded unfolding model: A general parametric item response model for
 //! unfolding graded responses. *ETS Research Report Series, 1998*(2), i–53.
 //! https://doi.org/10.1002/j.2333-8504.1998.tb01781.x
+//!
+//! Roberts, J. S., Donoghue, J. R., & Laughlin, J. E. (2000). A general item
+//! response theory model for unfolding unidimensional polytomous responses.
+//! *Applied Psychological Measurement, 24*(1), 3–32.
+//! https://doi.org/10.1177/01466216000241001
 //!
 //! Shim, H., Bonifay, W., & Wiedermann, W. (2023). Parsimonious asymmetric
 //! item response theory modeling with the complementary log-log link.
@@ -420,22 +428,23 @@ fn item_logprobs(
         }
         MixedItemKind::Ggum => {
             let a = params[0].clamp(-5.0, 4.0).exp();
-            let b = params[1];
+            let delta = params[1];
             let thresholds = ordered_values(&params[2..]);
-            let dist = (a * (theta - b)).abs();
-            let m = (2 * (k - 1) + 1) as f64;
-            let mut cumulative = 0.0;
-            let mut numerators = Vec::with_capacity(k);
-            for z in 0..k {
-                if z > 0 {
-                    cumulative += a * thresholds[z - 1];
-                }
-                numerators.push(logaddexp(
-                    z as f64 * dist + cumulative,
-                    (m - z as f64) * dist + cumulative,
-                ));
+            let c = k - 1;
+            let m = 2 * c + 1;
+            let mut tau = vec![0.0; m + 1];
+            tau[1..=c].copy_from_slice(&thresholds);
+            for z in 1..=c {
+                tau[m - z + 1] = -thresholds[z - 1];
             }
-            softmax_log(&numerators)
+            let mut cumulative_tau = 0.0;
+            let mut log_f = Vec::with_capacity(m + 1);
+            for (w, &tau_w) in tau.iter().enumerate() {
+                cumulative_tau += tau_w;
+                log_f.push(a * (w as f64 * (theta - delta) - cumulative_tau));
+            }
+            let paired: Vec<f64> = (0..=c).map(|z| logaddexp(log_f[z], log_f[m - z])).collect();
+            softmax_log(&paired)
         }
         MixedItemKind::Lsirm | MixedItemKind::LsirmGrm | MixedItemKind::LsirmGpcm => {
             let a = params[0].clamp(-5.0, 4.0).exp();
@@ -1173,6 +1182,48 @@ pub fn fit_mixed_items(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ggum_probabilities_match_paired_subjective_category_formula() {
+        let spec = MixedItemSpec {
+            kind: MixedItemKind::Ggum,
+            n_categories: 4,
+        };
+        let a = 1.2_f64;
+        let delta = -0.3;
+        let thresholds = [0.8, 0.2, -0.4];
+        let mut params = vec![a.ln(), delta];
+        params.extend(ordered_raw(&thresholds));
+
+        let theta = 0.7;
+        let actual = item_logprobs(&spec, &params, theta, &[], 0);
+
+        // Roberts et al. (2000): P(Z=z) is proportional to
+        // f(z) + f(M-z), where the subjective-category thresholds are
+        // symmetric around the zero middle threshold.
+        let c = spec.n_categories - 1;
+        let m = 2 * c + 1;
+        let mut tau = vec![0.0; m + 1];
+        tau[1..=c].copy_from_slice(&thresholds);
+        for z in 1..=c {
+            tau[m - z + 1] = -thresholds[z - 1];
+        }
+        let mut cumulative_tau = 0.0;
+        let mut log_f = Vec::with_capacity(m + 1);
+        for (w, &tau_w) in tau.iter().enumerate() {
+            cumulative_tau += tau_w;
+            log_f.push(a * (w as f64 * (theta - delta) - cumulative_tau));
+        }
+        let paired: Vec<f64> = (0..=c).map(|z| logaddexp(log_f[z], log_f[m - z])).collect();
+        let expected = softmax_log(&paired);
+
+        for (category, (got, want)) in actual.iter().zip(&expected).enumerate() {
+            assert!(
+                (got - want).abs() < 1e-12,
+                "category {category}: got {got}, expected {want}"
+            );
+        }
+    }
 
     #[test]
     fn every_mixed_cell_normalizes() {

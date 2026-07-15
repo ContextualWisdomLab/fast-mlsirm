@@ -167,7 +167,9 @@ def fit_mixed_items(
     ``exp(-0.5 * (a * (theta - b))**2)``. LSIRM items alone use
     ``-||xi-zeta||`` with fixed distance weight one; all LSIRM items share the
     same standard-normal latent-space coordinate, while non-spatial items are
-    constant on that integration axis.
+    constant on that integration axis. GGUM observed-category probabilities
+    pair the two subjective categories ``z`` and ``M-z`` under the symmetric
+    threshold sequence of Roberts et al. (2000).
 
     Rust performs the person E-step and independent item M-steps in parallel on
     CPU. ``n_threads=0`` selects the available hardware parallelism; larger
@@ -219,6 +221,11 @@ def fit_mixed_items(
     graded unfolding model: A general parametric item response model for
     unfolding graded responses. *ETS Research Report Series, 1998*(2), i–53.
     https://doi.org/10.1002/j.2333-8504.1998.tb01781.x
+
+    Roberts, J. S., Donoghue, J. R., & Laughlin, J. E. (2000). A general item
+    response theory model for unfolding unidimensional polytomous responses.
+    *Applied Psychological Measurement, 24*(1), 3–32.
+    https://doi.org/10.1177/01466216000241001
 
     Shim, H., Bonifay, W., & Wiedermann, W. (2023). Parsimonious asymmetric
     item response theory modeling with the complementary log-log link.
