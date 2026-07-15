@@ -3,6 +3,7 @@ pub mod cdm;
 pub mod equating;
 pub mod fitstats;
 pub mod linking;
+pub mod lltm;
 pub mod marginal;
 pub mod mixture;
 pub mod mmle;

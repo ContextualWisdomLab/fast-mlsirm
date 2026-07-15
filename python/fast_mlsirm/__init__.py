@@ -21,6 +21,7 @@ from .equating import equate_observed_scores as equate_observed_scores, equate_n
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
+from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (ValidationVerdict as ValidationVerdict,
                          validate_judge as validate_judge)
@@ -91,6 +92,8 @@ __all__ = [
     "GdinaFit",
     "fit_mixture",
     "MixtureFit",
+    "fit_lltm",
+    "LltmFit",
     "export_serving_bundle",
     "fit",
     "fit_polytomous",

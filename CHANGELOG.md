@@ -93,6 +93,35 @@
 
 ### Added
 
+- **Linear Logistic Test Model (LLTM)** (Fischer, 1973). An *explanatory* Rasch
+  model: `fit_lltm(responses, q_design)` decomposes each item's difficulty into a
+  linear combination of `K` basic cognitive-operation parameters through a fixed
+  weight matrix `Q` (`b_i = c + Σ_k q_ik·η_k`), rather than estimating `J` free item
+  difficulties. With `K << J` parameters it tests whether a small set of cognitive
+  operations *explains* the item difficulties. Estimated by marginal-ML EM: the
+  E-step is the Rasch node posterior over the shared Gauss-Hermite rule; the M-step is
+  a `K`-dimensional chain-rule Newton — the per-item Rasch difficulty gradient/Hessian
+  aggregated through the design (`g_η = Qᵀg_b`, `H_η = Qᵀ diag(h_b) Q + ridge`, solved
+  with the shared dense `solve_small`). A free grand-mean easiness intercept is fit by
+  default. The classic likelihood-ratio test of LLTM vs the saturated Rasch model
+  (`2·(ll_Rasch − ll_LLTM) ~ χ²(J − K − 1)`) is computed inline (the Rasch reference is
+  the same engine run with `Q = I`). **Identification is validated, not assumed**: the
+  effective design (including the intercept column) must have full column rank for `η`
+  to be identified, so a rank-deficient `Q` (e.g. one whose rows sum to a constant,
+  colliding with the intercept) is rejected rather than papered over by the Newton
+  ridge. Compute lives in `mlsirm_core::lltm::fit_lltm`; because the M-step reuses
+  `mmle`'s Rasch Newton and Gauss-Hermite table, the `Q = I` case reduces
+  **bit-exactly** to a Rasch fit — anchored two ways: a single M-step is bit-identical
+  (`==`) to `J` independent per-item Rasch Newton steps, and a full `Q = I` fit matches
+  a single-class Rasch mixture fit to `< 1e-10`. A 500-replication Monte-Carlo
+  (J=30, K=5, N=1500) under normal and skewed ability recovers the basic parameters
+  (RMSE/bias) and induced difficulties, and validates the LR test (Type I when the
+  restriction holds, power when it is violated off-model). Exposed via PyO3 as
+  `fit_lltm` with the `LltmFit` Python wrapper. This is the marginal-ML / `N(0,1)`
+  operationalization of Fischer's conditional-ML LLTM (same item contrasts, different
+  location convention). Deferred: conditional-ML estimation, LLTM for 2PL/polytomous
+  models, and random-weights / LLRA extensions.
+
 - **Mixed Rasch / mixture IRT** (Rost, 1990; Rost & von Davier, 1995). A new
   paradigm for unobserved population heterogeneity: `fit_mixture(responses,
   n_classes, model="rasch"|"2pl")` models the population as a mixture of `C` latent

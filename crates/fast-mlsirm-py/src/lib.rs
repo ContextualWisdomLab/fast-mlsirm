@@ -34,6 +34,7 @@ use mlsirm_core::scoring::{
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, CdmConfig, CdmModel};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
+use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -397,6 +398,55 @@ fn fit_mixture(
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Marginal-EM fit of the Linear Logistic Test Model (`mlsirm_core::lltm`, Fischer,
+/// 1973). `y`/`observed` are row-major `n_persons * n_items`; `q_design` is row-major
+/// `n_items * n_basic` (real operation weights). Item difficulty is `b_i = c + sum_k
+/// q_ik eta_k`. Returns a dict with `eta` (K), `intercept`, `b` (J induced), `theta`
+/// (N), `loglik_trace`, `n_iter`, `converged`, `n_parameters`, and (when `compute_lr`)
+/// the LR test of LLTM vs Rasch: `loglik_rasch`, `lr_stat`, `lr_df`, `lr_p`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, q_design, n_persons, n_items, n_basic, fit_intercept = true, compute_lr = true, max_iter = 500, tol = 1e-6))]
+fn fit_lltm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    q_design: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_basic: usize,
+    fit_intercept: bool,
+    compute_lr: bool,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = LltmConfig { max_iter, tol, fit_intercept, compute_lr, ..LltmConfig::default() };
+    let res = core_fit_lltm(
+        y.as_slice()?,
+        observed.as_slice()?,
+        q_design.as_slice()?,
+        n_persons,
+        n_items,
+        n_basic,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("eta", res.eta)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("b", res.b)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    out.set_item("loglik_rasch", res.loglik_rasch)?;
+    out.set_item("lr_stat", res.lr_stat)?;
+    out.set_item("lr_df", res.lr_df)?;
+    out.set_item("lr_p", res.lr_p)?;
     Ok(out.into())
 }
 
@@ -2590,6 +2640,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_marginal, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;

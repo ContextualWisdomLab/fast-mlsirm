@@ -1684,3 +1684,43 @@ def test_fit_mixture_recovers_two_class_rasch():
         fit_mixture(y.ravel(), n_classes=2)  # responses not 2-D
     with pytest.raises(ValueError):
         fit_mixture(y, n_classes=2, model="graded")  # unknown within-class model
+
+
+def test_fit_lltm_recovers_basic_parameters():
+    """LLTM (Fischer, 1973): recover the basic cognitive-operation parameters from the
+    design matrix, and the LR test does not reject when the restriction holds."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_lltm, LltmFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_lltm"):
+        pytest.skip("compiled core built without fit_lltm")
+
+    rng = np.random.default_rng(1973)
+    n, j, k = 2500, 20, 5
+    # full-rank design with varying row sums (column k has period k+2)
+    q = np.array([[(i + kk) % (kk + 2) for kk in range(k)] for i in range(j)], dtype=float)
+    eta_true = np.array([0.6, -0.4, 0.9, -0.5, 0.3])
+    c_true = -0.2
+    b_true = c_true + q @ eta_true
+    theta = rng.standard_normal(n)
+    y = (rng.random((n, j)) < 1 / (1 + np.exp(-(theta[:, None] + b_true[None, :])))).astype(float)
+
+    res = fit_lltm(y, q)
+    assert isinstance(res, LltmFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert res.eta.shape == (k,) and res.b.shape == (j,)
+    assert np.corrcoef(res.eta, eta_true)[0, 1] > 0.95
+    assert np.sqrt(np.mean((res.b - b_true) ** 2)) < 0.15
+    assert res.n_parameters == k + 1  # K basic + intercept
+    # LR test: LLTM restriction HOLDS, so it should not reject
+    assert res.lr_df == j - k - 1
+    assert res.lr_p > 0.01, f"LR falsely rejected true LLTM: p={res.lr_p}"
+
+    with pytest.raises(ValueError):
+        fit_lltm(y.ravel(), q)  # responses not 2-D
+    with pytest.raises(ValueError):
+        # rows sum to a constant + intercept => rank-deficient design, rejected
+        fit_lltm(y, np.ones((j, 1)))
