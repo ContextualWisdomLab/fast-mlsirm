@@ -1113,41 +1113,48 @@ pub struct WaldSelectionResult {
 
 /// Item-level cognitive-diagnosis model selection by the Wald test (de la Torre &
 /// Lee, 2013). For each item the saturated G-DINA is compared with reduced models that
-/// are exact linear restrictions of its identity-link parameters `delta = M^{-1} P`
-/// (`P` the `2^{K_i}` reduced-class success probabilities, `M[l][S] = [S subseteq l]`
-/// the subset-sum design; see [`fit_gdina`]):
+/// are exact linear restrictions of the reduced-class success probabilities `P` (the
+/// `2^{K_i}` values; `M[l][S] = [S subseteq l]` the subset-sum design, see [`fit_gdina`]).
+/// DINA/DINO/A-CDM restrict the identity-link parameters `delta = M^{-1} P`; LLM and
+/// R-RUM are additive on the logit and log links, so they restrict the transformed
+/// parameters `delta^h = M^{-1} h(P)`:
 ///
 /// - **DINA** (purely conjunctive): only the intercept `delta_0` and the top
 ///   interaction `delta_{1..K}` are free; the middle `2^{K_i} - 2` coordinates are 0.
 /// - **DINO** (purely disjunctive): the non-intercept coordinates are tied onto one
 ///   line `delta_S = (-1)^{|S|+1} Delta` (a general, non-coordinate linear
 ///   restriction with `df = 2^{K_i} - 2`).
-/// - **A-CDM** (additive): all interaction coordinates (`|S| >= 2`) are 0, leaving
-///   the intercept and `K_i` main effects.
+/// - **A-CDM** (additive on the identity link): all interaction coordinates (`|S| >= 2`)
+///   are 0, leaving the intercept and `K_i` main effects.
+/// - **LLM** (linear logistic model; additive on the logit link): the interaction
+///   coordinates of `delta^{logit} = M^{-1} logit(P)` are 0 (`df = 2^{K_i} - 1 - K_i`).
+/// - **R-RUM** (reduced reparameterized unified model; additive on the log link): the
+///   interaction coordinates of `delta^{log} = M^{-1} log(P)` are 0 (same `df`).
 ///
 /// The Wald statistic for the restriction `R delta = 0` (`df = rank(R)`) is
 /// `W = (R delta)^T (R Sigma_delta R^T)^{-1} (R delta) ~ chi^2(df)` under the reduced
-/// model; for the coordinate restrictions (DINA, A-CDM) `R` selects coordinates and
-/// `R Sigma_delta R^T` is the corresponding *block* of `Sigma_delta`, while DINO uses
-/// a general sparse `R`. The identity link is linear, so
-/// `Sigma_delta = M^{-1} Var(P_hat) M^{-T}`; under the complete-data model each
+/// model; for the coordinate restrictions (DINA, A-CDM, LLM, R-RUM) `R` selects
+/// coordinates and `R Sigma_delta R^T` is the corresponding *block* of `Sigma_delta`,
+/// while DINO uses a general sparse `R`. Under the complete-data model each
 /// `P_hat_l = R_l / I_l` is a binomial proportion over the disjoint persons of reduced
 /// class `l`, so `Var(P_hat) = diag(P_l (1 - P_l) / I_l)` is *exact* there (`I_l` =
-/// expected count in reduced class `l`). This estimator uses complete-data (expected)
-/// rather than observed information; by the missing-information principle
-/// `I_complete >= I_observed`, so `Sigma_delta` is under-estimated and the test is
-/// mildly **liberal** (Type I `>=` alpha), the gap shrinking with `N` and with item
+/// expected count in reduced class `l`). For the identity link
+/// `Sigma_delta = M^{-1} Var(P_hat) M^{-T}`; for a transformed link `h` the first-order
+/// delta method gives `Var(h(P_hat_l)) = h'(P_hat_l)^2 Var(P_hat_l)`, so LLM uses
+/// `h' = 1/(P(1-P))` (`Var = 1/(I_l P_l(1-P_l))`) and R-RUM `h' = 1/P`
+/// (`Var = (1-P_l)/(I_l P_l)`), with the same Mobius sandwich. This estimator uses
+/// complete-data (expected) rather than observed information; by the missing-information
+/// principle `I_complete >= I_observed`, so `Sigma_delta` is under-estimated and the test
+/// is mildly **liberal** (Type I `>=` alpha), the gap shrinking with `N` and with item
 /// discrimination (small slip/guess). Per item the fewest-parameter model with
-/// `p > alpha` is selected (DINA and DINO both cost two parameters, so a tie between
-/// them is broken by the larger p-value); if all reduced models are rejected, the
-/// saturated G-DINA.
+/// `p > alpha` is selected (DINA and DINO cost two parameters; A-CDM, LLM and R-RUM each
+/// cost `1 + K_i`, so ties are broken by the larger p-value); if all reduced models are
+/// rejected, the saturated G-DINA.
 ///
-/// `y`/`observed` are row-major `N*J`; `q_matrix` row-major `J*K` (0/1). Deferred:
-/// LLM / R-RUM (which are additive on the log-odds / log link, needing a
-/// nonlinear-restriction Wald test), plus the incomplete-data
-/// (observed-information) covariance. A
-/// nonconverged saturated G-DINA calibration is rejected rather than used to form
-/// Wald statistics from unfinished parameters.
+/// `y`/`observed` are row-major `N*J`; `q_matrix` row-major `J*K` (0/1). Deferred: the
+/// incomplete-data (observed-information) covariance. A nonconverged saturated G-DINA
+/// calibration is rejected rather than used to form Wald statistics from unfinished
+/// parameters.
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
@@ -1221,7 +1228,13 @@ pub fn gdina_wald_selection(
         }
     }
 
-    let models = vec!["dina".to_string(), "dino".to_string(), "acdm".to_string()];
+    let models = vec![
+        "dina".to_string(),
+        "dino".to_string(),
+        "acdm".to_string(),
+        "llm".to_string(),
+        "rrum".to_string(),
+    ];
     let n_models = models.len();
     let mut wald_stat = vec![f64::NAN; n_items * n_models];
     let mut wald_df = vec![0usize; n_items * n_models];
@@ -1240,20 +1253,31 @@ pub fn gdina_wald_selection(
         let ic = &icount[off..off + w];
 
         // Sigma_delta = sum_l v_l c_l c_l^T, c_l = M^{-1} e_l (Mobius applied to the
-        // l-th unit vector = column l of M^{-1}), v_l = P_l(1-P_l) / I_l. An empty
-        // reduced class (I_l ~ 0) is floored so its variance is finite-but-huge,
-        // making any delta touching it effectively untestable (conservative) rather
-        // than NaN.
-        let mut sigma = vec![vec![0.0f64; w]; w];
+        // l-th unit vector = column l of M^{-1}). The per-class variance v_l depends on
+        // the link on which the reduced model is additive. On the identity link
+        // (DINA/DINO/A-CDM) v_l = Var(P_l) = P_l(1-P_l)/I_l. On a transformed link h the
+        // delta method gives Var(h(P_l)) = h'(P_l)^2 Var(P_l): LLM uses the logit
+        // (h' = 1/(P(1-P)) -> v_l = 1/(I_l P_l(1-P_l))) and R-RUM the log
+        // (h' = 1/P -> v_l = (1-P_l)/(I_l P_l)). The Mobius columns c_l are shared across
+        // links, so all three covariances accumulate in one pass. An empty reduced class
+        // (I_l ~ 0) is floored so its variance is finite-but-huge, making any delta
+        // touching it effectively untestable (conservative) rather than NaN.
+        let mut sigma = vec![vec![0.0f64; w]; w]; // identity link (DINA/DINO/A-CDM)
+        let mut sigma_logit = vec![vec![0.0f64; w]; w]; // logit link (LLM)
+        let mut sigma_log = vec![vec![0.0f64; w]; w]; // log link (R-RUM)
         for l in 0..w {
             // Floor at count_floor (an empty class -> huge, conservative variance)
             // and additionally at a strictly positive constant so a wholly-unobserved
             // item under a `count_floor == 0` config cannot divide by zero.
             let denom = ic[l].max(cfg.count_floor).max(1e-12);
-            let v = p[l] * (1.0 - p[l]) / denom;
+            let pl = p[l].clamp(cfg.eps, 1.0 - cfg.eps); // guard the logit/log transforms
+            let base = pl * (1.0 - pl); // P_l(1-P_l) > 0 under the clamp
+            let v = base / denom; // identity-link Var(P_l), matches the reduced-model baseline
             if v <= 0.0 {
                 continue;
             }
+            let v_logit = 1.0 / (denom * base); // (1/base)^2 * base/denom
+            let v_log = (1.0 - pl) / (denom * pl); // (1/P_l)^2 * base/denom
             let mut c = vec![0.0f64; w];
             c[l] = 1.0;
             mobius_inverse_inplace(&mut c, k as u32);
@@ -1262,12 +1286,26 @@ pub fn gdina_wald_selection(
                 if ca == 0.0 {
                     continue;
                 }
-                let vca = v * ca;
+                let (vca, vca_logit, vca_log) = (v * ca, v_logit * ca, v_log * ca);
                 for b in 0..w {
-                    sigma[a][b] += vca * c[b];
+                    let cb = c[b];
+                    sigma[a][b] += vca * cb;
+                    sigma_logit[a][b] += vca_logit * cb;
+                    sigma_log[a][b] += vca_log * cb;
                 }
             }
         }
+        // Link-transformed deltas delta^h = M^{-1} h(P) restricted by LLM (logit) and
+        // R-RUM (log); the identity-link `delta` above serves DINA/DINO/A-CDM.
+        let mut delta_logit = vec![0.0f64; w];
+        let mut delta_log = vec![0.0f64; w];
+        for l in 0..w {
+            let pl = p[l].clamp(cfg.eps, 1.0 - cfg.eps);
+            delta_logit[l] = (pl / (1.0 - pl)).ln();
+            delta_log[l] = pl.ln();
+        }
+        mobius_inverse_inplace(&mut delta_logit, k as u32);
+        mobius_inverse_inplace(&mut delta_log, k as u32);
 
         let full = w - 1;
         // Restriction rows in the subset-index layout: each row is a sparse linear
@@ -1287,7 +1325,9 @@ pub fn gdina_wald_selection(
                         vec![(s, 1.0), (1usize, -sign)]
                     })
                     .collect(),
-                // A-CDM: all interaction coordinates zero.
+                // A-CDM / LLM / R-RUM: all interaction coordinates zero. The three share
+                // this restriction pattern but on different links (identity/logit/log),
+                // so they differ only in which (delta, Sigma) pair the caller feeds in.
                 _ => (0..w).filter(|&s| (s as u32).count_ones() >= 2).map(|s| vec![(s, 1.0)]).collect(),
             }
         };
@@ -1299,12 +1339,20 @@ pub fn gdina_wald_selection(
             if df == 0 {
                 continue;
             }
+            // DINA/DINO/A-CDM restrict the identity-link delta; LLM restricts the
+            // logit-link delta and R-RUM the log-link delta, each with the matching
+            // delta-method covariance.
+            let (dvec, svec): (&[f64], &[Vec<f64>]) = match m {
+                3 => (&delta_logit, &sigma_logit),
+                4 => (&delta_log, &sigma_log),
+                _ => (delta, &sigma),
+            };
             // R*delta and R*Sigma*R^T; relative ridge for a well-posed solve.
             let mut rd = vec![0.0f64; df];
             let mut sr = vec![vec![0.0f64; df]; df];
             for a in 0..df {
                 for &(ca, va) in &rows[a] {
-                    rd[a] += va * delta[ca];
+                    rd[a] += va * dvec[ca];
                 }
             }
             for a in 0..df {
@@ -1312,7 +1360,7 @@ pub fn gdina_wald_selection(
                     let mut acc = 0.0f64;
                     for &(ca, va) in &rows[a] {
                         for &(cb, vb) in &rows[b] {
-                            acc += va * vb * sigma[ca][cb];
+                            acc += va * vb * svec[ca][cb];
                         }
                     }
                     sr[a][b] = acc;
@@ -3305,11 +3353,23 @@ mod tests {
                 truth[a + 1] = 0.85;
             } else {
                 // reduce_class layout: [none, a0, a1, both]
+                let sig = |x: f64| 1.0 / (1.0 + (-x).exp());
                 let (p00, p10, p01, p11) = match kind {
                     "dina" => (0.15, 0.15, 0.15, 0.85), // conjunctive
                     "dino" => (0.15, 0.85, 0.85, 0.85), // disjunctive (any mastered -> 1-s)
                     "acdm" => (0.10, 0.45, 0.45, 0.80), // additive 0.1 + .35a0 + .35a1
-                    _ => (0.10, 0.35, 0.35, 0.90),      // main effects + interaction
+                    // LLM: additive on the logit, logit(P) = -3 + 2 a0 + 2 a1. Chosen
+                    // asymmetric (2*(-3)+2+2 = -2 != 0) so the four points are NOT
+                    // reflection-symmetric about 0 -> genuinely identity-NONadditive
+                    // (A-CDM must reject) yet exactly logit-additive (LLM must not). Also
+                    // log-nonadditive (P10/P00 != P11/P01), so R-RUM rejects too.
+                    "llm" => (sig(-3.0), sig(-1.0), sig(-1.0), sig(1.0)),
+                    // R-RUM: additive on the log, P = pi* r0^(1-a0) r1^(1-a1) with
+                    // pi*=0.92, r0=0.3, r1=0.4. Log-additive (P10/P00 = P11/P01 = 1/r0)
+                    // but strongly identity- AND logit-NONadditive (the high pi* makes
+                    // logit(P) depart from log(P) sharply), so only R-RUM survives.
+                    "rrum" => (0.92 * 0.3 * 0.4, 0.92 * 0.4, 0.92 * 0.3, 0.92),
+                    _ => (0.10, 0.35, 0.35, 0.90), // main effects + interaction (saturated)
                 };
                 truth[a] = p00;
                 truth[a + 1] = p10;
@@ -3335,13 +3395,23 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
                 .unwrap();
-        assert_eq!(res.models, vec!["dina".to_string(), "dino".to_string(), "acdm".to_string()]);
+        assert_eq!(
+            res.models,
+            vec![
+                "dina".to_string(),
+                "dino".to_string(),
+                "acdm".to_string(),
+                "llm".to_string(),
+                "rrum".to_string(),
+            ]
+        );
+        let nm = res.models.len();
         let pair_dina = (first_pair..n_items).filter(|&i| res.selected[i] == 0).count();
         assert!(pair_dina >= 7, "DINA selected for {pair_dina}/8 pair items");
         // single-attribute items are trivial (df=0) -> saturated, NaN stats
         for i in 0..first_pair {
             assert_eq!(res.selected[i], -1);
-            assert!(res.wald_stat[i * 3].is_nan());
+            assert!(res.wald_stat[i * nm].is_nan());
         }
     }
 
@@ -3361,11 +3431,12 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
                 .unwrap();
+        let nm = res.models.len();
         let pair_dino = (first_pair..n_items).filter(|&i| res.selected[i] == 1).count();
         assert!(pair_dino >= 7, "DINO selected for {pair_dino}/8 pair items");
         // DINO and DINA both have df = 2^K - 2 = 2 at K=2
-        assert_eq!(res.wald_df[first_pair * 3], 2); // DINA
-        assert_eq!(res.wald_df[first_pair * 3 + 1], 2); // DINO
+        assert_eq!(res.wald_df[first_pair * nm], 2); // DINA
+        assert_eq!(res.wald_df[first_pair * nm + 1], 2); // DINO
     }
 
     /// Additive-generated pair items are classified as A-CDM (additive not rejected,
@@ -3387,6 +3458,51 @@ mod tests {
         assert!(pair_acdm >= 7, "A-CDM selected for {pair_acdm}/8 pair items");
     }
 
+    /// Faithfulness anchor for the link-transformed reduced models. The LLM and R-RUM
+    /// truths are constructed to be additive ONLY on their own link (logit / log) and
+    /// genuinely NON-additive on the identity link, so a correct implementation must
+    /// (a) select LLM (index 3) / R-RUM (index 4) and (b) *reject* the identity-link
+    /// A-CDM (index 2) — a sign/identity bug in the Jacobian covariance or the
+    /// transformed delta would collapse this distinction. This is deliberately a
+    /// non-centered, non-trivial truth: A-CDM, LLM and R-RUM all cost 1+K parameters,
+    /// so only the transform can break the tie.
+    #[test]
+    fn wald_llm_and_rrum_data_select_their_link() {
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 8000usize;
+        let first_pair = 10usize;
+
+        // LLM truth (logit-additive; identity- and log-NONadditive) -> LLM selected.
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "llm");
+        let mut rng = Lcg(770011);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        let nm = res.models.len();
+        let pair_llm = (first_pair..n_items).filter(|&i| res.selected[i] == 3).count();
+        assert!(pair_llm >= 7, "LLM selected for {pair_llm}/8 pair items");
+        // The identity-link A-CDM must be rejected on these identity-nonadditive items.
+        let acdm_rej = (first_pair..n_items).filter(|&i| res.p_value[i * nm + 2] < 0.05).count();
+        assert!(acdm_rej >= 7, "A-CDM rejected on {acdm_rej}/8 LLM items (identity-nonadditive)");
+
+        // R-RUM truth (log-additive; identity- and logit-NONadditive) -> R-RUM selected.
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "rrum");
+        let mut rng = Lcg(880022);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        let pair_rrum = (first_pair..n_items).filter(|&i| res.selected[i] == 4).count();
+        assert!(pair_rrum >= 7, "R-RUM selected for {pair_rrum}/8 pair items");
+        // The logit-link LLM must be rejected on these logit-nonadditive items.
+        let llm_rej = (first_pair..n_items).filter(|&i| res.p_value[i * nm + 3] < 0.05).count();
+        assert!(llm_rej >= 7, "LLM rejected on {llm_rej}/8 R-RUM items (logit-nonadditive)");
+    }
+
     /// Items with both main effects and an interaction reject every reduced model,
     /// so the saturated G-DINA is kept.
     #[test]
@@ -3402,13 +3518,14 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
                 .unwrap();
+        let nm = res.models.len();
         let pair_sat = (first_pair..n_items).filter(|&i| res.selected[i] == -1).count();
         assert!(pair_sat >= 7, "saturated kept for {pair_sat}/8 pair items");
-        // every reduced model carries a positive, finite Wald statistic
+        // every reduced model (DINA/DINO/A-CDM/LLM/R-RUM) carries a positive, finite stat
         for i in first_pair..n_items {
-            for m in 0..3 {
-                assert!(res.wald_stat[i * 3 + m].is_finite() && res.wald_stat[i * 3 + m] >= 0.0);
-                assert!(res.p_value[i * 3 + m].is_finite());
+            for m in 0..nm {
+                assert!(res.wald_stat[i * nm + m].is_finite() && res.wald_stat[i * nm + m] >= 0.0);
+                assert!(res.p_value[i * nm + m].is_finite());
             }
         }
     }
@@ -3450,10 +3567,13 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, k, 0.05, &CdmConfig::default())
                 .unwrap();
+        let nm = res.models.len();
         let triple = n_items - 1;
-        assert_eq!(res.wald_df[triple * 3], (1 << k) - 2, "DINA df"); // 6
-        assert_eq!(res.wald_df[triple * 3 + 1], (1 << k) - 2, "DINO df"); // 6
-        assert_eq!(res.wald_df[triple * 3 + 2], (1 << k) - 1 - k, "A-CDM df"); // 4
+        assert_eq!(res.wald_df[triple * nm], (1 << k) - 2, "DINA df"); // 6
+        assert_eq!(res.wald_df[triple * nm + 1], (1 << k) - 2, "DINO df"); // 6
+        assert_eq!(res.wald_df[triple * nm + 2], (1 << k) - 1 - k, "A-CDM df"); // 4
+        assert_eq!(res.wald_df[triple * nm + 3], (1 << k) - 1 - k, "LLM df"); // 4
+        assert_eq!(res.wald_df[triple * nm + 4], (1 << k) - 1 - k, "R-RUM df"); // 4
         // single-attribute items: no test (df=0), saturated
         assert_eq!(res.wald_df[0], 0);
         assert_eq!(res.selected[0], -1);
@@ -3524,10 +3644,14 @@ mod tests {
                 .collect()
         };
 
-        // Candidate columns: DINA=0, DINO=1, A-CDM=2.
+        // Candidate columns: DINA=0, DINO=1, A-CDM=2, LLM=3, R-RUM=4.
         for &skew in [false, true].iter() {
-            let (mut t1_acdm, mut t1_dina, mut t1_dino) = (0.0f64, 0.0f64, 0.0f64);
-            let (mut pow_dina, mut pow_dino) = (0.0f64, 0.0f64);
+            let (mut t1_acdm, mut t1_dina, mut t1_dino, mut t1_llm, mut t1_rrum) =
+                (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            // Power of over-restrictive models against each additive-family truth: the
+            // identity-link A-CDM and cross-link LLM/R-RUM must reject the wrong link.
+            let (mut pow_dina, mut pow_dino, mut pow_acdm_llm, mut pow_rrum_llm, mut pow_llm_rrum) =
+                (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
             let mut den = 0.0f64;
             for rep in 0..reps {
                 let mut rng = Lcg(
@@ -3549,40 +3673,73 @@ mod tests {
                 let rd = run("dina", &mut rng);
                 // DINO truth: Type I of DINO (col 1).
                 let rn = run("dino", &mut rng);
+                // LLM truth: Type I of LLM (col 3) + power of the false identity A-CDM
+                // (col 2) and false log-link R-RUM (col 4).
+                let rl = run("llm", &mut rng);
+                // R-RUM truth: Type I of R-RUM (col 4) + power of the false logit LLM (col 3).
+                let rr = run("rrum", &mut rng);
+                let nm = ra.models.len();
                 for i in first_pair..n_items {
-                    if ra.p_value[i * 3 + 2] < 0.05 {
+                    if ra.p_value[i * nm + 2] < 0.05 {
                         t1_acdm += 1.0;
                     }
-                    if ra.p_value[i * 3] < 0.05 {
+                    if ra.p_value[i * nm] < 0.05 {
                         pow_dina += 1.0; // DINA false under A-CDM truth
                     }
-                    if rd.p_value[i * 3] < 0.05 {
+                    if rd.p_value[i * nm] < 0.05 {
                         t1_dina += 1.0;
                     }
-                    if rd.p_value[i * 3 + 1] < 0.05 {
+                    if rd.p_value[i * nm + 1] < 0.05 {
                         pow_dino += 1.0; // DINO false under DINA truth
                     }
-                    if rn.p_value[i * 3 + 1] < 0.05 {
+                    if rn.p_value[i * nm + 1] < 0.05 {
                         t1_dino += 1.0;
+                    }
+                    if rl.p_value[i * nm + 3] < 0.05 {
+                        t1_llm += 1.0;
+                    }
+                    if rl.p_value[i * nm + 2] < 0.05 {
+                        pow_acdm_llm += 1.0; // A-CDM false under LLM truth
+                    }
+                    if rl.p_value[i * nm + 4] < 0.05 {
+                        pow_rrum_llm += 1.0; // R-RUM false under LLM truth
+                    }
+                    if rr.p_value[i * nm + 4] < 0.05 {
+                        t1_rrum += 1.0;
+                    }
+                    if rr.p_value[i * nm + 3] < 0.05 {
+                        pow_llm_rrum += 1.0; // LLM false under R-RUM truth
                     }
                     den += 1.0;
                 }
             }
             println!(
                 "[wald MC skew={skew}] reps={reps} TypeI(dina)={:.3} TypeI(dino)={:.3} \
-                 TypeI(acdm)={:.3} power(dina|acdm)={:.3} power(dino|dina)={:.3}",
+                 TypeI(acdm)={:.3} TypeI(llm)={:.3} TypeI(rrum)={:.3} power(dina|acdm)={:.3} \
+                 power(dino|dina)={:.3} power(acdm|llm)={:.3} power(rrum|llm)={:.3} \
+                 power(llm|rrum)={:.3}",
                 t1_dina / den,
                 t1_dino / den,
                 t1_acdm / den,
+                t1_llm / den,
+                t1_rrum / den,
                 pow_dina / den,
-                pow_dino / den
+                pow_dino / den,
+                pow_acdm_llm / den,
+                pow_rrum_llm / den,
+                pow_llm_rrum / den
             );
             // Complete-data covariance is mildly liberal; allow up to ~2.5x nominal.
             assert!(t1_acdm / den < 0.13, "A-CDM Type I {}", t1_acdm / den);
             assert!(t1_dina / den < 0.13, "DINA Type I {}", t1_dina / den);
             assert!(t1_dino / den < 0.13, "DINO Type I {}", t1_dino / den);
+            assert!(t1_llm / den < 0.13, "LLM Type I {}", t1_llm / den);
+            assert!(t1_rrum / den < 0.13, "R-RUM Type I {}", t1_rrum / den);
             assert!(pow_dina / den > 0.95, "DINA power {}", pow_dina / den);
             assert!(pow_dino / den > 0.95, "DINO power {}", pow_dino / den);
+            assert!(pow_acdm_llm / den > 0.95, "A-CDM|LLM power {}", pow_acdm_llm / den);
+            assert!(pow_rrum_llm / den > 0.90, "R-RUM|LLM power {}", pow_rrum_llm / den);
+            assert!(pow_llm_rrum / den > 0.90, "LLM|R-RUM power {}", pow_llm_rrum / den);
         }
     }
 

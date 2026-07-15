@@ -359,26 +359,34 @@ def gdina_wald_selection(
     """Select item-level CDMs by Wald test (Rust; de la Torre & Lee, 2013).
 
     For each item the saturated G-DINA is compared with reduced models that are exact
-    linear restrictions of its identity-link parameters ``delta`` (the intercept,
-    main effects, and interactions of the reduced attribute-mastery classes):
+    linear restrictions of the reduced attribute-mastery success probabilities ``P``.
+    DINA/DINO/A-CDM restrict the identity-link parameters ``delta = M^{-1} P``; LLM and
+    R-RUM restrict the transformed parameters ``delta^h = M^{-1} h(P)`` on the link on
+    which each is additive:
 
     * **DINA** (conjunctive): only the intercept and the top-order interaction free.
     * **DINO** (disjunctive): the non-intercept coordinates tied onto one line
       ``delta_S = (-1)^{|S|+1} Delta`` (a general, non-coordinate linear restriction).
-    * **A-CDM** (additive): all interaction terms zero (intercept + main effects).
+    * **A-CDM** (additive on the identity link): all interaction terms zero
+      (intercept + main effects).
+    * **LLM** (linear logistic model; additive on the logit link): interaction terms of
+      ``delta^{logit} = M^{-1} logit(P)`` zero.
+    * **R-RUM** (reduced reparameterized unified model; additive on the log link):
+      interaction terms of ``delta^{log} = M^{-1} log(P)`` zero.
 
     The Wald statistic ``W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)``
-    tests whether the restriction ``R delta = 0`` holds; ``Sigma_delta = M^{-1} Var(P)
-    M^{-T}`` is the delta-method covariance with ``Var(P_l) = P_l(1-P_l)/I_l``
-    (complete-data / expected information). Per item the fewest-parameter model with
-    ``p > alpha`` is selected (DINA and DINO both cost two parameters, so a tie is
-    broken by the larger p-value); if all reduced models are rejected, the saturated
-    G-DINA is kept.
+    tests whether the restriction ``R delta = 0`` holds. For the identity link
+    ``Sigma_delta = M^{-1} Var(P) M^{-T}`` with ``Var(P_l) = P_l(1-P_l)/I_l``
+    (complete-data / expected information); for a transformed link the delta method uses
+    ``Var(h(P_l)) = h'(P_l)^2 Var(P_l)`` (LLM: ``1/(I_l P_l(1-P_l))``; R-RUM:
+    ``(1-P_l)/(I_l P_l)``). Per item the fewest-parameter model with ``p > alpha`` is
+    selected (DINA and DINO cost two parameters; A-CDM, LLM and R-RUM each cost
+    ``1 + K``, so ties are broken by the larger p-value); if all reduced models are
+    rejected, the saturated G-DINA is kept.
 
     Note: the complete-data covariance uses expected rather than observed information,
     so the test is mildly liberal (Type I slightly above ``alpha``); the gap shrinks
     with sample size and item discrimination and with strong attribute identification.
-    LLM / R-RUM (additive on other links) are deferred.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
     MAR); ``q_matrix`` is an items x attributes 0/1 array. A nonconverged saturated

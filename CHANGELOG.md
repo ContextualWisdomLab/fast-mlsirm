@@ -184,25 +184,38 @@
   probabilities): **DINA** (conjunctive — only the intercept and the top-order
   interaction free), **DINO** (disjunctive — the non-intercept coordinates tied
   onto one line `delta_S = (-1)^{|S|+1} Delta`, a general non-coordinate
-  restriction), and **A-CDM** (additive — all interaction coordinates zero). The
-  Wald statistic `W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)`
-  uses the delta-method covariance `Sigma_delta = M^{-1} Var(P) M^{-T}` with
-  `Var(P_l) = P_l(1-P_l)/I_l`; `Sigma_delta` is assembled from the Möbius columns
-  `c_l = M^{-1} e_l` (reusing `mobius_inverse_inplace`), and the expected
-  reduced-class counts `I_l` are recovered from one posterior pass. Per item the
-  fewest-parameter model not rejected at `alpha` is selected (DINA and DINO both
-  cost two parameters, so a tie is broken by the larger p-value), else the
+  restriction), **A-CDM** (additive on the identity link — all interaction
+  coordinates zero), **LLM** (linear logistic model — additive on the *logit* link),
+  and **R-RUM** (reduced reparameterized unified model — additive on the *log* link).
+  The Wald statistic `W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)`
+  restricts the identity-link `delta = M^{-1} P` for DINA/DINO/A-CDM and the
+  transformed `delta^h = M^{-1} h(P)` for LLM (`h = logit`) and R-RUM (`h = log`).
+  For the identity link `Sigma_delta = M^{-1} Var(P) M^{-T}` with
+  `Var(P_l) = P_l(1-P_l)/I_l`; for a transformed link the first-order delta method
+  gives `Var(h(P_l)) = h'(P_l)^2 Var(P_l)` (LLM `1/(I_l P_l(1-P_l))`, R-RUM
+  `(1-P_l)/(I_l P_l)`), sharing the same Möbius sandwich. All three covariances (and
+  the two transformed deltas) accumulate in one pass over the shared Möbius columns
+  `c_l = M^{-1} e_l` (reusing `mobius_inverse_inplace`); the expected reduced-class
+  counts `I_l` come from one posterior pass. Per item the fewest-parameter model not
+  rejected at `alpha` is selected (DINA and DINO cost two parameters; A-CDM, LLM and
+  R-RUM each cost `1 + K`, so ties are broken by the larger p-value), else the
   saturated G-DINA. The covariance uses complete-data (expected) rather than
   observed information, so the test is mildly liberal — a 500-replication
   Monte-Carlo study (K=2, N=3000, strong attribute identification) confirms Type I
-  error near nominal under both uniform and correlated/skew attribute
-  distributions (DINA 0.071–0.072, DINO 0.074–0.083, A-CDM 0.059–0.062 at
-  `alpha=0.05`) with power 1.000 against a false over-restrictive model. Extends
-  `mlsirm_core::cdm` (reuses `fit_gdina`, `reduce_class`, `posterior_row_gdina`,
-  `mobius_inverse_inplace`, and `fitstats::chi2_sf`). Exposed to Python through
-  PyO3 as `gdina_wald_selection` with the `WaldModelSelection` wrapper. Deferred:
-  LLM / R-RUM (additive on the log-odds / log link, needing a nonlinear-restriction
-  Wald test), plus the incomplete-data (observed-information) covariance.
+  error near nominal under both uniform and correlated/skew attribute distributions
+  (Type I at `alpha=0.05`: DINA/DINO/A-CDM/LLM/R-RUM all within ~0.059–0.083) with
+  power 0.98–1.000 against false over-restrictive or wrong-link models — including the
+  cross-link cases (A-CDM and R-RUM rejected under LLM truth ~1.000/0.98, LLM rejected
+  under R-RUM truth 1.000), verifying the link transform is faithful rather than
+  cosmetic. A
+  non-centered anchor test drives this home: truths additive on *only* one of the
+  three links (identity/logit/log) are each recovered as their own model while the
+  other two additive models are rejected. Extends `mlsirm_core::cdm` (reuses
+  `fit_gdina`, `reduce_class`, `posterior_row_gdina`, `mobius_inverse_inplace`, and
+  `fitstats::chi2_sf`). Exposed to Python through `gdina_wald_selection` /
+  `WaldModelSelection` (both generic in the model count, so the two new candidates
+  flow through unchanged). Deferred: the incomplete-data (observed-information)
+  covariance.
 
 - **Empirical Q-matrix validation by the PVAF method** (de la Torre & Chiu,
   2016). `validate_q_matrix(responses, provisional_q, epsilon=0.95)` checks and
