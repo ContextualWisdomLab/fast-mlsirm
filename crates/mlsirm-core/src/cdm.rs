@@ -790,6 +790,25 @@ pub fn fit_gdina(
     })
 }
 
+fn ensure_gdina_converged(res: &GdinaResult, cfg: &CdmConfig) -> Result<(), String> {
+    if res.converged {
+        return Ok(());
+    }
+    let final_delta = res
+        .loglik_trace
+        .windows(2)
+        .last()
+        .map(|w| (w[1] - w[0]).abs())
+        .unwrap_or(f64::INFINITY);
+    Err(format!(
+        concat!(
+            "G-DINA calibration did not converge after {} of {} M-steps: ",
+            "final |delta loglik| = {:.6e} (tol = {:.6e})"
+        ),
+        res.n_iter, cfg.max_iter, final_delta, cfg.tol
+    ))
+}
+
 /// Result of [`validate_q_matrix`] (de la Torre & Chiu, 2016). Per item, the
 /// method suggests the smallest attribute vector whose PVAF reaches the cutoff.
 #[derive(Clone, Debug)]
@@ -889,21 +908,7 @@ pub fn validate_q_matrix(
     // Fit the structural G-DINA under the provisional Q (identifies the attribute
     // labels; also validates y/observed shapes and the config).
     let res = fit_gdina(y, observed, provisional_q, n_persons, n_items, n_attributes, cfg)?;
-    if !res.converged {
-        let final_delta = res
-            .loglik_trace
-            .windows(2)
-            .last()
-            .map(|w| (w[1] - w[0]).abs())
-            .unwrap_or(f64::INFINITY);
-        return Err(format!(
-            concat!(
-                "G-DINA calibration did not converge after {} of {} M-steps: ",
-                "final |delta loglik| = {:.6e} (tol = {:.6e})"
-            ),
-            res.n_iter, cfg.max_iter, final_delta, cfg.tol
-        ));
-    }
+    ensure_gdina_converged(&res, cfg)?;
 
     // Recover each item's SATURATED IRF over all 2^K full classes and the class
     // weights pi_c from one posterior pass at the fitted parameters. The provisional
@@ -1082,9 +1087,9 @@ pub fn validate_q_matrix(
     })
 }
 
-/// Result of [`gdina_wald_selection`] (de la Torre, 2011). Per item, each candidate
-/// reduced model is Wald-tested against the saturated G-DINA, and `selected` names
-/// the most parsimonious model not rejected at level `alpha`.
+/// Result of [`gdina_wald_selection`] (de la Torre & Lee, 2013). Per item, each
+/// candidate reduced model is Wald-tested against the saturated G-DINA, and
+/// `selected` names the most parsimonious model not rejected at level `alpha`.
 #[derive(Clone, Debug)]
 pub struct WaldSelectionResult {
     /// Candidate reduced models, in increasing parameter count (parsimony order).
@@ -1102,8 +1107,8 @@ pub struct WaldSelectionResult {
     pub alpha: f64,
 }
 
-/// Item-level cognitive-diagnosis model selection by the Wald test (de la Torre,
-/// 2011). For each item the saturated G-DINA is compared with reduced models that
+/// Item-level cognitive-diagnosis model selection by the Wald test (de la Torre &
+/// Lee, 2013). For each item the saturated G-DINA is compared with reduced models that
 /// are exact linear restrictions of its identity-link parameters `delta = M^{-1} P`
 /// (`P` the `2^{K_i}` reduced-class success probabilities, `M[l][S] = [S subseteq l]`
 /// the subset-sum design; see [`fit_gdina`]):
@@ -1130,14 +1135,20 @@ pub struct WaldSelectionResult {
 /// `y`/`observed` are row-major `N*J`; `q_matrix` row-major `J*K` (0/1). Deferred:
 /// DINO (a general linear restriction, not a coordinate one) and LLM / R-RUM (which
 /// are additive on the log-odds / log link, needing a nonlinear-restriction Wald
-/// test), plus the incomplete-data (observed-information) covariance.
+/// test), plus the incomplete-data (observed-information) covariance. A
+/// nonconverged saturated G-DINA calibration is rejected rather than used to form
+/// Wald statistics from unfinished parameters.
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
-///     76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+///     76*(2), 179–199. https://doi.org/10.1007/s11336-011-9207-7
+///   de la Torre, J., & Lee, Y.-S. (2013). Evaluating the Wald test for item-level
+///     comparison of saturated and reduced models in cognitive diagnosis. *Journal
+///     of Educational Measurement, 50*(4), 355–373.
+///     https://doi.org/10.1111/jedm.12022
 ///   Ma, W., Iaconangelo, C., & de la Torre, J. (2016). Model similarity, model
 ///     selection, and attribute classification. *Applied Psychological Measurement,
-///     40*(3), 200-217. https://doi.org/10.1177/0146621615621717
+///     40*(3), 200–217. https://doi.org/10.1177/0146621615621717
 #[allow(clippy::too_many_arguments)]
 pub fn gdina_wald_selection(
     y: &[f64],
@@ -1156,6 +1167,7 @@ pub fn gdina_wald_selection(
 
     // Saturated G-DINA under the given Q (also validates y/observed/q shapes+config).
     let res = fit_gdina(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+    ensure_gdina_converged(&res, cfg)?;
 
     // Reduced-class index tables (mirror fit_gdina), then one posterior pass to
     // recover the expected reduced-class counts I_l (the Var(P_l) denominators).
@@ -2616,6 +2628,24 @@ mod tests {
         // shape errors are delegated to fit_gdina's validate
         assert!(gdina_wald_selection(&y[..5], &obs, &q, n, n_items, 2, 0.05, &CdmConfig::default())
             .is_err());
+    }
+
+    #[test]
+    fn wald_rejects_nonconverged_gdina_calibration() {
+        let (q, n_items) = wald_q2(2, 2);
+        let n = 80usize;
+        let mut rng = Lcg(20260715);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "dina");
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = CdmConfig { max_iter: 1, tol: 1e-12, ..CdmConfig::default() };
+
+        let err = gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &cfg)
+            .expect_err("Wald selection must not use unfinished G-DINA parameters");
+        assert!(err.contains("G-DINA calibration did not converge after 1 of 1 M-steps"));
+        assert!(err.contains("final |delta loglik| ="));
+        assert!(err.contains("tol = 1.000000e-12"));
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): Type I error (reject the TRUE

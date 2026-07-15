@@ -2125,6 +2125,11 @@ def test_gdina_wald_selection_classifies_items():
         gdina_wald_selection(y.ravel(), q)  # responses not 2-D
     with pytest.raises(ValueError):
         gdina_wald_selection(y, q, alpha=0.0)  # alpha out of range
+    with pytest.raises(
+        ValueError,
+        match=r"G-DINA calibration did not converge after 1 of 1 M-steps",
+    ):
+        gdina_wald_selection(y, q, max_iter=1, tol=1e-12)
 
 
 def test_fit_mixture_recovers_two_class_rasch():

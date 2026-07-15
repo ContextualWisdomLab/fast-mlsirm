@@ -408,13 +408,14 @@ fn validate_q_matrix(
     Ok(out.into())
 }
 
-/// Item-level CDM model selection by the Wald test (de la Torre, 2011;
+/// Item-level CDM model selection by the Wald test (de la Torre & Lee, 2013;
 /// `mlsirm_core::cdm::gdina_wald_selection`). `y`/`observed` are row-major
 /// `n_persons * n_items`; `q_matrix` row-major `n_items * n_attributes` (0/1).
 /// Each item's saturated G-DINA is Wald-tested against the reduced DINA and A-CDM
 /// models; `alpha` is the test level. Returns a dict with `models` (candidate
 /// names), `wald_stat`/`wald_df`/`p_value` (row-major `n_items * n_models`),
 /// `selected` (per item: model index or -1 for the saturated G-DINA), `alpha`.
+/// A nonconverged saturated calibration raises `ValueError`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, alpha = 0.05, max_iter = 500, tol = 1e-6))]

@@ -327,7 +327,7 @@ def validate_q_matrix(
 
 @dataclass
 class WaldModelSelection:
-    """Result of item-level CDM model selection by the Wald test (de la Torre, 2011).
+    """Item-level CDM model selection by Wald test (de la Torre & Lee, 2013).
 
     ``models`` names the candidate reduced models (parsimony order). ``wald_stat``,
     ``wald_df`` and ``p_value`` are items x models arrays of the Wald statistic,
@@ -351,7 +351,7 @@ def gdina_wald_selection(
     max_iter: int = 500,
     tol: float = 1e-6,
 ) -> WaldModelSelection:
-    """Item-level CDM model selection by the Wald test (compute in Rust; de la Torre, 2011).
+    """Select item-level CDMs by Wald test (Rust; de la Torre & Lee, 2013).
 
     For each item the saturated G-DINA is compared with reduced models that are exact
     linear restrictions of its identity-link parameters ``delta`` (the intercept,
@@ -373,14 +373,20 @@ def gdina_wald_selection(
     deferred.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
-    MAR); ``q_matrix`` is an items x attributes 0/1 array.
+    MAR); ``q_matrix`` is an items x attributes 0/1 array. A nonconverged saturated
+    G-DINA calibration raises ``ValueError`` instead of returning Wald statistics and
+    a model choice from unfinished parameters.
 
     References (APA 7th ed.):
         de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
-            76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+            76*(2), 179–199. https://doi.org/10.1007/s11336-011-9207-7
+        de la Torre, J., & Lee, Y.-S. (2013). Evaluating the Wald test for item-level
+            comparison of saturated and reduced models in cognitive diagnosis.
+            *Journal of Educational Measurement, 50*(4), 355–373.
+            https://doi.org/10.1111/jedm.12022
         Ma, W., Iaconangelo, C., & de la Torre, J. (2016). Model similarity, model
             selection, and attribute classification. *Applied Psychological
-            Measurement, 40*(3), 200-217. https://doi.org/10.1177/0146621615621717
+            Measurement, 40*(3), 200–217. https://doi.org/10.1177/0146621615621717
     """
     from .fitstats import _core_module
 
