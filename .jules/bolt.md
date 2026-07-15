@@ -33,10 +33,3 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
-## 2025-05-19 - Replacing (A * B).sum() with np.einsum for array reductions
-**Learning:** During mathematical operations in `diagnostics.py`, code like `(y * observed).sum(axis=0)` creates a massive intermediate array for the element-wise product `(y * observed)` before performing the sum, which balloons memory allocation overhead when matrices are large.
-**Action:** Replace `(A * B).sum(axis=0)` with `np.einsum('ij,ij->j', A, B)` (and similarly for `axis=1`) when both `A` and `B` are 2D arrays. This computes the element-wise multiplication and reduction natively without allocating the massive intermediate matrix.
-
-## 2025-05-19 - Vectorizing inner loop categorizations with matrix operations
-**Learning:** Grouping statistics by factor variables inside a python loop (`for factor in np.unique(factors): cols = factors == factor; sum(array[:, cols])`) executes array slicings and summations sequentially, which is very slow for many factors and ignores C-level BLAS optimizations.
-**Action:** Vectorize inner loop categorizations by computing the entire statistic array across items (e.g. `array.sum(axis=0)` using `einsum`), creating a 2D float factor mask `mask_f = (factors[:, None] == unique_factors[None, :]).astype(float)`, and using matrix multiplication (`@ mask_f`) to project all item-wise sums into factor-wise sums simultaneously.
