@@ -21,12 +21,12 @@
 //! in a canonical order (mixing weight descending, ties broken by mean difficulty
 //! ascending); recovery studies must additionally match classes by permutation.
 //!
-//! Provenance. Rost's (1990) original estimator was conditional-ML-within-class with a
-//! saturated raw-score distribution and a sum-to-zero easiness normalization. This is
-//! the marginal-ML / `N(0,1)` operationalization (Rost & von Davier, 1995; the form in
-//! psychomix, Frick, Strobl, Leisch, & Zeileis, 2012) — the SAME item contrasts under
-//! a different location convention, chosen because it maps onto the crate's
-//! Bock-Aitkin infrastructure and yields the exact `fit_mmle_2pl` reduction.
+//! Provenance. Rost's (1990) original estimator used conditional ML within class with
+//! a saturated raw-score distribution; `psychomix` likewise fits Rasch mixtures by
+//! conditional ML (Frick, Strobl, Leisch, & Zeileis, 2012). This crate instead combines
+//! Rost's latent-class structure with a fixed-standard-normal, Bock-Aitkin marginal-ML
+//! EM estimator. That estimator is a repository-specific operationalization, not an
+//! assertion that its finite-sample item estimates equal the conditional-ML estimates.
 //!
 //! Deferred (explicit non-goals): free per-class ability variance `sigma_c`; automatic
 //! model selection over `C` (the result returns `n_parameters`/`loglik_trace`, so
@@ -35,15 +35,16 @@
 //!
 //! References (APA 7th ed.):
 //! - Rost, J. (1990). Rasch models in latent classes: An integration of two approaches
-//!   to item analysis. *Applied Psychological Measurement, 14*(3), 271-282.
+//!   to item analysis. *Applied Psychological Measurement, 14*(3), 271–282.
 //!   <https://doi.org/10.1177/014662169001400305>
 //! - Rost, J., & von Davier, M. (1995). Mixture distribution Rasch models. In G. H.
 //!   Fischer & I. W. Molenaar (Eds.), *Rasch models: Foundations, recent developments,
-//!   and applications* (pp. 257-268). Springer.
+//!   and applications* (pp. 257–268). Springer.
+//!   <https://doi.org/10.1007/978-1-4612-4230-7>
 //! - Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of item
-//!   parameters. *Psychometrika, 46*(4), 443-459. <https://doi.org/10.1007/BF02293801>
+//!   parameters. *Psychometrika, 46*(4), 443–459. <https://doi.org/10.1007/BF02293801>
 //! - Frick, H., Strobl, C., Leisch, F., & Zeileis, A. (2012). Flexible Rasch mixture
-//!   models with package psychomix. *Journal of Statistical Software, 48*(7), 1-25.
+//!   models with package psychomix. *Journal of Statistical Software, 48*(7), 1–25.
 //!   <https://doi.org/10.18637/jss.v048.i07>
 //! - McLachlan, G. J., & Peel, D. (2000). *Finite mixture models*. Wiley.
 
@@ -145,12 +146,40 @@ fn validate(
     if cfg.n_starts == 0 {
         return Err("n_starts must be positive".into());
     }
+    if !cfg.ridge_a.is_finite() || cfg.ridge_a < 0.0 {
+        return Err("ridge_a must be finite and non-negative".into());
+    }
+    if !cfg.ridge_b.is_finite() || cfg.ridge_b < 0.0 {
+        return Err("ridge_b must be finite and non-negative".into());
+    }
+    if !cfg.start_spread.is_finite() || cfg.start_spread < 0.0 {
+        return Err("start_spread must be finite and non-negative".into());
+    }
     if !cfg.pi_floor.is_finite() || !(0.0 < cfg.pi_floor && cfg.pi_floor < 1.0 / n_classes as f64) {
         return Err("pi_floor must be finite and in (0, 1/n_classes)".into());
+    }
+    if n_classes > u32::MAX as usize {
+        return Err("n_classes must fit in the u32 map_class representation".into());
     }
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    let class_items = n_classes
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_classes * n_items overflows usize".to_string())?;
+    n_classes
+        .checked_mul(GH_NODES.len())
+        .ok_or_else(|| "n_classes * quadrature_nodes overflows usize".to_string())?;
+    class_items
+        .checked_mul(GH_NODES.len())
+        .ok_or_else(|| "n_classes * n_items * quadrature_nodes overflows usize".to_string())?;
+    n_persons
+        .checked_mul(n_classes)
+        .ok_or_else(|| "n_persons * n_classes overflows usize".to_string())?;
+    class_items
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(n_classes - 1))
+        .ok_or_else(|| "mixture parameter count overflows usize".to_string())?;
     if y.len() != n_cells || observed.len() != n_cells {
         return Err("y and observed must have length n_persons * n_items".into());
     }
@@ -784,6 +813,41 @@ mod tests {
         assert!(bad(&y, &obs_gap, 4, 3, 2, &d));
         // tol == 0.0 is accepted
         assert!(fit_mixture(&y, &obs, 4, 3, 1, MixtureModel::Rasch, &MixtureConfig { tol: 0.0, max_iter: 2, ..d }).is_ok());
+    }
+
+    #[test]
+    fn mixture_validate_rejects_nonfinite_optimizer_config() {
+        let y = vec![0.0f64; 4 * 3];
+        let obs = vec![true; 12];
+        let d = MixtureConfig::default();
+        let bad = |cfg: &MixtureConfig| {
+            fit_mixture(&y, &obs, 4, 3, 2, MixtureModel::Rasch, cfg).is_err()
+        };
+
+        assert!(bad(&MixtureConfig { ridge_a: f64::NAN, ..d }));
+        assert!(bad(&MixtureConfig { ridge_b: -1.0, ..d }));
+        assert!(bad(&MixtureConfig { start_spread: f64::INFINITY, ..d }));
+    }
+
+    #[test]
+    fn mixture_validate_rejects_dimension_overflow() {
+        let y = vec![0.0f64; 2];
+        let obs = vec![true; 2];
+        let cfg = MixtureConfig {
+            pi_floor: f64::MIN_POSITIVE,
+            ..MixtureConfig::default()
+        };
+
+        assert!(fit_mixture(
+            &y,
+            &obs,
+            1,
+            2,
+            usize::MAX,
+            MixtureModel::Rasch,
+            &cfg,
+        )
+        .is_err());
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): Rost-style two-class reversal recovery

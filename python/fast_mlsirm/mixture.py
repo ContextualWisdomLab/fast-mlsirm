@@ -54,20 +54,23 @@ def fit_mixture(
     warm start). ``responses`` is a persons x items 0/1 array (``NaN`` = missing,
     dropped under MAR). Classes are returned in a canonical order.
 
-    Note: this is the marginal-ML / ``N(0,1)`` operationalization (Rost & von Davier,
-    1995; the form in psychomix, Frick et al., 2012), which yields item contrasts
-    equivalent to Rost's (1990) original conditional-ML formulation under a different
-    location convention.
+    Note: Rost (1990) and ``psychomix`` (Frick et al., 2012) fit Rasch mixtures by
+    conditional ML within class. This function instead combines Rost's latent-class
+    structure with a fixed-standard-normal, Bock-Aitkin marginal-ML EM estimator. That
+    estimator is a repository-specific operationalization; finite-sample equivalence
+    to the conditional-ML item estimates is not asserted.
 
     References (APA 7th ed.):
         Rost, J. (1990). Rasch models in latent classes: An integration of two
             approaches to item analysis. *Applied Psychological Measurement, 14*(3),
-            271-282. https://doi.org/10.1177/014662169001400305
+            271–282. https://doi.org/10.1177/014662169001400305
         Rost, J., & von Davier, M. (1995). Mixture distribution Rasch models. In G. H.
-            Fischer & I. W. Molenaar (Eds.), *Rasch models* (pp. 257-268). Springer.
+            Fischer & I. W. Molenaar (Eds.), *Rasch models: Foundations, recent
+            developments, and applications* (pp. 257–268). Springer.
+            https://doi.org/10.1007/978-1-4612-4230-7
         Frick, H., Strobl, C., Leisch, F., & Zeileis, A. (2012). Flexible Rasch
             mixture models with package psychomix. *Journal of Statistical Software,
-            48*(7), 1-25. https://doi.org/10.18637/jss.v048.i07
+            48*(7), 1–25. https://doi.org/10.18637/jss.v048.i07
     """
     from .fitstats import _core_module
 

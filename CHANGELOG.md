@@ -116,10 +116,11 @@
   skewed ability recovers the class difficulties (permutation-matched RMSE), mixing
   proportions, and class membership (MAP accuracy + label-invariant Adjusted Rand
   Index; Hubert & Arabie, 1985). Exposed via PyO3 as `fit_mixture` with the
-  `MixtureFit` Python wrapper. This is the marginal-ML / `N(0,1)` operationalization
-  (Rost & von Davier, 1995; psychomix, Frick et al., 2012) — item contrasts
-  equivalent to Rost's (1990) conditional-ML form under a different location
-  convention. Deferred: free per-class ability variance, automatic model selection
+  `MixtureFit` Python wrapper. This repository combines Rost's latent-class structure
+  with a fixed-standard-normal, Bock-Aitkin marginal-ML EM estimator. It differs from
+  the conditional-ML estimators in Rost (1990) and psychomix (Frick et al., 2012), so
+  no exact finite-sample item-contrast equivalence is claimed. Deferred: free per-class
+  ability variance, automatic model selection
   over `C` (AIC/BIC/ICL from the returned `n_parameters`/`loglik_trace`), and
   concomitant-variable mixing.
 
