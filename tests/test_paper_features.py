@@ -1550,3 +1550,78 @@ def test_fit_cdm_dina_recovers_and_classifies():
         fit_cdm(y, q, model="rasch")  # unknown gate
     with pytest.raises(ValueError):
         fit_cdm(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols
+
+
+def test_fit_gdina_recovers_saturated_and_reduces_to_dina():
+    """Saturated G-DINA (de la Torre, 2011): recover free reduced-class success
+    probabilities, and confirm DINA-generated data yields the DINA identity-link
+    pattern (only intercept + highest-order interaction nonzero)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_gdina, GdinaFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_gdina"):
+        pytest.skip("compiled core built without fit_gdina")
+
+    def reduce_class(c, qmask, k):
+        l, m = 0, 0
+        for bit in range(k):
+            if (qmask >> bit) & 1:
+                l |= ((c >> bit) & 1) << m
+                m += 1
+        return l
+
+    rng = np.random.default_rng(2011)
+    k, n_items, n = 2, 12, 2500
+    q = np.zeros((n_items, k), dtype=np.int64)
+    for i in range(n_items):
+        if i < 4:
+            q[i, 0] = 1
+        elif i < 8:
+            q[i, 1] = 1
+        else:
+            q[i] = [1, 1]
+    qmask = [int(np.dot(q[i], 1 << np.arange(k))) for i in range(n_items)]
+    item_off = np.concatenate([[0], np.cumsum([1 << int(q[i].sum()) for i in range(n_items)])])
+
+    # DINA truth in CSR layout: top reduced class = 1 - s, all others = g.
+    s, g = 0.15, 0.2
+    truth = np.empty(item_off[-1])
+    for i in range(n_items):
+        truth[item_off[i] : item_off[i + 1]] = g
+        truth[item_off[i + 1] - 1] = 1.0 - s
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = np.empty((n, n_items))
+    for j in range(n):
+        for i in range(n_items):
+            p = truth[item_off[i] + reduce_class(int(profiles[j]), qmask[i], k)]
+            y[j, i] = 1.0 if rng.random() < p else 0.0
+
+    res = fit_gdina(y, q)
+    assert isinstance(res, GdinaFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert np.sqrt(np.mean((res.item_prob - truth) ** 2)) < 0.03
+    assert res.n_parameters == int(item_off[-1]) + ((1 << k) - 1)
+    # DINA identity-link pattern per item: delta_0 ~ g, delta_full ~ (1-s)-g, mids ~ 0.
+    for i in range(n_items):
+        d = res.item_delta_row(i)
+        assert abs(d[0] - g) < 0.05
+        assert abs(d[-1] - ((1.0 - s) - g)) < 0.05
+        if len(d) > 2:
+            assert np.all(np.abs(d[1:-1]) < 0.05)
+    # all-mastered reduced class has the highest success probability.
+    for i in range(n_items):
+        row = res.item_prob_row(i)
+        assert row[-1] >= row.max() - 1e-9
+
+    # missing-at-random cells are dropped.
+    ym = y.copy()
+    ym[rng.random(ym.shape) < 0.15] = np.nan
+    assert fit_gdina(ym, q).converged
+
+    with pytest.raises(ValueError):
+        fit_gdina(y.ravel(), q)  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_gdina(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols

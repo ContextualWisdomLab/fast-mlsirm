@@ -125,3 +125,106 @@ def fit_cdm(
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+
+@dataclass
+class GdinaFit:
+    """Fitted saturated G-DINA model (de la Torre, 2011).
+
+    Item parameters are ragged: item ``i`` has ``2 ** k_required[i]`` reduced
+    attribute-mastery classes, stored as the CSR slice
+    ``[item_off[i]:item_off[i+1]]`` of ``item_prob`` and ``item_delta``.
+    ``item_prob`` holds the free success probabilities ``P(X_i = 1 | reduced
+    class l)``; ``item_delta`` the identity-link parameters (intercept, main
+    effects, interactions). ``map_profile``/``attr_prob`` are the per-person MAP
+    profile and marginal attribute-mastery probabilities."""
+
+    item_off: np.ndarray
+    item_prob: np.ndarray
+    item_delta: np.ndarray
+    k_required: np.ndarray
+    profile_prob: np.ndarray
+    map_profile: np.ndarray
+    attr_prob: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    n_parameters: int
+
+    def item_prob_row(self, i: int) -> np.ndarray:
+        """Success probabilities of item ``i``'s ``2 ** K_i`` reduced classes."""
+        return self.item_prob[self.item_off[i] : self.item_off[i + 1]]
+
+    def item_delta_row(self, i: int) -> np.ndarray:
+        """Identity-link parameters of item ``i`` (intercept, mains, interactions)."""
+        return self.item_delta[self.item_off[i] : self.item_off[i + 1]]
+
+
+def fit_gdina(
+    responses: np.ndarray,
+    q_matrix: np.ndarray,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> GdinaFit:
+    """Fit the saturated G-DINA model (compute in Rust; de la Torre, 2011).
+
+    G-DINA is the general cognitive-diagnosis framework: for item ``i`` requiring
+    ``K_i`` attributes, each of the ``2 ** K_i`` reduced attribute-mastery classes
+    gets a FREE success probability, estimated by marginal-ML EM over the ``2 ** K``
+    profiles with the closed-form saturated M-step ``p_il = R_il / I_il`` (expected
+    correct / expected total in reduced class ``l``). DINA, DINO, A-CDM, LLM and
+    R-RUM are constrained special cases readable off the fitted identity-link
+    ``item_delta`` (e.g. DINA leaves only the intercept and the highest-order
+    interaction nonzero). ``responses`` is a persons x items 0/1 array (``NaN`` =
+    missing, dropped under MAR); ``q_matrix`` is an items x attributes 0/1 array.
+
+    References (APA 7th ed.):
+        de la Torre, J. (2011). The generalized DINA model framework.
+            *Psychometrika, 76*(2), 179-199.
+            https://doi.org/10.1007/s11336-011-9207-7
+        Ma, W., & de la Torre, J. (2020). GDINA: An R package for cognitive
+            diagnosis modeling. *Journal of Statistical Software, 93*(14), 1-26.
+            https://doi.org/10.18637/jss.v093.i14
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_gdina"):
+        raise RuntimeError("fit_gdina requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(q_matrix)
+    if q.ndim != 2:
+        raise ValueError("q_matrix must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("q_matrix must have one row per item")
+    n_attributes = q.shape[1]
+
+    observed = np.isfinite(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.fit_gdina(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        int(max_iter),
+        float(tol),
+    )
+    return GdinaFit(
+        item_off=np.asarray(res["item_off"], dtype=np.int64),
+        item_prob=np.asarray(res["item_prob"], dtype=np.float64),
+        item_delta=np.asarray(res["item_delta"], dtype=np.float64),
+        k_required=np.asarray(res["k_required"], dtype=np.int64),
+        profile_prob=np.asarray(res["profile_prob"], dtype=np.float64),
+        map_profile=np.asarray(res["map_profile"], dtype=np.int64),
+        attr_prob=np.asarray(res["attr_prob"], dtype=np.float64).reshape(n_persons, n_attributes),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        n_parameters=int(res["n_parameters"]),
+    )

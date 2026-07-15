@@ -464,6 +464,332 @@ pub fn fit_cdm(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Generalized DINA (G-DINA; de la Torre, 2011)
+// ---------------------------------------------------------------------------
+
+/// Fitted saturated G-DINA model (de la Torre, 2011). Item parameters are stored
+/// ragged in CSR layout: item `i` owns the slice `[item_off[i]..item_off[i+1])` of
+/// width `2^{K_i}` (`K_i` = number of attributes item `i` requires), indexed by the
+/// reduced attribute-mastery class. `item_prob[item_off[i] + l]` is the success
+/// probability `P(X_i = 1 | reduced class l)`; `item_delta` is the same slice under
+/// the identity link (`delta = M^{-1} p`: intercept, main effects, interactions).
+#[derive(Clone, Debug)]
+pub struct GdinaResult {
+    /// CSR offsets, length `n_items + 1`; item `i` width = `2^{K_i}`.
+    pub item_off: Vec<usize>,
+    /// Saturated success probabilities `p_il`, CSR-flat.
+    pub item_prob: Vec<f64>,
+    /// Identity-link parameters `delta_iS = M^{-1} p_i`, same CSR layout.
+    pub item_delta: Vec<f64>,
+    /// Number of required attributes `K_i` per item (to interpret the ragged rows).
+    pub k_required: Vec<u32>,
+    /// Population mixing proportions over the full `2^K` grid, sum 1.
+    pub profile_prob: Vec<f64>,
+    /// Bit-encoded MAP profile per person, length `N`.
+    pub map_profile: Vec<u32>,
+    /// Marginal `P(alpha_jk = 1 | X_j)`, row-major `N x K`.
+    pub attr_prob: Vec<f64>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    /// `sum_i 2^{K_i} + (2^K - 1)`.
+    pub n_parameters: usize,
+}
+
+/// Bit-encoded reduced attribute-mastery class of full profile `c` for an item with
+/// required-attribute bitmask `qmask`: gather the mastery bits at the set positions
+/// of `qmask`, packed LSB-ascending in ascending attribute order. This generalizes
+/// the DINA gate — `reduce_class(c, qmask) == 2^{K_i} - 1` iff `(c & qmask) == qmask`
+/// (all required attributes mastered). The bit convention is load-bearing: it must be
+/// identical across `reduce_class`, the design matrix, and `mobius_inverse_inplace`.
+#[inline]
+fn reduce_class(c: usize, qmask: usize) -> usize {
+    let (mut l, mut m, mut q) = (0usize, 0u32, qmask);
+    while q != 0 {
+        let k = q.trailing_zeros();
+        l |= ((c >> k) & 1) << m;
+        q &= q - 1; // clear lowest set bit
+        m += 1;
+    }
+    l
+}
+
+/// In-place identity-link transform `delta = M^{-1} p` (signed subset Möbius), where
+/// `M[l][S] = [(l & S) == S]` is the reduced-class superset (zeta) design. For each
+/// required-attribute bit, subtract the value of the pattern without that bit;
+/// `k_star` = the item's required-attribute count (`v.len() == 2^{k_star}`). This is
+/// the exact inverse of the zeta subset-sum, computed in `O(k_star * 2^{k_star})`
+/// without materializing or inverting any matrix.
+fn mobius_inverse_inplace(v: &mut [f64], k_star: u32) {
+    for t in 0..k_star {
+        let bit = 1usize << t;
+        for s in 0..v.len() {
+            if s & bit != 0 {
+                v[s] -= v[s ^ bit];
+            }
+        }
+    }
+}
+
+/// Per-person posterior over the full `2^K` profiles for G-DINA; returns `ln P(X_j)`.
+/// Mirrors [`posterior_row`] but indexes the ragged per-item CSR success-probability
+/// tables through `red` (reduced-class index) + `item_off`.
+#[allow(clippy::too_many_arguments)]
+fn posterior_row_gdina(
+    j: usize,
+    y: &[f64],
+    observed: &[bool],
+    n_items: usize,
+    l_full: usize,
+    red: &[u16],
+    log_p1: &[f64],
+    log_p0: &[f64],
+    item_off: &[usize],
+    log_pi: &[f64],
+    post: &mut [f64],
+) -> f64 {
+    for (c, slot) in post.iter_mut().enumerate().take(l_full) {
+        let mut acc = log_pi[c];
+        for i in 0..n_items {
+            let idx = j * n_items + i;
+            if observed[idx] {
+                let cell = item_off[i] + red[i * l_full + c] as usize;
+                let yy = y[idx];
+                acc += yy * log_p1[cell] + (1.0 - yy) * log_p0[cell];
+            }
+        }
+        *slot = acc;
+    }
+    let m = post[..l_full].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let mut denom = 0.0;
+    for c in 0..l_full {
+        denom += (post[c] - m).exp();
+    }
+    for c in 0..l_full {
+        post[c] = (post[c] - m).exp() / denom;
+    }
+    m + denom.ln()
+}
+
+/// Fit the saturated G-DINA model (de la Torre, 2011) by marginal-ML EM over the
+/// `2^K` attribute profiles. Every reduced attribute-mastery class of every item gets
+/// a free success probability; DINA, DINO, A-CDM, LLM and R-RUM are all constrained
+/// special cases that can be read off the fitted identity-link `item_delta` pattern
+/// (they are not refit here — see the module deferred-scope note).
+///
+/// The E-step and population update are the same profile-grid EM as [`fit_cdm`]; only
+/// the item conditional and M-step generalize: the closed-form saturated maximiser is
+/// `p_il = R_il / I_il` (expected correct / expected total in reduced class `l`),
+/// exactly [`fit_cdm`]'s two-cell slip/guess step generalized to `2^{K_i}` classes.
+/// The box constraint `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`); the
+/// all-mastered class has the highest success probability under an identifiable Q,
+/// which the recovery tests assert rather than the estimator projecting (matching de
+/// la Torre's unconstrained-in-`[0,1]` saturated MLE; full subset-lattice isotonicity
+/// — Hong et al., 2016 — is a deferred add-on). `y`/`observed` are row-major `N*J`,
+/// `q_matrix` row-major `J*K`; missing cells are dropped (MAR).
+///
+/// References (APA 7th ed.):
+///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
+///     76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
+///   Chen, H., & Zhou, H. (2016). ... order restrictions. *Journal of Classification,
+///     33*(3), 460-484. https://doi.org/10.1007/s00357-016-9216-4
+///   Ma, W., & de la Torre, J. (2020). GDINA: An R package. *Journal of Statistical
+///     Software, 93*(14), 1-26. https://doi.org/10.18637/jss.v093.i14
+#[allow(clippy::too_many_arguments)]
+pub fn fit_gdina(
+    y: &[f64],
+    observed: &[bool],
+    q_matrix: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<GdinaResult, String> {
+    validate(y, observed, q_matrix, n_persons, n_items, n_attributes, cfg)?;
+    let l_full = 1usize << n_attributes;
+
+    // Per-item required-attribute bitmask and count K_i.
+    let mut qmask = vec![0usize; n_items];
+    let mut k_required = vec![0u32; n_items];
+    for i in 0..n_items {
+        let mut mask = 0usize;
+        for k in 0..n_attributes {
+            if q_matrix[i * n_attributes + k] != 0 {
+                mask |= 1 << k;
+            }
+        }
+        qmask[i] = mask;
+        k_required[i] = mask.count_ones();
+    }
+
+    // Ragged CSR: item i owns [item_off[i]..item_off[i+1]) of width L_i = 2^{K_i}.
+    let mut item_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        item_off[i + 1] = item_off[i] + (1usize << k_required[i]);
+    }
+    let total = item_off[n_items];
+
+    // Reduced-class index of every (item, full-profile) pair, precomputed once. `u16`
+    // holds any class index (max `2^{K_i} - 1 <= 2^15 - 1`) because `validate` caps
+    // K <= 15; raising that cap past 15 would require widening this element type.
+    let mut red = vec![0u16; n_items * l_full];
+    for i in 0..n_items {
+        for c in 0..l_full {
+            red[i * l_full + c] = reduce_class(c, qmask[i]) as u16;
+        }
+    }
+
+    // Monotone init: p rises with the count of mastered required attributes, from
+    // init_guess (none) to 1 - init_slip (all); endpoints match DINA's (g, 1-s).
+    let mut p = vec![0.0f64; total];
+    for i in 0..n_items {
+        let ki = k_required[i] as f64; // >= 1 (validate rejects all-zero Q rows)
+        for l in 0..(item_off[i + 1] - item_off[i]) {
+            let frac = (l.count_ones() as f64) / ki;
+            p[item_off[i] + l] = cfg.init_guess + (1.0 - cfg.init_slip - cfg.init_guess) * frac;
+        }
+    }
+    let mut pi = vec![1.0 / l_full as f64; l_full];
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+
+    let mut post = vec![0.0f64; l_full];
+    let mut log_p1 = vec![0.0f64; total];
+    let mut log_p0 = vec![0.0f64; total];
+    let mut log_pi = vec![0.0f64; l_full];
+
+    let refresh = |p: &[f64], log_p1: &mut [f64], log_p0: &mut [f64]| {
+        for x in 0..total {
+            let pc = p[x].clamp(cfg.eps, 1.0 - cfg.eps);
+            log_p1[x] = pc.ln();
+            log_p0[x] = (1.0 - pc).ln();
+        }
+    };
+
+    for _ in 0..cfg.max_iter {
+        refresh(&p, &mut log_p1, &mut log_p0);
+        for c in 0..l_full {
+            log_pi[c] = pi[c].ln();
+        }
+
+        // E-step: scatter expected reduced-class counts I_il / R_il over the posterior.
+        let mut ii = vec![0.0f64; total];
+        let mut rr = vec![0.0f64; total];
+        let mut pi_new = vec![0.0f64; l_full];
+        let mut total_ll = 0.0;
+        for j in 0..n_persons {
+            total_ll += posterior_row_gdina(
+                j, y, observed, n_items, l_full, &red, &log_p1, &log_p0, &item_off, &log_pi,
+                &mut post,
+            );
+            for c in 0..l_full {
+                pi_new[c] += post[c];
+            }
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let (off, yy) = (item_off[i], y[idx]);
+                    for c in 0..l_full {
+                        let cell = off + red[i * l_full + c] as usize;
+                        ii[cell] += post[c];
+                        rr[cell] += yy * post[c];
+                    }
+                }
+            }
+        }
+        loglik_trace.push(total_ll);
+
+        // The likelihood just evaluated belongs to the current parameters. Stop
+        // before another M-step so the returned parameters and trace endpoint agree.
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
+        // M-step: saturated closed form p_il = R_il / I_il (de la Torre, 2011, Eq. 10).
+        // Box 0<=p<=1 is free (0<=R<=I); count_floor keeps a class's previous value
+        // when the posterior gives it ~no mass (empty reduced class).
+        for x in 0..total {
+            if ii[x] > cfg.count_floor {
+                p[x] = (rr[x] / ii[x]).clamp(cfg.eps, 1.0 - cfg.eps);
+            }
+        }
+        let nf = n_persons as f64;
+        let mut z = 0.0;
+        for c in 0..l_full {
+            pi[c] = (pi_new[c] / nf).max(cfg.eps);
+            z += pi[c];
+        }
+        for c in 0..l_full {
+            pi[c] /= z;
+        }
+        n_iter += 1;
+    }
+
+    // Classification pass (mirrors fit_cdm's tail; duplicated to keep the tested DINA
+    // core untouched).
+    refresh(&p, &mut log_p1, &mut log_p0);
+    for c in 0..l_full {
+        log_pi[c] = pi[c].ln();
+    }
+    let mut map_profile = vec![0u32; n_persons];
+    let mut attr_prob = vec![0.0f64; n_persons * n_attributes];
+    let mut final_ll = 0.0;
+    for j in 0..n_persons {
+        final_ll += posterior_row_gdina(
+            j, y, observed, n_items, l_full, &red, &log_p1, &log_p0, &item_off, &log_pi, &mut post,
+        );
+        let mut best = 0usize;
+        for c in 1..l_full {
+            if post[c] > post[best] {
+                best = c;
+            }
+        }
+        map_profile[j] = best as u32;
+        for k in 0..n_attributes {
+            let mut pk = 0.0;
+            for c in 0..l_full {
+                if (c >> k) & 1 == 1 {
+                    pk += post[c];
+                }
+            }
+            attr_prob[j * n_attributes + k] = pk;
+        }
+    }
+
+    // A max-iteration exit occurs immediately after an M-step, so record the
+    // likelihood of those returned parameters. On convergence the final E-step
+    // already supplied the same endpoint.
+    if !converged {
+        loglik_trace.push(final_ll);
+    }
+
+    // Identity-link parameters delta = M^{-1} p, per item slice.
+    let mut item_delta = p.clone();
+    for i in 0..n_items {
+        mobius_inverse_inplace(&mut item_delta[item_off[i]..item_off[i + 1]], k_required[i]);
+    }
+
+    Ok(GdinaResult {
+        item_off,
+        item_prob: p,
+        item_delta,
+        k_required,
+        profile_prob: pi,
+        map_profile,
+        attr_prob,
+        loglik_trace,
+        n_iter,
+        converged,
+        n_parameters: total + (l_full - 1),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +812,11 @@ mod tests {
         }
         fn profile(&mut self, l: usize) -> usize {
             ((self.next_f64() * l as f64) as usize).min(l - 1)
+        }
+        fn normal(&mut self) -> f64 {
+            let u1 = self.next_f64().max(1e-12);
+            let u2 = self.next_f64();
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
         }
     }
 
@@ -898,6 +1229,448 @@ mod tests {
             assert!(m_rg < 0.03, "mean RMSE(g) {m_rg} at s=g={sg}");
             if sg == 0.1 {
                 assert!(sum_attr / r > 0.90, "mean attribute agreement {} at s=g=0.1", sum_attr / r);
+            }
+        }
+    }
+
+    // ----- G-DINA (saturated) tests -----
+
+    /// Build the ragged CSR layout (item_off, qmask, k_required) from a Q-matrix,
+    /// matching fit_gdina exactly.
+    fn gdina_layout(q: &[u8], n_items: usize, n_attr: usize) -> (Vec<usize>, Vec<usize>, Vec<u32>) {
+        let mut qmask = vec![0usize; n_items];
+        let mut kreq = vec![0u32; n_items];
+        for i in 0..n_items {
+            let m = qmask_of(q, i, n_attr);
+            qmask[i] = m;
+            kreq[i] = m.count_ones();
+        }
+        let mut off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            off[i + 1] = off[i] + (1usize << kreq[i]);
+        }
+        (off, qmask, kreq)
+    }
+
+    /// Draw responses from a CSR-flat truth table, using the SAME reduce_class + item_off
+    /// convention as the estimator so RMSE compares matched classes (spec fix 3).
+    fn simulate_gdina(
+        qmask: &[usize],
+        item_off: &[usize],
+        truth_p: &[f64],
+        profiles: &[usize],
+        n_items: usize,
+        rng: &mut Lcg,
+    ) -> Vec<f64> {
+        let n = profiles.len();
+        let mut y = vec![0.0f64; n * n_items];
+        for j in 0..n {
+            for i in 0..n_items {
+                let l = reduce_class(profiles[j], qmask[i]);
+                y[j * n_items + i] = rng.bern(truth_p[item_off[i] + l]);
+            }
+        }
+        y
+    }
+
+    /// The all-mastered reduced class has the highest success probability per item.
+    fn top_class_is_max(res: &GdinaResult) -> bool {
+        (0..res.k_required.len()).all(|i| {
+            let (a, b) = (res.item_off[i], res.item_off[i + 1]);
+            let top = res.item_prob[b - 1];
+            res.item_prob[a..b].iter().all(|&p| p <= top + 1e-9)
+        })
+    }
+
+    /// reduce_class packs the required-attribute mastery bits LSB-ascending, and
+    /// equals L_i-1 iff all required attributes are mastered (the DINA eta identity).
+    #[test]
+    fn gdina_reduce_class_matches_bruteforce() {
+        for k in 1..=4usize {
+            for qmask in 1..(1usize << k) {
+                let li = 1usize << (qmask.count_ones());
+                for c in 0..(1usize << k) {
+                    let (mut expect, mut m) = (0usize, 0u32);
+                    for bit in 0..k {
+                        if (qmask >> bit) & 1 == 1 {
+                            expect |= ((c >> bit) & 1) << m;
+                            m += 1;
+                        }
+                    }
+                    assert_eq!(reduce_class(c, qmask), expect);
+                    assert_eq!(reduce_class(c, qmask) == li - 1, (c & qmask) == qmask);
+                }
+            }
+        }
+    }
+
+    /// mobius_inverse_inplace is the exact inverse of the zeta subset-sum, and matches
+    /// the explicit K=2 identity-link formulas.
+    #[test]
+    fn gdina_mobius_roundtrip() {
+        let mut rng = Lcg(42);
+        for ki in 1..=3u32 {
+            let li = 1usize << ki;
+            let p: Vec<f64> = (0..li).map(|_| 0.05 + 0.9 * rng.next_f64()).collect();
+            let mut delta = p.clone();
+            mobius_inverse_inplace(&mut delta, ki);
+            for l in 0..li {
+                // reconstruct p_l = sum_{S subset of l} delta_S
+                let recon: f64 = (0..li).filter(|&s| (l & s) == s).map(|s| delta[s]).sum();
+                assert!((recon - p[l]).abs() < 1e-12, "roundtrip K={ki} l={l}");
+            }
+        }
+        let mut d = vec![0.2, 0.5, 0.6, 0.9]; // p00, p10, p01, p11
+        mobius_inverse_inplace(&mut d, 2);
+        assert!((d[0] - 0.2).abs() < 1e-12);
+        assert!((d[1] - (0.5 - 0.2)).abs() < 1e-12);
+        assert!((d[2] - (0.6 - 0.2)).abs() < 1e-12);
+        assert!((d[3] - (0.9 - 0.5 - 0.6 + 0.2)).abs() < 1e-12);
+    }
+
+    /// Brute-force likelihood: the CSR log-space path equals a naive enumeration.
+    #[test]
+    fn gdina_brute_force_likelihood() {
+        let (n_attr, n_items) = (2usize, 2usize);
+        let l_full = 1usize << n_attr;
+        let q: Vec<u8> = vec![1, 0, /* */ 1, 1]; // item 0: K=1, item 1: K=2
+        let (item_off, qmask, _k) = gdina_layout(&q, n_items, n_attr);
+        let total = item_off[n_items];
+        let p = vec![0.15f64, 0.8, /* */ 0.1, 0.3, 0.4, 0.85];
+        assert_eq!(p.len(), total);
+        let mut red = vec![0u16; n_items * l_full];
+        for i in 0..n_items {
+            for c in 0..l_full {
+                red[i * l_full + c] = reduce_class(c, qmask[i]) as u16;
+            }
+        }
+        let (mut log_p1, mut log_p0) = (vec![0.0f64; total], vec![0.0f64; total]);
+        for x in 0..total {
+            log_p1[x] = p[x].ln();
+            log_p0[x] = (1.0 - p[x]).ln();
+        }
+        let pi = [0.4f64, 0.2, 0.1, 0.3];
+        let log_pi: Vec<f64> = pi.iter().map(|v| v.ln()).collect();
+        let x = [1.0f64, 0.0];
+        let observed = vec![true; n_items];
+        let mut post = vec![0.0f64; l_full];
+        let log_px = posterior_row_gdina(
+            0, &x, &observed, n_items, l_full, &red, &log_p1, &log_p0, &item_off, &log_pi, &mut post,
+        );
+        let mut px = 0.0;
+        for c in 0..l_full {
+            let mut lik = pi[c];
+            for i in 0..n_items {
+                let pc = p[item_off[i] + reduce_class(c, qmask[i])];
+                let xi = x[i];
+                lik *= pc.powf(xi) * (1.0 - pc).powf(1.0 - xi);
+            }
+            px += lik;
+        }
+        assert!((log_px.exp() - px).abs() < 1e-12, "module {} vs naive {}", log_px.exp(), px);
+        assert!((post.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+    }
+
+    /// THE CRUX ANCHOR: DINA-generated data => the saturated fit recovers p = g for
+    /// every non-top reduced class and 1-s at the top, so delta has only the intercept
+    /// and the highest-order interaction nonzero (the exact DINA identity-link constraint).
+    #[test]
+    fn gdina_recovers_dina() {
+        let (n_attr, n_items, n) = (2usize, 12usize, 2500usize);
+        let mut q = vec![0u8; n_items * n_attr];
+        for i in 0..n_items {
+            if i < 4 {
+                q[i * 2] = 1;
+            } else if i < 8 {
+                q[i * 2 + 1] = 1;
+            } else {
+                q[i * 2] = 1;
+                q[i * 2 + 1] = 1;
+            }
+        }
+        let s = vec![0.15f64; n_items];
+        let g = vec![0.2f64; n_items];
+        let mut rng = Lcg(2011);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << n_attr)).collect();
+        let y = simulate(CdmModel::Dina, &q, &s, &g, &profiles, n_items, n_attr, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.converged && nondecreasing(&res.loglik_trace) && top_class_is_max(&res));
+        let (item_off, _qm, _k) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a, b) = (item_off[i], item_off[i + 1]);
+            for l in a..b {
+                truth[l] = g[i];
+            }
+            truth[b - 1] = 1.0 - s[i];
+        }
+        assert!(rmse(&res.item_prob, &truth) < 0.03, "DINA p RMSE {}", rmse(&res.item_prob, &truth));
+        for i in 0..n_items {
+            let (a, b) = (item_off[i], item_off[i + 1]);
+            let d = &res.item_delta[a..b];
+            assert!((d[0] - g[i]).abs() < 0.05, "delta0 {} vs g {}", d[0], g[i]);
+            assert!((d[b - a - 1] - ((1.0 - s[i]) - g[i])).abs() < 0.05, "delta_full item {i}");
+            for l in 1..(b - a - 1) {
+                assert!(d[l].abs() < 0.05, "interior delta item {i} idx {l} = {}", d[l]);
+            }
+        }
+    }
+
+    /// DINO-generated data: p = g at the empty reduced class, 1-s elsewhere. Uses a
+    /// mixed Q (single-attribute items identify the attributes; an all-two-attribute Q
+    /// would leave profiles 10/01/11 response-equivalent under the OR gate).
+    #[test]
+    fn gdina_recovers_dino() {
+        let (n_attr, n_items, n) = (2usize, 12usize, 2500usize);
+        let mut q = vec![0u8; n_items * n_attr];
+        for i in 0..n_items {
+            if i < 4 {
+                q[i * 2] = 1;
+            } else if i < 8 {
+                q[i * 2 + 1] = 1;
+            } else {
+                q[i * 2] = 1;
+                q[i * 2 + 1] = 1;
+            }
+        }
+        let s = vec![0.15f64; n_items];
+        let g = vec![0.2f64; n_items];
+        let mut rng = Lcg(77);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << n_attr)).collect();
+        let y = simulate(CdmModel::Dino, &q, &s, &g, &profiles, n_items, n_attr, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        let (item_off, _qm, _k) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let (a, b) = (item_off[i], item_off[i + 1]);
+            for l in a..b {
+                truth[l] = 1.0 - s[i];
+            }
+            truth[a] = g[i];
+        }
+        assert!(rmse(&res.item_prob, &truth) < 0.03, "DINO p RMSE {}", rmse(&res.item_prob, &truth));
+    }
+
+    /// A-CDM (additive) data: recover p and confirm the interaction delta is ~0.
+    #[test]
+    fn gdina_recovers_acdm() {
+        let (n_attr, n_items, n) = (2usize, 10usize, 4000usize);
+        let q = vec![1u8; n_items * n_attr];
+        let base = [0.1f64, 0.35, 0.4, 0.65]; // additive: p11 = 0.1 + 0.25 + 0.3, no interaction
+        let (item_off, qmask, _k) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            for l in 0..4 {
+                truth[item_off[i] + l] = base[l];
+            }
+        }
+        let mut rng = Lcg(303);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << n_attr)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(rmse(&res.item_prob, &truth) < 0.05, "A-CDM p RMSE {}", rmse(&res.item_prob, &truth));
+        // Additive truth => interaction terms are negligible RELATIVE to the main
+        // effects (an interaction is a 4-probability contrast, so its absolute noise
+        // (~0.05) makes a fixed bound flaky; the additivity claim is a small ratio).
+        let (mut sum_int, mut sum_main) = (0.0, 0.0);
+        for i in 0..n_items {
+            let base = item_off[i];
+            sum_int += res.item_delta[base + 3].abs(); // both-attribute interaction
+            sum_main += (res.item_delta[base + 1].abs() + res.item_delta[base + 2].abs()) / 2.0;
+        }
+        assert!(sum_int / sum_main < 0.35, "A-CDM interaction/main ratio {}", sum_int / sum_main);
+        assert!(top_class_is_max(&res));
+    }
+
+    /// Deterministic s=g=0 limit: ideal responses => exact pattern recovery.
+    #[test]
+    fn gdina_deterministic_limit() {
+        let (n_attr, n_items, n) = (2usize, 3usize, 400usize);
+        let q: Vec<u8> = vec![1, 0, /* */ 0, 1, /* */ 1, 1];
+        let s = vec![0.0f64; n_items];
+        let g = vec![0.0f64; n_items];
+        let profiles: Vec<usize> = (0..n).map(|j| j % 4).collect();
+        let mut rng = Lcg(9);
+        let y = simulate(CdmModel::Dina, &q, &s, &g, &profiles, n_items, n_attr, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.converged && top_class_is_max(&res));
+        assert!(pattern_agreement(&res.map_profile, &profiles) > 0.99);
+    }
+
+    /// Tier-1 fast recovery guard: K=2, J=15, N=1000, monotone saturated truth.
+    #[test]
+    fn gdina_recovery_guard() {
+        let (n_attr, n_items, n) = (2usize, 15usize, 1000usize);
+        let mut q = vec![0u8; n_items * n_attr];
+        for i in 0..15 {
+            if i < 5 {
+                q[i * 2] = 1;
+            } else if i < 10 {
+                q[i * 2 + 1] = 1;
+            } else {
+                q[i * 2] = 1;
+                q[i * 2 + 1] = 1;
+            }
+        }
+        let (item_off, qmask, kreq) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let a = item_off[i];
+            if kreq[i] == 1 {
+                truth[a] = 0.2;
+                truth[a + 1] = 0.8;
+            } else {
+                truth[a] = 0.2;
+                truth[a + 1] = 0.5;
+                truth[a + 2] = 0.55;
+                truth[a + 3] = 0.85;
+            }
+        }
+        let mut rng = Lcg(2024);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << n_attr)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.converged && nondecreasing(&res.loglik_trace));
+        assert!(rmse(&res.item_prob, &truth) < 0.05, "guard p RMSE {}", rmse(&res.item_prob, &truth));
+        assert!(top_class_is_max(&res));
+        assert!(pattern_agreement(&res.map_profile, &profiles) > 0.80);
+        assert!(attribute_agreement(&res.attr_prob, &profiles, n, n_attr) > 0.85);
+        let total: usize = (0..n_items).map(|i| 1usize << kreq[i]).sum();
+        assert_eq!(res.n_parameters, total + ((1 << n_attr) - 1));
+    }
+
+    /// Missing-at-random cells are dropped from both likelihood and reduced-class counts.
+    #[test]
+    fn gdina_handles_missing_data() {
+        let (n_attr, n_items, n) = (2usize, 9usize, 500usize);
+        let q: Vec<u8> = vec![
+            1, 0, /* */ 0, 1, /* */ 1, 1, /* */ 1, 0, /* */ 0, 1, /* */ 1, 1, /* */ 1, 0, /* */ 0, 1, /* */ 1, 1,
+        ];
+        let (item_off, qmask, kreq) = gdina_layout(&q, n_items, n_attr);
+        let mut truth = vec![0.0f64; item_off[n_items]];
+        for i in 0..n_items {
+            let a = item_off[i];
+            if kreq[i] == 1 {
+                truth[a] = 0.2;
+                truth[a + 1] = 0.8;
+            } else {
+                truth[a] = 0.15;
+                truth[a + 1] = 0.5;
+                truth[a + 2] = 0.55;
+                truth[a + 3] = 0.85;
+            }
+        }
+        let mut rng = Lcg(555);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << n_attr)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let mut observed = vec![true; n * n_items];
+        for o in observed.iter_mut() {
+            if rng.next_f64() < 0.2 {
+                *o = false;
+            }
+        }
+        let res = fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+        assert!(res.converged && top_class_is_max(&res));
+        assert!(nondecreasing(&res.loglik_trace));
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): de la Torre (2011)-style design.
+    /// Attributes are drawn from a STOCHASTIC higher-order logistic model (de la Torre
+    /// & Douglas, 2004) so every reduced class gets positive, correlated mass; RMSE(p)
+    /// is mass-weighted so near-empty classes don't dominate (spec fixes 1 & 2). Q is
+    /// held to 1-2 required attributes per item to keep the reduced classes populated.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_gdina_recovery() {
+        let (n_attr, n_items, n, reps) = (5usize, 30usize, 1000usize, 500usize);
+        let mut q = vec![0u8; n_items * n_attr];
+        for a in 0..5 {
+            for r in 0..4 {
+                q[(a * 4 + r) * n_attr + a] = 1;
+            }
+        }
+        let pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 2), (1, 3), (2, 4), (0, 3), (1, 4), (0, 4)];
+        for (t, &(a, b)) in pairs.iter().enumerate() {
+            q[(20 + t) * n_attr + a] = 1;
+            q[(20 + t) * n_attr + b] = 1;
+        }
+        let (item_off, qmask, kreq) = gdina_layout(&q, n_items, n_attr);
+        let total = item_off[n_items];
+        let bk = [-1.0f64, -0.5, 0.0, 0.5, 1.0];
+        let lambda = 1.5f64;
+
+        for &skew in [false, true].iter() {
+            for &sg in [0.1f64, 0.2].iter() {
+                // Additive monotone truth: p_il = sg + (1-2sg)*popcount(l)/K_i.
+                let mut truth = vec![0.0f64; total];
+                for i in 0..n_items {
+                    let ki = kreq[i] as f64;
+                    for l in 0..(item_off[i + 1] - item_off[i]) {
+                        truth[item_off[i] + l] = sg + (1.0 - 2.0 * sg) * (l.count_ones() as f64) / ki;
+                    }
+                }
+                let mut dtruth = truth.clone();
+                for i in 0..n_items {
+                    mobius_inverse_inplace(&mut dtruth[item_off[i]..item_off[i + 1]], kreq[i]);
+                }
+                let (mut sum_wp, mut sum_bp, mut sum_dp, mut sum_pat, mut sum_attr) =
+                    (0.0, 0.0, 0.0, 0.0, 0.0);
+                for rep in 0..reps {
+                    let seed = 0xD1B54A32D192ED03u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 * 2 + (sg == 0.1) as u64 + 1) * 0x9E3779B97F4A7C15);
+                    let mut rng = Lcg(seed);
+                    let profiles: Vec<usize> = (0..n)
+                        .map(|_| {
+                            let theta =
+                                if skew { -(rng.next_f64().max(1e-12)).ln() - 1.0 } else { rng.normal() };
+                            let mut c = 0usize;
+                            for k in 0..n_attr {
+                                let pk = 1.0 / (1.0 + (-lambda * (theta - bk[k])).exp());
+                                if rng.next_f64() < pk {
+                                    c |= 1 << k;
+                                }
+                            }
+                            c
+                        })
+                        .collect();
+                    let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+                    let observed = vec![true; n * n_items];
+                    let res =
+                        fit_gdina(&y, &observed, &q, n, n_items, n_attr, &CdmConfig::default()).unwrap();
+                    // mass-weighted RMSE(p): weight each class by realized frequency.
+                    let mut mass = vec![0.0f64; total];
+                    for &c in &profiles {
+                        for i in 0..n_items {
+                            mass[item_off[i] + reduce_class(c, qmask[i])] += 1.0;
+                        }
+                    }
+                    let (mut num, mut den) = (0.0, 0.0);
+                    for x in 0..total {
+                        let e = res.item_prob[x] - truth[x];
+                        num += mass[x] * e * e;
+                        den += mass[x];
+                    }
+                    sum_wp += (num / den).sqrt();
+                    sum_bp += bias(&res.item_prob, &truth);
+                    sum_dp += rmse(&res.item_delta, &dtruth);
+                    sum_pat += pattern_agreement(&res.map_profile, &profiles);
+                    sum_attr += attribute_agreement(&res.attr_prob, &profiles, n, n_attr);
+                }
+                let r = reps as f64;
+                println!(
+                    "skew={} s=g={:.1}: wRMSE(p)={:.4} bias(p)={:.4} RMSE(delta)={:.4} pattern={:.3} attribute={:.3}",
+                    skew, sg, sum_wp / r, sum_bp / r, sum_dp / r, sum_pat / r, sum_attr / r
+                );
+                assert!(sum_wp / r < 0.03, "mass-weighted RMSE(p) {} skew={skew} sg={sg}", sum_wp / r);
+                if sg == 0.1 {
+                    assert!(sum_attr / r > 0.90, "attribute agreement {} skew={skew}", sum_attr / r);
+                }
             }
         }
     }

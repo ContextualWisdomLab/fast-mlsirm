@@ -93,6 +93,40 @@
 
 ### Added
 
+- **Generalized DINA (G-DINA), the saturated cognitive-diagnosis framework**
+  (de la Torre, 2011). `fit_gdina(responses, q_matrix)` fits the general model of
+  which DINA, DINO, A-CDM, LLM, and R-RUM are constrained special cases. For an
+  item requiring `K_i` attributes, each of its `2^{K_i}` *reduced* attribute-mastery
+  classes gets a **free** success probability `p_il = P(X_i = 1 | reduced class l)`,
+  estimated by marginal-ML EM over the `2^K` profiles. The E-step reuses the DINA
+  profile-grid posterior; the closed-form saturated M-step is
+  `p_il = R_il / I_il` (expected correct / expected total in reduced class `l`) —
+  exactly DINA's two-cell slip/guess step generalized to `2^{K_i}` cells (de la
+  Torre, 2011, Eq. 10). The identity-link parameters `item_delta` (intercept, main
+  effects, all interactions) are recovered from the fitted probabilities by an
+  in-place signed subset Möbius transform `delta = M^{-1} p` (no matrix inverse), so
+  the constrained submodels are readable off the `delta` pattern — DINA leaves only
+  the intercept and the highest-order interaction nonzero; A-CDM zeroes the
+  interactions. Item parameters are stored ragged (CSR: `item_off` + flat
+  `item_prob`/`item_delta`) since `2^{K_i}` varies per item; the box constraint
+  `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`), and the all-mastered class
+  having the highest success probability is asserted as an invariant rather than
+  projected (matching de la Torre's unconstrained-in-`[0,1]` saturated MLE).
+  Compute lives in `mlsirm_core::cdm::fit_gdina`, extending the DINA module without
+  touching the shipped DINA core; exposed via PyO3 as `fit_gdina` with the `GdinaFit`
+  Python wrapper. Correctness is anchored by a brute-force likelihood identity
+  (log-space path == naive enumeration to `1e-12`), a **DINA-reduction crux anchor**
+  (DINA-generated data recovers `p_il = g_i` for every non-top class and `1 - s_i`
+  at the top, with the exact DINA `delta` pattern), a DINO-reduction anchor, an
+  A-CDM additivity anchor (fitted interactions negligible relative to main effects),
+  a Möbius round-trip identity, an exhaustive `reduce_class` bit-packing check, and a
+  deterministic limit. A de la Torre (2011)-style 500-replication Monte-Carlo (K=5,
+  J=30, N=1000) with a stochastic higher-order attribute distribution (de la Torre &
+  Douglas, 2004) under normal and skewed abilities recovers `p_il` (mass-weighted
+  RMSE) and attribute classification accuracy. Deferred: LLM/R-RUM logit/log-link
+  submodels, item-level model-selection Wald tests, Q-matrix validation, and full
+  subset-lattice isotonic monotonicity (Hong et al., 2016).
+
 - **Cognitive diagnosis models: DINA and DINO** (Junker & Sijtsma, 2001; de la
   Torre, 2009; Templin & Henson, 2006). A new discrete-attribute paradigm
   alongside the continuous-trait family: `fit_cdm(responses, q_matrix,
