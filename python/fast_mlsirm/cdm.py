@@ -358,19 +358,22 @@ def gdina_wald_selection(
     main effects, and interactions of the reduced attribute-mastery classes):
 
     * **DINA** (conjunctive): only the intercept and the top-order interaction free.
+    * **DINO** (disjunctive): the non-intercept coordinates tied onto one line
+      ``delta_S = (-1)^{|S|+1} Delta`` (a general, non-coordinate linear restriction).
     * **A-CDM** (additive): all interaction terms zero (intercept + main effects).
 
-    The Wald statistic ``W = delta_R' Sigma_R^{-1} delta_R ~ chi^2(df)`` tests whether
-    the restricted coordinates are jointly zero; ``Sigma_delta = M^{-1} Var(P) M^{-T}``
-    is the delta-method covariance with ``Var(P_l) = P_l(1-P_l)/I_l`` (complete-data /
-    expected information). Per item the fewest-parameter model with ``p > alpha`` is
-    selected; if all reduced models are rejected, the saturated G-DINA is kept.
+    The Wald statistic ``W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)``
+    tests whether the restriction ``R delta = 0`` holds; ``Sigma_delta = M^{-1} Var(P)
+    M^{-T}`` is the delta-method covariance with ``Var(P_l) = P_l(1-P_l)/I_l``
+    (complete-data / expected information). Per item the fewest-parameter model with
+    ``p > alpha`` is selected (DINA and DINO both cost two parameters, so a tie is
+    broken by the larger p-value); if all reduced models are rejected, the saturated
+    G-DINA is kept.
 
     Note: the complete-data covariance uses expected rather than observed information,
     so the test is mildly liberal (Type I slightly above ``alpha``); the gap shrinks
     with sample size and item discrimination and with strong attribute identification.
-    DINO (a general linear restriction) and LLM / R-RUM (additive on other links) are
-    deferred.
+    LLM / R-RUM (additive on other links) are deferred.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
     MAR); ``q_matrix`` is an items x attributes 0/1 array. A nonconverged saturated

@@ -118,28 +118,30 @@
 - **Item-level cognitive-diagnosis model selection by the Wald test** (de la
   Torre, 2011). `gdina_wald_selection(responses, q_matrix, alpha=0.05)` tests, for
   each item, whether the saturated G-DINA can be replaced by a more parsimonious
-  reduced model. The candidates are the exact *linear restrictions* of the
+  reduced model. The candidates are exact *linear restrictions* of the
   identity-link parameters `delta = M^{-1} P` (`P` the reduced-class success
   probabilities): **DINA** (conjunctive — only the intercept and the top-order
-  interaction free) and **A-CDM** (additive — all interaction coordinates zero).
-  The Wald statistic `W = delta_R' Sigma_R^{-1} delta_R ~ chi^2(df)` uses the
-  delta-method covariance `Sigma_delta = M^{-1} Var(P) M^{-T}` with
+  interaction free), **DINO** (disjunctive — the non-intercept coordinates tied
+  onto one line `delta_S = (-1)^{|S|+1} Delta`, a general non-coordinate
+  restriction), and **A-CDM** (additive — all interaction coordinates zero). The
+  Wald statistic `W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)`
+  uses the delta-method covariance `Sigma_delta = M^{-1} Var(P) M^{-T}` with
   `Var(P_l) = P_l(1-P_l)/I_l`; `Sigma_delta` is assembled from the Möbius columns
   `c_l = M^{-1} e_l` (reusing `mobius_inverse_inplace`), and the expected
   reduced-class counts `I_l` are recovered from one posterior pass. Per item the
-  fewest-parameter model not rejected at `alpha` is selected, else the saturated
-  G-DINA. The covariance uses complete-data (expected) rather than observed
-  information, so the test is mildly liberal — a 500-replication Monte-Carlo study
-  (K=2, N=3000, strong attribute identification) confirms Type I error near
-  nominal under both uniform and correlated/skew attribute distributions
-  (A-CDM test 0.059–0.062, DINA test 0.071–0.072 at `alpha=0.05`) with power
-  1.000 against a false over-restrictive model. Extends `mlsirm_core::cdm`
-  (reuses `fit_gdina`, `reduce_class`, `posterior_row_gdina`,
+  fewest-parameter model not rejected at `alpha` is selected (DINA and DINO both
+  cost two parameters, so a tie is broken by the larger p-value), else the
+  saturated G-DINA. The covariance uses complete-data (expected) rather than
+  observed information, so the test is mildly liberal — a 500-replication
+  Monte-Carlo study (K=2, N=3000, strong attribute identification) confirms Type I
+  error near nominal under both uniform and correlated/skew attribute
+  distributions (DINA 0.071–0.072, DINO 0.074–0.083, A-CDM 0.059–0.062 at
+  `alpha=0.05`) with power 1.000 against a false over-restrictive model. Extends
+  `mlsirm_core::cdm` (reuses `fit_gdina`, `reduce_class`, `posterior_row_gdina`,
   `mobius_inverse_inplace`, and `fitstats::chi2_sf`). Exposed to Python through
   PyO3 as `gdina_wald_selection` with the `WaldModelSelection` wrapper. Deferred:
-  DINO (a general, non-coordinate linear restriction) and LLM / R-RUM (additive on
-  the log-odds / log link, needing a nonlinear-restriction Wald test), plus the
-  incomplete-data (observed-information) covariance.
+  LLM / R-RUM (additive on the log-odds / log link, needing a nonlinear-restriction
+  Wald test), plus the incomplete-data (observed-information) covariance.
 
 - **Empirical Q-matrix validation by the PVAF method** (de la Torre & Chiu,
   2016). `validate_q_matrix(responses, provisional_q, epsilon=0.95)` checks and

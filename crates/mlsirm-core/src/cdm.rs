@@ -1095,7 +1095,8 @@ pub fn validate_q_matrix(
 /// `selected` names the most parsimonious model not rejected at level `alpha`.
 #[derive(Clone, Debug)]
 pub struct WaldSelectionResult {
-    /// Candidate reduced models, in increasing parameter count (parsimony order).
+    /// Candidate reduced models (`["dina", "dino", "acdm"]`); DINA and DINO cost two
+    /// parameters, A-CDM costs `1 + K_i`.
     pub models: Vec<String>,
     /// Wald statistic per `(item, model)`, row-major `n_items * n_models`; `NaN`
     /// where the test is undefined (an item requiring `< 2` attributes).
@@ -1118,27 +1119,33 @@ pub struct WaldSelectionResult {
 ///
 /// - **DINA** (purely conjunctive): only the intercept `delta_0` and the top
 ///   interaction `delta_{1..K}` are free; the middle `2^{K_i} - 2` coordinates are 0.
+/// - **DINO** (purely disjunctive): the non-intercept coordinates are tied onto one
+///   line `delta_S = (-1)^{|S|+1} Delta` (a general, non-coordinate linear
+///   restriction with `df = 2^{K_i} - 2`).
 /// - **A-CDM** (additive): all interaction coordinates (`|S| >= 2`) are 0, leaving
 ///   the intercept and `K_i` main effects.
 ///
-/// The Wald statistic for the restriction `R delta = 0` (with `R` the selection of
-/// the restricted coordinates, `df = rank(R)`) is
-/// `W = delta_R^T Sigma_R^{-1} delta_R ~ chi^2(df)` under the reduced model, where
-/// `Sigma_R` is the corresponding *block* of `Sigma_delta`. The identity link is
-/// linear, so `Sigma_delta = M^{-1} Var(P_hat) M^{-T}`; under the complete-data model
-/// each `P_hat_l = R_l / I_l` is a binomial proportion over the disjoint persons of
-/// reduced class `l`, so `Var(P_hat) = diag(P_l (1 - P_l) / I_l)` is *exact* there
-/// (`I_l` = expected count in reduced class `l`). This estimator uses complete-data
-/// (expected) rather than observed information; by the missing-information principle
+/// The Wald statistic for the restriction `R delta = 0` (`df = rank(R)`) is
+/// `W = (R delta)^T (R Sigma_delta R^T)^{-1} (R delta) ~ chi^2(df)` under the reduced
+/// model; for the coordinate restrictions (DINA, A-CDM) `R` selects coordinates and
+/// `R Sigma_delta R^T` is the corresponding *block* of `Sigma_delta`, while DINO uses
+/// a general sparse `R`. The identity link is linear, so
+/// `Sigma_delta = M^{-1} Var(P_hat) M^{-T}`; under the complete-data model each
+/// `P_hat_l = R_l / I_l` is a binomial proportion over the disjoint persons of reduced
+/// class `l`, so `Var(P_hat) = diag(P_l (1 - P_l) / I_l)` is *exact* there (`I_l` =
+/// expected count in reduced class `l`). This estimator uses complete-data (expected)
+/// rather than observed information; by the missing-information principle
 /// `I_complete >= I_observed`, so `Sigma_delta` is under-estimated and the test is
 /// mildly **liberal** (Type I `>=` alpha), the gap shrinking with `N` and with item
 /// discrimination (small slip/guess). Per item the fewest-parameter model with
-/// `p > alpha` is selected; if all reduced models are rejected, the saturated G-DINA.
+/// `p > alpha` is selected (DINA and DINO both cost two parameters, so a tie between
+/// them is broken by the larger p-value); if all reduced models are rejected, the
+/// saturated G-DINA.
 ///
 /// `y`/`observed` are row-major `N*J`; `q_matrix` row-major `J*K` (0/1). Deferred:
-/// DINO (a general linear restriction, not a coordinate one) and LLM / R-RUM (which
-/// are additive on the log-odds / log link, needing a nonlinear-restriction Wald
-/// test), plus the incomplete-data (observed-information) covariance. A
+/// LLM / R-RUM (which are additive on the log-odds / log link, needing a
+/// nonlinear-restriction Wald test), plus the incomplete-data
+/// (observed-information) covariance. A
 /// nonconverged saturated G-DINA calibration is rejected rather than used to form
 /// Wald statistics from unfinished parameters.
 ///
@@ -1214,7 +1221,7 @@ pub fn gdina_wald_selection(
         }
     }
 
-    let models = vec!["dina".to_string(), "acdm".to_string()];
+    let models = vec!["dina".to_string(), "dino".to_string(), "acdm".to_string()];
     let n_models = models.len();
     let mut wald_stat = vec![f64::NAN; n_items * n_models];
     let mut wald_df = vec![0usize; n_items * n_models];
@@ -1263,57 +1270,90 @@ pub fn gdina_wald_selection(
         }
 
         let full = w - 1;
-        // Restriction coordinate sets in the subset-index layout.
-        let restriction = |model: usize| -> Vec<usize> {
-            (0..w)
-                .filter(|&s| match model {
-                    0 => s != 0 && s != full,           // DINA: middle coordinates
-                    _ => (s as u32).count_ones() >= 2,  // A-CDM: interaction coordinates
-                })
-                .collect()
+        // Restriction rows in the subset-index layout: each row is a sparse linear
+        // combination sum_j coeff_j * delta_{S_j} that a reduced model sets to zero.
+        // DINA and A-CDM are coordinate restrictions (single unit entry per row); DINO
+        // is a general restriction that ties the non-intercept deltas onto one line
+        // delta_S = (-1)^{|S|+1} * Delta (reference coordinate s=1, so Delta = delta_1).
+        let restriction_rows = |model: usize| -> Vec<Vec<(usize, f64)>> {
+            match model {
+                // DINA: intercept and top interaction free, middle coordinates zero.
+                0 => (0..w).filter(|&s| s != 0 && s != full).map(|s| vec![(s, 1.0)]).collect(),
+                // DINO: delta_S - (-1)^{|S|+1} delta_1 = 0 for every S != {empty, ref=1}.
+                1 => (0..w)
+                    .filter(|&s| s != 0 && s != 1)
+                    .map(|s| {
+                        let sign = if (s as u32).count_ones() % 2 == 1 { 1.0 } else { -1.0 };
+                        vec![(s, 1.0), (1usize, -sign)]
+                    })
+                    .collect(),
+                // A-CDM: all interaction coordinates zero.
+                _ => (0..w).filter(|&s| (s as u32).count_ones() >= 2).map(|s| vec![(s, 1.0)]).collect(),
+            }
         };
 
         for m in 0..n_models {
-            let idx = restriction(m);
-            let df = idx.len();
+            let rows = restriction_rows(m);
+            let df = rows.len();
             wald_df[i * n_models + m] = df;
             if df == 0 {
                 continue;
             }
-            // Sigma_R block + delta_R subvector; relative ridge for a well-posed solve.
+            // R*delta and R*Sigma*R^T; relative ridge for a well-posed solve.
+            let mut rd = vec![0.0f64; df];
             let mut sr = vec![vec![0.0f64; df]; df];
-            let mut dr = vec![0.0f64; df];
-            let mut diag_sum = 0.0f64;
-            for (a, &sa) in idx.iter().enumerate() {
-                dr[a] = delta[sa];
-                for (b, &sb) in idx.iter().enumerate() {
-                    sr[a][b] = sigma[sa][sb];
+            for a in 0..df {
+                for &(ca, va) in &rows[a] {
+                    rd[a] += va * delta[ca];
                 }
-                diag_sum += sr[a][a];
             }
+            for a in 0..df {
+                for b in 0..df {
+                    let mut acc = 0.0f64;
+                    for &(ca, va) in &rows[a] {
+                        for &(cb, vb) in &rows[b] {
+                            acc += va * vb * sigma[ca][cb];
+                        }
+                    }
+                    sr[a][b] = acc;
+                }
+            }
+            let diag_sum: f64 = (0..df).map(|a| sr[a][a]).sum();
             let ridge = 1e-9 * (diag_sum / df as f64).max(1e-300);
             for a in 0..df {
                 sr[a][a] += ridge;
             }
-            // W = delta_R^T Sigma_R^{-1} delta_R: solve Sigma_R x = delta_R.
-            let x = crate::poly::solve_small(sr, dr.clone());
-            let wstat = (0..df).map(|a| dr[a] * x[a]).sum::<f64>().max(0.0);
+            // W = (R delta)^T (R Sigma R^T)^{-1} (R delta): solve (R Sigma R^T) x = R delta.
+            let x = crate::poly::solve_small(sr, rd.clone());
+            let wstat = (0..df).map(|a| rd[a] * x[a]).sum::<f64>().max(0.0);
             wald_stat[i * n_models + m] = wstat;
             p_value[i * n_models + m] = crate::fitstats::chi2_sf(wstat, df as f64);
         }
 
-        // Fewest-parameter reduced model not rejected (candidates already ordered
-        // DINA then A-CDM); else keep the saturated G-DINA (selected stays -1).
+        // Fewest-parameter reduced model not rejected (DINA=2, DINO=2, A-CDM=1+K);
+        // ties (DINA vs DINO) broken by the larger p-value; else the saturated G-DINA.
+        let param_count = |m: usize| -> usize { if m <= 1 { 2 } else { 1 + k } };
+        let mut best: Option<usize> = None;
         for m in 0..n_models {
             if wald_df[i * n_models + m] == 0 {
                 continue;
             }
             let pv = p_value[i * n_models + m];
             if pv.is_finite() && pv > alpha {
-                selected[i] = m as i64;
-                break;
+                best = match best {
+                    None => Some(m),
+                    Some(b) => {
+                        let (pb, pm) = (param_count(b), param_count(m));
+                        if pm < pb || (pm == pb && pv > p_value[i * n_models + b]) {
+                            Some(m)
+                        } else {
+                            Some(b)
+                        }
+                    }
+                };
             }
         }
+        selected[i] = best.map_or(-1, |m| m as i64);
     }
 
     Ok(WaldSelectionResult { models, wald_stat, wald_df, p_value, selected, alpha })
@@ -2896,8 +2936,8 @@ mod tests {
     }
 
     /// CSR truth table for the K=2 scenario. Single items are 2PL-like (low/high);
-    /// pair items follow `kind`: DINA (conjunctive), A-CDM (additive), or "sat"
-    /// (main effects AND interaction, so neither reduced model fits).
+    /// pair items follow `kind`: DINA (conjunctive), DINO (disjunctive), A-CDM
+    /// (additive), or "sat" (main effects AND interaction, so no reduced model fits).
     fn wald_truth(
         q: &[u8],
         n_items: usize,
@@ -2914,6 +2954,7 @@ mod tests {
                 // reduce_class layout: [none, a0, a1, both]
                 let (p00, p10, p01, p11) = match kind {
                     "dina" => (0.15, 0.15, 0.15, 0.85), // conjunctive
+                    "dino" => (0.15, 0.85, 0.85, 0.85), // disjunctive (any mastered -> 1-s)
                     "acdm" => (0.10, 0.45, 0.45, 0.80), // additive 0.1 + .35a0 + .35a1
                     _ => (0.10, 0.35, 0.35, 0.90),      // main effects + interaction
                 };
@@ -2941,18 +2982,41 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
                 .unwrap();
-        assert_eq!(res.models, vec!["dina".to_string(), "acdm".to_string()]);
+        assert_eq!(res.models, vec!["dina".to_string(), "dino".to_string(), "acdm".to_string()]);
         let pair_dina = (first_pair..n_items).filter(|&i| res.selected[i] == 0).count();
         assert!(pair_dina >= 7, "DINA selected for {pair_dina}/8 pair items");
         // single-attribute items are trivial (df=0) -> saturated, NaN stats
         for i in 0..first_pair {
             assert_eq!(res.selected[i], -1);
-            assert!(res.wald_stat[i * 2].is_nan());
+            assert!(res.wald_stat[i * 3].is_nan());
         }
     }
 
+    /// DINO-generated pair items are classified as DINO (the disjunctive reduced
+    /// model is not rejected while DINA and A-CDM are). Exercises the general
+    /// (non-coordinate) linear restriction and the DINA/DINO parameter-count tie.
+    #[test]
+    fn wald_dino_data_selects_dino() {
+        let (q, n_items) = wald_q2(5, 8);
+        let n = 8000usize;
+        let first_pair = 10usize;
+        let (item_off, qmask, truth) = wald_truth(&q, n_items, "dino");
+        let mut rng = Lcg(6060);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(4)).collect();
+        let y = simulate_gdina(&qmask, &item_off, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
+                .unwrap();
+        let pair_dino = (first_pair..n_items).filter(|&i| res.selected[i] == 1).count();
+        assert!(pair_dino >= 7, "DINO selected for {pair_dino}/8 pair items");
+        // DINO and DINA both have df = 2^K - 2 = 2 at K=2
+        assert_eq!(res.wald_df[first_pair * 3], 2); // DINA
+        assert_eq!(res.wald_df[first_pair * 3 + 1], 2); // DINO
+    }
+
     /// Additive-generated pair items are classified as A-CDM (additive not rejected,
-    /// conjunctive DINA rejected).
+    /// conjunctive DINA and disjunctive DINO rejected). A-CDM is candidate index 2.
     #[test]
     fn wald_acdm_data_selects_acdm() {
         let (q, n_items) = wald_q2(5, 8);
@@ -2966,7 +3030,7 @@ mod tests {
         let res =
             gdina_wald_selection(&y, &observed, &q, n, n_items, 2, 0.05, &CdmConfig::default())
                 .unwrap();
-        let pair_acdm = (first_pair..n_items).filter(|&i| res.selected[i] == 1).count();
+        let pair_acdm = (first_pair..n_items).filter(|&i| res.selected[i] == 2).count();
         assert!(pair_acdm >= 7, "A-CDM selected for {pair_acdm}/8 pair items");
     }
 
@@ -2987,17 +3051,17 @@ mod tests {
                 .unwrap();
         let pair_sat = (first_pair..n_items).filter(|&i| res.selected[i] == -1).count();
         assert!(pair_sat >= 7, "saturated kept for {pair_sat}/8 pair items");
-        // both reduced models carry a positive, finite Wald statistic
+        // every reduced model carries a positive, finite Wald statistic
         for i in first_pair..n_items {
-            for m in 0..2 {
-                assert!(res.wald_stat[i * 2 + m].is_finite() && res.wald_stat[i * 2 + m] >= 0.0);
-                assert!(res.p_value[i * 2 + m].is_finite());
+            for m in 0..3 {
+                assert!(res.wald_stat[i * 3 + m].is_finite() && res.wald_stat[i * 3 + m] >= 0.0);
+                assert!(res.p_value[i * 3 + m].is_finite());
             }
         }
     }
 
-    /// Degrees of freedom are exactly the restriction sizes: DINA df = 2^K-2,
-    /// A-CDM df = 2^K-1-K, for K=2 and K=3 items.
+    /// Degrees of freedom are exactly the restriction sizes: DINA & DINO df = 2^K-2,
+    /// A-CDM df = 2^K-1-K, for K=3 items.
     #[test]
     fn wald_degrees_of_freedom() {
         // K=3 Q: single items (identification) + one triple item to read df off.
@@ -3034,8 +3098,9 @@ mod tests {
             gdina_wald_selection(&y, &observed, &q, n, n_items, k, 0.05, &CdmConfig::default())
                 .unwrap();
         let triple = n_items - 1;
-        assert_eq!(res.wald_df[triple * 2], (1 << k) - 2, "DINA df"); // 6
-        assert_eq!(res.wald_df[triple * 2 + 1], (1 << k) - 1 - k, "A-CDM df"); // 4
+        assert_eq!(res.wald_df[triple * 3], (1 << k) - 2, "DINA df"); // 6
+        assert_eq!(res.wald_df[triple * 3 + 1], (1 << k) - 2, "DINO df"); // 6
+        assert_eq!(res.wald_df[triple * 3 + 2], (1 << k) - 1 - k, "A-CDM df"); // 4
         // single-attribute items: no test (df=0), saturated
         assert_eq!(res.wald_df[0], 0);
         assert_eq!(res.selected[0], -1);
@@ -3106,8 +3171,10 @@ mod tests {
                 .collect()
         };
 
+        // Candidate columns: DINA=0, DINO=1, A-CDM=2.
         for &skew in [false, true].iter() {
-            let (mut type1_acdm, mut type1_dina, mut power_dina) = (0.0f64, 0.0f64, 0.0f64);
+            let (mut t1_acdm, mut t1_dina, mut t1_dino) = (0.0f64, 0.0f64, 0.0f64);
+            let (mut pow_dina, mut pow_dino) = (0.0f64, 0.0f64);
             let mut den = 0.0f64;
             for rep in 0..reps {
                 let mut rng = Lcg(
@@ -3115,45 +3182,54 @@ mod tests {
                         .wrapping_mul(rep as u64 + 1)
                         .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03),
                 );
-                // A-CDM truth: Type I of the A-CDM test + power of the (false) DINA test.
-                let (io_a, qm_a, tr_a) = wald_truth(&q, n_items, "acdm");
-                let prof = draw_profiles(&mut rng, skew);
-                let y = simulate_gdina(&qm_a, &io_a, &tr_a, &prof, n_items, &mut rng);
                 let obs = vec![true; n * n_items];
-                let ra =
+                let run = |kind: &str, rng: &mut Lcg| {
+                    let (io, qm, tr) = wald_truth(&q, n_items, kind);
+                    let prof = draw_profiles(rng, skew);
+                    let y = simulate_gdina(&qm, &io, &tr, &prof, n_items, rng);
                     gdina_wald_selection(&y, &obs, &q, n, n_items, k, 0.05, &CdmConfig::default())
-                        .unwrap();
-                // DINA truth: Type I of the DINA test.
-                let (io_d, qm_d, tr_d) = wald_truth(&q, n_items, "dina");
-                let prof2 = draw_profiles(&mut rng, skew);
-                let y2 = simulate_gdina(&qm_d, &io_d, &tr_d, &prof2, n_items, &mut rng);
-                let rd =
-                    gdina_wald_selection(&y2, &obs, &q, n, n_items, k, 0.05, &CdmConfig::default())
-                        .unwrap();
+                        .unwrap()
+                };
+                // A-CDM truth: Type I of A-CDM (col 2) + power of the false DINA (col 0).
+                let ra = run("acdm", &mut rng);
+                // DINA truth: Type I of DINA (col 0) + power of the false DINO (col 1).
+                let rd = run("dina", &mut rng);
+                // DINO truth: Type I of DINO (col 1).
+                let rn = run("dino", &mut rng);
                 for i in first_pair..n_items {
-                    // A-CDM test index 1, DINA test index 0
-                    if ra.p_value[i * 2 + 1] < 0.05 {
-                        type1_acdm += 1.0;
+                    if ra.p_value[i * 3 + 2] < 0.05 {
+                        t1_acdm += 1.0;
                     }
-                    if ra.p_value[i * 2] < 0.05 {
-                        power_dina += 1.0; // DINA is false under A-CDM truth
+                    if ra.p_value[i * 3] < 0.05 {
+                        pow_dina += 1.0; // DINA false under A-CDM truth
                     }
-                    if rd.p_value[i * 2] < 0.05 {
-                        type1_dina += 1.0;
+                    if rd.p_value[i * 3] < 0.05 {
+                        t1_dina += 1.0;
+                    }
+                    if rd.p_value[i * 3 + 1] < 0.05 {
+                        pow_dino += 1.0; // DINO false under DINA truth
+                    }
+                    if rn.p_value[i * 3 + 1] < 0.05 {
+                        t1_dino += 1.0;
                     }
                     den += 1.0;
                 }
             }
             println!(
-                "[wald MC skew={skew}] reps={reps} TypeI(acdm)={:.3} TypeI(dina)={:.3} power(dina|acdm)={:.3}",
-                type1_acdm / den,
-                type1_dina / den,
-                power_dina / den
+                "[wald MC skew={skew}] reps={reps} TypeI(dina)={:.3} TypeI(dino)={:.3} \
+                 TypeI(acdm)={:.3} power(dina|acdm)={:.3} power(dino|dina)={:.3}",
+                t1_dina / den,
+                t1_dino / den,
+                t1_acdm / den,
+                pow_dina / den,
+                pow_dino / den
             );
             // Complete-data covariance is mildly liberal; allow up to ~2.5x nominal.
-            assert!(type1_acdm / den < 0.13, "A-CDM Type I {}", type1_acdm / den);
-            assert!(type1_dina / den < 0.13, "DINA Type I {}", type1_dina / den);
-            assert!(power_dina / den > 0.95, "DINA power {}", power_dina / den);
+            assert!(t1_acdm / den < 0.13, "A-CDM Type I {}", t1_acdm / den);
+            assert!(t1_dina / den < 0.13, "DINA Type I {}", t1_dina / den);
+            assert!(t1_dino / den < 0.13, "DINO Type I {}", t1_dino / den);
+            assert!(pow_dina / den > 0.95, "DINA power {}", pow_dina / den);
+            assert!(pow_dino / den > 0.95, "DINO power {}", pow_dino / den);
         }
     }
 

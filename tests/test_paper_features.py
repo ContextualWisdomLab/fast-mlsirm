@@ -2073,9 +2073,10 @@ def test_validate_q_matrix_corrects_misspecification():
 
 
 def test_gdina_wald_selection_classifies_items():
-    """Item-level Wald model selection (de la Torre, 2011): a conjunctive (DINA)
-    item is classified DINA, an additive item A-CDM, and an item with both main
-    effects and an interaction keeps the saturated G-DINA."""
+    """Item-level Wald model selection (de la Torre, 2011): a conjunctive (DINA),
+    disjunctive (DINO), and additive (A-CDM) item are each classified as their
+    reduced model, and an item with both main effects and an interaction keeps the
+    saturated G-DINA."""
     import numpy as np
     import pytest
     from fast_mlsirm import gdina_wald_selection, WaldModelSelection
@@ -2086,16 +2087,17 @@ def test_gdina_wald_selection_classifies_items():
         pytest.skip("compiled core built without gdina_wald_selection")
 
     rng = np.random.default_rng(2011)
-    k, n = 2, 5000
-    # 5 single-attribute items per attribute (identification) + 3 pair items:
-    # one DINA, one additive (A-CDM), one saturated (mains + interaction).
-    rows = [[1, 0]] * 5 + [[0, 1]] * 5 + [[1, 1], [1, 1], [1, 1]]
+    k, n = 2, 8000
+    # 5 single-attribute items per attribute (identification) + 4 pair items:
+    # DINA, DINO, additive (A-CDM), saturated (mains + interaction).
+    rows = [[1, 0]] * 5 + [[0, 1]] * 5 + [[1, 1]] * 4
     q = np.array(rows, dtype=np.int64)
     n_items = q.shape[0]
     # per reduced-class truth [none, a0, a1, both]
-    truth_pair = {10: [0.15, 0.15, 0.15, 0.85],  # DINA
-                  11: [0.10, 0.45, 0.45, 0.80],  # A-CDM (additive)
-                  12: [0.10, 0.35, 0.35, 0.90]}  # saturated
+    truth_pair = {10: [0.15, 0.15, 0.15, 0.85],  # DINA (conjunctive)
+                  11: [0.15, 0.85, 0.85, 0.85],  # DINO (disjunctive)
+                  12: [0.10, 0.45, 0.45, 0.80],  # A-CDM (additive)
+                  13: [0.10, 0.35, 0.35, 0.90]}  # saturated
     profiles = rng.integers(0, 1 << k, size=n)
     y = np.empty((n, n_items))
     for j in range(n):
@@ -2111,15 +2113,17 @@ def test_gdina_wald_selection_classifies_items():
 
     res = gdina_wald_selection(y, q, alpha=0.05)
     assert isinstance(res, WaldModelSelection)
-    assert res.models == ["dina", "acdm"]
+    assert res.models == ["dina", "dino", "acdm"]
     assert res.selected[10] == 0   # DINA
-    assert res.selected[11] == 1   # A-CDM
-    assert res.selected[12] == -1  # saturated G-DINA
+    assert res.selected[11] == 1   # DINO
+    assert res.selected[12] == 2   # A-CDM
+    assert res.selected[13] == -1  # saturated G-DINA
     # single-attribute items carry no test (df 0), keep saturated
     assert np.all(res.selected[:10] == -1)
     assert np.all(res.wald_df[:10] == 0)
-    # the tested pair items have the right degrees of freedom (K=2)
-    assert res.wald_df[10, 0] == 2 and res.wald_df[10, 1] == 1  # DINA df=2, A-CDM df=1
+    # the tested pair items have the right degrees of freedom (K=2):
+    # DINA & DINO df = 2^K-2 = 2, A-CDM df = 2^K-1-K = 1
+    assert res.wald_df[10, 0] == 2 and res.wald_df[10, 1] == 2 and res.wald_df[10, 2] == 1
 
     with pytest.raises(ValueError):
         gdina_wald_selection(y.ravel(), q)  # responses not 2-D
