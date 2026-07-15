@@ -32,7 +32,10 @@ use mlsirm_core::scoring::{
     PriorSpec,
 };
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
-use mlsirm_core::cdm::{fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, CdmConfig, CdmModel};
+use mlsirm_core::cdm::{
+    fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina,
+    validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
+};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
@@ -347,6 +350,60 @@ fn fit_gdina(
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
     out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Empirical Q-matrix validation by the PVAF method (de la Torre & Chiu, 2016;
+/// `mlsirm_core::cdm::validate_q_matrix`). `y`/`observed` are row-major
+/// `n_persons * n_items`; `provisional_q` is row-major `n_items * n_attributes`
+/// with 0/1 entries, each item loading at least one attribute. `epsilon` is the
+/// PVAF cutoff (0.95 typical). Returns a dict with `suggested_q` (row-major
+/// `n_items * n_attributes`), `suggested_pvaf`, `provisional_pvaf`, `flagged`,
+/// `n_attributes`, `epsilon`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, provisional_q, n_persons, n_items, n_attributes, epsilon = 0.95, max_iter = 500, tol = 1e-6))]
+fn validate_q_matrix(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    provisional_q: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    epsilon: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let q: Vec<u8> = provisional_q
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("provisional_q entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let res = core_validate_q_matrix(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &q,
+        n_persons,
+        n_items,
+        n_attributes,
+        epsilon,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    let suggested: Vec<i64> = res.suggested_q.iter().map(|&v| v as i64).collect();
+    out.set_item("suggested_q", suggested)?;
+    out.set_item("suggested_pvaf", res.suggested_pvaf)?;
+    out.set_item("provisional_pvaf", res.provisional_pvaf)?;
+    out.set_item("flagged", res.flagged)?;
+    out.set_item("n_attributes", res.n_attributes)?;
+    out.set_item("epsilon", res.epsilon)?;
     Ok(out.into())
 }
 
@@ -2841,6 +2898,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_mmle_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_q_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

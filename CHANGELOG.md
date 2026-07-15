@@ -93,6 +93,33 @@
 
 ### Added
 
+- **Empirical Q-matrix validation by the PVAF method** (de la Torre & Chiu,
+  2016). `validate_q_matrix(responses, provisional_q, epsilon=0.95)` checks and
+  corrects the attribute-by-item Q-matrix of a cognitive-diagnosis model. Each
+  candidate q-vector groups the `2^K` latent attribute classes into masters vs.
+  non-masters of its required attributes; the *proportion of variance accounted
+  for* is `PVAF(q) = zeta^2(q) / zeta^2_full`, the share of the item's
+  across-class success-probability variance that grouping captures. Per item the
+  method returns the q-vector with the **fewest** required attributes whose
+  `PVAF >= epsilon` — an under-specified provisional q falls short and is
+  enlarged, an over-specified one is trimmed because a smaller vector already
+  clears the cutoff. The class weights and identified attribute labels come from
+  a G-DINA fit under the provisional Q; each item's *saturated* success
+  probability over all `2^K` classes is then recovered nonparametrically from
+  the fitted posteriors, so a mis-specified item's true dependence is exposed by
+  the attributes the *other* items identify (the method assumes the provisional
+  Q is mostly correct). Extends `mlsirm_core::cdm` — reuses the G-DINA
+  `reduce_class` collapse and posterior pass; the exhaustive q-vector search is
+  `O(J * 4^K)`, so `K` is capped at 10. Validated by an anchor (the true Q
+  validates to itself), over-/under-specification correction, and a
+  500-replication Monte-Carlo Q-recovery study (K=3, J=15, N=1000): under a
+  uniform attribute distribution the exact q-vector is recovered for 98.1% of
+  items (attribute TPR 0.996, FPR 0.012), and under a correlated/skew
+  higher-order distribution for 93.5% (TPR 0.982, FPR 0.035). Exposed to Python
+  through PyO3 as `validate_q_matrix` with the `QMatrixValidation` wrapper.
+  Deferred: the stepwise Wald item-level model-selection test (de la Torre,
+  2011) and sequential/iterative Q-matrix re-estimation.
+
 - **Testlet response model** (Bradlow, Wainer, & Wang, 1999; Wang, Bradlow, &
   Wainer, 2002). `fit_testlet(responses, testlet_id, model="rasch"|"2pl")` models the
   local dependence induced when items share a common stimulus (a reading passage): each

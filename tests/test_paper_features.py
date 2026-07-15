@@ -2019,6 +2019,54 @@ def test_fit_gdina_recovers_saturated_and_reduces_to_dina():
         fit_gdina(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols
 
 
+def test_validate_q_matrix_corrects_misspecification():
+    """PVAF Q-matrix validation (de la Torre & Chiu, 2016): the true Q validates to
+    itself, and a Q with an over-specified and an under-specified item is corrected
+    back to the truth while flagging exactly those items."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import validate_q_matrix, QMatrixValidation
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "validate_q_matrix"):
+        pytest.skip("compiled core built without validate_q_matrix")
+
+    rng = np.random.default_rng(715)
+    k, n_items, n = 3, 15, 3000
+    rows = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1],
+            [1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1],
+            [1, 1, 1], [1, 1, 1], [1, 1, 1]]
+    truth = np.array(rows, dtype=np.int64)
+    s = np.full(n_items, 0.1)
+    g = np.full(n_items, 0.1)
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = _sim_cdm(rng, truth, s, g, profiles)
+
+    # Anchor: the true Q validates to itself, nothing flagged.
+    res = validate_q_matrix(y, truth, epsilon=0.95)
+    assert isinstance(res, QMatrixValidation)
+    assert np.array_equal(res.suggested_q, truth)
+    assert not res.flagged.any()
+    assert np.all(res.provisional_pvaf > 0.9)
+
+    # Over-specify item 0 ({0} -> {0,1}) and under-specify item 6 ({0,1} -> {0}).
+    prov = truth.copy()
+    prov[0, 1] = 1
+    prov[6, 1] = 0
+    res2 = validate_q_matrix(y, prov, epsilon=0.95)
+    assert np.array_equal(res2.suggested_q[0], truth[0])  # trimmed back
+    assert np.array_equal(res2.suggested_q[6], truth[6])  # enlarged back
+    assert res2.flagged[0] and res2.flagged[6]
+    # the under-specified item's provisional q falls short of the cutoff
+    assert res2.provisional_pvaf[6] < 0.95
+
+    with pytest.raises(ValueError):
+        validate_q_matrix(y.ravel(), truth)  # responses not 2-D
+    with pytest.raises(ValueError):
+        validate_q_matrix(y, truth, epsilon=1.5)  # epsilon out of range
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

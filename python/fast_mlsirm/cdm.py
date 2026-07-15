@@ -228,3 +228,96 @@ def fit_gdina(
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+
+@dataclass
+class QMatrixValidation:
+    """Result of empirical Q-matrix validation (de la Torre & Chiu, 2016).
+
+    ``suggested_q`` is the validated items x attributes 0/1 Q-matrix — per item the
+    fewest-attribute vector whose PVAF (proportion of variance accounted for)
+    reaches ``epsilon``. ``suggested_pvaf``/``provisional_pvaf`` are the per-item
+    PVAF of the suggested and the caller's provisional q-vector; ``flagged`` marks
+    the items whose suggested vector differs from the provisional one."""
+
+    suggested_q: np.ndarray
+    suggested_pvaf: np.ndarray
+    provisional_pvaf: np.ndarray
+    flagged: np.ndarray
+    epsilon: float
+
+
+def validate_q_matrix(
+    responses: np.ndarray,
+    provisional_q: np.ndarray,
+    epsilon: float = 0.95,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> QMatrixValidation:
+    """Validate a Q-matrix by the PVAF method (compute in Rust; de la Torre & Chiu, 2016).
+
+    The G-DINA item response function varies across the ``2^K`` latent attribute
+    classes. A candidate q-vector groups those classes into masters vs. non-masters
+    of its required attributes; the proportion of the item's across-class variance
+    that grouping captures is its ``PVAF``. For each item the method returns the
+    q-vector with the FEWEST required attributes whose ``PVAF >= epsilon``: an
+    under-specified provisional vector falls short of the cutoff and is enlarged, an
+    over-specified one is trimmed because a smaller vector already reaches it.
+
+    The class distribution and identified attribute labels come from a G-DINA fit
+    with the provisional Q; each item's saturated success probability over all
+    ``2^K`` classes is then recovered from the fitted posteriors, so a mis-specified
+    item's true attribute dependence is exposed by the attributes identified from
+    the other items. The method therefore assumes the provisional Q is mostly
+    correct (enough items to identify the attributes).
+
+    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
+    MAR); ``provisional_q`` is an items x attributes 0/1 array, each item loading at
+    least one attribute (``K`` up to 10). ``epsilon`` is the PVAF cutoff.
+
+    References (APA 7th ed.):
+        de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
+            validation. *Psychometrika, 81*(2), 253-273.
+            https://doi.org/10.1007/s11336-015-9467-8
+        de la Torre, J. (2008). An empirically based method of Q-matrix validation
+            for the DINA model: Development and applications. *Journal of Educational
+            Measurement, 45*(4), 343-362.
+            https://doi.org/10.1111/j.1745-3984.2008.00069.x
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "validate_q_matrix"):
+        raise RuntimeError("validate_q_matrix requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    q = np.asarray(provisional_q)
+    if q.ndim != 2:
+        raise ValueError("provisional_q must be a 2-D items x attributes array")
+    n_persons, n_items = y.shape
+    if q.shape[0] != n_items:
+        raise ValueError("provisional_q must have one row per item")
+    n_attributes = q.shape[1]
+
+    observed = np.isfinite(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.validate_q_matrix(
+        yy,
+        observed.reshape(-1),
+        q.astype(np.int64).reshape(-1),
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        float(epsilon),
+        int(max_iter),
+        float(tol),
+    )
+    return QMatrixValidation(
+        suggested_q=np.asarray(res["suggested_q"], dtype=np.int64).reshape(n_items, n_attributes),
+        suggested_pvaf=np.asarray(res["suggested_pvaf"], dtype=np.float64),
+        provisional_pvaf=np.asarray(res["provisional_pvaf"], dtype=np.float64),
+        flagged=np.asarray(res["flagged"], dtype=bool),
+        epsilon=float(res["epsilon"]),
+    )

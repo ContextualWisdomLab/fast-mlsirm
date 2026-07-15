@@ -790,6 +790,282 @@ pub fn fit_gdina(
     })
 }
 
+/// Result of [`validate_q_matrix`] (de la Torre & Chiu, 2016). Per item, the
+/// method suggests the smallest attribute vector whose PVAF reaches the cutoff.
+#[derive(Clone, Debug)]
+pub struct QValidationResult {
+    pub n_attributes: usize,
+    /// The suggested (validated) Q-matrix, row-major `J x K`, entries 0/1.
+    pub suggested_q: Vec<u8>,
+    /// PVAF of the suggested q-vector, per item (in `[0, 1]`).
+    pub suggested_pvaf: Vec<f64>,
+    /// PVAF of the caller's provisional q-vector, per item (for comparison).
+    pub provisional_pvaf: Vec<f64>,
+    /// `true` where the suggested q-vector differs from the provisional one.
+    pub flagged: Vec<bool>,
+    /// The PVAF cutoff used.
+    pub epsilon: f64,
+}
+
+/// Empirical Q-matrix validation by the PVAF (proportion of variance accounted
+/// for) method of de la Torre and Chiu (2016).
+///
+/// The G-DINA item response function `P(alpha_c)` varies across the `2^K` latent
+/// attribute classes. A candidate q-vector groups those classes into equivalence
+/// classes (masters vs. non-masters of each *required* attribute), and its
+/// captured variance is
+///
+/// ```text
+/// zeta^2(q) = sum_l W_l (Pbar_l(q) - Pbar)^2,   PVAF(q) = zeta^2(q) / zeta^2_full
+/// ```
+///
+/// where `Pbar_l(q)` is the population-weighted mean success probability within
+/// reduced class `l` under `q`, `W_l` its total weight, `Pbar` the item's overall
+/// mean, and `zeta^2_full` the total across-class variance (the saturated
+/// reference). PVAF is monotone in `q` and equals 1 at the full attribute vector.
+/// For each item the method returns the q-vector with the **fewest** required
+/// attributes whose `PVAF >= epsilon` (ties broken by larger PVAF): an
+/// under-specified provisional q falls short of the cutoff and is enlarged, an
+/// over-specified one is trimmed because a smaller vector already reaches it.
+///
+/// The class weights `pi_c` and the reference IRF are read off a G-DINA fit with
+/// the **provisional** Q ([`fit_gdina`]): that structural model identifies the
+/// attribute labels (which latent bit is which attribute), and each item's
+/// *saturated* success probability over all `2^K` classes,
+/// `p_{i,c} = E[X_i | alpha_c]`, is then recovered nonparametrically from the
+/// fitted posteriors (expected-correct / expected-count per full class). Because a
+/// mis-specified item's responses still correlate with the attributes recovered
+/// from the *other* items, its saturated IRF exposes the attributes it truly
+/// depends on — so an under-specified provisional q shows `PVAF < epsilon` and is
+/// enlarged. The method assumes the provisional Q is mostly correct (enough items
+/// to identify the attributes). `y`/`observed` are row-major `N*J` (missing
+/// dropped, MAR); `provisional_q` is row-major `J*K`, entries 0/1, each item
+/// loading at least one attribute. Cost is `O(J * 4^K)` for the exhaustive
+/// q-vector search, so `K` is capped at 10.
+///
+/// References (APA 7th ed.):
+///   de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
+///     validation. *Psychometrika, 81*(2), 253-273.
+///     https://doi.org/10.1007/s11336-015-9467-8
+///   de la Torre, J. (2008). An empirically based method of Q-matrix validation for
+///     the DINA model: Development and applications. *Journal of Educational
+///     Measurement, 45*(4), 343-362. https://doi.org/10.1111/j.1745-3984.2008.00069.x
+#[allow(clippy::too_many_arguments)]
+pub fn validate_q_matrix(
+    y: &[f64],
+    observed: &[bool],
+    provisional_q: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    epsilon: f64,
+    cfg: &CdmConfig,
+) -> Result<QValidationResult, String> {
+    if n_attributes == 0 || n_attributes > 10 {
+        return Err("n_attributes must be in 1..=10 for the PVAF q-vector search".into());
+    }
+    if !(epsilon > 0.0 && epsilon <= 1.0) {
+        return Err("epsilon must be in (0, 1]".into());
+    }
+    if provisional_q.len() != n_items * n_attributes {
+        return Err("provisional_q must have length n_items * n_attributes".into());
+    }
+    for &v in provisional_q {
+        if v > 1 {
+            return Err("provisional_q entries must be 0 or 1".into());
+        }
+    }
+
+    for i in 0..n_items {
+        if (0..n_attributes).all(|k| provisional_q[i * n_attributes + k] == 0) {
+            return Err("each provisional_q row must load at least one attribute".into());
+        }
+    }
+
+    let l_full = 1usize << n_attributes;
+    let full_mask = l_full - 1;
+
+    // Fit the structural G-DINA under the provisional Q (identifies the attribute
+    // labels; also validates y/observed shapes and the config).
+    let res = fit_gdina(y, observed, provisional_q, n_persons, n_items, n_attributes, cfg)?;
+
+    // Recover each item's SATURATED IRF over all 2^K full classes and the class
+    // weights pi_c from one posterior pass at the fitted parameters. The provisional
+    // fit's own item probabilities are only over reduced classes; the saturated IRF
+    // p_{i,c} = E[X_i | alpha_c] over full classes is what PVAF needs.
+    let mut qmask = vec![0usize; n_items];
+    for i in 0..n_items {
+        for k in 0..n_attributes {
+            if provisional_q[i * n_attributes + k] != 0 {
+                qmask[i] |= 1 << k;
+            }
+        }
+    }
+    let total = res.item_off[n_items];
+    let mut red = vec![0u16; n_items * l_full];
+    for i in 0..n_items {
+        for c in 0..l_full {
+            red[i * l_full + c] = reduce_class(c, qmask[i]) as u16;
+        }
+    }
+    let mut log_p1 = vec![0.0f64; total];
+    let mut log_p0 = vec![0.0f64; total];
+    for x in 0..total {
+        let pc = res.item_prob[x].clamp(cfg.eps, 1.0 - cfg.eps);
+        log_p1[x] = pc.ln();
+        log_p0[x] = (1.0 - pc).ln();
+    }
+    let log_pi: Vec<f64> = res.profile_prob.iter().map(|v| v.max(cfg.eps).ln()).collect();
+
+    let mut icount = vec![0.0f64; n_items * l_full]; // I_{i,c} expected count
+    let mut rcount = vec![0.0f64; n_items * l_full]; // R_{i,c} expected correct
+    let mut pi_c = vec![0.0f64; l_full];
+    let mut post = vec![0.0f64; l_full];
+    for j in 0..n_persons {
+        posterior_row_gdina(
+            j, y, observed, n_items, l_full, &red, &log_p1, &log_p0, &res.item_off, &log_pi,
+            &mut post,
+        );
+        for c in 0..l_full {
+            pi_c[c] += post[c];
+        }
+        for i in 0..n_items {
+            let idx = j * n_items + i;
+            if observed[idx] {
+                let yy = y[idx];
+                for c in 0..l_full {
+                    icount[i * l_full + c] += post[c];
+                    rcount[i * l_full + c] += yy * post[c];
+                }
+            }
+        }
+    }
+    let ntot: f64 = pi_c.iter().sum();
+    let pi: Vec<f64> = pi_c.iter().map(|v| v / ntot).collect();
+
+    let mut suggested_q = vec![0u8; n_items * n_attributes];
+    let mut suggested_pvaf = vec![0.0f64; n_items];
+    let mut provisional_pvaf = vec![0.0f64; n_items];
+    let mut flagged = vec![false; n_items];
+
+    // Reusable per-mask group accumulators (sized to the largest reduced class set).
+    let mut num = vec![0.0f64; l_full];
+    let mut den = vec![0.0f64; l_full];
+    let mut p_full = vec![0.0f64; l_full];
+
+    for i in 0..n_items {
+        // Saturated IRF: p_{i,c} = R_{i,c} / I_{i,c}; empty classes (~zero weight)
+        // fall back to the overall item mean so they never distort the variance.
+        let mut mean_num = 0.0f64;
+        let mut mean_den = 0.0f64;
+        for c in 0..l_full {
+            let ic = icount[i * l_full + c];
+            if ic > cfg.count_floor {
+                p_full[c] = (rcount[i * l_full + c] / ic).clamp(0.0, 1.0);
+                mean_num += rcount[i * l_full + c];
+                mean_den += ic;
+            }
+        }
+        let item_mean = if mean_den > 0.0 { mean_num / mean_den } else { 0.0 };
+        for c in 0..l_full {
+            if icount[i * l_full + c] <= cfg.count_floor {
+                p_full[c] = item_mean;
+            }
+        }
+        let p_c: &[f64] = &p_full;
+
+        // Overall mean and total across-class variance (saturated reference).
+        let mut pbar = 0.0f64;
+        for c in 0..l_full {
+            pbar += pi[c] * p_c[c];
+        }
+        let mut var_tot = 0.0f64;
+        for c in 0..l_full {
+            let d = p_c[c] - pbar;
+            var_tot += pi[c] * d * d;
+        }
+
+        // PVAF of a candidate q-vector (bit-mask of required attributes).
+        let mut pvaf_of = |mask: usize| -> f64 {
+            if var_tot <= cfg.eps {
+                return 0.0; // non-discriminating item: no variance to explain
+            }
+            let lred = 1usize << mask.count_ones();
+            for l in 0..lred {
+                num[l] = 0.0;
+                den[l] = 0.0;
+            }
+            for c in 0..l_full {
+                let l = reduce_class(c, mask);
+                num[l] += pi[c] * p_c[c];
+                den[l] += pi[c];
+            }
+            let mut var_q = 0.0f64;
+            for l in 0..lred {
+                if den[l] > 0.0 {
+                    let d = num[l] / den[l] - pbar;
+                    var_q += den[l] * d * d;
+                }
+            }
+            (var_q / var_tot).clamp(0.0, 1.0)
+        };
+
+        let prov_mask = {
+            let mut m = 0usize;
+            for k in 0..n_attributes {
+                if provisional_q[i * n_attributes + k] != 0 {
+                    m |= 1 << k;
+                }
+            }
+            m
+        };
+        provisional_pvaf[i] = if prov_mask == 0 { 0.0 } else { pvaf_of(prov_mask) };
+
+        if var_tot <= cfg.eps {
+            // Uninformative item: cannot be validated. Keep the provisional vector.
+            for k in 0..n_attributes {
+                suggested_q[i * n_attributes + k] = provisional_q[i * n_attributes + k];
+            }
+            suggested_pvaf[i] = 0.0;
+            flagged[i] = false;
+            continue;
+        }
+
+        // Search for the fewest-attribute q-vector reaching the cutoff. The full
+        // vector always qualifies (PVAF == 1), so a solution always exists; ties on
+        // attribute count are broken by the larger PVAF, then the smaller mask.
+        let mut best_mask = full_mask;
+        let mut best_pvaf = 1.0f64;
+        let mut best_pc = n_attributes as u32;
+        for mask in 1..l_full {
+            let pv = pvaf_of(mask);
+            if pv + 1e-12 >= epsilon {
+                let pc = (mask as u32).count_ones();
+                if pc < best_pc || (pc == best_pc && pv > best_pvaf + 1e-12) {
+                    best_mask = mask;
+                    best_pvaf = pv;
+                    best_pc = pc;
+                }
+            }
+        }
+
+        for k in 0..n_attributes {
+            suggested_q[i * n_attributes + k] = ((best_mask >> k) & 1) as u8;
+        }
+        suggested_pvaf[i] = best_pvaf;
+        flagged[i] = best_mask != prov_mask;
+    }
+
+    Ok(QValidationResult {
+        n_attributes,
+        suggested_q,
+        suggested_pvaf,
+        provisional_pvaf,
+        flagged,
+        epsilon,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1672,6 +1948,214 @@ mod tests {
                     assert!(sum_attr / r > 0.90, "attribute agreement {} skew={skew}", sum_attr / r);
                 }
             }
+        }
+    }
+
+    // ----- Q-matrix validation (de la Torre & Chiu, 2016) tests -----
+
+    /// A canonical K=3, 15-item Q-matrix: six single-attribute items (two per
+    /// attribute), six two-attribute items (two per pair), three full-triple items.
+    fn canonical_q3() -> Vec<u8> {
+        let k = 3usize;
+        let mut q = vec![0u8; 15 * k];
+        let set = |q: &mut [u8], i: usize, attrs: &[usize]| {
+            for &a in attrs {
+                q[i * k + a] = 1;
+            }
+        };
+        let rows: [&[usize]; 15] = [
+            &[0], &[1], &[2], &[0], &[1], &[2], // singles
+            &[0, 1], &[0, 2], &[1, 2], &[0, 1], &[0, 2], &[1, 2], // pairs
+            &[0, 1, 2], &[0, 1, 2], &[0, 1, 2], // triples
+        ];
+        for (i, r) in rows.iter().enumerate() {
+            set(&mut q, i, r);
+        }
+        q
+    }
+
+    fn q_rows_equal(a: &[u8], b: &[u8], i: usize, k: usize) -> bool {
+        (0..k).all(|c| (a[i * k + c] != 0) == (b[i * k + c] != 0))
+    }
+
+    /// ANCHOR: DINA-generated data whose provisional Q is the TRUE Q must validate
+    /// to itself — every item's true q-vector is the fewest-attribute vector whose
+    /// PVAF clears the cutoff, so nothing is flagged.
+    #[test]
+    fn qval_true_q_validates_to_itself() {
+        let (k, n_items, n) = (3usize, 15usize, 3000usize);
+        let q = canonical_q3();
+        let (s, g) = (vec![0.1f64; n_items], vec![0.1f64; n_items]);
+        let mut rng = Lcg(20240715);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate(CdmModel::Dina, &q, &s, &g, &profiles, n_items, k, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res =
+            validate_q_matrix(&y, &observed, &q, n, n_items, k, 0.95, &CdmConfig::default()).unwrap();
+        let correct = (0..n_items).filter(|&i| q_rows_equal(&res.suggested_q, &q, i, k)).count();
+        assert!(correct >= n_items - 1, "recovered {correct}/{n_items} true q-vectors");
+        // The true q-vector explains ~all the item variance.
+        assert!(
+            res.provisional_pvaf.iter().all(|&p| p > 0.9),
+            "min provisional PVAF {}",
+            res.provisional_pvaf.iter().cloned().fold(f64::INFINITY, f64::min)
+        );
+    }
+
+    /// A provisional Q with BOTH under-specified pairs (one attribute dropped) and
+    /// over-specified singles (one spurious attribute added) is corrected back to
+    /// the truth, and exactly the mis-specified items are flagged.
+    #[test]
+    fn qval_corrects_over_and_under_specification() {
+        let (k, n_items, n) = (3usize, 15usize, 4000usize);
+        let truth = canonical_q3();
+        let (s, g) = (vec![0.1f64; n_items], vec![0.1f64; n_items]);
+        let mut rng = Lcg(13579);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate(CdmModel::Dina, &truth, &s, &g, &profiles, n_items, k, &mut rng);
+        let observed = vec![true; n * n_items];
+
+        // Mis-specify a FEW items only (the method needs the rest of the Q to keep
+        // the attributes identified): over-specify singles 0 & 3, under-specify
+        // pairs 6 & 9.
+        let mut prov = truth.clone();
+        prov[0 * k + 1] = 1; // item 0 {0} -> {0,1}
+        prov[3 * k + 2] = 1; // item 3 {0} -> {0,2}
+        prov[6 * k + 1] = 0; // item 6 {0,1} -> {0}
+        prov[9 * k + 0] = 0; // item 9 {0,1} -> {1}
+        let perturbed = [0usize, 3, 6, 9];
+
+        let res = validate_q_matrix(&y, &observed, &prov, n, n_items, k, 0.95, &CdmConfig::default())
+            .unwrap();
+        let correct = (0..n_items).filter(|&i| q_rows_equal(&res.suggested_q, &truth, i, k)).count();
+        assert!(correct >= n_items - 1, "corrected {correct}/{n_items} to truth");
+        for &i in &perturbed {
+            assert!(res.flagged[i], "item {i} was mis-specified but not flagged");
+            assert!(
+                q_rows_equal(&res.suggested_q, &truth, i, k),
+                "item {i} not corrected back to truth"
+            );
+        }
+    }
+
+    #[test]
+    fn qval_rejects_malformed() {
+        let n = 4usize;
+        let y = vec![0.0f64; n * 3];
+        let obs = vec![true; n * 3];
+        let q = vec![1u8; 3 * 2];
+        // bad epsilon
+        assert!(validate_q_matrix(&y, &obs, &q, n, 3, 2, 0.0, &CdmConfig::default()).is_err());
+        assert!(validate_q_matrix(&y, &obs, &q, n, 3, 2, 1.5, &CdmConfig::default()).is_err());
+        // n_attributes out of range
+        assert!(validate_q_matrix(&y, &obs, &q, n, 3, 0, 0.95, &CdmConfig::default()).is_err());
+        assert!(validate_q_matrix(&y, &obs, &[1u8; 3 * 11], n, 3, 11, 0.95, &CdmConfig::default())
+            .is_err());
+        // wrong provisional_q length
+        assert!(validate_q_matrix(&y, &obs, &[1u8; 5], n, 3, 2, 0.95, &CdmConfig::default()).is_err());
+        // non-binary provisional entry
+        assert!(
+            validate_q_matrix(&y, &obs, &[2, 0, 1, 1, 0, 1], n, 3, 2, 0.95, &CdmConfig::default())
+                .is_err()
+        );
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): recovery of the true Q-matrix by
+    /// PVAF validation starting from a mis-specified provisional Q, under a uniform
+    /// (independent) and a correlated/skew (higher-order) attribute distribution.
+    /// Reported as a *procedure* recovery: per-item exact q-vector rate plus
+    /// attribute-level true-positive / false-positive rates.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_qval_recovery_500() {
+        let (k, n_items, n, reps) = (3usize, 15usize, 1000usize, 500usize);
+        let truth = canonical_q3();
+        let (s, g) = (vec![0.1f64; n_items], vec![0.1f64; n_items]);
+        let bk = [-0.6f64, 0.0, 0.6];
+        let lambda = 1.5f64;
+
+        for &skew in [false, true].iter() {
+            let (mut sum_qrec, mut sum_tpr, mut sum_fpr) = (0.0f64, 0.0f64, 0.0f64);
+            for rep in 0..reps {
+                let seed = 0x2545F4914F6CDD1Du64
+                    .wrapping_mul(rep as u64 + 1)
+                    .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15);
+                let mut rng = Lcg(seed);
+                // attribute profiles
+                let profiles: Vec<usize> = (0..n)
+                    .map(|_| {
+                        if skew {
+                            // correlated higher-order logistic (de la Torre & Douglas, 2004)
+                            let theta = -(rng.next_f64().max(1e-12)).ln() - 1.0;
+                            let mut c = 0usize;
+                            for a in 0..k {
+                                let pk = 1.0 / (1.0 + (-lambda * (theta - bk[a])).exp());
+                                if rng.next_f64() < pk {
+                                    c |= 1 << a;
+                                }
+                            }
+                            c
+                        } else {
+                            rng.profile(1 << k) // independent uniform over classes
+                        }
+                    })
+                    .collect();
+                let y = simulate(CdmModel::Dina, &truth, &s, &g, &profiles, n_items, k, &mut rng);
+                let observed = vec![true; n * n_items];
+
+                // mis-specify ~1/6 of items (flip one attribute bit); the rest keep
+                // the attributes identified, as the method requires.
+                let mut prov = truth.clone();
+                for i in 0..n_items {
+                    if rng.next_f64() < 0.17 {
+                        let a = (rng.next_f64() * k as f64) as usize % k;
+                        prov[i * k + a] ^= 1;
+                    }
+                    // guard against an all-zero provisional row (validation needs >=1)
+                    if (0..k).all(|a| prov[i * k + a] == 0) {
+                        prov[i * k] = 1;
+                    }
+                }
+                let res =
+                    validate_q_matrix(&y, &observed, &prov, n, n_items, k, 0.95, &CdmConfig::default())
+                        .unwrap();
+
+                let mut qrec = 0usize;
+                let (mut tp, mut fp, mut pos, mut neg) = (0usize, 0usize, 0usize, 0usize);
+                for i in 0..n_items {
+                    if q_rows_equal(&res.suggested_q, &truth, i, k) {
+                        qrec += 1;
+                    }
+                    for a in 0..k {
+                        let t = truth[i * k + a] != 0;
+                        let hcap = res.suggested_q[i * k + a] != 0;
+                        if t {
+                            pos += 1;
+                            if hcap {
+                                tp += 1;
+                            }
+                        } else {
+                            neg += 1;
+                            if hcap {
+                                fp += 1;
+                            }
+                        }
+                    }
+                }
+                sum_qrec += qrec as f64 / n_items as f64;
+                sum_tpr += tp as f64 / pos as f64;
+                sum_fpr += fp as f64 / neg as f64;
+            }
+            let r = reps as f64;
+            println!(
+                "[qval MC skew={skew}] reps={reps} q-recovery={:.3} attr-TPR={:.3} attr-FPR={:.3}",
+                sum_qrec / r,
+                sum_tpr / r,
+                sum_fpr / r
+            );
+            assert!(sum_qrec / r > 0.80, "q-vector recovery {} skew={skew}", sum_qrec / r);
+            assert!(sum_tpr / r > 0.90, "attribute TPR {} skew={skew}", sum_tpr / r);
+            assert!(sum_fpr / r < 0.10, "attribute FPR {} skew={skew}", sum_fpr / r);
         }
     }
 }
