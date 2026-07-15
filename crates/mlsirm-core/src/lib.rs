@@ -1,5 +1,6 @@
 pub mod agreement;
 pub mod cdm;
+pub mod crm;
 pub mod equating;
 pub mod fitstats;
 pub mod linking;

@@ -24,6 +24,7 @@ from .equating import equate_observed_scores as equate_observed_scores, equate_n
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
+from .crm import fit_crm as fit_crm, CrmFit as CrmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
@@ -104,6 +105,8 @@ __all__ = [
     "HoCdmFit",
     "fit_mixture",
     "MixtureFit",
+    "fit_crm",
+    "CrmFit",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

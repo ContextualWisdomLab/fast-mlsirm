@@ -93,6 +93,26 @@
 
 ### Added
 
+- **Continuous Response Model** (Samejima, 1973) — the library's first estimator
+  for a *continuous* bounded response (all other models are binary, polytomous,
+  response-time, or cognitive-diagnosis). `fit_crm(responses)` fits Samejima's CRM,
+  the limit of the graded response model as the number of ordered categories grows
+  without bound. Operationally (Wang & Zeng, 1998), the logit of a response
+  `Z in (0,1)` is conditionally normal and linear in the trait:
+  `logit(Z_ij) | theta_j ~ N(a_i theta_j + d_i, sigma_i^2)`, `theta ~ N(0,1)`. The
+  working `(slope a_i, intercept d_i, residual sd sigma_i)` map to the classic
+  `(discrimination alpha_i = a_i/sigma_i, difficulty b_i = -d_i/a_i, scale
+  gamma_i = a_i)`, all reported. Estimated by marginal-ML EM over a Gauss-Hermite
+  trait grid with a **closed-form** weighted-least-squares item M-step (regress the
+  transformed response on the trait under the posterior, then the residual
+  variance) — the exact profile MLE, no Newton iteration. Continuous responses are
+  information-rich, so a 500-replication Monte-Carlo study (J=15, N=500) recovers
+  the item parameters tightly and the trait with correlation > 0.9 under both a
+  normal and a skewed trait distribution. New `mlsirm_core::crm` module (reuses the
+  `quadrature::gh_rule` grid); exposed to Python through PyO3 as `fit_crm` with the
+  `CrmFit` wrapper. The `Z -> logit` Jacobian is a data-only constant, so the
+  reported log-likelihood is in the transformed metric.
+
 - **Higher-order structured attribute prior for cognitive diagnosis** (de la Torre
   & Douglas, 2004). `fit_ho_cdm(responses, q_matrix, model="dina"|"dino")` fits a
   DINA/DINO model whose `2^K` attribute-class distribution, instead of being free

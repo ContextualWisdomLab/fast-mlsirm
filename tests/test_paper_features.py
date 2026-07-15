@@ -2305,6 +2305,53 @@ def test_fit_ho_cdm_recovers_higher_order_structure():
         fit_ho_cdm(y, q, model="rasch")  # unknown gate
 
 
+def test_fit_crm_recovers_continuous_responses():
+    """Continuous Response Model (Samejima, 1973): recover the item slope/intercept/
+    residual-sd and the Samejima discrimination/difficulty from continuous bounded
+    responses, plus the trait (continuous responses are information-rich)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_crm, CrmFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_crm"):
+        pytest.skip("compiled core built without fit_crm")
+
+    rng = np.random.default_rng(1973)
+    n_items, n = 15, 1500
+    a_true = 0.8 + 0.05 * np.arange(n_items)
+    d_true = -0.6 + 0.08 * np.arange(n_items)
+    sigma_true = 0.6 + 0.02 * (np.arange(n_items) % 5)
+    theta = rng.standard_normal(n)
+    x = a_true * theta[:, None] + d_true + sigma_true * rng.standard_normal((n, n_items))
+    z = 1.0 / (1.0 + np.exp(-x))  # in (0,1)
+
+    res = fit_crm(z)
+    assert isinstance(res, CrmFit) and res.converged
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
+    assert res.n_parameters == 3 * n_items
+    assert np.all(res.slope > 0)  # reflection convention
+    assert np.sqrt(np.mean((res.slope - a_true) ** 2)) < 0.15
+    assert np.sqrt(np.mean((res.intercept - d_true) ** 2)) < 0.1
+    assert np.sqrt(np.mean((res.resid_sd - sigma_true) ** 2)) < 0.1
+    # Samejima re-parameterization
+    assert np.sqrt(np.mean((res.discrimination - a_true / sigma_true) ** 2)) < 0.3
+    assert np.sqrt(np.mean((res.difficulty - (-d_true / a_true)) ** 2)) < 0.2
+    # trait recovery
+    assert np.corrcoef(res.theta, theta)[0, 1] > 0.9
+
+    # missing-at-random handling
+    zm = z.copy()
+    zm[rng.random(zm.shape) < 0.15] = np.nan
+    assert fit_crm(zm).converged
+
+    with pytest.raises(ValueError):
+        fit_crm(z.ravel())  # responses not 2-D
+    with pytest.raises(ValueError):
+        fit_crm(np.full((4, 3), 1.5))  # outside (0,1)
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

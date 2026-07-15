@@ -37,6 +37,7 @@ use mlsirm_core::cdm::{
     gdina_wald_selection as core_gdina_wald_selection,
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
+use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
@@ -521,6 +522,50 @@ fn fit_ho_cdm(
     out.set_item("theta", res.theta)?;
     out.set_item("map_profile", res.map_profile)?;
     out.set_item("attr_prob", res.attr_prob)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Continuous Response Model fit (Samejima, 1973; `mlsirm_core::crm::fit_crm`).
+/// `responses`/`observed` are row-major `n_persons * n_items` with responses in
+/// `(0, 1)`. The logit of the response is conditionally normal and linear in the
+/// trait, `logit(Z) | theta ~ N(slope*theta + intercept, resid_sd^2)`,
+/// `theta ~ N(0,1)`. Returns a dict with `slope`, `intercept`, `resid_sd`,
+/// `discrimination` (`= slope/resid_sd`), `difficulty` (`= -intercept/slope`),
+/// `theta` (per-person EAP), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (responses, observed, n_persons, n_items, q_theta = 41, max_iter = 500, tol = 1e-6))]
+fn fit_crm(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    q_theta: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_fit_crm(
+        responses.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        n_items,
+        q_theta,
+        max_iter,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", res.slope)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("resid_sd", res.resid_sd)?;
+    out.set_item("discrimination", res.discrimination)?;
+    out.set_item("difficulty", res.difficulty)?;
+    out.set_item("theta", res.theta)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
@@ -3027,6 +3072,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_q_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(gdina_wald_selection, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
