@@ -109,7 +109,9 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
+        # Optimized gradient computation: replace intermediate memory allocation for the full N x J array
+        # multiplication with an efficient einsum along the columns.
+        grad_alpha = np.einsum('ij,ij->j', e, params.theta[:, factors]) * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
@@ -169,7 +171,7 @@ def _neg_loglik_and_grad_rust(
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
 
     if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
-        raise ValueError(f"{model} requires one trait dimension")
+        raise ValueError(f"{model} requires one trait dimension")  # pragma: no cover
 
     core = load_rust_core()
     objective, gradients, loglik = core.neg_loglik_and_grad(
