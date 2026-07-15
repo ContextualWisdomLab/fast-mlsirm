@@ -779,6 +779,13 @@ pub struct LoglinearFit {
     pub moments: Vec<f64>,
     pub converged: bool,
     pub iters: usize,
+    /// Stopping rule that ended Newton iteration: `gradient_tolerance`,
+    /// `log_likelihood_tolerance`, `line_search_stalled`, or `max_iter`.
+    pub termination_reason: String,
+    /// Maximum absolute Poisson score component at the returned coefficients.
+    pub final_gradient_max: f64,
+    /// Scale-adjusted score tolerance used for the convergence decision.
+    pub gradient_tolerance: f64,
 }
 
 /// Orthonormal polynomial design matrix `B` of shape `(k+1) x (degree+1)` over the
@@ -845,6 +852,7 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
     let mut beta = vec![0.0_f64; t];
     let mut converged = false;
     let mut iters = 0usize;
+    let mut termination_reason = "max_iter";
     let mut prev_ll = ll(&beta);
     // Scale-free tolerances: the gradient B^T(counts-m) is O(N) and the
     // log-likelihood O(N), so absolute floors would never be reached for large
@@ -859,6 +867,7 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
         let gmax = grad.iter().fold(0.0_f64, |a, &g| a.max(g.abs()));
         if gmax < gtol {
             converged = true;
+            termination_reason = "gradient_tolerance";
             break;
         }
         let mut hess = vec![vec![0.0_f64; t]; t];
@@ -882,6 +891,7 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
                 // plateaued at the optimum — treat as converged, not stalled
                 if llt - prev_ll <= ll_tol {
                     converged = true;
+                    termination_reason = "log_likelihood_tolerance";
                 }
                 prev_ll = llt;
                 accepted = true;
@@ -889,11 +899,23 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
             }
             lambda *= 0.5;
         }
-        if !accepted || converged {
+        if !accepted {
+            termination_reason = "line_search_stalled";
+            break;
+        }
+        if converged {
             break;
         }
     }
     let m: Vec<f64> = (0..n_cells).map(|x| eta_of(&beta, x).exp()).collect();
+    let final_gradient_max = (0..t)
+        .map(|j| {
+            (0..n_cells)
+                .map(|x| b[x][j] * (counts[x] - m[x]))
+                .sum::<f64>()
+                .abs()
+        })
+        .fold(0.0_f64, f64::max);
     let msum: f64 = m.iter().sum();
     let probs: Vec<f64> = m.iter().map(|&mx| mx / msum).collect();
     let log_lik = ll(&beta);
@@ -907,7 +929,18 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
                 .sum()
         })
         .collect();
-    Ok(LoglinearFit { probs, log_lik, aic, bic, moments, converged, iters })
+    Ok(LoglinearFit {
+        probs,
+        log_lik,
+        aic,
+        bic,
+        moments,
+        converged,
+        iters,
+        termination_reason: termination_reason.into(),
+        final_gradient_max,
+        gradient_tolerance: gtol,
+    })
 }
 
 // ===================== Gaussian-kernel equating =====================
@@ -1100,7 +1133,20 @@ fn density(scores: &[f64], k: usize, smooth: Option<usize>) -> Result<Vec<f64>, 
         Some(t) => {
             let n = scores.len() as f64;
             let counts: Vec<f64> = g.iter().map(|&p| p * n).collect();
-            Ok(loglinear_smooth(&counts, t)?.probs)
+            let fit = loglinear_smooth(&counts, t)?;
+            if !fit.converged {
+                return Err(format!(
+                    "log-linear presmoothing did not converge: reason={}, iterations={}, max|score|={:.3e}, tolerance={:.3e}",
+                    fit.termination_reason,
+                    fit.iters,
+                    fit.final_gradient_max,
+                    fit.gradient_tolerance
+                ));
+            }
+            if fit.probs.iter().any(|p| !p.is_finite()) {
+                return Err("log-linear presmoothing returned non-finite probabilities".into());
+            }
+            Ok(fit.probs)
         }
     }
 }
@@ -1468,6 +1514,34 @@ mod tests {
         let sat = loglinear_smooth(&counts, k).unwrap();
         let d = (0..=k).map(|x| (sat.probs[x] - g[x]).abs()).fold(0.0, f64::max);
         assert!(d < 1e-9, "saturated loglinear must reproduce rel_freq: {d}");
+    }
+
+    #[test]
+    fn equating_rejects_nonconverged_presmoothing() {
+        let counts = [0usize, 1564, 426, 0, 1008, 0, 0];
+        let scores: Vec<f64> = counts
+            .iter()
+            .enumerate()
+            .flat_map(|(score, &count)| std::iter::repeat_n(score as f64, count))
+            .collect();
+        let fit = loglinear_smooth(
+            &counts.iter().map(|&count| count as f64).collect::<Vec<_>>(),
+            5,
+        )
+        .unwrap();
+        assert!(!fit.converged, "fixture must exercise the non-converged path");
+        assert_eq!(fit.termination_reason, "line_search_stalled");
+        assert!(fit.final_gradient_max > fit.gradient_tolerance);
+
+        let err = equate_eg_ext(
+            &scores,
+            &scores,
+            6,
+            6,
+            ext(Continuization::Uniform, Some(5), Some(5), None, None),
+        )
+        .unwrap_err();
+        assert!(err.contains("did not converge"), "unexpected error: {err}");
     }
 
     // Anchors 4 & 6: Gaussian-kernel self-equate is the identity (F_h == G_h), and

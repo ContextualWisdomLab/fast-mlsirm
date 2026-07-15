@@ -1770,6 +1770,26 @@ def test_kernel_equating_and_presmoothing():
     short = loglinear_smooth(np.array([10.0, 20.0, 30.0, 15.0, 8.0, 4.0]))  # k = 5
     assert short["converged"] and short["probs"].shape == (6,)
 
+    # A successful function return is not a successful optimization.  This sparse
+    # fixture stops before satisfying the log-linear score tolerance, so the
+    # high-level equating path must not consume its unfinished density.
+    sparse_counts = np.array([0, 1564, 426, 0, 1008, 0, 0])
+    unfinished = loglinear_smooth(sparse_counts, degree=5)
+    assert not unfinished["converged"] and unfinished["iters"] < 50
+    assert unfinished["termination_reason"] == "line_search_stalled"
+    assert unfinished["final_gradient_max"] > unfinished["gradient_tolerance"]
+    sparse_scores = np.repeat(np.arange(7), sparse_counts).astype(float)
+    with pytest.raises(ValueError, match="presmoothing did not converge"):
+        equate_observed_scores_kernel(
+            sparse_scores,
+            sparse_scores,
+            continuization="uniform",
+            k_x=6,
+            k_y=6,
+            smooth_x=5,
+            smooth_y=5,
+        )
+
     with pytest.raises(ValueError):
         equate_observed_scores_kernel(x, y, continuization="bogus", k_x=k, k_y=k)
     with pytest.raises(ValueError):

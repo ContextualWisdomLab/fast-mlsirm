@@ -1384,6 +1384,9 @@ fn loglinear_smooth(
     out.set_item("moments", fit.moments)?;
     out.set_item("converged", fit.converged)?;
     out.set_item("iters", fit.iters)?;
+    out.set_item("termination_reason", fit.termination_reason)?;
+    out.set_item("final_gradient_max", fit.final_gradient_max)?;
+    out.set_item("gradient_tolerance", fit.gradient_tolerance)?;
     Ok(out.into())
 }
 

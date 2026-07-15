@@ -212,7 +212,8 @@ def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
     ``degree = k`` reproduces the raw relative frequencies. Returns a dict with
     ``probs`` (smoothed density), ``log_lik``, ``aic``, ``bic`` (comparable across
     degrees on the same data), ``moments`` (fitted moments on the ``u = x/k`` scale,
-    orders ``1..=degree``), ``converged``, and ``iters``.
+    orders ``1..=degree``), ``converged``, ``iters``, ``termination_reason``,
+    ``final_gradient_max``, and ``gradient_tolerance``.
 
     References (APA 7th ed.):
         Holland, P. W., & Thayer, D. T. (2000). Univariate and bivariate loglinear
@@ -238,6 +239,9 @@ def loglinear_smooth(counts: np.ndarray, degree: int = 6) -> dict:
         "moments": np.asarray(res["moments"], dtype=np.float64),
         "converged": bool(res["converged"]),
         "iters": int(res["iters"]),
+        "termination_reason": str(res["termination_reason"]),
+        "final_gradient_max": float(res["final_gradient_max"]),
+        "gradient_tolerance": float(res["gradient_tolerance"]),
     }
 
 
@@ -263,9 +267,10 @@ def equate_observed_scores_kernel(
     ``EquateResult.h_x``/``h_y`` (``NaN`` for the uniform kernel). This entry point
     defaults to the Gaussian kernel (unlike the plain
     :func:`equate_observed_scores`, whose equipercentile is the uniform kernel).
-    When presmoothing is requested the fit is assumed to converge (the Poisson
-    log-linear likelihood is concave); the result does not carry a convergence flag
-    -- use :func:`loglinear_smooth` directly if you need to inspect it.
+    Presmoothing must actually satisfy its stopping criterion. If the Poisson
+    log-linear fit does not converge, this function raises ``ValueError`` instead of
+    constructing an equating table from an unfinished density; use
+    :func:`loglinear_smooth` directly to inspect ``converged`` and ``iters``.
 
     References (APA 7th ed.):
         von Davier, A. A., Holland, P. W., & Thayer, D. T. (2004). *The kernel
