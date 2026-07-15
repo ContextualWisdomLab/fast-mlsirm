@@ -172,6 +172,58 @@ def test_bifactor_parity_and_recovery():
         fit(y, fid, FitConfig(model="BIFAC2PLM", estimator="jmle"))
 
 
+def test_bifactor_covariate_parity_uses_inner_product_predictor():
+    rng = np.random.default_rng(22)
+    P, I, D = 400, 8, 2
+    fid = np.arange(I) % D
+    gid = np.arange(P) % 2
+    w = np.empty((2, I))
+    w[0] = np.linspace(0.0, 1.0, I)
+    w[1] = w[0, ::-1]
+    theta = rng.standard_normal((P, D))
+    general = rng.standard_normal(P)
+    loadings = np.linspace(0.7, 1.3, I)
+    intercepts = np.linspace(-0.8, 0.8, I)
+    delta_true = -1.0
+    eta = (
+        theta[:, fid]
+        + intercepts[None, :]
+        + loadings[None, :] * general[:, None]
+        + delta_true * w[gid]
+    )
+    y = (rng.random((P, I)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
+
+    results = {}
+    for backend in ("rust", "numpy"):
+        cfg = FitConfig(
+            model="BIFAC2PLM",
+            estimator="mmle",
+            max_iter=30,
+            backend=backend,
+            rust_device="cpu",
+            latent_dim=1,
+            q_theta=7,
+            q_xi=7,
+        )
+        results[backend] = fit(
+            y,
+            fid,
+            cfg,
+            group_id=gid,
+            covariate={"w": w, "init_delta": 0.0},
+        )
+
+    rust_delta = results["rust"].population["delta"]
+    numpy_delta = results["numpy"].population["delta"]
+    assert rust_delta < -0.2
+    np.testing.assert_allclose(rust_delta, numpy_delta, atol=1e-8)
+    np.testing.assert_allclose(
+        results["rust"].loglik_trace[-1],
+        results["numpy"].loglik_trace[-1],
+        atol=1e-8,
+    )
+
+
 def test_m2_rmsea2_parity_and_fit():
     # M2 limited-information GOF (Maydeu-Olivares & Joe): Rust core vs the
     # NumPy reference, plus a well-specified-vs-local-dependence contrast.

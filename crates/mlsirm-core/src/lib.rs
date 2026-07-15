@@ -35,6 +35,16 @@ pub enum ModelType {
     /// `eta = a_i theta_d(i) + b_i + dot(zeta_i, x)` with `x ~ MVN(0, I)` the
     /// general factor(s); at `latent_dim = 1`, `zeta_i` is the general-factor
     /// loading `lambda_i`. Marginal (MMLE) estimation only.
+    ///
+    /// # References
+    ///
+    /// Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item bi-factor
+    /// analysis. *Psychometrika, 57*(3), 423–436.
+    /// https://doi.org/10.1007/BF02295430
+    ///
+    /// Cai, L., Yang, J. S., & Hansen, M. (2011). Generalized full-information
+    /// item bifactor analysis. *Psychological Methods, 16*(3), 221–248.
+    /// https://doi.org/10.1037/a0023350
     Bifac2plm,
 }
 

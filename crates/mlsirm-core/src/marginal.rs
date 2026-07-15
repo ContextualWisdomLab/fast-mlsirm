@@ -1359,11 +1359,11 @@ fn m_step_delta(
     factor_id: &[usize],
     penalty: &PenaltyConfig,
 ) {
-    let (free_alpha, uses_space) = model_exec_flags(config.model_type);
+    let (free_alpha, _) = model_exec_flags(config.model_type);
+    let kind = interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
-    let gamma = tau.exp();
     let eval_q = |delta_c: f64| -> f64 {
         let offsets: Vec<f64> = w_cov.iter().map(|&w| delta_c * w).collect();
         let mut q = 0.0;
@@ -1388,7 +1388,6 @@ fn m_step_delta(
     let (mut grad, mut info) = (0.0_f64, 0.0_f64);
     for i in 0..n_items {
         let d = factor_id[i];
-        let a = if free_alpha { alpha[i].exp() } else { 1.0 };
         for s in 0..ctx.n_ctx {
             let w_si = w_cov[s * n_items + i];
             if w_si == 0.0 {
@@ -1406,16 +1405,20 @@ fn m_step_delta(
                     if n <= 0.0 && r <= 0.0 {
                         continue;
                     }
-                    let mut eta = off + a * theta + b[i];
-                    if uses_space {
-                        let mut dist2 = config.eps_distance;
-                        for k in 0..latent_dim {
-                            let diff = grids.x_grid[x * latent_dim + k]
-                                - zeta[i * latent_dim + k];
-                            dist2 += diff * diff;
-                        }
-                        eta -= gamma * dist2.sqrt();
-                    }
+                    let eta = off
+                        + eta_at_kind(
+                            alpha,
+                            b,
+                            zeta,
+                            tau,
+                            free_alpha,
+                            kind,
+                            latent_dim,
+                            config.eps_distance,
+                            i,
+                            theta,
+                            &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
+                        );
                     let prob = sigmoid(eta);
                     grad += (r - n * prob) * w_si;
                     info += n * prob * (1.0 - prob) * w_si * w_si;
@@ -2067,6 +2070,69 @@ mod xirule_parse_tests {
         assert_eq!(XiRuleKind::parse("mc"), Some(XiRuleKind::MonteCarlo));
         assert_eq!(XiRuleKind::parse("monte-carlo"), Some(XiRuleKind::MonteCarlo));
         assert_eq!(XiRuleKind::parse("nope"), None);
+    }
+}
+
+#[cfg(test)]
+mod covariate_interaction_tests {
+    use super::{m_step_delta, Contexts, EStep, Grids};
+    use crate::{ModelConfig, ModelType, PenaltyConfig};
+
+    #[test]
+    fn bifactor_delta_step_uses_inner_product_predictor() {
+        let mut delta = 0.0;
+        let config = ModelConfig {
+            n_persons: 100,
+            n_items: 1,
+            n_dims: 1,
+            latent_dim: 1,
+            model_type: ModelType::Bifac2plm,
+            eps_distance: 1e-8,
+        };
+        let estep = EStep {
+            nbar: vec![100.0],
+            rbar: vec![50.0],
+            mbar: vec![0.0],
+            loglik: 0.0,
+            zi_resp: Vec::new(),
+            sum_e_v2: 0.0,
+            cluster_post: Vec::new(),
+        };
+        let ctx = Contexts {
+            n_ctx: 1,
+            shift: vec![0.0],
+            scale: vec![1.0],
+            u_nodes: Vec::new(),
+            u_logw: Vec::new(),
+        };
+        let grids = Grids {
+            t_nodes: vec![0.0],
+            t_logw: vec![0.0],
+            x_grid: vec![2.0],
+            x_logw: vec![0.0],
+            q_t: 1,
+            n_x: 1,
+        };
+
+        m_step_delta(
+            &[0.0],
+            &[0.0],
+            &[2.0],
+            -30.0,
+            &mut delta,
+            &[1.0],
+            &estep,
+            &ctx,
+            &grids,
+            &config,
+            &[0],
+            &PenaltyConfig::default(),
+        );
+
+        assert!(
+            delta < -1.0,
+            "the inner-product eta is 4 at delta=0, so a 50% success rate must move delta negative; got {delta}"
+        );
     }
 }
 

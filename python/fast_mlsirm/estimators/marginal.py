@@ -736,19 +736,22 @@ def fit_marginal_numpy(
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar
-            if uses_space:
+            kind_i = _interaction_kind(model)
+            if kind_i == "distance":
                 diffz = x_grid[None, :, :] - zeta[:, None, :]
                 distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
-                dterm = gamma * distz[None, :, None, :]
+                interaction_term = -gamma * distz[None, :, None, :]
+            elif kind_i == "inner":
+                interaction_term = (zeta @ x_grid.T)[None, :, None, :]
             else:
-                dterm = 0.0
+                interaction_term = 0.0
 
             def eta_delta(delta_c: float) -> np.ndarray:
                 return (
                     a_all[None, :, None, None] * theta_it[:, :, :, None]
                     + b[None, :, None, None]
                     + (delta_c * w_cov)[:, :, None, None]
-                    - dterm
+                    + interaction_term
                 )
 
             eta = eta_delta(delta)
