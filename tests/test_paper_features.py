@@ -2104,6 +2104,8 @@ def test_fit_testlet_recovers_local_dependence():
 
     res = fit_testlet(y, tid, model="rasch")
     assert isinstance(res, TestletFit) and res.converged
+    assert res.termination_reason == "converged"
+    assert res.final_loglik_change < 1e-6
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)
     assert np.all(res.a == 1.0)  # Rasch
     assert res.sigma2.shape == (d,)
@@ -2120,3 +2122,6 @@ def test_fit_testlet_recovers_local_dependence():
         fit_testlet(y.ravel(), tid)  # responses not 2-D
     with pytest.raises(ValueError):
         fit_testlet(y, tid, model="graded")  # unknown model
+
+    with pytest.raises(RuntimeError, match="max_iter_reached"):
+        fit_testlet(y[:40], tid, model="rasch", max_iter=1, require_convergence=True)

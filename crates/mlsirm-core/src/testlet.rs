@@ -108,6 +108,10 @@ pub struct TestletResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Machine-readable termination status: `converged` or `max_iter_reached`.
+    pub termination_reason: String,
+    /// Absolute change between the final two evaluated marginal log-likelihoods.
+    pub final_loglik_change: f64,
     /// `(TwoPl? 2J : J) + D`.
     pub n_parameters: usize,
 }
@@ -538,6 +542,14 @@ pub fn fit_testlet(
             if n_iter >= cfg.max_iter {
                 break;
             }
+            // A SQUAREM cycle consumes two further iteration slots. When only one
+            // remains, take one plain EM step and evaluate it on the next loop so
+            // n_iter never exceeds the public max_iter contract.
+            if cfg.max_iter - n_iter < 2 {
+                let (a1, b1, s1) = m_step(&ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg);
+                params = pack(&a1, &b1, &s1);
+                continue;
+            }
             // Two plain EM steps.
             let (a1, b1, s1) = m_step(&ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg);
             let p1 = pack(&a1, &b1, &s1);
@@ -601,9 +613,14 @@ pub fn fit_testlet(
 
     // Final pass at the returned params: theta EAP + final loglik.
     let (final_ll, _, _, _, theta) = full_estep(&ctx, &a, &beta, &sigma2);
-    if !converged {
+    if !converged && loglik_trace.last().is_none_or(|last| last.to_bits() != final_ll.to_bits()) {
         loglik_trace.push(final_ll);
     }
+    let final_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map_or(f64::INFINITY, |pair| (pair[1] - pair[0]).abs());
+    let termination_reason = if converged { "converged" } else { "max_iter_reached" };
 
     let b: Vec<f64> = (0..j).map(|i| -beta[i] / a[i]).collect();
     let k = if fix_slope { 1 } else { 2 };
@@ -620,6 +637,8 @@ pub fn fit_testlet(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason: termination_reason.to_string(),
+        final_loglik_change,
         n_parameters: k * j + n_free_sigma,
     })
 }
@@ -752,6 +771,8 @@ mod tests {
         let cfg = TestletConfig { max_iter: 2000, ..TestletConfig::default() };
         let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
         println!("no_spurious: converged={} n_iter={} sigma2={:?}", res.converged, res.n_iter, res.sigma2);
+        assert!(res.converged, "testlet fit exhausted {} iterations", cfg.max_iter);
+        assert!(res.n_iter < cfg.max_iter);
         assert!(nondecreasing(&res.loglik_trace));
         assert!(res.sigma2.iter().all(|&s| s < 0.08), "spurious LD: {:?}", res.sigma2);
     }
@@ -849,6 +870,22 @@ mod tests {
         assert!(fit_testlet(&y, &obs, &tid, n, j, d_n, TestletModel::Rasch, &TestletConfig { tol: 0.0, max_iter: 2, ..d }).is_ok());
     }
 
+    /// Iteration exhaustion is explicit and SQUAREM must not overrun max_iter.
+    #[test]
+    fn testlet_reports_max_iter_nonconvergence() {
+        let (n, j, d_n) = (40usize, 6usize, 2usize);
+        let tid = contiguous_testlets(j, d_n);
+        let y: Vec<f64> = (0..n * j).map(|idx| ((idx + idx / j) % 2) as f64).collect();
+        let observed = vec![true; n * j];
+        let cfg = TestletConfig { max_iter: 2, tol: 0.0, q_gamma: 7, ..TestletConfig::default() };
+        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
+        assert!(!res.converged);
+        assert_eq!(res.termination_reason, "max_iter_reached");
+        assert_eq!(res.n_iter, cfg.max_iter);
+        assert!(res.final_loglik_change.is_finite());
+        assert_eq!(res.loglik_trace.len(), cfg.max_iter);
+    }
+
     /// Literature-grade Monte-Carlo (>=500 reps): Bradlow-Wainer-Wang-style design.
     /// Uses the RASCH testlet (the well-identified case; in the 2PL testlet the free
     /// discrimination a_i and the testlet SD sigma_d both scale the LD via a_i*sigma_d
@@ -874,6 +911,12 @@ mod tests {
                 let y = simulate(&a_t, &beta_t, &sig2_t, &tid, n, j, skew, &mut rng);
                 let observed = vec![true; n * j];
                 let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
+                assert!(
+                    res.converged,
+                    "testlet Monte-Carlo fit did not converge: skew={skew}, rep={rep}, n_iter={}, final_delta={}",
+                    res.n_iter,
+                    res.final_loglik_change
+                );
                 s_b += rmse(&res.beta, &beta_t);
                 s_sig += rmse(&res.sigma2, &sig2_t);
                 s_bsig += bias(&res.sigma2, &sig2_t);
@@ -888,6 +931,7 @@ mod tests {
             );
             assert!(s_b / r < 0.12, "RMSE(beta) {} skew={skew}", s_b / r);
             assert!(s_sig / r < 0.15, "RMSE(sigma2) {} skew={skew}", s_sig / r);
+            assert_eq!(n_conv, r, "not every Monte-Carlo fit converged (skew={skew})");
         }
     }
 }

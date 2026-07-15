@@ -4,6 +4,7 @@ by marginal-ML EM in the Rust core."""
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -30,6 +31,8 @@ class TestletFit:
     n_iter: int
     converged: bool
     n_parameters: int
+    termination_reason: str = "unknown"
+    final_loglik_change: float = np.nan
 
 
 def fit_testlet(
@@ -41,6 +44,7 @@ def fit_testlet(
     q_gamma: int = 21,
     estimate_sigma: bool = True,
     init_sigma2: float = 0.5,
+    require_convergence: bool = False,
 ) -> TestletFit:
     """Fit the testlet response model (compute in Rust; Bradlow, Wainer, & Wang, 1999).
 
@@ -59,6 +63,8 @@ def fit_testlet(
     discrimination ``a_i`` and the testlet SD ``sigma_d`` both scale the dependence via
     ``a_i*sigma_d`` and separate only weakly. The variance-component EM converges
     linearly, so a large ``sigma^2_d`` may want a generous ``max_iter``.
+    Non-convergence emits ``RuntimeWarning`` and is recorded in
+    ``termination_reason``; set ``require_convergence=True`` to raise instead.
 
     References (APA 7th ed.):
         Bradlow, E. T., Wainer, H., & Wang, X. (1999). A Bayesian random effects model
@@ -100,7 +106,7 @@ def fit_testlet(
         bool(estimate_sigma),
         float(init_sigma2),
     )
-    return TestletFit(
+    fit = TestletFit(
         model=str(res["model"]),
         a=np.asarray(res["a"], dtype=np.float64),
         b=np.asarray(res["b"], dtype=np.float64),
@@ -111,4 +117,16 @@ def fit_testlet(
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
     )
+    if not fit.converged:
+        message = (
+            "testlet calibration did not converge: "
+            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter}, "
+            f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
+        )
+        if require_convergence:
+            raise RuntimeError(message)
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+    return fit
