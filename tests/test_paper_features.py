@@ -2519,6 +2519,9 @@ def test_fit_seq_gdina_recovers_polytomous_and_reduces_to_gdina():
 
     res = fit_seq_gdina(y, q)
     assert isinstance(res, SeqGdinaFit) and res.converged
+    assert res.termination_reason == "tolerance_met"
+    assert abs(res.final_loglik_change) < res.stopping_tolerance
+    assert np.isfinite(res.final_relative_loglik_change)
     assert res.max_cat.tolist() == [1] * 8 + [2] * 4  # M_i derived from data
     assert abs(res.profile_prob.sum() - 1.0) < 1e-9
     # category probabilities sum to 1 per (item, reduced class)
@@ -2563,6 +2566,14 @@ def test_fit_seq_gdina_recovers_polytomous_and_reduces_to_gdina():
     ymiss = y.copy()
     ymiss[0, 0] = np.nan
     assert fit_seq_gdina(ymiss, q).converged
+
+    unfinished = fit_seq_gdina(y[:100], q, max_iter=1, tol=1e-12)
+    assert not unfinished.converged
+    assert unfinished.n_iter == 1
+    assert unfinished.termination_reason == "max_iter_reached"
+    assert np.isfinite(unfinished.final_loglik_change)
+    assert np.isfinite(unfinished.final_relative_loglik_change)
+    assert unfinished.stopping_tolerance == 1e-12
 
 
 def test_fit_crm_recovers_continuous_responses():

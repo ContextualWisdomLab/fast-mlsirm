@@ -370,7 +370,8 @@ fn fit_gdina(
 /// slice `[cat_off[i]..cat_off[i+1])` (`P(X_i=x|l)` at `cat_off[i] + l*(M_i+1) + x`).
 /// Returns a dict with `s_off`, `step_prob`, `cat_off`, `cat_prob`, `max_cat`,
 /// `k_required`, `profile_prob`, `map_profile`, `attr_prob`, `loglik_trace`, `n_iter`,
-/// `converged`, `n_parameters`.
+/// `converged`, `termination_reason`, `final_loglik_change`,
+/// `final_relative_loglik_change`, `stopping_tolerance`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, max_iter = 500, tol = 1e-6))]
@@ -418,6 +419,13 @@ fn fit_seq_gdina(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item(
+        "final_relative_loglik_change",
+        res.final_relative_loglik_change,
+    )?;
+    out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }

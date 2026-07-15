@@ -2151,7 +2151,11 @@ pub fn fit_ho_gdina(
         .last()
         .map(|pair| (pair[1] - pair[0]).abs() / (1.0 + pair[0].abs()))
         .unwrap_or(f64::NAN);
-    let termination_reason = if converged { "tolerance_met" } else { "max_iter_reached" };
+    let termination_reason = if converged {
+        "tolerance_met"
+    } else {
+        "max_iter_reached"
+    };
 
     // Identity-link parameters delta = M^{-1} p, per item slice.
     let mut item_delta = p.clone();
@@ -2213,6 +2217,14 @@ pub struct SeqGdinaResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Stable public reason for termination: `tolerance_met` or `max_iter_reached`.
+    pub termination_reason: &'static str,
+    /// Last observed-data log-likelihood increment at the returned parameters.
+    pub final_loglik_change: f64,
+    /// Last scale-free increment `|delta log L| / (1 + |log L_previous|)`.
+    pub final_relative_loglik_change: f64,
+    /// Requested absolute log-likelihood stopping tolerance.
+    pub stopping_tolerance: f64,
     /// `sum_i M_i * 2^{K_i}` step probs `+ (2^K - 1)` free profile probs.
     pub n_parameters: usize,
 }
@@ -2425,6 +2437,10 @@ fn validate_seq_gdina(
 /// `y`/`observed` are row-major `N*J` (`y` holds ordered integer categories `0..=M_i` where
 /// observed; `M_i` is derived as the maximum observed category); `q_matrix` is row-major
 /// `J*K` (0/1). Missing cells are dropped (MAR). Returns `Err` on malformed input.
+/// Convergence uses the absolute observed-data log-likelihood increment and is checked
+/// before another M-step, so the trace endpoint and returned parameters agree. The stable
+/// termination reason, signed and relative terminal increments, completed M-step count, and
+/// requested tolerance are returned explicitly.
 ///
 /// References (APA 7th ed.):
 ///   Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for
@@ -2670,6 +2686,17 @@ pub fn fit_seq_gdina(
     }
 
     let cat_prob: Vec<f64> = clp.iter().map(|v| v.exp()).collect();
+    let final_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| pair[1] - pair[0])
+        .unwrap_or(f64::NAN);
+    let final_relative_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| (pair[1] - pair[0]).abs() / (1.0 + pair[0].abs()))
+        .unwrap_or(f64::NAN);
+    let termination_reason = if converged { "tolerance_met" } else { "max_iter_reached" };
 
     Ok(SeqGdinaResult {
         s_off,
@@ -2684,6 +2711,10 @@ pub fn fit_seq_gdina(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason,
+        final_loglik_change,
+        final_relative_loglik_change,
+        stopping_tolerance: cfg.tol,
         n_parameters: total_steps + (l_full - 1),
     })
 }
@@ -5109,6 +5140,17 @@ mod tests {
         observed[n_items + 1] = false;
         let res = fit_seq_gdina(&y, &observed, &q, n, n_items, k, &cfg).unwrap();
         assert!(!res.loglik_trace.is_empty());
+        assert!(
+            res.converged,
+            "termination={} n_iter={} delta={} tolerance={}",
+            res.termination_reason,
+            res.n_iter,
+            res.final_loglik_change,
+            res.stopping_tolerance
+        );
+        assert_eq!(res.termination_reason, "tolerance_met");
+        assert!(res.final_loglik_change.abs() < res.stopping_tolerance);
+        assert!(res.final_relative_loglik_change.is_finite());
         let all_obs = vec![true; n * n_items];
         // Non-integer category.
         let mut ybad = y.clone();
@@ -5136,6 +5178,21 @@ mod tests {
         }
         // max observed category is 2 (some persons reach 2), interior cat 1 has 0 freq.
         assert!(fit_seq_gdina(&yskip, &all_obs, &q, n, n_items, k, &cfg).is_ok());
+
+        // Iteration-limited fits expose exact nonconvergence evidence instead of requiring
+        // callers to infer the reason and stopping metric from the likelihood trace.
+        let one_cfg = CdmConfig {
+            max_iter: 1,
+            tol: 1e-12,
+            ..CdmConfig::default()
+        };
+        let one = fit_seq_gdina(&y, &all_obs, &q, n, n_items, k, &one_cfg).unwrap();
+        assert!(!one.converged);
+        assert_eq!(one.n_iter, 1);
+        assert_eq!(one.termination_reason, "max_iter_reached");
+        assert!(one.final_loglik_change.is_finite());
+        assert!(one.final_relative_loglik_change.is_finite());
+        assert_eq!(one.stopping_tolerance, one_cfg.tol);
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): recover the sequential G-DINA step and
@@ -5251,9 +5308,18 @@ mod tests {
                 let observed = vec![true; n * n_items];
                 let res =
                     fit_seq_gdina(&y, &observed, &q, n, n_items, k, &CdmConfig::default()).unwrap();
-                if res.converged {
-                    nconv += 1;
-                }
+                assert!(
+                    res.converged,
+                    "rep {rep} skew={skew}: termination={} n_iter={} delta={} relative_delta={} tolerance={}",
+                    res.termination_reason,
+                    res.n_iter,
+                    res.final_loglik_change,
+                    res.final_relative_loglik_change,
+                    res.stopping_tolerance
+                );
+                assert_eq!(res.termination_reason, "tolerance_met");
+                assert!(res.final_loglik_change.abs() < res.stopping_tolerance);
+                nconv += 1;
                 assert_eq!(res.max_cat, max_cat, "derived M_i matches design (rep {rep})");
                 // Invariants: every step/category prob finite in (0,1); category probs sum to 1.
                 for &sp in &res.step_prob {
@@ -5339,7 +5405,7 @@ mod tests {
             assert!(rmse_cat < 0.03, "category-prob RMSE {rmse_cat} skew={skew}");
             assert!(wrmse_step < 0.05, "at-risk-weighted step RMSE {wrmse_step} skew={skew}");
             assert!(attr > 0.92, "attribute agreement {attr} skew={skew}");
-            assert!(conv > 0.9, "convergence rate {conv} skew={skew}");
+            assert_eq!(nconv, reps, "every calibration must converge skew={skew}");
         }
     }
 }

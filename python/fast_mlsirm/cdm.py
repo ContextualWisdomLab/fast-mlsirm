@@ -706,6 +706,10 @@ class SeqGdinaFit:
     loglik_trace: np.ndarray
     n_iter: int
     converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    final_relative_loglik_change: float
+    stopping_tolerance: float
     n_parameters: int
 
     def item_step_prob(self, i: int) -> np.ndarray:
@@ -750,6 +754,9 @@ def fit_seq_gdina(
     (``NaN`` = missing, dropped under MAR); ``M_i`` (the number of steps) is derived as the
     maximum observed category of item ``i``, and an item whose observed maximum is 0 (never
     leaves the base category) is rejected. ``q_matrix`` is an items x attributes 0/1 array.
+    Convergence uses the absolute observed-data log-likelihood increment and is checked
+    before another M-step. The stable termination reason, completed M-step count, signed and
+    relative terminal increments, and requested tolerance are returned explicitly.
 
     References (APA 7th ed.):
         Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for
@@ -805,5 +812,9 @@ def fit_seq_gdina(
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        final_relative_loglik_change=float(res["final_relative_loglik_change"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
