@@ -1,6 +1,7 @@
 //! Linear Logistic Test Model (LLTM; Fischer, 1973): an *explanatory* Rasch model in
-//! which the `J` item difficulties are not free but a fixed linear image of `K` basic
-//! (cognitive-operation) parameters through a known weight matrix `Q` (`J x K`,
+//! which the package's `J` item easinesses (the negatives of Fischer difficulties) are
+//! not free but a fixed linear image of `K` basic (cognitive-operation) parameters
+//! through a known weight matrix `Q` (`J x K`,
 //! `q_ik` = how many times operation `k` is engaged by item `i`):
 //!
 //! ```text
@@ -26,10 +27,12 @@
 //! whose rows sum to a constant, which collides with the intercept) rather than letting
 //! the Newton ridge paper over a non-identified model.
 //!
-//! Provenance: Fischer's (1973, 1995) canonical LLTM is conditional-ML (person-free).
-//! This is the marginal-ML / `N(0,1)` operationalization mapping onto the crate's
-//! Bock-Aitkin infrastructure — the same item contrasts under a different location
-//! convention, and it yields the exact `Q = I` Rasch reduction.
+//! Provenance: Fischer's (1973, 1995) canonical LLTM uses conditional maximum
+//! likelihood. This crate instead uses a fixed `N(0,1)` ability distribution and the
+//! marginal-ML EM strategy of Bock and Aitkin (1981). That is a repository-specific
+//! estimator choice: no finite-sample equivalence to Fischer's conditional-ML item
+//! estimates is asserted. Within this marginal engine, `Q = I` reduces exactly to the
+//! crate's Rasch implementation.
 //!
 //! Deferred (non-goals): conditional-ML estimation, LLTM for 2PL/polytomous models,
 //! LLRA / random-weights extensions, person-side covariate design, analytic SE(eta)
@@ -37,13 +40,14 @@
 //!
 //! References (APA 7th ed.):
 //! - Fischer, G. H. (1973). The linear logistic test model as an instrument in
-//!   educational research. *Acta Psychologica, 37*(6), 359-374.
+//!   educational research. *Acta Psychologica, 37*(6), 359–374.
 //!   <https://doi.org/10.1016/0001-6918(73)90003-6>
 //! - Fischer, G. H. (1995). The linear logistic test model. In G. H. Fischer & I. W.
 //!   Molenaar (Eds.), *Rasch models: Foundations, recent developments, and
-//!   applications* (pp. 131-155). Springer. <https://doi.org/10.1007/978-1-4612-4230-7_8>
+//!   applications* (pp. 131–155). Springer. <https://doi.org/10.1007/978-1-4612-4230-7_8>
 //! - Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of item
-//!   parameters. *Psychometrika, 46*(4), 443-459. <https://doi.org/10.1007/BF02293801>
+//!   parameters: Application of an EM algorithm. *Psychometrika, 46*(4), 443–459.
+//!   <https://doi.org/10.1007/BF02293801>
 
 use crate::fitstats::chi2_sf;
 use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES, GH_WEIGHTS};

@@ -403,8 +403,9 @@ fn fit_mixture(
 
 /// Marginal-EM fit of the Linear Logistic Test Model (`mlsirm_core::lltm`, Fischer,
 /// 1973). `y`/`observed` are row-major `n_persons * n_items`; `q_design` is row-major
-/// `n_items * n_basic` (real operation weights). Item difficulty is `b_i = c + sum_k
-/// q_ik eta_k`. Returns a dict with `eta` (K), `intercept`, `b` (J induced), `theta`
+/// `n_items * n_basic` (real operation weights). In the crate's additive sign
+/// convention, item easiness is `b_i = c + sum_k q_ik eta_k` (Fischer difficulty is
+/// `-b_i`). Returns a dict with `eta` (K), `intercept`, `b` (J induced), `theta`
 /// (N), `loglik_trace`, `n_iter`, `converged`, `n_parameters`, and (when `compute_lr`)
 /// the LR test of LLTM vs Rasch: `loglik_rasch`, `lr_stat`, `lr_df`, `lr_p`.
 #[pyfunction]

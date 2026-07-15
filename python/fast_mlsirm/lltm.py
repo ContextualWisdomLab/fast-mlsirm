@@ -45,11 +45,12 @@ def fit_lltm(
 ) -> LltmFit:
     """Fit the Linear Logistic Test Model (compute in Rust; Fischer, 1973).
 
-    LLTM is an *explanatory* Rasch model: item ``i``'s difficulty is not free but a
-    linear image ``b_i = c + sum_k q_ik * eta_k`` of ``K`` basic cognitive-operation
-    parameters through a fixed weight matrix ``q_design`` (``q_ik`` = how many times
-    operation ``k`` is engaged by item ``i``). With ``K << J`` parameters it tests
-    whether a small set of operations explains the item difficulties; the returned
+    LLTM is an *explanatory* Rasch model: item ``i``'s easiness (the sign convention
+    returned here) is not free but a linear image
+    ``b_i = c + sum_k q_ik * eta_k`` of ``K`` basic cognitive-operation parameters
+    through a fixed weight matrix ``q_design`` (``q_ik`` = how many times operation
+    ``k`` is engaged by item ``i``). With ``K << J`` parameters it tests
+    whether a small set of operations explains the item parameters; the returned
     likelihood-ratio test against the saturated Rasch model is its classic use.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under
@@ -58,17 +59,24 @@ def fit_lltm(
     be identified — a rank-deficient design (e.g. rows summing to a constant while
     fitting an intercept) is rejected.
 
-    This is the marginal-ML / ``N(0,1)`` operationalization; Fischer's canonical LLTM
-    uses conditional ML, giving the same item contrasts under a different location
-    convention.
+    Fischer's (1973, 1995) canonical LLTM uses conditional maximum likelihood. This
+    function instead fixes the ability distribution to ``N(0,1)`` and uses a
+    Bock-Aitkin-style marginal-ML EM algorithm. This is a repository-specific
+    estimator choice; finite-sample equality with Fischer's conditional-ML item
+    estimates is not assumed.
 
     References (APA 7th ed.):
         Fischer, G. H. (1973). The linear logistic test model as an instrument in
-            educational research. *Acta Psychologica, 37*(6), 359-374.
+            educational research. *Acta Psychologica, 37*(6), 359–374.
             https://doi.org/10.1016/0001-6918(73)90003-6
         Fischer, G. H. (1995). The linear logistic test model. In G. H. Fischer & I.
-            W. Molenaar (Eds.), *Rasch models* (pp. 131-155). Springer.
+            W. Molenaar (Eds.), *Rasch models: Foundations, recent developments, and
+            applications* (pp. 131–155). Springer.
             https://doi.org/10.1007/978-1-4612-4230-7_8
+        Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+            item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+            443–459.
+            https://doi.org/10.1007/BF02293801
     """
     from .fitstats import _core_module
 

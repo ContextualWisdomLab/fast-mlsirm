@@ -94,13 +94,14 @@
 ### Added
 
 - **Linear Logistic Test Model (LLTM)** (Fischer, 1973). An *explanatory* Rasch
-  model: `fit_lltm(responses, q_design)` decomposes each item's difficulty into a
+  model: `fit_lltm(responses, q_design)` decomposes each item's easiness (the package's
+  additive sign convention; Fischer difficulty is its negative) into a
   linear combination of `K` basic cognitive-operation parameters through a fixed
   weight matrix `Q` (`b_i = c + Σ_k q_ik·η_k`), rather than estimating `J` free item
-  difficulties. With `K << J` parameters it tests whether a small set of cognitive
-  operations *explains* the item difficulties. Estimated by marginal-ML EM: the
+  easinesses. With `K << J` parameters it tests whether a small set of cognitive
+  operations *explains* the item parameters. Estimated by marginal-ML EM: the
   E-step is the Rasch node posterior over the shared Gauss-Hermite rule; the M-step is
-  a `K`-dimensional chain-rule Newton — the per-item Rasch difficulty gradient/Hessian
+  a `K`-dimensional chain-rule Newton — the per-item Rasch easiness gradient/Hessian
   aggregated through the design (`g_η = Qᵀg_b`, `H_η = Qᵀ diag(h_b) Q + ridge`, solved
   with the shared dense `solve_small`). A free grand-mean easiness intercept is fit by
   default. The classic likelihood-ratio test of LLTM vs the saturated Rasch model
@@ -115,11 +116,12 @@
   (`==`) to `J` independent per-item Rasch Newton steps, and a full `Q = I` fit matches
   a single-class Rasch mixture fit to `< 1e-10`. A 500-replication Monte-Carlo
   (J=30, K=5, N=1500) under normal and skewed ability recovers the basic parameters
-  (RMSE/bias) and induced difficulties, and validates the LR test (Type I when the
+  (RMSE/bias) and induced easinesses, and validates the LR test (Type I when the
   restriction holds, power when it is violated off-model). Exposed via PyO3 as
   `fit_lltm` with the `LltmFit` Python wrapper. This is the marginal-ML / `N(0,1)`
-  operationalization of Fischer's conditional-ML LLTM (same item contrasts, different
-  location convention). Deferred: conditional-ML estimation, LLTM for 2PL/polytomous
+  operationalization of Fischer's conditional-ML LLTM. It is a repository-specific
+  estimator choice, and finite-sample equality with Fischer's conditional-ML item
+  estimates is not asserted. Deferred: conditional-ML estimation, LLTM for 2PL/polytomous
   models, and random-weights / LLRA extensions.
 
 - **Mixed Rasch / mixture IRT** (Rost, 1990; Rost & von Davier, 1995). A new
