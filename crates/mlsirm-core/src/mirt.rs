@@ -30,8 +30,25 @@
 //! product-GH weights integrate `phi_Sigma` — and the item M-step is reused verbatim on the
 //! mapped nodes; the `Sigma` M-step ascends the Gaussian-prior objective
 //! `-0.5[log|Sigma| + tr(Sigma^{-1} C)]` over the free correlations (`C` the posterior second
-//! moment) with backtracking + a positive-definite guard so EM stays monotone. `D > 3` (which
-//! would need coarser GH or QMC) remains a deferred extension.
+//! moment) with backtracking + a positive-definite guard so EM stays monotone.
+//!
+//! **Integration node rule (`xi_rule`).** The product Gauss-Hermite grid is exact for
+//! near-polynomial integrands but its `Q^D` node count is exponential in `D`, so it is capped at
+//! `D <= 3`. For `D = 4, 5, 6` the E-step integral is instead evaluated by **quasi-Monte-Carlo**
+//! (`Halton`, the low-discrepancy default for the QMC path) or plain **Monte-Carlo** (`MonteCarlo`)
+//! quadrature: `xi_points` points drawn from the standard-normal prior (Halton radical inverse ->
+//! `inv_normal_cdf`, or seeded Gaussian draws), equal weights `1/xi_points`. This is Jank's (2005)
+//! QMC-EM — only the E-step nodes/weights change; the per-item Newton M-step and the `Sigma`
+//! M-step are byte-for-byte the same code on the swapped node set. Because the standard node set
+//! is FIXED for the whole EM run, the ORTHOGONAL fit (`Sigma = I`, nodes never move) stays monotone
+//! in the QMC-approximated marginal likelihood. In the CORRELATED fit the `Sigma` M-step
+//! reparametrizes the node cloud (`theta_g = L(Sigma) z_g`), so each `Sigma` induces a different
+//! QMC quadrature of its own likelihood and EM is monotone only up to the QMC quadrature error
+//! (overall ascent with small per-step wobble that shrinks as `xi_points` grows) — use the
+//! orthogonal path, or a larger `xi_points`, when strict monotonicity matters. QMC carries an
+//! `O(N^{-1} (log N)^D)` finite-node bias that grows with `D`, so `D = 5, 6` and the correlated
+//! `Sigma` off-diagonals need materially larger `xi_points`; a Cranley-Patterson random shift
+//! (`xi_seed`, nonzero by default) de-correlates the higher-prime Halton axes.
 //!
 //! Identification: unit trait variances fix the per-dimension loading scale (independently of
 //! the free correlations); `E[theta] = 0` fixes the intercepts; the confirmatory pattern
@@ -51,16 +68,26 @@
 //! Bock, R. D., Gibbons, R., & Muraki, E. (1988). Full-information item factor analysis.
 //! *Applied Psychological Measurement, 12*(3), 261-280.
 //! https://doi.org/10.1177/014662168801200305
+//!
+//! Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of Monte Carlo EM.
+//! *Computational Statistics & Data Analysis, 48*(4), 685-701.
+//! https://doi.org/10.1016/j.csda.2004.03.019
 
+use crate::marginal::XiRuleKind;
 use crate::mmle::{log_sigmoid, sigmoid_stable};
+use crate::nodes::{build_xi_nodes, XiRule};
 use crate::poly::solve_small;
 use crate::quadrature::{gh_rule, SUPPORTED_Q};
 
-/// Maximum product-grid node count `Q^D` (bounds the per-iteration `Q^D x J` tables).
+/// Maximum integration node count (bounds the per-iteration `nodes x J` tables) for BOTH the
+/// `Q^D` Gauss-Hermite grid and the `xi_points` QMC/MC point set.
 const MIRT_MAX_NODES: usize = 200_000;
-/// Maximum number of latent dimensions for the v1 GH product grid (`41^3 = 68_921 <= cap`).
-/// `D > 3` (which would need coarse GH or QMC/MC-EM) is a deferred extension.
+/// Maximum latent dimensions for the Gauss-Hermite product grid (`41^3 = 68_921 <= cap`). `D > 3`
+/// is served by the quasi-Monte-Carlo (Halton) / Monte-Carlo node rules instead.
 const MIRT_MAX_DIMS: usize = 3;
+/// Maximum latent dimensions for the Halton/MonteCarlo rules (= `HALTON_PRIMES.len()` in `nodes`,
+/// the Halton axis cap; also the sole guard for the MonteCarlo builder, which has no internal cap).
+const MIRT_MAX_DIMS_QMC: usize = 6;
 /// Symmetric loading bound. Loadings are NOT floored positive: confirmatory MIRT routinely
 /// has opposite-sign loadings on a shared dimension (reverse-keyed items, suppressor
 /// cross-loadings). The per-dimension reflection anchor fixes only the global sign.
@@ -85,6 +112,17 @@ pub struct MirtConfig {
     /// diagonal). When `false`, `Sigma = I` (orthogonal factors) exactly — the item model is
     /// evaluated on the raw Gauss-Hermite grid, bit-for-bit as the orthogonal fit.
     pub estimate_corr: bool,
+    /// Latent-integral node rule. `GaussHermite` (default) uses the `q^D` product grid and caps
+    /// `D <= 3`; `Halton` (quasi-Monte-Carlo, Jank 2005) and `MonteCarlo` use `xi_points` nodes
+    /// mapped from the prior and unlock `D` up to 6 (the Halton prime axes). The item and `Sigma`
+    /// M-steps are identical for every rule — only the E-step quadrature nodes/weights change.
+    pub xi_rule: XiRuleKind,
+    /// Number of QMC/MC integration points (used only for `Halton`/`MonteCarlo`; `q` is ignored
+    /// for those rules). `D = 5, 6` need materially larger `xi_points` to keep the QMC error small.
+    pub xi_points: usize,
+    /// Halton Cranley-Patterson random-shift seed / Monte-Carlo seed. Nonzero by default so QMC
+    /// runs are randomized (helps the high-prime axes at `D >= 5`); deterministic given the seed.
+    pub xi_seed: u64,
 }
 
 impl Default for MirtConfig {
@@ -97,6 +135,9 @@ impl Default for MirtConfig {
             ridge_b: 1e-3,
             newton_iter: 25,
             estimate_corr: false,
+            xi_rule: XiRuleKind::GaussHermite,
+            xi_points: 4000,
+            xi_seed: 0x9E37_79B9_7F4A_7C15,
         }
     }
 }
@@ -140,14 +181,6 @@ fn validate(
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if !(1..=MIRT_MAX_DIMS).contains(&n_dims) {
-        return Err(format!(
-            "n_dims must be in 1..={MIRT_MAX_DIMS} (Q^D product grid; D>3 is a deferred extension)"
-        ));
-    }
-    if !SUPPORTED_Q.contains(&cfg.q) {
-        return Err(format!("q must be one of {SUPPORTED_Q:?} (Gauss-Hermite rules); got {}", cfg.q));
-    }
     if cfg.max_iter == 0 {
         return Err("max_iter must be positive".into());
     }
@@ -161,13 +194,56 @@ fn validate(
             return Err(format!("{name} must be finite and positive"));
         }
     }
-    // Q^D via an accumulating checked multiply in a fixed order (never wraps).
-    let mut n_nodes = 1usize;
-    for _ in 0..n_dims {
-        n_nodes = n_nodes
-            .checked_mul(cfg.q)
-            .filter(|&n| n <= MIRT_MAX_NODES)
-            .ok_or_else(|| format!("q^n_dims exceeds the node cap {MIRT_MAX_NODES}"))?;
+    // Rule-dependent dimension bound + node-count cap. The Gauss-Hermite product grid caps at
+    // MIRT_MAX_DIMS (Q^D blows up); the QMC/MC rules cap at MIRT_MAX_DIMS_QMC (the Halton primes)
+    // and bound the user-supplied point count instead. `q` is validated/used only for GH.
+    match cfg.xi_rule {
+        XiRuleKind::GaussHermite => {
+            if !(1..=MIRT_MAX_DIMS).contains(&n_dims) {
+                return Err(format!(
+                    "n_dims must be in 1..={MIRT_MAX_DIMS} for the Gauss-Hermite grid; use \
+                     xi_rule Halton/MonteCarlo for D up to {MIRT_MAX_DIMS_QMC}"
+                ));
+            }
+            if !SUPPORTED_Q.contains(&cfg.q) {
+                return Err(format!(
+                    "q must be one of {SUPPORTED_Q:?} (Gauss-Hermite rules); got {}",
+                    cfg.q
+                ));
+            }
+            // Q^D via an accumulating checked multiply in a fixed order (never wraps).
+            let mut n_nodes = 1usize;
+            for _ in 0..n_dims {
+                n_nodes = n_nodes
+                    .checked_mul(cfg.q)
+                    .filter(|&n| n <= MIRT_MAX_NODES)
+                    .ok_or_else(|| format!("q^n_dims exceeds the node cap {MIRT_MAX_NODES}"))?;
+            }
+        }
+        XiRuleKind::Halton | XiRuleKind::MonteCarlo => {
+            // The MonteCarlo node builder has no internal dimension cap, so this bound is the sole
+            // guard for MC at D > MIRT_MAX_DIMS_QMC (Halton's own builder errors past its primes).
+            if !(1..=MIRT_MAX_DIMS_QMC).contains(&n_dims) {
+                return Err(format!(
+                    "n_dims must be in 1..={MIRT_MAX_DIMS_QMC} for the Halton/MonteCarlo rules"
+                ));
+            }
+            if !(1..=MIRT_MAX_NODES).contains(&cfg.xi_points) {
+                return Err(format!(
+                    "xi_points must be in 1..={MIRT_MAX_NODES} for the Halton/MonteCarlo rules; \
+                     got {}",
+                    cfg.xi_points
+                ));
+            }
+            // Bound the per-iteration `xi_points x J` count tables and the `xi_points x D` node
+            // buffers with checked multiplies (never wrap).
+            cfg.xi_points
+                .checked_mul(n_items)
+                .ok_or_else(|| "xi_points * n_items overflows usize".to_string())?;
+            cfg.xi_points
+                .checked_mul(n_dims)
+                .ok_or_else(|| "xi_points * n_dims overflows usize".to_string())?;
+        }
     }
     let n_cells = n_persons
         .checked_mul(n_items)
@@ -466,7 +542,21 @@ pub fn fit_compensatory_mirt(
     cfg: &MirtConfig,
 ) -> Result<CompMirtResult, String> {
     validate(y, observed, loading_pattern, n_persons, n_items, n_dims, cfg)?;
-    let (nodes, logw) = build_grid(n_dims, cfg.q);
+    // Build the latent-integral node set once, before the EM loop: a FIXED quadrature keeps EM
+    // monotone in the (QMC-)approximated marginal likelihood (Jank, 2005). The Gauss-Hermite path
+    // keeps `build_grid` verbatim (bit-for-bit the orthogonal fit); Halton/MonteCarlo delegate to
+    // the shared, parity-tested `build_xi_nodes` (prior-sampled points, equal `logw = -ln(n)`).
+    let (nodes, logw) = match cfg.xi_rule {
+        XiRuleKind::GaussHermite => build_grid(n_dims, cfg.q),
+        XiRuleKind::Halton => {
+            let xn = build_xi_nodes(XiRule::Halton { n: cfg.xi_points, shift_seed: cfg.xi_seed }, n_dims)?;
+            (xn.grid, xn.logw)
+        }
+        XiRuleKind::MonteCarlo => {
+            let xn = build_xi_nodes(XiRule::MonteCarlo { n: cfg.xi_points, seed: cfg.xi_seed.max(1) }, n_dims)?;
+            (xn.grid, xn.logw)
+        }
+    };
     let n_nodes = logw.len();
 
     // Per-item loaded-dimension lists S_i (the free-loading dims).
@@ -1033,6 +1123,346 @@ mod tests {
         }
     }
 
+    /// Deterministic reflection tests. (b) `flip_corr_dim` negates EXACTLY the off-diagonals that
+    /// involve the flipped dimension (packed pairs (i,j), i<j) and leaves the rest untouched.
+    /// (a) A fit whose largest pure anchor on a dimension is reverse-keyed (true loading strongly
+    /// negative) is canonicalized by the reflection so that anchor ends POSITIVE and the dimension's
+    /// co-loaders flip sign — deleting the reflection block leaves the raw negative anchor and fails.
+    #[test]
+    fn mirt_reflection_flips_negative_anchor() {
+        // (b) flip_corr_dim on D=4: pairs are m0=(0,1) m1=(0,2) m2=(0,3) m3=(1,2) m4=(1,3) m5=(2,3).
+        // Flipping dim 1 must negate exactly m0,(0,1) m3,(1,2) m4,(1,3) and leave m1,m2,m5 alone.
+        let mut off = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+        flip_corr_dim(&mut off, 4, 1);
+        assert_eq!(off, vec![-0.1, 0.2, 0.3, -0.4, -0.5, 0.6]);
+
+        // (a) reverse-keyed largest anchor on dim 0. Items 0,1 pure dim0; 2,3 pure dim1; 4 cross.
+        let n_dims = 2usize;
+        let n_items = 5usize;
+        let pattern: Vec<u8> = vec![1, 0, 1, 0, 0, 1, 0, 1, 1, 1];
+        let mut loading = vec![0.0f64; n_items * n_dims];
+        loading[0 * 2] = -1.8; // reverse-keyed anchor, largest |loading| on dim 0
+        loading[1 * 2] = 1.0;
+        loading[2 * 2 + 1] = 1.2;
+        loading[3 * 2 + 1] = 1.0;
+        loading[4 * 2] = 0.9;
+        loading[4 * 2 + 1] = 0.8;
+        let intercept = vec![0.1, -0.2, 0.15, -0.1, 0.05];
+        let n = 3000usize;
+        let mut rng = Lcg(4242);
+        let mut thetas = vec![0.0f64; n * n_dims];
+        for j in 0..n {
+            thetas[j * 2] = rng.normal();
+            thetas[j * 2 + 1] = rng.normal();
+        }
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = MirtConfig { q: 21, ..MirtConfig::default() };
+        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        // Canonical output: the largest pure anchor on dim 0 (item 0) ends POSITIVE; because the
+        // whole dimension was reflected, the positively-keyed co-item (item 1) ends NEGATIVE.
+        assert!(res.loading[0 * 2] > 0.8, "reflected anchor should be positive: {}", res.loading[0 * 2]);
+        assert!(res.loading[1 * 2] < -0.3, "co-item flipped negative: {}", res.loading[1 * 2]);
+    }
+
+    /// Two-sided reduction anchor at D=2: the Halton QMC fit AGREES with the Gauss-Hermite fit
+    /// within QMC error AND DIFFERS from it bit-wise. The disagreement guard is essential — a
+    /// silent fallback to GH nodes on the Halton arm would make the two fits bit-identical and
+    /// pass a one-sided within-error check trivially.
+    #[test]
+    fn qmc_reduces_to_gh_within_error_d2() {
+        let n_dims = 2usize;
+        let mut pattern: Vec<u8> = Vec::new();
+        for _ in 0..4 { pattern.extend_from_slice(&[1, 0]); }
+        for _ in 0..4 { pattern.extend_from_slice(&[0, 1]); }
+        pattern.extend_from_slice(&[1, 1]);
+        let n_items = 9usize;
+        let mut loading = vec![0.0f64; n_items * n_dims];
+        for i in 0..4 {
+            loading[i * 2] = 1.0 + 0.15 * i as f64;
+            loading[(4 + i) * 2 + 1] = 1.1 - 0.1 * i as f64;
+        }
+        loading[8 * 2] = 0.9;
+        loading[8 * 2 + 1] = 0.8;
+        let intercept: Vec<f64> = (0..n_items).map(|i| -0.6 + 0.15 * i as f64).collect();
+        let n = 2000usize;
+        let mut rng = Lcg(1357);
+        let mut thetas = vec![0.0f64; n * n_dims];
+        for v in thetas.iter_mut() {
+            *v = rng.normal();
+        }
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let gh = fit_compensatory_mirt(
+            &y, &observed, &pattern, n, n_items, n_dims,
+            &MirtConfig { q: 21, ..MirtConfig::default() },
+        ).unwrap();
+        let qmc = fit_compensatory_mirt(
+            &y, &observed, &pattern, n, n_items, n_dims,
+            &MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 6000, xi_seed: 0, ..MirtConfig::default() },
+        ).unwrap();
+        let max_abs = gh.loading.iter().zip(&qmc.loading)
+            .chain(gh.intercept.iter().zip(&qmc.intercept))
+            .map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
+        assert!(max_abs < 0.10, "QMC and GH disagree beyond QMC error: {max_abs}");
+        assert!(max_abs > 1e-10, "QMC fit is bit-identical to GH (silent GH fallback?)");
+    }
+
+    /// Deterministic FD anchor on a FIXED Halton node set at D=4 with a NON-IDENTITY dims map
+    /// [0,2,3] (so nodes are indexed dims[k] != k). Pins the analytic gradient and the full
+    /// (n_i+1)^2 Hessian — including the off-diagonal cross-Hessian and the local->pattern
+    /// dimension map — against central differences of item_obj to < 1e-4, on the SAME QMC nodes
+    /// the estimator uses. This is deterministic (fixed seed) and node-source specific, so a
+    /// cross-Hessian sign error or a dims[k] mis-map at D>3 fails here with no MC noise. (The
+    /// grid LAYOUT itself is pinned independently in nodes::halton_grid_layout_is_prime_per_axis.)
+    #[test]
+    fn qmc_item_grad_hess_matches_fd_on_halton_d4() {
+        let n_dims = 4usize;
+        let dims = vec![0usize, 2, 3];
+        let xn = build_xi_nodes(XiRule::Halton { n: 240, shift_seed: 0 }, n_dims).unwrap();
+        let nodes = &xn.grid;
+        let n_nodes = xn.logw.len();
+        let mut rng = Lcg(2718);
+        let (mut n_ig, mut r_ig) = (vec![0.0f64; n_nodes], vec![0.0f64; n_nodes]);
+        for g in 0..n_nodes {
+            n_ig[g] = 1.0 + rng.next_f64() * 3.0;
+            r_ig[g] = n_ig[g] * rng.next_f64();
+        }
+        let (a, b) = (vec![0.7f64, -0.6, 0.9], 0.2f64);
+        let (ra, rb) = (1e-3, 1e-3);
+        let np = dims.len() + 1;
+        let (grad, amat) = item_grad_hess(&dims, &a, b, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+        let obj = |aa: &[f64], bb: f64| item_obj(&dims, aa, bb, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+        let eps = 1e-6;
+        let perturb = |k: usize, s: f64| -> (Vec<f64>, f64) {
+            let mut aa = a.clone();
+            let mut bb = b;
+            if k < dims.len() { aa[k] += s; } else { bb += s; }
+            (aa, bb)
+        };
+        for k in 0..np {
+            let (ap, bp) = perturb(k, eps);
+            let (am, bm) = perturb(k, -eps);
+            let fd = (obj(&ap, bp) - obj(&am, bm)) / (2.0 * eps);
+            assert!((grad[k] - fd).abs() < 1e-4, "grad[{k}] {} vs fd {fd}", grad[k]);
+        }
+        for jp in 0..np {
+            let (ap, bp) = perturb(jp, eps);
+            let (am, bm) = perturb(jp, -eps);
+            let (gp, _) = item_grad_hess(&dims, &ap, bp, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+            let (gm, _) = item_grad_hess(&dims, &am, bm, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+            for k in 0..np {
+                let dfd = (gp[k] - gm[k]) / (2.0 * eps);
+                assert!((dfd + amat[k][jp]).abs() < 1e-4, "H[{k}][{jp}]");
+            }
+        }
+    }
+
+    /// D=4 orthogonal recovery on Halton QMC nodes (the headline D>3 capability the GH grid cannot
+    /// reach). Confirmatory pattern: 2 pure anchors per dimension + cross-loaders INCLUDING a
+    /// genuine negative one, which is asserted recovered < 0 explicitly (a compensation-sign bug on
+    /// a shared dimension cannot be averaged away by an aggregate RMSE).
+    #[test]
+    fn qmc_recovers_compensatory_d4() {
+        let n_dims = 4usize;
+        let mut pattern: Vec<u8> = Vec::new();
+        for d in 0..n_dims {
+            for _ in 0..2 {
+                let mut row = vec![0u8; n_dims];
+                row[d] = 1;
+                pattern.extend_from_slice(&row);
+            }
+        }
+        // cross-loaders: (0,1) with a NEGATIVE dim-1 loading; (1,2); (2,3).
+        pattern.extend_from_slice(&[1, 1, 0, 0]);
+        pattern.extend_from_slice(&[0, 1, 1, 0]);
+        pattern.extend_from_slice(&[0, 0, 1, 1]);
+        let n_items = 2 * n_dims + 3; // 11
+        let mut loading = vec![0.0f64; n_items * n_dims];
+        for d in 0..n_dims {
+            loading[(2 * d) * n_dims + d] = 1.2 + 0.1 * d as f64;
+            loading[(2 * d + 1) * n_dims + d] = 0.9;
+        }
+        let cross = 2 * n_dims;
+        loading[cross * n_dims + 0] = 1.0;
+        loading[cross * n_dims + 1] = -0.8; // the negative cross-loader
+        loading[(cross + 1) * n_dims + 1] = 1.1;
+        loading[(cross + 1) * n_dims + 2] = 0.7;
+        loading[(cross + 2) * n_dims + 2] = 0.8;
+        loading[(cross + 2) * n_dims + 3] = 1.0;
+        let intercept: Vec<f64> = (0..n_items).map(|i| -0.5 + 0.12 * i as f64).collect();
+        let n = 2000usize;
+        let mut rng = Lcg(9001);
+        let mut thetas = vec![0.0f64; n * n_dims];
+        for v in thetas.iter_mut() {
+            *v = rng.normal();
+        }
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 4000, xi_seed: 12345, ..MirtConfig::default() };
+        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        assert_eq!(res.n_dims, 4);
+        for i in 0..n_items {
+            for d in 0..n_dims {
+                if pattern[i * n_dims + d] == 0 {
+                    assert_eq!(res.loading[i * n_dims + d], 0.0, "unloaded exactly zero");
+                }
+            }
+        }
+        assert!(rmse(&res.loading, &loading) < 0.18, "loading RMSE {}", rmse(&res.loading, &loading));
+        // the negative cross-loader recovered negative (sign / compensation guard).
+        assert!(res.loading[cross * n_dims + 1] < -0.3, "neg cross-loader: {}", res.loading[cross * n_dims + 1]);
+        for d in 0..n_dims {
+            let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
+            let tt: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + d]).collect();
+            assert!(corr(&th, &tt) > 0.55, "theta{d} corr {}", corr(&th, &tt));
+        }
+        for w in res.loglik_trace.windows(2) {
+            assert!(w[1] >= w[0] - 1e-6, "monotone");
+        }
+    }
+
+    /// D=4 correlated WIRING on Halton QMC nodes: the correlated path runs at D>3 and returns a
+    /// valid positive-definite, unit-diagonal Sigma whose off-diagonals recover the POSITIVE
+    /// equicorrelation (truth rho=0.4) directionally, with monotone EM. This exercises the Cholesky
+    /// node-map + the Sigma M-step at D>3. It is deliberately a directional/structural check, NOT a
+    /// tight per-pair recovery: at an affordable point count the higher-prime Halton axes carry real
+    /// QMC error in individual Sigma off-diagonals (documented ceiling), so a broken M-step (Sigma=I,
+    /// non-PD, NaN, or sign-flipped) is what this catches. Tight per-pair Sigma recovery needs a much
+    /// larger point count (n>=8000 at N>=4000 brings the worst pair within ~0.14 of the realized
+    /// correlation) and is out of scope for a fast test.
+    #[test]
+    fn qmc_recovers_correlated_d4() {
+        let n_dims = 4usize;
+        // pure anchors: 2 per dim (identification under correlation needs pure indicators).
+        let mut pattern: Vec<u8> = Vec::new();
+        for d in 0..n_dims {
+            for _ in 0..2 {
+                let mut row = vec![0u8; n_dims];
+                row[d] = 1;
+                pattern.extend_from_slice(&row);
+            }
+        }
+        let n_items = 2 * n_dims; // 8, all pure
+        let mut loading = vec![0.0f64; n_items * n_dims];
+        for d in 0..n_dims {
+            loading[(2 * d) * n_dims + d] = 1.3;
+            loading[(2 * d + 1) * n_dims + d] = 1.0;
+        }
+        let intercept: Vec<f64> = (0..n_items).map(|i| -0.4 + 0.1 * i as f64).collect();
+        // Build an equicorrelation Sigma (all pairwise correlations = rho) and its Cholesky.
+        let rho = 0.4f64;
+        let mut sigma = vec![rho; n_dims * n_dims];
+        for i in 0..n_dims { sigma[i * n_dims + i] = 1.0; }
+        let lchol = chol_lower(&sigma, n_dims).unwrap();
+        let n = 1500usize;
+        let mut rng = Lcg(20260716);
+        let mut thetas = vec![0.0f64; n * n_dims];
+        for j in 0..n {
+            let z: Vec<f64> = (0..n_dims).map(|_| rng.normal()).collect();
+            for k in 0..n_dims {
+                let mut t = 0.0f64;
+                for m in 0..=k { t += lchol[k * n_dims + m] * z[m]; }
+                thetas[j * n_dims + k] = t;
+            }
+        }
+        // realized sample correlation of the drawn traits (the estimable target under finite N).
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = MirtConfig {
+            xi_rule: XiRuleKind::Halton, xi_points: 3000, xi_seed: 777, estimate_corr: true,
+            ..MirtConfig::default()
+        };
+        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        assert_eq!(res.corr.len(), n_dims * n_dims);
+        for i in 0..n_dims {
+            assert!((res.corr[i * n_dims + i] - 1.0).abs() < 1e-9, "unit diagonal");
+        }
+        // Structural: the returned Sigma is a valid positive-definite correlation matrix, and every
+        // off-diagonal is a genuine (non-degenerate) correlation.
+        assert!(chol_lower(&res.corr, n_dims).is_some(), "Sigma is PD");
+        // Directional: the positive equicorrelation (truth rho=0.4) is recovered as a clearly
+        // POSITIVE mean off-diagonal. A broken Sigma M-step returning I gives mean 0; a sign flip
+        // gives a negative mean. We do NOT assert closeness to the realized ~0.41: at this
+        // affordable point count the higher-prime Halton axes bias the recovered correlations UPWARD
+        // by ~0.15 on the mean (the documented QMC ceiling), so tight closeness needs a much larger n.
+        let mut rec_sum = 0.0f64;
+        let mut cnt = 0.0f64;
+        for i in 0..n_dims {
+            for j in (i + 1)..n_dims {
+                assert!(res.corr[i * n_dims + j].abs() < 0.999, "off-diagonal not degenerate");
+                rec_sum += res.corr[i * n_dims + j];
+                cnt += 1.0;
+            }
+        }
+        let rec_mean = rec_sum / cnt;
+        assert!(rec_mean > 0.2, "recovered mean correlation {rec_mean} not clearly positive");
+        assert!(rec_mean < 0.85, "recovered mean correlation {rec_mean} implausibly high");
+        // The correlated path is NOT strictly step-monotone under QMC: the Sigma M-step
+        // reparametrizes the integration nodes (theta_g = L(Sigma) z_g), so each Sigma gives a
+        // different QMC quadrature of ITS marginal likelihood and the fixed-node monotonicity that
+        // the ORTHOGONAL path enjoys (Sigma = I, nodes never move) no longer holds exactly. What
+        // does hold is overall ASCENT and only QMC-scale per-step wobble. (Larger xi_points shrinks
+        // the wobble; the orthogonal path is the choice when strict monotonicity is required.)
+        // Overall ascent with only QMC-scale per-step wobble. The measured worst decrease here is
+        // ~0.1 on a loglik scale of ~8050 (relative ~1e-5); the 1.0 bound gives 10x headroom while
+        // still catching a Sigma M-step that genuinely harms the fit (which would drop it by >>1).
+        let trace = &res.loglik_trace;
+        let max_dec = trace.windows(2).map(|w| (w[0] - w[1]).max(0.0)).fold(0.0f64, f64::max);
+        assert!(max_dec < 1.0, "per-step decrease {max_dec} exceeds QMC wobble");
+        assert!(*trace.last().unwrap() >= trace[0], "overall EM ascent");
+    }
+
+    /// Rule-dependent validation: GH stays D<=3, QMC allows D<=6 and bounds xi_points; `q` is
+    /// unused on the QMC arms (an out-of-set q must NOT reject a Halton fit).
+    #[test]
+    fn mirt_qmc_validates() {
+        let n = 200usize;
+        // GH rejects D=4; Halton accepts it (needs a D=4 pattern with pure anchors).
+        let gh4 = MirtConfig { estimate_corr: false, ..MirtConfig::default() };
+        // build a minimal D=4 pattern (one pure anchor per dim) + data of the right shape.
+        let n_dims4 = 4usize;
+        let mut pat4: Vec<u8> = Vec::new();
+        for d in 0..n_dims4 {
+            let mut row = vec![0u8; n_dims4];
+            row[d] = 1;
+            pat4.extend_from_slice(&row);
+        }
+        let ni4 = n_dims4;
+        let y4 = vec![1.0f64; n * ni4];
+        let obs4 = vec![true; n * ni4];
+        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &gh4).is_err(), "GH D=4 rejected");
+        // Halton D=4 with an INVALID GH q (q ignored on the QMC arm) must SUCCEED.
+        let ok = MirtConfig {
+            xi_rule: XiRuleKind::Halton, xi_points: 400, xi_seed: 1, q: 99, max_iter: 3,
+            ..MirtConfig::default()
+        };
+        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &ok).is_ok(), "Halton D=4 q=99 ok");
+        // Halton D=6 (the UPPER bound MIRT_MAX_DIMS_QMC = HALTON_PRIMES.len()) is ACCEPTED. Pins
+        // the boundary so a shrink of the constant to 5 (silently rejecting valid D=6) is caught;
+        // D=7 just below is REJECTED (beyond the prime axes).
+        let mut pat6 = Vec::new();
+        for d in 0..6 { let mut r = vec![0u8; 6]; r[d] = 1; pat6.extend_from_slice(&r); }
+        let y6 = vec![1.0f64; n * 6];
+        let obs6 = vec![true; n * 6];
+        let d6 = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 200, max_iter: 1, ..MirtConfig::default() };
+        assert!(fit_compensatory_mirt(&y6, &obs6, &pat6, n, 6, 6, &d6).is_ok(), "Halton D=6 accepted");
+        let d7 = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 100, ..MirtConfig::default() };
+        let mut pat7 = Vec::new();
+        for d in 0..7 { let mut r = vec![0u8; 7]; r[d] = 1; pat7.extend_from_slice(&r); }
+        let y7 = vec![1.0f64; n * 7];
+        let obs7 = vec![true; n * 7];
+        assert!(fit_compensatory_mirt(&y7, &obs7, &pat7, n, 7, 7, &d7).is_err(), "Halton D=7 rejected");
+        // xi_points bounds: 0 rejected; MAX+1 rejected.
+        let zero = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 0, ..MirtConfig::default() };
+        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &zero).is_err(), "xi_points=0 rejected");
+        let huge = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: MIRT_MAX_NODES + 1, ..MirtConfig::default() };
+        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &huge).is_err(), "xi_points>MAX rejected");
+        // MonteCarlo D=7 also rejected (its builder has no cap; validate is the sole guard).
+        let mc7 = MirtConfig { xi_rule: XiRuleKind::MonteCarlo, xi_points: 100, ..MirtConfig::default() };
+        assert!(fit_compensatory_mirt(&y7, &obs7, &pat7, n, 7, 7, &mc7).is_err(), "MC D=7 rejected");
+    }
+
     fn small_design() -> (Vec<u8>, Vec<f64>, Vec<f64>, usize) {
         let mut pattern: Vec<u8> = Vec::new();
         for _ in 0..3 { pattern.extend_from_slice(&[1, 0]); }
@@ -1253,6 +1683,140 @@ mod tests {
                     assert!(lb.abs() < 0.03, "loading bias {lb} (D={n_dims})");
                     assert!(lrmse < 0.14, "loading RMSE {lrmse} (D={n_dims})");
                     assert!(tc > 0.68, "theta corr {tc} (D={n_dims})");
+                }
+            }
+        }
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps) for the HIGH-DIMENSIONAL QMC path (`D > 3`, which
+    /// the Gauss-Hermite product grid cannot reach): recover the compensatory loadings and traits
+    /// at D=4 and D=5 on Halton QMC nodes, under a normal AND a per-dim-standardized right-skew
+    /// trait. The QMC node set is FIXED across the EM run (so EM is monotone) and across reps (a
+    /// deterministic quadrature); the finite-node QMC bias is what the looser-than-GH thresholds
+    /// absorb, and averaging over reps is what pins the low-variance recovery the single fast test
+    /// cannot. Per-rep finiteness + monotone-EM canaries; non-convergence tracked separately.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_qmc_mirt_recovery_500() {
+        let reps = 500usize;
+        for &(n_dims, xi_points, n) in [(4usize, 4000usize, 2000usize), (5usize, 6000usize, 1500usize)].iter() {
+            // 2 pure anchors per dim (identification) + one cross-loader per dim.
+            let mut pattern: Vec<u8> = Vec::new();
+            for d in 0..n_dims {
+                for _ in 0..2 {
+                    let mut r = vec![0u8; n_dims];
+                    r[d] = 1;
+                    pattern.extend_from_slice(&r);
+                }
+            }
+            for d in 0..n_dims {
+                let mut r = vec![0u8; n_dims];
+                r[d] = 1;
+                r[(d + 1) % n_dims] = 1;
+                pattern.extend_from_slice(&r);
+            }
+            let n_items = 2 * n_dims + n_dims;
+            let mut loading = vec![0.0f64; n_items * n_dims];
+            for d in 0..n_dims {
+                loading[(2 * d) * n_dims + d] = 1.2;
+                loading[(2 * d + 1) * n_dims + d] = 0.9;
+            }
+            for d in 0..n_dims {
+                let base = 2 * n_dims + d;
+                loading[base * n_dims + d] = 1.0;
+                // alternate the cross-loader sign so a compensation-sign bug cannot hide.
+                loading[base * n_dims + (d + 1) % n_dims] = if d % 2 == 0 { 0.7 } else { -0.7 };
+            }
+            let intercept: Vec<f64> = (0..n_items).map(|i| -0.5 + 0.1 * i as f64).collect();
+
+            for &skew in [false, true].iter() {
+                let (mut lnum, mut lden, mut lbias) = (0.0f64, 0.0f64, 0.0f64);
+                let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
+                let mut nconv = 0usize;
+                for rep in 0..reps {
+                    let mut rng = Lcg(
+                        0x9E3779B97F4A7C15u64
+                            .wrapping_mul(rep as u64 + 1)
+                            .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
+                            .wrapping_add(n_dims as u64 * 0x100000001B3),
+                    );
+                    let mut thetas = vec![0.0f64; n * n_dims];
+                    for d in 0..n_dims {
+                        let col: Vec<f64> = (0..n)
+                            .map(|_| {
+                                if skew {
+                                    let mut cc = 0.0;
+                                    for _ in 0..3 {
+                                        let z = rng.normal();
+                                        cc += z * z;
+                                    }
+                                    (cc - 3.0) / 6f64.sqrt()
+                                } else {
+                                    rng.normal()
+                                }
+                            })
+                            .collect();
+                        let m = col.iter().sum::<f64>() / n as f64;
+                        let v = col.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n as f64;
+                        let sd = v.sqrt();
+                        for j in 0..n {
+                            thetas[j * n_dims + d] = (col[j] - m) / sd;
+                        }
+                    }
+                    let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+                    let observed = vec![true; n * n_items];
+                    let cfg = MirtConfig {
+                        xi_rule: XiRuleKind::Halton, xi_points, xi_seed: 0x2545_F491_4F6C_DD1D,
+                        ..MirtConfig::default()
+                    };
+                    let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+                    if res.converged {
+                        nconv += 1;
+                    }
+                    assert!(res.loglik_trace.iter().all(|v| v.is_finite()), "finite loglik (rep {rep})");
+                    for w in res.loglik_trace.windows(2) {
+                        assert!(w[1] >= w[0] - 1e-6, "monotone loglik (rep {rep})");
+                    }
+                    for i in 0..n_items {
+                        for d in 0..n_dims {
+                            let v = res.loading[i * n_dims + d];
+                            if pattern[i * n_dims + d] == 0 {
+                                assert_eq!(v, 0.0, "unloaded exactly zero");
+                            } else {
+                                assert!(v.is_finite() && v.abs() <= 10.0, "loading in bound");
+                                let e = v - loading[i * n_dims + d];
+                                lnum += e * e;
+                                lden += 1.0;
+                                lbias += e;
+                            }
+                        }
+                    }
+                    assert!(res.theta.iter().all(|v| v.is_finite()), "finite theta (rep {rep})");
+                    for d in 0..n_dims {
+                        let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
+                        let tt: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + d]).collect();
+                        csum += corr(&th, &tt);
+                        ccnt += 1.0;
+                    }
+                }
+                let lrmse = (lnum / lden).sqrt();
+                let (lb, tc, conv) = (lbias / lden, csum / ccnt, nconv as f64 / reps as f64);
+                println!(
+                    "[qmc-mirt MC D={n_dims} xi={xi_points} N={n} skew={skew}] reps={reps} \
+                     conv={conv:.3} loadRMSE={lrmse:.4} loadBias={lb:.4} thetaCorr={tc:.3}"
+                );
+                // Looser than the GH MC: QMC carries an O(N^-1 (log N)^D) finite-node bias that
+                // grows with D. Calibrated from a 50-rep pilot at D=4/5 x normal/skew (conv=1.000;
+                // normal loadRMSE 0.13/0.17, bias ~0.01; skew loadRMSE 0.16/0.21, bias ~-0.07/-0.09;
+                // thetaCorr 0.58-0.64) with margin for the 500-rep estimate.
+                assert!(conv > 0.90, "convergence {conv} (D={n_dims} skew={skew})");
+                if skew {
+                    assert!(lrmse < 0.26, "skew loading RMSE {lrmse} (D={n_dims})");
+                    assert!(tc > 0.50, "skew theta corr {tc} (D={n_dims})");
+                } else {
+                    assert!(lb.abs() < 0.06, "loading bias {lb} (D={n_dims})");
+                    assert!(lrmse < 0.19, "loading RMSE {lrmse} (D={n_dims})");
+                    assert!(tc > 0.55, "theta corr {tc} (D={n_dims})");
                 }
             }
         }

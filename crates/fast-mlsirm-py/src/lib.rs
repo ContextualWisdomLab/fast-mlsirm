@@ -757,14 +757,17 @@ fn fit_ho_gdina(
 /// `n_items * n_dims` 0/1 pattern; each dimension needs a pure single-loading anchor item
 /// (identification; the all-ones pattern is rejected). With `estimate_corr = False` the
 /// factors are ORTHOGONAL (`Sigma = I`); with `estimate_corr = True` the inter-factor
-/// correlation matrix is estimated (Cholesky node-map + a monotone ECM step). Returns a dict
+/// correlation matrix is estimated (Cholesky node-map + a monotone ECM step). `node_rule` picks
+/// the E-step quadrature: `"gh"` (Gauss-Hermite product grid, `n_dims <= 3`) or `"qmc"`/`"mc"`
+/// (Halton QMC / Monte-Carlo with `xi_points` prior draws, `n_dims <= 6`; Jank, 2005). `q`
+/// applies to `"gh"` only; `xi_points`/`xi_seed` to `"qmc"`/`"mc"` only. Returns a dict
 /// with `loading` (row-major `n_items * n_dims`, `0` off-pattern), `intercept`, `theta`
 /// (`n_persons * n_dims` EAP), `n_dims`, `corr` (row-major `n_dims * n_dims`, identity when not
 /// estimated), `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
 /// `final_loglik_change`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, estimate_corr = false, max_iter = 500, tol = 1e-6))]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, estimate_corr = false, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
 fn fit_compensatory_mirt(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, f64>,
@@ -777,6 +780,9 @@ fn fit_compensatory_mirt(
     estimate_corr: bool,
     max_iter: usize,
     tol: f64,
+    node_rule: &str,
+    xi_points: usize,
+    xi_seed: u64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let pattern: Vec<u8> = loading_pattern
         .as_slice()?
@@ -787,7 +793,11 @@ fn fit_compensatory_mirt(
             _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = MirtConfig { max_iter, tol, q, estimate_corr, ..MirtConfig::default() };
+    // `node_rule`: "gh" (Gauss-Hermite product grid, D<=3) or "qmc"/"mc" (Halton/Monte-Carlo,
+    // D<=6). q applies only to "gh"; xi_points/xi_seed only to the QMC/MC rules.
+    let xi_rule = XiRuleKind::parse(node_rule)
+        .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
+    let cfg = MirtConfig { max_iter, tol, q, estimate_corr, xi_rule, xi_points, xi_seed, ..MirtConfig::default() };
     let res = core_fit_compensatory_mirt(
         y.as_slice()?,
         observed.as_slice()?,

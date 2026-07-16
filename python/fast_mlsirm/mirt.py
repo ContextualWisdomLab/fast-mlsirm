@@ -51,6 +51,9 @@ def fit_compensatory_mirt(
     estimate_corr: bool = False,
     max_iter: int = 500,
     tol: float = 1e-6,
+    node_rule: str = "gh",
+    xi_points: int = 4000,
+    xi_seed: int = 0x9E37_79B9_7F4A_7C15,
 ) -> CompMirtFit:
     """Fit the confirmatory compensatory MIRT (compute in Rust; Reckase, 2009;
     Bock, Gibbons & Muraki, 1988).
@@ -73,10 +76,19 @@ def fit_compensatory_mirt(
 
     **Latent traits.** With ``estimate_corr=False`` (default) the factors are ORTHOGONAL
     (``theta ~ MVN(0, I)``). With ``estimate_corr=True`` the inter-factor CORRELATION matrix
-    ``Sigma`` (unit diagonal) is estimated by an ECM step (the standard GH grid is mapped
+    ``Sigma`` (unit diagonal) is estimated by an ECM step (the standard grid is mapped
     through ``chol(Sigma)`` and the correlations ascend the Gaussian-prior objective with a
-    positive-definite, monotone guard). ``n_dims > 3`` (which would need coarser GH or QMC) is
-    a deferred extension.
+    positive-definite, monotone guard).
+
+    **Integration nodes (``node_rule``).** ``"gh"`` (default) uses the exact ``q**n_dims``
+    Gauss-Hermite product grid and caps ``n_dims <= 3``. For ``n_dims = 4, 5, 6`` use
+    ``"qmc"`` (Halton quasi-Monte-Carlo, Jank 2005) or ``"mc"`` (plain Monte-Carlo): the E-step
+    integral is evaluated at ``xi_points`` points drawn from the prior (equal weights) instead
+    of the product grid, leaving the item and ``Sigma`` M-steps unchanged. QMC carries an
+    ``O(N**-1 (log N)**D)`` finite-node bias that grows with the dimension, so ``n_dims = 5, 6``
+    need materially larger ``xi_points``; ``xi_seed`` (nonzero by default) applies a
+    Cranley-Patterson random shift that de-correlates the higher Halton axes. ``q`` is used only
+    by ``"gh"``; ``xi_points``/``xi_seed`` only by ``"qmc"``/``"mc"``.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
     ``loading_pattern`` is an items x dimensions 0/1 array; ``q`` is the Gauss-Hermite nodes
@@ -91,6 +103,9 @@ def fit_compensatory_mirt(
         Bock, R. D., Gibbons, R., & Muraki, E. (1988). Full-information item factor
             analysis. *Applied Psychological Measurement, 12*(3), 261-280.
             https://doi.org/10.1177/014662168801200305
+        Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of Monte
+            Carlo EM. *Computational Statistics & Data Analysis, 48*(4), 685-701.
+            https://doi.org/10.1016/j.csda.2004.03.019
     """
     from .fitstats import _core_module
 
@@ -112,9 +127,14 @@ def fit_compensatory_mirt(
     if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
         raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
     n_dims = pat.shape[1]
-    if not 1 <= n_dims <= _MAX_DIMS:
+    # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
+    # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
+    _gh = str(node_rule).lower() in ("gh", "gauss-hermite", "gausshermite")
+    _max_dims = _MAX_DIMS if _gh else 6
+    if not 1 <= n_dims <= _max_dims:
         raise ValueError(
-            f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}"
+            f"loading_pattern dimensions must be between 1 and {_max_dims} "
+            f"(node_rule={node_rule!r})"
         )
     if np.isinf(y).any():
         raise ValueError("responses must be 0, 1, or NaN (missing)")
@@ -134,8 +154,19 @@ def fit_compensatory_mirt(
 
     q_int = _finite_integer(q, "q")
     max_iter_int = _finite_integer(max_iter, "max_iter")
-    if q_int not in _SUPPORTED_Q:
+    # q is used only by the Gauss-Hermite rule; the QMC/MC rules ignore it (matching the core).
+    if _gh and q_int not in _SUPPORTED_Q:
         raise ValueError(f"q must be one of {_SUPPORTED_Q}")
+    xi_points_int = _finite_integer(xi_points, "xi_points")
+    # xi_seed is a full-range u64 (default 0x9E37_79B9_7F4A_7C15): validate it as an EXACT integer
+    # WITHOUT a float64 round-trip. _finite_integer casts through float(), which silently rounds any
+    # value >= 2^53 (the default drifts, breaking Rust<->Python parity) and overflows u64 near the
+    # top of the range (raising OverflowError in the PyO3 conversion).
+    if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
+        raise ValueError("xi_seed must be a non-negative integer")
+    xi_seed_int = int(xi_seed)
+    if not 0 <= xi_seed_int < 2**64:
+        raise ValueError("xi_seed must be in [0, 2**64)")
 
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
@@ -150,6 +181,9 @@ def fit_compensatory_mirt(
         bool(estimate_corr),
         max_iter_int,
         float(tol),
+        str(node_rule),
+        xi_points_int,
+        xi_seed_int,
     )
     return CompMirtFit(
         loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),

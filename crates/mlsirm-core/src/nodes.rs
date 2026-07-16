@@ -331,6 +331,49 @@ mod tests {
         )
         .is_err());
     }
+
+    /// Deterministic LAYOUT pin for the Halton grid at D=4. A finite-difference gradient anchor
+    /// (used downstream in the MIRT QMC tests) reads the SAME grid for both the analytic and the
+    /// numeric derivative, so a transposed grid, a wrong prime-to-axis assignment, a dropped `+1`
+    /// index skip, or a mis-ordered row-major write is fed CONSISTENTLY to both and stays
+    /// invisible to that check. This pins each cell against an INDEPENDENT recomputation of the
+    /// exact construction, so any of those layout bugs fails here.
+    #[test]
+    fn halton_grid_layout_is_prime_per_axis_row_major() {
+        let (n, d) = (37usize, 4usize);
+        let nodes = build_xi_nodes(XiRule::Halton { n, shift_seed: 0 }, d).unwrap();
+        assert_eq!(nodes.grid.len(), n * d);
+        for j in 0..n {
+            for k in 0..d {
+                // axis k must use the k-th prime; point j must use radical index j+1 (skip 0).
+                let expect = inv_normal_cdf(
+                    radical_inverse(j as u64 + 1, HALTON_PRIMES[k]).clamp(1e-12, 1.0 - 1e-12),
+                );
+                assert_eq!(
+                    nodes.grid[j * d + k], expect,
+                    "halton grid[{j}*{d}+{k}] layout mismatch (prime {})",
+                    HALTON_PRIMES[k]
+                );
+            }
+        }
+    }
+
+    /// The QMC weights are equal `-ln(n)` (a uniform average over the prior-sampled nodes). Because
+    /// this constant cancels in the self-normalized posterior and in every posterior moment, a
+    /// wrong weight (e.g. `0` or a missing `1/n`) is invisible to every fit-level test and surfaces
+    /// only as a constant shift in the reported marginal loglik — a direct assertion is the ONLY
+    /// possible guard.
+    #[test]
+    fn qmc_weights_are_uniform_log_of_n() {
+        for (grid, expect) in [
+            (build_xi_nodes(XiRule::Halton { n: 500, shift_seed: 0 }, 3).unwrap(), -(500f64).ln()),
+            (build_xi_nodes(XiRule::MonteCarlo { n: 750, seed: 5 }, 4).unwrap(), -(750f64).ln()),
+        ] {
+            assert!(grid.logw.iter().all(|&w| w == expect), "QMC logw not uniform -ln(n)");
+            let total: f64 = grid.logw.iter().map(|w| w.exp()).sum();
+            assert!((total - 1.0).abs() < 1e-12, "sum exp(logw) != 1: {total}");
+        }
+    }
 }
 
 

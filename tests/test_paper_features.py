@@ -3086,6 +3086,86 @@ def test_fit_compensatory_mirt_recovers_loadings():
     assert np.all(np.linalg.eigvalsh(rc.corr) > 0)  # positive-definite
 
 
+def test_fit_compensatory_mirt_qmc_high_dim():
+    """QMC compensatory MIRT (Jank, 2005): the D>3 quasi-Monte-Carlo path the Gauss-Hermite
+    product grid cannot reach. Recovers a D=4 confirmatory loading pattern (2 pure anchors per
+    dimension + cross-loaders including a genuine NEGATIVE one) on Halton nodes; confirms the GH
+    path still caps D<=3 while QMC/MC reach D<=6; and checks the wrapper plumbing is two-sided
+    (a D<=3 QMC fit agrees with GH within QMC error but is NOT a silent bit-identical GH fallback)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_compensatory_mirt, CompMirtFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_compensatory_mirt"):
+        pytest.skip("compiled core built without fit_compensatory_mirt")
+
+    rng = np.random.default_rng(2005)
+    n, n_dims = 2500, 4
+    # 2 pure anchors per dim + 3 cross-loaders (one with a negative dim-1 loading).
+    rows = []
+    for d in range(n_dims):
+        rows += [[1 if k == d else 0 for k in range(n_dims)]] * 2
+    rows += [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]]
+    pattern = np.array(rows, dtype=np.int64)
+    n_items = pattern.shape[0]
+    loading = np.zeros((n_items, n_dims))
+    for d in range(n_dims):
+        loading[2 * d, d] = 1.2 + 0.1 * d
+        loading[2 * d + 1, d] = 0.9
+    cross = 2 * n_dims
+    loading[cross] = [1.0, -0.8, 0.0, 0.0]  # the negative cross-loader
+    loading[cross + 1] = [0.0, 1.1, 0.7, 0.0]
+    loading[cross + 2] = [0.0, 0.0, 0.8, 1.0]
+    intercept = np.linspace(-0.5, 0.7, n_items)
+    theta = rng.standard_normal((n, n_dims))
+    p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    # GH cannot reach D=4; QMC (Halton) can.
+    with pytest.raises(ValueError):
+        fit_compensatory_mirt(y, pattern, node_rule="gh")
+    res = fit_compensatory_mirt(y, pattern, node_rule="qmc", xi_points=4000, xi_seed=12345)
+    assert isinstance(res, CompMirtFit) and res.n_dims == 4
+    assert np.all(res.loading[pattern == 0] == 0.0)
+    assert np.sqrt(np.mean((res.loading - loading) ** 2)) < 0.18
+    assert res.loading[cross, 1] < -0.3  # negative cross-loader recovered with sign
+    for d in range(n_dims):
+        c = np.corrcoef(res.theta[:, d], theta[:, d])[0, 1]
+        assert c > 0.55, f"dim {d} theta corr {c}"
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # EM monotone
+
+    # node_rule validation and D<=6 bounds.
+    with pytest.raises(ValueError, match="node_rule"):
+        fit_compensatory_mirt(y, pattern, node_rule="nope")
+    pat7 = np.eye(7, dtype=np.int64)
+    y7 = (rng.random((200, 7)) < 0.5).astype(float)
+    with pytest.raises(ValueError):
+        fit_compensatory_mirt(y7, pat7, node_rule="qmc", xi_points=200)  # D=7 > 6
+
+    # Two-sided wrapper plumbing at D=2: GH and QMC agree within QMC error yet differ bit-wise
+    # (a silent GH fallback on the QMC arm would make them identical).
+    pat2 = np.array([[1, 0]] * 3 + [[0, 1]] * 3 + [[1, 1]], dtype=np.int64)
+    ld2 = np.zeros((7, 2))
+    for i in range(3):
+        ld2[i, 0] = 1.0 + 0.1 * i
+        ld2[3 + i, 1] = 1.0
+    ld2[6] = [0.9, 0.8]
+    ic2 = np.linspace(-0.4, 0.5, 7)
+    th2 = rng.standard_normal((2000, 2))
+    p2 = 1.0 / (1.0 + np.exp(-(th2 @ ld2.T + ic2)))
+    y2 = (rng.random((2000, 7)) < p2).astype(float)
+    gh2 = fit_compensatory_mirt(y2, pat2, q=21, node_rule="gh")
+    qmc2 = fit_compensatory_mirt(y2, pat2, node_rule="qmc", xi_points=6000, xi_seed=0)
+    max_abs = max(
+        np.max(np.abs(gh2.loading - qmc2.loading)),
+        np.max(np.abs(gh2.intercept - qmc2.intercept)),
+    )
+    assert max_abs < 0.10, f"QMC vs GH beyond QMC error: {max_abs}"
+    assert max_abs > 1e-10, "QMC fit bit-identical to GH (silent fallback?)"
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

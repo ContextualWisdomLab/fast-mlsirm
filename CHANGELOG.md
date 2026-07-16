@@ -139,6 +139,48 @@
   right-skew trait (shape misspecification; RMSE ~0.12/0.16, bias ~-0.06/-0.10), with
   per-dimension trait EAP correlation ~0.67-0.72 and 100% convergence, EM monotone every
   replication. Exposed to Python as `fit_compensatory_mirt` / `CompMirtFit`.
+- **`D > 3` confirmatory compensatory MIRT via quasi-Monte-Carlo EM** (Jank, 2005). The
+  compensatory MIRT above was capped at `D <= 3` by its `q^D` Gauss-Hermite product grid;
+  `fit_compensatory_mirt` now takes a `node_rule` (`"gh"` default, or `"qmc"`/`"mc"`) that swaps
+  the E-step integration nodes for a **Halton quasi-Monte-Carlo** (or seeded Monte-Carlo) rule,
+  reaching `D = 4, 5, 6` (the Halton prime axes). This is Jank's (2005) QMC-EM: the E-step integral
+  `int p(x|theta) phi(theta) dtheta` is evaluated at `xi_points` points drawn from the prior
+  (Halton radical inverse mapped through the inverse-normal CDF, equal weights `1/xi_points`)
+  instead of the product grid, and the node set is built ONCE before the EM loop, so the per-item
+  `(n_i+1)`-dim Newton M-step and the correlated-`Sigma` ECM step are byte-for-byte the same code on
+  the swapped nodes. The reused node generator (`mlsirm_core::nodes::build_xi_nodes`, shared with the
+  marginal QMC-EM family) is parity-tested; its Gauss-Hermite arm is bit-identical to the existing
+  product grid, so the `"gh"` path is unchanged bit-for-bit and every prior MIRT test passes verbatim.
+  Both the orthogonal and the correlated-`Sigma` (Cholesky node-map `theta_g = L z_g`) paths carry
+  over to `D > 3`. **Monotonicity.** With `Sigma = I` the nodes never move, so the orthogonal fit is
+  monotone in the QMC-approximated marginal likelihood; the correlated `Sigma` M-step reparametrizes
+  the node cloud, so that fit is monotone only up to the QMC quadrature error (overall ascent with
+  per-step wobble ~1e-5 relative that shrinks as `xi_points` grows) — use the orthogonal path or a
+  larger `xi_points` when strict monotonicity matters. Validation is rule-dependent: `"gh"` keeps
+  `D <= 3` and the `q^D <= 200_000` node cap; `"qmc"`/`"mc"` cap `D <= 6` (the Monte-Carlo node
+  builder has no internal cap, so this bound is its sole guard) and bound `xi_points`
+  (`1..=200_000`, with checked `xi_points * n_items` and `xi_points * n_dims` allocations); `q`
+  applies only to `"gh"`, `xi_points`/`xi_seed` only to `"qmc"`/`"mc"`. **Guards.** Beyond the
+  reused-grid regression, a deterministic layout pin asserts `build_xi_nodes(Halton).grid[j*D+k] ==
+  inv_normal_cdf(radical_inverse(j+1, prime_k))` at `D = 4` (independently fixing the prime-to-axis
+  assignment, the index skip, and the row-major layout that a value-recovery test cannot see); the
+  QMC weights are pinned to `-ln(n)` (invisible to every fit-level test since they cancel in the
+  self-normalized posterior); a deterministic finite-difference anchor pins the analytic gradient and
+  full cross-Hessian on a FIXED Halton grid at `D = 4` with a non-identity `dims` map; the reduction
+  anchor is TWO-SIDED (a `D = 2` QMC fit agrees with the GH fit within QMC error AND differs
+  bit-wise, so a silent GH fallback is caught); and the reflection anchor is exercised with a
+  reverse-keyed largest anchor. **Accuracy.** A Monte-Carlo (`D in {4, 5}`, confirmatory pattern with
+  pure anchors + alternating-sign cross-loaders, Halton `xi_points = 4000/6000`, `N = 2000/1500`)
+  under a correctly-specified normal trait recovers the loadings near-unbiased (loading RMSE ~0.13 at
+  `D = 4` / ~0.17 at `D = 5`, bias ~0.01) and shows the expected mild attenuation under a
+  per-dimension-standardized right-skew trait (shape misspecification; RMSE ~0.16/0.21, bias
+  ~-0.07/-0.09), with per-dimension trait EAP correlation ~0.58-0.64 and 100% convergence, EM
+  monotone every replication (the reported figures are a 50-replication pilot; the committed
+  `#[ignore]` test runs 500). QMC carries an `O(N^{-1} (log N)^D)` finite-node bias that grows with
+  `D` (the higher-prime Halton axes degrade), so `D = 5, 6` and the correlated `Sigma` off-diagonals
+  need materially larger `xi_points`; `xi_seed` (nonzero by default) applies a Cranley-Patterson
+  shift that partly de-correlates the higher axes. Exposed to Python as `fit_compensatory_mirt(...,
+  node_rule=, xi_points=, xi_seed=)`.
 - **Shared-Q sequential G-DINA for polytomous responses** (Ma & de la Torre, 2016;
   Tutz, 1990). `fit_seq_gdina(responses, q_matrix)` fits ordered polytomous cognitive
   diagnosis by the sequential (continuation-ratio) model: each ordered *step*
