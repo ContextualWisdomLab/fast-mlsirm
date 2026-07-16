@@ -1672,6 +1672,57 @@ def test_dif_polytomous():
         dif_polytomous(y1, gid1[:-5], k)  # group_id length mismatch
 
 
+def test_mantel_haenszel_dif():
+    """Observed-score Mantel-Haenszel DIF (Holland & Thayer, 1988) via the public API: a uniform
+    (b-shift) DIF planted on one dichotomous item, no group impact. MH flags the planted item as
+    practically large (ETS class B/C, BH-significant) with the delta sign matching the shift (harder for
+    the focal group -> negative MH_D-DIF and STD-P-DIF), classifies the clean items as A, and returns the
+    documented per-item arrays. Validation guards reject non-dichotomous responses and a single group."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import mantel_haenszel_dif
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mantel_haenszel_dif"):
+        pytest.skip("compiled core built without mantel_haenszel_dif")
+
+    n, n_items = 3000, 12
+    dif_item = 6
+    rng = np.random.default_rng(1988)
+    a = np.full(n_items, 1.2)
+    b = -0.8 + 0.14 * np.arange(n_items)
+    group = np.tile([0, 1], n // 2).astype(np.int64)
+    theta = rng.standard_normal(n)  # equal ability distribution -> no impact
+    bmat = np.tile(b, (n, 1))
+    bmat[group == 1, dif_item] += 0.7  # item harder for the focal group (uniform DIF)
+    p = 1.0 / (1.0 + np.exp(-(a * (theta[:, None] - bmat))))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    res = mantel_haenszel_dif(y, group)
+    for key in ("item", "alpha_mh", "chi2_mh", "p_value", "mh_d_dif", "se_d_dif", "std_p_dif",
+                "ets_class", "flagged_bh"):
+        assert res[key].shape == (n_items,), key
+    assert list(res["item"]) == list(range(n_items))
+    # planted item: BH-flagged, large negative delta, negative std-p-dif, class B or C
+    assert res["flagged_bh"][dif_item]
+    assert res["mh_d_dif"][dif_item] < -0.8
+    assert res["std_p_dif"][dif_item] < 0.0
+    assert res["ets_class"][dif_item] in ("B", "C")
+    # clean items: negligible (class A) by the practical-significance classification
+    clean = [i for i in range(n_items) if i != dif_item]
+    assert all(res["ets_class"][i] == "A" for i in clean)
+    assert np.all(np.abs(res["mh_d_dif"][clean]) < 1.0)
+
+    # validation: non-dichotomous responses and a single-group sample are rejected
+    ybad = y.copy()
+    ybad[0, 0] = 2
+    with pytest.raises(ValueError):
+        mantel_haenszel_dif(ybad, group)
+    with pytest.raises(ValueError):
+        mantel_haenszel_dif(y, np.zeros(n, dtype=np.int64))
+
+
 def test_dif_polytomous_grm_no_silent_false_negative():
     """A GRM studied item whose focal group never uses a middle category can
     disorder thresholds -> NaN loglik. The finiteness guard must surface that as

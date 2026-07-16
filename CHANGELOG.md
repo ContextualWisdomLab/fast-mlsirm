@@ -93,6 +93,33 @@
 
 ### Added
 
+- **Mantel-Haenszel differential item functioning** (`fast_mlsirm.mantel_haenszel_dif`; new
+  `mlsirm_core::dif`; Holland & Thayer, 1988). The observed-score, calibration-free DIF procedure — the
+  complement to the parametric IRT-LR DIF (`dif_polytomous`): no item response model is fitted.
+  Examinees are matched on the number-correct total (thin matching, studied item **included** by
+  default per Donoghue, Holland & Thayer, 1993; `exclude_studied_item=True` uses the rest score), and
+  per item the common odds ratio `alpha_MH = (sum_m A_m D_m / T_m)/(sum_m B_m C_m / T_m)` and the
+  continuity-corrected MH chi-square `max(0, |sum A_m - sum E(A_m)| - 0.5)^2 / sum Var(A_m)` (with the
+  hypergeometric `Var(A_m) = n_Rm n_Fm m1_m m0_m / (T_m^2(T_m-1))`, referred to `chi^2(1)`) are computed
+  over the DIF-informative strata (all four `2 x 2` marginal totals positive). Reported on the **ETS
+  delta metric** `MH_D-DIF = -2.35 ln(alpha_MH)` (negative = harder for the focal group) with the
+  Robins-Breslow-Greenland (1986) standard error, the **ETS A/B/C** severity classification (Zieky,
+  1993; A if not significant at .05 or `|D-DIF| < 1.0`, C if `|D-DIF| >= 1.5` and `|D-DIF| - 1.645 SE >
+  1.0`, B otherwise — or `Undefined`/`"U"` when there are no informative strata or a degenerate odds
+  ratio, *not* the affirmative "A"), and the **standardized P-DIF** companion (Dorans & Kulick, 1986)
+  `sum_m n_Fm (P_Fm - P_Rm) / sum_m n_Fm` (focal minus reference, so its sign agrees with `MH_D-DIF`).
+  Benjamini-Hochberg controls the across-item FDR; the p-value reuses `fitstats::chi2_sf`. **Guards.** A
+  two-stratum hand-computed anchor pins `alpha_MH`, the continuity-corrected chi-square, `MH_D-DIF`, the
+  RBG SE, `STD-P-DIF`, and the C label; a no-DIF symmetry anchor returns `alpha_MH = 1`, zero delta, and
+  class A; a degenerate/perfect-separation case returns NaN statistics and `Undefined` (never A); and a
+  planted uniform-DIF simulation flags the DIF item (class B/C, correct delta sign) while classifying
+  the clean items A and agreeing with the parametric IRT-LR DIF on the flagged item. Because the MH
+  chi-square is over-powered at large N and the studied item mildly contaminates the matching total, the
+  A/B/C classification (not the raw significance) is the practical-significance guard — documented, with
+  item purification and SIBTEST (Shealy & Stout, 1993) noted as future work. Spec-verified
+  (GO-WITH-MUST-FIXES: STD-P-DIF sign, `Var_m > 0` stratum gate, degenerate-odds guards, zero-clamped
+  continuity numerator).
+
 - **Dimension-agnostic IRT model API.** Item families are named by their
   response function rather than by UIRT/MIRT dimensionality:
   `fit_2pl`/`TwoPlFit`, `fit_grm`/`GrmFit`, and

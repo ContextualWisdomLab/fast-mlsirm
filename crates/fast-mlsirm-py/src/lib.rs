@@ -37,6 +37,7 @@ use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
+use mlsirm_core::dif::{mantel_haenszel_dif as core_mh_dif, MhDifConfig};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::poly::{
@@ -3302,6 +3303,78 @@ fn poly_dif(
     Ok(out.into())
 }
 
+/// Mantel-Haenszel differential item functioning (Rust compute path; Holland & Thayer, 1988). The
+/// observed-score, calibration-free DIF test: examinees are matched on the number-correct total
+/// (studied item included by default; `exclude_studied_item=True` uses the rest score), and per item a
+/// common odds ratio `alpha_MH` is estimated across the `2 x 2` (group x response) tables. `y` is a
+/// row-major `n_persons * n_items` `0/1` array; `group` is length `n_persons` with `0` = reference and
+/// `1` = focal. Returns a dict of per-item arrays: `item`, `alpha_mh`, `chi2_mh`, `p_value` (chi2 df 1),
+/// `mh_d_dif` (ETS delta `-2.35 ln(alpha_MH)`, negative = harder for the focal group), `se_d_dif`
+/// (Robins-Breslow-Greenland), `std_p_dif` (Dorans & Kulick, 1986, focal minus reference), `ets_class`
+/// (ETS `"A"`/`"B"`/`"C"`, or `"U"` when undefined), and `flagged_bh` (Benjamini-Hochberg at `fdr_q`).
+/// NaN statistics / `"U"` mean the item had no DIF-informative strata or a degenerate odds ratio.
+///
+/// References (APA 7th ed.):
+///   Dorans, N. J., & Kulick, E. (1986). Demonstrating the utility of the standardization approach to
+///     assessing unexpected differential item performance on the Scholastic Aptitude Test. Journal of
+///     Educational Measurement, 23(4), 355-368.
+///   Holland, P. W., & Thayer, D. T. (1988). Differential item performance and the Mantel-Haenszel
+///     procedure. In H. Wainer & H. I. Braun (Eds.), Test validity (pp. 129-145). Erlbaum.
+///   Robins, J., Breslow, N., & Greenland, S. (1986). Estimators of the Mantel-Haenszel variance
+///     consistent in both sparse data and large-strata limiting models. Biometrics, 42(2), 311-323.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, group, n_persons, n_items, exclude_studied_item = false, fdr_q = 0.05))]
+fn mantel_haenszel_dif(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    exclude_studied_item: bool,
+    fdr_q: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv: Vec<u8> = y
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("y responses must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let gv: Vec<u8> = group
+        .as_slice()?
+        .iter()
+        .map(|&g| match g {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err(
+                "group labels must be 0 (reference) or 1 (focal)",
+            )),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = MhDifConfig {
+        exclude_studied_item,
+        fdr_q,
+    };
+    let rows = core_mh_dif(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
+    out.set_item("alpha_mh", rows.iter().map(|r| r.alpha_mh).collect::<Vec<_>>())?;
+    out.set_item("chi2_mh", rows.iter().map(|r| r.chi2_mh).collect::<Vec<_>>())?;
+    out.set_item("p_value", rows.iter().map(|r| r.p_value).collect::<Vec<_>>())?;
+    out.set_item("mh_d_dif", rows.iter().map(|r| r.mh_d_dif).collect::<Vec<_>>())?;
+    out.set_item("se_d_dif", rows.iter().map(|r| r.se_d_dif).collect::<Vec<_>>())?;
+    out.set_item("std_p_dif", rows.iter().map(|r| r.std_p_dif).collect::<Vec<_>>())?;
+    out.set_item(
+        "ets_class",
+        rows.iter().map(|r| r.ets_class.as_str()).collect::<Vec<_>>(),
+    )?;
+    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    Ok(out.into())
+}
+
 /// Nonparametric polytomous person-fit U3poly (Rust compute path). Generalizes
 /// van der Flier's U3 to ordered polytomous items via sample item-step response
 /// functions; no fitted IRT model. Returns a dict of per-person arrays
@@ -4223,6 +4296,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
