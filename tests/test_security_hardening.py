@@ -935,3 +935,14 @@ def test_nominal_mirt_rejects_fractional_categories_before_native(monkeypatch):
             n_cat=2,
         )
 
+@pytest.mark.parametrize("factor_id", [np.array([0.5]), np.array([np.nan])])
+def test_fit_rejects_fractional_factor_id_before_integer_cast(factor_id):
+    from fast_mlsirm.fit import fit as fit_model
+
+    with pytest.raises(ValueError, match="integer values"):
+        fit_model(
+            np.array([[0.0], [1.0]]),
+            factor_id,
+            FitConfig(model="MIRT", estimator="mmle", backend="numpy", max_iter=1),
+        )
+

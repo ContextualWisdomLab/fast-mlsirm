@@ -74,7 +74,11 @@ def fit(
 
     y, observed = prepare_response(responses, mask)
     _, n_items = y.shape
-    factors = np.asarray(factor_id, dtype=np.int64)
+    factors = np.asarray(factor_id)
+    if factors.shape != (n_items,):
+        raise ValueError("factor_id length must match number of items")
+    if factors.dtype.kind not in {"i", "u"}:
+        raise ValueError("factor_id must contain integer values")
     n_dims = 1 if model in {"ULS2PLM", "ULSRM"} else int(factors.max()) + 1
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
