@@ -116,6 +116,41 @@ def test_score_respondents_rejects_item_count_mismatch():
         serving.score_respondents(bundle, {"q0": 1})
 
 
+@pytest.mark.parametrize("method", ["eap", "map"])
+def test_score_respondents_rejects_non_matrix_responses_before_core(
+    monkeypatch, method
+):
+    class BombCore:
+        def __getattr__(self, name):
+            raise AssertionError(f"compiled core must not be called: {name}")
+
+    monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="2-D"):
+        serving.score_respondents(
+            _bundle(n_items=2), np.zeros((1, 2, 3)), method=method
+        )
+
+
+def test_score_respondents_rejects_mismatched_mask_shape():
+    with pytest.raises(ValueError, match="mask shape"):
+        serving.score_respondents(
+            _bundle(n_items=2),
+            np.zeros((1, 2)),
+            mask=np.ones((2, 1), dtype=bool),
+        )
+
+
+def test_score_respondents_rejects_oversized_ndarray_before_core(monkeypatch):
+    class BombCore:
+        def __getattr__(self, name):
+            raise AssertionError(f"compiled core must not be called: {name}")
+
+    monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
+    monkeypatch.setattr(serving, "MAX_SCORE_CELLS", 3, raising=False)
+    with pytest.raises(ValueError, match="3-cell scoring limit"):
+        serving.score_respondents(_bundle(n_items=2), np.zeros((2, 2)))
+
+
 # ---- VULN-0002: plausible_values non-binary/non-finite responses -----------
 def test_plausible_values_rejects_non_binary_response():
     if serving._core_module() is None:  # pragma: no cover - core is built in CI

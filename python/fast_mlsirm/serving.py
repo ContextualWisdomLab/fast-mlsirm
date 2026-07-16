@@ -28,6 +28,7 @@ from .types import FitResult
 SCHEMA_VERSION = 1
 MAX_DRAWS = 100_000
 MAX_INFORMATION_POINTS = 100_000
+MAX_SCORE_CELLS = 20_000_000
 MAX_SERVING_OUTPUT_CELLS = 20_000_000
 
 
@@ -287,7 +288,6 @@ def score_respondents(
     if isinstance(responses, list):
         # Bound the dense respondent matrix before allocating: len(responses)
         # and n_items are both request/bundle controlled (memory-exhaustion DoS).
-        MAX_SCORE_CELLS = 20_000_000
         if len(responses) * n_items > MAX_SCORE_CELLS:
             raise ValueError(
                 f"response matrix ({len(responses)} x {n_items}) exceeds the "
@@ -304,9 +304,23 @@ def score_respondents(
         y = np.asarray(responses, dtype=float)
         if y.ndim == 1:
             y = y[None, :]
+        elif y.ndim != 2:
+            raise ValueError(
+                "responses must be a 1-D vector or 2-D persons x items matrix"
+            )
         if y.shape[1] != n_items:
             raise ValueError("responses column count must match the bundle items")
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+        if y.size > MAX_SCORE_CELLS:
+            raise ValueError(
+                f"response matrix ({y.shape[0]} x {n_items}) exceeds the "
+                f"{MAX_SCORE_CELLS}-cell scoring limit"
+            )
+    if mask is None:
+        observed = ~np.isnan(y)
+    else:
+        observed = np.asarray(mask, dtype=bool)
+        if observed.shape != y.shape:
+            raise ValueError("mask shape must match responses")
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
         raise ValueError("observed responses must be 0 or 1")
@@ -602,7 +616,6 @@ def plausible_values(
     if isinstance(responses, list):
         # Bound the dense respondent matrix before allocating: len(responses)
         # and n_items are both request/bundle controlled (memory-exhaustion DoS).
-        MAX_SCORE_CELLS = 20_000_000
         if len(responses) * n_items > MAX_SCORE_CELLS:
             raise ValueError(
                 f"response matrix ({len(responses)} x {n_items}) exceeds the "
@@ -619,8 +632,10 @@ def plausible_values(
         y = np.asarray(responses, dtype=float)
         if y.ndim != 2 or y.shape[1] != n_items:
             raise ValueError("responses must be a 2-D persons x n_items array")
-        if y.size > 20_000_000:
-            raise ValueError("response matrix exceeds the 20000000-cell scoring limit")
+        if y.size > MAX_SCORE_CELLS:
+            raise ValueError(
+                f"response matrix exceeds the {MAX_SCORE_CELLS}-cell scoring limit"
+            )
     output_cells = int(y.shape[0]) * draw_count * int(bundle["n_dims"])
     if output_cells > MAX_SERVING_OUTPUT_CELLS:
         raise ValueError(
