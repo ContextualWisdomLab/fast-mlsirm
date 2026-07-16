@@ -17,7 +17,16 @@ from .diagnostics import (
     response_process_fit_diagnostics,
 )
 from .fit import fit
-from .io import _load_numpy_bounded, load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
+from .io import (
+    _load_json_bounded,
+    _load_numpy_bounded,
+    load_factor_csv,
+    load_params,
+    save_dimensionality_diagnostics,
+    save_fit_diagnostics,
+    save_fit_result,
+    save_simulation,
+)
 from .report import render_diagnostics_report
 from .simulation import simulate
 
@@ -38,7 +47,7 @@ def _load_fit_context(
     summary_path = path.with_name("fit_summary.json")
     if not summary_path.exists():
         return None, None, None
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = _load_json_bounded(summary_path, source="fit summary")
     optimizer = str(summary.get("optimizer", "")).lower()
     estimator = "mmle" if optimizer.startswith("mmle") else "jmle" if optimizer else None
     raw_status = summary.get("convergence_status")
@@ -316,8 +325,10 @@ def _main(argv: list[str] | None = None) -> int:
             if args.responses.endswith(".npy"):
                 payload = _load_numpy_bounded(args.responses)
             else:
-                with open(args.responses, encoding="utf-8") as fh:
-                    payload = json.load(fh)
+                payload = _load_json_bounded(
+                    args.responses,
+                    source="response JSON",
+                )
             scores = score_respondents(bundle, payload)
         except (ValueError, OSError, json.JSONDecodeError) as e:
             if os.environ.get("FAST_MLSIRM_DEBUG"):

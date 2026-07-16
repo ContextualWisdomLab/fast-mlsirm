@@ -13,6 +13,8 @@ from __future__ import annotations
 import numpy as np
 
 SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
+MAX_FACTOR_DIMENSIONS = 64
+MAX_GPCM_CATEGORIES = 256
 
 # Priors of Jeon et al. (2021) / lsirm12pl, used as MAP penalties by the
 # marginal estimator (mirror of PenaltyConfig::lsirm_prior in Rust):
@@ -1028,9 +1030,37 @@ def score_eap(
     """
     y = np.asarray(y, dtype=np.float64)
     observed = np.asarray(observed, dtype=bool)
-    factor_id = np.asarray(factor_id, dtype=np.int64)
+    factor_values = np.asarray(factor_id)
+    if factor_values.ndim != 1 or factor_values.size == 0:
+        raise ValueError("factor_id must be a non-empty 1-D array")
+    try:
+        factor_numeric = np.asarray(factor_values, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("factor_id must contain integer values") from exc
+    if (
+        not np.all(np.isfinite(factor_numeric))
+        or np.any(factor_numeric != np.floor(factor_numeric))
+        or np.any(factor_numeric < 0)
+    ):
+        raise ValueError("factor_id must contain finite non-negative integers")
+    max_factor = int(factor_numeric.max())
+    if max_factor >= MAX_FACTOR_DIMENSIONS:
+        raise ValueError(
+            f"factor_id values must be below {MAX_FACTOR_DIMENSIONS}"
+        )
     if n_dims is None:
-        n_dims = int(factor_id.max()) + 1
+        n_dims = max_factor + 1
+    elif (
+        not isinstance(n_dims, (int, np.integer))
+        or isinstance(n_dims, (bool, np.bool_))
+        or not (max_factor < int(n_dims) <= MAX_FACTOR_DIMENSIONS)
+    ):
+        raise ValueError(
+            f"n_dims must be an integer in {max_factor + 1}.."
+            f"{MAX_FACTOR_DIMENSIONS}"
+        )
+    n_dims = int(n_dims)
+    factor_id = factor_numeric.astype(np.int64)
     model = model.upper()
     _, uses_space = _model_flags(model)
     alpha = np.asarray(alpha, dtype=np.float64)
@@ -1235,6 +1265,11 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         raise ValueError("tol must be finite and > 0")
 
     k_cat = int(n_cat)
+    if k_cat > MAX_GPCM_CATEGORIES:
+        raise ValueError(
+            f"n_cat must be at most {MAX_GPCM_CATEGORIES} to bound the "
+            "per-item Hessian allocation"
+        )
     if (
         not np.all(np.isfinite(yf))
         or np.any(yf != np.floor(yf))

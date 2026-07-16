@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import zipfile
 from dataclasses import asdict
@@ -17,6 +18,8 @@ MAX_NUMPY_ARRAY_BYTES = 512 * 1024 * 1024
 MAX_NUMPY_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_NUMPY_ARCHIVE_MEMBERS = 256
 MAX_NUMPY_HEADER_BYTES = 64 * 1024
+MAX_JSON_INPUT_BYTES = 32 * 1024 * 1024
+MAX_FACTOR_CSV_BYTES = 16 * 1024 * 1024
 
 
 def _validate_npy_header(stream: BinaryIO, source: str) -> tuple[int, int]:
@@ -99,6 +102,40 @@ def _validate_numpy_file(path: Path) -> None:
                 raise ValueError(
                     "NPZ archive declares more array bytes than the safe limit"
                 )
+
+
+def _read_text_bounded(
+    path: str | Path,
+    *,
+    source: str,
+    max_bytes: int,
+) -> str:
+    """Read UTF-8 text without permitting an unbounded in-memory payload."""
+    input_path = Path(path)
+    with input_path.open("rb") as stream:
+        payload = stream.read(max_bytes + 1)
+    if len(payload) > max_bytes:
+        raise ValueError(f"{source} exceeds the {max_bytes}-byte input limit")
+    try:
+        return payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{source} must be valid UTF-8") from exc
+
+
+def _load_json_bounded(
+    path: str | Path,
+    *,
+    source: str,
+    parse_constant=None,
+):
+    """Deserialize JSON only after enforcing a byte limit on the input."""
+    content = _read_text_bounded(
+        path,
+        source=source,
+        max_bytes=MAX_JSON_INPUT_BYTES,
+    )
+    kwargs = {} if parse_constant is None else {"parse_constant": parse_constant}
+    return json.loads(content, **kwargs)
 
 
 def _load_numpy_bounded(path: str | Path):
@@ -212,13 +249,25 @@ def load_params(path: str | Path) -> MLSIRMParams:
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
     import warnings
-    content = Path(path).read_text(encoding="utf-8").strip()
-    if not content:
+
+    content = _read_text_bounded(
+        path,
+        source="factor CSV",
+        max_bytes=MAX_FACTOR_CSV_BYTES,
+    )
+    if not content or content.isspace():
         raise ValueError("factor CSV is empty")
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return np.loadtxt(path, delimiter=',', skiprows=1, usecols=1, dtype=np.int64, ndmin=1)
+        return np.loadtxt(
+            io.StringIO(content),
+            delimiter=",",
+            skiprows=1,
+            usecols=1,
+            dtype=np.int64,
+            ndmin=1,
+        )
 
 
 def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:

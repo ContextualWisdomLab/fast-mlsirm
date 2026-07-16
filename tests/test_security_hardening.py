@@ -21,7 +21,8 @@ from fast_mlsirm.config import (
     FitConfig,
 )
 from fast_mlsirm.fit import _compact_population_labels
-from fast_mlsirm.io import load_params
+from fast_mlsirm.estimators.marginal import fit_gpcm_numpy, score_eap
+from fast_mlsirm.io import load_factor_csv, load_params
 from fast_mlsirm.validation import validate_judge
 
 
@@ -973,3 +974,82 @@ def test_fit_rejects_fractional_factor_id_before_integer_cast(factor_id):
             FitConfig(model="MIRT", estimator="mmle", backend="numpy", max_iter=1),
         )
 
+
+# ===========================================================================
+# Strix current-head resource-exhaustion regressions.
+# ===========================================================================
+def test_factor_csv_rejects_oversized_text_before_numpy_parse(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "factors.csv"
+    path.write_text("item_id,factor_id\n0,0\n", encoding="utf-8")
+    monkeypatch.setattr("fast_mlsirm.io.MAX_FACTOR_CSV_BYTES", 8)
+    with patch(
+        "fast_mlsirm.io.np.loadtxt",
+        side_effect=AssertionError("oversized CSV reached NumPy parsing"),
+    ):
+        with pytest.raises(ValueError, match="input limit"):
+            load_factor_csv(path)
+
+
+def test_serving_bundle_rejects_oversized_json_before_deserialization(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps(_bundle()), encoding="utf-8")
+    monkeypatch.setattr("fast_mlsirm.io.MAX_JSON_INPUT_BYTES", 8)
+    with pytest.raises(ValueError, match="input limit"):
+        serving.load_serving_bundle(path)
+
+
+def test_fit_gpcm_rejects_unbounded_category_count_before_quadrature():
+    with patch(
+        "fast_mlsirm.estimators.marginal._gh",
+        side_effect=AssertionError("oversized category count reached quadrature"),
+    ):
+        with pytest.raises(ValueError, match="at most"):
+            fit_gpcm_numpy(np.array([[0.0]]), n_cat=100_000)
+
+
+@pytest.mark.parametrize(
+    "factor_id",
+    [
+        np.array([100_000_000]),
+        np.array([2**63], dtype=np.uint64),
+    ],
+)
+def test_score_eap_rejects_unbounded_factor_id_before_quadrature(factor_id):
+    with patch(
+        "fast_mlsirm.estimators.marginal._gh",
+        side_effect=AssertionError("unsafe factor_id reached quadrature"),
+    ):
+        with pytest.raises(ValueError, match="factor_id"):
+            score_eap(
+                np.zeros((1, 1)),
+                np.ones((1, 1), dtype=bool),
+                factor_id,
+                np.zeros(1),
+                np.zeros(1),
+                np.zeros((1, 1)),
+                0.0,
+                model="MIRT",
+            )
+
+
+def test_score_eap_rejects_unbounded_explicit_dimensions_before_quadrature():
+    with patch(
+        "fast_mlsirm.estimators.marginal._gh",
+        side_effect=AssertionError("unsafe n_dims reached quadrature"),
+    ):
+        with pytest.raises(ValueError, match="n_dims"):
+            score_eap(
+                np.zeros((1, 1)),
+                np.ones((1, 1), dtype=bool),
+                np.array([0]),
+                np.zeros(1),
+                np.zeros(1),
+                np.zeros((1, 1)),
+                0.0,
+                model="MIRT",
+                n_dims=100_000_000,
+            )

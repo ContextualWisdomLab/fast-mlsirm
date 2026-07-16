@@ -23,6 +23,7 @@ import numpy as np
 
 from .config import MAX_LATENT_DIM, VALID_MODELS
 from .estimators.marginal import score_eap
+from .io import _load_json_bounded
 from .types import FitResult
 
 SCHEMA_VERSION = 1
@@ -281,8 +282,10 @@ def _validate_bundle(bundle: Any) -> None:
 
 
 def load_serving_bundle(path: str | Path) -> dict[str, Any]:
-    bundle = json.loads(
-        Path(path).read_text(encoding="utf-8"), parse_constant=_reject_nonfinite_json
+    bundle = _load_json_bounded(
+        path,
+        source="serving bundle",
+        parse_constant=_reject_nonfinite_json,
     )
     _validate_bundle(bundle)
     return bundle
