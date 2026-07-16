@@ -42,6 +42,7 @@ use mlsirm_core::cdm::{
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::mirt::{fit_compensatory_mirt as core_fit_compensatory_mirt, MirtConfig};
 use mlsirm_core::nominal_mirt::{fit_nominal_mirt as core_fit_nominal_mirt, NominalMirtConfig};
+use mlsirm_core::grm_mirt::{fit_grm_mirt as core_fit_grm_mirt, GrmMirtConfig};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
@@ -900,6 +901,85 @@ fn fit_nominal_mirt(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", res.slope)?;
     out.set_item("intercept", res.intercept)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("n_dims", res.n_dims)?;
+    out.set_item("n_cat", res.n_cat)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+
+/// Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995;
+/// `mlsirm_core::grm_mirt::fit_grm_mirt`). Each item's `n_cat` ORDERED categories share a SINGLE
+/// multidimensional discrimination `a_i` (free on the confirmatory `loading_pattern`, items x
+/// n_dims 0/1) and have `n_cat-1` ORDERED boundary intercepts `beta_i`:
+/// `P(Y>=k|theta) = sigmoid(sum_d a_id theta_d + beta_i,{k-1})`, `theta ~ MVN(0, I)`. Reduces to
+/// `fit_poly_unidim(GRM)` at `n_dims = 1`. `node_rule` picks the E-step quadrature: `"gh"`
+/// (`n_dims <= 3`) or `"qmc"`/`"mc"` (Halton/Monte-Carlo, `n_dims <= 6`). `y` is a row-major
+/// `n_persons * n_items` integer-category array; `observed` an optional bool mask (missing dropped
+/// MAR). Returns a dict with `slope` (row-major `n_items * n_dims`, `0` off-pattern,
+/// reflection-canonicalized), `threshold` (`n_items * (n_cat-1)`, strictly decreasing per item),
+/// `theta` (`n_persons * n_dims` EAP), `n_dims`, `n_cat`, `loglik_trace`, `n_iter`, `converged`,
+/// `termination_reason`, `final_loglik_change`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, q = 21, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
+fn fit_grm_mirt(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    loading_pattern: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    n_cat: usize,
+    q: usize,
+    max_iter: usize,
+    tol: f64,
+    node_rule: &str,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative")))
+        .collect::<PyResult<_>>()?;
+    let pattern: Vec<u8> = loading_pattern
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let xi_rule = XiRuleKind::parse(node_rule)
+        .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
+    let cfg = GrmMirtConfig { max_iter, tol, q, xi_rule, xi_points, xi_seed, ..GrmMirtConfig::default() };
+    let res = core_fit_grm_mirt(
+        &yy,
+        obs_vec.as_deref(),
+        &pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", res.slope)?;
+    out.set_item("threshold", res.threshold)?;
     out.set_item("theta", res.theta)?;
     out.set_item("n_dims", res.n_dims)?;
     out.set_item("n_cat", res.n_cat)?;
@@ -3543,6 +3623,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_seq_gdina_qr, m)?)?;
     m.add_function(wrap_pyfunction!(fit_compensatory_mirt, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal_mirt, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_grm_mirt, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;

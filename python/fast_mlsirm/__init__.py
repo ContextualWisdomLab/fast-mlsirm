@@ -27,6 +27,7 @@ from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
 from .mirt import fit_compensatory_mirt as fit_compensatory_mirt, CompMirtFit as CompMirtFit
 from .nominal_mirt import fit_nominal_mirt as fit_nominal_mirt, NominalMirtFit as NominalMirtFit
+from .grm_mirt import fit_grm_mirt as fit_grm_mirt, GrmMirtFit as GrmMirtFit
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -120,6 +121,8 @@ __all__ = [
     "CompMirtFit",
     "fit_nominal_mirt",
     "NominalMirtFit",
+    "fit_grm_mirt",
+    "GrmMirtFit",
     "fit_rsm",
     "RsmFit",
     "fit_mixed_items",

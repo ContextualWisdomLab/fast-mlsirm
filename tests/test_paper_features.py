@@ -3254,6 +3254,84 @@ def test_fit_nominal_mirt_recovers_multidimensional_categories():
         fit_nominal_mirt(ygap, pattern, n_cat)
 
 
+def test_fit_grm_mirt_recovers_multidimensional_ordered_categories():
+    """Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995):
+    recover a D=2 confirmatory pattern of item discrimination vectors (ORDERED categories) including a
+    genuinely NEGATIVE cross-loader on a positively-anchored dimension; confirm the recovered
+    thresholds are strictly ordered and the baseline reflection is canonicalized (pure anchors
+    positive); and reject rotationally-degenerate patterns, out-of-range and unobserved categories,
+    and GH D>3."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_grm_mirt, GrmMirtFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_grm_mirt"):
+        pytest.skip("compiled core built without fit_grm_mirt")
+
+    rng = np.random.default_rng(1969)
+    n_dims, n_cat, n = 2, 3, 6000
+    pattern = np.array([[1, 0], [1, 0], [0, 1], [0, 1], [1, 1]], dtype=np.int64)
+    n_items = pattern.shape[0]
+    slope = np.zeros((n_items, n_dims))
+    slope[0, 0], slope[1, 0] = 1.4, 1.0
+    slope[2, 1], slope[3, 1] = 1.2, 1.1
+    slope[4, 0], slope[4, 1] = -1.0, 0.9   # negative cross-loader on dim0 (anchor item 0 positive)
+    threshold = np.zeros((n_items, n_cat - 1))
+    for i in range(n_items):
+        threshold[i] = [1.1 + 0.05 * i, 0.05 * i - 0.9]  # strictly decreasing
+    theta = rng.standard_normal((n, n_dims))
+    # simulate via cumulative logits P(Y>=k)=sigmoid(base+beta_{k-1})
+    y = np.zeros((n, n_items), dtype=np.int64)
+    for i in range(n_items):
+        base = theta @ slope[i]
+        ge = 1.0 / (1.0 + np.exp(-(base[:, None] + threshold[i][None, :])))  # (n, n_cat-1)
+        pk = np.zeros((n, n_cat))
+        pk[:, 0] = 1.0 - ge[:, 0]
+        for k in range(1, n_cat - 1):
+            pk[:, k] = ge[:, k - 1] - ge[:, k]
+        pk[:, n_cat - 1] = ge[:, n_cat - 2]
+        pk = np.clip(pk, 1e-12, None)
+        pk /= pk.sum(axis=1, keepdims=True)
+        u = rng.random(n)
+        y[:, i] = (pk.cumsum(axis=1) < u[:, None]).sum(axis=1)
+
+    res = fit_grm_mirt(y, pattern, n_cat, q=21)
+    assert isinstance(res, GrmMirtFit) and res.converged
+    assert res.slope.shape == (n_items, n_dims) and res.threshold.shape == (n_items, n_cat - 1)
+    assert res.n_dims == 2 and res.n_cat == 3
+    # off-pattern slopes exactly zero
+    for i in range(n_items):
+        for d in range(n_dims):
+            if pattern[i, d] == 0:
+                assert res.slope[i, d] == 0.0
+    # free-parameter count = sum_i (|S_i| + (n_cat-1))
+    assert res.n_parameters == 4 * (1 + 2) + (2 + 2)
+    # recovered thresholds strictly decreasing on every item
+    assert np.all(res.threshold[:, 0] > res.threshold[:, 1])
+    # canonical: pure anchors positive; negative cross-loader recovered negative
+    assert res.slope[0, 0] > 0.5 and res.slope[2, 1] > 0.5
+    assert res.slope[4, 0] < -0.4, f"neg cross-loader {res.slope[4, 0]}"
+    assert np.sqrt(np.mean((res.slope - slope) ** 2)) < 0.16
+    for d in range(n_dims):
+        assert np.corrcoef(res.theta[:, d], theta[:, d])[0, 1] > 0.6
+    assert np.all(np.diff(res.loglik_trace) >= -1e-9)  # EM monotone
+
+    # validation
+    with pytest.raises(ValueError):  # GH D=4
+        fit_grm_mirt((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64),
+                     np.eye(4, dtype=np.int64), n_cat, node_rule="gh")
+    with pytest.raises(ValueError):  # no pure anchor
+        fit_grm_mirt(y, np.ones((n_items, n_dims), dtype=np.int64), n_cat)
+    with pytest.raises(ValueError):  # category out of range
+        ybad = y.copy(); ybad[0, 0] = n_cat
+        fit_grm_mirt(ybad, pattern, n_cat)
+    with pytest.raises(ValueError):  # unobserved category
+        ygap = y.copy(); ygap[ygap[:, 0] == 1, 0] = 0
+        fit_grm_mirt(ygap, pattern, n_cat)
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

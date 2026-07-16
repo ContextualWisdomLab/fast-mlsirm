@@ -8,6 +8,7 @@ pub mod lltm;
 pub mod marginal;
 pub mod mixed;
 pub mod mixture;
+pub mod grm_mirt;
 pub mod mirt;
 pub mod mmle;
 pub mod nominal_mirt;

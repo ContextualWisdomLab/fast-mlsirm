@@ -93,6 +93,58 @@
 
 ### Added
 
+- **Confirmatory MULTIDIMENSIONAL graded response model** (Samejima, 1969; Muraki & Carlson, 1995).
+  `fit_grm_mirt(responses, loading_pattern, n_cat)` fits ORDERED polytomous categories with a SINGLE
+  multidimensional discrimination vector per item and ordered category boundaries: item `i` has a
+  free slope `a_i` (free on the confirmatory 0/1 `loading_pattern`, items x D) and `n_cat-1` ORDERED
+  boundary intercepts `beta_i`, with `P(Y_i >= k | theta) = sigmoid(sum_{d in S_i} a_id theta_d +
+  beta_i,{k-1})`, `theta ~ MVN(0, I_D)`. This is the ORDERED counterpart of the multidimensional
+  nominal model and the polytomous generalization of the compensatory MIRT; it reduces to the
+  unidimensional GRM (`poly::fit_poly_unidim(PolyModel::Grm)`) at `D = 1` (within optimizer tolerance
+  and up to reflection — NOT bit-exact, because `fit_poly_unidim` forces `a > 0` via a `log a`
+  parametrization while the confirmatory model uses an UNCONSTRAINED slope so reverse-keyed / negative
+  cross-loadings are representable). Estimated by Bock-Aitkin marginal MLE over the D-dim latent grid,
+  REUSING the compensatory-MIRT node machinery (`nodes::build_xi_nodes`): `node_rule = "gh"` uses the
+  `q^D` Gauss-Hermite grid (`D <= 3`), `"qmc"`/`"mc"` use `xi_points` Halton / Monte-Carlo draws
+  (`D <= 6`, Jank 2005 QMC-EM), and the GRM cumulative-logit cell of `poly::grm_logprobs` /
+  `grm_node_gradient`. The per-item M-step is a finite-difference-Hessian Newton over
+  `[a_{d0}..a_{d,L-1}, beta_1..beta_{M-1}]`, byte-for-byte the ascent of `poly::m_step_item` (ridge =
+  Hessian conditioning only, not a prior), with the GRM node gradient chained to the multidimensional
+  slope (`d/da_id = sum_node g_base theta_d`, `d/dbeta_j = sum_node g_thr[j]`). The ORDERED-threshold
+  constraint is maintained WITHOUT an explicit reparametrization: every adjacent boundary pair is a
+  middle category whose log-probability goes non-finite the instant the pair inverts (`0*NaN=NaN` so a
+  zero expected count cannot mask it), so the backtracking line search — which rejects any non-finite
+  step — keeps `beta` fully ordered by adjacency + transitivity. EM uses the SIGNED
+  monotonic-decrease stopping guard (a likelihood decrease errors, not the compensatory MIRT's
+  `.abs()` check). **Identification.** Unit trait variances + ordered thresholds + a PURE
+  single-dimension anchor item per dimension pin the rotation to the coordinate axes; the
+  per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` leaves `base` — hence every
+  threshold and category probability — INVARIANT, so it is CANONICALIZED (unlike the nominal, whose
+  per-category slopes make the anchor sign ambiguous): dimension `d` is flipped so its
+  largest-magnitude pure anchor loads positively, negating that dimension's slopes AND the trait
+  `theta_d` but NOT the thresholds. `validate` rejects a rotationally-degenerate pattern (no pure
+  anchor), an out-of-range category, and ANY unobserved category for an item (a GRM boundary would
+  diverge), with a `nodes x items x n_cat` count-table cap and the rule-dependent D / q / xi_points
+  bounds. **Guards.** The D=1 anchor recovers `fit_poly_unidim(Grm)`'s slope and thresholds within
+  tolerance (all-positive DGP, the domain where its `log a` is correctly specified); a deterministic
+  finite-difference anchor pins every per-(dimension, threshold) gradient slot on a fixed node set at
+  D=2 (GH) AND D=4 (Halton) with a NON-IDENTITY dims map, M>=4 categories, STRICTLY-DECREASING
+  thresholds (gaps >> the FD step, since the GRM cell NaNs on an inverted boundary) and distinct
+  random per-category counts; because that FD anchor is map-invariant, a SEPARATE deterministic
+  objective-value assertion at D=4 (dims `[0,2,3]`) pins the node-column dims map by computing
+  `base = sum_t a_t node[dim_t]` and the GRM log-probabilities BY HAND and matching the estimator's
+  internal value to `< 1e-9` (the QMC path is never exercised by the D<=3 recovery / MC); a
+  reflection-FIRES test drives a reverse-keyed largest pure anchor and asserts it ends positive, a
+  co-loader ends negative, and the thresholds are unchanged and still ordered; a D=2 recovery carries
+  a genuinely NEGATIVE cross-loader on a positively-anchored dimension (asserted `< -margin`) with
+  strictly-ordered recovered thresholds. A Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied
+  cross-loaders, `n_cat = 3`, GH `q = 15/11`, `N = 2500/2000`) recovers the loadings near-unbiased
+  under a normal trait (loading RMSE ~0.10, bias ~0.00-0.01; threshold RMSE ~0.05-0.06) with the
+  expected mild attenuation under a per-dimension-standardized right-skew trait (RMSE ~0.17/0.18,
+  bias ~-0.12/-0.13), per-dimension trait EAP correlation ~0.63-0.70 and 100% convergence, EM
+  monotone and thresholds ordered every replication (40-replication pilot; the committed `#[ignore]`
+  test runs 500). Compute lives in `mlsirm_core::grm_mirt::fit_grm_mirt`; exposed to Python as
+  `fit_grm_mirt` / `GrmMirtFit`.
 - **Confirmatory MULTIDIMENSIONAL nominal response model** (Bock, 1972; Thissen, Cai, & Bock,
   2010). `fit_nominal_mirt(responses, loading_pattern, n_cat)` fits unordered polytomous categories
   with CATEGORY-SPECIFIC multidimensional discrimination: category `k` of item `i` has a free slope
