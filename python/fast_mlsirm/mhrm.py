@@ -1,11 +1,12 @@
-"""Metropolis-Hastings Robbins-Monro (MH-RM) confirmatory multidimensional 2PL (Cai, 2010).
+"""Metropolis-Hastings Robbins-Monro (MH-RM) confirmatory multidimensional IFA (Cai, 2010).
 
 A stochastic-approximation EM that scales confirmatory item factor analysis to a latent
 dimensionality where the deterministic Gauss-Hermite / quasi-Monte-Carlo E-steps of
 :func:`fast_mlsirm.fit_2pl` become infeasible. Each cycle imputes the traits with a short persistent
 random-walk Metropolis chain, then takes one Robbins-Monro stochastic-Newton step on the
-block-diagonal (per-item) complete-data score and information. Orthogonal factors (``Sigma = I``).
-The numerical estimation runs in Rust."""
+block-diagonal (per-item) complete-data score and information. Supports the binary 2PL and the ordered
+polytomous GPCM (Muraki, 1992) response families, orthogonal or correlated factors. The numerical
+estimation runs in Rust."""
 
 from __future__ import annotations
 
@@ -24,25 +25,36 @@ class MhrmFit:
 
     ``loading`` is the ``n_items x n_dims`` matrix of free loadings ``a_id`` (exactly ``0`` where the
     confirmatory pattern is ``0``), per-dimension reflection-canonicalized so each dimension's largest
-    pure anchor loads positive; ``intercept`` the per-item ``b_i``; ``theta`` the ``n_persons x
-    n_dims`` trait EAP (Monte-Carlo mean of the imputed draws over the convergence stage); ``corr`` the
-    ``n_dims x n_dims`` latent correlation matrix ``Phi`` (identity when ``estimate_corr=False``, unit
-    diagonal with estimated off-diagonals otherwise); ``se_loading`` / ``se_intercept`` the Louis
-    (1982) observed-information standard errors (empty when ``estimate_se=False``; a block falls back to
-    the complete-data Fisher information where the finite-sample Louis block is not positive-definite).
-    The model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
-    ``theta_j ~ MVN(0, Phi)``.
+    pure anchor loads positive; ``theta`` the ``n_persons x n_dims`` trait EAP (Monte-Carlo mean of the
+    imputed draws over the convergence stage); ``corr`` the ``n_dims x n_dims`` latent correlation
+    matrix ``Phi`` (identity when ``estimate_corr=False``, unit diagonal with estimated off-diagonals
+    otherwise).
+
+    The category parameters depend on :attr:`family`. For the binary 2PL, ``intercept`` holds the
+    per-item ``b_i`` (and ``step`` is empty); the model is
+    ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)``. For the GPCM (Muraki, 1992), ``step``
+    is the ``n_items x (n_cat - 1)`` matrix of UNORDERED step intercepts (and ``intercept`` is empty);
+    with ``base_ij = sum_d a_id theta_jd`` (no intercept),
+    ``P(X_ij=k | theta_j) = softmax_k(k*base_ij + step_ik)`` (``step_i0 = 0`` pinned), ``theta_j ~
+    MVN(0, Phi)``. ``se_loading`` / ``se_intercept`` / ``se_step`` are the matching Louis (1982)
+    observed-information standard errors (empty when ``estimate_se=False``; a block falls back to the
+    complete-data Fisher information where the finite-sample Louis block is not positive-definite).
+
     ``acceptance_rate`` is the final tuned Metropolis acceptance; ``termination_reason`` is
     ``"converged"`` or ``"max_cycles_reached"``; ``final_param_change`` the windowed mean parameter
     change at termination."""
 
     model: IrtModel
+    family: str
+    n_cat: int
     loading: np.ndarray
     intercept: np.ndarray
+    step: np.ndarray
     theta: np.ndarray
     corr: np.ndarray
     se_loading: np.ndarray
     se_intercept: np.ndarray
+    se_step: np.ndarray
     acceptance_rate: float
     n_cycles: int
     converged: bool
@@ -60,6 +72,8 @@ class MhrmFit:
 def fit_mhrm(
     responses: np.ndarray,
     model: int | ExploratoryModel | ConfirmatoryModel = 1,
+    family: str = "2pl",
+    n_cat: int = 2,
     max_cycles: int = 2000,
     burn_in: int = 200,
     mh_steps: int = 5,
@@ -91,14 +105,23 @@ def fit_mhrm(
     Loadings are UNCONSTRAINED so reverse-keyed / negative cross-loadings are representable. Standard
     errors are the Louis (1982) observed information accumulated over the convergence stage.
 
-    ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR). For
-    ``model=1`` all item loadings on the single factor are free; a multidimensional confirmatory
-    structure is supplied with ``model=models.confirmatory(loading_pattern)``; every dimension needs a
-    pure single-loading anchor item. ``burn_in`` must be less than ``max_cycles``; ``proposal_sd`` is
-    the initial random-walk SD, auto-tuned toward ``target_accept`` during burn-in. With
-    ``estimate_corr=True`` a free latent CORRELATION matrix ``Phi`` (``theta ~ MVN(0, Phi)``, unit
-    diagonal) is estimated by a per-cycle Robbins-Monro gradient step (Cai, 2010b); with ``False``
-    (default) the factors are orthogonal (``Phi = I``) and the fit is bit-identical to the flag off.
+    The response family is selected by ``family``: ``"2pl"`` (binary, default) or ``"gpcm"`` (the
+    ordered polytomous generalized partial credit model, Muraki, 1992, with ``n_cat`` integer
+    categories ``0..n_cat``). For the GPCM each item keeps a SINGLE discrimination vector ``a_i`` and
+    gains ``n_cat - 1`` free UNORDERED step intercepts, ``P(X_ij=k) = softmax_k(k*sum_d a_id theta_jd +
+    step_ik)``, estimated by the same MH-RM machinery with the closed-form multinomial complete-data
+    Hessian as the Robbins-Monro preconditioner and Louis information. ``family="gpcm"`` requires every
+    declared category to be observed for every item (else the corresponding step is unidentified).
+
+    ``responses`` is a persons x items array (``NaN`` = missing, dropped under MAR): ``0/1`` for the
+    2PL, integer categories ``0..n_cat`` for the GPCM. For ``model=1`` all item loadings on the single
+    factor are free; a multidimensional confirmatory structure is supplied with
+    ``model=models.confirmatory(loading_pattern)``; every dimension needs a pure single-loading anchor
+    item. ``burn_in`` must be less than ``max_cycles``; ``proposal_sd`` is the initial random-walk SD,
+    auto-tuned toward ``target_accept`` during burn-in. With ``estimate_corr=True`` a free latent
+    CORRELATION matrix ``Phi`` (``theta ~ MVN(0, Phi)``, unit diagonal) is estimated by a per-cycle
+    Robbins-Monro gradient step (Cai, 2010b); with ``False`` (default) the factors are orthogonal
+    (``Phi = I``) and the fit is bit-identical to the flag off.
 
     References (APA 7th ed.):
         Cai, L. (2010). High-dimensional exploratory item factor analysis by a Metropolis-Hastings
@@ -110,6 +133,8 @@ def fit_mhrm(
         Louis, T. A. (1982). Finding the observed information matrix when using the EM algorithm.
             *Journal of the Royal Statistical Society: Series B, 44*(2), 226-233.
             https://doi.org/10.1111/j.2517-6161.1982.tb01203.x
+        Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
+            Psychological Measurement, 16*(2), 159-176. https://doi.org/10.1177/014662169201600206
     """
     from .fitstats import _core_module
 
@@ -151,11 +176,26 @@ def fit_mhrm(
         if not np.isfinite(float(val)):
             raise ValueError(f"{name} must be finite")
 
+    fam = str(family).lower()
+    if fam not in ("2pl", "gpcm"):
+        raise ValueError("family must be '2pl' or 'gpcm'")
+    n_cat_int = _finite_int(n_cat, "n_cat")
+    if fam == "2pl":
+        n_cat_int = 2
+    elif n_cat_int < 2:
+        raise ValueError("n_cat must be >= 2 for family='gpcm'")
+
     observed = ~np.isnan(y)
     if np.any(observed):
         obs_y = y[observed]
-        if np.any((obs_y != 0) & (obs_y != 1)):
-            raise ValueError("responses must be 0, 1, or NaN (missing)")
+        if fam == "2pl":
+            if np.any((obs_y != 0) & (obs_y != 1)):
+                raise ValueError("responses must be 0, 1, or NaN (missing)")
+        else:
+            if np.any(obs_y != np.floor(obs_y)) or np.any(obs_y < 0) or np.any(obs_y >= n_cat_int):
+                raise ValueError(
+                    f"responses must be integer categories in 0..{n_cat_int}, or NaN (missing)"
+                )
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
     res = core.fit_mhrm(
@@ -174,17 +214,26 @@ def fit_mhrm(
         seed_int,
         bool(estimate_se),
         bool(estimate_corr),
+        fam,
+        int(n_cat_int),
     )
     se_loading = np.asarray(res["se_loading"], dtype=np.float64)
     se_intercept = np.asarray(res["se_intercept"], dtype=np.float64)
+    se_step = np.asarray(res["se_step"], dtype=np.float64)
+    n_free_cat = int(res["n_cat"]) - 1
+    step = np.asarray(res["step"], dtype=np.float64)
     return MhrmFit(
         model=resolved_model,
+        family=fam,
+        n_cat=int(res["n_cat"]),
         loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),
         intercept=np.asarray(res["intercept"], dtype=np.float64),
+        step=step.reshape(n_items, n_free_cat) if step.size else step,
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
         corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
         se_loading=se_loading.reshape(n_items, n_dims) if se_loading.size else se_loading,
         se_intercept=se_intercept,
+        se_step=se_step.reshape(n_items, n_free_cat) if se_step.size else se_step,
         acceptance_rate=float(res["acceptance_rate"]),
         n_cycles=int(res["n_cycles"]),
         converged=bool(res["converged"]),

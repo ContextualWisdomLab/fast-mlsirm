@@ -3276,6 +3276,87 @@ def test_fit_mhrm_estimate_corr_recovers_factor_correlation():
     assert res0.n_parameters == n_items + n_items
 
 
+def test_fit_mhrm_gpcm_recovers_high_dimensional_polytomous():
+    """MH-RM GPCM (Muraki, 1992; Cai, 2010): high-dimensional confirmatory GENERALIZED PARTIAL CREDIT
+    model by Metropolis-Hastings Robbins-Monro. Recovers a D=3 confirmatory pattern of loadings and
+    UNORDERED step intercepts — the q**D Gauss-Hermite grid and the QMC E-step are infeasible for a
+    polytomous item factor model at this dimensionality — including a genuinely NEGATIVE cross-loader,
+    with reflection-canonicalized signs; exposes the family/n_cat/step result shape (intercept empty);
+    and rejects out-of-range responses and a never-observed category (an unidentified step)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import MhrmFit, fit_mhrm, models
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        pytest.skip("compiled core built without fit_mhrm")
+
+    rng = np.random.default_rng(1992)
+    n, n_dims, n_cat = 3000, 3, 3
+    rows = []
+    for d in range(n_dims):
+        rows += [[1 if k == d else 0 for k in range(n_dims)]] * 3  # 3 pure anchors per dim
+    cross = [0] * n_dims
+    cross[0] = 1
+    cross[2] = 1
+    rows.append(cross)  # one cross-loader on dims 0 and 2
+    pattern = np.array(rows, dtype=np.int64)
+    n_items = pattern.shape[0]
+    loading = np.zeros((n_items, n_dims))
+    for d in range(n_dims):
+        for a in range(3):
+            loading[3 * d + a, d] = 0.9 + 0.1 * a
+    xi = n_items - 1
+    loading[xi, 0] = 1.0
+    loading[xi, 2] = -0.7  # negative cross-loader
+    # non-monotone (unordered) steps per item
+    step = np.column_stack([
+        0.7 - 0.12 * (np.arange(n_items) % 3),
+        -0.4 + 0.1 * (np.arange(n_items) % 4),
+    ])
+    theta = rng.standard_normal((n, n_dims))
+    base = theta @ loading.T  # (n, n_items), no intercept
+    # psi_k = k*base + step_k (step_0 = 0); sample categories from the softmax
+    ks = np.arange(n_cat)
+    full_step = np.hstack([np.zeros((n_items, 1)), step])  # (n_items, n_cat)
+    psi = base[:, :, None] * ks[None, None, :] + full_step[None, :, :]  # (n, n_items, n_cat)
+    psi -= psi.max(axis=2, keepdims=True)
+    prob = np.exp(psi)
+    prob /= prob.sum(axis=2, keepdims=True)
+    u = rng.random((n, n_items))
+    y = (u[:, :, None] > np.cumsum(prob, axis=2)).sum(axis=2).astype(float)  # inverse-CDF draw
+
+    res = fit_mhrm(y, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat,
+                   max_cycles=1200, burn_in=250, mh_steps=6, seed=11)
+    assert isinstance(res, MhrmFit) and res.n_dims == n_dims
+    assert res.family == "gpcm" and res.n_cat == n_cat
+    assert res.loading.shape == (n_items, n_dims)
+    assert res.step.shape == (n_items, n_cat - 1)
+    assert res.intercept.size == 0  # 2PL intercept empty for GPCM
+    assert res.se_step.shape == (n_items, n_cat - 1)
+    assert np.all(res.loading[pattern == 0] == 0.0)
+    assert res.n_parameters == int(pattern.sum()) + n_items * (n_cat - 1)
+    onpat = pattern == 1
+    assert np.sqrt(np.mean((res.loading[onpat] - loading[onpat]) ** 2)) < 0.25
+    assert res.loading[xi, 2] < -0.3  # negative cross-loader recovered with sign
+    assert np.sqrt(np.mean((res.step - step) ** 2)) < 0.25
+    for d in range(n_dims):
+        c = np.corrcoef(res.theta[:, d], theta[:, d])[0, 1]
+        assert c > 0.5, f"dim {d} theta corr {c}"
+
+    # out-of-range response (== n_cat) rejected
+    with pytest.raises(ValueError):
+        ybad = y.copy()
+        ybad[0, 0] = n_cat
+        fit_mhrm(ybad, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat)
+    # a declared category never observed for an item (unidentified step) rejected
+    with pytest.raises(ValueError):
+        ycov = y.copy()
+        ycov[ycov[:, 0] == 1, 0] = 0  # item 0 never shows category 1
+        fit_mhrm(ycov, model=models.confirmatory(pattern), family="gpcm", n_cat=n_cat)
+
+
 def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     """Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen-Cai-Bock, 2010):
     recover a D=2 confirmatory pattern of CATEGORY-SPECIFIC multidimensional slopes (unordered

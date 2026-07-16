@@ -34,7 +34,7 @@ use mlsirm_core::fitstats::{
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
-use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig};
+use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
@@ -892,14 +892,20 @@ fn fit_2pl(
 /// chain, then takes one Robbins-Monro stochastic-Newton step on the block-diagonal (per-item)
 /// complete-data score/information. Orthogonal factors (`Sigma = I`). `y` is a row-major
 /// `n_persons * n_items` binary array; `observed` an optional bool mask (missing dropped MAR).
-/// Returns a dict with `loading` (row-major `n_items * n_dims`, `0` off-pattern, reflection-
-/// canonicalized), `intercept` (`n_items`), `theta` (`n_persons * n_dims` trait EAP), `n_dims`,
-/// `se_loading`/`se_intercept` (Louis observed-information SEs; empty when `estimate_se = false`),
-/// `acceptance_rate`, `n_cycles`, `converged`, `termination_reason`, `final_param_change`,
-/// `n_parameters`.
+/// The response family is chosen by `model`: `"2pl"` (binary, DEFAULT) or `"gpcm"` (ordered
+/// polytomous generalized partial credit model, Muraki, 1992, with `n_cat` categories `0..n_cat`).
+/// For GPCM `base_i = sum_d a_id theta_d` (NO intercept) and `P(Y=k) = softmax_k(k*base_i + step_ik)`
+/// with `n_cat - 1` free UNORDERED step intercepts per item, estimated by the SAME MH-RM machinery
+/// with the closed-form multinomial Hessian as the Robbins-Monro preconditioner and Louis
+/// information. Returns a dict with `loading` (row-major `n_items * n_dims`, `0` off-pattern,
+/// reflection-canonicalized), `intercept` (`n_items`; EMPTY for GPCM), `step` (row-major
+/// `n_items * (n_cat - 1)` GPCM step intercepts; EMPTY for the 2PL), `n_cat`, `theta`
+/// (`n_persons * n_dims` trait EAP), `n_dims`, `corr`, `se_loading`/`se_intercept`/`se_step` (Louis
+/// observed-information SEs; empty when `estimate_se = false`), `acceptance_rate`, `n_cycles`,
+/// `converged`, `termination_reason`, `final_param_change`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true, estimate_corr = false))]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true, estimate_corr = false, model = "2pl", n_cat = 2))]
 fn fit_mhrm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -917,7 +923,23 @@ fn fit_mhrm(
     seed: u64,
     estimate_se: bool,
     estimate_corr: bool,
+    model: &str,
+    n_cat: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    let model_kind = match model {
+        "2pl" | "2PL" => MhrmModel::TwoPl,
+        "gpcm" | "GPCM" => {
+            if n_cat < 2 {
+                return Err(PyValueError::new_err("n_cat must be >= 2 for the GPCM"));
+            }
+            MhrmModel::Gpcm { n_cat }
+        }
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "model must be '2pl' or 'gpcm', got '{other}'"
+            )))
+        }
+    };
     let yy: Vec<usize> = y
         .as_slice()?
         .iter()
@@ -951,6 +973,7 @@ fn fit_mhrm(
         seed,
         estimate_se,
         estimate_corr,
+        model: model_kind,
         ..MhrmConfig::default()
     };
     let res = core_fit_mhrm(
@@ -966,11 +989,14 @@ fn fit_mhrm(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("loading", res.loading)?;
     out.set_item("intercept", res.intercept)?;
+    out.set_item("step", res.step)?;
+    out.set_item("n_cat", res.n_cat)?;
     out.set_item("theta", res.theta)?;
     out.set_item("n_dims", res.n_dims)?;
     out.set_item("corr", res.corr)?;
     out.set_item("se_loading", res.se_loading)?;
     out.set_item("se_intercept", res.se_intercept)?;
+    out.set_item("se_step", res.se_step)?;
     out.set_item("acceptance_rate", res.acceptance_rate)?;
     out.set_item("n_cycles", res.n_cycles)?;
     out.set_item("converged", res.converged)?;

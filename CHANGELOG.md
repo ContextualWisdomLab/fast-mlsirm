@@ -134,6 +134,47 @@
   correlation RMSE/bias and would surface a persistent PD-backtracking stall. Exposed to Python as the
   `estimate_corr` argument and the `corr` field of `MhrmFit`.
 
+- **Polytomous (GPCM) response family for MH-RM** (`fit_mhrm(..., family="gpcm", n_cat=K)`; Muraki,
+  1992, generalized partial credit model estimated by the Cai, 2010 MH-RM). Extends the
+  stochastic-approximation confirmatory item factor analysis from binary items to ordered polytomous
+  items, scaling high-dimensional POLYTOMOUS IFA to a latent dimensionality where the deterministic
+  `fit_gpcm` (Gauss-Hermite / QMC EM) is infeasible. Each item keeps a SINGLE multidimensional
+  discrimination `a_i` (free on the confirmatory loading pattern) and gains `K-1` free UNORDERED step
+  intercepts: `base_i = sum_{d in S_i} a_id theta_d` (NO intercept), `P(Y=k) = softmax_k(k*base_i +
+  step_ik)` (`step_i0 = 0` pinned). The MH imputation likelihood is the inline log-softmax of the
+  observed category (no per-node allocation), and the per-item RM step uses the **closed-form
+  multinomial complete-data Hessian** `H = sum_p J_p^T (diag(P) - P P^T) J_p` (data-independent given
+  `theta`, where the design row `J_p[k]` is `d psi_k / d param`: `k*theta_pd` for slope `a_id`, `[k==j]`
+  for `step_j`) as BOTH the Robbins-Monro preconditioner AND the Louis positive term — NOT the BHHH
+  score cross-product (which is the term Louis subtracts, so `H_BHHH - sum s s^T = 0` would give a
+  degenerate SE). The complete-data score `sum_p J_p^T ([k==y_p] - P)` equals the deterministic
+  `gpcm.rs`'s `[g_base*theta_d; g_intercepts]` with the integer scores fixed (`g_scores` dropped — what
+  makes it GPCM, not nominal). The per-dimension reflection flips only the slope column and the trait
+  chain — the UNORDERED steps are left INVARIANT (`base = k*sum a_d theta_d` is invariant under the
+  joint `(a, theta)` sign flip), exactly as the deterministic `gpcm.rs`. `family="2pl"` (default) keeps
+  the binary path **BIT-IDENTICAL** (the closed-form `log_sigmoid` score and `sum w X X^T` information
+  are unchanged on the same RNG stream). GRM (Samejima cumulative-logit, ordered thresholds) is
+  DEFERRED: its thresholds must stay strictly decreasing, which the deterministic `grm.rs` maintains by
+  a backtracking line search a single stochastic RM Newton step cannot replicate (the standard path is a
+  softplus threshold-gap reparametrization — future work). An adversarial implementation review found
+  and fixed two defects the initial tests missed: the output/SE routing keyed on `n_free_cat == 1` as a
+  "is 2PL" proxy, which mis-collapsed a legal `Gpcm { n_cat = 2 }` fit's single step into the 2PL
+  `intercept`/`se_intercept` fields (now keyed on the model family); and the declared `MHRM_MAX_CAT`
+  category cap was never enforced (an unbounded `n_cat` allocation vector — now validated). **Guards.** A
+  deterministic finite-difference
+  anchor pins the GPCM score AND the exact-multinomial information against the complete-data GPCM
+  log-likelihood on an asymmetric cross-loader with a NEGATIVE loading and NON-MONOTONE steps (a sign
+  flip, a transposed/dropped design slot, an over-collapsed step block, or BHHH-as-information all fail
+  it), with an independent per-person score outer-product re-sum pinning the sign of the Louis
+  missing-information subtraction; a `D=1` reduction test agrees with `poly::fit_poly_unidim(Gpcm)`
+  (Bock-Aitkin quadrature) within Monte-Carlo tolerance; a `D=5` recovery (GH/QMC infeasible) recovers
+  loadings, steps, and the negative cross-loader with correct sign; a reflection-FIRES test witnesses
+  the canonicalization flipping a negative anchor while leaving the steps un-swept; the validation
+  rejects out-of-range responses and any never-observed category (an unidentified step); and a
+  `#[ignore]` 500-rep Monte-Carlo (normal + right-skew traits, `D=2` and `D=5`, `K=3`) reports the
+  loading/step RMSE and bias. Exposed to Python as the `family`/`n_cat` arguments and the
+  `step`/`se_step`/`n_cat` fields of `MhrmFit`.
+
 - **High-dimensional confirmatory 2PL by Metropolis-Hastings Robbins-Monro** (Cai, 2010).
   `fit_mhrm(responses, model=...)` fits the general compensatory multidimensional 2PL
   (`P(X_ij = 1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta ~ MVN(0, I_D)`) — the
