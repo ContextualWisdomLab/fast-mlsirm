@@ -142,7 +142,10 @@ def fit_nominal_mirt(
     # missing = NaN or negative; the core takes a categories array + an observed mask.
     observed = np.isfinite(y) & (y >= 0)
     if np.any(observed):
-        maxc = y[observed].max()
+        observed_y = y[observed]
+        if np.any(observed_y != np.floor(observed_y)):
+            raise ValueError("responses must be integer categories in 0..n_cat-1 where observed")
+        maxc = observed_y.max()
         if maxc >= n_cat_int:
             raise ValueError("responses must be integer categories in 0..n_cat-1 where observed")
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)

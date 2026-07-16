@@ -919,3 +919,19 @@ def test_polytomous_dif_rejects_unsafe_controls_before_native(
         polytomous.dif_polytomous(
             np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
         )
+
+def test_nominal_mirt_rejects_fractional_categories_before_native(monkeypatch):
+    from fast_mlsirm.nominal_mirt import fit_nominal_mirt
+
+    class BombCore:
+        def fit_nominal_mirt(self, *_args):
+            raise AssertionError("fractional responses reached the native core")
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="integer categories"):
+        fit_nominal_mirt(
+            np.array([[0.9], [1.9]]),
+            np.ones((1, 1), dtype=np.int64),
+            n_cat=2,
+        )
+
