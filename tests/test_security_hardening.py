@@ -177,6 +177,57 @@ def test_plausible_values_rejects_extreme_n_draws():
             serving.plausible_values(bundle, {"q0": 1}, n_draws=bad)
 
 
+def test_plausible_values_rejects_unbounded_output_before_core(monkeypatch):
+    class UnexpectedCore:
+        def plausible_values(self, *args, **kwargs):
+            pytest.fail("oversized plausible-value request reached the native core")
+
+    monkeypatch.setattr(serving, "_core_module", lambda: UnexpectedCore())
+    bundle = _bundle(n_dims=64)
+    responses = np.zeros((1_000, 1), dtype=np.float64)
+    with pytest.raises(ValueError, match="output size"):
+        serving.plausible_values(bundle, responses, n_draws=100_000)
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [np.zeros((2, 1, 1)), np.zeros((2, 2)), np.zeros(1)],
+)
+def test_plausible_values_rejects_malformed_ndarray_shape(monkeypatch, responses):
+    monkeypatch.setattr(serving, "_core_module", lambda: object())
+    with pytest.raises(ValueError, match="2-D persons x n_items"):
+        serving.plausible_values(_bundle(), responses, n_draws=1)
+
+
+def test_plausible_values_rejects_noninteger_n_draws(monkeypatch):
+    monkeypatch.setattr(serving, "_core_module", lambda: object())
+    with pytest.raises(ValueError, match="integer"):
+        serving.plausible_values(_bundle(), np.zeros((1, 1)), n_draws=1.5)
+
+
+@pytest.mark.parametrize(
+    ("theta", "xi"),
+    [
+        (np.zeros((3, 1)), np.zeros((3, 2))),
+        (np.zeros((3, 2)), np.zeros((3, 1))),
+        (np.zeros((3, 2)), np.zeros((2, 2))),
+        (np.array([[0.0, np.nan]]), np.zeros((1, 2))),
+        (np.zeros((1, 2)), np.array([[0.0, np.inf]])),
+        (np.zeros((0, 2)), np.zeros((0, 2))),
+    ],
+)
+def test_bank_information_rejects_malformed_inputs_before_core(monkeypatch, theta, xi):
+    monkeypatch.setattr(serving, "_core_module", lambda: object())
+    with pytest.raises(ValueError):
+        serving.bank_information(_bundle(n_items=2, n_dims=2, latent_dim=2), theta, xi)
+
+
+def test_bank_information_rejects_unbounded_points_before_core(monkeypatch):
+    monkeypatch.setattr(serving, "_core_module", lambda: object())
+    with pytest.raises(ValueError, match="points"):
+        serving.bank_information(_bundle(), np.zeros((100_001, 1)))
+
+
 # ---- VULN-0002 (confirm): malformed bundle -> ValueError, not KeyError ------
 def test_score_respondents_rejects_bundle_missing_items():
     with pytest.raises(ValueError):

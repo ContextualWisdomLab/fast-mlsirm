@@ -27,6 +27,8 @@ from .types import FitResult
 
 SCHEMA_VERSION = 1
 MAX_DRAWS = 100_000
+MAX_INFORMATION_POINTS = 100_000
+MAX_SERVING_OUTPUT_CELLS = 20_000_000
 
 
 def _core_module():
@@ -449,18 +451,53 @@ def bank_information(
     """Item/test information at the given trait points (Magis 2013 formula;
     Lord's test-information tradition). ``theta`` is points x n_dims; ``xi``
     defaults to the origin of the latent space."""
+    _validate_bundle(bundle)
     core = _core_module()
     if core is None:
         raise RuntimeError("bank_information requires the compiled Rust core")
+    n_dims = int(bundle["n_dims"])
+    latent_dim = int(bundle["latent_dim"])
     theta = np.asarray(theta, dtype=np.float64)
     if theta.ndim == 1:
-        theta = theta[:, None]
+        if n_dims == 1:
+            theta = theta[:, None]
+        elif theta.shape == (n_dims,):
+            theta = theta[None, :]
+        else:
+            raise ValueError("theta must have shape (points, n_dims)")
+    if theta.ndim != 2 or theta.shape[1] != n_dims:
+        raise ValueError("theta must have shape (points, n_dims)")
     n_points = theta.shape[0]
+    if not (1 <= n_points <= MAX_INFORMATION_POINTS):
+        raise ValueError(
+            f"theta must contain between 1 and {MAX_INFORMATION_POINTS} points"
+        )
+    output_cells = n_points * (int(bundle["n_items"]) + n_dims)
+    if output_cells > MAX_SERVING_OUTPUT_CELLS:
+        raise ValueError(
+            f"bank-information output size ({output_cells} cells) exceeds the "
+            f"{MAX_SERVING_OUTPUT_CELLS}-cell serving limit"
+        )
+    if not np.all(np.isfinite(theta)):
+        raise ValueError("theta must contain only finite values")
     if xi is None:
-        xi = np.zeros((n_points, bundle["latent_dim"]))
+        xi_array = np.zeros((n_points, latent_dim))
+    else:
+        xi_array = np.asarray(xi, dtype=np.float64)
+        if xi_array.ndim == 1:
+            if latent_dim == 1 and xi_array.shape == (n_points,):
+                xi_array = xi_array[:, None]
+            elif n_points == 1 and xi_array.shape == (latent_dim,):
+                xi_array = xi_array[None, :]
+            else:
+                raise ValueError("xi must have shape (points, latent_dim)")
+        if xi_array.shape != (n_points, latent_dim):
+            raise ValueError("xi must have shape (points, latent_dim)")
+        if not np.all(np.isfinite(xi_array)):
+            raise ValueError("xi must contain only finite values")
     res = dict(
         core.bank_information(
-            theta.ravel(), np.asarray(xi, dtype=np.float64).ravel(), int(n_points),
+            theta.ravel(), xi_array.ravel(), int(n_points),
             **_bundle_bank_args(bundle),
         )
     )
@@ -550,7 +587,12 @@ def plausible_values(
     if core is None:
         raise RuntimeError("plausible_values requires the compiled Rust core")
     _validate_bundle(bundle)
-    if not (1 <= int(n_draws) <= MAX_DRAWS):
+    if not isinstance(n_draws, (int, np.integer)) or isinstance(
+        n_draws, (bool, np.bool_)
+    ):
+        raise ValueError("n_draws must be an integer")
+    draw_count = int(n_draws)
+    if not (1 <= draw_count <= MAX_DRAWS):
         raise ValueError(f"n_draws must be between 1 and {MAX_DRAWS}")
     items = bundle["items"]
     n_items = bundle["n_items"]
@@ -575,6 +617,16 @@ def plausible_values(
                 y[r, j] = float(bool(value)) if isinstance(value, bool) else float(value)
     else:
         y = np.asarray(responses, dtype=float)
+        if y.ndim != 2 or y.shape[1] != n_items:
+            raise ValueError("responses must be a 2-D persons x n_items array")
+        if y.size > 20_000_000:
+            raise ValueError("response matrix exceeds the 20000000-cell scoring limit")
+    output_cells = int(y.shape[0]) * draw_count * int(bundle["n_dims"])
+    if output_cells > MAX_SERVING_OUTPUT_CELLS:
+        raise ValueError(
+            f"plausible-values output size ({output_cells} cells) exceeds the "
+            f"{MAX_SERVING_OUTPUT_CELLS}-cell serving limit"
+        )
     observed = ~np.isnan(y)
     obs_vals = y[observed]
     if obs_vals.size and not np.all((obs_vals == 0.0) | (obs_vals == 1.0)):
@@ -585,7 +637,7 @@ def plausible_values(
         np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
         prior_mean=mean, prior_sd=sd,
         q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
-        q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=int(n_draws), seed=int(seed),
+        q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=draw_count, seed=int(seed),
         **_bundle_bank_args(bundle),
     )
-    return np.asarray(pv).reshape(y.shape[0], n_draws, bundle["n_dims"])
+    return np.asarray(pv).reshape(y.shape[0], draw_count, bundle["n_dims"])
