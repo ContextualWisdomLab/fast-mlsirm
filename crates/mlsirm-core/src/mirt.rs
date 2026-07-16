@@ -95,6 +95,10 @@ pub struct CompMirtResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Machine-readable termination status: `converged` or `max_iter_reached`.
+    pub termination_reason: String,
+    /// Absolute change between the final two evaluated marginal log-likelihoods.
+    pub final_loglik_change: f64,
     /// `#{L_id = 1}` loadings `+ J` intercepts (traits are fixed `MVN(0, I)`).
     pub n_parameters: usize,
 }
@@ -501,6 +505,10 @@ pub fn fit_compensatory_mirt(
     }
     if !converged {
         loglik_trace.push(final_ll);
+        let l = loglik_trace.len();
+        if (loglik_trace[l - 1] - loglik_trace[l - 2]).abs() < cfg.tol {
+            converged = true;
+        }
     }
 
     // Per-dimension reflection anchor: flip dimension d (all loadings on d and all theta_d) so
@@ -528,6 +536,8 @@ pub fn fit_compensatory_mirt(
     }
 
     let n_free_loadings = loading_pattern.iter().filter(|&&v| v == 1).count();
+    let l = loglik_trace.len();
+    let final_loglik_change = (loglik_trace[l - 1] - loglik_trace[l - 2]).abs();
     Ok(CompMirtResult {
         loading,
         intercept,
@@ -536,6 +546,13 @@ pub fn fit_compensatory_mirt(
         loglik_trace,
         n_iter,
         converged,
+        termination_reason: if converged {
+            "converged"
+        } else {
+            "max_iter_reached"
+        }
+        .into(),
+        final_loglik_change,
         n_parameters: n_free_loadings + n_items,
     })
 }
@@ -810,6 +827,51 @@ mod tests {
         let mut ybad = y.clone();
         ybad[5] = 2.0;
         assert!(fit_compensatory_mirt(&ybad, &obs, &pattern, n, n_items, n_dims, &cfg).is_err());
+    }
+
+    /// The final E-step is a genuine evaluated stopping point: meeting tolerance there is
+    /// convergence even when it follows the last permitted M-step; otherwise exhaustion stays
+    /// explicit and reports the observed stopping metric.
+    #[test]
+    fn mirt_reports_final_stopping_evidence() {
+        let pattern = vec![1u8, 0, 0, 1];
+        let balanced = vec![0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0];
+        let observed = vec![true; balanced.len()];
+        let cfg = MirtConfig {
+            q: 7,
+            max_iter: 1,
+            ..MirtConfig::default()
+        };
+        let stable =
+            fit_compensatory_mirt(&balanced, &observed, &pattern, 4, 2, 2, &cfg).unwrap();
+        assert!(stable.converged);
+        assert_eq!(stable.termination_reason, "converged");
+        assert_eq!(stable.n_iter, cfg.max_iter);
+        assert_eq!(stable.loglik_trace.len(), 2);
+        assert!(stable.final_loglik_change <= cfg.tol);
+
+        let mut y = vec![0.0f64; 20 * 4];
+        for p in 0..20 {
+            y[p * 4] = if p % 5 == 0 { 0.0 } else { 1.0 };
+            y[p * 4 + 1] = if p % 3 == 0 { 1.0 } else { 0.0 };
+            y[p * 4 + 2] = if p % 4 == 0 { 0.0 } else { 1.0 };
+            y[p * 4 + 3] = if p % 6 == 0 { 1.0 } else { 0.0 };
+        }
+        let observed = vec![true; y.len()];
+        let pattern4 = vec![1u8, 0, 1, 0, 0, 1, 0, 1];
+        let strict = MirtConfig {
+            q: 7,
+            max_iter: 1,
+            tol: 1e-12,
+            ..MirtConfig::default()
+        };
+        let unfinished =
+            fit_compensatory_mirt(&y, &observed, &pattern4, 20, 4, 2, &strict).unwrap();
+        assert!(!unfinished.converged);
+        assert_eq!(unfinished.termination_reason, "max_iter_reached");
+        assert_eq!(unfinished.n_iter, strict.max_iter);
+        assert_eq!(unfinished.loglik_trace.len(), 2);
+        assert!(unfinished.final_loglik_change >= strict.tol);
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): recover the compensatory loadings and traits

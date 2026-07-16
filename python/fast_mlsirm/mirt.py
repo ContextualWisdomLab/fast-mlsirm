@@ -20,7 +20,9 @@ class CompMirtFit:
     the persons x dimensions trait EAP. The model is ``P(X_ij=1 | theta_j) =
     sigmoid(sum_d a_id theta_jd + b_i)`` with ``theta_j ~ MVN(0, I_D)`` (ORTHOGONAL,
     unit-variance traits). Correlated traits ``theta ~ MVN(0, Sigma)`` are a deferred
-    extension; this is the orthogonal confirmatory model."""
+    extension; this is the orthogonal confirmatory model. ``termination_reason`` is either
+    ``"converged"`` or ``"max_iter_reached"``; ``final_loglik_change`` is the absolute
+    difference between the final two evaluated marginal log-likelihoods."""
 
     loading: np.ndarray
     intercept: np.ndarray
@@ -30,6 +32,8 @@ class CompMirtFit:
     n_iter: int
     converged: bool
     n_parameters: int
+    termination_reason: str = "unknown"
+    final_loglik_change: float = np.nan
 
 
 def fit_compensatory_mirt(
@@ -65,7 +69,10 @@ def fit_compensatory_mirt(
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
     ``loading_pattern`` is an items x dimensions 0/1 array; ``q`` is the Gauss-Hermite nodes
-    per dimension (one of ``7, 11, 15, 21, 31, 41``).
+    per dimension (one of ``7, 11, 15, 21, 31, 41``). Convergence requires the absolute
+    change between consecutive evaluated marginal log-likelihoods to be less than ``tol``;
+    the returned fit exposes that value as ``final_loglik_change`` and the terminal state as
+    ``termination_reason``.
 
     References (APA 7th ed.):
         Reckase, M. D. (2009). *Multidimensional item response theory*. Springer.
@@ -89,9 +96,29 @@ def fit_compensatory_mirt(
     n_persons, n_items = y.shape
     if pat.shape[0] != n_items:
         raise ValueError("loading_pattern must have one row per item")
+    if not np.issubdtype(pat.dtype, np.number) or np.iscomplexobj(pat):
+        raise ValueError("loading_pattern entries must be numeric 0 or 1")
+    if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
+        raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
     n_dims = pat.shape[1]
     if np.isinf(y).any():
         raise ValueError("responses must be 0, 1, or NaN (missing)")
+
+    def _finite_integer(value: int, name: str) -> int:
+        scalar = np.asarray(value)
+        if (
+            scalar.ndim != 0
+            or not np.issubdtype(scalar.dtype, np.number)
+            or np.iscomplexobj(scalar)
+        ):
+            raise ValueError(f"{name} must be a finite integer")
+        numeric = float(scalar)
+        if not np.isfinite(numeric) or numeric != np.floor(numeric):
+            raise ValueError(f"{name} must be a finite integer")
+        return int(numeric)
+
+    q_int = _finite_integer(q, "q")
+    max_iter_int = _finite_integer(max_iter, "max_iter")
 
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
@@ -102,8 +129,8 @@ def fit_compensatory_mirt(
         int(n_persons),
         int(n_items),
         int(n_dims),
-        int(q),
-        int(max_iter),
+        q_int,
+        max_iter_int,
         float(tol),
     )
     return CompMirtFit(
@@ -115,4 +142,6 @@ def fit_compensatory_mirt(
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
         n_parameters=int(res["n_parameters"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
     )

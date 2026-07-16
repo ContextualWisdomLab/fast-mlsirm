@@ -685,7 +685,8 @@ fn fit_ho_gdina(
 /// pure single-loading anchor item (identification; the all-ones pattern is rejected).
 /// Correlated traits are a deferred extension. Returns a dict with `loading` (row-major
 /// `n_items * n_dims`, `0` off-pattern), `intercept`, `theta` (`n_persons * n_dims` EAP),
-/// `n_dims`, `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
+/// `n_dims`, `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// `final_loglik_change`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, max_iter = 500, tol = 1e-6))]
@@ -729,6 +730,8 @@ fn fit_compensatory_mirt(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }

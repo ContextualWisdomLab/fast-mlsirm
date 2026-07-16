@@ -2785,14 +2785,34 @@ def test_fit_compensatory_mirt_recovers_loadings():
         c = np.corrcoef(res.theta[:, d], theta[:, d])[0, 1]
         assert c > 0.7, f"dim {d} theta corr {c}"
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # EM monotone
+    assert res.termination_reason == "converged"
+    assert res.n_iter < 500
+    assert np.isfinite(res.final_loglik_change)
+    assert res.final_loglik_change < 1e-6
 
     # a rotationally-degenerate all-ones pattern is rejected (no pure anchor per dimension)
     with pytest.raises(ValueError):
         fit_compensatory_mirt(y, np.ones((n_items, n_dims), dtype=np.int64))
+    fractional = pattern.astype(float)
+    fractional[0, 1] = 0.5
+    with pytest.raises(ValueError, match="exactly 0 or 1"):
+        fit_compensatory_mirt(y, fractional)
+    with pytest.raises(ValueError, match="q must be a finite integer"):
+        fit_compensatory_mirt(y, pattern, q=15.5)
+    with pytest.raises(ValueError, match="max_iter must be a finite integer"):
+        fit_compensatory_mirt(y, pattern, max_iter=1.5)
     # missing (MAR) handled
     ymiss = y.copy()
     ymiss[0, 0] = np.nan
     assert fit_compensatory_mirt(ymiss, pattern, q=15).converged
+
+    # A one-step run that has not met the documented tolerance is explicitly unfinished.
+    unfinished = fit_compensatory_mirt(y, pattern, q=7, max_iter=1, tol=1e-12)
+    assert not unfinished.converged
+    assert unfinished.termination_reason == "max_iter_reached"
+    assert unfinished.n_iter == 1
+    assert len(unfinished.loglik_trace) == 2
+    assert unfinished.final_loglik_change >= 1e-12
 
 
 def test_fit_mixture_recovers_two_class_rasch():
