@@ -465,7 +465,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
   line-height: 1.5;
 }
 
@@ -702,7 +703,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fbfcfa;
+  background: #f4f6f3;
 }
 
 .empty-state {
