@@ -1316,7 +1316,17 @@ def grm_category_logprobs(base, thresholds):
     (``mlsirm_core::poly::grm_logprobs``). ``thresholds`` are the ``K-1``
     cumulative boundary intercepts ``beta_k`` (ordered decreasing);
     ``P(Y >= k) = sigmoid(base + beta_k)``. Returns ``log P(Y = k)`` with the
-    category axis last (``base`` broadcasts over any leading shape).
+    category axis last (``base`` broadcasts over any leading shape). Middle
+    categories use a factorized cumulative-probability difference so that a
+    valid narrow category remains finite in either extreme logistic tail.
+
+    Samejima (1969) introduced the graded response formulation used here.
+
+    References
+    ----------
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1–97.
+    https://doi.org/10.1007/BF03372160
     """
     base = np.asarray(base, dtype=np.float64)
     thresholds = np.asarray(thresholds, dtype=np.float64)
@@ -1329,8 +1339,12 @@ def grm_category_logprobs(base, thresholds):
     out = np.empty(base.shape + (kb + 1,), dtype=np.float64)
     out[..., 0] = ls_neg[..., 0]                        # P(Y=0)
     for k in range(1, kb):                              # P(Y=k) = e^{ls[k-1]} - e^{ls[k]}
-        a = ls[..., k - 1]
-        b = ls[..., k]
-        out[..., k] = a + np.log1p(-np.exp(b - a))
+        upper = eta[..., k - 1]
+        lower = eta[..., k]
+        out[..., k] = (
+            -np.logaddexp(0.0, -upper)
+            - np.logaddexp(0.0, lower)
+            + np.log(-np.expm1(lower - upper))
+        )
     out[..., kb] = ls[..., kb - 1]                      # P(Y=K-1)
     return out

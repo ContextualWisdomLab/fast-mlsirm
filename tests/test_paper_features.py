@@ -1034,6 +1034,24 @@ def test_grm_cell_rust_numpy_parity():
         assert np.allclose(rust, npy, atol=1e-12), f"grm parity at base={base}"
 
 
+def test_grm_cell_extreme_predictor_stays_finite():
+    from fast_mlsirm.estimators.marginal import grm_category_logprobs
+
+    thresholds = np.array([1.0, 0.0])
+    expected_middle = -1000.0 + np.log1p(-np.exp(-1.0))
+    npy = grm_category_logprobs(np.array([1000.0]), thresholds)[0]
+    assert np.all(np.isfinite(npy)), npy
+    np.testing.assert_allclose(npy[1], expected_middle, atol=1e-12)
+
+    try:
+        from fast_mlsirm import _core
+    except Exception:  # pragma: no cover
+        pytest.skip("compiled core not available")
+    rust = np.asarray(_core.grm_cell_logprobs(1000.0, thresholds))
+    assert np.all(np.isfinite(rust)), rust
+    np.testing.assert_allclose(rust, npy, atol=1e-12)
+
+
 def test_information_polytomous_api():
     """information_polytomous returns positive item/test information curves whose
     test info equals the item-info row sum (Rust compute)."""

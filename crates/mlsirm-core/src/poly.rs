@@ -7,7 +7,7 @@
 //! Two response families over a shared linear predictor `base = a*theta +
 //! interaction(x)`:
 //!
-//! - **GRM** (Samejima 1968, cumulative logit) — the identification-clean
+//! - **GRM** (Samejima 1969, cumulative logit) — the identification-clean
 //!   default for the LSIRM family: the single latent-space interaction enters
 //!   every cumulative logit as one shared shift inside `base`, so nothing
 //!   cancels and no category scaling is forced.
@@ -28,6 +28,15 @@ fn log_sigmoid(x: f64) -> f64 {
 /// cumulative boundary intercepts `beta_k` (ordered *decreasing* for a valid
 /// distribution); `base` is the shared person-item linear predictor. Returns
 /// `log P(Y = k)` for `k = 0..K-1`. `P(Y>=k) = sigmoid(base + beta_k)`.
+/// Middle-category differences use an algebraically equivalent factorization
+/// that remains finite when both cumulative logits are in the same extreme
+/// tail.
+///
+/// # References
+///
+/// Samejima, F. (1969). Estimation of latent ability using a response pattern
+/// of graded scores. *Psychometrika, 34*(S1), 1–97.
+/// https://doi.org/10.1007/BF03372160
 pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
     let kb = thresholds.len(); // number of boundaries = K-1
     let mut out = vec![0.0_f64; kb + 1];
@@ -35,17 +44,20 @@ pub fn grm_logprobs(base: f64, thresholds: &[f64]) -> Vec<f64> {
         out[0] = 0.0;
         return out;
     }
-    // A[j] = log sigmoid(base + beta_j) = log P(Y >= j+1)
-    let a: Vec<f64> = thresholds.iter().map(|&b| log_sigmoid(base + b)).collect();
     // category 0: 1 - sigmoid(base + beta_0) = sigmoid(-(base + beta_0))
     out[0] = log_sigmoid(-(base + thresholds[0]));
     // middle categories 1..K-2: P = sigmoid(base+beta_{k-1}) - sigmoid(base+beta_k)
     for k in 1..kb {
-        // log(e^{A[k-1]} - e^{A[k]}) = A[k-1] + log1p(-e^{A[k]-A[k-1]}), A[k-1] >= A[k]
-        out[k] = a[k - 1] + (-((a[k] - a[k - 1]).exp())).ln_1p();
+        let upper = base + thresholds[k - 1];
+        let lower = base + thresholds[k];
+        // sigmoid(upper) - sigmoid(lower)
+        // = sigmoid(upper) * sigmoid(-lower) * (1 - exp(lower - upper)).
+        // `-expm1` preserves a narrow category and avoids subtracting two
+        // rounded log-sigmoids in the same extreme tail.
+        out[k] = log_sigmoid(upper) + log_sigmoid(-lower) + (-(lower - upper).exp_m1()).ln();
     }
     // top category K-1: sigmoid(base + beta_{K-2})
-    out[kb] = a[kb - 1];
+    out[kb] = log_sigmoid(base + thresholds[kb - 1]);
     out
 }
 
@@ -59,15 +71,25 @@ pub fn grm_node_gradient(base: f64, thresholds: &[f64], counts: &[f64]) -> (f64,
     if kb == 0 {
         return (0.0, g_t);
     }
-    let p: Vec<f64> = grm_logprobs(base, thresholds).iter().map(|&l| l.exp()).collect();
-    // s[j] = sigmoid(base + beta_j) = P(Y >= j+1); v[j] = s[j](1-s[j])
+    let log_p = grm_logprobs(base, thresholds);
+    // Evaluate v/P in log space. Directly exponentiating a valid tail category
+    // can underflow P to zero even though its score contribution is finite.
     for j in 0..kb {
-        let s = 1.0 / (1.0 + (-(base + thresholds[j])).exp());
-        let v = s * (1.0 - s);
+        let eta = base + thresholds[j];
+        let log_v = log_sigmoid(eta) + log_sigmoid(-eta);
         // d q / d s_j = r_{j+1}/P_{j+1} - r_j/P_j  (boundary j sits between cats j and j+1)
-        let dqds = counts[j + 1] / p[j + 1] - counts[j] / p[j];
-        g_t[j] = v * dqds;
-        g_base += v * dqds;
+        let right = if counts[j + 1] == 0.0 {
+            0.0
+        } else {
+            counts[j + 1] * (log_v - log_p[j + 1]).exp()
+        };
+        let left = if counts[j] == 0.0 {
+            0.0
+        } else {
+            counts[j] * (log_v - log_p[j]).exp()
+        };
+        g_t[j] = right - left;
+        g_base += right - left;
     }
     (g_base, g_t)
 }
@@ -2186,6 +2208,19 @@ mod tests {
         let lp4 = grm_logprobs(0.2, &[1.0, 0.0, -1.2]);
         assert!(logsumexp0(&lp4).abs() < 1e-10);
         assert!(lp4.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn grm_logprobs_and_gradient_remain_finite_at_extreme_bases() {
+        let thresholds = [1.0, 0.0];
+        let expected_middle = -1000.0 + (-(-1.0_f64).exp()).ln_1p();
+        let lp = grm_logprobs(1000.0, &thresholds);
+        assert!(lp.iter().all(|value| value.is_finite()), "{lp:?}");
+        assert!((lp[1] - expected_middle).abs() < 1e-12, "{lp:?}");
+        let (g_base, g_thresholds) =
+            grm_node_gradient(1000.0, &thresholds, &[3.0, 5.0, 2.0]);
+        assert!(g_base.is_finite(), "g_base={g_base}");
+        assert!(g_thresholds.iter().all(|value| value.is_finite()), "{g_thresholds:?}");
     }
 
     #[test]
