@@ -35,6 +35,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::cdm::{
     fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
     fit_ho_gdina as core_fit_ho_gdina, fit_seq_gdina as core_fit_seq_gdina,
+    fit_seq_gdina_qr as core_fit_seq_gdina_qr,
     gdina_wald_selection as core_gdina_wald_selection,
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
@@ -373,6 +374,78 @@ fn fit_gdina(
 /// `k_required`, `profile_prob`, `map_profile`, `attr_prob`, `loglik_trace`, `n_iter`,
 /// `converged`, `termination_reason`, `final_loglik_change`,
 /// `final_relative_loglik_change`, `stopping_tolerance`, `n_parameters`.
+/// Per-step-Q sequential G-DINA (Ma & de la Torre, 2016; `mlsirm_core::cdm::fit_seq_gdina_qr`),
+/// the full restricted-Q model where each ordered STEP has its own attribute requirement.
+/// `step_q` is row-major `(sum_i n_steps[i]) * n_attributes` (0/1); `n_steps[i] = M_i` (the step
+/// count, which must equal item `i`'s maximum observed category), so step `k` of item `i` is row
+/// `step_off[i] + (k-1)` with `step_off = cumsum(n_steps)`. Generalizes `fit_seq_gdina` (which is
+/// this with every step sharing the item's Q). Step probs are STEP-ROW-major:
+/// `step_prob[spo[step_off[i]+(k-1)] + l]` (`l` the reduced class under `q_ik`, width
+/// `2^{|q_ik|}`); category probs are union-class-major:
+/// `cat_prob[cat_off[i] + uc*(M_i+1) + x]` over the item's union `2^{K^u_i}` classes. Returns a
+/// dict with `step_off`, `spo`, `step_prob`, `step_kq`, `cat_off`, `cat_prob`, `max_cat`,
+/// `union_k`, `profile_prob`, `map_profile`, `attr_prob`, `loglik_trace`, `n_iter`, `converged`,
+/// `termination_reason`, `final_loglik_change`, `final_relative_loglik_change`,
+/// `stopping_tolerance`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, step_q, n_steps, n_persons, n_items, n_attributes, max_iter = 500, tol = 1e-6))]
+fn fit_seq_gdina_qr(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    step_q: PyReadonlyArray1<'_, i64>,
+    n_steps: Vec<usize>,
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let sq: Vec<u8> = step_q
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("step_q entries must be 0 or 1")),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let res = core_fit_seq_gdina_qr(
+        y.as_slice()?,
+        observed.as_slice()?,
+        &sq,
+        &n_steps,
+        n_persons,
+        n_items,
+        n_attributes,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("step_off", res.step_off)?;
+    out.set_item("spo", res.spo)?;
+    out.set_item("step_prob", res.step_prob)?;
+    out.set_item("step_kq", res.step_kq)?;
+    out.set_item("cat_off", res.cat_off)?;
+    out.set_item("cat_prob", res.cat_prob)?;
+    out.set_item("max_cat", res.max_cat)?;
+    out.set_item("union_k", res.union_k)?;
+    out.set_item("profile_prob", res.profile_prob)?;
+    out.set_item("map_profile", res.map_profile)?;
+    out.set_item("attr_prob", res.attr_prob)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("final_relative_loglik_change", res.final_relative_loglik_change)?;
+    out.set_item("stopping_tolerance", res.stopping_tolerance)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, q_matrix, n_persons, n_items, n_attributes, max_iter = 500, tol = 1e-6))]
@@ -3368,6 +3441,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_ho_cdm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_ho_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_seq_gdina, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_seq_gdina_qr, m)?)?;
     m.add_function(wrap_pyfunction!(fit_compensatory_mirt, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;

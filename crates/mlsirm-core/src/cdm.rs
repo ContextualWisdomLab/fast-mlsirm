@@ -2720,6 +2720,493 @@ pub fn fit_seq_gdina(
     })
 }
 
+/// Result of [`fit_seq_gdina_qr`] (Ma & de la Torre, 2016): the PER-STEP-Q sequential
+/// (continuation-ratio) G-DINA, where each ordered step has its own attribute requirement
+/// `q_ik` (the restricted Q-matrix `Q_r`). Step probabilities are STEP-ROW-major: step row
+/// `g = step_off[i] + (k-1)` (item `i`, step `k`) owns `2^{|q_ik|}` reduced classes at
+/// `step_prob[spo[g] + l]`, `l` the reduced class of the profile under `q_ik`. Category
+/// probabilities are UNION-class-major: item `i`'s union `u_i = OR_k q_ik` has `2^{K^u_i}`
+/// classes and `cat_prob[cat_off[i] + uc*(M_i+1) + x] = P(X_i = x | union class uc)`.
+#[derive(Clone, Debug)]
+pub struct SeqGdinaQrResult {
+    /// Per-item offsets into the step-row arrays (`spo`, `step_kq`), length `n_items + 1`.
+    pub step_off: Vec<usize>,
+    /// Per-step-row offsets into `step_prob` (length `sum_i M_i + 1`).
+    pub spo: Vec<usize>,
+    /// Continuation probabilities `s_ik(l)`, step-row-major (see struct doc).
+    pub step_prob: Vec<f64>,
+    /// Required-attribute count `|q_ik|` per step row (length `sum_i M_i`).
+    pub step_kq: Vec<u32>,
+    /// Per-item category-prob block offsets into `cat_prob` (length `n_items + 1`).
+    pub cat_off: Vec<usize>,
+    /// Implied category probabilities `P(X_i = x | union class uc)`, union-class-major.
+    pub cat_prob: Vec<f64>,
+    /// Number of ordered steps `M_i` per item.
+    pub max_cat: Vec<u32>,
+    /// Union required-attribute count `K^u_i = |OR_k q_ik|` per item.
+    pub union_k: Vec<u32>,
+    /// Free profile distribution `pi_c` (length `2^K`, sums to 1).
+    pub profile_prob: Vec<f64>,
+    /// Bit-encoded MAP profile per person.
+    pub map_profile: Vec<u32>,
+    /// Marginal `P(alpha_jk = 1 | X_j)`, row-major `N x K`.
+    pub attr_prob: Vec<f64>,
+    pub loglik_trace: Vec<f64>,
+    pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: &'static str,
+    pub final_loglik_change: f64,
+    pub final_relative_loglik_change: f64,
+    pub stopping_tolerance: f64,
+    /// `sum_{i,k} 2^{|q_ik|}` step probs `+ (2^K - 1)` free profile probs.
+    pub n_parameters: usize,
+}
+
+/// Validate per-step-Q sequential-CDM input and return `(n_steps as usize vector)`. `step_q`
+/// is row-major `(sum_i n_steps[i]) x K` (0/1); `n_steps[i] = M_i` is the declared step count
+/// of item `i`. Rejects: shape/overflow, non-0/1 or non-integer data, a step measuring nothing
+/// (all-zero `q_ik` row), an attribute measured by NO step of any item (all-zero column over the
+/// union), an item with no observed responses, and `M_i != ` the maximum OBSERVED category
+/// (a declared step no one reaches, or data beyond the declared steps).
+#[allow(clippy::too_many_arguments)]
+fn validate_seq_gdina_qr(
+    y: &[f64],
+    observed: &[bool],
+    step_q: &[u8],
+    n_steps: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<(), String> {
+    if n_persons < 1 || n_items < 1 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
+    if !(1..=15).contains(&n_attributes) {
+        return Err(format!(
+            "n_attributes must be in 1..=15 (L = 2^K grid + O(N*J*L) cost); got {n_attributes}"
+        ));
+    }
+    if cfg.max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if !cfg.eps.is_finite() || !(0.0 < cfg.eps && cfg.eps < 0.5) {
+        return Err("eps must be finite and in (0, 0.5)".into());
+    }
+    if !cfg.init_slip.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_slip) {
+        return Err("init_slip must be finite and in [eps, 1 - eps]".into());
+    }
+    if !cfg.init_guess.is_finite() || !(cfg.eps..=1.0 - cfg.eps).contains(&cfg.init_guess) {
+        return Err("init_guess must be finite and in [eps, 1 - eps]".into());
+    }
+    if cfg.init_slip + cfg.init_guess >= 1.0 {
+        return Err("init_slip + init_guess must be less than 1".into());
+    }
+    if !cfg.count_floor.is_finite() || cfg.count_floor < 0.0 {
+        return Err("count_floor must be finite and non-negative".into());
+    }
+    if n_steps.len() != n_items {
+        return Err("n_steps must have length n_items".into());
+    }
+    // Total step rows and the step_q length, both via checked arithmetic.
+    let mut total_step_rows = 0usize;
+    for (i, &m) in n_steps.iter().enumerate() {
+        if m < 1 {
+            return Err(format!("item {i} has n_steps < 1 (an item must leave category 0)"));
+        }
+        if m > SEQ_MAX_CAT {
+            return Err(format!("item {i} n_steps {m} exceeds SEQ_MAX_CAT = {SEQ_MAX_CAT}"));
+        }
+        total_step_rows = total_step_rows
+            .checked_add(m)
+            .ok_or_else(|| "sum of n_steps overflows usize".to_string())?;
+    }
+    let n_sq = total_step_rows
+        .checked_mul(n_attributes)
+        .ok_or_else(|| "sum(n_steps) * n_attributes overflows usize".to_string())?;
+    if step_q.len() != n_sq {
+        return Err("step_q must have length sum(n_steps) * n_attributes".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells || observed.len() != n_cells {
+        return Err("y and observed must have length n_persons * n_items".into());
+    }
+    for (idx, &v) in y.iter().enumerate() {
+        if observed[idx] && (!v.is_finite() || v < 0.0 || v.fract() != 0.0) {
+            return Err(format!(
+                "y[{idx}] must be a non-negative integer category where observed; got {v}"
+            ));
+        }
+    }
+    for (idx, &v) in step_q.iter().enumerate() {
+        if v != 0 && v != 1 {
+            return Err(format!("step_q[{idx}] must be 0 or 1; got {v}"));
+        }
+    }
+    // Each declared step measures at least one attribute (no all-zero step-q row).
+    for g in 0..total_step_rows {
+        if !(0..n_attributes).any(|k| step_q[g * n_attributes + k] != 0) {
+            return Err(format!("step row {g} is all-zero (a step measuring no attribute)"));
+        }
+    }
+    // Every attribute is required by at least one step of some item (union column non-empty).
+    for k in 0..n_attributes {
+        if !(0..total_step_rows).any(|g| step_q[g * n_attributes + k] != 0) {
+            return Err(format!(
+                "attribute {k} is required by no step (all-zero column; non-identified)"
+            ));
+        }
+    }
+    // Per item: at least one observed response, and the maximum observed category equals the
+    // declared step count M_i (so every declared step has a globally non-empty at-risk set and
+    // no observed category exceeds the declared steps).
+    let mut step_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        step_off[i + 1] = step_off[i] + n_steps[i];
+    }
+    for i in 0..n_items {
+        let mut any = false;
+        let mut mi = 0u32;
+        for p in 0..n_persons {
+            let idx = p * n_items + i;
+            if observed[idx] {
+                any = true;
+                mi = mi.max(y[idx] as u32);
+            }
+        }
+        if !any {
+            return Err(format!("item {i} has no observed responses"));
+        }
+        if mi as usize != n_steps[i] {
+            return Err(format!(
+                "item {i}: max observed category {mi} != declared n_steps {} (a declared step is \
+                 unreached, or data exceeds the declared steps)",
+                n_steps[i]
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Fit the **per-step-Q sequential (continuation-ratio) G-DINA** for ordered polytomous
+/// responses (Ma & de la Torre, 2016), the full restricted-Q model in which each ordered STEP
+/// `k` of item `i` is a saturated G-DINA over its OWN required attributes `q_ik` (step 1 may
+/// need attribute A, step 2 need A and B, etc.).
+///
+/// Generalizes the shared-Q [`fit_seq_gdina`]: when every step of an item shares the item's
+/// Q-vector this reduces to it exactly. Step `k`'s continuation probability
+/// `s_ik(l) = P(X_i >= k | X_i >= k-1, reduced class of alpha under q_ik)` is free per step
+/// reduced class; the category probability is the unchanged sequential product
+/// `P(X_i = x | alpha) = (prod_{v<=x} s_iv)(1 - s_{i,x+1})`. Estimated by marginal-ML EM with
+/// the closed-form saturated step ratio `s_ik(l) = R/I` (reached >= k over reached >= k-1 in
+/// step `k`'s reduced class `l`) — the sequential likelihood still factorizes into independent
+/// per-step Bernoullis, so this is the exact complete-data MLE. Free profile distribution `pi_c`.
+///
+/// Each step's reduced class is computed DIRECTLY from the full profile (`reduce_class(c,
+/// q_ik)`); the item's UNION class `reduce_class(c, OR_k q_ik)` indexes the category
+/// probabilities. `y`/`observed` are row-major `N*J` (ordered integer categories `0..=M_i`);
+/// `step_q` is row-major `(sum_i n_steps[i]) * K` (0/1), step `k` of item `i` at row
+/// `step_off[i] + (k-1)`; `n_steps[i] = M_i` (the number of steps, which must equal item `i`'s
+/// maximum observed category). Missing cells are dropped (MAR).
+///
+/// References (APA 7th ed.):
+///   Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for polytomous
+///     responses. *British Journal of Mathematical and Statistical Psychology, 69*(3),
+///     253-275. https://doi.org/10.1111/bmsp.12070
+///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
+///     179-199. https://doi.org/10.1007/s11336-011-9207-7
+#[allow(clippy::too_many_arguments)]
+pub fn fit_seq_gdina_qr(
+    y: &[f64],
+    observed: &[bool],
+    step_q: &[u8],
+    n_steps: &[usize],
+    n_persons: usize,
+    n_items: usize,
+    n_attributes: usize,
+    cfg: &CdmConfig,
+) -> Result<SeqGdinaQrResult, String> {
+    validate_seq_gdina_qr(y, observed, step_q, n_steps, n_persons, n_items, n_attributes, cfg)?;
+    let l_full = 1usize << n_attributes;
+
+    // Per-item offsets into the step-row arrays; total step rows = sum_i M_i.
+    let mut step_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        step_off[i + 1] = step_off[i] + n_steps[i];
+    }
+    let n_rows = step_off[n_items];
+
+    // Per step row: its own attribute mask, |q_ik|, reduced-class width, and step_prob offset.
+    let mut step_qmask = vec![0usize; n_rows];
+    let mut step_kq = vec![0u32; n_rows];
+    let mut spo = vec![0usize; n_rows + 1];
+    for g in 0..n_rows {
+        let mut mask = 0usize;
+        for k in 0..n_attributes {
+            if step_q[g * n_attributes + k] != 0 {
+                mask |= 1 << k;
+            }
+        }
+        step_qmask[g] = mask;
+        step_kq[g] = mask.count_ones();
+        spo[g + 1] = spo[g] + (1usize << step_kq[g]);
+    }
+    let total_steps = spo[n_rows];
+
+    // Each step's reduced class as a function of the FULL profile (mirror shared-Q's `red`;
+    // this avoids the union-renumber / bit-gather hazard entirely).
+    let mut step_red = vec![0u16; n_rows * l_full];
+    for g in 0..n_rows {
+        for c in 0..l_full {
+            step_red[g * l_full + c] = reduce_class(c, step_qmask[g]) as u16;
+        }
+    }
+
+    // Per item: union mask u_i, union width, union reduced class of each profile, category
+    // offsets (union-class-major: (M_i+1) * 2^{K^u_i}).
+    let mut union_k = vec![0u32; n_items];
+    let mut union_rw = vec![0usize; n_items];
+    let mut red_u = vec![0u16; n_items * l_full];
+    let mut cat_off = vec![0usize; n_items + 1];
+    for i in 0..n_items {
+        let mut u = 0usize;
+        for g in step_off[i]..step_off[i + 1] {
+            u |= step_qmask[g];
+        }
+        union_k[i] = u.count_ones();
+        union_rw[i] = 1usize << union_k[i];
+        for c in 0..l_full {
+            red_u[i * l_full + c] = reduce_class(c, u) as u16;
+        }
+        cat_off[i + 1] = cat_off[i] + (n_steps[i] + 1) * union_rw[i];
+    }
+    let total_cats = cat_off[n_items];
+
+    // Monotone init per step row, using the STEP's own |q_ik| in the denominator so the
+    // shared-Q case reproduces fit_seq_gdina's init exactly.
+    let mut s = vec![0.0f64; total_steps];
+    for g in 0..n_rows {
+        let kq = step_kq[g] as f64; // >= 1 (validate rejects all-zero step rows)
+        let rw = 1usize << step_kq[g];
+        for l in 0..rw {
+            let frac = (l.count_ones() as f64) / kq;
+            s[spo[g] + l] = cfg.init_guess + (1.0 - cfg.init_slip - cfg.init_guess) * frac;
+        }
+    }
+    let mut pi = vec![1.0 / l_full as f64; l_full];
+    let mut loglik_trace: Vec<f64> = Vec::new();
+    let mut converged = false;
+    let mut n_iter = 0usize;
+
+    let mut post = vec![0.0f64; l_full];
+    let mut clp = vec![0.0f64; total_cats]; // union-class category log-probs
+    let mut log_pi = vec![0.0f64; l_full];
+    let mut sbuf = vec![0.0f64; *n_steps.iter().max().unwrap_or(&1)]; // per-item step gather
+
+    // Fill union-class category log-probs by walking the full profile grid: each step's own
+    // reduced class comes from step_red[g][c]; multiple profiles map to the same union class and
+    // (because q_ik subset of u_i) give the same gathered step vector, so the writes agree.
+    let refresh = |s: &[f64], clp: &mut [f64], sbuf: &mut [f64]| {
+        for i in 0..n_items {
+            let m = n_steps[i];
+            let m1 = m + 1;
+            let co = cat_off[i];
+            for c in 0..l_full {
+                let uc = red_u[i * l_full + c] as usize;
+                debug_assert!(uc < union_rw[i], "union class (clp) within bound");
+                for v in 0..m {
+                    let g = step_off[i] + v;
+                    let l_v = step_red[g * l_full + c] as usize;
+                    debug_assert!(l_v < (1usize << step_kq[g]), "step class (step_prob) within bound");
+                    sbuf[v] = s[spo[g] + l_v];
+                }
+                seq_category_logprobs_into(&sbuf[..m], cfg.eps, &mut clp[co + uc * m1..co + uc * m1 + m1]);
+            }
+        }
+    };
+
+    for _ in 0..cfg.max_iter {
+        refresh(&s, &mut clp, &mut sbuf);
+        for c in 0..l_full {
+            log_pi[c] = pi[c].ln();
+        }
+
+        let mut i_acc = vec![0.0f64; total_steps];
+        let mut r_acc = vec![0.0f64; total_steps];
+        let mut pi_new = vec![0.0f64; l_full];
+        let mut total_ll = 0.0f64;
+        for j in 0..n_persons {
+            // E-step posterior over the 2^K profiles via the union-class category log-probs.
+            for c in 0..l_full {
+                let mut acc = log_pi[c];
+                for i in 0..n_items {
+                    let idx = j * n_items + i;
+                    if observed[idx] {
+                        let m1 = n_steps[i] + 1;
+                        let uc = red_u[i * l_full + c] as usize;
+                        let x = y[idx] as usize;
+                        acc += clp[cat_off[i] + uc * m1 + x];
+                    }
+                }
+                post[c] = acc;
+            }
+            let mmax = post.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let mut denom = 0.0f64;
+            for v in post.iter() {
+                denom += (v - mmax).exp();
+            }
+            total_ll += mmax + denom.ln();
+            for v in post.iter_mut() {
+                *v = (*v - mmax).exp() / denom;
+            }
+            for c in 0..l_full {
+                pi_new[c] += post[c];
+            }
+            // M-step counts: scatter PER STEP into its own (step_row, step-class) cell.
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let x = y[idx] as usize;
+                    let m = n_steps[i];
+                    for c in 0..l_full {
+                        let pc = post[c];
+                        for v in 1..=m {
+                            let g = step_off[i] + (v - 1);
+                            let l_v = step_red[g * l_full + c] as usize;
+                            let cell = spo[g] + l_v;
+                            if x >= v - 1 {
+                                i_acc[cell] += pc; // at risk for step v
+                                if x >= v {
+                                    r_acc[cell] += pc; // advanced past step v
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        loglik_trace.push(total_ll);
+
+        if loglik_trace.len() > 1 {
+            let n = loglik_trace.len();
+            if (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < cfg.tol {
+                converged = true;
+                break;
+            }
+        }
+
+        for x in 0..total_steps {
+            if i_acc[x] > cfg.count_floor {
+                s[x] = (r_acc[x] / i_acc[x]).clamp(cfg.eps, 1.0 - cfg.eps);
+            }
+        }
+        let nf = n_persons as f64;
+        let mut z = 0.0f64;
+        for c in 0..l_full {
+            pi[c] = (pi_new[c] / nf).max(cfg.eps);
+            z += pi[c];
+        }
+        for c in 0..l_full {
+            pi[c] /= z;
+        }
+        n_iter += 1;
+    }
+
+    // Classification pass + category probabilities from the final step probs.
+    refresh(&s, &mut clp, &mut sbuf);
+    for c in 0..l_full {
+        log_pi[c] = pi[c].ln();
+    }
+    let mut map_profile = vec![0u32; n_persons];
+    let mut attr_prob = vec![0.0f64; n_persons * n_attributes];
+    let mut final_ll = 0.0f64;
+    for j in 0..n_persons {
+        for c in 0..l_full {
+            let mut acc = log_pi[c];
+            for i in 0..n_items {
+                let idx = j * n_items + i;
+                if observed[idx] {
+                    let m1 = n_steps[i] + 1;
+                    let uc = red_u[i * l_full + c] as usize;
+                    let x = y[idx] as usize;
+                    acc += clp[cat_off[i] + uc * m1 + x];
+                }
+            }
+            post[c] = acc;
+        }
+        let mmax = post.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut denom = 0.0f64;
+        for v in post.iter() {
+            denom += (v - mmax).exp();
+        }
+        for v in post.iter_mut() {
+            *v = (*v - mmax).exp() / denom;
+        }
+        final_ll += mmax + denom.ln();
+        let mut best = 0usize;
+        for c in 1..l_full {
+            if post[c] > post[best] {
+                best = c;
+            }
+        }
+        map_profile[j] = best as u32;
+        for k in 0..n_attributes {
+            let mut pk = 0.0;
+            for c in 0..l_full {
+                if (c >> k) & 1 == 1 {
+                    pk += post[c];
+                }
+            }
+            attr_prob[j * n_attributes + k] = pk;
+        }
+    }
+    if !converged {
+        loglik_trace.push(final_ll);
+    }
+
+    let cat_prob: Vec<f64> = clp.iter().map(|v| v.exp()).collect();
+    let max_cat: Vec<u32> = n_steps.iter().map(|&m| m as u32).collect();
+    let final_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| pair[1] - pair[0])
+        .unwrap_or(f64::NAN);
+    let final_relative_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| (pair[1] - pair[0]).abs() / (1.0 + pair[0].abs()))
+        .unwrap_or(f64::NAN);
+    let termination_reason = if converged { "tolerance_met" } else { "max_iter_reached" };
+
+    Ok(SeqGdinaQrResult {
+        step_off,
+        spo,
+        step_prob: s,
+        step_kq,
+        cat_off,
+        cat_prob,
+        max_cat,
+        union_k,
+        profile_prob: pi,
+        map_profile,
+        attr_prob,
+        loglik_trace,
+        n_iter,
+        converged,
+        termination_reason,
+        final_loglik_change,
+        final_relative_loglik_change,
+        stopping_tolerance: cfg.tol,
+        n_parameters: total_steps + (l_full - 1),
+    })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5407,6 +5894,464 @@ mod tests {
             assert!(wrmse_step < 0.05, "at-risk-weighted step RMSE {wrmse_step} skew={skew}");
             assert!(attr > 0.92, "attribute agreement {attr} skew={skew}");
             assert_eq!(nconv, reps, "every calibration must converge skew={skew}");
+        }
+    }
+
+    // ----- Per-step-Q sequential G-DINA (Ma & de la Torre, 2016, restricted-Q) -----
+
+    /// Simulate per-step-Q sequential responses: step v of item i succeeds with probability
+    /// `step_truth[step_off[i]+v-1][reduce_class(profile, step_qmask[g])]`.
+    fn simulate_seq_gdina_qr(
+        step_off: &[usize],
+        step_qmask: &[usize],
+        spo_kq: &[u32], // |q_ik| per step row (for the truth table width)
+        step_truth: &[f64], // step-row-major, spo-indexed
+        spo: &[usize],
+        n_steps: &[usize],
+        profiles: &[usize],
+        n_items: usize,
+        rng: &mut Lcg,
+    ) -> Vec<f64> {
+        let _ = spo_kq;
+        let n = profiles.len();
+        let mut y = vec![0.0f64; n * n_items];
+        for j in 0..n {
+            for i in 0..n_items {
+                let m = n_steps[i];
+                let mut cat = 0usize;
+                for v in 1..=m {
+                    let g = step_off[i] + (v - 1);
+                    let l = reduce_class(profiles[j], step_qmask[g]);
+                    if rng.next_f64() < step_truth[spo[g] + l] {
+                        cat = v;
+                    } else {
+                        break;
+                    }
+                }
+                y[j * n_items + i] = cat as f64;
+            }
+        }
+        y
+    }
+
+    /// Shared-Q reduction: with every step of an item sharing the item's Q, fit_seq_gdina_qr
+    /// matches the shipped shared-Q fit_seq_gdina. loglik and cat_prob zip bit-exactly; step_prob
+    /// is compared CELL-BY-CELL through the transposed layout map (class-major vs step-row-major).
+    #[test]
+    fn seq_gdina_qr_reduces_to_shared_q() {
+        let (q, qmask, s_off_t, max_cat_t, truth) = seq_design(4, 4);
+        let n_items = 2 * 4 + 4;
+        let n = 3000usize;
+        let mut rng = Lcg(20240101);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << 2)).collect();
+        let y = simulate_seq_gdina(&qmask, &s_off_t, &max_cat_t, &truth, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = CdmConfig::default();
+        let shared = fit_seq_gdina(&y, &observed, &q, n, n_items, 2, &cfg).unwrap();
+        let n_steps: Vec<usize> = shared.max_cat.iter().map(|&m| m as usize).collect();
+        let mut step_q: Vec<u8> = Vec::new();
+        for i in 0..n_items {
+            for _ in 0..n_steps[i] {
+                step_q.extend_from_slice(&q[i * 2..i * 2 + 2]);
+            }
+        }
+        let qr = fit_seq_gdina_qr(&y, &observed, &step_q, &n_steps, n, n_items, 2, &cfg).unwrap();
+        assert_eq!(qr.loglik_trace.len(), shared.loglik_trace.len());
+        for (a, b) in qr.loglik_trace.iter().zip(&shared.loglik_trace) {
+            assert!((a - b).abs() < 1e-12, "loglik {a} vs {b}");
+        }
+        for (a, b) in qr.cat_prob.iter().zip(&shared.cat_prob) {
+            assert!((a - b).abs() < 1e-12, "cat_prob {a} vs {b}");
+        }
+        assert_eq!(qr.n_parameters, shared.n_parameters);
+        // step_prob: shared s_off[i]+l*M+(k-1) (class-major) vs qr spo[step_off[i]+(k-1)]+l.
+        for i in 0..n_items {
+            let m = shared.max_cat[i] as usize;
+            let rw = 1usize << shared.k_required[i];
+            for l in 0..rw {
+                for k in 1..=m {
+                    let sh = shared.step_prob[shared.s_off[i] + l * m + (k - 1)];
+                    let g = qr.step_off[i] + (k - 1);
+                    let qv = qr.step_prob[qr.spo[g] + l];
+                    assert!((sh - qv).abs() < 1e-12, "step i{i} l{l} k{k}: {sh} vs {qv}");
+                }
+            }
+        }
+    }
+
+    /// Non-trivial STEP-DISTINCT recovery with a NON-CONTIGUOUS union: an item whose step 1
+    /// requires attribute 0 only and step 2 requires attributes {0, 2} (union {0,2} is
+    /// non-contiguous — a naive union-mask-AND derivation would misread the step class). Asserts
+    /// (a) per-step block WIDTHS (2 and 4 — the only thing that catches over-collapse), (b) a
+    /// large B-contrast in step 2 is recovered (gap >= 0.4), and (c) step 1 is flat in attr 2.
+    #[test]
+    fn seq_gdina_qr_recovers_step_distinct() {
+        let k = 3usize; // attrs 0,1,2
+        // items: 3 single-attr M=1 identification items per attribute (pins each dim) + 1
+        // step-distinct M=2 item (step1 q={0}, step2 q={0,2}).
+        let mut step_q: Vec<u8> = Vec::new();
+        let mut n_steps: Vec<usize> = Vec::new();
+        for a in 0..k {
+            for _ in 0..3 {
+                let mut r = vec![0u8; k];
+                r[a] = 1;
+                step_q.extend_from_slice(&r); // one step row
+                n_steps.push(1);
+            }
+        }
+        // the step-distinct item: step1 {0}, step2 {0,2}
+        step_q.extend_from_slice(&[1, 0, 0]); // step 1 q = {0}
+        step_q.extend_from_slice(&[1, 0, 1]); // step 2 q = {0,2}
+        n_steps.push(2);
+        let n_items = 3 * k + 1;
+        let sd = n_items - 1; // the step-distinct item index
+
+        // truth: singles guess 0.15 / master 0.90; step-distinct item step1 (q={0}: classes
+        // [a0=0,a0=1]) = [0.30, 0.80]; step2 (q={0,2}: classes [00,10,01,11] over (a0,a2)) with a
+        // LARGE a2-contrast: s2(a0=1,a2=0)=0.20 vs s2(a0=1,a2=1)=0.80.
+        // Build step_off/spo/step_qmask to drive the simulator.
+        let mut step_off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            step_off[i + 1] = step_off[i] + n_steps[i];
+        }
+        let n_rows = step_off[n_items];
+        let mut step_qmask = vec![0usize; n_rows];
+        let mut spo = vec![0usize; n_rows + 1];
+        for g in 0..n_rows {
+            let mut m = 0usize;
+            for a in 0..k {
+                if step_q[g * k + a] != 0 {
+                    m |= 1 << a;
+                }
+            }
+            step_qmask[g] = m;
+            spo[g + 1] = spo[g] + (1usize << m.count_ones());
+        }
+        let mut truth = vec![0.0f64; spo[n_rows]];
+        for i in 0..(3 * k) {
+            // single M=1 identification items (K=1: classes [non,master])
+            truth[spo[step_off[i]]] = 0.15;
+            truth[spo[step_off[i]] + 1] = 0.90;
+        }
+        // step-distinct item
+        let g1 = step_off[sd]; // step 1, q={0}: classes [a0=0, a0=1]
+        truth[spo[g1]] = 0.30;
+        truth[spo[g1] + 1] = 0.80;
+        let g2 = step_off[sd] + 1; // step 2, q={0,2}: reduce_class over {0,2} = a0 + 2*a2
+        truth[spo[g2]] = 0.15; // (a0=0,a2=0)
+        truth[spo[g2] + 1] = 0.20; // (a0=1,a2=0)
+        truth[spo[g2] + 2] = 0.20; // (a0=0,a2=1)
+        truth[spo[g2] + 3] = 0.80; // (a0=1,a2=1)  <- large a2 contrast at a0=1
+
+        let n = 6000usize;
+        let mut rng = Lcg(916);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate_seq_gdina_qr(&step_off, &step_qmask, &[], &truth, &spo, &n_steps, &profiles, n_items, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_seq_gdina_qr(&y, &observed, &step_q, &n_steps, n, n_items, k, &CdmConfig::default()).unwrap();
+        assert!(res.converged);
+        // (a) STRUCTURE: the step-distinct item's step blocks have widths 2 and 4.
+        let g1r = res.step_off[sd];
+        let g2r = res.step_off[sd] + 1;
+        assert_eq!(res.spo[g1r + 1] - res.spo[g1r], 2, "step 1 width = 2^{{|q1|}}");
+        assert_eq!(res.spo[g2r + 1] - res.spo[g2r], 4, "step 2 width = 2^{{|q2|}}");
+        assert_eq!(res.step_kq[g1r], 1);
+        assert_eq!(res.step_kq[g2r], 2);
+        // n_parameters reflects the per-step widths (2 + 4 for the step-distinct item).
+        let total_step_params: usize = (0..n_rows).map(|g| res.spo[g + 1] - res.spo[g]).sum();
+        assert_eq!(res.n_parameters, total_step_params + ((1 << k) - 1));
+        // (b) large a2-contrast in step 2 recovered (gap >= 0.4).
+        let s2_a1_b0 = res.step_prob[res.spo[g2r] + 1]; // (a0=1,a2=0)
+        let s2_a1_b1 = res.step_prob[res.spo[g2r] + 3]; // (a0=1,a2=1)
+        assert!(s2_a1_b1 - s2_a1_b0 > 0.4, "step-2 a2 contrast {s2_a1_b0} -> {s2_a1_b1}");
+        // (c) step 1 is (near) flat in attr 2 (it only depends on a0): both a0=1 draws equal.
+        // step 1 has only 2 classes (a0), so it is structurally flat in a2 by construction; assert
+        // the recovered step-1 master prob is near 0.80 and non-master near 0.30.
+        assert!((res.step_prob[res.spo[g1r]] - 0.30).abs() < 0.06, "step1 non-master");
+        assert!((res.step_prob[res.spo[g1r] + 1] - 0.80).abs() < 0.06, "step1 master");
+        for w in res.loglik_trace.windows(2) {
+            assert!(w[1] >= w[0] - 1e-6, "EM monotone");
+        }
+    }
+
+    #[test]
+    fn seq_gdina_qr_validates() {
+        let k = 2usize;
+        // valid: 2 single items + 1 M=2 step-distinct-ish item (step1 {0}, step2 {0,1})
+        let mut step_q: Vec<u8> = vec![1, 0, /*item0 step1*/ 0, 1 /*item1 step1*/];
+        let mut n_steps = vec![1usize, 1];
+        step_q.extend_from_slice(&[1, 0]); // item2 step1 {0}
+        step_q.extend_from_slice(&[1, 1]); // item2 step2 {0,1}
+        n_steps.push(2);
+        let n_items = 3usize;
+        let n = 300usize;
+        // build a simple valid y via the simulator
+        let mut step_off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            step_off[i + 1] = step_off[i] + n_steps[i];
+        }
+        let n_rows = step_off[n_items];
+        let mut step_qmask = vec![0usize; n_rows];
+        let mut spo = vec![0usize; n_rows + 1];
+        for g in 0..n_rows {
+            let mut m = 0usize;
+            for a in 0..k {
+                if step_q[g * k + a] != 0 {
+                    m |= 1 << a;
+                }
+            }
+            step_qmask[g] = m;
+            spo[g + 1] = spo[g] + (1usize << m.count_ones());
+        }
+        let mut truth = vec![0.5f64; spo[n_rows]];
+        truth[spo[step_off[0]]] = 0.2;
+        truth[spo[step_off[0]] + 1] = 0.85;
+        truth[spo[step_off[1]]] = 0.2;
+        truth[spo[step_off[1]] + 1] = 0.85;
+        let mut rng = Lcg(3);
+        let profiles: Vec<usize> = (0..n).map(|_| rng.profile(1 << k)).collect();
+        let y = simulate_seq_gdina_qr(&step_off, &step_qmask, &[], &truth, &spo, &n_steps, &profiles, n_items, &mut rng);
+        let cfg = CdmConfig::default();
+        let obs = vec![true; n * n_items];
+        // valid fit (if item2 reaches category 2 for someone; make sure the design does)
+        let ok = fit_seq_gdina_qr(&y, &obs, &step_q, &n_steps, n, n_items, k, &cfg);
+        assert!(ok.is_ok(), "valid: {:?}", ok.err());
+        // n_steps length mismatch
+        assert!(fit_seq_gdina_qr(&y, &obs, &step_q, &n_steps[..2], n, n_items, k, &cfg).is_err());
+        // all-zero step-q row (a step measuring nothing)
+        let mut zq = step_q.clone();
+        zq[0] = 0; // item0 step1 was {0} -> now all-zero
+        assert!(fit_seq_gdina_qr(&y, &obs, &zq, &n_steps, n, n_items, k, &cfg).is_err());
+        // all-zero COLUMN: an attribute required by no step. ISOLATE this guard from the
+        // all-zero-ROW guard that precedes it by keeping every row non-empty -- two items whose
+        // only step is {0}, so attr1 appears in no column while no row is all-zero (a naive
+        // fixture that empties attr1's only single-attr step trips the row guard first and would
+        // let a deletion of the column guard survive).
+        let col_q: Vec<u8> = vec![1, 0, 1, 0];
+        let col_ns = vec![1usize, 1];
+        let col_y = vec![0.0f64; n * 2];
+        let col_obs = vec![true; n * 2];
+        let col_err = fit_seq_gdina_qr(&col_y, &col_obs, &col_q, &col_ns, n, 2, k, &cfg).unwrap_err();
+        assert!(col_err.contains("required by no step"), "expected column guard, got: {col_err}");
+        // max observed category != declared n_steps: clamp item2 (declared M=2) so its data never
+        // reaches category 2. sum(n_steps)=4 still matches the 4 step_q rows, so the length guard
+        // passes and the max-observed guard is what must reject it (else x = y as usize could
+        // exceed M_i and index clp past the item's (M_i+1)-wide block).
+        let mut y_low = y.clone();
+        for p in 0..n {
+            let idx = p * n_items + 2;
+            if y_low[idx] > 1.0 {
+                y_low[idx] = 1.0;
+            }
+        }
+        let low_err = fit_seq_gdina_qr(&y_low, &obs, &step_q, &n_steps, n, n_items, k, &cfg).unwrap_err();
+        assert!(low_err.contains("max observed category"), "expected max-observed guard, got: {low_err}");
+        // non-integer response
+        let mut yb = y.clone();
+        yb[5] = 1.5;
+        assert!(fit_seq_gdina_qr(&yb, &obs, &step_q, &n_steps, n, n_items, k, &cfg).is_err());
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): recover the per-step-Q sequential G-DINA under
+    /// normal and skew higher-order attribute distributions.
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_seq_gdina_qr_recovery_500() {
+        let reps = 500usize;
+        let k = 3usize;
+        let n = 2000usize;
+        // 3 single M=1 items per attribute (identification) + step-distinct polytomous items.
+        let mut step_q: Vec<u8> = Vec::new();
+        let mut n_steps: Vec<usize> = Vec::new();
+        for a in 0..k {
+            for _ in 0..3 {
+                let mut r = vec![0u8; k];
+                r[a] = 1;
+                step_q.extend_from_slice(&r);
+                n_steps.push(1);
+            }
+        }
+        // step-distinct items: (step1 {0}, step2 {0,1}); (step1 {1}, step2 {1,2}); (step1 {2},
+        // step2 {0,2}, step3 {0,1,2}).
+        let poly: [&[&[usize]]; 3] = [
+            &[&[0], &[0, 1]],
+            &[&[1], &[1, 2]],
+            &[&[2], &[0, 2], &[0, 1, 2]],
+        ];
+        for steps in poly.iter() {
+            for stp in steps.iter() {
+                let mut r = vec![0u8; k];
+                for &a in stp.iter() {
+                    r[a] = 1;
+                }
+                step_q.extend_from_slice(&r);
+            }
+            n_steps.push(steps.len());
+        }
+        let n_items = 3 * k + poly.len();
+        let mut step_off = vec![0usize; n_items + 1];
+        for i in 0..n_items {
+            step_off[i + 1] = step_off[i] + n_steps[i];
+        }
+        let n_rows = step_off[n_items];
+        let mut step_qmask = vec![0usize; n_rows];
+        let mut spo = vec![0usize; n_rows + 1];
+        for g in 0..n_rows {
+            let mut m = 0usize;
+            for a in 0..k {
+                if step_q[g * k + a] != 0 {
+                    m |= 1 << a;
+                }
+            }
+            step_qmask[g] = m;
+            spo[g + 1] = spo[g] + (1usize << m.count_ones());
+        }
+        // truth step tables: mastery-increasing per step (more mastered required attrs -> higher).
+        let mut truth = vec![0.0f64; spo[n_rows]];
+        for g in 0..n_rows {
+            let rw = 1usize << step_qmask[g].count_ones();
+            let kq = step_qmask[g].count_ones() as f64;
+            for l in 0..rw {
+                let frac = l.count_ones() as f64 / kq;
+                truth[spo[g] + l] = (0.20 + 0.65 * frac).clamp(0.08, 0.92);
+            }
+        }
+        // strong single identification items
+        for i in 0..(3 * k) {
+            truth[spo[step_off[i]]] = 0.12;
+            truth[spo[step_off[i]] + 1] = 0.90;
+        }
+        let a_ho = vec![1.2f64; k];
+        let d_ho: Vec<f64> = (0..k).map(|kk| 0.4 - 0.4 * kk as f64).collect();
+
+        for &skew in [false, true].iter() {
+            let (mut wnum, mut wden) = (0.0f64, 0.0f64);
+            let (mut cat_se, mut cat_cnt) = (0.0f64, 0.0f64);
+            let (mut attr_ok, mut attr_tot) = (0.0f64, 0.0f64);
+            let mut nconv = 0usize;
+            for rep in 0..reps {
+                let mut rng = Lcg(
+                    0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03),
+                );
+                let profiles: Vec<usize> = (0..n)
+                    .map(|_| {
+                        let theta = if skew {
+                            let mut cc = 0.0;
+                            for _ in 0..3 {
+                                let z = rng.normal();
+                                cc += z * z;
+                            }
+                            (cc - 3.0) / 6.0_f64.sqrt()
+                        } else {
+                            rng.normal()
+                        };
+                        let mut c = 0usize;
+                        for kk in 0..k {
+                            let p = 1.0 / (1.0 + (-(a_ho[kk] * theta + d_ho[kk])).exp());
+                            if rng.next_f64() < p {
+                                c |= 1 << kk;
+                            }
+                        }
+                        c
+                    })
+                    .collect();
+                let y = simulate_seq_gdina_qr(&step_off, &step_qmask, &[], &truth, &spo, &n_steps, &profiles, n_items, &mut rng);
+                let observed = vec![true; n * n_items];
+                let res =
+                    match fit_seq_gdina_qr(&y, &observed, &step_q, &n_steps, n, n_items, k, &CdmConfig::default()) {
+                        Ok(r) => r,
+                        Err(_) => continue, // a rep where a poly item did not reach its top category
+                    };
+                if res.converged {
+                    nconv += 1;
+                }
+                for w in res.loglik_trace.windows(2) {
+                    assert!(w[1] >= w[0] - 1e-6, "EM monotone (rep {rep})");
+                }
+                for &sp in &res.step_prob {
+                    assert!(sp.is_finite() && sp > 0.0 && sp < 1.0, "step prob {sp}");
+                }
+                // realized at-risk mass per step cell for weighting.
+                let mut atrisk = vec![0.0f64; spo[n_rows]];
+                let mut advanced = vec![0.0f64; spo[n_rows]];
+                for j in 0..n {
+                    for i in 0..n_items {
+                        let m = n_steps[i];
+                        let x = y[j * n_items + i] as usize;
+                        for v in 1..=m {
+                            let g = step_off[i] + (v - 1);
+                            let l = reduce_class(profiles[j], step_qmask[g]);
+                            if x >= v - 1 {
+                                atrisk[spo[g] + l] += 1.0;
+                                if x >= v {
+                                    advanced[spo[g] + l] += 1.0;
+                                }
+                            }
+                        }
+                    }
+                }
+                for cell in 0..spo[n_rows] {
+                    if atrisk[cell] > 0.0 {
+                        let e = res.step_prob[cell] - truth[cell];
+                        wnum += atrisk[cell] * e * e;
+                        wden += atrisk[cell];
+                    }
+                }
+                // category-prob RMSE vs model truth for the poly items.
+                for i in (3 * k)..n_items {
+                    let m = n_steps[i];
+                    let m1 = m + 1;
+                    // union class truth: gather step probs per union class via full profiles.
+                    // compare recovered cat_prob against seq_category_probs of the truth steps
+                    // at each union class (representative full profile).
+                    let mut u = 0usize;
+                    for g in step_off[i]..step_off[i + 1] {
+                        u |= step_qmask[g];
+                    }
+                    let rwu = 1usize << u.count_ones();
+                    for c in 0..(1 << k) {
+                        let uc = reduce_class(c, u);
+                        if uc >= rwu {
+                            continue;
+                        }
+                        let mut steps_t = vec![0.0f64; m];
+                        for v in 0..m {
+                            let g = step_off[i] + v;
+                            steps_t[v] = truth[spo[g] + reduce_class(c, step_qmask[g])];
+                        }
+                        let tc = seq_category_probs(&steps_t);
+                        for x in 0..m1 {
+                            let est = res.cat_prob[res.cat_off[i] + uc * m1 + x];
+                            let e = est - tc[x];
+                            cat_se += e * e;
+                            cat_cnt += 1.0;
+                        }
+                    }
+                }
+                for j in 0..n {
+                    for kk in 0..k {
+                        let est = (res.attr_prob[j * k + kk] >= 0.5) as usize;
+                        if est == ((profiles[j] >> kk) & 1) {
+                            attr_ok += 1.0;
+                        }
+                        attr_tot += 1.0;
+                    }
+                }
+            }
+            let wrmse = (wnum / wden).sqrt();
+            let crmse = (cat_se / cat_cnt).sqrt();
+            let attr = attr_ok / attr_tot;
+            let conv = nconv as f64 / reps as f64;
+            println!(
+                "[seq-qr MC skew={skew}] reps={reps} conv={conv:.3} wRMSE(step)={wrmse:.4} \
+                 RMSE(cat)={crmse:.4} attr={attr:.3}"
+            );
+            assert!(conv > 0.9, "convergence {conv} skew={skew}");
+            assert!(crmse < 0.03, "category-prob RMSE {crmse} skew={skew}");
+            assert!(wrmse < 0.05, "at-risk-weighted step RMSE {wrmse} skew={skew}");
+            assert!(attr > 0.90, "attribute agreement {attr} skew={skew}");
         }
     }
 }

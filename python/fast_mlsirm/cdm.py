@@ -818,3 +818,130 @@ def fit_seq_gdina(
         stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
+
+@dataclass
+class SeqGdinaQrFit:
+    """Fitted per-step-Q sequential G-DINA (Ma & de la Torre, 2016, restricted-Q).
+
+    Each ordered STEP has its own attribute requirement ``q_ik``. Step probabilities are
+    STEP-ROW-major: item ``i``'s step ``k`` is step row ``g = step_off[i] + (k-1)`` and owns
+    ``2 ** step_kq[g]`` reduced classes at ``step_prob[spo[g]:spo[g+1]]`` (``step_kq[g] =
+    |q_ik|``). Category probabilities are UNION-class-major: item ``i``'s union
+    ``u_i = OR_k q_ik`` has ``2 ** union_k[i]`` classes and
+    ``cat_prob[cat_off[i] + uc*(M_i+1) + x] = P(X_i = x | union class uc)``. ``max_cat`` is
+    ``M_i`` (the number of steps); ``map_profile``/``attr_prob`` the per-person MAP profile and
+    marginal attribute mastery."""
+
+    step_off: np.ndarray
+    spo: np.ndarray
+    step_prob: np.ndarray
+    step_kq: np.ndarray
+    cat_off: np.ndarray
+    cat_prob: np.ndarray
+    max_cat: np.ndarray
+    union_k: np.ndarray
+    profile_prob: np.ndarray
+    map_profile: np.ndarray
+    attr_prob: np.ndarray
+    loglik_trace: np.ndarray
+    n_iter: int
+    converged: bool
+    termination_reason: str
+    final_loglik_change: float
+    final_relative_loglik_change: float
+    stopping_tolerance: float
+    n_parameters: int
+
+    def item_step_prob(self, i: int, k: int) -> np.ndarray:
+        """Step ``k`` (1-based) of item ``i``: its ``2 ** |q_ik|`` reduced-class continuation
+        probabilities."""
+        g = int(self.step_off[i]) + (k - 1)
+        return self.step_prob[self.spo[g] : self.spo[g + 1]]
+
+
+def fit_seq_gdina_qr(
+    responses: np.ndarray,
+    step_q: np.ndarray,
+    n_steps,
+    max_iter: int = 500,
+    tol: float = 1e-6,
+) -> SeqGdinaQrFit:
+    """Fit the per-step-Q sequential G-DINA (compute in Rust; Ma & de la Torre, 2016).
+
+    The full restricted-Q sequential CDM: each ordered STEP ``k`` of item ``i`` is a saturated
+    G-DINA over its OWN required attributes ``q_ik`` (step 1 may need attribute A, step 2 need A
+    and B, etc.). Generalizes :func:`fit_seq_gdina` (which is this with every step of an item
+    sharing the item's Q-vector). Estimated by marginal-ML EM with the closed-form saturated
+    step ratio; each step's reduced class is computed directly from the attribute profile, and
+    the item's union class indexes the category probabilities.
+
+    ``responses`` is a persons x items array of ordered integer categories ``0..M_i`` (``NaN`` =
+    missing, dropped MAR). ``step_q`` is a ``(sum_i n_steps[i]) x n_attributes`` 0/1 array (row
+    ``step_off[i] + (k-1)`` is step ``k`` of item ``i``, ``step_off = cumsum(n_steps)``);
+    ``n_steps[i] = M_i`` is item ``i``'s number of steps, which must equal its maximum observed
+    category. Every declared step must measure at least one attribute, and every attribute must
+    be required by at least one step.
+
+    References (APA 7th ed.):
+        Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for polytomous
+            responses. *British Journal of Mathematical and Statistical Psychology, 69*(3),
+            253-275. https://doi.org/10.1111/bmsp.12070
+        de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika, 76*(2),
+            179-199. https://doi.org/10.1007/s11336-011-9207-7
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_seq_gdina_qr"):
+        raise RuntimeError("fit_seq_gdina_qr requires the compiled Rust core")
+
+    y = np.asarray(responses, dtype=np.float64)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    sq = np.asarray(step_q)
+    if sq.ndim != 2:
+        raise ValueError("step_q must be a 2-D (sum_i n_steps[i]) x n_attributes array")
+    n_persons, n_items = y.shape
+    steps = np.asarray(n_steps, dtype=np.int64)
+    if steps.ndim != 1 or steps.shape[0] != n_items:
+        raise ValueError("n_steps must be a 1-D array of length n_items")
+    if sq.shape[0] != int(steps.sum()):
+        raise ValueError("step_q must have sum(n_steps) rows")
+    n_attributes = sq.shape[1]
+    if np.isinf(y).any():
+        raise ValueError("responses must be finite ordered categories or NaN (missing)")
+
+    observed = ~np.isnan(y)
+    yy = np.where(observed, y, 0.0).reshape(-1)
+    res = core.fit_seq_gdina_qr(
+        yy,
+        observed.reshape(-1),
+        sq.astype(np.int64).reshape(-1),
+        [int(m) for m in steps],
+        int(n_persons),
+        int(n_items),
+        int(n_attributes),
+        int(max_iter),
+        float(tol),
+    )
+    return SeqGdinaQrFit(
+        step_off=np.asarray(res["step_off"], dtype=np.int64),
+        spo=np.asarray(res["spo"], dtype=np.int64),
+        step_prob=np.asarray(res["step_prob"], dtype=np.float64),
+        step_kq=np.asarray(res["step_kq"], dtype=np.int64),
+        cat_off=np.asarray(res["cat_off"], dtype=np.int64),
+        cat_prob=np.asarray(res["cat_prob"], dtype=np.float64),
+        max_cat=np.asarray(res["max_cat"], dtype=np.int64),
+        union_k=np.asarray(res["union_k"], dtype=np.int64),
+        profile_prob=np.asarray(res["profile_prob"], dtype=np.float64),
+        map_profile=np.asarray(res["map_profile"], dtype=np.int64),
+        attr_prob=np.asarray(res["attr_prob"], dtype=np.float64).reshape(n_persons, n_attributes),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
+        n_iter=int(res["n_iter"]),
+        converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        final_relative_loglik_change=float(res["final_relative_loglik_change"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
+        n_parameters=int(res["n_parameters"]),
+    )

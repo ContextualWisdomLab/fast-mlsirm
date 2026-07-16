@@ -2711,6 +2711,147 @@ def test_fit_seq_gdina_recovers_polytomous_and_reduces_to_gdina():
     assert unfinished.stopping_tolerance == 1e-12
 
 
+def test_fit_seq_gdina_qr_per_step_q_reduces_and_recovers_structure():
+    """Per-step-Q sequential G-DINA (Ma & de la Torre, 2016, restricted-Q full model):
+    each ordered step of an item may require its OWN attributes. Three guards:
+
+    (1) SHARED-Q REDUCTION -- expanding every step of an item to the item's Q reproduces
+        :func:`fit_seq_gdina` BIT-EXACTLY (layout-aware step_prob compare: item-major
+        ``s_off[i]+l*M_i+(k-1)`` vs step-row-major ``spo[step_off[i]+(k-1)]+l``; cat_prob
+        and loglik_trace are class-major and compared directly). A dimension-map, layout,
+        or union-collapse bug fails this exact-zero guard.
+    (2) STRUCTURE -- item0 step1 q={A} (block width 2^1=2), step2 q={A,B} (width 2^2=4):
+        the per-step widths and n_parameters must reflect the distinct step Qs, NOT a
+        single union block. A large B-contrast in step 2 (s2(A1,B0)=0.20 vs s2(A1,B1)=0.80,
+        gap 0.60) is recovered (gap >= 0.4) while the union stays lossless. Value recovery
+        alone can't catch an over-collapse to the union; the width assertions can.
+    (3) VALIDATION -- all-zero step row (a step measuring nothing), an attribute used by no
+        step (all-zero union column), and n_steps != observed max are all rejected."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_seq_gdina, fit_seq_gdina_qr, SeqGdinaQrFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_seq_gdina_qr"):
+        pytest.skip("compiled core built without fit_seq_gdina_qr")
+
+    rng = np.random.default_rng(2016_3)
+    k, n = 2, 6000
+    # 4 single-attribute M=1 items per attribute (identification) + 4 shared-Q M=2 pairs.
+    rows = [[1, 0]] * 4 + [[0, 1]] * 4 + [[1, 1]] * 4
+    q = np.array(rows, dtype=np.int64)
+    n_items = q.shape[0]
+    pair_s1 = {0: 0.25, 1: 0.55, 2: 0.50, 3: 0.85}
+    pair_s2 = {0: 0.15, 1: 0.30, 2: 0.25, 3: 0.70}
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = np.zeros((n, n_items))
+    for j in range(n):
+        c = int(profiles[j])
+        for i in range(n_items):
+            if i < 8:
+                a = i // 4
+                p = 0.85 if (c >> a) & 1 else 0.15
+                y[j, i] = 1.0 if rng.random() < p else 0.0
+            else:
+                l = (c & 1) + 2 * ((c >> 1) & 1)
+                cat = 0
+                if rng.random() < pair_s1[l]:
+                    cat = 1
+                    if rng.random() < pair_s2[l]:
+                        cat = 2
+                y[j, i] = float(cat)
+
+    # (1) Shared-Q reduction: expand item Q into per-step rows sharing the item Q.
+    n_steps = np.array([1] * 8 + [2] * 4, dtype=np.int64)
+    step_rows = []
+    for i in range(n_items):
+        for _ in range(int(n_steps[i])):
+            step_rows.append(q[i])
+    step_q = np.vstack(step_rows).astype(np.int64)
+
+    sh = fit_seq_gdina(y, q, tol=1e-8)
+    qr = fit_seq_gdina_qr(y, step_q, n_steps, tol=1e-8)
+    assert isinstance(qr, SeqGdinaQrFit) and qr.converged
+    assert qr.termination_reason == "tolerance_met"
+    assert qr.max_cat.tolist() == [1] * 8 + [2] * 4
+    # cat_prob and loglik_trace are class-major: direct bit-exact compare.
+    assert sh.cat_prob.shape == qr.cat_prob.shape
+    assert np.array_equal(sh.cat_prob, qr.cat_prob)
+    assert len(sh.loglik_trace) == len(qr.loglik_trace)
+    assert np.array_equal(sh.loglik_trace, qr.loglik_trace)
+    # step_prob layouts are transposed: cell-by-cell exact-zero difference.
+    for i in range(n_items):
+        Mi = int(n_steps[i])
+        width = 1 << int(q[i].sum())
+        for l in range(width):
+            for kk in range(1, Mi + 1):
+                sh_val = sh.step_prob[int(sh.s_off[i]) + l * Mi + (kk - 1)]
+                qr_val = qr.item_step_prob(i, kk)[l]
+                assert sh_val == qr_val, f"item{i} l{l} k{kk}: {sh_val} vs {qr_val}"
+
+    # (2) Structure: distinct per-step Qs the shared-Q model cannot represent.
+    #     item0 step1={A}, step2={A,B}; item1 M=1 {A}, item2 M=1 {B} pin both dims.
+    step_q2 = np.array([[1, 0], [1, 1], [1, 0], [0, 1]], dtype=np.int64)
+    n_steps2 = np.array([2, 1, 1], dtype=np.int64)
+    s2_by_class = {0: 0.15, 1: 0.20, 2: 0.30, 3: 0.80}  # big B-contrast at A=1
+    n2 = 8000
+    al2 = rng.integers(0, 2, size=(n2, k))
+    Y2 = np.zeros((n2, 3))
+    for j in range(n2):
+        a0, a1 = int(al2[j, 0]), int(al2[j, 1])
+        # item0
+        if rng.random() < (0.25 + 0.5 * a0):
+            Y2[j, 0] = 1
+            rcAB = a0 + 2 * a1
+            if rng.random() < s2_by_class[rcAB]:
+                Y2[j, 0] = 2
+        Y2[j, 1] = 1.0 if rng.random() < (0.2 + 0.6 * a0) else 0.0
+        Y2[j, 2] = 1.0 if rng.random() < (0.2 + 0.6 * a1) else 0.0
+    qr2 = fit_seq_gdina_qr(Y2, step_q2, n_steps2, max_iter=1000, tol=1e-8)
+    # per-step block widths reflect the distinct Qs (2 and 4), not a single union block.
+    assert len(qr2.item_step_prob(0, 1)) == 2
+    assert len(qr2.item_step_prob(0, 2)) == 4
+    assert qr2.step_kq.tolist() == [1, 2, 1, 1]  # |q_ik| per step row
+    # n_parameters = total step cells + (2^K - 1) free profile weights.
+    assert qr2.n_parameters == (2 + 4 + 2 + 2) + ((1 << k) - 1)
+    # large B-contrast recovered in step 2 (class A1B1 minus A1B0).
+    s2 = qr2.item_step_prob(0, 2)
+    assert s2[3] - s2[1] >= 0.4, f"B-gap too small: {s2}"
+    # category space: P(X=2 | A1B1) >> P(X=2 | A1B0), P(X>=1) roughly equal.
+    cp = qr2.cat_prob[int(qr2.cat_off[0]):int(qr2.cat_off[0]) + 4 * 3].reshape(4, 3)
+    assert cp[3, 2] - cp[1, 2] >= 0.3
+    assert abs((1 - cp[3, 0]) - (1 - cp[1, 0])) < 0.15  # P(X>=1) close across B
+    # B is pinned by a single M=1 item (0.20/0.80 split), so its Bayes-optimal recovery is
+    # ~0.8; well above the 0.5 chance rate, confirming both latent dims are identified.
+    est = (qr2.attr_prob >= 0.5).astype(int)
+    assert (est == al2).mean() > 0.75
+
+    # (3) Validation.
+    with pytest.raises(ValueError):
+        fit_seq_gdina_qr(Y2.ravel(), step_q2, n_steps2)  # not 2-D
+    zero_row = step_q2.copy()
+    zero_row[1] = [0, 0]  # a step measuring nothing
+    with pytest.raises(ValueError):
+        fit_seq_gdina_qr(Y2, zero_row, n_steps2)
+    dead_col = np.array([[1, 0], [1, 0], [1, 0], [1, 0]], dtype=np.int64)  # attr B unused
+    with pytest.raises(ValueError):
+        fit_seq_gdina_qr(Y2, dead_col, n_steps2)
+    with pytest.raises(ValueError, match="sum"):
+        fit_seq_gdina_qr(Y2, step_q2, np.array([3, 1, 1], dtype=np.int64))  # wrapper: rows != sum(n_steps)
+    # max observed category != declared n_steps -- reaches the Rust guard, NOT the wrapper's
+    # row-count guard: keep sum(n_steps)=4 (matches step_q2's 4 rows) but let item0 declare 2
+    # steps while the data never reaches category 2 (else x=y could index clp past item0's block).
+    y_low = Y2.copy()
+    y_low[y_low[:, 0] == 2, 0] = 1
+    with pytest.raises(ValueError, match="max observed category"):
+        fit_seq_gdina_qr(y_low, step_q2, n_steps2)
+    ymiss = Y2.copy()
+    ymiss[0, 0] = np.nan
+    fm = fit_seq_gdina_qr(ymiss, step_q2, n_steps2, max_iter=1000)  # MAR: dropped, no crash
+    assert np.isfinite(fm.loglik_trace[-1]) and abs(fm.profile_prob.sum() - 1.0) < 1e-9
+
+
 def test_fit_crm_recovers_continuous_responses():
     """Continuous Response Model (Samejima, 1973): recover the item slope/intercept/
     residual-sd and the Samejima discrimination/difficulty from continuous bounded

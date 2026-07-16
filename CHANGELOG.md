@@ -173,6 +173,43 @@
   `mlsirm_core::cdm::fit_seq_gdina` (reuses `reduce_class`, the profile-grid posterior,
   and the saturated closed-form ratio); exposed to Python as `fit_seq_gdina` with the
   `SeqGdinaFit` wrapper (`item_step_prob` / `item_cat_prob` ragged accessors).
+- **Per-step-Q sequential G-DINA — the full restricted-Q model** (Ma & de la Torre,
+  2016). `fit_seq_gdina_qr(responses, step_q, n_steps)` lifts the restriction above: each
+  ordered *step* `k` of item `i` carries its OWN attribute requirement `q_ik` (the paper's
+  headline generality — step 1 may need attribute A, step 2 need A AND B), supplied as a
+  row-major `(sum_i M_i) x K` restricted Q-matrix `Q_r`. The sequential factorization is
+  unchanged, so each step is still an independent saturated Bernoulli on its at-risk set
+  and the closed-form ratio `s = R/I` is still the exact complete-data MLE — but now each
+  step's success is a saturated G-DINA over ITS OWN `2^{|q_ik|}` reduced classes. **Storage
+  is union-class-indexed and lossless:** response probabilities depend only on the item's
+  UNION `u_i = OR_k q_ik`, so the E-step posterior and the category probabilities are
+  indexed by the `2^{|u_i|}` union reduced class (no `N x 2^K` materialization), while each
+  step's own reduced class is computed DIRECTLY from the full profile `c` via
+  `reduce_class(c, q_ik)` — never a union-mask AND, which would silently mis-gather the
+  renumbered set bits. Step probabilities are stored step-row-major (`spo` over `sum_i M_i`
+  rows, width `2^{|q_ik|}` each; `step_off[i]` per item, `step_kq[g] = |q_ik|`), category
+  probabilities item-major over the union class. **Reduction guard:** giving every step of
+  an item the item's Q reproduces `fit_seq_gdina` BIT-EXACTLY (layout-aware cell compare of
+  the transposed step tables plus direct compare of the class-major category probs and the
+  whole loglik trace — difference exactly `0`). A structural anchor (step 1 `q={A}`, step 2
+  `q={A,B}`) asserts the per-step block widths are `2` and `4` (not one collapsed union
+  block) and `n_parameters` reflects the per-step widths — a discrimination value recovery
+  alone cannot make, since an over-collapse to the union would still fit — while recovering
+  a large step-2 B-contrast (`s_2(A1,B0)=0.20` vs `s_2(A1,B1)=0.80`, gap >= 0.4) that the
+  shared-Q model cannot represent. `validate` rejects an all-zero step row (a step measuring
+  nothing), an attribute required by no step (all-zero union column), and `n_steps[i]` not
+  equal to both the declared step count and the maximum observed category, with checked
+  `(sum_i M_i) * K` and `2^{|u_i|}` allocations and the same `K` cap. A 500-replication
+  Monte-Carlo (K=3, step-distinct M=2/M=3 items plus single-attribute M=1 identification
+  items pinning each dimension, N, under BOTH a normal and a right-skew higher-order
+  attribute distribution) recovers the model with at-risk-mass-weighted step-probability
+  RMSE ~0.017, category-probability RMSE ~0.018, and attribute-classification agreement
+  ~0.972 — essentially identical across the normal and skew conditions (the free `pi_c`
+  nests the higher-order-implied distribution), 100% convergence with every replication
+  finite and on the simplex. Compute lives in `mlsirm_core::cdm::fit_seq_gdina_qr`; exposed
+  to Python as `fit_seq_gdina_qr` with the `SeqGdinaQrFit` wrapper (`item_step_prob` ragged
+  accessor over the per-step layout). The shared-Q `fit_seq_gdina` is retained as the
+  convenience special case.
 - **Higher-order G-DINA** (de la Torre & Douglas, 2004; de la Torre, 2011).
   `fit_ho_gdina(responses, q_matrix)` fits the saturated G-DINA item model (each
   item's reduced attribute-mastery classes get a free success probability) under a
