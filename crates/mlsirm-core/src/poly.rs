@@ -1103,6 +1103,11 @@ pub struct TwoGroupPolyFit {
     pub sigma: Vec<f64>,
     pub loglik: f64,
     pub n_iter: usize,
+    pub converged: bool,
+    pub termination_reason: String,
+    pub loglik_trace: Vec<f64>,
+    pub final_delta: f64,
+    pub stopping_tolerance: f64,
 }
 
 /// Multi-group polytomous marginal MLE (Bock-Zimowski population), the estimator
@@ -1136,13 +1141,25 @@ pub fn fit_poly_multigroup(
     max_iter: usize,
     tol: f64,
 ) -> Result<TwoGroupPolyFit, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be >= 1".into());
+    }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be >= 1".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and > 0".into());
     }
     if n_groups < 2 {
         return Err("n_groups must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_owned())?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if group_id.len() != n_persons {
@@ -1167,7 +1184,7 @@ pub fn fit_poly_multigroup(
         return Err("response categories must be < n_cat".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -1218,10 +1235,14 @@ pub fn fit_poly_multigroup(
     let mut mu = vec![0.0_f64; n_groups];
     let mut sigma = vec![1.0_f64; n_groups];
 
-    let mut prev_ll = f64::NEG_INFINITY;
-    let mut ll = f64::NEG_INFINITY;
+    let mut ll: f64;
     let mut it = 0;
-    while it < max_iter {
+    let mut converged = false;
+    let mut termination_reason = "max_iter".to_owned();
+    let mut final_delta = f64::INFINITY;
+    let mut stopping_tolerance = f64::INFINITY;
+    let mut loglik_trace = Vec::with_capacity(max_iter + 1);
+    loop {
         // group-specific trait locations for the shared standard nodes
         let theta: Vec<Vec<f64>> = (0..n_groups)
             .map(|g| nodes.iter().map(|&x| mu[g] + sigma[g] * x).collect())
@@ -1286,6 +1307,29 @@ pub fn fit_poly_multigroup(
                 }
             }
         }
+        if !ll.is_finite() {
+            termination_reason = "non_finite".to_owned();
+            break;
+        }
+        loglik_trace.push(ll);
+        if loglik_trace.len() >= 2 {
+            let previous = loglik_trace[loglik_trace.len() - 2];
+            final_delta = ll - previous;
+            stopping_tolerance = tol * (1.0 + previous.abs());
+            let monotonic_tolerance = 32.0 * f64::EPSILON * (1.0 + previous.abs());
+            if final_delta < -monotonic_tolerance {
+                termination_reason = "non_monotone".to_owned();
+                break;
+            }
+            if final_delta <= stopping_tolerance {
+                converged = true;
+                termination_reason = "tolerance".to_owned();
+                break;
+            }
+        }
+        if it == max_iter {
+            break;
+        }
         // M-step, item parameters
         for i in 0..n_items {
             if Some(i) == studied_item {
@@ -1315,10 +1359,6 @@ pub fn fit_poly_multigroup(
             }
         }
         it += 1;
-        if (ll - prev_ll).abs() < tol * (1.0 + prev_ll.abs()) {
-            break;
-        }
-        prev_ll = ll;
     }
 
     let slope: Vec<f64> = (0..n_items).map(|i| params[i][0].exp()).collect();
@@ -1331,7 +1371,21 @@ pub fn fit_poly_multigroup(
     } else {
         (Vec::new(), Vec::new())
     };
-    Ok(TwoGroupPolyFit { slope, cat_params, studied_slope, studied_cat, mu, sigma, loglik: ll, n_iter: it })
+    Ok(TwoGroupPolyFit {
+        slope,
+        cat_params,
+        studied_slope,
+        studied_cat,
+        mu,
+        sigma,
+        loglik: ll,
+        n_iter: it,
+        converged,
+        termination_reason,
+        loglik_trace,
+        final_delta,
+        stopping_tolerance,
+    })
 }
 
 /// One studied item's likelihood-ratio DIF result.
@@ -1366,8 +1420,11 @@ pub struct PolyDifRow {
 ///
 /// Woehr, D. J., & Meriac, J. P. (2010). Using polytomous item response theory
 ///   to examine differential item and test functioning: The case of work ethic.
-///   In N. T. Tippins & S. Adler (Eds.), *Technology-enhanced assessment of
-///   talent* (pp. 199–229). Jossey-Bass.
+///   In J. A. Harkness, M. Braun, B. Edwards, T. P. Johnson, L. E. Lyberg,
+///   P. P. Mohler, B.-E. Pennell, & T. W. Smith (Eds.), *Survey methods in
+///   multinational, multiregional, and multicultural contexts* (pp. 419–433).
+///   Wiley.
+///   https://doi.org/10.1002/9780470609927.ch22
 #[allow(clippy::too_many_arguments)]
 pub fn poly_dif_sweep(
     y: &[usize],
@@ -1397,6 +1454,17 @@ pub fn poly_dif_sweep(
                     (a group may have a rarely-used category; try model=\"gpcm\")"
             .into());
     }
+    if !con.converged {
+        return Err(format!(
+            "compact multi-group fit did not converge: reason={}, iteration={}/{}, \
+             final_delta={:.6e}, tolerance={:.6e}",
+            con.termination_reason,
+            con.n_iter,
+            max_iter,
+            con.final_delta,
+            con.stopping_tolerance
+        ));
+    }
     let items: Vec<usize> = match studied_items {
         Some(s) => s.to_vec(),
         None => (0..n_items).collect(),
@@ -1413,26 +1481,26 @@ pub fn poly_dif_sweep(
         )?;
         // If this item's augmented fit diverged, surface it as NaN rather than let
         // `.max(0.0)` mask a failed fit as LR=0 (a silent "no DIF" false negative).
-        let (lr, p_value) = if aug.loglik.is_finite() {
+        let (lr, p_value, effect_size) = if aug.converged && aug.loglik.is_finite() {
             let lr = (2.0 * (aug.loglik - con.loglik)).max(0.0);
-            (lr, crate::fitstats::chi2_sf(lr, df as f64))
+            let bbar: Vec<f64> = aug
+                .studied_cat
+                .iter()
+                .map(|c| c.iter().sum::<f64>() / c.len().max(1) as f64)
+                .collect();
+            let hi = bbar.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let lo = bbar.iter().cloned().fold(f64::INFINITY, f64::min);
+            (lr, crate::fitstats::chi2_sf(lr, df as f64), hi - lo)
         } else {
-            (f64::NAN, f64::NAN)
+            (f64::NAN, f64::NAN, f64::NAN)
         };
-        let bbar: Vec<f64> = aug
-            .studied_cat
-            .iter()
-            .map(|c| c.iter().sum::<f64>() / c.len().max(1) as f64)
-            .collect();
-        let hi = bbar.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let lo = bbar.iter().cloned().fold(f64::INFINITY, f64::min);
         rows.push(PolyDifRow {
             item: j,
             lr,
             df,
             p_value,
             flagged_bh: false,
-            effect_size: hi - lo,
+            effect_size,
         });
     }
     let pvals: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
@@ -3515,6 +3583,10 @@ mod tests {
         let con =
             fit_poly_multigroup(&yi, None, &gid, 2, np, n_items, k, PolyModel::Gpcm, None, 21, 200, 1e-6)
                 .unwrap();
+        assert!(con.converged, "compact fit: {}", con.termination_reason);
+        assert!(con.n_iter < 200);
+        assert_eq!(con.loglik_trace.last().copied(), Some(con.loglik));
+        assert!(con.final_delta <= con.stopping_tolerance);
         assert_eq!(con.mu[0], 0.0);
         assert_eq!(con.sigma[0], 1.0);
         assert!((con.mu[1] - 0.5).abs() < 0.15, "focal mean not recovered: {}", con.mu[1]);
@@ -3523,7 +3595,29 @@ mod tests {
             &yi, None, &gid, 2, np, n_items, k, PolyModel::Gpcm, Some(0), 21, 200, 1e-6,
         )
         .unwrap();
-        // nesting, with tolerance-scaled slack (EM loglik lags one M-step)
+        assert!(aug.converged, "augmented fit: {}", aug.termination_reason);
+        assert!(aug.n_iter < 200);
+        assert_eq!(aug.loglik_trace.last().copied(), Some(aug.loglik));
+        assert!(aug.final_delta <= aug.stopping_tolerance);
+        for fit in [&con, &aug] {
+            assert!(fit.loglik_trace.iter().all(|v| v.is_finite()));
+            assert!(fit.loglik_trace.windows(2).all(|w| w[1] >= w[0] - 1e-9));
+        }
+        println!(
+            "[poly DIF convergence] compact: reason={} iter={}/200 delta={:.3e} tol={:.3e} ll={:.6}; \
+             augmented: reason={} iter={}/200 delta={:.3e} tol={:.3e} ll={:.6}",
+            con.termination_reason,
+            con.n_iter,
+            con.final_delta,
+            con.stopping_tolerance,
+            con.loglik,
+            aug.termination_reason,
+            aug.n_iter,
+            aug.final_delta,
+            aug.stopping_tolerance,
+            aug.loglik,
+        );
+        // nesting, with tolerance-scaled numerical slack
         let slack = 1e-6_f64.max(1e-6 * (1.0 + con.loglik.abs()));
         assert!(
             aug.loglik >= con.loglik - slack,
@@ -3543,6 +3637,34 @@ mod tests {
             &yi, None, &gid, 3, np, 6, 3, PolyModel::Gpcm, None, 21, 50, 1e-4,
         );
         assert!(err.is_err(), "empty declared group should be rejected");
+    }
+
+    #[test]
+    fn poly_dif_rejects_unconverged_compact_fit() {
+        let (yi, gid) = gen_two_group_gpcm(100, 4, 3, 0, false, 1701);
+        let np = gid.len();
+        let result = poly_dif_sweep(
+            &yi,
+            None,
+            &gid,
+            2,
+            np,
+            4,
+            3,
+            PolyModel::Gpcm,
+            Some(&[0]),
+            7,
+            1,
+            1e-12,
+            0.05,
+        );
+        let err = match result {
+            Ok(_) => panic!("iteration-limited compact fit must fail closed"),
+            Err(err) => err,
+        };
+        assert!(err.contains("did not converge"), "unexpected error: {err}");
+        assert!(err.contains("reason=max_iter"), "unexpected error: {err}");
+        assert!(err.contains("iteration=1/1"), "unexpected error: {err}");
     }
 
     // (Type I over non-DIF items, power on item 0 when DIF is present, mean LR

@@ -83,6 +83,28 @@ def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, n
     return y_int, observed
 
 
+def _nonnegative_integer_vector(values, name: str) -> np.ndarray:
+    """Validate label/index vectors before their irreversible int64 cast."""
+    raw = np.asarray(values)
+    if raw.ndim != 1 or raw.size == 0:
+        raise ValueError(f"{name} must be a non-empty 1-D array")
+    if (
+        not np.issubdtype(raw.dtype, np.number)
+        or np.issubdtype(raw.dtype, np.bool_)
+        or np.issubdtype(raw.dtype, np.complexfloating)
+    ):
+        raise ValueError(f"{name} must contain non-negative integers")
+    numeric = raw.astype(np.float64)
+    if (
+        not np.all(np.isfinite(numeric))
+        or np.any(numeric < 0)
+        or np.any(numeric != np.floor(numeric))
+        or np.any(numeric > np.iinfo(np.int64).max)
+    ):
+        raise ValueError(f"{name} must contain non-negative integers")
+    return raw.astype(np.int64)
+
+
 def fit_polytomous(
     responses: np.ndarray,
     n_cat: int,
@@ -853,17 +875,46 @@ def dif_polytomous(
             models. In P. W. Holland & H. Wainer (Eds.), *Differential item
             functioning* (pp. 67-113). Erlbaum.
         Woehr, D. J., & Meriac, J. P. (2010). Using polytomous item response
-            theory to examine differential item and test functioning. In N. T.
-            Tippins & S. Adler (Eds.), *Technology-enhanced assessment of talent*
-            (pp. 199-229). Jossey-Bass.
+            theory to examine differential item and test functioning: The case
+            of work ethic. In J. A. Harkness, M. Braun, B. Edwards, T. P.
+            Johnson, L. E. Lyberg, P. P. Mohler, B.-E. Pennell, & T. W. Smith
+            (Eds.), *Survey methods in multinational, multiregional, and
+            multicultural contexts* (pp. 419-433). Wiley.
+            https://doi.org/10.1002/9780470609927.ch22
     """
-    y_int, observed = _poly_int_and_mask(responses, n_cat)
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or n_cat < 2
+    ):
+        raise ValueError("n_cat must be an integer >= 2")
+    m = str(model).lower()
+    if m not in VALID_POLY_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
+    if (
+        not isinstance(q_theta, (int, np.integer))
+        or isinstance(q_theta, (bool, np.bool_))
+        or q_theta not in {7, 11, 15, 21, 31, 41}
+    ):
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+    if (
+        not isinstance(max_iter, (int, np.integer))
+        or isinstance(max_iter, (bool, np.bool_))
+        or max_iter < 1
+    ):
+        raise ValueError("max_iter must be an integer >= 1")
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0")
+    if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:
+        raise ValueError("fdr_q must be finite and in (0, 1]")
+
+    y_int, observed = _poly_int_and_mask(responses, int(n_cat))
     n_persons, n_items = y_int.shape
-    gid_raw = np.asarray(group_id, dtype=np.int64).ravel()
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    gid_raw = _nonnegative_integer_vector(group_id, "group_id")
     if gid_raw.shape[0] != n_persons:
         raise ValueError("group_id length must match the number of persons")
-    if gid_raw.min() < 0:
-        raise ValueError("group_id labels must be non-negative")
     # Densify labels so n_groups equals the number of *populated* groups and the
     # LR test's df = (n_groups - 1) * n_cat counts only groups backed by data.
     # Without this, sparse/non-contiguous labels (e.g. {0, 2} after filtering, or
@@ -882,7 +933,11 @@ def dif_polytomous(
 
     studied_arg = None
     if studied_items is not None:
-        studied_arg = np.asarray(studied_items, dtype=np.int64).ravel()
+        studied_arg = _nonnegative_integer_vector(studied_items, "studied_items")
+        if np.any(studied_arg >= n_items):
+            raise ValueError("studied_items entries must be valid item indices")
+        if np.unique(studied_arg).size != studied_arg.size:
+            raise ValueError("studied_items must not contain duplicates")
     obs_arg = None if observed.all() else observed.reshape(-1)
     res = core.poly_dif(
         y_int.reshape(-1),
@@ -892,7 +947,7 @@ def dif_polytomous(
         int(n_items),
         int(n_cat),
         obs_arg,
-        model,
+        m,
         studied_arg,
         int(q_theta),
         int(max_iter),

@@ -755,3 +755,70 @@ def test_seq_gdina_qr_rejects_unsafe_step_counts_before_native(
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="n_steps"):
         fit_seq_gdina_qr(np.array([[1.0]]), np.array([[1]]), n_steps)
+
+class _RejectPolyDifCore:
+    def poly_dif(self, *_args):
+        raise AssertionError("invalid DIF input reached the native core")
+
+
+@pytest.mark.parametrize(
+    "group_id",
+    [np.array([0.0, 1.5]), np.array([0.0, np.nan]), np.array([0, -1])],
+)
+def test_polytomous_dif_rejects_unsafe_group_labels_before_native(
+    monkeypatch, group_id
+):
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
+    with pytest.raises(ValueError, match="group_id"):
+        polytomous.dif_polytomous(np.array([[0.0], [1.0]]), group_id, 2)
+
+
+@pytest.mark.parametrize(
+    "studied_items",
+    [
+        np.array([0.5]),
+        np.array([np.nan]),
+        np.array([-1]),
+        np.array([1]),
+        np.array([0, 0]),
+    ],
+)
+def test_polytomous_dif_rejects_unsafe_studied_items_before_native(
+    monkeypatch, studied_items
+):
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
+    with pytest.raises(ValueError, match="studied_items"):
+        polytomous.dif_polytomous(
+            np.array([[0.0], [1.0]]),
+            np.array([0, 1]),
+            2,
+            studied_items=studied_items,
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"n_cat": 2.5}, "n_cat"),
+        ({"model": "bad"}, "model"),
+        ({"q_theta": 8}, "q_theta"),
+        ({"max_iter": 1.5}, "max_iter"),
+        ({"tol": np.nan}, "tol"),
+        ({"fdr_q": 1.5}, "fdr_q"),
+    ],
+)
+def test_polytomous_dif_rejects_unsafe_controls_before_native(
+    monkeypatch, kwargs, match
+):
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolyDifCore())
+    n_cat = kwargs.pop("n_cat", 2)
+    with pytest.raises(ValueError, match=match):
+        polytomous.dif_polytomous(
+            np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
+        )
