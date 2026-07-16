@@ -93,6 +93,50 @@
 
 ### Added
 
+- **Confirmatory MULTIDIMENSIONAL nominal response model** (Bock, 1972; Thissen, Cai, & Bock,
+  2010). `fit_nominal_mirt(responses, loading_pattern, n_cat)` fits unordered polytomous categories
+  with CATEGORY-SPECIFIC multidimensional discrimination: category `k` of item `i` has a free slope
+  vector `a_ik` (free on the confirmatory 0/1 `loading_pattern`, items x D) and intercept `c_ik`,
+  and `P(Y_i = k | theta) = softmax_k(sum_{d in S_i} a_ikd theta_d + c_ik)` with the baseline
+  category `0` pinned `a_i0 = 0, c_i0 = 0`, `theta ~ MVN(0, I_D)`. This generalizes the
+  unidimensional `poly::fit_nominal` to D latent dimensions, and reduces to it EXACTLY at `D = 1`
+  (the same general free-`a_k` parametrization). Estimated by Bock-Aitkin marginal MLE (EM) over the
+  D-dimensional latent grid, REUSING the compensatory-MIRT integration machinery: `node_rule = "gh"`
+  uses the `q^D` Gauss-Hermite product grid (`D <= 3`); `"qmc"`/`"mc"` use `xi_points` Halton /
+  Monte-Carlo draws (`D <= 6`), the quasi-Monte-Carlo EM of Jank (2005). The per-item M-step is a
+  Newton on the concave multinomial-logit complete-data objective, byte-for-byte the
+  finite-difference-Hessian ascent of `poly::nominal_m_step` (the ridge is Hessian conditioning only,
+  NOT a parameter prior, so the fit is genuine MML and the D=1 reduction is bit-exact), generalized
+  so the softmax residual `resid_k = r_k - n P_k` drives `d/dc_ik = sum_node resid_k` and
+  `d/da_ikd = sum_node resid_k theta_d`. EM uses `fit_nominal`'s relative-tolerance stopping with a
+  SIGNED monotonic-decrease guard (a likelihood decrease errors, rather than the compensatory MIRT's
+  `.abs()` check which would accept one as convergence). **Identification.** Baseline category +
+  unit trait variances + a PURE single-dimension anchor item per dimension pin the rotation to the
+  coordinate axes: a pure anchor forces every one of its category slopes onto the axis, so an
+  orthogonal trait rotation must send that axis to `+-e_d`, and the confirmatory labels forbid axis
+  permutation — leaving only a per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)`,
+  which (as in `fit_nominal`) is NOT canonicalized; recovery is assessed up to it. `validate` rejects
+  a rotationally-degenerate pattern (no pure anchor), an out-of-range category, and — a guard
+  `fit_nominal` lacks — ANY unobserved category for an item (its intercept would diverge and its D
+  slopes be unidentified), plus a `nodes x items x n_cat` count-table cap and the rule-dependent
+  D / q / xi_points bounds. **Guards.** The D=1 anchor reproduces `fit_nominal`'s scores/intercepts
+  and whole loglik trace bit-exactly (< 1e-9); a deterministic finite-difference anchor pins EVERY
+  per-(category, dimension) gradient component on a fixed node set at D=2 (GH) AND D=4 (Halton) with
+  a NON-IDENTITY dims map and distinct random per-category counts (catching a category<->dimension
+  transposition the D=1 reduction cannot see); a D=2 recovery carries a genuinely NEGATIVE
+  cross-loader slope AND two OPPOSITE-sign sibling categories on the same dimension (catching a
+  collapse of the free per-category slopes to a shared scalar discrimination); and baseline /
+  off-pattern entries are asserted EXACTLY `0.0` with a free-parameter-count invariant. A
+  Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied cross-loaders, `n_cat = 3`, GH
+  `q = 15/11`, `N = 2500/2000`, assessed up to per-dimension reflection) recovers the category
+  slopes near-unbiased under a normal trait (slope RMSE ~0.12 at `D = 2` / ~0.13 at `D = 3`, bias
+  ~0.00-0.01) with the expected mild attenuation under a per-dimension-standardized right-skew trait
+  (RMSE ~0.21/0.22, bias ~-0.09), per-dimension trait EAP correlation ~0.61-0.67 and 100%
+  convergence, EM monotone every replication (the figures are a 40-replication pilot; the committed
+  `#[ignore]` test runs 500). Compute lives in
+  `mlsirm_core::nominal_mirt::fit_nominal_mirt`; exposed to Python as `fit_nominal_mirt` /
+  `NominalMirtFit`.
+
 - **Confirmatory compensatory multidimensional 2PL (MIRT), orthogonal or correlated**
   (Reckase, 2009; Bock, Gibbons, & Muraki, 1988).
   `fit_compensatory_mirt(responses, loading_pattern)` fits

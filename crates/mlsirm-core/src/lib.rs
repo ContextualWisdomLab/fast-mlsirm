@@ -10,6 +10,7 @@ pub mod mixed;
 pub mod mixture;
 pub mod mirt;
 pub mod mmle;
+pub mod nominal_mirt;
 pub mod nodes;
 pub mod poly;
 pub mod poly_marginal;

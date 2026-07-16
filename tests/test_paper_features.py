@@ -3166,6 +3166,94 @@ def test_fit_compensatory_mirt_qmc_high_dim():
     assert max_abs > 1e-10, "QMC fit bit-identical to GH (silent fallback?)"
 
 
+def test_fit_nominal_mirt_recovers_multidimensional_categories():
+    """Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen-Cai-Bock, 2010):
+    recover a D=2 confirmatory pattern of CATEGORY-SPECIFIC multidimensional slopes (unordered
+    categories) including a genuinely NEGATIVE cross-loader slope with an OPPOSITE-sign sibling
+    category on the same dimension (the signature a per-item RMSE would average away), assessed up
+    to per-dimension reflection; confirm the baseline/off-pattern slopes are exactly zero; and
+    reject rotationally-degenerate patterns, out-of-range and unobserved categories, and GH D>3."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_nominal_mirt, NominalMirtFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_nominal_mirt"):
+        pytest.skip("compiled core built without fit_nominal_mirt")
+
+    rng = np.random.default_rng(1972)
+    n_dims, n_cat, n = 2, 3, 6000
+    # items 0,1 pure dim0; items 2,3 pure dim1; item 4 cross-loader {0,1}.
+    pattern = np.array([[1, 0], [1, 0], [0, 1], [0, 1], [1, 1]], dtype=np.int64)
+    n_items = pattern.shape[0]
+    anchor = [0, 2]  # pure anchor item per dim
+    slope = np.zeros((n_items, n_cat, n_dims))
+    slope[0, 1, 0], slope[0, 2, 0] = 1.4, 0.8
+    slope[1, 1, 0], slope[1, 2, 0] = 1.0, 1.3
+    slope[2, 1, 1], slope[2, 2, 1] = 1.2, 0.9
+    slope[3, 1, 1], slope[3, 2, 1] = 1.1, 1.4
+    slope[4, 1, 0], slope[4, 2, 0] = -1.1, 1.0   # negative + positive sibling on dim0
+    slope[4, 1, 1], slope[4, 2, 1] = 0.9, 0.7
+    intercept = np.zeros((n_items, n_cat))
+    for i in range(n_items):
+        for k in range(1, n_cat):
+            intercept[i, k] = -0.2 + 0.15 * k - 0.05 * i
+    theta = rng.standard_normal((n, n_dims))
+    eta = np.zeros((n, n_items, n_cat))
+    for k in range(1, n_cat):
+        eta[:, :, k] = theta @ slope[:, k, :].T + intercept[:, k]
+    ex = np.exp(eta - eta.max(axis=2, keepdims=True))
+    probs = ex / ex.sum(axis=2, keepdims=True)
+    u = rng.random((n, n_items))
+    y = (probs.cumsum(axis=2) < u[:, :, None]).sum(axis=2)
+
+    res = fit_nominal_mirt(y, pattern, n_cat, q=21)
+    assert isinstance(res, NominalMirtFit) and res.converged
+    assert res.slope.shape == (n_items, n_cat, n_dims) and res.n_dims == 2 and res.n_cat == 3
+    # baseline category and off-pattern entries are EXACTLY zero
+    assert np.all(res.slope[:, 0, :] == 0.0)
+    for i in range(n_items):
+        for d in range(n_dims):
+            if pattern[i, d] == 0:
+                assert np.all(res.slope[i, :, d] == 0.0)
+    assert np.all(res.intercept[:, 0] == 0.0)
+    # free-parameter count = sum_i (n_cat-1)*(|S_i|+1)
+    assert res.n_parameters == 2 * 2 + 2 * 2 + 2 * 2 + 2 * 2 + 2 * 3
+
+    # per-dimension reflection alignment to truth (same rule applied to est), then compare
+    est = res.slope.copy()
+    for d in range(n_dims):
+        if est[anchor[d], 1, d] * slope[anchor[d], 1, d] < 0:
+            est[:, :, d] = -est[:, :, d]
+    assert np.sqrt(np.mean((est - slope) ** 2)) < 0.16
+    # the negative cross-loader slope and its opposite-sign sibling recovered with the right signs
+    assert est[4, 1, 0] < -0.4
+    assert est[4, 2, 0] > 0.4
+    # per-dim trait EAP correlation (sign-aligned)
+    for d in range(n_dims):
+        th = res.theta[:, d].copy()
+        if res.slope[anchor[d], 1, d] * slope[anchor[d], 1, d] < 0:
+            th = -th
+        assert np.corrcoef(th, theta[:, d])[0, 1] > 0.6
+    assert np.all(np.diff(res.loglik_trace) >= -1e-9)  # EM monotone
+
+    # validation
+    with pytest.raises(ValueError):  # GH cannot reach D=4
+        pat4 = np.eye(4, dtype=np.int64)
+        fit_nominal_mirt(np.zeros((50, 4), dtype=np.int64), pat4, n_cat, node_rule="gh")
+    with pytest.raises(ValueError):  # no pure anchor for either dim
+        fit_nominal_mirt(y, np.ones((n_items, n_dims), dtype=np.int64), n_cat)
+    with pytest.raises(ValueError):  # category out of range
+        ybad = y.copy()
+        ybad[0, 0] = n_cat
+        fit_nominal_mirt(ybad, pattern, n_cat)
+    with pytest.raises(ValueError):  # an unobserved category for an item
+        ygap = y.copy()
+        ygap[ygap[:, 0] == 2, 0] = 1
+        fit_nominal_mirt(ygap, pattern, n_cat)
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""
