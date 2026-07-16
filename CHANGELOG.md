@@ -109,6 +109,54 @@
   `python/fast_mlsirm/models.py` for the verified Chalmers (2012) APA reference
   and DOI.
 
+- **High-dimensional confirmatory 2PL by Metropolis-Hastings Robbins-Monro** (Cai, 2010).
+  `fit_mhrm(responses, model=...)` fits the general compensatory multidimensional 2PL
+  (`P(X_ij = 1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta ~ MVN(0, I_D)`) — the
+  same model as `fit_2pl` — by a STOCHASTIC-approximation EM that scales to a latent dimensionality
+  where the deterministic `q^D` Gauss-Hermite grid and the QMC E-step of `fit_2pl` are infeasible
+  (`n_dims` up to 64). Each cycle (1) IMPUTES each person's `theta` by a short PERSISTENT
+  (warm-started) symmetric random-walk Metropolis chain from its current posterior
+  `pi_j(theta) prop phi(theta; 0, I) prod_i P_i(y_ij | theta)` — the acceptance ratio is the pure
+  Metropolis posterior ratio (the symmetric proposal cancels), the proposal SD is auto-tuned toward a
+  target acceptance during burn-in, and the chain carries across cycles so no per-cycle burn-in is
+  needed; and (2) takes one Robbins-Monro stochastic-Newton step
+  `xi <- xi + gain_k Gamma_k^{-1} s_k` on the complete-data score `s_k` (Fisher's identity gives an
+  unbiased-in-the-limit Monte-Carlo estimate of the marginal score) and the RM-smoothed information
+  `Gamma_k = Gamma_{k-1} + gain_k (H_k - Gamma_{k-1})`. Because the item blocks are conditionally
+  independent given `theta`, the score, information, and RM step are BLOCK-DIAGONAL by item, and the
+  per-item work is the CLOSED-FORM logistic gradient `X'(y - P)` and information `X'WX` — no
+  quadrature, `D`-independent per-node cost (reusing `mmle::{log_sigmoid, sigmoid_stable}` and
+  `poly::solve_small`). The gain follows a constant-gain burn-in (a Metropolis-Hastings stochastic EM
+  that random-walks into the MLE neighbourhood) then a decreasing `gain_k = 1/(k - k0)^alpha`
+  (`sum gain = inf`, `sum gain^2 < inf`, Robbins & Monro 1951) that converges almost surely to a
+  marginal-score root. Convergence is WINDOWED (the running mean of `||xi^(k) - xi^(k-1)||` over the
+  last `w` cycles falls below `tol`) — MH-RM iterates are non-monotone by design, so no
+  likelihood-decrease guard is used. **Identification.** Unit trait variances fix the loading scale,
+  `E[theta] = 0` the intercepts, and a PURE single-dimension anchor item per dimension pins the
+  rotation; the per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` is likelihood-
+  invariant, and because the stochastic iterates could otherwise drift between the two mirror modes
+  and corrupt the RM RUNNING AVERAGE of the loadings, the canonical sign (largest pure anchor
+  positive) is enforced IN-LOOP every cycle — flipping the loading column, the persistent `theta`
+  chain, and the averaged trait together — and once more at the end (mutation-verified: disabling the
+  flip makes the reflection-fires test fail on all three sign checks). Loadings are UNCONSTRAINED so
+  reverse-keyed / negative cross-loadings are representable. **Standard errors.** The Louis (1982)
+  identity `I_obs = E[-d^2 l_c] - Var[d l_c]` gives per-item observed-information SEs, accumulated by
+  a parallel RM filter (`sum_p (w_p - r_p^2) X_p X_p'`) over the convergence stage; where a
+  finite-sample Louis block is not positive-definite the block falls back to the complete-data
+  (Fisher) information (a conservative SE). **Guards.** A deterministic finite-difference anchor pins
+  the per-item score and information against numerical derivatives of the complete-data logistic
+  log-likelihood on an ASYMMETRIC D=2 cross-loader with a negative loading (catching sign, layout, and
+  dims-map bugs a centered value-recovery test would not); the D=1 fit agrees with the established
+  deterministic unidimensional MMLE (`mmle::fit_mmle_2pl`) within Monte-Carlo tolerance; a **D=6**
+  recovery (3 pure anchors per dimension + a negative cross-loader, GH/QMC infeasible) recovers the
+  loadings and per-dimension traits; the reflection-fires test drives a weak reverse-keyed pure anchor
+  against a strong positive cross-loader so raw MH-RM lands the anchor negative and canonicalization
+  must fire; and `validate` rejects rotationally-degenerate patterns, non-binary responses, and
+  `burn_in >= max_cycles`. This first release fits the ORTHOGONAL 2PL (`Sigma = I`); a free latent
+  correlation matrix and the polytomous item families are natural extensions of the same loop. Compute
+  lives in `mlsirm_core::mhrm::fit_mhrm`; exposed to Python as `fit_mhrm` / `MhrmFit` via the
+  `model=` specification API.
+
 - **Confirmatory MULTIDIMENSIONAL generalized partial credit model** (Muraki, 1992).
   `fit_gpcm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
   multidimensional discrimination vector per item and INTEGER category scores, completing the

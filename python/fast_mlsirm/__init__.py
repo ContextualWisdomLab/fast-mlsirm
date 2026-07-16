@@ -28,6 +28,7 @@ from .crm import fit_crm as fit_crm, CrmFit as CrmFit
 from . import models as models
 from .models import ConfirmatoryModel as ConfirmatoryModel, ExploratoryModel as ExploratoryModel, IrtModel as IrtModel
 from .twopl import fit_2pl as fit_2pl, TwoPlFit as TwoPlFit
+from .mhrm import fit_mhrm as fit_mhrm, MhrmFit as MhrmFit
 from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalResponseFit
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
@@ -126,6 +127,8 @@ __all__ = [
     "IrtModel",
     "fit_2pl",
     "TwoPlFit",
+    "fit_mhrm",
+    "MhrmFit",
     "fit_nominal",
     "NominalResponseFit",
     "fit_grm",

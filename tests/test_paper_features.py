@@ -3166,6 +3166,73 @@ def test_fit_2pl_qmc_high_dim():
     assert max_abs > 1e-10, "QMC fit bit-identical to GH (silent fallback?)"
 
 
+def test_fit_mhrm_recovers_high_dimensional_2pl():
+    """MH-RM (Cai, 2010): high-dimensional confirmatory 2PL by Metropolis-Hastings Robbins-Monro
+    stochastic approximation. Recovers a D=6 confirmatory loading pattern — the q**D Gauss-Hermite
+    grid (21**6 ~ 8.6e7) and even the QMC E-step are infeasible at this dimensionality, which is the
+    module's reason to exist — including a genuine NEGATIVE cross-loader, with reflection-
+    canonicalized signs, per-dimension trait recovery, finite Louis observed-information SEs, and a
+    tuned acceptance rate; and rejects rotationally-degenerate patterns and non-binary responses."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import MhrmFit, fit_mhrm, models
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        pytest.skip("compiled core built without fit_mhrm")
+
+    rng = np.random.default_rng(2010)
+    n, n_dims = 3000, 6
+    rows = []
+    for d in range(n_dims):
+        rows += [[1 if k == d else 0 for k in range(n_dims)]] * 3  # 3 pure anchors per dim
+    cross = [0] * n_dims
+    cross[0] = 1
+    cross[3] = 1
+    rows.append(cross)  # one cross-loader on dims 0 and 3
+    pattern = np.array(rows, dtype=np.int64)
+    n_items = pattern.shape[0]
+    loading = np.zeros((n_items, n_dims))
+    for d in range(n_dims):
+        for a in range(3):
+            loading[3 * d + a, d] = 0.9 + 0.1 * a
+    xi = n_items - 1
+    loading[xi, 0] = 1.0
+    loading[xi, 3] = -0.7  # negative cross-loader
+    intercept = np.linspace(-0.5, 0.6, n_items)
+    theta = rng.standard_normal((n, n_dims))
+    p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    res = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=1400, burn_in=280, mh_steps=8, seed=7)
+    assert isinstance(res, MhrmFit) and res.n_dims == 6
+    assert res.loading.shape == (n_items, n_dims)
+    assert np.all(res.loading[pattern == 0] == 0.0)
+    assert res.n_parameters == int(pattern.sum()) + n_items
+    onpat = pattern == 1
+    assert np.sqrt(np.mean((res.loading[onpat] - loading[onpat]) ** 2)) < 0.22
+    assert res.loading[xi, 3] < -0.3  # negative cross-loader recovered with sign
+    for d in range(n_dims):
+        c = np.corrcoef(res.theta[:, d], theta[:, d])[0, 1]
+        assert c > 0.5, f"dim {d} theta corr {c}"
+    # Louis SEs: right shape, finite on-pattern
+    assert res.se_loading.shape == (n_items, n_dims)
+    assert np.all(np.isfinite(res.se_loading[onpat]))
+    assert res.se_intercept.shape == (n_items,)
+    # acceptance auto-tuned into a sane band
+    assert 0.1 < res.acceptance_rate < 0.7, res.acceptance_rate
+
+    # rotationally-degenerate pattern (every item loads all dims -> no pure anchor) rejected
+    with pytest.raises(ValueError):
+        fit_mhrm(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+    # non-binary response rejected
+    with pytest.raises(ValueError):
+        ybad = y.copy()
+        ybad[0, 0] = 2
+        fit_mhrm(ybad, model=models.confirmatory(pattern))
+
+
 def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     """Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen-Cai-Bock, 2010):
     recover a D=2 confirmatory pattern of CATEGORY-SPECIFIC multidimensional slopes (unordered

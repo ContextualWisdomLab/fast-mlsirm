@@ -34,6 +34,7 @@ use mlsirm_core::fitstats::{
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
+use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
@@ -880,6 +881,98 @@ fn fit_2pl(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Confirmatory MULTIDIMENSIONAL 2PL by Metropolis-Hastings Robbins-Monro (Cai, 2010;
+/// `mlsirm_core::mhrm::fit_mhrm`). A STOCHASTIC-approximation EM that scales confirmatory item factor
+/// analysis to a latent dimensionality where the deterministic Gauss-Hermite / QMC E-steps of
+/// `fit_2pl` are infeasible: each cycle imputes `theta` by a short persistent random-walk Metropolis
+/// chain, then takes one Robbins-Monro stochastic-Newton step on the block-diagonal (per-item)
+/// complete-data score/information. Orthogonal factors (`Sigma = I`). `y` is a row-major
+/// `n_persons * n_items` binary array; `observed` an optional bool mask (missing dropped MAR).
+/// Returns a dict with `loading` (row-major `n_items * n_dims`, `0` off-pattern, reflection-
+/// canonicalized), `intercept` (`n_items`), `theta` (`n_persons * n_dims` trait EAP), `n_dims`,
+/// `se_loading`/`se_intercept` (Louis observed-information SEs; empty when `estimate_se = false`),
+/// `acceptance_rate`, `n_cycles`, `converged`, `termination_reason`, `final_param_change`,
+/// `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true))]
+fn fit_mhrm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    loading_pattern: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    max_cycles: usize,
+    burn_in: usize,
+    mh_steps: usize,
+    proposal_sd: f64,
+    target_accept: f64,
+    tol: f64,
+    seed: u64,
+    estimate_se: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y responses must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let pattern: Vec<u8> = loading_pattern
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err(
+                "loading_pattern entries must be 0 or 1",
+            )),
+        })
+        .collect::<PyResult<_>>()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let cfg = MhrmConfig {
+        max_cycles,
+        burn_in,
+        mh_steps,
+        proposal_sd,
+        target_accept,
+        tol,
+        seed,
+        estimate_se,
+        ..MhrmConfig::default()
+    };
+    let res = core_fit_mhrm(
+        &yy,
+        obs_vec.as_deref(),
+        &pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("loading", res.loading)?;
+    out.set_item("intercept", res.intercept)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("n_dims", res.n_dims)?;
+    out.set_item("se_loading", res.se_loading)?;
+    out.set_item("se_intercept", res.se_intercept)?;
+    out.set_item("acceptance_rate", res.acceptance_rate)?;
+    out.set_item("n_cycles", res.n_cycles)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_param_change", res.final_param_change)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
@@ -4083,6 +4176,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_seq_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_seq_gdina_qr, m)?)?;
     m.add_function(wrap_pyfunction!(fit_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_mhrm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;

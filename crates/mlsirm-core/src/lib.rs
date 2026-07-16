@@ -8,6 +8,7 @@ pub mod grm;
 pub mod linking;
 pub mod lltm;
 pub mod marginal;
+pub mod mhrm;
 pub mod mixed;
 pub mod mixture;
 pub mod mmle;
