@@ -83,12 +83,21 @@ def fit_testlet(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    tid = np.asarray(testlet_id, dtype=np.int64)
-    if tid.ndim != 1:
+    raw_tid = np.asarray(testlet_id)
+    if raw_tid.ndim != 1:
         raise ValueError("testlet_id must be a 1-D array")
     n_persons, n_items = y.shape
-    if tid.shape[0] != n_items:
+    if n_items < 1:
+        raise ValueError("responses and testlet_id must describe a non-empty item bank")
+    if raw_tid.shape[0] != n_items:
         raise ValueError("testlet_id must have length n_items")
+    if not np.issubdtype(raw_tid.dtype, np.integer) or np.issubdtype(
+        raw_tid.dtype, np.bool_
+    ):
+        raise ValueError("testlet_id entries must be integers")
+    if not np.all((raw_tid >= 0) & (raw_tid < n_items)):
+        raise ValueError("testlet_id entries must be between 0 and n_items - 1")
+    tid = raw_tid.astype(np.int64, copy=False)
     n_testlets = int(tid.max()) + 1
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.0).reshape(-1)

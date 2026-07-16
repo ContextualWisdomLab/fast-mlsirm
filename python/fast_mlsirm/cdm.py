@@ -9,12 +9,36 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_MAX_ATTRIBUTES = 15
+
+
 def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return the flattened values/mask for 0/1 data with NaN-only missingness."""
     if np.isinf(y).any():
         raise ValueError("responses must contain only 0, 1, or NaN (missing)")
     observed = ~np.isnan(y)
     return np.where(observed, y, 0.0).reshape(-1), observed.reshape(-1)
+
+
+def _validate_q_matrix_input(
+    value: np.ndarray, name: str, n_items: int
+) -> tuple[np.ndarray, int]:
+    """Validate and safely coerce a public Q-matrix before native dispatch."""
+    q = np.asarray(value)
+    if q.ndim != 2:
+        raise ValueError(f"{name} must be a 2-D items x attributes array")
+    if q.shape[0] != n_items:
+        raise ValueError(f"{name} must have one row per item")
+    n_attributes = q.shape[1]
+    if not 1 <= n_attributes <= _MAX_ATTRIBUTES:
+        raise ValueError(f"{name} must have between 1 and {_MAX_ATTRIBUTES} attributes")
+    if not (
+        np.issubdtype(q.dtype, np.number) or np.issubdtype(q.dtype, np.bool_)
+    ) or np.issubdtype(q.dtype, np.complexfloating):
+        raise ValueError(f"{name} entries must be numeric 0 or 1")
+    if not np.all(np.isfinite(q)) or not np.all((q == 0) | (q == 1)):
+        raise ValueError(f"{name} entries must be finite and exactly 0 or 1")
+    return q.astype(np.int64, copy=False), n_attributes
 
 
 @dataclass
@@ -100,19 +124,14 @@ def fit_cdm(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_cdm(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -202,19 +221,14 @@ def fit_gdina(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_gdina(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -301,19 +315,14 @@ def validate_q_matrix(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(provisional_q)
-    if q.ndim != 2:
-        raise ValueError("provisional_q must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("provisional_q must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.validate_q_matrix(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -413,19 +422,14 @@ def gdina_wald_selection(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.gdina_wald_selection(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -518,19 +522,14 @@ def fit_ho_cdm(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_cdm(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -636,19 +635,14 @@ def fit_ho_gdina(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_gdina(
         yy,
         observed,
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -777,13 +771,8 @@ def fit_seq_gdina(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    q = np.asarray(q_matrix)
-    if q.ndim != 2:
-        raise ValueError("q_matrix must be a 2-D items x attributes array")
     n_persons, n_items = y.shape
-    if q.shape[0] != n_items:
-        raise ValueError("q_matrix must have one row per item")
-    n_attributes = q.shape[1]
+    q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
 
@@ -792,7 +781,7 @@ def fit_seq_gdina(
     res = core.fit_seq_gdina(
         yy,
         observed.reshape(-1),
-        q.astype(np.int64).reshape(-1),
+        q.reshape(-1),
         int(n_persons),
         int(n_items),
         int(n_attributes),
@@ -898,16 +887,24 @@ def fit_seq_gdina_qr(
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    raw_steps = np.asarray(n_steps)
+    if raw_steps.ndim != 1 or raw_steps.shape[0] != n_items:
+        raise ValueError("n_steps must be a 1-D array of length n_items")
+    if not np.issubdtype(raw_steps.dtype, np.integer) or np.issubdtype(
+        raw_steps.dtype, np.bool_
+    ):
+        raise ValueError("n_steps entries must be positive integers")
+    if np.any(raw_steps < 1):
+        raise ValueError("n_steps entries must be positive integers")
+    steps = raw_steps.astype(np.int64, copy=False)
+    n_step_rows = sum(int(m) for m in steps)
     sq = np.asarray(step_q)
     if sq.ndim != 2:
         raise ValueError("step_q must be a 2-D (sum_i n_steps[i]) x n_attributes array")
-    n_persons, n_items = y.shape
-    steps = np.asarray(n_steps, dtype=np.int64)
-    if steps.ndim != 1 or steps.shape[0] != n_items:
-        raise ValueError("n_steps must be a 1-D array of length n_items")
-    if sq.shape[0] != int(steps.sum()):
+    if sq.shape[0] != n_step_rows:
         raise ValueError("step_q must have sum(n_steps) rows")
-    n_attributes = sq.shape[1]
+    sq, n_attributes = _validate_q_matrix_input(step_q, "step_q", n_step_rows)
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
 
@@ -916,7 +913,7 @@ def fit_seq_gdina_qr(
     res = core.fit_seq_gdina_qr(
         yy,
         observed.reshape(-1),
-        sq.astype(np.int64).reshape(-1),
+        sq.reshape(-1),
         [int(m) for m in steps],
         int(n_persons),
         int(n_items),

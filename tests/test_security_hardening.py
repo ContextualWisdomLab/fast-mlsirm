@@ -492,6 +492,18 @@ def test_mls2plmconfig_rejects_oversized_dims(kw):
         MLS2PLMConfig(**kw).validate()
 
 
+@pytest.mark.parametrize("latent_dim", [2.5, np.nan, np.inf, MAX_LATENT_DIM + 1])
+def test_mls2plmconfig_rejects_invalid_latent_dim(latent_dim):
+    with pytest.raises(ValueError, match="latent_dim"):
+        MLS2PLMConfig(latent_dim=latent_dim).validate()
+
+
+@pytest.mark.parametrize("gamma", [np.nan, np.inf, -np.inf])
+def test_mls2plmconfig_rejects_nonfinite_gamma(gamma):
+    with pytest.raises(ValueError, match="gamma"):
+        MLS2PLMConfig(gamma=gamma).validate()
+
+
 # ---- VULN-0007: oversized population counts in fit_marginal_numpy -----------
 def test_fit_marginal_numpy_rejects_oversized_population():
     with pytest.raises(ValueError, match="n_groups"):
@@ -620,3 +632,126 @@ def test_information_polytomous_rejects_malformed_inputs(
     )
     with pytest.raises(ValueError, match=match):
         information_polytomous(fit, theta)
+
+
+# ---- Current-head Strix: native allocation controls ----------------------
+class _RejectResourceCore:
+    _cdm_methods = {
+        "fit_cdm",
+        "fit_gdina",
+        "validate_q_matrix",
+        "gdina_wald_selection",
+        "fit_ho_cdm",
+        "fit_ho_gdina",
+        "fit_seq_gdina",
+        "fit_seq_gdina_qr",
+    }
+
+    def fit_testlet(self, *_args):
+        raise AssertionError("invalid testlet IDs reached the native core")
+
+    def fit_compensatory_mirt(self, *_args):
+        raise AssertionError("invalid MIRT dimensions reached the native core")
+
+    def __getattr__(self, name):
+        if name in self._cdm_methods:
+            return lambda *_args: (_ for _ in ()).throw(
+                AssertionError("invalid Q-matrix reached the native core")
+            )
+        raise AttributeError(name)
+
+
+@pytest.mark.parametrize(
+    "testlet_id",
+    [
+        np.array([-1]),
+        np.array([1]),
+        np.array([1_000_000_000]),
+        np.array([np.nan]),
+        np.array([0.5]),
+    ],
+)
+def test_fit_testlet_rejects_unsafe_ids_before_native(monkeypatch, testlet_id):
+    from fast_mlsirm.testlet import fit_testlet
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="testlet_id"):
+        fit_testlet(np.array([[1.0]]), testlet_id)
+
+
+def test_fit_testlet_rejects_empty_bank_before_native(monkeypatch):
+    from fast_mlsirm.testlet import fit_testlet
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="non-empty"):
+        fit_testlet(np.empty((1, 0)), np.array([], dtype=np.int64))
+
+
+@pytest.mark.parametrize("q", [0, 8, 1_000_000_000])
+def test_mirt_rejects_unsupported_quadrature_before_native(monkeypatch, q):
+    from fast_mlsirm.mirt import fit_compensatory_mirt
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="q must be one of"):
+        fit_compensatory_mirt(
+            np.array([[1.0, 0.0]]), np.eye(2, dtype=np.int64), q=q
+        )
+
+
+def test_mirt_rejects_more_than_three_dimensions_before_native(monkeypatch):
+    from fast_mlsirm.mirt import fit_compensatory_mirt
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="between 1 and 3"):
+        fit_compensatory_mirt(
+            np.array([[1.0, 0.0, 1.0, 0.0]]), np.eye(4, dtype=np.int64)
+        )
+
+
+@pytest.mark.parametrize(
+    "wrapper_name",
+    [
+        "fit_cdm",
+        "fit_gdina",
+        "validate_q_matrix",
+        "gdina_wald_selection",
+        "fit_ho_cdm",
+        "fit_ho_gdina",
+        "fit_seq_gdina",
+        "fit_seq_gdina_qr",
+    ],
+)
+@pytest.mark.parametrize(
+    "q_matrix",
+    [
+        np.array([[np.nan]]),
+        np.array([[2.5]]),
+        np.zeros((1, 16), dtype=np.int64),
+    ],
+)
+def test_cdm_wrappers_reject_unsafe_q_before_native(
+    monkeypatch, wrapper_name, q_matrix
+):
+    from fast_mlsirm import cdm
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="q_matrix|provisional_q|step_q"):
+        wrapper = getattr(cdm, wrapper_name)
+        if wrapper_name == "fit_seq_gdina_qr":
+            wrapper(np.array([[1.0]]), q_matrix, np.array([1]))
+        else:
+            wrapper(np.array([[1.0]]), q_matrix)
+
+
+@pytest.mark.parametrize(
+    "n_steps",
+    [np.array([1.5]), np.array([np.nan]), np.array([-1]), np.array([0])],
+)
+def test_seq_gdina_qr_rejects_unsafe_step_counts_before_native(
+    monkeypatch, n_steps
+):
+    from fast_mlsirm.cdm import fit_seq_gdina_qr
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="n_steps"):
+        fit_seq_gdina_qr(np.array([[1.0]]), np.array([[1]]), n_steps)

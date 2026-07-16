@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import numpy as np
 
 
+_SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
+_MAX_DIMS = 3
+
+
 @dataclass
 class CompMirtFit:
     """Fitted confirmatory compensatory MIRT (Reckase, 2009).
@@ -108,6 +112,10 @@ def fit_compensatory_mirt(
     if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
         raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
     n_dims = pat.shape[1]
+    if not 1 <= n_dims <= _MAX_DIMS:
+        raise ValueError(
+            f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}"
+        )
     if np.isinf(y).any():
         raise ValueError("responses must be 0, 1, or NaN (missing)")
 
@@ -126,6 +134,8 @@ def fit_compensatory_mirt(
 
     q_int = _finite_integer(q, "q")
     max_iter_int = _finite_integer(max_iter, "max_iter")
+    if q_int not in _SUPPORTED_Q:
+        raise ValueError(f"q must be one of {_SUPPORTED_Q}")
 
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)

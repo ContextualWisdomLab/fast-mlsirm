@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import operator
 from dataclasses import dataclass
 
 from .backend import normalize_backend, normalize_device
@@ -50,6 +51,18 @@ class MLS2PLMConfig:
         return self.n_dims * self.items_per_dim
 
     def validate(self) -> None:
+        for name, value in (
+            ("n_persons", self.n_persons),
+            ("n_dims", self.n_dims),
+            ("items_per_dim", self.items_per_dim),
+            ("latent_dim", self.latent_dim),
+        ):
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be an integer")
+            try:
+                operator.index(value)
+            except TypeError as exc:
+                raise ValueError(f"{name} must be an integer") from exc
         if self.n_persons < 1:
             raise ValueError("n_persons must be >= 1")
         if self.n_dims < 1:
@@ -69,8 +82,16 @@ class MLS2PLMConfig:
             )
         if self.latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
+        if self.latent_dim > MAX_LATENT_DIM:
+            raise ValueError(f"latent_dim must be <= {MAX_LATENT_DIM}")
         if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
             raise ValueError("phi must produce a positive-definite equicorrelation matrix")
+        try:
+            gamma_is_finite = math.isfinite(self.gamma)
+        except TypeError as exc:
+            raise ValueError("gamma must be finite") from exc
+        if not gamma_is_finite:
+            raise ValueError("gamma must be finite")
         if self.gamma < 0:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:

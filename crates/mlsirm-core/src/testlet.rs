@@ -129,6 +129,9 @@ fn validate(
     if n_persons < 1 || n_items < 1 || n_testlets < 1 {
         return Err("n_persons, n_items and n_testlets must be >= 1".into());
     }
+    if n_testlets > n_items {
+        return Err("n_testlets must not exceed n_items".into());
+    }
     if cfg.max_iter == 0 || cfg.newton_iter == 0 {
         return Err("max_iter and newton_iter must be positive".into());
     }
@@ -693,6 +696,14 @@ mod tests {
             let m2: f64 = u.iter().zip(v).map(|(x, w)| x * x * w).sum();
             assert!((m2 - 1.0).abs() < 1e-6, "gh_rule({q}) E[u^2] = {m2}");
         }
+    }
+
+    #[test]
+    fn rejects_testlet_count_exceeding_item_count_before_allocation() {
+        let cfg = TestletConfig::default();
+        let err = validate(&[1.0], &[true], &[0], 1, 1, 1_000_000_001, &cfg)
+            .expect_err("oversized testlet count must be rejected");
+        assert!(err.contains("n_testlets must not exceed n_items"));
     }
 
     /// Contiguous testlet assignment: testlet d owns items [d*size .. (d+1)*size).
