@@ -681,6 +681,30 @@ def test_information_polytomous_rejects_malformed_inputs(
         information_polytomous(fit, theta)
 
 
+def test_irt_model_contract_unifies_dimension_and_confirmatory_structure():
+    from fast_mlsirm import models
+    from fast_mlsirm.models import _resolve_model
+
+    one_factor, pattern = _resolve_model(1, 3)
+    assert isinstance(one_factor, models.ExploratoryModel)
+    assert one_factor.dimensions == 1
+    assert pattern.shape == (3, 1)
+    assert np.all(pattern == 1)
+
+    confirmatory = models.confirmatory([[1, 0], [0, 1], [1, 1]])
+    assert confirmatory.n_dims == 2
+    resolved, resolved_pattern = _resolve_model(confirmatory, 3)
+    assert resolved is confirmatory
+    assert np.array_equal(resolved_pattern, confirmatory.loading_pattern)
+
+    with pytest.raises(NotImplementedError, match="exploratory loading estimation"):
+        _resolve_model(2, 3)
+    with pytest.raises(ValueError, match="exactly 0 or 1"):
+        models.confirmatory([[1, 0.5]])
+    with pytest.raises(TypeError, match="model"):
+        _resolve_model(np.ones((3, 2), dtype=np.int64), 3)
+
+
 # ---- Current-head Strix: native allocation controls ----------------------
 class _RejectResourceCore:
     _cdm_methods = {
@@ -697,7 +721,7 @@ class _RejectResourceCore:
     def fit_testlet(self, *_args):
         raise AssertionError("invalid testlet IDs reached the native core")
 
-    def fit_compensatory_mirt(self, *_args):
+    def fit_2pl(self, *_args):
         raise AssertionError("invalid MIRT dimensions reached the native core")
 
     def __getattr__(self, name):
@@ -785,23 +809,25 @@ def test_fit_testlet_rejects_oversized_response_matrix_before_native(monkeypatch
 
 
 @pytest.mark.parametrize("q", [0, 8, 1_000_000_000])
-def test_mirt_rejects_unsupported_quadrature_before_native(monkeypatch, q):
-    from fast_mlsirm.mirt import fit_compensatory_mirt
+def test_2pl_rejects_unsupported_quadrature_before_native(monkeypatch, q):
+    from fast_mlsirm import models
+    from fast_mlsirm.twopl import fit_2pl
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="q must be one of"):
-        fit_compensatory_mirt(
-            np.array([[1.0, 0.0]]), np.eye(2, dtype=np.int64), q=q
+        fit_2pl(
+            np.array([[1.0, 0.0]]), model=models.confirmatory(np.eye(2, dtype=np.int64)), q=q
         )
 
 
-def test_mirt_rejects_more_than_three_dimensions_before_native(monkeypatch):
-    from fast_mlsirm.mirt import fit_compensatory_mirt
+def test_2pl_rejects_more_than_three_dimensions_before_native(monkeypatch):
+    from fast_mlsirm import models
+    from fast_mlsirm.twopl import fit_2pl
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
     with pytest.raises(ValueError, match="between 1 and 3"):
-        fit_compensatory_mirt(
-            np.array([[1.0, 0.0, 1.0, 0.0]]), np.eye(4, dtype=np.int64)
+        fit_2pl(
+            np.array([[1.0, 0.0, 1.0, 0.0]]), model=models.confirmatory(np.eye(4, dtype=np.int64))
         )
 
 
@@ -920,19 +946,20 @@ def test_polytomous_dif_rejects_unsafe_controls_before_native(
             np.array([[0.0], [1.0]]), np.array([0, 1]), n_cat, **kwargs
         )
 
-def test_nominal_mirt_rejects_fractional_categories_before_native(monkeypatch):
-    from fast_mlsirm.nominal_mirt import fit_nominal_mirt
+def test_nominal_rejects_fractional_categories_before_native(monkeypatch):
+    from fast_mlsirm import models
+    from fast_mlsirm.nominal import fit_nominal
 
     class BombCore:
-        def fit_nominal_mirt(self, *_args):
+        def fit_nominal_model(self, *_args):
             raise AssertionError("fractional responses reached the native core")
 
     monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
     with pytest.raises(ValueError, match="integer categories"):
-        fit_nominal_mirt(
+        fit_nominal(
             np.array([[0.9], [1.9]]),
-            np.ones((1, 1), dtype=np.int64),
             n_cat=2,
+            model=models.confirmatory(np.ones((1, 1), dtype=np.int64)),
         )
 
 @pytest.mark.parametrize("factor_id", [np.array([0.5]), np.array([np.nan])])

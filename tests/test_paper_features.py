@@ -3001,19 +3001,19 @@ def test_fit_rsm_rejects_unidentified_or_malformed_inputs():
     assert np.all(np.isfinite(unfinished.loglik_trace))
 
 
-def test_fit_compensatory_mirt_recovers_loadings():
+def test_fit_2pl_recovers_confirmatory_loadings():
     """Compensatory MIRT (Reckase, 2009): recover a confirmatory 2-dimensional loading
     pattern (dim0-only, dim1-only, and BOTH-loading items) including a genuinely NEGATIVE
     loading, plus the per-dimension trait EAP; and reject a rotationally-degenerate
     (all-ones) pattern."""
     import numpy as np
     import pytest
-    from fast_mlsirm import fit_compensatory_mirt, CompMirtFit
+    from fast_mlsirm import TwoPlFit, fit_2pl, models
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_compensatory_mirt"):
-        pytest.skip("compiled core built without fit_compensatory_mirt")
+    if core is None or not hasattr(core, "fit_2pl"):
+        pytest.skip("compiled core built without fit_2pl")
 
     rng = np.random.default_rng(2009)
     n, n_dims = 4000, 2
@@ -3028,8 +3028,8 @@ def test_fit_compensatory_mirt_recovers_loadings():
     p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
     y = (rng.random((n, n_items)) < p).astype(float)
 
-    res = fit_compensatory_mirt(y, pattern, q=21)
-    assert isinstance(res, CompMirtFit) and res.converged
+    res = fit_2pl(y, model=models.confirmatory(pattern), q=21)
+    assert isinstance(res, TwoPlFit) and res.converged
     assert res.loading.shape == (n_items, n_dims) and res.n_dims == 2
     # off-pattern entries are exactly zero
     assert np.all(res.loading[pattern == 0] == 0.0)
@@ -3049,22 +3049,22 @@ def test_fit_compensatory_mirt_recovers_loadings():
 
     # a rotationally-degenerate all-ones pattern is rejected (no pure anchor per dimension)
     with pytest.raises(ValueError):
-        fit_compensatory_mirt(y, np.ones((n_items, n_dims), dtype=np.int64))
+        fit_2pl(y, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
     fractional = pattern.astype(float)
     fractional[0, 1] = 0.5
     with pytest.raises(ValueError, match="exactly 0 or 1"):
-        fit_compensatory_mirt(y, fractional)
+        fit_2pl(y, model=models.confirmatory(fractional))
     with pytest.raises(ValueError, match="q must be a finite integer"):
-        fit_compensatory_mirt(y, pattern, q=15.5)
+        fit_2pl(y, model=models.confirmatory(pattern), q=15.5)
     with pytest.raises(ValueError, match="max_iter must be a finite integer"):
-        fit_compensatory_mirt(y, pattern, max_iter=1.5)
+        fit_2pl(y, model=models.confirmatory(pattern), max_iter=1.5)
     # missing (MAR) handled
     ymiss = y.copy()
     ymiss[0, 0] = np.nan
-    assert fit_compensatory_mirt(ymiss, pattern, q=15).converged
+    assert fit_2pl(ymiss, model=models.confirmatory(pattern), q=15).converged
 
     # A one-step run that has not met the documented tolerance is explicitly unfinished.
-    unfinished = fit_compensatory_mirt(y, pattern, q=7, max_iter=1, tol=1e-12)
+    unfinished = fit_2pl(y, model=models.confirmatory(pattern), q=7, max_iter=1, tol=1e-12)
     assert not unfinished.converged
     assert unfinished.termination_reason == "max_iter_reached"
     assert unfinished.n_iter == 1
@@ -3072,13 +3072,13 @@ def test_fit_compensatory_mirt_recovers_loadings():
     assert unfinished.final_loglik_change >= 1e-12
 
     # estimate_corr=False reports Sigma = I; estimate_corr=True recovers a known correlation.
-    ortho = fit_compensatory_mirt(y, pattern, q=15, estimate_corr=False)
+    ortho = fit_2pl(y, model=models.confirmatory(pattern), q=15, estimate_corr=False)
     assert np.allclose(ortho.corr, np.eye(n_dims))
     ncorr = np.linalg.cholesky(np.array([[1.0, 0.5], [0.5, 1.0]]))
     thc = (ncorr @ rng.standard_normal((n_dims, n))).T
     pc = 1.0 / (1.0 + np.exp(-(thc @ loading.T + intercept)))
     yc = (rng.random((n, n_items)) < pc).astype(float)
-    rc = fit_compensatory_mirt(yc, pattern, q=15, estimate_corr=True)
+    rc = fit_2pl(yc, model=models.confirmatory(pattern), q=15, estimate_corr=True)
     assert rc.corr.shape == (n_dims, n_dims)
     assert np.allclose(np.diag(rc.corr), 1.0) and np.allclose(rc.corr, rc.corr.T)
     realized = np.corrcoef(thc.T)[0, 1]
@@ -3086,7 +3086,7 @@ def test_fit_compensatory_mirt_recovers_loadings():
     assert np.all(np.linalg.eigvalsh(rc.corr) > 0)  # positive-definite
 
 
-def test_fit_compensatory_mirt_qmc_high_dim():
+def test_fit_2pl_qmc_high_dim():
     """QMC compensatory MIRT (Jank, 2005): the D>3 quasi-Monte-Carlo path the Gauss-Hermite
     product grid cannot reach. Recovers a D=4 confirmatory loading pattern (2 pure anchors per
     dimension + cross-loaders including a genuine NEGATIVE one) on Halton nodes; confirms the GH
@@ -3094,12 +3094,12 @@ def test_fit_compensatory_mirt_qmc_high_dim():
     (a D<=3 QMC fit agrees with GH within QMC error but is NOT a silent bit-identical GH fallback)."""
     import numpy as np
     import pytest
-    from fast_mlsirm import fit_compensatory_mirt, CompMirtFit
+    from fast_mlsirm import TwoPlFit, fit_2pl, models
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_compensatory_mirt"):
-        pytest.skip("compiled core built without fit_compensatory_mirt")
+    if core is None or not hasattr(core, "fit_2pl"):
+        pytest.skip("compiled core built without fit_2pl")
 
     rng = np.random.default_rng(2005)
     n, n_dims = 2500, 4
@@ -3125,9 +3125,9 @@ def test_fit_compensatory_mirt_qmc_high_dim():
 
     # GH cannot reach D=4; QMC (Halton) can.
     with pytest.raises(ValueError):
-        fit_compensatory_mirt(y, pattern, node_rule="gh")
-    res = fit_compensatory_mirt(y, pattern, node_rule="qmc", xi_points=4000, xi_seed=12345)
-    assert isinstance(res, CompMirtFit) and res.n_dims == 4
+        fit_2pl(y, model=models.confirmatory(pattern), node_rule="gh")
+    res = fit_2pl(y, model=models.confirmatory(pattern), node_rule="qmc", xi_points=4000, xi_seed=12345)
+    assert isinstance(res, TwoPlFit) and res.n_dims == 4
     assert np.all(res.loading[pattern == 0] == 0.0)
     assert np.sqrt(np.mean((res.loading - loading) ** 2)) < 0.18
     assert res.loading[cross, 1] < -0.3  # negative cross-loader recovered with sign
@@ -3138,11 +3138,11 @@ def test_fit_compensatory_mirt_qmc_high_dim():
 
     # node_rule validation and D<=6 bounds.
     with pytest.raises(ValueError, match="node_rule"):
-        fit_compensatory_mirt(y, pattern, node_rule="nope")
+        fit_2pl(y, model=models.confirmatory(pattern), node_rule="nope")
     pat7 = np.eye(7, dtype=np.int64)
     y7 = (rng.random((200, 7)) < 0.5).astype(float)
     with pytest.raises(ValueError):
-        fit_compensatory_mirt(y7, pat7, node_rule="qmc", xi_points=200)  # D=7 > 6
+        fit_2pl(y7, model=models.confirmatory(pat7), node_rule="qmc", xi_points=200)  # D=7 > 6
 
     # Two-sided wrapper plumbing at D=2: GH and QMC agree within QMC error yet differ bit-wise
     # (a silent GH fallback on the QMC arm would make them identical).
@@ -3156,8 +3156,8 @@ def test_fit_compensatory_mirt_qmc_high_dim():
     th2 = rng.standard_normal((2000, 2))
     p2 = 1.0 / (1.0 + np.exp(-(th2 @ ld2.T + ic2)))
     y2 = (rng.random((2000, 7)) < p2).astype(float)
-    gh2 = fit_compensatory_mirt(y2, pat2, q=21, node_rule="gh")
-    qmc2 = fit_compensatory_mirt(y2, pat2, node_rule="qmc", xi_points=6000, xi_seed=0)
+    gh2 = fit_2pl(y2, model=models.confirmatory(pat2), q=21, node_rule="gh")
+    qmc2 = fit_2pl(y2, model=models.confirmatory(pat2), node_rule="qmc", xi_points=6000, xi_seed=0)
     max_abs = max(
         np.max(np.abs(gh2.loading - qmc2.loading)),
         np.max(np.abs(gh2.intercept - qmc2.intercept)),
@@ -3166,7 +3166,7 @@ def test_fit_compensatory_mirt_qmc_high_dim():
     assert max_abs > 1e-10, "QMC fit bit-identical to GH (silent fallback?)"
 
 
-def test_fit_nominal_mirt_recovers_multidimensional_categories():
+def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     """Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen-Cai-Bock, 2010):
     recover a D=2 confirmatory pattern of CATEGORY-SPECIFIC multidimensional slopes (unordered
     categories) including a genuinely NEGATIVE cross-loader slope with an OPPOSITE-sign sibling
@@ -3175,12 +3175,12 @@ def test_fit_nominal_mirt_recovers_multidimensional_categories():
     reject rotationally-degenerate patterns, out-of-range and unobserved categories, and GH D>3."""
     import numpy as np
     import pytest
-    from fast_mlsirm import fit_nominal_mirt, NominalMirtFit
+    from fast_mlsirm import NominalResponseFit, fit_nominal, models
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_nominal_mirt"):
-        pytest.skip("compiled core built without fit_nominal_mirt")
+    if core is None or not hasattr(core, "fit_nominal_model"):
+        pytest.skip("compiled core built without fit_nominal_model")
 
     rng = np.random.default_rng(1972)
     n_dims, n_cat, n = 2, 3, 6000
@@ -3208,8 +3208,8 @@ def test_fit_nominal_mirt_recovers_multidimensional_categories():
     u = rng.random((n, n_items))
     y = (probs.cumsum(axis=2) < u[:, :, None]).sum(axis=2)
 
-    res = fit_nominal_mirt(y, pattern, n_cat, q=21)
-    assert isinstance(res, NominalMirtFit) and res.converged
+    res = fit_nominal(y, n_cat, model=models.confirmatory(pattern), q=21)
+    assert isinstance(res, NominalResponseFit) and res.converged
     assert res.slope.shape == (n_items, n_cat, n_dims) and res.n_dims == 2 and res.n_cat == 3
     # baseline category and off-pattern entries are EXACTLY zero
     assert np.all(res.slope[:, 0, :] == 0.0)
@@ -3241,20 +3241,20 @@ def test_fit_nominal_mirt_recovers_multidimensional_categories():
     # validation
     with pytest.raises(ValueError):  # GH cannot reach D=4
         pat4 = np.eye(4, dtype=np.int64)
-        fit_nominal_mirt(np.zeros((50, 4), dtype=np.int64), pat4, n_cat, node_rule="gh")
+        fit_nominal(np.zeros((50, 4), dtype=np.int64), n_cat, model=models.confirmatory(pat4), node_rule="gh")
     with pytest.raises(ValueError):  # no pure anchor for either dim
-        fit_nominal_mirt(y, np.ones((n_items, n_dims), dtype=np.int64), n_cat)
+        fit_nominal(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
     with pytest.raises(ValueError):  # category out of range
         ybad = y.copy()
         ybad[0, 0] = n_cat
-        fit_nominal_mirt(ybad, pattern, n_cat)
+        fit_nominal(ybad, n_cat, model=models.confirmatory(pattern))
     with pytest.raises(ValueError):  # an unobserved category for an item
         ygap = y.copy()
         ygap[ygap[:, 0] == 2, 0] = 1
-        fit_nominal_mirt(ygap, pattern, n_cat)
+        fit_nominal(ygap, n_cat, model=models.confirmatory(pattern))
 
 
-def test_fit_grm_mirt_recovers_multidimensional_ordered_categories():
+def test_fit_grm_recovers_confirmatory_multidimensional_ordered_categories():
     """Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995):
     recover a D=2 confirmatory pattern of item discrimination vectors (ORDERED categories) including a
     genuinely NEGATIVE cross-loader on a positively-anchored dimension; confirm the recovered
@@ -3263,12 +3263,12 @@ def test_fit_grm_mirt_recovers_multidimensional_ordered_categories():
     and GH D>3."""
     import numpy as np
     import pytest
-    from fast_mlsirm import fit_grm_mirt, GrmMirtFit
+    from fast_mlsirm import GrmFit, fit_grm, models
     from fast_mlsirm.fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_grm_mirt"):
-        pytest.skip("compiled core built without fit_grm_mirt")
+    if core is None or not hasattr(core, "fit_grm"):
+        pytest.skip("compiled core built without fit_grm")
 
     rng = np.random.default_rng(1969)
     n_dims, n_cat, n = 2, 3, 6000
@@ -3297,8 +3297,8 @@ def test_fit_grm_mirt_recovers_multidimensional_ordered_categories():
         u = rng.random(n)
         y[:, i] = (pk.cumsum(axis=1) < u[:, None]).sum(axis=1)
 
-    res = fit_grm_mirt(y, pattern, n_cat, q=21)
-    assert isinstance(res, GrmMirtFit) and res.converged
+    res = fit_grm(y, n_cat, model=models.confirmatory(pattern), q=21)
+    assert isinstance(res, GrmFit) and res.converged
     assert res.slope.shape == (n_items, n_dims) and res.threshold.shape == (n_items, n_cat - 1)
     assert res.n_dims == 2 and res.n_cat == 3
     # off-pattern slopes exactly zero
@@ -3320,16 +3320,16 @@ def test_fit_grm_mirt_recovers_multidimensional_ordered_categories():
 
     # validation
     with pytest.raises(ValueError):  # GH D=4
-        fit_grm_mirt((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64),
-                     np.eye(4, dtype=np.int64), n_cat, node_rule="gh")
+        fit_grm((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64), n_cat,
+                model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh")
     with pytest.raises(ValueError):  # no pure anchor
-        fit_grm_mirt(y, np.ones((n_items, n_dims), dtype=np.int64), n_cat)
+        fit_grm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
     with pytest.raises(ValueError):  # category out of range
         ybad = y.copy(); ybad[0, 0] = n_cat
-        fit_grm_mirt(ybad, pattern, n_cat)
+        fit_grm(ybad, n_cat, model=models.confirmatory(pattern))
     with pytest.raises(ValueError):  # unobserved category
         ygap = y.copy(); ygap[ygap[:, 0] == 1, 0] = 0
-        fit_grm_mirt(ygap, pattern, n_cat)
+        fit_grm(ygap, n_cat, model=models.confirmatory(pattern))
 
 
 def test_fit_mixture_recovers_two_class_rasch():

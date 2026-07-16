@@ -1,4 +1,4 @@
-"""Confirmatory compensatory multidimensional 2PL (MIRT).
+"""Dimension-agnostic compensatory 2PL item response model.
 
 Reckase (2009) / Bock, Gibbons & Muraki (1988) full-information item factor model, in
 which an item may load freely on several latent dimensions that trade off additively in the
@@ -12,17 +12,19 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
+
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS = 3
 
 
 @dataclass
-class CompMirtFit:
-    """Fitted confirmatory compensatory MIRT (Reckase, 2009).
+class TwoPlFit:
+    """Fitted compensatory 2PL item response model (Reckase, 2009).
 
     ``loading`` is the items x dimensions matrix of free loadings ``a_id`` (exactly ``0``
-    where the ``loading_pattern`` is ``0``); ``intercept`` the per-item ``b_i``; ``theta``
+    where the confirmatory model loading pattern is ``0``); ``intercept`` the per-item ``b_i``; ``theta``
     the persons x dimensions trait EAP; ``corr`` the ``n_dims x n_dims`` latent correlation
     matrix (identity when ``estimate_corr=False``, estimated off-diagonals otherwise). The
     model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
@@ -31,10 +33,10 @@ class CompMirtFit:
     ``final_loglik_change`` is the absolute difference between the final two evaluated
     marginal log-likelihoods."""
 
+    model: IrtModel
     loading: np.ndarray
     intercept: np.ndarray
     theta: np.ndarray
-    n_dims: int
     corr: np.ndarray
     loglik_trace: np.ndarray
     n_iter: int
@@ -43,10 +45,16 @@ class CompMirtFit:
     termination_reason: str = "unknown"
     final_loglik_change: float = np.nan
 
+    @property
+    def n_dims(self) -> int:
+        """Latent dimension count derived from :attr:`model`."""
 
-def fit_compensatory_mirt(
+        return self.model.n_dims
+
+
+def fit_2pl(
     responses: np.ndarray,
-    loading_pattern: np.ndarray,
+    model: int | ExploratoryModel | ConfirmatoryModel = 1,
     q: int = 21,
     estimate_corr: bool = False,
     max_iter: int = 500,
@@ -54,15 +62,15 @@ def fit_compensatory_mirt(
     node_rule: str = "gh",
     xi_points: int = 4000,
     xi_seed: int = 0x9E37_79B9_7F4A_7C15,
-) -> CompMirtFit:
-    """Fit the confirmatory compensatory MIRT (compute in Rust; Reckase, 2009;
+) -> TwoPlFit:
+    """Fit the compensatory 2PL item response model (compute in Rust; Reckase, 2009;
     Bock, Gibbons & Muraki, 1988).
 
     A general COMPENSATORY multidimensional 2PL: an item may load freely on several latent
     dimensions, which trade off ADDITIVELY inside a single logit,
     ``P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`` with
-    ``theta_j ~ MVN(0, I_D)``. ``S_i`` is item ``i``'s loading set from the 0/1 confirmatory
-    ``loading_pattern`` (items x dimensions); ``a_id`` is a free loading for ``d in S_i``
+    ``theta_j ~ MVN(0, I_D)``. ``S_i`` is item ``i``'s loading set from the confirmatory model specification;
+    ``a_id`` is a free loading for ``d in S_i``
     (zero otherwise). This is distinct from the simple-structure MIRT (one dimension per
     item) and the orthogonal bifactor (one primary + one general per item): arbitrary
     within-item cross-loadings are allowed, which is why it needs the full ``q**n_dims``
@@ -91,8 +99,11 @@ def fit_compensatory_mirt(
     by ``"gh"``; ``xi_points``/``xi_seed`` only by ``"qmc"``/``"mc"``.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
-    ``loading_pattern`` is an items x dimensions 0/1 array; ``q`` is the Gauss-Hermite nodes
-    per dimension (one of ``7, 11, 15, 21, 31, 41``). Convergence requires the absolute
+    For ``model=1``, all item loadings on the single factor are free. A
+    multidimensional confirmatory structure is supplied with
+    ``model=models.confirmatory(loading_pattern)``; a numeric exploratory model greater than
+    one is rejected until unrestricted loading rotation and identification are implemented.
+    ``q`` is the Gauss-Hermite node count per dimension (one of ``7, 11, 15, 21, 31, 41``). Convergence requires the absolute
     change between consecutive evaluated marginal log-likelihoods to be less than ``tol``;
     the returned fit exposes that value as ``final_loglik_change`` and the terminal state as
     ``termination_reason``.
@@ -110,22 +121,14 @@ def fit_compensatory_mirt(
     from .fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_compensatory_mirt"):
-        raise RuntimeError("fit_compensatory_mirt requires the compiled Rust core")
+    if core is None or not hasattr(core, "fit_2pl"):
+        raise RuntimeError("fit_2pl requires the compiled Rust core")
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    pat = np.asarray(loading_pattern)
-    if pat.ndim != 2:
-        raise ValueError("loading_pattern must be a 2-D items x dimensions array")
     n_persons, n_items = y.shape
-    if pat.shape[0] != n_items:
-        raise ValueError("loading_pattern must have one row per item")
-    if not np.issubdtype(pat.dtype, np.number) or np.iscomplexobj(pat):
-        raise ValueError("loading_pattern entries must be numeric 0 or 1")
-    if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
-        raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
+    resolved_model, pat = _resolve_model(model, n_items)
     n_dims = pat.shape[1]
     # The Gauss-Hermite product grid caps D <= _MAX_DIMS; the QMC/MC rules reach D <= 6 (the Halton
     # prime axes). The core does the authoritative rule-dependent check; this mirrors it up front.
@@ -170,7 +173,7 @@ def fit_compensatory_mirt(
 
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
-    res = core.fit_compensatory_mirt(
+    res = core.fit_2pl(
         yy,
         observed.reshape(-1),
         pat.astype(np.int64).reshape(-1),
@@ -185,11 +188,11 @@ def fit_compensatory_mirt(
         xi_points_int,
         xi_seed_int,
     )
-    return CompMirtFit(
+    return TwoPlFit(
+        model=resolved_model,
         loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),
         intercept=np.asarray(res["intercept"], dtype=np.float64),
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
-        n_dims=int(res["n_dims"]),
         corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),

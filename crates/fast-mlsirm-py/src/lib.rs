@@ -1,15 +1,6 @@
 use std::collections::HashMap;
 
-use mlsirm_core::fitstats::{
-    infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
-    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
-};
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
-use mlsirm_core::marginal::{
-    fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
-    PopulationSpec, XiRuleKind,
-};
-use mlsirm_core::nodes::XiRule;
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
     equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
@@ -17,57 +8,66 @@ use mlsirm_core::equating::{
     loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
     EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
 };
+use mlsirm_core::fitstats::{
+    infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
+    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+};
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
+use mlsirm_core::marginal::{
+    fit_marginal_full as core_fit_marginal_full, Anchors, ItemCovariate, MarginalConfig,
+    PopulationSpec, XiRuleKind,
+};
+use mlsirm_core::nodes::XiRule;
 
+use mlsirm_core::cdm::{
+    fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
+    fit_ho_gdina as core_fit_ho_gdina, fit_seq_gdina as core_fit_seq_gdina,
+    fit_seq_gdina_qr as core_fit_seq_gdina_qr, gdina_wald_selection as core_gdina_wald_selection,
+    validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
+};
+use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
-use mlsirm_core::scoring::{
-    bank_information as core_bank_information, cat_next_item as core_cat_next_item,
-    empirical_reliability as core_empirical_reliability,
-    eapsum_tables as core_eapsum_tables, plausible_values as core_plausible_values,
-    score_eap_device as core_score_eap_device, score_map as core_score_map, ItemBank,
-    PriorSpec,
-};
-use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
-use mlsirm_core::cdm::{
-    fit_cdm as core_fit_cdm, fit_gdina as core_fit_gdina, fit_ho_cdm as core_fit_ho_cdm,
-    fit_ho_gdina as core_fit_ho_gdina, fit_seq_gdina as core_fit_seq_gdina,
-    fit_seq_gdina_qr as core_fit_seq_gdina_qr,
-    gdina_wald_selection as core_gdina_wald_selection,
-    validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
-};
-use mlsirm_core::crm::fit_crm as core_fit_crm;
-use mlsirm_core::mirt::{fit_compensatory_mirt as core_fit_compensatory_mirt, MirtConfig};
-use mlsirm_core::nominal_mirt::{fit_nominal_mirt as core_fit_nominal_mirt, NominalMirtConfig};
-use mlsirm_core::grm_mirt::{fit_grm_mirt as core_fit_grm_mirt, GrmMirtConfig};
-use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
-use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
+use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
-use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
+use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
+use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
+use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
     poly_cat_simulate as core_poly_cat_simulate, poly_dif_sweep as core_poly_dif,
-    poly_information_curves as core_poly_information_curves, poly_person_fit as core_poly_person_fit,
-    poly_s_x2 as core_poly_s_x2, score_poly_eap as core_score_poly_eap,
-    u3_poly_bootstrap_cutoff as core_u3_poly_cutoff, u3_poly_person_fit as core_u3_poly_person_fit,
-    PolyModel,
+    poly_information_curves as core_poly_information_curves,
+    poly_person_fit as core_poly_person_fit, poly_s_x2 as core_poly_s_x2,
+    score_poly_eap as core_score_poly_eap, u3_poly_bootstrap_cutoff as core_u3_poly_cutoff,
+    u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
-use mlsirm_core::rt::{fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig};
-use mlsirm_core::rt_joint::{
-    fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig,
+use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
+use mlsirm_core::rt::{
+    fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
 };
+use mlsirm_core::rt_joint::{fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig};
+use mlsirm_core::scoring::{
+    bank_information as core_bank_information, cat_next_item as core_cat_next_item,
+    eapsum_tables as core_eapsum_tables, empirical_reliability as core_empirical_reliability,
+    plausible_values as core_plausible_values, score_eap_device as core_score_eap_device,
+    score_map as core_score_map, ItemBank, PriorSpec,
+};
+use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
+use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
         "grm" => Ok(PolyModel::Grm),
         "gpcm" => Ok(PolyModel::Gpcm),
-        other => Err(PyValueError::new_err(format!("model must be grm or gpcm, got {other}"))),
+        other => Err(PyValueError::new_err(format!(
+            "model must be grm or gpcm, got {other}"
+        ))),
     }
 }
 
@@ -75,7 +75,9 @@ fn poly_responses(y: &[i64], n_cat: usize) -> PyResult<Vec<usize>> {
     let mut yv = Vec::with_capacity(y.len());
     for &v in y {
         if v < 0 || v as usize >= n_cat {
-            return Err(PyValueError::new_err("responses must be integer categories in 0..n_cat-1"));
+            return Err(PyValueError::new_err(
+                "responses must be integer categories in 0..n_cat-1",
+            ));
         }
         yv.push(v as usize);
     }
@@ -239,7 +241,11 @@ fn fit_mmle_2pl(
             "y and observed must both have length n_persons * n_items",
         ));
     }
-    let cfg = MmleConfig { max_iter, tol, ..MmleConfig::default() };
+    let cfg = MmleConfig {
+        max_iter,
+        tol,
+        ..MmleConfig::default()
+    };
     let res = core_fit_mmle_2pl(y_slice, observed_slice, n_persons, n_items, &cfg);
     Ok((res.a, res.b, res.theta, res.loglik_trace, res.converged))
 }
@@ -268,7 +274,11 @@ fn fit_cdm(
     let gate = match model {
         "dina" | "DINA" => CdmModel::Dina,
         "dino" | "DINO" => CdmModel::Dino,
-        other => return Err(PyValueError::new_err(format!("model must be 'dina' or 'dino'; got {other}"))),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "model must be 'dina' or 'dino'; got {other}"
+            )))
+        }
     };
     let q: Vec<u8> = q_matrix
         .as_slice()?
@@ -279,7 +289,11 @@ fn fit_cdm(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_cdm(
         y.as_slice()?,
         observed.as_slice()?,
@@ -335,7 +349,11 @@ fn fit_gdina(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_gdina(
         y.as_slice()?,
         observed.as_slice()?,
@@ -413,7 +431,11 @@ fn fit_seq_gdina_qr(
             _ => Err(PyValueError::new_err("step_q entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_seq_gdina_qr(
         y.as_slice()?,
         observed.as_slice()?,
@@ -442,7 +464,10 @@ fn fit_seq_gdina_qr(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
-    out.set_item("final_relative_loglik_change", res.final_relative_loglik_change)?;
+    out.set_item(
+        "final_relative_loglik_change",
+        res.final_relative_loglik_change,
+    )?;
     out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
@@ -471,7 +496,11 @@ fn fit_seq_gdina(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_seq_gdina(
         y.as_slice()?,
         observed.as_slice()?,
@@ -534,10 +563,16 @@ fn validate_q_matrix(
         .map(|&v| match v {
             0 => Ok(0u8),
             1 => Ok(1u8),
-            _ => Err(PyValueError::new_err("provisional_q entries must be 0 or 1")),
+            _ => Err(PyValueError::new_err(
+                "provisional_q entries must be 0 or 1",
+            )),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_validate_q_matrix(
         y.as_slice()?,
         observed.as_slice()?,
@@ -592,7 +627,11 @@ fn gdina_wald_selection(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_gdina_wald_selection(
         y.as_slice()?,
         observed.as_slice()?,
@@ -640,7 +679,11 @@ fn fit_ho_cdm(
     let gate = match model {
         "dina" | "DINA" => CdmModel::Dina,
         "dino" | "DINO" => CdmModel::Dino,
-        other => return Err(PyValueError::new_err(format!("model must be 'dina' or 'dino'; got {other}"))),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "model must be 'dina' or 'dino'; got {other}"
+            )))
+        }
     };
     let q: Vec<u8> = q_matrix
         .as_slice()?
@@ -651,7 +694,11 @@ fn fit_ho_cdm(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_ho_cdm(
         y.as_slice()?,
         observed.as_slice()?,
@@ -712,7 +759,11 @@ fn fit_ho_gdina(
             _ => Err(PyValueError::new_err("q_matrix entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = CdmConfig { max_iter, tol, ..CdmConfig::default() };
+    let cfg = CdmConfig {
+        max_iter,
+        tol,
+        ..CdmConfig::default()
+    };
     let res = core_fit_ho_gdina(
         y.as_slice()?,
         observed.as_slice()?,
@@ -739,21 +790,17 @@ fn fit_ho_gdina(
     out.set_item("converged", res.converged)?;
     out.set_item("termination_reason", res.termination_reason)?;
     out.set_item("final_loglik_change", res.final_loglik_change)?;
-    out.set_item("final_relative_loglik_change", res.final_relative_loglik_change)?;
+    out.set_item(
+        "final_relative_loglik_change",
+        res.final_relative_loglik_change,
+    )?;
     out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
 
-/// Continuous Response Model fit (Samejima, 1973; `mlsirm_core::crm::fit_crm`).
-/// `responses`/`observed` are row-major `n_persons * n_items` with responses in
-/// `(0, 1)`. The logit of the response is conditionally normal and linear in the
-/// trait, `logit(Z) | theta ~ N(slope*theta + intercept, resid_sd^2)`,
-/// `theta ~ N(0,1)`. Returns a dict with `slope`, `intercept`, `resid_sd`,
-/// `discrimination` (`= slope/resid_sd`), `difficulty` (`= -intercept/slope`),
-/// `theta` (per-person EAP), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
 /// Confirmatory compensatory multidimensional 2PL (Reckase, 2009; Bock, Gibbons, & Muraki,
-/// 1988; `mlsirm_core::mirt::fit_compensatory_mirt`). Each item may load FREELY on several
+/// 1988; `mlsirm_core::twopl::fit_2pl`). Each item may load FREELY on several
 /// latent dimensions `theta ~ MVN(0, Sigma)` that trade off additively in the logit:
 /// `P(X=1) = sigmoid(sum_d L_id a_id theta_d + b_i)`. `loading_pattern` is a row-major
 /// `n_items * n_dims` 0/1 pattern; each dimension needs a pure single-loading anchor item
@@ -770,7 +817,7 @@ fn fit_ho_gdina(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, estimate_corr = false, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
-fn fit_compensatory_mirt(
+fn fit_2pl(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, f64>,
     observed: PyReadonlyArray1<'_, bool>,
@@ -792,15 +839,26 @@ fn fit_compensatory_mirt(
         .map(|&v| match v {
             0 => Ok(0u8),
             1 => Ok(1u8),
-            _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
+            _ => Err(PyValueError::new_err(
+                "loading_pattern entries must be 0 or 1",
+            )),
         })
         .collect::<PyResult<_>>()?;
     // `node_rule`: "gh" (Gauss-Hermite product grid, D<=3) or "qmc"/"mc" (Halton/Monte-Carlo,
     // D<=6). q applies only to "gh"; xi_points/xi_seed only to the QMC/MC rules.
     let xi_rule = XiRuleKind::parse(node_rule)
         .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
-    let cfg = MirtConfig { max_iter, tol, q, estimate_corr, xi_rule, xi_points, xi_seed, ..MirtConfig::default() };
-    let res = core_fit_compensatory_mirt(
+    let cfg = TwoPlConfig {
+        max_iter,
+        tol,
+        q,
+        estimate_corr,
+        xi_rule,
+        xi_points,
+        xi_seed,
+        ..TwoPlConfig::default()
+    };
+    let res = core_fit_2pl(
         y.as_slice()?,
         observed.as_slice()?,
         &pattern,
@@ -825,9 +883,8 @@ fn fit_compensatory_mirt(
     Ok(out.into())
 }
 
-
 /// Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen, Cai, & Bock, 2010;
-/// `mlsirm_core::nominal_mirt::fit_nominal_mirt`). Each item's `n_cat` UNORDERED categories get a
+/// `mlsirm_core::nominal::fit_nominal`). Each item's `n_cat` UNORDERED categories get a
 /// free multidimensional discrimination `a_ikd` (free on the confirmatory `loading_pattern`, items x
 /// n_dims 0/1) and intercept `c_ik`, with the baseline category `0` pinned to `0`:
 /// `P(Y=k|theta) = softmax_k(sum_d a_ikd theta_d + c_ik)`, `theta ~ MVN(0, I)`. Reduces to
@@ -840,7 +897,7 @@ fn fit_compensatory_mirt(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, q = 21, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
-fn fit_nominal_mirt(
+fn fit_nominal_model(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
     observed: Option<PyReadonlyArray1<'_, bool>>,
@@ -860,7 +917,8 @@ fn fit_nominal_mirt(
         .as_slice()?
         .iter()
         .map(|&v| {
-            usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
         })
         .collect::<PyResult<_>>()?;
     let pattern: Vec<u8> = loading_pattern
@@ -869,7 +927,9 @@ fn fit_nominal_mirt(
         .map(|&v| match v {
             0 => Ok(0u8),
             1 => Ok(1u8),
-            _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
+            _ => Err(PyValueError::new_err(
+                "loading_pattern entries must be 0 or 1",
+            )),
         })
         .collect::<PyResult<_>>()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -878,16 +938,16 @@ fn fit_nominal_mirt(
     };
     let xi_rule = XiRuleKind::parse(node_rule)
         .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
-    let cfg = NominalMirtConfig {
+    let cfg = NominalConfig {
         max_iter,
         tol,
         q,
         xi_rule,
         xi_points,
         xi_seed,
-        ..NominalMirtConfig::default()
+        ..NominalConfig::default()
     };
-    let res = core_fit_nominal_mirt(
+    let res = core_fit_nominal_model(
         &yy,
         obs_vec.as_deref(),
         &pattern,
@@ -913,9 +973,8 @@ fn fit_nominal_mirt(
     Ok(out.into())
 }
 
-
 /// Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995;
-/// `mlsirm_core::grm_mirt::fit_grm_mirt`). Each item's `n_cat` ORDERED categories share a SINGLE
+/// `mlsirm_core::grm::fit_grm`). Each item's `n_cat` ORDERED categories share a SINGLE
 /// multidimensional discrimination `a_i` (free on the confirmatory `loading_pattern`, items x
 /// n_dims 0/1) and have `n_cat-1` ORDERED boundary intercepts `beta_i`:
 /// `P(Y>=k|theta) = sigmoid(sum_d a_id theta_d + beta_i,{k-1})`, `theta ~ MVN(0, I)`. Reduces to
@@ -929,7 +988,7 @@ fn fit_nominal_mirt(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, q = 21, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
-fn fit_grm_mirt(
+fn fit_grm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
     observed: Option<PyReadonlyArray1<'_, bool>>,
@@ -948,7 +1007,10 @@ fn fit_grm_mirt(
     let yy: Vec<usize> = y
         .as_slice()?
         .iter()
-        .map(|&v| usize::try_from(v).map_err(|_| PyValueError::new_err("y categories must be non-negative")))
+        .map(|&v| {
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
         .collect::<PyResult<_>>()?;
     let pattern: Vec<u8> = loading_pattern
         .as_slice()?
@@ -956,7 +1018,9 @@ fn fit_grm_mirt(
         .map(|&v| match v {
             0 => Ok(0u8),
             1 => Ok(1u8),
-            _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
+            _ => Err(PyValueError::new_err(
+                "loading_pattern entries must be 0 or 1",
+            )),
         })
         .collect::<PyResult<_>>()?;
     let obs_vec: Option<Vec<bool>> = match &observed {
@@ -965,8 +1029,16 @@ fn fit_grm_mirt(
     };
     let xi_rule = XiRuleKind::parse(node_rule)
         .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
-    let cfg = GrmMirtConfig { max_iter, tol, q, xi_rule, xi_points, xi_seed, ..GrmMirtConfig::default() };
-    let res = core_fit_grm_mirt(
+    let cfg = GrmConfig {
+        max_iter,
+        tol,
+        q,
+        xi_rule,
+        xi_points,
+        xi_seed,
+        ..GrmConfig::default()
+    };
+    let res = core_fit_grm(
         &yy,
         obs_vec.as_deref(),
         &pattern,
@@ -1055,11 +1127,28 @@ fn fit_rsm(
     let yy: Vec<usize> = y
         .as_slice()?
         .iter()
-        .map(|&v| if v >= 0 { Ok(v as usize) } else { Err(PyValueError::new_err("y must be non-negative category indices")) })
+        .map(|&v| {
+            if v >= 0 {
+                Ok(v as usize)
+            } else {
+                Err(PyValueError::new_err(
+                    "y must be non-negative category indices",
+                ))
+            }
+        })
         .collect::<PyResult<_>>()?;
     let obs = observed.as_slice()?;
-    let res = core_fit_rsm(&yy, Some(obs), n_persons, n_items, n_cat, q_theta, max_iter, tol)
-        .map_err(PyValueError::new_err)?;
+    let res = core_fit_rsm(
+        &yy,
+        Some(obs),
+        n_persons,
+        n_items,
+        n_cat,
+        q_theta,
+        max_iter,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item_location", res.item_location)?;
     out.set_item("thresholds", res.thresholds)?;
@@ -1095,9 +1184,19 @@ fn fit_mixture(
     let within = match model {
         "rasch" | "Rasch" | "RASCH" => MixtureModel::Rasch,
         "2pl" | "2PL" | "twopl" | "TwoPl" => MixtureModel::TwoPl,
-        other => return Err(PyValueError::new_err(format!("model must be 'rasch' or '2pl'; got {other}"))),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "model must be 'rasch' or '2pl'; got {other}"
+            )))
+        }
     };
-    let cfg = MixtureConfig { max_iter, tol, n_starts, seed, ..MixtureConfig::default() };
+    let cfg = MixtureConfig {
+        max_iter,
+        tol,
+        n_starts,
+        seed,
+        ..MixtureConfig::default()
+    };
     let res = core_fit_mixture(
         y.as_slice()?,
         observed.as_slice()?,
@@ -1147,7 +1246,13 @@ fn fit_lltm(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let cfg = LltmConfig { max_iter, tol, fit_intercept, compute_lr, ..LltmConfig::default() };
+    let cfg = LltmConfig {
+        max_iter,
+        tol,
+        fit_intercept,
+        compute_lr,
+        ..LltmConfig::default()
+    };
     let res = core_fit_lltm(
         y.as_slice()?,
         observed.as_slice()?,
@@ -1201,20 +1306,33 @@ fn fit_testlet(
     let within = match model {
         "rasch" | "Rasch" | "RASCH" => TestletModel::Rasch,
         "2pl" | "2PL" | "twopl" | "TwoPl" => TestletModel::TwoPl,
-        other => return Err(PyValueError::new_err(format!("model must be 'rasch' or '2pl'; got {other}"))),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "model must be 'rasch' or '2pl'; got {other}"
+            )))
+        }
     };
     let tid: Vec<usize> = testlet_id
         .as_slice()?
         .iter()
         .map(|&v| {
             if v < 0 {
-                Err(PyValueError::new_err("testlet_id entries must be non-negative"))
+                Err(PyValueError::new_err(
+                    "testlet_id entries must be non-negative",
+                ))
             } else {
                 Ok(v as usize)
             }
         })
         .collect::<PyResult<_>>()?;
-    let cfg = TestletConfig { max_iter, tol, q_gamma, estimate_sigma, init_sigma2, ..TestletConfig::default() };
+    let cfg = TestletConfig {
+        max_iter,
+        tol,
+        q_gamma,
+        estimate_sigma,
+        init_sigma2,
+        ..TestletConfig::default()
+    };
     let res = core_fit_testlet(
         y.as_slice()?,
         observed.as_slice()?,
@@ -1356,8 +1474,7 @@ fn fit_marginal(
             n_groups: n_pop,
         },
         "multilevel" => PopulationSpec::Multilevel {
-            cluster_id: ids
-                .ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
+            cluster_id: ids.ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
             n_clusters: n_pop,
         },
         _ => {
@@ -1390,8 +1507,7 @@ fn fit_marginal(
         mu_tau,
         ..PenaltyConfig::lsirm_prior()
     };
-    let anchors: Option<Anchors> = match (&anchor_fixed, &anchor_alpha, &anchor_b, &anchor_zeta)
-    {
+    let anchors: Option<Anchors> = match (&anchor_fixed, &anchor_alpha, &anchor_b, &anchor_zeta) {
         (None, None, None, None) => None,
         (Some(f), Some(a), Some(b_arr), Some(z)) => Some(Anchors {
             fixed: f.as_slice()?.to_vec(),
@@ -1463,11 +1579,17 @@ fn fit_marginal(
 fn parse_xi_rule(name: &str, q_xi: usize, xi_points: usize, xi_seed: u64) -> PyResult<XiRule> {
     match XiRuleKind::parse(name) {
         Some(XiRuleKind::GaussHermite) => Ok(XiRule::GaussHermite { q_xi }),
-        Some(XiRuleKind::Halton) => Ok(XiRule::Halton { n: xi_points, shift_seed: xi_seed }),
-        Some(XiRuleKind::MonteCarlo) => {
-            Ok(XiRule::MonteCarlo { n: xi_points, seed: xi_seed.max(1) })
-        }
-        None => Err(PyValueError::new_err("xi_rule must be one of ['gh', 'qmc', 'mc']")),
+        Some(XiRuleKind::Halton) => Ok(XiRule::Halton {
+            n: xi_points,
+            shift_seed: xi_seed,
+        }),
+        Some(XiRuleKind::MonteCarlo) => Ok(XiRule::MonteCarlo {
+            n: xi_points,
+            seed: xi_seed.max(1),
+        }),
+        None => Err(PyValueError::new_err(
+            "xi_rule must be one of ['gh', 'qmc', 'mc']",
+        )),
     }
 }
 
@@ -1520,8 +1642,19 @@ fn score_bank_eap(
     xi_seed: u64,
     device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
@@ -1529,8 +1662,16 @@ fn score_bank_eap(
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
     let dev = Device::parse(device)
         .ok_or_else(|| PyValueError::new_err(format!("unknown device: {device}")))?;
-    let res = core_score_eap_device(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
-        q_theta, rule, dev)
+    let res = core_score_eap_device(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+        dev,
+    )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("theta_eap", res.theta_eap)?;
@@ -1566,14 +1707,32 @@ fn score_bank_map(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
-    let res = core_score_map(&bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior,
-        max_iter, tol)
+    let res = core_score_map(
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        max_iter,
+        tol,
+    )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("theta_map", res.theta_map)?;
@@ -1611,15 +1770,25 @@ fn eapsum_tables(
     xi_points: usize,
     xi_seed: u64,
 ) -> PyResult<Vec<Py<pyo3::types::PyDict>>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
-    let tables = core_eapsum_tables(&bank, &prior, q_theta, rule)
-        .map_err(PyValueError::new_err)?;
+    let tables = core_eapsum_tables(&bank, &prior, q_theta, rule).map_err(PyValueError::new_err)?;
     let mut out = Vec::new();
     for t in tables {
         let d = pyo3::types::PyDict::new(py);
@@ -1668,8 +1837,19 @@ fn s_x2_stat(
     min_effect: f64,
     person_weight: Option<PyReadonlyArray1<'_, f64>>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
@@ -1812,8 +1992,9 @@ fn equate_observed_scores_ext(
     bandwidth_x: Option<f64>,
     bandwidth_y: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let cont = Continuization::parse(continuization)
-        .ok_or_else(|| PyValueError::new_err(format!("unknown continuization: {continuization}")))?;
+    let cont = Continuization::parse(continuization).ok_or_else(|| {
+        PyValueError::new_err(format!("unknown continuization: {continuization}"))
+    })?;
     let res = core_equate_eg_ext(
         x_scores.as_slice()?,
         y_scores.as_slice()?,
@@ -1956,8 +2137,17 @@ fn bootstrap_see(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
-    let res = core_bootstrap_see(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m, n_boot, ci_level, seed)
-        .map_err(PyValueError::new_err)?;
+    let res = core_bootstrap_see(
+        x_scores.as_slice()?,
+        y_scores.as_slice()?,
+        k_x,
+        k_y,
+        m,
+        n_boot,
+        ci_level,
+        seed,
+    )
+    .map_err(PyValueError::new_err)?;
     see_result_dict(py, res)
 }
 
@@ -1977,8 +2167,15 @@ fn analytic_see(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
-    let res = core_analytic_see(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m, ci_level)
-        .map_err(PyValueError::new_err)?;
+    let res = core_analytic_see(
+        x_scores.as_slice()?,
+        y_scores.as_slice()?,
+        k_x,
+        k_y,
+        m,
+        ci_level,
+    )
+    .map_err(PyValueError::new_err)?;
     see_result_dict(py, res)
 }
 
@@ -1991,7 +2188,11 @@ fn gpcm_cell_logprobs(
     scores: PyReadonlyArray1<'_, f64>,
     intercepts: PyReadonlyArray1<'_, f64>,
 ) -> PyResult<Vec<f64>> {
-    Ok(core_gpcm_logprobs(base, scores.as_slice()?, intercepts.as_slice()?))
+    Ok(core_gpcm_logprobs(
+        base,
+        scores.as_slice()?,
+        intercepts.as_slice()?,
+    ))
 }
 
 /// GRM cumulative-logit cell log-probabilities at one node.
@@ -2021,8 +2222,10 @@ fn fit_poly_unidim(
     let m = parse_poly_model(model)?;
     let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
-    let fit = core_fit_poly_unidim(&yv, obs, n_persons, n_items, n_cat, m, q_theta, max_iter, tol)
-        .map_err(PyValueError::new_err)?;
+    let fit = core_fit_poly_unidim(
+        &yv, obs, n_persons, n_items, n_cat, m, q_theta, max_iter, tol,
+    )
+    .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", fit.slope)?;
     out.set_item("cat_params", fit.cat_params)?;
@@ -2472,7 +2675,13 @@ fn fit_rt_lognormal(
     fix_sigma_tau: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
-    let cfg = RtConfig { max_iter, tol, var_floor, sigma_floor, fix_sigma_tau };
+    let cfg = RtConfig {
+        max_iter,
+        tol,
+        var_floor,
+        sigma_floor,
+        fix_sigma_tau,
+    };
     let fit = core_fit_rt(times.as_slice()?, obs, n_persons, n_items, cfg)
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -2514,7 +2723,13 @@ fn fit_speed_accuracy_covariance(
     fix_sigma_tau: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
-    let cfg = SpeedAccuracyConfig { q, max_iter, tol, fix_sigma_tau, ..Default::default() };
+    let cfg = SpeedAccuracyConfig {
+        q,
+        max_iter,
+        tol,
+        fix_sigma_tau,
+        ..Default::default()
+    };
     let fit = core_fit_sa(
         responses.as_slice()?,
         times.as_slice()?,
@@ -2616,8 +2831,19 @@ fn m2_stat(
     xi_points: usize,
     xi_seed: u64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
@@ -2952,8 +3178,19 @@ fn person_fit_stat(
     prior_mean: Option<PyReadonlyArray1<'_, f64>>,
     flag_threshold: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let pm_storage = match &prior_mean {
         Some(v) => v.as_slice()?.to_vec(),
         None => Vec::new(),
@@ -3000,8 +3237,19 @@ fn infit_outfit_stat(
     theta: PyReadonlyArray1<'_, f64>,
     xi: PyReadonlyArray1<'_, f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let res = core_infit_outfit(
         &bank,
         y.as_slice()?,
@@ -3046,7 +3294,9 @@ fn validate_scoring(
         auto.as_slice()?,
         human.as_slice()?,
         k,
-        hh_storage.as_ref().map(|(a, b)| (a.as_slice(), b.as_slice())),
+        hh_storage
+            .as_ref()
+            .map(|(a, b)| (a.as_slice(), b.as_slice())),
         sg_storage.as_deref(),
     )
     .map_err(PyValueError::new_err)?;
@@ -3192,8 +3442,7 @@ fn oakes_standard_errors(
             n_groups: n_pop,
         },
         "multilevel" => PopulationSpec::Multilevel {
-            cluster_id: ids
-                .ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
+            cluster_id: ids.ok_or_else(|| PyValueError::new_err("multilevel requires pop_id"))?,
             n_clusters: n_pop,
         },
         _ => {
@@ -3255,7 +3504,6 @@ fn oakes_standard_errors(
     Ok(out.into())
 }
 
-
 /// Item/test information at supplied (theta, xi) points (Magis 2013 4PL
 /// formula, c=0/d=1 logistic case; Lord test-information tradition).
 #[pyfunction]
@@ -3279,8 +3527,19 @@ fn bank_information(
     latent_dim: usize,
     eps_distance: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let (item_info, test_info) =
         core_bank_information(&bank, theta.as_slice()?, xi.as_slice()?, n_points)
             .map_err(PyValueError::new_err)?;
@@ -3333,15 +3592,31 @@ fn cat_next_item(
     xi_points: usize,
     xi_seed: u64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
     let step = core_cat_next_item(
-        &bank, y.as_slice()?, administered.as_slice()?, &prior, q_theta, rule,
+        &bank,
+        y.as_slice()?,
+        administered.as_slice()?,
+        &prior,
+        q_theta,
+        rule,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -3392,16 +3667,34 @@ fn plausible_values(
     n_draws: usize,
     seed: u64,
 ) -> PyResult<Vec<f64>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
     core_plausible_values(
-        &bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior, q_theta, rule,
-        n_draws, seed,
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
+        n_draws,
+        seed,
     )
     .map_err(PyValueError::new_err)
 }
@@ -3431,11 +3724,27 @@ fn residual_item_fit(
     xi: PyReadonlyArray1<'_, f64>,
     n_bins: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let res = core_residual_item_fit(
-        &bank, y.as_slice()?, observed.as_slice()?, n_persons, theta.as_slice()?,
-        xi.as_slice()?, n_bins,
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        theta.as_slice()?,
+        xi.as_slice()?,
+        n_bins,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -3475,15 +3784,32 @@ fn adjusted_chi2_pairs(
     xi_points: usize,
     xi_seed: u64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
     let res = core_adjusted_chi2_pairs(
-        &bank, y.as_slice()?, observed.as_slice()?, n_persons, &prior, q_theta, rule,
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &prior,
+        q_theta,
+        rule,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -3519,15 +3845,33 @@ fn person_fit_resampling(
     n_replicates: usize,
     seed: u64,
 ) -> PyResult<Vec<f64>> {
-    bank_from_args!(alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-        eps_distance, factors, bank);
+    bank_from_args!(
+        alpha,
+        b,
+        zeta,
+        tau,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors,
+        bank
+    );
     let pm = match &prior_mean {
         Some(v) => v.as_slice()?.to_vec(),
         None => Vec::new(),
     };
     core_person_fit_resampling(
-        &bank, y.as_slice()?, observed.as_slice()?, n_persons, theta.as_slice()?,
-        xi.as_slice()?, &pm, n_replicates, seed,
+        &bank,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        theta.as_slice()?,
+        xi.as_slice()?,
+        &pm,
+        n_replicates,
+        seed,
     )
     .map_err(PyValueError::new_err)
 }
@@ -3565,10 +3909,32 @@ fn tcc_drift(
     xi_seed: u64,
     threshold: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    bank_from_args!(alpha_old, b_old, zeta_old, tau_old, factor_id, model, n_dims,
-        latent_dim, eps_distance, factors_old, bank_old);
-    bank_from_args!(alpha_new, b_new, zeta_new, tau_new, factor_id, model, n_dims,
-        latent_dim, eps_distance, factors_new, bank_new);
+    bank_from_args!(
+        alpha_old,
+        b_old,
+        zeta_old,
+        tau_old,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors_old,
+        bank_old
+    );
+    bank_from_args!(
+        alpha_new,
+        b_new,
+        zeta_new,
+        tau_new,
+        factor_id,
+        model,
+        n_dims,
+        latent_dim,
+        eps_distance,
+        factors_new,
+        bank_new
+    );
     let prior = PriorSpec {
         mean: prior_mean.as_slice()?.to_vec(),
         sd: prior_sd.as_slice()?.to_vec(),
@@ -3581,7 +3947,6 @@ fn tcc_drift(
     out.set_item("area_trace", res.area_trace)?;
     Ok(out.into())
 }
-
 
 /// Empirical (marginal) EAP reliability per trait dimension from the posterior
 /// variance decomposition of Bechger et al. (2003); report it alongside model
@@ -3604,8 +3969,13 @@ fn empirical_reliability(
     n_persons: usize,
     n_dims: usize,
 ) -> PyResult<Vec<f64>> {
-    core_empirical_reliability(theta_eap.as_slice()?, theta_sd.as_slice()?, n_persons, n_dims)
-        .map_err(PyValueError::new_err)
+    core_empirical_reliability(
+        theta_eap.as_slice()?,
+        theta_sd.as_slice()?,
+        n_persons,
+        n_dims,
+    )
+    .map_err(PyValueError::new_err)
 }
 
 #[pymodule]
@@ -3621,9 +3991,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_ho_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_seq_gdina, m)?)?;
     m.add_function(wrap_pyfunction!(fit_seq_gdina_qr, m)?)?;
-    m.add_function(wrap_pyfunction!(fit_compensatory_mirt, m)?)?;
-    m.add_function(wrap_pyfunction!(fit_nominal_mirt, m)?)?;
-    m.add_function(wrap_pyfunction!(fit_grm_mirt, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_2pl, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;

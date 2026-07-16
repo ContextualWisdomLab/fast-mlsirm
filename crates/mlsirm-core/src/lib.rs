@@ -3,25 +3,25 @@ pub mod cdm;
 pub mod crm;
 pub mod equating;
 pub mod fitstats;
+pub mod grm;
 pub mod linking;
 pub mod lltm;
 pub mod marginal;
 pub mod mixed;
 pub mod mixture;
-pub mod grm_mirt;
-pub mod mirt;
 pub mod mmle;
-pub mod nominal_mirt;
 pub mod nodes;
+pub mod nominal;
+pub mod oakes;
 pub mod poly;
 pub mod poly_marginal;
-pub mod oakes;
+pub(crate) mod quadrature;
 pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
-pub(crate) mod quadrature;
 pub mod scoring;
 pub mod testlet;
+pub mod twopl;
 
 // cargo-llvm-cov runs in CPU-only CI against the repository-owned line-coverage
 // baseline. Keep the hardware-backed wgpu module in normal builds, and cover

@@ -1,7 +1,7 @@
-//! Compensatory multidimensional 2PL — confirmatory, orthogonal or correlated (Reckase,
+//! Two-parameter logistic item response model — confirmatory multidimensional form, orthogonal or correlated (Reckase,
 //! 2009; Bock, Gibbons, & Muraki, 1988).
 //!
-//! `fit_compensatory_mirt` fits a **general compensatory** multidimensional 2PL in which an
+//! `fit_2pl` fits a **general compensatory** multidimensional 2PL in which an
 //! item may load FREELY on several latent dimensions, which trade off ADDITIVELY inside a
 //! single logit:
 //!
@@ -93,9 +93,9 @@ const MIRT_MAX_DIMS_QMC: usize = 6;
 /// cross-loadings). The per-dimension reflection anchor fixes only the global sign.
 const MIRT_A_BOUND: f64 = 10.0;
 
-/// Configuration for [`fit_compensatory_mirt`].
+/// Configuration for [`fit_2pl`].
 #[derive(Clone, Copy, Debug)]
-pub struct MirtConfig {
+pub struct TwoPlConfig {
     /// Maximum EM iterations.
     pub max_iter: usize,
     /// Convergence tolerance on `|delta loglik|`.
@@ -125,7 +125,7 @@ pub struct MirtConfig {
     pub xi_seed: u64,
 }
 
-impl Default for MirtConfig {
+impl Default for TwoPlConfig {
     fn default() -> Self {
         Self {
             max_iter: 500,
@@ -142,10 +142,10 @@ impl Default for MirtConfig {
     }
 }
 
-/// Result of [`fit_compensatory_mirt`] (confirmatory compensatory MIRT, orthogonal or
+/// Result of [`fit_2pl`] (confirmatory compensatory MIRT, orthogonal or
 /// correlated latent factors).
 #[derive(Clone, Debug)]
-pub struct CompMirtResult {
+pub struct TwoPlResult {
     /// Free loadings `a_id`, row-major `J x D` (exactly `0.0` where `L_id = 0`).
     pub loading: Vec<f64>,
     /// Item intercepts `b_i`, length `J`.
@@ -176,7 +176,7 @@ fn validate(
     n_persons: usize,
     n_items: usize,
     n_dims: usize,
-    cfg: &MirtConfig,
+    cfg: &TwoPlConfig,
 ) -> Result<(), String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
@@ -270,7 +270,9 @@ fn validate(
     // Every item loads >= 1 dimension; every item has >= 1 observed response.
     for i in 0..n_items {
         if !(0..n_dims).any(|d| loading_pattern[i * n_dims + d] != 0) {
-            return Err(format!("item {i} loads no dimension (all-zero loading_pattern row)"));
+            return Err(format!(
+                "item {i} loads no dimension (all-zero loading_pattern row)"
+            ));
         }
         if !(0..n_persons).any(|p| observed[p * n_items + i]) {
             return Err(format!("item {i} has no observed responses"));
@@ -283,7 +285,10 @@ fn validate(
     for d in 0..n_dims {
         let has_pure_anchor = (0..n_items).any(|i| {
             loading_pattern[i * n_dims + d] != 0
-                && (0..n_dims).filter(|&d2| loading_pattern[i * n_dims + d2] != 0).count() == 1
+                && (0..n_dims)
+                    .filter(|&d2| loading_pattern[i * n_dims + d2] != 0)
+                    .count()
+                    == 1
         });
         if !has_pure_anchor {
             return Err(format!(
@@ -383,16 +388,28 @@ fn item_grad_hess(
         let w = n * pg * (1.0 - pg);
         let resid = r_ig[g] - n * pg;
         for k in 0..np {
-            let zk = if k < ni { nodes[g * n_dims + dims[k]] } else { 1.0 };
+            let zk = if k < ni {
+                nodes[g * n_dims + dims[k]]
+            } else {
+                1.0
+            };
             grad[k] += resid * zk;
             for j in 0..np {
-                let zj = if j < ni { nodes[g * n_dims + dims[j]] } else { 1.0 };
+                let zj = if j < ni {
+                    nodes[g * n_dims + dims[j]]
+                } else {
+                    1.0
+                };
                 amat[k][j] += w * zk * zj;
             }
         }
     }
     for k in 0..np {
-        let (rk, pk) = if k < ni { (ridge_a, a[k]) } else { (ridge_b, b) };
+        let (rk, pk) = if k < ni {
+            (ridge_a, a[k])
+        } else {
+            (ridge_b, b)
+        };
         grad[k] -= rk * pk;
         amat[k][k] += rk;
     }
@@ -532,16 +549,24 @@ fn flip_corr_dim(offdiag: &mut [f64], d: usize, flip: usize) {
 /// under MAR); `loading_pattern` is row-major `J*D` in `{0,1}`. Returns `Err` on malformed or
 /// rotationally-underidentified input.
 #[allow(clippy::too_many_arguments)]
-pub fn fit_compensatory_mirt(
+pub fn fit_2pl(
     y: &[f64],
     observed: &[bool],
     loading_pattern: &[u8],
     n_persons: usize,
     n_items: usize,
     n_dims: usize,
-    cfg: &MirtConfig,
-) -> Result<CompMirtResult, String> {
-    validate(y, observed, loading_pattern, n_persons, n_items, n_dims, cfg)?;
+    cfg: &TwoPlConfig,
+) -> Result<TwoPlResult, String> {
+    validate(
+        y,
+        observed,
+        loading_pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        cfg,
+    )?;
     // Build the latent-integral node set once, before the EM loop: a FIXED quadrature keeps EM
     // monotone in the (QMC-)approximated marginal likelihood (Jank, 2005). The Gauss-Hermite path
     // keeps `build_grid` verbatim (bit-for-bit the orthogonal fit); Halton/MonteCarlo delegate to
@@ -549,11 +574,23 @@ pub fn fit_compensatory_mirt(
     let (nodes, logw) = match cfg.xi_rule {
         XiRuleKind::GaussHermite => build_grid(n_dims, cfg.q),
         XiRuleKind::Halton => {
-            let xn = build_xi_nodes(XiRule::Halton { n: cfg.xi_points, shift_seed: cfg.xi_seed }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::Halton {
+                    n: cfg.xi_points,
+                    shift_seed: cfg.xi_seed,
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
         XiRuleKind::MonteCarlo => {
-            let xn = build_xi_nodes(XiRule::MonteCarlo { n: cfg.xi_points, seed: cfg.xi_seed.max(1) }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::MonteCarlo {
+                    n: cfg.xi_points,
+                    seed: cfg.xi_seed.max(1),
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
     };
@@ -561,7 +598,11 @@ pub fn fit_compensatory_mirt(
 
     // Per-item loaded-dimension lists S_i (the free-loading dims).
     let dims_of: Vec<Vec<usize>> = (0..n_items)
-        .map(|i| (0..n_dims).filter(|&d| loading_pattern[i * n_dims + d] != 0).collect())
+        .map(|i| {
+            (0..n_dims)
+                .filter(|&d| loading_pattern[i * n_dims + d] != 0)
+                .collect()
+        })
         .collect();
 
     // Init: loadings 1.0 on the pattern; intercept = logit of the item's observed proportion.
@@ -579,7 +620,11 @@ pub fn fit_compensatory_mirt(
                 den += 1.0;
             }
         }
-        let prop = if den > 0.0 { (num / den).clamp(0.02, 0.98) } else { 0.5 };
+        let prop = if den > 0.0 {
+            (num / den).clamp(0.02, 0.98)
+        } else {
+            0.5
+        };
         intercept[i] = (prop / (1.0 - prop)).ln();
     }
 
@@ -598,7 +643,11 @@ pub fn fit_compensatory_mirt(
     let d = n_dims;
     let n_off = d * (d - 1) / 2;
     let mut r_off = vec![0.0f64; n_off];
-    let mut theta_nodes = if cfg.estimate_corr { vec![0.0f64; n_nodes * n_dims] } else { Vec::new() };
+    let mut theta_nodes = if cfg.estimate_corr {
+        vec![0.0f64; n_nodes * n_dims]
+    } else {
+        Vec::new()
+    };
 
     for _ in 0..cfg.max_iter {
         // Map the standard GH grid through L = chol(Sigma): theta_g = L z_g (rt_joint pattern).
@@ -615,7 +664,11 @@ pub fn fit_compensatory_mirt(
                 }
             }
         }
-        let cur_nodes: &[f64] = if cfg.estimate_corr { &theta_nodes } else { &nodes };
+        let cur_nodes: &[f64] = if cfg.estimate_corr {
+            &theta_nodes
+        } else {
+            &nodes
+        };
 
         // Node x item log-probabilities under the current parameters.
         for g in 0..n_nodes {
@@ -655,7 +708,10 @@ pub fn fit_compensatory_mirt(
             for v in post.iter_mut() {
                 *v = (*v - m).exp() / denom;
             }
-            debug_assert!((post.iter().sum::<f64>() - 1.0).abs() < 1e-9, "posterior sums to 1");
+            debug_assert!(
+                (post.iter().sum::<f64>() - 1.0).abs() < 1e-9,
+                "posterior sums to 1"
+            );
             if cfg.estimate_corr {
                 for (mg, &pg) in m_g.iter_mut().zip(post.iter()) {
                     *mg += pg;
@@ -695,10 +751,30 @@ pub fn fit_compensatory_mirt(
             let rs = &r_ig[ni_off..ni_off + n_nodes];
             for _ in 0..cfg.newton_iter {
                 let (grad, amat) = item_grad_hess(
-                    dims, &a, b, ns, rs, cur_nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b,
+                    dims,
+                    &a,
+                    b,
+                    ns,
+                    rs,
+                    cur_nodes,
+                    n_dims,
+                    n_nodes,
+                    cfg.ridge_a,
+                    cfg.ridge_b,
                 );
                 let delta = solve_small(amat, grad); // A positive-definite => exact ascent step
-                let q0 = item_obj(dims, &a, b, ns, rs, cur_nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b);
+                let q0 = item_obj(
+                    dims,
+                    &a,
+                    b,
+                    ns,
+                    rs,
+                    cur_nodes,
+                    n_dims,
+                    n_nodes,
+                    cfg.ridge_a,
+                    cfg.ridge_b,
+                );
                 // Backtracking: halve until the penalized item objective does not decrease.
                 let mut step = 1.0f64;
                 let mut accepted = false;
@@ -708,8 +784,18 @@ pub fn fit_compensatory_mirt(
                         a_new[k] = (a[k] + step * delta[k]).clamp(-MIRT_A_BOUND, MIRT_A_BOUND);
                     }
                     b_new = b + step * delta[ni];
-                    let q1 = item_obj(dims, &a_new, b_new, ns, rs, cur_nodes, n_dims, n_nodes,
-                        cfg.ridge_a, cfg.ridge_b);
+                    let q1 = item_obj(
+                        dims,
+                        &a_new,
+                        b_new,
+                        ns,
+                        rs,
+                        cur_nodes,
+                        n_dims,
+                        n_nodes,
+                        cfg.ridge_a,
+                        cfg.ridge_b,
+                    );
                     if q1 >= q0 - 1e-12 {
                         accepted = true;
                         break;
@@ -719,8 +805,8 @@ pub fn fit_compensatory_mirt(
                 if !accepted {
                     break; // no uphill step found -> keep previous (rare; near a maximum)
                 }
-                let moved: f64 = (0..ni).map(|k| (a_new[k] - a[k]).abs()).sum::<f64>()
-                    + (b_new - b).abs();
+                let moved: f64 =
+                    (0..ni).map(|k| (a_new[k] - a[k]).abs()).sum::<f64>() + (b_new - b).abs();
                 a = a_new;
                 b = b_new;
                 if moved < 1e-9 {
@@ -808,7 +894,11 @@ pub fn fit_compensatory_mirt(
             }
         }
     }
-    let final_nodes: &[f64] = if cfg.estimate_corr { &theta_nodes } else { &nodes };
+    let final_nodes: &[f64] = if cfg.estimate_corr {
+        &theta_nodes
+    } else {
+        &nodes
+    };
     for g in 0..n_nodes {
         for i in 0..n_items {
             let mut eta = intercept[i];
@@ -884,7 +974,7 @@ pub fn fit_compensatory_mirt(
     let l = loglik_trace.len();
     let final_loglik_change = (loglik_trace[l - 1] - loglik_trace[l - 2]).abs();
     let n_parameters = n_free_loadings + n_items + if cfg.estimate_corr { n_off } else { 0 };
-    Ok(CompMirtResult {
+    Ok(TwoPlResult {
         loading,
         intercept,
         theta,
@@ -912,7 +1002,10 @@ mod tests {
     struct Lcg(u64);
     impl Lcg {
         fn next_f64(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
         }
         fn normal(&mut self) -> f64 {
@@ -921,7 +1014,11 @@ mod tests {
             (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
         }
         fn bern(&mut self, p: f64) -> f64 {
-            if self.next_f64() < p { 1.0 } else { 0.0 }
+            if self.next_f64() < p {
+                1.0
+            } else {
+                0.0
+            }
         }
     }
 
@@ -947,8 +1044,13 @@ mod tests {
     /// Simulate compensatory M2PL responses from loadings (J*D), intercepts (J), and person
     /// traits (N*D) via the same additive-logit model the estimator recovers.
     fn simulate(
-        loading: &[f64], intercept: &[f64], thetas: &[f64],
-        n: usize, n_items: usize, n_dims: usize, rng: &mut Lcg,
+        loading: &[f64],
+        intercept: &[f64],
+        thetas: &[f64],
+        n: usize,
+        n_items: usize,
+        n_dims: usize,
+        rng: &mut Lcg,
     ) -> Vec<f64> {
         let mut y = vec![0.0f64; n * n_items];
         for j in 0..n {
@@ -981,7 +1083,10 @@ mod tests {
             c01 += w[g] * t0 * t1;
         }
         assert!(e0.abs() < 1e-9 && e1.abs() < 1e-9, "means");
-        assert!((v0 - 1.0).abs() < 1e-9 && (v1 - 1.0).abs() < 1e-9, "variances");
+        assert!(
+            (v0 - 1.0).abs() < 1e-9 && (v1 - 1.0).abs() < 1e-9,
+            "variances"
+        );
         assert!(c01.abs() < 1e-9, "cross moment (orthogonality)");
     }
 
@@ -1015,14 +1120,22 @@ mod tests {
             let perturb = |k: usize, s: f64| -> (Vec<f64>, f64) {
                 let mut aa = a.clone();
                 let mut bb = b;
-                if k < dims.len() { aa[k] += s; } else { bb += s; }
+                if k < dims.len() {
+                    aa[k] += s;
+                } else {
+                    bb += s;
+                }
                 (aa, bb)
             };
             for k in 0..np {
                 let (ap, bp) = perturb(k, eps);
                 let (am, bm) = perturb(k, -eps);
                 let fd = (obj(&ap, bp) - obj(&am, bm)) / (2.0 * eps);
-                assert!((grad[k] - fd).abs() < 1e-4, "grad[{k}] {} vs fd {fd} (D={n_dims})", grad[k]);
+                assert!(
+                    (grad[k] - fd).abs() < 1e-4,
+                    "grad[{k}] {} vs fd {fd} (D={n_dims})",
+                    grad[k]
+                );
             }
             for jp in 0..np {
                 let (ap, bp) = perturb(jp, eps);
@@ -1051,13 +1164,28 @@ mod tests {
         let y = simulate(&a_true, &b_true, &thetas, n, n_items, 1, &mut rng);
         let observed = vec![true; n * n_items];
         let pattern = vec![1u8; n_items];
-        let cfg = MirtConfig { q: 41, ..MirtConfig::default() };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, 1, &cfg).unwrap();
-        assert!(rmse(&res.loading, &a_true) < 0.12, "loading RMSE {}", rmse(&res.loading, &a_true));
+        let cfg = TwoPlConfig {
+            q: 41,
+            ..TwoPlConfig::default()
+        };
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, 1, &cfg).unwrap();
+        assert!(
+            rmse(&res.loading, &a_true) < 0.12,
+            "loading RMSE {}",
+            rmse(&res.loading, &a_true)
+        );
         assert!(rmse(&res.intercept, &b_true) < 0.12, "intercept RMSE");
         let m = fit_mmle_2pl(&y, &observed, n, n_items, &MmleConfig::default());
-        assert!(rmse(&res.loading, &m.a) < 1e-2, "vs mmle a {}", rmse(&res.loading, &m.a));
-        assert!(rmse(&res.intercept, &m.b) < 1e-2, "vs mmle b {}", rmse(&res.intercept, &m.b));
+        assert!(
+            rmse(&res.loading, &m.a) < 1e-2,
+            "vs mmle a {}",
+            rmse(&res.loading, &m.a)
+        );
+        assert!(
+            rmse(&res.intercept, &m.b) < 1e-2,
+            "vs mmle b {}",
+            rmse(&res.intercept, &m.b)
+        );
         for w in res.loglik_trace.windows(2) {
             assert!(w[1] >= w[0] - 1e-6, "monotone");
         }
@@ -1071,9 +1199,15 @@ mod tests {
     fn mirt_recovers_compensatory_d2() {
         let n_dims = 2usize;
         let mut pattern: Vec<u8> = Vec::new();
-        for _ in 0..4 { pattern.extend_from_slice(&[1, 0]); }
-        for _ in 0..4 { pattern.extend_from_slice(&[0, 1]); }
-        for _ in 0..3 { pattern.extend_from_slice(&[1, 1]); }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[1, 0]);
+        }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[0, 1]);
+        }
+        for _ in 0..3 {
+            pattern.extend_from_slice(&[1, 1]);
+        }
         let n_items = 11usize;
         let a0 = [1.2, 0.8, 1.5, -0.9];
         let a1 = [1.0, 1.3, 0.7, 1.1];
@@ -1097,8 +1231,11 @@ mod tests {
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let cfg = MirtConfig { q: 21, ..MirtConfig::default() };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        let cfg = TwoPlConfig {
+            q: 21,
+            ..TwoPlConfig::default()
+        };
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
         for i in 0..n_items {
             for d in 0..n_dims {
                 if pattern[i * n_dims + d] == 0 {
@@ -1106,9 +1243,21 @@ mod tests {
                 }
             }
         }
-        assert!(rmse(&res.loading, &loading) < 0.12, "loading RMSE {}", rmse(&res.loading, &loading));
-        assert!(res.loading[3 * 2] < -0.5, "negative dim0 loading recovered: {}", res.loading[3 * 2]);
-        assert!(res.loading[9 * 2 + 1] < -0.3, "negative cross-loading: {}", res.loading[9 * 2 + 1]);
+        assert!(
+            rmse(&res.loading, &loading) < 0.12,
+            "loading RMSE {}",
+            rmse(&res.loading, &loading)
+        );
+        assert!(
+            res.loading[3 * 2] < -0.5,
+            "negative dim0 loading recovered: {}",
+            res.loading[3 * 2]
+        );
+        assert!(
+            res.loading[9 * 2 + 1] < -0.3,
+            "negative cross-loading: {}",
+            res.loading[9 * 2 + 1]
+        );
         let t0h: Vec<f64> = (0..n).map(|j| res.theta[j * 2]).collect();
         let t0t: Vec<f64> = (0..n).map(|j| thetas[j * 2]).collect();
         let t1h: Vec<f64> = (0..n).map(|j| res.theta[j * 2 + 1]).collect();
@@ -1157,12 +1306,23 @@ mod tests {
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let cfg = MirtConfig { q: 21, ..MirtConfig::default() };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        let cfg = TwoPlConfig {
+            q: 21,
+            ..TwoPlConfig::default()
+        };
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
         // Canonical output: the largest pure anchor on dim 0 (item 0) ends POSITIVE; because the
         // whole dimension was reflected, the positively-keyed co-item (item 1) ends NEGATIVE.
-        assert!(res.loading[0 * 2] > 0.8, "reflected anchor should be positive: {}", res.loading[0 * 2]);
-        assert!(res.loading[1 * 2] < -0.3, "co-item flipped negative: {}", res.loading[1 * 2]);
+        assert!(
+            res.loading[0 * 2] > 0.8,
+            "reflected anchor should be positive: {}",
+            res.loading[0 * 2]
+        );
+        assert!(
+            res.loading[1 * 2] < -0.3,
+            "co-item flipped negative: {}",
+            res.loading[1 * 2]
+        );
     }
 
     /// Two-sided reduction anchor at D=2: the Halton QMC fit AGREES with the Gauss-Hermite fit
@@ -1173,8 +1333,12 @@ mod tests {
     fn qmc_reduces_to_gh_within_error_d2() {
         let n_dims = 2usize;
         let mut pattern: Vec<u8> = Vec::new();
-        for _ in 0..4 { pattern.extend_from_slice(&[1, 0]); }
-        for _ in 0..4 { pattern.extend_from_slice(&[0, 1]); }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[1, 0]);
+        }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[0, 1]);
+        }
         pattern.extend_from_slice(&[1, 1]);
         let n_items = 9usize;
         let mut loading = vec![0.0f64; n_items * n_dims];
@@ -1193,19 +1357,49 @@ mod tests {
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let gh = fit_compensatory_mirt(
-            &y, &observed, &pattern, n, n_items, n_dims,
-            &MirtConfig { q: 21, ..MirtConfig::default() },
-        ).unwrap();
-        let qmc = fit_compensatory_mirt(
-            &y, &observed, &pattern, n, n_items, n_dims,
-            &MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 6000, xi_seed: 0, ..MirtConfig::default() },
-        ).unwrap();
-        let max_abs = gh.loading.iter().zip(&qmc.loading)
+        let gh = fit_2pl(
+            &y,
+            &observed,
+            &pattern,
+            n,
+            n_items,
+            n_dims,
+            &TwoPlConfig {
+                q: 21,
+                ..TwoPlConfig::default()
+            },
+        )
+        .unwrap();
+        let qmc = fit_2pl(
+            &y,
+            &observed,
+            &pattern,
+            n,
+            n_items,
+            n_dims,
+            &TwoPlConfig {
+                xi_rule: XiRuleKind::Halton,
+                xi_points: 6000,
+                xi_seed: 0,
+                ..TwoPlConfig::default()
+            },
+        )
+        .unwrap();
+        let max_abs = gh
+            .loading
+            .iter()
+            .zip(&qmc.loading)
             .chain(gh.intercept.iter().zip(&qmc.intercept))
-            .map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
-        assert!(max_abs < 0.10, "QMC and GH disagree beyond QMC error: {max_abs}");
-        assert!(max_abs > 1e-10, "QMC fit is bit-identical to GH (silent GH fallback?)");
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f64, f64::max);
+        assert!(
+            max_abs < 0.10,
+            "QMC and GH disagree beyond QMC error: {max_abs}"
+        );
+        assert!(
+            max_abs > 1e-10,
+            "QMC fit is bit-identical to GH (silent GH fallback?)"
+        );
     }
 
     /// Deterministic FD anchor on a FIXED Halton node set at D=4 with a NON-IDENTITY dims map
@@ -1219,7 +1413,14 @@ mod tests {
     fn qmc_item_grad_hess_matches_fd_on_halton_d4() {
         let n_dims = 4usize;
         let dims = vec![0usize, 2, 3];
-        let xn = build_xi_nodes(XiRule::Halton { n: 240, shift_seed: 0 }, n_dims).unwrap();
+        let xn = build_xi_nodes(
+            XiRule::Halton {
+                n: 240,
+                shift_seed: 0,
+            },
+            n_dims,
+        )
+        .unwrap();
         let nodes = &xn.grid;
         let n_nodes = xn.logw.len();
         let mut rng = Lcg(2718);
@@ -1231,26 +1432,39 @@ mod tests {
         let (a, b) = (vec![0.7f64, -0.6, 0.9], 0.2f64);
         let (ra, rb) = (1e-3, 1e-3);
         let np = dims.len() + 1;
-        let (grad, amat) = item_grad_hess(&dims, &a, b, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
-        let obj = |aa: &[f64], bb: f64| item_obj(&dims, aa, bb, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+        let (grad, amat) =
+            item_grad_hess(&dims, &a, b, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+        let obj = |aa: &[f64], bb: f64| {
+            item_obj(&dims, aa, bb, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb)
+        };
         let eps = 1e-6;
         let perturb = |k: usize, s: f64| -> (Vec<f64>, f64) {
             let mut aa = a.clone();
             let mut bb = b;
-            if k < dims.len() { aa[k] += s; } else { bb += s; }
+            if k < dims.len() {
+                aa[k] += s;
+            } else {
+                bb += s;
+            }
             (aa, bb)
         };
         for k in 0..np {
             let (ap, bp) = perturb(k, eps);
             let (am, bm) = perturb(k, -eps);
             let fd = (obj(&ap, bp) - obj(&am, bm)) / (2.0 * eps);
-            assert!((grad[k] - fd).abs() < 1e-4, "grad[{k}] {} vs fd {fd}", grad[k]);
+            assert!(
+                (grad[k] - fd).abs() < 1e-4,
+                "grad[{k}] {} vs fd {fd}",
+                grad[k]
+            );
         }
         for jp in 0..np {
             let (ap, bp) = perturb(jp, eps);
             let (am, bm) = perturb(jp, -eps);
-            let (gp, _) = item_grad_hess(&dims, &ap, bp, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
-            let (gm, _) = item_grad_hess(&dims, &am, bm, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+            let (gp, _) =
+                item_grad_hess(&dims, &ap, bp, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
+            let (gm, _) =
+                item_grad_hess(&dims, &am, bm, &n_ig, &r_ig, nodes, n_dims, n_nodes, ra, rb);
             for k in 0..np {
                 let dfd = (gp[k] - gm[k]) / (2.0 * eps);
                 assert!((dfd + amat[k][jp]).abs() < 1e-4, "H[{k}][{jp}]");
@@ -1299,8 +1513,13 @@ mod tests {
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let cfg = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 4000, xi_seed: 12345, ..MirtConfig::default() };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        let cfg = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 4000,
+            xi_seed: 12345,
+            ..TwoPlConfig::default()
+        };
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
         assert_eq!(res.n_dims, 4);
         for i in 0..n_items {
             for d in 0..n_dims {
@@ -1309,9 +1528,17 @@ mod tests {
                 }
             }
         }
-        assert!(rmse(&res.loading, &loading) < 0.18, "loading RMSE {}", rmse(&res.loading, &loading));
+        assert!(
+            rmse(&res.loading, &loading) < 0.18,
+            "loading RMSE {}",
+            rmse(&res.loading, &loading)
+        );
         // the negative cross-loader recovered negative (sign / compensation guard).
-        assert!(res.loading[cross * n_dims + 1] < -0.3, "neg cross-loader: {}", res.loading[cross * n_dims + 1]);
+        assert!(
+            res.loading[cross * n_dims + 1] < -0.3,
+            "neg cross-loader: {}",
+            res.loading[cross * n_dims + 1]
+        );
         for d in 0..n_dims {
             let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
             let tt: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + d]).collect();
@@ -1353,7 +1580,9 @@ mod tests {
         // Build an equicorrelation Sigma (all pairwise correlations = rho) and its Cholesky.
         let rho = 0.4f64;
         let mut sigma = vec![rho; n_dims * n_dims];
-        for i in 0..n_dims { sigma[i * n_dims + i] = 1.0; }
+        for i in 0..n_dims {
+            sigma[i * n_dims + i] = 1.0;
+        }
         let lchol = chol_lower(&sigma, n_dims).unwrap();
         let n = 1500usize;
         let mut rng = Lcg(20260716);
@@ -1362,21 +1591,29 @@ mod tests {
             let z: Vec<f64> = (0..n_dims).map(|_| rng.normal()).collect();
             for k in 0..n_dims {
                 let mut t = 0.0f64;
-                for m in 0..=k { t += lchol[k * n_dims + m] * z[m]; }
+                for m in 0..=k {
+                    t += lchol[k * n_dims + m] * z[m];
+                }
                 thetas[j * n_dims + k] = t;
             }
         }
         // realized sample correlation of the drawn traits (the estimable target under finite N).
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let cfg = MirtConfig {
-            xi_rule: XiRuleKind::Halton, xi_points: 3000, xi_seed: 777, estimate_corr: true,
-            ..MirtConfig::default()
+        let cfg = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 3000,
+            xi_seed: 777,
+            estimate_corr: true,
+            ..TwoPlConfig::default()
         };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
         assert_eq!(res.corr.len(), n_dims * n_dims);
         for i in 0..n_dims {
-            assert!((res.corr[i * n_dims + i] - 1.0).abs() < 1e-9, "unit diagonal");
+            assert!(
+                (res.corr[i * n_dims + i] - 1.0).abs() < 1e-9,
+                "unit diagonal"
+            );
         }
         // Structural: the returned Sigma is a valid positive-definite correlation matrix, and every
         // off-diagonal is a genuine (non-degenerate) correlation.
@@ -1390,14 +1627,23 @@ mod tests {
         let mut cnt = 0.0f64;
         for i in 0..n_dims {
             for j in (i + 1)..n_dims {
-                assert!(res.corr[i * n_dims + j].abs() < 0.999, "off-diagonal not degenerate");
+                assert!(
+                    res.corr[i * n_dims + j].abs() < 0.999,
+                    "off-diagonal not degenerate"
+                );
                 rec_sum += res.corr[i * n_dims + j];
                 cnt += 1.0;
             }
         }
         let rec_mean = rec_sum / cnt;
-        assert!(rec_mean > 0.2, "recovered mean correlation {rec_mean} not clearly positive");
-        assert!(rec_mean < 0.85, "recovered mean correlation {rec_mean} implausibly high");
+        assert!(
+            rec_mean > 0.2,
+            "recovered mean correlation {rec_mean} not clearly positive"
+        );
+        assert!(
+            rec_mean < 0.85,
+            "recovered mean correlation {rec_mean} implausibly high"
+        );
         // The correlated path is NOT strictly step-monotone under QMC: the Sigma M-step
         // reparametrizes the integration nodes (theta_g = L(Sigma) z_g), so each Sigma gives a
         // different QMC quadrature of ITS marginal likelihood and the fixed-node monotonicity that
@@ -1408,8 +1654,14 @@ mod tests {
         // ~0.1 on a loglik scale of ~8050 (relative ~1e-5); the 1.0 bound gives 10x headroom while
         // still catching a Sigma M-step that genuinely harms the fit (which would drop it by >>1).
         let trace = &res.loglik_trace;
-        let max_dec = trace.windows(2).map(|w| (w[0] - w[1]).max(0.0)).fold(0.0f64, f64::max);
-        assert!(max_dec < 1.0, "per-step decrease {max_dec} exceeds QMC wobble");
+        let max_dec = trace
+            .windows(2)
+            .map(|w| (w[0] - w[1]).max(0.0))
+            .fold(0.0f64, f64::max);
+        assert!(
+            max_dec < 1.0,
+            "per-step decrease {max_dec} exceeds QMC wobble"
+        );
         assert!(*trace.last().unwrap() >= trace[0], "overall EM ascent");
     }
 
@@ -1419,7 +1671,10 @@ mod tests {
     fn mirt_qmc_validates() {
         let n = 200usize;
         // GH rejects D=4; Halton accepts it (needs a D=4 pattern with pure anchors).
-        let gh4 = MirtConfig { estimate_corr: false, ..MirtConfig::default() };
+        let gh4 = TwoPlConfig {
+            estimate_corr: false,
+            ..TwoPlConfig::default()
+        };
         // build a minimal D=4 pattern (one pure anchor per dim) + data of the right shape.
         let n_dims4 = 4usize;
         let mut pat4: Vec<u8> = Vec::new();
@@ -1431,42 +1686,100 @@ mod tests {
         let ni4 = n_dims4;
         let y4 = vec![1.0f64; n * ni4];
         let obs4 = vec![true; n * ni4];
-        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &gh4).is_err(), "GH D=4 rejected");
+        assert!(
+            fit_2pl(&y4, &obs4, &pat4, n, ni4, n_dims4, &gh4).is_err(),
+            "GH D=4 rejected"
+        );
         // Halton D=4 with an INVALID GH q (q ignored on the QMC arm) must SUCCEED.
-        let ok = MirtConfig {
-            xi_rule: XiRuleKind::Halton, xi_points: 400, xi_seed: 1, q: 99, max_iter: 3,
-            ..MirtConfig::default()
+        let ok = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 400,
+            xi_seed: 1,
+            q: 99,
+            max_iter: 3,
+            ..TwoPlConfig::default()
         };
-        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &ok).is_ok(), "Halton D=4 q=99 ok");
+        assert!(
+            fit_2pl(&y4, &obs4, &pat4, n, ni4, n_dims4, &ok).is_ok(),
+            "Halton D=4 q=99 ok"
+        );
         // Halton D=6 (the UPPER bound MIRT_MAX_DIMS_QMC = HALTON_PRIMES.len()) is ACCEPTED. Pins
         // the boundary so a shrink of the constant to 5 (silently rejecting valid D=6) is caught;
         // D=7 just below is REJECTED (beyond the prime axes).
         let mut pat6 = Vec::new();
-        for d in 0..6 { let mut r = vec![0u8; 6]; r[d] = 1; pat6.extend_from_slice(&r); }
+        for d in 0..6 {
+            let mut r = vec![0u8; 6];
+            r[d] = 1;
+            pat6.extend_from_slice(&r);
+        }
         let y6 = vec![1.0f64; n * 6];
         let obs6 = vec![true; n * 6];
-        let d6 = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 200, max_iter: 1, ..MirtConfig::default() };
-        assert!(fit_compensatory_mirt(&y6, &obs6, &pat6, n, 6, 6, &d6).is_ok(), "Halton D=6 accepted");
-        let d7 = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 100, ..MirtConfig::default() };
+        let d6 = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 200,
+            max_iter: 1,
+            ..TwoPlConfig::default()
+        };
+        assert!(
+            fit_2pl(&y6, &obs6, &pat6, n, 6, 6, &d6).is_ok(),
+            "Halton D=6 accepted"
+        );
+        let d7 = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 100,
+            ..TwoPlConfig::default()
+        };
         let mut pat7 = Vec::new();
-        for d in 0..7 { let mut r = vec![0u8; 7]; r[d] = 1; pat7.extend_from_slice(&r); }
+        for d in 0..7 {
+            let mut r = vec![0u8; 7];
+            r[d] = 1;
+            pat7.extend_from_slice(&r);
+        }
         let y7 = vec![1.0f64; n * 7];
         let obs7 = vec![true; n * 7];
-        assert!(fit_compensatory_mirt(&y7, &obs7, &pat7, n, 7, 7, &d7).is_err(), "Halton D=7 rejected");
+        assert!(
+            fit_2pl(&y7, &obs7, &pat7, n, 7, 7, &d7).is_err(),
+            "Halton D=7 rejected"
+        );
         // xi_points bounds: 0 rejected; MAX+1 rejected.
-        let zero = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: 0, ..MirtConfig::default() };
-        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &zero).is_err(), "xi_points=0 rejected");
-        let huge = MirtConfig { xi_rule: XiRuleKind::Halton, xi_points: MIRT_MAX_NODES + 1, ..MirtConfig::default() };
-        assert!(fit_compensatory_mirt(&y4, &obs4, &pat4, n, ni4, n_dims4, &huge).is_err(), "xi_points>MAX rejected");
+        let zero = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: 0,
+            ..TwoPlConfig::default()
+        };
+        assert!(
+            fit_2pl(&y4, &obs4, &pat4, n, ni4, n_dims4, &zero).is_err(),
+            "xi_points=0 rejected"
+        );
+        let huge = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: MIRT_MAX_NODES + 1,
+            ..TwoPlConfig::default()
+        };
+        assert!(
+            fit_2pl(&y4, &obs4, &pat4, n, ni4, n_dims4, &huge).is_err(),
+            "xi_points>MAX rejected"
+        );
         // MonteCarlo D=7 also rejected (its builder has no cap; validate is the sole guard).
-        let mc7 = MirtConfig { xi_rule: XiRuleKind::MonteCarlo, xi_points: 100, ..MirtConfig::default() };
-        assert!(fit_compensatory_mirt(&y7, &obs7, &pat7, n, 7, 7, &mc7).is_err(), "MC D=7 rejected");
+        let mc7 = TwoPlConfig {
+            xi_rule: XiRuleKind::MonteCarlo,
+            xi_points: 100,
+            ..TwoPlConfig::default()
+        };
+        assert!(
+            fit_2pl(&y7, &obs7, &pat7, n, 7, 7, &mc7).is_err(),
+            "MC D=7 rejected"
+        );
     }
 
     fn small_design() -> (Vec<u8>, Vec<f64>, Vec<f64>, usize) {
         let mut pattern: Vec<u8> = Vec::new();
-        for _ in 0..3 { pattern.extend_from_slice(&[1, 0]); }
-        for _ in 0..3 { pattern.extend_from_slice(&[0, 1]); }
+        for _ in 0..3 {
+            pattern.extend_from_slice(&[1, 0]);
+        }
+        for _ in 0..3 {
+            pattern.extend_from_slice(&[0, 1]);
+        }
         pattern.extend_from_slice(&[1, 1]);
         let n_items = 7usize;
         let mut loading = vec![0.0f64; n_items * 2];
@@ -1491,29 +1804,32 @@ mod tests {
             thetas[j * 2 + 1] = rng.normal();
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
-        let cfg = MirtConfig::default();
+        let cfg = TwoPlConfig::default();
         let mut observed = vec![true; n * n_items];
         observed[0] = false;
         observed[n_items + 3] = false;
-        assert!(fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).is_ok());
+        assert!(fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).is_ok());
         let obs = vec![true; n * n_items];
         let allones = vec![1u8; n_items * n_dims];
-        assert!(fit_compensatory_mirt(&y, &obs, &allones, n, n_items, n_dims, &cfg).is_err());
+        assert!(fit_2pl(&y, &obs, &allones, n, n_items, n_dims, &cfg).is_err());
         let mut badrow = pattern.clone();
         badrow[0] = 0;
         badrow[1] = 0;
-        assert!(fit_compensatory_mirt(&y, &obs, &badrow, n, n_items, n_dims, &cfg).is_err());
+        assert!(fit_2pl(&y, &obs, &badrow, n, n_items, n_dims, &cfg).is_err());
         let mut nopure = pattern.clone();
         for i in 0..3 {
             nopure[i * 2 + 1] = 1; // items 0,1,2 now load both dims -> dim0 has no pure anchor
         }
-        assert!(fit_compensatory_mirt(&y, &obs, &nopure, n, n_items, n_dims, &cfg).is_err());
-        assert!(fit_compensatory_mirt(&y, &obs, &vec![1u8; n_items * 4], n, n_items, 4, &cfg).is_err());
-        let badq = MirtConfig { q: 10, ..MirtConfig::default() };
-        assert!(fit_compensatory_mirt(&y, &obs, &pattern, n, n_items, n_dims, &badq).is_err());
+        assert!(fit_2pl(&y, &obs, &nopure, n, n_items, n_dims, &cfg).is_err());
+        assert!(fit_2pl(&y, &obs, &vec![1u8; n_items * 4], n, n_items, 4, &cfg).is_err());
+        let badq = TwoPlConfig {
+            q: 10,
+            ..TwoPlConfig::default()
+        };
+        assert!(fit_2pl(&y, &obs, &pattern, n, n_items, n_dims, &badq).is_err());
         let mut ybad = y.clone();
         ybad[5] = 2.0;
-        assert!(fit_compensatory_mirt(&ybad, &obs, &pattern, n, n_items, n_dims, &cfg).is_err());
+        assert!(fit_2pl(&ybad, &obs, &pattern, n, n_items, n_dims, &cfg).is_err());
     }
 
     /// The final E-step is a genuine evaluated stopping point: meeting tolerance there is
@@ -1524,13 +1840,12 @@ mod tests {
         let pattern = vec![1u8, 0, 0, 1];
         let balanced = vec![0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0];
         let observed = vec![true; balanced.len()];
-        let cfg = MirtConfig {
+        let cfg = TwoPlConfig {
             q: 7,
             max_iter: 1,
-            ..MirtConfig::default()
+            ..TwoPlConfig::default()
         };
-        let stable =
-            fit_compensatory_mirt(&balanced, &observed, &pattern, 4, 2, 2, &cfg).unwrap();
+        let stable = fit_2pl(&balanced, &observed, &pattern, 4, 2, 2, &cfg).unwrap();
         assert!(stable.converged);
         assert_eq!(stable.termination_reason, "converged");
         assert_eq!(stable.n_iter, cfg.max_iter);
@@ -1546,14 +1861,13 @@ mod tests {
         }
         let observed = vec![true; y.len()];
         let pattern4 = vec![1u8, 0, 1, 0, 0, 1, 0, 1];
-        let strict = MirtConfig {
+        let strict = TwoPlConfig {
             q: 7,
             max_iter: 1,
             tol: 1e-12,
-            ..MirtConfig::default()
+            ..TwoPlConfig::default()
         };
-        let unfinished =
-            fit_compensatory_mirt(&y, &observed, &pattern4, 20, 4, 2, &strict).unwrap();
+        let unfinished = fit_2pl(&y, &observed, &pattern4, 20, 4, 2, &strict).unwrap();
         assert!(!unfinished.converged);
         assert_eq!(unfinished.termination_reason, "max_iter_reached");
         assert_eq!(unfinished.n_iter, strict.max_iter);
@@ -1603,12 +1917,10 @@ mod tests {
                 let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
                 let mut nconv = 0usize;
                 for rep in 0..reps {
-                    let mut rng = Lcg(
-                        0x9E3779B97F4A7C15u64
-                            .wrapping_mul(rep as u64 + 1)
-                            .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
-                            .wrapping_add(n_dims as u64 * 0x100000001B3),
-                    );
+                    let mut rng = Lcg(0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
+                        .wrapping_add(n_dims as u64 * 0x100000001B3));
                     let mut thetas = vec![0.0f64; n * n_dims];
                     for d in 0..n_dims {
                         let col: Vec<f64> = (0..n)
@@ -1634,10 +1946,11 @@ mod tests {
                     }
                     let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
                     let observed = vec![true; n * n_items];
-                    let cfg = MirtConfig { q, ..MirtConfig::default() };
-                    let res =
-                        fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg)
-                            .unwrap();
+                    let cfg = TwoPlConfig {
+                        q,
+                        ..TwoPlConfig::default()
+                    };
+                    let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
                     if res.converged {
                         nconv += 1;
                     }
@@ -1699,7 +2012,12 @@ mod tests {
     #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
     fn mc_qmc_mirt_recovery_500() {
         let reps = 500usize;
-        for &(n_dims, xi_points, n) in [(4usize, 4000usize, 2000usize), (5usize, 6000usize, 1500usize)].iter() {
+        for &(n_dims, xi_points, n) in [
+            (4usize, 4000usize, 2000usize),
+            (5usize, 6000usize, 1500usize),
+        ]
+        .iter()
+        {
             // 2 pure anchors per dim (identification) + one cross-loader per dim.
             let mut pattern: Vec<u8> = Vec::new();
             for d in 0..n_dims {
@@ -1734,12 +2052,10 @@ mod tests {
                 let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
                 let mut nconv = 0usize;
                 for rep in 0..reps {
-                    let mut rng = Lcg(
-                        0x9E3779B97F4A7C15u64
-                            .wrapping_mul(rep as u64 + 1)
-                            .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
-                            .wrapping_add(n_dims as u64 * 0x100000001B3),
-                    );
+                    let mut rng = Lcg(0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
+                        .wrapping_add(n_dims as u64 * 0x100000001B3));
                     let mut thetas = vec![0.0f64; n * n_dims];
                     for d in 0..n_dims {
                         let col: Vec<f64> = (0..n)
@@ -1765,15 +2081,20 @@ mod tests {
                     }
                     let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
                     let observed = vec![true; n * n_items];
-                    let cfg = MirtConfig {
-                        xi_rule: XiRuleKind::Halton, xi_points, xi_seed: 0x2545_F491_4F6C_DD1D,
-                        ..MirtConfig::default()
+                    let cfg = TwoPlConfig {
+                        xi_rule: XiRuleKind::Halton,
+                        xi_points,
+                        xi_seed: 0x2545_F491_4F6C_DD1D,
+                        ..TwoPlConfig::default()
                     };
-                    let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+                    let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
                     if res.converged {
                         nconv += 1;
                     }
-                    assert!(res.loglik_trace.iter().all(|v| v.is_finite()), "finite loglik (rep {rep})");
+                    assert!(
+                        res.loglik_trace.iter().all(|v| v.is_finite()),
+                        "finite loglik (rep {rep})"
+                    );
                     for w in res.loglik_trace.windows(2) {
                         assert!(w[1] >= w[0] - 1e-6, "monotone loglik (rep {rep})");
                     }
@@ -1791,7 +2112,10 @@ mod tests {
                             }
                         }
                     }
-                    assert!(res.theta.iter().all(|v| v.is_finite()), "finite theta (rep {rep})");
+                    assert!(
+                        res.theta.iter().all(|v| v.is_finite()),
+                        "finite theta (rep {rep})"
+                    );
                     for d in 0..n_dims {
                         let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
                         let tt: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + d]).collect();
@@ -1882,8 +2206,16 @@ mod tests {
         }
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims,
-            &MirtConfig::default()).unwrap();
+        let res = fit_2pl(
+            &y,
+            &observed,
+            &pattern,
+            n,
+            n_items,
+            n_dims,
+            &TwoPlConfig::default(),
+        )
+        .unwrap();
         assert_eq!(res.corr, vec![1.0, 0.0, 0.0, 1.0], "Sigma == I exactly");
         let nfree = pattern.iter().filter(|&&v| v == 1).count();
         assert_eq!(res.n_parameters, nfree + n_items, "no extra corr params");
@@ -1906,9 +2238,14 @@ mod tests {
     fn mirt_sigma_grad_matches_finite_difference() {
         for &(d, ref r0, ref c) in [
             (2usize, vec![0.35f64], vec![1.2f64, 0.5, 0.5, 0.9]),
-            (3usize, vec![0.3f64, -0.15, 0.25],
-             vec![1.1f64, 0.4, 0.2, 0.4, 0.95, -0.3, 0.2, -0.3, 1.05]),
-        ].iter() {
+            (
+                3usize,
+                vec![0.3f64, -0.15, 0.25],
+                vec![1.1f64, 0.4, 0.2, 0.4, 0.95, -0.3, 0.2, -0.3, 1.05],
+            ),
+        ]
+        .iter()
+        {
             let sigma = build_corr(r0, d);
             let g = sigma_grad(&sigma, c, d).unwrap();
             let eps = 1e-6;
@@ -1920,7 +2257,11 @@ mod tests {
                 let qp = sigma_qprior(&build_corr(&rp, d), c, d).unwrap();
                 let qm = sigma_qprior(&build_corr(&rm, d), c, d).unwrap();
                 let fd = (qp - qm) / (2.0 * eps);
-                assert!((g[m] - fd).abs() < 1e-5, "D={d} grad[{m}] {} vs fd {fd}", g[m]);
+                assert!(
+                    (g[m] - fd).abs() < 1e-5,
+                    "D={d} grad[{m}] {} vs fd {fd}",
+                    g[m]
+                );
             }
         }
     }
@@ -1932,9 +2273,15 @@ mod tests {
     fn mirt_recovers_correlated_d2_with_reflection() {
         let n_dims = 2usize;
         let mut pattern: Vec<u8> = Vec::new();
-        for _ in 0..4 { pattern.extend_from_slice(&[1, 0]); }
-        for _ in 0..4 { pattern.extend_from_slice(&[0, 1]); }
-        for _ in 0..2 { pattern.extend_from_slice(&[1, 1]); }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[1, 0]);
+        }
+        for _ in 0..4 {
+            pattern.extend_from_slice(&[0, 1]);
+        }
+        for _ in 0..2 {
+            pattern.extend_from_slice(&[1, 1]);
+        }
         let n_items = 10usize;
         let mut loading = vec![0.0f64; n_items * n_dims];
         // dim0 pure anchors: largest |.| is -1.6 (NEGATIVE) -> reflection flips dim 0.
@@ -1956,8 +2303,12 @@ mod tests {
         let thetas = draw_corr(&lchol, n, n_dims, &mut rng);
         let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
         let observed = vec![true; n * n_items];
-        let cfg = MirtConfig { q: 15, estimate_corr: true, ..MirtConfig::default() };
-        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        let cfg = TwoPlConfig {
+            q: 15,
+            estimate_corr: true,
+            ..TwoPlConfig::default()
+        };
+        let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
         assert!(res.converged);
         // Sigma is a valid unit-diagonal correlation matrix.
         assert!((res.corr[0] - 1.0).abs() < 1e-12 && (res.corr[3] - 1.0).abs() < 1e-12);
@@ -1966,15 +2317,32 @@ mod tests {
         // is negated -> the reported correlation is the flip-consistent -rho. The realized sample
         // correlation is the honest recovery target; after the flip its sign is negated.
         let r_true = sample_corr(&thetas, n, n_dims)[0];
-        assert!((res.corr[1] - (-r_true)).abs() < 0.06, "corr {} vs -R {}", res.corr[1], -r_true);
-        assert!(res.corr[1] < -0.3, "flip-consistent NEGATIVE correlation, got {}", res.corr[1]);
+        assert!(
+            (res.corr[1] - (-r_true)).abs() < 0.06,
+            "corr {} vs -R {}",
+            res.corr[1],
+            -r_true
+        );
+        assert!(
+            res.corr[1] < -0.3,
+            "flip-consistent NEGATIVE correlation, got {}",
+            res.corr[1]
+        );
         // Loadings recovered against the flip-adjusted truth (dim 0 negated by the reflection).
         let mut expected = loading.clone();
         for i in 0..n_items {
             expected[i * 2] = -expected[i * 2]; // dim 0 flipped
         }
-        assert!(rmse(&res.loading, &expected) < 0.12, "loading RMSE {}", rmse(&res.loading, &expected));
-        assert!(res.loading[2 * 2] > 0.9, "flipped anchor now positive: {}", res.loading[2 * 2]);
+        assert!(
+            rmse(&res.loading, &expected) < 0.12,
+            "loading RMSE {}",
+            rmse(&res.loading, &expected)
+        );
+        assert!(
+            res.loading[2 * 2] > 0.9,
+            "flipped anchor now positive: {}",
+            res.loading[2 * 2]
+        );
         assert!(res.n_parameters == pattern.iter().filter(|&&v| v == 1).count() + n_items + 1);
         for w in res.loglik_trace.windows(2) {
             assert!(w[1] >= w[0] - 1e-6, "EM monotone with the Sigma M-step");
@@ -1992,7 +2360,9 @@ mod tests {
         for &(n_dims, q, n, ref true_off) in [
             (2usize, 15usize, 3000usize, vec![0.5f64]),
             (3usize, 11usize, 2000usize, vec![0.4f64, 0.4, 0.4]), // exchangeable, eig 1.8,0.6,0.6
-        ].iter() {
+        ]
+        .iter()
+        {
             let sigma_true = build_corr(true_off, n_dims);
             let lchol = chol_lower(&sigma_true, n_dims).expect("true Sigma must be PD");
             // pattern: 3 pure anchors per dim + one cross-loader per consecutive pair.
@@ -2031,12 +2401,10 @@ mod tests {
                 let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
                 let (mut nconv, mut interior) = (0usize, 0usize);
                 for rep in 0..reps {
-                    let mut rng = Lcg(
-                        0xD1B54A32D192ED03u64
-                            .wrapping_mul(rep as u64 + 1)
-                            .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15)
-                            .wrapping_add(n_dims as u64 * 0x100000001B3),
-                    );
+                    let mut rng = Lcg(0xD1B54A32D192ED03u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15)
+                        .wrapping_add(n_dims as u64 * 0x100000001B3));
                     // NORTA: correlated normals z = L u; per-dim monotone right-skew then
                     // re-standardize (keeps the sign of the correlation, attenuated).
                     let mut thetas = draw_corr(&lchol, n, n_dims, &mut rng);
@@ -2058,10 +2426,12 @@ mod tests {
                     let r_rep = sample_corr(&thetas, n, n_dims); // honest recovery target
                     let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
                     let observed = vec![true; n * n_items];
-                    let cfg = MirtConfig { q, estimate_corr: true, ..MirtConfig::default() };
-                    let res =
-                        fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg)
-                            .unwrap();
+                    let cfg = TwoPlConfig {
+                        q,
+                        estimate_corr: true,
+                        ..TwoPlConfig::default()
+                    };
+                    let res = fit_2pl(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
                     if res.converged {
                         nconv += 1;
                     }
@@ -2070,7 +2440,10 @@ mod tests {
                     }
                     // Sigma invariants: unit diagonal, symmetric, PD, |off|<1, all finite.
                     for k in 0..n_dims {
-                        assert!((res.corr[k * n_dims + k] - 1.0).abs() < 1e-9, "unit diagonal");
+                        assert!(
+                            (res.corr[k * n_dims + k] - 1.0).abs() < 1e-9,
+                            "unit diagonal"
+                        );
                     }
                     assert!(chol_lower(&res.corr, n_dims).is_some(), "Sigma PD");
                     let mut pinned = false;
@@ -2133,8 +2506,14 @@ mod tests {
                      thetaCorr={tc:.3} interior={int_frac:.3}"
                 );
                 assert!(conv > 0.95, "convergence {conv} (D={n_dims} skew={skew})");
-                assert!(int_frac > 0.95, "Sigma interior fraction {int_frac} (D={n_dims})");
-                assert!(crmse < 0.06, "correlation RMSE vs R_rep {crmse} (D={n_dims} skew={skew})");
+                assert!(
+                    int_frac > 0.95,
+                    "Sigma interior fraction {int_frac} (D={n_dims})"
+                );
+                assert!(
+                    crmse < 0.06,
+                    "correlation RMSE vs R_rep {crmse} (D={n_dims} skew={skew})"
+                );
                 if skew {
                     assert!(lrmse < 0.20, "skew loading RMSE {lrmse} (D={n_dims})");
                     assert!(tc > 0.62, "skew theta corr {tc} (D={n_dims})");

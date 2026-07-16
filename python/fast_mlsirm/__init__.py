@@ -25,9 +25,11 @@ from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_sp
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
-from .mirt import fit_compensatory_mirt as fit_compensatory_mirt, CompMirtFit as CompMirtFit
-from .nominal_mirt import fit_nominal_mirt as fit_nominal_mirt, NominalMirtFit as NominalMirtFit
-from .grm_mirt import fit_grm_mirt as fit_grm_mirt, GrmMirtFit as GrmMirtFit
+from . import models as models
+from .models import ConfirmatoryModel as ConfirmatoryModel, ExploratoryModel as ExploratoryModel, IrtModel as IrtModel
+from .twopl import fit_2pl as fit_2pl, TwoPlFit as TwoPlFit
+from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalResponseFit
+from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -117,12 +119,16 @@ __all__ = [
     "MixtureFit",
     "fit_crm",
     "CrmFit",
-    "fit_compensatory_mirt",
-    "CompMirtFit",
-    "fit_nominal_mirt",
-    "NominalMirtFit",
-    "fit_grm_mirt",
-    "GrmMirtFit",
+    "models",
+    "ConfirmatoryModel",
+    "ExploratoryModel",
+    "IrtModel",
+    "fit_2pl",
+    "TwoPlFit",
+    "fit_nominal",
+    "NominalResponseFit",
+    "fit_grm",
+    "GrmFit",
     "fit_rsm",
     "RsmFit",
     "fit_mixed_items",

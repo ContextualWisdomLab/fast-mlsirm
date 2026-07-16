@@ -64,9 +64,9 @@ const NM_MAX_DIMS_QMC: usize = 6;
 /// Sanity cap on the number of categories.
 const NM_MAX_CAT: usize = 64;
 
-/// Configuration for [`fit_nominal_mirt`]. Defaults mirror the compensatory MIRT and `fit_nominal`.
+/// Configuration for [`fit_nominal`]. Defaults mirror the compensatory MIRT and `fit_nominal`.
 #[derive(Clone, Copy, Debug)]
-pub struct NominalMirtConfig {
+pub struct NominalConfig {
     pub max_iter: usize,
     pub tol: f64,
     /// Gauss-Hermite nodes per dimension (used only for `xi_rule = GaussHermite`).
@@ -84,7 +84,7 @@ pub struct NominalMirtConfig {
     pub xi_seed: u64,
 }
 
-impl Default for NominalMirtConfig {
+impl Default for NominalConfig {
     fn default() -> Self {
         Self {
             max_iter: 500,
@@ -99,9 +99,9 @@ impl Default for NominalMirtConfig {
     }
 }
 
-/// Result of [`fit_nominal_mirt`].
+/// Result of [`fit_nominal`].
 #[derive(Clone, Debug)]
-pub struct NominalMirtResult {
+pub struct NominalResult {
     pub n_dims: usize,
     pub n_cat: usize,
     /// Category slopes `a_ikd`, row-major `n_items * n_cat * n_dims`. The baseline category
@@ -129,7 +129,7 @@ fn validate(
     n_items: usize,
     n_dims: usize,
     n_cat: usize,
-    cfg: &NominalMirtConfig,
+    cfg: &NominalConfig,
 ) -> Result<usize, String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
@@ -229,7 +229,9 @@ fn validate(
     // unidentified, so it is rejected rather than fit; fit_nominal does not guard this).
     for i in 0..n_items {
         if !(0..n_dims).any(|d| loading_pattern[i * n_dims + d] != 0) {
-            return Err(format!("item {i} loads no dimension (all-zero loading_pattern row)"));
+            return Err(format!(
+                "item {i} loads no dimension (all-zero loading_pattern row)"
+            ));
         }
         let mut seen = vec![false; n_cat];
         let mut any = false;
@@ -253,7 +255,10 @@ fn validate(
     for d in 0..n_dims {
         let has_pure = (0..n_items).any(|i| {
             loading_pattern[i * n_dims + d] != 0
-                && (0..n_dims).filter(|&d2| loading_pattern[i * n_dims + d2] != 0).count() == 1
+                && (0..n_dims)
+                    .filter(|&d2| loading_pattern[i * n_dims + d2] != 0)
+                    .count()
+                    == 1
         });
         if !has_pure {
             return Err(format!(
@@ -299,7 +304,11 @@ fn nm_item_neg_ll_grad(
             eta[k] = e;
         }
         let lp = gpcm_logprobs(0.0, &sbase, &eta); // log softmax(eta)
-        ll += counts[nd].iter().zip(&lp).map(|(r, l2)| r * l2).sum::<f64>();
+        ll += counts[nd]
+            .iter()
+            .zip(&lp)
+            .map(|(r, l2)| r * l2)
+            .sum::<f64>();
         let n: f64 = counts[nd].iter().sum();
         // residual and gradient accumulation
         for k in 1..n_cat {
@@ -373,7 +382,8 @@ fn nm_m_step(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            let (candidate_f, _) = nm_item_neg_ll_grad(&candidate, dims, nodes, n_dims, counts, n_cat);
+            let (candidate_f, _) =
+                nm_item_neg_ll_grad(&candidate, dims, nodes, n_dims, counts, n_cat);
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -394,7 +404,7 @@ fn nm_m_step(
 /// missing cells dropped under MAR); `loading_pattern` is row-major `n_items * n_dims` in `{0,1}`.
 /// Returns `Err` on malformed / rotationally-underidentified / unobserved-category input.
 #[allow(clippy::too_many_arguments)]
-pub fn fit_nominal_mirt(
+pub fn fit_nominal(
     y: &[usize],
     observed: Option<&[bool]>,
     loading_pattern: &[u8],
@@ -402,9 +412,18 @@ pub fn fit_nominal_mirt(
     n_items: usize,
     n_dims: usize,
     n_cat: usize,
-    cfg: &NominalMirtConfig,
-) -> Result<NominalMirtResult, String> {
-    let _n_nodes = validate(y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, cfg)?;
+    cfg: &NominalConfig,
+) -> Result<NominalResult, String> {
+    let _n_nodes = validate(
+        y,
+        observed,
+        loading_pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        cfg,
+    )?;
 
     // Build the latent-integral node set once (fixed-node QMC-EM; monotone since theta ~ N(0,I)).
     let (nodes, logw) = match cfg.xi_rule {
@@ -413,11 +432,23 @@ pub fn fit_nominal_mirt(
             (xn.grid, xn.logw)
         }
         XiRuleKind::Halton => {
-            let xn = build_xi_nodes(XiRule::Halton { n: cfg.xi_points, shift_seed: cfg.xi_seed }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::Halton {
+                    n: cfg.xi_points,
+                    shift_seed: cfg.xi_seed,
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
         XiRuleKind::MonteCarlo => {
-            let xn = build_xi_nodes(XiRule::MonteCarlo { n: cfg.xi_points, seed: cfg.xi_seed.max(1) }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::MonteCarlo {
+                    n: cfg.xi_points,
+                    seed: cfg.xi_seed.max(1),
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
     };
@@ -426,7 +457,11 @@ pub fn fit_nominal_mirt(
 
     // Per-item loaded-dimension lists S_i and free-parameter vectors.
     let dims_of: Vec<Vec<usize>> = (0..n_items)
-        .map(|i| (0..n_dims).filter(|&d| loading_pattern[i * n_dims + d] != 0).collect())
+        .map(|i| {
+            (0..n_dims)
+                .filter(|&d| loading_pattern[i * n_dims + d] != 0)
+                .collect()
+        })
         .collect();
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
 
@@ -519,7 +554,9 @@ pub fn fit_nominal_mirt(
             }
         }
         if !ll.is_finite() {
-            return Err(format!("non-finite observed-data log-likelihood at iteration {n_iter}"));
+            return Err(format!(
+                "non-finite observed-data log-likelihood at iteration {n_iter}"
+            ));
         }
         loglik_trace.push(ll);
 
@@ -627,7 +664,7 @@ pub fn fit_nominal_mirt(
 
     let ll = *loglik_trace.last().expect("EM trace is never empty");
     let _ = ll;
-    Ok(NominalMirtResult {
+    Ok(NominalResult {
         n_dims,
         n_cat,
         slope,
@@ -650,7 +687,10 @@ mod tests {
     struct Lcg(u64);
     impl Lcg {
         fn next_f64(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
         }
         fn normal(&mut self) -> f64 {
@@ -695,8 +735,14 @@ mod tests {
     /// Simulate multidimensional nominal responses from a dense slope tensor (n_items*n_cat*n_dims,
     /// baseline cat 0 = 0), intercepts (n_items*n_cat), and traits (n_persons*n_dims).
     fn simulate(
-        slope: &[f64], intercept: &[f64], theta: &[f64],
-        n: usize, n_items: usize, n_dims: usize, n_cat: usize, rng: &mut Lcg,
+        slope: &[f64],
+        intercept: &[f64],
+        theta: &[f64],
+        n: usize,
+        n_items: usize,
+        n_dims: usize,
+        n_cat: usize,
+        rng: &mut Lcg,
     ) -> Vec<usize> {
         let mut y = vec![0usize; n * n_items];
         let mut eta = vec![0.0f64; n_cat];
@@ -717,11 +763,11 @@ mod tests {
         y
     }
 
-    /// D = 1 REDUCTION: with D=1 and every item's S_i = {0}, fit_nominal_mirt reproduces
+    /// D = 1 REDUCTION: with D=1 and every item's S_i = {0}, fit_nominal reproduces
     /// poly::fit_nominal BIT-EXACTLY (same init a_k=k / c_k=log(freq/freq0), same GH nodes+order,
     /// same relative-tol + signed-monotone stopping, same nominal_m_step arithmetic generalized).
     #[test]
-    fn nominal_mirt_reduces_to_fit_nominal_at_d1() {
+    fn nominal_reduces_to_fit_nominal_at_d1() {
         let (n, n_items, n_cat) = (1500usize, 6usize, 4usize);
         // truth: unidimensional nominal (a_k on the single dim, c_k intercepts)
         let mut rng = Lcg(202401);
@@ -736,13 +782,24 @@ mod tests {
         let theta: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
         let y = simulate(&slope, &intercept, &theta, n, n_items, 1, n_cat, &mut rng);
         let pattern = vec![1u8; n_items]; // D=1, all load dim 0
-        let cfg = NominalMirtConfig { q: 21, ..NominalMirtConfig::default() };
-        let mm = fit_nominal_mirt(&y, None, &pattern, n, n_items, 1, n_cat, &cfg).unwrap();
+        let cfg = NominalConfig {
+            q: 21,
+            ..NominalConfig::default()
+        };
+        let mm = fit_nominal(&y, None, &pattern, n, n_items, 1, n_cat, &cfg).unwrap();
         let fnom = fit_nominal(&y, None, n, n_items, n_cat, 21, 500, 1e-6).unwrap();
         // loglik traces bit-identical
-        assert_eq!(mm.loglik_trace.len(), fnom.loglik_trace.len(), "trace length");
-        let dtrace = mm.loglik_trace.iter().zip(&fnom.loglik_trace)
-            .map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
+        assert_eq!(
+            mm.loglik_trace.len(),
+            fnom.loglik_trace.len(),
+            "trace length"
+        );
+        let dtrace = mm
+            .loglik_trace
+            .iter()
+            .zip(&fnom.loglik_trace)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f64, f64::max);
         assert!(dtrace < 1e-9, "loglik trace diff {dtrace}");
         // scores/intercepts bit-identical (fit_nominal stores z = n_cat-1 free per item; my slope
         // has baseline cat 0 = 0 then a_1..a_{K-1} on dim 0).
@@ -769,9 +826,10 @@ mod tests {
     /// The M-step uses an FD Hessian, so the correctness-bearing map lives in the GRADIENT — pin
     /// EVERY free slot (all a_kd and all c_k) against central differences of the objective.
     #[test]
-    fn nominal_mirt_gradient_matches_finite_difference() {
+    fn nominal_gradient_matches_finite_difference() {
         let n_cat = 4usize;
-        for &(n_dims, ref dims) in [(2usize, vec![0usize, 1]), (4usize, vec![0usize, 2, 3])].iter() {
+        for &(n_dims, ref dims) in [(2usize, vec![0usize, 1]), (4usize, vec![0usize, 2, 3])].iter()
+        {
             let l = dims.len();
             let nodes: Vec<f64>;
             let n_nodes: usize;
@@ -780,7 +838,14 @@ mod tests {
                 n_nodes = xn.logw.len();
                 nodes = xn.grid;
             } else {
-                let xn = build_xi_nodes(XiRule::Halton { n: 200, shift_seed: 0 }, n_dims).unwrap();
+                let xn = build_xi_nodes(
+                    XiRule::Halton {
+                        n: 200,
+                        shift_seed: 0,
+                    },
+                    n_dims,
+                )
+                .unwrap();
                 n_nodes = xn.logw.len();
                 nodes = xn.grid;
             }
@@ -808,7 +873,11 @@ mod tests {
                 pm[j] -= eps;
                 let (fm, _) = nm_item_neg_ll_grad(&pm, dims, &nodes, n_dims, &counts, n_cat);
                 let fd = (fp - fm) / (2.0 * eps);
-                assert!((grad[j] - fd).abs() < 1e-4, "grad[{j}] {} vs fd {fd} (D={n_dims})", grad[j]);
+                assert!(
+                    (grad[j] - fd).abs() < 1e-4,
+                    "grad[{j}] {} vs fd {fd} (D={n_dims})",
+                    grad[j]
+                );
             }
         }
     }
@@ -817,7 +886,12 @@ mod tests {
     // its pure-anchor item's category-1 slope matches the sign of `truth`'s. Deterministic; applied
     // identically so a genuine sign/compensation bug in `est` survives as a mismatch elsewhere.
     fn align_reflection(
-        est: &mut [f64], truth: &[f64], anchor: &[usize], n_items: usize, n_cat: usize, n_dims: usize,
+        est: &mut [f64],
+        truth: &[f64],
+        anchor: &[usize],
+        n_items: usize,
+        n_cat: usize,
+        n_dims: usize,
     ) {
         for d in 0..n_dims {
             let a = anchor[d];
@@ -838,7 +912,7 @@ mod tests {
     /// (which catches a mutation collapsing the free per-category slopes to a shared scalar
     /// discrimination). Assessed up to per-dimension reflection (aligned to truth).
     #[test]
-    fn nominal_mirt_recovers_d2_with_signed_categories() {
+    fn nominal_recovers_d2_with_signed_categories() {
         let (n_dims, n_cat) = (2usize, 3usize);
         // items 0,1 pure dim0; items 2,3 pure dim1; item 4 cross-loader {0,1}.
         let pattern: Vec<u8> = vec![1, 0, 1, 0, 0, 1, 0, 1, 1, 1];
@@ -873,17 +947,30 @@ mod tests {
         for v in theta.iter_mut() {
             *v = rng.normal();
         }
-        let y = simulate(&slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng);
-        let cfg = NominalMirtConfig { q: 21, ..NominalMirtConfig::default() };
-        let res = fit_nominal_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+        let y = simulate(
+            &slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng,
+        );
+        let cfg = NominalConfig {
+            q: 21,
+            ..NominalConfig::default()
+        };
+        let res = fit_nominal(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
         assert!(res.converged);
         // baseline + off-pattern EXACT zero
         for i in 0..n_items {
             for d in 0..n_dims {
-                assert_eq!(res.slope[(i * n_cat + 0) * n_dims + d], 0.0, "baseline slope zero");
+                assert_eq!(
+                    res.slope[(i * n_cat + 0) * n_dims + d],
+                    0.0,
+                    "baseline slope zero"
+                );
                 if pattern[i * n_dims + d] == 0 {
                     for k in 0..n_cat {
-                        assert_eq!(res.slope[(i * n_cat + k) * n_dims + d], 0.0, "off-pattern zero");
+                        assert_eq!(
+                            res.slope[(i * n_cat + k) * n_dims + d],
+                            0.0,
+                            "off-pattern zero"
+                        );
                     }
                 }
             }
@@ -891,11 +978,23 @@ mod tests {
         }
         let mut est = res.slope.clone();
         align_reflection(&mut est, &slope, &anchor, n_items, n_cat, n_dims);
-        assert!(rmse(&est, &slope) < 0.16, "slope RMSE {}", rmse(&est, &slope));
+        assert!(
+            rmse(&est, &slope) < 0.16,
+            "slope RMSE {}",
+            rmse(&est, &slope)
+        );
         // the negative cross-loader category-1 slope on dim0 (sign pinned by anchor item 0), and its
         // opposite-sign sibling category-2 — both recovered with the right sign.
-        assert!(est[(4 * n_cat + 1) * n_dims + 0] < -0.4, "neg sibling: {}", est[(4 * n_cat + 1) * n_dims + 0]);
-        assert!(est[(4 * n_cat + 2) * n_dims + 0] > 0.4, "pos sibling: {}", est[(4 * n_cat + 2) * n_dims + 0]);
+        assert!(
+            est[(4 * n_cat + 1) * n_dims + 0] < -0.4,
+            "neg sibling: {}",
+            est[(4 * n_cat + 1) * n_dims + 0]
+        );
+        assert!(
+            est[(4 * n_cat + 2) * n_dims + 0] > 0.4,
+            "pos sibling: {}",
+            est[(4 * n_cat + 2) * n_dims + 0]
+        );
         // per-dim trait EAP correlation (sign-aligned)
         for d in 0..n_dims {
             let mut th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
@@ -917,7 +1016,7 @@ mod tests {
 
     /// Softmax-sum, structural zeros, parameter count, and validation guards.
     #[test]
-    fn nominal_mirt_validates_and_structural_invariants() {
+    fn nominal_validates_and_structural_invariants() {
         let (n_dims, n_cat) = (2usize, 3usize);
         let pattern: Vec<u8> = vec![1, 0, 0, 1, 1, 1];
         let n_items = 3usize;
@@ -942,32 +1041,53 @@ mod tests {
         for v in theta.iter_mut() {
             *v = rng.normal();
         }
-        let y = simulate(&slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng);
-        let cfg = NominalMirtConfig { q: 15, max_iter: 30, ..NominalMirtConfig::default() };
-        let res = fit_nominal_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+        let y = simulate(
+            &slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng,
+        );
+        let cfg = NominalConfig {
+            q: 15,
+            max_iter: 30,
+            ..NominalConfig::default()
+        };
+        let res = fit_nominal(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
         // parameter count invariant: sum_i (n_cat-1)*(|S_i|+1)  = 2*(1+1) [item0] + 2*(1+1) [item1] + 2*(2+1) [item2]
         assert_eq!(res.n_parameters, 2 * 2 + 2 * 2 + 2 * 3);
         // softmax probabilities sum to 1 at a few nodes (recompute a category dist for item 2)
-        let eta = [0.0, slope[(2 * n_cat + 1) * n_dims + 0], slope[(2 * n_cat + 2) * n_dims + 0]];
+        let eta = [
+            0.0,
+            slope[(2 * n_cat + 1) * n_dims + 0],
+            slope[(2 * n_cat + 2) * n_dims + 0],
+        ];
         let p = softmax(&eta);
         assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         // validation: GH D=4 rejected; no pure anchor rejected; category >= n_cat rejected;
         // unobserved category rejected.
-        let gh4 = NominalMirtConfig::default();
-        let pat4: Vec<u8> = (0..4).flat_map(|d| (0..4).map(move |k| (k == d) as u8)).collect();
+        let gh4 = NominalConfig::default();
+        let pat4: Vec<u8> = (0..4)
+            .flat_map(|d| (0..4).map(move |k| (k == d) as u8))
+            .collect();
         // y4 cycles through every category (so the unobserved-category guard does NOT fire): the
         // GH D>3 bound must be the SOLE rejection reason, else a NM_MAX_DIMS mutation survives (at
         // q=21, 21^4=194481 nodes sits under the node cap, so only the dim bound rejects it).
         let y4: Vec<usize> = (0..n * 4).map(|idx| idx % n_cat).collect();
-        assert!(fit_nominal_mirt(&y4, None, &pat4, n, 4, 4, n_cat, &gh4).is_err(), "GH D=4 rejected");
+        assert!(
+            fit_nominal(&y4, None, &pat4, n, 4, 4, n_cat, &gh4).is_err(),
+            "GH D=4 rejected"
+        );
         // no pure anchor for either dim (all three items load BOTH dims). Uses the full 3-item y so
         // the y-length check passes and the pure-anchor identification guard is the failing branch.
         let no_anchor: Vec<u8> = vec![1, 1, 1, 1, 1, 1];
-        assert!(fit_nominal_mirt(&y, None, &no_anchor, n, n_items, n_dims, n_cat, &cfg).is_err(), "no pure anchor rejected");
+        assert!(
+            fit_nominal(&y, None, &no_anchor, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "no pure anchor rejected"
+        );
         // category >= n_cat
         let mut ybad = y.clone();
         ybad[0] = n_cat;
-        assert!(fit_nominal_mirt(&ybad, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(), "bad category rejected");
+        assert!(
+            fit_nominal(&ybad, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "bad category rejected"
+        );
         // an item with an unobserved category (force item 0 to never show category 2)
         let mut ygap = y.clone();
         for p in 0..n {
@@ -975,7 +1095,10 @@ mod tests {
                 ygap[p * n_items + 0] = 1;
             }
         }
-        assert!(fit_nominal_mirt(&ygap, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(), "unobserved category rejected");
+        assert!(
+            fit_nominal(&ygap, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "unobserved category rejected"
+        );
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): recover the multidimensional nominal at D=2 and
@@ -984,7 +1107,7 @@ mod tests {
     /// per-dim trait EAP correlation). Per-rep monotone-EM + finiteness canaries.
     #[test]
     #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn mc_nominal_mirt_recovery_500() {
+    fn mc_nominal_recovery_500() {
         let reps = 500usize;
         let n_cat = 3usize;
         for &(n_dims, q, n) in [(2usize, 15usize, 2500usize), (3usize, 11usize, 2000usize)].iter() {
@@ -1031,12 +1154,10 @@ mod tests {
                 let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
                 let mut nconv = 0usize;
                 for rep in 0..reps {
-                    let mut rng = Lcg(
-                        0x9E3779B97F4A7C15u64
-                            .wrapping_mul(rep as u64 + 1)
-                            .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
-                            .wrapping_add(n_dims as u64 * 0x100000001B3),
-                    );
+                    let mut rng = Lcg(0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
+                        .wrapping_add(n_dims as u64 * 0x100000001B3));
                     let mut theta = vec![0.0f64; n * n_dims];
                     for d in 0..n_dims {
                         let col: Vec<f64> = (0..n)
@@ -1060,23 +1181,33 @@ mod tests {
                             theta[j * n_dims + d] = (col[j] - m) / sd;
                         }
                     }
-                    let y = simulate(&slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng);
-                    let cfg = NominalMirtConfig { q, ..NominalMirtConfig::default() };
-                    let res = fit_nominal_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+                    let y = simulate(
+                        &slope, &intercept, &theta, n, n_items, n_dims, n_cat, &mut rng,
+                    );
+                    let cfg = NominalConfig {
+                        q,
+                        ..NominalConfig::default()
+                    };
+                    let res =
+                        fit_nominal(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
                     if res.converged {
                         nconv += 1;
                     }
                     for w in res.loglik_trace.windows(2) {
                         assert!(w[1] >= w[0] - 1e-9, "monotone (rep {rep})");
                     }
-                    assert!(res.slope.iter().all(|v| v.is_finite()), "finite slope (rep {rep})");
+                    assert!(
+                        res.slope.iter().all(|v| v.is_finite()),
+                        "finite slope (rep {rep})"
+                    );
                     let mut est = res.slope.clone();
                     align_reflection(&mut est, &slope, &anchor, n_items, n_cat, n_dims);
                     for i in 0..n_items {
                         for k in 1..n_cat {
                             for d in 0..n_dims {
                                 if pattern[i * n_dims + d] != 0 {
-                                    let e = est[(i * n_cat + k) * n_dims + d] - slope[(i * n_cat + k) * n_dims + d];
+                                    let e = est[(i * n_cat + k) * n_dims + d]
+                                        - slope[(i * n_cat + k) * n_dims + d];
                                     snum += e * e;
                                     sden += 1.0;
                                     sbias += e;
@@ -1101,7 +1232,7 @@ mod tests {
                 let srmse = (snum / sden).sqrt();
                 let (sb, tc, conv) = (sbias / sden, csum / ccnt, nconv as f64 / reps as f64);
                 println!(
-                    "[nominal-mirt MC D={n_dims} q={q} N={n} skew={skew}] reps={reps} conv={conv:.3} \
+                    "[nominal MC D={n_dims} q={q} N={n} skew={skew}] reps={reps} conv={conv:.3} \
                      slopeRMSE={srmse:.4} slopeBias={sb:.4} thetaCorr={tc:.3}"
                 );
                 assert!(conv > 0.90, "convergence {conv} (D={n_dims} skew={skew})");

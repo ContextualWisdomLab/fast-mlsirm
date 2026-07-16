@@ -1,11 +1,9 @@
-"""Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995).
+"""Dimension-agnostic graded response model (Samejima, 1969; Muraki & Carlson, 1995).
 
-Ordered polytomous categories with a single multidimensional discrimination vector per item and
-ordered category boundaries: ``P(Y>=k|theta) = sigmoid(sum_d a_id theta_d + beta_i,{k-1})``. The
-ordered counterpart of :func:`fast_mlsirm.fit_nominal_mirt` and the polytomous generalization of the
-compensatory MIRT; reduces to the unidimensional GRM (``fit_poly_unidim``) at ``n_dims = 1``.
-Estimated in the Rust core by Bock-Aitkin marginal MLE over a Gauss-Hermite (``n_dims <= 3``) or
-Halton quasi-Monte-Carlo (``n_dims = 4..6``) grid."""
+Ordered categories share one discrimination vector and use ordered cumulative
+boundaries. The public ``model=`` argument selects the one-factor model or a
+confirmatory multidimensional loading specification; the numerical estimation
+runs in Rust."""
 
 from __future__ import annotations
 
@@ -13,13 +11,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
+
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
 
 
 @dataclass
-class GrmMirtFit:
+class GrmFit:
     """Fitted multidimensional graded response model (Samejima, 1969; Muraki & Carlson, 1995).
 
     ``slope`` is the ``n_items x n_dims`` discrimination matrix ``a_id`` (exactly ``0`` for
@@ -32,10 +32,10 @@ class GrmMirtFit:
     ``final_loglik_change`` the SIGNED change ``ll_final - ll_prev`` (non-negative up to a tiny
     monotone-guard band)."""
 
+    model: IrtModel
     slope: np.ndarray
     threshold: np.ndarray
     theta: np.ndarray
-    n_dims: int
     n_cat: int
     loglik_trace: np.ndarray
     n_iter: int
@@ -44,25 +44,31 @@ class GrmMirtFit:
     final_loglik_change: float
     n_parameters: int
 
+    @property
+    def n_dims(self) -> int:
+        """Latent dimension count derived from :attr:`model`."""
 
-def fit_grm_mirt(
+        return self.model.n_dims
+
+
+def fit_grm(
     responses: np.ndarray,
-    loading_pattern: np.ndarray,
     n_cat: int,
+    model: int | ExploratoryModel | ConfirmatoryModel = 1,
     q: int = 21,
     max_iter: int = 500,
     tol: float = 1e-6,
     node_rule: str = "gh",
     xi_points: int = 4000,
     xi_seed: int = 0x9E37_79B9_7F4A_7C15,
-) -> GrmMirtFit:
-    """Fit the confirmatory multidimensional graded response model (compute in Rust; Samejima, 1969;
+) -> GrmFit:
+    """Fit the graded response model (compute in Rust; Samejima, 1969;
     Muraki & Carlson, 1995).
 
     Ordered polytomous categories with a SINGLE multidimensional discrimination vector per item and
     ordered boundary intercepts: for category boundary ``k`` of item ``i``,
-    ``P(Y >= k | theta) = sigmoid(sum_{d in S_i} a_id theta_d + beta_i,{k-1})``, where ``S_i`` is the
-    item's loading set from the 0/1 ``loading_pattern`` (items x dimensions) and the ``n_cat-1``
+    ``P(Y >= k | theta) = sigmoid(sum_{d in S_i} a_id theta_d + beta_i,{k-1})``, where ``S_i`` is the item's loading set from the confirmatory model specification and the
+    ``n_cat-1``
     thresholds ``beta_i`` are strictly decreasing (Samejima's graded model). ``theta ~ MVN(0, I)``.
     Reduces to the unidimensional GRM at ``n_dims = 1``.
 
@@ -77,12 +83,15 @@ def fit_grm_mirt(
     ``xi_seed`` only to ``"qmc"``/``"mc"``.
 
     ``responses`` is a persons x items integer-category array (``0..n_cat-1``; ``NaN`` or negative =
-    missing, dropped MAR); ``loading_pattern`` an items x dimensions 0/1 array. Every declared
-    category must be observed for each item, and every dimension needs a pure anchor item.
+    missing, dropped MAR); For ``model=1``, all item slopes on the single factor are free. A
+    multidimensional confirmatory structure is supplied with
+    ``model=models.confirmatory(loading_pattern)``; a numeric exploratory model greater than
+    one is rejected until unrestricted loading rotation and identification are implemented.
+    Every declared category must be observed for each item, and every dimension needs a pure anchor item.
 
     References (APA 7th ed.):
         Samejima, F. (1969). Estimation of latent ability using a response pattern of graded
-            scores. *Psychometrika Monograph Supplement, 34*(4, Pt. 2).
+            scores. *Psychometrika, 34*(S1), 1-97.
             https://doi.org/10.1007/BF03372160
         Muraki, E., & Carlson, J. E. (1995). Full-information factor analysis for polytomous item
             responses. *Applied Psychological Measurement, 19*(1), 73-90.
@@ -93,22 +102,14 @@ def fit_grm_mirt(
     from .fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_grm_mirt"):
-        raise RuntimeError("fit_grm_mirt requires the compiled Rust core")
+    if core is None or not hasattr(core, "fit_grm"):
+        raise RuntimeError("fit_grm requires the compiled Rust core")
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    pat = np.asarray(loading_pattern)
-    if pat.ndim != 2:
-        raise ValueError("loading_pattern must be a 2-D items x dimensions array")
     n_persons, n_items = y.shape
-    if pat.shape[0] != n_items:
-        raise ValueError("loading_pattern must have one row per item")
-    if not np.issubdtype(pat.dtype, np.number) or np.iscomplexobj(pat):
-        raise ValueError("loading_pattern entries must be numeric 0 or 1")
-    if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
-        raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
+    resolved_model, pat = _resolve_model(model, n_items)
     n_dims = pat.shape[1]
     _gh = str(node_rule).lower() in ("gh", "gauss-hermite", "gausshermite")
     _max_dims = _MAX_DIMS_GH if _gh else _MAX_DIMS_QMC
@@ -119,7 +120,11 @@ def fit_grm_mirt(
 
     def _finite_int(value, name: str) -> int:
         scalar = np.asarray(value)
-        if scalar.ndim != 0 or not np.issubdtype(scalar.dtype, np.number) or np.iscomplexobj(scalar):
+        if (
+            scalar.ndim != 0
+            or not np.issubdtype(scalar.dtype, np.number)
+            or np.iscomplexobj(scalar)
+        ):
             raise ValueError(f"{name} must be a finite integer")
         numeric = float(scalar)
         if not np.isfinite(numeric) or numeric != np.floor(numeric):
@@ -144,10 +149,12 @@ def fit_grm_mirt(
     if np.any(observed):
         observed_y = y[observed]
         if np.any(observed_y != np.floor(observed_y)) or observed_y.max() >= n_cat_int:
-            raise ValueError("responses must be integer categories in 0..n_cat-1 where observed")
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
-    res = core.fit_grm_mirt(
+    res = core.fit_grm(
         yy,
         observed.reshape(-1),
         pat.astype(np.int64).reshape(-1),
@@ -162,11 +169,13 @@ def fit_grm_mirt(
         xi_points_int,
         xi_seed_int,
     )
-    return GrmMirtFit(
+    return GrmFit(
+        model=resolved_model,
         slope=np.asarray(res["slope"], dtype=np.float64).reshape(n_items, n_dims),
-        threshold=np.asarray(res["threshold"], dtype=np.float64).reshape(n_items, n_cat_int - 1),
+        threshold=np.asarray(res["threshold"], dtype=np.float64).reshape(
+            n_items, n_cat_int - 1
+        ),
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
-        n_dims=int(res["n_dims"]),
         n_cat=int(res["n_cat"]),
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),

@@ -1,10 +1,8 @@
-"""Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen, Cai & Bock, 2010).
+"""Dimension-agnostic nominal response model (Bock, 1972; Thissen, Cai, & Bock, 2010).
 
-Each item's unordered categories get a free multidimensional discrimination and intercept; the
-category probability is a softmax of ``sum_d a_ikd theta_d + c_ik`` with the baseline category
-pinned to zero. Generalizes the unidimensional :func:`fast_mlsirm.fit_nominal` to ``n_dims`` latent
-dimensions (reducing to it at ``n_dims = 1``). Estimated in the Rust core by Bock-Aitkin marginal
-MLE over a Gauss-Hermite (``n_dims <= 3``) or Halton quasi-Monte-Carlo (``n_dims = 4..6``) grid."""
+Each unordered category has its own discrimination vector and intercept. The
+public ``model=`` argument selects the one-factor model or a confirmatory
+multidimensional loading specification; the numerical estimation runs in Rust."""
 
 from __future__ import annotations
 
@@ -12,13 +10,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
+
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
 
 
 @dataclass
-class NominalMirtFit:
+class NominalResponseFit:
     """Fitted multidimensional nominal response model (Bock, 1972).
 
     ``slope`` is the ``n_items x n_cat x n_dims`` category-slope tensor ``a_ikd`` (exactly ``0`` for
@@ -31,10 +31,10 @@ class NominalMirtFit:
     the SIGNED change ``ll_final - ll_prev`` between the final two evaluated marginal
     log-likelihoods (non-negative up to a tiny monotone-guard band)."""
 
+    model: IrtModel
     slope: np.ndarray
     intercept: np.ndarray
     theta: np.ndarray
-    n_dims: int
     n_cat: int
     loglik_trace: np.ndarray
     n_iter: int
@@ -43,26 +43,32 @@ class NominalMirtFit:
     final_loglik_change: float
     n_parameters: int
 
+    @property
+    def n_dims(self) -> int:
+        """Latent dimension count derived from :attr:`model`."""
 
-def fit_nominal_mirt(
+        return self.model.n_dims
+
+
+def fit_nominal(
     responses: np.ndarray,
-    loading_pattern: np.ndarray,
     n_cat: int,
+    model: int | ExploratoryModel | ConfirmatoryModel = 1,
     q: int = 21,
     max_iter: int = 500,
     tol: float = 1e-6,
     node_rule: str = "gh",
     xi_points: int = 4000,
     xi_seed: int = 0x9E37_79B9_7F4A_7C15,
-) -> NominalMirtFit:
-    """Fit the confirmatory multidimensional nominal response model (compute in Rust; Bock, 1972;
-    Thissen, Cai & Bock, 2010).
+) -> NominalResponseFit:
+    """Fit the nominal response model (compute in Rust; Bock, 1972;
+    Thissen, Cai, & Bock, 2010).
 
     Unordered polytomous categories with CATEGORY-SPECIFIC multidimensional discrimination: for
     category ``k`` of item ``i`` the linear predictor is ``eta_ik = sum_{d in S_i} a_ikd theta_d +
     c_ik`` and ``P(Y=k | theta) = softmax_k(eta_ik)``, with the baseline category ``0`` pinned
-    ``a_i0 = 0, c_i0 = 0``. ``S_i`` is item ``i``'s loading set from the 0/1 ``loading_pattern``
-    (items x dimensions): a slope ``a_ikd`` is free only for ``d in S_i``. ``theta ~ MVN(0, I)``.
+    ``a_i0 = 0, c_i0 = 0``. ``S_i`` is item ``i``'s loading set from the confirmatory model specification;
+    a slope ``a_ikd`` is free only for ``d in S_i``. ``theta ~ MVN(0, I)``.
     At ``n_dims = 1`` this reduces to :func:`fast_mlsirm.fit_nominal` (the same general free-``a_k``
     parametrization).
 
@@ -76,8 +82,11 @@ def fit_nominal_mirt(
     applies only to ``"gh"``; ``xi_points``/``xi_seed`` only to ``"qmc"``/``"mc"``.
 
     ``responses`` is a persons x items integer-category array (``0..n_cat-1``; ``NaN`` or negative =
-    missing, dropped MAR); ``loading_pattern`` an items x dimensions 0/1 array. Every declared
-    category must be observed for each item, and every dimension needs a pure anchor item.
+    missing, dropped MAR); For ``model=1``, all item parameters on the single factor are free. A
+    multidimensional confirmatory structure is supplied with
+    ``model=models.confirmatory(loading_pattern)``; a numeric exploratory model greater than
+    one is rejected until unrestricted loading rotation and identification are implemented.
+    Every declared category must be observed for each item, and every dimension needs a pure anchor item.
 
     References (APA 7th ed.):
         Bock, R. D. (1972). Estimating item parameters and latent ability when responses are
@@ -91,22 +100,14 @@ def fit_nominal_mirt(
     from .fitstats import _core_module
 
     core = _core_module()
-    if core is None or not hasattr(core, "fit_nominal_mirt"):
-        raise RuntimeError("fit_nominal_mirt requires the compiled Rust core")
+    if core is None or not hasattr(core, "fit_nominal_model"):
+        raise RuntimeError("fit_nominal requires the compiled Rust core")
 
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
-    pat = np.asarray(loading_pattern)
-    if pat.ndim != 2:
-        raise ValueError("loading_pattern must be a 2-D items x dimensions array")
     n_persons, n_items = y.shape
-    if pat.shape[0] != n_items:
-        raise ValueError("loading_pattern must have one row per item")
-    if not np.issubdtype(pat.dtype, np.number) or np.iscomplexobj(pat):
-        raise ValueError("loading_pattern entries must be numeric 0 or 1")
-    if not np.all(np.isfinite(pat)) or not np.all((pat == 0) | (pat == 1)):
-        raise ValueError("loading_pattern entries must be finite and exactly 0 or 1")
+    resolved_model, pat = _resolve_model(model, n_items)
     n_dims = pat.shape[1]
     _gh = str(node_rule).lower() in ("gh", "gauss-hermite", "gausshermite")
     _max_dims = _MAX_DIMS_GH if _gh else _MAX_DIMS_QMC
@@ -117,7 +118,11 @@ def fit_nominal_mirt(
 
     def _finite_int(value, name: str) -> int:
         scalar = np.asarray(value)
-        if scalar.ndim != 0 or not np.issubdtype(scalar.dtype, np.number) or np.iscomplexobj(scalar):
+        if (
+            scalar.ndim != 0
+            or not np.issubdtype(scalar.dtype, np.number)
+            or np.iscomplexobj(scalar)
+        ):
             raise ValueError(f"{name} must be a finite integer")
         numeric = float(scalar)
         if not np.isfinite(numeric) or numeric != np.floor(numeric):
@@ -144,13 +149,17 @@ def fit_nominal_mirt(
     if np.any(observed):
         observed_y = y[observed]
         if np.any(observed_y != np.floor(observed_y)):
-            raise ValueError("responses must be integer categories in 0..n_cat-1 where observed")
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
         maxc = observed_y.max()
         if maxc >= n_cat_int:
-            raise ValueError("responses must be integer categories in 0..n_cat-1 where observed")
+            raise ValueError(
+                "responses must be integer categories in 0..n_cat-1 where observed"
+            )
     yy = np.where(observed, y, 0.0).astype(np.int64).reshape(-1)
 
-    res = core.fit_nominal_mirt(
+    res = core.fit_nominal_model(
         yy,
         observed.reshape(-1),
         pat.astype(np.int64).reshape(-1),
@@ -165,11 +174,15 @@ def fit_nominal_mirt(
         xi_points_int,
         xi_seed_int,
     )
-    return NominalMirtFit(
-        slope=np.asarray(res["slope"], dtype=np.float64).reshape(n_items, n_cat_int, n_dims),
-        intercept=np.asarray(res["intercept"], dtype=np.float64).reshape(n_items, n_cat_int),
+    return NominalResponseFit(
+        model=resolved_model,
+        slope=np.asarray(res["slope"], dtype=np.float64).reshape(
+            n_items, n_cat_int, n_dims
+        ),
+        intercept=np.asarray(res["intercept"], dtype=np.float64).reshape(
+            n_items, n_cat_int
+        ),
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
-        n_dims=int(res["n_dims"]),
         n_cat=int(res["n_cat"]),
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),

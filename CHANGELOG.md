@@ -93,8 +93,24 @@
 
 ### Added
 
+- **Dimension-agnostic IRT model API.** Item families are named by their
+  response function rather than by UIRT/MIRT dimensionality:
+  `fit_2pl`/`TwoPlFit`, `fit_grm`/`GrmFit`, and
+  `fit_nominal`/`NominalResponseFit`. A single `model=` argument follows the
+  R `mirt` convention (Chalmers, 2012): `model=1` denotes the unrestricted
+  one-factor model, while `model=models.confirmatory(loading_pattern)` carries
+  a confirmatory loading structure and derives its dimension count. The fitted
+  result retains `n_dims` only as a derived read-only property of its model
+  specification. Numeric exploratory requests above one factor fail explicitly;
+  the Rust estimators do not yet implement unrestricted multidimensional loading
+  rotation/identification, so a confirmatory anchor pattern is never relabeled
+  as exploratory. The previous brand-new `*_mirt` entry points and module names
+  were removed rather than retained as misleading aliases. See
+  `python/fast_mlsirm/models.py` for the verified Chalmers (2012) APA reference
+  and DOI.
+
 - **Confirmatory MULTIDIMENSIONAL graded response model** (Samejima, 1969; Muraki & Carlson, 1995).
-  `fit_grm_mirt(responses, loading_pattern, n_cat)` fits ORDERED polytomous categories with a SINGLE
+  `fit_grm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
   multidimensional discrimination vector per item and ordered category boundaries: item `i` has a
   free slope `a_i` (free on the confirmatory 0/1 `loading_pattern`, items x D) and `n_cat-1` ORDERED
   boundary intercepts `beta_i`, with `P(Y_i >= k | theta) = sigmoid(sum_{d in S_i} a_id theta_d +
@@ -143,10 +159,10 @@
   expected mild attenuation under a per-dimension-standardized right-skew trait (RMSE ~0.17/0.18,
   bias ~-0.12/-0.13), per-dimension trait EAP correlation ~0.63-0.70 and 100% convergence, EM
   monotone and thresholds ordered every replication (40-replication pilot; the committed `#[ignore]`
-  test runs 500). Compute lives in `mlsirm_core::grm_mirt::fit_grm_mirt`; exposed to Python as
-  `fit_grm_mirt` / `GrmMirtFit`.
+  test runs 500). Compute lives in `mlsirm_core::grm::fit_grm`; exposed to Python as
+  `fit_grm` / `GrmFit`.
 - **Confirmatory MULTIDIMENSIONAL nominal response model** (Bock, 1972; Thissen, Cai, & Bock,
-  2010). `fit_nominal_mirt(responses, loading_pattern, n_cat)` fits unordered polytomous categories
+  2010). `fit_nominal(responses, n_cat, model=...)` fits unordered polytomous categories
   with CATEGORY-SPECIFIC multidimensional discrimination: category `k` of item `i` has a free slope
   vector `a_ik` (free on the confirmatory 0/1 `loading_pattern`, items x D) and intercept `c_ik`,
   and `P(Y_i = k | theta) = softmax_k(sum_{d in S_i} a_ikd theta_d + c_ik)` with the baseline
@@ -186,12 +202,12 @@
   (RMSE ~0.21/0.22, bias ~-0.09), per-dimension trait EAP correlation ~0.61-0.67 and 100%
   convergence, EM monotone every replication (the figures are a 40-replication pilot; the committed
   `#[ignore]` test runs 500). Compute lives in
-  `mlsirm_core::nominal_mirt::fit_nominal_mirt`; exposed to Python as `fit_nominal_mirt` /
-  `NominalMirtFit`.
+  `mlsirm_core::nominal::fit_nominal`; exposed to Python as `fit_nominal` /
+  `NominalResponseFit`.
 
 - **Confirmatory compensatory multidimensional 2PL (MIRT), orthogonal or correlated**
   (Reckase, 2009; Bock, Gibbons, & Muraki, 1988).
-  `fit_compensatory_mirt(responses, loading_pattern)` fits
+  `fit_2pl(responses, model=...)` fits
   a general COMPENSATORY multidimensional 2PL in which an item may load FREELY on several
   latent dimensions, which trade off ADDITIVELY inside a single logit:
   `P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta_j ~ MVN(0, I_D)`,
@@ -200,7 +216,7 @@
   the existing simple-structure `Mirt` (one dimension per item) and the orthogonal bifactor
   (one primary + one general per item): arbitrary within-item cross-loadings break the
   simple-structure quadrature factorization, so it is a dedicated estimator (standalone
-  `mlsirm_core::mirt`) with the full `q^D` product Gauss-Hermite grid (`D <= 3`). Estimated by
+  `mlsirm_core::twopl`) with the full `q^D` product Gauss-Hermite grid (`D <= 3`). Estimated by
   marginal-ML EM: the E-step is streamed per person (no `N x q^D` posterior materialized), and
   each item M-step is an `(n_i + 1)`-dimensional Newton generalizing `fit_mmle_2pl`'s 2x2 — the
   ridged, positive-definite `-Hessian` block solved by Gaussian elimination with a backtracking
@@ -234,10 +250,10 @@
   ~0.006) and shows the expected mild loading attenuation under a per-dimension-standardized
   right-skew trait (shape misspecification; RMSE ~0.12/0.16, bias ~-0.06/-0.10), with
   per-dimension trait EAP correlation ~0.67-0.72 and 100% convergence, EM monotone every
-  replication. Exposed to Python as `fit_compensatory_mirt` / `CompMirtFit`.
+  replication. Exposed to Python as `fit_2pl` / `TwoPlFit`.
 - **`D > 3` confirmatory compensatory MIRT via quasi-Monte-Carlo EM** (Jank, 2005). The
   compensatory MIRT above was capped at `D <= 3` by its `q^D` Gauss-Hermite product grid;
-  `fit_compensatory_mirt` now takes a `node_rule` (`"gh"` default, or `"qmc"`/`"mc"`) that swaps
+  `fit_2pl` now takes a `node_rule` (`"gh"` default, or `"qmc"`/`"mc"`) that swaps
   the E-step integration nodes for a **Halton quasi-Monte-Carlo** (or seeded Monte-Carlo) rule,
   reaching `D = 4, 5, 6` (the Halton prime axes). This is Jank's (2005) QMC-EM: the E-step integral
   `int p(x|theta) phi(theta) dtheta` is evaluated at `xi_points` points drawn from the prior
@@ -275,7 +291,7 @@
   `#[ignore]` test runs 500). QMC carries an `O(N^{-1} (log N)^D)` finite-node bias that grows with
   `D` (the higher-prime Halton axes degrade), so `D = 5, 6` and the correlated `Sigma` off-diagonals
   need materially larger `xi_points`; `xi_seed` (nonzero by default) applies a Cranley-Patterson
-  shift that partly de-correlates the higher axes. Exposed to Python as `fit_compensatory_mirt(...,
+  shift that partly de-correlates the higher axes. Exposed to Python as `fit_2pl(...,
   node_rule=, xi_points=, xi_seed=)`.
 - **Shared-Q sequential G-DINA for polytomous responses** (Ma & de la Torre, 2016;
   Tutz, 1990). `fit_seq_gdina(responses, q_matrix)` fits ordered polytomous cognitive

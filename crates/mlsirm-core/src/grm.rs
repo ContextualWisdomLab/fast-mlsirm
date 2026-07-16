@@ -1,6 +1,6 @@
 //! Confirmatory MULTIDIMENSIONAL graded response model (Samejima, 1969; Muraki & Carlson, 1995),
-//! the ORDERED-category counterpart of [`crate::nominal_mirt::fit_nominal_mirt`] and the polytomous
-//! generalization of the compensatory MIRT ([`crate::mirt::fit_compensatory_mirt`]).
+//! the ORDERED-category counterpart of [`crate::nominal::fit_nominal`] and the polytomous
+//! generalization of the compensatory MIRT ([`crate::twopl::fit_2pl`]).
 //!
 //! Each item `i` has `n_cat` ORDERED categories, a SINGLE multidimensional discrimination vector
 //! `a_i` (free on the confirmatory 0/1 `loading_pattern`, items x D), and `n_cat - 1` ORDERED
@@ -44,7 +44,7 @@
 //! # References (APA 7th ed.)
 //!
 //! Samejima, F. (1969). Estimation of latent ability using a response pattern of graded scores.
-//! *Psychometrika Monograph Supplement, 34*(4, Pt. 2). https://doi.org/10.1007/BF03372160
+//! *Psychometrika, 34*(S1), 1-97. https://doi.org/10.1007/BF03372160
 //!
 //! Muraki, E., & Carlson, J. E. (1995). Full-information factor analysis for polytomous item
 //! responses. *Applied Psychological Measurement, 19*(1), 73-90.
@@ -67,9 +67,9 @@ const GM_MAX_DIMS: usize = 3;
 const GM_MAX_DIMS_QMC: usize = 6;
 const GM_MAX_CAT: usize = 64;
 
-/// Configuration for [`fit_grm_mirt`].
+/// Configuration for [`fit_grm`].
 #[derive(Clone, Copy, Debug)]
-pub struct GrmMirtConfig {
+pub struct GrmConfig {
     pub max_iter: usize,
     pub tol: f64,
     /// Gauss-Hermite nodes per dimension (used only for `xi_rule = GaussHermite`).
@@ -84,7 +84,7 @@ pub struct GrmMirtConfig {
     pub xi_seed: u64,
 }
 
-impl Default for GrmMirtConfig {
+impl Default for GrmConfig {
     fn default() -> Self {
         Self {
             max_iter: 500,
@@ -99,9 +99,9 @@ impl Default for GrmMirtConfig {
     }
 }
 
-/// Result of [`fit_grm_mirt`].
+/// Result of [`fit_grm`].
 #[derive(Clone, Debug)]
-pub struct GrmMirtResult {
+pub struct GrmResult {
     pub n_dims: usize,
     pub n_cat: usize,
     /// Item discrimination slopes `a_id`, row-major `n_items * n_dims` (exactly `0.0` off-pattern).
@@ -130,7 +130,7 @@ fn validate(
     n_items: usize,
     n_dims: usize,
     n_cat: usize,
-    cfg: &GrmMirtConfig,
+    cfg: &GrmConfig,
 ) -> Result<usize, String> {
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
@@ -174,7 +174,10 @@ fn validate(
                 ));
             }
             if !(1..=GM_MAX_NODES).contains(&cfg.xi_points) {
-                return Err(format!("xi_points must be in 1..={GM_MAX_NODES}; got {}", cfg.xi_points));
+                return Err(format!(
+                    "xi_points must be in 1..={GM_MAX_NODES}; got {}",
+                    cfg.xi_points
+                ));
             }
             cfg.xi_points
         }
@@ -220,7 +223,9 @@ fn validate(
     }
     for i in 0..n_items {
         if !(0..n_dims).any(|d| loading_pattern[i * n_dims + d] != 0) {
-            return Err(format!("item {i} loads no dimension (all-zero loading_pattern row)"));
+            return Err(format!(
+                "item {i} loads no dimension (all-zero loading_pattern row)"
+            ));
         }
         let mut seen = vec![false; n_cat];
         let mut any = false;
@@ -243,7 +248,10 @@ fn validate(
     for d in 0..n_dims {
         let has_pure = (0..n_items).any(|i| {
             loading_pattern[i * n_dims + d] != 0
-                && (0..n_dims).filter(|&d2| loading_pattern[i * n_dims + d2] != 0).count() == 1
+                && (0..n_dims)
+                    .filter(|&d2| loading_pattern[i * n_dims + d2] != 0)
+                    .count()
+                    == 1
         });
         if !has_pure {
             return Err(format!(
@@ -270,7 +278,11 @@ fn grm_item_neg_ll_grad(
 ) -> (f64, Vec<f64>) {
     let l = dims.len();
     let beta = &params[l..]; // M-1 boundary intercepts
-    debug_assert_eq!(beta.len(), n_cat - 1, "GRM param layout: L slopes + (n_cat-1) thresholds");
+    debug_assert_eq!(
+        beta.len(),
+        n_cat - 1,
+        "GRM param layout: L slopes + (n_cat-1) thresholds"
+    );
     let mut ll = 0.0f64;
     let mut grad = vec![0.0f64; params.len()];
     for (nd, cnt) in counts.iter().enumerate() {
@@ -352,7 +364,8 @@ fn grm_m_step(
                 .zip(&step)
                 .map(|(value, direction)| value - alpha * direction)
                 .collect();
-            let (candidate_f, _) = grm_item_neg_ll_grad(&candidate, dims, nodes, n_dims, counts, n_cat);
+            let (candidate_f, _) =
+                grm_item_neg_ll_grad(&candidate, dims, nodes, n_dims, counts, n_cat);
             if candidate_f.is_finite() && candidate_f <= f0 - 1e-4 * alpha * directional {
                 params = candidate;
                 accepted = true;
@@ -373,7 +386,7 @@ fn grm_m_step(
 /// `0..n_cat-1`, missing cells dropped MAR); `loading_pattern` is row-major `n_items * n_dims` in
 /// `{0,1}`. Returns `Err` on malformed / rotationally-underidentified / unobserved-category input.
 #[allow(clippy::too_many_arguments)]
-pub fn fit_grm_mirt(
+pub fn fit_grm(
     y: &[usize],
     observed: Option<&[bool]>,
     loading_pattern: &[u8],
@@ -381,9 +394,18 @@ pub fn fit_grm_mirt(
     n_items: usize,
     n_dims: usize,
     n_cat: usize,
-    cfg: &GrmMirtConfig,
-) -> Result<GrmMirtResult, String> {
-    let _n_nodes = validate(y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, cfg)?;
+    cfg: &GrmConfig,
+) -> Result<GrmResult, String> {
+    let _n_nodes = validate(
+        y,
+        observed,
+        loading_pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        cfg,
+    )?;
 
     let (nodes, logw) = match cfg.xi_rule {
         XiRuleKind::GaussHermite => {
@@ -391,11 +413,23 @@ pub fn fit_grm_mirt(
             (xn.grid, xn.logw)
         }
         XiRuleKind::Halton => {
-            let xn = build_xi_nodes(XiRule::Halton { n: cfg.xi_points, shift_seed: cfg.xi_seed }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::Halton {
+                    n: cfg.xi_points,
+                    shift_seed: cfg.xi_seed,
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
         XiRuleKind::MonteCarlo => {
-            let xn = build_xi_nodes(XiRule::MonteCarlo { n: cfg.xi_points, seed: cfg.xi_seed.max(1) }, n_dims)?;
+            let xn = build_xi_nodes(
+                XiRule::MonteCarlo {
+                    n: cfg.xi_points,
+                    seed: cfg.xi_seed.max(1),
+                },
+                n_dims,
+            )?;
             (xn.grid, xn.logw)
         }
     };
@@ -403,7 +437,11 @@ pub fn fit_grm_mirt(
     let m1 = n_cat - 1; // boundary count
 
     let dims_of: Vec<Vec<usize>> = (0..n_items)
-        .map(|i| (0..n_dims).filter(|&d| loading_pattern[i * n_dims + d] != 0).collect())
+        .map(|i| {
+            (0..n_dims)
+                .filter(|&d| loading_pattern[i * n_dims + d] != 0)
+                .collect()
+        })
         .collect();
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
 
@@ -495,7 +533,9 @@ pub fn fit_grm_mirt(
             }
         }
         if !ll.is_finite() {
-            return Err(format!("non-finite observed-data log-likelihood at iteration {n_iter}"));
+            return Err(format!(
+                "non-finite observed-data log-likelihood at iteration {n_iter}"
+            ));
         }
         loglik_trace.push(ll);
 
@@ -606,7 +646,7 @@ pub fn fit_grm_mirt(
 
     let ll = *loglik_trace.last().expect("EM trace is never empty");
     let _ = ll;
-    Ok(GrmMirtResult {
+    Ok(GrmResult {
         n_dims,
         n_cat,
         slope,
@@ -629,7 +669,10 @@ mod tests {
     struct Lcg(u64);
     impl Lcg {
         fn next_f64(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
         }
         fn normal(&mut self) -> f64 {
@@ -656,8 +699,14 @@ mod tests {
     /// Simulate multidimensional GRM responses from slope (n_items*n_dims), thresholds
     /// (n_items*(n_cat-1)), and traits (n_persons*n_dims).
     fn simulate(
-        slope: &[f64], threshold: &[f64], theta: &[f64],
-        n: usize, n_items: usize, n_dims: usize, n_cat: usize, rng: &mut Lcg,
+        slope: &[f64],
+        threshold: &[f64],
+        theta: &[f64],
+        n: usize,
+        n_items: usize,
+        n_dims: usize,
+        n_cat: usize,
+        rng: &mut Lcg,
     ) -> Vec<usize> {
         let m1 = n_cat - 1;
         let mut y = vec![0usize; n * n_items];
@@ -690,7 +739,7 @@ mod tests {
     /// optimizer tolerance and the (positive) reflection, so recovered slope & thresholds & loglik
     /// agree within a loose bound. NOT bit-exact (log_a vs unconstrained a differ in Newton path).
     #[test]
-    fn grm_mirt_reduces_to_poly_grm_at_d1() {
+    fn grm_reduces_to_poly_grm_at_d1() {
         let (n, n_items, n_cat) = (2000usize, 6usize, 4usize);
         let m1 = n_cat - 1;
         let mut rng = Lcg(51169);
@@ -698,7 +747,7 @@ mod tests {
         let mut threshold = vec![0.0f64; n_items * m1];
         for i in 0..n_items {
             slope[i] = 0.8 + 0.25 * i as f64; // POSITIVE
-            // strictly decreasing thresholds
+                                              // strictly decreasing thresholds
             for j in 0..m1 {
                 threshold[i * m1 + j] = 1.2 - 1.0 * j as f64 - 0.05 * i as f64;
             }
@@ -706,19 +755,32 @@ mod tests {
         let theta: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
         let y = simulate(&slope, &threshold, &theta, n, n_items, 1, n_cat, &mut rng);
         let pattern = vec![1u8; n_items];
-        let cfg = GrmMirtConfig { q: 21, ..GrmMirtConfig::default() };
-        let mm = fit_grm_mirt(&y, None, &pattern, n, n_items, 1, n_cat, &cfg).unwrap();
-        let pf = fit_poly_unidim(&y, None, n, n_items, n_cat, PolyModel::Grm, 21, 500, 1e-6).unwrap();
+        let cfg = GrmConfig {
+            q: 21,
+            ..GrmConfig::default()
+        };
+        let mm = fit_grm(&y, None, &pattern, n, n_items, 1, n_cat, &cfg).unwrap();
+        let pf =
+            fit_poly_unidim(&y, None, n, n_items, n_cat, PolyModel::Grm, 21, 500, 1e-6).unwrap();
         // slopes agree (both positive), thresholds agree, within optimizer tolerance
         for i in 0..n_items {
-            assert!((mm.slope[i] - pf.slope[i]).abs() < 0.05, "slope[{i}] {} vs {}", mm.slope[i], pf.slope[i]);
+            assert!(
+                (mm.slope[i] - pf.slope[i]).abs() < 0.05,
+                "slope[{i}] {} vs {}",
+                mm.slope[i],
+                pf.slope[i]
+            );
             for j in 0..m1 {
                 let d = (mm.threshold[i * m1 + j] - pf.cat_params[i][j]).abs();
                 assert!(d < 0.06, "threshold[{i}][{j}] diff {d}");
             }
         }
         let mm_ll = *mm.loglik_trace.last().unwrap();
-        assert!((mm_ll - pf.loglik).abs() < 0.5, "loglik {mm_ll} vs {}", pf.loglik);
+        assert!(
+            (mm_ll - pf.loglik).abs() < 0.5,
+            "loglik {mm_ll} vs {}",
+            pf.loglik
+        );
         assert_eq!(mm.n_parameters, n_items * (1 + m1));
     }
 
@@ -728,15 +790,23 @@ mod tests {
     /// per-category counts random+distinct, so a slope<->threshold slot transposition or a sign error
     /// is detected. The M-step uses an FD Hessian, so pin the GRADIENT.
     #[test]
-    fn grm_mirt_gradient_matches_finite_difference() {
+    fn grm_gradient_matches_finite_difference() {
         let n_cat = 4usize;
-        for &(n_dims, ref dims) in [(2usize, vec![0usize, 1]), (4usize, vec![0usize, 2, 3])].iter() {
+        for &(n_dims, ref dims) in [(2usize, vec![0usize, 1]), (4usize, vec![0usize, 2, 3])].iter()
+        {
             let l = dims.len();
             let (nodes, n_nodes) = if n_dims == 2 {
                 let xn = build_xi_nodes(XiRule::GaussHermite { q_xi: 15 }, n_dims).unwrap();
                 (xn.grid, xn.logw.len())
             } else {
-                let xn = build_xi_nodes(XiRule::Halton { n: 200, shift_seed: 0 }, n_dims).unwrap();
+                let xn = build_xi_nodes(
+                    XiRule::Halton {
+                        n: 200,
+                        shift_seed: 0,
+                    },
+                    n_dims,
+                )
+                .unwrap();
                 (xn.grid, xn.logw.len())
             };
             let mut rng = Lcg(2718 + n_dims as u64);
@@ -761,7 +831,11 @@ mod tests {
                 pm[j] -= eps;
                 let (fm, _) = grm_item_neg_ll_grad(&pm, dims, &nodes, n_dims, &counts, n_cat);
                 let fd = (fp - fm) / (2.0 * eps);
-                assert!((grad[j] - fd).abs() < 1e-4, "grad[{j}] {} vs fd {fd} (D={n_dims})", grad[j]);
+                assert!(
+                    (grad[j] - fd).abs() < 1e-4,
+                    "grad[{j}] {} vs fd {fd} (D={n_dims})",
+                    grad[j]
+                );
             }
         }
     }
@@ -772,12 +846,19 @@ mod tests {
     /// tests. So compute the objective's per-node base and neg-loglik BY HAND with the CORRECT dim map
     /// and assert the estimator's internal value equals it to < 1e-9 — pinning nodes[nd*n_dims + dims[t]].
     #[test]
-    fn grm_mirt_objective_dims_map_pinned_at_d4() {
+    fn grm_objective_dims_map_pinned_at_d4() {
         let n_dims = 4usize;
         let dims = vec![0usize, 2, 3];
         let n_cat = 4usize;
         let l = dims.len();
-        let xn = build_xi_nodes(XiRule::Halton { n: 64, shift_seed: 0 }, n_dims).unwrap();
+        let xn = build_xi_nodes(
+            XiRule::Halton {
+                n: 64,
+                shift_seed: 0,
+            },
+            n_dims,
+        )
+        .unwrap();
         let nodes = xn.grid;
         let n_nodes = xn.logw.len();
         let mut rng = Lcg(31337);
@@ -799,7 +880,11 @@ mod tests {
             let lp = grm_logprobs(base, &beta);
             hand += cnt.iter().zip(&lp).map(|(r, l2)| r * l2).sum::<f64>();
         }
-        assert!((neg_ll - (-hand)).abs() < 1e-9, "objective dims-map mismatch: {neg_ll} vs {}", -hand);
+        assert!(
+            (neg_ll - (-hand)).abs() < 1e-9,
+            "objective dims-map mismatch: {neg_ll} vs {}",
+            -hand
+        );
     }
 
     // build a D=2 confirmatory GRM design (items 0,1 pure dim0; 2,3 pure dim1; item 4 cross-loader).
@@ -828,7 +913,7 @@ mod tests {
     /// anchor is positively keyed, so canonicalization preserves the cross-loader's sign). Recovered
     /// thresholds must stay STRICTLY ordered on every item. Baseline structural checks + per-dim EAP.
     #[test]
-    fn grm_mirt_recovers_d2_with_negative_cross_loader() {
+    fn grm_recovers_d2_with_negative_cross_loader() {
         let (n_dims, n_cat) = (2usize, 3usize);
         let m1 = n_cat - 1;
         let (pattern, n_items, slope, threshold) = design_d2(n_cat);
@@ -838,9 +923,14 @@ mod tests {
         for v in theta.iter_mut() {
             *v = rng.normal();
         }
-        let y = simulate(&slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng);
-        let cfg = GrmMirtConfig { q: 21, ..GrmMirtConfig::default() };
-        let res = fit_grm_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+        let y = simulate(
+            &slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng,
+        );
+        let cfg = GrmConfig {
+            q: 21,
+            ..GrmConfig::default()
+        };
+        let res = fit_grm(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
         assert!(res.converged);
         // off-pattern slopes EXACTLY zero
         for i in 0..n_items {
@@ -853,14 +943,25 @@ mod tests {
         // recovered thresholds strictly ordered-decreasing on EVERY item
         for i in 0..n_items {
             for j in 0..m1 - 1 {
-                assert!(res.threshold[i * m1 + j] > res.threshold[i * m1 + j + 1], "ordered item {i}");
+                assert!(
+                    res.threshold[i * m1 + j] > res.threshold[i * m1 + j + 1],
+                    "ordered item {i}"
+                );
             }
         }
         // canonical output: pure anchors positive; the negative cross-loader recovered NEGATIVE
         assert!(res.slope[0 * n_dims + 0] > 0.5, "anchor0 positive");
         assert!(res.slope[2 * n_dims + 1] > 0.5, "anchor2 positive");
-        assert!(res.slope[4 * n_dims + 0] < -0.4, "neg cross-loader: {}", res.slope[4 * n_dims + 0]);
-        assert!(rmse(&res.slope, &slope) < 0.16, "slope RMSE {}", rmse(&res.slope, &slope));
+        assert!(
+            res.slope[4 * n_dims + 0] < -0.4,
+            "neg cross-loader: {}",
+            res.slope[4 * n_dims + 0]
+        );
+        assert!(
+            rmse(&res.slope, &slope) < 0.16,
+            "slope RMSE {}",
+            rmse(&res.slope, &slope)
+        );
         for d in 0..n_dims {
             let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + d]).collect();
             let tt: Vec<f64> = (0..n).map(|j| theta[j * n_dims + d]).collect();
@@ -876,7 +977,7 @@ mod tests {
     /// co-loader on the same dimension ends NEGATIVE (whole-dimension flip), and the thresholds are
     /// UNCHANGED and still ordered (the flip touches only slopes + theta, never betas).
     #[test]
-    fn grm_mirt_reflection_fires_on_negative_anchor() {
+    fn grm_reflection_fires_on_negative_anchor() {
         let (n_dims, n_cat) = (2usize, 3usize);
         let m1 = n_cat - 1;
         // item0 pure dim0 (largest, NEGATIVE), item1 pure dim0 (positive), items 2,3 pure dim1.
@@ -899,12 +1000,25 @@ mod tests {
         for v in theta.iter_mut() {
             *v = rng.normal();
         }
-        let y = simulate(&slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng);
-        let cfg = GrmMirtConfig { q: 21, ..GrmMirtConfig::default() };
-        let res = fit_grm_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+        let y = simulate(
+            &slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng,
+        );
+        let cfg = GrmConfig {
+            q: 21,
+            ..GrmConfig::default()
+        };
+        let res = fit_grm(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
         // dim0's largest pure anchor (item 0) ends POSITIVE; co-loader (item 1) ends NEGATIVE.
-        assert!(res.slope[0 * n_dims + 0] > 0.8, "reflected anchor positive: {}", res.slope[0 * n_dims + 0]);
-        assert!(res.slope[1 * n_dims + 0] < -0.3, "co-loader flipped negative: {}", res.slope[1 * n_dims + 0]);
+        assert!(
+            res.slope[0 * n_dims + 0] > 0.8,
+            "reflected anchor positive: {}",
+            res.slope[0 * n_dims + 0]
+        );
+        assert!(
+            res.slope[1 * n_dims + 0] < -0.3,
+            "co-loader flipped negative: {}",
+            res.slope[1 * n_dims + 0]
+        );
         // The reflection flips BOTH the slope column AND theta_d, keeping base = sum a_d theta_d
         // invariant. Since dim0 was flipped, the returned EAP theta_0 must correlate NEGATIVELY with
         // the true theta_0 (the data was generated with the negative anchor); dim1 (not flipped) stays
@@ -913,19 +1027,30 @@ mod tests {
         let tt0: Vec<f64> = (0..n).map(|j| theta[j * n_dims + 0]).collect();
         let th1: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + 1]).collect();
         let tt1: Vec<f64> = (0..n).map(|j| theta[j * n_dims + 1]).collect();
-        assert!(corr(&th0, &tt0) < -0.5, "flipped-dim theta corr must be negative: {}", corr(&th0, &tt0));
-        assert!(corr(&th1, &tt1) > 0.5, "unflipped-dim theta corr positive: {}", corr(&th1, &tt1));
+        assert!(
+            corr(&th0, &tt0) < -0.5,
+            "flipped-dim theta corr must be negative: {}",
+            corr(&th0, &tt0)
+        );
+        assert!(
+            corr(&th1, &tt1) > 0.5,
+            "unflipped-dim theta corr positive: {}",
+            corr(&th1, &tt1)
+        );
         // thresholds still strictly ordered (untouched by the reflection)
         for i in 0..n_items {
             for j in 0..m1 - 1 {
-                assert!(res.threshold[i * m1 + j] > res.threshold[i * m1 + j + 1], "ordered item {i}");
+                assert!(
+                    res.threshold[i * m1 + j] > res.threshold[i * m1 + j + 1],
+                    "ordered item {i}"
+                );
             }
         }
     }
 
     /// Structural invariants + validation guards.
     #[test]
-    fn grm_mirt_validates_and_structural_invariants() {
+    fn grm_validates_and_structural_invariants() {
         let (n_dims, n_cat) = (2usize, 3usize);
         let (pattern, n_items, slope, threshold) = design_d2(n_cat);
         let n = 500usize;
@@ -934,9 +1059,15 @@ mod tests {
         for v in theta.iter_mut() {
             *v = rng.normal();
         }
-        let y = simulate(&slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng);
-        let cfg = GrmMirtConfig { q: 15, max_iter: 25, ..GrmMirtConfig::default() };
-        let res = fit_grm_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+        let y = simulate(
+            &slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng,
+        );
+        let cfg = GrmConfig {
+            q: 15,
+            max_iter: 25,
+            ..GrmConfig::default()
+        };
+        let res = fit_grm(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
         // free-parameter count = sum_i (|S_i| + (n_cat-1)): items 0-3 pure (1+2), item 4 cross (2+2).
         assert_eq!(res.n_parameters, 4 * (1 + 2) + (2 + 2));
         // grm_logprobs sum to 1 at a sample base
@@ -945,22 +1076,36 @@ mod tests {
         assert!((s - 1.0).abs() < 1e-12);
         // validation: GH D=4 rejected (y observes all categories so the D-bound is the sole reason);
         // no pure anchor rejected; category >= n_cat rejected; unobserved category rejected.
-        let gh4 = GrmMirtConfig::default();
-        let pat4: Vec<u8> = (0..4).flat_map(|d| (0..4).map(move |k| (k == d) as u8)).collect();
+        let gh4 = GrmConfig::default();
+        let pat4: Vec<u8> = (0..4)
+            .flat_map(|d| (0..4).map(move |k| (k == d) as u8))
+            .collect();
         let y4: Vec<usize> = (0..n * 4).map(|idx| idx % n_cat).collect();
-        assert!(fit_grm_mirt(&y4, None, &pat4, n, 4, 4, n_cat, &gh4).is_err(), "GH D=4 rejected");
+        assert!(
+            fit_grm(&y4, None, &pat4, n, 4, 4, n_cat, &gh4).is_err(),
+            "GH D=4 rejected"
+        );
         let no_anchor: Vec<u8> = vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-        assert!(fit_grm_mirt(&y, None, &no_anchor, n, n_items, n_dims, n_cat, &cfg).is_err(), "no pure anchor rejected");
+        assert!(
+            fit_grm(&y, None, &no_anchor, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "no pure anchor rejected"
+        );
         let mut ybad = y.clone();
         ybad[0] = n_cat;
-        assert!(fit_grm_mirt(&ybad, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(), "bad category rejected");
+        assert!(
+            fit_grm(&ybad, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "bad category rejected"
+        );
         let mut ygap = y.clone();
         for p in 0..n {
             if ygap[p * n_items + 0] == 1 {
                 ygap[p * n_items + 0] = 0;
             }
         }
-        assert!(fit_grm_mirt(&ygap, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(), "unobserved category rejected");
+        assert!(
+            fit_grm(&ygap, None, &pattern, n, n_items, n_dims, n_cat, &cfg).is_err(),
+            "unobserved category rejected"
+        );
     }
 
     /// Literature-grade Monte-Carlo (>=500 reps): recover the multidimensional GRM at D=2 and D=3
@@ -969,7 +1114,7 @@ mod tests {
     /// Per-rep monotone-EM + finiteness + threshold-ordering canaries.
     #[test]
     #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn mc_grm_mirt_recovery_500() {
+    fn mc_grm_recovery_500() {
         let reps = 500usize;
         let n_cat = 3usize;
         let m1 = n_cat - 1;
@@ -1011,12 +1156,10 @@ mod tests {
                 let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
                 let mut nconv = 0usize;
                 for rep in 0..reps {
-                    let mut rng = Lcg(
-                        0x9E3779B97F4A7C15u64
-                            .wrapping_mul(rep as u64 + 1)
-                            .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
-                            .wrapping_add(n_dims as u64 * 0x100000001B3),
-                    );
+                    let mut rng = Lcg(0x9E3779B97F4A7C15u64
+                        .wrapping_mul(rep as u64 + 1)
+                        .wrapping_add((skew as u64 + 1) * 0xD1B54A32D192ED03)
+                        .wrapping_add(n_dims as u64 * 0x100000001B3));
                     let mut theta = vec![0.0f64; n * n_dims];
                     for d in 0..n_dims {
                         let col: Vec<f64> = (0..n)
@@ -1040,16 +1183,24 @@ mod tests {
                             theta[j * n_dims + d] = (col[j] - m) / sd;
                         }
                     }
-                    let y = simulate(&slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng);
-                    let cfg = GrmMirtConfig { q, ..GrmMirtConfig::default() };
-                    let res = fit_grm_mirt(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
+                    let y = simulate(
+                        &slope, &threshold, &theta, n, n_items, n_dims, n_cat, &mut rng,
+                    );
+                    let cfg = GrmConfig {
+                        q,
+                        ..GrmConfig::default()
+                    };
+                    let res = fit_grm(&y, None, &pattern, n, n_items, n_dims, n_cat, &cfg).unwrap();
                     if res.converged {
                         nconv += 1;
                     }
                     for w in res.loglik_trace.windows(2) {
                         assert!(w[1] >= w[0] - 1e-9, "monotone (rep {rep})");
                     }
-                    assert!(res.slope.iter().all(|v| v.is_finite()), "finite slope (rep {rep})");
+                    assert!(
+                        res.slope.iter().all(|v| v.is_finite()),
+                        "finite slope (rep {rep})"
+                    );
                     for i in 0..n_items {
                         for j in 0..m1 - 1 {
                             assert!(
@@ -1086,7 +1237,7 @@ mod tests {
                 let trmse = (tnum / tden).sqrt();
                 let (lb, tc, conv) = (lbias / lden, csum / ccnt, nconv as f64 / reps as f64);
                 println!(
-                    "[grm-mirt MC D={n_dims} q={q} N={n} skew={skew}] reps={reps} conv={conv:.3} \
+                    "[grm MC D={n_dims} q={q} N={n} skew={skew}] reps={reps} conv={conv:.3} \
                      loadRMSE={lrmse:.4} loadBias={lb:.4} threshRMSE={trmse:.4} thetaCorr={tc:.3}"
                 );
                 assert!(conv > 0.90, "convergence {conv} (D={n_dims} skew={skew})");
