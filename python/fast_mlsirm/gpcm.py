@@ -91,7 +91,7 @@ def fit_gpcm(
 
     References (APA 7th ed.):
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm.
-            *Applied Psychological Measurement, 16*(2), 159-176.
+            *Applied Psychological Measurement, 16*(2), 159–176.
             https://doi.org/10.1177/014662169201600206
         Reckase, M. D. (2009). *Multidimensional item response theory*. Springer.
             https://doi.org/10.1007/978-0-387-89976-3

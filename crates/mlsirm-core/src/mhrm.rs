@@ -59,17 +59,17 @@
 //! # References (APA 7th ed.)
 //!
 //! Cai, L. (2010a). High-dimensional exploratory item factor analysis by a Metropolis-Hastings
-//! Robbins-Monro algorithm. *Psychometrika, 75*(1), 33-57. https://doi.org/10.1007/s11336-009-9136-x
+//! Robbins-Monro algorithm. *Psychometrika, 75*(1), 33–57. https://doi.org/10.1007/s11336-009-9136-x
 //!
 //! Cai, L. (2010b). Metropolis-Hastings Robbins-Monro algorithm for confirmatory item factor
-//! analysis. *Journal of Educational and Behavioral Statistics, 35*(3), 307-335.
+//! analysis. *Journal of Educational and Behavioral Statistics, 35*(3), 307–335.
 //! https://doi.org/10.3102/1076998609353115
 //!
 //! Robbins, H., & Monro, S. (1951). A stochastic approximation method. *The Annals of Mathematical
-//! Statistics, 22*(3), 400-407. https://doi.org/10.1214/aoms/1177729586
+//! Statistics, 22*(3), 400–407. https://doi.org/10.1214/aoms/1177729586
 //!
 //! Louis, T. A. (1982). Finding the observed information matrix when using the EM algorithm. *Journal
-//! of the Royal Statistical Society: Series B, 44*(2), 226-233.
+//! of the Royal Statistical Society: Series B (Methodological), 44*(2), 226–233.
 //! https://doi.org/10.1111/j.2517-6161.1982.tb01203.x
 
 use crate::mmle::{log_sigmoid, sigmoid_stable};
@@ -597,7 +597,7 @@ fn validate(
     Ok(())
 }
 
-/// Fit the confirmatory multidimensional 2PL by Metropolis-Hastings Robbins-Monro (Cai, 2010).
+/// Fit the confirmatory multidimensional 2PL by Metropolis-Hastings Robbins-Monro (Cai, 2010b).
 ///
 /// `y` is a row-major `n_persons * n_items` binary (`0/1`) response array; `observed` an optional
 /// row-major bool mask (missing dropped MAR). `loading_pattern` is a row-major `n_items * n_dims`

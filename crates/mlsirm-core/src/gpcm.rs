@@ -42,13 +42,13 @@
 //! # References (APA 7th ed.)
 //!
 //! Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
-//! Psychological Measurement, 16*(2), 159-176. https://doi.org/10.1177/014662169201600206
+//! Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
 //!
 //! Reckase, M. D. (2009). *Multidimensional item response theory*. Springer.
 //! https://doi.org/10.1007/978-0-387-89976-3
 //!
 //! Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of Monte Carlo EM.
-//! *Computational Statistics & Data Analysis, 48*(4), 685-701. https://doi.org/10.1016/j.csda.2004.03.019
+//! *Computational Statistics & Data Analysis, 48*(4), 685–701. https://doi.org/10.1016/j.csda.2004.03.019
 
 use crate::marginal::XiRuleKind;
 use crate::nodes::{build_xi_nodes, XiRule};

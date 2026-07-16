@@ -1,4 +1,4 @@
-"""Metropolis-Hastings Robbins-Monro (MH-RM) confirmatory multidimensional IFA (Cai, 2010).
+"""Metropolis-Hastings Robbins-Monro (MH-RM) confirmatory multidimensional IFA (Cai, 2010b).
 
 A stochastic-approximation EM that scales confirmatory item factor analysis to a latent
 dimensionality where the deterministic Gauss-Hermite / quasi-Monte-Carlo E-steps of
@@ -21,7 +21,7 @@ _MAX_DIMS = 64
 
 @dataclass
 class MhrmFit:
-    """Fitted MH-RM confirmatory multidimensional 2PL (Cai, 2010).
+    """Fitted MH-RM confirmatory multidimensional 2PL (Cai, 2010b).
 
     ``loading`` is the ``n_items x n_dims`` matrix of free loadings ``a_id`` (exactly ``0`` where the
     confirmatory pattern is ``0``), per-dimension reflection-canonicalized so each dimension's largest
@@ -85,7 +85,7 @@ def fit_mhrm(
     estimate_corr: bool = False,
 ) -> MhrmFit:
     """Fit the confirmatory multidimensional 2PL by Metropolis-Hastings Robbins-Monro (compute in
-    Rust; Cai, 2010).
+    Rust; Cai, 2010b).
 
     A stochastic-approximation EM for the general compensatory 2PL,
     ``P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`` with ``theta_j ~ MVN(0,
@@ -124,17 +124,17 @@ def fit_mhrm(
     (``Phi = I``) and the fit is bit-identical to the flag off.
 
     References (APA 7th ed.):
-        Cai, L. (2010). High-dimensional exploratory item factor analysis by a Metropolis-Hastings
-            Robbins-Monro algorithm. *Psychometrika, 75*(1), 33-57.
+        Cai, L. (2010a). High-dimensional exploratory item factor analysis by a Metropolis-Hastings
+            Robbins-Monro algorithm. *Psychometrika, 75*(1), 33–57.
             https://doi.org/10.1007/s11336-009-9136-x
-        Cai, L. (2010). Metropolis-Hastings Robbins-Monro algorithm for confirmatory item factor
-            analysis. *Journal of Educational and Behavioral Statistics, 35*(3), 307-335.
+        Cai, L. (2010b). Metropolis-Hastings Robbins-Monro algorithm for confirmatory item factor
+            analysis. *Journal of Educational and Behavioral Statistics, 35*(3), 307–335.
             https://doi.org/10.3102/1076998609353115
         Louis, T. A. (1982). Finding the observed information matrix when using the EM algorithm.
-            *Journal of the Royal Statistical Society: Series B, 44*(2), 226-233.
+            *Journal of the Royal Statistical Society: Series B (Methodological), 44*(2), 226–233.
             https://doi.org/10.1111/j.2517-6161.1982.tb01203.x
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm. *Applied
-            Psychological Measurement, 16*(2), 159-176. https://doi.org/10.1177/014662169201600206
+            Psychological Measurement, 16*(2), 159–176. https://doi.org/10.1177/014662169201600206
     """
     from .fitstats import _core_module
 
