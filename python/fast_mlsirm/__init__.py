@@ -30,6 +30,7 @@ from .models import ConfirmatoryModel as ConfirmatoryModel, ExploratoryModel as 
 from .twopl import fit_2pl as fit_2pl, TwoPlFit as TwoPlFit
 from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalResponseFit
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
+from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -129,6 +130,8 @@ __all__ = [
     "NominalResponseFit",
     "fit_grm",
     "GrmFit",
+    "fit_gpcm",
+    "GpcmFit",
     "fit_rsm",
     "RsmFit",
     "fit_mixed_items",

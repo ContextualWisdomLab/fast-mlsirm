@@ -109,6 +109,66 @@
   `python/fast_mlsirm/models.py` for the verified Chalmers (2012) APA reference
   and DOI.
 
+- **Confirmatory MULTIDIMENSIONAL generalized partial credit model** (Muraki, 1992).
+  `fit_gpcm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
+  multidimensional discrimination vector per item and INTEGER category scores, completing the
+  polytomous-MIRT trio (`fit_nominal` / `fit_grm` / `fit_gpcm`). Item `i` has a free slope `a_i` (free
+  on the confirmatory 0/1 loading pattern from `model=models.confirmatory(...)`, items x D) and
+  `n_cat-1` category step intercepts `gamma_i`, with `psi_k = k * (sum_{d in S_i} a_id theta_d) +
+  gamma_i,k`, `gamma_i,0 = 0` pinned, and `P(Y_i = k | theta) = softmax_k(psi_k)`, `theta ~ MVN(0,
+  I_D)`. This is the `a_ikd = k a_id` INTEGER-scoring restriction of the multidimensional nominal
+  model in a distinct single-slope parametrization — NOT a mode of `fit_nominal` (which optimizes free
+  per-category slopes), so it warrants its own estimator; and it is the ADJACENT-category-logit
+  counterpart of the cumulative `fit_grm`. Unlike the GRM's thresholds, the GPCM steps are UNORDERED
+  (the softmax is finite for any real `gamma`, so no ordering constraint exists or is imposed). It
+  reduces to the unidimensional GPCM (`poly::fit_poly_unidim(PolyModel::Gpcm)`) at `D = 1` (within
+  optimizer tolerance and up to reflection — NOT bit-exact, because `fit_poly_unidim` forces `a > 0`
+  via a `log a` parametrization while the confirmatory model uses an UNCONSTRAINED slope so
+  reverse-keyed / negative cross-loadings are representable). Estimated by Bock-Aitkin marginal MLE
+  over the D-dim latent grid, REUSING the compensatory-MIRT node machinery (`nodes::build_xi_nodes`):
+  `node_rule = "gh"` uses the `q^D` Gauss-Hermite grid (`D <= 3`), `"qmc"`/`"mc"` use `xi_points`
+  Halton / Monte-Carlo draws (`D <= 6`, Jank 2005 QMC-EM), and the GPCM softmax cell of
+  `poly::gpcm_logprobs` / `gpcm_node_gradient`. The per-item M-step is a finite-difference-Hessian
+  Newton over `[a_{d0}..a_{d,L-1}, gamma_1..gamma_{M-1}]`, byte-for-byte the ascent of
+  `poly::m_step_item` (ridge = Hessian conditioning only, not a prior), with the GPCM node gradient
+  chained to the multidimensional slope (`d/da_id = sum_node g_base theta_d`, `d/dgamma_j = sum_node
+  g_intercepts[j]`). Category scores are FIXED integers `0..n_cat-1` (that fixity is what makes the
+  model GPCM rather than nominal), so the free per-category slope gradient returned by the shared cell
+  (`g_scores`) is DROPPED — only the single `base` slope and the step intercepts are estimated. Init is
+  `gamma_k = ln(freq_k / freq_0)` (a plain marginal log-odds, NOT a cumulative GRM-style boundary). EM
+  uses the SIGNED monotonic-decrease stopping guard (a likelihood decrease errors, not the
+  compensatory MIRT's `.abs()` check). **Identification.** Unit trait variances + a PURE
+  single-dimension anchor item per dimension pin the rotation to the coordinate axes; the per-dimension
+  reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` leaves `base` — hence every step and category
+  probability — INVARIANT, so it is CANONICALIZED (as for the GRM / compensatory MIRT, and unlike the
+  nominal, whose per-category slopes make the anchor sign ambiguous): dimension `d` is flipped so its
+  largest-magnitude pure anchor loads positively, negating that dimension's slope column AND the trait
+  `theta_d` but NOT the steps. `validate` rejects a rotationally-degenerate pattern (no pure anchor),
+  an out-of-range category, and ANY unobserved category for an item, with a `nodes x items x n_cat`
+  count-table cap and the rule-dependent D / q / xi_points bounds. **Guards.** The D=1 anchor recovers
+  `fit_poly_unidim(Gpcm)`'s slope and steps within tolerance; a deterministic finite-difference anchor
+  pins every per-(dimension, step) gradient slot on a fixed node set at D=2 (GH) AND D=4 (Halton) with
+  a NON-IDENTITY dims map, M>=4 categories, deliberately NON-MONOTONE step values (unordered steps have
+  no ordering canary, so the anchor exercises the free-step estimator directly) and distinct random
+  per-category counts; because that FD anchor is map-invariant, a SEPARATE deterministic
+  objective-value assertion at D=4 (dims `[0,2,3]`) pins the node-column dims map by computing
+  `base = sum_t a_t node[dim_t]` and the GPCM log-probabilities BY HAND with LITERAL integer scores and
+  matching the estimator's internal value to `< 1e-9` (the QMC path is never exercised by the D<=3
+  recovery / MC); a reflection-FIRES test is constructed so the RAW EM mode lands the pure anchor
+  NEGATIVE (a WEAK reverse-keyed pure anchor plus a STRONG positively-keyed cross-loader that dominates
+  the dim0 orientation), so canonicalization MUST fire — asserting the anchor ends positive, the
+  co-loader ends negative, the trait axis is sign-flipped (theta correlates negatively with the truth
+  on the reflected dimension), and the steps are unchanged; mutation-verified (disabling the flip fails
+  all three sign checks). A D=2 recovery carries a genuinely NEGATIVE cross-loader on a
+  positively-anchored dimension (asserted `< -margin`) and recovers the unordered steps by RMSE. A
+  Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied cross-loaders, `n_cat = 4`, GH `q = 15/11`,
+  `N = 2500/2000`) recovers the loadings near-unbiased under a normal trait (loading RMSE ~0.08-0.09,
+  bias ~0.00-0.01; step RMSE ~0.06-0.07) with the expected mild attenuation under a
+  per-dimension-standardized right-skew trait (loading RMSE ~0.10-0.11, bias ~-0.04; step RMSE ~0.14),
+  per-dimension trait EAP correlation ~0.74-0.77 and 100% convergence, EM monotone every replication
+  (40-replication pilot; the committed `#[ignore]` test runs 500). Compute lives in
+  `mlsirm_core::gpcm::fit_gpcm`; exposed to Python as `fit_gpcm` / `GpcmFit`.
+
 - **Confirmatory MULTIDIMENSIONAL graded response model** (Samejima, 1969; Muraki & Carlson, 1995).
   `fit_grm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
   multidimensional discrimination vector per item and ordered category boundaries: item `i` has a

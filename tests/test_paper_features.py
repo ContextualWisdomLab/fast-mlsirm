@@ -3332,6 +3332,89 @@ def test_fit_grm_recovers_confirmatory_multidimensional_ordered_categories():
         fit_grm(ygap, n_cat, model=models.confirmatory(pattern))
 
 
+def test_fit_gpcm_recovers_confirmatory_multidimensional_adjacent_category():
+    """Confirmatory MULTIDIMENSIONAL generalized partial credit model (Muraki, 1992): recover a D=2
+    confirmatory pattern of item discrimination vectors (INTEGER-scored adjacent-category logits)
+    including a genuinely NEGATIVE cross-loader on a positively-anchored dimension; recover the
+    UNORDERED category step intercepts numerically (GPCM steps carry no ordering constraint, so a
+    monotone canary would be vacuous — RMSE is the only guard); confirm the baseline reflection is
+    canonicalized (pure anchors positive) while steps are left unflipped; and reject
+    rotationally-degenerate patterns, out-of-range and unobserved categories, and GH D>3."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import GpcmFit, fit_gpcm, models
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_gpcm"):
+        pytest.skip("compiled core built without fit_gpcm")
+
+    rng = np.random.default_rng(1992)
+    n_dims, n_cat, n = 2, 4, 6000
+    pattern = np.array([[1, 0], [1, 0], [0, 1], [0, 1], [1, 1]], dtype=np.int64)
+    n_items = pattern.shape[0]
+    slope = np.zeros((n_items, n_dims))
+    slope[0, 0], slope[1, 0] = 1.4, 1.0
+    slope[2, 1], slope[3, 1] = 1.2, 1.1
+    slope[4, 0], slope[4, 1] = -1.0, 0.9   # negative cross-loader on dim0 (anchor item 0 positive)
+    # UNORDERED step intercepts gamma_k (psi_k = k*base + gamma_k, gamma_0 = 0); deliberately
+    # non-monotone across k to exercise the free-step estimator.
+    step = np.array([
+        [0.7, -0.4, 0.9],
+        [-0.3, 0.6, 0.1],
+        [0.5, 0.2, -0.6],
+        [-0.2, 0.8, -0.3],
+        [0.4, -0.5, 0.7],
+    ])
+    theta = rng.standard_normal((n, n_dims))
+    # simulate via adjacent-category softmax P(Y=k) = softmax_k(k*base + gamma_k)
+    y = np.zeros((n, n_items), dtype=np.int64)
+    for i in range(n_items):
+        base = theta @ slope[i]
+        psi = np.zeros((n, n_cat))
+        for k in range(1, n_cat):
+            psi[:, k] = k * base + step[i, k - 1]
+        psi -= psi.max(axis=1, keepdims=True)
+        pk = np.exp(psi)
+        pk /= pk.sum(axis=1, keepdims=True)
+        u = rng.random(n)
+        y[:, i] = (pk.cumsum(axis=1) < u[:, None]).sum(axis=1)
+
+    res = fit_gpcm(y, n_cat, model=models.confirmatory(pattern), q=21)
+    assert isinstance(res, GpcmFit) and res.converged
+    assert res.slope.shape == (n_items, n_dims) and res.step.shape == (n_items, n_cat - 1)
+    assert res.n_dims == 2 and res.n_cat == 4
+    # off-pattern slopes exactly zero
+    for i in range(n_items):
+        for d in range(n_dims):
+            if pattern[i, d] == 0:
+                assert res.slope[i, d] == 0.0
+    # free-parameter count = sum_i (|S_i| + (n_cat-1))
+    assert res.n_parameters == 4 * (1 + 3) + (2 + 3)
+    # canonical: pure anchors positive; negative cross-loader recovered negative
+    assert res.slope[0, 0] > 0.5 and res.slope[2, 1] > 0.5
+    assert res.slope[4, 0] < -0.4, f"neg cross-loader {res.slope[4, 0]}"
+    assert np.sqrt(np.mean((res.slope - slope) ** 2)) < 0.16
+    # UNORDERED steps recovered numerically (no ordering canary possible for GPCM)
+    assert np.sqrt(np.mean((res.step - step) ** 2)) < 0.16, f"step RMSE {res.step}"
+    for d in range(n_dims):
+        assert np.corrcoef(res.theta[:, d], theta[:, d])[0, 1] > 0.6
+    assert np.all(np.diff(res.loglik_trace) >= -1e-9)  # EM monotone
+
+    # validation
+    with pytest.raises(ValueError):  # GH D=4
+        fit_gpcm((np.arange(200).reshape(50, 4) % n_cat).astype(np.int64), n_cat,
+                 model=models.confirmatory(np.eye(4, dtype=np.int64)), node_rule="gh")
+    with pytest.raises(ValueError):  # no pure anchor
+        fit_gpcm(y, n_cat, model=models.confirmatory(np.ones((n_items, n_dims), dtype=np.int64)))
+    with pytest.raises(ValueError):  # category out of range
+        ybad = y.copy(); ybad[0, 0] = n_cat
+        fit_gpcm(ybad, n_cat, model=models.confirmatory(pattern))
+    with pytest.raises(ValueError):  # unobserved category
+        ygap = y.copy(); ygap[ygap[:, 0] == 1, 0] = 0
+        fit_gpcm(ygap, n_cat, model=models.confirmatory(pattern))
+
+
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a
     difficulty reversal (a single-class model cannot fit both orderings)."""

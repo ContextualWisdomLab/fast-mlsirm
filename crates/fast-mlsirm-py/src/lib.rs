@@ -31,6 +31,7 @@ use mlsirm_core::fitstats::{
     person_fit_resampling as core_person_fit_resampling,
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
+use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
@@ -1052,6 +1053,96 @@ fn fit_grm(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("slope", res.slope)?;
     out.set_item("threshold", res.threshold)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("n_dims", res.n_dims)?;
+    out.set_item("n_cat", res.n_cat)?;
+    out.set_item("loglik_trace", res.loglik_trace)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("n_parameters", res.n_parameters)?;
+    Ok(out.into())
+}
+
+/// Confirmatory MULTIDIMENSIONAL generalized partial credit model fit (Muraki, 1992;
+/// `mlsirm_core::gpcm::fit_gpcm`). Ordered polytomous categories with a SINGLE discrimination
+/// vector per item and INTEGER category scores: `P(Y = k | theta) = softmax_k(k * sum_d a_id
+/// theta_d + step_ik)`, `theta ~ MVN(0, I)`. The `n_cat-1` step intercepts are UNORDERED (the
+/// softmax is finite for any values). `node_rule` selects the E-step grid: `"gh"` (Gauss-Hermite,
+/// `n_dims <= 3`) or `"qmc"`/`"mc"` (Halton/Monte-Carlo, `n_dims <= 6`). `y` is a row-major
+/// `n_persons * n_items` integer-category array; `observed` an optional bool mask (missing dropped
+/// MAR). Returns a dict with `slope` (row-major `n_items * n_dims`, `0` off-pattern,
+/// reflection-canonicalized), `step` (`n_items * (n_cat-1)`, unordered), `theta`
+/// (`n_persons * n_dims` EAP), `n_dims`, `n_cat`, `loglik_trace`, `n_iter`, `converged`,
+/// `termination_reason`, `final_loglik_change`, `n_parameters`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, n_cat, q = 21, max_iter = 500, tol = 1e-6, node_rule = "gh", xi_points = 4000, xi_seed = 0x9E37_79B9_7F4A_7C15))]
+fn fit_gpcm(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    loading_pattern: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_dims: usize,
+    n_cat: usize,
+    q: usize,
+    max_iter: usize,
+    tol: f64,
+    node_rule: &str,
+    xi_points: usize,
+    xi_seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yy: Vec<usize> = y
+        .as_slice()?
+        .iter()
+        .map(|&v| {
+            usize::try_from(v)
+                .map_err(|_| PyValueError::new_err("y categories must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let pattern: Vec<u8> = loading_pattern
+        .as_slice()?
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err(
+                "loading_pattern entries must be 0 or 1",
+            )),
+        })
+        .collect::<PyResult<_>>()?;
+    let obs_vec: Option<Vec<bool>> = match &observed {
+        Some(o) => Some(o.as_slice()?.to_vec()),
+        None => None,
+    };
+    let xi_rule = XiRuleKind::parse(node_rule)
+        .ok_or_else(|| PyValueError::new_err("node_rule must be one of ['gh', 'qmc', 'mc']"))?;
+    let cfg = GpcmConfig {
+        max_iter,
+        tol,
+        q,
+        xi_rule,
+        xi_points,
+        xi_seed,
+        ..GpcmConfig::default()
+    };
+    let res = core_fit_gpcm(
+        &yy,
+        obs_vec.as_deref(),
+        &pattern,
+        n_persons,
+        n_items,
+        n_dims,
+        n_cat,
+        &cfg,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("slope", res.slope)?;
+    out.set_item("step", res.step)?;
     out.set_item("theta", res.theta)?;
     out.set_item("n_dims", res.n_dims)?;
     out.set_item("n_cat", res.n_cat)?;
@@ -3994,6 +4085,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_2pl, m)?)?;
     m.add_function(wrap_pyfunction!(fit_nominal_model, m)?)?;
     m.add_function(wrap_pyfunction!(fit_grm, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_gpcm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;

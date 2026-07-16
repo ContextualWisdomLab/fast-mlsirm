@@ -3,6 +3,7 @@ pub mod cdm;
 pub mod crm;
 pub mod equating;
 pub mod fitstats;
+pub mod gpcm;
 pub mod grm;
 pub mod linking;
 pub mod lltm;
