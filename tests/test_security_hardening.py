@@ -14,7 +14,12 @@ import pytest
 
 from fast_mlsirm import serving
 from fast_mlsirm.cli import _load_optional_npy
-from fast_mlsirm.config import MAX_LATENT_DIM, MAX_XI_POINTS, FitConfig
+from fast_mlsirm.config import (
+    MAX_LATENT_DIM,
+    MAX_LBFGS_HISTORY,
+    MAX_XI_POINTS,
+    FitConfig,
+)
 from fast_mlsirm.fit import _compact_population_labels
 from fast_mlsirm.io import load_params
 from fast_mlsirm.validation import validate_judge
@@ -249,6 +254,19 @@ def test_config_accepts_normal_numerics():
     FitConfig(model="MLS2PLM", estimator="mmle", max_iter=100, n_restarts=2,
               m_steps=4, learning_rate=0.01, tolerance=1e-6,
               eps_distance=1e-8, init_gamma=1.0, gradient_clip=100.0).validate()
+
+
+@pytest.mark.parametrize(
+    "bad", [0, -1, True, 1.5, "10", MAX_LBFGS_HISTORY + 1, 10**9]
+)
+def test_fitconfig_rejects_invalid_lbfgs_history(bad):
+    with pytest.raises(ValueError, match="lbfgs_history"):
+        FitConfig(lbfgs_history=bad).validate()
+
+
+def test_fitconfig_accepts_bounded_lbfgs_history():
+    FitConfig(lbfgs_history=1).validate()
+    FitConfig(lbfgs_history=MAX_LBFGS_HISTORY).validate()
 
 
 # ---- VULN-0005 (2nd pass): n_draws / serving_prior bounds -------------------

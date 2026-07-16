@@ -24,6 +24,9 @@ MAX_XI_POINTS = 1_000_000
 MAX_MAX_ITER = 100_000
 MAX_RESTARTS = 1_000
 MAX_M_STEPS = 1_000
+# L-BFGS keeps two full parameter vectors per history entry. Values above 100
+# are outside practical limited-memory use and amplify caller-controlled RAM.
+MAX_LBFGS_HISTORY = 100
 # Aggregate optimizer work (max_iter x n_restarts) across a single fit; the
 # per-field caps still permit 1e8 iterations together, so bound the product.
 MAX_AGGREGATE_ITERS = 10_000_000
@@ -170,6 +173,16 @@ class FitConfig:
             raise ValueError(f"optimizer must be one of {sorted(VALID_OPTIMIZERS)}")
         if self.estimator not in VALID_ESTIMATORS:
             raise ValueError(f"estimator must be one of {sorted(VALID_ESTIMATORS)}")
+        if isinstance(self.lbfgs_history, bool):
+            raise ValueError("lbfgs_history must be an integer")
+        try:
+            lbfgs_history = operator.index(self.lbfgs_history)
+        except TypeError as exc:
+            raise ValueError("lbfgs_history must be an integer") from exc
+        if not (1 <= lbfgs_history <= MAX_LBFGS_HISTORY):
+            raise ValueError(
+                f"lbfgs_history must be >= 1 and <= {MAX_LBFGS_HISTORY}"
+            )
         if not (1 <= self.max_iter <= MAX_MAX_ITER):
             raise ValueError(f"max_iter must be >= 1 and <= {MAX_MAX_ITER}")
         if not (1 <= self.n_restarts <= MAX_RESTARTS):
