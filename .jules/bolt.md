@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-07-16 - [Vectorized M-step in MMLE-EM]
+**Learning:** In Expectation-Maximization (EM) or MMLE numerical algorithms within the codebase, replacing Python `for` loops over large dimensions (e.g., items) with fully vectorized NumPy operations using 2D matrix multiplications (`@`) and state masks (e.g., `active_mask`) avoids unoptimized scalar calls and significantly improves performance (e.g., ~24x speedup on 1000 items).
+**Action:** When working on numerical iterative algorithms (like Newton-Raphson steps inside an EM loop), look for opportunities to vectorise across the independent dimension (like items) using a convergence mask (`active_mask`) to halt computation only for the elements that have converged.

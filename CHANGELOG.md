@@ -83,3 +83,6 @@
   not Bayesian posterior samplers.
 - Ordinal response estimators, sparse/block execution, benchmark automation,
   and posterior predictive checks remain future work.
+
+### Changed
+- MMLE-EM 수치적 최적화 알고리즘의 M-Step을 벡터화된 NumPy 행렬 연산으로 대체하여 성능 향상 (`python/fast_mlsirm/estimators/mmle.py`)
