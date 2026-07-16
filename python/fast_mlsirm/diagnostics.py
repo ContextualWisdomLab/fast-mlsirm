@@ -8,7 +8,7 @@ import numpy as np
 
 from .config import FitConfig
 from .math import sigmoid, standardize
-from .objective import linear_predictor, model_flags, prepare_response
+from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
@@ -24,8 +24,10 @@ def predict_proba(
     items: np.ndarray | None = None,
     model: str = "MLS2PLM",
 ) -> np.ndarray:
+    factors = validate_factor_id(
+        factor_id, len(params.b), params.theta.shape[1]
+    )
     sub = _subset_params(params, persons, items)
-    factors = np.asarray(factor_id, dtype=np.int64)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
     eta, _ = linear_predictor(sub, factors, model=model)

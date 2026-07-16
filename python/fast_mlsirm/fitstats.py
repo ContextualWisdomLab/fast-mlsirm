@@ -48,14 +48,13 @@ def _validate_factor_id(factor_id):
     Bounds n_dims by the item count (len(factor_id)) so a huge dimension label
     cannot force n_dims-sized allocations in the fit-statistics cores."""
     fid = np.asarray(factor_id)
-    ff = fid.astype(np.float64)
     if fid.ndim != 1:
         raise ValueError("factor_id must be a 1-D array")
-    if not np.all(np.isfinite(ff)) or np.any(ff < 0) or np.any(ff != np.floor(ff)):
+    if fid.dtype.kind not in {"i", "u"}:
         raise ValueError("factor_id must be finite non-negative integers")
-    d = fid.astype(np.int64)
-    if d.size and int(d.max()) >= d.size:
+    if fid.size and (np.any(fid < 0) or int(fid.max()) >= fid.size):
         raise ValueError("factor_id values must be in 0..n_items-1")
+    d = fid.astype(np.int64, copy=False)
     n_dims = int(d.max()) + 1 if d.size else 0
     return d, n_dims
 

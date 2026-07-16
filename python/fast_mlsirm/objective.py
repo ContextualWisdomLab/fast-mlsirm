@@ -32,12 +32,14 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
 
 
 def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.ndarray:
-    factors = np.asarray(factor_id, dtype=np.int64)
-    if factors.shape != (n_items,):
+    raw = np.asarray(factor_id)
+    if raw.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
-    if np.any(factors < 0) or np.any(factors >= n_dims):
+    if raw.dtype.kind not in {"i", "u"}:
+        raise ValueError("factor_id must contain integer values")
+    if raw.size and (np.any(raw < 0) or int(raw.max()) >= n_dims):
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    return factors
+    return raw.astype(np.int64, copy=False)
 
 
 def model_flags(model: str) -> tuple[bool, bool]:

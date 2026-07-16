@@ -563,6 +563,35 @@ def test_fitstats_validate_factor_id_accepts_normal():
     assert n_dims == 3 and d.tolist() == [0, 0, 1, 1, 2]
 
 
+# ---- VULN-0011: factor_id conversion must not alias untrusted labels -------
+def test_fitstats_rejects_uint64_factor_id_wraparound():
+    bad = np.array([np.iinfo(np.uint64).max], dtype=np.uint64)
+    with pytest.raises(ValueError, match="factor_id"):
+        fitstats._validate_factor_id(bad)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.array([np.iinfo(np.uint64).max], dtype=np.uint64),
+        np.array([0.5], dtype=np.float64),
+    ],
+)
+def test_predict_proba_rejects_factor_id_before_integer_cast(bad):
+    from fast_mlsirm.diagnostics import predict_proba
+
+    params = MLSIRMParams(
+        theta=np.array([[0.0, 4.0]]),
+        alpha=np.array([0.0]),
+        b=np.array([0.0]),
+        xi=np.zeros((1, 1)),
+        zeta=np.zeros((1, 1)),
+        tau=0.0,
+    )
+    with pytest.raises(ValueError, match="factor_id"):
+        predict_proba(params, bad, model="MIRT")
+
+
 # ---- VULN-0012: unbounded QMC quadrature working set -----------------------
 def test_fit_marginal_numpy_rejects_qmc_working_set():
     with pytest.raises(ValueError, match="working set"):
