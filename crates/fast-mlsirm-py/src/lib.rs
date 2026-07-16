@@ -677,19 +677,21 @@ fn fit_ho_gdina(
 /// `theta ~ N(0,1)`. Returns a dict with `slope`, `intercept`, `resid_sd`,
 /// `discrimination` (`= slope/resid_sd`), `difficulty` (`= -intercept/slope`),
 /// `theta` (per-person EAP), `loglik_trace`, `n_iter`, `converged`, `n_parameters`.
-/// Orthogonal confirmatory compensatory multidimensional 2PL (Reckase, 2009; Bock,
-/// Gibbons, & Muraki, 1988; `mlsirm_core::mirt::fit_compensatory_mirt`). Each item may
-/// load FREELY on several ORTHOGONAL latent dimensions `theta ~ MVN(0, I_D)`, which trade
-/// off additively in the logit: `P(X=1) = sigmoid(sum_d L_id a_id theta_d + b_i)`.
-/// `loading_pattern` is a row-major `n_items * n_dims` 0/1 pattern; each dimension needs a
-/// pure single-loading anchor item (identification; the all-ones pattern is rejected).
-/// Correlated traits are a deferred extension. Returns a dict with `loading` (row-major
-/// `n_items * n_dims`, `0` off-pattern), `intercept`, `theta` (`n_persons * n_dims` EAP),
-/// `n_dims`, `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
+/// Confirmatory compensatory multidimensional 2PL (Reckase, 2009; Bock, Gibbons, & Muraki,
+/// 1988; `mlsirm_core::mirt::fit_compensatory_mirt`). Each item may load FREELY on several
+/// latent dimensions `theta ~ MVN(0, Sigma)` that trade off additively in the logit:
+/// `P(X=1) = sigmoid(sum_d L_id a_id theta_d + b_i)`. `loading_pattern` is a row-major
+/// `n_items * n_dims` 0/1 pattern; each dimension needs a pure single-loading anchor item
+/// (identification; the all-ones pattern is rejected). With `estimate_corr = False` the
+/// factors are ORTHOGONAL (`Sigma = I`); with `estimate_corr = True` the inter-factor
+/// correlation matrix is estimated (Cholesky node-map + a monotone ECM step). Returns a dict
+/// with `loading` (row-major `n_items * n_dims`, `0` off-pattern), `intercept`, `theta`
+/// (`n_persons * n_dims` EAP), `n_dims`, `corr` (row-major `n_dims * n_dims`, identity when not
+/// estimated), `loglik_trace`, `n_iter`, `converged`, `termination_reason`,
 /// `final_loglik_change`, `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, max_iter = 500, tol = 1e-6))]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, q = 21, estimate_corr = false, max_iter = 500, tol = 1e-6))]
 fn fit_compensatory_mirt(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, f64>,
@@ -699,6 +701,7 @@ fn fit_compensatory_mirt(
     n_items: usize,
     n_dims: usize,
     q: usize,
+    estimate_corr: bool,
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -711,7 +714,7 @@ fn fit_compensatory_mirt(
             _ => Err(PyValueError::new_err("loading_pattern entries must be 0 or 1")),
         })
         .collect::<PyResult<_>>()?;
-    let cfg = MirtConfig { max_iter, tol, q, ..MirtConfig::default() };
+    let cfg = MirtConfig { max_iter, tol, q, estimate_corr, ..MirtConfig::default() };
     let res = core_fit_compensatory_mirt(
         y.as_slice()?,
         observed.as_slice()?,
@@ -727,6 +730,7 @@ fn fit_compensatory_mirt(
     out.set_item("intercept", res.intercept)?;
     out.set_item("theta", res.theta)?;
     out.set_item("n_dims", res.n_dims)?;
+    out.set_item("corr", res.corr)?;
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;

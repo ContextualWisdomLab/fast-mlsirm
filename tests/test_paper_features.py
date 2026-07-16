@@ -2930,6 +2930,20 @@ def test_fit_compensatory_mirt_recovers_loadings():
     assert len(unfinished.loglik_trace) == 2
     assert unfinished.final_loglik_change >= 1e-12
 
+    # estimate_corr=False reports Sigma = I; estimate_corr=True recovers a known correlation.
+    ortho = fit_compensatory_mirt(y, pattern, q=15, estimate_corr=False)
+    assert np.allclose(ortho.corr, np.eye(n_dims))
+    ncorr = np.linalg.cholesky(np.array([[1.0, 0.5], [0.5, 1.0]]))
+    thc = (ncorr @ rng.standard_normal((n_dims, n))).T
+    pc = 1.0 / (1.0 + np.exp(-(thc @ loading.T + intercept)))
+    yc = (rng.random((n, n_items)) < pc).astype(float)
+    rc = fit_compensatory_mirt(yc, pattern, q=15, estimate_corr=True)
+    assert rc.corr.shape == (n_dims, n_dims)
+    assert np.allclose(np.diag(rc.corr), 1.0) and np.allclose(rc.corr, rc.corr.T)
+    realized = np.corrcoef(thc.T)[0, 1]
+    assert abs(rc.corr[0, 1] - realized) < 0.06, f"corr {rc.corr[0, 1]} vs realized {realized}"
+    assert np.all(np.linalg.eigvalsh(rc.corr) > 0)  # positive-definite
+
 
 def test_fit_mixture_recovers_two_class_rasch():
     """Mixed Rasch / mixture IRT (Rost, 1990): recover two latent classes with a

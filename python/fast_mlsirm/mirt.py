@@ -1,8 +1,10 @@
-"""Orthogonal confirmatory compensatory multidimensional 2PL (MIRT).
+"""Confirmatory compensatory multidimensional 2PL (MIRT).
 
 Reckase (2009) / Bock, Gibbons & Muraki (1988) full-information item factor model, in
-which an item may load freely on several orthogonal latent dimensions that trade off
-additively in the logit. Estimated in the Rust core over a product Gauss-Hermite grid."""
+which an item may load freely on several latent dimensions that trade off additively in the
+logit. Factors are orthogonal by default (``estimate_corr=False``, ``Sigma = I``) or their
+correlation matrix is estimated (``estimate_corr=True``). Estimated in the Rust core over a
+product Gauss-Hermite grid."""
 
 from __future__ import annotations
 
@@ -13,21 +15,23 @@ import numpy as np
 
 @dataclass
 class CompMirtFit:
-    """Fitted orthogonal confirmatory compensatory MIRT (Reckase, 2009).
+    """Fitted confirmatory compensatory MIRT (Reckase, 2009).
 
     ``loading`` is the items x dimensions matrix of free loadings ``a_id`` (exactly ``0``
     where the ``loading_pattern`` is ``0``); ``intercept`` the per-item ``b_i``; ``theta``
-    the persons x dimensions trait EAP. The model is ``P(X_ij=1 | theta_j) =
-    sigmoid(sum_d a_id theta_jd + b_i)`` with ``theta_j ~ MVN(0, I_D)`` (ORTHOGONAL,
-    unit-variance traits). Correlated traits ``theta ~ MVN(0, Sigma)`` are a deferred
-    extension; this is the orthogonal confirmatory model. ``termination_reason`` is either
-    ``"converged"`` or ``"max_iter_reached"``; ``final_loglik_change`` is the absolute
-    difference between the final two evaluated marginal log-likelihoods."""
+    the persons x dimensions trait EAP; ``corr`` the ``n_dims x n_dims`` latent correlation
+    matrix (identity when ``estimate_corr=False``, estimated off-diagonals otherwise). The
+    model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
+    ``theta_j ~ MVN(0, Sigma)``, ``Sigma`` a unit-diagonal correlation matrix.
+    ``termination_reason`` is either ``"converged"`` or ``"max_iter_reached"``;
+    ``final_loglik_change`` is the absolute difference between the final two evaluated
+    marginal log-likelihoods."""
 
     loading: np.ndarray
     intercept: np.ndarray
     theta: np.ndarray
     n_dims: int
+    corr: np.ndarray
     loglik_trace: np.ndarray
     n_iter: int
     converged: bool
@@ -40,10 +44,11 @@ def fit_compensatory_mirt(
     responses: np.ndarray,
     loading_pattern: np.ndarray,
     q: int = 21,
+    estimate_corr: bool = False,
     max_iter: int = 500,
     tol: float = 1e-6,
 ) -> CompMirtFit:
-    """Fit the orthogonal confirmatory compensatory MIRT (compute in Rust; Reckase, 2009;
+    """Fit the confirmatory compensatory MIRT (compute in Rust; Reckase, 2009;
     Bock, Gibbons & Muraki, 1988).
 
     A general COMPENSATORY multidimensional 2PL: an item may load freely on several latent
@@ -62,10 +67,12 @@ def fit_compensatory_mirt(
     per-dimension sign is fixed by a reflection anchor. Loadings are NOT constrained
     non-negative — reverse-keyed and suppressor cross-loadings are representable.
 
-    **Scope (restriction).** ORTHOGONAL traits only (``theta ~ MVN(0, I)``). Correlated
-    traits ``theta ~ MVN(0, Sigma)`` with a free correlation matrix are a documented
-    DEFERRED extension. ``n_dims > 3`` (which would need coarser GH or QMC/MC-EM) is also
-    deferred.
+    **Latent traits.** With ``estimate_corr=False`` (default) the factors are ORTHOGONAL
+    (``theta ~ MVN(0, I)``). With ``estimate_corr=True`` the inter-factor CORRELATION matrix
+    ``Sigma`` (unit diagonal) is estimated by an ECM step (the standard GH grid is mapped
+    through ``chol(Sigma)`` and the correlations ascend the Gaussian-prior objective with a
+    positive-definite, monotone guard). ``n_dims > 3`` (which would need coarser GH or QMC) is
+    a deferred extension.
 
     ``responses`` is a persons x items 0/1 array (``NaN`` = missing, dropped under MAR);
     ``loading_pattern`` is an items x dimensions 0/1 array; ``q`` is the Gauss-Hermite nodes
@@ -130,6 +137,7 @@ def fit_compensatory_mirt(
         int(n_items),
         int(n_dims),
         q_int,
+        bool(estimate_corr),
         max_iter_int,
         float(tol),
     )
@@ -138,6 +146,7 @@ def fit_compensatory_mirt(
         intercept=np.asarray(res["intercept"], dtype=np.float64),
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
         n_dims=int(res["n_dims"]),
+        corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),

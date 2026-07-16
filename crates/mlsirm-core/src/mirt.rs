@@ -1,5 +1,5 @@
-//! Compensatory multidimensional 2PL — confirmatory, orthogonal (Reckase, 2009; Bock,
-//! Gibbons, & Muraki, 1988).
+//! Compensatory multidimensional 2PL — confirmatory, orthogonal or correlated (Reckase,
+//! 2009; Bock, Gibbons, & Muraki, 1988).
 //!
 //! `fit_compensatory_mirt` fits a **general compensatory** multidimensional 2PL in which an
 //! item may load FREELY on several latent dimensions, which trade off ADDITIVELY inside a
@@ -22,18 +22,26 @@
 //! that factorization and requires the full `Q^D` product quadrature, so this is a dedicated
 //! estimator rather than a mode of `marginal.rs`.
 //!
-//! **Scope — ORTHOGONAL factors only.** `theta ~ MVN(0, I_D)`: the latent traits are
-//! uncorrelated and unit-variance. Correlated traits `theta ~ MVN(0, Sigma)` with a free
-//! correlation matrix are a documented DEFERRED extension (they would add a Cholesky
-//! node-mapping and a unit-diagonal-constrained `Sigma` M-step). This estimator is the
-//! *orthogonal confirmatory* compensatory model, not the general correlated one.
+//! **Latent traits.** `theta ~ MVN(0, Sigma)`, `Sigma` a CORRELATION matrix (unit diagonal).
+//! With `estimate_corr = false` (default) the factors are ORTHOGONAL (`Sigma = I`); with
+//! `estimate_corr = true` the inter-factor correlations are estimated by an ECM step. The
+//! correlated case maps the standard Gauss-Hermite grid through the Cholesky factor
+//! `theta_g = L z_g` (`Sigma = L L'`) — a measure-preserving change of variables, so the same
+//! product-GH weights integrate `phi_Sigma` — and the item M-step is reused verbatim on the
+//! mapped nodes; the `Sigma` M-step ascends the Gaussian-prior objective
+//! `-0.5[log|Sigma| + tr(Sigma^{-1} C)]` over the free correlations (`C` the posterior second
+//! moment) with backtracking + a positive-definite guard so EM stays monotone. `D > 3` (which
+//! would need coarser GH or QMC) remains a deferred extension.
 //!
-//! Identification: unit trait variances fix the per-dimension loading scale; `E[theta] = 0`
-//! fixes the intercepts; the confirmatory pattern labels the dimensions (no rotation to
-//! resolve) PROVIDED every dimension has at least one PURE single-loading anchor item
-//! (`validate` enforces this — it rejects rotationally-degenerate patterns such as all-ones);
-//! the residual per-dimension sign is fixed by a reflection anchor (each dimension is flipped
-//! so its largest-magnitude pure anchor item loads positively).
+//! Identification: unit trait variances fix the per-dimension loading scale (independently of
+//! the free correlations); `E[theta] = 0` fixes the intercepts; the confirmatory pattern
+//! labels the dimensions and — with at least one PURE single-loading anchor item per dimension
+//! (`validate` enforces this, rejecting rotationally-degenerate patterns such as all-ones) —
+//! fixes rotation even with correlated factors (one pure indicator per factor forces the
+//! observational-equivalence transform to be diagonal, and the unit diagonal then forces it to
+//! `+-I`); the residual per-dimension sign is fixed by a reflection anchor (each dimension is
+//! flipped so its largest-magnitude pure anchor loads positively, which also negates that
+//! dimension's correlation off-diagonals).
 //!
 //! # References (APA 7th ed.)
 //!
@@ -73,15 +81,28 @@ pub struct MirtConfig {
     pub ridge_b: f64,
     /// Inner Newton iterations per item M-step.
     pub newton_iter: usize,
+    /// Estimate a free latent CORRELATION matrix `Sigma` (`theta ~ MVN(0, Sigma)`, unit
+    /// diagonal). When `false`, `Sigma = I` (orthogonal factors) exactly — the item model is
+    /// evaluated on the raw Gauss-Hermite grid, bit-for-bit as the orthogonal fit.
+    pub estimate_corr: bool,
 }
 
 impl Default for MirtConfig {
     fn default() -> Self {
-        Self { max_iter: 500, tol: 1e-6, q: 21, ridge_a: 1e-3, ridge_b: 1e-3, newton_iter: 25 }
+        Self {
+            max_iter: 500,
+            tol: 1e-6,
+            q: 21,
+            ridge_a: 1e-3,
+            ridge_b: 1e-3,
+            newton_iter: 25,
+            estimate_corr: false,
+        }
     }
 }
 
-/// Result of [`fit_compensatory_mirt`] (orthogonal confirmatory compensatory MIRT).
+/// Result of [`fit_compensatory_mirt`] (confirmatory compensatory MIRT, orthogonal or
+/// correlated latent factors).
 #[derive(Clone, Debug)]
 pub struct CompMirtResult {
     /// Free loadings `a_id`, row-major `J x D` (exactly `0.0` where `L_id = 0`).
@@ -92,6 +113,9 @@ pub struct CompMirtResult {
     pub theta: Vec<f64>,
     /// Number of latent dimensions `D`.
     pub n_dims: usize,
+    /// Latent correlation matrix `Sigma`, row-major `D x D` (identity when `estimate_corr`
+    /// is `false`; unit diagonal, estimated off-diagonals otherwise).
+    pub corr: Vec<f64>,
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
@@ -99,7 +123,7 @@ pub struct CompMirtResult {
     pub termination_reason: String,
     /// Absolute change between the final two evaluated marginal log-likelihoods.
     pub final_loglik_change: f64,
-    /// `#{L_id = 1}` loadings `+ J` intercepts (traits are fixed `MVN(0, I)`).
+    /// `#{L_id = 1}` loadings `+ J` intercepts `+ D(D-1)/2` correlations (when estimated).
     pub n_parameters: usize,
 }
 
@@ -299,7 +323,134 @@ fn item_grad_hess(
     (grad, amat)
 }
 
-/// Fit the orthogonal confirmatory compensatory MIRT by marginal-ML EM.
+/// Lower Cholesky factor of a `D x D` symmetric matrix (row-major), or `None` if it is not
+/// (numerically) positive-definite — the PD gate for the correlation M-step and the node map.
+fn chol_lower(sigma: &[f64], d: usize) -> Option<Vec<f64>> {
+    let mut l = vec![0.0f64; d * d];
+    for i in 0..d {
+        for j in 0..=i {
+            let mut s = sigma[i * d + j];
+            for k in 0..j {
+                s -= l[i * d + k] * l[j * d + k];
+            }
+            if i == j {
+                if s <= 1e-12 {
+                    return None;
+                }
+                l[i * d + i] = s.sqrt();
+            } else {
+                l[i * d + j] = s / l[j * d + j];
+            }
+        }
+    }
+    Some(l)
+}
+
+/// Inverse (row-major) and log-determinant of a symmetric PD `D x D` matrix via its Cholesky
+/// factor; `None` if not PD.
+fn sym_inv_logdet(sigma: &[f64], d: usize) -> Option<(Vec<f64>, f64)> {
+    let l = chol_lower(sigma, d)?;
+    let logdet = (0..d).map(|i| 2.0 * l[i * d + i].ln()).sum::<f64>();
+    let mut inv = vec![0.0f64; d * d];
+    for col in 0..d {
+        let mut y = vec![0.0f64; d]; // forward solve L y = e_col
+        for i in 0..d {
+            let mut s = if i == col { 1.0 } else { 0.0 };
+            for k in 0..i {
+                s -= l[i * d + k] * y[k];
+            }
+            y[i] = s / l[i * d + i];
+        }
+        for i in (0..d).rev() {
+            // back solve L^T x = y
+            let mut s = y[i];
+            for k in i + 1..d {
+                s -= l[k * d + i] * inv[k * d + col];
+            }
+            inv[i * d + col] = s / l[i * d + i];
+        }
+    }
+    Some((inv, logdet))
+}
+
+/// Gaussian-prior objective the correlation M-step ascends:
+/// `Q_prior(Sigma) = -0.5 [ log|Sigma| + tr(Sigma^{-1} C) ]`, `C` the posterior second moment.
+/// `None` if `Sigma` is not PD.
+fn sigma_qprior(sigma: &[f64], c: &[f64], d: usize) -> Option<f64> {
+    let (inv, logdet) = sym_inv_logdet(sigma, d)?;
+    let mut tr = 0.0f64;
+    for i in 0..d {
+        for k in 0..d {
+            tr += inv[i * d + k] * c[k * d + i];
+        }
+    }
+    Some(-0.5 * (logdet + tr))
+}
+
+/// Off-diagonal gradient of `sigma_qprior` w.r.t. the free correlations (pairs `(i,j)`, `i<j`,
+/// length `D(D-1)/2`): `g_{ij} = [Sigma^{-1} C Sigma^{-1} - Sigma^{-1}]_{ij}`. `None` if not PD.
+fn sigma_grad(sigma: &[f64], c: &[f64], d: usize) -> Option<Vec<f64>> {
+    let (inv, _) = sym_inv_logdet(sigma, d)?;
+    let mut ic = vec![0.0f64; d * d]; // inv * C
+    for i in 0..d {
+        for j in 0..d {
+            let mut s = 0.0;
+            for k in 0..d {
+                s += inv[i * d + k] * c[k * d + j];
+            }
+            ic[i * d + j] = s;
+        }
+    }
+    let mut g = Vec::with_capacity(d * (d - 1) / 2);
+    for i in 0..d {
+        for j in i + 1..d {
+            let mut ici = 0.0; // (inv * C * inv)_{ij}
+            for k in 0..d {
+                ici += ic[i * d + k] * inv[k * d + j];
+            }
+            g.push(ici - inv[i * d + j]);
+        }
+    }
+    Some(g)
+}
+
+/// Build a `D x D` correlation matrix (row-major, unit diagonal) from the free off-diagonal
+/// correlations (pairs `(i,j)`, `i<j`), clamped to `(-1, 1)` (a cheap first PD reject; the full
+/// PD guarantee is enforced by the caller's Cholesky check).
+fn build_corr(offdiag: &[f64], d: usize) -> Vec<f64> {
+    let mut s = vec![0.0f64; d * d];
+    for i in 0..d {
+        s[i * d + i] = 1.0;
+    }
+    let mut m = 0;
+    for i in 0..d {
+        for j in i + 1..d {
+            let r = offdiag[m].clamp(-0.999, 0.999);
+            m += 1;
+            s[i * d + j] = r;
+            s[j * d + i] = r;
+        }
+    }
+    s
+}
+
+/// Negate the free correlations (off-diagonal `(i,j)` pairs, `i<j`) that involve dimension
+/// `flip`, so a per-dimension reflection `theta_flip -> -theta_flip` stays consistent with the
+/// reported correlation matrix (`corr(theta_flip, theta_k) -> -corr`). Correlations not
+/// involving `flip` are untouched; the diagonal is implicitly unchanged (it is not stored).
+fn flip_corr_dim(offdiag: &mut [f64], d: usize, flip: usize) {
+    let mut m = 0;
+    for i in 0..d {
+        for j in i + 1..d {
+            if i == flip || j == flip {
+                offdiag[m] = -offdiag[m];
+            }
+            m += 1;
+        }
+    }
+}
+
+/// Fit the orthogonal OR correlated confirmatory compensatory MIRT by marginal-ML (EC)M.
 ///
 /// `y`/`observed` are row-major `N*J` (`y` in `{0,1}` where observed; missing cells dropped
 /// under MAR); `loading_pattern` is row-major `J*D` in `{0,1}`. Returns `Err` on malformed or
@@ -351,13 +502,37 @@ pub fn fit_compensatory_mirt(
     let mut log_p1 = vec![0.0f64; n_nodes * n_items];
     let mut log_p0 = vec![0.0f64; n_nodes * n_items];
 
+    // Correlated traits (estimate_corr): free correlations `r_off` (pairs i<j; Sigma = I at
+    // r_off = 0) and the buffer for the correlated nodes theta_g = L z_g. When !estimate_corr
+    // the item model reads the raw grid `nodes` directly (bit-identical to the orthogonal fit).
+    let d = n_dims;
+    let n_off = d * (d - 1) / 2;
+    let mut r_off = vec![0.0f64; n_off];
+    let mut theta_nodes = if cfg.estimate_corr { vec![0.0f64; n_nodes * n_dims] } else { Vec::new() };
+
     for _ in 0..cfg.max_iter {
+        // Map the standard GH grid through L = chol(Sigma): theta_g = L z_g (rt_joint pattern).
+        if cfg.estimate_corr {
+            let sigma = build_corr(&r_off, d);
+            let lchol = chol_lower(&sigma, d).expect("Sigma is PD by construction of r_off");
+            for g in 0..n_nodes {
+                for k in 0..d {
+                    let mut t = 0.0f64;
+                    for j in 0..=k {
+                        t += lchol[k * d + j] * nodes[g * d + j];
+                    }
+                    theta_nodes[g * d + k] = t;
+                }
+            }
+        }
+        let cur_nodes: &[f64] = if cfg.estimate_corr { &theta_nodes } else { &nodes };
+
         // Node x item log-probabilities under the current parameters.
         for g in 0..n_nodes {
             for i in 0..n_items {
                 let mut eta = intercept[i];
                 for &d in &dims_of[i] {
-                    eta += loading[i * n_dims + d] * nodes[g * n_dims + d];
+                    eta += loading[i * n_dims + d] * cur_nodes[g * n_dims + d];
                 }
                 log_p1[g * n_items + i] = log_sigmoid(eta);
                 log_p0[g * n_items + i] = log_sigmoid(-eta);
@@ -367,6 +542,7 @@ pub fn fit_compensatory_mirt(
         // Streamed E-step: per person, fill `post`, then accumulate counts + theta EAP.
         let mut n_ig = vec![0.0f64; n_items * n_nodes];
         let mut r_ig = vec![0.0f64; n_items * n_nodes];
+        let mut m_g = vec![0.0f64; if cfg.estimate_corr { n_nodes } else { 0 }];
         let mut total_ll = 0.0f64;
         for p in 0..n_persons {
             for (g, slot) in post.iter_mut().enumerate() {
@@ -390,6 +566,11 @@ pub fn fit_compensatory_mirt(
                 *v = (*v - m).exp() / denom;
             }
             debug_assert!((post.iter().sum::<f64>() - 1.0).abs() < 1e-9, "posterior sums to 1");
+            if cfg.estimate_corr {
+                for (mg, &pg) in m_g.iter_mut().zip(post.iter()) {
+                    *mg += pg;
+                }
+            }
             for i in 0..n_items {
                 let idx = p * n_items + i;
                 if observed[idx] {
@@ -424,10 +605,10 @@ pub fn fit_compensatory_mirt(
             let rs = &r_ig[ni_off..ni_off + n_nodes];
             for _ in 0..cfg.newton_iter {
                 let (grad, amat) = item_grad_hess(
-                    dims, &a, b, ns, rs, &nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b,
+                    dims, &a, b, ns, rs, cur_nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b,
                 );
                 let delta = solve_small(amat, grad); // A positive-definite => exact ascent step
-                let q0 = item_obj(dims, &a, b, ns, rs, &nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b);
+                let q0 = item_obj(dims, &a, b, ns, rs, cur_nodes, n_dims, n_nodes, cfg.ridge_a, cfg.ridge_b);
                 // Backtracking: halve until the penalized item objective does not decrease.
                 let mut step = 1.0f64;
                 let mut accepted = false;
@@ -437,7 +618,7 @@ pub fn fit_compensatory_mirt(
                         a_new[k] = (a[k] + step * delta[k]).clamp(-MIRT_A_BOUND, MIRT_A_BOUND);
                     }
                     b_new = b + step * delta[ni];
-                    let q1 = item_obj(dims, &a_new, b_new, ns, rs, &nodes, n_dims, n_nodes,
+                    let q1 = item_obj(dims, &a_new, b_new, ns, rs, cur_nodes, n_dims, n_nodes,
                         cfg.ridge_a, cfg.ridge_b);
                     if q1 >= q0 - 1e-12 {
                         accepted = true;
@@ -461,17 +642,88 @@ pub fn fit_compensatory_mirt(
             }
             intercept[i] = b;
         }
+
+        // Correlation (Sigma) M-step: gradient ascent on Q_prior over the free correlations,
+        // with backtracking + a full-matrix PD (Cholesky) guard so each step is non-decreasing
+        // (keeps the ECM marginal loglik monotone). The complete-data Q separates additively
+        // into item terms + the Gaussian prior, so this block is independent of the item M-step.
+        if cfg.estimate_corr {
+            // C = (1/N) sum_g m_g theta_g theta_g^T (posterior second moment; theta_g is
+            // person-independent, so the marginal node mass m_g factors the N-loop out).
+            let nf = n_persons as f64;
+            let mut cmat = vec![0.0f64; d * d];
+            for g in 0..n_nodes {
+                let w = m_g[g] / nf;
+                for a1 in 0..d {
+                    let ta = theta_nodes[g * d + a1];
+                    for b1 in 0..d {
+                        cmat[a1 * d + b1] += w * ta * theta_nodes[g * d + b1];
+                    }
+                }
+            }
+            for _ in 0..cfg.newton_iter {
+                let sigma = build_corr(&r_off, d);
+                let grad = match sigma_grad(&sigma, &cmat, d) {
+                    Some(g) => g,
+                    None => break,
+                };
+                let q0 = match sigma_qprior(&sigma, &cmat, d) {
+                    Some(q) => q,
+                    None => break,
+                };
+                let gnorm = grad.iter().map(|x| x * x).sum::<f64>().sqrt();
+                if gnorm < 1e-10 {
+                    break;
+                }
+                let mut alpha = 1.0f64;
+                let mut moved = false;
+                for _ in 0..40 {
+                    let r_cand: Vec<f64> = (0..n_off)
+                        .map(|m| (r_off[m] + alpha * grad[m]).clamp(-0.999, 0.999))
+                        .collect();
+                    let cand = build_corr(&r_cand, d);
+                    // sigma_qprior returns None unless `cand` is PD -> both the ascent and the
+                    // full-matrix PD guard are enforced in one check (the box clamp above is only
+                    // a cheap first reject; it does not imply PD at D=3).
+                    if let Some(q1) = sigma_qprior(&cand, &cmat, d) {
+                        if q1 >= q0 - 1e-12 {
+                            r_off = r_cand;
+                            moved = true;
+                            break;
+                        }
+                    }
+                    alpha *= 0.5;
+                }
+                if !moved {
+                    break;
+                }
+            }
+        }
         n_iter += 1;
     }
 
     // Final pass under the returned parameters: trait EAP for every person, and the marginal
     // loglik of those parameters (pushed when EM exited on max-iter, so the trace endpoint
     // matches the returned params — on convergence the last E-step already supplied it).
+    if cfg.estimate_corr {
+        let sigma = build_corr(&r_off, d);
+        let lchol = chol_lower(&sigma, d).expect("Sigma is PD by construction of r_off");
+        for g in 0..n_nodes {
+            for k in 0..d {
+                let mut t = 0.0f64;
+                for j in 0..=k {
+                    t += lchol[k * d + j] * nodes[g * d + j];
+                }
+                theta_nodes[g * d + k] = t;
+            }
+        }
+    }
+    let final_nodes: &[f64] = if cfg.estimate_corr { &theta_nodes } else { &nodes };
     for g in 0..n_nodes {
         for i in 0..n_items {
             let mut eta = intercept[i];
             for &d in &dims_of[i] {
-                eta += loading[i * n_dims + d] * nodes[g * n_dims + d];
+                eta += loading[i * n_dims + d] * final_nodes[g * n_dims + d];
             }
             log_p1[g * n_items + i] = log_sigmoid(eta);
             log_p0[g * n_items + i] = log_sigmoid(-eta);
@@ -499,7 +751,7 @@ pub fn fit_compensatory_mirt(
         for (g, v) in post.iter().enumerate() {
             let pg = (v - m).exp() / denom;
             for d in 0..n_dims {
-                theta[p * n_dims + d] += pg * nodes[g * n_dims + d];
+                theta[p * n_dims + d] += pg * final_nodes[g * n_dims + d];
             }
         }
     }
@@ -512,7 +764,9 @@ pub fn fit_compensatory_mirt(
     }
 
     // Per-dimension reflection anchor: flip dimension d (all loadings on d and all theta_d) so
-    // its largest-|loading| PURE anchor item loads positively. Flips commute across dimensions.
+    // its largest-|loading| PURE anchor item loads positively. Flipping theta_d -> -theta_d
+    // negates corr(theta_d, theta_k), so the correlation off-diagonals of row/col d must flip
+    // too (likelihood-invariant relabeling). Flips commute across dimensions.
     for d in 0..n_dims {
         let mut anchor: Option<usize> = None;
         let mut best = 0.0f64;
@@ -531,6 +785,7 @@ pub fn fit_compensatory_mirt(
                 for p in 0..n_persons {
                     theta[p * n_dims + d] = -theta[p * n_dims + d];
                 }
+                flip_corr_dim(&mut r_off, n_dims, d); // keep Sigma consistent with the sign flip
             }
         }
     }
@@ -538,11 +793,13 @@ pub fn fit_compensatory_mirt(
     let n_free_loadings = loading_pattern.iter().filter(|&&v| v == 1).count();
     let l = loglik_trace.len();
     let final_loglik_change = (loglik_trace[l - 1] - loglik_trace[l - 2]).abs();
+    let n_parameters = n_free_loadings + n_items + if cfg.estimate_corr { n_off } else { 0 };
     Ok(CompMirtResult {
         loading,
         intercept,
         theta,
         n_dims,
+        corr: build_corr(&r_off, d),
         loglik_trace,
         n_iter,
         converged,
@@ -553,7 +810,7 @@ pub fn fit_compensatory_mirt(
         }
         .into(),
         final_loglik_change,
-        n_parameters: n_free_loadings + n_items,
+        n_parameters,
     })
 }
 
@@ -993,6 +1250,331 @@ mod tests {
                     assert!(tc > 0.62, "skew theta corr {tc} (D={n_dims})");
                 } else {
                     // Correctly-specified N(0,I): recovery is UNBIASED (the correctness signal).
+                    assert!(lb.abs() < 0.03, "loading bias {lb} (D={n_dims})");
+                    assert!(lrmse < 0.14, "loading RMSE {lrmse} (D={n_dims})");
+                    assert!(tc > 0.68, "theta corr {tc} (D={n_dims})");
+                }
+            }
+        }
+    }
+
+    // ----- Correlated-Sigma extension (theta ~ MVN(0, Sigma)) -----
+
+    /// Draw N x D standard normals correlated through L = chol(Sigma): theta = L z.
+    fn draw_corr(l: &[f64], n: usize, d: usize, rng: &mut Lcg) -> Vec<f64> {
+        let mut th = vec![0.0f64; n * d];
+        for j in 0..n {
+            let z: Vec<f64> = (0..d).map(|_| rng.normal()).collect();
+            for k in 0..d {
+                let mut t = 0.0;
+                for i in 0..=k {
+                    t += l[k * d + i] * z[i];
+                }
+                th[j * d + k] = t;
+            }
+        }
+        th
+    }
+
+    /// Realized sample correlation off-diagonals (pairs i<j) of an N x D trait matrix.
+    fn sample_corr(th: &[f64], n: usize, d: usize) -> Vec<f64> {
+        let mut mean = vec![0.0f64; d];
+        for j in 0..n {
+            for k in 0..d {
+                mean[k] += th[j * d + k];
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= n as f64;
+        }
+        let mut var = vec![0.0f64; d];
+        let mut off = Vec::new();
+        for i in 0..d {
+            for j in 0..n {
+                var[i] += (th[j * d + i] - mean[i]).powi(2);
+            }
+        }
+        for i in 0..d {
+            for k in i + 1..d {
+                let mut cov = 0.0;
+                for j in 0..n {
+                    cov += (th[j * d + i] - mean[i]) * (th[j * d + k] - mean[k]);
+                }
+                off.push(cov / (var[i] * var[k]).sqrt());
+            }
+        }
+        off
+    }
+
+    /// estimate_corr = false reports Sigma = I exactly and keeps the orthogonal parameter count.
+    #[test]
+    fn mirt_estimate_corr_false_is_identity() {
+        let (pattern, loading, intercept, n_items) = small_design();
+        let (n, n_dims) = (300usize, 2usize);
+        let mut rng = Lcg(5);
+        let mut thetas = vec![0.0f64; n * n_dims];
+        for t in thetas.iter_mut() {
+            *t = rng.normal();
+        }
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims,
+            &MirtConfig::default()).unwrap();
+        assert_eq!(res.corr, vec![1.0, 0.0, 0.0, 1.0], "Sigma == I exactly");
+        let nfree = pattern.iter().filter(|&&v| v == 1).count();
+        assert_eq!(res.n_parameters, nfree + n_items, "no extra corr params");
+    }
+
+    /// flip_corr_dim negates exactly the correlations that involve the flipped dimension.
+    #[test]
+    fn mirt_flip_corr_dim_negates_involving_dim() {
+        // D=3, off-diagonal order (0,1),(0,2),(1,2).
+        let mut r = vec![0.3f64, -0.2, 0.5];
+        flip_corr_dim(&mut r, 3, 0); // negate pairs touching dim 0: (0,1),(0,2); (1,2) unchanged
+        assert_eq!(r, vec![-0.3, 0.2, 0.5]);
+        flip_corr_dim(&mut r, 3, 1); // negate pairs touching dim 1: (0,1),(1,2); (0,2) unchanged
+        assert_eq!(r, vec![0.3, 0.2, -0.5]);
+    }
+
+    /// Deterministic FD anchor: the analytic correlation gradient matches central finite
+    /// differences of Q_prior at a Sigma with NONZERO off-diagonals and a non-diagonal C.
+    #[test]
+    fn mirt_sigma_grad_matches_finite_difference() {
+        for &(d, ref r0, ref c) in [
+            (2usize, vec![0.35f64], vec![1.2f64, 0.5, 0.5, 0.9]),
+            (3usize, vec![0.3f64, -0.15, 0.25],
+             vec![1.1f64, 0.4, 0.2, 0.4, 0.95, -0.3, 0.2, -0.3, 1.05]),
+        ].iter() {
+            let sigma = build_corr(r0, d);
+            let g = sigma_grad(&sigma, c, d).unwrap();
+            let eps = 1e-6;
+            for m in 0..r0.len() {
+                let mut rp = r0.clone();
+                let mut rm = r0.clone();
+                rp[m] += eps;
+                rm[m] -= eps;
+                let qp = sigma_qprior(&build_corr(&rp, d), c, d).unwrap();
+                let qm = sigma_qprior(&build_corr(&rm, d), c, d).unwrap();
+                let fd = (qp - qm) / (2.0 * eps);
+                assert!((g[m] - fd).abs() < 1e-5, "D={d} grad[{m}] {} vs fd {fd}", g[m]);
+            }
+        }
+    }
+
+    /// Recover a KNOWN correlated Sigma (rho = 0.5) AND loadings at D=2, with the largest-|loading|
+    /// PURE anchor on dim 0 genuinely NEGATIVE so the reflection FIRES: the reported correlation
+    /// must then carry the flip-consistent sign (a missing Sigma sign-flip would report +rho).
+    #[test]
+    fn mirt_recovers_correlated_d2_with_reflection() {
+        let n_dims = 2usize;
+        let mut pattern: Vec<u8> = Vec::new();
+        for _ in 0..4 { pattern.extend_from_slice(&[1, 0]); }
+        for _ in 0..4 { pattern.extend_from_slice(&[0, 1]); }
+        for _ in 0..2 { pattern.extend_from_slice(&[1, 1]); }
+        let n_items = 10usize;
+        let mut loading = vec![0.0f64; n_items * n_dims];
+        // dim0 pure anchors: largest |.| is -1.6 (NEGATIVE) -> reflection flips dim 0.
+        let a0 = [1.0, 0.8, -1.6, 1.1];
+        let a1 = [1.2, 0.9, 1.4, 1.0];
+        for i in 0..4 {
+            loading[i * 2] = a0[i];
+            loading[(4 + i) * 2 + 1] = a1[i];
+        }
+        loading[8 * 2] = 0.9;
+        loading[8 * 2 + 1] = 0.8;
+        loading[9 * 2] = 1.1;
+        loading[9 * 2 + 1] = 0.7;
+        let intercept: Vec<f64> = (0..n_items).map(|i| -0.6 + 0.13 * i as f64).collect();
+        let rho = 0.5;
+        let lchol = chol_lower(&build_corr(&[rho], n_dims), n_dims).unwrap();
+        let n = 5000usize;
+        let mut rng = Lcg(4242);
+        let thetas = draw_corr(&lchol, n, n_dims, &mut rng);
+        let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+        let observed = vec![true; n * n_items];
+        let cfg = MirtConfig { q: 15, estimate_corr: true, ..MirtConfig::default() };
+        let res = fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg).unwrap();
+        assert!(res.converged);
+        // Sigma is a valid unit-diagonal correlation matrix.
+        assert!((res.corr[0] - 1.0).abs() < 1e-12 && (res.corr[3] - 1.0).abs() < 1e-12);
+        assert!((res.corr[1] - res.corr[2]).abs() < 1e-12, "symmetric");
+        // The reflection fired on dim 0 (its true anchor was negative), so the reported theta_0
+        // is negated -> the reported correlation is the flip-consistent -rho. The realized sample
+        // correlation is the honest recovery target; after the flip its sign is negated.
+        let r_true = sample_corr(&thetas, n, n_dims)[0];
+        assert!((res.corr[1] - (-r_true)).abs() < 0.06, "corr {} vs -R {}", res.corr[1], -r_true);
+        assert!(res.corr[1] < -0.3, "flip-consistent NEGATIVE correlation, got {}", res.corr[1]);
+        // Loadings recovered against the flip-adjusted truth (dim 0 negated by the reflection).
+        let mut expected = loading.clone();
+        for i in 0..n_items {
+            expected[i * 2] = -expected[i * 2]; // dim 0 flipped
+        }
+        assert!(rmse(&res.loading, &expected) < 0.12, "loading RMSE {}", rmse(&res.loading, &expected));
+        assert!(res.loading[2 * 2] > 0.9, "flipped anchor now positive: {}", res.loading[2 * 2]);
+        assert!(res.n_parameters == pattern.iter().filter(|&&v| v == 1).count() + n_items + 1);
+        for w in res.loglik_trace.windows(2) {
+            assert!(w[1] >= w[0] - 1e-6, "EM monotone with the Sigma M-step");
+        }
+    }
+
+    /// Literature-grade Monte-Carlo (>=500 reps): recover loadings AND the latent correlation at
+    /// D=2 (rho=0.5) and D=3 (exchangeable rho=0.4, verified PD) under a normal and a NORTA
+    /// right-skew marginal (single correlated normal -> monotone per-dim skew, so the copula
+    /// keeps the sign; corr is scored against the REALIZED sample correlation R_rep, not nominal).
+    #[test]
+    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
+    fn mc_corr_mirt_recovery_500() {
+        let reps = 500usize;
+        for &(n_dims, q, n, ref true_off) in [
+            (2usize, 15usize, 3000usize, vec![0.5f64]),
+            (3usize, 11usize, 2000usize, vec![0.4f64, 0.4, 0.4]), // exchangeable, eig 1.8,0.6,0.6
+        ].iter() {
+            let sigma_true = build_corr(true_off, n_dims);
+            let lchol = chol_lower(&sigma_true, n_dims).expect("true Sigma must be PD");
+            // pattern: 3 pure anchors per dim + one cross-loader per consecutive pair.
+            let mut pattern: Vec<u8> = Vec::new();
+            for dd in 0..n_dims {
+                for _ in 0..3 {
+                    let mut r = vec![0u8; n_dims];
+                    r[dd] = 1;
+                    pattern.extend_from_slice(&r);
+                }
+            }
+            for dd in 0..n_dims {
+                let mut r = vec![0u8; n_dims];
+                r[dd] = 1;
+                r[(dd + 1) % n_dims] = 1;
+                pattern.extend_from_slice(&r);
+            }
+            let n_items = 3 * n_dims + n_dims;
+            let mut loading = vec![0.0f64; n_items * n_dims];
+            for dd in 0..n_dims {
+                for k in 0..3 {
+                    loading[(dd * 3 + k) * n_dims + dd] = 0.9 + 0.3 * k as f64; // positive anchors
+                }
+            }
+            for dd in 0..n_dims {
+                let base = 3 * n_dims + dd;
+                loading[base * n_dims + dd] = 1.0;
+                loading[base * n_dims + (dd + 1) % n_dims] = 0.7;
+            }
+            let intercept: Vec<f64> = (0..n_items).map(|i| -0.6 + 0.12 * i as f64).collect();
+            let n_off = n_dims * (n_dims - 1) / 2;
+
+            for &skew in [false, true].iter() {
+                let (mut lnum, mut lden, mut lbias) = (0.0f64, 0.0f64, 0.0f64);
+                let (mut cnum, mut cbias) = (0.0f64, 0.0f64);
+                let (mut csum, mut ccnt) = (0.0f64, 0.0f64);
+                let (mut nconv, mut interior) = (0usize, 0usize);
+                for rep in 0..reps {
+                    let mut rng = Lcg(
+                        0xD1B54A32D192ED03u64
+                            .wrapping_mul(rep as u64 + 1)
+                            .wrapping_add((skew as u64 + 1) * 0x9E3779B97F4A7C15)
+                            .wrapping_add(n_dims as u64 * 0x100000001B3),
+                    );
+                    // NORTA: correlated normals z = L u; per-dim monotone right-skew then
+                    // re-standardize (keeps the sign of the correlation, attenuated).
+                    let mut thetas = draw_corr(&lchol, n, n_dims, &mut rng);
+                    if skew {
+                        for k in 0..n_dims {
+                            for j in 0..n {
+                                let z = thetas[j * n_dims + k];
+                                thetas[j * n_dims + k] = (0.5 * z).exp(); // monotone lognormal skew
+                            }
+                            let col: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + k]).collect();
+                            let m = col.iter().sum::<f64>() / n as f64;
+                            let v = col.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / n as f64;
+                            let sd = v.sqrt();
+                            for j in 0..n {
+                                thetas[j * n_dims + k] = (thetas[j * n_dims + k] - m) / sd;
+                            }
+                        }
+                    }
+                    let r_rep = sample_corr(&thetas, n, n_dims); // honest recovery target
+                    let y = simulate(&loading, &intercept, &thetas, n, n_items, n_dims, &mut rng);
+                    let observed = vec![true; n * n_items];
+                    let cfg = MirtConfig { q, estimate_corr: true, ..MirtConfig::default() };
+                    let res =
+                        fit_compensatory_mirt(&y, &observed, &pattern, n, n_items, n_dims, &cfg)
+                            .unwrap();
+                    if res.converged {
+                        nconv += 1;
+                    }
+                    for w in res.loglik_trace.windows(2) {
+                        assert!(w[1] >= w[0] - 1e-6, "EM monotone (rep {rep})");
+                    }
+                    // Sigma invariants: unit diagonal, symmetric, PD, |off|<1, all finite.
+                    for k in 0..n_dims {
+                        assert!((res.corr[k * n_dims + k] - 1.0).abs() < 1e-9, "unit diagonal");
+                    }
+                    assert!(chol_lower(&res.corr, n_dims).is_some(), "Sigma PD");
+                    let mut pinned = false;
+                    let off_est: Vec<f64> = {
+                        let mut o = Vec::new();
+                        for i in 0..n_dims {
+                            for j in i + 1..n_dims {
+                                let v = res.corr[i * n_dims + j];
+                                assert!(v.is_finite() && v.abs() < 1.0, "corr in (-1,1)");
+                                assert!((v - res.corr[j * n_dims + i]).abs() < 1e-12, "symmetric");
+                                if v.abs() > 0.99 {
+                                    pinned = true;
+                                }
+                                o.push(v);
+                            }
+                        }
+                        o
+                    };
+                    if !pinned {
+                        interior += 1;
+                    }
+                    // Loadings: pure anchors positive -> reflection never fires -> no flip; score
+                    // vs truth directly.
+                    for i in 0..n_items {
+                        for dd in 0..n_dims {
+                            let v = res.loading[i * n_dims + dd];
+                            if pattern[i * n_dims + dd] == 0 {
+                                assert_eq!(v, 0.0);
+                            } else {
+                                assert!(v.is_finite() && v.abs() <= 10.0);
+                                let e = v - loading[i * n_dims + dd];
+                                lnum += e * e;
+                                lden += 1.0;
+                                lbias += e;
+                            }
+                        }
+                    }
+                    for m in 0..n_off {
+                        let e = off_est[m] - r_rep[m]; // vs realized correlation
+                        cnum += e * e;
+                        cbias += e;
+                        // correlation sign matches the (positive) truth
+                        assert!(off_est[m] > 0.0, "corr sign matches truth (rep {rep})");
+                    }
+                    for dd in 0..n_dims {
+                        let th: Vec<f64> = (0..n).map(|j| res.theta[j * n_dims + dd]).collect();
+                        let tt: Vec<f64> = (0..n).map(|j| thetas[j * n_dims + dd]).collect();
+                        csum += corr(&th, &tt);
+                        ccnt += 1.0;
+                    }
+                }
+                let lrmse = (lnum / lden).sqrt();
+                let crmse = (cnum / (reps * n_off) as f64).sqrt();
+                let (lb, cb) = (lbias / lden, cbias / (reps * n_off) as f64);
+                let (tc, conv) = (csum / ccnt, nconv as f64 / reps as f64);
+                let int_frac = interior as f64 / reps as f64;
+                println!(
+                    "[corr-mirt MC D={n_dims} q={q} N={n} skew={skew}] reps={reps} conv={conv:.3} \
+                     loadRMSE={lrmse:.4} loadBias={lb:.4} corrRMSE={crmse:.4} corrBias={cb:.4} \
+                     thetaCorr={tc:.3} interior={int_frac:.3}"
+                );
+                assert!(conv > 0.95, "convergence {conv} (D={n_dims} skew={skew})");
+                assert!(int_frac > 0.95, "Sigma interior fraction {int_frac} (D={n_dims})");
+                assert!(crmse < 0.06, "correlation RMSE vs R_rep {crmse} (D={n_dims} skew={skew})");
+                if skew {
+                    assert!(lrmse < 0.20, "skew loading RMSE {lrmse} (D={n_dims})");
+                    assert!(tc > 0.62, "skew theta corr {tc} (D={n_dims})");
+                } else {
                     assert!(lb.abs() < 0.03, "loading bias {lb} (D={n_dims})");
                     assert!(lrmse < 0.14, "loading RMSE {lrmse} (D={n_dims})");
                     assert!(tc > 0.68, "theta corr {tc} (D={n_dims})");

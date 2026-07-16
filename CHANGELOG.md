@@ -93,8 +93,9 @@
 
 ### Added
 
-- **Orthogonal confirmatory compensatory multidimensional 2PL (MIRT)** (Reckase, 2009;
-  Bock, Gibbons, & Muraki, 1988). `fit_compensatory_mirt(responses, loading_pattern)` fits
+- **Confirmatory compensatory multidimensional 2PL (MIRT), orthogonal or correlated**
+  (Reckase, 2009; Bock, Gibbons, & Muraki, 1988).
+  `fit_compensatory_mirt(responses, loading_pattern)` fits
   a general COMPENSATORY multidimensional 2PL in which an item may load FREELY on several
   latent dimensions, which trade off ADDITIVELY inside a single logit:
   `P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta_j ~ MVN(0, I_D)`,
@@ -109,9 +110,21 @@
   ridged, positive-definite `-Hessian` block solved by Gaussian elimination with a backtracking
   line search that keeps the marginal loglik monotone. Loadings are **not** constrained
   non-negative (reverse-keyed and suppressor cross-loadings are representable); the
-  per-dimension sign is fixed by a reflection anchor. **Scope:** ORTHOGONAL traits
-  (`theta ~ MVN(0, I)`) — correlated traits `theta ~ MVN(0, Sigma)` and `D > 3` (needing
-  coarser GH or QMC) are documented deferred extensions. Identification is enforced by
+  per-dimension sign is fixed by a reflection anchor. **Latent traits:** `theta ~ MVN(0,
+  Sigma)` — orthogonal (`Sigma = I`) by default, or with `estimate_corr = true` the
+  inter-factor **correlation matrix is estimated**: the standard grid is mapped through
+  `chol(Sigma)` (`theta_g = L z_g`, a measure-preserving change of variables that reuses the
+  product-GH weights and the item M-step verbatim), and the `D(D-1)/2` free correlations ascend
+  the Gaussian-prior objective `-0.5[log|Sigma| + tr(Sigma^{-1} C)]` (`C` the posterior second
+  moment, accumulated via the per-node marginal mass so it adds nothing to the E-step order)
+  with backtracking + a full-matrix positive-definite guard, keeping EM monotone; the reflection
+  anchor also negates the flipped dimension's correlation off-diagonals. A deterministic
+  finite-difference anchor pins the correlation gradient (`D=2` and `D=3`); a known-`Sigma`
+  (`rho=0.5`) recovery with a reflection-triggering negative anchor confirms the sign flip; and
+  a 500-rep MC recovers the correlations essentially UNBIASED against the realized sample
+  correlation (correlation RMSE ~0.035-0.05, bias ~0.0005 under the normal model / ~0.017 under
+  the NORTA right-skew arm), 100% convergence with every fitted `Sigma` strictly interior.
+  `D > 3` (coarser GH or QMC) remains deferred. Identification is enforced by
   `validate`: every dimension must have a PURE single-loading anchor item, so
   rotationally-degenerate patterns (e.g. all-ones) are rejected rather than returning a point
   on a non-identified ridge. Verified with the N(0,I) grid-moment identities, a DETERMINISTIC
