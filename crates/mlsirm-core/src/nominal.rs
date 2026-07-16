@@ -682,7 +682,7 @@ pub fn fit_nominal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poly::fit_nominal;
+    use crate::poly::fit_nominal as fit_nominal_unidim;
 
     struct Lcg(u64);
     impl Lcg {
@@ -787,7 +787,7 @@ mod tests {
             ..NominalConfig::default()
         };
         let mm = fit_nominal(&y, None, &pattern, n, n_items, 1, n_cat, &cfg).unwrap();
-        let fnom = fit_nominal(&y, None, n, n_items, n_cat, 21, 500, 1e-6).unwrap();
+        let fnom = fit_nominal_unidim(&y, None, n, n_items, n_cat, 21, 500, 1e-6).unwrap();
         // loglik traces bit-identical
         assert_eq!(
             mm.loglik_trace.len(),
