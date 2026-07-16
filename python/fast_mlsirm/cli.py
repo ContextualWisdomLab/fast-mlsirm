@@ -17,7 +17,7 @@ from .diagnostics import (
     response_process_fit_diagnostics,
 )
 from .fit import fit
-from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
+from .io import _load_numpy_bounded, load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
 from .report import render_diagnostics_report
 from .simulation import simulate
 
@@ -50,7 +50,7 @@ def _load_fit_context(
     population = summary.get("population")
     if population is not None:
         population = dict(population)
-        with np.load(path, allow_pickle=False) as arrays:
+        with _load_numpy_bounded(path) as arrays:
             if "pop_mu" in arrays:
                 population["mu"] = np.asarray(arrays["pop_mu"], dtype=float)
             if "pop_sigma" in arrays:
@@ -76,7 +76,7 @@ def _output_file(run_dir: str, filename: str) -> str:
 
 
 def _load_response_and_factors(responses_path: str, factors_path: str) -> tuple[np.ndarray, np.ndarray]:
-    responses = np.load(responses_path, allow_pickle=False)
+    responses = _load_numpy_bounded(responses_path)
     factors = load_factor_csv(factors_path)
     _validate_response_and_factors(responses, factors)
     return responses, factors
@@ -314,7 +314,7 @@ def _main(argv: list[str] | None = None) -> int:
         try:
             bundle = load_serving_bundle(args.bundle)
             if args.responses.endswith(".npy"):
-                payload = np.load(args.responses, allow_pickle=False)
+                payload = _load_numpy_bounded(args.responses)
             else:
                 with open(args.responses, encoding="utf-8") as fh:
                     payload = json.load(fh)
@@ -453,8 +453,8 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-response-process":
         _progress(args, f"⏳ Computing {args.item_type} {args.response_process} fit diagnostics...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
-            probabilities = np.load(args.probabilities, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
+            probabilities = _load_numpy_bounded(args.probabilities)
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
@@ -498,7 +498,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-response-candidates":
         _progress(args, f"⏳ Comparing {args.item_type} {args.response_process} response candidates...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
         except FileNotFoundError as e:
             if os.environ.get("FAST_MLSIRM_DEBUG"):
@@ -540,7 +540,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-fixed-item-calibration":
         _progress(args, "⏳ Scoring fixed-item calibration candidates...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
             fixed_items = _load_optional_npy(args.fixed_items)
         except FileNotFoundError as e:
@@ -702,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:
-    return None if path is None else np.load(path, allow_pickle=False)
+    return None if path is None else _load_numpy_bounded(path)
 
 
 def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
@@ -713,7 +713,7 @@ def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
             raise ValueError("candidate label must not be empty")
         if label in candidates:
             raise ValueError(f"duplicate candidate label: {label}")
-        candidates[label] = np.load(path, allow_pickle=False)
+        candidates[label] = _load_numpy_bounded(path)
     return candidates
 
 

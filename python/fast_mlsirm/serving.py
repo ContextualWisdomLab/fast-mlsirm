@@ -30,6 +30,8 @@ MAX_DRAWS = 100_000
 MAX_INFORMATION_POINTS = 100_000
 MAX_SCORE_CELLS = 20_000_000
 MAX_SERVING_OUTPUT_CELLS = 20_000_000
+MAX_ABS_LOG_SCALE = 100.0
+MAX_ABS_ITEM_PARAMETER = 1_000_000.0
 
 
 def _core_module():
@@ -180,10 +182,10 @@ def _finite_number(x) -> bool:
 
 
 def _validate_bundle(bundle: Any) -> None:
-    """Validate a serving bundle's structure, sizes, and parameter finiteness
+    """Validate a serving bundle's structure, sizes, and numeric domains
     before it is used to score untrusted respondents. Guards against oversized
     or inconsistent dimensions (multi-terabyte allocations / index errors) and
-    non-finite item parameters (NaN/Inf scores) reaching the scoring core."""
+    unsafe item parameters (NaN/Inf scores) reaching the scoring core."""
     if not isinstance(bundle, dict):
         raise ValueError("serving bundle must be a JSON object")
     if bundle.get("schema_version") != SCHEMA_VERSION:
@@ -202,11 +204,24 @@ def _validate_bundle(bundle: Any) -> None:
     latent_dim = _pos_int("latent_dim", MAX_LATENT_DIM)
     if bundle.get("model") not in VALID_MODELS:
         raise ValueError(f"bundle model must be one of {sorted(VALID_MODELS)}")
-    if not _finite_number(bundle.get("tau")):
-        raise ValueError("bundle tau must be finite")
+    if (
+        not _finite_number(bundle.get("tau"))
+        or abs(float(bundle["tau"])) > MAX_ABS_LOG_SCALE
+    ):
+        raise ValueError(
+            f"bundle tau must be in the safe numeric range "
+            f"[-{MAX_ABS_LOG_SCALE}, {MAX_ABS_LOG_SCALE}]"
+        )
     eps = bundle.get("eps_distance")
-    if not _finite_number(eps) or eps <= 0:
-        raise ValueError("bundle eps_distance must be a positive finite number")
+    if (
+        not _finite_number(eps)
+        or eps <= 0
+        or float(eps) > MAX_ABS_ITEM_PARAMETER
+    ):
+        raise ValueError(
+            f"bundle eps_distance must be in the safe numeric range "
+            f"(0, {MAX_ABS_ITEM_PARAMETER}]"
+        )
     quad = bundle.get("quadrature")
     if not isinstance(quad, dict):
         raise ValueError("bundle quadrature must be an object")
@@ -237,16 +252,32 @@ def _validate_bundle(bundle: Any) -> None:
         fid = it.get("factor_id")
         if not isinstance(fid, int) or isinstance(fid, bool) or not (0 <= fid < n_dims):
             raise ValueError(f"bundle item {code!r} factor_id must be an int in 0..n_dims-1")
-        for pk in ("alpha", "b"):
-            if not _finite_number(it.get(pk)):
-                raise ValueError(f"bundle item {code!r} {pk} must be finite")
+        for pk, bound in (
+            ("alpha", MAX_ABS_LOG_SCALE),
+            ("b", MAX_ABS_ITEM_PARAMETER),
+        ):
+            if (
+                not _finite_number(it.get(pk))
+                or abs(float(it[pk])) > bound
+            ):
+                raise ValueError(
+                    f"bundle item {code!r} {pk} must be in the safe numeric "
+                    f"range [-{bound}, {bound}]"
+                )
         zeta = it.get("zeta")
         if (
             not isinstance(zeta, list)
             or len(zeta) != latent_dim
-            or not all(_finite_number(z) for z in zeta)
+            or not all(
+                _finite_number(z) and abs(float(z)) <= MAX_ABS_ITEM_PARAMETER
+                for z in zeta
+            )
         ):
-            raise ValueError(f"bundle item {code!r} zeta must be {latent_dim} finite numbers")
+            raise ValueError(
+                f"bundle item {code!r} zeta must be {latent_dim} numbers in "
+                f"the safe numeric range [-{MAX_ABS_ITEM_PARAMETER}, "
+                f"{MAX_ABS_ITEM_PARAMETER}]"
+            )
 
 
 def load_serving_bundle(path: str | Path) -> dict[str, Any]:

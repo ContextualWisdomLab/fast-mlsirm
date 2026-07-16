@@ -1,13 +1,115 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import BinaryIO
 
 import numpy as np
 
 from .types import DimensionalityDiagnostics, FitDiagnostics, FitResult, MLSIRMParams, SimulationData
+
+
+MAX_NUMPY_ARRAY_ELEMENTS = 50_000_000
+MAX_NUMPY_ARRAY_BYTES = 512 * 1024 * 1024
+MAX_NUMPY_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_NUMPY_ARCHIVE_MEMBERS = 256
+MAX_NUMPY_HEADER_BYTES = 64 * 1024
+
+
+def _validate_npy_header(stream: BinaryIO, source: str) -> tuple[int, int]:
+    """Read only an NPY header and reject unsafe declared allocations."""
+    version = np.lib.format.read_magic(stream)
+    if version == (1, 0):
+        shape, _, dtype = np.lib.format.read_array_header_1_0(
+            stream, max_header_size=MAX_NUMPY_HEADER_BYTES
+        )
+    elif version == (2, 0):
+        shape, _, dtype = np.lib.format.read_array_header_2_0(
+            stream, max_header_size=MAX_NUMPY_HEADER_BYTES
+        )
+    else:
+        raise ValueError(f"{source} uses unsupported NPY format version {version}")
+    if dtype.hasobject:
+        raise ValueError(f"{source} contains an object dtype")
+
+    elements = 1
+    for dim in shape:
+        if dim < 0:
+            raise ValueError(f"{source} declares a negative array dimension")
+        if dim == 0:
+            elements = 0
+        elif elements and elements > MAX_NUMPY_ARRAY_ELEMENTS // dim:
+            raise ValueError(
+                f"{source} declares more than {MAX_NUMPY_ARRAY_ELEMENTS} array elements"
+            )
+        else:
+            elements *= dim
+    nbytes = elements * int(dtype.itemsize)
+    if elements > MAX_NUMPY_ARRAY_ELEMENTS or nbytes > MAX_NUMPY_ARRAY_BYTES:
+        raise ValueError(
+            f"{source} declares {elements} elements / {nbytes} bytes, above the safe limit"
+        )
+    return nbytes, stream.tell()
+
+
+def _validate_numpy_file(path: Path) -> None:
+    file_size = path.stat().st_size
+    if file_size > MAX_NUMPY_ARCHIVE_BYTES:
+        raise ValueError(
+            f"NumPy input exceeds the {MAX_NUMPY_ARCHIVE_BYTES}-byte file limit"
+        )
+    if path.suffix.lower() == ".npy":
+        with path.open("rb") as stream:
+            nbytes, header_end = _validate_npy_header(stream, path.name)
+        if file_size - header_end < nbytes:
+            raise ValueError(
+                f"{path.name} is truncated relative to its declared array shape"
+            )
+        return
+    if path.suffix.lower() != ".npz":
+        raise ValueError("NumPy input must use a .npy or .npz suffix")
+
+    with zipfile.ZipFile(path) as archive:
+        members = [info for info in archive.infolist() if not info.is_dir()]
+        if not members or len(members) > MAX_NUMPY_ARCHIVE_MEMBERS:
+            raise ValueError(
+                f"NPZ archive must contain 1..{MAX_NUMPY_ARCHIVE_MEMBERS} members"
+            )
+        total_bytes = 0
+        for info in members:
+            if not info.filename.endswith(".npy"):
+                raise ValueError(
+                    f"NPZ archive member {info.filename!r} is not an NPY array"
+                )
+            if info.file_size > MAX_NUMPY_ARRAY_BYTES + MAX_NUMPY_HEADER_BYTES:
+                raise ValueError(
+                    f"NPZ member {info.filename!r} exceeds the safe byte limit"
+                )
+            with archive.open(info) as stream:
+                nbytes, header_end = _validate_npy_header(stream, info.filename)
+            if info.file_size - header_end < nbytes:
+                raise ValueError(
+                    f"NPZ member {info.filename!r} is truncated relative to its declared array shape"
+                )
+            total_bytes += nbytes
+            if total_bytes > MAX_NUMPY_ARCHIVE_BYTES:
+                raise ValueError(
+                    "NPZ archive declares more array bytes than the safe limit"
+                )
+
+
+def _load_numpy_bounded(path: str | Path):
+    """Load NPY/NPZ only after validating headers and allocation bounds."""
+    source = Path(path)
+    _validate_numpy_file(source)
+    return np.load(
+        source,
+        allow_pickle=False,
+        max_header_size=MAX_NUMPY_HEADER_BYTES,
+    )
 
 
 def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
@@ -104,9 +206,8 @@ def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
-    # Security: explicitly disable pickle to prevent arbitrary code execution
-    data = np.load(path, allow_pickle=False)
-    return MLSIRMParams(theta=data["theta"], alpha=data["alpha"], b=data["b"], xi=data["xi"], zeta=data["zeta"], tau=float(data["tau"]))
+    with _load_numpy_bounded(path) as data:
+        return MLSIRMParams(theta=data["theta"], alpha=data["alpha"], b=data["b"], xi=data["xi"], zeta=data["zeta"], tau=float(data["tau"]))
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:

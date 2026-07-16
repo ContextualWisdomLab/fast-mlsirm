@@ -4,14 +4,19 @@ structure/finiteness, and plausible-values response domain."""
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
 from fast_mlsirm import serving
+from fast_mlsirm.cli import _load_optional_npy
 from fast_mlsirm.config import MAX_LATENT_DIM, MAX_XI_POINTS, FitConfig
 from fast_mlsirm.fit import _compact_population_labels
+from fast_mlsirm.io import load_params
 from fast_mlsirm.validation import validate_judge
 
 
@@ -74,6 +79,57 @@ def _bundle(n_items=1, n_dims=1, latent_dim=1):
             for j in range(n_items)
         ],
     }
+
+
+def _oversized_npy_header() -> bytes:
+    payload = io.BytesIO()
+    np.lib.format.write_array_header_1_0(
+        payload,
+        {
+            "descr": np.dtype("<f8").descr,
+            "fortran_order": False,
+            "shape": (50_000_001,),
+        },
+    )
+    return payload.getvalue()
+
+
+def test_numpy_loader_rejects_oversized_npy_header_before_np_load(tmp_path):
+    path = tmp_path / "oversized.npy"
+    path.write_bytes(_oversized_npy_header())
+    with patch(
+        "fast_mlsirm.cli.np.load",
+        side_effect=AssertionError("np.load reached before header validation"),
+    ):
+        with pytest.raises(ValueError, match="declares"):
+            _load_optional_npy(str(path))
+
+
+def test_numpy_loader_rejects_oversized_npz_member_before_np_load(tmp_path):
+    path = tmp_path / "oversized.npz"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("theta.npy", _oversized_npy_header())
+    with patch(
+        "fast_mlsirm.io.np.load",
+        side_effect=AssertionError("np.load reached before archive validation"),
+    ):
+        with pytest.raises(ValueError, match="declares"):
+            load_params(path)
+
+
+@pytest.mark.parametrize("field", ["alpha", "b", "zeta", "tau"])
+def test_bundle_rejects_unsafe_finite_numeric_domain(field):
+    bundle = _bundle()
+    if field == "tau":
+        bundle["tau"] = 1e308
+    elif field == "zeta":
+        bundle["items"][0][field] = [1e308]
+    else:
+        bundle["items"][0][field] = 1e308
+    with patch("fast_mlsirm.serving._core_module") as core:
+        with pytest.raises(ValueError, match="safe numeric range"):
+            serving.score_respondents(bundle, np.array([[1.0]]))
+    core.assert_not_called()
 
 
 # ---- VULN-0006: non-finite bundle JSON / params ----------------------------
