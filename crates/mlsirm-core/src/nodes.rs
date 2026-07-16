@@ -27,6 +27,10 @@ pub struct XiNodes {
     pub logw: Vec<f64>,
 }
 
+/// Repository resource limits mirrored by Python's `FitConfig` validation.
+pub const MAX_XI_POINTS: usize = 1_000_000;
+pub const MAX_XI_LATENT_DIM: usize = 8;
+
 /// How to build the latent-space node set.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum XiRule {
@@ -40,6 +44,11 @@ pub enum XiRule {
 }
 
 pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String> {
+    if !(1..=MAX_XI_LATENT_DIM).contains(&latent_dim) {
+        return Err(format!(
+            "latent_dim must be in 1..={MAX_XI_LATENT_DIM} for latent-space nodes"
+        ));
+    }
     match rule {
         XiRule::GaussHermite { q_xi } => {
             let (nodes, weights) =
@@ -50,8 +59,13 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
                         .into(),
                 );
             }
-            let n = q_xi.pow(latent_dim as u32);
-            let mut grid = vec![0.0_f64; n * latent_dim];
+            let n = q_xi
+                .checked_pow(latent_dim as u32)
+                .ok_or("Gauss-Hermite node count overflows usize")?;
+            let grid_len = n
+                .checked_mul(latent_dim)
+                .ok_or("Gauss-Hermite grid length overflows usize")?;
+            let mut grid = vec![0.0_f64; grid_len];
             let mut logw = vec![0.0_f64; n];
             for j in 0..n {
                 let mut rem = j;
@@ -65,9 +79,7 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
             Ok(XiNodes { grid, logw })
         }
         XiRule::Halton { n, shift_seed } => {
-            if n == 0 {
-                return Err("Halton rule needs n >= 1".into());
-            }
+            let grid_len = checked_stochastic_grid_len("Halton", n, latent_dim)?;
             if latent_dim > HALTON_PRIMES.len() {
                 return Err(format!(
                     "Halton rule supports latent_dim <= {}",
@@ -81,7 +93,7 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
                     *s = lcg_uniform(&mut state);
                 }
             }
-            let mut grid = vec![0.0_f64; n * latent_dim];
+            let mut grid = vec![0.0_f64; grid_len];
             for j in 0..n {
                 for k in 0..latent_dim {
                     // skip the first point (index j+1) — Halton index 0 is 0.
@@ -95,11 +107,9 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
             Ok(XiNodes { grid, logw: vec![-(n as f64).ln(); n] })
         }
         XiRule::MonteCarlo { n, seed } => {
-            if n == 0 {
-                return Err("MonteCarlo rule needs n >= 1".into());
-            }
+            let grid_len = checked_stochastic_grid_len("MonteCarlo", n, latent_dim)?;
             let mut state = seed.max(1);
-            let mut grid = vec![0.0_f64; n * latent_dim];
+            let mut grid = vec![0.0_f64; grid_len];
             for v in grid.iter_mut() {
                 // Box-Muller on LCG uniforms (deterministic, mirrored in NumPy).
                 *v = normal_draw(&mut state);
@@ -107,6 +117,19 @@ pub fn build_xi_nodes(rule: XiRule, latent_dim: usize) -> Result<XiNodes, String
             Ok(XiNodes { grid, logw: vec![-(n as f64).ln(); n] })
         }
     }
+}
+
+fn checked_stochastic_grid_len(rule: &str, n: usize, latent_dim: usize) -> Result<usize, String> {
+    if n == 0 {
+        return Err(format!("{rule} rule needs n >= 1"));
+    }
+    if n > MAX_XI_POINTS {
+        return Err(format!(
+            "{rule} rule supports at most {MAX_XI_POINTS} points; got {n}"
+        ));
+    }
+    n.checked_mul(latent_dim)
+        .ok_or_else(|| format!("{rule} grid length overflows usize"))
 }
 
 const HALTON_PRIMES: [u64; 6] = [2, 3, 5, 7, 11, 13];
@@ -249,6 +272,64 @@ mod tests {
         assert!(build_xi_nodes(XiRule::GaussHermite { q_xi: 7 }, 4).is_err());
         assert!(build_xi_nodes(XiRule::Halton { n: 0, shift_seed: 0 }, 2).is_err());
         assert!(build_xi_nodes(XiRule::MonteCarlo { n: 0, seed: 1 }, 2).is_err());
+    }
+
+    #[test]
+    fn node_rules_reject_overflow_without_panicking() {
+        for rule in [
+            XiRule::Halton {
+                n: usize::MAX,
+                shift_seed: 0,
+            },
+            XiRule::MonteCarlo {
+                n: usize::MAX,
+                seed: 1,
+            },
+        ] {
+            let result = std::panic::catch_unwind(|| build_xi_nodes(rule, 2));
+            assert!(
+                result.is_ok(),
+                "node-size overflow must return Err, not panic"
+            );
+            assert!(result.unwrap().is_err());
+        }
+    }
+
+    #[test]
+    fn node_rules_reject_oversized_point_counts() {
+        assert!(build_xi_nodes(
+            XiRule::Halton {
+                n: MAX_XI_POINTS + 1,
+                shift_seed: 0,
+            },
+            1,
+        )
+        .is_err());
+        assert!(build_xi_nodes(
+            XiRule::MonteCarlo {
+                n: MAX_XI_POINTS + 1,
+                seed: 1,
+            },
+            1,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn node_rules_reject_unsafe_latent_dimensions() {
+        assert!(build_xi_nodes(
+            XiRule::Halton {
+                n: 1,
+                shift_seed: 0,
+            },
+            0,
+        )
+        .is_err());
+        assert!(build_xi_nodes(
+            XiRule::MonteCarlo { n: 1, seed: 1 },
+            MAX_XI_LATENT_DIM + 1,
+        )
+        .is_err());
     }
 }
 
