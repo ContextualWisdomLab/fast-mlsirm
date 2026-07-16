@@ -93,6 +93,34 @@
 
 ### Added
 
+- **Rasch conditional maximum likelihood + Andersen's LR test** (`fast_mlsirm.fit_rasch_cml`,
+  `andersen_lr_test`; new `mlsirm_core::rasch_cml`; Andersen, 1970, 1972, 1973). CML estimation of the
+  dichotomous Rasch item difficulties: conditioning each response pattern on its raw score (the
+  sufficient statistic for ability) ELIMINATES the person parameters, so the difficulties are estimated
+  without any assumption on the ability distribution (Rasch's specific objectivity) and consistently at
+  fixed test length — unlike the marginal-ML path (which must posit a `theta` distribution) or joint ML
+  (inconsistent). The conditional log-likelihood
+  `ln L_c = -sum_i s_i beta_i - sum_r n_r ln gamma_r(eps)` uses the elementary symmetric functions
+  `gamma_r`; the ESF and its per-item/per-pair derivatives are computed by the numerically stable
+  SUMMATION algorithm (a fresh forward pass `gamma_r += eps_j gamma_{r-1}` over the relevant item
+  subset), avoiding the cancellation-prone subtractive difference recursion (Verhelst, Glas & van der
+  Sluis, 1984). Newton on `beta` with sum-zero identification and a reduced-system solve; standard
+  errors from the pseudoinverse of the conditional information; persons scoring `0` or `k` are dropped.
+  Andersen's (1973) conditional likelihood-ratio test partitions the persons, fits CML within each group
+  and pooled, and refers `2[sum_g llc_g - llc_pooled]` to `chi^2((G-1)(k-1))`. **Guards.** The
+  summation-algorithm ESF (and its leave-one-out / leave-two-out passes) match brute-force subset sums;
+  a deterministic finite-difference anchor pins the CML gradient AND Hessian (catching the
+  `d eps/d beta = -eps` sign); the DEFINING person-distribution-free property is the primary anchor — the
+  same `beta_hat` is recovered whether `theta` is `N(0,1)` or strongly right-skewed (a value-recovery
+  test alone cannot separate CML from JML); and the Andersen LR does not over-reject Rasch data but
+  rejects a planted group-specific difficulty shift, with the `df` and upper tail pinned. Spec-verified
+  (GO-WITH-MUST-FIXES applied: the summation ESF over the difference recursion, dropping `r=0/k` persons,
+  sum-zero centering, the reduced-Hessian SE, and reuse of `solve_small`/`chi2_sf`). An adversarial
+  implementation review (faithfulness clean) then hardened two edge cases: `andersen_lr_test` surfaces a
+  `converged` flag so a stalled fit's clamped `lr = 0` is not misread as a clean non-rejection, and the
+  Python binding caps `n_groups` at 256 (u8 label range). Complete-data only; polytomous and missing-data
+  CML are deferred. Exposed to Python as `fit_rasch_cml` and `andersen_lr_test`.
+
 - **Warm's weighted likelihood estimation of ability** (`fast_mlsirm.score_wle`;
   `mlsirm_core::scoring::score_wle`; Warm, 1989). The bias-reduced maximum-likelihood ability estimator
   for unidimensional dichotomous items (2PL/3PL/4PL): it solves the weighted-likelihood estimating

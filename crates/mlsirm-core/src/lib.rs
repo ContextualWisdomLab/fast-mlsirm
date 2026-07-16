@@ -18,6 +18,7 @@ pub mod nominal;
 pub mod oakes;
 pub mod poly;
 pub mod poly_marginal;
+pub mod rasch_cml;
 pub(crate) mod quadrature;
 pub mod rsm;
 pub mod rt;

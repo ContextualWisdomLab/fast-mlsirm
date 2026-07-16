@@ -1770,6 +1770,66 @@ def test_score_wle_warm():
         score_wle(a, b, np.array([[2.0] + [0.0] * (j - 1)]))
 
 
+def test_rasch_cml_and_andersen_lr():
+    """Rasch CML (Andersen, 1970/1972) and Andersen's (1973) LR test via the public API: the item
+    difficulties are recovered PERSON-DISTRIBUTION-FREE (the same beta under N(0,1) vs skewed ability,
+    the CML signature), and the LR test does not over-reject true Rasch data but flags a planted
+    group-specific difficulty shift."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import andersen_lr_test, fit_rasch_cml
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_rasch_cml"):
+        pytest.skip("compiled core built without fit_rasch_cml")
+
+    rng = np.random.default_rng(1972)
+    k, n = 8, 4000
+    beta = np.array([-1.6, -0.9, -0.3, 0.2, 0.7, 1.2, 1.7, 0.0])
+    beta -= beta.mean()
+
+    def sim(theta):
+        p = 1.0 / (1.0 + np.exp(-(theta[:, None] - beta)))
+        return (rng.random((n, k)) < p).astype(float)
+
+    # (a) N(0,1) ability and (b) a strongly right-skewed ability
+    ya = sim(rng.standard_normal(n))
+    yb = sim(1.5 * rng.exponential(size=n) - 1.5)
+    fa = fit_rasch_cml(ya)
+    fb = fit_rasch_cml(yb)
+    assert fa["converged"] and fb["converged"]
+    assert fa["beta"].shape == (k,) and fa["se"].shape == (k,)
+    assert abs(fa["beta"].sum()) < 1e-8  # sum-zero identification
+    assert np.sqrt(np.mean((fa["beta"] - beta) ** 2)) < 0.15
+    # the defining property: the two ability distributions give the SAME estimates
+    assert np.sqrt(np.mean((fa["beta"] - fb["beta"]) ** 2)) < 0.15
+    assert np.all(np.isfinite(fa["se"])) and np.all(fa["se"] > 0)
+
+    # Andersen LR: arbitrary split of true Rasch data -> not rejected; planted DIF -> rejected
+    theta = rng.standard_normal(n)
+    group = (np.arange(n) % 2)
+    y_rasch = sim(theta)
+    t1 = andersen_lr_test(y_rasch, group)
+    assert t1["df"] == (2 - 1) * (k - 1)
+    assert t1["p_value"] > 0.01
+    y_dif = y_rasch.copy()
+    # regenerate group-1 responses on item 0 under a shifted difficulty
+    b0 = beta.copy()
+    b0[0] += 1.5
+    mask = group == 1
+    p_dif = 1.0 / (1.0 + np.exp(-(theta[mask][:, None] - b0)))
+    y_dif[mask] = (rng.random((mask.sum(), k)) < p_dif).astype(float)
+    t2 = andersen_lr_test(y_dif, group)
+    assert t2["lr"] > t1["lr"] + 15.0 and t2["p_value"] < 0.01
+
+    # validation: non-0/1 responses rejected
+    with pytest.raises(ValueError):
+        bad = ya.copy()
+        bad[0, 0] = 2
+        fit_rasch_cml(bad)
+
+
 def test_dif_polytomous_grm_no_silent_false_negative():
     """A GRM studied item whose focal group never uses a middle category can
     disorder thresholds -> NaN loglik. The finiteness guard must surface that as

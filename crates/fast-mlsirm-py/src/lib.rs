@@ -38,6 +38,9 @@ use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::dif::{mantel_haenszel_dif as core_mh_dif, MhDifConfig};
+use mlsirm_core::rasch_cml::{
+    andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
+};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::poly::{
@@ -2004,6 +2007,98 @@ fn score_wle(
     out.set_item("theta", res.theta)?;
     out.set_item("se", res.se)?;
     out.set_item("boundary", res.boundary)?;
+    Ok(out.into())
+}
+
+/// Convert an `i64` response slice to `0/1` bytes, rejecting anything else.
+fn binary_u8(slice: &[i64]) -> PyResult<Vec<u8>> {
+    slice
+        .iter()
+        .map(|&v| match v {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err("responses must be 0 or 1")),
+        })
+        .collect()
+}
+
+/// Rasch conditional maximum likelihood item difficulties (Rust compute path; Andersen, 1970, 1972).
+/// Conditioning each response pattern on its raw score (the sufficient statistic for ability) eliminates
+/// the person parameters, so the difficulties are estimated without any ability-distribution assumption
+/// and consistently at fixed test length. `y` is a row-major `n_persons * n_items` complete `0/1` array
+/// (persons scoring `0` or `n_items` are dropped). Returns a dict with `beta` (sum-zero item
+/// difficulties), `se` (from the pseudoinverse of the conditional information), `loglik`, `n_iter`,
+/// `converged`, and `n_used`.
+///
+/// Reference (APA 7th ed.):
+///   Andersen, E. B. (1972). The numerical solution of a set of conditional estimation equations.
+///     Journal of the Royal Statistical Society: Series B, 34(1), 42-54.
+#[pyfunction]
+#[pyo3(signature = (y, n_persons, n_items, max_iter = 100, tol = 1e-8))]
+fn fit_rasch_cml(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = binary_u8(y.as_slice()?)?;
+    let res = core_fit_rasch_cml(&yv, n_persons, n_items, max_iter, tol).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("beta", res.beta)?;
+    out.set_item("se", res.se)?;
+    out.set_item("loglik", res.loglik)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item("n_used", res.n_used)?;
+    Ok(out.into())
+}
+
+/// Andersen's (1973) conditional likelihood-ratio test of Rasch fit (Rust compute path). Partitions the
+/// persons by `group` (labels `0..n_groups`), fits CML within each group and pooled, and refers
+/// `LR = 2[sum_g llc_g - llc_pooled]` to `chi^2((n_groups - 1)(n_items - 1))`; a significant `LR`
+/// rejects invariance of the item difficulties across the split. Returns a dict with `lr`, `df`,
+/// `p_value`, and `n_used` (per-group retained counts).
+///
+/// Reference (APA 7th ed.):
+///   Andersen, E. B. (1973). A goodness of fit test for the Rasch model. Psychometrika, 38(1), 123-140.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, group, n_groups, n_persons, n_items, max_iter = 100, tol = 1e-8))]
+fn andersen_lr_test(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_groups: usize,
+    n_persons: usize,
+    n_items: usize,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    if n_groups > 256 {
+        return Err(PyValueError::new_err("n_groups must be <= 256"));
+    }
+    let yv = binary_u8(y.as_slice()?)?;
+    let gv: Vec<u8> = group
+        .as_slice()?
+        .iter()
+        .map(|&g| {
+            if g < 0 || g as usize >= n_groups {
+                Err(PyValueError::new_err("group labels must be in 0..n_groups"))
+            } else {
+                Ok(g as u8)
+            }
+        })
+        .collect::<PyResult<_>>()?;
+    let res = core_andersen_lr(&yv, &gv, n_groups, n_persons, n_items, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lr", res.lr)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("n_used", res.n_used)?;
+    out.set_item("converged", res.converged)?;
     Ok(out.into())
 }
 
@@ -4348,6 +4443,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
     m.add_function(wrap_pyfunction!(score_wle, m)?)?;
+    m.add_function(wrap_pyfunction!(fit_rasch_cml, m)?)?;
+    m.add_function(wrap_pyfunction!(andersen_lr_test, m)?)?;
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;
