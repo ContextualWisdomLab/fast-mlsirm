@@ -915,6 +915,188 @@ pub fn bank_information(
     Ok((item_info, test_info))
 }
 
+/// Warm's (1989) weighted-likelihood ability estimates for a UNIDIMENSIONAL dichotomous test.
+///
+/// The maximum-likelihood ability estimate carries an `O(1/n)` bias; Warm removes its leading term by
+/// weighting the likelihood by a function `w(theta)` with `w'/w = J(theta) / (2 I(theta))`, giving the
+/// estimating equation
+///
+/// ```text
+///   dlnL/dtheta + J(theta) / (2 I(theta)) = 0,
+/// ```
+///
+/// where, for the 4-parameter logistic `P_i = c_i + (d_i - c_i) sigmoid(a_i (theta - b_i))` (the 3PL is
+/// `d_i = 1`, the 2PL is `c_i = 0, d_i = 1`), with `P_i' = a_i (d_i - c_i) s_i (1 - s_i)` and
+/// `P_i'' = a_i^2 (d_i - c_i) s_i (1 - s_i)(1 - 2 s_i)` (`s_i = sigmoid(a_i(theta - b_i))`):
+///
+/// - `dlnL/dtheta = sum_i (y_i - P_i) P_i' / (P_i Q_i)` (score);
+/// - `I(theta) = sum_i P_i'^2 / (P_i Q_i)` (test information, [`item_information_4pl`] per item);
+/// - `J(theta) = sum_i P_i' P_i'' / (P_i Q_i)` (the Warm correction; computed DIRECTLY from `P' P''`).
+///
+/// `J` is **not** `I'(theta)/2`: they coincide only for the 2PL/Rasch (`c = 0, d = 1`), where the
+/// weight is `sqrt(I)` (the Jeffreys prior); for the 3PL/4PL `J != I'` (the second derivative carries
+/// `1 - 2 s` while `I'` carries `1 - 2 P`), so a `sqrt(I)`-weighted estimator applies the wrong 3PL/4PL
+/// correction. Two properties Warm establishes: the estimator removes the leading MLE bias, and — unlike
+/// the MLE, which is `+/-infinity` for the all-correct / all-incorrect pattern — it yields a FINITE
+/// estimate there. The estimate is the GLOBAL maximizer of the weighted log-likelihood `Phi`
+/// (`Phi' = g`), located by a grid scan of `g` (its trapezoidal cumulative integral recovers `Phi`) plus
+/// a local root refinement; this is robust to the 3PL/4PL case where the weighted likelihood can be
+/// multimodal (Samejima, 1973; Yen, Burket & Sykes, 1991), which a single bracketed root can get wrong.
+/// The reported standard error is `1 / sqrt(I(theta_wle))` (asymptotic).
+///
+/// `a`/`b`/`c`/`d` are per-item NATURAL-scale parameters (length `n_items`; `a` is the slope, NOT
+/// log-alpha) with `0 <= c_i < d_i <= 1`; `y`/`observed` are row-major `n_persons * n_items` (missing
+/// items dropped per person). `theta_bound` bounds the search grid; when the finite Warm root lies
+/// beyond it (very easy/hard items relative to the pattern) the estimate is clamped to the boundary and
+/// `boundary` is set. A person with no observed items gets `NaN` theta/se with `boundary` set (ability
+/// undefined).
+///
+/// # References (APA 7th ed.)
+///
+/// Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
+/// *Psychometrika, 54*(3), 427-450. <https://doi.org/10.1007/BF02294627>
+pub struct WleScores {
+    /// Weighted-likelihood ability estimate per person.
+    pub theta: Vec<f64>,
+    /// Asymptotic standard error `1 / sqrt(I(theta_wle))` (`NaN` if the test information is ~0).
+    pub se: Vec<f64>,
+    /// `true` when the finite root fell outside `[-theta_bound, theta_bound]` and `theta` was clamped.
+    pub boundary: Vec<bool>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn score_wle(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    d: &[f64],
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    theta_bound: f64,
+    tol: f64,
+) -> Result<WleScores, String> {
+    let n_items = a.len();
+    if n_items == 0 {
+        return Err("need at least one item".into());
+    }
+    if b.len() != n_items || c.len() != n_items || d.len() != n_items {
+        return Err("a, b, c, d must have equal length".into());
+    }
+    for i in 0..n_items {
+        if !a[i].is_finite() || !b[i].is_finite() || !c[i].is_finite() || !d[i].is_finite() {
+            return Err("item parameters must be finite".into());
+        }
+        if !(0.0..1.0).contains(&c[i]) || c[i] >= d[i] || d[i] > 1.0 {
+            return Err("require 0 <= c_i < d_i <= 1".into());
+        }
+    }
+    if !theta_bound.is_finite() || theta_bound <= 0.0 {
+        return Err("theta_bound must be finite and positive".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
+
+    // (g, I) at theta for person p, where g = score + J/(2I) is the Warm estimating function. The
+    // clamp on s keeps P Q away from 0 (item_information_4pl-style saturation), and the I floor guards
+    // the J/(2I) division when every observed item is saturated.
+    let eval = |p: usize, theta: f64| -> (f64, f64) {
+        let (mut score, mut info, mut jterm) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for i in 0..n_items {
+            let idx = p * n_items + i;
+            if !observed[idx] {
+                continue;
+            }
+            let s = sigmoid(a[i] * (theta - b[i])).clamp(1e-12, 1.0 - 1e-12);
+            let dc = d[i] - c[i];
+            let pp = c[i] + dc * s;
+            let pq = (pp * (1.0 - pp)).max(1e-300);
+            let p1 = a[i] * dc * s * (1.0 - s); // P'
+            let p2 = a[i] * a[i] * dc * s * (1.0 - s) * (1.0 - 2.0 * s); // P''
+            score += (y[idx] - pp) * p1 / pq;
+            info += p1 * p1 / pq;
+            jterm += p1 * p2 / pq;
+        }
+        (score + jterm / (2.0 * info.max(1e-12)), info)
+    };
+
+    // The WLE is the GLOBAL maximizer of the weighted log-likelihood `Phi` with `Phi'(theta) = g`; for
+    // the 2PL/Rasch `Phi` is unimodal, but for the 3PL/4PL the weighted likelihood can have SEVERAL
+    // stationary points (Samejima, 1973; Yen, Burket & Sykes, 1991), so a single bracketed bisection can
+    // converge to a non-dominant root. Recover `Phi` (up to a constant) as the trapezoidal cumulative
+    // integral of `g` over a grid, take the global-max node, and refine the root of `g` around it.
+    const GRID: usize = 512;
+    let h = 2.0 * theta_bound / GRID as f64;
+    let mut gvals = vec![0.0f64; GRID + 1];
+    let mut out = WleScores {
+        theta: vec![0.0; n_persons],
+        se: vec![0.0; n_persons],
+        boundary: vec![false; n_persons],
+    };
+    for p in 0..n_persons {
+        // No observed items -> ability is undefined; do not report a spurious theta = 0.
+        if (0..n_items).all(|i| !observed[p * n_items + i]) {
+            out.theta[p] = f64::NAN;
+            out.se[p] = f64::NAN;
+            out.boundary[p] = true;
+            continue;
+        }
+        for k in 0..=GRID {
+            gvals[k] = eval(p, -theta_bound + h * k as f64).0;
+        }
+        // Phi_0 = 0 (reference); track the global argmax over the grid nodes.
+        let (mut phi, mut best_phi, mut best_k) = (0.0f64, 0.0f64, 0usize);
+        for k in 1..=GRID {
+            phi += 0.5 * (gvals[k - 1] + gvals[k]) * h;
+            if phi > best_phi {
+                best_phi = phi;
+                best_k = k;
+            }
+        }
+        let theta_hat = if best_k == 0 || best_k == GRID {
+            // Global max at a boundary node: the finite Warm root lies at/beyond the hard bound.
+            out.boundary[p] = true;
+            -theta_bound + h * best_k as f64
+        } else {
+            // Interior max: Phi' = g crosses + -> - in [node-1, node+1]; refine by bisection.
+            let (mut a0, mut b0) = (
+                -theta_bound + h * (best_k as f64 - 1.0),
+                -theta_bound + h * (best_k as f64 + 1.0),
+            );
+            let mut ga = eval(p, a0).0;
+            if ga * eval(p, b0).0 > 0.0 {
+                -theta_bound + h * best_k as f64 // no clean sign change (narrow mode): use the node
+            } else {
+                for _ in 0..200 {
+                    if b0 - a0 < tol {
+                        break;
+                    }
+                    let mid = 0.5 * (a0 + b0);
+                    let gm = eval(p, mid).0;
+                    if gm == 0.0 {
+                        a0 = mid;
+                        b0 = mid;
+                        break;
+                    }
+                    if (gm > 0.0) == (ga > 0.0) {
+                        a0 = mid;
+                        ga = gm;
+                    } else {
+                        b0 = mid;
+                    }
+                }
+                0.5 * (a0 + b0)
+            }
+        };
+        out.theta[p] = theta_hat;
+        let info = eval(p, theta_hat).1;
+        out.se[p] = if info > 1e-12 { (1.0 / info).sqrt() } else { f64::NAN };
+    }
+    Ok(out)
+}
+
 /// One step of adaptive EAP testing: score the responses so far by EAP, pick
 /// the trait dimension with the largest posterior SD, and return the
 /// unadministered items of that dimension ranked by information at the current
@@ -1414,5 +1596,246 @@ mod gpu_score_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod wle_tests {
+    use super::{item_information_4pl, score_wle};
+
+    fn sig(x: f64) -> f64 {
+        1.0 / (1.0 + (-x).exp())
+    }
+
+    struct Lcg(u64);
+    impl Lcg {
+        fn next_f64(&mut self) -> f64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
+        }
+        fn normal(&mut self) -> f64 {
+            let u1 = self.next_f64().max(1e-12);
+            let u2 = self.next_f64();
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        }
+    }
+
+    /// The Warm estimating function `g = score + J/(2I)` recomputed INDEPENDENTLY from FINITE-DIFFERENCE
+    /// derivatives of `P` (no analytic `P'`/`P''`), so a sign error in the implementation's `J = P' P''`
+    /// term is not shared. Returns `g` at `theta`.
+    fn g_fd(a: &[f64], b: &[f64], c: &[f64], d: &[f64], y: &[f64], theta: f64) -> f64 {
+        let h = 1e-4;
+        let pf = |i: usize, t: f64| c[i] + (d[i] - c[i]) * sig(a[i] * (t - b[i]));
+        let (mut score, mut info, mut jterm) = (0.0, 0.0, 0.0);
+        for i in 0..a.len() {
+            let p0 = pf(i, theta);
+            let p1 = (pf(i, theta + h) - pf(i, theta - h)) / (2.0 * h); // P' by FD
+            let p2 = (pf(i, theta + h) - 2.0 * p0 + pf(i, theta - h)) / (h * h); // P'' by FD
+            let pq = p0 * (1.0 - p0);
+            score += (y[i] - p0) * p1 / pq;
+            info += p1 * p1 / pq;
+            jterm += p1 * p2 / pq;
+        }
+        score + jterm / (2.0 * info)
+    }
+
+    /// Root anchor across {2PL, 3PL, Rasch}: the returned `theta_hat` satisfies the Warm estimating
+    /// equation, verified by the FD-derivative recomputation (independent of the analytic derivatives).
+    #[test]
+    fn wle_estimating_equation_root() {
+        let j = 10usize;
+        let a2: Vec<f64> = (0..j).map(|i| 0.8 + 0.09 * i as f64).collect();
+        let b: Vec<f64> = (0..j).map(|i| -2.0 + 0.4 * i as f64).collect();
+        let y: Vec<f64> = (0..j).map(|i| (i % 2) as f64).collect(); // mixed -> interior root
+        let obs = vec![true; j];
+        let one = vec![1.0f64; j];
+        let zero = vec![0.0f64; j];
+        let d = vec![1.0f64; j];
+        let c02 = vec![0.2f64; j];
+        for (label, a, c) in [
+            ("2PL", &a2, &zero),
+            ("3PL", &a2, &c02),
+            ("Rasch", &one, &zero),
+        ] {
+            let res = score_wle(a, &b, c, &d, &y, &obs, 1, 20.0, 1e-9).unwrap();
+            assert!(!res.boundary[0], "{label}: unexpected boundary");
+            let g = g_fd(a, &b, c, &d, &y, res.theta[0]);
+            assert!(g.abs() < 1e-4, "{label}: WLE root residual {g} at theta {}", res.theta[0]);
+            // SE matches 1/sqrt(I) recomputed from item_information_4pl at the estimate
+            let info: f64 = (0..j)
+                .map(|i| {
+                    let p = c[i] + (d[i] - c[i]) * sig(a[i] * (res.theta[0] - b[i]));
+                    item_information_4pl(a[i], p, c[i], d[i])
+                })
+                .sum();
+            assert!((res.se[0] - (1.0 / info).sqrt()).abs() < 1e-9, "{label}: SE");
+        }
+    }
+
+    /// Finiteness (scoped to the 2PL, `c=0, d=1`): the all-correct and all-incorrect patterns — where
+    /// the MLE is `+/-infinity` — return FINITE, interior WLE estimates, with correct > incorrect.
+    #[test]
+    fn wle_finite_at_perfect_score_2pl() {
+        let j = 6usize;
+        let a: Vec<f64> = (0..j).map(|i| 1.0 + 0.1 * i as f64).collect();
+        let b: Vec<f64> = (0..j).map(|i| -1.5 + 0.6 * i as f64).collect();
+        let c = vec![0.0f64; j];
+        let d = vec![1.0f64; j];
+        let obs = vec![true; j];
+        let all1 = vec![1.0f64; j];
+        let all0 = vec![0.0f64; j];
+        let hi = score_wle(&a, &b, &c, &d, &all1, &obs, 1, 20.0, 1e-9).unwrap();
+        let lo = score_wle(&a, &b, &c, &d, &all0, &obs, 1, 20.0, 1e-9).unwrap();
+        assert!(hi.theta[0].is_finite() && !hi.boundary[0], "all-correct theta {}", hi.theta[0]);
+        assert!(lo.theta[0].is_finite() && !lo.boundary[0], "all-incorrect theta {}", lo.theta[0]);
+        assert!(hi.theta[0] > lo.theta[0], "correct {} !> incorrect {}", hi.theta[0], lo.theta[0]);
+        // the FD estimating equation is also ~0 at these finite roots
+        assert!(g_fd(&a, &b, &c, &d, &all1, hi.theta[0]).abs() < 1e-4);
+        assert!(g_fd(&a, &b, &c, &d, &all0, lo.theta[0]).abs() < 1e-4);
+    }
+
+    /// Monotonicity: for a fixed Rasch item set the WLE is nondecreasing in the number-correct score.
+    #[test]
+    fn wle_monotone_in_raw_score() {
+        let j = 8usize;
+        let a = vec![1.0f64; j];
+        let b: Vec<f64> = (0..j).map(|i| -2.0 + 0.5 * i as f64).collect();
+        let c = vec![0.0f64; j];
+        let d = vec![1.0f64; j];
+        let obs = vec![true; j];
+        let mut prev = f64::NEG_INFINITY;
+        for k in 0..=j {
+            let y: Vec<f64> = (0..j).map(|i| if i < k { 1.0 } else { 0.0 }).collect();
+            let res = score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).unwrap();
+            assert!(
+                res.theta[0] >= prev - 1e-9,
+                "raw score {k}: theta {} < previous {prev}",
+                res.theta[0]
+            );
+            prev = res.theta[0];
+        }
+    }
+
+    /// Validation guards trip non-vacuously.
+    #[test]
+    fn wle_validates() {
+        let a = vec![1.0, 1.2];
+        let b = vec![0.0, 0.5];
+        let c = vec![0.0, 0.0];
+        let d = vec![1.0, 1.0];
+        let y = vec![1.0, 0.0];
+        let obs = vec![true, true];
+        assert!(score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).is_ok());
+        // length mismatch
+        assert!(score_wle(&a, &b[..1], &c, &d, &y, &obs, 1, 20.0, 1e-9).is_err());
+        // c >= d
+        let cbad = vec![1.0, 0.0];
+        assert!(score_wle(&a, &b, &cbad, &d, &y, &obs, 1, 20.0, 1e-9).is_err());
+        // response not 0/1
+        let ybad = vec![2.0, 0.0];
+        assert!(score_wle(&a, &b, &c, &d, &ybad, &obs, 1, 20.0, 1e-9).is_err());
+        // theta_bound non-positive
+        assert!(score_wle(&a, &b, &c, &d, &y, &obs, 1, 0.0, 1e-9).is_err());
+    }
+
+    /// The 3PL weighted likelihood is multimodal here; the WLE must return the GLOBAL mode, not merely
+    /// a root of the estimating equation. Adversarial-review worst case: a single bracketed bisection
+    /// returns `theta ~ +1.70`, but the dominant weighted-likelihood mode is `theta ~ -4.13` (~10x more
+    /// probable). Pins the global-mode selection.
+    #[test]
+    fn wle_selects_global_mode_3pl_multimodal() {
+        let a = [0.59, 1.38, 2.16, 3.45, 1.53, 2.58, 1.13, 1.02, 2.9, 2.07];
+        let b = [-3.5, -3.78, -0.06, 2.82, 2.51, 2.73, -2.84, 3.48, 1.77, 0.07];
+        let c = [0.37, 0.23, 0.26, 0.45, 0.28, 0.3, 0.4, 0.22, 0.22, 0.21];
+        let d = [1.0f64; 10];
+        let y = [1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let obs = [true; 10];
+        let res = score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).unwrap();
+        assert!(
+            res.theta[0] < -3.0,
+            "did not select the global mode: theta {} (expected ~ -4.13, not the +1.70 root)",
+            res.theta[0]
+        );
+    }
+
+    /// A person with no observed items has undefined ability: `NaN` estimate and SE, flagged — not a
+    /// spurious `theta = 0` (which the `g == 0` bisection shortcut would otherwise return).
+    #[test]
+    fn wle_all_missing_is_nan() {
+        let a = [1.0, 1.2, 0.9];
+        let b = [-0.5, 0.0, 0.7];
+        let c = [0.0f64; 3];
+        let d = [1.0f64; 3];
+        let y = [0.0, 0.0, 0.0];
+        let obs = [false, false, false];
+        let res = score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).unwrap();
+        assert!(res.theta[0].is_nan() && res.se[0].is_nan() && res.boundary[0]);
+    }
+
+    /// Literature-grade bias comparison (>=500 reps): Warm's WLE has smaller mean bias than the MLE,
+    /// especially at extreme abilities where perfect/near-perfect patterns bias the (boundary-clamped)
+    /// MLE. Run with: `cargo test -p mlsirm-core --release wle_reduces_mle_bias_500 -- --ignored`.
+    #[test]
+    #[ignore]
+    fn wle_reduces_mle_bias_500() {
+        let reps = 500usize;
+        let j = 15usize;
+        let a: Vec<f64> = (0..j).map(|i| 0.9 + 0.05 * (i % 5) as f64).collect();
+        let b: Vec<f64> = (0..j).map(|i| -2.0 + 4.0 * i as f64 / (j as f64 - 1.0)).collect();
+        let c = vec![0.0f64; j];
+        let d = vec![1.0f64; j];
+        let obs = vec![true; j];
+        // MLE by bisection on the score (clamped to +/-6 for separable patterns).
+        let mle = |y: &[f64]| -> f64 {
+            let score = |t: f64| -> f64 {
+                (0..j)
+                    .map(|i| {
+                        let p = sig(a[i] * (t - b[i]));
+                        a[i] * (y[i] - p)
+                    })
+                    .sum::<f64>()
+            };
+            let (mut loi, mut hii) = (-6.0f64, 6.0f64);
+            let (glo, ghi) = (score(loi), score(hii));
+            if glo * ghi > 0.0 {
+                return if glo > 0.0 { hii } else { loi };
+            }
+            for _ in 0..100 {
+                let mid = 0.5 * (loi + hii);
+                if score(mid) > 0.0 {
+                    loi = mid;
+                } else {
+                    hii = mid;
+                }
+            }
+            0.5 * (loi + hii)
+        };
+        let grid = [-2.0, -1.0, 0.0, 1.0, 2.0];
+        let (mut wle_abs, mut mle_abs) = (0.0f64, 0.0f64);
+        for &theta in &grid {
+            let (mut wsum, mut msum, mut n) = (0.0f64, 0.0f64, 0usize);
+            for rep in 0..reps {
+                let mut rng = Lcg(0x9E1E_u64.wrapping_mul(rep as u64 + 1).wrapping_add((theta as i64 as u64).wrapping_mul(97)));
+                let y: Vec<f64> = (0..j)
+                    .map(|i| {
+                        let p = sig(a[i] * (theta - b[i]));
+                        if rng.next_f64() < p { 1.0 } else { 0.0 }
+                    })
+                    .collect();
+                let w = score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).unwrap().theta[0];
+                wsum += w - theta;
+                msum += mle(&y) - theta;
+                n += 1;
+            }
+            let (wb, mb) = (wsum / n as f64, msum / n as f64);
+            println!("[wle bias theta={theta}] WLE={wb:.4} MLE={mb:.4}");
+            wle_abs += wb.abs();
+            mle_abs += mb.abs();
+        }
+        println!("[wle] sum|bias| WLE={wle_abs:.4} MLE={mle_abs:.4}");
+        assert!(wle_abs < mle_abs, "WLE did not reduce aggregate bias: {wle_abs} vs {mle_abs}");
     }
 }

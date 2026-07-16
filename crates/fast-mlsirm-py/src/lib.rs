@@ -59,7 +59,7 @@ use mlsirm_core::scoring::{
     bank_information as core_bank_information, cat_next_item as core_cat_next_item,
     eapsum_tables as core_eapsum_tables, empirical_reliability as core_empirical_reliability,
     plausible_values as core_plausible_values, score_eap_device as core_score_eap_device,
-    score_map as core_score_map, ItemBank, PriorSpec,
+    score_map as core_score_map, score_wle as core_score_wle, ItemBank, PriorSpec,
 };
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1954,6 +1954,56 @@ fn score_bank_map(
     out.set_item("xi_map", res.xi_map)?;
     out.set_item("log_posterior", res.log_posterior)?;
     out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+/// Warm's (1989) weighted-likelihood ability estimates for a unidimensional dichotomous test (Rust
+/// compute path). The bias-reduced maximum-likelihood estimator: solves
+/// `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with `J = sum_i P_i' P_i''/(P_i Q_i)` (computed directly,
+/// not `I'/2`, which differs for the 3PL/4PL), yielding a FINITE estimate for the all-correct /
+/// all-incorrect patterns where the MLE diverges. `a`/`b`/`c`/`d` are per-item NATURAL-scale parameters
+/// (`a` the slope, NOT log-alpha) with `0 <= c_i < d_i <= 1` (2PL: `c=0, d=1`); `y`/`observed` are
+/// row-major `n_persons * n_items` (`0/1`; missing items dropped per person). Returns a dict with
+/// `theta` (`n_persons`), `se` (`1/sqrt(I)`), and `boundary` (root clamped to `+/- theta_bound`).
+///
+/// Reference (APA 7th ed.):
+///   Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
+///     Psychometrika, 54(3), 427-450.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (a, b, c, d, y, observed, n_persons, n_items, theta_bound = 20.0, tol = 1e-8))]
+fn score_wle(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    d: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    n_items: usize,
+    theta_bound: f64,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    if a.as_slice()?.len() != n_items {
+        return Err(PyValueError::new_err("a length must equal n_items"));
+    }
+    let res = core_score_wle(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        d.as_slice()?,
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        theta_bound,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta", res.theta)?;
+    out.set_item("se", res.se)?;
+    out.set_item("boundary", res.boundary)?;
     Ok(out.into())
 }
 
@@ -4297,6 +4347,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(score_wle, m)?)?;
     m.add_function(wrap_pyfunction!(u3_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(u3_bootstrap_cutoff, m)?)?;
     m.add_function(wrap_pyfunction!(irt_link, m)?)?;

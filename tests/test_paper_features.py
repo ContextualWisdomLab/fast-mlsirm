@@ -1723,6 +1723,53 @@ def test_mantel_haenszel_dif():
         mantel_haenszel_dif(y, np.zeros(n, dtype=np.int64))
 
 
+def test_score_wle_warm():
+    """Warm's WLE (1989) via the public API: FINITE estimates for the perfect/zero patterns where the
+    MLE diverges (correct > incorrect), monotone in the raw score, SE = 1/sqrt(I), 3PL support, and
+    input validation."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import score_wle
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle"):
+        pytest.skip("compiled core built without score_wle")
+
+    j = 8
+    a = 1.0 + 0.1 * np.arange(j)
+    b = np.linspace(-2.0, 2.0, j)
+    # perfect and zero patterns -> finite, interior, correct > incorrect (MLE would be +/-inf)
+    rc = score_wle(a, b, np.ones((1, j)))
+    rw = score_wle(a, b, np.zeros((1, j)))
+    assert np.isfinite(rc["theta"][0]) and not rc["boundary"][0]
+    assert np.isfinite(rw["theta"][0]) and not rw["boundary"][0]
+    assert rc["theta"][0] > rw["theta"][0]
+    # monotone in the number-correct score (Rasch, a=1)
+    a1 = np.ones(j)
+    thetas = [
+        score_wle(a1, b, np.array([[1.0 if i < k else 0.0 for i in range(j)]]))["theta"][0]
+        for k in range(j + 1)
+    ]
+    assert all(thetas[k] <= thetas[k + 1] + 1e-9 for k in range(j))
+    # SE = 1/sqrt(I) at the estimate (2PL information)
+    y = np.array([[1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0]])
+    res = score_wle(a, b, y)
+    assert res["theta"].shape == (1,) and res["se"].shape == (1,) and res["boundary"].shape == (1,)
+    theta = res["theta"][0]
+    p = 1.0 / (1.0 + np.exp(-a * (theta - b)))
+    info = np.sum(a**2 * p * (1.0 - p))
+    assert abs(res["se"][0] - 1.0 / np.sqrt(info)) < 1e-6
+    # 3PL support (lower asymptote c > 0)
+    r3 = score_wle(a, b, y, c=np.full(j, 0.2))
+    assert np.isfinite(r3["theta"][0])
+    # validation: a/b length mismatch and a non-0/1 response
+    with pytest.raises(ValueError):
+        score_wle(a, b[:-1], y)
+    with pytest.raises(ValueError):
+        score_wle(a, b, np.array([[2.0] + [0.0] * (j - 1)]))
+
+
 def test_dif_polytomous_grm_no_silent_false_negative():
     """A GRM studied item whose focal group never uses a middle category can
     disorder thresholds -> NaN loglik. The finiteness guard must surface that as

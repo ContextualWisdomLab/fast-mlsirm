@@ -93,6 +93,37 @@
 
 ### Added
 
+- **Warm's weighted likelihood estimation of ability** (`fast_mlsirm.score_wle`;
+  `mlsirm_core::scoring::score_wle`; Warm, 1989). The bias-reduced maximum-likelihood ability estimator
+  for unidimensional dichotomous items (2PL/3PL/4PL): it solves the weighted-likelihood estimating
+  equation `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with the Warm correction
+  `J = sum_i P_i' P_i''/(P_i Q_i)` computed DIRECTLY. Crucially `J` is *not* `I'(theta)/2` — the two
+  coincide only for the 2PL/Rasch (`c=0, d=1`), where the weight is `sqrt(I)` (the Jeffreys prior); for
+  the 3PL/4PL the second derivative carries `1-2s` while the information derivative carries `1-2P`, so a
+  `sqrt(I)`-weighted estimator applies the wrong correction. Warm's estimator removes the leading
+  `O(1/n)` MLE bias and — unlike the MLE, which is `+/-infinity` for the all-correct / all-incorrect
+  pattern — yields a FINITE estimate for every response pattern. The estimate is the GLOBAL maximizer of
+  the weighted log-likelihood (whose derivative is the estimating function), located by a grid scan plus
+  a local root refinement — robust to the 3PL/4PL case where the weighted likelihood is multimodal
+  (Samejima, 1973; Yen, Burket & Sykes, 1991) and a single bracketed root can select the wrong mode;
+  it is clamped and flagged when the finite root falls beyond `theta_bound`, and a person with no
+  observed items returns `NaN`. It reuses `item_information_4pl` for `I(theta)`; the SE is `1/sqrt(I)`.
+  **Guards.** An estimating-equation root anchor is verified by INDEPENDENT finite-difference
+  derivatives of `P` (so a `J` sign error in the analytic `P' P''` is not shared) across the 2PL, 3PL,
+  and Rasch; a 2PL finiteness anchor confirms the perfect/zero patterns give finite, interior estimates
+  with correct > incorrect; a monotonicity anchor confirms the estimate is nondecreasing in the
+  number-correct score; a global-mode anchor confirms the multimodal-3PL worst case returns the dominant
+  mode (`theta ~ -4.13`, ~10x more probable) rather than a minor root; an all-missing person returns
+  `NaN`; and a `#[ignore]` >=500-rep Monte-Carlo confirms Warm's headline result — the WLE aggregate
+  `|bias|` (~0.04) is an order of magnitude smaller than the boundary-clamped MLE's (~0.50), the gap
+  widening at extreme abilities. Spec-verified (GO-WITH-MUST-FIXES: `J`-not-`I'`, the `I~0` division
+  guard, plain natural-scale `a/b/c/d` rather than the log-alpha `ItemBank`); an adversarial
+  implementation review then caught and fixed two defects the initial tests missed — the 3PL/4PL
+  multimodality (a single bracketed bisection could return a non-dominant root; replaced by the
+  global-mode grid search) and an all-missing person silently returning `theta = 0` (now `NaN`).
+  Polytomous WLE (Penfield & Bergeron, 2005) is deferred. Exposed to Python as `score_wle` returning
+  `theta`/`se`/`boundary`.
+
 - **Mantel-Haenszel differential item functioning** (`fast_mlsirm.mantel_haenszel_dif`; new
   `mlsirm_core::dif`; Holland & Thayer, 1988). The observed-score, calibration-free DIF procedure — the
   complement to the parametric IRT-LR DIF (`dif_polytomous`): no item response model is fitted.
