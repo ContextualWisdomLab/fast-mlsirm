@@ -769,9 +769,81 @@ def test_fit_gpcm_numpy_recovers_known_parameters():
 
     res = fit_gpcm_numpy(y, k_cat, max_iter=80)
     assert np.isfinite(res["loglik"])
+    assert res["converged"]
+    assert res["termination_reason"] == "tolerance"
+    assert res["n_iter"] < 80
+    assert res["loglik_trace"].shape == (res["n_iter"] + 1,)
+    assert np.all(np.isfinite(res["loglik_trace"]))
+    assert np.all(np.diff(res["loglik_trace"]) >= -1e-10)
+    assert res["final_delta"] <= res["stopping_tolerance"]
+    assert res["loglik"] == res["loglik_trace"][-1]
     assert np.corrcoef(a_true, res["a"])[0, 1] > 0.9
     assert np.max(np.abs(a_true - res["a"])) < 0.35
     assert np.mean(np.abs(c_true[:, 1:] - res["intercepts"][:, 1:])) < 0.2
+
+
+def test_fit_gpcm_numpy_reports_likelihood_at_returned_parameters():
+    """The reference EM result and trace end at the returned parameter state."""
+    import numpy as np
+
+    from fast_mlsirm.estimators.marginal import _gh, category_logprobs, fit_gpcm_numpy
+
+    y = np.array(
+        [
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 1, 1],
+            [1, 2, 1],
+            [2, 2, 2],
+            [2, 1, 2],
+            [1, 0, 1],
+            [2, 2, 1],
+        ],
+        dtype=np.int64,
+    )
+    res = fit_gpcm_numpy(y, 3, q_theta=7, max_iter=1, tol=1e-6)
+
+    nodes, weights = _gh(7)
+    scores = np.arange(3, dtype=np.float64)
+    log_node = np.zeros((y.shape[0], nodes.size), dtype=np.float64)
+    for item in range(y.shape[1]):
+        item_lp = category_logprobs(
+            res["a"][item] * nodes, scores, res["intercepts"][item]
+        )
+        log_node += item_lp[:, y[:, item]].T
+    log_node += np.log(weights)[None, :]
+    maximum = log_node.max(axis=1, keepdims=True)
+    reevaluated = float(
+        np.sum(maximum[:, 0] + np.log(np.exp(log_node - maximum).sum(axis=1)))
+    )
+
+    assert res["n_iter"] == 1
+    assert not res["converged"]
+    assert res["termination_reason"] == "max_iter_reached"
+    assert res["loglik_trace"].shape == (2,)
+    assert np.all(np.isfinite(res["loglik_trace"]))
+    assert res["final_delta"] > res["stopping_tolerance"]
+    assert np.allclose(res["loglik"], res["loglik_trace"][-1], atol=1e-12)
+    assert np.allclose(res["loglik"], reevaluated, atol=1e-12)
+
+
+def test_fit_gpcm_numpy_rejects_malformed_controls_and_responses():
+    import numpy as np
+    import pytest
+
+    from fast_mlsirm.estimators.marginal import fit_gpcm_numpy
+
+    valid = np.array([[0, 1], [1, 2]], dtype=np.int64)
+    for bad in (np.array([0, 1, 2]), np.empty((0, 2)), np.array([[0.5, 1.0]])):
+        with pytest.raises(ValueError):
+            fit_gpcm_numpy(bad, 3, q_theta=7, max_iter=1)
+    for kwargs in (
+        {"n_cat": 3.5},
+        {"n_cat": 3, "max_iter": 0},
+        {"n_cat": 3, "tol": 0.0},
+    ):
+        with pytest.raises(ValueError):
+            fit_gpcm_numpy(valid, **kwargs)
 
 
 def test_poly_cell_and_fitter_rust_numpy_parity():

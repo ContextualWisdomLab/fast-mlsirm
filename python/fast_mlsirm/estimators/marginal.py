@@ -1176,26 +1176,74 @@ def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
 
 
 def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
-    """Unidimensional GPCM (Muraki 1992) marginal MLE via Bock-Aitkin EM — the
+    """Unidimensional GPCM marginal MLE via Bock-Aitkin EM — the
     NumPy parity reference for the polytomous cell of the forthcoming Rust
     kernel (``docs/papers/gpcm-nominal-design-spec.md``). Validates the unified
     softmax cell (:func:`category_logprobs`) and residual gradient
     (:func:`gpcm_node_gradient`) in a full EM loop before the Rust port.
 
     ``y`` is persons x items with integer categories ``0..n_cat-1`` (complete
-    data). ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. Returns
-    ``{"a", "alpha", "intercepts", "thresholds", "loglik", "n_iter"}`` where
-    ``a`` are slopes, ``intercepts`` the additive category intercepts (baseline
-    pinned to 0), and ``thresholds`` the Muraki step difficulties
-    ``b_{i,k} = c_{i,k-1} - c_{i,k}``.
+    data). ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The
+    returned likelihood and trace endpoint are evaluated at the returned item
+    parameters. ``converged`` means the absolute observed-data likelihood change
+    met the reported scaled tolerance before ``max_iter``. The finite-difference
+    Hessian Newton item M-step is a repository-specific numerical choice.
+
+    Bock and Aitkin (1981) established marginal item-parameter estimation using
+    EM, while Muraki (1992) derived the EM calibration of the GPCM.
+
+    References
+    ----------
+    Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of
+    item parameters: Application of an EM algorithm. *Psychometrika, 46*(4),
+    443–459. https://doi.org/10.1007/BF02293801
+
+    Muraki, E. (1992). A generalized partial credit model: Application of an EM
+    algorithm. *ETS Research Report Series, 1992*(1), i–30.
+    https://doi.org/10.1002/j.2333-8504.1992.tb01436.x
     """
-    y = np.asarray(y)
-    n_persons, n_items = y.shape
+    try:
+        yf = np.asarray(y, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("responses must be a numeric 2-D array") from exc
+    if yf.ndim != 2 or 0 in yf.shape:
+        raise ValueError("responses must be a non-empty persons x items array")
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or n_cat < 2
+    ):
+        raise ValueError("n_cat must be an integer >= 2")
+    if (
+        not isinstance(q_theta, (int, np.integer))
+        or isinstance(q_theta, (bool, np.bool_))
+        or q_theta < 1
+    ):
+        raise ValueError("q_theta must be an integer >= 1")
+    if (
+        not isinstance(max_iter, (int, np.integer))
+        or isinstance(max_iter, (bool, np.bool_))
+        or max_iter < 1
+    ):
+        raise ValueError("max_iter must be an integer >= 1")
+    if (
+        not isinstance(tol, (int, float, np.integer, np.floating))
+        or isinstance(tol, (bool, np.bool_))
+        or not np.isfinite(tol)
+        or tol <= 0
+    ):
+        raise ValueError("tol must be finite and > 0")
+
     k_cat = int(n_cat)
-    if k_cat < 2:
-        raise ValueError("n_cat must be >= 2")
-    if y.min() < 0 or y.max() >= k_cat:
+    if (
+        not np.all(np.isfinite(yf))
+        or np.any(yf != np.floor(yf))
+        or yf.min() < 0
+        or yf.max() >= k_cat
+    ):
         raise ValueError(f"responses must be integer categories in 0..{k_cat - 1}")
+    y = yf.astype(np.int64)
+    n_persons, n_items = y.shape
     nodes, wts = _gh(q_theta)
     log_prior = np.log(wts)
     scores = np.arange(k_cat, dtype=np.float64)
@@ -1205,12 +1253,13 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         freq = np.array([(y[:, i] == k).mean() for k in range(k_cat)]) + 1e-3
         params[i, 1:] = np.log(freq[1:] / freq[0])
 
-    prev_ll = -np.inf
-    it = 0
-    for it in range(max_iter):
+    def estep(current_params):
         item_lp = [
-            category_logprobs(np.exp(params[i, 0]) * nodes, scores,
-                              np.concatenate([[0.0], params[i, 1:]]))
+            category_logprobs(
+                np.exp(current_params[i, 0]) * nodes,
+                scores,
+                np.concatenate([[0.0], current_params[i, 1:]]),
+            )
             for i in range(n_items)
         ]
         log_node = np.zeros((n_persons, q_theta))
@@ -1222,12 +1271,27 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         denom = w.sum(axis=1, keepdims=True)
         post = w / denom
         ll = float(np.sum(mx[:, 0] + np.log(denom[:, 0])))
+        return ll, post
+
+    ll, post = estep(params)
+    loglik_trace = [ll]
+    converged = False
+    final_delta = np.inf
+    stopping_tolerance = float(tol * (1.0 + abs(ll)))
+    for it in range(1, max_iter + 1):
         for i in range(n_items):
             r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
-        if abs(ll - prev_ll) < tol * (1.0 + abs(prev_ll)):
+        next_ll, post = estep(params)
+        if not np.isfinite(next_ll):
+            raise RuntimeError("GPCM EM produced a non-finite observed-data likelihood")
+        final_delta = float(abs(next_ll - ll))
+        stopping_tolerance = float(tol * (1.0 + abs(ll)))
+        ll = next_ll
+        loglik_trace.append(ll)
+        if final_delta <= stopping_tolerance:
+            converged = True
             break
-        prev_ll = ll
 
     a = np.exp(params[:, 0])
     intercepts = np.concatenate([np.zeros((n_items, 1)), params[:, 1:]], axis=1)
@@ -1237,8 +1301,13 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         "alpha": params[:, 0],
         "intercepts": intercepts,
         "thresholds": thresholds,
-        "loglik": prev_ll if it == 0 else ll,
-        "n_iter": it + 1,
+        "loglik": ll,
+        "n_iter": it,
+        "converged": converged,
+        "termination_reason": "tolerance" if converged else "max_iter_reached",
+        "loglik_trace": np.asarray(loglik_trace, dtype=np.float64),
+        "final_delta": final_delta,
+        "stopping_tolerance": stopping_tolerance,
     }
 
 
