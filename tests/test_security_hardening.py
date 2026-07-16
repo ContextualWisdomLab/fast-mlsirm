@@ -507,3 +507,25 @@ def test_validate_judge_compacts_sparse_subgroup():
         subgroup=np.array([0, 4294967295, 0, 4294967295], dtype=np.uint32),
     )
     assert v is not None  # returns promptly; compaction -> 2 groups
+
+
+# ---- Proactive audit: polytomous information public API -------------------
+@pytest.mark.parametrize(
+    ("theta", "slope", "cat_params", "match"),
+    [
+        (np.array([[0.0, 1.0]]), np.array([1.0]), np.array([[0.0, 0.0]]), "1-D"),
+        (np.array([0.0]), np.array([np.nan]), np.array([[0.0, 0.0]]), "finite"),
+        (np.array([0.0]), np.array([1.0]), np.array([0.0, 0.0]), "n_items"),
+        (np.array([0.0]), np.array([]), np.empty((0, 2)), "non-empty"),
+    ],
+)
+def test_information_polytomous_rejects_malformed_inputs(
+    theta, slope, cat_params, match
+):
+    from fast_mlsirm.polytomous import PolytomousFit, information_polytomous
+
+    fit = PolytomousFit(
+        model="gpcm", slope=slope, cat_params=cat_params, loglik=0.0, n_iter=1
+    )
+    with pytest.raises(ValueError, match=match):
+        information_polytomous(fit, theta)

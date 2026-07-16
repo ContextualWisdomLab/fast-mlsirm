@@ -1709,6 +1709,16 @@ pub fn u3_poly_bootstrap_cutoff(
 /// polytomous item at trait value `theta`. GPCM reduces to `a^2 * Var_P(scores)`;
 /// GRM to `a^2 * sum_k (v_k - v_{k+1})^2 / P_k` with `v_j = s_j(1-s_j)`,
 /// `s_j = P(Y>=j)`. `cat_params` is this item's `K-1` category parameters.
+///
+/// # References
+///
+/// Muraki, E. (1993). Information functions of the generalized partial credit
+/// model. *Applied Psychological Measurement, 17*(4), 351–363.
+/// <https://doi.org/10.1177/014662169301700403>
+///
+/// Samejima, F. (1969). Estimation of latent ability using a response pattern
+/// of graded scores. *Psychometrika, 34*(S1), 1–97.
+/// <https://doi.org/10.1007/BF03372160>
 pub fn poly_item_information(
     theta: f64,
     slope: f64,
@@ -1762,10 +1772,29 @@ pub fn poly_information_curves(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+    if n_items < 1 {
+        return Err("need at least one item".into());
+    }
+    if theta.is_empty() {
+        return Err("theta must be non-empty".into());
+    }
+    let expected_cat_params = n_items
+        .checked_mul(n_cat - 1)
+        .ok_or_else(|| "n_items * (n_cat - 1) overflows usize".to_string())?;
+    if slope.len() != n_items || cat_params.len() != expected_cat_params {
         return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
     }
-    let mut out = vec![0.0_f64; theta.len() * n_items];
+    if theta.iter().any(|value| !value.is_finite())
+        || slope.iter().any(|value| !value.is_finite())
+        || cat_params.iter().any(|value| !value.is_finite())
+    {
+        return Err("theta, slope, and cat_params must be finite".into());
+    }
+    let output_len = theta
+        .len()
+        .checked_mul(n_items)
+        .ok_or_else(|| "theta.len() * n_items overflows usize".to_string())?;
+    let mut out = vec![0.0_f64; output_len];
     for (t, &th) in theta.iter().enumerate() {
         for i in 0..n_items {
             let cp = &cat_params[i * (n_cat - 1)..(i + 1) * (n_cat - 1)];
@@ -2339,6 +2368,28 @@ mod tests {
             let ana = poly_item_information(theta, a, cat, model);
             assert!((ana - fd_info).abs() < 1e-4, "{model:?}: analytic {ana} vs fd {fd_info}");
         }
+    }
+
+    #[test]
+    fn poly_information_curves_rejects_nonfinite_or_empty_inputs() {
+        for (theta, slope, cat_params) in [
+            (&[f64::NAN][..], &[1.0][..], &[0.0, 0.0][..]),
+            (&[0.0][..], &[f64::INFINITY][..], &[0.0, 0.0][..]),
+            (&[0.0][..], &[1.0][..], &[0.0, f64::NEG_INFINITY][..]),
+        ] {
+            assert!(poly_information_curves(
+                theta,
+                slope,
+                cat_params,
+                1,
+                3,
+                PolyModel::Gpcm,
+            )
+            .is_err());
+        }
+        assert!(poly_information_curves(&[], &[1.0], &[0.0, 0.0], 1, 3, PolyModel::Gpcm)
+            .is_err());
+        assert!(poly_information_curves(&[0.0], &[], &[], 0, 3, PolyModel::Gpcm).is_err());
     }
 
     #[test]

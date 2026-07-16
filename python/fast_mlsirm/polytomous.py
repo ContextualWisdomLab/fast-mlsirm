@@ -240,24 +240,51 @@ def information_polytomous(
 ) -> dict[str, np.ndarray]:
     """Item and test information curves for a fitted polytomous model (compute
     in Rust). ``theta`` is a 1-D grid of trait values. Returns
-    ``{"item_info"` (n_theta x n_items), ``"test_info"`` (n_theta)}``.
+    ``{"item_info"` (n_theta x n_items), ``"test_info"`` (n_theta)}``. The
+    model-specific information functions follow Samejima (1969) for the GRM
+    and Muraki (1993) for the GPCM.
+
+    References
+    ----------
+    Muraki, E. (1993). Information functions of the generalized partial credit
+    model. *Applied Psychological Measurement, 17*(4), 351–363.
+    https://doi.org/10.1177/014662169301700403
+
+    Samejima, F. (1969). Estimation of latent ability using a response pattern
+    of graded scores. *Psychometrika, 34*(S1), 1–97.
+    https://doi.org/10.1007/BF03372160
     """
-    th = np.asarray(theta, dtype=np.float64).ravel()
-    if th.size == 0 or not np.all(np.isfinite(th)):
+    th = np.asarray(theta, dtype=np.float64)
+    if th.ndim != 1 or th.size == 0 or not np.all(np.isfinite(th)):
         raise ValueError("theta must be a non-empty finite 1-D grid")
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    cat_params = np.asarray(fit.cat_params, dtype=np.float64)
+    if slope.ndim != 1 or slope.size == 0:
+        raise ValueError("fit.slope must be a non-empty 1-D array")
+    if (
+        cat_params.ndim != 2
+        or cat_params.shape[0] != slope.size
+        or cat_params.shape[1] < 1
+    ):
+        raise ValueError("fit.cat_params must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(slope)) or not np.all(np.isfinite(cat_params)):
+        raise ValueError("fit item parameters must be finite")
+    model = str(fit.model).lower()
+    if model not in VALID_POLY_MODELS:
+        raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
     core = _core_module()
     if core is None or not hasattr(core, "poly_information_curves"):
         raise RuntimeError("information_polytomous requires the compiled Rust core")
 
-    n_items = fit.slope.shape[0]
-    n_cat = fit.cat_params.shape[1] + 1
+    n_items = slope.shape[0]
+    n_cat = cat_params.shape[1] + 1
     flat = core.poly_information_curves(
         th,
-        fit.slope.astype(np.float64),
-        fit.cat_params.reshape(-1).astype(np.float64),
+        slope,
+        cat_params.reshape(-1),
         int(n_items),
         int(n_cat),
-        fit.model,
+        model,
     )
     item_info = np.asarray(flat, dtype=np.float64).reshape(th.size, n_items)
     return {"item_info": item_info, "test_info": item_info.sum(axis=1)}
