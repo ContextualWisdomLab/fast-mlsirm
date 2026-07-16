@@ -498,6 +498,12 @@ main:focus {
   outline: none;
 }
 
+main:focus-visible {
+  outline: 3px solid #0f766e;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .hero {
   min-height: 172px;
   display: flex;
