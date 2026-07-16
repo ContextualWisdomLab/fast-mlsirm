@@ -461,36 +461,38 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
-    rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+    unique_factors = np.unique(factors)
+    # Optimized boolean mask matrix multiplication: Avoids slow python loops and intermediate
+    # subset array allocations by converting aggregations to fast dense BLAS operations.
+    mask = (factors[:, None] == unique_factors[None, :]).astype(np.float64)
 
-    table = np.asarray(rows, dtype=np.float64)
-    variance_sum = table[:, 5]
-    count = table[:, 1]
+    obs_sum = observed.sum(axis=0).astype(np.float64)
+    y_obs_sum = (y * observed).sum(axis=0)
+    prob_obs_sum = (prob * observed).sum(axis=0)
+    res_sum = residual.sum(axis=0)
+    var_obs_sum = (variance * observed).sum(axis=0)
+    res_sq_sum = (residual * residual).sum(axis=0)
+    pearson_sum = pearson_sq.sum(axis=0)
+
+    count = obs_sum @ mask
+    score = y_obs_sum @ mask
+    expected_score = prob_obs_sum @ mask
+    raw_residual = res_sum @ mask
+    variance_sum = var_obs_sum @ mask
+    infit_num = res_sq_sum @ mask
+    outfit_num = pearson_sum @ mask
+
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
-        "factor_id": table[:, 0],
+        "factor_id": unique_factors.astype(np.float64),
         "observed_count": count,
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
-        "infit_mnsq": table[:, 6] / safe_variance,
-        "outfit_mnsq": table[:, 7] / safe_count,
+        "score": score,
+        "expected_score": expected_score,
+        "raw_residual": raw_residual,
+        "standardized_residual": raw_residual / np.sqrt(safe_variance),
+        "infit_mnsq": infit_num / safe_variance,
+        "outfit_mnsq": outfit_num / safe_count,
     }
 
 
