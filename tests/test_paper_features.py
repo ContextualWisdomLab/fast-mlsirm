@@ -3233,6 +3233,49 @@ def test_fit_mhrm_recovers_high_dimensional_2pl():
         fit_mhrm(ybad, model=models.confirmatory(pattern))
 
 
+def test_fit_mhrm_estimate_corr_recovers_factor_correlation():
+    """MH-RM with estimate_corr (Cai, 2010b): recover a free latent factor CORRELATION at D=2 from
+    theta ~ MVN(0, Phi), and confirm estimate_corr=False yields exactly the identity."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import MhrmFit, fit_mhrm, models
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        pytest.skip("compiled core built without fit_mhrm")
+
+    rng = np.random.default_rng(2010)
+    n, n_dims, rho = 3000, 2, 0.5
+    per = 4
+    n_items = per * n_dims
+    pattern = np.zeros((n_items, n_dims), dtype=np.int64)
+    loading = np.zeros((n_items, n_dims))
+    for d in range(n_dims):
+        for a in range(per):
+            pattern[d * per + a, d] = 1
+            loading[d * per + a, d] = 1.0 + 0.1 * a
+    intercept = np.linspace(-0.4, 0.5, n_items)
+    phi = np.array([[1.0, rho], [rho, 1.0]])
+    theta = rng.multivariate_normal(np.zeros(n_dims), phi, size=n)
+    p = 1.0 / (1.0 + np.exp(-(theta @ loading.T + intercept)))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    res = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=1500, burn_in=320,
+                   mh_steps=8, estimate_corr=True, seed=3)
+    assert isinstance(res, MhrmFit)
+    assert res.corr.shape == (n_dims, n_dims)
+    assert np.allclose(np.diag(res.corr), 1.0)
+    assert abs(res.corr[0, 1] - rho) < 0.12, res.corr[0, 1]
+    assert res.n_parameters == n_items + n_items + n_dims * (n_dims - 1) // 2
+
+    # estimate_corr=False -> exactly the identity, and fewer parameters
+    res0 = fit_mhrm(y, model=models.confirmatory(pattern), max_cycles=400, burn_in=100,
+                    estimate_corr=False, seed=3)
+    assert np.array_equal(res0.corr, np.eye(n_dims))
+    assert res0.n_parameters == n_items + n_items
+
+
 def test_fit_nominal_recovers_confirmatory_multidimensional_categories():
     """Confirmatory MULTIDIMENSIONAL nominal response model (Bock, 1972; Thissen-Cai-Bock, 2010):
     recover a D=2 confirmatory pattern of CATEGORY-SPECIFIC multidimensional slopes (unordered

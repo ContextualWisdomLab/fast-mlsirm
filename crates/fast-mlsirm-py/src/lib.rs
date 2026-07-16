@@ -899,7 +899,7 @@ fn fit_2pl(
 /// `n_parameters`.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true))]
+#[pyo3(signature = (y, observed, loading_pattern, n_persons, n_items, n_dims, max_cycles = 2000, burn_in = 200, mh_steps = 5, proposal_sd = 1.0, target_accept = 0.30, tol = 1e-3, seed = 0x9E37_79B9_7F4A_7C15, estimate_se = true, estimate_corr = false))]
 fn fit_mhrm(
     py: Python<'_>,
     y: PyReadonlyArray1<'_, i64>,
@@ -916,6 +916,7 @@ fn fit_mhrm(
     tol: f64,
     seed: u64,
     estimate_se: bool,
+    estimate_corr: bool,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let yy: Vec<usize> = y
         .as_slice()?
@@ -949,6 +950,7 @@ fn fit_mhrm(
         tol,
         seed,
         estimate_se,
+        estimate_corr,
         ..MhrmConfig::default()
     };
     let res = core_fit_mhrm(
@@ -966,6 +968,7 @@ fn fit_mhrm(
     out.set_item("intercept", res.intercept)?;
     out.set_item("theta", res.theta)?;
     out.set_item("n_dims", res.n_dims)?;
+    out.set_item("corr", res.corr)?;
     out.set_item("se_loading", res.se_loading)?;
     out.set_item("se_intercept", res.se_intercept)?;
     out.set_item("acceptance_rate", res.acceptance_rate)?;

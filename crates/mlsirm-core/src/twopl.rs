@@ -418,7 +418,7 @@ fn item_grad_hess(
 
 /// Lower Cholesky factor of a `D x D` symmetric matrix (row-major), or `None` if it is not
 /// (numerically) positive-definite — the PD gate for the correlation M-step and the node map.
-fn chol_lower(sigma: &[f64], d: usize) -> Option<Vec<f64>> {
+pub(crate) fn chol_lower(sigma: &[f64], d: usize) -> Option<Vec<f64>> {
     let mut l = vec![0.0f64; d * d];
     for i in 0..d {
         for j in 0..=i {
@@ -441,7 +441,7 @@ fn chol_lower(sigma: &[f64], d: usize) -> Option<Vec<f64>> {
 
 /// Inverse (row-major) and log-determinant of a symmetric PD `D x D` matrix via its Cholesky
 /// factor; `None` if not PD.
-fn sym_inv_logdet(sigma: &[f64], d: usize) -> Option<(Vec<f64>, f64)> {
+pub(crate) fn sym_inv_logdet(sigma: &[f64], d: usize) -> Option<(Vec<f64>, f64)> {
     let l = chol_lower(sigma, d)?;
     let logdet = (0..d).map(|i| 2.0 * l[i * d + i].ln()).sum::<f64>();
     let mut inv = vec![0.0f64; d * d];
@@ -482,7 +482,7 @@ fn sigma_qprior(sigma: &[f64], c: &[f64], d: usize) -> Option<f64> {
 
 /// Off-diagonal gradient of `sigma_qprior` w.r.t. the free correlations (pairs `(i,j)`, `i<j`,
 /// length `D(D-1)/2`): `g_{ij} = [Sigma^{-1} C Sigma^{-1} - Sigma^{-1}]_{ij}`. `None` if not PD.
-fn sigma_grad(sigma: &[f64], c: &[f64], d: usize) -> Option<Vec<f64>> {
+pub(crate) fn sigma_grad(sigma: &[f64], c: &[f64], d: usize) -> Option<Vec<f64>> {
     let (inv, _) = sym_inv_logdet(sigma, d)?;
     let mut ic = vec![0.0f64; d * d]; // inv * C
     for i in 0..d {
@@ -510,7 +510,7 @@ fn sigma_grad(sigma: &[f64], c: &[f64], d: usize) -> Option<Vec<f64>> {
 /// Build a `D x D` correlation matrix (row-major, unit diagonal) from the free off-diagonal
 /// correlations (pairs `(i,j)`, `i<j`), clamped to `(-1, 1)` (a cheap first PD reject; the full
 /// PD guarantee is enforced by the caller's Cholesky check).
-fn build_corr(offdiag: &[f64], d: usize) -> Vec<f64> {
+pub(crate) fn build_corr(offdiag: &[f64], d: usize) -> Vec<f64> {
     let mut s = vec![0.0f64; d * d];
     for i in 0..d {
         s[i * d + i] = 1.0;
@@ -531,7 +531,7 @@ fn build_corr(offdiag: &[f64], d: usize) -> Vec<f64> {
 /// `flip`, so a per-dimension reflection `theta_flip -> -theta_flip` stays consistent with the
 /// reported correlation matrix (`corr(theta_flip, theta_k) -> -corr`). Correlations not
 /// involving `flip` are untouched; the diagonal is implicitly unchanged (it is not stored).
-fn flip_corr_dim(offdiag: &mut [f64], d: usize, flip: usize) {
+pub(crate) fn flip_corr_dim(offdiag: &mut [f64], d: usize, flip: usize) {
     let mut m = 0;
     for i in 0..d {
         for j in i + 1..d {

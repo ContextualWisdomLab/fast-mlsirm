@@ -25,11 +25,13 @@ class MhrmFit:
     ``loading`` is the ``n_items x n_dims`` matrix of free loadings ``a_id`` (exactly ``0`` where the
     confirmatory pattern is ``0``), per-dimension reflection-canonicalized so each dimension's largest
     pure anchor loads positive; ``intercept`` the per-item ``b_i``; ``theta`` the ``n_persons x
-    n_dims`` trait EAP (Monte-Carlo mean of the imputed draws over the convergence stage);
-    ``se_loading`` / ``se_intercept`` the Louis (1982) observed-information standard errors (empty when
-    ``estimate_se=False``; a block falls back to the complete-data Fisher information where the
-    finite-sample Louis block is not positive-definite). The model is
-    ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with ``theta_j ~ MVN(0, I)``.
+    n_dims`` trait EAP (Monte-Carlo mean of the imputed draws over the convergence stage); ``corr`` the
+    ``n_dims x n_dims`` latent correlation matrix ``Phi`` (identity when ``estimate_corr=False``, unit
+    diagonal with estimated off-diagonals otherwise); ``se_loading`` / ``se_intercept`` the Louis
+    (1982) observed-information standard errors (empty when ``estimate_se=False``; a block falls back to
+    the complete-data Fisher information where the finite-sample Louis block is not positive-definite).
+    The model is ``P(X_ij=1 | theta_j) = sigmoid(sum_d a_id theta_jd + b_i)`` with
+    ``theta_j ~ MVN(0, Phi)``.
     ``acceptance_rate`` is the final tuned Metropolis acceptance; ``termination_reason`` is
     ``"converged"`` or ``"max_cycles_reached"``; ``final_param_change`` the windowed mean parameter
     change at termination."""
@@ -38,6 +40,7 @@ class MhrmFit:
     loading: np.ndarray
     intercept: np.ndarray
     theta: np.ndarray
+    corr: np.ndarray
     se_loading: np.ndarray
     se_intercept: np.ndarray
     acceptance_rate: float
@@ -65,6 +68,7 @@ def fit_mhrm(
     tol: float = 1e-3,
     seed: int = 0x9E37_79B9_7F4A_7C15,
     estimate_se: bool = True,
+    estimate_corr: bool = False,
 ) -> MhrmFit:
     """Fit the confirmatory multidimensional 2PL by Metropolis-Hastings Robbins-Monro (compute in
     Rust; Cai, 2010).
@@ -91,7 +95,10 @@ def fit_mhrm(
     ``model=1`` all item loadings on the single factor are free; a multidimensional confirmatory
     structure is supplied with ``model=models.confirmatory(loading_pattern)``; every dimension needs a
     pure single-loading anchor item. ``burn_in`` must be less than ``max_cycles``; ``proposal_sd`` is
-    the initial random-walk SD, auto-tuned toward ``target_accept`` during burn-in.
+    the initial random-walk SD, auto-tuned toward ``target_accept`` during burn-in. With
+    ``estimate_corr=True`` a free latent CORRELATION matrix ``Phi`` (``theta ~ MVN(0, Phi)``, unit
+    diagonal) is estimated by a per-cycle Robbins-Monro gradient step (Cai, 2010b); with ``False``
+    (default) the factors are orthogonal (``Phi = I``) and the fit is bit-identical to the flag off.
 
     References (APA 7th ed.):
         Cai, L. (2010). High-dimensional exploratory item factor analysis by a Metropolis-Hastings
@@ -166,6 +173,7 @@ def fit_mhrm(
         float(tol),
         seed_int,
         bool(estimate_se),
+        bool(estimate_corr),
     )
     se_loading = np.asarray(res["se_loading"], dtype=np.float64)
     se_intercept = np.asarray(res["se_intercept"], dtype=np.float64)
@@ -174,6 +182,7 @@ def fit_mhrm(
         loading=np.asarray(res["loading"], dtype=np.float64).reshape(n_items, n_dims),
         intercept=np.asarray(res["intercept"], dtype=np.float64),
         theta=np.asarray(res["theta"], dtype=np.float64).reshape(n_persons, n_dims),
+        corr=np.asarray(res["corr"], dtype=np.float64).reshape(n_dims, n_dims),
         se_loading=se_loading.reshape(n_items, n_dims) if se_loading.size else se_loading,
         se_intercept=se_intercept,
         acceptance_rate=float(res["acceptance_rate"]),

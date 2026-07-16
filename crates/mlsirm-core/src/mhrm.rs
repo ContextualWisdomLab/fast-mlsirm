@@ -45,10 +45,16 @@
 //! largest pure anchor loads positive) is enforced IN-LOOP every cycle — flipping the loading column,
 //! the persistent `theta` chain, and the averaged trait together — and once more at the end.
 //!
-//! This first release fits the ORTHOGONAL confirmatory 2PL (`Sigma = I`); a free latent correlation
-//! matrix (as in [`crate::twopl::fit_2pl`]'s `estimate_corr`) and the polytomous item families
-//! (reusing the `poly.rs` cell gradients as the complete-data score) are natural extensions of the
-//! same MH-RM loop.
+//! **Correlated factors (`estimate_corr`).** With `estimate_corr = false` (default) the factors are
+//! ORTHOGONAL (`theta ~ MVN(0, I)`) and the fit is bit-identical to a run with the flag off. With
+//! `estimate_corr = true` a free latent CORRELATION matrix `Phi` (unit diagonal) is estimated (Cai,
+//! 2010b confirmatory item factor analysis): the MH acceptance prior uses `Phi^{-1}` (recomputed by
+//! Cholesky each cycle) and the free off-diagonals ascend the Gaussian-prior objective
+//! `Q(Phi) = -0.5[log|Phi| + tr(Phi^{-1} C)]` (`C` the imputed second moment) by a per-cycle
+//! Robbins-Monro gradient step, PD-backtracked, reusing the `twopl.rs` correlation machinery
+//! (`build_corr`, `sigma_grad`, `chol_lower`, `sym_inv_logdet`, `flip_corr_dim`). The polytomous item
+//! families (reusing the `poly.rs` cell gradients as the complete-data score) are a natural extension
+//! of the same MH-RM loop.
 //!
 //! # References (APA 7th ed.)
 //!
@@ -68,6 +74,7 @@
 
 use crate::mmle::{log_sigmoid, sigmoid_stable};
 use crate::poly::solve_small;
+use crate::twopl::{build_corr, chol_lower, flip_corr_dim, sigma_grad, sym_inv_logdet};
 
 /// Maximum latent dimensions (MH-RM's whole point is high `D`; this only bounds the per-person
 /// proposal work and the `D x D`-ish per-item blocks against pathological inputs).
@@ -111,6 +118,12 @@ pub struct MhrmConfig {
     pub ridge: f64,
     /// Accumulate the Louis (1982) observed-information standard errors over the convergence stage.
     pub estimate_se: bool,
+    /// Estimate a free latent CORRELATION matrix `Phi` (`theta ~ MVN(0, Phi)`, unit diagonal;
+    /// Cai 2010b confirmatory item factor analysis). When `false` (default), `Phi = I` (orthogonal
+    /// factors) exactly — the orthogonal path is BIT-IDENTICAL to a fit with this off. When `true`,
+    /// the MH acceptance prior uses `Phi^{-1}` and the free off-diagonals ascend the Gaussian-prior
+    /// objective by a per-cycle Robbins-Monro gradient step (PD-backtracked).
+    pub estimate_corr: bool,
     /// PRNG seed (deterministic given the seed).
     pub seed: u64,
 }
@@ -130,6 +143,7 @@ impl Default for MhrmConfig {
             tol: 1e-3,
             ridge: 1e-6,
             estimate_se: true,
+            estimate_corr: false,
             seed: 0x9E37_79B9_7F4A_7C15,
         }
     }
@@ -147,6 +161,9 @@ pub struct MhrmResult {
     /// row-major `N x D`.
     pub theta: Vec<f64>,
     pub n_dims: usize,
+    /// Latent correlation matrix `Phi`, row-major `D x D` (identity when `estimate_corr` is `false`;
+    /// unit diagonal, estimated off-diagonals otherwise).
+    pub corr: Vec<f64>,
     /// Louis (1982) block-diagonal (per-item) observed-information standard errors for the loadings,
     /// row-major `J x D` (`0.0` off-pattern; empty when `estimate_se` is `false`). Computed from the
     /// uncentered `m = 1` observed information (see the module docs): where the block is
@@ -450,6 +467,21 @@ pub fn fit_mhrm(
     let mut theta_sum = vec![0.0f64; n_persons * n_dims]; // convergence-stage accumulation
     let mut theta_count = 0usize;
 
+    // Latent correlation Phi (Cai 2010b): free off-diagonals + its inverse (precomputed per cycle for
+    // the MH acceptance prior). When estimate_corr is false, phi_inv stays None so the acceptance
+    // prior is the bit-identical orthogonal -0.5(||theta*||^2 - ||theta||^2).
+    let n_off = n_dims * (n_dims - 1) / 2;
+    let mut offdiag = vec![0.0f64; n_off];
+    let mut phi_inv: Option<Vec<f64>> = if cfg.estimate_corr {
+        let mut m = vec![0.0f64; n_dims * n_dims];
+        for a in 0..n_dims {
+            m[a * n_dims + a] = 1.0;
+        }
+        Some(m)
+    } else {
+        None
+    };
+
     let mut rng = Lcg(cfg.seed | 1);
     let mut c = cfg.proposal_sd;
     let mut converged = false;
@@ -467,13 +499,33 @@ pub fn fit_mhrm(
         let mut trials = 0usize;
         for p in 0..n_persons {
             for _ in 0..cfg.mh_steps {
-                let mut quad = 0.0; // prior quadratic-form difference ||theta*||^2 - ||theta||^2
+                // propose theta* = theta + c N(0, I) (identical RNG stream in both prior branches)
                 for d in 0..n_dims {
-                    let cur = theta[p * n_dims + d];
-                    let prop = cur + c * rng.normal();
-                    thstar[d] = prop;
-                    quad += prop * prop - cur * cur;
+                    thstar[d] = theta[p * n_dims + d] + c * rng.normal();
                 }
+                // prior quadratic-form difference: correlated theta*'Phi^-1 theta* - theta'Phi^-1 theta,
+                // or the bit-identical orthogonal ||theta*||^2 - ||theta||^2 when phi_inv is None.
+                let quad = match phi_inv.as_ref() {
+                    Some(pinv) => {
+                        let mut q = 0.0;
+                        for a in 0..n_dims {
+                            for b in 0..n_dims {
+                                q += pinv[a * n_dims + b]
+                                    * (thstar[a] * thstar[b]
+                                        - theta[p * n_dims + a] * theta[p * n_dims + b]);
+                            }
+                        }
+                        q
+                    }
+                    None => {
+                        let mut q = 0.0;
+                        for d in 0..n_dims {
+                            let cur = theta[p * n_dims + d];
+                            q += thstar[d] * thstar[d] - cur * cur;
+                        }
+                        q
+                    }
+                };
                 let mut lr = -0.5 * quad;
                 for i in 0..n_items {
                     if !seen(p, i) {
@@ -587,7 +639,57 @@ pub fn fit_mhrm(
                         theta[p * n_dims + d] = -theta[p * n_dims + d];
                         theta_sum[p * n_dims + d] = -theta_sum[p * n_dims + d];
                     }
+                    if cfg.estimate_corr {
+                        // theta_d -> -theta_d negates corr(theta_d, theta_k); keep Phi consistent
+                        // with the flipped chain BEFORE Phi^{-1} is recomputed below.
+                        flip_corr_dim(&mut offdiag, n_dims, d);
+                    }
                 }
+            }
+        }
+
+        // ---- correlation Phi Robbins-Monro update (Cai, 2010b) ----
+        if cfg.estimate_corr && n_off > 0 {
+            // Sample second moment C = (1/N) sum_p theta_p theta_p^T at the imputed traits. RAW /
+            // uncentered: E[theta] = 0 is fixed by identification, so this IS the covariance; do NOT
+            // standardize to a correlation (that would double-apply the unit-diagonal constraint and
+            // bias Phi). Matches twopl::fit_2pl's C exactly.
+            let mut cmat = vec![0.0f64; n_dims * n_dims];
+            for p in 0..n_persons {
+                for a in 0..n_dims {
+                    let ta = theta[p * n_dims + a];
+                    for b in 0..n_dims {
+                        cmat[a * n_dims + b] += ta * theta[p * n_dims + b];
+                    }
+                }
+            }
+            for x in cmat.iter_mut() {
+                *x /= n_persons as f64;
+            }
+            let phi = build_corr(&offdiag, n_dims);
+            // ponytail: BARE gradient Robbins-Monro step on the free off-diagonals (ascent of the
+            // Gaussian-prior objective Q(Phi) = -0.5[log|Phi| + tr(Phi^{-1} C)]), NOT Cai's
+            // Newton-preconditioned covariance update. The RM gain still gives a.s. convergence to the
+            // same Phi root; only the (un-curvature-adapted) rate differs. Upgrade path: precondition
+            // by the Q off-diagonal Hessian if the rate matters. PD is kept by BACKTRACKING the step
+            // (halve until the rebuilt Phi is positive-definite), preferred over a full reject to
+            // avoid frozen cycles near the PD boundary at high |rho|.
+            if let Some(g) = sigma_grad(&phi, &cmat, n_dims) {
+                let mut scale = 1.0f64;
+                for _ in 0..12 {
+                    let cand: Vec<f64> = (0..n_off)
+                        .map(|m| offdiag[m] + gain * scale * g[m])
+                        .collect();
+                    if chol_lower(&build_corr(&cand, n_dims), n_dims).is_some() {
+                        offdiag = cand;
+                        break;
+                    }
+                    scale *= 0.5; // never PD after 12 halvings => keep the previous PD offdiag
+                }
+            }
+            // recompute Phi^{-1} for the next cycle's I-step (keep previous if somehow non-PD)
+            if let Some((inv, _)) = sym_inv_logdet(&build_corr(&offdiag, n_dims), n_dims) {
+                phi_inv = Some(inv);
             }
         }
 
@@ -650,9 +752,13 @@ pub fn fit_mhrm(
                 for p in 0..n_persons {
                     theta_eap[p * n_dims + d] = -theta_eap[p * n_dims + d];
                 }
+                if cfg.estimate_corr {
+                    flip_corr_dim(&mut offdiag, n_dims, d);
+                }
             }
         }
     }
+    let corr = build_corr(&offdiag, n_dims);
 
     // Louis SEs: SE = sqrt(diag((Gamma_obs + ridge I)^{-1})) per item block
     let (mut se_loading, mut se_intercept) = (Vec::new(), Vec::new());
@@ -703,11 +809,13 @@ pub fn fit_mhrm(
     }
 
     let n_free_loadings = loading_pattern.iter().filter(|&&v| v == 1).count();
+    let n_corr = if cfg.estimate_corr { n_off } else { 0 };
     Ok(MhrmResult {
         loading,
         intercept,
         theta: theta_eap,
         n_dims,
+        corr,
         se_loading,
         se_intercept,
         acceptance_rate,
@@ -720,7 +828,7 @@ pub fn fit_mhrm(
         }
         .into(),
         final_param_change: final_change,
-        n_parameters: n_free_loadings + n_items,
+        n_parameters: n_free_loadings + n_items + n_corr,
     })
 }
 
@@ -1148,6 +1256,97 @@ mod tests {
         );
     }
 
+    /// Correlated-Sigma MH-RM (Cai, 2010b): with `estimate_corr` the free latent correlation matrix
+    /// `Phi` is recovered from `theta ~ MVN(0, Phi)`. Covers a POSITIVE, a near-PD-boundary (D=3,
+    /// rho=0.5), and a NEGATIVE correlation (sign correctness); confirms `Phi` stays a valid PD
+    /// correlation matrix (unit diagonal) and `n_parameters` counts the `D(D-1)/2` correlations.
+    #[test]
+    fn mhrm_correlated_recovers_known_phi() {
+        for &(n_dims, rho, n) in &[
+            (2usize, 0.4f64, 3000usize),
+            (3usize, 0.5f64, 3500usize),
+            (2usize, -0.5f64, 3000usize),
+        ] {
+            // exchangeable Phi
+            let mut phi = vec![rho; n_dims * n_dims];
+            for a in 0..n_dims {
+                phi[a * n_dims + a] = 1.0;
+            }
+            let l = chol_lower(&phi, n_dims).expect("Phi PD");
+            let per = 4usize;
+            let n_items = per * n_dims;
+            let mut pattern = vec![0u8; n_items * n_dims];
+            let mut a_t = vec![0.0f64; n_items * n_dims];
+            for d in 0..n_dims {
+                for a in 0..per {
+                    let i = d * per + a;
+                    pattern[i * n_dims + d] = 1;
+                    a_t[i * n_dims + d] = 1.0 + 0.1 * a as f64;
+                }
+            }
+            let b_t: Vec<f64> = (0..n_items).map(|i| -0.4 + 0.1 * (i % 5) as f64).collect();
+            let mut rng = Lcg(0x00C0FFEE ^ ((n_dims as u64) << 8) ^ ((rho < 0.0) as u64));
+            // theta_p = L z_p ~ MVN(0, Phi)
+            let mut th = vec![0.0f64; n * n_dims];
+            for p in 0..n {
+                let z: Vec<f64> = (0..n_dims).map(|_| rng.normal()).collect();
+                for a in 0..n_dims {
+                    let mut v = 0.0;
+                    for b in 0..=a {
+                        v += l[a * n_dims + b] * z[b];
+                    }
+                    th[p * n_dims + a] = v;
+                }
+            }
+            let mut y = vec![0usize; n * n_items];
+            for p in 0..n {
+                for i in 0..n_items {
+                    let mut base = b_t[i];
+                    for d in 0..n_dims {
+                        base += a_t[i * n_dims + d] * th[p * n_dims + d];
+                    }
+                    let pr = 1.0 / (1.0 + (-base).exp());
+                    y[p * n_items + i] = if rng.next_f64() < pr { 1 } else { 0 };
+                }
+            }
+            let cfg = MhrmConfig {
+                max_cycles: 1600,
+                burn_in: 350,
+                mh_steps: 8,
+                estimate_corr: true,
+                seed: 42,
+                ..MhrmConfig::default()
+            };
+            let res = fit_mhrm(&y, None, &pattern, n, n_items, n_dims, &cfg).unwrap();
+            assert_eq!(res.corr.len(), n_dims * n_dims);
+            // valid correlation matrix: unit diagonal, symmetric, PD
+            for a in 0..n_dims {
+                assert!(
+                    (res.corr[a * n_dims + a] - 1.0).abs() < 1e-9,
+                    "unit diagonal"
+                );
+                for b in 0..n_dims {
+                    assert!((res.corr[a * n_dims + b] - res.corr[b * n_dims + a]).abs() < 1e-12);
+                }
+            }
+            assert!(chol_lower(&res.corr, n_dims).is_some(), "recovered Phi PD");
+            // recover the off-diagonals (sign + magnitude) within MC tolerance
+            for a in 0..n_dims {
+                for b in a + 1..n_dims {
+                    let est = res.corr[a * n_dims + b];
+                    assert!(
+                        (est - rho).abs() < 0.12,
+                        "D={n_dims} rho={rho} corr[{a}][{b}]={est}"
+                    );
+                }
+            }
+            assert_eq!(
+                res.n_parameters,
+                n_items + n_items + n_dims * (n_dims - 1) / 2
+            );
+        }
+    }
+
     /// Validation guards constructed non-vacuously (each input trips the INTENDED guard, not an
     /// earlier one).
     #[test]
@@ -1166,8 +1365,10 @@ mod tests {
             ..MhrmConfig::default()
         };
         let res = fit_mhrm(&y, None, &pattern, n, n_items, n_dims, &short).unwrap();
-        assert_eq!(res.n_parameters, 4 + 4); // 4 loadings + 4 intercepts
+        assert_eq!(res.n_parameters, 4 + 4); // 4 loadings + 4 intercepts (no correlations)
         assert_eq!(res.se_loading.len(), n_items * n_dims);
+        // estimate_corr=false -> Phi is EXACTLY the identity (orthogonal factors)
+        assert_eq!(res.corr, vec![1.0, 0.0, 0.0, 1.0]);
         // no pure anchor on any dimension (every item loads both dims)
         let all_both = vec![1u8; n_items * n_dims];
         assert!(fit_mhrm(&y, None, &all_both, n, n_items, n_dims, &short).is_err());
@@ -1292,6 +1493,85 @@ mod tests {
                     assert!(load_rmse < 0.2, "normal loading RMSE {load_rmse}");
                 }
             }
+        }
+
+        // correlated-Sigma condition (Cai 2010b): recover an exchangeable Phi at the near-PD-boundary
+        // rho = 0.5, D = 3 (so a persistent PD-backtracking stall would surface over 500 reps).
+        {
+            let (n_dims, n, rho) = (3usize, 3000usize, 0.5f64);
+            let per = 4usize;
+            let n_items = per * n_dims;
+            let mut pattern = vec![0u8; n_items * n_dims];
+            let mut a_t = vec![0.0f64; n_items * n_dims];
+            for d in 0..n_dims {
+                for a in 0..per {
+                    let i = d * per + a;
+                    pattern[i * n_dims + d] = 1;
+                    a_t[i * n_dims + d] = 0.9 + 0.1 * a as f64;
+                }
+            }
+            let b_t: Vec<f64> = (0..n_items).map(|i| -0.4 + 0.1 * (i % 5) as f64).collect();
+            let mut phi = vec![rho; n_dims * n_dims];
+            for a in 0..n_dims {
+                phi[a * n_dims + a] = 1.0;
+            }
+            let l = chol_lower(&phi, n_dims).unwrap();
+            let n_off = n_dims * (n_dims - 1) / 2;
+            let (mut conv, mut se2, mut sbias) = (0usize, 0.0f64, 0.0f64);
+            for rep in 0..reps {
+                let mut rng = Lcg(0x5EED_u64.wrapping_mul((rep as u64) + 1));
+                let mut th = vec![0.0f64; n * n_dims];
+                for p in 0..n {
+                    let z: Vec<f64> = (0..n_dims).map(|_| rng.normal()).collect();
+                    for a in 0..n_dims {
+                        let mut v = 0.0;
+                        for b in 0..=a {
+                            v += l[a * n_dims + b] * z[b];
+                        }
+                        th[p * n_dims + a] = v;
+                    }
+                }
+                let mut y = vec![0usize; n * n_items];
+                for p in 0..n {
+                    for i in 0..n_items {
+                        let mut base = b_t[i];
+                        for d in 0..n_dims {
+                            base += a_t[i * n_dims + d] * th[p * n_dims + d];
+                        }
+                        let pr = 1.0 / (1.0 + (-base).exp());
+                        y[p * n_items + i] = if rng.next_f64() < pr { 1 } else { 0 };
+                    }
+                }
+                let cfg = MhrmConfig {
+                    max_cycles: 1200,
+                    burn_in: 300,
+                    mh_steps: 6,
+                    estimate_corr: true,
+                    estimate_se: false,
+                    seed: 0xBEEF_u64.wrapping_add(rep as u64),
+                    ..MhrmConfig::default()
+                };
+                let res = fit_mhrm(&y, None, &pattern, n, n_items, n_dims, &cfg).unwrap();
+                if res.converged {
+                    conv += 1;
+                }
+                for a in 0..n_dims {
+                    for b in a + 1..n_dims {
+                        let e = res.corr[a * n_dims + b] - rho;
+                        se2 += e * e;
+                        sbias += e;
+                    }
+                }
+            }
+            let m = (reps * n_off) as f64;
+            println!(
+                "[mhrm MC correlated D={n_dims} N={n} rho={rho}] reps={reps} conv={:.3} corrRMSE={:.4} corrBias={:.4}",
+                conv as f64 / reps as f64,
+                (se2 / m).sqrt(),
+                sbias / m
+            );
+            assert!(conv as f64 / reps as f64 > 0.9, "correlated convergence");
+            assert!((se2 / m).sqrt() < 0.1, "correlated corr RMSE");
         }
         println!("=== done ===");
     }

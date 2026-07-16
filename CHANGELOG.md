@@ -109,6 +109,31 @@
   `python/fast_mlsirm/models.py` for the verified Chalmers (2012) APA reference
   and DOI.
 
+- **Correlated latent factors for MH-RM** (`fit_mhrm(..., estimate_corr=True)`; Cai, 2010b confirmatory
+  item factor analysis). Completes the MH-RM to a free latent CORRELATION matrix `Phi` (unit diagonal,
+  `theta ~ MVN(0, Phi)`) rather than orthogonal factors. The Metropolis acceptance prior becomes
+  `-0.5 (theta*^T Phi^{-1} theta* - theta^T Phi^{-1} theta)` (the symmetric proposal cancels; `Phi^{-1}`
+  is recomputed by Cholesky each cycle), and the `D(D-1)/2` free off-diagonal correlations ascend the
+  Gaussian-prior objective `Q(Phi) = -0.5[log|Phi| + tr(Phi^{-1} C)]` (`C` the imputed second moment,
+  RAW/uncentered — `E[theta]=0` is fixed by identification) by a per-cycle Robbins-Monro GRADIENT step
+  `offdiag += gain_k * sigma_grad(Phi, C)`, kept positive-definite by BACKTRACKING (halve the step
+  until the rebuilt `Phi` is PD). This REUSES the `twopl.rs` correlation machinery verbatim
+  (`build_corr`, `sigma_grad`, `chol_lower`, `sym_inv_logdet`, `flip_corr_dim`, now `pub(crate)`), the
+  same helpers `fit_2pl`'s deterministic ECM correlation step uses — so the `Phi` estimation is shared,
+  not duplicated. The per-dimension reflection flips the correlation off-diagonals for the flipped
+  dimension (`corr(theta_d, theta_k) -> -corr`) together with the loading column and trait chain, so
+  the reported `Phi` is consistent with the canonicalized signs. `estimate_corr=False` (default) keeps
+  `Phi = I` and is BIT-IDENTICAL to the previous orthogonal fit (the acceptance prior branches to the
+  original per-dimension `||theta*||^2 - ||theta||^2` on the same RNG stream). It is a gradient-RM (not
+  Cai's Newton-preconditioned) covariance update — documented as such; it still converges almost surely
+  to the same `Phi` root, only the (un-curvature-adapted) rate differs. **Guards.** A recovery test
+  recovers an exchangeable `Phi` off-diagonal at a POSITIVE (`rho=0.4`), a near-PD-boundary
+  (`D=3, rho=0.5`), and a NEGATIVE (`rho=-0.5`) correlation within Monte-Carlo tolerance, confirming the
+  recovered matrix stays a valid PD correlation matrix; `estimate_corr=False` yields exactly the
+  identity; and a `#[ignore]` 500-rep Monte-Carlo at the near-boundary `D=3, rho=0.5` reports the
+  correlation RMSE/bias and would surface a persistent PD-backtracking stall. Exposed to Python as the
+  `estimate_corr` argument and the `corr` field of `MhrmFit`.
+
 - **High-dimensional confirmatory 2PL by Metropolis-Hastings Robbins-Monro** (Cai, 2010).
   `fit_mhrm(responses, model=...)` fits the general compensatory multidimensional 2PL
   (`P(X_ij = 1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta ~ MVN(0, I_D)`) — the
