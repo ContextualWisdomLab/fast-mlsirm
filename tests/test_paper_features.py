@@ -908,6 +908,32 @@ def test_score_polytomous_recovers_theta():
     assert np.corrcoef(theta_true, sc["theta_eap"])[0, 1] > 0.8
 
 
+def test_score_polytomous_rejects_malformed_scoring_contract():
+    """Scoring must not truncate quadrature controls or emit non-finite scores."""
+    import numpy as np
+    import pytest
+
+    from fast_mlsirm import score_polytomous
+    from fast_mlsirm.polytomous import PolytomousFit, _core_module
+
+    if _core_module() is None or not hasattr(__import__("fast_mlsirm")._core, "score_poly_eap"):
+        pytest.skip("compiled core without polytomous scoring")
+
+    fit = PolytomousFit(
+        model="gpcm",
+        slope=np.array([1.0]),
+        cat_params=np.array([[0.2, -0.3]]),
+        loglik=0.0,
+        n_iter=0,
+    )
+    with pytest.raises(ValueError, match="q_theta must be one of"):
+        score_polytomous(np.array([[0.0]]), fit, q_theta=21.5)
+
+    fit.slope[0] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        score_polytomous(np.array([[1.0]]), fit)
+
+
 def test_grm_cell_rust_numpy_parity():
     """The Rust GRM cumulative-logit cell matches the NumPy reference to 1e-12,
     and the NumPy GRM cell is a proper (normalized) log-distribution."""

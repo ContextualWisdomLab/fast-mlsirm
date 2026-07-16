@@ -1780,6 +1780,12 @@ pub fn poly_information_curves(
 /// `cat_params` is flattened `n_items * (n_cat-1)` (GPCM intercepts or GRM
 /// thresholds). Returns `(theta_eap, theta_sd)` per person over a `theta~N(0,1)`
 /// Gauss-Hermite grid.
+///
+/// # References
+///
+/// Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
+/// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
+/// 431–444. https://doi.org/10.1177/014662168200600405
 #[allow(clippy::too_many_arguments)]
 pub fn score_poly_eap(
     y: &[usize],
@@ -1795,16 +1801,33 @@ pub fn score_poly_eap(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+    let n_params = n_items
+        .checked_mul(n_cat - 1)
+        .ok_or_else(|| "n_items * (n_cat - 1) overflows usize".to_string())?;
+    if slope.len() != n_items || cat_params.len() != n_params {
         return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
+    }
+    if slope.iter().any(|v| !v.is_finite()) || cat_params.iter().any(|v| !v.is_finite()) {
+        return Err("slope and cat_params must be finite".into());
+    }
+    for (idx, &yc) in y.iter().enumerate() {
+        if observed.map_or(true, |o| o[idx]) && yc >= n_cat {
+            return Err(format!(
+                "observed responses must be categories in 0..{}; y[{idx}]={yc}",
+                n_cat - 1
+            ));
+        }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
@@ -2434,6 +2457,40 @@ mod tests {
         }
         let corr = num / (dt.sqrt() * de.sqrt());
         assert!(corr > 0.8, "theta EAP corr {corr}");
+    }
+
+    #[test]
+    fn score_poly_eap_rejects_invalid_inputs() {
+        let y = vec![3usize];
+        let slope = vec![1.0];
+        let cat_params = vec![0.2, -0.3];
+        let err = score_poly_eap(
+            &y,
+            None,
+            1,
+            1,
+            3,
+            &slope,
+            &cat_params,
+            PolyModel::Gpcm,
+            21,
+        )
+        .unwrap_err();
+        assert!(err.contains("categories"));
+
+        let err = score_poly_eap(
+            &[1],
+            None,
+            1,
+            1,
+            3,
+            &[f64::NAN],
+            &cat_params,
+            PolyModel::Gpcm,
+            21,
+        )
+        .unwrap_err();
+        assert!(err.contains("finite"));
     }
 
     #[test]

@@ -172,10 +172,41 @@ def score_polytomous(
     """EAP trait scores for polytomous responses given a fitted model (compute
     in Rust). ``responses`` is persons x items of integer categories; ``fit`` is
     a :class:`PolytomousFit` from :func:`fit_polytomous`. ``NaN`` marks a
-    missing response. Returns ``{"theta_eap", "theta_sd"}``.
+    missing response. The posterior mean and standard deviation are evaluated
+    on a standard-normal quadrature grid (Bock & Mislevy, 1982). Returns
+    ``{"theta_eap", "theta_sd"}``.
+
+    References
+    ----------
+    Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
+    a microcomputer environment. *Applied Psychological Measurement, 6*(4),
+    431–444. https://doi.org/10.1177/014662168200600405
     """
-    n_items = fit.slope.shape[0]
-    n_cat = fit.cat_params.shape[1] + 1
+    if (
+        not isinstance(q_theta, int)
+        or isinstance(q_theta, bool)
+        or q_theta not in {7, 11, 15, 21, 31, 41}
+    ):
+        raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
+
+    slope = np.asarray(fit.slope, dtype=np.float64)
+    cat_params = np.asarray(fit.cat_params, dtype=np.float64)
+    if slope.ndim != 1 or slope.size == 0:
+        raise ValueError("fit.slope must be a non-empty 1-D array")
+    if (
+        cat_params.ndim != 2
+        or cat_params.shape[0] != slope.size
+        or cat_params.shape[1] < 1
+    ):
+        raise ValueError("fit.cat_params must be n_items x (n_cat - 1)")
+    if not np.all(np.isfinite(slope)) or not np.all(np.isfinite(cat_params)):
+        raise ValueError("fit item parameters must be finite")
+    model = str(fit.model).lower()
+    if model not in VALID_POLY_MODELS:
+        raise ValueError(f"fit.model must be one of {sorted(VALID_POLY_MODELS)}")
+
+    n_items = slope.shape[0]
+    n_cat = cat_params.shape[1] + 1
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     if y_int.shape[1] != n_items:
         raise ValueError("responses column count must match the fitted item count")
@@ -191,11 +222,11 @@ def score_polytomous(
         int(n_persons),
         int(n_items),
         int(n_cat),
-        fit.slope.astype(np.float64),
-        fit.cat_params.reshape(-1).astype(np.float64),
+        slope,
+        cat_params.reshape(-1),
         obs_arg,
-        fit.model,
-        int(q_theta),
+        model,
+        q_theta,
     )
     return {
         "theta_eap": np.asarray(res["theta_eap"], dtype=np.float64),
