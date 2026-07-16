@@ -82,6 +82,10 @@ use crate::quadrature::{gh_rule, SUPPORTED_Q};
 /// Maximum integration node count (bounds the per-iteration `nodes x J` tables) for BOTH the
 /// `Q^D` Gauss-Hermite grid and the `xi_points` QMC/MC point set.
 const MIRT_MAX_NODES: usize = 200_000;
+/// Maximum node-by-item cells in each E-step table. Four dense f64 tables use this shape
+/// (log P1, log P0, expected trials, expected successes), so this cap bounds aggregate table
+/// memory and must be checked before any of those allocations.
+const MIRT_MAX_NODE_ITEM_CELLS: usize = 60_000_000;
 /// Maximum latent dimensions for the Gauss-Hermite product grid (`41^3 = 68_921 <= cap`). `D > 3`
 /// is served by the quasi-Monte-Carlo (Halton) / Monte-Carlo node rules instead.
 const MIRT_MAX_DIMS: usize = 3;
@@ -197,7 +201,7 @@ fn validate(
     // Rule-dependent dimension bound + node-count cap. The Gauss-Hermite product grid caps at
     // MIRT_MAX_DIMS (Q^D blows up); the QMC/MC rules cap at MIRT_MAX_DIMS_QMC (the Halton primes)
     // and bound the user-supplied point count instead. `q` is validated/used only for GH.
-    match cfg.xi_rule {
+    let n_nodes = match cfg.xi_rule {
         XiRuleKind::GaussHermite => {
             if !(1..=MIRT_MAX_DIMS).contains(&n_dims) {
                 return Err(format!(
@@ -219,6 +223,7 @@ fn validate(
                     .filter(|&n| n <= MIRT_MAX_NODES)
                     .ok_or_else(|| format!("q^n_dims exceeds the node cap {MIRT_MAX_NODES}"))?;
             }
+            n_nodes
         }
         XiRuleKind::Halton | XiRuleKind::MonteCarlo => {
             // The MonteCarlo node builder has no internal dimension cap, so this bound is the sole
@@ -235,16 +240,21 @@ fn validate(
                     cfg.xi_points
                 ));
             }
-            // Bound the per-iteration `xi_points x J` count tables and the `xi_points x D` node
-            // buffers with checked multiplies (never wrap).
             cfg.xi_points
-                .checked_mul(n_items)
-                .ok_or_else(|| "xi_points * n_items overflows usize".to_string())?;
-            cfg.xi_points
-                .checked_mul(n_dims)
-                .ok_or_else(|| "xi_points * n_dims overflows usize".to_string())?;
         }
+    };
+    let table_cells = n_nodes
+        .checked_mul(n_items)
+        .ok_or_else(|| "node * item table size overflows usize".to_string())?;
+    if table_cells > MIRT_MAX_NODE_ITEM_CELLS {
+        return Err(format!(
+            "node * item table has {table_cells} cells, exceeding the cap \
+             {MIRT_MAX_NODE_ITEM_CELLS}; reduce nodes or items"
+        ));
     }
+    n_nodes
+        .checked_mul(n_dims)
+        .ok_or_else(|| "node * dimension buffer size overflows usize".to_string())?;
     let n_cells = n_persons
         .checked_mul(n_items)
         .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
@@ -1770,6 +1780,31 @@ mod tests {
             fit_2pl(&y7, &obs7, &pat7, n, 7, 7, &mc7).is_err(),
             "MC D=7 rejected"
         );
+
+        // Individually valid xi_points and item counts must not combine into an unbounded dense
+        // E-step table. This input is tiny (one response per item), but without the aggregate guard
+        // it attempts four 200_000 x 301 f64 tables before doing any statistical work.
+        let table_items = MIRT_MAX_NODE_ITEM_CELLS / MIRT_MAX_NODES + 1;
+        let table_y = vec![0.0; table_items];
+        let table_obs = vec![true; table_items];
+        let table_pattern = vec![1u8; table_items];
+        let table_cfg = TwoPlConfig {
+            xi_rule: XiRuleKind::Halton,
+            xi_points: MIRT_MAX_NODES,
+            max_iter: 1,
+            ..TwoPlConfig::default()
+        };
+        let err = fit_2pl(
+            &table_y,
+            &table_obs,
+            &table_pattern,
+            1,
+            table_items,
+            1,
+            &table_cfg,
+        )
+        .unwrap_err();
+        assert!(err.contains("node * item table"), "{err}");
     }
 
     fn small_design() -> (Vec<u8>, Vec<f64>, Vec<f64>, usize) {
