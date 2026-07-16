@@ -734,6 +734,56 @@ def test_fit_testlet_rejects_empty_bank_before_native(monkeypatch):
         fit_testlet(np.empty((1, 0)), np.array([], dtype=np.int64))
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"max_iter": True}, "max_iter"),
+        ({"max_iter": 1.5}, "max_iter"),
+        ({"max_iter": 0}, "max_iter"),
+        ({"max_iter": 100_001}, "max_iter"),
+        ({"tol": np.nan}, "tol"),
+        ({"tol": np.inf}, "tol"),
+        ({"tol": -1.0}, "tol"),
+        ({"q_gamma": True}, "q_gamma"),
+        ({"q_gamma": 7.5}, "q_gamma"),
+        ({"q_gamma": 8}, "q_gamma"),
+        ({"init_sigma2": np.inf}, "init_sigma2"),
+        ({"init_sigma2": -1.0}, "init_sigma2"),
+    ],
+)
+def test_fit_testlet_rejects_unsafe_controls_before_native(monkeypatch, kwargs, match):
+    from fast_mlsirm.testlet import fit_testlet
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match=match):
+        fit_testlet(np.array([[1.0, 0.0]]), np.array([0, 0]), **kwargs)
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        np.array([[0.0, 2.0]]),
+        np.array([[0.0, np.inf]]),
+        np.empty((0, 2)),
+    ],
+)
+def test_fit_testlet_rejects_unsafe_responses_before_native(monkeypatch, responses):
+    from fast_mlsirm.testlet import fit_testlet
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    with pytest.raises(ValueError, match="responses"):
+        fit_testlet(responses, np.array([0, 0]))
+
+
+def test_fit_testlet_rejects_oversized_response_matrix_before_native(monkeypatch):
+    from fast_mlsirm import testlet
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _RejectResourceCore())
+    monkeypatch.setattr(testlet, "MAX_TESTLET_RESPONSE_CELLS", 3, raising=False)
+    with pytest.raises(ValueError, match="response.*limit"):
+        testlet.fit_testlet(np.zeros((2, 2)), np.array([0, 0]))
+
+
 @pytest.mark.parametrize("q", [0, 8, 1_000_000_000])
 def test_mirt_rejects_unsupported_quadrature_before_native(monkeypatch, q):
     from fast_mlsirm.mirt import fit_compensatory_mirt

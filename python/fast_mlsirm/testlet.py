@@ -9,6 +9,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER
+
+
+MAX_TESTLET_RESPONSE_CELLS = 20_000_000
+_SUPPORTED_Q_GAMMA = (7, 11, 15, 21, 31, 41)
+
 
 @dataclass
 class TestletFit:
@@ -65,6 +71,9 @@ def fit_testlet(
     linearly, so a large ``sigma^2_d`` may want a generous ``max_iter``.
     Non-convergence emits ``RuntimeWarning`` and is recorded in
     ``termination_reason``; set ``require_convergence=True`` to raise instead.
+    The repository-specific execution policy limits ``max_iter`` to 100,000 and
+    the response matrix to 20,000,000 cells; these are resource guards, not
+    properties of the testlet model.
 
     References (APA 7th ed.):
         Bradlow, E. T., Wainer, H., & Wang, X. (1999). A Bayesian random effects model
@@ -74,21 +83,28 @@ def fit_testlet(
             testlets. *Applied Psychological Measurement, 26*(1), 109-128.
             https://doi.org/10.1177/0146621602026001007
     """
-    from .fitstats import _core_module
-
-    core = _core_module()
-    if core is None or not hasattr(core, "fit_testlet"):
-        raise RuntimeError("fit_testlet requires the compiled Rust core")
-
-    y = np.asarray(responses, dtype=np.float64)
-    if y.ndim != 2:
+    raw_y = np.asarray(responses)
+    if raw_y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     raw_tid = np.asarray(testlet_id)
     if raw_tid.ndim != 1:
         raise ValueError("testlet_id must be a 1-D array")
-    n_persons, n_items = y.shape
+    n_persons, n_items = raw_y.shape
     if n_items < 1:
         raise ValueError("responses and testlet_id must describe a non-empty item bank")
+    if n_persons < 1:
+        raise ValueError("responses must contain at least one person")
+    if raw_y.size > MAX_TESTLET_RESPONSE_CELLS:
+        raise ValueError(
+            "response matrix exceeds the "
+            f"{MAX_TESTLET_RESPONSE_CELLS}-cell testlet-calibration limit"
+        )
+    try:
+        y = np.asarray(raw_y, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("responses must contain numeric 0/1 values or NaN") from exc
+    if not np.all(np.isnan(y) | (np.isfinite(y) & ((y == 0.0) | (y == 1.0)))):
+        raise ValueError("responses must be 0/1 or NaN (missing)")
     if raw_tid.shape[0] != n_items:
         raise ValueError("testlet_id must have length n_items")
     if not np.issubdtype(raw_tid.dtype, np.integer) or np.issubdtype(
@@ -99,7 +115,40 @@ def fit_testlet(
         raise ValueError("testlet_id entries must be between 0 and n_items - 1")
     tid = raw_tid.astype(np.int64, copy=False)
     n_testlets = int(tid.max()) + 1
-    observed = np.isfinite(y)
+    if (
+        isinstance(max_iter, (bool, np.bool_))
+        or not isinstance(max_iter, (int, np.integer))
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
+    ):
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
+    if isinstance(tol, (bool, np.bool_)) or not isinstance(
+        tol, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError("tol must be a finite non-negative number")
+    tol_value = float(tol)
+    if not np.isfinite(tol_value) or tol_value < 0.0:
+        raise ValueError("tol must be a finite non-negative number")
+    if (
+        isinstance(q_gamma, (bool, np.bool_))
+        or not isinstance(q_gamma, (int, np.integer))
+        or int(q_gamma) not in _SUPPORTED_Q_GAMMA
+    ):
+        raise ValueError(f"q_gamma must be one of {_SUPPORTED_Q_GAMMA}")
+    if isinstance(init_sigma2, (bool, np.bool_)) or not isinstance(
+        init_sigma2, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError("init_sigma2 must be a finite non-negative number")
+    init_sigma2_value = float(init_sigma2)
+    if not np.isfinite(init_sigma2_value) or init_sigma2_value < 0.0:
+        raise ValueError("init_sigma2 must be a finite non-negative number")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_testlet"):
+        raise RuntimeError("fit_testlet requires the compiled Rust core")
+
+    observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_testlet(
         yy,
@@ -110,10 +159,10 @@ def fit_testlet(
         int(n_testlets),
         str(model),
         int(max_iter),
-        float(tol),
+        tol_value,
         int(q_gamma),
         bool(estimate_sigma),
-        float(init_sigma2),
+        init_sigma2_value,
     )
     fit = TestletFit(
         model=str(res["model"]),
@@ -133,7 +182,8 @@ def fit_testlet(
         message = (
             "testlet calibration did not converge: "
             f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter}, "
-            f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
+            "final_loglik_change="
+            f"{fit.final_loglik_change:.12g}, tolerance={tol_value:.12g}"
         )
         if require_convergence:
             raise RuntimeError(message)
