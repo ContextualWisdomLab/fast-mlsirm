@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Fast reduction of matrix-multiplication-like element-wise products over indices
+**Learning:** When calculating an element-wise product followed by a sum over an axis where one operand is broadcasted along factors (e.g. `(e * theta[:, factors]).sum(axis=0)`), numpy allocates a massive intermediate `N x J` array before summation. For large data (e.g. `N=5000, J=500`), this takes seconds and limits scalability.
+**Action:** Replace `(A * B[:, factors]).sum(axis=0)` with `(A.T @ B)[np.arange(A.shape[1]), factors]` to eliminate the intermediate array. This allows the linear algebra routines (BLAS) to compute the projection dynamically using dot products, offering an order-of-magnitude speedup.
