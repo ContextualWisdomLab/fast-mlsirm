@@ -151,10 +151,18 @@ def test_neg_loglik_matches_closed_form_single_entry():
     assert math.isclose(float(grad.theta[0, 0]), e * a, abs_tol=1e-12)
     assert math.isclose(float(grad.tau), e * (-gamma * r), abs_tol=1e-12)
     # d r / d xi = (xi - zeta)/r ; eta has -gamma*r, so grad_xi = -gamma*e*(xi-zeta)/r
-    assert math.isclose(float(grad.xi[0, 0]), -gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12)
-    assert math.isclose(float(grad.xi[0, 1]), -gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12)
-    assert math.isclose(float(grad.zeta[0, 0]), gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12)
-    assert math.isclose(float(grad.zeta[0, 1]), gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12)
+    assert math.isclose(
+        float(grad.xi[0, 0]), -gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12
+    )
+    assert math.isclose(
+        float(grad.xi[0, 1]), -gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12
+    )
+    assert math.isclose(
+        float(grad.zeta[0, 0]), gamma * e * (0.3 - (-0.2)) / r, abs_tol=1e-12
+    )
+    assert math.isclose(
+        float(grad.zeta[0, 1]), gamma * e * (-0.1 - 0.4) / r, abs_tol=1e-12
+    )
 
 
 def test_neg_loglik_and_grad_matches_independent_reference():
@@ -183,7 +191,9 @@ def test_neg_loglik_and_grad_matches_independent_reference():
     ref_nll, ref_grad = _reference_neg_loglik_and_grad(y, factors, params, config)
 
     assert math.isclose(nll, ref_nll, rel_tol=0.0, abs_tol=1e-10)
-    assert math.isclose(loglik, -(ref_nll - _reference_penalty_only(params, config)), abs_tol=1e-10)
+    assert math.isclose(
+        loglik, -(ref_nll - _reference_penalty_only(params, config)), abs_tol=1e-10
+    )
     assert np.allclose(grad.theta, ref_grad["theta"], atol=1e-12)
     assert np.allclose(grad.alpha, ref_grad["alpha"], atol=1e-12)
     assert np.allclose(grad.b, ref_grad["b"], atol=1e-12)
@@ -217,11 +227,15 @@ def test_missing_entries_are_excluded():
         tau=0.0,
     )
     y = np.array([[1.0, -1.0], [0.0, 1.0]])
-    full_obj, _, _ = neg_loglik_and_grad(y, np.array([0, 0]), params, FitConfig(max_iter=1))
+    full_obj, _, _ = neg_loglik_and_grad(
+        y, np.array([0, 0]), params, FitConfig(max_iter=1)
+    )
 
     y2 = np.array([[1.0, 0.0], [0.0, 1.0]])
     mask = np.array([[True, False], [True, True]])
-    mask_obj, _, _ = neg_loglik_and_grad(y2, np.array([0, 0]), params, FitConfig(max_iter=1), mask=mask)
+    mask_obj, _, _ = neg_loglik_and_grad(
+        y2, np.array([0, 0]), params, FitConfig(max_iter=1), mask=mask
+    )
     assert np.isclose(full_obj, mask_obj)
 
 
@@ -274,8 +288,12 @@ def test_rust_backend_matches_numpy_objective():
     factors = np.array([0, 0])
     config = FitConfig(max_iter=1)
 
-    numpy_obj, numpy_grad, numpy_loglik = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="numpy")
-    rust_obj, rust_grad, rust_loglik = neg_loglik_and_grad(y, factors, params, config, mask=mask, backend="rust")
+    numpy_obj, numpy_grad, numpy_loglik = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="numpy"
+    )
+    rust_obj, rust_grad, rust_loglik = neg_loglik_and_grad(
+        y, factors, params, config, mask=mask, backend="rust"
+    )
 
     assert np.isclose(rust_obj, numpy_obj)
     assert np.isclose(rust_loglik, numpy_loglik)
@@ -389,7 +407,9 @@ def test_prepare_response_errors():
     with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
         prepare_response(np.array([[2.0, 0.0], [1.0, -1.0]]))
 
-    clean, observed = prepare_response(np.array([[1.0, -1.0], [0.0, -1.0], [-1.0, np.nan]]))
+    clean, observed = prepare_response(
+        np.array([[1.0, -1.0], [0.0, -1.0], [-1.0, np.nan]])
+    )
     assert observed.sum(axis=0).tolist() == [2, 0]
     assert observed.sum(axis=1).tolist() == [1, 1, 0]
     assert np.array_equal(clean[2], np.array([0.0, 0.0]))
@@ -417,18 +437,45 @@ def test_objective_check_responses_errors():
 def test_objective_model_requires_one_trait():
     from fast_mlsirm.objective import neg_loglik_and_grad
     from fast_mlsirm.config import FitConfig
-    params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+
+    params = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=1.0,
+    )
 
     with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
-        neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=FitConfig(model="ULS2PLM"))
+        neg_loglik_and_grad(
+            np.zeros((2, 2)),
+            np.zeros(2, dtype=int),
+            params,
+            config=FitConfig(model="ULS2PLM"),
+        )
 
 
 def test_objective_add_penalty_uses_space():
     from fast_mlsirm.types import MLSIRMParams
-    params = MLSIRMParams(theta=np.zeros((2, 2)), alpha=np.zeros(2), b=np.zeros(2), xi=np.zeros((2, 2)), zeta=np.zeros((2, 2)), tau=1.0)
+
+    params = MLSIRMParams(
+        theta=np.zeros((2, 2)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 2)),
+        zeta=np.zeros((2, 2)),
+        tau=1.0,
+    )
     penalty = PenaltyConfig(
-        lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0, lambda_xi=1.0, lambda_zeta=1.0, lambda_tau=1.0,
-        mu_alpha=0.0, mu_tau=0.0
+        lambda_theta=1.0,
+        lambda_b=1.0,
+        lambda_alpha=1.0,
+        lambda_xi=1.0,
+        lambda_zeta=1.0,
+        lambda_tau=1.0,
+        mu_alpha=0.0,
+        mu_tau=0.0,
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0
