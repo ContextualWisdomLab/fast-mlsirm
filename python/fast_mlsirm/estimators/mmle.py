@@ -91,6 +91,7 @@ def fit_mmle_2pl(
 
     loglik_trace: list[float] = []
     status = "max_iter_reached"
+    nodes_sq = nodes * nodes
 
     for iteration in range(max_iter):
         # ---- E-step: posterior over quadrature nodes per person ----
@@ -109,7 +110,7 @@ def fit_mmle_2pl(
         stab = np.exp(log_joint - max_lj)
         denom = stab.sum(axis=1, keepdims=True)
         posterior = stab / denom  # (n_persons, Q)
-        person_loglik = (max_lj[:, 0] + np.log(denom[:, 0]))
+        person_loglik = max_lj[:, 0] + np.log(denom[:, 0])
         total_loglik = float(person_loglik.sum())
         loglik_trace.append(total_loglik)
 
@@ -119,32 +120,58 @@ def fit_mmle_2pl(
         n_iq = obs_f.T @ posterior  # (n_items, Q)
         r_iq = (obs_f * y_filled).T @ posterior  # (n_items, Q)
 
+        # Vectorized Newton steps for all items using an active mask to track convergence
+        # This optimization avoids Python loops over the items dimension and bypasses intermediate array memory allocations where applicable
         a_new = a.copy()
         b_new = b.copy()
-        for i in range(n_items):
-            ai, bi = a[i], b[i]
-            # Newton steps on the item's expected log-likelihood over nodes.
-            for _ in range(25):
-                eta = ai * nodes + bi
-                p = _sigmoid(eta)
-                w = n_iq[i] * p * (1.0 - p)
-                resid = r_iq[i] - n_iq[i] * p
-                g_a = float((resid * nodes).sum()) - ridge_a * ai
-                g_b = float(resid.sum()) - ridge_b * bi
-                h_aa = -float((w * nodes * nodes).sum()) - ridge_a
-                h_bb = -float(w.sum()) - ridge_b
-                h_ab = -float((w * nodes).sum())
-                det = h_aa * h_bb - h_ab * h_ab
-                if abs(det) < 1e-12:
-                    break
-                da = (h_bb * g_a - h_ab * g_b) / det
-                db = (h_aa * g_b - h_ab * g_a) / det
-                ai -= da
-                bi -= db
-                ai = float(np.clip(ai, 1e-3, 10.0))
-                if abs(da) + abs(db) < 1e-8:
-                    break
-            a_new[i], b_new[i] = ai, bi
+        active_mask = np.ones(n_items, dtype=bool)
+
+        for _ in range(25):
+            if not active_mask.any():
+                break
+
+            ai = a_new[active_mask]
+            bi = b_new[active_mask]
+            niq_active = n_iq[active_mask]
+            riq_active = r_iq[active_mask]
+
+            eta = ai[:, None] * nodes[None, :] + bi[:, None]
+            p = _sigmoid(eta)
+
+            w = niq_active * p * (1.0 - p)
+            resid = riq_active - niq_active * p
+
+            g_a = resid @ nodes - ridge_a * ai
+            g_b = resid.sum(axis=1) - ridge_b * bi
+
+            h_aa = -(w @ nodes_sq) - ridge_a
+            h_bb = -w.sum(axis=1) - ridge_b
+            h_ab = -(w @ nodes)
+
+            det = h_aa * h_bb - h_ab * h_ab
+
+            valid_det = np.abs(det) >= 1e-12
+
+            da = np.zeros_like(ai)
+            db = np.zeros_like(bi)
+
+            da[valid_det] = (
+                h_bb[valid_det] * g_a[valid_det] - h_ab[valid_det] * g_b[valid_det]
+            ) / det[valid_det]
+            db[valid_det] = (
+                h_aa[valid_det] * g_b[valid_det] - h_ab[valid_det] * g_a[valid_det]
+            ) / det[valid_det]
+
+            ai -= da
+            bi -= db
+            ai = np.clip(ai, 1e-3, 10.0)
+
+            a_new[active_mask] = ai
+            b_new[active_mask] = bi
+
+            converged = (np.abs(da) + np.abs(db)) < 1e-8
+            still_active = valid_det & ~converged
+            active_mask[active_mask] = still_active
 
         a, b = a_new, b_new
 
