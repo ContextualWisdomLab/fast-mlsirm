@@ -1830,6 +1830,24 @@ def test_rasch_cml_and_andersen_lr():
         fit_rasch_cml(bad)
 
 
+def test_andersen_group_labels_must_be_finite(monkeypatch):
+    """Non-finite labels must fail before NumPy's float-to-int cast can densify them."""
+    import numpy as np
+    import pytest
+
+    from fast_mlsirm import andersen_lr_test
+
+    class UnexpectedCore:
+        def andersen_lr_test(self, *_args):  # pragma: no cover - must not be reached
+            pytest.fail("invalid group labels reached the Rust core")
+
+    monkeypatch.setattr("fast_mlsirm.fitstats._core_module", lambda: UnexpectedCore())
+    responses = np.array([[1.0, 0.0], [0.0, 1.0]])
+    for invalid in (np.nan, np.inf, -np.inf):
+        with pytest.raises(ValueError, match="finite non-negative integers"):
+            andersen_lr_test(responses, np.array([0.0, invalid]))
+
+
 def test_dif_polytomous_grm_no_silent_false_negative():
     """A GRM studied item whose focal group never uses a middle category can
     disorder thresholds -> NaN loglik. The finiteness guard must surface that as

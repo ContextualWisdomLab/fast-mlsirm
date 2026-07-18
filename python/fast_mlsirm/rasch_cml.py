@@ -94,8 +94,8 @@ def andersen_lr_test(
     if g.ndim != 1 or g.shape[0] != n_persons:
         raise ValueError("group must be a length-n_persons 1-D array")
     gf = np.asarray(g, dtype=np.float64)
-    if np.any(gf != np.floor(gf)) or np.any(gf < 0):
-        raise ValueError("group labels must be non-negative integers")
+    if not np.all(np.isfinite(gf)) or np.any(gf != np.floor(gf)) or np.any(gf < 0):
+        raise ValueError("group labels must be finite non-negative integers")
     # densify labels so n_groups counts only populated groups
     _, gid = np.unique(gf.astype(np.int64), return_inverse=True)
     n_groups = int(gid.max()) + 1
