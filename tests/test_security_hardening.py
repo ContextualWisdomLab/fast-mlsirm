@@ -624,6 +624,16 @@ def test_serving_prior_rejects_bad_sigma_u(sigma_u):
         serving.serving_prior(b)
 
 
+@pytest.mark.parametrize("population", ["attacker-string", [], 1])
+def test_serving_bundle_rejects_non_object_population(population):
+    b = _bundle(n_items=1)
+    b["population"] = population
+    with pytest.raises(ValueError, match="population must be an object or null"):
+        serving._validate_bundle(b)
+    with pytest.raises(ValueError, match="population must be an object or null"):
+        serving.serving_prior(b)
+
+
 def test_validate_bundle_rejects_oversized_scoring_tables():
     # 20 items x q_theta 41 x q_xi^3 (41^3=68921) ~ 5.6e7 > 5e7 table cells
     b = _bundle_q(n_items=20, latent_dim=3, model="MLS2PLM", q_theta=41, q_xi=41)

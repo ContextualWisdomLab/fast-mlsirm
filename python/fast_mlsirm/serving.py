@@ -56,7 +56,11 @@ def serving_prior(bundle: dict) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError("bundle n_dims must be an integer in 1..64")
     mean = np.zeros(n_dims)
     sd = np.ones(n_dims)
-    pop = bundle.get("population") or {}
+    pop = bundle.get("population")
+    if pop is None:
+        pop = {}
+    elif not isinstance(pop, dict):
+        raise ValueError("bundle population must be an object or null")
     if pop.get("kind") == "multilevel" and "sigma_u" in pop:
         su = pop["sigma_u"]
         # sigma_u is attacker-controlled in an untrusted bundle: a string
@@ -193,6 +197,9 @@ def _validate_bundle(bundle: Any) -> None:
         raise ValueError(
             f"unsupported bundle schema_version {bundle.get('schema_version')!r}"
         )
+    population = bundle.get("population")
+    if population is not None and not isinstance(population, dict):
+        raise ValueError("bundle population must be an object or null")
 
     def _pos_int(key: str, hi: int) -> int:
         v = bundle.get(key)
