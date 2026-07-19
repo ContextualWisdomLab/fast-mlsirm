@@ -256,3 +256,13 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     assert "tbody tr:hover" in html
     assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<div class="bar-track" aria-hidden="true">' in html
+
+def test_render_report_has_tabular_nums_in_body(tmp_path):
+    source = tmp_path / "fit_diagnostics.json"
+    out = tmp_path / "report.html"
+    source.write_text(json.dumps({"model_fit": {}}), encoding="utf-8")
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "font-variant-numeric: tabular-nums;" in html
