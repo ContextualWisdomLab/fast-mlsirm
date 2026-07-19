@@ -22,6 +22,7 @@ VALID_ESTIMATORS = {"jmle", "mmle", "em", "bayes"}
 MAX_LATENT_DIM = 8
 MAX_XI_POINTS = 1_000_000
 MAX_MAX_ITER = 100_000
+MAX_POLYTOMOUS_CATEGORIES = 64
 MAX_RESTARTS = 1_000
 MAX_M_STEPS = 1_000
 # L-BFGS keeps two full parameter vectors per history entry. Values above 100

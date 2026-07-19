@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+
 __all__ = [
     "PolytomousFit",
     "fit_polytomous",
@@ -68,6 +70,13 @@ def _core_module():
 def _poly_int_and_mask(responses: np.ndarray, n_cat: int) -> tuple[np.ndarray, np.ndarray]:
     """Validate polytomous responses (``NaN`` = missing) and return
     ``(int64 categories with missing filled to 0, boolean observed mask)``."""
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
+    n_cat = int(n_cat)
     yf = np.asarray(responses, dtype=np.float64)
     if yf.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -121,6 +130,7 @@ def fit_polytomous(
     ``theta ~ N(0, 1)`` on a ``q_theta``-node Gauss-Hermite grid. The returned
     convergence fields describe the observed-data likelihood at the returned
     parameter state; reaching ``max_iter`` is reported as nonconvergence.
+    ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
 
     References
     ----------
@@ -136,12 +146,20 @@ def fit_polytomous(
     m = str(model).lower()
     if m not in VALID_POLY_MODELS:
         raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if not isinstance(n_cat, int) or n_cat < 2:
-        raise ValueError("n_cat must be an integer >= 2")
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
-        raise ValueError("max_iter must be an integer >= 1")
+    if (
+        not isinstance(max_iter, (int, np.integer))
+        or isinstance(max_iter, (bool, np.bool_))
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
+    ):
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
     if not np.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
@@ -348,16 +366,29 @@ def fit_lsirm_polytomous(
     by marginal EM — all compute in the Rust core (``poly_marginal``). The
     distance weight is fixed to 1 (Go et al. 2024 identification); positions are
     identified up to rotation/reflection/translation. ``NaN`` marks missing.
+    ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
     """
     m = str(model).lower()
     if m not in VALID_POLY_MODELS:
         raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
-    if not isinstance(n_cat, int) or n_cat < 2:
-        raise ValueError("n_cat must be an integer >= 2")
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     if not isinstance(latent_dim, int) or not (1 <= latent_dim <= 3):
         raise ValueError("latent_dim must be an integer in 1..3")
     if q_theta not in {7, 11, 15, 21, 31, 41} or q_xi not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta/q_xi must be one of 7, 11, 15, 21, 31, 41")
+    if (
+        not isinstance(max_iter, (int, np.integer))
+        or isinstance(max_iter, (bool, np.bool_))
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
+    ):
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
+    if not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0")
 
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     core = _core_module()
@@ -662,16 +693,20 @@ def fit_nominal_polytomous(
             response model. In *Handbook of polytomous item response theory
             models* (pp. 43-75). Routledge.
     """
-    if not isinstance(n_cat, int) or n_cat < 2:
-        raise ValueError("n_cat must be an integer >= 2")
+    if (
+        not isinstance(n_cat, (int, np.integer))
+        or isinstance(n_cat, (bool, np.bool_))
+        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
+    ):
+        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
     if (
         isinstance(max_iter, bool)
         or not isinstance(max_iter, (int, np.integer))
-        or max_iter < 1
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
     ):
-        raise ValueError("max_iter must be an integer >= 1")
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
     if not np.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
@@ -885,9 +920,9 @@ def dif_polytomous(
     if (
         not isinstance(n_cat, (int, np.integer))
         or isinstance(n_cat, (bool, np.bool_))
-        or n_cat < 2
+        or not 2 <= int(n_cat) <= MAX_POLYTOMOUS_CATEGORIES
     ):
-        raise ValueError("n_cat must be an integer >= 2")
+        raise ValueError(f"n_cat must be an integer between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     m = str(model).lower()
     if m not in VALID_POLY_MODELS:
         raise ValueError(f"model must be one of {sorted(VALID_POLY_MODELS)}")
@@ -900,9 +935,9 @@ def dif_polytomous(
     if (
         not isinstance(max_iter, (int, np.integer))
         or isinstance(max_iter, (bool, np.bool_))
-        or max_iter < 1
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
     ):
-        raise ValueError("max_iter must be an integer >= 1")
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
     if not np.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
     if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:

@@ -18,6 +18,7 @@
 
 use crate::poly::{
     gpcm_logprobs, gpcm_node_gradient, grm_logprobs, grm_node_gradient, solve_small, PolyModel,
+    POLY_MAX_CAT, POLY_MAX_ITER,
 };
 
 /// Result of [`fit_poly_lsirm`]. `zeta` is `n_items * latent_dim` item positions
@@ -213,8 +214,11 @@ pub fn fit_poly_lsirm(
     max_iter: usize,
     tol: f64,
 ) -> Result<PolyLsirmFit, String> {
-    if n_cat < 2 {
-        return Err("n_cat must be >= 2".into());
+    if !(2..=POLY_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
+    }
+    if !(1..=POLY_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
     }
     if latent_dim < 1 || latent_dim > 3 {
         return Err("latent_dim must be 1..3 for the tensor grid".into());
@@ -436,6 +440,39 @@ pub fn fit_poly_lsirm(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lsirm_rejects_unbounded_categories_and_iterations() {
+        let y = [0usize];
+        assert!(fit_poly_lsirm(
+            &y,
+            None,
+            1,
+            1,
+            POLY_MAX_CAT + 1,
+            1,
+            PolyModel::Grm,
+            7,
+            7,
+            1,
+            1e-6,
+        )
+        .is_err());
+        assert!(fit_poly_lsirm(
+            &y,
+            None,
+            1,
+            1,
+            2,
+            1,
+            PolyModel::Grm,
+            7,
+            7,
+            POLY_MAX_ITER + 1,
+            1e-6,
+        )
+        .is_err());
+    }
 
     fn dist_matrix(z: &[f64], n: usize, d: usize) -> Vec<f64> {
         let mut out = Vec::new();

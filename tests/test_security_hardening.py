@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import warnings
 import zipfile
 from unittest.mock import patch
 
@@ -17,6 +18,8 @@ from fast_mlsirm.cli import _load_optional_npy
 from fast_mlsirm.config import (
     MAX_LATENT_DIM,
     MAX_LBFGS_HISTORY,
+    MAX_MAX_ITER,
+    MAX_POLYTOMOUS_CATEGORIES,
     MAX_XI_POINTS,
     FitConfig,
 )
@@ -1019,6 +1022,94 @@ def test_fit_gpcm_rejects_unbounded_category_count_before_quadrature():
     ):
         with pytest.raises(ValueError, match="at most"):
             fit_gpcm_numpy(np.array([[0.0]]), n_cat=100_000)
+
+
+class _RejectPolytomousCore:
+    def fit_gpcm(self, *_args):
+        raise AssertionError("unsafe input reached native fit_gpcm")
+
+    def fit_grm(self, *_args):
+        raise AssertionError("unsafe input reached native fit_grm")
+
+    def fit_poly_unidim(self, *_args):
+        raise AssertionError("unsafe input reached native fit_poly_unidim")
+
+    def fit_poly_lsirm(self, *_args):
+        raise AssertionError("unsafe input reached native fit_poly_lsirm")
+
+
+@pytest.mark.parametrize("family", ["gpcm", "grm"])
+def test_multidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
+    family,
+):
+    module = __import__(f"fast_mlsirm.{family}", fromlist=[f"fit_{family}"])
+    function = getattr(module, f"fit_{family}")
+    with (
+        patch("fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()),
+        warnings.catch_warnings(),
+    ):
+        warnings.simplefilter("error", RuntimeWarning)
+        with pytest.raises(ValueError, match="n_cat"):
+            function(
+                np.array([[1e19]]),
+                n_cat=np.uint64(2**64 - 1),
+                q=7,
+                max_iter=1,
+            )
+
+
+def test_unidimensional_polytomous_rejects_unsafe_int64_cast_before_native(
+    monkeypatch,
+):
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolytomousCore())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        with pytest.raises(ValueError, match="n_cat"):
+            polytomous.fit_polytomous(
+                np.array([[1e30]]), n_cat=10**40, q_theta=7, max_iter=1
+            )
+
+
+@pytest.mark.parametrize("family", ["gpcm", "grm"])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_iter": 0},
+        {"max_iter": MAX_MAX_ITER + 1},
+        {"node_rule": "qmc", "xi_points": 0},
+        {"node_rule": "qmc", "xi_points": 200_001},
+    ],
+)
+def test_multidimensional_polytomous_rejects_unsafe_budgets_before_native(
+    family, kwargs
+):
+    module = __import__(f"fast_mlsirm.{family}", fromlist=[f"fit_{family}"])
+    function = getattr(module, f"fit_{family}")
+    with patch("fast_mlsirm.fitstats._core_module", return_value=_RejectPolytomousCore()):
+        with pytest.raises(ValueError, match="max_iter|xi_points"):
+            function(np.array([[0.0]]), n_cat=2, q=7, **kwargs)
+
+
+@pytest.mark.parametrize("function_name", ["fit_polytomous", "fit_lsirm_polytomous"])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_cat": MAX_POLYTOMOUS_CATEGORIES + 1, "max_iter": 1},
+        {"n_cat": 2, "max_iter": 0},
+        {"n_cat": 2, "max_iter": MAX_MAX_ITER + 1},
+    ],
+)
+def test_polytomous_fitters_reject_unsafe_budgets_before_native(
+    monkeypatch, function_name, kwargs
+):
+    from fast_mlsirm import polytomous
+
+    monkeypatch.setattr(polytomous, "_core_module", lambda: _RejectPolytomousCore())
+    function = getattr(polytomous, function_name)
+    with pytest.raises(ValueError, match="n_cat|max_iter"):
+        function(np.array([[0.0]]), q_theta=7, **kwargs)
 
 
 @pytest.mark.parametrize(

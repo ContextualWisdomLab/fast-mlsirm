@@ -15,6 +15,9 @@
 //!   partial-credit scoring; the category-constant term cancels in the softmax,
 //!   so the space term enters category-score-scaled (a documented consequence).
 
+pub(crate) const POLY_MAX_CAT: usize = 64;
+pub(crate) const POLY_MAX_ITER: usize = 100_000;
+
 #[inline]
 fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
@@ -342,11 +345,11 @@ pub fn fit_poly_unidim(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if n_cat < 2 {
-        return Err("n_cat must be >= 2".into());
+    if !(2..=POLY_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
     }
-    if max_iter == 0 {
-        return Err("max_iter must be >= 1".into());
+    if !(1..=POLY_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
     }
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
@@ -655,11 +658,11 @@ pub fn fit_nominal(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if n_cat < 2 {
-        return Err("n_cat must be >= 2".into());
+    if !(2..=POLY_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
     }
-    if max_iter == 0 {
-        return Err("max_iter must be >= 1".into());
+    if !(1..=POLY_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
     }
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
@@ -1144,11 +1147,11 @@ pub fn fit_poly_multigroup(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if n_cat < 2 {
-        return Err("n_cat must be >= 2".into());
+    if !(2..=POLY_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
     }
-    if max_iter == 0 {
-        return Err("max_iter must be >= 1".into());
+    if !(1..=POLY_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={POLY_MAX_ITER}"));
     }
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
@@ -2256,6 +2259,35 @@ pub fn poly_s_x2(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fitters_reject_unbounded_categories_and_iterations() {
+        let y = [0usize];
+        assert!(fit_poly_unidim(
+            &y,
+            None,
+            1,
+            1,
+            POLY_MAX_CAT + 1,
+            PolyModel::Grm,
+            7,
+            1,
+            1e-6,
+        )
+        .is_err());
+        assert!(fit_poly_unidim(
+            &y,
+            None,
+            1,
+            1,
+            2,
+            PolyModel::Grm,
+            7,
+            POLY_MAX_ITER + 1,
+            1e-6,
+        )
+        .is_err());
+    }
 
     fn logsumexp0(v: &[f64]) -> f64 {
         let m = v.iter().cloned().fold(f64::NEG_INFINITY, f64::max);

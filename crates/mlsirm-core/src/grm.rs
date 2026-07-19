@@ -66,6 +66,7 @@ const GM_MAX_COUNT_CELLS: usize = 60_000_000;
 const GM_MAX_DIMS: usize = 3;
 const GM_MAX_DIMS_QMC: usize = 6;
 const GM_MAX_CAT: usize = 64;
+const GM_MAX_ITER: usize = 100_000;
 
 /// Configuration for [`fit_grm`].
 #[derive(Clone, Copy, Debug)]
@@ -138,8 +139,8 @@ fn validate(
     if !(2..=GM_MAX_CAT).contains(&n_cat) {
         return Err(format!("n_cat must be in 2..={GM_MAX_CAT}; got {n_cat}"));
     }
-    if cfg.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=GM_MAX_ITER).contains(&cfg.max_iter) {
+        return Err(format!("max_iter must be in 1..={GM_MAX_ITER}"));
     }
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());

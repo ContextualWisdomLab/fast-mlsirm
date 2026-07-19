@@ -11,11 +11,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
+_MAX_NODES = 200_000
 
 
 @dataclass
@@ -87,7 +89,9 @@ def fit_gpcm(
     multidimensional confirmatory structure is supplied with
     ``model=models.confirmatory(loading_pattern)``; a numeric exploratory model greater than
     one is rejected until unrestricted loading rotation and identification are implemented.
-    Every declared category must be observed for each item, and every dimension needs a pure anchor item.
+    ``n_cat`` is limited to 2..64, ``max_iter`` to 1..100,000, and Monte Carlo/QMC
+    ``xi_points`` to 1..200,000. Every declared category must be observed for each item, and every
+    dimension needs a pure anchor item.
 
     References (APA 7th ed.):
         Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm.
@@ -129,13 +133,17 @@ def fit_gpcm(
         return int(numeric)
 
     n_cat_int = _finite_int(n_cat, "n_cat")
-    if n_cat_int < 2:
-        raise ValueError("n_cat must be >= 2")
+    if not 2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES:
+        raise ValueError(f"n_cat must be between 2 and {MAX_POLYTOMOUS_CATEGORIES}")
     q_int = _finite_int(q, "q")
     if _gh and q_int not in _SUPPORTED_Q:
         raise ValueError(f"q must be one of {_SUPPORTED_Q}")
     max_iter_int = _finite_int(max_iter, "max_iter")
     xi_points_int = _finite_int(xi_points, "xi_points")
+    if not 1 <= max_iter_int <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be between 1 and {MAX_MAX_ITER}")
+    if not 1 <= xi_points_int <= _MAX_NODES:
+        raise ValueError(f"xi_points must be between 1 and {_MAX_NODES}")
     if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
         raise ValueError("xi_seed must be a non-negative integer")
     xi_seed_int = int(xi_seed)
