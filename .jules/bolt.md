@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-05-19 - NumPy Array Allocation for Row-wise Pairwise Sums
+**Learning:** In mathematical Python operations, calculating sums across rows for element-wise multiplications, such as `(x * y).sum(axis=0)`, allocates a massive intermediate 2D array which significantly slows down performance, especially in gradient calculations like `grad_alpha`.
+**Action:** Always avoid intermediate array allocation via `(x * y).sum(axis=0)` by replacing it with `np.einsum('ij,ij->j', x, y)`. This skips the memory allocation for the full 2D array, leading to a substantial speedup for large matrices.
