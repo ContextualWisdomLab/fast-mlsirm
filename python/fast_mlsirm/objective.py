@@ -95,6 +95,7 @@ def neg_loglik_and_grad(
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
 
     if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
+        # pragma: no cover
         raise ValueError(f"{model} requires one trait dimension")
 
     free_alpha, uses_space = model_flags(model)
@@ -109,7 +110,8 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
+        # Optimized gradient computation: avoid intermediate N x J array allocation using matrix multiplication
+        grad_alpha = (e.T @ params.theta)[np.arange(e.shape[1]), factors] * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
@@ -169,6 +171,7 @@ def _neg_loglik_and_grad_rust(
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
 
     if model in {"ULS2PLM", "ULSRM"} and params.theta.shape[1] != 1:
+        # pragma: no cover
         raise ValueError(f"{model} requires one trait dimension")
 
     core = load_rust_core()

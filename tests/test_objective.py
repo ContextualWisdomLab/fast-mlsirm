@@ -432,3 +432,18 @@ def test_objective_add_penalty_uses_space():
     )
     val = _add_penalty(params, penalty, free_alpha=True, uses_space=True)
     assert val > 0.0
+
+def test_neg_loglik_and_grad_rust_uls2plm_invalid():
+    """Test _neg_loglik_and_grad_rust raises ValueError when ULS2PLM is used with >1 trait dimension."""
+    from fast_mlsirm.objective import _neg_loglik_and_grad_rust
+    from fast_mlsirm.types import MLSIRMParams
+    from fast_mlsirm.config import FitConfig
+    import numpy as np
+
+    responses = np.ones((10, 5))
+    factor_id = np.zeros(5, dtype=int)
+    params = MLSIRMParams(theta=np.zeros((10, 2)), alpha=np.zeros(5), b=np.zeros(5), xi=np.zeros((10, 2)), zeta=np.zeros((5, 2)), tau=0.0)
+    config = FitConfig(model="ULS2PLM")
+
+    with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
+        _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask=None, device="cpu")
