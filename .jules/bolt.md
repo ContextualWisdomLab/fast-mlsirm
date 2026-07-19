@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Using einsum instead of axis-reduced multiplication
+**Learning:** For gradient calculations like `(e * params.theta[:, factors]).sum(axis=0)`, calculating the element-wise multiplication creates an intermediate array of shape N x J before reducing it. This causes a memory allocation overhead and reduces performance significantly.
+**Action:** Replace `(A * B).sum(axis=0)` operations on 2D arrays with `np.einsum('ij,ij->j', A, B)` to avoid creating the intermediate array, saving memory and speeding up gradient updates.

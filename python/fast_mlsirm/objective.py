@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from .backend import load_rust_core, normalize_backend, normalize_device, resolve_backend
+from .backend import (
+    load_rust_core,
+    normalize_backend,
+    normalize_device,
+    resolve_backend,
+)
 from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
 
 
-def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def prepare_response(
+    responses: np.ndarray, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -59,9 +66,11 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        xi_sq = np.einsum("ij,ij->i", params.xi, params.xi)
+        zeta_sq = np.einsum("ij,ij->i", params.zeta, params.zeta)
+        dist_sq = (
+            xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        )
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
         gamma = params.gamma
@@ -84,10 +93,18 @@ def neg_loglik_and_grad(
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
     requested_backend = normalize_backend(backend)
-    normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
+    normalized_backend = (
+        resolve_backend(requested_backend)
+        if requested_backend == "auto"
+        else requested_backend
+    )
     if normalized_backend == "rust":
-        resolved_device = normalize_device(device if device is not None else config.rust_device)
-        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask, resolved_device)
+        resolved_device = normalize_device(
+            device if device is not None else config.rust_device
+        )
+        return _neg_loglik_and_grad_rust(
+            responses, factor_id, params, config, mask, resolved_device
+        )
 
     model = config.normalized_model()
     penalty = config.penalty
@@ -99,7 +116,9 @@ def neg_loglik_and_grad(
 
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    eta, distance = linear_predictor(params, factors, model=model, eps_distance=config.eps_distance)
+    eta, distance = linear_predictor(
+        params, factors, model=model, eps_distance=config.eps_distance
+    )
     pi = sigmoid(eta)
     entry_loss = (softplus(eta) - y * eta) * observed
     nll = float(entry_loss.sum())
@@ -109,7 +128,8 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
+        # Optimized gradient computation: replace (e * theta).sum(axis=0) with np.einsum to avoid memory allocation of an intermediate N x J array
+        grad_alpha = np.einsum("ij,ij->j", e, params.theta[:, factors]) * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
@@ -129,7 +149,9 @@ def neg_loglik_and_grad(
         grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
 
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
-        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+        grad_zeta = gamma * (
+            np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j
+        )
 
         # Optimized gradient computation: avoid intermediate array allocation by using vdot
         grad_tau = float(-gamma * np.vdot(e, distance))
@@ -195,7 +217,9 @@ def _neg_loglik_and_grad_rust(
         device,
     )
     grads = MLSIRMParams(
-        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(params.theta.shape),
+        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(
+            params.theta.shape
+        ),
         alpha=np.asarray(gradients["alpha"], dtype=np.float64),
         b=np.asarray(gradients["b"], dtype=np.float64),
         xi=np.asarray(gradients["xi"], dtype=np.float64).reshape(params.xi.shape),
@@ -205,7 +229,9 @@ def _neg_loglik_and_grad_rust(
     return float(objective), grads, float(loglik)
 
 
-def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
+def _add_penalty(
+    params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool
+) -> float:
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
     value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
