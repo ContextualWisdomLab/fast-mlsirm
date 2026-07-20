@@ -93,6 +93,43 @@
 
 ### Added
 
+- **Zumbo logistic-regression DIF, with non-uniform detection** (`fast_mlsirm.logistic_dif`; extends
+  `mlsirm_core::dif`; Zumbo, 1999; Swaminathan & Rogers, 1990). Regresses each item response on the
+  observed matching score `S`, the group `G`, and their interaction in three NESTED logistic models
+  (`M0: b0 + b1 S`; `M1: + b2 G`; `M2: + b3 (S x G)`), fitted by IRLS/Newton. This closes the known blind
+  spot of the Mantel-Haenszel procedure added earlier in this release: a stratified odds-ratio test can
+  only see a *consistent* group advantage, so **crossing (non-uniform) DIF is invisible to it**, while
+  the interaction term detects it directly. The 2-df `chi2_total = 2[ll(M2) - ll(M0)]` is the primary
+  omnibus DIF decision (the value Benjamini-Hochberg adjusts); the 1-df components are descriptive
+  follow-ups, and the module documents that `chi2_uniform = 2[ll(M1) - ll(M0)]` tests `b2` *assuming*
+  `b3 = 0` — it is not the group term of the full model and is uninterpretable when non-uniform DIF is
+  present, so the hierarchical entry order `S -> G -> S x G` is load-bearing. The effect size is the
+  Nagelkerke (1991) pseudo-`R^2` change `delta_r2 = R2_N(M2) - R2_N(M0)` (with `ll_null` the
+  intercept-only fit, and all four models fitted on one identical subsample so the normalizer is
+  comparable), classified by Jodoin & Gierl (2001) — A `< 0.035`, B, C `>= 0.070` — and forced to A
+  whenever the omnibus test is not BH-significant. The uniform-only `delta_r2_uniform` is reported
+  without a letter class because those cut-offs were calibrated on the 2-df quantity; the more
+  conservative Zumbo & Thomas (1997) cut-offs are documented as an alternative. **Robustness.** The
+  matching score is mean-centered (the chi-squares are invariant, but the raw total leaves the `S x G`
+  Gram near-singular); the design is rank-checked; the Newton step uses the *checked* solver and
+  step-halving with a coefficient bound, so (quasi-)separation, a rank-deficient design, or
+  non-convergence yield `NaN` statistics with `converged = false` and are never BH-flagged (a constant
+  item is rejected outright). **Guards.** A SATURATED-DESIGN anchor (two-level score x binary group)
+  pins the IRLS, log-likelihood, omnibus chi-square and Nagelkerke effect size against closed-form
+  binomial arithmetic, plus the exact decomposition `chi2_uniform + chi2_nonuniform == chi2_total`; and
+  the discriminating anchor plants a crossing item whose ICCs intersect at the common group ability
+  mean, asserting the logistic test flags the interaction (with the uniform component non-significant)
+  on the very item Mantel-Haenszel classifies as negligible, while a plain b-shift item shows the
+  reverse pattern; the Jodoin-Gierl classifier is additionally pinned at its boundaries. Spec-verified
+  (GO-WITH-MUST-FIXES applied), and an adversarial implementation review then fixed four further root
+  causes: a NaN chi-square silently becoming `p = 1.0` in `chi2_sf` (which both misreported "no DIF" and
+  let unfittable items dilute the Benjamini-Hochberg denominator), a convergence backstop that certified
+  a bound-truncated separated fit as converged, a minimum-sample floor far too weak for the
+  four-parameter model, and the unpinned classifier. Convergence uses the standard GLM relative-deviance
+  test paired with a coefficient-bound separation check, since near the optimum the attainable score
+  floor exceeds any usable absolute gradient tolerance. Same matching-criterion contamination as
+  Mantel-Haenszel (no purification), plus the logit-linearity-in-`S` assumption, both documented.
+
 - **Rasch conditional maximum likelihood + Andersen's LR test** (`fast_mlsirm.fit_rasch_cml`,
   `andersen_lr_test`; new `mlsirm_core::rasch_cml`; Andersen, 1970, 1972, 1973). CML estimation of the
   dichotomous Rasch item difficulties: conditioning each response pattern on its raw score (the

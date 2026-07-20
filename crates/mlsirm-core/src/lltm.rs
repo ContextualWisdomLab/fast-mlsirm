@@ -57,7 +57,7 @@ use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES, GH_WEIGHTS};
 /// `H` — the `Q = I` case — yields `g[i]/h[i][i]` bit-exactly), but the Newton M-step
 /// breaks on `None` rather than taking `poly::solve_small`'s gradient-direction
 /// fallback, which would be downhill for this maximization (matches `mmle`/`mixture`).
-fn solve_small_checked(mut h: Vec<Vec<f64>>, mut g: Vec<f64>) -> Option<Vec<f64>> {
+pub(crate) fn solve_small_checked(mut h: Vec<Vec<f64>>, mut g: Vec<f64>) -> Option<Vec<f64>> {
     let n = g.len();
     for col in 0..n {
         let mut piv = col;
@@ -151,7 +151,7 @@ fn build_design(q_design: &[f64], n_items: usize, n_basic: usize, fit_intercept:
 
 /// Pivoted Gaussian elimination on the `M x M` Gram: true iff every pivot exceeds
 /// `thresh` (i.e. the design has full column rank).
-fn gram_full_rank(g: &mut [Vec<f64>], m: usize, thresh: f64) -> bool {
+pub(crate) fn gram_full_rank(g: &mut [Vec<f64>], m: usize, thresh: f64) -> bool {
     for col in 0..m {
         let mut piv = col;
         for r in col + 1..m {

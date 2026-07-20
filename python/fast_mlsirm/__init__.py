@@ -47,7 +47,7 @@ from .serving import (bank_information as bank_information,
                       score_respondents as score_respondents)
 from .preprocessing import irtree_expand as irtree_expand
 from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as PolytomousFit, score_polytomous as score_polytomous, information_polytomous as information_polytomous, fit_lsirm_polytomous as fit_lsirm_polytomous, PolyLsirmFit as PolyLsirmFit, polytomous_information_criteria as polytomous_information_criteria, item_fit_polytomous as item_fit_polytomous, m2_polytomous as m2_polytomous, local_dependence_polytomous as local_dependence_polytomous, fit_nominal_polytomous as fit_nominal_polytomous, NominalFit as NominalFit, person_fit_polytomous as person_fit_polytomous, cat_simulate_polytomous as cat_simulate_polytomous, dif_polytomous as dif_polytomous, u3_person_fit_polytomous as u3_person_fit_polytomous, u3_cutoff_polytomous as u3_cutoff_polytomous
-from .dif import mantel_haenszel_dif as mantel_haenszel_dif
+from .dif import mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif
 from .wle import score_wle as score_wle
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
 from .simulation import simulate as simulate
@@ -164,6 +164,7 @@ __all__ = [
     "cat_simulate_polytomous",
     "dif_polytomous",
     "mantel_haenszel_dif",
+    "logistic_dif",
     "score_wle",
     "fit_rasch_cml",
     "andersen_lr_test",

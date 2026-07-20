@@ -1763,6 +1763,74 @@ def test_mantel_haenszel_dif():
         mantel_haenszel_dif(y, np.zeros(n, dtype=np.int64))
 
 
+def test_logistic_dif_zumbo():
+    """Zumbo (1999) logistic-regression DIF via the public API. Its reason to exist is NON-UNIFORM DIF:
+    a crossing item whose ICCs intersect at the common group ability mean is flagged through the
+    score x group interaction, while Mantel-Haenszel — a stratified odds-ratio test — calls the very
+    same item negligible. A plain b-shift item shows the reverse pattern (uniform component fires, the
+    interaction does not), and the exact LR decomposition holds for every item."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import logistic_dif, mantel_haenszel_dif
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "logistic_dif"):
+        pytest.skip("compiled core built without logistic_dif")
+
+    rng = np.random.default_rng(1999)
+    n, n_items = 4000, 10
+    cross_item, unif_item = 4, 7
+    b = -0.9 + 0.2 * np.arange(n_items)
+    group = (np.arange(n) % 2).astype(np.int64)
+    theta = rng.standard_normal(n)  # identical ability distribution in both groups
+
+    a_mat = np.ones((n, n_items))
+    b_mat = np.tile(b, (n, 1))
+    focal = group == 1
+    # crossing DIF centered at the common ability mean: same difficulty, different slope
+    a_mat[:, cross_item] = np.where(focal, 0.4, 1.7)
+    b_mat[:, cross_item] = 0.0
+    # pure uniform DIF
+    b_mat[focal, unif_item] += 0.8
+    p = 1.0 / (1.0 + np.exp(-(a_mat * (theta[:, None] - b_mat))))
+    y = (rng.random((n, n_items)) < p).astype(float)
+
+    lr = logistic_dif(y, group)
+    mh = mantel_haenszel_dif(y, group)
+    for key in ("item", "chi2_uniform", "p_uniform", "chi2_nonuniform", "p_nonuniform",
+                "chi2_total", "p_total", "delta_r2", "delta_r2_uniform", "jg_class",
+                "flagged_bh", "converged"):
+        assert lr[key].shape == (n_items,), key
+
+    # crossing item: the interaction fires, the group main effect does not, MH says negligible
+    assert lr["converged"][cross_item]
+    assert lr["p_nonuniform"][cross_item] < 0.01
+    assert lr["p_uniform"][cross_item] > 0.05
+    assert lr["flagged_bh"][cross_item]
+    assert mh["ets_class"][cross_item] == "A", "MH unexpectedly flagged the crossing item"
+
+    # uniform item: the reverse pattern, and MH does see it
+    assert lr["p_uniform"][unif_item] < 0.01
+    assert lr["p_nonuniform"][unif_item] > 0.05
+    assert mh["ets_class"][unif_item] != "A"
+
+    # exact nesting decomposition everywhere; clean items negligible
+    np.testing.assert_allclose(
+        lr["chi2_uniform"] + lr["chi2_nonuniform"], lr["chi2_total"], atol=1e-6
+    )
+    clean = [i for i in range(n_items) if i not in (cross_item, unif_item)]
+    assert all(lr["jg_class"][i] == "A" for i in clean)
+
+    # validation
+    with pytest.raises(ValueError):
+        bad = y.copy()
+        bad[0, 0] = 2
+        logistic_dif(bad, group)
+    with pytest.raises(ValueError):
+        logistic_dif(y, np.zeros(n, dtype=np.int64) + 3)
+
+
 def test_score_wle_warm():
     """Warm's WLE (1989) via the public API: FINITE estimates for the perfect/zero patterns where the
     MLE diverges (correct > incorrect), monotone in the raw score, SE = 1/sqrt(I), 3PL support, and

@@ -37,7 +37,10 @@ use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
-use mlsirm_core::dif::{mantel_haenszel_dif as core_mh_dif, MhDifConfig};
+use mlsirm_core::dif::{
+    logistic_dif as core_logistic_dif, mantel_haenszel_dif as core_mh_dif, LogisticDifConfig,
+    MhDifConfig,
+};
 use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
 };
@@ -2007,6 +2010,82 @@ fn score_wle(
     out.set_item("theta", res.theta)?;
     out.set_item("se", res.se)?;
     out.set_item("boundary", res.boundary)?;
+    Ok(out.into())
+}
+
+/// Zumbo (1999) logistic-regression DIF (Rust compute path; Swaminathan & Rogers, 1990). Regresses each
+/// item response on the observed matching score, the group, and their interaction in three nested
+/// logistic models, separating UNIFORM from NON-UNIFORM (crossing) DIF — the latter is invisible to the
+/// Mantel-Haenszel procedure. `y` is a row-major `n_persons * n_items` `0/1` array; `group` is length
+/// `n_persons` with `0` = reference, `1` = focal. Returns a dict of per-item arrays: `item`,
+/// `chi2_uniform`/`p_uniform` and `chi2_nonuniform`/`p_nonuniform` (1 df each, DESCRIPTIVE and
+/// unadjusted), `chi2_total`/`p_total` (2 df, the PRIMARY omnibus test that Benjamini-Hochberg adjusts),
+/// `delta_r2` (Nagelkerke `R2(M2) - R2(M0)`), `delta_r2_uniform` (uncalibrated descriptive),
+/// `jg_class` (Jodoin & Gierl, 2001 `"A"`/`"B"`/`"C"`, or `"U"` when undefined), `flagged_bh`, and
+/// `converged`. A failed fit (separation, rank-deficient design, no convergence) reports NaN statistics,
+/// `converged=False`, and is never flagged.
+///
+/// References (APA 7th ed.):
+///   Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates using an effect size
+///     measure with the logistic regression procedure for DIF detection. Applied Measurement in
+///     Education, 14(4), 329-349.
+///   Swaminathan, H., & Rogers, H. J. (1990). Detecting differential item functioning using logistic
+///     regression procedures. Journal of Educational Measurement, 27(4), 361-370.
+///   Zumbo, B. D. (1999). A handbook on the theory and methods of differential item functioning (DIF).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, group, n_persons, n_items, exclude_studied_item = false, fdr_q = 0.05, max_iter = 50))]
+fn logistic_dif(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    exclude_studied_item: bool,
+    fdr_q: f64,
+    max_iter: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = binary_u8(y.as_slice()?)?;
+    let gv: Vec<u8> = group
+        .as_slice()?
+        .iter()
+        .map(|&g| match g {
+            0 => Ok(0u8),
+            1 => Ok(1u8),
+            _ => Err(PyValueError::new_err(
+                "group labels must be 0 (reference) or 1 (focal)",
+            )),
+        })
+        .collect::<PyResult<_>>()?;
+    let cfg = LogisticDifConfig {
+        exclude_studied_item,
+        fdr_q,
+        max_iter,
+    };
+    let rows =
+        core_logistic_dif(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
+    out.set_item("chi2_uniform", rows.iter().map(|r| r.chi2_uniform).collect::<Vec<_>>())?;
+    out.set_item("p_uniform", rows.iter().map(|r| r.p_uniform).collect::<Vec<_>>())?;
+    out.set_item(
+        "chi2_nonuniform",
+        rows.iter().map(|r| r.chi2_nonuniform).collect::<Vec<_>>(),
+    )?;
+    out.set_item("p_nonuniform", rows.iter().map(|r| r.p_nonuniform).collect::<Vec<_>>())?;
+    out.set_item("chi2_total", rows.iter().map(|r| r.chi2_total).collect::<Vec<_>>())?;
+    out.set_item("p_total", rows.iter().map(|r| r.p_total).collect::<Vec<_>>())?;
+    out.set_item("delta_r2", rows.iter().map(|r| r.delta_r2).collect::<Vec<_>>())?;
+    out.set_item(
+        "delta_r2_uniform",
+        rows.iter().map(|r| r.delta_r2_uniform).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "jg_class",
+        rows.iter().map(|r| r.jg_class.as_str()).collect::<Vec<_>>(),
+    )?;
+    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    out.set_item("converged", rows.iter().map(|r| r.converged).collect::<Vec<_>>())?;
     Ok(out.into())
 }
 
@@ -4442,6 +4521,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
     m.add_function(wrap_pyfunction!(score_wle, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rasch_cml, m)?)?;
     m.add_function(wrap_pyfunction!(andersen_lr_test, m)?)?;

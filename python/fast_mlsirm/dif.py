@@ -102,3 +102,99 @@ def mantel_haenszel_dif(
         "ets_class": np.asarray(res["ets_class"]),
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
     }
+
+
+def logistic_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+    max_iter: int = 50,
+) -> dict[str, np.ndarray]:
+    """Zumbo (1999) logistic-regression DIF for dichotomous items (compute in Rust; Swaminathan &
+    Rogers, 1990).
+
+    Each item response is regressed on the observed matching score ``S`` (number-correct total, studied
+    item included by default), the group ``G``, and their interaction, in three NESTED logistic models:
+    ``M0: b0 + b1 S``; ``M1: + b2 G``; ``M2: + b3 (S x G)``. This separates UNIFORM from NON-UNIFORM
+    (crossing) DIF — the latter is invisible to :func:`mantel_haenszel_dif`, whose stratified odds-ratio
+    test can only detect a consistent group advantage.
+
+    - ``chi2_total`` / ``p_total`` (2 df) is the PRIMARY Swaminathan-Rogers/Zumbo omnibus DIF test and is
+      the value Benjamini-Hochberg adjusts (``flagged_bh``).
+    - ``chi2_nonuniform`` / ``p_nonuniform`` (1 df) tests the interaction ``b3``.
+    - ``chi2_uniform`` / ``p_uniform`` (1 df) tests ``b2`` *assuming* ``b3 = 0``; it is a descriptive
+      follow-up, is NOT the group term of the full model, and is not interpretable when non-uniform DIF
+      is present. Component p-values are unadjusted.
+    - ``delta_r2`` is the Nagelkerke pseudo-R² change ``R2(M2) - R2(M0)`` (Zumbo's effect size), and
+      ``jg_class`` classifies it by Jodoin & Gierl (2001): ``"A"`` negligible (< 0.035), ``"B"`` moderate,
+      ``"C"`` large (>= 0.070) — forced to ``"A"`` when the omnibus test is not BH-significant, and
+      ``"U"`` when undefined. ``delta_r2_uniform`` is an uncalibrated descriptive value with no class.
+      (The older Zumbo & Thomas, 1997 cut-offs of 0.13/0.26 are much more conservative.)
+
+    Items whose fits fail (separation, a rank-deficient design, no convergence) report ``NaN``
+    statistics with ``converged=False`` and are never flagged. As with Mantel-Haenszel, the studied item
+    is included in the matching score and item purification is out of scope; logistic-regression DIF
+    additionally assumes the logit is linear in ``S``, so a non-uniform flag is not by itself proof of
+    crossing item characteristic curves.
+
+    ``responses`` is a persons x items ``0/1`` array (no missing data); ``group`` is length-persons with
+    ``0`` = reference and ``1`` = focal. Returns per-item NumPy arrays keyed as above.
+
+    References (APA 7th ed.):
+        Jodoin, M. G., & Gierl, M. J. (2001). Evaluating Type I error and power rates using an effect
+            size measure with the logistic regression procedure for DIF detection. *Applied Measurement
+            in Education, 14*(4), 329-349. https://doi.org/10.1207/S15324818AME1404_2
+        Swaminathan, H., & Rogers, H. J. (1990). Detecting differential item functioning using logistic
+            regression procedures. *Journal of Educational Measurement, 27*(4), 361-370.
+            https://doi.org/10.1111/j.1745-3984.1990.tb00754.x
+        Zumbo, B. D. (1999). *A handbook on the theory and methods of differential item functioning
+            (DIF)*. Directorate of Human Resources Research and Evaluation.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "logistic_dif"):
+        raise RuntimeError("logistic_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isin(yf, (0.0, 1.0))):
+        raise ValueError("responses must be 0 or 1 (logistic-regression DIF is for dichotomous items)")
+    g = np.asarray(group)
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+    if not np.isfinite(fdr_q) or not 0 < fdr_q <= 1:
+        raise ValueError("fdr_q must be finite and in (0, 1]")
+
+    res = core.logistic_dif(
+        yf.astype(np.int64).reshape(-1),
+        gf.astype(np.int64),
+        int(n_persons),
+        int(n_items),
+        bool(exclude_studied_item),
+        float(fdr_q),
+        int(max_iter),
+    )
+    return {
+        "item": np.asarray(res["item"], dtype=np.int64),
+        "chi2_uniform": np.asarray(res["chi2_uniform"], dtype=np.float64),
+        "p_uniform": np.asarray(res["p_uniform"], dtype=np.float64),
+        "chi2_nonuniform": np.asarray(res["chi2_nonuniform"], dtype=np.float64),
+        "p_nonuniform": np.asarray(res["p_nonuniform"], dtype=np.float64),
+        "chi2_total": np.asarray(res["chi2_total"], dtype=np.float64),
+        "p_total": np.asarray(res["p_total"], dtype=np.float64),
+        "delta_r2": np.asarray(res["delta_r2"], dtype=np.float64),
+        "delta_r2_uniform": np.asarray(res["delta_r2_uniform"], dtype=np.float64),
+        "jg_class": np.asarray(res["jg_class"]),
+        "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
+        "converged": np.asarray(res["converged"], dtype=bool),
+    }
