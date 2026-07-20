@@ -2607,6 +2607,12 @@ def test_rt_person_fit():
 
     with pytest.raises(ValueError):
         rt_person_fit(times.ravel(), alpha, beta)  # not 2-D
+    with pytest.raises(ValueError, match="finite positive squares"):
+        rt_person_fit(np.array([[1.0, 2.0]]), np.array([1e308, 1.0]), np.zeros(2))
+    with pytest.raises(ValueError, match="finite positive squares"):
+        rt_person_fit(np.array([[1.0, 2.0]]), np.full(2, 1e-308), np.zeros(2))
+    with pytest.raises(ValueError, match="non-finite"):
+        rt_person_fit(np.array([[1.0, 2.0]]), np.ones(2), np.full(2, 1e308))
 
 
 def _sim_cdm(rng, q, s, g, profiles, model="dina"):

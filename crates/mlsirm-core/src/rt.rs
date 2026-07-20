@@ -334,6 +334,8 @@ pub struct RtPersonFit {
 /// this crate. Van der Linden and Guo (2008) motivate the interpretation of
 /// unusually fast item responses, but their Bayesian leave-one-out procedure is
 /// not the statistic implemented here.
+/// Inputs whose squared time discriminations or profiled residual arithmetic are
+/// non-finite are rejected rather than returned as undefined diagnostics.
 ///
 /// # References (APA 7th ed.)
 ///
@@ -372,8 +374,11 @@ pub fn rt_person_fit(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if alpha.iter().any(|a| !a.is_finite() || *a <= 0.0) {
-        return Err("alpha values must be finite and positive".into());
+    if alpha.iter().any(|a| {
+        let a2 = *a * *a;
+        !a.is_finite() || *a <= 0.0 || !a2.is_finite() || a2 <= 0.0
+    }) {
+        return Err("alpha values must have finite positive squares".into());
     }
     if beta.iter().any(|b| !b.is_finite()) {
         return Err("beta values must be finite".into());
@@ -407,14 +412,24 @@ pub fn rt_person_fit(
                 return Err("response times must be finite and positive where observed".into());
             }
             let a2 = alpha[i] * alpha[i];
-            num += a2 * (beta[i] - t.ln());
+            let contribution = a2 * (beta[i] - t.ln());
+            if !contribution.is_finite() {
+                return Err("non-finite response-time profile contribution".into());
+            }
+            num += contribution;
             s += a2;
+            if !num.is_finite() || !s.is_finite() {
+                return Err("non-finite response-time profile accumulation".into());
+            }
             nj += 1;
         }
         if nj < 2 || s <= 0.0 {
             continue; // undefined; leave NaN/unflagged
         }
         let tau_hat = num / s;
+        if !tau_hat.is_finite() {
+            return Err("non-finite profiled speed".into());
+        }
         tau_ml[p] = tau_hat;
         // pass 2: residuals + statistics
         let mut wj = 0.0_f64;
@@ -424,9 +439,19 @@ pub fn rt_person_fit(
             }
             let y = times[p * n_items + i].ln();
             let zhat = alpha[i] * (y - beta[i] + tau_hat);
-            wj += zhat * zhat;
+            let z2 = zhat * zhat;
+            if !zhat.is_finite() || !z2.is_finite() {
+                return Err("non-finite response-time residual".into());
+            }
+            wj += z2;
+            if !wj.is_finite() {
+                return Err("non-finite response-time person-fit statistic".into());
+            }
             let h = alpha[i] * alpha[i] / s; // leverage
             let iz = zhat / (1.0 - h).max(1e-12).sqrt();
+            if !h.is_finite() || !iz.is_finite() {
+                return Err("non-finite studentized response-time residual".into());
+            }
             z_resid[p * n_items + i] = iz;
             item_flag[p * n_items + i] = iz < -z_fast;
         }
@@ -434,10 +459,16 @@ pub fn rt_person_fit(
         w[p] = wj;
         df[p] = dj;
         p_value[p] = crate::fitstats::chi2_sf(wj, dj as f64);
+        if !p_value[p].is_finite() {
+            return Err("non-finite response-time person-fit p-value".into());
+        }
         flagged[p] = p_value[p] < alpha_level;
         // Wilson-Hilferty
         let d = 2.0 / (9.0 * dj as f64);
         l_t[p] = ((wj / dj as f64).cbrt() - (1.0 - d)) / d.sqrt();
+        if !l_t[p].is_finite() {
+            return Err("non-finite response-time person-fit standardization".into());
+        }
     }
 
     Ok(RtPersonFit { w, df, l_t, p_value, flagged, tau_ml, z_resid, item_flag })
@@ -897,7 +928,10 @@ mod tests {
         };
         assert!(bad(&[0.0, 1.5], &beta, 0.05, 1.645));
         assert!(bad(&[f64::NAN, 1.5], &beta, 0.05, 1.645));
+        assert!(bad(&[1e308, 1.5], &beta, 0.05, 1.645));
+        assert!(bad(&[1e-308, 1e-308], &beta, 0.05, 1.645));
         assert!(bad(&alpha, &[0.0, f64::INFINITY], 0.05, 1.645));
+        assert!(bad(&alpha, &[1e308, 1e308], 0.05, 1.645));
         assert!(bad(&alpha, &beta, f64::NAN, 1.645));
         assert!(bad(&alpha, &beta, 0.05, -0.1));
         assert!(bad(&alpha, &beta, 0.05, f64::INFINITY));

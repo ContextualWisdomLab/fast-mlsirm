@@ -212,6 +212,8 @@ def rt_person_fit(
     The item residuals are a fixed-bank diagnostic in this package. Van der Linden
     and Guo (2008) motivate the aberrant-fast-response interpretation, but their
     Bayesian leave-one-out procedure is not implemented here.
+    Inputs whose squared time discriminations or profiled residual arithmetic are
+    non-finite are rejected instead of returning undefined diagnostics.
 
     References (APA 7th ed.):
         van der Linden, W. J., & Guo, F. (2008). Bayesian procedures for
