@@ -1043,22 +1043,34 @@ fn bifactor_recovers_general_loadings() {
         model_type: ModelType::Bifac2plm,
         eps_distance: 1e-8,
     };
+    let marginal_config = MarginalConfig {
+        q_theta: 15,
+        q_xi: 15,
+        max_iter: 300,
+        tol: 1e-4,
+        ..Default::default()
+    };
     let res = fit_marginal(
         &y,
         &observed,
         &factor_id,
         &config,
         &PopulationSpec::Single,
-        &MarginalConfig {
-            q_theta: 15,
-            q_xi: 15,
-            max_iter: 150,
-            ..Default::default()
-        },
+        &marginal_config,
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
     )
     .expect("bifactor fit should succeed");
+    assert!(res.converged, "bifactor fit reached the iteration limit");
+    assert!(res.n_iter < marginal_config.max_iter);
+    let final_change = (res.loglik_trace[res.loglik_trace.len() - 1]
+        - res.loglik_trace[res.loglik_trace.len() - 2])
+        .abs();
+    assert!(
+        final_change < marginal_config.tol,
+        "final likelihood change {final_change} exceeds tolerance {}",
+        marginal_config.tol
+    );
     assert_monotone(&res.loglik_trace);
     // general-factor loadings recovered up to a global sign (fixed by the
     // alignment); check correlation with truth

@@ -187,14 +187,30 @@ def test_bifactor_parity_and_recovery():
     th = rng.standard_normal((P, D))
     eta = th[:, fid] + b[None, :] + lam[None, :] * g[:, None]
     y = (rng.random((P, I)) < 1 / (1 + np.exp(-eta))).astype(float)
+    max_iter = 300
+    tolerance = 1e-4
     results = {}
     for backend in ("rust", "numpy"):
         cfg = FitConfig(
-            model="BIFAC2PLM", estimator="mmle", max_iter=80, backend=backend,
-            rust_device="cpu", latent_dim=1, q_theta=15, q_xi=15,
+            model="BIFAC2PLM",
+            estimator="mmle",
+            max_iter=max_iter,
+            backend=backend,
+            rust_device="cpu",
+            latent_dim=1,
+            q_theta=15,
+            q_xi=15,
+            tolerance=tolerance,
         )
         results[backend] = fit(y, fid, cfg)
     r, n = results["rust"], results["numpy"]
+    for result in results.values():
+        trace = np.asarray(result.loglik_trace)
+        assert result.convergence_status == "converged"
+        assert result.n_iter < max_iter
+        assert np.all(np.isfinite(trace))
+        assert np.all(np.diff(trace) >= -1e-10)
+        assert abs(trace[-1] - trace[-2]) < tolerance
     np.testing.assert_allclose(r.params.b, n.params.b, atol=1e-9)
     np.testing.assert_allclose(r.params.zeta, n.params.zeta, atol=1e-9)
     np.testing.assert_allclose(r.loglik_trace[-1], n.loglik_trace[-1], atol=1e-9)
@@ -229,12 +245,15 @@ def test_bifactor_covariate_parity_uses_inner_product_predictor():
     )
     y = (rng.random((P, I)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
 
+    max_iter = 300
+    tolerance = 1e-4
     results = {}
     for backend in ("rust", "numpy"):
         cfg = FitConfig(
             model="BIFAC2PLM",
             estimator="mmle",
-            max_iter=30,
+            max_iter=max_iter,
+            tolerance=tolerance,
             backend=backend,
             rust_device="cpu",
             latent_dim=1,
@@ -248,6 +267,14 @@ def test_bifactor_covariate_parity_uses_inner_product_predictor():
             group_id=gid,
             covariate={"w": w, "init_delta": 0.0},
         )
+
+    for result in results.values():
+        trace = np.asarray(result.loglik_trace)
+        assert result.convergence_status == "converged"
+        assert result.n_iter < max_iter
+        assert np.all(np.isfinite(trace))
+        assert np.all(np.diff(trace) >= -1e-10)
+        assert abs(trace[-1] - trace[-2]) < tolerance
 
     rust_delta = results["rust"].population["delta"]
     numpy_delta = results["numpy"].population["delta"]
