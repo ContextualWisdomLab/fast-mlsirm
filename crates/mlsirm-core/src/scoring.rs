@@ -1097,11 +1097,10 @@ pub fn score_wle(
 /// a microcomputer environment. *Applied Psychological Measurement, 6*(4),
 /// 431–444. <https://doi.org/10.1177/014662168200600405>
 ///
-/// Wang, C.-S., Kuo, C.-L., & Chao, C.-Y. (2010). A multidimensional
+/// Wang, H.-P., Kuo, B.-C., & Chao, R.-C. (2010). A multidimensional
 /// computerized adaptive testing system for enhancing the Chinese as second
-/// language proficiency test. In N. E. Mastorakis, V. Mladenov, Z. Bojkovic,
-/// & S. Kartalopoulos (Eds.), *Selected topics in education and educational
-/// technology* (pp. 245–252). WSEAS Press.
+/// language proficiency test. In H. Fujita & J. Sasaki (Eds.), *Selected topics
+/// in education and educational technology* (pp. 245–252). WSEAS Press.
 pub struct CatStep {
     pub theta_eap: Vec<f64>,
     pub theta_sd: Vec<f64>,
