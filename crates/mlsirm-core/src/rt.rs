@@ -71,6 +71,8 @@ pub struct RtFit {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    pub termination_reason: String,
+    pub final_loglik_change: f64,
 }
 
 /// Fit the lognormal RT measurement model by marginal-ML EM (van der Linden,
@@ -95,6 +97,18 @@ pub fn fit_rt_lognormal(
         if o.len() != n_persons * n_items {
             return Err("observed must have length n_persons * n_items".into());
         }
+    }
+    if config.max_iter == 0 {
+        return Err("max_iter must be positive".into());
+    }
+    if !(config.tol.is_finite() && config.tol > 0.0) {
+        return Err("tol must be positive and finite".into());
+    }
+    if !(config.var_floor.is_finite() && config.var_floor > 0.0) {
+        return Err("var_floor must be positive and finite".into());
+    }
+    if !(config.sigma_floor.is_finite() && config.sigma_floor > 0.0) {
+        return Err("sigma_floor must be positive and finite".into());
     }
     if let Some(s) = config.fix_sigma_tau {
         if !(s.is_finite() && s > 0.0) {
@@ -180,7 +194,18 @@ pub fn fit_rt_lognormal(
             loglik +=
                 -0.5 * (nj as f64 * ln2pi - ld + sigma_tau2.ln() + pj.ln() + ar2 - pj * te * te);
         }
+        if !loglik.is_finite() {
+            return Err("response-time log-likelihood became non-finite".into());
+        }
         trace.push(loglik);
+
+        // Stop at the likelihood state that is actually returned. Checking after
+        // the M-step would return parameters one update beyond the state whose
+        // likelihood change met `tol`.
+        if it > 0 && (trace[it] - trace[it - 1]).abs() < config.tol {
+            converged = true;
+            break;
+        }
 
         // M-step (closed form): beta, then alpha with fresh beta, then sigma_tau
         for i in 0..n_items {
@@ -210,10 +235,6 @@ pub fn fit_rt_lognormal(
             sigma_tau2 = mean_s.max(config.sigma_floor);
         }
 
-        if it > 0 && (trace[it] - trace[it - 1]).abs() < config.tol {
-            converged = true;
-            break;
-        }
     }
 
     // final EAP + log-likelihood at the converged parameters
@@ -238,7 +259,22 @@ pub fn fit_rt_lognormal(
         tau_sd[p] = (1.0 / pj).sqrt();
         final_ll += -0.5 * (nj as f64 * ln2pi - ld + sigma_tau2.ln() + pj.ln() + ar2 - pj * te * te);
     }
-    trace.push(final_ll);
+    if !final_ll.is_finite() {
+        return Err("response-time final log-likelihood became non-finite".into());
+    }
+    if converged {
+        // The loop broke before the M-step, so this recomputation is the same
+        // parameter state. Replace the endpoint instead of duplicating it.
+        *trace.last_mut().expect("a converged fit has a likelihood") = final_ll;
+    } else {
+        // At max_iter the final M-step has not yet been evaluated in the trace.
+        trace.push(final_ll);
+    }
+    let final_loglik_change = trace
+        .windows(2)
+        .last()
+        .map_or(f64::INFINITY, |w| (w[1] - w[0]).abs());
+    let termination_reason = if converged { "converged" } else { "max_iter_reached" };
 
     Ok(RtFit {
         alpha,
@@ -251,6 +287,8 @@ pub fn fit_rt_lognormal(
         loglik_trace: trace,
         n_iter,
         converged,
+        termination_reason: termination_reason.to_string(),
+        final_loglik_change,
     })
 }
 
@@ -528,6 +566,43 @@ mod tests {
             let var = col.iter().map(|&v| (v - m).powi(2)).sum::<f64>() / np as f64;
             assert!((fit.beta[i] - m).abs() < 1e-2, "beta {} vs mle {m}", fit.beta[i]);
             assert!((1.0 / (fit.alpha[i] * fit.alpha[i]) - var).abs() < 1e-2, "alpha resvar mismatch");
+        }
+    }
+
+    #[test]
+    fn rt_reports_max_iter_nonconvergence() {
+        let n_persons = 20usize;
+        let n_items = 4usize;
+        let times: Vec<f64> = (0..n_persons * n_items)
+            .map(|idx| 2.0 + (idx % n_items) as f64 * 0.1)
+            .collect();
+        let fit = fit_rt_lognormal(
+            &times,
+            None,
+            n_persons,
+            n_items,
+            RtConfig { max_iter: 1, ..RtConfig::default() },
+        )
+        .unwrap();
+        assert!(!fit.converged);
+        assert_eq!(fit.termination_reason, "max_iter_reached");
+        assert_eq!(fit.n_iter, 1);
+        assert_eq!(fit.loglik_trace.len(), 2);
+        assert!(fit.final_loglik_change.is_finite());
+        assert!(fit.final_loglik_change >= RtConfig::default().tol);
+        assert_eq!(fit.loglik, *fit.loglik_trace.last().unwrap());
+    }
+
+    #[test]
+    fn rt_rejects_invalid_controls() {
+        let times = [2.0_f64];
+        for config in [
+            RtConfig { max_iter: 0, ..RtConfig::default() },
+            RtConfig { tol: f64::NAN, ..RtConfig::default() },
+            RtConfig { var_floor: f64::INFINITY, ..RtConfig::default() },
+            RtConfig { sigma_floor: 0.0, ..RtConfig::default() },
+        ] {
+            assert!(fit_rt_lognormal(&times, None, 1, 1, config).is_err());
         }
     }
 

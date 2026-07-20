@@ -4,7 +4,7 @@ core."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import warnings
 
 import numpy as np
@@ -26,6 +26,10 @@ class RtFit:
     loglik: float
     n_iter: int
     converged: bool
+    # Appended defaults preserve the positional constructor used by older callers.
+    loglik_trace: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
+    termination_reason: str = "unknown"
+    final_loglik_change: float = float("inf")
 
 
 def fit_response_times(
@@ -35,6 +39,7 @@ def fit_response_times(
     var_floor: float = 1e-4,
     sigma_floor: float = 1e-4,
     fix_sigma_tau: float | None = None,
+    require_convergence: bool = False,
 ) -> RtFit:
     """Fit the lognormal response-time measurement model (compute in Rust; van der
     Linden, 2007): ``ln(T_ij) ~ Normal(beta_i - tau_j, 1/alpha_i^2)`` for person
@@ -45,6 +50,9 @@ def fit_response_times(
     or ``NaN`` entries are treated as missing (marginalized per person). By default
     ``sigma_tau`` is estimated (the log-time metric identifies the speed scale);
     pass ``fix_sigma_tau`` only to impose a deliberately standardized metric.
+    The result exposes the likelihood trace, termination reason, and final
+    likelihood change. Non-convergence emits ``RuntimeWarning``; set
+    ``require_convergence=True`` to raise instead.
 
     References (APA 7th ed.):
         van der Linden, W. J. (2007). A hierarchical framework for modeling speed
@@ -68,7 +76,7 @@ def fit_response_times(
         int(max_iter), float(tol), float(var_floor), float(sigma_floor),
         None if fix_sigma_tau is None else float(fix_sigma_tau),
     )
-    return RtFit(
+    fit = RtFit(
         alpha=np.asarray(res["alpha"], dtype=np.float64),
         beta=np.asarray(res["beta"], dtype=np.float64),
         mu_tau=float(res["mu_tau"]),
@@ -76,9 +84,22 @@ def fit_response_times(
         tau_eap=np.asarray(res["tau_eap"], dtype=np.float64),
         tau_sd=np.asarray(res["tau_sd"], dtype=np.float64),
         loglik=float(res["loglik"]),
+        loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
     )
+    if not fit.converged:
+        message = (
+            "response-time calibration did not converge: "
+            f"reason={fit.termination_reason}, iterations={fit.n_iter}/{max_iter}, "
+            f"final_loglik_change={fit.final_loglik_change:.12g}, tolerance={tol:.12g}"
+        )
+        if require_convergence:
+            raise RuntimeError(message)
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+    return fit
 
 
 def fit_speed_accuracy(

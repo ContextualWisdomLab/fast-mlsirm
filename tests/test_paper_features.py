@@ -2404,6 +2404,15 @@ def test_fit_response_times():
 
     fit = fit_response_times(times)
     assert fit.converged
+    assert fit.termination_reason == "converged"
+    assert fit.n_iter < 500
+    assert fit.final_loglik_change < 1e-6
+    assert np.isfinite(fit.loglik_trace).all()
+    assert np.all(
+        np.diff(fit.loglik_trace)
+        >= -1e-6 * np.maximum(np.abs(fit.loglik_trace[:-1]), 1)
+    )
+    assert fit.loglik == fit.loglik_trace[-1]
     assert fit.alpha.shape == (m,) and fit.tau_eap.shape == (n,)
     assert np.corrcoef(fit.beta, beta)[0, 1] > 0.95
     assert np.corrcoef(fit.alpha, alpha)[0, 1] > 0.85
@@ -2414,6 +2423,19 @@ def test_fit_response_times():
     # (exposed via n_iter/converged; recompute a small fit to confirm determinism)
     fit2 = fit_response_times(times)
     assert np.allclose(fit.beta, fit2.beta)
+
+    with pytest.warns(RuntimeWarning, match="max_iter_reached"):
+        fit_nc = fit_response_times(times, max_iter=1)
+    assert not fit_nc.converged
+    assert fit_nc.termination_reason == "max_iter_reached"
+    assert fit_nc.n_iter == 1
+    assert fit_nc.final_loglik_change >= 1e-6
+
+    with pytest.raises(RuntimeError, match="max_iter_reached"):
+        fit_response_times(times, max_iter=1, require_convergence=True)
+
+    with pytest.raises(ValueError, match="max_iter"):
+        fit_response_times(times, max_iter=0)
 
     with pytest.raises(ValueError):
         fit_response_times(times.ravel())  # not 2-D
