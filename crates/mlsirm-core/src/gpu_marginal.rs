@@ -227,16 +227,15 @@ fn context() -> Option<&'static GpuContext> {
                     ..Default::default()
                 }))
                 .ok()?;
-            let (device, queue) = pollster::block_on(adapter.request_device(
-                &wgpu::DeviceDescriptor {
+            let (device, queue) =
+                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                     label: Some("mlsirm-marginal-gpgpu"),
                     // The adapter's real limits: the 18-binding layout and the
                     // large logz buffer exceed the downlevel defaults.
                     required_limits: adapter.limits(),
                     ..Default::default()
-                },
-            ))
-            .ok()?;
+                }))
+                .ok()?;
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("mlsirm-marginal-estep"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
@@ -263,12 +262,11 @@ fn context() -> Option<&'static GpuContext> {
                 label: Some("mlsirm-marginal-layout"),
                 entries: &entries,
             });
-            let pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("mlsirm-marginal-pipeline-layout"),
-                    bind_group_layouts: &[Some(&layout)],
-                    immediate_size: 0,
-                });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mlsirm-marginal-pipeline-layout"),
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
             let make = |entry: &str| {
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                     label: Some(entry),
@@ -419,14 +417,38 @@ pub(crate) fn e_step_gpu(
 
     use wgpu::BufferUsages as BU;
     let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
-    let logp0 = storage(device, bytemuck::cast_slice(&as_f32(inputs.logp0)), BU::STORAGE);
-    let logp1 = storage(device, bytemuck::cast_slice(&as_f32(inputs.logp1)), BU::STORAGE);
-    let c0 = storage(device, bytemuck::cast_slice(&as_f32(inputs.c0)), BU::STORAGE);
-    let t_logw = storage(device, bytemuck::cast_slice(&as_f32(inputs.t_logw)), BU::STORAGE);
-    let x_logw = storage(device, bytemuck::cast_slice(&as_f32(inputs.x_logw)), BU::STORAGE);
+    let logp0 = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inputs.logp0)),
+        BU::STORAGE,
+    );
+    let logp1 = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inputs.logp1)),
+        BU::STORAGE,
+    );
+    let c0 = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inputs.c0)),
+        BU::STORAGE,
+    );
+    let t_logw = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inputs.t_logw)),
+        BU::STORAGE,
+    );
+    let x_logw = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inputs.x_logw)),
+        BU::STORAGE,
+    );
     let fid: Vec<u32> = inputs.factor_id.iter().map(|&d| d as u32).collect();
     let fid_buf = storage(device, bytemuck::cast_slice(&fid), BU::STORAGE);
-    let ctx_person = storage(device, bytemuck::cast_slice(inputs.ctx_of_person), BU::STORAGE);
+    let ctx_person = storage(
+        device,
+        bytemuck::cast_slice(inputs.ctx_of_person),
+        BU::STORAGE,
+    );
     let pos_off = storage(device, bytemuck::cast_slice(inputs.pos_off), BU::STORAGE);
     let pos_items = storage(device, bytemuck::cast_slice(inputs.pos_items), BU::STORAGE);
     let miss_off = storage(device, bytemuck::cast_slice(inputs.miss_off), BU::STORAGE);
@@ -482,10 +504,12 @@ pub(crate) fn e_step_gpu(
             (16, item_off),
             (17, item_persons),
         ]
-        .map(|(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
-            binding,
-            resource: buffer.as_entire_binding(),
-        });
+        .map(
+            |(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
+                binding,
+                resource: buffer.as_entire_binding(),
+            },
+        );
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &ctx.layout,
@@ -523,7 +547,11 @@ pub(crate) fn e_step_gpu(
     // Cluster posteriors (or all-ones) computed on the host in f64.
     let w_outer_host = w_outer_fn(&lp_host);
     debug_assert_eq!(w_outer_host.len(), n_ctx * n_persons);
-    let w_outer = storage(device, bytemuck::cast_slice(&as_f32(&w_outer_host)), BU::STORAGE);
+    let w_outer = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(&w_outer_host)),
+        BU::STORAGE,
+    );
 
     let run_reduce = |pipeline: &wgpu::ComputePipeline,
                       total: usize,
@@ -572,22 +600,42 @@ pub(crate) fn e_step_gpu(
     )?;
 
     // --- Pass 3: rbar (item-major positives) ---
-    let ipo = storage(device, bytemuck::cast_slice(inputs.item_pos_off), BU::STORAGE);
-    let ipp = storage(device, bytemuck::cast_slice(inputs.item_pos_persons), BU::STORAGE);
+    let ipo = storage(
+        device,
+        bytemuck::cast_slice(inputs.item_pos_off),
+        BU::STORAGE,
+    );
+    let ipp = storage(
+        device,
+        bytemuck::cast_slice(inputs.item_pos_persons),
+        BU::STORAGE,
+    );
     let rbar = run_reduce(&ctx.pipeline_item, n_ctx * n_items * cell, &ipo, &ipp)?;
 
     // --- Pass 4: mbar (item-major missing) — skipped when nothing is missing.
     let mbar = if inputs.item_miss_persons.is_empty() {
         vec![0.0; n_ctx * n_items * cell]
     } else {
-        let imo = storage(device, bytemuck::cast_slice(inputs.item_miss_off), BU::STORAGE);
-        let imp = storage(device, bytemuck::cast_slice(inputs.item_miss_persons), BU::STORAGE);
+        let imo = storage(
+            device,
+            bytemuck::cast_slice(inputs.item_miss_off),
+            BU::STORAGE,
+        );
+        let imp = storage(
+            device,
+            bytemuck::cast_slice(inputs.item_miss_persons),
+            BU::STORAGE,
+        );
         run_reduce(&ctx.pipeline_item, n_ctx * n_items * cell, &imo, &imp)?
     };
 
-    Some(GpuEStepOutputs { lp: lp_host, nbar, rbar, mbar })
+    Some(GpuEStepOutputs {
+        lp: lp_host,
+        nbar,
+        rbar,
+        mbar,
+    })
 }
-
 
 // ---------------------------------------------------------------------------
 // GPU EAP scoring (Bock & Mislevy 1982). One thread per person, race-free:
@@ -783,15 +831,47 @@ pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs>
         _p1: 0,
     };
     let u_buf = storage(device, bytemuck::bytes_of(&uniforms), BU::UNIFORM);
-    let logp0 = storage(device, bytemuck::cast_slice(&as_f32(inp.logp0)), BU::STORAGE);
-    let logp1 = storage(device, bytemuck::cast_slice(&as_f32(inp.logp1)), BU::STORAGE);
+    let logp0 = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.logp0)),
+        BU::STORAGE,
+    );
+    let logp1 = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.logp1)),
+        BU::STORAGE,
+    );
     let c0 = storage(device, bytemuck::cast_slice(&as_f32(inp.c0)), BU::STORAGE);
-    let t_logw = storage(device, bytemuck::cast_slice(&as_f32(inp.t_logw)), BU::STORAGE);
-    let x_logw = storage(device, bytemuck::cast_slice(&as_f32(inp.x_logw)), BU::STORAGE);
-    let t_nodes = storage(device, bytemuck::cast_slice(&as_f32(inp.t_nodes)), BU::STORAGE);
-    let x_grid = storage(device, bytemuck::cast_slice(&as_f32(inp.x_grid)), BU::STORAGE);
-    let prior_mean = storage(device, bytemuck::cast_slice(&as_f32(inp.prior_mean)), BU::STORAGE);
-    let prior_sd = storage(device, bytemuck::cast_slice(&as_f32(inp.prior_sd)), BU::STORAGE);
+    let t_logw = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.t_logw)),
+        BU::STORAGE,
+    );
+    let x_logw = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.x_logw)),
+        BU::STORAGE,
+    );
+    let t_nodes = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.t_nodes)),
+        BU::STORAGE,
+    );
+    let x_grid = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.x_grid)),
+        BU::STORAGE,
+    );
+    let prior_mean = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.prior_mean)),
+        BU::STORAGE,
+    );
+    let prior_sd = storage(
+        device,
+        bytemuck::cast_slice(&as_f32(inp.prior_sd)),
+        BU::STORAGE,
+    );
     let fid: Vec<u32> = inp.factor_id.iter().map(|&d| d as u32).collect();
     let fid_buf = storage(device, bytemuck::cast_slice(&fid), BU::STORAGE);
     let pos_off = storage(device, bytemuck::cast_slice(inp.pos_off), BU::STORAGE);
@@ -833,10 +913,12 @@ pub(crate) fn score_eap_gpu(inp: &GpuScoreInputs<'_>) -> Option<GpuScoreOutputs>
         (17, &xi_eap),
         (18, &loglik),
     ]
-    .map(|(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
-        binding,
-        resource: buffer.as_entire_binding(),
-    });
+    .map(
+        |(binding, buffer): (u32, &wgpu::Buffer)| wgpu::BindGroupEntry {
+            binding,
+            resource: buffer.as_entire_binding(),
+        },
+    );
     let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &ctx.score_layout,

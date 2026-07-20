@@ -1,12 +1,15 @@
 //! Recovery and contract tests for the marginal (MMLE-EM) estimator.
 
-use mlsirm_core::marginal::{fit_marginal, MarginalConfig, PopulationSpec};
-use mlsirm_core::{Device, ModelConfig, ModelType, PenaltyConfig};
+use crate::marginal::{fit_marginal, MarginalConfig, PopulationSpec};
+use crate::{Device, ModelConfig, ModelType, PenaltyConfig};
 
 struct Lcg(u64);
 impl Lcg {
     fn next_f64(&mut self) -> f64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
     }
     fn normal(&mut self) -> f64 {
@@ -84,14 +87,24 @@ fn simulate(
     let factor_id: Vec<usize> = (0..n_items).map(|i| i % n_dims).collect();
     let b_true: Vec<f64> = (0..n_items).map(|_| -1.0 + 2.0 * rng.next_f64()).collect();
     let a_true: Vec<f64> = (0..n_items).map(|_| 0.8 + 0.8 * rng.next_f64()).collect();
-    let zeta_true: Vec<f64> = (0..n_items * latent_dim).map(|_| rng.normal() * 0.8).collect();
+    let zeta_true: Vec<f64> = (0..n_items * latent_dim)
+        .map(|_| rng.normal() * 0.8)
+        .collect();
     let u_true: Vec<f64> = (0..n_clusters).map(|_| rng.normal() * cluster_sd).collect();
     let mut y = vec![0.0_f64; n_persons * n_items];
     let observed = vec![true; n_persons * n_items];
     let mut theta_true = vec![0.0_f64; n_persons * n_dims];
     for p in 0..n_persons {
-        let shift = if group_shift.is_empty() { 0.0 } else { group_shift[group_id[p]] };
-        let u = if n_clusters > 0 { u_true[cluster_id[p]] } else { 0.0 };
+        let shift = if group_shift.is_empty() {
+            0.0
+        } else {
+            group_shift[group_id[p]]
+        };
+        let u = if n_clusters > 0 {
+            u_true[cluster_id[p]]
+        } else {
+            0.0
+        };
         let xi_p: Vec<f64> = (0..latent_dim).map(|_| rng.normal()).collect();
         for d in 0..n_dims {
             theta_true[p * n_dims + d] = shift + u + rng.normal();
@@ -108,11 +121,25 @@ fn simulate(
             y[p * n_items + i] = if rng.next_f64() < prob { 1.0 } else { 0.0 };
         }
     }
-    Sim { y, observed, factor_id, b_true, a_true, theta_true, zeta_true }
+    Sim {
+        y,
+        observed,
+        factor_id,
+        b_true,
+        a_true,
+        theta_true,
+        zeta_true,
+    }
 }
 
 fn small_cfg() -> MarginalConfig {
-    MarginalConfig { q_theta: 15, q_xi: 7, q_u: 11, max_iter: 150, ..Default::default() }
+    MarginalConfig {
+        q_theta: 15,
+        q_xi: 7,
+        q_u: 11,
+        max_iter: 150,
+        ..Default::default()
+    }
 }
 
 fn assert_monotone(trace: &[f64]) {
@@ -121,7 +148,12 @@ fn assert_monotone(trace: &[f64]) {
     // APPROXIMATION of the marginal can dip by discretization error, so allow
     // a small absolute slack.
     for w in trace.windows(2) {
-        assert!(w[1] >= w[0] - 1e-3, "marginal loglik decreased: {} -> {}", w[0], w[1]);
+        assert!(
+            w[1] >= w[0] - 1e-3,
+            "marginal loglik decreased: {} -> {}",
+            w[0],
+            w[1]
+        );
     }
 }
 
@@ -129,8 +161,19 @@ fn assert_monotone(trace: &[f64]) {
 fn recovers_mls2plm_single_population() {
     let mut rng = Lcg(2024);
     let (n_persons, n_items, n_dims, latent_dim) = (800usize, 16usize, 2usize, 2usize);
-    let sim =
-        simulate(&mut rng, n_persons, n_items, n_dims, latent_dim, 1.0, &[], &[], 0.0, &[], 0);
+    let sim = simulate(
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        1.0,
+        &[],
+        &[],
+        0.0,
+        &[],
+        0,
+    );
     let config = ModelConfig {
         n_persons,
         n_items,
@@ -145,7 +188,12 @@ fn recovers_mls2plm_single_population() {
         &sim.factor_id,
         &config,
         &PopulationSpec::Single,
-        &MarginalConfig { q_theta: 21, q_xi: 11, max_iter: 150, ..Default::default() },
+        &MarginalConfig {
+            q_theta: 21,
+            q_xi: 11,
+            max_iter: 150,
+            ..Default::default()
+        },
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
     )
@@ -174,7 +222,16 @@ fn recovers_multigroup_mean_shift() {
     let (n_persons, n_items, n_dims, latent_dim) = (500usize, 12usize, 1usize, 1usize);
     let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
     let sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.8, &[0.0, 1.0], &group_id, 0.0, &[],
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.8,
+        &[0.0, 1.0],
+        &group_id,
+        0.0,
+        &[],
         0,
     );
     let config = ModelConfig {
@@ -190,14 +247,24 @@ fn recovers_multigroup_mean_shift() {
         &sim.observed,
         &sim.factor_id,
         &config,
-        &PopulationSpec::Multigroup { group_id, n_groups: 2 },
+        &PopulationSpec::Multigroup {
+            group_id,
+            n_groups: 2,
+        },
         &small_cfg(),
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
     )
     .expect("fit should succeed");
-    assert!((res.mu[0] - 0.0).abs() < 1e-12, "reference group mean must stay pinned");
-    assert!(res.mu[1] > 0.5 && res.mu[1] < 1.6, "group-2 mean should recover ~1.0, got {}", res.mu[1]);
+    assert!(
+        (res.mu[0] - 0.0).abs() < 1e-12,
+        "reference group mean must stay pinned"
+    );
+    assert!(
+        res.mu[1] > 0.5 && res.mu[1] < 1.6,
+        "group-2 mean should recover ~1.0, got {}",
+        res.mu[1]
+    );
     assert_monotone(&res.loglik_trace);
 }
 
@@ -208,7 +275,16 @@ fn recovers_multilevel_intercept_sd() {
     let n_clusters = 30usize;
     let cluster_id: Vec<usize> = (0..n_persons).map(|p| p % n_clusters).collect();
     let sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.8, &[], &[], 0.8, &cluster_id,
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.8,
+        &[],
+        &[],
+        0.8,
+        &cluster_id,
         n_clusters,
     );
     let config = ModelConfig {
@@ -224,7 +300,10 @@ fn recovers_multilevel_intercept_sd() {
         &sim.observed,
         &sim.factor_id,
         &config,
-        &PopulationSpec::Multilevel { cluster_id, n_clusters },
+        &PopulationSpec::Multilevel {
+            cluster_id,
+            n_clusters,
+        },
         &small_cfg(),
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
@@ -244,8 +323,19 @@ fn recovers_multilevel_intercept_sd() {
 fn mirt_runs_without_latent_space() {
     let mut rng = Lcg(5);
     let (n_persons, n_items, n_dims, latent_dim) = (200usize, 8usize, 2usize, 2usize);
-    let sim =
-        simulate(&mut rng, n_persons, n_items, n_dims, latent_dim, 0.0, &[], &[], 0.0, &[], 0);
+    let sim = simulate(
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.0,
+        &[],
+        &[],
+        0.0,
+        &[],
+        0,
+    );
     let config = ModelConfig {
         n_persons,
         n_items,
@@ -265,7 +355,10 @@ fn mirt_runs_without_latent_space() {
         Device::Cpu,
     )
     .expect("fit should succeed");
-    assert!(res.zeta.iter().all(|z| *z == 0.0), "MIRT must not move item positions");
+    assert!(
+        res.zeta.iter().all(|z| *z == 0.0),
+        "MIRT must not move item positions"
+    );
     assert_monotone(&res.loglik_trace);
 }
 
@@ -273,8 +366,19 @@ fn mirt_runs_without_latent_space() {
 fn tolerates_missing_and_all_missing_rows() {
     let mut rng = Lcg(13);
     let (n_persons, n_items, n_dims, latent_dim) = (150usize, 10usize, 1usize, 2usize);
-    let mut sim =
-        simulate(&mut rng, n_persons, n_items, n_dims, latent_dim, 1.0, &[], &[], 0.0, &[], 0);
+    let mut sim = simulate(
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        1.0,
+        &[],
+        &[],
+        0.0,
+        &[],
+        0,
+    );
     for p in 0..n_persons {
         for i in 0..n_items {
             if rng.next_f64() < 0.25 {
@@ -304,7 +408,10 @@ fn tolerates_missing_and_all_missing_rows() {
         Device::Cpu,
     )
     .expect("fit should succeed");
-    assert!(res.theta_eap[0].abs() < 1e-6, "all-missing person shrinks to prior mean");
+    assert!(
+        res.theta_eap[0].abs() < 1e-6,
+        "all-missing person shrinks to prior mean"
+    );
     assert!(res.theta_eap.iter().all(|t| t.is_finite()));
     assert_monotone(&res.loglik_trace);
 }
@@ -325,12 +432,29 @@ fn rejects_invalid_inputs() {
     let pen = PenaltyConfig::default();
     let single = PopulationSpec::Single;
     // wrong y length
-    assert!(fit_marginal(&[0.0; 3], &ok_obs, &[0, 0], &config, &single, &base, &pen, Device::Cpu)
-        .is_err());
+    assert!(fit_marginal(
+        &[0.0; 3],
+        &ok_obs,
+        &[0, 0],
+        &config,
+        &single,
+        &base,
+        &pen,
+        Device::Cpu
+    )
+    .is_err());
     // bad factor id
-    assert!(
-        fit_marginal(&ok_y, &ok_obs, &[0, 5], &config, &single, &base, &pen, Device::Cpu).is_err()
-    );
+    assert!(fit_marginal(
+        &ok_y,
+        &ok_obs,
+        &[0, 5],
+        &config,
+        &single,
+        &base,
+        &pen,
+        Device::Cpu
+    )
+    .is_err());
     // non-binary response
     assert!(fit_marginal(
         &[0.0, 2.0, 1.0, 0.0],
@@ -344,18 +468,31 @@ fn rejects_invalid_inputs() {
     )
     .is_err());
     // unsupported quadrature
-    let bad_q = MarginalConfig { q_theta: 12, ..MarginalConfig::default() };
-    assert!(
-        fit_marginal(&ok_y, &ok_obs, &[0, 0], &config, &single, &bad_q, &pen, Device::Cpu)
-            .is_err()
-    );
+    let bad_q = MarginalConfig {
+        q_theta: 12,
+        ..MarginalConfig::default()
+    };
+    assert!(fit_marginal(
+        &ok_y,
+        &ok_obs,
+        &[0, 0],
+        &config,
+        &single,
+        &bad_q,
+        &pen,
+        Device::Cpu
+    )
+    .is_err());
     // bad group id
     assert!(fit_marginal(
         &ok_y,
         &ok_obs,
         &[0, 0],
         &config,
-        &PopulationSpec::Multigroup { group_id: vec![0, 7], n_groups: 2 },
+        &PopulationSpec::Multigroup {
+            group_id: vec![0, 7],
+            n_groups: 2
+        },
         &base,
         &pen,
         Device::Cpu
@@ -367,26 +504,51 @@ fn rejects_invalid_inputs() {
         &ok_obs,
         &[0, 0],
         &config,
-        &PopulationSpec::Multilevel { cluster_id: vec![0], n_clusters: 1 },
+        &PopulationSpec::Multilevel {
+            cluster_id: vec![0],
+            n_clusters: 1
+        },
         &base,
         &pen,
         Device::Cpu
     )
     .is_err());
     // latent_dim too large for grid quadrature
-    let big_k = ModelConfig { latent_dim: 4, ..config.clone() };
-    assert!(
-        fit_marginal(&ok_y, &ok_obs, &[0, 0], &big_k, &single, &base, &pen, Device::Cpu).is_err()
-    );
+    let big_k = ModelConfig {
+        latent_dim: 4,
+        ..config.clone()
+    };
+    assert!(fit_marginal(
+        &ok_y,
+        &ok_obs,
+        &[0, 0],
+        &big_k,
+        &single,
+        &base,
+        &pen,
+        Device::Cpu
+    )
+    .is_err());
 }
 
 #[test]
 fn qmc_and_mc_rules_recover_like_gauss_hermite() {
-    use mlsirm_core::marginal::XiRuleKind;
+    use crate::marginal::XiRuleKind;
     let mut rng = Lcg(31);
     let (n_persons, n_items, n_dims, latent_dim) = (500usize, 14usize, 2usize, 2usize);
-    let sim =
-        simulate(&mut rng, n_persons, n_items, n_dims, latent_dim, 1.0, &[], &[], 0.0, &[], 0);
+    let sim = simulate(
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        1.0,
+        &[],
+        &[],
+        0.0,
+        &[],
+        0,
+    );
     let config = ModelConfig {
         n_persons,
         n_items,
@@ -438,8 +600,16 @@ fn qmc_and_mc_rules_recover_like_gauss_hermite() {
         );
     }
     // the integration rule must not change the answer materially
-    assert!(corr(&gh.b, &qmc.b) > 0.98, "QMC b diverges from GH: {}", corr(&gh.b, &qmc.b));
-    assert!(corr(&gh.b, &mc.b) > 0.95, "MC b diverges from GH: {}", corr(&gh.b, &mc.b));
+    assert!(
+        corr(&gh.b, &qmc.b) > 0.98,
+        "QMC b diverges from GH: {}",
+        corr(&gh.b, &qmc.b)
+    );
+    assert!(
+        corr(&gh.b, &mc.b) > 0.95,
+        "MC b diverges from GH: {}",
+        corr(&gh.b, &mc.b)
+    );
     assert!(
         (gh.tau.exp() - qmc.tau.exp()).abs() < 0.4,
         "gamma mismatch GH={} QMC={}",
@@ -454,7 +624,7 @@ fn qmc_and_mc_rules_recover_like_gauss_hermite() {
 
 #[test]
 fn fipc_recovers_shifted_population_with_anchors() {
-    use mlsirm_core::marginal::Anchors;
+    use crate::marginal::Anchors;
     let mut rng = Lcg(55);
     let (n_persons, n_items, n_dims, latent_dim) = (700usize, 12usize, 1usize, 1usize);
     // simulate a shifted population theta ~ N(0.8, 1) WITHOUT a latent-space
@@ -462,8 +632,17 @@ fn fipc_recovers_shifted_population_with_anchors() {
     // (it confounds with the item's map radius), so valid anchors require a
     // distance-free generating model here.
     let sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.0, &[0.8], &vec![0; n_persons],
-        0.0, &[], 0,
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.0,
+        &[0.8],
+        &vec![0; n_persons],
+        0.0,
+        &[],
+        0,
     );
     // "old calibration": treat the first 6 items' TRUE parameters as anchors
     let mut fixed = vec![false; n_items];
@@ -490,7 +669,7 @@ fn fipc_recovers_shifted_population_with_anchors() {
         zeta: anchor_zeta,
         tau: Some(-30.0), // anchor calibration had no usable space; freeze gamma ~ 0
     };
-    let res = mlsirm_core::marginal::fit_marginal_anchored(
+    let res = crate::marginal::fit_marginal_anchored(
         &sim.y,
         &sim.observed,
         &sim.factor_id,
@@ -541,7 +720,7 @@ fn fipc_requires_anchors_for_free_population() {
 
 #[test]
 fn fipc_rejects_unidentified_and_nonfinite_anchor_contracts() {
-    use mlsirm_core::marginal::{fit_marginal_anchored, Anchors};
+    use crate::marginal::{fit_marginal_anchored, Anchors};
     let config = ModelConfig {
         n_persons: 2,
         n_items: 4,
@@ -598,8 +777,17 @@ fn concurrent_calibration_two_forms_with_anchor_block() {
     let (n_persons, n_items, n_dims, latent_dim) = (800usize, 15usize, 1usize, 1usize);
     let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
     let mut sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.8, &[0.0, 0.7], &group_id, 0.0,
-        &[], 0,
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.8,
+        &[0.0, 0.7],
+        &group_id,
+        0.0,
+        &[],
+        0,
     );
     // items 0..5 unique to form A, 5..10 anchors, 10..15 unique to form B
     for p in 0..n_persons {
@@ -624,7 +812,10 @@ fn concurrent_calibration_two_forms_with_anchor_block() {
         &sim.observed,
         &sim.factor_id,
         &config,
-        &PopulationSpec::Multigroup { group_id, n_groups: 2 },
+        &PopulationSpec::Multigroup {
+            group_id,
+            n_groups: 2,
+        },
         &small_cfg(),
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
@@ -646,7 +837,17 @@ fn zero_inflation_recovers_mixing_weight() {
     let mut rng = Lcg(2027);
     let (n_persons, n_items, n_dims, latent_dim) = (800usize, 12usize, 1usize, 1usize);
     let mut sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.5, &[], &[], 0.0, &[], 0,
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.5,
+        &[],
+        &[],
+        0.0,
+        &[],
+        0,
     );
     // structural zeros: 30% of persons produce all-zero patterns regardless
     let pi_true = 0.30;
@@ -664,7 +865,10 @@ fn zero_inflation_recovers_mixing_weight() {
         model_type: ModelType::Uls2plm,
         eps_distance: 1e-8,
     };
-    let mcfg = MarginalConfig { zero_inflation: true, ..small_cfg() };
+    let mcfg = MarginalConfig {
+        zero_inflation: true,
+        ..small_cfg()
+    };
     let res = fit_marginal(
         &sim.y,
         &sim.observed,
@@ -682,10 +886,9 @@ fn zero_inflation_recovers_mixing_weight() {
         res.pi_zero
     );
     // injected structural zeros carry high responsibility
-    let mean_resp_zero: f64 =
-        res.zero_responsibility[..n_zero].iter().sum::<f64>() / n_zero as f64;
-    let mean_resp_rest: f64 = res.zero_responsibility[n_zero..].iter().sum::<f64>()
-        / (n_persons - n_zero) as f64;
+    let mean_resp_zero: f64 = res.zero_responsibility[..n_zero].iter().sum::<f64>() / n_zero as f64;
+    let mean_resp_rest: f64 =
+        res.zero_responsibility[n_zero..].iter().sum::<f64>() / (n_persons - n_zero) as f64;
     assert!(
         mean_resp_zero > mean_resp_rest + 0.3,
         "structural zeros must get higher responsibility: {mean_resp_zero} vs {mean_resp_rest}"
@@ -712,7 +915,7 @@ fn zero_inflation_recovers_mixing_weight() {
 
 #[test]
 fn item_position_covariate_recovers_delta() {
-    use mlsirm_core::marginal::{fit_marginal_full, ItemCovariate};
+    use crate::marginal::{fit_marginal_full, ItemCovariate};
     let mut rng = Lcg(404);
     let (n_persons, n_items, n_dims, latent_dim) = (900usize, 12usize, 1usize, 1usize);
     let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
@@ -724,15 +927,25 @@ fn item_position_covariate_recovers_delta() {
     }
     let delta_true = -0.8; // later positions get harder (fatigue effect)
     let mut sim = simulate(
-        &mut rng, n_persons, n_items, n_dims, latent_dim, 0.0, &[0.0, 0.0], &group_id, 0.0,
-        &[], 0,
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.0,
+        &[0.0, 0.0],
+        &group_id,
+        0.0,
+        &[],
+        0,
     );
     // re-simulate responses with the position effect applied
     let mut rng2 = Lcg(405);
     for p in 0..n_persons {
         let booklet = group_id[p];
         for i in 0..n_items {
-            let eta = sim.a_true[i] * sim.theta_true[p] + sim.b_true[i]
+            let eta = sim.a_true[i] * sim.theta_true[p]
+                + sim.b_true[i]
                 + delta_true * w[booklet * n_items + i];
             let prob = 1.0 / (1.0 + (-eta).exp());
             sim.y[p * n_items + i] = if rng2.next_f64() < prob { 1.0 } else { 0.0 };
@@ -752,7 +965,10 @@ fn item_position_covariate_recovers_delta() {
         &sim.observed,
         &sim.factor_id,
         &config,
-        &PopulationSpec::Multigroup { group_id, n_groups: 2 },
+        &PopulationSpec::Multigroup {
+            group_id,
+            n_groups: 2,
+        },
         &small_cfg(),
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
@@ -770,7 +986,7 @@ fn item_position_covariate_recovers_delta() {
 
 #[test]
 fn covariate_guards() {
-    use mlsirm_core::marginal::{fit_marginal_full, ItemCovariate};
+    use crate::marginal::{fit_marginal_full, ItemCovariate};
     let config = ModelConfig {
         n_persons: 2,
         n_items: 2,
@@ -779,7 +995,10 @@ fn covariate_guards() {
         model_type: ModelType::Uls2plm,
         eps_distance: 1e-8,
     };
-    let cov = ItemCovariate { w: vec![0.0, 1.0], init_delta: 0.0 };
+    let cov = ItemCovariate {
+        w: vec![0.0, 1.0],
+        init_delta: 0.0,
+    };
     // single-context covariate without anchors: collinear with b -> rejected
     let res = fit_marginal_full(
         &[0.0, 1.0, 1.0, 0.0],
@@ -795,7 +1014,6 @@ fn covariate_guards() {
     );
     assert!(res.is_err());
 }
-
 
 #[test]
 fn bifactor_recovers_general_loadings() {
@@ -831,7 +1049,12 @@ fn bifactor_recovers_general_loadings() {
         &factor_id,
         &config,
         &PopulationSpec::Single,
-        &MarginalConfig { q_theta: 15, q_xi: 15, max_iter: 150, ..Default::default() },
+        &MarginalConfig {
+            q_theta: 15,
+            q_xi: 15,
+            max_iter: 150,
+            ..Default::default()
+        },
         &PenaltyConfig::lsirm_prior(),
         Device::Cpu,
     )
@@ -843,15 +1066,18 @@ fn bifactor_recovers_general_loadings() {
     let c = corr(&lam, &lambda_true);
     assert!(c.abs() > 0.6, "lambda recovery too low: {c}");
     // tau is not a free parameter for the inner kind
-    assert!(res.tau < -20.0, "tau must stay inert for BIFAC2PLM: {}", res.tau);
+    assert!(
+        res.tau < -20.0,
+        "tau must stay inert for BIFAC2PLM: {}",
+        res.tau
+    );
 }
-
 
 #[test]
 fn m2_calibration_and_local_dependence() {
-    use mlsirm_core::fitstats::m2_rmsea2;
-    use mlsirm_core::nodes::XiRule;
-    use mlsirm_core::scoring::{ItemBank, PriorSpec};
+    use crate::fitstats::m2_rmsea2;
+    use crate::nodes::XiRule;
+    use crate::scoring::{ItemBank, PriorSpec};
 
     // unidimensional 2PL (MIRT kind: no latent-space term), fit by MMLE
     let mut rng = Lcg(9091);
@@ -877,7 +1103,11 @@ fn m2_calibration_and_local_dependence() {
         model_type: ModelType::Mirt,
         eps_distance: 1e-8,
     };
-    let mcfg = MarginalConfig { q_theta: 21, max_iter: 300, ..Default::default() };
+    let mcfg = MarginalConfig {
+        q_theta: 21,
+        max_iter: 300,
+        ..Default::default()
+    };
     let fit = |resp: &[f64]| {
         fit_marginal(
             resp,
@@ -891,7 +1121,7 @@ fn m2_calibration_and_local_dependence() {
         )
         .expect("fit should succeed")
     };
-    let run_m2 = |resp: &[f64], res: &mlsirm_core::marginal::MarginalResult| {
+    let run_m2 = |resp: &[f64], res: &crate::marginal::MarginalResult| {
         let bank = ItemBank {
             alpha: &res.alpha,
             b: &res.b,
@@ -903,8 +1133,16 @@ fn m2_calibration_and_local_dependence() {
             latent_dim: 1,
             eps_distance: 1e-8,
         };
-        m2_rmsea2(&bank, resp, &observed, n_persons, &PriorSpec::standard(1), 21, XiRule::GaussHermite { q_xi: 7 })
-            .expect("m2 should succeed")
+        m2_rmsea2(
+            &bank,
+            resp,
+            &observed,
+            n_persons,
+            &PriorSpec::standard(1),
+            21,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+        .expect("m2 should succeed")
     };
 
     // well-specified: df = (12 + 66) - 24 = 54; RMSEA2 near zero
@@ -913,7 +1151,11 @@ fn m2_calibration_and_local_dependence() {
     assert_eq!(m2.n_moments, 78);
     assert_eq!(m2.n_parameters, 24);
     assert_eq!(m2.df, 54.0);
-    assert!(m2.rmsea2 < 0.03, "well-specified RMSEA2 too high: {}", m2.rmsea2);
+    assert!(
+        m2.rmsea2 < 0.03,
+        "well-specified RMSEA2 too high: {}",
+        m2.rmsea2
+    );
     assert!(
         m2.rmsea2_ci_lower <= m2.rmsea2 + 1e-9 && m2.rmsea2 <= m2.rmsea2_ci_upper + 1e-9,
         "CI must bracket point estimate: [{}, {}] vs {}",
@@ -921,7 +1163,11 @@ fn m2_calibration_and_local_dependence() {
         m2.rmsea2_ci_upper,
         m2.rmsea2
     );
-    assert!(m2.srmsr < 0.05, "well-specified SRMSR too high: {}", m2.srmsr);
+    assert!(
+        m2.srmsr < 0.05,
+        "well-specified SRMSR too high: {}",
+        m2.srmsr
+    );
 
     // inject strong local dependence: item 1 becomes an exact copy of item 0
     let mut y_ld = y.clone();
@@ -936,5 +1182,8 @@ fn m2_calibration_and_local_dependence() {
         m2_ld.rmsea2
     );
     assert!(m2_ld.m2 > m2.m2, "LD M2 must exceed well-specified M2");
-    assert!(m2_ld.srmsr > m2.srmsr, "LD SRMSR must exceed well-specified SRMSR");
+    assert!(
+        m2_ld.srmsr > m2.srmsr,
+        "LD SRMSR must exceed well-specified SRMSR"
+    );
 }

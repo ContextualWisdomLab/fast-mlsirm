@@ -291,4 +291,19 @@ pub(crate) fn gh_rule(q: usize) -> Option<(&'static [f64], &'static [f64])> {
     }
 }
 
+/// Resolve an embedded rule with a consistent public-validation error.
+pub(crate) fn require_gh_rule(
+    q: usize,
+    name: &str,
+) -> Result<(&'static [f64], &'static [f64]), String> {
+    match gh_rule(q) {
+        Some(rule) => Ok(rule),
+        None => Err(format!("unsupported {name} {q}")),
+    }
+}
+
 pub(crate) const SUPPORTED_Q: [usize; 6] = [7, 11, 15, 21, 31, 41];
+
+#[cfg(test)]
+#[path = "../../../tests/unit/quadrature_tests.rs"]
+mod tests;

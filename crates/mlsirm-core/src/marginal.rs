@@ -39,9 +39,15 @@ pub enum PopulationSpec {
     /// items, so `fit_marginal` requires `anchors` with this variant.
     SingleFree,
     /// `group_id[p] in 0..n_groups`; group 0 is the fixed `N(0,1)` reference.
-    Multigroup { group_id: Vec<usize>, n_groups: usize },
+    Multigroup {
+        group_id: Vec<usize>,
+        n_groups: usize,
+    },
     /// `cluster_id[p] in 0..n_clusters`.
-    Multilevel { cluster_id: Vec<usize>, n_clusters: usize },
+    Multilevel {
+        cluster_id: Vec<usize>,
+        n_clusters: usize,
+    },
 }
 
 /// Context-varying item covariate with one estimated coefficient
@@ -416,7 +422,12 @@ pub(crate) struct ResponseIndex {
     pub(crate) miss: Vec<Vec<usize>>,
 }
 
-pub(crate) fn index_responses(y: &[f64], observed: &[bool], n_persons: usize, n_items: usize) -> ResponseIndex {
+pub(crate) fn index_responses(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    n_items: usize,
+) -> ResponseIndex {
     let mut pos = vec![Vec::new(); n_persons];
     let mut miss = vec![Vec::new(); n_persons];
     for p in 0..n_persons {
@@ -569,9 +580,8 @@ fn accumulate_person(
         let px = lx.exp();
         for d in 0..n_dims {
             for t in 0..q_t {
-                let pt = (grids.t_logw[t] + l_buf[d * cell + t * n_x + x]
-                    - log_zdx[d * n_x + x])
-                    .exp();
+                let pt =
+                    (grids.t_logw[t] + l_buf[d * cell + t * n_x + x] - log_zdx[d * n_x + x]).exp();
                 post_buf[d * cell + t * n_x + x] = w_outer * px * pt;
             }
         }
@@ -618,8 +628,7 @@ fn e_step_device(
         Device::Gpu | Device::Auto => {
             #[cfg(all(feature = "gpu", not(coverage)))]
             {
-                match e_step_gpu_adapter(tables, resp, factor_id, config, pop, ctx, grids, zi)
-                {
+                match e_step_gpu_adapter(tables, resp, factor_id, config, pop, ctx, grids, zi) {
                     Some(estep) => return estep,
                     None => {
                         if matches!(device, Device::Gpu) {
@@ -730,7 +739,11 @@ fn e_step_gpu_adapter(
         Some((pi, _)) => (pi.ln(), (1.0 - pi).ln()),
         None => (f64::NEG_INFINITY, 0.0),
     };
-    let mut zi_resp = if zi.is_some() { vec![0.0_f64; n_persons] } else { Vec::new() };
+    let mut zi_resp = if zi.is_some() {
+        vec![0.0_f64; n_persons]
+    } else {
+        Vec::new()
+    };
     let mut w_outer_fn = |lp: &[f64]| -> Vec<f64> {
         let mut w = vec![0.0_f64; n_ctx * n_persons];
         match pop {
@@ -765,7 +778,10 @@ fn e_step_gpu_adapter(
                     w[s * n_persons + p] = w_irt;
                 }
             }
-            PopulationSpec::Multilevel { cluster_id, n_clusters } => {
+            PopulationSpec::Multilevel {
+                cluster_id,
+                n_clusters,
+            } => {
                 // mixture applies per (person, u-node)
                 let mut lp_mix_v = vec![0.0_f64; n_persons * n_ctx];
                 let mut w_irt_v = vec![1.0_f64; n_persons * n_ctx];
@@ -851,7 +867,11 @@ fn e_step(
         rbar: vec![0.0; ctx.n_ctx * n_items * cell],
         mbar: vec![0.0; ctx.n_ctx * n_items * cell],
         loglik: 0.0,
-        zi_resp: if zi.is_some() { vec![0.0; n_persons] } else { Vec::new() },
+        zi_resp: if zi.is_some() {
+            vec![0.0; n_persons]
+        } else {
+            Vec::new()
+        },
         sum_e_v2: 0.0,
         cluster_post: Vec::new(),
     };
@@ -867,7 +887,15 @@ fn e_step(
         PopulationSpec::Single | PopulationSpec::SingleFree => {
             for p in 0..n_persons {
                 let lp = person_pass(
-                    p, 0, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
+                    p,
+                    0,
+                    tables,
+                    resp,
+                    factor_id,
+                    n_dims,
+                    n_items,
+                    grids,
+                    &mut l_buf,
                     &mut log_zdx,
                 );
                 let (lp_mix, w_irt) = match zi {
@@ -879,8 +907,19 @@ fn e_step(
                     estep.zi_resp[p] = 1.0 - w_irt;
                 }
                 accumulate_person(
-                    p, 0, w_irt, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
-                    lp, &mut estep, &mut post_buf,
+                    p,
+                    0,
+                    w_irt,
+                    resp,
+                    factor_id,
+                    n_dims,
+                    n_items,
+                    grids,
+                    &l_buf,
+                    &log_zdx,
+                    lp,
+                    &mut estep,
+                    &mut post_buf,
                 );
             }
         }
@@ -888,7 +927,15 @@ fn e_step(
             for p in 0..n_persons {
                 let s = group_id[p];
                 let lp = person_pass(
-                    p, s, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
+                    p,
+                    s,
+                    tables,
+                    resp,
+                    factor_id,
+                    n_dims,
+                    n_items,
+                    grids,
+                    &mut l_buf,
                     &mut log_zdx,
                 );
                 let (lp_mix, w_irt) = match zi {
@@ -900,12 +947,26 @@ fn e_step(
                     estep.zi_resp[p] = 1.0 - w_irt;
                 }
                 accumulate_person(
-                    p, s, w_irt, resp, factor_id, n_dims, n_items, grids, &l_buf, &log_zdx,
-                    lp, &mut estep, &mut post_buf,
+                    p,
+                    s,
+                    w_irt,
+                    resp,
+                    factor_id,
+                    n_dims,
+                    n_items,
+                    grids,
+                    &l_buf,
+                    &log_zdx,
+                    lp,
+                    &mut estep,
+                    &mut post_buf,
                 );
             }
         }
-        PopulationSpec::Multilevel { cluster_id, n_clusters } => {
+        PopulationSpec::Multilevel {
+            cluster_id,
+            n_clusters,
+        } => {
             let q_u = ctx.n_ctx;
             // Pass 1: per-person conditional marginals log L_p(v).
             let mut lp_v = vec![0.0_f64; n_persons * q_u];
@@ -913,13 +974,19 @@ fn e_step(
             for p in 0..n_persons {
                 for v in 0..q_u {
                     let lp_irt = person_pass(
-                        p, v, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
+                        p,
+                        v,
+                        tables,
+                        resp,
+                        factor_id,
+                        n_dims,
+                        n_items,
+                        grids,
+                        &mut l_buf,
                         &mut log_zdx,
                     );
                     let (lp_mix, w_irt) = match zi {
-                        Some((_, all_zero)) => {
-                            zi_mix(lp_irt, all_zero[p], log_pi, log_1m_pi)
-                        }
+                        Some((_, all_zero)) => zi_mix(lp_irt, all_zero[p], log_pi, log_1m_pi),
                         None => (lp_irt, 1.0),
                     };
                     lp_v[p * q_u + v] = lp_mix;
@@ -965,12 +1032,31 @@ fn e_step(
                         continue;
                     }
                     let lp = person_pass(
-                        p, v, tables, resp, factor_id, n_dims, n_items, grids, &mut l_buf,
+                        p,
+                        v,
+                        tables,
+                        resp,
+                        factor_id,
+                        n_dims,
+                        n_items,
+                        grids,
+                        &mut l_buf,
                         &mut log_zdx,
                     );
                     accumulate_person(
-                        p, v, w_outer, resp, factor_id, n_dims, n_items, grids, &l_buf,
-                        &log_zdx, lp, &mut estep, &mut post_buf,
+                        p,
+                        v,
+                        w_outer,
+                        resp,
+                        factor_id,
+                        n_dims,
+                        n_items,
+                        grids,
+                        &l_buf,
+                        &log_zdx,
+                        lp,
+                        &mut estep,
+                        &mut post_buf,
                     );
                 }
             }
@@ -978,7 +1064,6 @@ fn e_step(
     }
     estep
 }
-
 
 /// Crate-internal bridge for the Oakes SE module: posterior expected counts.
 pub(crate) struct EStepCounts {
@@ -1010,7 +1095,11 @@ pub(crate) fn e_step_pub(
     grids: &Grids,
 ) -> EStepCounts {
     let estep = e_step(tables, resp, factor_id, config, pop, ctx, grids, None);
-    EStepCounts { nbar: estep.nbar, rbar: estep.rbar, mbar: estep.mbar }
+    EStepCounts {
+        nbar: estep.nbar,
+        rbar: estep.rbar,
+        mbar: estep.mbar,
+    }
 }
 
 /// Expected complete-data log-likelihood contribution of one item (plus its L2
@@ -1112,8 +1201,7 @@ fn m_step_items(
         let d = factor_id[i];
         let mut zeta_i: Vec<f64> = zeta[i * latent_dim..(i + 1) * latent_dim].to_vec();
         let mut cur_q = item_q(
-            i, alpha[i], b[i], &zeta_i, tau, estep, ctx, grids, config, factor_id, penalty,
-            offset,
+            i, alpha[i], b[i], &zeta_i, tau, estep, ctx, grids, config, factor_id, penalty, offset,
         );
         for _ in 0..m_steps {
             // Analytic gradient of the expected complete-data objective, plus
@@ -1173,12 +1261,12 @@ fn m_step_items(
                         }
                         if uses_space {
                             for k in 0..latent_dim {
-                                let deta = match kind {
-                                    InteractionKind::Distance => {
-                                        gamma * (x_node[k] - zeta_i[k]) / dist
-                                    }
-                                    InteractionKind::Inner => x_node[k],
-                                    InteractionKind::None => 0.0,
+                                // model_exec_flags guarantees a spatial model uses either the
+                                // distance or inner-product interaction; None has uses_space=false.
+                                let deta = if kind == InteractionKind::Distance {
+                                    gamma * (x_node[k] - zeta_i[k]) / dist
+                                } else {
+                                    x_node[k]
                                 };
                                 g_zeta[k] += resid * deta;
                                 i_zeta[k] += info * deta * deta;
@@ -1214,13 +1302,17 @@ fn m_step_items(
             let mut accepted = false;
             for _ in 0..30 {
                 let cand_b = b[i] + step * d_b;
-                let cand_alpha = if free_alpha { alpha[i] + step * d_alpha } else { alpha[i] };
+                let cand_alpha = if free_alpha {
+                    alpha[i] + step * d_alpha
+                } else {
+                    alpha[i]
+                };
                 let cand_zeta: Vec<f64> = (0..latent_dim)
                     .map(|k| zeta_i[k] + step * d_zeta[k])
                     .collect();
                 let cand_q = item_q(
-                    i, cand_alpha, cand_b, &cand_zeta, tau, estep, ctx, grids, config,
-                    factor_id, penalty, offset,
+                    i, cand_alpha, cand_b, &cand_zeta, tau, estep, ctx, grids, config, factor_id,
+                    penalty, offset,
                 );
                 if cand_q > cur_q + 1e-4 * step * slope {
                     b[i] = cand_b;
@@ -1514,7 +1606,9 @@ fn pca_align(zeta: &mut [f64], xi: &mut [f64], n_items: usize, n_persons: usize,
     // Order columns by descending eigenvalue (diagonal of m).
     let mut order: Vec<usize> = (0..k).collect();
     order.sort_by(|&a2, &b2| {
-        m[b2 * k + b2].partial_cmp(&m[a2 * k + a2]).unwrap_or(std::cmp::Ordering::Equal)
+        m[b2 * k + b2]
+            .partial_cmp(&m[a2 * k + a2])
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let apply = |data: &mut [f64], n_rows: usize| {
         for row in 0..n_rows {
@@ -1581,12 +1675,11 @@ fn validate(
     }
     if matches!(mcfg.xi_rule, XiRuleKind::GaussHermite) && config.latent_dim > 3 {
         return Err(
-            "tensor Gauss-Hermite supports latent_dim <= 3; use xi_rule Halton/MonteCarlo"
-                .into(),
+            "tensor Gauss-Hermite supports latent_dim <= 3; use xi_rule Halton/MonteCarlo".into(),
         );
     }
-    if config.eps_distance <= 0.0 {
-        return Err("eps_distance must be positive".into());
+    if !config.eps_distance.is_finite() || config.eps_distance <= 0.0 {
+        return Err("eps_distance must be positive and finite".into());
     }
     let mut required_q = vec![mcfg.q_theta, mcfg.q_u];
     if matches!(mcfg.xi_rule, XiRuleKind::GaussHermite) {
@@ -1600,12 +1693,13 @@ fn validate(
             ));
         }
     }
-    if matches!(mcfg.xi_rule, XiRuleKind::Halton | XiRuleKind::MonteCarlo)
-        && mcfg.xi_points == 0
-    {
+    if matches!(mcfg.xi_rule, XiRuleKind::Halton | XiRuleKind::MonteCarlo) && mcfg.xi_points == 0 {
         return Err("xi_points must be >= 1 for the Halton/MonteCarlo rules".into());
     }
-    if y.iter().zip(observed).any(|(&v, &o)| o && v != 0.0 && v != 1.0) {
+    if y.iter()
+        .zip(observed)
+        .any(|(&v, &o)| o && v != 0.0 && v != 1.0)
+    {
         return Err("observed responses must be 0 or 1".into());
     }
     match pop {
@@ -1618,7 +1712,10 @@ fn validate(
                 return Err("group_id values must be in 0..n_groups-1".into());
             }
         }
-        PopulationSpec::Multilevel { cluster_id, n_clusters } => {
+        PopulationSpec::Multilevel {
+            cluster_id,
+            n_clusters,
+        } => {
             if cluster_id.len() != config.n_persons {
                 return Err("cluster_id length must match n_persons".into());
             }
@@ -1648,7 +1745,9 @@ pub fn fit_marginal(
     penalty: &PenaltyConfig,
     device: Device,
 ) -> Result<MarginalResult, String> {
-    fit_marginal_anchored(y, observed, factor_id, config, pop, mcfg, penalty, device, None)
+    fit_marginal_anchored(
+        y, observed, factor_id, config, pop, mcfg, penalty, device, None,
+    )
 }
 
 /// [`fit_marginal`] with optional fixed-item anchors (FIPC, Kim 2006).
@@ -1667,7 +1766,9 @@ pub fn fit_marginal_anchored(
     device: Device,
     anchors: Option<&Anchors>,
 ) -> Result<MarginalResult, String> {
-    fit_marginal_full(y, observed, factor_id, config, pop, mcfg, penalty, device, anchors, None)
+    fit_marginal_full(
+        y, observed, factor_id, config, pop, mcfg, penalty, device, anchors, None,
+    )
 }
 
 /// [`fit_marginal_anchored`] plus an optional context-varying item covariate.
@@ -1730,9 +1831,7 @@ pub fn fit_marginal_full(
         }
     }
     if matches!(pop, PopulationSpec::SingleFree) && anchors.is_none() {
-        return Err(
-            "PopulationSpec::SingleFree (FIPC) requires anchors for identification".into(),
-        );
+        return Err("PopulationSpec::SingleFree (FIPC) requires anchors for identification".into());
     }
     let n_ctx_expected = match pop {
         PopulationSpec::Multigroup { n_groups, .. } => *n_groups,
@@ -1758,19 +1857,25 @@ pub fn fit_marginal_full(
         }
     }
     let (_, uses_space) = model_exec_flags(config.model_type);
-    let (n_persons, n_items, n_dims, latent_dim) =
-        (config.n_persons, config.n_items, config.n_dims, config.latent_dim);
+    let (n_persons, n_items, n_dims, latent_dim) = (
+        config.n_persons,
+        config.n_items,
+        config.n_dims,
+        config.latent_dim,
+    );
 
     let (t_nodes, t_weights) = gh_rule(mcfg.q_theta).expect("validated");
     let (x_grid, x_logw) = if uses_space {
         let rule = match mcfg.xi_rule {
             XiRuleKind::GaussHermite => XiRule::GaussHermite { q_xi: mcfg.q_xi },
-            XiRuleKind::Halton => {
-                XiRule::Halton { n: mcfg.xi_points, shift_seed: mcfg.xi_seed }
-            }
-            XiRuleKind::MonteCarlo => {
-                XiRule::MonteCarlo { n: mcfg.xi_points, seed: mcfg.xi_seed.max(1) }
-            }
+            XiRuleKind::Halton => XiRule::Halton {
+                n: mcfg.xi_points,
+                shift_seed: mcfg.xi_seed,
+            },
+            XiRuleKind::MonteCarlo => XiRule::MonteCarlo {
+                n: mcfg.xi_points,
+                seed: mcfg.xi_seed.max(1),
+            },
         };
         let nodes = build_xi_nodes(rule, latent_dim)?;
         (nodes.grid, nodes.logw)
@@ -1799,7 +1904,11 @@ pub fn fit_marginal_full(
                 den += 1.0;
             }
         }
-        let prop: f64 = if den > 0.0 { (num / den).clamp(0.02, 0.98) } else { 0.5 };
+        let prop: f64 = if den > 0.0 {
+            (num / den).clamp(0.02, 0.98)
+        } else {
+            0.5
+        };
         b[i] = (prop / (1.0 - prop)).ln();
     }
     let mut zeta = vec![0.0_f64; n_items * latent_dim];
@@ -1817,8 +1926,7 @@ pub fn fit_marginal_full(
                 zeta[i * latent_dim + 1] = mcfg.init_zeta_radius * angle.sin();
             }
             if latent_dim >= 3 {
-                zeta[i * latent_dim + 2] =
-                    mcfg.init_zeta_radius * (2.0 * angle).cos() * 0.5;
+                zeta[i * latent_dim + 2] = mcfg.init_zeta_radius * (2.0 * angle).cos() * 0.5;
             }
         }
     }
@@ -1848,7 +1956,11 @@ pub fn fit_marginal_full(
             tau = t;
         }
     }
-    let mut sigma_u = if n_clusters > 0 { mcfg.init_sigma_u } else { 0.0 };
+    let mut sigma_u = if n_clusters > 0 {
+        mcfg.init_sigma_u
+    } else {
+        0.0
+    };
 
     let resp = index_responses(y, observed, n_persons, n_items);
     // Zero inflation: a person is a structural-zero candidate when every
@@ -1868,14 +1980,26 @@ pub fn fit_marginal_full(
 
     for _ in 0..mcfg.max_iter {
         let ctx = build_contexts(pop, &mu, &sigma, sigma_u, n_dims, mcfg.q_u);
-        let offsets: Option<Vec<f64>> =
-            covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
+        let offsets: Option<Vec<f64>> = covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
         let tables = build_tables_offset(
-            &alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids, offsets.as_deref(),
+            &alpha,
+            &b,
+            &zeta,
+            tau,
+            config,
+            factor_id,
+            &ctx,
+            &grids,
+            offsets.as_deref(),
         );
-        let zi = if mcfg.zero_inflation { Some((pi_zero, all_zero.as_slice())) } else { None };
-        let estep =
-            e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
+        let zi = if mcfg.zero_inflation {
+            Some((pi_zero, all_zero.as_slice()))
+        } else {
+            None
+        };
+        let estep = e_step_device(
+            device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi,
+        );
         loglik_trace.push(estep.loglik);
         if mcfg.zero_inflation {
             zero_responsibility = estep.zi_resp.clone();
@@ -1893,21 +2017,39 @@ pub fn fit_marginal_full(
         }
 
         if mcfg.zero_inflation {
-            let mean_resp =
-                estep.zi_resp.iter().sum::<f64>() / n_persons.max(1) as f64;
+            let mean_resp = estep.zi_resp.iter().sum::<f64>() / n_persons.max(1) as f64;
             pi_zero = mean_resp.clamp(0.0, 0.999);
         }
 
         // M-step: items, then tau, then population parameters.
         m_step_items(
-            &mut alpha, &mut b, &mut zeta, tau, &estep, &ctx, &grids, config, factor_id,
-            penalty, mcfg.m_steps, anchors.map(|a| a.fixed.as_slice()),
+            &mut alpha,
+            &mut b,
+            &mut zeta,
+            tau,
+            &estep,
+            &ctx,
+            &grids,
+            config,
+            factor_id,
+            penalty,
+            mcfg.m_steps,
+            anchors.map(|a| a.fixed.as_slice()),
             offsets.as_deref(),
         );
         if anchors.and_then(|a| a.tau).is_none() {
             m_step_tau(
-                &alpha, &b, &zeta, &mut tau, &estep, &ctx, &grids, config, factor_id,
-                penalty, offsets.as_deref(),
+                &alpha,
+                &b,
+                &zeta,
+                &mut tau,
+                &estep,
+                &ctx,
+                &grids,
+                config,
+                factor_id,
+                penalty,
+                offsets.as_deref(),
             );
         }
         if let Some(cov) = covariate {
@@ -1920,7 +2062,11 @@ pub fn fit_marginal_full(
             PopulationSpec::Single => {}
             PopulationSpec::SingleFree | PopulationSpec::Multigroup { .. } => {
                 let cell = grids.q_t * grids.n_x;
-                let g_start = if matches!(pop, PopulationSpec::SingleFree) { 0 } else { 1 };
+                let g_start = if matches!(pop, PopulationSpec::SingleFree) {
+                    0
+                } else {
+                    1
+                };
                 for g in g_start..n_groups {
                     for d in 0..n_dims {
                         let (shift, scale) = (mu[g * n_dims + d], sigma[g * n_dims + d]);
@@ -1944,11 +2090,10 @@ pub fn fit_marginal_full(
                 }
             }
             PopulationSpec::Multilevel { .. } => {
-                if n_clusters > 0 {
-                    let e_v2 = estep.sum_e_v2 / n_clusters as f64;
-                    // theta = sigma_u * v + e; EM update of the intercept scale.
-                    sigma_u = (sigma_u * sigma_u * e_v2).sqrt().clamp(0.0, 10.0);
-                }
+                // validate() guarantees a positive cluster count for this variant.
+                let e_v2 = estep.sum_e_v2 / n_clusters as f64;
+                // theta = sigma_u * v + e; EM update of the intercept scale.
+                sigma_u = (sigma_u * sigma_u * e_v2).sqrt().clamp(0.0, 10.0);
             }
         }
         n_iter += 1;
@@ -1959,12 +2104,25 @@ pub fn fit_marginal_full(
     let final_offsets: Option<Vec<f64>> =
         covariate.map(|c| c.w.iter().map(|&w| delta * w).collect());
     let tables = build_tables_offset(
-        &alpha, &b, &zeta, tau, config, factor_id, &ctx, &grids, final_offsets.as_deref(),
+        &alpha,
+        &b,
+        &zeta,
+        tau,
+        config,
+        factor_id,
+        &ctx,
+        &grids,
+        final_offsets.as_deref(),
     );
     if !converged {
-        let zi = if mcfg.zero_inflation { Some((pi_zero, all_zero.as_slice())) } else { None };
-        let final_estep =
-            e_step_device(device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi);
+        let zi = if mcfg.zero_inflation {
+            Some((pi_zero, all_zero.as_slice()))
+        } else {
+            None
+        };
+        let final_estep = e_step_device(
+            device, &tables, &resp, factor_id, config, pop, &ctx, &grids, zi,
+        );
         loglik_trace.push(final_estep.loglik);
         let n = loglik_trace.len();
         if n > 1 && (loglik_trace[n - 1] - loglik_trace[n - 2]).abs() < mcfg.tol {
@@ -1984,7 +2142,10 @@ pub fn fit_marginal_full(
 
     // Cluster posteriors for the final parameters (multilevel).
     let cluster_post: Vec<f64> = match pop {
-        PopulationSpec::Multilevel { cluster_id, n_clusters } => {
+        PopulationSpec::Multilevel {
+            cluster_id,
+            n_clusters,
+        } => {
             let q_u = ctx.n_ctx;
             let mut log_cluster = vec![0.0_f64; n_clusters * q_u];
             for c in 0..*n_clusters {
@@ -1996,7 +2157,15 @@ pub fn fit_marginal_full(
                 let c = cluster_id[p];
                 for v in 0..q_u {
                     log_cluster[c * q_u + v] += person_pass(
-                        p, v, &tables, &resp, factor_id, n_dims, n_items, &grids, &mut l_buf,
+                        p,
+                        v,
+                        &tables,
+                        &resp,
+                        factor_id,
+                        n_dims,
+                        n_items,
+                        &grids,
+                        &mut l_buf,
                         &mut log_zdx,
                     );
                 }
@@ -2023,7 +2192,10 @@ pub fn fit_marginal_full(
             PopulationSpec::Multilevel { cluster_id, .. } => {
                 let c = cluster_id[p];
                 let q_u = ctx.n_ctx;
-                ((0..q_u).collect(), cluster_post[c * q_u..(c + 1) * q_u].to_vec())
+                (
+                    (0..q_u).collect(),
+                    cluster_post[c * q_u..(c + 1) * q_u].to_vec(),
+                )
             }
         };
         for (&s, &w_outer) in contexts.iter().zip(&weights) {
@@ -2031,7 +2203,15 @@ pub fn fit_marginal_full(
                 continue;
             }
             let lp = person_pass(
-                p, s, &tables, &resp, factor_id, n_dims, n_items, &grids, &mut l_buf,
+                p,
+                s,
+                &tables,
+                &resp,
+                factor_id,
+                n_dims,
+                n_items,
+                &grids,
+                &mut l_buf,
                 &mut log_zdx,
             );
             for x in 0..grids.n_x {
@@ -2044,8 +2224,7 @@ pub fn fit_marginal_full(
                     xi_eap[p * latent_dim + k] += px * grids.x_grid[x * latent_dim + k];
                 }
                 for d in 0..n_dims {
-                    let (shift, scale) =
-                        (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
+                    let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
                     for (t, &node_t) in grids.t_nodes.iter().enumerate() {
                         let theta = shift + scale * node_t;
                         let pt = (grids.t_logw[t] + l_buf[d * cell + t * grids.n_x + x]
@@ -2094,160 +2273,14 @@ pub fn fit_marginal_full(
     })
 }
 
+#[cfg(test)]
+#[path = "../../../tests/unit/marginal_xirule_parse_tests.rs"]
+mod xirule_parse_tests;
 
 #[cfg(test)]
-mod xirule_parse_tests {
-    use super::XiRuleKind;
-
-    #[test]
-    fn parse_covers_all_arms() {
-        assert_eq!(XiRuleKind::parse("gh"), Some(XiRuleKind::GaussHermite));
-        assert_eq!(XiRuleKind::parse("gauss-hermite"), Some(XiRuleKind::GaussHermite));
-        assert_eq!(XiRuleKind::parse("qmc"), Some(XiRuleKind::Halton));
-        assert_eq!(XiRuleKind::parse("halton"), Some(XiRuleKind::Halton));
-        assert_eq!(XiRuleKind::parse("mc"), Some(XiRuleKind::MonteCarlo));
-        assert_eq!(XiRuleKind::parse("monte-carlo"), Some(XiRuleKind::MonteCarlo));
-        assert_eq!(XiRuleKind::parse("nope"), None);
-    }
-}
+#[path = "../../../tests/unit/marginal_covariate_interaction_tests.rs"]
+mod covariate_interaction_tests;
 
 #[cfg(test)]
-mod covariate_interaction_tests {
-    use super::{m_step_delta, Contexts, EStep, Grids};
-    use crate::{ModelConfig, ModelType, PenaltyConfig};
-
-    #[test]
-    fn bifactor_delta_step_uses_inner_product_predictor() {
-        let mut delta = 0.0;
-        let config = ModelConfig {
-            n_persons: 100,
-            n_items: 1,
-            n_dims: 1,
-            latent_dim: 1,
-            model_type: ModelType::Bifac2plm,
-            eps_distance: 1e-8,
-        };
-        let estep = EStep {
-            nbar: vec![100.0],
-            rbar: vec![50.0],
-            mbar: vec![0.0],
-            loglik: 0.0,
-            zi_resp: Vec::new(),
-            sum_e_v2: 0.0,
-            cluster_post: Vec::new(),
-        };
-        let ctx = Contexts {
-            n_ctx: 1,
-            shift: vec![0.0],
-            scale: vec![1.0],
-            u_nodes: Vec::new(),
-            u_logw: Vec::new(),
-        };
-        let grids = Grids {
-            t_nodes: vec![0.0],
-            t_logw: vec![0.0],
-            x_grid: vec![2.0],
-            x_logw: vec![0.0],
-            q_t: 1,
-            n_x: 1,
-        };
-
-        m_step_delta(
-            &[0.0],
-            &[0.0],
-            &[2.0],
-            -30.0,
-            &mut delta,
-            &[1.0],
-            &estep,
-            &ctx,
-            &grids,
-            &config,
-            &[0],
-            &PenaltyConfig::default(),
-        );
-
-        assert!(
-            delta < -1.0,
-            "the inner-product eta is 4 at delta=0, so a 50% success rate must move delta negative; got {delta}"
-        );
-    }
-}
-
-#[cfg(test)]
-mod em_endpoint_tests {
-    use super::{fit_marginal, fit_marginal_anchored, Anchors, MarginalConfig, PopulationSpec};
-    use crate::{Device, ModelConfig, ModelType, PenaltyConfig};
-
-    #[test]
-    fn trace_endpoint_matches_returned_parameters_after_max_iter() {
-        let n_persons = 8;
-        let n_items = 3;
-        let y = vec![
-            0.0, 0.0, 0.0, // person 0
-            0.0, 0.0, 1.0, // person 1
-            0.0, 1.0, 0.0, // person 2
-            0.0, 1.0, 1.0, // person 3
-            1.0, 0.0, 0.0, // person 4
-            1.0, 0.0, 1.0, // person 5
-            1.0, 1.0, 0.0, // person 6
-            1.0, 1.0, 1.0, // person 7
-        ];
-        let observed = vec![true; n_persons * n_items];
-        let factor_id = vec![0; n_items];
-        let config = ModelConfig {
-            n_persons,
-            n_items,
-            n_dims: 1,
-            latent_dim: 1,
-            model_type: ModelType::Mirt,
-            eps_distance: 1e-8,
-        };
-        let mcfg = MarginalConfig {
-            q_theta: 7,
-            q_xi: 7,
-            q_u: 7,
-            max_iter: 1,
-            m_steps: 2,
-            ..MarginalConfig::default()
-        };
-        let result = fit_marginal(
-            &y,
-            &observed,
-            &factor_id,
-            &config,
-            &PopulationSpec::Single,
-            &mcfg,
-            &PenaltyConfig::default(),
-            Device::Cpu,
-        )
-        .unwrap();
-        let anchors = Anchors {
-            fixed: vec![true; n_items],
-            alpha: result.alpha.clone(),
-            b: result.b.clone(),
-            zeta: result.zeta.clone(),
-            tau: Some(result.tau),
-        };
-        let reevaluated = fit_marginal_anchored(
-            &y,
-            &observed,
-            &factor_id,
-            &config,
-            &PopulationSpec::Single,
-            &mcfg,
-            &PenaltyConfig::default(),
-            Device::Cpu,
-            Some(&anchors),
-        )
-        .unwrap();
-
-        assert_eq!(result.n_iter, 1);
-        assert!(
-            (result.loglik_trace.last().unwrap() - reevaluated.loglik_trace[0]).abs() < 1e-10,
-            "trace endpoint must be the likelihood of the returned parameters: {:?} vs {:?}",
-            result.loglik_trace,
-            reevaluated.loglik_trace
-        );
-    }
-}
+#[path = "../../../tests/unit/marginal_em_endpoint_tests.rs"]
+mod em_endpoint_tests;

@@ -132,14 +132,22 @@ fn cdf(g: &[f64]) -> Vec<f64> {
 /// Population mean and standard deviation of a score distribution `g`.
 fn moments(g: &[f64]) -> (f64, f64) {
     let mean: f64 = g.iter().enumerate().map(|(x, &p)| x as f64 * p).sum();
-    let var: f64 = g.iter().enumerate().map(|(x, &p)| (x as f64 - mean).powi(2) * p).sum();
+    let var: f64 = g
+        .iter()
+        .enumerate()
+        .map(|(x, &p)| (x as f64 - mean).powi(2) * p)
+        .sum();
     (mean, var.max(0.0).sqrt())
 }
 
 /// Mean/SD of the equated scores `y_eq` weighted by form X's distribution `gx`.
 fn weighted_moments(y_eq: &[f64], gx: &[f64]) -> (f64, f64) {
     let mean: f64 = y_eq.iter().zip(gx).map(|(&y, &w)| y * w).sum();
-    let var: f64 = y_eq.iter().zip(gx).map(|(&y, &w)| (y - mean).powi(2) * w).sum();
+    let var: f64 = y_eq
+        .iter()
+        .zip(gx)
+        .map(|(&y, &w)| (y - mean).powi(2) * w)
+        .sum();
     (mean, var.max(0.0).sqrt())
 }
 
@@ -181,10 +189,7 @@ fn perc_rank_inv(f: &[f64], k: usize, p_star: f64) -> f64 {
     }
     let f_lo = if x_u == 0 { 0.0 } else { f[x_u - 1] };
     let g_u = f[x_u] - f_lo;
-    if g_u <= 0.0 {
-        // unreachable when F(x_u) > pp >= F(x_u-1) (implies g_u > 0); defensive
-        return x_u as f64 - 0.5;
-    }
+    // The selected cell satisfies F(x_u) > pp >= F(x_u-1), hence g_u > 0.
     (pp - f_lo) / g_u + (x_u as f64 - 0.5)
 }
 
@@ -255,7 +260,11 @@ pub fn equate_eg(
             }
             let a = sigma_y / sigma_x;
             let b = mu_y - a * mu_x;
-            ((0..=k_x).map(|x| a * x as f64 + b).collect::<Vec<_>>(), a, b)
+            (
+                (0..=k_x).map(|x| a * x as f64 + b).collect::<Vec<_>>(),
+                a,
+                b,
+            )
         }
         EquateMethod::Equipercentile => (equipercentile(&gx, &gy, k_x, k_y), f64::NAN, f64::NAN),
     };
@@ -490,7 +499,12 @@ fn paired_moments(a: &[f64], b: &[f64]) -> (f64, f64, f64, f64, f64) {
     let mb = b.iter().sum::<f64>() / n;
     let va = a.iter().map(|&x| (x - ma).powi(2)).sum::<f64>() / n;
     let vb = b.iter().map(|&x| (x - mb).powi(2)).sum::<f64>() / n;
-    let cov = a.iter().zip(b).map(|(&x, &y)| (x - ma) * (y - mb)).sum::<f64>() / n;
+    let cov = a
+        .iter()
+        .zip(b)
+        .map(|(&x, &y)| (x - ma) * (y - mb))
+        .sum::<f64>()
+        / n;
     (ma, va, mb, vb, cov)
 }
 
@@ -538,7 +552,13 @@ pub fn equate_neat_linear(
     if !(0.0..=1.0).contains(&w1) {
         return Err("w1 must be in [0, 1]".into());
     }
-    if x_total.iter().chain(x_anchor).chain(y_total).chain(y_anchor).any(|v| !v.is_finite()) {
+    if x_total
+        .iter()
+        .chain(x_anchor)
+        .chain(y_total)
+        .chain(y_anchor)
+        .any(|v| !v.is_finite())
+    {
         return Err("scores must be finite".into());
     }
     let (m1x, v1x, m1v, v1v, cov1) = paired_moments(x_total, x_anchor);
@@ -550,13 +570,14 @@ pub fn equate_neat_linear(
         NeatLinearMethod::Tucker => (cov1 / v1v, cov2 / v2v),
         NeatLinearMethod::LevineObserved => {
             if cov1 <= 0.0 || cov2 <= 0.0 {
-                return Err("Levine equating needs a positive total-anchor covariance in both groups".into());
+                return Err(
+                    "Levine equating needs a positive total-anchor covariance in both groups"
+                        .into(),
+                );
             }
             match anchor_kind {
                 AnchorKind::Internal => (v1x / cov1, v2y / cov2),
-                AnchorKind::External => {
-                    ((v1x + cov1) / (v1v + cov1), (v2y + cov2) / (v2v + cov2))
-                }
+                AnchorKind::External => ((v1x + cov1) / (v1v + cov1), (v2y + cov2) / (v2v + cov2)),
             }
         }
     };
@@ -665,7 +686,9 @@ pub fn bootstrap_see(
     let mut reps = vec![0.0_f64; n_boot * ncol];
     let mut st = seed.max(1);
     let mut u = || {
-        st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        st = st
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((st >> 11) as f64) / ((1u64 << 53) as f64)
     };
     let mut xb = vec![0.0_f64; nx];
@@ -727,7 +750,10 @@ pub fn analytic_see(
         return Err("ci_level must be in (0, 1)".into());
     }
     if method == EquateMethod::Equipercentile {
-        return Err("analytic_see supports only Mean and Linear; use bootstrap_see for equipercentile".into());
+        return Err(
+            "analytic_see supports only Mean and Linear; use bootstrap_see for equipercentile"
+                .into(),
+        );
     }
     let res = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
     let (nx, ny) = (res.n_x as f64, res.n_y as f64);
@@ -740,13 +766,12 @@ pub fn analytic_see(
     let mut ci_lo = vec![0.0_f64; k_x + 1];
     let mut ci_hi = vec![0.0_f64; k_x + 1];
     for x in 0..=k_x {
-        let var = match method {
-            EquateMethod::Mean => sx * sx / nx + sy * sy / ny,
-            EquateMethod::Linear => {
-                let z = (x as f64 - res.mu_x) / sx;
-                sy * sy * (1.0 + z * z / 2.0) * (1.0 / nx + 1.0 / ny)
-            }
-            EquateMethod::Equipercentile => unreachable!(),
+        let var = if method == EquateMethod::Mean {
+            sx * sx / nx + sy * sy / ny
+        } else {
+            // Equipercentile was rejected above, so the remaining method is Linear.
+            let z = (x as f64 - res.mu_x) / sx;
+            sy * sy * (1.0 + z * z / 2.0) * (1.0 / nx + 1.0 / ny)
         };
         se[x] = var.sqrt();
         ci_lo[x] = res.y_equivalents[x] - z_c * se[x];
@@ -795,9 +820,18 @@ pub struct LoglinearFit {
 fn ortho_poly_design(k: usize, degree: usize) -> Vec<Vec<f64>> {
     let n = k + 1;
     let t = degree + 1;
-    let u: Vec<f64> =
-        (0..n).map(|x| if k == 0 { 0.0 } else { 2.0 * x as f64 / k as f64 - 1.0 }).collect();
-    let mut cols: Vec<Vec<f64>> = (0..t).map(|j| u.iter().map(|&ui| ui.powi(j as i32)).collect()).collect();
+    let u: Vec<f64> = (0..n)
+        .map(|x| {
+            if k == 0 {
+                0.0
+            } else {
+                2.0 * x as f64 / k as f64 - 1.0
+            }
+        })
+        .collect();
+    let mut cols: Vec<Vec<f64>> = (0..t)
+        .map(|j| u.iter().map(|&ui| ui.powi(j as i32)).collect())
+        .collect();
     for j in 0..t {
         for i in 0..j {
             let dot: f64 = (0..n).map(|r| cols[j][r] * cols[i][r]).sum();
@@ -812,7 +846,9 @@ fn ortho_poly_design(k: usize, degree: usize) -> Vec<Vec<f64>> {
             }
         }
     }
-    (0..n).map(|r| (0..t).map(|j| cols[j][r]).collect()).collect()
+    (0..n)
+        .map(|r| (0..t).map(|j| cols[j][r]).collect())
+        .collect()
 }
 
 /// Univariate log-linear presmoothing of a score-frequency distribution (Holland &
@@ -847,7 +883,12 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
     let b = ortho_poly_design(k, degree);
     let eta_of = |beta: &[f64], x: usize| -> f64 { (0..t).map(|j| b[x][j] * beta[j]).sum() };
     let ll = |beta: &[f64]| -> f64 {
-        (0..n_cells).map(|x| { let e = eta_of(beta, x); counts[x] * e - e.exp() }).sum()
+        (0..n_cells)
+            .map(|x| {
+                let e = eta_of(beta, x);
+                counts[x] * e - e.exp()
+            })
+            .sum()
     };
     let mut beta = vec![0.0_f64; t];
     let mut converged = false;
@@ -862,8 +903,9 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
     for it in 0..MAX_IT {
         iters = it + 1;
         let m: Vec<f64> = (0..n_cells).map(|x| eta_of(&beta, x).exp()).collect();
-        let grad: Vec<f64> =
-            (0..t).map(|j| (0..n_cells).map(|x| b[x][j] * (counts[x] - m[x])).sum()).collect();
+        let grad: Vec<f64> = (0..t)
+            .map(|j| (0..n_cells).map(|x| b[x][j] * (counts[x] - m[x])).sum())
+            .collect();
         let gmax = grad.iter().fold(0.0_f64, |a, &g| a.max(g.abs()));
         if gmax < gtol {
             converged = true;
@@ -925,7 +967,10 @@ pub fn loglinear_smooth(counts: &[f64], degree: usize) -> Result<LoglinearFit, S
     let moments: Vec<f64> = (1..=degree)
         .map(|j| {
             (0..n_cells)
-                .map(|x| { let u = if k == 0 { 0.0 } else { x as f64 / k as f64 }; u.powi(j as i32) * probs[x] })
+                .map(|x| {
+                    let u = if k == 0 { 0.0 } else { x as f64 / k as f64 };
+                    u.powi(j as i32) * probs[x]
+                })
                 .sum()
         })
         .collect();
@@ -988,12 +1033,18 @@ fn kernel_a(sig2: f64, h: f64) -> f64 {
 fn kernel_cdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
     let a = kernel_a(sig2, h);
     let ah = a * h;
-    r.iter().enumerate().map(|(j, &rj)| rj * norm_cdf((x - a * j as f64 - (1.0 - a) * mu) / ah)).sum()
+    r.iter()
+        .enumerate()
+        .map(|(j, &rj)| rj * norm_cdf((x - a * j as f64 - (1.0 - a) * mu) / ah))
+        .sum()
 }
 fn kernel_pdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
     let a = kernel_a(sig2, h);
     let ah = a * h;
-    r.iter().enumerate().map(|(j, &rj)| rj * norm_pdf((x - a * j as f64 - (1.0 - a) * mu) / ah) / ah).sum()
+    r.iter()
+        .enumerate()
+        .map(|(j, &rj)| rj * norm_pdf((x - a * j as f64 - (1.0 - a) * mu) / ah) / ah)
+        .sum()
 }
 fn kernel_dpdf(r: &[f64], mu: f64, sig2: f64, h: f64, x: f64) -> f64 {
     let a = kernel_a(sig2, h);
@@ -1033,17 +1084,26 @@ fn kernel_inv(r: &[f64], mu: f64, sig2: f64, h: f64, p: f64, k: usize) -> f64 {
             lo = x;
         }
         let d = kernel_pdf(r, mu, sig2, h, x);
-        let mut xn = if d > 1e-12 { x - fx / d } else { 0.5 * (lo + hi) };
-        if !(xn > lo && xn < hi) {
-            xn = 0.5 * (lo + hi);
-        }
-        x = xn;
+        let xn = if d > 1e-12 { x - fx / d } else { f64::NAN };
+        x = if xn > lo && xn < hi {
+            xn
+        } else {
+            0.5 * (lo + hi)
+        };
     }
     x
 }
 fn kernel_equate(
-    rx: &[f64], ry: &[f64], mu_x: f64, s2x: f64, mu_y: f64, s2y: f64, k_x: usize, k_y: usize,
-    h_x: f64, h_y: f64,
+    rx: &[f64],
+    ry: &[f64],
+    mu_x: f64,
+    s2x: f64,
+    mu_y: f64,
+    s2y: f64,
+    k_x: usize,
+    k_y: usize,
+    h_x: f64,
+    h_y: f64,
 ) -> Vec<f64> {
     (0..=k_x)
         .map(|x| {
@@ -1069,6 +1129,13 @@ fn kernel_penalty(r: &[f64], mu: f64, sig2: f64, h: f64, k: usize) -> f64 {
     }
     pen
 }
+fn expanded_upper_bandwidth(best_h: f64, upper: f64) -> f64 {
+    if best_h >= upper - 1e-9 {
+        2.0 * upper
+    } else {
+        upper
+    }
+}
 /// Penalty-optimal bandwidth: coarse grid to bracket the (non-smooth) valley
 /// indicator, then golden-section refinement to grid resolution (heuristic — any
 /// `h` preserves the mean/variance, so this only tunes smoothing, not validity).
@@ -1089,9 +1156,7 @@ fn optimal_bandwidth(r: &[f64], mu: f64, sig2: f64, k: usize) -> f64 {
     if best_h <= lo + 1e-9 {
         lo = 0.02;
     }
-    if best_h >= hi - 1e-9 {
-        hi = 6.0;
-    }
+    hi = expanded_upper_bandwidth(best_h, hi);
     let cell = (hi - lo) / n_grid as f64;
     let mut a = (best_h - cell).max(lo);
     let mut b = (best_h + cell).min(hi);
@@ -1143,11 +1208,27 @@ fn density(scores: &[f64], k: usize, smooth: Option<usize>) -> Result<Vec<f64>, 
                     fit.gradient_tolerance
                 ));
             }
-            if fit.probs.iter().any(|p| !p.is_finite()) {
-                return Err("log-linear presmoothing returned non-finite probabilities".into());
-            }
+            // A finite-input fit can only be marked converged after a finite
+            // gradient or log-likelihood stopping check; its normalized
+            // probabilities are therefore finite here.
             Ok(fit.probs)
         }
+    }
+}
+
+fn validate_optional_bandwidth(value: Option<f64>, name: &str) -> Result<(), String> {
+    match value {
+        Some(value) if !value.is_finite() || value <= 0.0 => {
+            Err(format!("{name} must be positive and finite"))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn bandwidth_or_optimal(value: Option<f64>, r: &[f64], mu: f64, sig2: f64, k: usize) -> f64 {
+    match value {
+        Some(value) => value,
+        None => optimal_bandwidth(r, mu, sig2, k),
     }
 }
 
@@ -1181,20 +1262,23 @@ pub fn equate_eg_ext(
         // the uniform kernel ignores bandwidth entirely, so it is not validated here
         Continuization::Uniform => (equipercentile(&gx, &gy, k_x, k_y), f64::NAN, f64::NAN),
         Continuization::Gaussian => {
-            for (h, nm) in [(opts.bandwidth_x, "bandwidth_x"), (opts.bandwidth_y, "bandwidth_y")] {
-                if let Some(hv) = h {
-                    if !hv.is_finite() || hv <= 0.0 {
-                        return Err(format!("{nm} must be positive and finite"));
-                    }
-                }
+            for (h, nm) in [
+                (opts.bandwidth_x, "bandwidth_x"),
+                (opts.bandwidth_y, "bandwidth_y"),
+            ] {
+                validate_optional_bandwidth(h, nm)?;
             }
             let (s2x, s2y) = (sigma_x * sigma_x, sigma_y * sigma_y);
             if s2x <= 0.0 || s2y <= 0.0 {
                 return Err("gaussian kernel equating needs a positive SD on both forms".into());
             }
-            let hx = opts.bandwidth_x.unwrap_or_else(|| optimal_bandwidth(&gx, mu_x, s2x, k_x));
-            let hy = opts.bandwidth_y.unwrap_or_else(|| optimal_bandwidth(&gy, mu_y, s2y, k_y));
-            (kernel_equate(&gx, &gy, mu_x, s2x, mu_y, s2y, k_x, k_y, hx, hy), hx, hy)
+            let hx = bandwidth_or_optimal(opts.bandwidth_x, &gx, mu_x, s2x, k_x);
+            let hy = bandwidth_or_optimal(opts.bandwidth_y, &gy, mu_y, s2y, k_y);
+            (
+                kernel_equate(&gx, &gy, mu_x, s2x, mu_y, s2y, k_x, k_y, hx, hy),
+                hx,
+                hy,
+            )
         }
     };
     let (mu_eq, sigma_eq) = weighted_moments(&y_eq, &gx);
@@ -1217,751 +1301,5 @@ pub fn equate_eg_ext(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Small LCG + Box-Muller for deterministic test data.
-    fn lcg(seed: u64) -> impl FnMut() -> f64 {
-        let mut st = seed.max(1);
-        move || {
-            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((st >> 11) as f64) / ((1u64 << 53) as f64)
-        }
-    }
-    fn normal(u: &mut impl FnMut() -> f64) -> f64 {
-        let u1 = u().max(1e-12);
-        let u2 = u();
-        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-    }
-
-    // R1: equipercentile self-equating is the exact identity at every integer
-    // score with positive frequency (the tightest correctness anchor).
-    #[test]
-    fn equate_self_is_identity() {
-        let mut u = lcg(11);
-        let k = 40usize;
-        // a spread of scores covering the interior, all cells populated
-        let scores: Vec<f64> =
-            (0..4000).map(|_| (8.0 + 24.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
-        let g = rel_freq(&scores, k).unwrap();
-        let res = equate_eg(&scores, &scores, k, k, EquateMethod::Equipercentile).unwrap();
-        let mut maxdev = 0.0_f64;
-        for x in 0..=k {
-            if g[x] > 0.0 {
-                maxdev = maxdev.max((res.y_equivalents[x] - x as f64).abs());
-            }
-        }
-        assert!(maxdev < 1e-9, "self-equate must be identity, maxdev={maxdev}");
-        // includes x=0 whenever it has mass (the low-boundary interpolation)
-        assert!(g[0] == 0.0 || (res.y_equivalents[0]).abs() < 1e-9);
-    }
-
-    // R2(a): closed-form moment methods recover the exact generating transform.
-    #[test]
-    fn equate_mean_linear_recover_transform() {
-        let mut u = lcg(7);
-        let k_x = 30usize;
-        let x_scores: Vec<f64> =
-            (0..5000).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, k_x as f64)).collect();
-        // mean: Y = X + 5 exactly
-        let c = 5.0;
-        let y_mean: Vec<f64> = x_scores.iter().map(|&x| x + c).collect();
-        let rm = equate_eg(&x_scores, &y_mean, k_x, k_x + 5, EquateMethod::Mean).unwrap();
-        assert!((rm.intercept - c).abs() < 1e-9 && (rm.slope - 1.0).abs() < 1e-12);
-        assert!(rm.y_equivalents.iter().enumerate().all(|(x, &y)| (y - (x as f64 + c)).abs() < 1e-9));
-        // linear: Y = 2*X + 3 exactly (integer affine, positive slope)
-        let (a, b) = (2.0_f64, 3.0_f64);
-        let k_y = (a * k_x as f64 + b) as usize;
-        let y_lin: Vec<f64> = x_scores.iter().map(|&x| a * x + b).collect();
-        let rl = equate_eg(&x_scores, &y_lin, k_x, k_y, EquateMethod::Linear).unwrap();
-        assert!((rl.slope - a).abs() < 1e-9, "slope {} != {a}", rl.slope);
-        assert!((rl.intercept - b).abs() < 1e-9, "intercept {} != {b}", rl.intercept);
-        assert!(rl.y_equivalents.iter().enumerate().all(|(x, &y)| (y - (a * x as f64 + b)).abs() < 1e-9));
-    }
-
-    // R3: with EQUAL anchor distributions (h_V1 = h_V2) and genuinely different X
-    // vs Y forms, both NEAT methods collapse to EG equipercentile of X onto Y.
-    // (Equal anchor marginals make the anchor cancel in chaining, and make the FE
-    // synthetic density equal each group's own marginal.)
-    #[test]
-    fn neat_collapses_to_eg_under_equal_anchors() {
-        let mut u = lcg(3);
-        let n = 6000usize;
-        let (k_x, k_y, k_v) = (30usize, 40usize, 15usize);
-        // identical anchor score vector for both populations => h_V1 == h_V2 exactly
-        let anchor: Vec<f64> =
-            (0..n).map(|_| (7.0 + 3.0 * normal(&mut u)).round().clamp(0.0, k_v as f64)).collect();
-        // different X and Y forms, correlated with the anchor but not equal to it
-        let x_total: Vec<f64> = (0..n)
-            .map(|i| (anchor[i] * 1.4 + 4.0 + 4.0 * normal(&mut u)).round().clamp(0.0, k_x as f64))
-            .collect();
-        let y_total: Vec<f64> = (0..n)
-            .map(|i| (anchor[i] * 2.0 + 6.0 + 5.0 * normal(&mut u)).round().clamp(0.0, k_y as f64))
-            .collect();
-
-        let eg = equate_eg(&x_total, &y_total, k_x, k_y, EquateMethod::Equipercentile).unwrap();
-        let ch = equate_neat(
-            &x_total, &anchor, &y_total, &anchor, k_x, k_y, k_v, 0.5,
-            NeatMethod::ChainedEquipercentile,
-        )
-        .unwrap();
-        let fe = equate_neat(
-            &x_total, &anchor, &y_total, &anchor, k_x, k_y, k_v, 0.5,
-            NeatMethod::FrequencyEstimation,
-        )
-        .unwrap();
-        let mut dmax_ch = 0.0_f64;
-        let mut dmax_fe = 0.0_f64;
-        for x in 0..=k_x {
-            dmax_ch = dmax_ch.max((ch.y_equivalents[x] - eg.y_equivalents[x]).abs());
-            dmax_fe = dmax_fe.max((fe.y_equivalents[x] - eg.y_equivalents[x]).abs());
-        }
-        assert!(dmax_ch < 1e-9, "chained must equal EG under equal anchors: {dmax_ch}");
-        assert!(dmax_fe < 1e-9, "FE must equal EG under equal anchors: {dmax_fe}");
-        // FE weight is inert here (h1==h2), so w1 in {0,1} agrees too
-        for w1 in [0.0_f64, 1.0] {
-            let fw = equate_neat(
-                &x_total, &anchor, &y_total, &anchor, k_x, k_y, k_v, w1,
-                NeatMethod::FrequencyEstimation,
-            )
-            .unwrap();
-            let d = (0..=k_x).map(|x| (fw.y_equivalents[x] - eg.y_equivalents[x]).abs()).fold(0.0, f64::max);
-            assert!(d < 1e-9, "FE(w1={w1}) must match EG under equal anchors: {d}");
-        }
-    }
-
-    #[test]
-    fn method_and_error_paths() {
-        assert_eq!(EquateMethod::parse("EquiPercentile"), Some(EquateMethod::Equipercentile));
-        assert_eq!(EquateMethod::parse("mean-mean"), None);
-        assert_eq!(NeatMethod::parse("FE"), Some(NeatMethod::FrequencyEstimation));
-        assert!(equate_eg(&[], &[1.0], 5, 5, EquateMethod::Mean).is_err());
-        assert!(equate_eg(&[6.0], &[1.0], 5, 5, EquateMethod::Mean).is_err()); // out of range
-        assert!(equate_neat(&[1.0, 2.0], &[1.0], &[1.0], &[1.0], 5, 5, 5, 0.5, NeatMethod::FrequencyEstimation).is_err());
-        // out-of-range score (>= k+0.5) is now rejected (the old ±0.4 tolerance
-        // on the already-rounded index silently binned it to a boundary cell)
-        assert!(rel_freq(&[30.6], 30).is_err());
-        assert!(rel_freq(&[-0.6], 30).is_err());
-        // in-range fractional scores bin to the containing category interval:
-        // 30.4 -> cat 30 ([29.5,30.5)), and -0.5 -> cat 0 ([-0.5,0.5))
-        assert_eq!(rel_freq(&[30.4], 30).unwrap()[30], 1.0);
-        assert_eq!(rel_freq(&[-0.5, 0.0, 1.0], 3).unwrap()[0], 2.0 / 3.0);
-    }
-
-    // FE requires the two groups to share anchor support; fully disjoint anchors
-    // would otherwise silently collapse the synthetic density (finding: garbage
-    // conversion table returned as Ok). Chained composition has no such
-    // requirement and still returns a result.
-    #[test]
-    fn fe_rejects_disjoint_anchor_support() {
-        let x_total = vec![1.0, 2.0, 3.0, 2.0, 1.0, 3.0];
-        let x_anchor = vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0]; // support {0,1}
-        let y_total = vec![2.0, 3.0, 1.0, 2.0, 3.0, 1.0];
-        let y_anchor = vec![4.0, 5.0, 4.0, 5.0, 4.0, 5.0]; // support {4,5}
-        assert!(equate_neat(
-            &x_total, &x_anchor, &y_total, &y_anchor, 5, 5, 5, 0.5,
-            NeatMethod::FrequencyEstimation,
-        )
-        .is_err());
-        // also at the boundary weight w1=0 (the all-zero-density degenerate case)
-        assert!(equate_neat(
-            &x_total, &x_anchor, &y_total, &y_anchor, 5, 5, 5, 0.0,
-            NeatMethod::FrequencyEstimation,
-        )
-        .is_err());
-        assert!(equate_neat(
-            &x_total, &x_anchor, &y_total, &y_anchor, 5, 5, 5, 0.5,
-            NeatMethod::ChainedEquipercentile,
-        )
-        .is_ok());
-    }
-
-    // 2PL population number-correct density on a GH grid, via Lord-Wingersky.
-    fn pop_density(a: &[f64], b: &[f64], nodes: &[f64], weights: &[f64]) -> Vec<f64> {
-        let n_items = a.len();
-        let n_nodes = nodes.len();
-        let mut probs = vec![0.0_f64; n_items * n_nodes];
-        for i in 0..n_items {
-            for (t, &th) in nodes.iter().enumerate() {
-                probs[i * n_nodes + t] = 1.0 / (1.0 + (-(a[i] * th + b[i])).exp());
-            }
-        }
-        let f = crate::scoring::lord_wingersky(&probs, n_items, n_nodes);
-        (0..=n_items)
-            .map(|s| (0..n_nodes).map(|t| weights[t] * f[s * n_nodes + t]).sum())
-            .collect()
-    }
-
-    fn interior_bias_rmse(
-        a_x: &[f64], b_x: &[f64], a_y: &[f64], b_y: &[f64], n: usize, reps: usize, seed: u64,
-    ) -> (f64, f64) {
-        let (k_x, k_y) = (a_x.len(), a_y.len());
-        let (nodes, weights) = crate::quadrature::gh_rule(41).unwrap();
-        // deterministic population reference e_Y*(x)
-        let gx_pop = pop_density(a_x, b_x, nodes, weights);
-        let gy_pop = pop_density(a_y, b_y, nodes, weights);
-        let e_ref = equipercentile(&gx_pop, &gy_pop, k_x, k_y);
-        let mut u = lcg(seed);
-        let mut sum = vec![0.0_f64; k_x + 1];
-        let mut sum2 = vec![0.0_f64; k_x + 1];
-        let sim = |u: &mut dyn FnMut() -> f64, a: &[f64], b: &[f64]| -> Vec<f64> {
-            (0..n)
-                .map(|_| {
-                    let th = {
-                        let u1 = u().max(1e-12);
-                        let u2 = u();
-                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                    };
-                    a.iter()
-                        .zip(b)
-                        .filter(|(&ai, &bi)| u() < 1.0 / (1.0 + (-(ai * th + bi)).exp()))
-                        .count() as f64
-                })
-                .collect()
-        };
-        for _ in 0..reps {
-            let xs = sim(&mut u, a_x, b_x);
-            let ys = sim(&mut u, a_y, b_y);
-            let est = equate_eg(&xs, &ys, k_x, k_y, EquateMethod::Equipercentile).unwrap();
-            for x in 0..=k_x {
-                let d = est.y_equivalents[x] - e_ref[x];
-                sum[x] += d;
-                sum2[x] += d * d;
-            }
-        }
-        // trim the outer ~5% of the score range where zero-cell sampling dominates
-        let lo = (k_x as f64 * 0.05).ceil() as usize;
-        let hi = k_x - lo;
-        let mut max_bias = 0.0_f64;
-        let mut rmse_acc = 0.0_f64;
-        let mut cnt = 0usize;
-        for x in lo..=hi {
-            max_bias = max_bias.max((sum[x] / reps as f64).abs());
-            rmse_acc += sum2[x] / reps as f64;
-            cnt += 1;
-        }
-        (max_bias, (rmse_acc / cnt as f64).sqrt())
-    }
-
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn equate_monte_carlo_500() {
-        // distinct 2PL forms X (30 items) and Y (40 items)
-        let k_x = 30usize;
-        let k_y = 40usize;
-        let a_x: Vec<f64> = (0..k_x).map(|i| 0.8 + 0.5 * ((i % 5) as f64 / 4.0)).collect();
-        let b_x: Vec<f64> = (0..k_x).map(|i| 1.5 - 3.0 * i as f64 / (k_x - 1) as f64).collect();
-        let a_y: Vec<f64> = (0..k_y).map(|i| 0.9 + 0.4 * ((i % 4) as f64 / 3.0)).collect();
-        let b_y: Vec<f64> = (0..k_y).map(|i| 1.8 - 3.6 * i as f64 / (k_y - 1) as f64).collect();
-
-        let reps = 500usize;
-        let (bias1, rmse1) = interior_bias_rmse(&a_x, &b_x, &a_y, &b_y, 1000, reps, 4001);
-        let (bias4, rmse4) = interior_bias_rmse(&a_x, &b_x, &a_y, &b_y, 4000, reps, 7001);
-        let ratio = rmse1 / rmse4;
-        println!(
-            "[equate 500] N=1000: max|bias|={bias1:.4} RMSE={rmse1:.4}  \
-             N=4000: max|bias|={bias4:.4} RMSE={rmse4:.4}  RMSE ratio={ratio:.3} (expect ~2)"
-        );
-        // the empirical equipercentile converges to the population equipercentile
-        // of the same Lord-Wingersky densities (that population transform IS the
-        // estimand; R1/R2/R3 supply the independent identification):
-        assert!(bias1 < 0.15 && bias4 < 0.08, "bias should be small and shrink: {bias1}, {bias4}");
-        assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): ratio={ratio}");
-    }
-
-    fn ext(cont: Continuization, sx: Option<usize>, sy: Option<usize>, hx: Option<f64>, hy: Option<f64>) -> EgSmoothOptions {
-        EgSmoothOptions {
-            continuization: cont,
-            smooth_degree_x: sx,
-            smooth_degree_y: sy,
-            bandwidth_x: hx,
-            bandwidth_y: hy,
-        }
-    }
-
-    // Anchor 1: uniform-kernel ext == existing equipercentile, bit-exact.
-    #[test]
-    fn ext_uniform_matches_equipercentile() {
-        let mut u = lcg(21);
-        let (n, kx, ky) = (3000usize, 30usize, 30usize);
-        let xs: Vec<f64> = (0..n).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
-        let ys: Vec<f64> = (0..n).map(|_| (14.0 + 7.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
-        let base = equate_eg(&xs, &ys, kx, ky, EquateMethod::Equipercentile).unwrap();
-        let e = equate_eg_ext(&xs, &ys, kx, ky, ext(Continuization::Uniform, None, None, None, None)).unwrap();
-        let d = (0..=kx).map(|x| (base.y_equivalents[x] - e.y_equivalents[x]).abs()).fold(0.0, f64::max);
-        assert!(d < 1e-12, "uniform-kernel ext must equal equipercentile: {d}");
-    }
-
-    // Anchors 2 & 3: log-linear presmoothing preserves the first T sample moments
-    // exactly (on the u=x/k scale) and, saturated at T=k, reproduces rel_freq.
-    #[test]
-    fn loglinear_preserves_moments_and_saturates() {
-        let mut u = lcg(5);
-        let k = 40usize;
-        let scores: Vec<f64> = (0..5000).map(|_| (20.0 + 7.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
-        let g = rel_freq(&scores, k).unwrap();
-        let n = scores.len() as f64;
-        let counts: Vec<f64> = g.iter().map(|&p| p * n).collect();
-        let fit = loglinear_smooth(&counts, 4).unwrap();
-        assert!(fit.converged);
-        assert!((fit.probs.iter().sum::<f64>() - 1.0).abs() < 1e-12);
-        assert!(fit.probs.iter().all(|&p| p >= 0.0));
-        for (j, &fm) in fit.moments.iter().enumerate() {
-            let order = (j + 1) as i32;
-            let sm: f64 = (0..=k).map(|x| (x as f64 / k as f64).powi(order) * g[x]).sum();
-            assert!((fm - sm).abs() < 1e-8, "moment {order} not preserved: {fm} vs {sm}");
-        }
-        let sat = loglinear_smooth(&counts, k).unwrap();
-        let d = (0..=k).map(|x| (sat.probs[x] - g[x]).abs()).fold(0.0, f64::max);
-        assert!(d < 1e-9, "saturated loglinear must reproduce rel_freq: {d}");
-    }
-
-    #[test]
-    fn equating_rejects_nonconverged_presmoothing() {
-        let counts = [0usize, 1564, 426, 0, 1008, 0, 0];
-        let scores: Vec<f64> = counts
-            .iter()
-            .enumerate()
-            .flat_map(|(score, &count)| std::iter::repeat_n(score as f64, count))
-            .collect();
-        let fit = loglinear_smooth(
-            &counts.iter().map(|&count| count as f64).collect::<Vec<_>>(),
-            5,
-        )
-        .unwrap();
-        assert!(!fit.converged, "fixture must exercise the non-converged path");
-        assert_eq!(fit.termination_reason, "line_search_stalled");
-        assert!(fit.final_gradient_max > fit.gradient_tolerance);
-
-        let err = equate_eg_ext(
-            &scores,
-            &scores,
-            6,
-            6,
-            ext(Continuization::Uniform, Some(5), Some(5), None, None),
-        )
-        .unwrap_err();
-        assert!(err.contains("did not converge"), "unexpected error: {err}");
-    }
-
-    // Anchors 4 & 6: Gaussian-kernel self-equate is the identity (F_h == G_h), and
-    // the continuized density preserves the discrete mean and variance.
-    #[test]
-    fn kernel_self_equate_and_mean_var() {
-        let mut u = lcg(9);
-        let k = 30usize;
-        let xs: Vec<f64> = (0..4000).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
-        let res = equate_eg_ext(&xs, &xs, k, k, ext(Continuization::Gaussian, None, None, Some(0.6), Some(0.6))).unwrap();
-        let g = rel_freq(&xs, k).unwrap();
-        let mut dmax = 0.0_f64;
-        for x in 0..=k {
-            if g[x] > 0.0 {
-                dmax = dmax.max((res.y_equivalents[x] - x as f64).abs());
-            }
-        }
-        // exact in exact arithmetic (F_h == G_h); the ~1e-8 residual is the
-        // erfc approximation (|err| < 1.2e-7) through the numeric inverse
-        assert!(dmax < 1e-6, "kernel self-equate must be identity: {dmax}");
-        assert_eq!(res.h_x, 0.6);
-        let (mu, sd) = moments(&g);
-        let sig2 = sd * sd;
-        let h = 0.8;
-        let (lo, hi, steps) = (-6.0_f64, k as f64 + 6.0, 20000usize);
-        let dx = (hi - lo) / steps as f64;
-        let (mut m0, mut m1, mut m2) = (0.0_f64, 0.0, 0.0);
-        for i in 0..steps {
-            let x = lo + (i as f64 + 0.5) * dx;
-            let fh = kernel_pdf(&g, mu, sig2, h, x);
-            m0 += fh * dx;
-            m1 += x * fh * dx;
-            m2 += x * x * fh * dx;
-        }
-        let mean = m1 / m0;
-        let var = m2 / m0 - mean * mean;
-        assert!((mean - mu).abs() < 1e-3, "kernel mean {mean} != {mu}");
-        assert!((var - sig2).abs() < 1e-2 * sig2.max(1.0), "kernel var {var} != {sig2}");
-    }
-
-    // Anchor 5: a very large bandwidth drives Gaussian-kernel equating to LINEAR.
-    #[test]
-    fn kernel_large_bandwidth_is_linear() {
-        let mut u = lcg(13);
-        let (kx, ky) = (30usize, 40usize);
-        let xs: Vec<f64> = (0..4000).map(|_| (15.0 + 6.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
-        let ys: Vec<f64> = (0..4000).map(|_| (22.0 + 8.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
-        let lin = equate_eg(&xs, &ys, kx, ky, EquateMethod::Linear).unwrap();
-        let ker = equate_eg_ext(&xs, &ys, kx, ky, ext(Continuization::Gaussian, None, None, Some(1e6), Some(1e6))).unwrap();
-        let d = (0..=kx).map(|x| (lin.y_equivalents[x] - ker.y_equivalents[x]).abs()).fold(0.0, f64::max);
-        assert!(d < 1e-4, "large-h kernel must match linear: {d}");
-    }
-
-    // Anchor 8: presmoothed self-equate is still the identity.
-    #[test]
-    fn presmoothed_self_equate_is_identity() {
-        let mut u = lcg(17);
-        let k = 40usize;
-        let xs: Vec<f64> = (0..3000).map(|_| (20.0 + 7.0 * normal(&mut u)).round().clamp(0.0, k as f64)).collect();
-        let res = equate_eg_ext(&xs, &xs, k, k, ext(Continuization::Uniform, Some(5), Some(5), None, None)).unwrap();
-        let g = density(&xs, k, Some(5)).unwrap();
-        let mut dmax = 0.0_f64;
-        for x in 0..=k {
-            if g[x] > 1e-12 {
-                dmax = dmax.max((res.y_equivalents[x] - x as f64).abs());
-            }
-        }
-        assert!(dmax < 1e-8, "presmoothed self-equate must be identity: {dmax}");
-    }
-
-    // Fix guard: on a non-unimodal penalty (bimodal density) the golden-section
-    // refinement can land in a worse cell, so optimal_bandwidth must fall back to
-    // the grid best rather than ship it.
-    #[test]
-    fn optimal_bandwidth_never_worse_than_grid() {
-        let k = 40usize;
-        let mut r = vec![0.0_f64; k + 1];
-        for j in 0..=k {
-            let d1 = (j as f64 - 8.0) / 2.0;
-            let d2 = (j as f64 - 32.0) / 2.0;
-            r[j] = (-0.5 * d1 * d1).exp() + (-0.5 * d2 * d2).exp();
-        }
-        let s: f64 = r.iter().sum();
-        for v in r.iter_mut() {
-            *v /= s;
-        }
-        let (mu, sd) = moments(&r);
-        let sig2 = sd * sd;
-        let h = optimal_bandwidth(&r, mu, sig2, k);
-        assert!(h.is_finite() && h > 0.0);
-        let pen_h = kernel_penalty(&r, mu, sig2, h, k);
-        let grid_best = (0..=40)
-            .map(|i| kernel_penalty(&r, mu, sig2, 0.1 + (3.0 - 0.1) * i as f64 / 40.0, k))
-            .fold(f64::INFINITY, f64::min);
-        assert!(pen_h <= grid_best + 1e-12, "optimal_bandwidth worse than grid: {pen_h} vs {grid_best}");
-    }
-
-    // Gaussian-kernel MC with a FIXED bandwidth shared by the population reference
-    // and the per-rep estimator, so the assertion measures density-sampling error
-    // alone (penalty-selected h would inject selection noise).
-    fn kernel_bias_rmse(
-        a_x: &[f64], b_x: &[f64], a_y: &[f64], b_y: &[f64], n: usize, reps: usize, seed: u64, h: f64,
-    ) -> (f64, f64) {
-        let (k_x, k_y) = (a_x.len(), a_y.len());
-        let (nodes, weights) = crate::quadrature::gh_rule(41).unwrap();
-        let gx_pop = pop_density(a_x, b_x, nodes, weights);
-        let gy_pop = pop_density(a_y, b_y, nodes, weights);
-        let (mux, sdx) = moments(&gx_pop);
-        let (muy, sdy) = moments(&gy_pop);
-        let e_ref = kernel_equate(&gx_pop, &gy_pop, mux, sdx * sdx, muy, sdy * sdy, k_x, k_y, h, h);
-        let mut u = lcg(seed);
-        let sim = |u: &mut dyn FnMut() -> f64, a: &[f64], b: &[f64]| -> Vec<f64> {
-            (0..n)
-                .map(|_| {
-                    let th = {
-                        let u1 = u().max(1e-12);
-                        let u2 = u();
-                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                    };
-                    a.iter().zip(b).filter(|(&ai, &bi)| u() < 1.0 / (1.0 + (-(ai * th + bi)).exp())).count() as f64
-                })
-                .collect()
-        };
-        let mut sum = vec![0.0_f64; k_x + 1];
-        let mut sum2 = vec![0.0_f64; k_x + 1];
-        for _ in 0..reps {
-            let xs = sim(&mut u, a_x, b_x);
-            let ys = sim(&mut u, a_y, b_y);
-            let est = equate_eg_ext(&xs, &ys, k_x, k_y, ext(Continuization::Gaussian, None, None, Some(h), Some(h))).unwrap();
-            for x in 0..=k_x {
-                let d = est.y_equivalents[x] - e_ref[x];
-                sum[x] += d;
-                sum2[x] += d * d;
-            }
-        }
-        let lo = (k_x as f64 * 0.05).ceil() as usize;
-        let hi = k_x - lo;
-        let mut max_bias = 0.0_f64;
-        let mut rmse_acc = 0.0_f64;
-        let mut cnt = 0usize;
-        for x in lo..=hi {
-            max_bias = max_bias.max((sum[x] / reps as f64).abs());
-            rmse_acc += sum2[x] / reps as f64;
-            cnt += 1;
-        }
-        (max_bias, (rmse_acc / cnt as f64).sqrt())
-    }
-
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn kernel_equate_monte_carlo_500() {
-        let k_x = 30usize;
-        let k_y = 40usize;
-        let a_x: Vec<f64> = (0..k_x).map(|i| 0.8 + 0.5 * ((i % 5) as f64 / 4.0)).collect();
-        let b_x: Vec<f64> = (0..k_x).map(|i| 1.5 - 3.0 * i as f64 / (k_x - 1) as f64).collect();
-        let a_y: Vec<f64> = (0..k_y).map(|i| 0.9 + 0.4 * ((i % 4) as f64 / 3.0)).collect();
-        let b_y: Vec<f64> = (0..k_y).map(|i| 1.8 - 3.6 * i as f64 / (k_y - 1) as f64).collect();
-        let reps = 500usize;
-        let h = 0.6_f64;
-        let (bias1, rmse1) = kernel_bias_rmse(&a_x, &b_x, &a_y, &b_y, 1000, reps, 5001, h);
-        let (bias4, rmse4) = kernel_bias_rmse(&a_x, &b_x, &a_y, &b_y, 4000, reps, 8001, h);
-        let ratio = rmse1 / rmse4;
-        println!(
-            "[kernel equate 500] h={h} N=1000: max|bias|={bias1:.4} RMSE={rmse1:.4}  \
-             N=4000: max|bias|={bias4:.4} RMSE={rmse4:.4}  RMSE ratio={ratio:.3} (expect ~2)"
-        );
-        assert!(bias1 < 0.15 && bias4 < 0.08, "bias should be small and shrink: {bias1}, {bias4}");
-        assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
-    }
-
-    // Primary anchor: with equal anchor moments (a shared anchor vector) every
-    // Tucker/Levine variant collapses to EG linear equating of X onto Y, for any
-    // w1 and anchor kind.
-    #[test]
-    fn neat_linear_collapses_to_eg_linear() {
-        let (kx, ky) = (30usize, 40usize);
-        let mut u = lcg(41);
-        let n = 4000usize;
-        // a shared anchor vector (equal anchor moments by construction) that is
-        // genuinely correlated with both totals (so Levine's covariance is positive)
-        let anchor: Vec<f64> = (0..n).map(|_| (7.0 + 3.0 * normal(&mut u)).round().clamp(0.0, 15.0)).collect();
-        let x_total: Vec<f64> =
-            anchor.iter().map(|&v| (1.5 * v + 4.0 + 3.0 * normal(&mut u)).round().clamp(0.0, kx as f64)).collect();
-        let y_total: Vec<f64> =
-            anchor.iter().map(|&v| (1.8 * v + 6.0 + 4.0 * normal(&mut u)).round().clamp(0.0, ky as f64)).collect();
-        let eg = equate_eg(&x_total, &y_total, kx, ky, EquateMethod::Linear).unwrap();
-        for m in [NeatLinearMethod::Tucker, NeatLinearMethod::LevineObserved] {
-            for ak in [AnchorKind::Internal, AnchorKind::External] {
-                for w1 in [0.0_f64, 0.5, 1.0] {
-                    let r = equate_neat_linear(&x_total, &anchor, &y_total, &anchor, kx, ky, w1, m, ak).unwrap();
-                    assert!(
-                        (r.slope - eg.slope).abs() < 1e-9 && (r.intercept - eg.intercept).abs() < 1e-9,
-                        "collapse {m:?}/{ak:?}/w1={w1}: slope {} vs {}, int {} vs {}",
-                        r.slope, eg.slope, r.intercept, eg.intercept
-                    );
-                    let d = (0..=kx).map(|x| (r.y_equivalents[x] - eg.y_equivalents[x]).abs()).fold(0.0, f64::max);
-                    assert!(d < 1e-9, "table mismatch: {d}");
-                }
-            }
-        }
-    }
-
-    // Pins the internal-vs-external Levine gamma (the crux) against a NumPy oracle
-    // (N-denominator moments): the three gamma branches give three distinct
-    // slope/intercept pairs.
-    #[test]
-    fn neat_linear_gamma_hand_computed() {
-        let x1 = [3.0, 5., 7., 9., 4., 6., 8., 2.];
-        let v1 = [1.0, 2., 2., 3., 1., 2., 3., 1.];
-        let y2 = [2.0, 5., 8., 11., 4., 7., 10., 1.];
-        let v2 = [2.0, 4., 4., 6., 3., 5., 6., 2.];
-        let (kx, ky, w1) = (11usize, 11usize, 0.5_f64);
-        let tk = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
-        assert!((tk.slope - 0.8006819908).abs() < 1e-8 && (tk.intercept + 3.0616870634).abs() < 1e-8, "tucker {} {}", tk.slope, tk.intercept);
-        let li = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::LevineObserved, AnchorKind::Internal).unwrap();
-        assert!((li.slope - 0.7403094687).abs() < 1e-8 && (li.intercept + 3.0252464118).abs() < 1e-8, "levine-int {} {}", li.slope, li.intercept);
-        let le = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::LevineObserved, AnchorKind::External).unwrap();
-        assert!((le.slope - 0.7550256824).abs() < 1e-8 && (le.intercept + 3.017543311).abs() < 1e-8, "levine-ext {} {}", le.slope, le.intercept);
-        // Tucker ignores the anchor kind
-        let tk2 = equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::External).unwrap();
-        assert_eq!(tk.slope, tk2.slope);
-        assert_eq!(NeatLinearMethod::parse("levine"), Some(NeatLinearMethod::LevineObserved));
-        assert_eq!(AnchorKind::parse("ext"), Some(AnchorKind::External));
-        // error paths: bad w1, constant anchor (zero variance), Levine on a zero-cov anchor
-        assert!(equate_neat_linear(&x1, &v1, &y2, &v2, kx, ky, 1.5, NeatLinearMethod::Tucker, AnchorKind::Internal).is_err());
-        let const_v = [2.0_f64; 8];
-        assert!(equate_neat_linear(&x1, &const_v, &y2, &v2, kx, ky, w1, NeatLinearMethod::Tucker, AnchorKind::Internal).is_err());
-    }
-
-    // Common-regression generative model (satisfies the Tucker assumption); the
-    // estimator's equated table converges to the large-N reference at ~1/sqrt(N).
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn neat_linear_monte_carlo_500() {
-        let (kt_x, kt_y, kv) = (40usize, 45usize, 15usize);
-        let (sdv, beta, tau) = (2.5_f64, 1.2_f64, 3.0_f64);
-        let gen = |u: &mut dyn FnMut() -> f64, n: usize, muv: f64, alpha: f64, kt: usize| -> (Vec<f64>, Vec<f64>) {
-            let nd = |u: &mut dyn FnMut() -> f64| {
-                let u1 = u().max(1e-12);
-                let u2 = u();
-                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-            };
-            let mut tot = vec![0.0_f64; n];
-            let mut anc = vec![0.0_f64; n];
-            for i in 0..n {
-                let v = muv + sdv * nd(u);
-                let t = alpha + beta * v + tau * nd(u);
-                anc[i] = v.round().clamp(0.0, kv as f64);
-                tot[i] = t.round().clamp(0.0, kt as f64);
-            }
-            (tot, anc)
-        };
-        // reference from a large calibration draw through the same sampler+rounding
-        let mut ur = lcg(9100);
-        let (rx, rxa) = gen(&mut ur, 2_000_000, 6.0, 5.0, kt_x);
-        let (ry, rya) = gen(&mut ur, 2_000_000, 9.0, 8.0, kt_y);
-        let e_ref = equate_neat_linear(&rx, &rxa, &ry, &rya, kt_x, kt_y, 0.5, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
-        let bias_rmse = |n: usize, seed: u64| -> (f64, f64) {
-            let mut u = lcg(seed);
-            let reps = 500usize;
-            let mut sum = vec![0.0_f64; kt_x + 1];
-            let mut sum2 = vec![0.0_f64; kt_x + 1];
-            for _ in 0..reps {
-                let (xt, xa) = gen(&mut u, n, 6.0, 5.0, kt_x);
-                let (yt, ya) = gen(&mut u, n, 9.0, 8.0, kt_y);
-                let est = equate_neat_linear(&xt, &xa, &yt, &ya, kt_x, kt_y, 0.5, NeatLinearMethod::Tucker, AnchorKind::Internal).unwrap();
-                for x in 0..=kt_x {
-                    let d = est.y_equivalents[x] - e_ref.y_equivalents[x];
-                    sum[x] += d;
-                    sum2[x] += d * d;
-                }
-            }
-            let lo = (kt_x as f64 * 0.05).ceil() as usize;
-            let hi = kt_x - lo;
-            let (mut mb, mut ra, mut c) = (0.0_f64, 0.0_f64, 0usize);
-            for x in lo..=hi {
-                mb = mb.max((sum[x] / reps as f64).abs());
-                ra += sum2[x] / reps as f64;
-                c += 1;
-            }
-            (mb, (ra / c as f64).sqrt())
-        };
-        let (b1, r1) = bias_rmse(1000, 111);
-        let (b4, r4) = bias_rmse(4000, 222);
-        let ratio = r1 / r4;
-        println!("[neat-linear 500] N=1000: max|bias|={b1:.4} RMSE={r1:.4}  N=4000: max|bias|={b4:.4} RMSE={r4:.4}  ratio={ratio:.3}");
-        assert!(b1 < 0.20 && b4 < 0.10, "bias should be small and shrink: {b1}, {b4}");
-        assert!((1.6..=2.4).contains(&ratio), "RMSE should shrink ~1/sqrt(N): {ratio}");
-    }
-
-    // helper: two near-normal EG samples of size n
-    fn see_gen(u: &mut impl FnMut() -> f64, n: usize, k: usize) -> (Vec<f64>, Vec<f64>) {
-        let xs = (0..n).map(|_| (15.0 + 5.0 * normal(u)).round().clamp(0.0, k as f64)).collect();
-        let ys = (0..n).map(|_| (16.0 + 5.0 * normal(u)).round().clamp(0.0, k as f64)).collect();
-        (xs, ys)
-    }
-
-    // A1: delta-method Linear SEE agrees with the bootstrap Linear SEE.
-    #[test]
-    fn see_analytic_linear_matches_bootstrap() {
-        let mut u = lcg(71);
-        let (k, n) = (30usize, 3000usize);
-        let (xs, ys) = see_gen(&mut u, n, k);
-        let a = analytic_see(&xs, &ys, k, k, EquateMethod::Linear, 0.95).unwrap();
-        let b = bootstrap_see(&xs, &ys, k, k, EquateMethod::Linear, 2000, 0.95, 12345).unwrap();
-        let (lo, hi) = ((k as f64 * 0.1).ceil() as usize, k - (k as f64 * 0.1).ceil() as usize);
-        let mut maxrel = 0.0_f64;
-        for x in lo..=hi {
-            if a.se[x] > 1e-6 {
-                maxrel = maxrel.max((b.se[x] - a.se[x]).abs() / a.se[x]);
-            }
-        }
-        assert!(maxrel < 0.15, "analytic vs bootstrap Linear SEE relative gap too large: {maxrel}");
-    }
-
-    // A2: Mean SEE is constant in x and equals the closed form.
-    #[test]
-    fn see_mean_is_constant() {
-        let mut u = lcg(72);
-        let (k, n) = (30usize, 2000usize);
-        let (xs, ys) = see_gen(&mut u, n, k);
-        let a = analytic_see(&xs, &ys, k, k, EquateMethod::Mean, 0.95).unwrap();
-        let (_, sx) = moments(&rel_freq(&xs, k).unwrap());
-        let (_, sy) = moments(&rel_freq(&ys, k).unwrap());
-        let expected = (sx * sx / n as f64 + sy * sy / n as f64).sqrt();
-        for x in 0..=k {
-            assert!((a.se[x] - expected).abs() < 1e-9 && (a.se[x] - a.se[0]).abs() < 1e-12, "Mean SEE not constant");
-        }
-    }
-
-    // A3/A4: bootstrap sanity (positive SE, CI brackets the estimate, ~1/sqrt(N)
-    // shrink), determinism, and the input guards.
-    #[test]
-    fn see_bootstrap_sanity_and_guards() {
-        let mut u = lcg(73);
-        let k = 20usize;
-        let (x1, y1) = see_gen(&mut u, 1000, k);
-        let (x4, y4) = see_gen(&mut u, 4000, k);
-        let b1 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 500, 0.95, 7).unwrap();
-        let b4 = bootstrap_see(&x4, &y4, k, k, EquateMethod::Equipercentile, 500, 0.95, 7).unwrap();
-        let (lo, hi) = ((k as f64 * 0.1).ceil() as usize, k - (k as f64 * 0.1).ceil() as usize);
-        for x in lo..=hi {
-            assert!(b1.se[x] > 0.0);
-            assert!(b1.ci_lo[x] <= b1.y_equivalents[x] + 1e-9 && b1.y_equivalents[x] <= b1.ci_hi[x] + 1e-9);
-        }
-        let ratio: f64 = (lo..=hi).map(|x| b1.se[x] / b4.se[x].max(1e-9)).sum::<f64>() / (hi - lo + 1) as f64;
-        assert!((1.5..=2.6).contains(&ratio), "SE should ~halve when N x4: {ratio}");
-        // determinism
-        let d1 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
-        let d2 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
-        assert_eq!(d1.se, d2.se);
-        // guards
-        assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 1, 0.95, 1).is_err());
-        assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 100, 1.5, 1).is_err());
-        assert!(analytic_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 0.95).is_err());
-    }
-
-    // The bootstrap SE approximates the TRUE sampling SD of e_Y(x) (from an outer
-    // Monte-Carlo that redraws fresh 2PL samples) within Monte-Carlo tolerance.
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn see_bootstrap_monte_carlo_500() {
-        let (k_x, k_y, n) = (30usize, 40usize, 2000usize);
-        let a_x: Vec<f64> = (0..k_x).map(|i| 0.8 + 0.5 * ((i % 5) as f64 / 4.0)).collect();
-        let b_x: Vec<f64> = (0..k_x).map(|i| 1.5 - 3.0 * i as f64 / (k_x - 1) as f64).collect();
-        let a_y: Vec<f64> = (0..k_y).map(|i| 0.9 + 0.4 * ((i % 4) as f64 / 3.0)).collect();
-        let b_y: Vec<f64> = (0..k_y).map(|i| 1.8 - 3.6 * i as f64 / (k_y - 1) as f64).collect();
-        let sim = |u: &mut dyn FnMut() -> f64, a: &[f64], b: &[f64]| -> Vec<f64> {
-            (0..n)
-                .map(|_| {
-                    let th = {
-                        let u1 = u().max(1e-12);
-                        let u2 = u();
-                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                    };
-                    a.iter().zip(b).filter(|(&ai, &bi)| u() < 1.0 / (1.0 + (-(ai * th + bi)).exp())).count() as f64
-                })
-                .collect()
-        };
-        let run = |method: EquateMethod, label: &str| {
-            // outer MC: true SD of e_Y(x) over R fresh samples
-            let r_out = 500usize;
-            let mut uo = lcg(3300);
-            let mut vals = vec![0.0_f64; r_out * (k_x + 1)];
-            for r in 0..r_out {
-                let xs = sim(&mut uo, &a_x, &b_x);
-                let ys = sim(&mut uo, &a_y, &b_y);
-                let e = equate_eg(&xs, &ys, k_x, k_y, method).unwrap();
-                vals[r * (k_x + 1)..(r + 1) * (k_x + 1)].copy_from_slice(&e.y_equivalents);
-            }
-            let true_sd: Vec<f64> = (0..=k_x)
-                .map(|x| {
-                    let col: Vec<f64> = (0..r_out).map(|r| vals[r * (k_x + 1) + x]).collect();
-                    let m = col.iter().sum::<f64>() / r_out as f64;
-                    (col.iter().map(|&v| (v - m).powi(2)).sum::<f64>() / (r_out as f64 - 1.0)).sqrt()
-                })
-                .collect();
-            // mean bootstrap SE over n_samp fresh samples
-            let n_samp = 40usize;
-            let mut ub = lcg(9900);
-            let mut sum_se = vec![0.0_f64; k_x + 1];
-            for s_i in 0..n_samp {
-                let xs = sim(&mut ub, &a_x, &b_x);
-                let ys = sim(&mut ub, &a_y, &b_y);
-                let s = bootstrap_see(&xs, &ys, k_x, k_y, method, 300, 0.95, 41_000 + s_i as u64).unwrap();
-                for x in 0..=k_x {
-                    sum_se[x] += s.se[x];
-                }
-            }
-            let (lo, hi) = ((k_x as f64 * 0.05).ceil() as usize, k_x - (k_x as f64 * 0.05).ceil() as usize);
-            let (mut rmin, mut rmax) = (f64::INFINITY, f64::NEG_INFINITY);
-            for x in lo..=hi {
-                let ratio = (sum_se[x] / n_samp as f64) / true_sd[x].max(1e-9);
-                rmin = rmin.min(ratio);
-                rmax = rmax.max(ratio);
-            }
-            println!("[see 500] {label}: interior boot/true SD ratio in [{rmin:.3}, {rmax:.3}]");
-            assert!(rmin > 0.80 && rmax < 1.20, "{label} bootstrap SEE off true SD: [{rmin}, {rmax}]");
-        };
-        run(EquateMethod::Linear, "linear");
-        run(EquateMethod::Equipercentile, "equipercentile");
-    }
-}
+#[path = "../../../tests/unit/equating_tests.rs"]
+mod tests;

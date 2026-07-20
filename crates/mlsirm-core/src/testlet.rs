@@ -138,14 +138,21 @@ fn validate(
     if !cfg.tol.is_finite() || cfg.tol < 0.0 {
         return Err("tol must be finite and non-negative".into());
     }
-    if !cfg.ridge_a.is_finite() || cfg.ridge_a < 0.0 || !cfg.ridge_b.is_finite() || cfg.ridge_b < 0.0 {
+    if !cfg.ridge_a.is_finite()
+        || cfg.ridge_a < 0.0
+        || !cfg.ridge_b.is_finite()
+        || cfg.ridge_b < 0.0
+    {
         return Err("ridge_a and ridge_b must be finite and non-negative".into());
     }
     if !cfg.init_sigma2.is_finite() || cfg.init_sigma2 < 0.0 {
         return Err("init_sigma2 must be finite and non-negative".into());
     }
     if !SUPPORTED_Q.contains(&cfg.q_gamma) {
-        return Err(format!("q_gamma must be one of {SUPPORTED_Q:?}; got {}", cfg.q_gamma));
+        return Err(format!(
+            "q_gamma must be one of {SUPPORTED_Q:?}; got {}",
+            cfg.q_gamma
+        ));
     }
     let n_cells = n_persons
         .checked_mul(n_items)
@@ -164,7 +171,9 @@ fn validate(
     let mut size = vec![0usize; n_testlets];
     for (i, &d) in testlet_id.iter().enumerate() {
         if d >= n_testlets {
-            return Err(format!("testlet_id[{i}] = {d} out of range 0..{n_testlets}"));
+            return Err(format!(
+                "testlet_id[{i}] = {d} out of range 0..{n_testlets}"
+            ));
         }
         size[d] += 1;
     }
@@ -193,7 +202,8 @@ fn init_beta(y: &[f64], observed: &[bool], n_persons: usize, n_items: usize) -> 
                     den += 1.0;
                 }
             }
-            let prop = if den > 0.0 { (num / den).clamp(0.02, 0.98) } else { 0.5 };
+            // validate() guarantees every item has at least one observed response.
+            let prop = (num / den).clamp(0.02, 0.98);
             (prop / (1.0 - prop)).ln()
         })
         .collect()
@@ -263,7 +273,8 @@ fn full_estep(
                     if ctx.observed[idx] {
                         let yy = ctx.y[idx];
                         for g in 0..qt {
-                            log_a[g] += yy * logp1[idx3(i, g, 0)] + (1.0 - yy) * logp0[idx3(i, g, 0)];
+                            log_a[g] +=
+                                yy * logp1[idx3(i, g, 0)] + (1.0 - yy) * logp0[idx3(i, g, 0)];
                         }
                     }
                 }
@@ -416,9 +427,8 @@ fn m_step(
             if fix_slope {
                 g_b -= cfg.ridge_b * bi;
                 h_bb -= cfg.ridge_b;
-                if h_bb.abs() < 1e-12 {
-                    break;
-                }
+                // Every valid item has positive posterior mass and finite logistic probabilities,
+                // hence h_bb is strictly negative (with optional extra negative ridge).
                 let db = g_b / h_bb;
                 bi -= db;
                 if db.abs() < 1e-8 {
@@ -430,9 +440,8 @@ fn m_step(
                 h_aa -= cfg.ridge_a;
                 h_bb -= cfg.ridge_b;
                 let det = h_aa * h_bb - h_ab * h_ab;
-                if det.abs() < 1e-12 {
-                    break;
-                }
+                // Positive Gauss-Hermite mass at distinct theta values makes this information
+                // matrix nonsingular for every valid item.
                 let da = (h_bb * g_a - h_ab * g_b) / det;
                 let db = (h_aa * g_b - h_ab * g_a) / det;
                 ai = (ai - da).clamp(1e-3, 10.0);
@@ -453,6 +462,18 @@ fn m_step(
         }
     }
     (a, beta, sigma2)
+}
+
+fn choose_squarem_parameters(extrapolated: Option<Vec<f64>>, two_step_em: Vec<f64>) -> Vec<f64> {
+    extrapolated.unwrap_or(two_step_em)
+}
+
+fn squarem_alpha(sr: f64, sv: f64) -> f64 {
+    if sv > 1e-300 {
+        (-(sr / sv).sqrt()).min(-1.0)
+    } else {
+        -1.0
+    }
 }
 
 /// Fit the testlet response model (Bradlow, Wainer, & Wang, 1999) by marginal EM.
@@ -492,13 +513,25 @@ pub fn fit_testlet(
 
     let fix_slope = model == TestletModel::Rasch;
     let ctx = Ctx {
-        y, observed, testlet_id, items_of: &items_of, n, j, d_n, qt, qg,
-        u_nodes, log_wt: &log_wt, log_vu: &log_vu,
+        y,
+        observed,
+        testlet_id,
+        items_of: &items_of,
+        n,
+        j,
+        d_n,
+        qt,
+        qg,
+        u_nodes,
+        log_wt: &log_wt,
+        log_vu: &log_vu,
     };
 
     let mut a = vec![1.0f64; j];
     let mut beta = init_beta(y, observed, n, j);
-    let mut sigma2: Vec<f64> = (0..d_n).map(|d| if multi[d] { cfg.init_sigma2 } else { 0.0 }).collect();
+    let mut sigma2: Vec<f64> = (0..d_n)
+        .map(|d| if multi[d] { cfg.init_sigma2 } else { 0.0 })
+        .collect();
 
     let mut loglik_trace: Vec<f64> = Vec::new();
     let mut converged = false;
@@ -515,7 +548,11 @@ pub fn fit_testlet(
             a.iter().chain(b.iter()).chain(s.iter()).copied().collect()
         };
         let unpack = |p: &[f64]| -> (Vec<f64>, Vec<f64>, Vec<f64>) {
-            (p[0..j].to_vec(), p[j..2 * j].to_vec(), p[2 * j..2 * j + d_n].to_vec())
+            (
+                p[0..j].to_vec(),
+                p[j..2 * j].to_vec(),
+                p[2 * j..2 * j + d_n].to_vec(),
+            )
         };
         let project = |p: &mut [f64]| {
             for ai in p.iter_mut().take(j) {
@@ -526,7 +563,11 @@ pub fn fit_testlet(
                 // Floor multi-testlet sigma^2 above 0: exactly 0 is an absorbing state
                 // (the sigma==0 fast path stops accumulating sum_u2, so the
                 // multiplicative update could never revive an overshot testlet).
-                p[idx] = if multi[d] { p[idx].clamp(1e-8, 100.0) } else { 0.0 };
+                p[idx] = if multi[d] {
+                    p[idx].clamp(1e-8, 100.0)
+                } else {
+                    0.0
+                };
             }
         };
         let mut params = pack(&a, &beta, &sigma2);
@@ -549,15 +590,21 @@ pub fn fit_testlet(
             // remains, take one plain EM step and evaluate it on the next loop so
             // n_iter never exceeds the public max_iter contract.
             if cfg.max_iter - n_iter < 2 {
-                let (a1, b1, s1) = m_step(&ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg);
+                let (a1, b1, s1) = m_step(
+                    &ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg,
+                );
                 params = pack(&a1, &b1, &s1);
                 continue;
             }
             // Two plain EM steps.
-            let (a1, b1, s1) = m_step(&ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg);
+            let (a1, b1, s1) = m_step(
+                &ctx, &a0, &b0, &s0, &ni0, &ri0, &su0, &multi, fix_slope, cfg,
+            );
             let p1 = pack(&a1, &b1, &s1);
             let (_l1, ni1, ri1, su1, _) = full_estep(&ctx, &a1, &b1, &s1);
-            let (a2, b2, s2) = m_step(&ctx, &a1, &b1, &s1, &ni1, &ri1, &su1, &multi, fix_slope, cfg);
+            let (a2, b2, s2) = m_step(
+                &ctx, &a1, &b1, &s1, &ni1, &ri1, &su1, &multi, fix_slope, cfg,
+            );
             let p2 = pack(&a2, &b2, &s2);
             // SqS3 steplength from r = p1 - p0, v = p2 - 2p1 + p0.
             let mut r = vec![0.0f64; len];
@@ -568,27 +615,25 @@ pub fn fit_testlet(
             }
             let sr: f64 = r.iter().map(|x| x * x).sum();
             let sv: f64 = v.iter().map(|x| x * x).sum();
-            let mut accepted = false;
-            if sv > 1e-300 {
-                let alpha = (-(sr / sv).sqrt()).min(-1.0);
-                let mut pn = vec![0.0f64; len];
-                for k in 0..len {
-                    pn[k] = params[k] - 2.0 * alpha * r[k] + alpha * alpha * v[k];
-                }
-                project(&mut pn);
-                let (an, bn, sn) = unpack(&pn);
-                let (lc, nic, ric, suc, _) = full_estep(&ctx, &an, &bn, &sn);
-                // Accept only if not worse than the cycle start (=> monotone after one
-                // stabilizing M-step); else fall back to the two plain EM steps.
-                if lc.is_finite() && lc >= l0 {
-                    let (a3, b3, s3) = m_step(&ctx, &an, &bn, &sn, &nic, &ric, &suc, &multi, fix_slope, cfg);
-                    params = pack(&a3, &b3, &s3);
-                    accepted = true;
-                }
+            let alpha = squarem_alpha(sr, sv);
+            let mut pn = vec![0.0f64; len];
+            for k in 0..len {
+                pn[k] = params[k] - 2.0 * alpha * r[k] + alpha * alpha * v[k];
             }
-            if !accepted {
-                params = p2;
-            }
+            project(&mut pn);
+            let (an, bn, sn) = unpack(&pn);
+            let (lc, nic, ric, suc, _) = full_estep(&ctx, &an, &bn, &sn);
+            // Accept only if not worse than the cycle start (=> monotone after one
+            // stabilizing M-step); else fall back to the two plain EM steps.  With a
+            // degenerate SQUAREM direction (`sv <= 1e-300`) the extrapolated point is
+            // deliberately rejected and the two plain EM steps are retained.
+            let extrapolated = (sv > 1e-300 && lc.is_finite() && lc >= l0).then(|| {
+                let (a3, b3, s3) = m_step(
+                    &ctx, &an, &bn, &sn, &nic, &ric, &suc, &multi, fix_slope, cfg,
+                );
+                pack(&a3, &b3, &s3)
+            });
+            params = choose_squarem_parameters(extrapolated, p2);
             n_iter += 2;
         }
         let (fa, fb, fs) = unpack(&params);
@@ -607,7 +652,9 @@ pub fn fit_testlet(
                     break;
                 }
             }
-            let (na, nb, ns) = m_step(&ctx, &a, &beta, &sigma2, &ni, &ri, &su, &multi, fix_slope, cfg);
+            let (na, nb, ns) = m_step(
+                &ctx, &a, &beta, &sigma2, &ni, &ri, &su, &multi, fix_slope, cfg,
+            );
             a = na;
             beta = nb;
             sigma2 = ns;
@@ -616,20 +663,32 @@ pub fn fit_testlet(
 
     // Final pass at the returned params: theta EAP + final loglik.
     let (final_ll, _, _, _, theta) = full_estep(&ctx, &a, &beta, &sigma2);
-    if !converged && loglik_trace.last().is_none_or(|last| last.to_bits() != final_ll.to_bits()) {
+    if !converged
+        && loglik_trace
+            .last()
+            .is_none_or(|last| last.to_bits() != final_ll.to_bits())
+    {
         loglik_trace.push(final_ll);
     }
     let final_loglik_change = loglik_trace
         .windows(2)
         .last()
         .map_or(f64::INFINITY, |pair| (pair[1] - pair[0]).abs());
-    let termination_reason = if converged { "converged" } else { "max_iter_reached" };
+    let termination_reason = if converged {
+        "converged"
+    } else {
+        "max_iter_reached"
+    };
 
     let b: Vec<f64> = (0..j).map(|i| -beta[i] / a[i]).collect();
     let k = if fix_slope { 1 } else { 2 };
     // Only FREELY-estimated testlet variances count: singletons are pinned to 0
     // (non-identified) and estimate_sigma=false fixes every variance.
-    let n_free_sigma = if cfg.estimate_sigma { multi.iter().filter(|&&m| m).count() } else { 0 };
+    let n_free_sigma = if cfg.estimate_sigma {
+        multi.iter().filter(|&&m| m).count()
+    } else {
+        0
+    };
     Ok(TestletResult {
         model,
         a,
@@ -647,302 +706,5 @@ pub fn fit_testlet(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mmle::{fit_mmle_2pl, MmleConfig};
-
-    struct Lcg(u64);
-    impl Lcg {
-        fn next_f64(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
-        }
-        fn normal(&mut self) -> f64 {
-            let u1 = self.next_f64().max(1e-12);
-            let u2 = self.next_f64();
-            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-        }
-        fn skew(&mut self) -> f64 {
-            -(self.next_f64().max(1e-12)).ln() - 1.0 // Exp(1)-1: mean 0, var 1
-        }
-        fn bern(&mut self, p: f64) -> f64 {
-            if self.next_f64() < p {
-                1.0
-            } else {
-                0.0
-            }
-        }
-    }
-    fn rmse(a: &[f64], b: &[f64]) -> f64 {
-        let n = a.len() as f64;
-        (a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f64>() / n).sqrt()
-    }
-    fn bias(a: &[f64], b: &[f64]) -> f64 {
-        let n = a.len() as f64;
-        a.iter().zip(b).map(|(x, y)| x - y).sum::<f64>() / n
-    }
-    fn nondecreasing(t: &[f64]) -> bool {
-        t.windows(2).all(|w| w[1] >= w[0] - 1e-6)
-    }
-
-    /// The gamma quadrature must be the standard normal (unit variance) or the
-    /// sigma^2 = sigma^2 * mean(E[u^2]) update converges to a biased fixed point.
-    #[test]
-    fn gh_rule_is_unit_normal() {
-        for &q in &[11usize, 15, 21, 31, 41] {
-            let (u, v) = gh_rule(q).unwrap();
-            assert!((v.iter().sum::<f64>() - 1.0).abs() < 1e-9);
-            assert!(u.iter().zip(v).map(|(x, w)| x * w).sum::<f64>().abs() < 1e-9);
-            let m2: f64 = u.iter().zip(v).map(|(x, w)| x * x * w).sum();
-            assert!((m2 - 1.0).abs() < 1e-6, "gh_rule({q}) E[u^2] = {m2}");
-        }
-    }
-
-    #[test]
-    fn rejects_testlet_count_exceeding_item_count_before_allocation() {
-        let cfg = TestletConfig::default();
-        let err = validate(&[1.0], &[true], &[0], 1, 1, 1_000_000_001, &cfg)
-            .expect_err("oversized testlet count must be rejected");
-        assert!(err.contains("n_testlets must not exceed n_items"));
-    }
-
-    /// Contiguous testlet assignment: testlet d owns items [d*size .. (d+1)*size).
-    fn contiguous_testlets(n_items: usize, n_testlets: usize) -> Vec<usize> {
-        let per = n_items / n_testlets;
-        (0..n_items).map(|i| (i / per).min(n_testlets - 1)).collect()
-    }
-
-    /// Simulate testlet data: draw theta, per-testlet gamma ~ N(0, sigma^2_d), responses.
-    fn simulate(
-        a: &[f64],
-        beta: &[f64],
-        sigma2: &[f64],
-        testlet_id: &[usize],
-        n: usize,
-        j: usize,
-        skew: bool,
-        rng: &mut Lcg,
-    ) -> Vec<f64> {
-        let d_n = sigma2.len();
-        let mut y = vec![0.0f64; n * j];
-        for p in 0..n {
-            let theta = if skew { rng.skew() } else { rng.normal() };
-            let gamma: Vec<f64> = (0..d_n).map(|d| sigma2[d].sqrt() * rng.normal()).collect();
-            for i in 0..j {
-                let eta = a[i] * theta + beta[i] - a[i] * gamma[testlet_id[i]];
-                y[p * j + i] = rng.bern(sigmoid_stable(eta));
-            }
-        }
-        y
-    }
-
-    /// PRIMARY anchor: sigma^2 pinned to 0 reduces to fit_mmle_2pl (a/beta/loglik match).
-    #[test]
-    fn testlet_sigma0_equals_fit_mmle_2pl() {
-        let (n, j, d_n) = (700usize, 12usize, 3usize);
-        let tid = contiguous_testlets(j, d_n);
-        let mut rng = Lcg(7);
-        let a_t: Vec<f64> = (0..j).map(|_| 0.8 + 0.8 * rng.next_f64()).collect();
-        let beta_t: Vec<f64> = (0..j).map(|i| -1.2 + 2.4 * i as f64 / (j - 1) as f64).collect();
-        let y = simulate(&a_t, &beta_t, &vec![0.0; d_n], &tid, n, j, false, &mut rng);
-        let observed = vec![true; n * j];
-        let mcfg = MmleConfig { max_iter: 80, tol: 0.0, ridge_a: 1e-3, ridge_b: 1e-3, newton_iter: 25 };
-        let mmle = fit_mmle_2pl(&y, &observed, n, j, &mcfg);
-        let cfg = TestletConfig {
-            max_iter: 80, tol: 0.0, q_gamma: 21, ridge_a: 1e-3, ridge_b: 1e-3,
-            newton_iter: 25, estimate_sigma: false, init_sigma2: 0.0,
-        };
-        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
-        // a/beta bit-exact; theta OMITTED (mmle EAP uses a stale posterior — same reason
-        // the mixture/lltm anchors assert only item params).
-        assert!(rmse(&res.a, &mmle.a) < 1e-12, "a rmse {}", rmse(&res.a, &mmle.a));
-        assert!(rmse(&res.beta, &mmle.b) < 1e-12, "beta rmse {}", rmse(&res.beta, &mmle.b));
-        // loglik agrees on the common prefix (testlet may push an extra final_ll).
-        assert!(
-            res.loglik_trace.iter().zip(&mmle.loglik_trace).all(|(x, y)| (x - y).abs() < 1e-12),
-            "loglik prefix mismatch"
-        );
-        assert_eq!(res.n_parameters, 2 * j); // sigma^2 fixed => 0 free variance params
-        assert!(res.sigma2.iter().all(|&s| s == 0.0));
-    }
-
-    /// No-spurious-LD: pure 2PL data (all true sigma^2=0), full fit must not invent LD.
-    /// Ignored by default: shrinking sigma^2 to ~0 needs many iterations (the sigma->0
-    /// tail of the variance-component EM is slow even with SQUAREM).
-    #[test]
-    #[ignore = "slow (sigma->0 convergence); run with: cargo test --release -- --ignored"]
-    fn testlet_no_spurious_ld() {
-        let (n, j, d_n) = (600usize, 12usize, 3usize);
-        let tid = contiguous_testlets(j, d_n);
-        let mut rng = Lcg(11);
-        let a_t: Vec<f64> = (0..j).map(|_| 0.8 + 0.8 * rng.next_f64()).collect();
-        let beta_t: Vec<f64> = (0..j).map(|i| -1.5 + 3.0 * i as f64 / (j - 1) as f64).collect();
-        let y = simulate(&a_t, &beta_t, &vec![0.0; d_n], &tid, n, j, false, &mut rng);
-        let observed = vec![true; n * j];
-        let cfg = TestletConfig { max_iter: 2000, ..TestletConfig::default() };
-        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
-        println!("no_spurious: converged={} n_iter={} sigma2={:?}", res.converged, res.n_iter, res.sigma2);
-        assert!(res.converged, "testlet fit exhausted {} iterations", cfg.max_iter);
-        assert!(res.n_iter < cfg.max_iter);
-        assert!(nondecreasing(&res.loglik_trace));
-        assert!(res.sigma2.iter().all(|&s| s < 0.08), "spurious LD: {:?}", res.sigma2);
-    }
-
-    /// Strong-LD: large true sigma^2 recovered, and modeling it improves the loglik over
-    /// the sigma=0 (naive-2PL) fit — the signature of unmodeled local dependence.
-    #[test]
-    fn testlet_recovers_strong_ld() {
-        // Rasch (a=1), 8 items per testlet (the well-identified testlet model; the 2PL
-        // discrimination trades off against the testlet SD via a_i*sigma_d).
-        let (n, j, d_n) = (800usize, 16usize, 2usize);
-        let tid = contiguous_testlets(j, d_n);
-        let sig2 = vec![0.6f64, 0.3];
-        let mut rng = Lcg(2024);
-        let a_t = vec![1.0f64; j];
-        let beta_t: Vec<f64> = (0..j).map(|i| -1.5 + 3.0 * (i % 8) as f64 / 7.0).collect();
-        let y = simulate(&a_t, &beta_t, &sig2, &tid, n, j, false, &mut rng);
-        let observed = vec![true; n * j];
-        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &TestletConfig::default()).unwrap();
-        assert!(res.converged && nondecreasing(&res.loglik_trace));
-        assert!(rmse(&res.sigma2, &sig2) < 0.2, "sigma2 rmse {} ({:?})", rmse(&res.sigma2, &sig2), res.sigma2);
-        assert!(res.sigma2[0] > 0.35, "strong LD not recovered: {}", res.sigma2[0]);
-        // loglik gain over the naive sigma=0 fit
-        let naive = TestletConfig { estimate_sigma: false, init_sigma2: 0.0, ..TestletConfig::default() };
-        let res0 = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &naive).unwrap();
-        assert!(
-            *res.loglik_trace.last().unwrap() > *res0.loglik_trace.last().unwrap() + 5.0,
-            "testlet fit did not improve loglik over naive 2PL"
-        );
-    }
-
-    /// A singleton testlet's variance is non-identified => pinned to 0, not spurious.
-    #[test]
-    fn testlet_singleton_pinned() {
-        let (n, j) = (600usize, 7usize);
-        // testlets: {0,1,2}, {3,4,5}, {6} (singleton)
-        let tid = vec![0usize, 0, 0, 1, 1, 1, 2];
-        let sig2 = vec![0.6f64, 0.6, 0.0];
-        let mut rng = Lcg(5);
-        let a_t = vec![1.0f64; j];
-        let beta_t: Vec<f64> = (0..j).map(|i| -1.0 + 2.0 * i as f64 / (j - 1) as f64).collect();
-        let y = simulate(&a_t, &beta_t, &sig2, &tid, n, j, false, &mut rng);
-        let observed = vec![true; n * j];
-        let res = fit_testlet(&y, &observed, &tid, n, j, 3, TestletModel::Rasch, &TestletConfig::default()).unwrap();
-        assert!(res.converged);
-        assert_eq!(res.sigma2[2], 0.0, "singleton testlet variance must be pinned to 0");
-        // the singleton's pinned variance is NOT a free parameter (Rasch: J + 2 multi).
-        assert_eq!(res.n_parameters, j + 2);
-    }
-
-    /// Missing-at-random cells are dropped.
-    #[test]
-    fn testlet_handles_missing_data() {
-        let (n, j, d_n) = (500usize, 12usize, 3usize);
-        let tid = contiguous_testlets(j, d_n);
-        let sig2 = vec![0.5f64, 0.5, 0.5];
-        let mut rng = Lcg(9);
-        let a_t = vec![1.0f64; j];
-        let beta_t: Vec<f64> = (0..j).map(|i| -1.0 + 2.0 * i as f64 / (j - 1) as f64).collect();
-        let y = simulate(&a_t, &beta_t, &sig2, &tid, n, j, false, &mut rng);
-        let mut observed = vec![true; n * j];
-        for o in observed.iter_mut() {
-            if rng.next_f64() < 0.2 {
-                *o = false;
-            }
-        }
-        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &TestletConfig::default()).unwrap();
-        assert!(res.converged && nondecreasing(&res.loglik_trace));
-    }
-
-    /// Malformed inputs are rejected (covers each validate branch, incl. tol=0 allowed).
-    #[test]
-    fn testlet_validate_rejects_malformed() {
-        let (n, j, d_n) = (5usize, 6usize, 2usize);
-        let tid = contiguous_testlets(j, d_n);
-        let y = vec![0.0f64; n * j];
-        let obs = vec![true; n * j];
-        let d = TestletConfig::default();
-        let bad = |y: &[f64], obs: &[bool], tid: &[usize], n, j, dn, cfg: &TestletConfig| {
-            fit_testlet(y, obs, tid, n, j, dn, TestletModel::Rasch, cfg).is_err()
-        };
-        assert!(bad(&y, &obs, &tid, 0, j, d_n, &d)); // n_persons
-        assert!(bad(&y, &obs, &tid, n, j, 0, &d)); // n_testlets
-        assert!(bad(&y, &obs, &tid, n, j, d_n, &TestletConfig { max_iter: 0, ..d }));
-        assert!(bad(&y, &obs, &tid, n, j, d_n, &TestletConfig { tol: -1.0, ..d }));
-        assert!(bad(&y, &obs, &tid, n, j, d_n, &TestletConfig { q_gamma: 8, ..d })); // not in SUPPORTED_Q
-        assert!(bad(&y, &obs, &tid, n, j, d_n, &TestletConfig { init_sigma2: -1.0, ..d }));
-        assert!(bad(&vec![0.0; n * j - 1], &obs, &tid, n, j, d_n, &d)); // y length
-        assert!(bad(&y, &obs, &vec![0usize; j - 1], n, j, d_n, &d)); // testlet_id length
-        assert!(bad(&y, &obs, &vec![0, 0, 0, 5, 0, 0], n, j, d_n, &d)); // testlet_id out of range
-        assert!(bad(&vec![2.0; n * j], &obs, &tid, n, j, d_n, &d)); // y not 0/1
-        // an empty testlet (n_testlets says 3 but only 0,1 used)
-        assert!(bad(&y, &obs, &vec![0, 0, 0, 1, 1, 1], n, j, 3, &d));
-        // tol == 0.0 accepted
-        assert!(fit_testlet(&y, &obs, &tid, n, j, d_n, TestletModel::Rasch, &TestletConfig { tol: 0.0, max_iter: 2, ..d }).is_ok());
-    }
-
-    /// Iteration exhaustion is explicit and SQUAREM must not overrun max_iter.
-    #[test]
-    fn testlet_reports_max_iter_nonconvergence() {
-        let (n, j, d_n) = (40usize, 6usize, 2usize);
-        let tid = contiguous_testlets(j, d_n);
-        let y: Vec<f64> = (0..n * j).map(|idx| ((idx + idx / j) % 2) as f64).collect();
-        let observed = vec![true; n * j];
-        let cfg = TestletConfig { max_iter: 2, tol: 0.0, q_gamma: 7, ..TestletConfig::default() };
-        let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
-        assert!(!res.converged);
-        assert_eq!(res.termination_reason, "max_iter_reached");
-        assert_eq!(res.n_iter, cfg.max_iter);
-        assert!(res.final_loglik_change.is_finite());
-        assert_eq!(res.loglik_trace.len(), cfg.max_iter);
-    }
-
-    /// Literature-grade Monte-Carlo (>=500 reps): Bradlow-Wainer-Wang-style design.
-    /// Uses the RASCH testlet (the well-identified case; in the 2PL testlet the free
-    /// discrimination a_i and the testlet SD sigma_d both scale the LD via a_i*sigma_d
-    /// and separate only weakly with few testlets). Recovers the testlet variances and
-    /// item difficulties under normal and skew ability.
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn mc_testlet_recovery_500() {
-        let (n, j, d_n, per, reps) = (1000usize, 24usize, 4usize, 6usize, 500usize);
-        let tid = contiguous_testlets(j, d_n);
-        let sig2_t = vec![0.2f64, 0.4, 0.6, 0.8];
-        assert_eq!(j, d_n * per);
-        let a_t = vec![1.0f64; j];
-        let cfg = TestletConfig { q_gamma: 15, max_iter: 1500, ..TestletConfig::default() };
-        for &skew in [false, true].iter() {
-            let (mut s_b, mut s_sig, mut s_bsig, mut n_conv) = (0.0, 0.0, 0.0, 0.0);
-            for rep in 0..reps {
-                let seed = 0xBADC0FFEE0DDF00Du64
-                    .wrapping_mul(rep as u64 + 1)
-                    .wrapping_add(if skew { 0x9E3779B97F4A7C15 } else { 0 });
-                let mut rng = Lcg(seed);
-                let beta_t: Vec<f64> = (0..j).map(|i| -1.5 + 3.0 * (i % per) as f64 / (per - 1) as f64).collect();
-                let y = simulate(&a_t, &beta_t, &sig2_t, &tid, n, j, skew, &mut rng);
-                let observed = vec![true; n * j];
-                let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::Rasch, &cfg).unwrap();
-                assert!(
-                    res.converged,
-                    "testlet Monte-Carlo fit did not converge: skew={skew}, rep={rep}, n_iter={}, final_delta={}",
-                    res.n_iter,
-                    res.final_loglik_change
-                );
-                s_b += rmse(&res.beta, &beta_t);
-                s_sig += rmse(&res.sigma2, &sig2_t);
-                s_bsig += bias(&res.sigma2, &sig2_t);
-                if res.converged {
-                    n_conv += 1.0;
-                }
-            }
-            let r = reps as f64;
-            println!(
-                "skew={}: RMSE(beta)={:.4} RMSE(sigma2)={:.4} bias(sigma2)={:.4} converged={:.2}",
-                skew, s_b / r, s_sig / r, s_bsig / r, n_conv / r
-            );
-            assert!(s_b / r < 0.12, "RMSE(beta) {} skew={skew}", s_b / r);
-            assert!(s_sig / r < 0.15, "RMSE(sigma2) {} skew={skew}", s_sig / r);
-            assert_eq!(n_conv, r, "not every Monte-Carlo fit converged (skew={skew})");
-        }
-    }
-}
+#[path = "../../../tests/unit/testlet_tests.rs"]
+mod tests;

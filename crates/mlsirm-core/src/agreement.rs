@@ -129,7 +129,8 @@ pub fn agreement_rates(a: &[u32], b: &[u32]) -> Result<(f64, f64), String> {
         .iter()
         .zip(b)
         .filter(|(&x, &y)| (x as i64 - y as i64).abs() <= 1)
-        .count() as f64 / n;
+        .count() as f64
+        / n;
     Ok((exact, adjacent))
 }
 
@@ -168,11 +169,26 @@ pub fn validate_scoring(
     let mut gates = Vec::new();
 
     let qwk = quadratic_weighted_kappa(auto, human, k)?;
-    gates.push(Gate { name: "qwk", value: qwk, threshold: 0.70, pass: qwk >= 0.70 });
+    gates.push(Gate {
+        name: "qwk",
+        value: qwk,
+        threshold: 0.70,
+        pass: qwk >= 0.70,
+    });
     let r = pearson_r(&auto_f, &human_f)?;
-    gates.push(Gate { name: "pearson_r", value: r, threshold: 0.70, pass: r >= 0.70 });
+    gates.push(Gate {
+        name: "pearson_r",
+        value: r,
+        threshold: 0.70,
+        pass: r >= 0.70,
+    });
     let s = smd(&auto_f, &human_f)?;
-    gates.push(Gate { name: "smd", value: s, threshold: 0.15, pass: s.abs() <= 0.15 });
+    gates.push(Gate {
+        name: "smd",
+        value: s,
+        threshold: 0.15,
+        pass: s.abs() <= 0.15,
+    });
 
     if let Some((h1, h2)) = human_human {
         let hh = quadratic_weighted_kappa(h1, h2, k)?;
@@ -192,17 +208,19 @@ pub fn validate_scoring(
         let n_groups = groups.iter().map(|&g| g as usize).max().unwrap_or(0) + 1;
         let mut worst: f64 = 0.0;
         for g in 0..n_groups {
-            let idx: Vec<usize> =
-                (0..groups.len()).filter(|&i| groups[i] as usize == g).collect();
+            let idx: Vec<usize> = (0..groups.len())
+                .filter(|&i| groups[i] as usize == g)
+                .collect();
             if idx.len() < 2 {
                 continue;
             }
             let ga: Vec<f64> = idx.iter().map(|&i| auto_f[i]).collect();
             let gh: Vec<f64> = idx.iter().map(|&i| human_f[i]).collect();
-            if let Ok(gs) = smd(&ga, &gh) {
-                if gs.abs() > worst.abs() {
-                    worst = gs;
-                }
+            let Ok(gs) = smd(&ga, &gh) else {
+                continue;
+            };
+            if gs.abs() > worst.abs() {
+                worst = gs;
             }
         }
         gates.push(Gate {
@@ -215,90 +233,14 @@ pub fn validate_scoring(
 
     let (exact, adjacent) = agreement_rates(auto, human)?;
     let pass = gates.iter().all(|g| g.pass);
-    Ok(ValidationVerdict { gates, exact_agreement: exact, adjacent_agreement: adjacent, pass })
+    Ok(ValidationVerdict {
+        gates,
+        exact_agreement: exact,
+        adjacent_agreement: adjacent,
+        pass,
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn kappa_hand_computed_2x2() {
-        // table: a\b -> [[20, 5], [10, 65]], n = 100
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        for (x, y, count) in [(0, 0, 20), (0, 1, 5), (1, 0, 10), (1, 1, 65)] {
-            for _ in 0..count {
-                a.push(x);
-                b.push(y);
-            }
-        }
-        // po = .85; pe = .25*.30 + .75*.70 = .60; kappa = .25/.40 = .625
-        let k = cohen_kappa(&a, &b, 2).unwrap();
-        assert!((k - 0.625).abs() < 1e-9, "kappa {k}");
-        // binary QWK equals unweighted kappa
-        let qwk = quadratic_weighted_kappa(&a, &b, 2).unwrap();
-        assert!((qwk - k).abs() < 1e-9);
-        let (exact, adjacent) = agreement_rates(&a, &b).unwrap();
-        assert!((exact - 0.85).abs() < 1e-9);
-        assert!((adjacent - 1.0).abs() < 1e-9, "binary adjacent is degenerate at 1");
-    }
-
-    #[test]
-    fn smd_and_r_hand_computed() {
-        let human = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0];
-        let auto = [1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0];
-        // p_h = .625, sd_h = sqrt(.625*.375); p_a = .75
-        let expect = (0.75 - 0.625) / (0.625_f64 * 0.375).sqrt();
-        assert!((smd(&auto, &human).unwrap() - expect).abs() < 1e-9);
-        let r = pearson_r(&auto, &human).unwrap();
-        assert!(r > 0.6 && r < 1.0);
-    }
-
-    #[test]
-    fn verdict_gates_flag_degradation() {
-        // auto-human agreement clearly worse than human-human
-        let human: Vec<u32> = (0..200).map(|i| (i % 2) as u32).collect();
-        let auto: Vec<u32> =
-            (0..200).map(|i| if i % 5 == 0 { 1 - (i % 2) as u32 } else { (i % 2) as u32 }).collect();
-        let h2: Vec<u32> = human.clone(); // perfect human-human baseline
-        let verdict =
-            validate_scoring(&auto, &human, 2, Some((&human, &h2)), None).unwrap();
-        let degr = verdict.gates.iter().find(|g| g.name == "degradation").unwrap();
-        assert!(!degr.pass, "20% flips vs perfect baseline must flag degradation");
-        assert!(verdict.exact_agreement < 1.0);
-    }
-
-    #[test]
-    fn subgroup_smd_catches_biased_slice() {
-        // group 1 systematically over-scored by the auto rater
-        let mut auto = Vec::new();
-        let mut human = Vec::new();
-        let mut grp = Vec::new();
-        let mut state = 9u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        for i in 0..400 {
-            let g = (i % 2) as u32;
-            let h = if unif() < 0.5 { 1u32 } else { 0 };
-            let a = if g == 1 && h == 0 && unif() < 0.5 { 1 } else { h };
-            auto.push(a);
-            human.push(h);
-            grp.push(g);
-        }
-        let verdict = validate_scoring(&auto, &human, 2, None, Some(&grp)).unwrap();
-        let sg = verdict.gates.iter().find(|g| g.name == "subgroup_smd").unwrap();
-        assert!(!sg.pass, "inflated group-1 scores must flag the subgroup SMD gate");
-    }
-
-    #[test]
-    fn rejects_degenerate_inputs() {
-        assert!(cohen_kappa(&[0, 1], &[0], 2).is_err());
-        assert!(quadratic_weighted_kappa(&[0, 0], &[0, 0], 2).is_err());
-        assert!(pearson_r(&[1.0, 1.0], &[0.0, 1.0]).is_err());
-        assert!(smd(&[1.0, 1.0], &[1.0, 1.0]).is_err());
-        assert!(quadratic_weighted_kappa(&[0, 3], &[0, 1], 2).is_err());
-    }
-}
+#[path = "../../../tests/unit/agreement_tests.rs"]
+mod tests;

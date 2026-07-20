@@ -39,10 +39,11 @@ pub struct PolyLsirmFit {
 /// Tensor Gauss-Hermite grid for a `latent_dim`-dimensional standard normal:
 /// returns `(grid [n_xi * latent_dim], log_weights [n_xi])`.
 fn xi_tensor_grid(q_xi: usize, latent_dim: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
-    let (nodes, weights) =
-        crate::quadrature::gh_rule(q_xi).ok_or_else(|| format!("unsupported q_xi {q_xi}"))?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule(q_xi, "q_xi")?;
     let q = nodes.len();
-    let n_xi = q.checked_pow(latent_dim as u32).ok_or("xi grid too large")?;
+    let n_xi = q
+        .checked_pow(latent_dim as u32)
+        .ok_or("xi grid too large")?;
     if n_xi > 200_000 {
         return Err("q_xi ** latent_dim exceeds the tensor-grid limit".into());
     }
@@ -232,8 +233,7 @@ pub fn fit_poly_lsirm(
         }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
-    let (theta, t_w) =
-        crate::quadrature::gh_rule(q_theta).ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let (theta, t_w) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
     let t_logw: Vec<f64> = t_w.iter().map(|w| w.ln()).collect();
     let (xi_grid, x_logw) = xi_tensor_grid(q_xi, latent_dim)?;
     let n_xi = x_logw.len();
@@ -434,147 +434,18 @@ pub fn fit_poly_lsirm(
         theta_sd[p] = (m2 - m1 * m1).max(0.0).sqrt();
     }
 
-    Ok(PolyLsirmFit { slope, cat_params, zeta, theta_eap, theta_sd, xi_eap, loglik: ll, n_iter: it })
+    Ok(PolyLsirmFit {
+        slope,
+        cat_params,
+        zeta,
+        theta_eap,
+        theta_sd,
+        xi_eap,
+        loglik: ll,
+        n_iter: it,
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lsirm_rejects_unbounded_categories_and_iterations() {
-        let y = [0usize];
-        assert!(fit_poly_lsirm(
-            &y,
-            None,
-            1,
-            1,
-            POLY_MAX_CAT + 1,
-            1,
-            PolyModel::Grm,
-            7,
-            7,
-            1,
-            1e-6,
-        )
-        .is_err());
-        assert!(fit_poly_lsirm(
-            &y,
-            None,
-            1,
-            1,
-            2,
-            1,
-            PolyModel::Grm,
-            7,
-            7,
-            POLY_MAX_ITER + 1,
-            1e-6,
-        )
-        .is_err());
-    }
-
-    fn dist_matrix(z: &[f64], n: usize, d: usize) -> Vec<f64> {
-        let mut out = Vec::new();
-        for i in 0..n {
-            for j in i + 1..n {
-                let mut s = 0.0;
-                for k in 0..d {
-                    let dd = z[i * d + k] - z[j * d + k];
-                    s += dd * dd;
-                }
-                out.push(s.sqrt());
-            }
-        }
-        out
-    }
-
-    fn rmse(a: &[f64], b: &[f64]) -> f64 {
-        (a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / a.len() as f64).sqrt()
-    }
-
-    #[test]
-    fn fit_poly_lsirm_recovers_positions_and_slopes() {
-        let (n_persons, n_items, k, ld) = (1500usize, 6usize, 3usize, 2usize);
-        let mut st = 314159u64;
-        let mut u = || {
-            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((st >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        macro_rules! nrm {
-            () => {{
-                let u1 = u().max(1e-12);
-                let u2 = u();
-                (-2.0_f64 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-            }};
-        }
-        // true item positions on two separated clusters, slopes, GPCM intercepts
-        let mut zeta_true = vec![0.0_f64; n_items * ld];
-        for i in 0..n_items {
-            let cx = if i < n_items / 2 { -1.2 } else { 1.2 };
-            zeta_true[i * ld] = cx + 0.3 * nrm!();
-            zeta_true[i * ld + 1] = 0.3 * nrm!();
-        }
-        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.08 * i as f64).collect();
-        let c_true: Vec<Vec<f64>> =
-            (0..n_items).map(|i| vec![0.0, 0.2 - 0.05 * i as f64, -0.2 + 0.05 * i as f64]).collect();
-        let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
-        let mut y = vec![0usize; n_persons * n_items];
-        let mut theta_true = vec![0.0_f64; n_persons];
-        for p in 0..n_persons {
-            let theta = nrm!();
-            theta_true[p] = theta;
-            let xi: Vec<f64> = (0..ld).map(|_| nrm!()).collect();
-            for i in 0..n_items {
-                let mut dist2 = 1e-8;
-                for kk in 0..ld {
-                    let dd = xi[kk] - zeta_true[i * ld + kk];
-                    dist2 += dd * dd;
-                }
-                let base = a_true[i] * theta - dist2.sqrt();
-                let mut ic = vec![0.0; k];
-                ic[1..].copy_from_slice(&c_true[i][1..]);
-                let lp = gpcm_logprobs(base, &scores, &ic);
-                let uu = u();
-                let mut cum = 0.0;
-                let mut cat = k - 1;
-                for (c, l) in lp.iter().enumerate() {
-                    cum += l.exp();
-                    if uu < cum {
-                        cat = c;
-                        break;
-                    }
-                }
-                y[p * n_items + i] = cat;
-            }
-        }
-        let fit = fit_poly_lsirm(&y, None, n_persons, n_items, k, ld, PolyModel::Gpcm, 7, 7, 40, 1e-5)
-            .unwrap();
-        assert!(fit.loglik.is_finite());
-        // ABSOLUTE-agreement checks (correlation only shows association, not
-        // identity): slope RMSE, and RMSE of the item-item distance matrix, which
-        // is exactly invariant to the position rotation/reflection/translation
-        // ambiguity while gamma = 1 fixes its absolute scale.
-        let slope_rmse = rmse(&a_true, &fit.slope);
-        assert!(slope_rmse < 0.25, "slope RMSE {slope_rmse}");
-        let dm_true = dist_matrix(&zeta_true, n_items, ld);
-        let dm_hat = dist_matrix(&fit.zeta, n_items, ld);
-        let pos_rmse = rmse(&dm_true, &dm_hat);
-        assert!(pos_rmse < 0.6, "position distance-matrix RMSE {pos_rmse}");
-        // person trait recovery: EAP is shrunk toward the prior, so correlation
-        // (association) is the appropriate metric here, not RMSE
-        let corr = {
-            let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-            let (mt, me) = (mean(&theta_true), mean(&fit.theta_eap));
-            let (mut num, mut dt, mut de) = (0.0, 0.0, 0.0);
-            for p in 0..n_persons {
-                num += (theta_true[p] - mt) * (fit.theta_eap[p] - me);
-                dt += (theta_true[p] - mt).powi(2);
-                de += (fit.theta_eap[p] - me).powi(2);
-            }
-            num / (dt.sqrt() * de.sqrt())
-        };
-        assert!(corr > 0.6, "theta EAP corr {corr}");
-        assert!(fit.theta_sd.iter().all(|s| s.is_finite() && *s > 0.0));
-    }
-}
+#[path = "../../../tests/unit/poly_marginal_tests.rs"]
+mod tests;

@@ -57,9 +57,8 @@ struct ParamVec {
 
 impl ParamVec {
     fn len(&self) -> usize {
-        let per_item = 1
-            + usize::from(self.free_alpha)
-            + if self.uses_space { self.latent_dim } else { 0 };
+        let per_item =
+            1 + usize::from(self.free_alpha) + if self.uses_space { self.latent_dim } else { 0 };
         self.n_items * per_item + usize::from(self.tau_free)
     }
 
@@ -182,8 +181,8 @@ fn q_gradient(
                         crate::InteractionKind::Distance => {
                             let mut dist2 = config.eps_distance;
                             for k in 0..latent_dim {
-                                let diff = grids.x_grid[x * latent_dim + k]
-                                    - zeta[i * latent_dim + k];
+                                let diff =
+                                    grids.x_grid[x * latent_dim + k] - zeta[i * latent_dim + k];
                                 dist2 += diff * diff;
                             }
                             dist = dist2.sqrt();
@@ -191,8 +190,7 @@ fn q_gradient(
                         }
                         crate::InteractionKind::Inner => {
                             for k in 0..latent_dim {
-                                eta += zeta[i * latent_dim + k]
-                                    * grids.x_grid[x * latent_dim + k];
+                                eta += zeta[i * latent_dim + k] * grids.x_grid[x * latent_dim + k];
                             }
                         }
                     }
@@ -203,17 +201,13 @@ fn q_gradient(
                     }
                     if uses_space {
                         for k in 0..latent_dim {
-                            let deta = match kind {
-                                crate::InteractionKind::Distance => {
-                                    gamma
-                                        * (grids.x_grid[x * latent_dim + k]
-                                            - zeta[i * latent_dim + k])
-                                        / dist
-                                }
-                                crate::InteractionKind::Inner => {
-                                    grids.x_grid[x * latent_dim + k]
-                                }
-                                crate::InteractionKind::None => 0.0,
+                            let deta = if kind == crate::InteractionKind::Distance {
+                                gamma
+                                    * (grids.x_grid[x * latent_dim + k] - zeta[i * latent_dim + k])
+                                    / dist
+                            } else {
+                                debug_assert_eq!(kind, crate::InteractionKind::Inner);
+                                grids.x_grid[x * latent_dim + k]
                             };
                             g_zeta[k] += resid * deta;
                         }
@@ -288,6 +282,11 @@ fn invert(mut m: Vec<f64>, k: usize) -> Option<Vec<f64>> {
     Some(inv)
 }
 
+fn invert_information(information: Vec<f64>, k: usize) -> Result<Vec<f64>, String> {
+    invert(information, k)
+        .ok_or_else(|| "observed information is singular; SEs unavailable".to_string())
+}
+
 /// Observed-information standard errors via Oakes' identity at the fitted
 /// parameters. `h` is the finite-difference step (default 1e-5 scaled).
 #[allow(clippy::too_many_arguments)]
@@ -315,8 +314,7 @@ pub fn observed_information_oakes(
     let pv = ParamVec {
         free_alpha,
         uses_space,
-        tau_free: crate::interaction_kind(config.model_type)
-            == crate::InteractionKind::Distance,
+        tau_free: crate::interaction_kind(config.model_type) == crate::InteractionKind::Distance,
         n_items: config.n_items,
         latent_dim: config.latent_dim,
     };
@@ -325,9 +323,7 @@ pub fn observed_information_oakes(
         gh_rule(mcfg.q_theta).ok_or_else(|| "unsupported q_theta".to_string())?;
     let (x_grid, x_logw) = if uses_space {
         let rule = match mcfg.xi_rule {
-            XiRuleKind::GaussHermite => {
-                crate::nodes::XiRule::GaussHermite { q_xi: mcfg.q_xi }
-            }
+            XiRuleKind::GaussHermite => crate::nodes::XiRule::GaussHermite { q_xi: mcfg.q_xi },
             XiRuleKind::Halton => crate::nodes::XiRule::Halton {
                 n: mcfg.xi_points,
                 shift_seed: mcfg.xi_seed,
@@ -379,13 +375,17 @@ pub fn observed_information_oakes(
     }
     // Term B: cross derivative — forward FD over xi0 (one E-step per
     // coordinate), gradient evaluated at the base xi.
-    let g0 = q_gradient(&pv, &xi0, &counts0, &ctx, &grids, config, factor_id, penalty);
+    let g0 = q_gradient(
+        &pv, &xi0, &counts0, &ctx, &grids, config, factor_id, penalty,
+    );
     for j in 0..k {
         let hj = h * (1.0 + xi0[j].abs());
         let mut x0p = xi0.clone();
         x0p[j] += hj;
         let counts_p = estep_at(&x0p);
-        let gp = q_gradient(&pv, &xi0, &counts_p, &ctx, &grids, config, factor_id, penalty);
+        let gp = q_gradient(
+            &pv, &xi0, &counts_p, &ctx, &grids, config, factor_id, penalty,
+        );
         for c in 0..k {
             info[j * k + c] += (gp[c] - g0[c]) / hj;
         }
@@ -397,193 +397,15 @@ pub fn observed_information_oakes(
             sym[r * k + c] = -0.5 * (info[r * k + c] + info[c * k + r]);
         }
     }
-    let inv = invert(sym.clone(), k)
-        .ok_or_else(|| "observed information is singular; SEs unavailable".to_string())?;
+    let inv = invert_information(sym.clone(), k)?;
     let se: Vec<f64> = (0..k).map(|j| inv[j * k + j].max(0.0).sqrt()).collect();
-    Ok(OakesResult { labels: pv.labels(), se, information: sym })
+    Ok(OakesResult {
+        labels: pv.labels(),
+        se,
+        information: sym,
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::marginal::{fit_marginal, MarginalConfig, PopulationSpec};
-    use crate::{Device, ModelType, PenaltyConfig};
-
-    #[test]
-    fn oakes_matches_central_difference_of_the_score() {
-        // simulate a small 1PL-with-space fit, then check the Oakes assembly
-        // against the full central difference of the marginal score, and the
-        // SEs against 1/sqrt(n) scaling expectations.
-        let mut state = 4242u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let (n_persons, n_items) = (400usize, 6usize);
-        let factor_id = vec![0usize; n_items];
-        let b_true: Vec<f64> = (0..n_items).map(|i| -1.0 + 0.4 * i as f64).collect();
-        let mut y = vec![0.0_f64; n_persons * n_items];
-        for p in 0..n_persons {
-            let u1: f64 = unif().max(1e-12);
-            let u2: f64 = unif();
-            let theta =
-                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let eta: f64 = theta + b_true[i];
-                if unif() < 1.0 / (1.0 + (-eta).exp()) {
-                    y[p * n_items + i] = 1.0;
-                }
-            }
-        }
-        let observed = vec![true; n_persons * n_items];
-        let config = ModelConfig {
-            n_persons,
-            n_items,
-            n_dims: 1,
-            latent_dim: 1,
-            model_type: ModelType::Mirt,
-            eps_distance: 1e-8,
-        };
-        let mcfg = MarginalConfig { q_theta: 15, q_xi: 7, max_iter: 80, ..Default::default() };
-        let pen = PenaltyConfig::lsirm_prior();
-        let fitted = fit_marginal(
-            &y,
-            &observed,
-            &factor_id,
-            &config,
-            &PopulationSpec::Single,
-            &mcfg,
-            &pen,
-            Device::Cpu,
-        )
-        .unwrap();
-        let res = observed_information_oakes(
-            &y,
-            &observed,
-            &factor_id,
-            &config,
-            &PopulationSpec::Single,
-            &mcfg,
-            &pen,
-            &fitted.alpha,
-            &fitted.b,
-            &fitted.zeta,
-            fitted.tau,
-            &fitted.mu,
-            &fitted.sigma,
-            fitted.sigma_u,
-            1e-5,
-        )
-        .unwrap();
-        // MIRT free-alpha: labels alternate alpha/b per item
-        assert_eq!(res.labels.len(), 2 * n_items);
-        assert!(res.se.iter().all(|s| s.is_finite() && *s > 0.0));
-        // b SEs at n=400 for a 1PL-ish item live in the 0.05..0.5 band
-        for (lab, se) in res.labels.iter().zip(&res.se) {
-            if lab.starts_with("b:") {
-                assert!(
-                    (0.03..0.6).contains(se),
-                    "implausible SE for {lab}: {se}"
-                );
-            }
-        }
-        // internal consistency: Oakes total equals the central FD of the
-        // marginal score for a couple of probe coordinates
-        let pv_probe = [1usize, 4usize];
-        let pv = ParamVec {
-            free_alpha: true,
-            uses_space: false,
-            tau_free: false,
-            n_items,
-            latent_dim: 1,
-        };
-        let (t_nodes, t_weights) = gh_rule(15).unwrap();
-        let grids = Grids {
-            t_nodes: t_nodes.to_vec(),
-            t_logw: t_weights.iter().map(|w| w.ln()).collect(),
-            x_grid: vec![0.0; 1],
-            x_logw: vec![0.0],
-            q_t: 15,
-            n_x: 1,
-        };
-        let ctx = build_contexts(&PopulationSpec::Single, &[], &[], 0.0, 1, 15);
-        let resp = index_responses(&y, &observed, n_persons, n_items);
-        let xi0 = pv.pack(&fitted.alpha, &fitted.b, &fitted.zeta, fitted.tau);
-        let score_at = |xv: &[f64]| -> Vec<f64> {
-            let (a0, b0, z0, t0) = pv.unpack(xv);
-            let tables = build_tables(&a0, &b0, &z0, t0, &config, &factor_id, &ctx, &grids);
-            let counts = e_step(&tables, &resp, &factor_id, &config, &PopulationSpec::Single, &ctx, &grids);
-            q_gradient(&pv, xv, &counts, &ctx, &grids, &config, &factor_id, &pen)
-        };
-        for &j in &pv_probe {
-            let hj = 1e-5 * (1.0 + xi0[j].abs());
-            let mut xp = xi0.clone();
-            xp[j] += hj;
-            let mut xm = xi0.clone();
-            xm[j] -= hj;
-            let sp = score_at(&xp);
-            let sm = score_at(&xm);
-            for c in 0..pv.len() {
-                let fd = -(sp[c] - sm[c]) / (2.0 * hj);
-                let oakes = res.information[j * pv.len() + c];
-                assert!(
-                    (fd - oakes).abs() < 1e-2 * (1.0 + fd.abs()),
-                    "Oakes[{j},{c}] = {oakes} vs FD {fd}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn inner_product_q_gradient_does_not_write_a_tau_slot() {
-        let pv = ParamVec {
-            free_alpha: true,
-            uses_space: true,
-            tau_free: false,
-            n_items: 1,
-            latent_dim: 1,
-        };
-        let counts = EStepCounts {
-            nbar: vec![1.0],
-            rbar: vec![0.5],
-            mbar: vec![0.0],
-        };
-        let ctx = Contexts {
-            n_ctx: 1,
-            shift: vec![0.0],
-            scale: vec![1.0],
-            u_nodes: Vec::new(),
-            u_logw: Vec::new(),
-        };
-        let grids = Grids {
-            t_nodes: vec![0.0],
-            t_logw: vec![0.0],
-            x_grid: vec![0.25],
-            x_logw: vec![0.0],
-            q_t: 1,
-            n_x: 1,
-        };
-        let config = ModelConfig {
-            n_persons: 1,
-            n_items: 1,
-            n_dims: 1,
-            latent_dim: 1,
-            model_type: ModelType::Bifac2plm,
-            eps_distance: 1e-8,
-        };
-
-        let gradient = q_gradient(
-            &pv,
-            &[0.0, 0.0, 0.1],
-            &counts,
-            &ctx,
-            &grids,
-            &config,
-            &[0],
-            &PenaltyConfig::lsirm_prior(),
-        );
-
-        assert_eq!(gradient.len(), pv.len());
-        assert!(gradient.iter().all(|value| value.is_finite()));
-    }
-}
+#[path = "../../../tests/unit/oakes_tests.rs"]
+mod tests;

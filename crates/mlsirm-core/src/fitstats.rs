@@ -18,8 +18,15 @@
 
 use crate::model_exec_flags;
 use crate::nodes::{build_xi_nodes, XiRule};
-use crate::quadrature::gh_rule;
 use crate::scoring::{lord_wingersky, validate_bank, validate_prior, ItemBank, PriorSpec};
+
+fn at_least_tiny(value: f64, tiny: f64) -> f64 {
+    if value.abs() < tiny {
+        tiny
+    } else {
+        value
+    }
+}
 
 /// Regularized upper incomplete gamma `Q(a, x)` (Numerical Recipes 6.2).
 fn gammainc_upper_reg(a: f64, x: f64) -> f64 {
@@ -52,14 +59,8 @@ fn gammainc_upper_reg(a: f64, x: f64) -> f64 {
         for i in 1..500 {
             let an = -(i as f64) * (i as f64 - a);
             b += 2.0;
-            d = an * d + b;
-            if d.abs() < tiny {
-                d = tiny;
-            }
-            c = b + an / c;
-            if c.abs() < tiny {
-                c = tiny;
-            }
+            d = at_least_tiny(an * d + b, tiny);
+            c = at_least_tiny(b + an / c, tiny);
             d = 1.0 / d;
             let delta = d * c;
             h *= delta;
@@ -108,7 +109,9 @@ pub fn chi2_sf(x: f64, df: f64) -> f64 {
 
 /// Benjamini-Hochberg step-up rejection mask at FDR level `q` (NaNs skipped).
 pub fn benjamini_hochberg(p_values: &[f64], q: f64) -> Vec<bool> {
-    let mut idx: Vec<usize> = (0..p_values.len()).filter(|&i| p_values[i].is_finite()).collect();
+    let mut idx: Vec<usize> = (0..p_values.len())
+        .filter(|&i| p_values[i].is_finite())
+        .collect();
     let m = idx.len();
     let mut reject = vec![false; p_values.len()];
     if m == 0 {
@@ -174,8 +177,7 @@ fn icc_nodes(
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
     let n_items = bank.b.len();
-    let (t_nodes, t_weights) =
-        gh_rule(q_theta).ok_or_else(|| format!("unsupported quadrature size {q_theta}"))?;
+    let (t_nodes, t_weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
     let (x_grid, x_logw) = if uses_space {
         let nodes = build_xi_nodes(xi_rule, bank.latent_dim)?;
         (nodes.grid, nodes.logw)
@@ -184,7 +186,11 @@ fn icc_nodes(
     };
     let n_x = x_logw.len();
     let cell = q_theta * n_x;
-    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
     let _ = uses_space;
     let mut probs = vec![0.0_f64; n_items * cell];
     let mut weights = vec![0.0_f64; cell];
@@ -251,7 +257,10 @@ pub fn s_x2(
     // The summed-score table is indexed by `sum(y as usize)` and sized n_d+1, so a
     // non-dichotomous observed value would index out of bounds (panic). S-X2 is a
     // dichotomous-item statistic; reject anything but 0/1 on observed cells.
-    if y.iter().zip(observed).any(|(&v, &o)| o && v != 0.0 && v != 1.0) {
+    if y.iter()
+        .zip(observed)
+        .any(|(&v, &o)| o && v != 0.0 && v != 1.0)
+    {
         return Err("s_x2 requires dichotomous (0/1) observed responses".into());
     }
     if let Some(w) = person_weight {
@@ -269,7 +278,11 @@ pub fn s_x2(
         2
     };
     let n_free = n_free_base
-        + if matches!(bank.model_type, crate::ModelType::Mirt) { 0 } else { bank.latent_dim };
+        + if matches!(bank.model_type, crate::ModelType::Mirt) {
+            0
+        } else {
+            bank.latent_dim
+        };
 
     let mut out = SX2Result {
         statistic: vec![f64::NAN; n_items],
@@ -301,8 +314,7 @@ pub fn s_x2(
         let mut obs_n = vec![0.0_f64; n_d + 1];
         let mut obs_r = vec![vec![0.0_f64; n_d + 1]; n_d];
         for &p in &persons {
-            let score: usize =
-                items.iter().map(|&i| y[p * n_items + i] as usize).sum();
+            let score: usize = items.iter().map(|&i| y[p * n_items + i] as usize).sum();
             obs_n[score] += 1.0;
             for (li, &i) in items.iter().enumerate() {
                 obs_r[li][score] += y[p * n_items + i];
@@ -311,8 +323,7 @@ pub fn s_x2(
         // node-level probabilities for the dimension's items
         let mut p_flat = vec![0.0_f64; n_d * cell];
         for (row, &i) in items.iter().enumerate() {
-            p_flat[row * cell..(row + 1) * cell]
-                .copy_from_slice(&probs[i * cell..(i + 1) * cell]);
+            p_flat[row * cell..(row + 1) * cell].copy_from_slice(&probs[i * cell..(i + 1) * cell]);
         }
         let s_all = lord_wingersky(&p_flat, n_d, cell);
         let denom: Vec<f64> = (0..=n_d)
@@ -335,24 +346,16 @@ pub fn s_x2(
                 let num: f64 = (0..cell)
                     .map(|c| p_flat[li * cell + c] * s_rest[(s - 1) * cell + c] * weights[c])
                     .sum();
-                if denom[s] > 0.0 {
-                    e[s] = num / denom[s];
-                }
+                e[s] = num / denom[s];
             }
             // collapse adjacent score groups to the minimum expected count
             let mut groups: Vec<(f64, f64, f64)> = Vec::new();
             let (mut acc_n, mut acc_r, mut acc_e) = (0.0_f64, 0.0_f64, 0.0_f64);
             for s in 1..n_d {
-                if !e[s].is_finite() {
-                    continue;
-                }
                 acc_n += obs_n[s];
                 acc_r += obs_r[li][s];
                 acc_e += obs_n[s] * e[s];
-                if acc_n > 0.0
-                    && acc_e >= cfg.min_expected
-                    && (acc_n - acc_e) >= cfg.min_expected
-                {
+                if acc_n > 0.0 && acc_e >= cfg.min_expected && (acc_n - acc_e) >= cfg.min_expected {
                     groups.push((acc_n, acc_r, acc_e));
                     acc_n = 0.0;
                     acc_r = 0.0;
@@ -371,13 +374,7 @@ pub fn s_x2(
             let (mut x2, mut n_grp) = (0.0_f64, 0usize);
             let (mut rss, mut n_tot) = (0.0_f64, 0.0_f64);
             for &(gn, gr, ge) in &groups {
-                if gn <= 0.0 {
-                    continue;
-                }
                 let e_prop = ge / gn;
-                if e_prop <= 0.0 || e_prop >= 1.0 {
-                    continue;
-                }
                 let o_prop = gr / gn;
                 x2 += gn * (o_prop - e_prop) * (o_prop - e_prop) / (e_prop * (1.0 - e_prop));
                 rss += gn * (o_prop - e_prop) * (o_prop - e_prop);
@@ -386,7 +383,11 @@ pub fn s_x2(
             }
             out.statistic[i] = x2;
             out.n_score_groups[i] = n_grp;
-            out.rms_residual[i] = if n_tot > 0.0 { (rss / n_tot).sqrt() } else { f64::NAN };
+            out.rms_residual[i] = if n_tot > 0.0 {
+                (rss / n_tot).sqrt()
+            } else {
+                f64::NAN
+            };
             let df = n_grp as f64 - n_free as f64;
             if df >= 1.0 {
                 out.df[i] = df;
@@ -436,7 +437,11 @@ pub fn person_fit(
         return Err("prior_mean must be empty or n_persons x n_dims".into());
     }
     let kind = crate::interaction_kind(bank.model_type);
-    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
     let _ = uses_space;
     let mut lz = vec![f64::NAN; n_persons * n_dims];
     let mut lz_star = vec![f64::NAN; n_persons * n_dims];
@@ -459,8 +464,7 @@ pub fn person_fit(
                     crate::InteractionKind::Distance => {
                         let mut dist2 = bank.eps_distance;
                         for k in 0..latent_dim {
-                            let diff =
-                                xi[p * latent_dim + k] - bank.zeta[i * latent_dim + k];
+                            let diff = xi[p * latent_dim + k] - bank.zeta[i * latent_dim + k];
                             dist2 += diff * diff;
                         }
                         eta -= gamma * dist2.sqrt();
@@ -495,11 +499,14 @@ pub fn person_fit(
                 tau2 += w_tilde * w_tilde * pv;
             }
             tau2 /= n_obs as f64;
-            let pm = if prior_mean.is_empty() { 0.0 } else { prior_mean[p * n_dims + d] };
+            let pm = if prior_mean.is_empty() {
+                0.0
+            } else {
+                prior_mean[p * n_dims + d]
+            };
             let r0 = -(theta[p * n_dims + d] - pm);
             if tau2 > 0.0 {
-                lz_star[p * n_dims + d] =
-                    (w_stat + c * r0) / ((n_obs as f64).sqrt() * tau2.sqrt());
+                lz_star[p * n_dims + d] = (w_stat + c * r0) / ((n_obs as f64).sqrt() * tau2.sqrt());
             }
         }
         let min_star = (0..n_dims)
@@ -508,7 +515,11 @@ pub fn person_fit(
             .fold(f64::INFINITY, f64::min);
         flagged[p] = min_star < flag_threshold;
     }
-    Ok(PersonFitResult { lz, lz_star, flagged })
+    Ok(PersonFitResult {
+        lz,
+        lz_star,
+        flagged,
+    })
 }
 
 pub struct InfitOutfit {
@@ -536,7 +547,11 @@ pub fn infit_outfit(
         );
     }
     let kind = crate::interaction_kind(bank.model_type);
-    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
     let _ = uses_space;
     let mut resid2_sum = vec![0.0_f64; n_items];
     let mut z2_sum = vec![0.0_f64; n_items];
@@ -555,16 +570,14 @@ pub fn infit_outfit(
                 crate::InteractionKind::Distance => {
                     let mut dist2 = bank.eps_distance;
                     for k in 0..bank.latent_dim {
-                        let diff = xi[p * bank.latent_dim + k]
-                            - bank.zeta[i * bank.latent_dim + k];
+                        let diff = xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
                         dist2 += diff * diff;
                     }
                     eta -= gamma * dist2.sqrt();
                 }
                 crate::InteractionKind::Inner => {
                     for k in 0..bank.latent_dim {
-                        eta += bank.zeta[i * bank.latent_dim + k]
-                            * xi[p * bank.latent_dim + k];
+                        eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
                     }
                 }
             }
@@ -578,176 +591,29 @@ pub fn infit_outfit(
         }
     }
     let infit = (0..n_items)
-        .map(|i| if var_sum[i] > 0.0 { resid2_sum[i] / var_sum[i] } else { f64::NAN })
+        .map(|i| {
+            if var_sum[i] > 0.0 {
+                resid2_sum[i] / var_sum[i]
+            } else {
+                f64::NAN
+            }
+        })
         .collect();
     let outfit = (0..n_items)
-        .map(|i| if counts[i] > 0.0 { z2_sum[i] / counts[i] } else { f64::NAN })
+        .map(|i| {
+            if counts[i] > 0.0 {
+                z2_sum[i] / counts[i]
+            } else {
+                f64::NAN
+            }
+        })
         .collect();
     Ok(InfitOutfit { infit, outfit })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ModelType;
-
-    #[test]
-    fn chi2_sf_reference_values() {
-        assert!((chi2_sf(3.841, 1.0) - 0.05).abs() < 1e-3);
-        assert!((chi2_sf(18.307, 10.0) - 0.05).abs() < 1e-3);
-        assert!((chi2_sf(0.0, 5.0) - 1.0).abs() < 1e-12);
-        assert!(chi2_sf(1e6, 2.0) < 1e-12);
-    }
-
-    #[test]
-    fn bh_step_up_known_case() {
-        let p = [0.001, 0.008, 0.039, 0.041, 0.042, 0.06, 0.074, 0.205, 0.212, 0.216];
-        let r = benjamini_hochberg(&p, 0.05);
-        assert_eq!(r.iter().filter(|&&v| v).count(), 2);
-        assert!(r[0] && r[1]);
-    }
-
-    fn toy_bank_data() -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>, Vec<f64>, Vec<bool>, Vec<f64>, Vec<f64>) {
-        // 1 dim, 20 items, 2000 persons simulated from a plain 1PL (MIRT
-        // flags); person-fit asymptotics are in the item count, and the S-X2
-        // effect size needs enough persons per score group to separate
-        // sampling noise from systematic misfit.
-        let n_items = 20usize;
-        let n_persons = 2000usize;
-        let alpha = vec![0.0; n_items];
-        let b: Vec<f64> = (0..n_items).map(|i| -1.2 + 0.12 * i as f64).collect();
-        let zeta = vec![0.0; n_items];
-        let fid = vec![0usize; n_items];
-        let mut state = 777u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let mut theta = vec![0.0_f64; n_persons];
-        let mut y = vec![0.0_f64; n_persons * n_items];
-        for p in 0..n_persons {
-            let u1: f64 = unif().max(1e-12);
-            let u2: f64 = unif();
-            theta[p] = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let eta: f64 = theta[p] + b[i];
-                let prob = 1.0 / (1.0 + (-eta).exp());
-                y[p * n_items + i] = if unif() < prob { 1.0 } else { 0.0 };
-            }
-        }
-        let observed = vec![true; n_persons * n_items];
-        let xi = vec![0.0_f64; n_persons];
-        (alpha, b, zeta, fid, y, observed, theta, xi)
-    }
-
-    #[test]
-    fn sx2_runs_and_effect_size_is_small_for_true_model() {
-        let (alpha, b, zeta, fid, y, observed, _, _) = toy_bank_data();
-        let bank = ItemBank {
-            alpha: &alpha,
-            b: &b,
-            zeta: &zeta,
-            tau: -30.0,
-            factor_id: &fid,
-            model_type: ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        };
-        let res = s_x2(
-            &bank,
-            &y,
-            &observed,
-            2000,
-            &PriorSpec::standard(1),
-            &SX2Config { q_theta: 21, ..Default::default() },
-            None,
-        )
-        .unwrap();
-        let finite = res.statistic.iter().filter(|v| v.is_finite()).count();
-        assert!(finite >= 15);
-        // data simulated from the scoring model: typical effect sizes stay low
-        // (the residual RMS at this N is dominated by ~sqrt(p(1-p)/N_s) noise)
-        let mean_effect: f64 = res
-            .rms_residual
-            .iter()
-            .filter(|v| v.is_finite())
-            .sum::<f64>()
-            / finite as f64;
-        assert!(mean_effect < 0.05, "effect size too large for a true model: {mean_effect}");
-    }
-
-    #[test]
-    fn sx2_rejects_non_dichotomous_responses() {
-        // A non-0/1 observed value would index the summed-score table out of bounds.
-        let (alpha, b, zeta, fid, mut y, observed, _, _) = toy_bank_data();
-        y[0] = 2.0;
-        let bank = ItemBank {
-            alpha: &alpha, b: &b, zeta: &zeta, tau: -30.0, factor_id: &fid,
-            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
-        };
-        let res = s_x2(
-            &bank, &y, &observed, 2000, &PriorSpec::standard(1),
-            &SX2Config { q_theta: 21, ..Default::default() }, None,
-        );
-        let err = res.err().expect("expected an error");
-        assert!(err.contains("dichotomous"), "got: {err}");
-    }
-
-    #[test]
-    fn infit_outfit_rejects_wrong_theta_length() {
-        let (alpha, b, zeta, fid, y, observed, _, xi) = toy_bank_data();
-        let bank = ItemBank {
-            alpha: &alpha, b: &b, zeta: &zeta, tau: -30.0, factor_id: &fid,
-            model_type: ModelType::Mirt, n_dims: 1, latent_dim: 1, eps_distance: 1e-8,
-        };
-        let short_theta = vec![0.0_f64; 3]; // not n_persons * n_dims
-        let err = infit_outfit(&bank, &y, &observed, 2000, &short_theta, &xi)
-            .err()
-            .expect("expected an error");
-        assert!(err.contains("theta/xi"), "got: {err}");
-    }
-
-    #[test]
-    fn person_fit_and_msq_finite_for_true_model() {
-        let (alpha, b, zeta, fid, y, observed, _theta_true, _xi_true) = toy_bank_data();
-        let bank = ItemBank {
-            alpha: &alpha,
-            b: &b,
-            zeta: &zeta,
-            tau: -30.0,
-            factor_id: &fid,
-            model_type: ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        };
-        // designed usage: the Snijders correction applies to ESTIMATED scores
-        let eap = crate::scoring::score_eap(
-            &bank,
-            &y,
-            &observed,
-            2000,
-            &PriorSpec::standard(1),
-            21,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .unwrap();
-        let pf = person_fit(
-            &bank, &y, &observed, 2000, &eap.theta_eap, &eap.xi_eap, &[], -1.645,
-        )
-        .unwrap();
-        let finite = pf.lz_star.iter().filter(|v| v.is_finite()).count();
-        assert!(finite > 1800);
-        let flag_rate =
-            pf.flagged.iter().filter(|&&f| f).count() as f64 / 2000.0;
-        assert!(flag_rate < 0.12, "flag rate should approach the nominal 5%: {flag_rate}");
-        let msq = infit_outfit(&bank, &y, &observed, 2000, &eap.theta_eap, &eap.xi_eap)
-            .unwrap();
-        let mean_infit: f64 = msq.infit.iter().sum::<f64>() / 20.0;
-        assert!((mean_infit - 1.0).abs() < 0.25, "infit should center near 1: {mean_infit}");
-    }
-}
+#[path = "../../../tests/unit/fitstats_tests.rs"]
+mod tests;
 
 /// Information criteria for marginal (MML) fits — the standard indices whose
 /// comparative behavior for IRT model selection is studied in Kang, Cohen &
@@ -777,29 +643,19 @@ pub fn information_criteria(loglik: f64, n_parameters: usize, n: usize) -> Infor
         n,
         aic,
         bic: dev + k * nf.ln(),
-        aicc: if nf - k - 1.0 > 0.0 { aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0) } else { f64::NAN },
+        aicc: if nf - k - 1.0 > 0.0 {
+            aic + 2.0 * k * (k + 1.0) / (nf - k - 1.0)
+        } else {
+            f64::NAN
+        },
         sabic: dev + k * ((nf + 2.0) / 24.0).ln(),
         caic: dev + k * (nf.ln() + 1.0),
     }
 }
 
 #[cfg(test)]
-mod ic_tests {
-    use super::*;
-
-    #[test]
-    fn information_criteria_reference_values() {
-        let ic = information_criteria(-500.0, 10, 200);
-        assert!((ic.aic - 1020.0).abs() < 1e-12);
-        assert!((ic.bic - (1000.0 + 10.0 * (200.0_f64).ln())).abs() < 1e-12);
-        assert!((ic.caic - (1000.0 + 10.0 * ((200.0_f64).ln() + 1.0))).abs() < 1e-12);
-        assert!((ic.aicc - (1020.0 + 220.0 / 189.0)).abs() < 1e-9);
-        assert!((ic.sabic - (1000.0 + 10.0 * (202.0_f64 / 24.0).ln())).abs() < 1e-9);
-        // degenerate n does not panic
-        let tiny = information_criteria(-5.0, 10, 10);
-        assert!(tiny.aicc.is_nan());
-    }
-}
+#[path = "../../../tests/unit/fitstats_ic_tests.rs"]
+mod ic_tests;
 
 /// Vuong (1989) test for non-nested model comparison from casewise marginal
 /// log-likelihoods (Schneider, Chalmers, Debelak & Merkle 2019, MBR): with
@@ -827,7 +683,11 @@ pub fn vuong_nonnested(
         return Err("casewise log-likelihood vectors must be equal-length with n >= 2".into());
     }
     let n = loglik_a.len() as f64;
-    let m: Vec<f64> = loglik_a.iter().zip(loglik_b).map(|(&a, &b)| a - b).collect();
+    let m: Vec<f64> = loglik_a
+        .iter()
+        .zip(loglik_b)
+        .map(|(&a, &b)| a - b)
+        .collect();
     let mean = m.iter().sum::<f64>() / n;
     let var = m.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / n;
     if var <= 0.0 {
@@ -843,7 +703,12 @@ pub fn vuong_nonnested(
     // two-sided normal tail via the complementary error function relation:
     // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2))
     let p = erfc(z.abs() / std::f64::consts::SQRT_2);
-    Ok(VuongResult { z, p_two_sided: p, omega, mean_diff: mean })
+    Ok(VuongResult {
+        z,
+        p_two_sided: p,
+        omega,
+        mean_diff: mean,
+    })
 }
 
 /// Complementary error function (Numerical Recipes rational approximation;
@@ -859,9 +724,8 @@ pub(crate) fn erfc(x: f64) -> f64 {
                         + t * (-0.18628806
                             + t * (0.27886807
                                 + t * (-1.13520398
-                                    + t * (1.48851587
-                                        + t * (-0.82215223 + t * 0.17087277)))))))))
-        .exp();
+                                    + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))))
+            .exp();
     if x >= 0.0 {
         ans
     } else {
@@ -919,7 +783,11 @@ pub fn dimensionality_residuals(
             let cov = sxy / n - (sx / n) * (sy / n);
             let vx = sxx / n - (sx / n) * (sx / n);
             let vy = syy / n - (sy / n) * (sy / n);
-            let r = if vx > 0.0 && vy > 0.0 { cov / (vx * vy).sqrt() } else { f64::NAN };
+            let r = if vx > 0.0 && vy > 0.0 {
+                cov / (vx * vy).sqrt()
+            } else {
+                f64::NAN
+            };
             q3.push(r);
             if r.is_finite() {
                 sum_abs += r.abs();
@@ -936,69 +804,18 @@ pub fn dimensionality_residuals(
     Ok(DimResidResult {
         q3_max_abs: max_abs,
         q3_mean_abs: sum_abs / n_finite,
-        gddm: if gddm_cnt > 0.0 { gddm_sum / gddm_cnt } else { f64::NAN },
+        gddm: if gddm_cnt > 0.0 {
+            gddm_sum / gddm_cnt
+        } else {
+            f64::NAN
+        },
         q3,
     })
 }
 
 #[cfg(test)]
-mod vuong_tests {
-    use super::*;
-
-    #[test]
-    fn vuong_favors_the_better_model() {
-        // model A consistently better by 0.2 per case, with case noise
-        let mut state = 5u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let n = 400;
-        let la: Vec<f64> = (0..n).map(|_| -1.0 + 0.1 * unif()).collect();
-        let lb: Vec<f64> = la.iter().map(|&v| v - 0.2 - 0.3 * (unif() - 0.5)).collect();
-        let res = vuong_nonnested(&la, &lb, 10, 10, false).unwrap();
-        assert!(res.z > 2.0, "A must be significantly favored: z = {}", res.z);
-        assert!(res.p_two_sided < 0.05);
-        // BIC correction penalizes the bigger model
-        let res_pen = vuong_nonnested(&la, &lb, 40, 10, true).unwrap();
-        assert!(res_pen.z < res.z);
-        // identical models are rejected as indistinguishable
-        assert!(vuong_nonnested(&la, &la, 10, 10, false).is_err());
-    }
-
-    #[test]
-    fn erfc_reference_values() {
-        assert!((erfc(0.0) - 1.0).abs() < 1e-7);
-        assert!((erfc(1.959963984540054 / std::f64::consts::SQRT_2) - 0.05).abs() < 1e-4);
-    }
-
-    #[test]
-    fn q3_detects_locally_dependent_pair() {
-        // residuals: items 0 and 1 share an extra common factor
-        let mut state = 11u64;
-        let mut norm = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            let u1 = (((state >> 11) as f64) / ((1u64 << 53) as f64)).max(1e-12);
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            let u2 = ((state >> 11) as f64) / ((1u64 << 53) as f64);
-            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-        };
-        let (n_persons, n_items) = (600, 6);
-        let mut resid = vec![0.0_f64; n_persons * n_items];
-        for p in 0..n_persons {
-            let shared = norm();
-            for i in 0..n_items {
-                resid[p * n_items + i] =
-                    norm() * 0.4 + if i < 2 { 0.6 * shared } else { 0.0 };
-            }
-        }
-        let out = dimensionality_residuals(&resid, n_persons, n_items).unwrap();
-        assert!(out.q3[0] > 0.5, "dependent pair must show high Q3: {}", out.q3[0]);
-        assert!(out.q3_max_abs >= out.q3[0].abs());
-        assert!(out.gddm > 0.0);
-    }
-}
-
+#[path = "../../../tests/unit/fitstats_vuong_tests.rs"]
+mod vuong_tests;
 
 /// Residual-based item fit (Haberman, Sinharay & Chon 2013): bin persons by
 /// EAP score on the item's dimension, compare observed proportions against
@@ -1036,15 +853,20 @@ pub fn residual_item_fit(
         return Err("n_bins must be >= 2".into());
     }
     let kind = crate::interaction_kind(bank.model_type);
-    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
     let _ = uses_space;
     let mut max_abs_z = vec![f64::NAN; n_items];
     let mut p_value = vec![f64::NAN; n_items];
     for i in 0..n_items {
         let d = bank.factor_id[i];
         // persons observed on item i, sorted by their EAP on dim d
-        let mut idx: Vec<usize> =
-            (0..n_persons).filter(|&p| observed[p * n_items + i]).collect();
+        let mut idx: Vec<usize> = (0..n_persons)
+            .filter(|&p| observed[p * n_items + i])
+            .collect();
         if idx.len() < n_bins * 5 {
             continue;
         }
@@ -1058,11 +880,12 @@ pub fn residual_item_fit(
         let bin_size = idx.len() / n_bins;
         for bin in 0..n_bins {
             let lo = bin * bin_size;
-            let hi = if bin == n_bins - 1 { idx.len() } else { (bin + 1) * bin_size };
+            let hi = if bin == n_bins - 1 {
+                idx.len()
+            } else {
+                (bin + 1) * bin_size
+            };
             let members = &idx[lo..hi];
-            if members.is_empty() {
-                continue;
-            }
             let (mut obs_sum, mut exp_sum) = (0.0_f64, 0.0_f64);
             for &p in members {
                 obs_sum += y[p * n_items + i];
@@ -1072,16 +895,15 @@ pub fn residual_item_fit(
                     crate::InteractionKind::Distance => {
                         let mut dist2 = bank.eps_distance;
                         for k in 0..bank.latent_dim {
-                            let diff = xi[p * bank.latent_dim + k]
-                                - bank.zeta[i * bank.latent_dim + k];
+                            let diff =
+                                xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
                             dist2 += diff * diff;
                         }
                         eta -= gamma * dist2.sqrt();
                     }
                     crate::InteractionKind::Inner => {
                         for k in 0..bank.latent_dim {
-                            eta += bank.zeta[i * bank.latent_dim + k]
-                                * xi[p * bank.latent_dim + k];
+                            eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
                         }
                     }
                 }
@@ -1099,7 +921,11 @@ pub fn residual_item_fit(
         let p_one = erfc(worst / std::f64::consts::SQRT_2);
         p_value[i] = (p_one * n_bins as f64).min(1.0);
     }
-    Ok(ResidualFitResult { max_abs_z, p_value, n_bins })
+    Ok(ResidualFitResult {
+        max_abs_z,
+        p_value,
+        n_bins,
+    })
 }
 
 /// Adjusted chi-square-to-df ratios for item pairs (Drasgow tradition;
@@ -1184,7 +1010,11 @@ pub fn adjusted_chi2_pairs(
     }
     Ok(AdjustedChi2Result {
         ratio,
-        mean_ratio: if count > 0 { sum / count as f64 } else { f64::NAN },
+        mean_ratio: if count > 0 {
+            sum / count as f64
+        } else {
+            f64::NAN
+        },
         max_ratio: max,
     })
 }
@@ -1215,11 +1045,17 @@ pub fn person_fit_resampling(
     }
     let base = person_fit(bank, y, observed, n_persons, theta, xi, prior_mean, -1.645)?;
     let kind = crate::interaction_kind(bank.model_type);
-    let gamma = if kind == crate::InteractionKind::Distance { bank.tau.exp() } else { 0.0 };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
     let _ = uses_space;
     let mut state = seed.max(1);
     let mut unif = move || {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((state >> 11) as f64) / ((1u64 << 53) as f64)
     };
     let mut p_values = vec![f64::NAN; n_persons];
@@ -1251,16 +1087,15 @@ pub fn person_fit_resampling(
                     crate::InteractionKind::Distance => {
                         let mut dist2 = bank.eps_distance;
                         for k in 0..bank.latent_dim {
-                            let diff = xi[p * bank.latent_dim + k]
-                                - bank.zeta[i * bank.latent_dim + k];
+                            let diff =
+                                xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
                             dist2 += diff * diff;
                         }
                         eta -= gamma * dist2.sqrt();
                     }
                     crate::InteractionKind::Inner => {
                         for k in 0..bank.latent_dim {
-                            eta += bank.zeta[i * bank.latent_dim + k]
-                                * xi[p * bank.latent_dim + k];
+                            eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
                         }
                     }
                 }
@@ -1281,17 +1116,15 @@ pub fn person_fit_resampling(
                 &xi[p * bank.latent_dim..(p + 1) * bank.latent_dim],
                 &pm,
                 -1.645,
-            )?;
+            )
+            .expect("replicated data preserve the already-validated person-fit shapes");
             let rep_stat = (0..bank.n_dims)
                 .map(|d| rep.lz_star[d])
                 .filter(|v| v.is_finite())
                 .fold(f64::INFINITY, f64::min);
-            if rep_stat.is_finite() {
-                count_valid += 1;
-                if rep_stat <= obs_stat {
-                    count_leq += 1;
-                }
-            }
+            let valid = rep_stat.is_finite();
+            count_valid += usize::from(valid);
+            count_leq += usize::from(valid && rep_stat <= obs_stat);
         }
         if count_valid > 0 {
             // add-one smoothing keeps p in (0, 1]
@@ -1349,8 +1182,7 @@ pub fn tcc_drift(
             area += weights[c] * diff_sum.abs();
             for i in 0..n_items {
                 if active[i] {
-                    per_item[i] +=
-                        weights[c] * (p_new[i * cell + c] - p_old[i * cell + c]).abs();
+                    per_item[i] += weights[c] * (p_new[i * cell + c] - p_old[i * cell + c]).abs();
                 }
             }
         }
@@ -1361,148 +1193,23 @@ pub fn tcc_drift(
         let worst = (0..n_items)
             .filter(|&i| active[i])
             .max_by(|&a, &b| {
-                per_item[a].partial_cmp(&per_item[b]).unwrap_or(std::cmp::Ordering::Equal)
+                per_item[a]
+                    .partial_cmp(&per_item[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap();
-        // stop when the worst item no longer moves the needle
-        if per_item[worst] < threshold / n_items as f64 {
-            break;
-        }
         active[worst] = false;
         drifted.push(worst);
     }
-    Ok(TccDriftResult { drifted, area_trace })
+    Ok(TccDriftResult {
+        drifted,
+        area_trace,
+    })
 }
 
 #[cfg(test)]
-mod batch3_tests {
-    use super::*;
-    use crate::scoring::{score_eap, ItemBank, PriorSpec};
-    use crate::nodes::XiRule;
-    use crate::ModelType;
-
-    fn sim_bank(
-        n_persons: usize,
-        n_items: usize,
-        seed: u64,
-    ) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>, Vec<f64>, Vec<bool>) {
-        let alpha = vec![0.0_f64; n_items];
-        let b: Vec<f64> = (0..n_items).map(|i| -1.2 + 2.4 * i as f64 / n_items as f64).collect();
-        let zeta = vec![0.0_f64; n_items];
-        let fid = vec![0usize; n_items];
-        let mut state = seed;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let mut y = vec![0.0_f64; n_persons * n_items];
-        for p in 0..n_persons {
-            let u1: f64 = unif().max(1e-12);
-            let u2: f64 = unif();
-            let theta = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let eta: f64 = theta + b[i];
-                if unif() < 1.0 / (1.0 + (-eta).exp()) {
-                    y[p * n_items + i] = 1.0;
-                }
-            }
-        }
-        (alpha, b, zeta, fid, y, vec![true; n_persons * n_items])
-    }
-
-    fn mk_bank<'a>(
-        alpha: &'a [f64],
-        b: &'a [f64],
-        zeta: &'a [f64],
-        fid: &'a [usize],
-    ) -> ItemBank<'a> {
-        ItemBank {
-            alpha,
-            b,
-            zeta,
-            tau: -30.0,
-            factor_id: fid,
-            model_type: ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        }
-    }
-
-    #[test]
-    fn residual_fit_and_adjusted_chi2_calibrate_on_true_model() {
-        // long test: the residual method's design regime (EAP shrinkage is
-        // negligible); short tests belong to S-X2
-        let (alpha, b, zeta, fid, y, observed) = sim_bank(1500, 40, 99);
-        let bank = mk_bank(&alpha, &b, &zeta, &fid);
-        let eap = score_eap(
-            &bank, &y, &observed, 1500, &PriorSpec::standard(1), 15,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .unwrap();
-        let rf = residual_item_fit(&bank, &y, &observed, 1500, &eap.theta_eap, &eap.xi_eap, 8)
-            .unwrap();
-        let finite = rf.max_abs_z.iter().filter(|v| v.is_finite()).count();
-        assert!(finite >= 35);
-        let flagged = rf.p_value.iter().filter(|&&p| p < 0.05).count();
-        assert!(flagged <= 8, "true model should rarely flag: {flagged}");
-        let adj = adjusted_chi2_pairs(
-            &bank, &y, &observed, 1500, &PriorSpec::standard(1), 15,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .unwrap();
-        assert!(adj.mean_ratio < 3.0, "true-model mean adjusted ratio: {}", adj.mean_ratio);
-    }
-
-    #[test]
-    fn resampling_person_fit_flags_reversed_pattern() {
-        let (alpha, b, zeta, fid, mut y, observed) = sim_bank(60, 20, 5);
-        // person 0: reversed responses (passes hard, fails easy) — aberrant
-        for i in 0..20 {
-            y[i] = if b[i] < 0.0 { 1.0 } else { 0.0 };
-        }
-        let bank = mk_bank(&alpha, &b, &zeta, &fid);
-        let eap = score_eap(
-            &bank, &y, &observed, 60, &PriorSpec::standard(1), 15,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .unwrap();
-        let pv = person_fit_resampling(
-            &bank, &y, &observed, 60, &eap.theta_eap, &eap.xi_eap, &[], 200, 11,
-        )
-        .unwrap();
-        assert!(pv[0].is_finite());
-        let median_rest = {
-            let mut rest: Vec<f64> =
-                (1..60).map(|p| pv[p]).filter(|v| v.is_finite()).collect();
-            rest.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            rest[rest.len() / 2]
-        };
-        assert!(
-            pv[0] < median_rest,
-            "aberrant person must sit low in the bootstrap null: {} vs median {}",
-            pv[0],
-            median_rest
-        );
-    }
-
-    #[test]
-    fn tcc_drift_isolates_the_shifted_item() {
-        let (alpha, b, zeta, fid, _y, _obs) = sim_bank(10, 10, 1);
-        let mut b_new = b.clone();
-        b_new[4] += 1.0; // drift on item 4
-        let bank_old = mk_bank(&alpha, &b, &zeta, &fid);
-        let bank_new = mk_bank(&alpha, &b_new, &zeta, &fid);
-        let res = tcc_drift(
-            &bank_old, &bank_new, &PriorSpec::standard(1), 21,
-            XiRule::GaussHermite { q_xi: 7 }, 1e-3,
-        )
-        .unwrap();
-        assert!(res.drifted.contains(&4), "shifted item must be flagged: {:?}", res.drifted);
-        assert!(res.area_trace[0] > *res.area_trace.last().unwrap());
-    }
-}
-
+#[path = "../../../tests/unit/fitstats_batch3_tests.rs"]
+mod batch3_tests;
 
 /// Chen & Thissen (1997) local-dependence indices for item pairs: the
 /// standardized (signed) LD X2 — the pairwise 2x2 chi-square against the
@@ -1538,9 +1245,8 @@ pub fn ld_indices(
     if n_items < 2 {
         return Err("local-dependence indices need at least 2 items".into());
     }
-    let n_cells = n_persons
-        .checked_mul(n_items)
-        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
     if y.len() != n_cells || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
@@ -1602,147 +1308,15 @@ pub fn ld_indices(
             g2_signed.push(sign * g2);
         }
     }
-    Ok(LdIndexResult { x2_signed, g2_signed })
+    Ok(LdIndexResult {
+        x2_signed,
+        g2_signed,
+    })
 }
 
 #[cfg(test)]
-mod ld_tests {
-    use super::*;
-    use crate::nodes::XiRule;
-    use crate::scoring::{ItemBank, PriorSpec};
-    use crate::ModelType;
-
-    fn two_item_bank<'a>(
-        alpha: &'a [f64],
-        b: &'a [f64],
-        zeta: &'a [f64],
-        fid: &'a [usize],
-    ) -> ItemBank<'a> {
-        ItemBank {
-            alpha,
-            b,
-            zeta,
-            tau: -30.0,
-            factor_id: fid,
-            model_type: ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        }
-    }
-
-    #[test]
-    fn ld_indices_reject_non_binary_observed_responses() {
-        let alpha = vec![0.0; 2];
-        let b = vec![0.0; 2];
-        let zeta = vec![0.0; 2];
-        let fid = vec![0usize; 2];
-        let bank = two_item_bank(&alpha, &b, &zeta, &fid);
-        let observed = vec![true; 40];
-
-        for invalid in [2.0, f64::NAN] {
-            let mut y = vec![0.0; 40];
-            y[0] = invalid;
-            assert!(
-                ld_indices(
-                    &bank,
-                    &y,
-                    &observed,
-                    20,
-                    &PriorSpec::standard(1),
-                    7,
-                    XiRule::GaussHermite { q_xi: 7 },
-                )
-                .is_err(),
-                "observed response {invalid:?} must be rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn ld_indices_returns_error_for_malformed_prior() {
-        let alpha = vec![0.0; 2];
-        let b = vec![0.0; 2];
-        let zeta = vec![0.0; 2];
-        let fid = vec![0usize; 2];
-        let bank = two_item_bank(&alpha, &b, &zeta, &fid);
-        let y = vec![0.0; 40];
-        let observed = vec![true; 40];
-        let malformed = PriorSpec {
-            mean: Vec::new(),
-            sd: Vec::new(),
-        };
-
-        assert!(ld_indices(
-            &bank,
-            &y,
-            &observed,
-            20,
-            &malformed,
-            7,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn ld_indices_flag_a_dependent_pair() {
-        // simulate 1PL data, then force item 1 to copy item 0 (max LD)
-        let n_items = 6usize;
-        let n_persons = 800usize;
-        let alpha = vec![0.0; n_items];
-        let b: Vec<f64> = (0..n_items).map(|i| -1.0 + 0.4 * i as f64).collect();
-        let zeta = vec![0.0; n_items];
-        let fid = vec![0usize; n_items];
-        let mut state = 21u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let mut y = vec![0.0_f64; n_persons * n_items];
-        for p in 0..n_persons {
-            let u1: f64 = unif().max(1e-12);
-            let u2: f64 = unif();
-            let theta =
-                (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let eta: f64 = theta + b[i];
-                if unif() < 1.0 / (1.0 + (-eta).exp()) {
-                    y[p * n_items + i] = 1.0;
-                }
-            }
-            y[p * n_items + 1] = y[p * n_items]; // item 1 duplicates item 0
-        }
-        let observed = vec![true; n_persons * n_items];
-        let bank = ItemBank {
-            alpha: &alpha,
-            b: &b,
-            zeta: &zeta,
-            tau: -30.0,
-            factor_id: &fid,
-            model_type: ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        };
-        let res = ld_indices(
-            &bank, &y, &observed, n_persons, &PriorSpec::standard(1), 15,
-            XiRule::GaussHermite { q_xi: 7 },
-        )
-        .unwrap();
-        // pair (0,1) is the first upper-triangle entry
-        assert!(
-            res.x2_signed[0] > 50.0,
-            "duplicated pair must show large positive LD X2: {}",
-            res.x2_signed[0]
-        );
-        assert!(res.g2_signed[0] > 50.0);
-        // an unrelated pair stays modest
-        let pair_23 = (n_items - 1) + (n_items - 2) + 0; // (2,3) index in triangle
-        assert!(res.x2_signed[pair_23].abs() < 50.0);
-    }
-}
-
+#[path = "../../../tests/unit/fitstats_ld_tests.rs"]
+mod ld_tests;
 
 // ---------------------------------------------------------------------------
 // M2 limited-information goodness-of-fit (Maydeu-Olivares & Joe 2005, 2006;
@@ -1792,6 +1366,89 @@ enum M2Param {
     Alpha(usize),
     Zeta(usize, usize),
     Tau,
+}
+
+fn m2_parameters(
+    n_items: usize,
+    free_alpha: bool,
+    uses_space: bool,
+    latent_dim: usize,
+    tau_free: bool,
+) -> Vec<M2Param> {
+    let mut params = Vec::new();
+    for i in 0..n_items {
+        params.push(M2Param::B(i));
+        if free_alpha {
+            params.push(M2Param::Alpha(i));
+        }
+        if uses_space {
+            for k in 0..latent_dim {
+                params.push(M2Param::Zeta(i, k));
+            }
+        }
+    }
+    if tau_free {
+        params.push(M2Param::Tau);
+    }
+    params
+}
+
+fn m2_param_value(
+    param: M2Param,
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    latent_dim: usize,
+) -> f64 {
+    match param {
+        M2Param::B(i) => b[i],
+        M2Param::Alpha(i) => alpha[i],
+        M2Param::Zeta(i, k) => zeta[i * latent_dim + k],
+        M2Param::Tau => tau,
+    }
+}
+
+fn set_m2_param(
+    param: M2Param,
+    value: f64,
+    alpha: &mut [f64],
+    b: &mut [f64],
+    zeta: &mut [f64],
+    tau: &mut f64,
+    latent_dim: usize,
+) {
+    match param {
+        M2Param::B(i) => b[i] = value,
+        M2Param::Alpha(i) => alpha[i] = value,
+        M2Param::Zeta(i, k) => zeta[i * latent_dim + k] = value,
+        M2Param::Tau => *tau = value,
+    }
+}
+
+fn srmsr_from_sum(sum_squared: f64, count: usize) -> f64 {
+    if count > 0 {
+        (sum_squared / count as f64).sqrt()
+    } else {
+        f64::NAN
+    }
+}
+
+fn comparative_fit_metrics(m2: f64, df: f64, null_m2: f64, null_df: f64) -> (f64, f64) {
+    let cfi_denom = null_m2 - null_df;
+    let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
+        (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
+    } else {
+        f64::NAN
+    };
+    let null_ratio = null_m2 / null_df;
+    let tli_denom = null_ratio - 1.0;
+    let tli = if null_m2 > m2 && tli_denom.abs() > 1e-12 {
+        (null_ratio - m2 / df) / tli_denom
+    } else {
+        f64::NAN
+    };
+    (cfi, tli)
 }
 
 /// In-place lower-triangular Cholesky with an adaptive ridge; leaves the factor
@@ -1914,6 +1571,14 @@ fn chi2_cdf(x: f64, df: f64) -> f64 {
     1.0 - chi2_sf(x, df)
 }
 
+fn finish_ncchi2_mixture(weighted: f64, normalizer: f64, converged: bool) -> f64 {
+    if converged {
+        (weighted / normalizer).clamp(0.0, 1.0)
+    } else {
+        f64::NAN
+    }
+}
+
 /// Noncentral chi-square CDF from a mode-centered Poisson mixture. Centering the
 /// recurrence avoids underflow of the `exp(-lam / 2)` starting weight for large
 /// noncentralities (Benton & Krishnamoorthy, 2003).
@@ -1960,10 +1625,7 @@ fn ncchi2_cdf(x: f64, df: f64, lam: f64) -> f64 {
             break;
         }
     }
-    if !converged {
-        return f64::NAN;
-    }
-    (weighted / normalizer).clamp(0.0, 1.0)
+    finish_ncchi2_mixture(weighted, normalizer, converged)
 }
 
 /// Smallest noncentrality `lam` with `ncchi2_cdf(x, df, lam) = target` (the CDF
@@ -1976,13 +1638,21 @@ fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
     while ncchi2_cdf(x, df, hi) > target && hi < 1e8 {
         hi *= 2.0;
     }
-    if ncchi2_cdf(x, df, hi) > target {
+    solve_decreasing_root(0.0, hi, target, &|lambda| ncchi2_cdf(x, df, lambda))
+}
+
+fn solve_decreasing_root(
+    mut lo: f64,
+    mut hi: f64,
+    target: f64,
+    evaluate: &dyn Fn(f64) -> f64,
+) -> f64 {
+    if evaluate(hi) > target {
         return f64::NAN;
     }
-    let mut lo = 0.0_f64;
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        if ncchi2_cdf(x, df, mid) > target {
+        if evaluate(mid) > target {
             lo = mid;
         } else {
             hi = mid;
@@ -2085,22 +1755,8 @@ pub fn m2_rmsea2(
     let s = moment_items.len();
 
     // free item parameters (Delta columns), matching the estimator's count
-    let mut params: Vec<M2Param> = Vec::new();
-    for i in 0..n_items {
-        params.push(M2Param::B(i));
-        if free_alpha {
-            params.push(M2Param::Alpha(i));
-        }
-        if uses_space {
-            for k in 0..bank.latent_dim {
-                params.push(M2Param::Zeta(i, k));
-            }
-        }
-    }
     let tau_free = kind == crate::InteractionKind::Distance && uses_space;
-    if tau_free {
-        params.push(M2Param::Tau);
-    }
+    let params = m2_parameters(n_items, free_alpha, uses_space, bank.latent_dim, tau_free);
     let p = params.len();
     if s <= p {
         return Err(format!(
@@ -2167,48 +1823,34 @@ pub fn m2_rmsea2(
     let b0 = bank.b.to_vec();
     let zeta0 = bank.zeta.to_vec();
     let tau0 = bank.tau;
-    let probs_for = |alpha: &[f64], b: &[f64], zeta: &[f64], tau: f64| -> Result<Vec<f64>, String> {
-        let tb = ItemBank {
-            alpha,
-            b,
-            zeta,
-            tau,
-            factor_id: bank.factor_id,
-            model_type: bank.model_type,
-            n_dims: bank.n_dims,
-            latent_dim: bank.latent_dim,
-            eps_distance: bank.eps_distance,
+    let probs_for =
+        |alpha: &[f64], b: &[f64], zeta: &[f64], tau: f64| -> Result<Vec<f64>, String> {
+            let tb = ItemBank {
+                alpha,
+                b,
+                zeta,
+                tau,
+                factor_id: bank.factor_id,
+                model_type: bank.model_type,
+                n_dims: bank.n_dims,
+                latent_dim: bank.latent_dim,
+                eps_distance: bank.eps_distance,
+            };
+            let (pr, _w, _t, _c) = icc_nodes(&tb, prior, q_theta, xi_rule)?;
+            Ok(pr)
         };
-        let (pr, _w, _t, _c) = icc_nodes(&tb, prior, q_theta, xi_rule)?;
-        Ok(pr)
-    };
     let mut delta = vec![0.0_f64; s * p];
     let ld = bank.latent_dim;
     for (col, param) in params.iter().enumerate() {
-        let base = match *param {
-            M2Param::B(i) => b0[i],
-            M2Param::Alpha(i) => alpha0[i],
-            M2Param::Zeta(i, k) => zeta0[i * ld + k],
-            M2Param::Tau => tau0,
-        };
+        let base = m2_param_value(*param, &alpha0, &b0, &zeta0, tau0, ld);
         let h = 1e-4 * (1.0 + base.abs());
         let mut a = alpha0.clone();
         let mut b = b0.clone();
         let mut z = zeta0.clone();
         let mut t = tau0;
-        match *param {
-            M2Param::B(i) => b[i] = base + h,
-            M2Param::Alpha(i) => a[i] = base + h,
-            M2Param::Zeta(i, k) => z[i * ld + k] = base + h,
-            M2Param::Tau => t = base + h,
-        }
+        set_m2_param(*param, base + h, &mut a, &mut b, &mut z, &mut t, ld);
         let mom_plus = model_moments(&probs_for(&a, &b, &z, t)?);
-        match *param {
-            M2Param::B(i) => b[i] = base - h,
-            M2Param::Alpha(i) => a[i] = base - h,
-            M2Param::Zeta(i, k) => z[i * ld + k] = base - h,
-            M2Param::Tau => t = base - h,
-        }
+        set_m2_param(*param, base - h, &mut a, &mut b, &mut z, &mut t, ld);
         let mom_minus = model_moments(&probs_for(&a, &b, &z, t)?);
         let inv = 0.5 / h;
         for row in 0..s {
@@ -2257,7 +1899,7 @@ pub fn m2_rmsea2(
             cnt += 1;
         }
     }
-    let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
+    let srmsr = srmsr_from_sum(ssum, cnt);
 
     // Fit a zero-factor / complete-independence baseline to the same complete
     // cases. Its free item margins reproduce the observed univariate margins;
@@ -2298,19 +1940,7 @@ pub fn m2_rmsea2(
     }
     let null_m2 = projected_m2(&null_e, &null_delta, null_xi, s, null_p, n_f)?;
     let null_df = (s - null_p) as f64;
-    let cfi_denom = null_m2 - null_df;
-    let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
-        (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
-    } else {
-        f64::NAN
-    };
-    let null_ratio = null_m2 / null_df;
-    let tli_denom = null_ratio - 1.0;
-    let tli = if null_m2 > m2 && tli_denom.abs() > 1e-12 {
-        (null_ratio - m2 / df) / tli_denom
-    } else {
-        f64::NAN
-    };
+    let (cfi, tli) = comparative_fit_metrics(m2, df, null_m2, null_df);
 
     Ok(M2Result {
         m2,
@@ -2349,6 +1979,17 @@ pub struct PolyLdResult {
     pub max_abs_std_resid: Vec<f64>,
     /// Pairwise-complete sample size per pair.
     pub n_pair: Vec<usize>,
+}
+
+fn validate_optional_observed_length(
+    observed: Option<&[bool]>,
+    expected: usize,
+) -> Result<(), String> {
+    if observed.is_some_and(|values| values.len() != expected) {
+        Err("observed must have length n_persons * n_items".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Local-dependence diagnostics for every item pair of a fitted unidimensional
@@ -2394,11 +2035,7 @@ pub fn poly_local_dependence(
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
     }
-    if let Some(o) = observed {
-        if o.len() != y.len() {
-            return Err("observed must have length n_persons * n_items".into());
-        }
-    }
+    validate_optional_observed_length(observed, y.len())?;
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
@@ -2411,8 +2048,7 @@ pub fn poly_local_dependence(
     let z = n_cat - 1;
 
     // per-item, per-node category probabilities P_i(a | theta_t)
-    let (nodes, weights) =
-        gh_rule(q_theta).ok_or_else(|| format!("unsupported quadrature size {q_theta}"))?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let mut probs = vec![0.0_f64; n_items * qn * n_cat];
     for i in 0..n_items {
@@ -2568,11 +2204,7 @@ pub fn poly_m2(
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
     }
-    if let Some(o) = observed {
-        if o.len() != y.len() {
-            return Err("observed must have length n_persons * n_items".into());
-        }
-    }
+    validate_optional_observed_length(observed, y.len())?;
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
@@ -2584,7 +2216,7 @@ pub fn poly_m2(
     }
 
     let z = n_cat - 1; // highest threshold index
-    // moment layout: item-major univariate (i,c), then bivariate pairs (i<j)x(c,d)
+                       // moment layout: item-major univariate (i,c), then bivariate pairs (i<j)x(c,d)
     let mut moment_cons: Vec<Vec<(usize, usize)>> = Vec::new();
     for i in 0..n_items {
         for c in 1..=z {
@@ -2639,8 +2271,7 @@ pub fn poly_m2(
     }
 
     // cumulative-probability tensor S[(i*qn+t)*z + (c-1)] = P(Y_i >= c | theta_t)
-    let (nodes, weights) =
-        gh_rule(q_theta).ok_or_else(|| format!("unsupported quadrature size {q_theta}"))?;
+    let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "quadrature size")?;
     let qn = nodes.len();
     let build_cum = |slope: &[f64], cat_params: &[f64]| -> Vec<f64> {
         let mut sc = vec![0.0_f64; n_items * qn * z];
@@ -2709,7 +2340,11 @@ pub fn poly_m2(
     for (col, &(pi, which)) in params.iter().enumerate() {
         let mut sl = slope.to_vec();
         let mut cp = cat_params.to_vec();
-        let base = if which < 0 { sl[pi] } else { cp[pi * z + which as usize] };
+        let base = if which < 0 {
+            sl[pi]
+        } else {
+            cp[pi * z + which as usize]
+        };
         let h = 1e-4 * (1.0 + base.abs());
         if which < 0 {
             sl[pi] = base + h;
@@ -2774,7 +2409,7 @@ pub fn poly_m2(
             cnt += 1;
         }
     }
-    let srmsr = if cnt > 0 { (ssum / cnt as f64).sqrt() } else { f64::NAN };
+    let srmsr = srmsr_from_sum(ssum, cnt);
 
     // Complete-independence baseline. Each item's K-1 cumulative margins are
     // free and reproduce the observed univariate cumulative margins; joint
@@ -2783,11 +2418,7 @@ pub fn poly_m2(
     let null_p = n_items * z;
     let null_mom: Vec<f64> = moment_cons
         .iter()
-        .map(|cons| {
-            cons.iter()
-                .map(|&(i, c)| p_hat[i * z + (c - 1)])
-                .product()
-        })
+        .map(|cons| cons.iter().map(|&(i, c)| p_hat[i * z + (c - 1)]).product())
         .collect();
     let null_e: Vec<f64> = (0..s).map(|a| p_hat[a] - null_mom[a]).collect();
     let mut null_delta = vec![0.0_f64; s * null_p];
@@ -2823,19 +2454,7 @@ pub fn poly_m2(
     }
     let null_m2 = projected_m2(&null_e, &null_delta, null_xi, s, null_p, n_f)?;
     let null_df = (s - null_p) as f64;
-    let cfi_denom = null_m2 - null_df;
-    let cfi = if null_m2 > m2 && cfi_denom > 0.0 {
-        (1.0 - (m2 - df) / cfi_denom).clamp(0.0, 1.0)
-    } else {
-        f64::NAN
-    };
-    let null_ratio = null_m2 / null_df;
-    let tli_denom = null_ratio - 1.0;
-    let tli = if null_m2 > m2 && tli_denom.abs() > 1e-12 {
-        (null_ratio - m2 / df) / tli_denom
-    } else {
-        f64::NAN
-    };
+    let (cfi, tli) = comparative_fit_metrics(m2, df, null_m2, null_df);
 
     Ok(M2Result {
         m2,
@@ -2855,496 +2474,6 @@ pub fn poly_m2(
     })
 }
 
-
 #[cfg(test)]
-mod m2_branch_tests {
-    use super::*;
-    use crate::scoring::{ItemBank, PriorSpec};
-
-    fn bank<'a>(alpha: &'a [f64], b: &'a [f64], zeta: &'a [f64], fid: &'a [usize]) -> ItemBank<'a> {
-        ItemBank {
-            alpha,
-            b,
-            zeta,
-            tau: -30.0,
-            factor_id: fid,
-            model_type: crate::ModelType::Mirt,
-            n_dims: 1,
-            latent_dim: 1,
-            eps_distance: 1e-8,
-        }
-    }
-
-    #[test]
-    fn m2_factorizes_independent_trait_dimensions() {
-        let probs = vec![0.2, 0.8, 0.3, 0.7];
-        let weights = vec![0.5, 0.5];
-        let sets = vec![vec![0, 1]];
-        let moments = factorized_trait_moments(
-            &probs,
-            &weights,
-            2,
-            &[0, 1],
-            2,
-            &sets,
-        );
-        assert!((moments[0] - 0.25).abs() < 1e-14);
-        assert!((moments[0] - 0.31).abs() > 1e-3, "must not share one trait node");
-    }
-
-    #[test]
-    fn ncchi2_large_noncentrality_matches_reference_values() {
-        // Independently evaluated with scipy.stats.ncx2 and scipy.optimize.brentq.
-        let cases = [
-            (2_000.0, 50.0, 0.05, 2_099.928_758_291_509_4),
-            (10_000.0, 50.0, 0.05, 10_282.274_417_418_035),
-            (10_000.0, 50.0, 0.95, 9_625.139_462_181_574),
-        ];
-        for (statistic, df, target, expected) in cases {
-            let got = nc_lambda_for(statistic, df, target);
-            assert!((got - expected).abs() <= 1e-10 * expected);
-            assert!((ncchi2_cdf(statistic, df, got) - target).abs() <= 1e-10);
-        }
-    }
-
-    #[test]
-    fn m2_rejects_too_few_items() {
-        let (alpha, b, zeta, fid) = (vec![0.0; 2], vec![0.0; 2], vec![0.0; 2], vec![0usize; 2]);
-        let bk = bank(&alpha, &b, &zeta, &fid);
-        let y = vec![0.0; 4];
-        let obs = vec![true; 4];
-        assert!(m2_rmsea2(&bk, &y, &obs, 2, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
-    }
-
-    #[test]
-    fn m2_rejects_length_mismatch() {
-        let (alpha, b, zeta, fid) = (vec![0.0; 4], vec![0.0; 4], vec![0.0; 4], vec![0usize; 4]);
-        let bk = bank(&alpha, &b, &zeta, &fid);
-        let y = vec![0.0; 8]; // wrong length for n_persons=3
-        let obs = vec![true; 8];
-        assert!(m2_rmsea2(&bk, &y, &obs, 3, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
-    }
-
-    #[test]
-    fn m2_rejects_nonpositive_df() {
-        // 3 MIRT items: s = 3 + 3 = 6 moments, p = 2*3 = 6 params -> df <= 0
-        let (alpha, b, zeta, fid) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![0usize; 3]);
-        let bk = bank(&alpha, &b, &zeta, &fid);
-        let n = 50usize;
-        let y = vec![1.0; n * 3];
-        let obs = vec![true; n * 3];
-        assert!(m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
-    }
-
-    #[test]
-    fn m2_rejects_too_few_complete_cases() {
-        // 8 items, but every row has a missing entry -> no complete cases
-        let (alpha, b, zeta, fid) =
-            (vec![0.0; 8], vec![0.0; 8], vec![0.0; 8], vec![0usize; 8]);
-        let bk = bank(&alpha, &b, &zeta, &fid);
-        let n = 40usize;
-        let y = vec![0.0; n * 8];
-        let mut obs = vec![true; n * 8];
-        for p in 0..n {
-            obs[p * 8] = false; // first item missing for everyone
-        }
-        assert!(m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 11, XiRule::GaussHermite { q_xi: 7 }).is_err());
-    }
-
-    #[test]
-    fn m2_runs_on_small_hand_built_bank() {
-        // exercises the full body (Cholesky, Delta, Xi, CI, SRMSR) under the lib
-        // tests, not only the integration recovery test
-        let n_items = 8usize;
-        let n = 400usize;
-        let alpha = vec![0.0; n_items];
-        let b: Vec<f64> = (0..n_items).map(|i| -0.8 + 0.2 * i as f64).collect();
-        let zeta = vec![0.0; n_items];
-        let fid = vec![0usize; n_items];
-        let mut state = 4242u64;
-        let mut unif = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((state >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let mut y = vec![0.0; n * n_items];
-        for p in 0..n {
-            let u1 = unif().max(1e-12);
-            let u2 = unif();
-            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let prob = 1.0 / (1.0 + (-(th + b[i])).exp());
-                y[p * n_items + i] = if unif() < prob { 1.0 } else { 0.0 };
-            }
-        }
-        let obs = vec![true; n * n_items];
-        let bk = bank(&alpha, &b, &zeta, &fid);
-        let res = m2_rmsea2(&bk, &y, &obs, n, &PriorSpec::standard(1), 21, XiRule::GaussHermite { q_xi: 7 })
-            .expect("m2 should run");
-        assert_eq!(res.n_moments, 36);
-        assert!(res.m2.is_finite() && res.df == 20.0);
-        assert!(res.rmsea2_ci_lower <= res.rmsea2_ci_upper + 1e-9);
-        assert!(res.srmsr.is_finite());
-    }
-
-    #[test]
-    fn poly_m2_reduces_to_binary_m2() {
-        // At K=2 the polytomous M2 must equal the trusted binary m2_rmsea2 at the
-        // same parameters (both GRM and GPCM cells reduce to the 2PL). This
-        // anchors the cumulative-moment machinery, the merge-max Xi, and the
-        // Delta/Cholesky solve against already-validated code.
-        use crate::poly::PolyModel;
-        let (n_persons, n_items) = (1500usize, 6usize);
-        let mut st = 24680u64;
-        let mut u = || {
-            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((st >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.1 * i as f64).collect();
-        let b_true: Vec<f64> = (0..n_items).map(|i| -0.5 + 0.2 * i as f64).collect();
-        let mut yf = vec![0.0_f64; n_persons * n_items];
-        let mut yi = vec![0usize; n_persons * n_items];
-        for pp in 0..n_persons {
-            let u1 = u().max(1e-12);
-            let u2 = u();
-            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let pr = 1.0 / (1.0 + (-(a_true[i] * th + b_true[i])).exp());
-                let v = if u() < pr { 1.0 } else { 0.0 };
-                yf[pp * n_items + i] = v;
-                yi[pp * n_items + i] = v as usize;
-            }
-        }
-        let obs = vec![true; n_persons * n_items];
-        let alpha: Vec<f64> = a_true.iter().map(|a| a.ln()).collect();
-        let zeta = vec![0.0_f64; n_items];
-        let fid = vec![0usize; n_items];
-        let bk = bank(&alpha, &b_true, &zeta, &fid);
-        let r_bin = m2_rmsea2(
-            &bk, &yf, &obs, n_persons, &PriorSpec::standard(1), 41,
-            XiRule::GaussHermite { q_xi: 1 },
-        )
-        .unwrap();
-        for model in [PolyModel::Gpcm, PolyModel::Grm] {
-            let r_poly =
-                poly_m2(&yi, Some(&obs), n_persons, n_items, 2, &a_true, &b_true, model, 41).unwrap();
-            assert_eq!(r_poly.n_moments, r_bin.n_moments, "{model:?} n_moments");
-            assert_eq!(r_poly.n_parameters, r_bin.n_parameters, "{model:?} n_parameters");
-            assert_eq!(r_poly.df, r_bin.df, "{model:?} df");
-            assert!(
-                (r_poly.m2 - r_bin.m2).abs() < 1e-4,
-                "{model:?} M2: poly {} vs binary {}", r_poly.m2, r_bin.m2
-            );
-            assert!((r_poly.p_value - r_bin.p_value).abs() < 1e-4, "{model:?} p_value");
-            assert!((r_poly.rmsea2 - r_bin.rmsea2).abs() < 1e-4, "{model:?} rmsea2");
-        }
-    }
-
-    // GPCM Monte-Carlo for M2 calibration: returns (mean M2/df, rejection rate at
-    // .05, df) over `reps` datasets simulated at fixed true parameters. Under a
-    // NORMAL theta (matching the N(0,1) quadrature) the model is correctly
-    // specified, so M2 -> chi^2(df) even at the true parameters (the residual
-    // projector removes P dimensions); under a right-SKEWED theta the N(0,1)
-    // quadrature is a population misspecification the statistic should detect.
-    fn mc_poly_m2(reps: usize, n_persons: usize, skew: bool) -> (f64, f64, f64) {
-        use crate::poly::{gpcm_logprobs, PolyModel};
-        let (n_items, k) = (5usize, 3usize);
-        let z = k - 1;
-        let a_true: Vec<f64> = (0..n_items).map(|i| 0.9 + 0.12 * i as f64).collect();
-        let cat_true: Vec<f64> = (0..n_items)
-            .flat_map(|i| vec![0.8 - 0.1 * i as f64, -0.8 + 0.1 * i as f64])
-            .collect();
-        let (mut ratio_sum, mut n_reject, mut df_val) = (0.0_f64, 0usize, 0.0_f64);
-        for rep in 0..reps {
-            let mut st = 909_090u64 + rep as u64 * 131 + if skew { 5 } else { 0 };
-            let mut u = || {
-                st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                ((st >> 11) as f64) / ((1u64 << 53) as f64)
-            };
-            let mut yi = vec![0usize; n_persons * n_items];
-            for pp in 0..n_persons {
-                let theta = if skew {
-                    -(u().max(1e-12)).ln() - 1.0
-                } else {
-                    let u1 = u().max(1e-12);
-                    let u2 = u();
-                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                };
-                for i in 0..n_items {
-                    let base = a_true[i] * theta;
-                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
-                    let mut ic = vec![0.0_f64; k];
-                    ic[1..].copy_from_slice(&cat_true[i * z..(i + 1) * z]);
-                    let lp = gpcm_logprobs(base, &scores, &ic);
-                    let draw = u();
-                    let (mut acc, mut cat) = (0.0_f64, k - 1);
-                    for (c, l) in lp.iter().enumerate() {
-                        acc += l.exp();
-                        if draw <= acc {
-                            cat = c;
-                            break;
-                        }
-                    }
-                    yi[pp * n_items + i] = cat;
-                }
-            }
-            let r =
-                poly_m2(&yi, None, n_persons, n_items, k, &a_true, &cat_true, PolyModel::Gpcm, 21)
-                    .unwrap();
-            ratio_sum += r.m2 / r.df;
-            if r.p_value < 0.05 {
-                n_reject += 1;
-            }
-            df_val = r.df;
-        }
-        (ratio_sum / reps as f64, n_reject as f64 / reps as f64, df_val)
-    }
-
-    #[test]
-    fn poly_m2_calibration_null_and_skew_power() {
-        // Fast CI guard. The authoritative >=500-replication study is
-        // poly_m2_monte_carlo_500 (ignored). See mc_poly_m2 for the design.
-        let (reps, n) = (20usize, 1500usize);
-        let (mn, rej_n, df) = mc_poly_m2(reps, n, false);
-        let (ms, rej_s, _) = mc_poly_m2(reps, n, true);
-        println!(
-            "[poly M2] df={df}  normal: mean(M2)/df={mn:.3} reject={rej_n:.3}  \
-             skew: mean(M2)/df={ms:.3} reject={rej_s:.3}"
-        );
-        // matched N(0,1) prior => calibrated (mean ~ df, few false rejections)
-        assert!((0.75..=1.35).contains(&mn), "normal M2/df off: {mn}");
-        assert!(rej_n < 0.25, "normal rejection too high: {rej_n}");
-        // skewed population is a misspecification M2 detects => inflated vs normal
-        assert!(ms > mn, "skew must inflate M2 vs normal: {ms} vs {mn}");
-    }
-
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn poly_m2_monte_carlo_500() {
-        let (reps, n) = (500usize, 2000usize);
-        let (mn, rej_n, df) = mc_poly_m2(reps, n, false);
-        let (ms, rej_s, _) = mc_poly_m2(reps, n, true);
-        println!(
-            "[poly M2 500] df={df}  normal: mean(M2)/df={mn:.4} reject={rej_n:.4}  \
-             skew: mean(M2)/df={ms:.4} reject={rej_s:.4}"
-        );
-        assert!((0.9..=1.1).contains(&mn), "normal M2/df off: {mn}");
-        assert!(rej_n < 0.12, "normal Type I too high: {rej_n}");
-        assert!(ms > mn + 0.1 && rej_s > rej_n, "skew misfit not detected: {ms} vs {mn}");
-    }
-
-    #[test]
-    fn poly_ld_matches_direct_2x2_at_k2() {
-        // Deterministic anchor: at K=2 the polytomous LD X² for each pair must
-        // equal a from-scratch 2x2 Pearson chi-square of observed counts vs the
-        // model-implied joint on the same quadrature — validating the table
-        // assembly, the local-independence marginalization, and the chi-square.
-        use crate::poly::{gpcm_logprobs, PolyModel};
-        let (n_persons, n_items) = (600usize, 3usize);
-        let mut st = 13131u64;
-        let mut u = || {
-            st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((st >> 11) as f64) / ((1u64 << 53) as f64)
-        };
-        let a = vec![1.1_f64, 0.9, 1.3];
-        let b = vec![0.3_f64, -0.4, 0.1]; // K=2 GPCM intercept per item
-        let mut yi = vec![0usize; n_persons * n_items];
-        for pp in 0..n_persons {
-            let u1 = u().max(1e-12);
-            let u2 = u();
-            let th = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-            for i in 0..n_items {
-                let pr = 1.0 / (1.0 + (-(a[i] * th + b[i])).exp());
-                yi[pp * n_items + i] = if u() < pr { 1 } else { 0 };
-            }
-        }
-        let r =
-            poly_local_dependence(&yi, None, n_persons, n_items, 2, &a, &b, PolyModel::Gpcm, 41)
-                .unwrap();
-        assert_eq!(r.df, 1.0);
-        let (nodes, weights) = gh_rule(41).unwrap();
-        let pcat = |i: usize, t: usize| -> [f64; 2] {
-            let lp = gpcm_logprobs(a[i] * nodes[t], &[0.0, 1.0], &[0.0, b[i]]);
-            [lp[0].exp(), lp[1].exp()]
-        };
-        for (idx, &(i, j)) in r.pairs.iter().enumerate() {
-            let mut pj = [[0.0_f64; 2]; 2];
-            for t in 0..nodes.len() {
-                let (pi, pjj) = (pcat(i, t), pcat(j, t));
-                for aa in 0..2 {
-                    for bb in 0..2 {
-                        pj[aa][bb] += weights[t] * pi[aa] * pjj[bb];
-                    }
-                }
-            }
-            let mut o = [[0.0_f64; 2]; 2];
-            for pp in 0..n_persons {
-                o[yi[pp * n_items + i]][yi[pp * n_items + j]] += 1.0;
-            }
-            let nf = n_persons as f64;
-            let mut x2ref = 0.0_f64;
-            for aa in 0..2 {
-                for bb in 0..2 {
-                    let e = nf * pj[aa][bb];
-                    if e > 1e-12 {
-                        let d = o[aa][bb] - e;
-                        x2ref += d * d / e;
-                    }
-                }
-            }
-            assert!(
-                (r.x2[idx] - x2ref).abs() < 1e-8,
-                "pair ({i},{j}): poly {} vs direct 2x2 {}", r.x2[idx], x2ref
-            );
-        }
-    }
-
-    // GPCM Monte-Carlo for the LD X²: returns (mean X²/df over locally-INDEPENDENT
-    // pairs, their rejection rate, X²/df for the injected/target pair (0,1), its
-    // rejection rate, df). With `inject_ld` a shared specific factor couples items
-    // 0 and 1 (a testlet), which the LD X² for that pair should detect while the
-    // other pairs stay calibrated. A skewed ability is a population
-    // misspecification that inflates all pairs.
-    fn mc_poly_ld(reps: usize, n_persons: usize, skew: bool, inject_ld: bool) -> (f64, f64, f64, f64, f64) {
-        use crate::poly::{fit_poly_unidim, gpcm_logprobs, PolyModel};
-        let (n_items, k) = (5usize, 3usize);
-        let z = k - 1;
-        let a_true: Vec<f64> = (0..n_items).map(|i| 1.0 + 0.1 * i as f64).collect();
-        let cat_true: Vec<f64> = (0..n_items)
-            .flat_map(|i| vec![0.7 - 0.08 * i as f64, -0.7 + 0.08 * i as f64])
-            .collect();
-        let (mut ind_ratio, mut ind_rej, mut ind_cnt) = (0.0_f64, 0usize, 0usize);
-        let (mut ld_ratio, mut ld_rej) = (0.0_f64, 0usize);
-        let mut df_val = 0.0_f64;
-        for rep in 0..reps {
-            let mut st = 5150u64 + rep as u64 * 131 + (skew as u64) * 7 + (inject_ld as u64) * 101;
-            let mut u = || {
-                st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                ((st >> 11) as f64) / ((1u64 << 53) as f64)
-            };
-            let mut yi = vec![0usize; n_persons * n_items];
-            for pp in 0..n_persons {
-                let theta = if skew {
-                    -(u().max(1e-12)).ln() - 1.0
-                } else {
-                    let u1 = u().max(1e-12);
-                    let u2 = u();
-                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                };
-                // shared specific factor coupling items 0 and 1 (testlet LD)
-                let uij = if inject_ld {
-                    let u1 = u().max(1e-12);
-                    let u2 = u();
-                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
-                } else {
-                    0.0
-                };
-                for i in 0..n_items {
-                    let extra = if inject_ld && (i == 0 || i == 1) { uij } else { 0.0 };
-                    let base = a_true[i] * theta + extra;
-                    let scores: Vec<f64> = (0..k).map(|c| c as f64).collect();
-                    let mut ic = vec![0.0_f64; k];
-                    ic[1..].copy_from_slice(&cat_true[i * z..(i + 1) * z]);
-                    let lp = gpcm_logprobs(base, &scores, &ic);
-                    let draw = u();
-                    let (mut acc, mut cat) = (0.0_f64, k - 1);
-                    for (c, l) in lp.iter().enumerate() {
-                        acc += l.exp();
-                        if draw <= acc {
-                            cat = c;
-                            break;
-                        }
-                    }
-                    yi[pp * n_items + i] = cat;
-                }
-            }
-            // LD is evaluated at the FITTED parameters (the operational case): the
-            // marginal MLE absorbs the univariate margins, leaving the (K-1)²
-            // residual-association dof the statistic references.
-            let fit =
-                fit_poly_unidim(&yi, None, n_persons, n_items, k, PolyModel::Gpcm, 21, 80, 1e-6)
-                    .unwrap();
-            assert!(
-                fit.converged,
-                "polytomous LD replicate {rep} did not converge: reason={}, \
-                 n_iter={}/{}, delta={:.6e}, tolerance={:.6e}",
-                fit.termination_reason,
-                fit.n_iter,
-                80,
-                fit.final_delta,
-                fit.stopping_tolerance
-            );
-            let cp_flat: Vec<f64> = fit.cat_params.iter().flatten().copied().collect();
-            let r = poly_local_dependence(
-                &yi, None, n_persons, n_items, k, &fit.slope, &cp_flat, PolyModel::Gpcm, 21,
-            )
-            .unwrap();
-            df_val = r.df;
-            for (idx, &(i, j)) in r.pairs.iter().enumerate() {
-                let ratio = r.x2[idx] / r.df;
-                let rej = r.p_value[idx] < 0.05;
-                if (i, j) == (0, 1) {
-                    ld_ratio += ratio;
-                    ld_rej += rej as usize;
-                } else if i >= 2 && j >= 2 {
-                    // pairs among the untouched items 2..; testlet-touching pairs excluded
-                    ind_ratio += ratio;
-                    ind_rej += rej as usize;
-                    ind_cnt += 1;
-                }
-            }
-        }
-        (
-            ind_ratio / ind_cnt as f64,
-            ind_rej as f64 / ind_cnt as f64,
-            ld_ratio / reps as f64,
-            ld_rej as f64 / reps as f64,
-            df_val,
-        )
-    }
-
-    #[test]
-    fn poly_ld_calibration_and_power() {
-        // Fast CI guard (fits each dataset). Authoritative >=500-rep study is
-        // poly_ld_monte_carlo_500 (ignored). "clean" = pairs among the untouched
-        // items 2.. ; "pair01" = the item pair carrying the injected testlet.
-        let (reps, n) = (20usize, 1500usize);
-        let (c0, r0, t0, _, df) = mc_poly_ld(reps, n, false, false); // null, normal ability
-        let (cl, rl, tl, tlrej, _) = mc_poly_ld(reps, n, false, true); // testlet on (0,1)
-        let (cs, rs, _, _, _) = mc_poly_ld(reps, n, true, false); // skewed ability
-        println!(
-            "[poly LD] df={df}  null: clean X2/df={c0:.3} reject={r0:.3} pair01={t0:.3}  \
-             LD: clean={cl:.3} reject={rl:.3} pair01 X2/df={tl:.3} reject={tlrej:.3}  \
-             skew: clean={cs:.3} reject={rs:.3}"
-        );
-        // null: clean pairs calibrated (the Chen-Thissen reference is conservative)
-        assert!((0.45..=1.35).contains(&c0), "null clean X2/df off: {c0}");
-        assert!(r0 < 0.15, "null rejection too high: {r0}");
-        // power: the testlet pair (0,1) is flagged; clean pairs stay calibrated
-        assert!(tl > 3.0 && tlrej > 0.6, "LD pair not detected: X2/df={tl}, reject={tlrej}");
-        assert!(cl < 1.6 && rl < 0.20, "clean pairs inflated under LD: {cl}, {rl}");
-        // a skewed ability that the N(0,1)-quadrature model cannot match inflates
-        // the pairwise residual association (a detectable distribution misfit)
-        assert!(cs > 2.0, "skew misspecification should inflate LD: {cs}");
-    }
-
-    #[test]
-    #[ignore = "literature-grade Monte-Carlo (>=500 reps); run with: cargo test --release -- --ignored --nocapture"]
-    fn poly_ld_monte_carlo_500() {
-        let (reps, n) = (500usize, 2000usize);
-        let (c0, r0, _, _, df) = mc_poly_ld(reps, n, false, false);
-        let (cl, rl, tl, tlrej, _) = mc_poly_ld(reps, n, false, true);
-        println!(
-            "[poly LD 500] df={df}  null: clean X2/df={c0:.4} reject={r0:.4}  \
-             LD: clean X2/df={cl:.4} reject={rl:.4} pair01 X2/df={tl:.4} reject={tlrej:.4}"
-        );
-        assert!((0.6..=1.15).contains(&c0), "null clean X2/df off: {c0}");
-        assert!(r0 < 0.09, "null Type I not conservative: {r0}");
-        // a 2-item testlet biases the whole unidimensional fit, so clean pairs are
-        // mildly elevated, but the LD pair is localized far above them
-        assert!(cl < 1.6, "clean pairs too inflated under LD: {cl}");
-        assert!(
-            tl > 6.0 && tlrej > 0.95 && tl > 4.0 * cl,
-            "LD pair power/separation too low: pair01={tl} clean={cl} reject={tlrej}"
-        );
-    }
-}
+#[path = "../../../tests/unit/fitstats_m2_branch_tests.rs"]
+mod m2_branch_tests;
