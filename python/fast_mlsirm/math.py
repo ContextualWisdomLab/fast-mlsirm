@@ -21,11 +21,26 @@ def logit(p: np.ndarray | float, eps: float = 1e-6) -> np.ndarray:
 
 def standardize(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=np.float64)
-    mean = np.nanmean(x)
-    sd = np.nanstd(x)
-    if not np.isfinite(sd) or sd < 1e-12:
-        return np.zeros_like(x, dtype=np.float64)
-    return (x - mean) / sd
+
+    if x.ndim == 1:
+        mean = np.nanmean(x)
+        sd = np.nanstd(x)
+        if not np.isfinite(sd) or sd < 1e-12:
+            return np.zeros_like(x, dtype=np.float64)
+        return (x - mean) / sd
+
+    # Vectorized 2D standardization across columns
+    mean = np.nanmean(x, axis=0)
+    sd = np.nanstd(x, axis=0)
+
+    # Handle zero/invalid standard deviations safely
+    valid = np.isfinite(sd) & (sd >= 1e-12)
+    sd_safe = np.where(valid, sd, 1.0)
+
+    result = (x - mean) / sd_safe
+    result[:, ~valid] = 0.0
+
+    return result
 
 
 def normalize_latent_positions(params: MLSIRMParams) -> MLSIRMParams:

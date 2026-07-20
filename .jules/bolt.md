@@ -33,3 +33,10 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Gradient alpha intermediate allocations
+**Learning:** In Python numerical gradients, operations like `(e * theta[:, factors]).sum(axis=0)` create massive intermediate arrays of shape (N, J). For large datasets, this severely impacts performance and memory.
+**Action:** Replace such calculations with transposed matrix multiplication and index selection (e.g., `(e.T @ theta)[np.arange(e.shape[1]), factors]`) to leverage BLAS optimization and avoid the large intermediate array allocation.
+
+## 2025-05-19 - Vectorizing standard math operations on 2D arrays
+**Learning:** Functions like `standardize` that assume 1D inputs force loops over 2D array columns, causing performance drops due to Python iteration overhead.
+**Action:** Upgrade math utilities to seamlessly support 2D arrays natively with  aggregations and fallback boolean masking, eliminating Python loops in caller code.

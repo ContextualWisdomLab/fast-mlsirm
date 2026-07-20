@@ -7,8 +7,12 @@ import numpy as np
 from .backend import normalize_device, resolve_backend
 from .config import FitConfig
 from .math import logit, normalize_latent_positions, standardize
-from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
-                        validate_factor_id)
+from .objective import (
+    model_flags,
+    neg_loglik_and_grad,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import FitResult, MLSIRMParams
 
 
@@ -58,7 +62,9 @@ def fit(
             best = candidate
 
     if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
+        raise RuntimeError(
+            "Optimization failed to find a valid fit."
+        )  # pragma: no cover
     return best
 
 
@@ -222,8 +228,7 @@ def _initial_params(
     denom = np.maximum(observed @ item_mask.astype(np.float64), 1)
     x = ((y * observed) @ item_mask.astype(np.float64)) / denom
 
-    for d in range(n_dims):
-        theta[:, d] = standardize(x[:, d])
+    theta = standardize(x)
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
     item_means = (y * observed).sum(axis=0) / item_counts
