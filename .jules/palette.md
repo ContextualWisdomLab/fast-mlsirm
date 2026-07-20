@@ -19,3 +19,7 @@
 ## 2024-07-13 - CLI Debugging Stack Traces
 **Learning:** Adding a `FAST_MLSIRM_DEBUG` bypass to user-friendly `try/except` blocks is crucial for DX. Otherwise, unexpected runtime errors during development will be swallowed into generic stderr messages, hiding the stack trace needed to actually fix the bug.
 **Action:** When adding `try-except` blocks to Python CLI subcommands to improve Developer Experience (DX) by preventing raw tracebacks for users, include a debug bypass (e.g., `if os.environ.get("FAST_MLSIRM_DEBUG"): raise`) in *all* catch blocks (including `RuntimeError` and `Exception`) to ensure tracebacks aren't swallowed during local development and debugging.
+
+## 2024-07-25 - HTML Data Table Header Accessibility and Styling
+**Learning:** Replaced the first `<td>` in data table rows with `<th scope="row">` to improve context for screen reader users. Discovered that doing so altered the default styling since the original CSS targeted `th` generally for headers and `td` for cells.
+**Action:** When updating generic HTML tags to semantic tags (like `td` to `th`) for accessibility, update existing CSS rules to narrow broad selectors (e.g., `th` to `thead th`) and explicitly style the new semantic elements (e.g., adding `tbody th { font-weight: normal; }`) to preserve the intended visual appearance without regression.
