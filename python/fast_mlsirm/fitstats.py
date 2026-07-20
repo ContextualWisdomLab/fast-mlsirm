@@ -334,6 +334,12 @@ def s_x2(
     flagged by person fit before item decisions (design doc §6).
     ``min_effect`` guards the BH flag with the RMS observed-minus-expected
     effect size (practical significance at large N).
+
+    References
+    ----------
+    Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
+    dichotomous item response theory models. *Applied Psychological
+    Measurement, 24*(1), 50–64. https://doi.org/10.1177/01466216000241003
     """
     core = _core_module()
     if core is not None and prior_mean is None:
@@ -490,6 +496,17 @@ def person_fit(
     for the N(prior_mean, 1) trait prior (EAP ≈ MAP for these posteriors);
     the latent-space position is held at its EAP, so the correction covers
     the trait estimate only (documented approximation).
+
+    References
+    ----------
+    Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
+    measurement with polychotomous item response models and standardized
+    indices. *British Journal of Mathematical and Statistical Psychology,
+    38*(1), 67–86. https://doi.org/10.1111/j.2044-8317.1985.tb00817.x
+
+    Snijders, T. A. B. (2001). Asymptotic null distribution of person fit
+    statistics with estimated person parameter. *Psychometrika, 66*(3),
+    331–342. https://doi.org/10.1007/BF02294437
     """
     model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}

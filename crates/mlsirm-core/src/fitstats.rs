@@ -240,6 +240,12 @@ fn icc_nodes(
 /// Persons with missing responses inside a dimension are excluded from that
 /// dimension's observed table; `person_weight` (0/1) can screen aberrant
 /// respondents out of the flagging statistics.
+///
+/// # References
+///
+/// Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
+/// dichotomous item response theory models. *Applied Psychological Measurement,
+/// 24*(1), 50–64. <https://doi.org/10.1177/01466216000241003>
 #[allow(clippy::too_many_arguments)]
 pub fn s_x2(
     bank: &ItemBank<'_>,
@@ -413,6 +419,17 @@ pub struct PersonFitResult {
 /// `l_z` / `l_z*` per person and trait dimension at the EAP estimates
 /// (`theta` row-major `n_persons x n_dims`, `xi` row-major
 /// `n_persons x latent_dim`); `prior_mean` per (person, dim) or empty for 0.
+///
+/// # References
+///
+/// Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness
+/// measurement with polychotomous item response models and standardized indices.
+/// *British Journal of Mathematical and Statistical Psychology, 38*(1), 67–86.
+/// <https://doi.org/10.1111/j.2044-8317.1985.tb00817.x>
+///
+/// Snijders, T. A. B. (2001). Asymptotic null distribution of person fit
+/// statistics with estimated person parameter. *Psychometrika, 66*(3), 331–342.
+/// <https://doi.org/10.1007/BF02294437>
 #[allow(clippy::too_many_arguments)]
 pub fn person_fit(
     bank: &ItemBank<'_>,

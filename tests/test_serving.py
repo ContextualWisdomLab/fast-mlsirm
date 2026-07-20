@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
@@ -11,6 +12,7 @@ from fast_mlsirm.serving import (
     load_serving_bundle,
     score_respondents,
 )
+from fast_mlsirm.types import FitResult, MLSIRMParams
 
 
 def _fit_small(seed=0):
@@ -22,8 +24,48 @@ def _fit_small(seed=0):
     zeta = rng.standard_normal((I, 2)) * 0.8
     eta = theta[:, fid] + 0.3 - np.linalg.norm(xi[:, None] - zeta[None], axis=2)
     y = (rng.random((P, I)) < 1 / (1 + np.exp(-eta))).astype(float)
-    cfg = FitConfig(model="MLS2PLM", estimator="mmle", max_iter=40, q_theta=15, q_xi=7)
+    cfg = FitConfig(
+        model="MLS2PLM",
+        estimator="mmle",
+        max_iter=160,
+        tolerance=1e-2,
+        q_theta=15,
+        q_xi=7,
+    )
     return y, fid, fit(y, fid, cfg)
+
+
+@pytest.mark.parametrize(
+    ("trace", "expected_delta"),
+    [([-12.0, -10.0], "2"), ([-10.0], "nan")],
+)
+def test_export_rejects_nonconverged_calibration(trace, expected_delta):
+    params = MLSIRMParams(
+        theta=np.zeros((1, 1)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((1, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    result = FitResult(
+        params=params,
+        model="MLS2PLM",
+        optimizer="em",
+        backend="rust",
+        rust_device="cpu",
+        objective=10.0,
+        loglik_trace=trace,
+        objective_trace=[],
+        convergence_status="max_iter_reached",
+        n_iter=1,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"status=max_iter_reached, n_iter=1, last_loglik_delta={expected_delta}",
+    ):
+        export_serving_bundle(result, ["I0", "I1"], np.array([0, 0]))
 
 
 def test_bundle_roundtrip_and_scoring(tmp_path):

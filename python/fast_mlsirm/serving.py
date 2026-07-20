@@ -82,7 +82,25 @@ def export_serving_bundle(
     screening_audit: dict[str, Any] | None = None,
     dim_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build (and optionally write) the serving bundle for a marginal fit."""
+    """Build (and optionally write) a serving bundle from a converged marginal fit.
+
+    Raises ``RuntimeError`` when calibration did not converge.  A frozen bundle
+    is a deployment artifact, so unfinished parameters must not cross this API
+    boundary merely because they are finite and serializable.
+    """
+    status = str(result.convergence_status).strip().lower()
+    if status != "converged":
+        trace = result.loglik_trace
+        last_delta = (
+            abs(float(trace[-1]) - float(trace[-2]))
+            if len(trace) >= 2
+            else float("nan")
+        )
+        raise RuntimeError(
+            "export_serving_bundle requires converged calibration parameters; "
+            f"status={status or 'unknown'}, n_iter={result.n_iter}, "
+            f"last_loglik_delta={last_delta:.6g}"
+        )
     p = result.params
     n_items = len(p.b)
     if len(item_codes) != n_items:

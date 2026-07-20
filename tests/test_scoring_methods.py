@@ -24,7 +24,13 @@ def _simulate(seed=0, P=400, I=12, D=2, gamma=1.0):
 def _bundle(seed=0, **fit_kwargs):
     y, fid = _simulate(seed=seed)
     cfg = FitConfig(
-        model="MLS2PLM", estimator="mmle", max_iter=40, q_theta=15, q_xi=7, **fit_kwargs
+        model="MLS2PLM",
+        estimator="mmle",
+        max_iter=240,
+        tolerance=1e-2,
+        q_theta=15,
+        q_xi=7,
+        **fit_kwargs,
     )
     result = fit(y, fid, cfg)
     codes = [f"I{i}" for i in range(y.shape[1])]
@@ -78,7 +84,14 @@ def test_prior_override_conditions_scores():
 def test_serving_prior_widens_for_multilevel_bundles():
     y, fid = _simulate(seed=4, P=300)
     cid = np.arange(len(y)) % 10
-    cfg = FitConfig(model="MLS2PLM", estimator="mmle", max_iter=30, q_theta=15, q_xi=7)
+    cfg = FitConfig(
+        model="MLS2PLM",
+        estimator="mmle",
+        max_iter=160,
+        tolerance=1e-2,
+        q_theta=15,
+        q_xi=7,
+    )
     result = fit(y, fid, cfg, cluster_id=cid)
     bundle = export_serving_bundle(
         result, [f"I{i}" for i in range(y.shape[1])], fid, q_theta=15, q_xi=7
