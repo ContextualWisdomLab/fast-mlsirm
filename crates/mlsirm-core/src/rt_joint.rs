@@ -157,7 +157,8 @@ pub struct SpeedAccuracyFit {
 /// (`> 0` where observed) are `n_persons * n_items` row-major; `observed` masks
 /// both (`None` = fully observed). `a`/`b` are the accuracy 2PL raw slope /
 /// intercept (`eta = a_i*theta + b_i`); `alpha`/`beta` are the lognormal time
-/// discrimination / intensity.
+/// discrimination / intensity. At least one paired observation and one observed
+/// item with non-zero accuracy discrimination are required to identify `rho`.
 #[allow(clippy::too_many_arguments)]
 pub fn fit_speed_accuracy_covariance(
     responses: &[f64],
@@ -201,15 +202,20 @@ pub fn fit_speed_accuracy_covariance(
         return Err("sigma_floor must be positive and finite".into());
     }
     if let Some(s) = config.fix_sigma_tau {
-        if !(s.is_finite() && s > 0.0) {
+        if !(s.is_finite() && s > 0.0 && (s * s).is_finite()) {
             return Err("fix_sigma_tau must be positive and finite".into());
         }
     }
     if a.iter().chain(b).chain(beta).any(|x| !x.is_finite()) {
         return Err("a, b, and beta must contain only finite values".into());
     }
-    if alpha.iter().any(|x| !x.is_finite() || *x <= 0.0) {
-        return Err("alpha must contain only positive finite values".into());
+    if alpha
+        .iter()
+        .any(|x| !x.is_finite() || *x <= 0.0 || !(*x * *x).is_finite())
+    {
+        return Err(
+            "alpha must be positive with finite squares; otherwise the joint likelihood is non-finite".into(),
+        );
     }
     let (nodes, weights) = gh_rule(config.q).ok_or_else(|| format!("unsupported q {}", config.q))?;
     let q = nodes.len();
@@ -224,10 +230,16 @@ pub fn fit_speed_accuracy_covariance(
     let mut bj = vec![0.0_f64; n_persons];
     let mut cj = vec![0.0_f64; n_persons];
     let mut kj = vec![0.0_f64; n_persons];
+    let mut n_observed = 0usize;
+    let mut n_accuracy_informative = 0usize;
     for p in 0..n_persons {
         for i in 0..n_items {
             if !is_obs(p, i) {
                 continue;
+            }
+            n_observed += 1;
+            if a[i] != 0.0 {
+                n_accuracy_informative += 1;
             }
             let u = responses[p * n_items + i];
             if u != 0.0 && u != 1.0 {
@@ -249,6 +261,14 @@ pub fn fit_speed_accuracy_covariance(
             cj[p] += a2 * d * d;
             kj[p] += alpha[i].ln() - 0.5 * ln2pi;
         }
+    }
+    if n_observed == 0 {
+        return Err("at least one response-time pair must be observed".into());
+    }
+    if n_accuracy_informative == 0 {
+        return Err(
+            "at least one observed response must have non-zero accuracy discrimination".into(),
+        );
     }
 
     let mut sigma_tau2 = match config.fix_sigma_tau {
@@ -299,6 +319,11 @@ pub fn fit_speed_accuracy_covariance(
                     acc22 += w * tau * tau;
                 }
             }
+        }
+        if !loglik.is_finite() || !acc11.is_finite() || !acc12.is_finite() || !acc22.is_finite() {
+            return Err(
+                "joint speed-accuracy likelihood or posterior moments became non-finite".into(),
+            );
         }
         trace.push(loglik);
         if it > 0 && (trace[it] - trace[it - 1]).abs() < config.tol {
@@ -366,6 +391,15 @@ pub fn fit_speed_accuracy_covariance(
         }
         theta_eap[p] = te;
         tau_eap[p] = ts;
+    }
+    if !final_ll.is_finite()
+        || !acc11.is_finite()
+        || theta_eap
+            .iter()
+            .chain(&tau_eap)
+            .any(|value| !value.is_finite())
+    {
+        return Err("joint speed-accuracy final likelihood or EAPs became non-finite".into());
     }
     if trace.last().is_none_or(|last| last.to_bits() != final_ll.to_bits()) {
         trace.push(final_ll);
@@ -483,6 +517,75 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("tol"));
+
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &a,
+            &b,
+            &[1.0],
+            &beta,
+            1,
+            1,
+            SpeedAccuracyConfig {
+                fix_sigma_tau: Some(1e308),
+                ..SpeedAccuracyConfig::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("fix_sigma_tau"));
+    }
+
+    #[test]
+    fn rejects_unidentified_or_nonfinite_joint_calibrations() {
+        let responses = [1.0];
+        let times = [2.0];
+        let observed = [false];
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            Some(&observed),
+            &[1.0],
+            &[0.0],
+            &[1.0],
+            &[1.0],
+            1,
+            1,
+            SpeedAccuracyConfig::default(),
+        )
+        .unwrap_err();
+        assert!(err.contains("observed"));
+
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &[0.0],
+            &[0.0],
+            &[1.0],
+            &[1.0],
+            1,
+            1,
+            SpeedAccuracyConfig::default(),
+        )
+        .unwrap_err();
+        assert!(err.contains("discrimination"));
+
+        let err = fit_speed_accuracy_covariance(
+            &responses,
+            &times,
+            None,
+            &[1.0],
+            &[0.0],
+            &[1e308],
+            &[1.0],
+            1,
+            1,
+            SpeedAccuracyConfig::default(),
+        )
+        .unwrap_err();
+        assert!(err.contains("non-finite"));
     }
 
     // Anchor A: at rho=0 the 2-D grid log-likelihood factorizes into the sum of the

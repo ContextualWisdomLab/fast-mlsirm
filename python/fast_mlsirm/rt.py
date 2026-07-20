@@ -125,7 +125,9 @@ def fit_speed_accuracy(
     arrays sharing a missingness mask (``NaN``/non-positive = missing); ``a``/``b``
     are the accuracy 2PL raw slope/intercept (``eta = a_i*theta + b_i``);
     ``alpha``/``beta`` are the lognormal time discrimination/intensity (e.g. from
-    :func:`fit_response_times`). Returns a dict with ``rho``, ``sigma_tau``,
+    :func:`fit_response_times`). At least one paired observation and one observed
+    item with non-zero accuracy discrimination are required to identify ``rho``.
+    Returns a dict with ``rho``, ``sigma_tau``,
     ``s_theta2`` (a theta-metric diagnostic ~1), joint ``theta_eap``/``tau_eap``,
     ``loglik``, ``loglik_trace``, ``n_iter``, ``converged``,
     ``termination_reason``, and ``final_loglik_change``. Non-convergence emits

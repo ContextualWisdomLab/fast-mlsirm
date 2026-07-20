@@ -2532,6 +2532,36 @@ def test_fit_speed_accuracy():
     with pytest.raises(ValueError):
         fit_speed_accuracy(resp.ravel(), times, a, b, alpha, beta)  # not 2-D
 
+    with pytest.raises(ValueError, match="observed"):
+        fit_speed_accuracy(
+            np.full((1, 1), np.nan),
+            np.full((1, 1), np.nan),
+            np.ones(1),
+            np.zeros(1),
+            np.ones(1),
+            np.ones(1),
+        )
+
+    with pytest.raises(ValueError, match="discrimination"):
+        fit_speed_accuracy(
+            np.array([[0.0], [1.0]]),
+            np.array([[2.0], [1.8]]),
+            np.zeros(1),
+            np.zeros(1),
+            np.ones(1),
+            np.ones(1),
+        )
+
+    with pytest.raises(ValueError, match="non-finite"):
+        fit_speed_accuracy(
+            np.array([[0.0], [1.0]]),
+            np.array([[2.0], [1.8]]),
+            np.ones(1),
+            np.zeros(1),
+            np.array([1e308]),
+            np.ones(1),
+        )
+
 
 def test_rt_person_fit():
     """RT person fit (van der Linden & Guo, 2008): W ~ chi2(n-1) with l_t ~ N(0,1)
