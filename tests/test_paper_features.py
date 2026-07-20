@@ -3085,6 +3085,10 @@ def test_fit_seq_gdina_recovers_polytomous_and_reduces_to_gdina():
     from fast_mlsirm import fit_seq_gdina, SeqGdinaFit, fit_gdina
     from fast_mlsirm.fitstats import _core_module
 
+    for public_doc in (SeqGdinaFit.__doc__, fit_seq_gdina.__doc__):
+        assert "fit_seq_gdina_qr" in (public_doc or "")
+        assert "deferred non-goal" not in (public_doc or "")
+
     core = _core_module()
     if core is None or not hasattr(core, "fit_seq_gdina"):
         pytest.skip("compiled core built without fit_seq_gdina")
@@ -3184,9 +3188,10 @@ def test_fit_seq_gdina_qr_per_step_q_reduces_and_recovers_structure():
         ``s_off[i]+l*M_i+(k-1)`` vs step-row-major ``spo[step_off[i]+(k-1)]+l``; cat_prob
         and loglik_trace are class-major and compared directly). A dimension-map, layout,
         or union-collapse bug fails this exact-zero guard.
-    (2) STRUCTURE -- item0 step1 q={A} (block width 2^1=2), step2 q={A,B} (width 2^2=4):
-        the per-step widths and n_parameters must reflect the distinct step Qs, NOT a
-        single union block. A large B-contrast in step 2 (s2(A1,B0)=0.20 vs s2(A1,B1)=0.80,
+    (2) STRUCTURE -- four items have step1 q={A} (block width 2^1=2), step2 q={A,B}
+        (width 2^2=4), with four single-step anchors per attribute for identification. The
+        per-step widths and n_parameters must reflect the distinct step Qs, NOT a single
+        union block. A large B-contrast in step 2 (s2(A1,B0)=0.20 vs s2(A1,B1)=0.80,
         gap 0.60) is recovered (gap >= 0.4) while the union stays lossless. Value recovery
         alone can't catch an over-collapse to the union; the width assertions can.
     (3) VALIDATION -- all-zero step row (a step measuring nothing), an attribute used by no
@@ -3254,31 +3259,45 @@ def test_fit_seq_gdina_qr_per_step_q_reduces_and_recovers_structure():
                 qr_val = qr.item_step_prob(i, kk)[l]
                 assert sh_val == qr_val, f"item{i} l{l} k{kk}: {sh_val} vs {qr_val}"
 
-    # (2) Structure: distinct per-step Qs the shared-Q model cannot represent.
-    #     item0 step1={A}, step2={A,B}; item1 M=1 {A}, item2 M=1 {B} pin both dims.
-    step_q2 = np.array([[1, 0], [1, 1], [1, 0], [0, 1]], dtype=np.int64)
-    n_steps2 = np.array([2, 1, 1], dtype=np.int64)
+    # (2) Structure: distinct per-step Qs the shared-Q model cannot represent. Four
+    #     polytomous items have step1={A}, step2={A,B}; four M=1 anchors per attribute
+    #     identify both dimensions and avoid treating a likelihood ridge as recovery.
+    n_pair2, n_anchor2 = 4, 4
+    step_q2 = np.array(
+        [[1, 0], [1, 1]] * n_pair2
+        + [[1, 0]] * n_anchor2
+        + [[0, 1]] * n_anchor2,
+        dtype=np.int64,
+    )
+    n_steps2 = np.array([2] * n_pair2 + [1] * (2 * n_anchor2), dtype=np.int64)
     s2_by_class = {0: 0.15, 1: 0.20, 2: 0.30, 3: 0.80}  # big B-contrast at A=1
-    n2 = 8000
+    n2 = 4000
     al2 = rng.integers(0, 2, size=(n2, k))
-    Y2 = np.zeros((n2, 3))
+    Y2 = np.zeros((n2, n_pair2 + 2 * n_anchor2))
     for j in range(n2):
         a0, a1 = int(al2[j, 0]), int(al2[j, 1])
-        # item0
-        if rng.random() < (0.25 + 0.5 * a0):
-            Y2[j, 0] = 1
-            rcAB = a0 + 2 * a1
-            if rng.random() < s2_by_class[rcAB]:
-                Y2[j, 0] = 2
-        Y2[j, 1] = 1.0 if rng.random() < (0.2 + 0.6 * a0) else 0.0
-        Y2[j, 2] = 1.0 if rng.random() < (0.2 + 0.6 * a1) else 0.0
-    qr2 = fit_seq_gdina_qr(Y2, step_q2, n_steps2, max_iter=1000, tol=1e-8)
+        for i in range(n_pair2):
+            if rng.random() < (0.25 + 0.5 * a0):
+                Y2[j, i] = 1
+                rcAB = a0 + 2 * a1
+                if rng.random() < s2_by_class[rcAB]:
+                    Y2[j, i] = 2
+        for i in range(n_pair2, n_pair2 + n_anchor2):
+            Y2[j, i] = 1.0 if rng.random() < (0.2 + 0.6 * a0) else 0.0
+        for i in range(n_pair2 + n_anchor2, Y2.shape[1]):
+            Y2[j, i] = 1.0 if rng.random() < (0.2 + 0.6 * a1) else 0.0
+    qr2 = fit_seq_gdina_qr(Y2, step_q2, n_steps2, max_iter=1000, tol=1e-6)
+    assert qr2.converged and qr2.termination_reason == "tolerance_met"
+    assert qr2.n_iter < 1000
+    assert abs(qr2.final_loglik_change) < qr2.stopping_tolerance
+    assert np.isfinite(qr2.loglik_trace).all()
+    assert np.min(np.diff(qr2.loglik_trace)) >= -1e-8
     # per-step block widths reflect the distinct Qs (2 and 4), not a single union block.
     assert len(qr2.item_step_prob(0, 1)) == 2
     assert len(qr2.item_step_prob(0, 2)) == 4
-    assert qr2.step_kq.tolist() == [1, 2, 1, 1]  # |q_ik| per step row
+    assert qr2.step_kq.tolist() == [1, 2] * n_pair2 + [1] * (2 * n_anchor2)
     # n_parameters = total step cells + (2^K - 1) free profile weights.
-    assert qr2.n_parameters == (2 + 4 + 2 + 2) + ((1 << k) - 1)
+    assert qr2.n_parameters == n_pair2 * (2 + 4) + 2 * n_anchor2 * 2 + ((1 << k) - 1)
     # large B-contrast recovered in step 2 (class A1B1 minus A1B0).
     s2 = qr2.item_step_prob(0, 2)
     assert s2[3] - s2[1] >= 0.4, f"B-gap too small: {s2}"
@@ -3286,8 +3305,7 @@ def test_fit_seq_gdina_qr_per_step_q_reduces_and_recovers_structure():
     cp = qr2.cat_prob[int(qr2.cat_off[0]):int(qr2.cat_off[0]) + 4 * 3].reshape(4, 3)
     assert cp[3, 2] - cp[1, 2] >= 0.3
     assert abs((1 - cp[3, 0]) - (1 - cp[1, 0])) < 0.15  # P(X>=1) close across B
-    # B is pinned by a single M=1 item (0.20/0.80 split), so its Bayes-optimal recovery is
-    # ~0.8; well above the 0.5 chance rate, confirming both latent dims are identified.
+    # Four M=1 anchors per attribute identify both dimensions and support stable recovery.
     est = (qr2.attr_prob >= 0.5).astype(int)
     assert (est == al2).mean() > 0.75
 
@@ -3298,14 +3316,17 @@ def test_fit_seq_gdina_qr_per_step_q_reduces_and_recovers_structure():
     zero_row[1] = [0, 0]  # a step measuring nothing
     with pytest.raises(ValueError):
         fit_seq_gdina_qr(Y2, zero_row, n_steps2)
-    dead_col = np.array([[1, 0], [1, 0], [1, 0], [1, 0]], dtype=np.int64)  # attr B unused
+    dead_col = step_q2.copy()
+    dead_col[:, 1] = 0  # attr B unused
     with pytest.raises(ValueError):
         fit_seq_gdina_qr(Y2, dead_col, n_steps2)
     with pytest.raises(ValueError, match="sum"):
-        fit_seq_gdina_qr(Y2, step_q2, np.array([3, 1, 1], dtype=np.int64))  # wrapper: rows != sum(n_steps)
+        too_many_steps = n_steps2.copy()
+        too_many_steps[0] = 3
+        fit_seq_gdina_qr(Y2, step_q2, too_many_steps)  # wrapper: rows != sum(n_steps)
     # max observed category != declared n_steps -- reaches the Rust guard, NOT the wrapper's
-    # row-count guard: keep sum(n_steps)=4 (matches step_q2's 4 rows) but let item0 declare 2
-    # steps while the data never reaches category 2 (else x=y could index clp past item0's block).
+    # row-count guard: keep sum(n_steps)=16 (matching step_q2's 16 rows) but let item0 declare
+    # 2 steps while its data never reaches category 2.
     y_low = Y2.copy()
     y_low[y_low[:, 0] == 2, 0] = 1
     with pytest.raises(ValueError, match="max observed category"):

@@ -693,9 +693,9 @@ class SeqGdinaFit:
     the per-person MAP profile and marginal attribute mastery.
 
     Restriction: every step of an item uses the SAME item Q-vector (shared-Q) — a
-    restriction of Ma & de la Torre's general per-step ``q_ik`` model (step-distinct
-    attributes are a deferred non-goal). Supply each item's Q-vector as the union of its
-    steps' required attributes."""
+    restriction of Ma & de la Torre's general per-step ``q_ik`` model. Use
+    :func:`fit_seq_gdina_qr` for step-distinct attributes; for this result, supply each
+    item's Q-vector as the union of its steps' required attributes."""
 
     s_off: np.ndarray
     step_prob: np.ndarray
@@ -750,13 +750,16 @@ def fit_seq_gdina(
     **Restriction (shared item Q-vector).** Every step of item ``i`` is a saturated G-DINA
     over the SAME required attributes (row ``i`` of ``q_matrix``). This is a restriction of
     Ma & de la Torre's (2016) general per-step ``q_ik`` model, whose headline feature is
-    *step-distinct* attribute requirements. Per-step Q-vectors are a deferred non-goal;
-    supply each item's Q-vector as the UNION of its steps' required attributes.
+    *step-distinct* attribute requirements. Use :func:`fit_seq_gdina_qr` for that model; for
+    this shared-Q entry point, supply each item's Q-vector as the UNION of its steps'
+    required attributes.
 
     ``responses`` is a persons x items array of ordered integer categories ``0..M_i``
     (``NaN`` = missing, dropped under MAR); ``M_i`` (the number of steps) is derived as the
     maximum observed category of item ``i``, and an item whose observed maximum is 0 (never
     leaves the base category) is rejected. ``q_matrix`` is an items x attributes 0/1 array.
+    Nonzero Q rows/columns are necessary sanity checks, not a certificate of global model
+    identifiability; supply an identified design and inspect ``converged``.
     Convergence uses the absolute observed-data log-likelihood increment and is checked
     before another M-step. The stable termination reason, completed M-step count, signed and
     relative terminal increments, and requested tolerance are returned explicitly.
@@ -878,7 +881,8 @@ def fit_seq_gdina_qr(
     ``step_off[i] + (k-1)`` is step ``k`` of item ``i``, ``step_off = cumsum(n_steps)``);
     ``n_steps[i] = M_i`` is item ``i``'s number of steps, which must equal its maximum observed
     category. Every declared step must measure at least one attribute, and every attribute must
-    be required by at least one step.
+    be required by at least one step. Those are necessary sanity checks, not a certificate of
+    global model identifiability; supply an identified design and inspect ``converged``.
 
     References (APA 7th ed.):
         Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for polytomous

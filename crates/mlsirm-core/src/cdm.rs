@@ -2424,10 +2424,10 @@ fn validate_seq_gdina(
 /// `i`), each with its own step-specific probability table. It is a restriction of the
 /// general per-step (per-category) `q_ik` model of Ma & de la Torre (2016), whose headline
 /// feature is *step-distinct* attribute requirements (e.g. step 1 needs attribute A, step 2
-/// needs A and B). Per-step Q-vectors are a deferred non-goal; supply the item Q-vector as
-/// the UNION of every step's required attributes so no step depends on an attribute outside
-/// it (any step that truly needs only a subset is still representable — its table is flat in
-/// the irrelevant attribute).
+/// needs A and B). Use [`fit_seq_gdina_qr`] when the steps need distinct Q-vectors. For this
+/// shared-Q entry point, supply the item Q-vector as the UNION of every step's required
+/// attributes so no step depends on an attribute outside it (any step that truly needs only
+/// a subset is still representable — its table is flat in the irrelevant attribute).
 ///
 /// Estimation reuses the CDM machinery: the closed-form saturated M-step
 /// `s_ik(l) = R_ik(l) / I_ik(l)` where `R = expected count reaching category >= k` and
@@ -2440,7 +2440,9 @@ fn validate_seq_gdina(
 ///
 /// `y`/`observed` are row-major `N*J` (`y` holds ordered integer categories `0..=M_i` where
 /// observed; `M_i` is derived as the maximum observed category); `q_matrix` is row-major
-/// `J*K` (0/1). Missing cells are dropped (MAR). Returns `Err` on malformed input.
+/// `J*K` (0/1). Missing cells are dropped (MAR). Returns `Err` on malformed input. The
+/// nonzero Q-row/Q-column guards are necessary sanity checks, not a certificate of global
+/// model identifiability; callers must provide an identified design and inspect `converged`.
 /// Convergence uses the absolute observed-data log-likelihood increment and is checked
 /// before another M-step, so the trace endpoint and returned parameters agree. The stable
 /// termination reason, signed and relative terminal increments, completed M-step count, and
@@ -2915,7 +2917,9 @@ fn validate_seq_gdina_qr(
 /// probabilities. `y`/`observed` are row-major `N*J` (ordered integer categories `0..=M_i`);
 /// `step_q` is row-major `(sum_i n_steps[i]) * K` (0/1), step `k` of item `i` at row
 /// `step_off[i] + (k-1)`; `n_steps[i] = M_i` (the number of steps, which must equal item `i`'s
-/// maximum observed category). Missing cells are dropped (MAR).
+/// maximum observed category). Missing cells are dropped (MAR). Nonzero step-Q rows and
+/// columns are necessary sanity checks, not a certificate of global model identifiability;
+/// callers must provide an identified design and inspect `converged`.
 ///
 /// References (APA 7th ed.):
 ///   Ma, W., & de la Torre, J. (2016). A sequential cognitive diagnosis model for polytomous
