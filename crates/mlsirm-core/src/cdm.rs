@@ -585,20 +585,23 @@ fn posterior_row_gdina(
 /// the item conditional and M-step generalize: the closed-form saturated maximiser is
 /// `p_il = R_il / I_il` (expected correct / expected total in reduced class `l`),
 /// exactly [`fit_cdm`]'s two-cell slip/guess step generalized to `2^{K_i}` classes.
-/// The box constraint `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`); the
-/// all-mastered class has the highest success probability under an identifiable Q,
-/// which the recovery tests assert rather than the estimator projecting (matching de
-/// la Torre's unconstrained-in-`[0,1]` saturated MLE; full subset-lattice isotonicity
-/// — Hong et al., 2016 — is a deferred add-on). `y`/`observed` are row-major `N*J`,
-/// `q_matrix` row-major `J*K`; missing cells are dropped (MAR).
+/// The box constraint `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`). This
+/// saturated estimator does **not** impose order restrictions: Q-matrix
+/// identifiability does not imply that mastering more required attributes raises the
+/// success probability, and an all-mastered class need not have the largest estimate.
+/// Subset-lattice order-restricted estimation is a separate model choice described by
+/// Hong et al. (2016) and is not implemented here. `y`/`observed` are row-major
+/// `N*J`, `q_matrix` row-major `J*K`; missing cells are dropped (MAR).
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J. (2011). The generalized DINA model framework. *Psychometrika,
 ///     76*(2), 179-199. https://doi.org/10.1007/s11336-011-9207-7
-///   Chen, H., & Zhou, H. (2016). ... order restrictions. *Journal of Classification,
-///     33*(3), 460-484. https://doi.org/10.1007/s00357-016-9216-4
-///   Ma, W., & de la Torre, J. (2020). GDINA: An R package. *Journal of Statistical
-///     Software, 93*(14), 1-26. https://doi.org/10.18637/jss.v093.i14
+///   Hong, C.-Y., Chang, Y.-W., & Tsai, R.-C. (2016). Estimation of generalized
+///     DINA model with order restrictions. *Journal of Classification, 33*(3),
+///     460-484. https://doi.org/10.1007/s00357-016-9215-5
+///   Ma, W., & de la Torre, J. (2020). GDINA: An R package for cognitive diagnosis
+///     modeling. *Journal of Statistical Software, 93*(14), 1-26.
+///     https://doi.org/10.18637/jss.v093.i14
 #[allow(clippy::too_many_arguments)]
 pub fn fit_gdina(
     y: &[f64],
@@ -3690,7 +3693,8 @@ mod tests {
         y
     }
 
-    /// The all-mastered reduced class has the highest success probability per item.
+    /// Check the all-mastered class for monotone-truth fixtures only; this is not an
+    /// invariant of the unconstrained saturated G-DINA estimator.
     fn top_class_is_max(res: &GdinaResult) -> bool {
         (0..res.k_required.len()).all(|i| {
             let (a, b) = (res.item_off[i], res.item_off[i + 1]);

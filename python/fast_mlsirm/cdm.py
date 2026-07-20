@@ -204,10 +204,19 @@ def fit_gdina(
     interaction nonzero). ``responses`` is a persons x items 0/1 array (``NaN`` =
     missing, dropped under MAR); ``q_matrix`` is an items x attributes 0/1 array.
 
+    The saturated fit constrains each success probability only to ``[0, 1]``. It does
+    not impose subset-lattice order restrictions, so Q-matrix identifiability alone
+    does not guarantee that mastering more required attributes increases success.
+    Order-restricted G-DINA estimation is a distinct model choice (Hong et al., 2016)
+    and is not implemented by this function.
+
     References (APA 7th ed.):
         de la Torre, J. (2011). The generalized DINA model framework.
             *Psychometrika, 76*(2), 179-199.
             https://doi.org/10.1007/s11336-011-9207-7
+        Hong, C.-Y., Chang, Y.-W., & Tsai, R.-C. (2016). Estimation of generalized
+            DINA model with order restrictions. *Journal of Classification, 33*(3),
+            460-484. https://doi.org/10.1007/s00357-016-9215-5
         Ma, W., & de la Torre, J. (2020). GDINA: An R package for cognitive
             diagnosis modeling. *Journal of Statistical Software, 93*(14), 1-26.
             https://doi.org/10.18637/jss.v093.i14

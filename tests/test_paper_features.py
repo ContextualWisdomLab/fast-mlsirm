@@ -2752,7 +2752,8 @@ def test_fit_gdina_recovers_saturated_and_reduces_to_dina():
         assert abs(d[-1] - ((1.0 - s) - g)) < 0.05
         if len(d) > 2:
             assert np.all(np.abs(d[1:-1]) < 0.05)
-    # all-mastered reduced class has the highest success probability.
+    # For this DINA-generated monotone truth, the all-mastered class is highest;
+    # unconstrained saturated G-DINA does not guarantee this for arbitrary data.
     for i in range(n_items):
         row = res.item_prob_row(i)
         assert row[-1] >= row.max() - 1e-9
@@ -2766,6 +2767,47 @@ def test_fit_gdina_recovers_saturated_and_reduces_to_dina():
         fit_gdina(y.ravel(), q)  # responses not 2-D
     with pytest.raises(ValueError):
         fit_gdina(y, np.zeros((n_items, k), dtype=np.int64))  # all-zero Q rows/cols
+
+
+def test_fit_gdina_does_not_claim_or_project_order_restrictions():
+    """The saturated estimator leaves G-DINA order restrictions unconstrained."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_gdina
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_gdina"):
+        pytest.skip("compiled core built without fit_gdina")
+
+    rng = np.random.default_rng(20260720)
+    k, n_items, n = 2, 12, 1500
+    q = np.zeros((n_items, k), dtype=np.int64)
+    q[:4, 0] = 1
+    q[4:8, 1] = 1
+    q[8:, :] = 1
+    profiles = rng.integers(0, 1 << k, size=n)
+    y = np.empty((n, n_items), dtype=float)
+    joint_prob = np.array([0.1, 0.8, 0.7, 0.2])
+    for person, profile in enumerate(profiles):
+        for item in range(n_items):
+            if item < 4:
+                prob = (0.2, 0.8)[profile & 1]
+            elif item < 8:
+                prob = (0.2, 0.8)[(profile >> 1) & 1]
+            else:
+                prob = joint_prob[profile]
+            y[person, item] = rng.random() < prob
+
+    result = fit_gdina(y, q, max_iter=500, tol=1e-6)
+    delta = np.diff(result.loglik_trace)
+    assert result.converged and result.n_iter < 500
+    assert np.isfinite(result.loglik_trace).all()
+    assert np.all(delta >= -1e-6)
+    assert abs(delta[-1]) < 1e-6
+    for item in range(8, n_items):
+        row = result.item_prob_row(item)
+        assert row[-1] < row[1:-1].max() - 0.3
 
 
 def test_validate_q_matrix_corrects_misspecification():

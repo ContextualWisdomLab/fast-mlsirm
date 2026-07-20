@@ -922,9 +922,10 @@
   the intercept and the highest-order interaction nonzero; A-CDM zeroes the
   interactions. Item parameters are stored ragged (CSR: `item_off` + flat
   `item_prob`/`item_delta`) since `2^{K_i}` varies per item; the box constraint
-  `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`), and the all-mastered class
-  having the highest success probability is asserted as an invariant rather than
-  projected (matching de la Torre's unconstrained-in-`[0,1]` saturated MLE).
+  `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`). The saturated estimator is
+  otherwise order-unconstrained: Q-matrix identifiability does not make the
+  all-mastered class largest, and the separate Hong, Chang, and Tsai (2016)
+  subset-lattice order restriction is not implemented.
   Compute lives in `mlsirm_core::cdm::fit_gdina`, extending the DINA module without
   touching the shipped DINA core; exposed via PyO3 as `fit_gdina` with the `GdinaFit`
   Python wrapper. Correctness is anchored by a brute-force likelihood identity
