@@ -942,6 +942,9 @@ pub fn bank_information(
 /// (`Phi' = g`), located by a grid scan of `g` (its trapezoidal cumulative integral recovers `Phi`) plus
 /// a local root refinement; this is robust to the 3PL/4PL case where the weighted likelihood can be
 /// multimodal (Samejima, 1973; Yen, Burket & Sykes, 1991), which a single bracketed root can get wrong.
+/// The grid resolution scales with the steepest item discrimination; combinations that would require
+/// more than 65,536 intervals are rejected rather than returned with an unresolved global mode. This
+/// bounded adaptive search is a repository implementation choice, not a procedure specified by Warm.
 /// The reported standard error is `1 / sqrt(I(theta_wle))` (asymptotic).
 ///
 /// `a`/`b`/`c`/`d` are per-item NATURAL-scale parameters (length `n_items`; `a` is the slope, NOT
@@ -1027,9 +1030,29 @@ pub fn score_wle(
     // stationary points (Samejima, 1973; Yen, Burket & Sykes, 1991), so a single bracketed bisection can
     // converge to a non-dominant root. Recover `Phi` (up to a constant) as the trapezoidal cumulative
     // integral of `g` over a grid, take the global-max node, and refine the root of `g` around it.
-    const GRID: usize = 512;
-    let h = 2.0 * theta_bound / GRID as f64;
-    let mut gvals = vec![0.0f64; GRID + 1];
+    //
+    // A fixed theta grid is not sufficient here: a logistic transition has width O(1 / |a_i|), and a
+    // high-discrimination 3PL/4PL item can therefore create a dominant mode entirely between two fixed
+    // nodes. Keep the historical 512-node floor for ordinary tests, but guarantee four intervals per
+    // unit of the steepest item's logit scale. Refuse pathological controls that would exceed the
+    // explicit work bound instead of silently returning the wrong mode.
+    const MIN_GRID: usize = 512;
+    const MAX_GRID: usize = 65_536;
+    const INTERVALS_PER_LOGIT: f64 = 4.0;
+    let max_abs_a = a.iter().fold(0.0_f64, |acc, &value| acc.max(value.abs()));
+    if max_abs_a == 0.0 {
+        return Err("at least one item must have nonzero discrimination".into());
+    }
+    let required_grid = (2.0 * theta_bound * max_abs_a * INTERVALS_PER_LOGIT).ceil();
+    if !required_grid.is_finite() || required_grid > MAX_GRID as f64 {
+        return Err(format!(
+            "theta_bound and item discrimination require more than {MAX_GRID} WLE grid intervals"
+        ));
+    }
+    let grid = (required_grid as usize).max(MIN_GRID);
+    let h = 2.0 * (theta_bound / grid as f64);
+    let grid_theta = |k: usize| theta_bound * (2.0 * k as f64 / grid as f64 - 1.0);
+    let mut gvals = vec![0.0f64; grid + 1];
     let mut out = WleScores {
         theta: vec![0.0; n_persons],
         se: vec![0.0; n_persons],
@@ -1043,37 +1066,40 @@ pub fn score_wle(
             out.boundary[p] = true;
             continue;
         }
-        for k in 0..=GRID {
-            gvals[k] = eval(p, -theta_bound + h * k as f64).0;
+        for (k, gval) in gvals.iter_mut().enumerate() {
+            *gval = eval(p, grid_theta(k)).0;
+            if !gval.is_finite() {
+                return Err(format!("non-finite WLE estimating function for person {p}"));
+            }
         }
         // Phi_0 = 0 (reference); track the global argmax over the grid nodes.
         let (mut phi, mut best_phi, mut best_k) = (0.0f64, 0.0f64, 0usize);
-        for k in 1..=GRID {
+        for k in 1..=grid {
             phi += 0.5 * (gvals[k - 1] + gvals[k]) * h;
+            if !phi.is_finite() {
+                return Err(format!("non-finite weighted log-likelihood for person {p}"));
+            }
             if phi > best_phi {
                 best_phi = phi;
                 best_k = k;
             }
         }
-        let theta_hat = if best_k == 0 || best_k == GRID {
+        let theta_hat = if best_k == 0 || best_k == grid {
             // Global max at a boundary node: the finite Warm root lies at/beyond the hard bound.
             out.boundary[p] = true;
-            -theta_bound + h * best_k as f64
+            grid_theta(best_k)
         } else {
             // Interior max: Phi' = g crosses + -> - in [node-1, node+1]; refine by bisection.
-            let (mut a0, mut b0) = (
-                -theta_bound + h * (best_k as f64 - 1.0),
-                -theta_bound + h * (best_k as f64 + 1.0),
-            );
+            let (mut a0, mut b0) = (grid_theta(best_k - 1), grid_theta(best_k + 1));
             let mut ga = eval(p, a0).0;
             if ga * eval(p, b0).0 > 0.0 {
-                -theta_bound + h * best_k as f64 // no clean sign change (narrow mode): use the node
+                return Err(format!("failed to bracket the global WLE mode for person {p}"));
             } else {
                 for _ in 0..200 {
                     if b0 - a0 < tol {
                         break;
                     }
-                    let mid = 0.5 * (a0 + b0);
+                    let mid = a0 + 0.5 * (b0 - a0);
                     let gm = eval(p, mid).0;
                     if gm == 0.0 {
                         a0 = mid;
@@ -1087,7 +1113,10 @@ pub fn score_wle(
                         b0 = mid;
                     }
                 }
-                0.5 * (a0 + b0)
+                if b0 - a0 >= tol {
+                    return Err(format!("WLE root refinement did not converge for person {p}"));
+                }
+                a0 + 0.5 * (b0 - a0)
             }
         };
         out.theta[p] = theta_hat;
@@ -1739,6 +1768,9 @@ mod wle_tests {
         assert!(score_wle(&a, &b, &c, &d, &ybad, &obs, 1, 20.0, 1e-9).is_err());
         // theta_bound non-positive
         assert!(score_wle(&a, &b, &c, &d, &y, &obs, 1, 0.0, 1e-9).is_err());
+        // no information, and controls whose required adaptive grid would be intractable
+        assert!(score_wle(&[0.0, 0.0], &b, &c, &d, &y, &obs, 1, 20.0, 1e-9).is_err());
+        assert!(score_wle(&a, &b, &c, &d, &y, &obs, 1, 1e308, 1e-9).is_err());
     }
 
     /// The 3PL weighted likelihood is multimodal here; the WLE must return the GLOBAL mode, not merely
@@ -1759,6 +1791,63 @@ mod wle_tests {
             "did not select the global mode: theta {} (expected ~ -4.13, not the +1.70 root)",
             res.theta[0]
         );
+    }
+
+    /// A fixed 512-node theta grid misses the narrow dominant mode created by the third item's high
+    /// discrimination and returns the lower weighted-likelihood mode near -3.37. A 0.001-step
+    /// independent numerical integral of `g` places the global maximum near -2.74.
+    #[test]
+    fn wle_resolves_narrow_global_mode_4pl() {
+        let a = [
+            3.329447657883643,
+            0.27232757528116147,
+            84.38646237902715,
+            4.507142332708399,
+            0.216076032654272,
+            1.152868526694496,
+            0.5026701543207452,
+            3.594020470848568,
+        ];
+        let b = [
+            -2.2559085720992726,
+            4.784793518100594,
+            -2.7313173853279284,
+            3.16639784715872,
+            2.45483432935667,
+            3.577399138394002,
+            -0.541499889021253,
+            -3.1606254220709538,
+        ];
+        let c = [
+            0.4293154638946107,
+            0.03968316086976924,
+            0.2117187277379179,
+            0.4041453105751009,
+            0.14842532496042327,
+            0.2781240730868334,
+            0.07100800469041686,
+            0.16882942315223948,
+        ];
+        let d = [
+            0.9271440266982822,
+            0.8326920519773708,
+            0.7052699247299387,
+            0.7321429393598535,
+            0.7250331916969143,
+            0.8800003001396377,
+            0.7964931220169523,
+            0.8078636510671307,
+        ];
+        let y = [1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0];
+        let obs = [true; 8];
+        let res = score_wle(&a, &b, &c, &d, &y, &obs, 1, 20.0, 1e-10).unwrap();
+        assert!(!res.boundary[0]);
+        assert!(
+            (res.theta[0] + 2.74).abs() < 0.02,
+            "selected theta {} instead of the narrow global mode near -2.74",
+            res.theta[0]
+        );
+        assert!(g_fd(&a, &b, &c, &d, &y, res.theta[0]).abs() < 1e-3);
     }
 
     /// A person with no observed items has undefined ability: `NaN` estimate and SE, flagged — not a

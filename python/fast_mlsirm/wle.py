@@ -35,7 +35,9 @@ def score_wle(
     optional bool mask (defaults to the non-``NaN`` entries). ``theta_bound`` is the hard clamp on the
     root search: when the finite Warm root lies beyond it (very easy/hard items for the pattern) the
     estimate is clamped to the boundary and flagged. Returns per-person NumPy arrays ``theta``, ``se``,
-    and ``boundary``.
+    and ``boundary``. The Rust implementation adapts its bounded search grid to the steepest item and
+    raises ``ValueError`` when resolving the global mode would exceed its 65,536-interval work limit;
+    this numerical policy is specific to fast-mlsirm rather than Warm's statistical result.
 
     Reference (APA 7th ed.):
         Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.

@@ -1770,6 +1770,68 @@ def test_score_wle_warm():
         score_wle(a, b, np.array([[2.0] + [0.0] * (j - 1)]))
 
 
+def test_score_wle_resolves_narrow_global_mode():
+    """The Rust WLE search resolves a narrow high-discrimination 4PL global mode that falls between
+    the historical fixed-grid nodes."""
+    import numpy as np
+
+    from fast_mlsirm import score_wle
+
+    a = np.array(
+        [
+            3.329447657883643,
+            0.27232757528116147,
+            84.38646237902715,
+            4.507142332708399,
+            0.216076032654272,
+            1.152868526694496,
+            0.5026701543207452,
+            3.594020470848568,
+        ]
+    )
+    b = np.array(
+        [
+            -2.2559085720992726,
+            4.784793518100594,
+            -2.7313173853279284,
+            3.16639784715872,
+            2.45483432935667,
+            3.577399138394002,
+            -0.541499889021253,
+            -3.1606254220709538,
+        ]
+    )
+    c = np.array(
+        [
+            0.4293154638946107,
+            0.03968316086976924,
+            0.2117187277379179,
+            0.4041453105751009,
+            0.14842532496042327,
+            0.2781240730868334,
+            0.07100800469041686,
+            0.16882942315223948,
+        ]
+    )
+    d = np.array(
+        [
+            0.9271440266982822,
+            0.8326920519773708,
+            0.7052699247299387,
+            0.7321429393598535,
+            0.7250331916969143,
+            0.8800003001396377,
+            0.7964931220169523,
+            0.8078636510671307,
+        ]
+    )
+    y = np.array([[1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0]])
+
+    result = score_wle(a, b, y, c=c, d=d, tol=1e-10)
+    assert not result["boundary"][0]
+    assert abs(result["theta"][0] + 2.74) < 0.02
+
+
 def test_rasch_cml_and_andersen_lr():
     """Rasch CML (Andersen, 1970/1972) and Andersen's (1973) LR test via the public API: the item
     difficulties are recovered PERSON-DISTRIBUTION-FREE (the same beta under N(0,1) vs skewed ability,
