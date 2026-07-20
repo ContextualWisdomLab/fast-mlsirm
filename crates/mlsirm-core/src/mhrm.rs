@@ -934,14 +934,15 @@ pub fn fit_mhrm(
             theta_count += 1;
         }
         let change = change2.sqrt();
-        final_change = change;
         recent.push(change);
         if recent.len() > cfg.window {
             recent.remove(0);
         }
+        // Report the same windowed statistic that defines convergence. Returning only the most
+        // recent stochastic step can exceed `tol` even when the window mean legitimately converged.
+        final_change = recent.iter().sum::<f64>() / recent.len() as f64;
         if k > cfg.burn_in && recent.len() == cfg.window {
-            let avg = recent.iter().sum::<f64>() / cfg.window as f64;
-            if avg < cfg.tol {
+            if final_change < cfg.tol {
                 converged = true;
                 break;
             }

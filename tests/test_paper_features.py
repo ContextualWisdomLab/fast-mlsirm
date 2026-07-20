@@ -3409,6 +3409,43 @@ def test_fit_mhrm_recovers_high_dimensional_2pl():
         fit_mhrm(ybad, model=models.confirmatory(pattern))
 
 
+def test_fit_mhrm_reports_the_windowed_stopping_metric():
+    """The reported metric must be the same window mean used to declare convergence."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_mhrm
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_mhrm"):
+        pytest.skip("compiled core built without fit_mhrm")
+
+    rng = np.random.default_rng(20260720)
+    n, n_items = 100, 6
+    theta = rng.normal(size=n)
+    loading = np.array([0.7, 0.9, 1.1, 1.3, 0.8, 1.0])
+    intercept = np.array([-0.8, -0.4, 0.0, 0.3, 0.6, -0.2])
+    prob = 1.0 / (1.0 + np.exp(-(theta[:, None] * loading + intercept)))
+    responses = (rng.random((n, n_items)) < prob).astype(float)
+    tol = 0.005
+
+    result = fit_mhrm(
+        responses,
+        model=1,
+        max_cycles=150,
+        burn_in=5,
+        mh_steps=1,
+        tol=tol,
+        seed=52,
+        estimate_se=False,
+    )
+
+    assert result.converged
+    assert result.termination_reason == "converged"
+    assert result.n_cycles == 110
+    assert result.final_param_change < tol
+
+
 def test_fit_mhrm_estimate_corr_recovers_factor_correlation():
     """MH-RM with estimate_corr (Cai, 2010b): recover a free latent factor CORRELATION at D=2 from
     theta ~ MVN(0, Phi), and confirm estimate_corr=False yields exactly the identity."""
