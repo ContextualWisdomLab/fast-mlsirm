@@ -73,6 +73,19 @@ def fit_diagnostics(
                 "limited-information diagnostics require converged parameters; "
                 f"the fitted model did not converge (status={status or 'unknown'})"
             )
+    if include_m2 and population is not None:
+        unsupported = []
+        if "pi_zero" in population:
+            unsupported.append("zero inflation")
+        if "delta" in population:
+            unsupported.append("item covariates")
+        if unsupported:
+            terms = " and ".join(unsupported)
+            raise ValueError(
+                "limited-information M2 does not yet support calibrations with "
+                f"{terms}; the required model moments and free-parameter columns "
+                "would otherwise be omitted"
+            )
     if include_m2 and group_id is not None and cluster_id is not None:
         raise ValueError("M2 accepts group_id or cluster_id, not both")
     y, observed = prepare_response(responses, mask)

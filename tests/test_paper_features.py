@@ -1365,6 +1365,46 @@ def test_m2_polytomous_rejects_nonconverged_calibration():
         m2_polytomous(y, fit, q_theta=11)
 
 
+@pytest.mark.parametrize(
+    ("population", "message"),
+    [
+        ({"kind": "single", "pi_zero": 0.2}, "zero inflation"),
+        ({"kind": "single", "delta": 0.4}, "item covariates"),
+        (
+            {"kind": "single", "pi_zero": 0.2, "delta": 0.4},
+            "zero inflation and item covariates",
+        ),
+    ],
+)
+def test_m2_rejects_unsupported_calibration_terms(population, message):
+    """M2 must not silently use base-model moments for structured fits."""
+    from fast_mlsirm import fit_diagnostics
+    from fast_mlsirm.types import MLSIRMParams
+
+    n_persons, n_items = 40, 8
+    responses = np.tile([0.0, 1.0], (n_persons, n_items // 2))
+    params = MLSIRMParams(
+        theta=np.zeros((n_persons, 1)),
+        alpha=np.zeros(n_items),
+        b=np.zeros(n_items),
+        xi=np.zeros((n_persons, 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=0.0,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        fit_diagnostics(
+            responses,
+            params,
+            np.zeros(n_items, dtype=np.int64),
+            model="MIRT",
+            include_m2=True,
+            estimator="mmle",
+            convergence_status="converged",
+            population=population,
+        )
+
+
 def test_local_dependence_polytomous():
     """Item-pair local dependence (Chen & Thissen, 1997) through the public API:
     correct per-pair bookkeeping, calibrated (few flags) for a locally
