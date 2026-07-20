@@ -173,6 +173,105 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     assert summary["rust_device"] == "gpu"
 
 
+def test_cli_score_json_payload_reports_scores(capsys):
+    payload = {"item-1": 1}
+    scores = [{"theta": [0.25], "theta_sd": [0.5], "method": "eap"}]
+    args = [
+        "score",
+        "--bundle",
+        "bundle.json",
+        "--responses",
+        "responses.json",
+        "--json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle", return_value={"bundle": True}
+    ) as load_bundle, patch(
+        "fast_mlsirm.cli._load_json_bounded", return_value=payload
+    ) as load_responses, patch(
+        "fast_mlsirm.serving.score_respondents", return_value=scores
+    ) as score, patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 0
+
+    load_bundle.assert_called_once_with("bundle.json")
+    load_responses.assert_called_once_with(
+        "responses.json", source="response JSON"
+    )
+    score.assert_called_once_with({"bundle": True}, payload)
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "command": "score",
+        "status": "ok",
+        "n_scored": 1,
+        "scores": scores,
+    }
+
+
+def test_cli_score_npy_payload_writes_output(tmp_path):
+    payload = np.array([[1.0, 0.0]])
+    scores = [{"theta": [0.1], "theta_sd": [0.4], "method": "eap"}]
+    output = tmp_path / "scores.json"
+    args = [
+        "score",
+        "--bundle",
+        "bundle.json",
+        "--responses",
+        "responses.npy",
+        "--out",
+        str(output),
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle", return_value={"bundle": True}
+    ), patch(
+        "fast_mlsirm.cli._load_numpy_bounded", return_value=payload
+    ) as load_responses, patch(
+        "fast_mlsirm.serving.score_respondents", return_value=scores
+    ) as score, patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 0
+
+    load_responses.assert_called_once_with("responses.npy")
+    score.assert_called_once_with({"bundle": True}, payload)
+    assert json.loads(output.read_text(encoding="utf-8")) == scores
+
+
+def test_cli_score_reports_validation_error(capsys):
+    args = [
+        "score",
+        "--bundle",
+        "bad.json",
+        "--responses",
+        "responses.json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle",
+        side_effect=ValueError("invalid bundle"),
+    ), patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "Scoring failed - invalid bundle" in capsys.readouterr().err
+
+
+def test_cli_score_debug_reraises_validation_error(monkeypatch):
+    monkeypatch.setenv("FAST_MLSIRM_DEBUG", "1")
+    args = [
+        "score",
+        "--bundle",
+        "bad.json",
+        "--responses",
+        "responses.json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle",
+        side_effect=ValueError("invalid bundle"),
+    ), patch.object(sys, "argv", ["fast-mlsirm", *args]), pytest.raises(
+        ValueError, match="invalid bundle"
+    ):
+        main()
+
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
