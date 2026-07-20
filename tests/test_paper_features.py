@@ -337,6 +337,24 @@ def test_m2_rmsea2_parity_and_fit():
     assert np.isnan(descriptive.rmsea2_ci_lower)
 
 
+def test_m2_noncentral_ci_large_statistic_reference_values():
+    """Large noncentralities must not collapse when exp(-lambda/2) underflows."""
+    from fast_mlsirm.fitstats import _nc_lambda_for, _ncchi2_cdf
+
+    # Independently evaluated with scipy.stats.ncx2 and scipy.optimize.brentq.
+    cases = [
+        (2_000.0, 50.0, 0.05, 2_099.9287582915094),
+        (10_000.0, 50.0, 0.05, 10_282.274417418035),
+        (10_000.0, 50.0, 0.95, 9_625.139462181574),
+    ]
+    for statistic, df, target, expected in cases:
+        got = _nc_lambda_for(statistic, df, target)
+        np.testing.assert_allclose(got, expected, rtol=1e-10)
+        np.testing.assert_allclose(
+            _ncchi2_cdf(statistic, df, got), target, atol=1e-10
+        )
+
+
 def test_m2_singlefree_uses_only_estimated_calibration_columns():
     """FIPC M2 counts free-population columns and excludes anchored items."""
     from fast_mlsirm import fit_diagnostics

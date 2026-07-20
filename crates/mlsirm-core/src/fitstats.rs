@@ -1914,22 +1914,56 @@ fn chi2_cdf(x: f64, df: f64) -> f64 {
     1.0 - chi2_sf(x, df)
 }
 
-/// Noncentral chi-square CDF: Poisson(lam/2)-weighted mixture of central CDFs.
+/// Noncentral chi-square CDF from a mode-centered Poisson mixture. Centering the
+/// recurrence avoids underflow of the `exp(-lam / 2)` starting weight for large
+/// noncentralities (Benton & Krishnamoorthy, 2003).
+///
+/// Benton, D., & Krishnamoorthy, K. (2003). Computing discrete mixtures of
+/// continuous distributions: Noncentral chi-square, noncentral *t* and the
+/// distribution of the square of the sample multiple correlation coefficient.
+/// *Computational Statistics & Data Analysis, 43*(2), 249-267.
+/// https://doi.org/10.1016/S0167-9473(02)00283-9
 fn ncchi2_cdf(x: f64, df: f64, lam: f64) -> f64 {
     if lam <= 0.0 {
         return chi2_cdf(x, df);
     }
+    if !(x.is_finite() && df.is_finite() && lam.is_finite()) {
+        return f64::NAN;
+    }
     let half = 0.5 * lam;
-    let mut term = (-half).exp();
-    let mut sum = term * chi2_cdf(x, df);
-    for j in 1..10000 {
-        term *= half / j as f64;
-        sum += term * chi2_cdf(x, df + 2.0 * j as f64);
-        if term < 1e-15 && (j as f64) > half {
+    let mode = half.floor() as usize;
+    let mut weighted = chi2_cdf(x, df + 2.0 * mode as f64);
+    let mut normalizer = 1.0_f64;
+
+    let mut weight = 1.0_f64;
+    let mut j = mode;
+    while j > 0 {
+        weight *= j as f64 / half;
+        j -= 1;
+        normalizer += weight;
+        weighted += weight * chi2_cdf(x, df + 2.0 * j as f64);
+        if weight <= 1e-15 * normalizer {
             break;
         }
     }
-    sum.clamp(0.0, 1.0)
+
+    weight = 1.0;
+    j = mode;
+    let mut converged = false;
+    for _ in 0..100_000 {
+        j += 1;
+        weight *= half / j as f64;
+        normalizer += weight;
+        weighted += weight * chi2_cdf(x, df + 2.0 * j as f64);
+        if weight <= 1e-15 * normalizer {
+            converged = true;
+            break;
+        }
+    }
+    if !converged {
+        return f64::NAN;
+    }
+    (weighted / normalizer).clamp(0.0, 1.0)
 }
 
 /// Smallest noncentrality `lam` with `ncchi2_cdf(x, df, lam) = target` (the CDF
@@ -1942,6 +1976,9 @@ fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
     while ncchi2_cdf(x, df, hi) > target && hi < 1e8 {
         hi *= 2.0;
     }
+    if ncchi2_cdf(x, df, hi) > target {
+        return f64::NAN;
+    }
     let mut lo = 0.0_f64;
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
@@ -1949,6 +1986,9 @@ fn nc_lambda_for(x: f64, df: f64, target: f64) -> f64 {
             lo = mid;
         } else {
             hi = mid;
+        }
+        if hi - lo <= 1e-12 * (1.0 + mid) {
+            break;
         }
     }
     0.5 * (lo + hi)
@@ -2850,6 +2890,21 @@ mod m2_branch_tests {
         );
         assert!((moments[0] - 0.25).abs() < 1e-14);
         assert!((moments[0] - 0.31).abs() > 1e-3, "must not share one trait node");
+    }
+
+    #[test]
+    fn ncchi2_large_noncentrality_matches_reference_values() {
+        // Independently evaluated with scipy.stats.ncx2 and scipy.optimize.brentq.
+        let cases = [
+            (2_000.0, 50.0, 0.05, 2_099.928_758_291_509_4),
+            (10_000.0, 50.0, 0.05, 10_282.274_417_418_035),
+            (10_000.0, 50.0, 0.95, 9_625.139_462_181_574),
+        ];
+        for (statistic, df, target, expected) in cases {
+            let got = nc_lambda_for(statistic, df, target);
+            assert!((got - expected).abs() <= 1e-10 * expected);
+            assert!((ncchi2_cdf(statistic, df, got) - target).abs() <= 1e-10);
+        }
     }
 
     #[test]

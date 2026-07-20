@@ -1644,18 +1644,51 @@ def m2_cmle_rasch(
 
 
 def _ncchi2_cdf(x: float, df: float, lam: float) -> float:
-    """Noncentral chi-square CDF (Poisson(lam/2)-weighted central CDFs)."""
+    """Noncentral chi-square CDF from a mode-centered Poisson mixture.
+
+    Centering the recurrence at the Poisson mode avoids underflow of the
+    ``exp(-lam / 2)`` starting weight for large noncentralities (Benton &
+    Krishnamoorthy, 2003).
+
+    References
+    ----------
+    Benton, D., & Krishnamoorthy, K. (2003). Computing discrete mixtures of
+    continuous distributions: Noncentral chi-square, noncentral *t* and the
+    distribution of the square of the sample multiple correlation coefficient.
+    *Computational Statistics & Data Analysis, 43*(2), 249–267.
+    https://doi.org/10.1016/S0167-9473(02)00283-9
+    """
     if lam <= 0.0:
         return 1.0 - chi2_sf(x, df)
+    if not (math.isfinite(x) and math.isfinite(df) and math.isfinite(lam)):
+        return float("nan")
     half = 0.5 * lam
-    term = math.exp(-half)
-    total = term * (1.0 - chi2_sf(x, df))
-    for j in range(1, 10000):
-        term *= half / j
-        total += term * (1.0 - chi2_sf(x, df + 2.0 * j))
-        if term < 1e-15 and j > half:
+    mode = int(math.floor(half))
+    weighted = 1.0 - chi2_sf(x, df + 2.0 * mode)
+    normalizer = 1.0
+
+    weight = 1.0
+    j = mode
+    while j > 0:
+        weight *= j / half
+        j -= 1
+        normalizer += weight
+        weighted += weight * (1.0 - chi2_sf(x, df + 2.0 * j))
+        if weight <= 1e-15 * normalizer:
             break
-    return min(1.0, max(0.0, total))
+
+    weight = 1.0
+    j = mode
+    for _ in range(100_000):
+        j += 1
+        weight *= half / j
+        normalizer += weight
+        weighted += weight * (1.0 - chi2_sf(x, df + 2.0 * j))
+        if weight <= 1e-15 * normalizer:
+            break
+    else:
+        return float("nan")
+    return min(1.0, max(0.0, weighted / normalizer))
 
 
 def _nc_lambda_for(x: float, df: float, target: float) -> float:
@@ -1665,6 +1698,8 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
     hi = 1.0
     while _ncchi2_cdf(x, df, hi) > target and hi < 1e8:
         hi *= 2.0
+    if _ncchi2_cdf(x, df, hi) > target:
+        return float("nan")
     lo = 0.0
     for _ in range(200):
         mid = 0.5 * (lo + hi)
@@ -1672,6 +1707,8 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
             lo = mid
         else:
             hi = mid
+        if hi - lo <= 1e-12 * (1.0 + mid):
+            break
     return 0.5 * (lo + hi)
 
 
