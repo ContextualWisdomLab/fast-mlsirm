@@ -307,6 +307,7 @@ def _report_css() -> str:
   box-sizing: border-box;
 }
 body {
+  font-variant-numeric: tabular-nums;
   margin: 0;
 }
 main {

@@ -462,6 +462,7 @@ def _css() -> str:
 }
 
 body {
+  font-variant-numeric: tabular-nums;
   margin: 0;
   background: var(--bg);
   color: var(--text);

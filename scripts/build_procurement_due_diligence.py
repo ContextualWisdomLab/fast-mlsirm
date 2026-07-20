@@ -289,7 +289,7 @@ def _report_css() -> str:
     return """
 :root { color: #172026; background: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; font-variant-numeric: tabular-nums; }
 main { max-width: 1120px; margin: 0 auto; padding: 32px 20px 56px; }
 .hero { background: #12343b; color: #fff; border-radius: 8px; padding: 28px; }
 .hero p, .hero h1 { margin: 0; }
