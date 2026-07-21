@@ -87,7 +87,7 @@ def test_fitconfig_invalid_init_gamma():
         FitConfig(init_gamma=0.0).validate()
 
 def test_fitconfig_invalid_eps_distance():
-    with pytest.raises(ValueError, match="eps_distance must be > 0"):
+    with pytest.raises(ValueError, match="eps_distance must be positive and finite"):
         FitConfig(eps_distance=0.0).validate()
 
 

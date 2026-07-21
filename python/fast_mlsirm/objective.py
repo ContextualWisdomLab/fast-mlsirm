@@ -15,7 +15,7 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
     if mask is None:
         observed = np.isfinite(y) & (y != -1)
     else:
-        observed = np.asarray(mask, dtype=bool)
+        observed = np.asarray(mask, dtype=bool).copy()
         if observed.shape != y.shape:
             raise ValueError("mask shape must match responses")
         observed &= np.isfinite(y) & (y != -1)
@@ -32,7 +32,10 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
 
 
 def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.ndarray:
-    factors = np.asarray(factor_id, dtype=np.int64)
+    factors = np.asarray(factor_id, dtype=np.float64)
+    if not np.all(factors == np.floor(factors)):
+        raise ValueError("factor_id must contain integer values")
+    factors = factors.astype(np.int64)
     if factors.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
     if np.any(factors < 0) or np.any(factors >= n_dims):
@@ -53,17 +56,30 @@ def linear_predictor(
     model: str = "MLS2PLM",
     eps_distance: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray]:
+    if not np.isfinite(eps_distance) or eps_distance <= 0:
+        raise ValueError("eps_distance must be positive and finite")
+
+    if not np.all(np.isfinite(params.xi)) or not np.all(np.isfinite(params.zeta)):
+        raise ValueError("spatial coordinates (xi, zeta) must be finite")
+
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
     theta_factor = params.theta[:, factor_id]
 
     if uses_space:
-        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
-        dist_sq = np.maximum(dist_sq, 0.0)
-        distance = np.sqrt(dist_sq + eps_distance)
+        max_val = max(np.max(np.abs(params.xi)), np.max(np.abs(params.zeta)))
+        if max_val > 1e100:
+            diff = params.xi[:, None, :] - params.zeta[None, :, :]
+            dist_sq = np.zeros(diff.shape[:2], dtype=diff.dtype)
+            for i in range(diff.shape[-1]):
+                dist_sq = np.hypot(dist_sq, diff[..., i])
+            distance = np.sqrt(dist_sq**2 + eps_distance)
+        else:
+            xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
+            zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
+            dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+            dist_sq = np.maximum(dist_sq, 0.0)
+            distance = np.sqrt(dist_sq + eps_distance)
         gamma = params.gamma
     else:
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
@@ -208,13 +224,20 @@ def _neg_loglik_and_grad_rust(
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
-    value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
-    value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
-    if free_alpha:
+    # Avoid zero-weight penalty multiplications that can turn overflow into NaN.
+    value = 0.0
+    if penalty.lambda_theta > 0:
+        value += 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
+    if penalty.lambda_b > 0:
+        value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
+    if free_alpha and penalty.lambda_alpha > 0:
         delta = params.alpha - penalty.mu_alpha
         value += 0.5 * penalty.lambda_alpha * float(np.vdot(delta, delta))
     if uses_space:
-        value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
-        value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
-        value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
+        if penalty.lambda_xi > 0:
+            value += 0.5 * penalty.lambda_xi * float(np.vdot(params.xi, params.xi))
+        if penalty.lambda_zeta > 0:
+            value += 0.5 * penalty.lambda_zeta * float(np.vdot(params.zeta, params.zeta))
+        if penalty.lambda_tau > 0:
+            value += 0.5 * penalty.lambda_tau * float((params.tau - penalty.mu_tau) ** 2)
     return value
