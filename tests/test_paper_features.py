@@ -1382,6 +1382,31 @@ def test_polytomous_information_criteria():
         polytomous_information_criteria(fit, 1)
 
 
+def test_polytomous_information_criteria_marks_undefined_aicc():
+    """AICc must not report a finite correction when N - K - 1 <= 0."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from fast_mlsirm import polytomous_information_criteria
+
+    fit = SimpleNamespace(
+        slope=np.ones(2),
+        cat_params=np.zeros((2, 2)),
+        loglik=-10.0,
+    )
+
+    undefined = polytomous_information_criteria(fit, n_persons=5)
+    assert undefined["n_parameters"] == 6
+    assert np.isnan(undefined["aicc"])
+    for key in ("aic", "bic", "caic", "sabic"):
+        assert np.isfinite(undefined[key])
+
+    defined = polytomous_information_criteria(fit, n_persons=10)
+    expected = defined["aic"] + 2.0 * 6 * 7 / (10 - 6 - 1)
+    assert defined["aicc"] == expected
+
+
 def test_item_fit_polytomous_sx2():
     """Generalized S-X² polytomous item fit (Kang & Chen, 2008, 2011) through the
     public API: well-formed per-item output, calibration at the fitted model

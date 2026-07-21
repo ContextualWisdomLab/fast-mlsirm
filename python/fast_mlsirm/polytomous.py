@@ -437,14 +437,39 @@ def fit_lsirm_polytomous(
 
 
 def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
-    """Relative model-selection indices for a polytomous fit (Kang, Cohen &
-    Sung 2009, *Model Selection Indices for Polytomous Items*). Given a fitted
-    :class:`PolytomousFit` or :class:`PolyLsirmFit` and the calibration sample
-    size, returns ``AIC``, ``BIC``, ``CAIC``, ``AICc``, and the sample-size
-    adjusted ``SABIC`` (all "smaller is better"), plus the free-parameter count.
+    """Return relative model-selection indices for a polytomous fit.
+
+    Information criteria have been studied for selecting among polytomous IRT
+    models (Kang et al., 2009). Given a fitted :class:`PolytomousFit` or
+    :class:`PolyLsirmFit` and the calibration sample size, this repository
+    applies the conventional ``AIC``, ``BIC``, ``CAIC``, ``AICc``, and
+    sample-size-adjusted ``SABIC`` formulas to the fitted marginal likelihood.
+    All five indices use "smaller is better" comparisons.
 
     The parameter count is read from the fitted arrays: ``slope`` +
     ``cat_params`` (+ item positions ``zeta`` for the latent-space model).
+    ``AICc`` is returned as ``NaN`` when ``n_persons <= n_parameters + 1``
+    because its finite-sample correction denominator is then non-positive.
+
+    References (APA 7th ed.):
+        Akaike, H. (1974). A new look at the statistical model identification.
+            *IEEE Transactions on Automatic Control, 19*(6), 716-723.
+            https://doi.org/10.1109/TAC.1974.1100705
+        Bozdogan, H. (1987). Model selection and Akaike's information criterion
+            (AIC): The general theory and its analytical extensions.
+            *Psychometrika, 52*(3), 345-370.
+            https://doi.org/10.1007/BF02294361
+        Hurvich, C. M., & Tsai, C.-L. (1989). Regression and time series model
+            selection in small samples. *Biometrika, 76*(2), 297-307.
+            https://doi.org/10.1093/biomet/76.2.297
+        Kang, T., Cohen, A. S., & Sung, H.-J. (2009). Model selection indices for
+            polytomous items. *Applied Psychological Measurement, 33*(7), 499-518.
+            https://doi.org/10.1177/0146621608327800
+        Schwarz, G. (1978). Estimating the dimension of a model. *The Annals of
+            Statistics, 6*(2), 461-464. https://doi.org/10.1214/aos/1176344136
+        Sclove, S. L. (1987). Application of model-selection criteria to some
+            problems in multivariate analysis. *Psychometrika, 52*(3), 333-343.
+            https://doi.org/10.1007/BF02294360
     """
     if not isinstance(n_persons, int) or n_persons < 2:
         raise ValueError("n_persons must be an integer >= 2")
@@ -458,7 +483,11 @@ def polytomous_information_criteria(fit, n_persons: int) -> dict[str, float]:
     aic = m2ll + 2.0 * k
     bic = m2ll + k * np.log(n)
     caic = m2ll + k * (np.log(n) + 1.0)
-    aicc = aic + (2.0 * k * (k + 1.0)) / max(n - k - 1, 1)
+    aicc = (
+        aic + (2.0 * k * (k + 1.0)) / (n - k - 1)
+        if n > k + 1
+        else np.nan
+    )
     sabic = m2ll + k * np.log((n + 2.0) / 24.0)
     return {
         "n_parameters": k,
