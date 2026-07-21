@@ -23,6 +23,17 @@
 //! then a backtracked Newton step for the global `tau`, then closed-form
 //! population-moment updates. Every step is deterministic — the Rust<->NumPy
 //! parity contract for this estimator is exact algorithm equality.
+//!
+//! Zero inflation is a repository-specific Bernoulli response-pattern
+//! adaptation of the structural-zero mixture template described for count
+//! models by Perumean-Chaney et al. (2013); that article does not present an
+//! IRT estimator. Engager/IRT-component scores are conditional on membership
+//! in that component, while multilevel `u_eap` integrates over the full mixture.
+//!
+//! Perumean-Chaney, S. E., Morgan, C., McDowall, D., & Aban, I. (2013).
+//! Zero-inflated and overdispersed: What's one to do? *Journal of Statistical
+//! Computation and Simulation, 83*(9), 1671–1683.
+//! https://doi.org/10.1080/00949655.2012.668550
 
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::quadrature::gh_rule;
@@ -528,6 +539,86 @@ fn zi_mix(lp_irt: f64, all_zero: bool, log_pi: f64, log_1m_pi: f64) -> (f64, f64
     let m = a.max(b);
     let lp = m + ((a - m).exp() + (b - m).exp()).ln();
     ((lp), (b - lp).exp())
+}
+
+/// Multilevel posteriors at fixed parameters.
+///
+/// The cluster posterior integrates the structural-zero mixture for every
+/// person. The per-person context posterior is additionally conditioned on
+/// that person belonging to the engager/IRT component, matching the public
+/// scoring contract for zero-inflated calibrations.
+pub(crate) fn multilevel_context_posteriors(
+    lp_irt: &[f64],
+    all_zero: &[bool],
+    cluster_id: &[usize],
+    n_clusters: usize,
+    u_logw: &[f64],
+    pi_zero: Option<f64>,
+) -> (Vec<f64>, Vec<f64>) {
+    let n_persons = cluster_id.len();
+    let q_u = u_logw.len();
+    debug_assert_eq!(lp_irt.len(), n_persons * q_u);
+    debug_assert_eq!(all_zero.len(), n_persons);
+
+    let (log_pi, log_1m_pi) = match pi_zero {
+        Some(pi) => (pi.ln(), (1.0 - pi).ln()),
+        None => (f64::NEG_INFINITY, 0.0),
+    };
+    let mut lp_mix = vec![0.0_f64; n_persons * q_u];
+    let mut log_irt_adjust = vec![0.0_f64; n_persons * q_u];
+    for p in 0..n_persons {
+        for v in 0..q_u {
+            let idx = p * q_u + v;
+            if pi_zero.is_some() {
+                let (mixed, _) = zi_mix(lp_irt[idx], all_zero[p], log_pi, log_1m_pi);
+                lp_mix[idx] = mixed;
+                // Replacing this person's mixture contribution with its IRT
+                // contribution conditions its context posterior on engager
+                // membership. Keep this in log space to avoid underflow.
+                log_irt_adjust[idx] = log_1m_pi + lp_irt[idx] - mixed;
+            } else {
+                lp_mix[idx] = lp_irt[idx];
+            }
+        }
+    }
+
+    let mut log_cluster = vec![0.0_f64; n_clusters * q_u];
+    for c in 0..n_clusters {
+        log_cluster[c * q_u..(c + 1) * q_u].copy_from_slice(u_logw);
+    }
+    for p in 0..n_persons {
+        let c = cluster_id[p];
+        for v in 0..q_u {
+            log_cluster[c * q_u + v] += lp_mix[p * q_u + v];
+        }
+    }
+
+    let normalize = |row: &[f64]| -> Vec<f64> {
+        let max = row.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let sum: f64 = row.iter().map(|&value| (value - max).exp()).sum();
+        row.iter().map(|&value| (value - max).exp() / sum).collect()
+    };
+    let mut cluster_post = vec![0.0_f64; n_clusters * q_u];
+    for c in 0..n_clusters {
+        let post = normalize(&log_cluster[c * q_u..(c + 1) * q_u]);
+        cluster_post[c * q_u..(c + 1) * q_u].copy_from_slice(&post);
+    }
+
+    let mut engager_context_post = vec![0.0_f64; n_persons * q_u];
+    for p in 0..n_persons {
+        let c = cluster_id[p];
+        if pi_zero.is_some() {
+            let row: Vec<f64> = (0..q_u)
+                .map(|v| log_cluster[c * q_u + v] + log_irt_adjust[p * q_u + v])
+                .collect();
+            let post = normalize(&row);
+            engager_context_post[p * q_u..(p + 1) * q_u].copy_from_slice(&post);
+        } else {
+            engager_context_post[p * q_u..(p + 1) * q_u]
+                .copy_from_slice(&cluster_post[c * q_u..(c + 1) * q_u]);
+        }
+    }
+    (cluster_post, engager_context_post)
 }
 
 /// E-step accumulators (per context, on the (t, x) grid).
@@ -2151,23 +2242,19 @@ pub fn fit_marginal_full(
     let mut xi_eap = vec![0.0_f64; n_persons * latent_dim];
     let mut u_eap = vec![0.0_f64; n_clusters];
 
-    // Cluster posteriors for the final parameters (multilevel).
-    let cluster_post: Vec<f64> = match pop {
+    // Cluster posteriors for the final parameters (multilevel), plus each
+    // person's context posterior conditional on engager/IRT membership.
+    let mut engager_context_post: Vec<f64> = Vec::new();
+    match pop {
         PopulationSpec::Multilevel {
             cluster_id,
             n_clusters,
         } => {
             let q_u = ctx.n_ctx;
-            let mut log_cluster = vec![0.0_f64; n_clusters * q_u];
-            for c in 0..*n_clusters {
-                for v in 0..q_u {
-                    log_cluster[c * q_u + v] = ctx.u_logw[v];
-                }
-            }
+            let mut lp_irt = vec![0.0_f64; n_persons * q_u];
             for p in 0..n_persons {
-                let c = cluster_id[p];
                 for v in 0..q_u {
-                    log_cluster[c * q_u + v] += person_pass(
+                    lp_irt[p * q_u + v] = person_pass(
                         p,
                         v,
                         &tables,
@@ -2181,31 +2268,37 @@ pub fn fit_marginal_full(
                     );
                 }
             }
-            let mut post = vec![0.0_f64; n_clusters * q_u];
+            let (post, engager_post) = multilevel_context_posteriors(
+                &lp_irt,
+                &all_zero,
+                cluster_id,
+                *n_clusters,
+                &ctx.u_logw,
+                if mcfg.zero_inflation {
+                    Some(pi_zero)
+                } else {
+                    None
+                },
+            );
+            engager_context_post = engager_post;
             for c in 0..*n_clusters {
-                let row = &log_cluster[c * q_u..(c + 1) * q_u];
-                let max = row.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let sum: f64 = row.iter().map(|&v| (v - max).exp()).sum();
                 for v in 0..q_u {
-                    post[c * q_u + v] = (row[v] - max).exp() / sum;
                     u_eap[c] += post[c * q_u + v] * sigma_u * ctx.u_nodes[v];
                 }
             }
-            post
         }
-        _ => Vec::new(),
-    };
+        _ => {}
+    }
 
     for p in 0..n_persons {
         let (contexts, weights): (Vec<usize>, Vec<f64>) = match pop {
             PopulationSpec::Single | PopulationSpec::SingleFree => (vec![0], vec![1.0]),
             PopulationSpec::Multigroup { group_id, .. } => (vec![group_id[p]], vec![1.0]),
-            PopulationSpec::Multilevel { cluster_id, .. } => {
-                let c = cluster_id[p];
+            PopulationSpec::Multilevel { .. } => {
                 let q_u = ctx.n_ctx;
                 (
                     (0..q_u).collect(),
-                    cluster_post[c * q_u..(c + 1) * q_u].to_vec(),
+                    engager_context_post[p * q_u..(p + 1) * q_u].to_vec(),
                 )
             }
         };

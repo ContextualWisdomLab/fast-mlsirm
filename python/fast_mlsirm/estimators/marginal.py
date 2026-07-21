@@ -292,6 +292,58 @@ def _posteriors(
     return px[:, None, None, :] * pt
 
 
+def _multilevel_context_posteriors(
+    lp_irt: np.ndarray,
+    all_zero: np.ndarray,
+    cluster_id: np.ndarray,
+    n_clusters: int,
+    u_logw: np.ndarray,
+    pi_zero: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return cluster and engager-conditional context posteriors.
+
+    ``lp_irt[p, v]`` is the IRT-component log marginal for person ``p`` at
+    random-intercept node ``v``. The cluster posterior integrates the complete
+    structural-zero mixture. The second result conditions each person's
+    context weights on that person belonging to the engager/IRT component,
+    which is the public scoring contract for zero-inflated calibrations.
+    """
+    if pi_zero is None:
+        lp_mix = lp_irt
+        log_irt_adjust = np.zeros_like(lp_irt)
+    else:
+        log_pi = np.log(pi_zero) if pi_zero > 0.0 else -np.inf
+        log_1m = np.log1p(-pi_zero)
+        a_zero = np.where(all_zero[:, None], log_pi, -np.inf)
+        b_irt = log_1m + lp_irt
+        maximum = np.maximum(a_zero, b_irt)
+        lp_mix = maximum + np.log(
+            np.exp(a_zero - maximum) + np.exp(b_irt - maximum)
+        )
+        # Replacing this person's mixture contribution with its IRT
+        # contribution conditions its context posterior on engager membership.
+        log_irt_adjust = b_irt - lp_mix
+
+    log_cluster = np.zeros((n_clusters, len(u_logw))) + u_logw[None, :]
+    np.add.at(log_cluster, cluster_id, lp_mix)
+    maximum = log_cluster.max(axis=1, keepdims=True)
+    log_norm = maximum + np.log(
+        np.exp(log_cluster - maximum).sum(axis=1, keepdims=True)
+    )
+    cluster_post = np.exp(log_cluster - log_norm)
+
+    if pi_zero is None:
+        engager_context_post = cluster_post[cluster_id]
+    else:
+        log_engager = log_cluster[cluster_id] + log_irt_adjust
+        maximum = log_engager.max(axis=1, keepdims=True)
+        log_norm = maximum + np.log(
+            np.exp(log_engager - maximum).sum(axis=1, keepdims=True)
+        )
+        engager_context_post = np.exp(log_engager - log_norm)
+    return cluster_post, engager_context_post
+
+
 def _accumulate(
     post: np.ndarray,
     w_outer: np.ndarray,
@@ -372,6 +424,19 @@ def fit_marginal_numpy(
     ``{"kind": "multilevel", "cluster_id": ..., "n_clusters": ...}``.
     ``anchors`` is ``{"fixed": bool[I], "alpha": ..., "b": ..., "zeta": ...,
     "tau": float | None}`` — fixed items stay frozen (FIPC, Kim 2006).
+
+    ``zero_inflation=True`` fits a structural-zero response-pattern mixture.
+    This is a repository-specific Bernoulli-pattern adaptation of the count-
+    model template in Perumean-Chaney et al. (2013), not an IRT estimator from
+    that article. Returned latent scores are conditional on the engager/IRT
+    component; multilevel ``u_eap`` integrates over the complete mixture.
+
+    References
+    ----------
+    Perumean-Chaney, S. E., Morgan, C., McDowall, D., & Aban, I. (2013).
+    Zero-inflated and overdispersed: What's one to do? *Journal of Statistical
+    Computation and Simulation, 83*(9), 1671–1683.
+    https://doi.org/10.1080/00949655.2012.668550
     """
     y = np.asarray(y, dtype=np.float64)
     observed = np.asarray(observed, dtype=bool)
@@ -910,14 +975,17 @@ def fit_marginal_numpy(
                 y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
             )
             lp_v[:, v] = lp
-        log_cluster = np.zeros((n_clusters, ctx["n_ctx"])) + ctx["u_logw"][None, :]
-        np.add.at(log_cluster, cluster_id, lp_v)
-        mc = log_cluster.max(axis=1, keepdims=True)
-        lse = np.squeeze(mc, axis=1) + np.log(np.exp(log_cluster - mc).sum(axis=1))
-        cluster_post = np.exp(log_cluster - lse[:, None])
+        cluster_post, engager_context_post = _multilevel_context_posteriors(
+            lp_v,
+            all_zero,
+            cluster_id,
+            n_clusters,
+            ctx["u_logw"],
+            pi_zero if zero_inflation else None,
+        )
         u_eap[:] = cluster_post @ (sigma_u * ctx["u_nodes"])
         for v in range(ctx["n_ctx"]):
-            w_outer = cluster_post[cluster_id, v]
+            w_outer = engager_context_post[:, v]
             w_outer = np.where(w_outer >= 1e-14, w_outer, 0.0)
             if not w_outer.any():
                 continue

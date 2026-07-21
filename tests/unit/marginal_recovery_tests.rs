@@ -1,6 +1,8 @@
 //! Recovery and contract tests for the marginal (MMLE-EM) estimator.
 
-use crate::marginal::{fit_marginal, MarginalConfig, PopulationSpec};
+use crate::marginal::{
+    fit_marginal, multilevel_context_posteriors, MarginalConfig, PopulationSpec,
+};
 use crate::{Device, ModelConfig, ModelType, PenaltyConfig};
 
 struct Lcg(u64);
@@ -910,6 +912,33 @@ fn zero_inflation_recovers_mixing_weight() {
     assert!(
         res.loglik_trace.last().unwrap() > plain.loglik_trace.last().unwrap(),
         "the mixture must improve the marginal loglik on ZI data"
+    );
+}
+
+#[test]
+fn zero_inflated_multilevel_posteriors_condition_on_the_mixture() {
+    // One all-zero person favors node 0 under the IRT component, while one
+    // nonzero person favors node 1. The structural-zero class should stop the
+    // first person from canceling the cluster evidence supplied by the second.
+    let lp_irt = [-1.0, -10.0, -10.0, -1.0];
+    let all_zero = [true, false];
+    let cluster_id = [0usize, 0usize];
+    let u_logw = [0.5_f64.ln(), 0.5_f64.ln()];
+
+    let (cluster_post, engager_post) =
+        multilevel_context_posteriors(&lp_irt, &all_zero, &cluster_id, 1, &u_logw, Some(0.5));
+
+    assert!(
+        cluster_post[1] > 0.999,
+        "mixture cluster posterior must preserve the nonzero person's node evidence: {cluster_post:?}"
+    );
+    assert!(
+        (engager_post[0] - 0.5).abs() < 1e-12,
+        "the all-zero person's engager-conditional context posterior should balance: {engager_post:?}"
+    );
+    assert!(
+        (engager_post[3] - cluster_post[1]).abs() < 1e-12,
+        "the nonzero person is necessarily in the engager component"
     );
 }
 

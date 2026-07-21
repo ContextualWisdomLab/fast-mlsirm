@@ -71,6 +71,12 @@ def fit(
     across EM iterations is a repository-specific deterministic approximation,
     not the adaptive sample-size procedure studied in those papers.
 
+    ``config.zero_inflation`` enables a structural-zero response-pattern
+    mixture. This is a repository-specific Bernoulli-pattern adaptation of the
+    count-model template in Perumean-Chaney et al. (2013), not an IRT estimator
+    from that article. Returned latent scores are conditional on the engager/
+    IRT component; multilevel ``u_eap`` integrates over the complete mixture.
+
     References
     ----------
     Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of
@@ -80,6 +86,11 @@ def fit(
     Kim, S. (2006). A comparative study of IRT fixed parameter calibration
     methods. *Journal of Educational Measurement, 43*(4), 355–381.
     https://doi.org/10.1111/j.1745-3984.2006.00021.x
+
+    Perumean-Chaney, S. E., Morgan, C., McDowall, D., & Aban, I. (2013).
+    Zero-inflated and overdispersed: What's one to do? *Journal of Statistical
+    Computation and Simulation, 83*(9), 1671–1683.
+    https://doi.org/10.1080/00949655.2012.668550
 
     Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation of
     the EM algorithm and the poor man's data augmentation algorithms.

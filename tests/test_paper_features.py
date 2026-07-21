@@ -52,6 +52,112 @@ def test_zero_inflation_via_public_api():
     assert r.ic["bic"] < plain.ic["bic"]
 
 
+def test_zero_inflation_multilevel_final_scores_use_mixture_posteriors():
+    from fast_mlsirm.estimators import marginal as marginal_ref
+
+    rng = np.random.default_rng(20260722)
+    n_clusters, persons_per_cluster, n_items = 4, 8, 6
+    n_persons = n_clusters * persons_per_cluster
+    cluster_id = np.repeat(np.arange(n_clusters), persons_per_cluster)
+    u_true = np.array([-1.2, -0.3, 0.6, 1.4])
+    theta = rng.standard_normal(n_persons) + u_true[cluster_id]
+    b_true = np.linspace(-1.0, 1.0, n_items)
+    eta = theta[:, None] + b_true[None, :]
+    y = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
+    y[np.flatnonzero(cluster_id == n_clusters - 1)[: persons_per_cluster // 2]] = 0.0
+    factor_id = np.zeros(n_items, dtype=np.int64)
+    config = FitConfig(
+        model="ULS2PLM",
+        estimator="mmle",
+        backend="numpy",
+        latent_dim=1,
+        q_theta=7,
+        q_xi=7,
+        q_u=7,
+        max_iter=80,
+        tolerance=3e-2,
+        zero_inflation=True,
+    )
+    result = fit(y, factor_id, config, cluster_id=cluster_id)
+    assert result.convergence_status == "converged"
+    assert result.n_iter < config.max_iter
+    assert abs(result.loglik_trace[-1] - result.loglik_trace[-2]) < config.tolerance
+
+    population = result.population
+    t_nodes, t_weights = marginal_ref._gh(config.q_theta)
+    x_grid, x_logw = marginal_ref._xi_nodes(
+        config.xi_rule,
+        config.latent_dim,
+        config.q_xi,
+        config.xi_points,
+        config.xi_seed,
+    )
+    contexts = marginal_ref._build_contexts(
+        {
+            "kind": "multilevel",
+            "cluster_id": cluster_id,
+            "n_clusters": n_clusters,
+        },
+        np.zeros((0, 1)),
+        np.zeros((0, 1)),
+        population["sigma_u"],
+        1,
+        config.q_u,
+    )
+    logp1, logp0, c0 = marginal_ref._build_tables(
+        result.params.alpha,
+        result.params.b,
+        result.params.zeta,
+        result.params.tau,
+        config.normalized_model(),
+        factor_id,
+        contexts,
+        t_nodes,
+        x_grid,
+        config.eps_distance,
+        1,
+        None,
+    )
+    lp_irt = np.empty((n_persons, config.q_u))
+    observed = np.ones_like(y, dtype=bool)
+    for node in range(config.q_u):
+        context = np.full(n_persons, node, dtype=np.int64)
+        _, _, lp_irt[:, node] = marginal_ref._person_logliks(
+            y,
+            observed,
+            factor_id,
+            logp1,
+            logp0,
+            c0,
+            np.log(t_weights),
+            x_logw,
+            context,
+            1,
+        )
+    all_zero = ~(y > 0.0).any(axis=1)
+    cluster_post, _ = marginal_ref._multilevel_context_posteriors(
+        lp_irt,
+        all_zero,
+        cluster_id,
+        n_clusters,
+        contexts["u_logw"],
+        population["pi_zero"],
+    )
+    expected_u = cluster_post @ (population["sigma_u"] * contexts["u_nodes"])
+    plain_post, _ = marginal_ref._multilevel_context_posteriors(
+        lp_irt,
+        all_zero,
+        cluster_id,
+        n_clusters,
+        contexts["u_logw"],
+        None,
+    )
+    plain_u = plain_post @ (population["sigma_u"] * contexts["u_nodes"])
+
+    np.testing.assert_allclose(population["u_eap"], expected_u, atol=1e-12, rtol=0.0)
+    assert np.max(np.abs(expected_u - plain_u)) > 0.1
+
+
 def test_position_covariate_via_public_api():
     rng = np.random.default_rng(3)
     P, I = 800, 10
