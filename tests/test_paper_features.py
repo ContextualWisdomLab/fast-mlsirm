@@ -177,6 +177,32 @@ def test_vuong_and_dimensionality_wrappers():
     assert d["gddm"] < 0.05
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_vuong_rejects_nonfinite_casewise_loglikelihoods(bad):
+    with pytest.raises(ValueError, match="finite"):
+        vuong_nonnested(np.array([0.0, bad]), np.array([0.0, 1.0]), 1, 1)
+
+
+@pytest.mark.parametrize(
+    "k_a,k_b,bic_correction,match",
+    [
+        (1.5, 1, True, "k_a"),
+        (True, 1, True, "k_a"),
+        (1, -1, True, "k_b"),
+        (1, 1, 1, "bic_correction"),
+    ],
+)
+def test_vuong_rejects_lossy_parameter_controls(k_a, k_b, bic_correction, match):
+    with pytest.raises(ValueError, match=match):
+        vuong_nonnested(
+            np.array([0.0, 1.0]),
+            np.array([1.0, 0.0]),
+            k_a,
+            k_b,
+            bic_correction=bic_correction,
+        )
+
+
 def test_bifactor_parity_and_recovery():
     rng = np.random.default_rng(21)
     P, I, D = 500, 10, 2

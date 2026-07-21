@@ -703,12 +703,23 @@ pub fn information_criteria(loglik: f64, n_parameters: usize, n: usize) -> Infor
 mod ic_tests;
 
 /// Vuong (1989) test for non-nested model comparison from casewise marginal
-/// log-likelihoods (Schneider, Chalmers, Debelak & Merkle 2019, MBR): with
+/// log-likelihoods (Schneider et al., 2020): with
 /// `m_i = l_i^A - l_i^B`, `omega^2 = Var(m)`,
 /// `z = (sum m_i - correction) / (sqrt(n) * omega)`; the Schwarz correction
 /// `(k_A - k_B)/2 * ln n` yields the BIC-adjusted variant. Positive z favors
 /// model A. The pre-test of distinguishability (`omega^2 = 0`, weighted
 /// chi-square tail) is not implemented here — inspect `omega` directly.
+///
+/// # References
+///
+/// Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020). Model
+/// selection of nested and non-nested item response models using Vuong tests.
+/// *Multivariate Behavioral Research, 55*(5), 664–684.
+/// <https://doi.org/10.1080/00273171.2019.1664280>
+///
+/// Vuong, Q. H. (1989). Likelihood ratio tests for model selection and
+/// non-nested hypotheses. *Econometrica, 57*(2), 307–333.
+/// <https://doi.org/10.2307/1912557>
 #[derive(Clone, Copy, Debug)]
 pub struct VuongResult {
     pub z: f64,
@@ -727,14 +738,27 @@ pub fn vuong_nonnested(
     if loglik_a.len() != loglik_b.len() || loglik_a.len() < 2 {
         return Err("casewise log-likelihood vectors must be equal-length with n >= 2".into());
     }
+    if loglik_a
+        .iter()
+        .chain(loglik_b)
+        .any(|value| !value.is_finite())
+    {
+        return Err("casewise log-likelihoods must be finite".into());
+    }
     let n = loglik_a.len() as f64;
     let m: Vec<f64> = loglik_a
         .iter()
         .zip(loglik_b)
         .map(|(&a, &b)| a - b)
         .collect();
+    if m.iter().any(|value| !value.is_finite()) {
+        return Err("casewise log-likelihood differences must be finite".into());
+    }
     let mean = m.iter().sum::<f64>() / n;
     let var = m.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / n;
+    if !mean.is_finite() || !var.is_finite() {
+        return Err("casewise log-likelihood moments must be finite".into());
+    }
     if var <= 0.0 {
         return Err("models are indistinguishable on this sample (omega^2 = 0)".into());
     }
@@ -745,6 +769,9 @@ pub fn vuong_nonnested(
         0.0
     };
     let z = (m.iter().sum::<f64>() - correction) / (n.sqrt() * omega);
+    if !z.is_finite() {
+        return Err("Vuong z statistic is non-finite for these inputs".into());
+    }
     // two-sided normal tail via the complementary error function relation:
     // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2))
     let p = erfc(z.abs() / std::f64::consts::SQRT_2);

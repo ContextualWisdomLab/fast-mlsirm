@@ -1009,17 +1009,55 @@ def vuong_nonnested(
     bic_correction: bool = True,
 ) -> dict:
     """Vuong test for non-nested model comparison from casewise marginal
-    log-likelihoods (Schneider, Chalmers, Debelak & Merkle 2019). Positive z
-    favors model A; ``bic_correction`` applies the Schwarz penalty."""
+    log-likelihoods. Positive z favors model A; ``bic_correction`` applies the
+    Schwarz penalty. This function implements the non-nested z test only, not
+    Vuong's separate distinguishability test (Schneider et al., 2020).
+
+    References (APA 7th ed.):
+        Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020).
+            Model selection of nested and non-nested item response models using
+            Vuong tests. *Multivariate Behavioral Research, 55*(5), 664–684.
+            https://doi.org/10.1080/00273171.2019.1664280
+        Vuong, Q. H. (1989). Likelihood ratio tests for model selection and
+            non-nested hypotheses. *Econometrica, 57*(2), 307–333.
+            https://doi.org/10.2307/1912557
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("vuong_nonnested requires the compiled Rust core")
+
+    ll_a = np.asarray(loglik_a)
+    ll_b = np.asarray(loglik_b)
+    if ll_a.ndim != 1 or ll_b.ndim != 1:
+        raise ValueError("casewise log-likelihoods must be one-dimensional")
+    try:
+        ll_a = ll_a.astype(np.float64, copy=False)
+        ll_b = ll_b.astype(np.float64, copy=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("casewise log-likelihoods must be numeric") from exc
+    if ll_a.size != ll_b.size or ll_a.size < 2:
+        raise ValueError("casewise log-likelihood vectors must be equal-length with n >= 2")
+    if not np.all(np.isfinite(ll_a)) or not np.all(np.isfinite(ll_b)):
+        raise ValueError("casewise log-likelihoods must be finite")
+
+    def parameter_count(value, name: str) -> int:
+        if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+            raise ValueError(f"{name} must be a non-negative integer")
+        result = int(value)
+        if result < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
+        return result
+
+    k_a_int = parameter_count(k_a, "k_a")
+    k_b_int = parameter_count(k_b, "k_b")
+    if not isinstance(bic_correction, (bool, np.bool_)):
+        raise ValueError("bic_correction must be boolean")
     return dict(
         core.vuong_nonnested(
-            np.asarray(loglik_a, dtype=np.float64),
-            np.asarray(loglik_b, dtype=np.float64),
-            int(k_a),
-            int(k_b),
+            ll_a,
+            ll_b,
+            k_a_int,
+            k_b_int,
             bool(bic_correction),
         )
     )

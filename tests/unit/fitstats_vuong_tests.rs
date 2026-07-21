@@ -28,6 +28,13 @@ fn vuong_favors_the_better_model() {
 }
 
 #[test]
+fn vuong_rejects_nonfinite_likelihoods_and_differences() {
+    assert!(vuong_nonnested(&[0.0, f64::NAN], &[0.0, 0.0], 1, 1, false).is_err());
+    assert!(vuong_nonnested(&[0.0, f64::INFINITY], &[0.0, 0.0], 1, 1, false).is_err());
+    assert!(vuong_nonnested(&[f64::MAX, 0.0], &[-f64::MAX, 1.0], 1, 1, false).is_err());
+}
+
+#[test]
 fn erfc_reference_values() {
     assert!((erfc(0.0) - 1.0).abs() < 1e-7);
     assert!((erfc(1.959963984540054 / std::f64::consts::SQRT_2) - 0.05).abs() < 1e-4);
