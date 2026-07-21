@@ -17,6 +17,8 @@ def render_diagnostics_report(
     """Render saved diagnostics JSON as a standalone HTML report."""
 
     source = Path(diagnostics_path)
+    if source.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("diagnostics JSON exceeds 16 MiB limit")
     payload = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("diagnostics JSON must contain an object")
@@ -358,14 +360,14 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
     if not isinstance(section, dict) or not section:
         return []
 
-    columns = list(section)
+    columns = list(section)[:20]
     lengths = [_value_length(section[column]) for column in columns]
     row_count = max(lengths) if lengths else 0
     if row_count == 0:
         return []
 
     rows = []
-    for index in range(row_count):
+    for index in range(min(row_count, 100)):
         row = {}
         for column in columns:
             row[column] = _index_value(section[column], index)
