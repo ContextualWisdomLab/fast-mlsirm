@@ -123,8 +123,24 @@ def oakes_standard_errors(
     on; anchors/zero-inflation/covariates are not supported. Runs on the CPU
     in f64 (finite differences would drown in f32 GPU noise).
 
+    The fit must be a converged marginal-MMLE result.  Structured likelihoods
+    whose free-parameter space is not represented by the current Oakes core
+    (anchors, zero inflation, and item covariates) fail closed instead of
+    returning curvature for a different model.
+
     Returns ``{"labels", "se", "information"}`` with labels ``alpha:i``,
     ``b:i``, ``zeta:i:k``, ``tau``.
+
+    References
+    ----------
+    Oakes, D. (1999). Direct calculation of the information matrix via the EM
+    algorithm. *Journal of the Royal Statistical Society Series B: Statistical
+    Methodology, 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
+
+    Pritikin, J. N. (2017). A comparison of parameter covariance estimation
+    methods for item response models in an expectation-maximization framework.
+    *Cogent Psychology, 4*(1), Article 1279435.
+    https://doi.org/10.1080/23311908.2017.1279435
     """
     import numpy as np
 
@@ -146,7 +162,25 @@ def oakes_standard_errors(
     n_dims = int(factors.max()) + 1 if factors.size else 0
     if n_dims > n_items:
         raise ValueError("factor_id implies more dimensions than items")
+    if not np.isfinite(h) or h <= 0:
+        raise ValueError("h must be > 0 and finite")
+    optimizer = getattr(result, "optimizer", None)
+    if not isinstance(optimizer, str) or not optimizer.startswith("mmle_marginal_em/"):
+        raise ValueError("Oakes SEs require a marginal MMLE fit")
+    if getattr(result, "convergence_status", None) != "converged":
+        raise ValueError("Oakes SEs require a converged marginal MMLE fit")
     pop = result.population or {}
+    if not isinstance(pop, dict):
+        raise ValueError("result.population must be a dictionary or None")
+    unsupported: list[str] = []
+    if "pi_zero" in pop or "zero_responsibility" in pop:
+        unsupported.append("zero inflation")
+    if "delta" in pop or "covariate_delta" in pop:
+        unsupported.append("item covariates")
+    if "fixed_items" in pop or "tau_fixed" in pop:
+        unsupported.append("anchors")
+    if unsupported:
+        raise ValueError(f"Oakes SEs do not support {', '.join(unsupported)}")
     from .fit import _compact_population_labels
     if group_id is not None:
         ids, n_pop = _compact_population_labels(group_id, n_persons, "group_id")

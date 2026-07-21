@@ -1727,6 +1727,17 @@ fn validate(
     Ok(())
 }
 
+pub(crate) fn validate_inputs(
+    y: &[f64],
+    observed: &[bool],
+    factor_id: &[usize],
+    config: &ModelConfig,
+    pop: &PopulationSpec,
+    mcfg: &MarginalConfig,
+) -> Result<(), String> {
+    validate(y, observed, factor_id, config, pop, mcfg)
+}
+
 /// Marginal EM calibration for the latent-space model family.
 ///
 /// `y`/`observed` are row-major `n_persons * n_items`; missing cells (where

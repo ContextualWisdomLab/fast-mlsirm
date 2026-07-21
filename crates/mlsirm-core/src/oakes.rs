@@ -31,7 +31,7 @@
 
 use crate::marginal::{
     build_contexts_pub as build_contexts, build_tables, e_step_pub as e_step, index_responses,
-    Contexts, EStepCounts, Grids, MarginalConfig, PopulationSpec, XiRuleKind,
+    validate_inputs, Contexts, EStepCounts, Grids, MarginalConfig, PopulationSpec, XiRuleKind,
 };
 use crate::nodes::build_xi_nodes;
 use crate::quadrature::gh_rule;
@@ -307,8 +307,54 @@ pub fn observed_information_oakes(
     sigma_u: f64,
     h: f64,
 ) -> Result<OakesResult, String> {
+    if !h.is_finite() || h <= 0.0 {
+        return Err("Oakes finite-difference step h must be positive and finite".into());
+    }
     if mcfg.zero_inflation {
         return Err("Oakes SEs with the zero-inflated mixture are not supported yet".into());
+    }
+    validate_inputs(y, observed, factor_id, config, pop, mcfg)?;
+    if matches!(pop, PopulationSpec::SingleFree) {
+        return Err("Oakes SEs with fixed-item anchors are not supported yet".into());
+    }
+    let expected_zeta = config
+        .n_items
+        .checked_mul(config.latent_dim)
+        .ok_or("n_items * latent_dim overflows")?;
+    if alpha.len() != config.n_items || b.len() != config.n_items || zeta.len() != expected_zeta {
+        return Err("alpha/b must match n_items and zeta must match n_items * latent_dim".into());
+    }
+    if alpha
+        .iter()
+        .chain(b)
+        .chain(zeta)
+        .chain(std::iter::once(&tau))
+        .any(|value| !value.is_finite())
+    {
+        return Err("Oakes parameters must be finite".into());
+    }
+    match pop {
+        PopulationSpec::Multigroup { n_groups, .. } => {
+            let expected = n_groups
+                .checked_mul(config.n_dims)
+                .ok_or("n_groups * n_dims overflows")?;
+            if mu.len() != expected || sigma.len() != expected {
+                return Err("multigroup mu/sigma must match n_groups * n_dims".into());
+            }
+            if mu.iter().any(|value| !value.is_finite())
+                || sigma
+                    .iter()
+                    .any(|value| !value.is_finite() || *value <= 0.0)
+            {
+                return Err("multigroup mu must be finite and sigma positive finite".into());
+            }
+        }
+        PopulationSpec::Multilevel { .. } => {
+            if !sigma_u.is_finite() || sigma_u < 0.0 {
+                return Err("multilevel sigma_u must be finite and non-negative".into());
+            }
+        }
+        PopulationSpec::Single | PopulationSpec::SingleFree => {}
     }
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let pv = ParamVec {

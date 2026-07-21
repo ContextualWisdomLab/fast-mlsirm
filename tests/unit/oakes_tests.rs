@@ -56,6 +56,28 @@ fn oakes_matches_central_difference_of_the_score() {
         Device::Cpu,
     )
     .unwrap();
+    let final_change = (fitted.loglik_trace[fitted.loglik_trace.len() - 1]
+        - fitted.loglik_trace[fitted.loglik_trace.len() - 2])
+        .abs();
+    assert!(fitted.converged, "Oakes reference fit did not converge");
+    assert!(fitted.n_iter < mcfg.max_iter, "fit exhausted max_iter");
+    assert!(
+        final_change < mcfg.tol,
+        "final likelihood change {final_change} exceeds tolerance {}",
+        mcfg.tol
+    );
+    assert!(fitted.loglik_trace.iter().all(|value| value.is_finite()));
+    assert!(
+        fitted
+            .loglik_trace
+            .windows(2)
+            .all(|pair| pair[1] + 1e-10 >= pair[0]),
+        "reference EM likelihood was not monotone"
+    );
+    eprintln!(
+        "Oakes reference: converged=true reason=tolerance_met n_iter={}/{} final_change={} tolerance={}",
+        fitted.n_iter, mcfg.max_iter, final_change, mcfg.tol
+    );
     let res = observed_information_oakes(
         &y,
         &observed,
@@ -289,7 +311,7 @@ fn oakes_rejects_unsupported_modes_and_builds_every_xi_rule() {
         eps_distance: 1e-8,
     };
     let penalty = PenaltyConfig::lsirm_prior();
-    let call = |mcfg: &MarginalConfig| {
+    let call = |mcfg: &MarginalConfig, h: f64| {
         observed_information_oakes(
             &y,
             &observed,
@@ -305,32 +327,78 @@ fn oakes_rejects_unsupported_modes_and_builds_every_xi_rule() {
             &[],
             &[],
             0.0,
-            1e-5,
+            h,
         )
     };
 
-    assert!(call(&MarginalConfig {
-        zero_inflation: true,
-        ..Default::default()
-    })
+    assert!(call(
+        &MarginalConfig {
+            zero_inflation: true,
+            ..Default::default()
+        },
+        1e-5
+    )
     .is_err());
-    assert!(call(&MarginalConfig {
-        q_theta: 9,
-        ..Default::default()
-    })
+    assert!(call(
+        &MarginalConfig {
+            q_theta: 9,
+            ..Default::default()
+        },
+        1e-5
+    )
     .is_err());
+    assert!(call(&MarginalConfig::default(), 0.0).is_err());
+    assert!(call(&MarginalConfig::default(), f64::NAN).is_err());
     for xi_rule in [
         XiRuleKind::GaussHermite,
         XiRuleKind::Halton,
         XiRuleKind::MonteCarlo,
     ] {
-        let _ = call(&MarginalConfig {
-            q_theta: 7,
-            q_xi: 7,
-            xi_points: 8,
-            xi_seed: 0,
-            xi_rule,
-            ..Default::default()
-        });
+        let _ = call(
+            &MarginalConfig {
+                q_theta: 7,
+                q_xi: 7,
+                xi_points: 8,
+                xi_seed: 0,
+                xi_rule,
+                ..Default::default()
+            },
+            1e-5,
+        );
     }
+}
+
+#[test]
+fn oakes_rejects_malformed_core_inputs_without_panicking() {
+    let config = ModelConfig {
+        n_persons: 2,
+        n_items: 2,
+        n_dims: 1,
+        latent_dim: 1,
+        model_type: ModelType::Mlsrm,
+        eps_distance: 1e-8,
+    };
+    let call = |y: &[f64], alpha: &[f64], b: &[f64]| {
+        observed_information_oakes(
+            y,
+            &[true; 4],
+            &[0, 0],
+            &config,
+            &PopulationSpec::Single,
+            &MarginalConfig::default(),
+            &PenaltyConfig::lsirm_prior(),
+            alpha,
+            b,
+            &[0.0; 2],
+            -2.0,
+            &[],
+            &[],
+            0.0,
+            1e-5,
+        )
+    };
+
+    assert!(call(&[0.0], &[0.0; 2], &[0.0; 2]).is_err());
+    assert!(call(&[0.0; 4], &[0.0], &[0.0; 2]).is_err());
+    assert!(call(&[0.0; 4], &[0.0; 2], &[0.0, f64::NAN]).is_err());
 }

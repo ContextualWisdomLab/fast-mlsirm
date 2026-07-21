@@ -651,6 +651,75 @@ def test_oakes_rejects_n_dims_exceeding_items():
         oakes_standard_errors(result, np.zeros((5, 1)), np.array([7]))
 
 
+def _oakes_result(*, population=None, status="converged", optimizer="mmle_marginal_em/rust"):
+    return types.SimpleNamespace(
+        model="MLS2PLM",
+        population={} if population is None else population,
+        params=MLSIRMParams(
+            theta=np.zeros((4, 1)),
+            alpha=np.zeros(2),
+            b=np.zeros(2),
+            xi=np.zeros((4, 1)),
+            zeta=np.zeros((2, 1)),
+            tau=-2.0,
+        ),
+        optimizer=optimizer,
+        convergence_status=status,
+    )
+
+
+@pytest.mark.parametrize(
+    ("population", "match"),
+    [
+        ({"kind": "single", "pi_zero": 0.25}, "zero inflation"),
+        ({"kind": "single", "delta": 0.4}, "item covariates"),
+        ({"kind": "single", "fixed_items": np.array([True, False])}, "anchors"),
+    ],
+)
+def test_oakes_rejects_unsupported_fitted_likelihoods(population, match):
+    with pytest.raises(ValueError, match=match):
+        oakes_standard_errors(
+            _oakes_result(population=population),
+            np.zeros((4, 2)),
+            np.array([0, 0]),
+        )
+
+
+def test_oakes_rejects_nonconverged_or_non_mmle_fit():
+    y = np.zeros((4, 2))
+    factors = np.array([0, 0])
+    with pytest.raises(ValueError, match="converged"):
+        oakes_standard_errors(_oakes_result(status="max_iter_reached"), y, factors)
+    with pytest.raises(ValueError, match="marginal MMLE"):
+        oakes_standard_errors(_oakes_result(optimizer="scipy/L-BFGS-B"), y, factors)
+
+
+@pytest.mark.parametrize("h", [0.0, -1e-5, np.nan, np.inf])
+def test_oakes_rejects_invalid_finite_difference_step(h):
+    with pytest.raises(ValueError, match="h must be"):
+        oakes_standard_errors(
+            _oakes_result(), np.zeros((4, 2)), np.array([0, 0]), h=h
+        )
+
+
+def test_oakes_allows_supported_converged_mmle_fit(monkeypatch):
+    from fast_mlsirm import _core
+
+    monkeypatch.setattr(
+        _core,
+        "oakes_standard_errors",
+        lambda *args, **kwargs: {
+            "labels": ["b:0"],
+            "se": [0.2],
+            "information": [25.0],
+        },
+    )
+    result = oakes_standard_errors(
+        _oakes_result(), np.zeros((4, 2)), np.array([0, 0])
+    )
+    assert result == {"labels": ["b:0"], "se": [0.2], "information": [25.0]}
+
+
 @pytest.mark.parametrize("args", [
     (np.array([1.0, np.nan]), np.array([0.0, 0.0]), np.array([1.0, 1.0]), np.array([0.0, 0.0])),
     (np.array([-1.0]), np.array([0.0]), np.array([1.0]), np.array([0.0])),
