@@ -209,6 +209,8 @@ fn mc_rsm_recovery_500() {
     for &skew in [false, true].iter() {
         let (mut rd, mut rt, mut bd, mut bt, mut nconv, mut tcorr) =
             (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0usize, 0.0f64);
+        let (mut max_n_iter, mut worst_stop_ratio, mut worst_delta, mut worst_tolerance) =
+            (0usize, 0.0f64, 0.0f64, 0.0f64);
         for rep in 0..reps {
             let mut rng = Lcg(0xB5297A4Du64
                 .wrapping_mul(rep as u64 + 1)
@@ -232,6 +234,39 @@ fn mc_rsm_recovery_500() {
                 }
             }
             let res = fit_rsm(&y, None, n, n_items, n_cat, 41, 500, 1e-6).unwrap();
+            assert!(
+                res.loglik_trace.iter().all(|value| value.is_finite()),
+                "non-finite likelihood trace at rep={rep} skew={skew}"
+            );
+            for window in res.loglik_trace.windows(2) {
+                assert!(
+                    window[1] >= window[0] - 1e-6,
+                    "likelihood decreased {} -> {} at rep={rep} skew={skew}",
+                    window[0],
+                    window[1]
+                );
+            }
+            assert!(
+                res.converged,
+                "RSM did not converge at rep={rep} skew={skew}: n_iter={}",
+                res.n_iter
+            );
+            assert!(res.n_iter <= 500);
+            let trace_len = res.loglik_trace.len();
+            let final_delta =
+                (res.loglik_trace[trace_len - 1] - res.loglik_trace[trace_len - 2]).abs();
+            let stopping_tolerance = 1e-6 * (1.0 + res.loglik_trace[trace_len - 2].abs());
+            assert!(
+                final_delta < stopping_tolerance,
+                "stopping metric {final_delta} did not meet tolerance {stopping_tolerance} at rep={rep} skew={skew}"
+            );
+            let stop_ratio = final_delta / stopping_tolerance;
+            if stop_ratio > worst_stop_ratio {
+                worst_stop_ratio = stop_ratio;
+                worst_delta = final_delta;
+                worst_tolerance = stopping_tolerance;
+            }
+            max_n_iter = max_n_iter.max(res.n_iter);
             if res.converged {
                 nconv += 1;
             }
@@ -244,8 +279,9 @@ fn mc_rsm_recovery_500() {
             tcorr += corr(&res.theta, &thetas) / reps as f64;
         }
         println!(
-            "[RSM MC skew={skew}] reps={reps} conv={:.2} RMSE(delta)={:.3} RMSE(tau)={:.3} \
-             bias(delta)={:.3} sum(tau)={:.4} theta-corr={:.3}",
+            "[RSM MC skew={skew}] reps={reps} conv={:.2} max_iter={max_n_iter}/500 \
+             worst_stop={worst_delta:.6}/{worst_tolerance:.6} ratio={worst_stop_ratio:.3} \
+             RMSE(delta)={:.3} RMSE(tau)={:.3} bias(delta)={:.3} sum(tau)={:.4} theta-corr={:.3}",
             nconv as f64 / reps as f64,
             rd,
             rt,
@@ -253,6 +289,7 @@ fn mc_rsm_recovery_500() {
             bt,
             tcorr
         );
+        assert_eq!(nconv, reps, "not every RSM fit converged for skew={skew}");
         assert!(rd < 0.12, "RMSE(delta) {rd} skew={skew}");
         assert!(rt < 0.1, "RMSE(tau) {rt} skew={skew}");
         assert!(tcorr > 0.85, "theta corr {tcorr} skew={skew}");
