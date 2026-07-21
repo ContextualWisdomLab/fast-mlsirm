@@ -22,6 +22,30 @@ def test_predict_proba_matches_simulation():
     assert np.allclose(probs, data.probabilities)
 
 
+def test_predict_proba_bifactor_uses_inner_product():
+    params = MLSIRMParams(
+        theta=np.array([[-0.5], [0.75]]),
+        alpha=np.log(np.array([1.2, 0.8])),
+        b=np.array([-0.2, 0.3]),
+        xi=np.array([[-1.1], [0.6]]),
+        zeta=np.array([[0.9], [-0.7]]),
+        # tau is not part of the bifactor predictor; a large value makes a
+        # mistaken distance penalty visibly disagree with the reference.
+        tau=np.log(4.0),
+    )
+    factor_id = np.array([0, 0], dtype=np.int64)
+    eta = (
+        np.exp(params.alpha)[None, :] * params.theta[:, factor_id]
+        + params.b[None, :]
+        + params.xi @ params.zeta.T
+    )
+    expected = 1.0 / (1.0 + np.exp(-eta))
+
+    np.testing.assert_allclose(
+        predict_proba(params, factor_id, model="BIFAC2PLM"), expected
+    )
+
+
 def test_predict_proba_subset_persons():
     data = simulate(MLS2PLMConfig(n_persons=10, n_dims=2, items_per_dim=2, seed=42))
 

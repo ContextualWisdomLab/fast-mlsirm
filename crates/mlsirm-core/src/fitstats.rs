@@ -805,17 +805,33 @@ pub(crate) fn erfc(x: f64) -> f64 {
     }
 }
 
-/// Residual-based dimensionality diagnostics (Svetina & Levy 2014 framework):
-/// Yen's Q3 residual correlations and the generalized dimensionality
-/// discrepancy measure (GDDM) — the mean absolute model-based covariance
-/// residual over item pairs. `resid` is the row-major `n_persons x n_items`
-/// matrix `y - P_hat` at the EAP estimates with NaN for missing cells.
+/// Yen's Q3 residual correlations and a repository-specific mean absolute
+/// residual cross-product. `resid` is the row-major `n_persons x n_items`
+/// matrix `y - P_hat` at EAP estimates, with NaN for missing cells.
+///
+/// The cross-product summary is not Levy and Svetina's (2011) GDDM, which is
+/// defined from model-based covariance in a posterior-predictive framework.
+///
+/// # References
+///
+/// Yen, W. M. (1984). Effects of local item dependence on the fit and equating
+/// performance of the three-parameter logistic model. *Applied Psychological
+/// Measurement, 8*(2), 125–145. https://doi.org/10.1177/014662168400800201
+///
+/// Levy, R., & Svetina, D. (2011). A generalized dimensionality discrepancy
+/// measure for dimensionality assessment in multidimensional item response
+/// theory. *British Journal of Mathematical and Statistical Psychology, 64*(2),
+/// 208–232. https://doi.org/10.1348/000711010X500483
 #[derive(Clone, Debug)]
 pub struct DimResidResult {
     /// Off-diagonal Q3 values (upper triangle, row-major pair order).
     pub q3: Vec<f64>,
     pub q3_max_abs: f64,
     pub q3_mean_abs: f64,
+    /// Mean of `abs(mean(e_i * e_j))` over pairs with at least three cases.
+    pub mean_abs_residual_cross_product: f64,
+    /// Backward-compatible alias for `mean_abs_residual_cross_product`.
+    /// This field is not the published Levy-Svetina GDDM.
     pub gddm: f64,
 }
 
@@ -824,8 +840,17 @@ pub fn dimensionality_residuals(
     n_persons: usize,
     n_items: usize,
 ) -> Result<DimResidResult, String> {
-    if resid.len() != n_persons * n_items {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be positive".into());
+    }
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "n_persons * n_items overflows usize".to_string())?;
+    if resid.len() != n_cells {
         return Err("resid must be n_persons x n_items".into());
+    }
+    if resid.iter().any(|value| value.is_infinite()) {
+        return Err("resid entries must be finite or NaN for missing cells".into());
     }
     let mut q3 = Vec::with_capacity(n_items * (n_items - 1) / 2);
     let (mut max_abs, mut sum_abs) = (0.0_f64, 0.0_f64);
@@ -867,20 +892,26 @@ pub fn dimensionality_residuals(
                     max_abs = r.abs();
                 }
             }
-            // GDDM: mean absolute residual raw covariance E[e_i e_j]
+            // Repository-specific descriptive residual cross-product.
             gddm_sum += (sxy / n).abs();
             gddm_cnt += 1.0;
         }
     }
-    let n_finite = q3.iter().filter(|v| v.is_finite()).count().max(1) as f64;
+    let n_finite = q3.iter().filter(|v| v.is_finite()).count();
+    let mean_abs_residual_cross_product = if gddm_cnt > 0.0 {
+        gddm_sum / gddm_cnt
+    } else {
+        f64::NAN
+    };
     Ok(DimResidResult {
-        q3_max_abs: max_abs,
-        q3_mean_abs: sum_abs / n_finite,
-        gddm: if gddm_cnt > 0.0 {
-            gddm_sum / gddm_cnt
+        q3_max_abs: if n_finite > 0 { max_abs } else { f64::NAN },
+        q3_mean_abs: if n_finite > 0 {
+            sum_abs / n_finite as f64
         } else {
             f64::NAN
         },
+        mean_abs_residual_cross_product,
+        gddm: mean_abs_residual_cross_product,
         q3,
     })
 }

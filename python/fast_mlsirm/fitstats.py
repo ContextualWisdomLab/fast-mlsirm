@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .estimators.marginal import _gh, _xi_grid
+from .math import sigmoid
+from .objective import linear_predictor, prepare_response, validate_factor_id
 
 MAX_PERSON_FIT_REPLICATES = 10_000
 MAX_PERSON_FIT_WORK_CELLS = 200_000_000
@@ -1072,27 +1074,58 @@ def dimensionality_residuals(
     model: str,
     mask: np.ndarray | None = None,
     eps_distance: float = 1e-8,
+    *,
+    convergence_status: str | None = None,
 ) -> dict:
-    """Yen Q3 residual correlations and the GDDM discrepancy (the usable
-    residual-based procedures of the Svetina & Levy 2014 framework), computed
-    from EAP residuals ``y - P_hat`` in the Rust core. Large |Q3| pairs signal
-    unmodeled local dependence; GDDM near 0 supports the fitted structure."""
+    """Compute Yen's Q3 correlations from EAP residuals ``y - P_hat``.
+
+    ``mean_abs_residual_cross_product`` is this package's descriptive average
+    of ``abs(mean(e_i * e_j))`` over item pairs. The legacy ``gddm`` key is an
+    alias for that value; it is **not** the published GDDM, which uses
+    model-based covariance in a posterior-predictive framework (Levy &
+    Svetina, 2011). When a calibration status is available, pass
+    ``convergence_status`` so diagnostics reject unfinished estimates.
+
+    References (APA 7th ed.):
+        Levy, R., & Svetina, D. (2011). A generalized dimensionality
+            discrepancy measure for dimensionality assessment in
+            multidimensional item response theory. *British Journal of
+            Mathematical and Statistical Psychology, 64*(2), 208–232.
+            https://doi.org/10.1348/000711010X500483
+        Yen, W. M. (1984). Effects of local item dependence on the fit and
+            equating performance of the three-parameter logistic model.
+            *Applied Psychological Measurement, 8*(2), 125–145.
+            https://doi.org/10.1177/014662168400800201
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("dimensionality_residuals requires the compiled Rust core")
-    model = model.upper()
-    free_alpha = model not in {"MLSRM", "ULSRM"}
-    uses_space = model != "MIRT"
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
-    a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
-    eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
-    if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
-        eta = eta - math.exp(params.tau) * dist
-    p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
+    if convergence_status is not None:
+        status = str(convergence_status).strip().lower()
+        if status != "converged":
+            raise ValueError(
+                "dimensionality residuals require converged parameters; "
+                f"the fitted model did not converge (status={status or 'unknown'})"
+            )
+    if isinstance(eps_distance, (bool, np.bool_)) or not isinstance(
+        eps_distance, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError("eps_distance must be > 0 and finite")
+    eps_value = float(eps_distance)
+    if not np.isfinite(eps_value) or eps_value <= 0.0:
+        raise ValueError("eps_distance must be > 0 and finite")
+
+    y, observed = prepare_response(responses, mask)
+    theta = np.asarray(params.theta, dtype=np.float64)
+    if theta.ndim != 2:
+        raise ValueError("params.theta must be a 2-D array")
+    d_of_i = validate_factor_id(factor_id, y.shape[1], theta.shape[1])
+    eta, _ = linear_predictor(params, d_of_i, model=model, eps_distance=eps_value)
+    if eta.shape != y.shape:
+        raise ValueError("parameter dimensions must match responses and factor_id")
+    if not np.all(np.isfinite(eta)):
+        raise ValueError("model linear predictors must be finite")
+    p = sigmoid(eta)
     resid = np.where(observed, y - p, np.nan)
     out = dict(
         core.dimensionality_residuals(
@@ -1100,6 +1133,7 @@ def dimensionality_residuals(
         )
     )
     out["q3"] = np.asarray(out["q3"])
+    out["mean_abs_residual_cross_product"] = out["gddm"]
     return out
 
 

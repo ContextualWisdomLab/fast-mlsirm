@@ -589,12 +589,20 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(adjusted.ratio.iter().all(|value| value.is_nan()));
 
     assert!(dimensionality_residuals(&[0.0], 2, 1).is_err());
+    assert!(dimensionality_residuals(&[], 0, 1).is_err());
+    assert!(dimensionality_residuals(&[], 1, 0).is_err());
+    assert!(dimensionality_residuals(&[f64::INFINITY], 1, 1).is_err());
     let sparse = dimensionality_residuals(&[f64::NAN, 0.0, f64::NAN, 0.0], 2, 2).unwrap();
     assert!(sparse.q3[0].is_nan());
+    assert!(sparse.q3_max_abs.is_nan());
+    assert!(sparse.q3_mean_abs.is_nan());
     let constant = dimensionality_residuals(&[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], 3, 2).unwrap();
     assert!(constant.q3[0].is_nan());
+    assert!(constant.q3_max_abs.is_nan());
+    assert!(constant.q3_mean_abs.is_nan());
     let no_pairs = dimensionality_residuals(&[0.0, 1.0, 2.0], 3, 1).unwrap();
     assert!(no_pairs.gddm.is_nan());
+    assert!(no_pairs.mean_abs_residual_cross_product.is_nan());
 
     let one_alpha = [0.0];
     let one_b = [0.0];

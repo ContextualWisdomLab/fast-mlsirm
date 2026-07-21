@@ -3858,8 +3858,9 @@ fn vuong_nonnested(
     Ok(out.into())
 }
 
-/// Q3 / GDDM residual dimensionality diagnostics (Svetina & Levy 2014 usable
-/// subset).
+/// Yen Q3 residual correlations and a descriptive mean absolute residual
+/// cross-product. The legacy `gddm` key remains as an explicitly documented
+/// compatibility alias; it is not the published Levy-Svetina GDDM.
 #[pyfunction]
 fn dimensionality_residuals(
     py: Python<'_>,
@@ -3874,6 +3875,10 @@ fn dimensionality_residuals(
     out.set_item("q3", res.q3)?;
     out.set_item("q3_max_abs", res.q3_max_abs)?;
     out.set_item("q3_mean_abs", res.q3_mean_abs)?;
+    out.set_item(
+        "mean_abs_residual_cross_product",
+        res.mean_abs_residual_cross_product,
+    )?;
     out.set_item("gddm", res.gddm)?;
     Ok(out.into())
 }

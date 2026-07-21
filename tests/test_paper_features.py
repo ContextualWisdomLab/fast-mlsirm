@@ -339,11 +339,86 @@ def test_vuong_and_dimensionality_wrappers():
     lb = la - 0.15 - 0.2 * (np.random.default_rng(1).random(400) - 0.5)
     v = vuong_nonnested(la, lb, 10, 10, bic_correction=False)
     assert v["z"] > 0 and 0 <= v["p_two_sided"] <= 1
-    # residual diagnostics on a well-fitting model: modest Q3, small GDDM
-    d = dimensionality_residuals(y, fid, r.params, r.model)
+    # Residual diagnostics on a converged, well-fitting model: modest Q3 and
+    # a small repository-specific mean absolute residual cross-product.
+    d = dimensionality_residuals(
+        y,
+        fid,
+        r.params,
+        r.model,
+        convergence_status=r.convergence_status,
+    )
     assert d["q3"].shape[0] == 10 * 9 // 2
     assert d["q3_max_abs"] < 0.5
-    assert d["gddm"] < 0.05
+    assert d["mean_abs_residual_cross_product"] < 0.05
+    assert d["gddm"] == d["mean_abs_residual_cross_product"]
+
+
+def test_dimensionality_residuals_bifactor_uses_inner_product():
+    from fast_mlsirm import _core
+    from fast_mlsirm.types import MLSIRMParams
+
+    params = MLSIRMParams(
+        theta=np.array([[-1.0], [0.2], [0.8], [-0.4], [1.1], [0.0]]),
+        alpha=np.log(np.array([1.0, 1.3, 0.8])),
+        b=np.array([-0.2, 0.3, -0.1]),
+        xi=np.array([[-1.5], [1.2], [0.7], [-0.8], [1.6], [-0.1]]),
+        zeta=np.array([[1.1], [-0.9], [0.6]]),
+        tau=np.log(2.0),
+    )
+    factor_id = np.zeros(3, dtype=np.int64)
+    eta = (
+        np.exp(params.alpha)[None, :] * params.theta[:, factor_id]
+        + params.b[None, :]
+        + params.xi @ params.zeta.T
+    )
+    probability = 1.0 / (1.0 + np.exp(-eta))
+    responses = (probability >= 0.5).astype(float)
+    expected = dict(
+        _core.dimensionality_residuals((responses - probability).ravel(), 6, 3)
+    )
+
+    actual = dimensionality_residuals(
+        responses,
+        factor_id,
+        params,
+        "BIFAC2PLM",
+        convergence_status="converged",
+    )
+    np.testing.assert_allclose(actual["q3"], expected["q3"])
+    assert actual["mean_abs_residual_cross_product"] == pytest.approx(
+        expected["mean_abs_residual_cross_product"]
+    )
+
+
+def test_dimensionality_residuals_rejects_unfinished_fit_and_invalid_inputs():
+    from fast_mlsirm.types import MLSIRMParams
+
+    params = MLSIRMParams(
+        theta=np.zeros((3, 1)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((3, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    y = np.zeros((3, 2))
+    factor_id = np.zeros(2, dtype=np.int64)
+    with pytest.raises(ValueError, match="did not converge"):
+        dimensionality_residuals(
+            y, factor_id, params, "MIRT", convergence_status="max_iter_reached"
+        )
+    with pytest.raises(ValueError, match="model must be one of"):
+        dimensionality_residuals(y, factor_id, params, "not-a-model")
+    with pytest.raises(ValueError, match="mask shape"):
+        dimensionality_residuals(y, factor_id, params, "MIRT", mask=np.ones(3))
+    with pytest.raises(ValueError, match="observed responses must be 0 or 1"):
+        dimensionality_residuals(
+            np.array([[0.0, 2.0], [0.0, 1.0], [1.0, 0.0]]),
+            factor_id,
+            params,
+            "MIRT",
+        )
 
 
 @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])

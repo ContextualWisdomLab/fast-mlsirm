@@ -71,4 +71,5 @@ fn q3_detects_locally_dependent_pair() {
     );
     assert!(out.q3_max_abs >= out.q3[0].abs());
     assert!(out.gddm > 0.0);
+    assert_eq!(out.gddm, out.mean_abs_residual_cross_product);
 }
