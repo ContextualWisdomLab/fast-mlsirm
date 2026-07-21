@@ -65,11 +65,26 @@ def fit(
     implementation requires at least two fixed items per simple-structure
     trait dimension, a necessary guard for estimating both its mean and SD.
 
+    For marginal latent-space integration, ``config.xi_rule="qmc"`` uses
+    randomized quasi-Monte Carlo nodes (Jank, 2005), while ``"mc"`` uses
+    seeded Monte Carlo nodes (Wei & Tanner, 1990). Reusing one fixed node set
+    across EM iterations is a repository-specific deterministic approximation,
+    not the adaptive sample-size procedure studied in those papers.
+
     References
     ----------
+    Jank, W. (2005). Quasi-Monte Carlo sampling to improve the efficiency of
+    Monte Carlo EM. *Computational Statistics & Data Analysis, 48*(4),
+    685–701. https://doi.org/10.1016/j.csda.2004.03.019
+
     Kim, S. (2006). A comparative study of IRT fixed parameter calibration
     methods. *Journal of Educational Measurement, 43*(4), 355–381.
     https://doi.org/10.1111/j.1745-3984.2006.00021.x
+
+    Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation of
+    the EM algorithm and the poor man's data augmentation algorithms.
+    *Journal of the American Statistical Association, 85*(411), 699–704.
+    https://doi.org/10.1080/01621459.1990.10474930
     """
     config = config or FitConfig()
     config.validate()

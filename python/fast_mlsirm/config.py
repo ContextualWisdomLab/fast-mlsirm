@@ -214,7 +214,19 @@ class FitConfig:
             raise ValueError(f"m_steps must be >= 1 and <= {MAX_M_STEPS}")
         if self.xi_rule.lower() not in {"gh", "qmc", "halton", "mc", "montecarlo", "monte-carlo"}:
             raise ValueError("xi_rule must be one of ['gh', 'qmc', 'mc']")
-        if not (1 <= self.xi_points <= MAX_XI_POINTS):
+        for name in ("xi_points", "xi_seed"):
+            value = getattr(self, name)
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be an integer")
+            try:
+                operator.index(value)
+            except TypeError as exc:
+                raise ValueError(f"{name} must be an integer") from exc
+        xi_points = operator.index(self.xi_points)
+        xi_seed = operator.index(self.xi_seed)
+        if not (1 <= xi_points <= MAX_XI_POINTS):
             raise ValueError(f"xi_points must be >= 1 and <= {MAX_XI_POINTS}")
+        if not (0 <= xi_seed <= (1 << 64) - 1):
+            raise ValueError("xi_seed must fit an unsigned 64-bit integer")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
