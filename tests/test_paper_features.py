@@ -3424,6 +3424,8 @@ def test_fit_crm_recovers_continuous_responses():
         fit_crm(np.empty((3, 0)))
     with pytest.raises(ValueError, match="max_iter"):
         fit_crm(z, max_iter=0)
+    with pytest.raises(ValueError, match="1..=100000"):
+        fit_crm(z, max_iter=100_001)
     with pytest.raises(ValueError, match="tol"):
         fit_crm(z, tol=np.nan)
     with pytest.raises(ValueError, match="no observed responses"):

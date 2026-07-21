@@ -43,6 +43,9 @@
 //!   *The Annals of Statistics, 11*(1), 95-103.
 //!   https://doi.org/10.1214/aos/1176346060
 
+/// Upper bound on caller-controlled EM iterations, shared with the Python API.
+const CRM_MAX_ITER: usize = 100_000;
+
 /// Fitted continuous response model (Samejima, 1973). `slope`/`intercept`/`resid_sd`
 /// are the working `(a_i, d_i, sigma_i)` of the logit-normal form; `discrimination`
 /// and `difficulty` are the derived Samejima `(alpha_i, b_i)` (`b_i` is `NaN` for a
@@ -161,8 +164,8 @@ pub fn fit_crm(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must both be positive".into());
     }
-    if max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=CRM_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={CRM_MAX_ITER}"));
     }
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and positive".into());

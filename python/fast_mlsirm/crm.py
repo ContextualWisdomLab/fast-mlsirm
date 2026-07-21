@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER
+
 
 @dataclass
 class CrmFit:
@@ -87,8 +89,8 @@ def fit_crm(
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
-    if max_iter <= 0:
-        raise ValueError("max_iter must be positive")
+    if not 1 <= max_iter <= MAX_MAX_ITER:
+        raise ValueError(f"max_iter must be in 1..={MAX_MAX_ITER}")
     if not np.isfinite(tol) or tol <= 0.0:
         raise ValueError("tol must be finite and positive")
 

@@ -155,6 +155,15 @@ fn crm_recovers_params() {
     let (z, thetas) = simulate_crm(&a_true, &d_true, &sigma_true, n, n_items, false, &mut rng);
     let observed = vec![true; n * n_items];
     let res = fit_crm(&z, &observed, n, n_items, 41, 500, 1e-7).unwrap();
+    println!(
+        "CRM convergence: reason={}, iterations={}/500, final_delta={}, tolerance={}, loglik={} -> {}",
+        res.termination_reason,
+        res.n_iter,
+        res.final_delta,
+        res.stopping_tolerance,
+        res.loglik_trace.first().unwrap(),
+        res.loglik_trace.last().unwrap()
+    );
     assert!(res.converged);
     assert_eq!(res.termination_reason, "tolerance");
     assert!(res.final_delta <= res.stopping_tolerance);
@@ -224,6 +233,7 @@ fn crm_validate_rejects_malformed() {
     assert!(fit_crm(&[], &[], 0, 2, 21, 10, 1e-6).is_err()); // no persons
     assert!(fit_crm(&[], &[], 2, 0, 21, 10, 1e-6).is_err()); // no items
     assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 0, 1e-6).is_err()); // no iterations
+    assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 100_001, 1e-6).is_err());
     assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 10, f64::NAN).is_err());
     assert!(fit_crm(&[0.5, 0.5], &[true, true], 1, 2, 21, 10, 0.0).is_err());
     assert!(fit_crm(&[0.5, 0.5], &[true, false], 1, 2, 21, 10, 1e-6).is_err());
