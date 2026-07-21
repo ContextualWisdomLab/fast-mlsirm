@@ -64,6 +64,12 @@ def fit(
     (concurrent-calibration-ready ``singlefree`` population). This
     implementation requires at least two fixed items per simple-structure
     trait dimension, a necessary guard for estimating both its mean and SD.
+
+    References
+    ----------
+    Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+    methods. *Journal of Educational Measurement, 43*(4), 355–381.
+    https://doi.org/10.1111/j.1745-3984.2006.00021.x
     """
     config = config or FitConfig()
     config.validate()
@@ -269,7 +275,9 @@ def _fit_mmle_marginal(
         )
     anchor_kwargs: dict = {}
     if anchors is not None:
-        fixed = np.asarray(anchors["fixed"], dtype=bool)
+        fixed = np.asarray(anchors["fixed"])
+        if fixed.dtype.kind != "b":
+            raise ValueError("anchor fixed must contain only boolean values")
         a_alpha = np.asarray(anchors["alpha"], dtype=np.float64)
         a_b = np.asarray(anchors["b"], dtype=np.float64)
         a_zeta = np.asarray(anchors["zeta"], dtype=np.float64).ravel()

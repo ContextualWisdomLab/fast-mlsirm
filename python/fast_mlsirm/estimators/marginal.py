@@ -483,7 +483,9 @@ def fit_marginal_numpy(
     fixed_mask = np.zeros(n_items, dtype=bool)
     anchor_tau = None
     if anchors is not None:
-        fixed_mask = np.asarray(anchors["fixed"], dtype=bool)
+        fixed_mask = np.asarray(anchors["fixed"])
+        if fixed_mask.dtype.kind != "b":
+            raise ValueError("anchor fixed must contain only boolean values")
         if fixed_mask.shape != (n_items,) or not fixed_mask.any():
             raise ValueError("anchors must fix at least one item and match n_items")
         if kind == "singlefree":

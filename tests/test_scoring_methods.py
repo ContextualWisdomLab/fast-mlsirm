@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.config import FitConfig
+from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
 from fast_mlsirm.serving import export_serving_bundle, score_respondents, serving_prior
 
@@ -202,3 +203,53 @@ def test_fipc_rejects_unidentified_and_nonfinite_anchor_contracts(backend):
     finite["tau"] = np.nan
     with pytest.raises(ValueError, match="anchor tau must be finite"):
         fit(y, fid, cfg, anchors=finite)
+
+
+@pytest.mark.parametrize("backend", ["rust", "numpy"])
+@pytest.mark.parametrize(
+    "fixed",
+    [
+        np.array([np.nan, np.nan, np.nan, np.nan, 0.0, 0.0]),
+        np.array(["false", "false", "false", "false", "", ""]),
+    ],
+    ids=["nan-numeric", "false-string"],
+)
+def test_fipc_rejects_nonboolean_anchor_masks(backend, fixed):
+    y, fid = _simulate(seed=18, P=40, I=6)
+    anchors = dict(
+        fixed=fixed,
+        alpha=np.zeros(6),
+        b=np.zeros(6),
+        zeta=np.zeros((6, 2)),
+    )
+    cfg = FitConfig(
+        model="MLS2PLM",
+        estimator="mmle",
+        backend=backend,
+        rust_device="cpu",
+        max_iter=1,
+    )
+    with pytest.raises(ValueError, match="anchor fixed must contain only boolean"):
+        fit(y, fid, cfg, anchors=anchors)
+
+
+def test_numpy_marginal_rejects_nonboolean_anchor_mask_directly():
+    y, fid = _simulate(seed=19, P=20, I=6)
+    anchors = dict(
+        fixed=np.array([np.nan, np.nan, np.nan, np.nan, 0.0, 0.0]),
+        alpha=np.zeros(6),
+        b=np.zeros(6),
+        zeta=np.zeros((6, 2)),
+    )
+    with pytest.raises(ValueError, match="anchor fixed must contain only boolean"):
+        fit_marginal_numpy(
+            y,
+            np.ones_like(y, dtype=bool),
+            fid,
+            model="MLS2PLM",
+            n_dims=2,
+            latent_dim=2,
+            pop={"kind": "singlefree"},
+            max_iter=1,
+            anchors=anchors,
+        )
