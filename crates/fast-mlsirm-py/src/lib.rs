@@ -1906,7 +1906,7 @@ fn score_bank_eap(
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
     y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-    eps_distance, prior_mean, prior_sd, max_iter = 100, tol = 1e-8,
+    eps_distance, prior_mean, prior_sd, max_iter = 100, tol = 1e-6,
 ))]
 fn score_bank_map(
     py: Python<'_>,

@@ -52,7 +52,7 @@ fn eap_map_agree_and_react_to_data() {
         eap.theta_eap[0] > eap.theta_eap[2],
         "dim-0 pass > dim-0 fail"
     );
-    let map = score_map(&bk, &y, &observed, 2, &prior, 50, 1e-8).unwrap();
+    let map = score_map(&bk, &y, &observed, 2, &prior, 50, 1e-6).unwrap();
     assert!(map.converged.iter().all(|&c| c));
     // EAP and MAP should agree loosely for these smooth posteriors
     for p in 0..2 {
@@ -62,6 +62,137 @@ fn eap_map_agree_and_react_to_data() {
         }
         assert!(map.theta_se[p * 2].is_finite() && map.theta_se[p * 2] > 0.0);
     }
+}
+
+#[test]
+fn map_does_not_relax_the_requested_gradient_tolerance() {
+    let alpha = [
+        0.04400557738268765,
+        -0.04623670215195566,
+        0.2241479276551487,
+        0.036715041003563896,
+        -0.18748428060638883,
+        0.12655826921831964,
+        0.456400015795548,
+        0.3314783370952347,
+        -0.24630733253244738,
+        -0.44289751486611834,
+        -0.21814606188807326,
+        0.014464092771535259,
+    ];
+    let b = [
+        -2.3250307746388343,
+        -0.21879166393254573,
+        -1.2459109472530652,
+        -0.7322673547034516,
+        -0.5442589828573099,
+        -0.31630015636915454,
+        0.4116305363741328,
+        1.0425133694426776,
+        -0.12853466294403426,
+        1.3664634705496859,
+        -0.6651946734866135,
+        0.3515100700930197,
+    ];
+    let zeta = [
+        0.9034701816518086,
+        0.09401229776087457,
+        -0.7434992493538084,
+        -0.9217253762584194,
+        -0.45772582566733916,
+        0.2201951234700494,
+        -1.009618183538736,
+        -0.20917557487171307,
+        -0.15922500991447772,
+        0.5408455846858077,
+        0.2146591225063409,
+        0.3553727090399214,
+        -0.6538286094183394,
+        -0.12961363369276946,
+        0.7839754700613295,
+        1.4934311452207607,
+        -1.2590655321041202,
+        1.5139237747390626,
+        1.3458754237823045,
+        0.7813114007004275,
+        0.2644556303293035,
+        -0.3139228145364278,
+        1.4580206835369587,
+        1.9602583164499647,
+    ];
+    let factor_id: Vec<usize> = (0..12).map(|i| i % 2).collect();
+    let y = [0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: 0.9008174349330625,
+        factor_id: &factor_id,
+        model_type: ModelType::Mls2plm,
+        n_dims: 2,
+        latent_dim: 2,
+        eps_distance: 1e-8,
+    };
+    let prior = PriorSpec {
+        mean: vec![0.3, -0.2],
+        sd: vec![1.2, 0.8],
+    };
+
+    let map = score_map(&bank, &y, &[true; 12], 1, &prior, 100, 1e-12).unwrap();
+    assert!(
+        !map.converged[0],
+        "a failed line search must not relax tol=1e-12 to the internal 1e-4 scale"
+    );
+}
+
+#[test]
+fn map_theta_se_uses_the_full_distance_observed_information() {
+    let alpha = [0.0];
+    let b = [0.2];
+    let zeta = [0.7];
+    let factor_id = [0usize];
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: 0.0,
+        factor_id: &factor_id,
+        model_type: ModelType::Mls2plm,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 0.1,
+    };
+    let map = score_map(
+        &bank,
+        &[1.0],
+        &[true],
+        1,
+        &PriorSpec::standard(1),
+        100,
+        1e-6,
+    )
+    .unwrap();
+    let theta = map.theta_map[0];
+    let xi = map.xi_map[0];
+    let diff = xi - zeta[0];
+    let dist = (bank.eps_distance + diff * diff).sqrt();
+    let eta = theta + b[0] - dist;
+    let probability = 1.0 / (1.0 + (-eta).exp());
+    let residual = 1.0 - probability;
+    let weight = probability * (1.0 - probability);
+    let derivative = -diff / dist;
+    let second_derivative = -(1.0 / dist - diff * diff / dist.powi(3));
+    let info_tt = weight + 1.0;
+    let info_tx = weight * derivative;
+    let info_xx = weight * derivative * derivative - residual * second_derivative + 1.0;
+    let expected_se = (info_xx / (info_tt * info_xx - info_tx * info_tx)).sqrt();
+
+    assert!(map.converged[0]);
+    assert!(
+        (map.theta_se[0] - expected_se).abs() < 1e-8,
+        "theta SE {} omitted nonlinear distance curvature; expected {expected_se}",
+        map.theta_se[0]
+    );
 }
 
 #[test]

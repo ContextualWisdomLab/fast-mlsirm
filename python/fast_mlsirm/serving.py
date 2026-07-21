@@ -375,8 +375,9 @@ def score_respondents(
     importance-assessment API receives.
 
     ``method`` is "eap" (posterior mean, default), "map" (posterior mode with
-    SEs), or "eapsum" (summed-score lookup via the bundle's Lord-Wingersky
-    conversion tables — requires complete responses within each dimension).
+    SEs; convergence requires a gradient norm below ``1e-6``), or "eapsum"
+    (summed-score lookup via the bundle's Lord-Wingersky conversion tables —
+    requires complete responses within each dimension).
     ``prior`` overrides the serving prior (mean, sd per dimension): condition
     on a known team with ``mean = u_eap`` or a known group with
     ``(mu_g, sigma_g)``.

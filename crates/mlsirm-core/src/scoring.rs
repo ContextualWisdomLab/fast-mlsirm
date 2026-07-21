@@ -466,7 +466,7 @@ fn solve_sym(mut h: Vec<f64>, mut g: Vec<f64>, n: usize) -> Option<Vec<f64>> {
     Some(g)
 }
 
-/// MAP scoring: damped Newton ascent of the log posterior over
+/// MAP scoring: damped Fisher scoring of the log posterior over
 /// `(theta in R^D, xi in R^K)` per person, with standard errors from the
 /// diagonal of the inverse observed information at the mode.
 pub fn score_map(
@@ -506,109 +506,125 @@ pub fn score_map(
     };
 
     // log posterior and its gradient / observed information at (theta, xi)
-    let eval =
-        |p: usize, par: &[f64], grad: Option<&mut Vec<f64>>, info: Option<&mut Vec<f64>>| -> f64 {
-            let theta = &par[..n_dims];
-            let xi = &par[n_dims..];
-            let mut lp = 0.0;
-            let mut g = vec![0.0_f64; n_par];
-            let mut h = vec![0.0_f64; n_par * n_par];
-            for i in 0..n_items {
-                let idx = p * n_items + i;
-                if !observed[idx] {
-                    continue;
-                }
-                let d = bank.factor_id[i];
-                let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
-                let mut eta = a * theta[d] + bank.b[i];
-                let mut dist = 1.0;
-                match kind {
-                    crate::InteractionKind::None => {}
-                    crate::InteractionKind::Distance => {
-                        let mut dist2 = bank.eps_distance;
-                        for k in 0..latent_dim {
-                            let diff = xi[k] - bank.zeta[i * latent_dim + k];
-                            dist2 += diff * diff;
-                        }
-                        dist = dist2.sqrt();
-                        eta -= gamma * dist;
-                    }
-                    crate::InteractionKind::Inner => {
-                        for k in 0..latent_dim {
-                            eta += bank.zeta[i * latent_dim + k] * xi[k];
-                        }
-                    }
-                }
-                let yy = y[idx];
-                lp += yy * log_sigmoid(eta) + (1.0 - yy) * log_sigmoid(-eta);
-                let prob = sigmoid(eta);
-                let resid = yy - prob;
-                let w = prob * (1.0 - prob);
-                // d eta / d theta_d = a ; d eta / d xi_k = -gamma (xi_k - zeta_ik)/dist
-                g[d] += resid * a;
-                h[d * n_par + d] += w * a * a;
-                if uses_space {
+    let eval = |p: usize,
+                par: &[f64],
+                grad: Option<&mut Vec<f64>>,
+                info: Option<&mut Vec<f64>>,
+                observed_curvature: bool|
+     -> f64 {
+        let theta = &par[..n_dims];
+        let xi = &par[n_dims..];
+        let mut lp = 0.0;
+        let mut g = vec![0.0_f64; n_par];
+        let mut h = vec![0.0_f64; n_par * n_par];
+        for i in 0..n_items {
+            let idx = p * n_items + i;
+            if !observed[idx] {
+                continue;
+            }
+            let d = bank.factor_id[i];
+            let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
+            let mut eta = a * theta[d] + bank.b[i];
+            let mut dist = 1.0;
+            match kind {
+                crate::InteractionKind::None => {}
+                crate::InteractionKind::Distance => {
+                    let mut dist2 = bank.eps_distance;
                     for k in 0..latent_dim {
-                        // model_exec_flags guarantees that a spatial model is either distance or
-                        // inner-product; InteractionKind::None always has uses_space=false.
-                        let u_k = if kind == crate::InteractionKind::Distance {
-                            -gamma * (xi[k] - bank.zeta[i * latent_dim + k]) / dist
-                        } else {
-                            bank.zeta[i * latent_dim + k]
-                        };
-                        g[n_dims + k] += resid * u_k;
-                        h[d * n_par + n_dims + k] += w * a * u_k;
-                        h[(n_dims + k) * n_par + d] += w * a * u_k;
-                        for k2 in 0..latent_dim {
-                            let u_k2 = if kind == crate::InteractionKind::Distance {
-                                -gamma * (xi[k2] - bank.zeta[i * latent_dim + k2]) / dist
-                            } else {
-                                bank.zeta[i * latent_dim + k2]
-                            };
-                            h[(n_dims + k) * n_par + n_dims + k2] += w * u_k * u_k2;
-                        }
+                        let diff = xi[k] - bank.zeta[i * latent_dim + k];
+                        dist2 += diff * diff;
+                    }
+                    dist = dist2.sqrt();
+                    eta -= gamma * dist;
+                }
+                crate::InteractionKind::Inner => {
+                    for k in 0..latent_dim {
+                        eta += bank.zeta[i * latent_dim + k] * xi[k];
                     }
                 }
             }
-            for d in 0..n_dims {
-                let z = (theta[d] - prior.mean[d]) / prior.sd[d];
-                lp -= 0.5 * z * z;
-                g[d] -= z / prior.sd[d];
-                h[d * n_par + d] += 1.0 / (prior.sd[d] * prior.sd[d]);
-            }
+            let yy = y[idx];
+            lp += yy * log_sigmoid(eta) + (1.0 - yy) * log_sigmoid(-eta);
+            let prob = sigmoid(eta);
+            let resid = yy - prob;
+            let w = prob * (1.0 - prob);
+            // d eta / d theta_d = a ; d eta / d xi_k = -gamma (xi_k - zeta_ik)/dist
+            g[d] += resid * a;
+            h[d * n_par + d] += w * a * a;
             if uses_space {
                 for k in 0..latent_dim {
-                    lp -= 0.5 * xi[k] * xi[k];
-                    g[n_dims + k] -= xi[k];
-                    h[(n_dims + k) * n_par + n_dims + k] += 1.0;
+                    // model_exec_flags guarantees that a spatial model is either distance or
+                    // inner-product; InteractionKind::None always has uses_space=false.
+                    let u_k = if kind == crate::InteractionKind::Distance {
+                        -gamma * (xi[k] - bank.zeta[i * latent_dim + k]) / dist
+                    } else {
+                        bank.zeta[i * latent_dim + k]
+                    };
+                    g[n_dims + k] += resid * u_k;
+                    h[d * n_par + n_dims + k] += w * a * u_k;
+                    h[(n_dims + k) * n_par + d] += w * a * u_k;
+                    for k2 in 0..latent_dim {
+                        let u_k2 = if kind == crate::InteractionKind::Distance {
+                            -gamma * (xi[k2] - bank.zeta[i * latent_dim + k2]) / dist
+                        } else {
+                            bank.zeta[i * latent_dim + k2]
+                        };
+                        let entry = (n_dims + k) * n_par + n_dims + k2;
+                        h[entry] += w * u_k * u_k2;
+                        if observed_curvature && kind == crate::InteractionKind::Distance {
+                            let diff_k = xi[k] - bank.zeta[i * latent_dim + k];
+                            let diff_k2 = xi[k2] - bank.zeta[i * latent_dim + k2];
+                            let diagonal = if k == k2 { 1.0 } else { 0.0 };
+                            let eta_second = -gamma
+                                * (diagonal / dist - diff_k * diff_k2 / (dist * dist * dist));
+                            // -d2 log p(y|eta) = w eta'eta' - (y-p) eta''.
+                            h[entry] -= resid * eta_second;
+                        }
+                    }
                 }
             }
-            if let Some(gr) = grad {
-                *gr = g;
+        }
+        for d in 0..n_dims {
+            let z = (theta[d] - prior.mean[d]) / prior.sd[d];
+            lp -= 0.5 * z * z;
+            g[d] -= z / prior.sd[d];
+            h[d * n_par + d] += 1.0 / (prior.sd[d] * prior.sd[d]);
+        }
+        if uses_space {
+            for k in 0..latent_dim {
+                lp -= 0.5 * xi[k] * xi[k];
+                g[n_dims + k] -= xi[k];
+                h[(n_dims + k) * n_par + n_dims + k] += 1.0;
             }
-            if let Some(inf) = info {
-                *inf = h;
-            }
-            lp
-        };
+        }
+        if let Some(gr) = grad {
+            *gr = g;
+        }
+        if let Some(inf) = info {
+            *inf = h;
+        }
+        lp
+    };
 
     for p in 0..n_persons {
         let mut par = vec![0.0_f64; n_par];
-        let mut lp = eval(p, &par, None, None);
+        let mut lp = eval(p, &par, None, None, false);
         let mut converged = false;
         for _ in 0..max_iter {
             let mut g = Vec::new();
             let mut h = Vec::new();
-            eval(p, &par, Some(&mut g), Some(&mut h));
-            // The likelihood information is positive semidefinite and the proper Gaussian priors
-            // add a strictly positive diagonal, so every validated MAP system is nonsingular.
-            let step_dir = solve_sym(h.clone(), g.clone(), n_par)
-                .expect("validated Gaussian priors make MAP information positive definite");
+            eval(p, &par, Some(&mut g), Some(&mut h), false);
             let g_norm: f64 = g.iter().map(|v| v * v).sum::<f64>().sqrt();
             if g_norm < tol {
                 converged = true;
                 break;
             }
+            // Fisher information is positive semidefinite and the proper Gaussian priors add a
+            // strictly positive diagonal. Fail closed if finite-precision elimination nevertheless
+            // cannot solve the system rather than unwinding a public scoring call.
+            let Some(step_dir) = solve_sym(h, g, n_par) else {
+                break;
+            };
             let mut step = 1.0_f64;
             let mut accepted = false;
             for _ in 0..25 {
@@ -617,7 +633,7 @@ pub fn score_map(
                     .zip(&step_dir)
                     .map(|(v, s)| v + step * s)
                     .collect();
-                let cand_lp = eval(p, &cand, None, None);
+                let cand_lp = eval(p, &cand, None, None, false);
                 if cand_lp > lp {
                     par = cand;
                     lp = cand_lp;
@@ -627,13 +643,12 @@ pub fn score_map(
                 step *= 0.5;
             }
             if !accepted {
-                converged = g_norm < tol.max(1e-4);
                 break;
             }
         }
         // SEs from the observed information at the mode.
         let mut h = Vec::new();
-        eval(p, &par, None, Some(&mut h));
+        eval(p, &par, None, Some(&mut h), true);
         for d in 0..n_dims {
             let mut e = vec![0.0_f64; n_par];
             e[d] = 1.0;
