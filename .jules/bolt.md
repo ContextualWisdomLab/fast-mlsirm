@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Matrix Multiplication for Factor Gradient Calculation
+**Learning:** Calculating gradients for factor arrays using boolean element-wise extraction and reduction like `(e * theta[:, factors]).sum(axis=0)` loops through columns and allocates large intermediate arrays (N x J). For large N (e.g., 5000), this significantly degrades performance.
+**Action:** Replace looped subset extraction and element-wise products with highly optimized dense matrix multiplications combined with advanced integer indexing. For example, replace `(e * theta[:, factors]).sum(axis=0)` with `(e.T @ theta)[np.arange(e.shape[1]), factors]` to bypass intermediate (N x J) allocation, achieving massive execution speedups.
