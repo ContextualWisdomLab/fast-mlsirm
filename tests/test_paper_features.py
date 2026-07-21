@@ -2403,6 +2403,16 @@ def test_equating_standard_errors():
         equating_standard_errors(x, y, method="equipercentile", route="analytic", k_x=k, k_y=k)
     with pytest.raises(ValueError):
         equating_standard_errors(x, y, method="linear", route="bogus", k_x=k, k_y=k)
+    with pytest.raises(ValueError, match="bootstrap buffer size"):
+        equating_standard_errors(
+            x,
+            y,
+            method="mean",
+            route="bootstrap",
+            k_x=k,
+            k_y=k,
+            n_boot=np.iinfo(np.uintp).max,
+        )
 
 
 def test_fit_response_times():

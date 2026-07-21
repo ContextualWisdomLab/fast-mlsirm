@@ -324,6 +324,7 @@ def equating_standard_errors(
     References (APA 7th ed.):
         Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and
             linking: Methods and practices* (3rd ed.). Springer.
+            https://doi.org/10.1007/978-1-4939-0317-7
         Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap*.
             Chapman & Hall.
     """

@@ -660,6 +660,7 @@ fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
 ///
 /// Kolen, M. J., & Brennan, R. L. (2014). *Test equating, scaling, and linking:
 ///   Methods and practices* (3rd ed.). Springer.
+///   https://doi.org/10.1007/978-1-4939-0317-7
 ///
 /// Efron, B., & Tibshirani, R. J. (1993). *An introduction to the bootstrap*.
 ///   Chapman & Hall.
@@ -683,7 +684,12 @@ pub fn bootstrap_see(
     let point = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
     let (nx, ny) = (x_scores.len(), y_scores.len());
     let ncol = k_x + 1;
-    let mut reps = vec![0.0_f64; n_boot * ncol];
+    let rep_cells = crate::checked_mul_usize(
+        n_boot,
+        ncol,
+        "n_boot * (k_x + 1) exceeds the bootstrap buffer size",
+    )?;
+    let mut reps = vec![0.0_f64; rep_cells];
     let mut st = seed.max(1);
     let mut u = || {
         st = st

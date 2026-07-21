@@ -1291,6 +1291,14 @@ fn see_bootstrap_sanity_and_guards() {
     // guards
     assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 1, 0.95, 1).is_err());
     assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 100, 1.5, 1).is_err());
+    let oversized = std::panic::catch_unwind(|| {
+        bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, usize::MAX, 0.95, 1)
+    });
+    assert!(
+        oversized.is_ok(),
+        "oversized n_boot must return an error instead of panicking"
+    );
+    assert!(oversized.unwrap().is_err());
     assert!(analytic_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 0.95).is_err());
 }
 
