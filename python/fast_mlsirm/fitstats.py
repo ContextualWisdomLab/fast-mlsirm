@@ -762,7 +762,7 @@ class ItemScreeningResult:
     final_result: object
 
 
-def _require_converged_screening_fit(result, config, stage: str) -> None:
+def _require_converged_fit(result, config, operation: str, stage: str) -> None:
     status = str(result.convergence_status).strip().lower()
     if status == "converged":
         return
@@ -772,7 +772,7 @@ def _require_converged_screening_fit(result, config, stage: str) -> None:
         abs(float(trace[-1]) - float(trace[-2])) if len(trace) >= 2 else float("nan")
     )
     raise RuntimeError(
-        "select_items requires converged parameters before "
+        f"{operation} requires converged parameters before "
         f"{stage}; status={status or 'unknown'}, n_iter={result.n_iter}, "
         f"max_iter={config.max_iter}, last_loglik_delta={last_delta:.6g}, "
         f"tolerance={config.tolerance:.6g}"
@@ -859,7 +859,9 @@ def select_items(
             cluster_id=cluster_id,
         )
         fitted_active = active.copy()
-        _require_converged_screening_fit(result, config, "inferential screening")
+        _require_converged_fit(
+            result, config, "select_items", "inferential screening"
+        )
         # person screen — prior means matter for the Snijders MAP correction:
         # multilevel EAPs absorb the cluster intercepts, multigroup the group
         # means, so r_0 must be centered accordingly.
@@ -986,7 +988,7 @@ def select_items(
             group_id=group_id,
             cluster_id=cluster_id,
         )
-        _require_converged_screening_fit(result, config, "the final refit")
+        _require_converged_fit(result, config, "select_items", "the final refit")
 
     return ItemScreeningResult(
         kept_items=[codes[g] for g in np.flatnonzero(active)],
@@ -1128,41 +1130,91 @@ def dif_analysis(
     mask: np.ndarray | None = None,
     fdr_q: float = 0.05,
 ) -> DIFResult:
-    """Likelihood-ratio DIF screen with group-specific item parameters.
+    """Likelihood-ratio DIF screen for the multidimensional 2-PL model.
 
-    Design per Jeon, Rijmen & Rabe-Hesketh (2013; multiple-group DIF with
-    group-specific item parameters and anchored impact) and Makransky & Glas
-    (2013; MML DIF for the 2-PL with iterative purification): for each
-    studied item, the constrained multigroup fit (common item parameters,
-    group trait means/SDs free) is compared against an augmented fit in which
-    that item is split into group-specific virtual items (its ``(a, b)`` free
-    per group, all other items anchored at the constrained estimates).
-    ``LR = 2 (ll_aug - ll_con)`` with ``df = (G - 1) x params-per-item``;
-    Benjamini-Hochberg controls the FDR over studied items. The effect size
-    is the largest between-group ``b`` difference on the logit scale.
+    Group-specific item parameters are a standard way to represent DIF in
+    multiple-group item-response models (Jeon et al., 2013; Makransky & Glas,
+    2013). This implementation fits a constrained multiple-group MIRT model,
+    then splits each studied item into group-specific virtual items whose
+    discrimination and intercept are free while all other items are anchored.
+    It reports ``LR = 2 (ll_aug - ll_con)`` with
+    ``df = 2 * (G - 1)``. Applying this itemwise likelihood-ratio screen and
+    Benjamini-Hochberg correction is a repository-specific implementation
+    choice, not a reproduction of either cited paper's complete procedure.
 
-    Virtual items keep the latent-space positions anchored (interaction DIF
-    would be confounded with the map; see the formula compilation, part I,
-    section 5.2).
+    Spatial models are intentionally rejected: their virtual items would also
+    free latent-space positions, adding nuisance parameters that are not part
+    of the stated likelihood-ratio degrees of freedom.
+
+    References
+    ----------
+    Benjamini, Y., & Hochberg, Y. (1995). Controlling the false discovery
+        rate: A practical and powerful approach to multiple testing. *Journal
+        of the Royal Statistical Society: Series B (Methodological), 57*(1),
+        289–300. https://doi.org/10.1111/j.2517-6161.1995.tb02031.x
+    Jeon, M., Rijmen, F., & Rabe-Hesketh, S. (2013). Modeling differential
+        item functioning using a generalization of the multiple-group bifactor
+        model. *Journal of Educational and Behavioral Statistics, 38*(1),
+        32–60. https://doi.org/10.3102/1076998611432173
+    Makransky, G., & Glas, C. A. W. (2013). Modeling differential item
+        functioning with group-specific item parameters: A computerized
+        adaptive testing application. *Measurement, 46*(9), 3228–3237.
+        https://doi.org/10.1016/j.measurement.2013.06.020
     """
     from .config import FitConfig
     from .fit import _compact_population_labels, fit
 
     y = np.asarray(responses, dtype=float)
+    if y.ndim != 2 or 0 in y.shape:
+        raise ValueError("responses must be a non-empty 2D array")
     if mask is not None:
-        y = np.where(np.asarray(mask, dtype=bool), y, np.nan)
+        mask_array = np.asarray(mask)
+        if mask_array.dtype.kind != "b":
+            raise ValueError("mask must be a boolean array")
+        if mask_array.shape != y.shape:
+            raise ValueError("mask must have the same shape as responses")
+        y = np.where(mask_array, y, np.nan)
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_persons, n_items = y.shape
     gid, n_groups = _compact_population_labels(group_id, n_persons, "group_id")
-    codes = item_codes or [f"item_{i:03d}" for i in range(n_items)]
-    studied = list(range(n_items)) if studied_items is None else list(studied_items)
-    config = config or FitConfig(model="MLS2PLM", estimator="mmle")
+    if n_groups < 2:
+        raise ValueError("dif_analysis requires at least two groups")
+    if item_codes is None:
+        codes = [f"item_{i:03d}" for i in range(n_items)]
+    else:
+        codes = list(item_codes)
+        if len(codes) != n_items:
+            raise ValueError("item_codes must have one entry per response column")
+    if studied_items is None:
+        studied = list(range(n_items))
+    else:
+        studied_array = np.asarray(studied_items)
+        if studied_array.size == 0:
+            raise ValueError("studied_items must not be empty")
+        if studied_array.ndim != 1 or studied_array.dtype.kind not in "iu":
+            raise ValueError("studied_items must be a one-dimensional integer sequence")
+        if np.any((studied_array < 0) | (studied_array >= n_items)):
+            raise ValueError("studied_items contains an out-of-range item index")
+        if np.unique(studied_array).size != studied_array.size:
+            raise ValueError("studied_items must not contain duplicate item indices")
+        studied = studied_array.tolist()
+    if not np.isfinite(fdr_q) or not 0.0 < fdr_q <= 1.0:
+        raise ValueError("fdr_q must be finite and in (0, 1]")
+    config = config or FitConfig(model="MIRT", estimator="mmle")
     if config.estimator != "mmle":
         raise ValueError("dif_analysis requires estimator='mmle'")
-    free_alpha = config.normalized_model() not in {"MLSRM", "ULSRM"}
-    params_per_item = 2 if free_alpha else 1
+    if config.normalized_model() != "MIRT":
+        raise ValueError(
+            "dif_analysis currently supports model='MIRT' only; spatial models "
+            "would free latent-space item positions that are not represented in "
+            "the likelihood-ratio degrees of freedom"
+        )
+    params_per_item = 2
 
     constrained = fit(y, d_of_i, config, group_id=gid)
+    _require_converged_fit(
+        constrained, config, "dif_analysis", "the constrained fit"
+    )
     ll_con = constrained.loglik_trace[-1]
 
     lr = np.full(n_items, np.nan)
@@ -1199,6 +1251,12 @@ def dif_analysis(
             tau=float(constrained.params.tau),
         )
         augmented = fit(y_aug, fid_aug, config, group_id=gid, anchors=anchors)
+        _require_converged_fit(
+            augmented,
+            config,
+            "dif_analysis",
+            f"the augmented fit for item {i}",
+        )
         ll_aug = augmented.loglik_trace[-1]
         stat = max(0.0, 2.0 * (ll_aug - ll_con))
         df_i = (n_groups - 1) * params_per_item

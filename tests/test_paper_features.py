@@ -222,12 +222,47 @@ def test_dif_analysis_detects_injected_shift():
     eta = a[None, :] * theta[:, None] + b[None, :]
     eta[:, 3] += np.where(gid == 1, 1.2, 0.0)  # uniform DIF on item 3
     y = (rng.random((P, I)) < 1 / (1 + np.exp(-eta))).astype(float)
-    cfg = FitConfig(model="ULSRM", estimator="mmle", max_iter=50, latent_dim=1,
-                    q_theta=15, q_xi=7, rust_device="cpu")
+    cfg = FitConfig(model="MIRT", estimator="mmle", max_iter=100,
+                    tolerance=0.02, q_theta=15, rust_device="cpu")
     res = dif_analysis(y, fid, gid, config=cfg, studied_items=[2, 3])
     assert res.flagged_bh[3], f"item 3 must flag: p={res.p_value[3]}"
     assert res.effect_size[3] > 0.5
     assert not res.flagged_bh[2] or res.p_value[2] > res.p_value[3]
+
+
+def test_dif_analysis_rejects_spatial_models_with_unaccounted_positions():
+    y = np.array([[0.0, 1.0], [1.0, 0.0]])
+    with pytest.raises(ValueError, match="latent-space item positions"):
+        dif_analysis(
+            y,
+            np.zeros(2, dtype=np.int64),
+            np.array([0, 1]),
+            config=FitConfig(model="ULSRM", estimator="mmle"),
+            studied_items=[0],
+        )
+
+
+@pytest.mark.parametrize(
+    ("group_id", "kwargs", "message"),
+    [
+        (np.array([0, 1]), {"mask": np.ones((2, 2), dtype=int)}, "boolean"),
+        (np.array([0, 0]), {}, "at least two groups"),
+        (np.array([0, 1]), {"item_codes": ["item_0"]}, "one entry"),
+        (np.array([0, 1]), {"studied_items": [-1]}, "out-of-range"),
+        (np.array([0, 1]), {"studied_items": []}, "must not be empty"),
+        (np.array([0, 1]), {"studied_items": [0, 0]}, "duplicate"),
+        (np.array([0, 1]), {"fdr_q": 0.0}, r"in \(0, 1\]"),
+        (np.array([0, 1]), {"fdr_q": np.nan}, r"in \(0, 1\]"),
+    ],
+)
+def test_dif_analysis_rejects_ambiguous_public_inputs(group_id, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        dif_analysis(
+            np.array([[0.0, 1.0], [1.0, 0.0]]),
+            np.zeros(2, dtype=np.int64),
+            group_id,
+            **kwargs,
+        )
 
 
 def test_dif_analysis_compacts_sparse_group_labels(monkeypatch):
@@ -248,7 +283,9 @@ def test_dif_analysis_compacts_sparse_group_labels(monkeypatch):
                 zeta=np.zeros((n_items, 1)),
                 tau=0.0,
             ),
-            loglik_trace=[1.0 if anchors is not None else 0.0],
+            convergence_status="converged",
+            n_iter=2,
+            loglik_trace=[0.0, 1.0] if anchors is not None else [-1.0, 0.0],
         )
 
     monkeypatch.setattr(fit_module, "fit", fake_fit)
@@ -264,6 +301,32 @@ def test_dif_analysis_compacts_sparse_group_labels(monkeypatch):
     assert result.b_by_group.shape == (2, 2)
     assert result.effect_size[0] == 1.0
     assert all(np.array_equal(gid, [0, 1]) for gid in seen_group_ids)
+
+
+def test_dif_analysis_rejects_nonconverged_constrained_fit(monkeypatch):
+    import importlib
+    from types import SimpleNamespace
+
+    fit_module = importlib.import_module("fast_mlsirm.fit")
+
+    def fake_fit(*_args, **_kwargs):
+        return SimpleNamespace(
+            convergence_status="max_iter_reached",
+            n_iter=3,
+            loglik_trace=[-3.0, -2.0, -1.5],
+        )
+
+    monkeypatch.setattr(fit_module, "fit", fake_fit)
+    with pytest.raises(
+        RuntimeError,
+        match=r"dif_analysis requires converged parameters.*status=max_iter_reached",
+    ):
+        dif_analysis(
+            np.array([[0.0, 1.0], [1.0, 0.0]]),
+            np.zeros(2, dtype=np.int64),
+            np.array([0, 1]),
+            studied_items=[0],
+        )
 
 
 def test_vuong_and_dimensionality_wrappers():
