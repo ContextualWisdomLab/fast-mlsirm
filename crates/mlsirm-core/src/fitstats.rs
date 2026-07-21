@@ -1057,8 +1057,19 @@ pub fn person_fit_resampling(
 ) -> Result<Vec<f64>, String> {
     let (free_alpha, uses_space) = crate::model_exec_flags(bank.model_type);
     let n_items = bank.b.len();
-    if n_replicates == 0 {
-        return Err("n_replicates must be >= 1".into());
+    const MAX_REPLICATES: usize = 10_000;
+    const MAX_WORK_CELLS: usize = 200_000_000;
+    if !(1..=MAX_REPLICATES).contains(&n_replicates) {
+        return Err(format!("n_replicates must be in 1..={MAX_REPLICATES}"));
+    }
+    let work_cells = n_persons
+        .checked_mul(n_items)
+        .and_then(|cells| cells.checked_mul(n_replicates))
+        .ok_or("person-fit resampling work size overflows usize")?;
+    if work_cells > MAX_WORK_CELLS {
+        return Err(format!(
+            "person-fit resampling exceeds the {MAX_WORK_CELLS}-cell work limit"
+        ));
     }
     let base = person_fit(bank, y, observed, n_persons, theta, xi, prior_mean, -1.645)?;
     let kind = crate::interaction_kind(bank.model_type);

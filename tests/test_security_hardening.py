@@ -1269,3 +1269,236 @@ def test_diagnostics_save_replaces_leaf_symlink_without_overwriting_target(tmp_p
     assert external.read_text(encoding="utf-8") == "do not overwrite"
     assert output.is_file() and not output.is_symlink()
     assert json.loads(output.read_text(encoding="utf-8"))["model_fit"] == {}
+
+
+# ---- Same-head Strix follow-up: remaining public trust boundaries ---------
+def test_cli_score_replaces_leaf_symlink_without_overwriting_target(
+    tmp_path, monkeypatch
+):
+    import fast_mlsirm.cli as cli
+
+    external = tmp_path / "external.txt"
+    external.write_text("do not overwrite", encoding="utf-8")
+    output = tmp_path / "scores.json"
+    output.symlink_to(external)
+    monkeypatch.setattr(serving, "load_serving_bundle", lambda _path: _bundle())
+    monkeypatch.setattr(
+        serving, "score_respondents", lambda _bundle, _payload: [{"theta": [0.0]}]
+    )
+    monkeypatch.setattr(
+        cli, "_load_json_bounded", lambda *_args, **_kwargs: [{"q0": 1}]
+    )
+
+    assert (
+        cli.main(
+            [
+                "score",
+                "--bundle",
+                "bundle.json",
+                "--responses",
+                "responses.json",
+                "--out",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert external.read_text(encoding="utf-8") == "do not overwrite"
+    assert output.is_file() and not output.is_symlink()
+
+
+def test_candidate_loader_rejects_count_and_aggregate_budgets(monkeypatch):
+    import fast_mlsirm.cli as cli
+
+    monkeypatch.setattr(cli, "_load_numpy_bounded", lambda _path: np.zeros(2))
+    with pytest.raises(ValueError, match="candidate count"):
+        cli._load_candidate_probabilities(
+            [f"c{i}=candidate-{i}.npy" for i in range(cli.MAX_CANDIDATE_COUNT + 1)]
+        )
+    monkeypatch.setattr(cli, "MAX_CANDIDATE_ELEMENTS", 1)
+    with pytest.raises(ValueError, match="aggregate"):
+        cli._load_candidate_probabilities(["one=candidate.npy"])
+
+
+def test_dimensionality_controls_deduplicate_and_bound_work(monkeypatch):
+    import fast_mlsirm.diagnostics as diagnostics
+
+    assert diagnostics._validated_latent_dims([2, 2, 1, 2]) == [2, 1]
+    with pytest.raises(ValueError, match="k_folds"):
+        diagnostics._validation_folds(
+            np.ones((20, 20), dtype=bool),
+            diagnostics.MAX_DIM_DIAGNOSTIC_FOLDS + 1,
+            1,
+        )
+    monkeypatch.setattr(diagnostics, "MAX_DIM_DIAGNOSTIC_MASK_CELLS", 100)
+    with pytest.raises(ValueError, match="aggregate"):
+        diagnostics._validation_folds(np.ones((10, 10), dtype=bool), 2, 1)
+
+
+def test_cdm_rejects_nonbinary_responses():
+    from fast_mlsirm.cdm import _prepare_binary_responses
+
+    with pytest.raises(ValueError, match="0, 1"):
+        _prepare_binary_responses(np.array([[0.0, 0.5, 1.0]]))
+
+
+@pytest.mark.parametrize(
+    "name,args",
+    [
+        ("fit_cdm", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("fit_gdina", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("validate_q_matrix", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("gdina_wald_selection", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("fit_ho_cdm", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("fit_ho_gdina", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        ("fit_seq_gdina", (np.array([[0.0, 1.0]]), np.array([[1], [1]]))),
+        (
+            "fit_seq_gdina_qr",
+            (np.array([[0.0, 1.0]]), np.array([[1], [1]]), [1, 1]),
+        ),
+    ],
+)
+def test_all_cdm_wrappers_reject_invalid_stopping_controls_before_native(
+    monkeypatch, name, args
+):
+    import fast_mlsirm.cdm as cdm
+
+    class BombCore:
+        def __getattr__(self, method):
+            def call(*_args, **_kwargs):
+                raise AssertionError(f"unsafe controls reached native {method}")
+
+            return call
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="max_iter"):
+        getattr(cdm, name)(*args, max_iter=0, tol=float("nan"))
+
+
+def test_serving_bundle_rejects_malformed_eapsum_tables():
+    bundle = _bundle()
+    bundle["eapsum_tables"] = [
+        {
+            "dim": 0,
+            "n_items_dim": 1,
+            "score_prob": [1.0],
+            "eap": [],
+            "sd": [],
+        }
+    ]
+    with pytest.raises(ValueError, match="eapsum"):
+        serving._validate_bundle(bundle)
+
+
+def test_json_loader_rejects_excessive_nesting(tmp_path):
+    from fast_mlsirm.io import MAX_JSON_NESTING_DEPTH, _load_json_bounded
+
+    path = tmp_path / "deep.json"
+    depth = MAX_JSON_NESTING_DEPTH + 1
+    path.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+    with pytest.raises(ValueError, match="nesting"):
+        _load_json_bounded(path, source="test JSON")
+
+
+def test_person_fit_resampling_rejects_unbounded_replicates_before_native(monkeypatch):
+    from types import SimpleNamespace
+
+    class BombCore:
+        def person_fit_resampling(self, *_args, **_kwargs):
+            raise AssertionError("unsafe replication count reached native core")
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    params = SimpleNamespace(theta=np.zeros((1, 1)), xi=np.zeros((1, 1)))
+    with pytest.raises(ValueError, match="n_replicates"):
+        fitstats.person_fit_resampling(
+            np.zeros((1, 1)),
+            np.array([0]),
+            params,
+            "MIRT",
+            n_replicates=fitstats.MAX_PERSON_FIT_REPLICATES + 1,
+        )
+
+
+def test_polytomous_diagnostics_reject_unbounded_quadrature_before_native(monkeypatch):
+    import fast_mlsirm.polytomous as poly
+
+    class BombCore:
+        def __getattr__(self, name):
+            raise AssertionError(f"unsafe quadrature reached native core: {name}")
+
+    fit = poly.PolytomousFit(
+        model="grm",
+        slope=np.array([1.0]),
+        cat_params=np.array([[0.0]]),
+        loglik=0.0,
+        n_iter=1,
+        converged=True,
+    )
+    monkeypatch.setattr(poly, "_core_module", lambda: BombCore())
+    for function in (
+        poly.item_fit_polytomous,
+        poly.m2_polytomous,
+        poly.local_dependence_polytomous,
+        poly.person_fit_polytomous,
+    ):
+        with pytest.raises(ValueError, match="q_theta"):
+            function(
+                np.array([[0.0]]),
+                fit,
+                q_theta=poly.MAX_POLY_QUADRATURE_POINTS + 1,
+            )
+
+
+def test_polytomous_simulation_rejects_unsafe_controls_before_native(monkeypatch):
+    import fast_mlsirm.polytomous as poly
+
+    fit = poly.PolytomousFit(
+        model="grm",
+        slope=np.array([1.0]),
+        cat_params=np.array([[0.0]]),
+        loglik=0.0,
+        n_iter=1,
+        converged=True,
+    )
+    monkeypatch.setattr(
+        poly,
+        "_core_module",
+        lambda: pytest.fail("unsafe controls reached native core"),
+    )
+    with pytest.raises(ValueError, match="q_theta"):
+        poly.cat_simulate_polytomous(
+            np.array([0.0]), fit, q_theta=poly.MAX_POLY_QUADRATURE_POINTS + 1
+        )
+    with pytest.raises(ValueError, match="max_items"):
+        poly.cat_simulate_polytomous(
+            np.array([0.0]),
+            fit,
+            min_items=1,
+            max_items=poly.MAX_POLY_CAT_ITEMS + 1,
+        )
+    with pytest.raises(ValueError, match="alpha"):
+        poly.u3_cutoff_polytomous(fit, n_persons=1, alpha=float("nan"))
+    with pytest.raises(ValueError, match="n_rep"):
+        poly.u3_cutoff_polytomous(
+            fit,
+            n_persons=1,
+            n_rep=poly.MAX_POLY_BOOTSTRAP_REPLICATES + 1,
+        )
+
+
+@pytest.mark.parametrize(
+    "function,payload",
+    [
+        (serving.score_respondents, [[]]),
+        (serving.plausible_values, [[]]),
+        (serving.cat_next_item, []),
+    ],
+)
+def test_serving_rejects_non_mapping_response_payloads(monkeypatch, function, payload):
+    class BombCore:
+        def __getattr__(self, name):
+            raise AssertionError(f"malformed payload reached native core: {name}")
+
+    monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="object mapping"):
+        function(_bundle(), payload)

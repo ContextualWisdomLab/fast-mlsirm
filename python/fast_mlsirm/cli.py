@@ -18,6 +18,7 @@ from .diagnostics import (
 )
 from .fit import fit
 from .io import (
+    _atomic_write_text,
     _load_json_bounded,
     _load_numpy_bounded,
     load_factor_csv,
@@ -29,6 +30,11 @@ from .io import (
 )
 from .report import render_diagnostics_report
 from .simulation import simulate
+
+
+MAX_CANDIDATE_COUNT = 128
+MAX_CANDIDATE_ELEMENTS = 50_000_000
+MAX_CANDIDATE_BYTES = 512 * 1024 * 1024
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
@@ -336,8 +342,8 @@ def _main(argv: list[str] | None = None) -> int:
             print(f"❌ Error: Scoring failed - {str(e)}", file=sys.stderr)
             return 1
         if args.out:
-            Path(args.out).write_text(
-                json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8"
+            _atomic_write_text(
+                args.out, json.dumps(scores, ensure_ascii=False, indent=2)
             )
         return _complete(
             args,
@@ -717,14 +723,31 @@ def _load_optional_npy(path: str | None) -> np.ndarray | None:
 
 
 def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
+    if len(specs) > MAX_CANDIDATE_COUNT:
+        raise ValueError(
+            f"candidate count exceeds the {MAX_CANDIDATE_COUNT}-candidate limit"
+        )
     candidates = {}
+    total_elements = 0
+    total_bytes = 0
     for spec in specs:
         label, path = spec.split("=", 1) if "=" in spec else (Path(spec).stem, spec)
         if not label:
             raise ValueError("candidate label must not be empty")
         if label in candidates:
             raise ValueError(f"duplicate candidate label: {label}")
-        candidates[label] = _load_numpy_bounded(path)
+        candidate = _load_numpy_bounded(path)
+        if not isinstance(candidate, np.ndarray):
+            candidate.close()
+            raise ValueError("candidate probability inputs must be single .npy arrays")
+        total_elements += int(candidate.size)
+        total_bytes += int(candidate.nbytes)
+        if (
+            total_elements > MAX_CANDIDATE_ELEMENTS
+            or total_bytes > MAX_CANDIDATE_BYTES
+        ):
+            raise ValueError("candidate probability inputs exceed the aggregate size limit")
+        candidates[label] = candidate
     return candidates
 
 

@@ -397,6 +397,10 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(residual_item_fit(&bank, &y, &observed, 3, &[0.0], &xi, 2).is_err());
     assert!(residual_item_fit(&bank, &y, &observed, 3, &theta, &xi, 1).is_err());
     assert!(person_fit_resampling(&bank, &y, &observed, 3, &theta, &xi, &[], 0, 1).is_err());
+    assert!(person_fit_resampling(&bank, &y, &observed, 3, &theta, &xi, &[], 10_001, 1).is_err());
+    assert!(
+        person_fit_resampling(&bank, &y, &observed, usize::MAX, &theta, &xi, &[], 2, 1).is_err()
+    );
     assert!(adjusted_chi2_pairs(
         &bank,
         &y[..2],

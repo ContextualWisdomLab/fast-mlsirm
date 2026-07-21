@@ -21,6 +21,7 @@ MAX_NUMPY_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_NUMPY_ARCHIVE_MEMBERS = 256
 MAX_NUMPY_HEADER_BYTES = 64 * 1024
 MAX_JSON_INPUT_BYTES = 32 * 1024 * 1024
+MAX_JSON_NESTING_DEPTH = 128
 MAX_FACTOR_CSV_BYTES = 16 * 1024 * 1024
 
 
@@ -160,6 +161,30 @@ def _load_json_bounded(
         source=source,
         max_bytes=MAX_JSON_INPUT_BYTES,
     )
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > MAX_JSON_NESTING_DEPTH:
+                raise ValueError(
+                    f"{source} exceeds the maximum JSON nesting depth "
+                    f"of {MAX_JSON_NESTING_DEPTH}"
+                )
+        elif char in "]}":
+            depth -= 1
+
     kwargs = {} if parse_constant is None else {"parse_constant": parse_constant}
     return json.loads(content, **kwargs)
 

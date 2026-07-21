@@ -30,6 +30,9 @@ import numpy as np
 
 from .estimators.marginal import _gh, _xi_grid
 
+MAX_PERSON_FIT_REPLICATES = 10_000
+MAX_PERSON_FIT_WORK_CELLS = 200_000_000
+
 
 def _core_module():
     """The compiled Rust core, when built — the compute path for every
@@ -1172,6 +1175,18 @@ def person_fit_resampling(
     if core is None:
         raise RuntimeError("person_fit_resampling requires the compiled Rust core")
     y = np.asarray(responses, dtype=float)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    if (
+        not isinstance(n_replicates, (int, np.integer))
+        or isinstance(n_replicates, (bool, np.bool_))
+        or not 1 <= int(n_replicates) <= MAX_PERSON_FIT_REPLICATES
+    ):
+        raise ValueError(
+            f"n_replicates must be an integer between 1 and {MAX_PERSON_FIT_REPLICATES}"
+        )
+    if y.size * int(n_replicates) > MAX_PERSON_FIT_WORK_CELLS:
+        raise ValueError("person-fit resampling exceeds the aggregate work limit")
     observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1

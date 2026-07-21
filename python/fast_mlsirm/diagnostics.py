@@ -17,6 +17,12 @@ from .types import (
 )
 
 
+MAX_DIM_DIAGNOSTIC_CANDIDATES = 32
+MAX_DIM_DIAGNOSTIC_FOLDS = 100
+MAX_DIM_DIAGNOSTIC_FITS = 1_000
+MAX_DIM_DIAGNOSTIC_MASK_CELLS = 20_000_000
+
+
 def predict_proba(
     params: MLSIRMParams,
     factor_id: np.ndarray,
@@ -253,11 +259,16 @@ def dimensionality_diagnostics(
     from .fit import fit
 
     y, observed = prepare_response(responses, mask)
+    dims = _validated_latent_dims(latent_dims)
     folds = _validation_folds(observed, k_folds, seed)
+    if len(dims) * k_folds > MAX_DIM_DIAGNOSTIC_FITS:
+        raise ValueError(
+            "latent dimension candidates x k_folds exceeds the diagnostic fit limit"
+        )
     base = config or FitConfig(model=model)
     candidates: list[dict[str, float]] = []
 
-    for latent_dim in _validated_latent_dims(latent_dims):
+    for latent_dim in dims:
         totals = {"loglik": 0.0, "abs_residual": 0.0, "sq_residual": 0.0, "n": 0.0}
         for fold_idx, validation_mask in enumerate(folds):
             train_mask = observed & ~validation_mask
@@ -1000,19 +1011,31 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
 
 
 def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
-    dims = [int(value) for value in latent_dims]
+    dims = list(dict.fromkeys(int(value) for value in latent_dims))
     if not dims:
         raise ValueError("latent_dims must not be empty")
     if any(value < 1 for value in dims):
         raise ValueError("latent_dims must be >= 1")
+    if len(dims) > MAX_DIM_DIAGNOSTIC_CANDIDATES:
+        raise ValueError(
+            f"latent_dims must contain at most {MAX_DIM_DIAGNOSTIC_CANDIDATES} unique values"
+        )
     return dims
 
 
 def _validation_folds(
     observed: np.ndarray, k_folds: int, seed: int
 ) -> list[np.ndarray]:
-    if k_folds < 2:
-        raise ValueError("k_folds must be >= 2")
+    if (
+        not isinstance(k_folds, (int, np.integer))
+        or isinstance(k_folds, (bool, np.bool_))
+        or not 2 <= int(k_folds) <= MAX_DIM_DIAGNOSTIC_FOLDS
+    ):
+        raise ValueError(
+            f"k_folds must be an integer between 2 and {MAX_DIM_DIAGNOSTIC_FOLDS}"
+        )
+    if observed.size * int(k_folds) > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
+        raise ValueError("k-fold validation masks exceed the aggregate size limit")
 
     row_counts = observed.sum(axis=1)
     col_counts = observed.sum(axis=0)

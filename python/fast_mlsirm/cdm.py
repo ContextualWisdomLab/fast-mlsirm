@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER
+
 
 _MAX_ATTRIBUTES = 15
 
@@ -17,7 +19,27 @@ def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     if np.isinf(y).any():
         raise ValueError("responses must contain only 0, 1, or NaN (missing)")
     observed = ~np.isnan(y)
+    values = y[observed]
+    if values.size and not np.all((values == 0.0) | (values == 1.0)):
+        raise ValueError("responses must contain only 0, 1, or NaN (missing)")
     return np.where(observed, y, 0.0).reshape(-1), observed.reshape(-1)
+
+
+def _validate_stopping_controls(max_iter: int, tol: float) -> tuple[int, float]:
+    if (
+        not isinstance(max_iter, (int, np.integer))
+        or isinstance(max_iter, (bool, np.bool_))
+        or not 1 <= int(max_iter) <= MAX_MAX_ITER
+    ):
+        raise ValueError(f"max_iter must be an integer between 1 and {MAX_MAX_ITER}")
+    if not isinstance(tol, (int, float, np.integer, np.floating)) or isinstance(
+        tol, (bool, np.bool_)
+    ):
+        raise ValueError("tol must be a finite number > 0")
+    tolerance = float(tol)
+    if not np.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError("tol must be a finite number > 0")
+    return int(max_iter), tolerance
 
 
 def _validate_q_matrix_input(
@@ -127,6 +149,7 @@ def fit_cdm(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_cdm(
         yy,
@@ -233,6 +256,7 @@ def fit_gdina(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_gdina(
         yy,
@@ -327,6 +351,7 @@ def validate_q_matrix(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(provisional_q, "provisional_q", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.validate_q_matrix(
         yy,
@@ -434,6 +459,7 @@ def gdina_wald_selection(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.gdina_wald_selection(
         yy,
@@ -534,6 +560,7 @@ def fit_ho_cdm(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_cdm(
         yy,
@@ -647,6 +674,7 @@ def fit_ho_gdina(
     n_persons, n_items = y.shape
     q, n_attributes = _validate_q_matrix_input(q_matrix, "q_matrix", n_items)
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     yy, observed = _prepare_binary_responses(y)
     res = core.fit_ho_gdina(
         yy,
@@ -788,6 +816,7 @@ def fit_seq_gdina(
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_seq_gdina(
@@ -921,6 +950,7 @@ def fit_seq_gdina_qr(
     if np.isinf(y).any():
         raise ValueError("responses must be finite ordered categories or NaN (missing)")
 
+    max_iter, tol = _validate_stopping_controls(max_iter, tol)
     observed = ~np.isnan(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_seq_gdina_qr(

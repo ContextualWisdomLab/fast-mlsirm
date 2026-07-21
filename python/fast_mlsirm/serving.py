@@ -302,6 +302,51 @@ def _validate_bundle(bundle: Any) -> None:
                 f"the safe numeric range [-{MAX_ABS_ITEM_PARAMETER}, "
                 f"{MAX_ABS_ITEM_PARAMETER}]"
             )
+    tables = bundle.get("eapsum_tables")
+    if tables is not None:
+        if not isinstance(tables, list) or len(tables) != n_dims:
+            raise ValueError(
+                "bundle eapsum_tables must be null or a list of length n_dims"
+            )
+        item_counts = [0] * n_dims
+        for item in items:
+            item_counts[item["factor_id"]] += 1
+        seen_dims: set[int] = set()
+        for index, table in enumerate(tables):
+            if not isinstance(table, dict):
+                raise ValueError(f"bundle eapsum table {index} must be an object")
+            dim = table.get("dim")
+            if (
+                not isinstance(dim, int)
+                or isinstance(dim, bool)
+                or not 0 <= dim < n_dims
+                or dim in seen_dims
+            ):
+                raise ValueError(
+                    "bundle eapsum table dimensions must be unique integers in 0..n_dims-1"
+                )
+            seen_dims.add(dim)
+            expected = item_counts[dim] + 1
+            if table.get("n_items_dim") != item_counts[dim]:
+                raise ValueError(
+                    "bundle eapsum table n_items_dim does not match bundle items"
+                )
+            for key in ("score_prob", "eap", "sd"):
+                values = table.get(key)
+                if (
+                    not isinstance(values, list)
+                    or len(values) != expected
+                    or not all(_finite_number(value) for value in values)
+                ):
+                    raise ValueError(
+                        f"bundle eapsum table {key} must contain {expected} finite numbers"
+                    )
+            if any(value < 0 for value in table["score_prob"]) or any(
+                value < 0 for value in table["sd"]
+            ):
+                raise ValueError(
+                    "bundle eapsum score_prob and sd values must be non-negative"
+                )
 
 
 def load_serving_bundle(path: str | Path) -> dict[str, Any]:
@@ -352,6 +397,10 @@ def score_respondents(
             )
         y = np.full((len(responses), n_items), np.nan)
         for r, resp in enumerate(responses):
+            if not isinstance(resp, dict):
+                raise ValueError(
+                    "each response must be an object mapping item codes to responses"
+                )
             for code, value in resp.items():
                 j = code_to_col.get(code)
                 if j is None:
@@ -621,6 +670,10 @@ def cat_next_item(
     code_to_col = {it["code"]: j for j, it in enumerate(items)}
     y = np.zeros(n_items)
     administered = np.zeros(n_items, dtype=bool)
+    if not isinstance(responses_so_far, dict):
+        raise ValueError(
+            "responses_so_far must be an object mapping item codes to responses"
+        )
     for code, value in responses_so_far.items():
         j = code_to_col.get(code)
         if j is None:
@@ -689,6 +742,10 @@ def plausible_values(
             )
         y = np.full((len(responses), n_items), np.nan)
         for r, resp in enumerate(responses):
+            if not isinstance(resp, dict):
+                raise ValueError(
+                    "each response must be an object mapping item codes to responses"
+                )
             for code, value in resp.items():
                 j = code_to_col.get(code)
                 if j is None:

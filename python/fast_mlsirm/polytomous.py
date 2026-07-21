@@ -17,7 +17,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+from .config import (
+    MAX_MAX_ITER,
+    MAX_POLYTOMOUS_CATEGORIES,
+    MAX_SIM_CELLS,
+    MAX_SIM_PERSONS,
+)
 
 __all__ = [
     "PolytomousFit",
@@ -30,6 +35,23 @@ __all__ = [
 ]
 
 VALID_POLY_MODELS = {"grm", "gpcm"}
+MAX_POLY_QUADRATURE_POINTS = 4_096
+MAX_POLY_BOOTSTRAP_REPLICATES = 10_000
+MAX_POLY_CAT_ITEMS = 10_000
+
+
+def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
+    if (
+        not isinstance(value, (int, np.integer))
+        or isinstance(value, (bool, np.bool_))
+        or not lower <= int(value) <= upper
+    ):
+        raise ValueError(f"{name} must be an integer between {lower} and {upper}")
+    return int(value)
+
+
+def _quadrature_points(value) -> int:
+    return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
 
 
 @dataclass
@@ -481,7 +503,8 @@ def item_fit_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
-    if min_expected <= 0:
+    q_theta = _quadrature_points(q_theta)
+    if not np.isfinite(min_expected) or min_expected <= 0:
         raise ValueError("min_expected must be positive")
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     if y_int.shape[1] != n_items:
@@ -541,6 +564,7 @@ def m2_polytomous(
             categorical data analysis. *Multivariate Behavioral Research,
             49*(4), 305-328. https://doi.org/10.1080/00273171.2014.911075
     """
+    q_theta = _quadrature_points(q_theta)
     if hasattr(fit, "converged") and not bool(fit.converged):
         reason = getattr(fit, "termination_reason", "unknown")
         n_iter = getattr(fit, "n_iter", "unknown")
@@ -609,6 +633,7 @@ def local_dependence_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
+    q_theta = _quadrature_points(q_theta)
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     if y_int.shape[1] != n_items:
         raise ValueError("responses column count must match the fitted item count")
@@ -775,6 +800,13 @@ def person_fit_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
+    q_theta = _quadrature_points(q_theta)
+    if not np.isfinite(prior_mean):
+        raise ValueError("prior_mean must be finite")
+    if not np.isfinite(prior_sd) or prior_sd <= 0:
+        raise ValueError("prior_sd must be finite and > 0")
+    if not np.isfinite(flag_threshold):
+        raise ValueError("flag_threshold must be finite")
     y_int, observed = _poly_int_and_mask(responses, n_cat)
     if y_int.shape[1] != n_items:
         raise ValueError("responses column count must match the fitted item count")
@@ -838,8 +870,16 @@ def cat_simulate_polytomous(
     tt = np.asarray(true_theta, dtype=np.float64).ravel()
     if tt.size == 0 or not np.all(np.isfinite(tt)):
         raise ValueError("true_theta must be a non-empty finite 1-D array")
-    if se_threshold < 0 or min_items < 1 or max_items < min_items:
-        raise ValueError("require se_threshold >= 0 and 1 <= min_items <= max_items")
+    q_theta = _quadrature_points(q_theta)
+    min_items = _bounded_integer(min_items, "min_items", 1, MAX_POLY_CAT_ITEMS)
+    max_items = _bounded_integer(max_items, "max_items", min_items, MAX_POLY_CAT_ITEMS)
+    effective_max_items = min(max_items, n_items)
+    if min_items > effective_max_items:
+        raise ValueError("min_items must not exceed the fitted item-bank size")
+    if not np.isfinite(se_threshold) or se_threshold < 0:
+        raise ValueError("se_threshold must be finite and >= 0")
+    if tt.size > MAX_SIM_PERSONS or tt.size * effective_max_items > MAX_SIM_CELLS:
+        raise ValueError("polytomous CAT simulation exceeds the aggregate work limit")
 
     core = _core_module()
     if core is None or not hasattr(core, "poly_cat_simulate"):
@@ -1074,6 +1114,12 @@ def u3_cutoff_polytomous(
     """
     n_items = fit.slope.shape[0]
     n_cat = fit.cat_params.shape[1] + 1
+    n_persons = _bounded_integer(n_persons, "n_persons", 1, MAX_SIM_PERSONS)
+    n_rep = _bounded_integer(n_rep, "n_rep", 1, MAX_POLY_BOOTSTRAP_REPLICATES)
+    if not np.isfinite(alpha) or not 0 < float(alpha) < 1:
+        raise ValueError("alpha must be finite and in (0, 1)")
+    if n_persons * n_items * n_rep > MAX_SIM_CELLS:
+        raise ValueError("U3 bootstrap exceeds the aggregate work limit")
     core = _core_module()
     if core is None or not hasattr(core, "u3_bootstrap_cutoff"):
         raise RuntimeError("u3_cutoff_polytomous requires the compiled Rust core")
