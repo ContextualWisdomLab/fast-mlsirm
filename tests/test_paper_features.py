@@ -211,6 +211,54 @@ def test_irtree_expand_linear_tree():
         irtree_expand(np.array([[5.0]]), mapping)
 
 
+@pytest.mark.parametrize(
+    ("responses", "mapping", "node_dims", "message"),
+    [
+        (np.array([0.0]), np.array([[0.0, 1.0]]), None, "persons x items"),
+        (np.empty((0, 1)), np.array([[0.0, 1.0]]), None, "at least one person"),
+        (np.array([[np.inf]]), np.array([[0.0, 1.0]]), None, "categories or NaN"),
+        (np.array([[0.0]]), np.array([[0.0, np.inf]]), None, "0, 1, or NaN"),
+        (np.array([[np.nan]]), np.empty((1, 0)), None, "at least one node"),
+        (np.array([[0.0]]), np.empty((0, 1)), None, "at least one node"),
+        (
+            np.array([[0.0]]),
+            np.array([[0.0, 0.0, 1.0], [1.0, 1.0, 0.0]]),
+            None,
+            "distinct tree paths",
+        ),
+        (
+            np.array([[0.0]]),
+            np.array([[0.0, 1.0], [0.0, 1.0]]),
+            np.array([0, 2**63]),
+            "node_dims",
+        ),
+        (
+            np.array([[0.0]]),
+            np.array([[0.0, 1.0], [0.0, 1.0]]),
+            np.array([1, 1]),
+            "contiguous dimension indices",
+        ),
+    ],
+)
+def test_irtree_expand_rejects_invalid_tree_contracts(
+    responses, mapping, node_dims, message
+):
+    with pytest.raises(ValueError, match=message):
+        irtree_expand(responses, mapping, node_dims=node_dims)
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        np.array([[np.nan, 0.0, 1.0], [np.nan, 1.0, 0.0]]),
+        np.array([[0.0, 0.0], [0.0, 1.0]]),
+    ],
+)
+def test_irtree_expand_rejects_unidentified_paths_and_nodes(mapping):
+    with pytest.raises(ValueError):
+        irtree_expand(np.array([[0.0]]), mapping)
+
+
 def test_dif_analysis_detects_injected_shift():
     rng = np.random.default_rng(11)
     P, I = 900, 8
