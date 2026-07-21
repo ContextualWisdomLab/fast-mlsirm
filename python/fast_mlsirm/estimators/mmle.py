@@ -121,66 +121,30 @@ def fit_mmle_2pl(
 
         a_new = a.copy()
         b_new = b.copy()
-
-        # Optimize Newton steps on the expected log-likelihood over items concurrently
-        # using a boolean active_mask instead of looping over n_items.
-        active_mask = np.ones(n_items, dtype=bool)
-        nodes_sq = nodes * nodes
-
-        for _ in range(25):
-            if not active_mask.any():
-                break
-
-            ai = a_new[active_mask]
-            bi = b_new[active_mask]
-
-            eta = ai[:, None] * nodes[None, :] + bi[:, None]
-            p = _sigmoid(eta)
-
-            n_iq_act = n_iq[active_mask]
-            r_iq_act = r_iq[active_mask]
-
-            w = n_iq_act * p * (1.0 - p)
-            resid = r_iq_act - n_iq_act * p
-
-            g_a = (resid @ nodes) - ridge_a * ai
-            g_b = resid.sum(axis=1) - ridge_b * bi
-
-            h_aa = -(w @ nodes_sq) - ridge_a
-            h_bb = -w.sum(axis=1) - ridge_b
-            h_ab = -(w @ nodes)
-
-            det = h_aa * h_bb - h_ab * h_ab
-            valid = np.abs(det) >= 1e-12
-
-            # Deactivate items with singular Hessian
-            active_mask[active_mask] = valid
-
-            if not valid.any():
-                break
-
-            ai = ai[valid]
-            bi = bi[valid]
-            g_a = g_a[valid]
-            g_b = g_b[valid]
-            h_aa = h_aa[valid]
-            h_bb = h_bb[valid]
-            h_ab = h_ab[valid]
-            det = det[valid]
-
-            da = (h_bb * g_a - h_ab * g_b) / det
-            db = (h_aa * g_b - h_ab * g_a) / det
-
-            ai -= da
-            bi -= db
-            ai = np.clip(ai, 1e-3, 10.0)
-
-            a_new[active_mask] = ai
-            b_new[active_mask] = bi
-
-            converged = (np.abs(da) + np.abs(db)) < 1e-8
-            # Deactivate items that have converged
-            active_mask[active_mask] = ~converged
+        for i in range(n_items):
+            ai, bi = a[i], b[i]
+            # Newton steps on the item's expected log-likelihood over nodes.
+            for _ in range(25):
+                eta = ai * nodes + bi
+                p = _sigmoid(eta)
+                w = n_iq[i] * p * (1.0 - p)
+                resid = r_iq[i] - n_iq[i] * p
+                g_a = float((resid * nodes).sum()) - ridge_a * ai
+                g_b = float(resid.sum()) - ridge_b * bi
+                h_aa = -float((w * nodes * nodes).sum()) - ridge_a
+                h_bb = -float(w.sum()) - ridge_b
+                h_ab = -float((w * nodes).sum())
+                det = h_aa * h_bb - h_ab * h_ab
+                if abs(det) < 1e-12:
+                    break
+                da = (h_bb * g_a - h_ab * g_b) / det
+                db = (h_aa * g_b - h_ab * g_a) / det
+                ai -= da
+                bi -= db
+                ai = float(np.clip(ai, 1e-3, 10.0))
+                if abs(da) + abs(db) < 1e-8:
+                    break
+            a_new[i], b_new[i] = ai, bi
 
         a, b = a_new, b_new
 
