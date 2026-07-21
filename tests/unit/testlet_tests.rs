@@ -167,15 +167,24 @@ fn testlet_no_spurious_ld() {
     };
     let res = fit_testlet(&y, &observed, &tid, n, j, d_n, TestletModel::TwoPl, &cfg).unwrap();
     println!(
-        "no_spurious: converged={} n_iter={} sigma2={:?}",
-        res.converged, res.n_iter, res.sigma2
+        "no_spurious: converged={} reason={} n_iter={}/{} final_delta={:.12e} tol={:.12e} sigma2={:?}",
+        res.converged,
+        res.termination_reason,
+        res.n_iter,
+        cfg.max_iter,
+        res.final_loglik_change,
+        cfg.tol,
+        res.sigma2
     );
     assert!(
         res.converged,
         "testlet fit exhausted {} iterations",
         cfg.max_iter
     );
+    assert_eq!(res.termination_reason, "converged");
     assert!(res.n_iter < cfg.max_iter);
+    assert!(res.final_loglik_change.is_finite());
+    assert!(res.final_loglik_change < cfg.tol);
     assert!(nondecreasing(&res.loglik_trace));
     assert!(
         res.sigma2.iter().all(|&s| s < 0.08),
@@ -326,6 +335,18 @@ fn testlet_validate_rejects_malformed() {
         j,
         d_n,
         &TestletConfig { max_iter: 0, ..d }
+    ));
+    assert!(bad(
+        &y,
+        &obs,
+        &tid,
+        n,
+        j,
+        d_n,
+        &TestletConfig {
+            max_iter: TESTLET_MAX_ITER + 1,
+            ..d
+        }
     ));
     assert!(bad(
         &y,

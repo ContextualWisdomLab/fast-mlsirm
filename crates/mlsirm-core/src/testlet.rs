@@ -49,6 +49,9 @@
 use crate::mmle::{log_sigmoid, sigmoid_stable, GH_NODES, GH_WEIGHTS};
 use crate::quadrature::{gh_rule, SUPPORTED_Q};
 
+/// Upper bound on caller-controlled EM iterations, shared with the Python API.
+const TESTLET_MAX_ITER: usize = 100_000;
+
 /// Within-testlet response model: `Rasch` fixes `a_i = 1`; `TwoPl` frees `a_i`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TestletModel {
@@ -132,8 +135,11 @@ fn validate(
     if n_testlets > n_items {
         return Err("n_testlets must not exceed n_items".into());
     }
-    if cfg.max_iter == 0 || cfg.newton_iter == 0 {
-        return Err("max_iter and newton_iter must be positive".into());
+    if !(1..=TESTLET_MAX_ITER).contains(&cfg.max_iter) {
+        return Err(format!("max_iter must be in 1..={TESTLET_MAX_ITER}"));
+    }
+    if cfg.newton_iter == 0 {
+        return Err("newton_iter must be positive".into());
     }
     if !cfg.tol.is_finite() || cfg.tol < 0.0 {
         return Err("tol must be finite and non-negative".into());
