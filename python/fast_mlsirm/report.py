@@ -156,7 +156,12 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
     if not isinstance(candidates, list):
         raise ValueError("candidates must be a list")
 
-    rows = [row for row in candidates if isinstance(row, dict)]
+    rows = []
+    for row in candidates:
+        if isinstance(row, dict):
+            rows.append(row)
+        if len(rows) >= 100:
+            break
     sections = []
     no_metric_sections = []
     best_section = _metric_section("Best Candidate", best)
@@ -182,7 +187,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     cards = []
-    for key, value in metrics.items():
+    for key, value in list(metrics.items())[:24]:
         cards.append(
             "\n".join(
                 [
@@ -271,11 +276,16 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    numeric_rows = [
-        (index, row, float(row[value_key]))
-        for index, row in enumerate(rows)
-        if _is_number(row.get(value_key))
-    ]
+    numeric_rows = []
+    for index, row in enumerate(rows):
+        val = row.get(value_key)
+        if _is_number(val):
+            try:
+                numeric_rows.append((index, row, float(val)))
+            except (OverflowError, ValueError, TypeError):
+                pass
+        if len(numeric_rows) >= 12:
+            break
     values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
@@ -381,6 +391,8 @@ def _columns(rows: list[dict[str, Any]]) -> list[str]:
         for key in row:
             if key not in ordered:
                 ordered.append(key)
+                if len(ordered) >= 20:
+                    return ordered
     return ordered
 
 
@@ -420,14 +432,17 @@ def _format_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        return str(value)
+        s = str(value)
+        return s if len(s) <= 100 else s[:100] + "..."
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return str(value)
         return f"{value:.4g}"
     if value is None:
         return ""
-    return str(value)
+    s = str(value)
+    return s if len(s) <= 100 else s[:100] + "..."
+
 
 
 def _format_label_value(value: Any) -> str:
@@ -437,11 +452,12 @@ def _format_label_value(value: Any) -> str:
 
 
 def _is_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError, TypeError):
+        return False
 
 
 def _content_security_policy() -> str:
