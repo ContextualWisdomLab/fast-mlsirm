@@ -11,8 +11,16 @@ def test_render_fit_diagnostics_report_has_sections(tmp_path):
     source.write_text(
         json.dumps(
             {
-                "itemfit": {"item_id": [0, 1], "outfit_mnsq": [1.0, 1.2], "observed_count": [4, 4]},
-                "personfit": {"person_id": [0, 1], "outfit_mnsq": [0.9, 1.1], "observed_count": [2, 2]},
+                "itemfit": {
+                    "item_id": [0, 1],
+                    "outfit_mnsq": [1.0, 1.2],
+                    "observed_count": [4, 4],
+                },
+                "personfit": {
+                    "person_id": [0, 1],
+                    "outfit_mnsq": [0.9, 1.1],
+                    "observed_count": [2, 2],
+                },
                 "factorfit": {},
                 "categoryfit": {},
                 "groupfit": {},
@@ -102,7 +110,11 @@ def test_render_report_summarizes_empty_metric_sections(tmp_path):
         json.dumps(
             {
                 "model_fit": {},
-                "itemfit": {"item_id": [0], "outfit_mnsq": [1.0], "observed_count": [4]},
+                "itemfit": {
+                    "item_id": [0],
+                    "outfit_mnsq": [1.0],
+                    "observed_count": [4],
+                },
             }
         ),
         encoding="utf-8",
@@ -178,7 +190,11 @@ def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
         json.dumps(
             {
                 "model_fit": {"loglik": -3.2},
-                "itemfit": {"item_id": ["A"], "outfit_mnsq": [None], "observed_count": [4]},
+                "itemfit": {
+                    "item_id": ["A"],
+                    "outfit_mnsq": [None],
+                    "observed_count": [4],
+                },
             }
         ),
         encoding="utf-8",
@@ -201,7 +217,11 @@ def test_render_table_section_charts_later_numeric_rows(tmp_path):
         json.dumps(
             {
                 "model_fit": {"loglik": -3.2},
-                "itemfit": {"item_id": item_ids, "outfit_mnsq": outfit, "observed_count": [4] * 13},
+                "itemfit": {
+                    "item_id": item_ids,
+                    "outfit_mnsq": outfit,
+                    "observed_count": [4] * 13,
+                },
             }
         ),
         encoding="utf-8",
@@ -253,6 +273,7 @@ def test_render_table_region_has_keyboard_focus_style(tmp_path):
     assert 'tabindex="0"' in html
     assert ".table-wrap:focus-visible" in html
     assert ".table-wrap:focus {" not in html
+    assert "main:focus-visible {" in html
     assert "tbody tr:hover" in html
     assert '<div class="bar-chart" aria-hidden="true">' in html
     assert '<div class="bar-track" aria-hidden="true">' in html
