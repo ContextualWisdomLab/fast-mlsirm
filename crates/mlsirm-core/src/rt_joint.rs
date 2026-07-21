@@ -31,6 +31,9 @@
 
 use crate::quadrature::gh_rule;
 
+/// Upper bound on caller-controlled EM iterations, shared with the other fit APIs.
+const RT_JOINT_MAX_ITER: usize = 100_000;
+
 #[inline]
 fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
@@ -221,8 +224,8 @@ pub fn fit_speed_accuracy_covariance(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if config.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=RT_JOINT_MAX_ITER).contains(&config.max_iter) {
+        return Err(format!("max_iter must be in 1..={RT_JOINT_MAX_ITER}"));
     }
     if !(config.tol.is_finite() && config.tol > 0.0) {
         return Err("tol must be positive and finite".into());

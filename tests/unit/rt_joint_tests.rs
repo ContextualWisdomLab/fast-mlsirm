@@ -109,6 +109,22 @@ fn rejects_every_shape_data_and_control_boundary() {
     assert!(call(
         &response,
         &time,
+        None,
+        &one,
+        &zero,
+        &one,
+        &zero,
+        1,
+        1,
+        SpeedAccuracyConfig {
+            max_iter: RT_JOINT_MAX_ITER + 1,
+            ..base
+        },
+    )
+    .is_err());
+    assert!(call(
+        &response,
+        &time,
         Some(&observed),
         &one,
         &zero,
