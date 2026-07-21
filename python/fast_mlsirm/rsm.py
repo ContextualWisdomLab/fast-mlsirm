@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
+
 
 @dataclass
 class RsmFit:
@@ -62,12 +64,16 @@ def fit_rsm(
 
     if not isinstance(n_cat, (int, type(None))) or isinstance(n_cat, bool):
         raise ValueError("n_cat must be an integer >= 2")
-    if n_cat is not None and n_cat < 2:
-        raise ValueError("n_cat must be an integer >= 2")
+    if n_cat is not None and not (2 <= n_cat <= MAX_POLYTOMOUS_CATEGORIES):
+        raise ValueError(f"n_cat must be an integer in 2..{MAX_POLYTOMOUS_CATEGORIES}")
     if q_theta not in {7, 11, 15, 21, 31, 41}:
         raise ValueError("q_theta must be one of 7, 11, 15, 21, 31, 41")
-    if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
-        raise ValueError("max_iter must be an integer >= 1")
+    if (
+        not isinstance(max_iter, int)
+        or isinstance(max_iter, bool)
+        or not (1 <= max_iter <= MAX_MAX_ITER)
+    ):
+        raise ValueError(f"max_iter must be an integer in 1..{MAX_MAX_ITER}")
     if not np.isfinite(tol) or tol <= 0:
         raise ValueError("tol must be finite and > 0")
 
@@ -92,6 +98,10 @@ def fit_rsm(
         n_cat = int(obs_values.max()) + 1
         if n_cat < 2:
             raise ValueError("responses must contain at least two categories")
+        if n_cat > MAX_POLYTOMOUS_CATEGORIES:
+            raise ValueError(
+                f"responses imply more than {MAX_POLYTOMOUS_CATEGORIES} categories"
+            )
     if obs_values.size and np.any(obs_values >= n_cat):
         raise ValueError(
             f"observed responses must be integer categories in 0..{n_cat - 1}"

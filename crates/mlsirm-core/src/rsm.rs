@@ -28,6 +28,10 @@
 
 use crate::poly::{gpcm_logprobs, solve_small};
 
+const RSM_MAX_CAT: usize = 64;
+const RSM_MAX_ITER: usize = 100_000;
+const RSM_MAX_COUNT_CELLS: usize = 60_000_000;
+
 /// Fitted rating scale model (Andrich, 1978). `item_location` is the per-item
 /// `delta_i`; `thresholds` the `K-1` common category thresholds `tau_k` (centered,
 /// `sum = 0`); `theta` the per-person EAP trait.
@@ -73,14 +77,14 @@ pub fn fit_rsm(
     max_iter: usize,
     tol: f64,
 ) -> Result<RsmResult, String> {
-    if n_cat < 2 {
-        return Err("n_cat must be >= 2".into());
+    if !(2..=RSM_MAX_CAT).contains(&n_cat) {
+        return Err(format!("n_cat must be in 2..={RSM_MAX_CAT}"));
     }
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if max_iter < 1 {
-        return Err("max_iter must be >= 1".into());
+    if !(1..=RSM_MAX_ITER).contains(&max_iter) {
+        return Err(format!("max_iter must be in 1..={RSM_MAX_ITER}"));
     }
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
@@ -108,6 +112,16 @@ pub fn fit_rsm(
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::gh_rule(q_theta)
         .ok_or_else(|| format!("unsupported q_theta {q_theta}"))?;
+    let count_cells = nodes
+        .len()
+        .checked_mul(n_items)
+        .and_then(|cells| cells.checked_mul(n_cat))
+        .ok_or_else(|| "node * item * category count-table size overflows usize".to_string())?;
+    if count_cells > RSM_MAX_COUNT_CELLS {
+        return Err(format!(
+            "count table {count_cells} cells exceeds the cap {RSM_MAX_COUNT_CELLS}"
+        ));
+    }
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
     let qn = nodes.len();
     let kb = n_cat - 1; // number of thresholds

@@ -84,6 +84,8 @@ const MIRT_MAX_NODES: usize = 200_000;
 /// (log P1, log P0, expected trials, expected successes), so this cap bounds aggregate table
 /// memory and must be checked before any of those allocations.
 const MIRT_MAX_NODE_ITEM_CELLS: usize = 60_000_000;
+/// Upper bound on caller-controlled EM iterations.
+const MIRT_MAX_ITER: usize = 100_000;
 
 fn checked_grid_nodes(current: usize, q: usize) -> Result<usize, String> {
     current
@@ -194,8 +196,8 @@ fn validate(
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if cfg.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=MIRT_MAX_ITER).contains(&cfg.max_iter) {
+        return Err(format!("max_iter must be in 1..={MIRT_MAX_ITER}"));
     }
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());

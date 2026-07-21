@@ -7,6 +7,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_AGGREGATE_ITERS, MAX_MAX_ITER, MAX_RESTARTS
+
+
+MAX_MIXTURE_CLASSES = 64
+MAX_MIXTURE_BUFFER_CELLS = 60_000_000
+
 
 @dataclass
 class MixtureFit:
@@ -82,6 +88,33 @@ def fit_mixture(
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
     n_persons, n_items = y.shape
+
+    def bounded_integer(value, name: str, upper: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise ValueError(f"{name} must be an integer in 1..{upper}")
+        result = int(value)
+        if not (1 <= result <= upper):
+            raise ValueError(f"{name} must be an integer in 1..{upper}")
+        return result
+
+    n_classes_int = bounded_integer(n_classes, "n_classes", MAX_MIXTURE_CLASSES)
+    n_starts_int = bounded_integer(n_starts, "n_starts", MAX_RESTARTS)
+    max_iter_int = bounded_integer(max_iter, "max_iter", MAX_MAX_ITER)
+    aggregate_iterations = n_classes_int * n_starts_int * max_iter_int
+    if aggregate_iterations > MAX_AGGREGATE_ITERS:
+        raise ValueError(
+            f"n_classes x n_starts x max_iter ({aggregate_iterations}) exceeds the "
+            f"{MAX_AGGREGATE_ITERS}-iteration mixture budget"
+        )
+    for label, cells in (
+        ("person-class", n_persons * n_classes_int),
+        ("class-item", n_classes_int * n_items),
+    ):
+        if cells > MAX_MIXTURE_BUFFER_CELLS:
+            raise ValueError(
+                f"{label} buffer ({cells} cells) exceeds the "
+                f"{MAX_MIXTURE_BUFFER_CELLS}-cell mixture limit"
+            )
     observed = np.isfinite(y)
     yy = np.where(observed, y, 0.0).reshape(-1)
     res = core.fit_mixture(
@@ -89,10 +122,10 @@ def fit_mixture(
         observed.reshape(-1),
         int(n_persons),
         int(n_items),
-        int(n_classes),
+        n_classes_int,
         str(model),
-        int(n_starts),
-        int(max_iter),
+        n_starts_int,
+        max_iter_int,
         float(tol),
         int(seed),
     )
@@ -103,7 +136,9 @@ def fit_mixture(
         a=np.asarray(res["a"], dtype=np.float64).reshape(c, n_items),
         b=np.asarray(res["b"], dtype=np.float64).reshape(c, n_items),
         pi=np.asarray(res["pi"], dtype=np.float64),
-        class_posterior=np.asarray(res["class_posterior"], dtype=np.float64).reshape(n_persons, c),
+        class_posterior=np.asarray(res["class_posterior"], dtype=np.float64).reshape(
+            n_persons, c
+        ),
         map_class=np.asarray(res["map_class"], dtype=np.int64),
         theta=np.asarray(res["theta"], dtype=np.float64),
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),

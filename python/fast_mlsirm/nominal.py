@@ -10,11 +10,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER, MAX_POLYTOMOUS_CATEGORIES
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 _SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 _MAX_DIMS_GH = 3
 _MAX_DIMS_QMC = 6
+_MAX_NOMINAL_XI_POINTS = 200_000
 
 
 @dataclass
@@ -130,13 +132,17 @@ def fit_nominal(
         return int(numeric)
 
     n_cat_int = _finite_int(n_cat, "n_cat")
-    if n_cat_int < 2:
-        raise ValueError("n_cat must be >= 2")
+    if not (2 <= n_cat_int <= MAX_POLYTOMOUS_CATEGORIES):
+        raise ValueError(f"n_cat must be in 2..{MAX_POLYTOMOUS_CATEGORIES}")
     q_int = _finite_int(q, "q")
     if _gh and q_int not in _SUPPORTED_Q:
         raise ValueError(f"q must be one of {_SUPPORTED_Q}")
     max_iter_int = _finite_int(max_iter, "max_iter")
     xi_points_int = _finite_int(xi_points, "xi_points")
+    if not (1 <= max_iter_int <= MAX_MAX_ITER):
+        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
+    if not _gh and not (1 <= xi_points_int <= _MAX_NOMINAL_XI_POINTS):
+        raise ValueError(f"xi_points must be in 1..{_MAX_NOMINAL_XI_POINTS}")
     # xi_seed is a full-range u64: validate as an exact integer, no float64 round-trip.
     if isinstance(xi_seed, bool) or not isinstance(xi_seed, (int, np.integer)):
         raise ValueError("xi_seed must be a non-negative integer")

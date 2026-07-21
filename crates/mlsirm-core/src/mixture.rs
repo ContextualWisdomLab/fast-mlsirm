@@ -50,6 +50,12 @@
 
 use crate::mmle::{fit_mmle_2pl, log_sigmoid, sigmoid_stable, MmleConfig, GH_NODES, GH_WEIGHTS};
 
+const MIXTURE_MAX_CLASSES: usize = 64;
+const MIXTURE_MAX_STARTS: usize = 1_000;
+const MIXTURE_MAX_ITER: usize = 100_000;
+const MIXTURE_MAX_AGGREGATE_ITERS: usize = 10_000_000;
+const MIXTURE_MAX_BUFFER_CELLS: usize = 60_000_000;
+
 /// Within-class IRT model: `Rasch` fixes `a_ic = 1` (Rost, 1990); `TwoPl` frees `a_ic`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MixtureModel {
@@ -130,11 +136,11 @@ fn validate(
     if n_persons < 1 || n_items < 1 {
         return Err("n_persons and n_items must be >= 1".into());
     }
-    if n_classes < 1 {
-        return Err("n_classes must be >= 1".into());
+    if !(1..=MIXTURE_MAX_CLASSES).contains(&n_classes) {
+        return Err(format!("n_classes must be in 1..={MIXTURE_MAX_CLASSES}"));
     }
-    if cfg.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=MIXTURE_MAX_ITER).contains(&cfg.max_iter) {
+        return Err(format!("max_iter must be in 1..={MIXTURE_MAX_ITER}"));
     }
     // tol == 0.0 is allowed (runs the full max_iter; needed for the C=1 anchor).
     if !cfg.tol.is_finite() || cfg.tol < 0.0 {
@@ -143,8 +149,8 @@ fn validate(
     if cfg.newton_iter == 0 {
         return Err("newton_iter must be positive".into());
     }
-    if cfg.n_starts == 0 {
-        return Err("n_starts must be positive".into());
+    if !(1..=MIXTURE_MAX_STARTS).contains(&cfg.n_starts) {
+        return Err(format!("n_starts must be in 1..={MIXTURE_MAX_STARTS}"));
     }
     if !cfg.ridge_a.is_finite() || cfg.ridge_a < 0.0 {
         return Err("ridge_a must be finite and non-negative".into());
@@ -161,13 +167,34 @@ fn validate(
     if n_classes > u32::MAX as usize {
         return Err("n_classes must fit in the u32 map_class representation".into());
     }
+    let aggregate_iterations = n_classes
+        .checked_mul(cfg.n_starts)
+        .and_then(|work| work.checked_mul(cfg.max_iter))
+        .ok_or_else(|| "n_classes * n_starts * max_iter overflows usize".to_string())?;
+    if aggregate_iterations > MIXTURE_MAX_AGGREGATE_ITERS {
+        return Err(format!(
+            "mixture work {aggregate_iterations} exceeds the cap {MIXTURE_MAX_AGGREGATE_ITERS}"
+        ));
+    }
     let n_cells =
         crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
     let class_items =
         crate::checked_mul_usize(n_classes, n_items, "n_classes * n_items overflows usize")?;
     crate::checked_mul_usize(n_classes, GH_NODES.len(), "class-node size overflows")?;
-    crate::checked_mul_usize(class_items, GH_NODES.len(), "class-item-node overflow")?;
-    crate::checked_mul_usize(n_persons, n_classes, "person-class size overflows")?;
+    let class_item_nodes =
+        crate::checked_mul_usize(class_items, GH_NODES.len(), "class-item-node overflow")?;
+    let person_classes =
+        crate::checked_mul_usize(n_persons, n_classes, "person-class size overflows")?;
+    for (label, cells) in [
+        ("class-item-node", class_item_nodes),
+        ("person-class", person_classes),
+    ] {
+        if cells > MIXTURE_MAX_BUFFER_CELLS {
+            return Err(format!(
+                "{label} buffer {cells} cells exceeds the cap {MIXTURE_MAX_BUFFER_CELLS}"
+            ));
+        }
+    }
     let doubled = crate::checked_mul_usize(class_items, 2, "parameter count overflows")?;
     crate::checked_add_usize(doubled, n_classes - 1, "parameter count overflows")?;
     if y.len() != n_cells || observed.len() != n_cells {

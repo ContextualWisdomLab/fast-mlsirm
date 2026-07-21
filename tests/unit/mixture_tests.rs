@@ -273,6 +273,41 @@ fn mixture_validate_rejects_malformed() {
         }
     )); // newton_iter
     assert!(bad(&y, &obs, 4, 3, 2, &MixtureConfig { n_starts: 0, ..d })); // n_starts
+    assert!(bad(&y, &obs, 4, 3, MIXTURE_MAX_CLASSES + 1, &d));
+    assert!(bad(
+        &y,
+        &obs,
+        4,
+        3,
+        2,
+        &MixtureConfig {
+            max_iter: MIXTURE_MAX_ITER + 1,
+            ..d
+        }
+    ));
+    assert!(bad(
+        &y,
+        &obs,
+        4,
+        3,
+        2,
+        &MixtureConfig {
+            n_starts: MIXTURE_MAX_STARTS + 1,
+            ..d
+        }
+    ));
+    assert!(bad(
+        &y,
+        &obs,
+        4,
+        3,
+        2,
+        &MixtureConfig {
+            n_starts: MIXTURE_MAX_STARTS,
+            max_iter: MIXTURE_MAX_AGGREGATE_ITERS,
+            ..d
+        }
+    ));
     assert!(bad(
         &y,
         &obs,

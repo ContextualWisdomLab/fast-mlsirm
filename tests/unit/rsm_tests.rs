@@ -185,6 +185,8 @@ fn rsm_validate_rejects_malformed() {
     assert!(fit_rsm(&[], None, 0, 1, 2, 21, 10, 1e-6).is_err()); // no persons
     assert!(fit_rsm(&[], None, 1, 0, 2, 21, 10, 1e-6).is_err()); // no items
     assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, 0, 1e-6).is_err()); // no iterations
+    assert!(fit_rsm(&[0, 1], None, 1, 2, RSM_MAX_CAT + 1, 21, 10, 1e-6).is_err());
+    assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, RSM_MAX_ITER + 1, 1e-6).is_err());
     assert!(fit_rsm(&[0, 1], None, 1, 2, 2, 21, 10, f64::INFINITY).is_err());
     let observed = [true, false, true, false];
     assert!(fit_rsm(&[0, 0, 1, 0], Some(&observed), 2, 2, 2, 21, 10, 1e-6).is_err());

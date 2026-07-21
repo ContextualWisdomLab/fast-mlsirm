@@ -23,7 +23,7 @@ import numpy as np
 
 from .config import MAX_LATENT_DIM, VALID_MODELS
 from .estimators.marginal import score_eap
-from .io import _load_json_bounded
+from .io import _atomic_write_text, _load_json_bounded
 from .types import FitResult
 
 SCHEMA_VERSION = 1
@@ -190,9 +190,7 @@ def export_serving_bundle(
             for t in tables
         ]
     if path is not None:
-        Path(path).write_text(
-            json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        _atomic_write_text(path, json.dumps(bundle, ensure_ascii=False, indent=2))
     return bundle
 
 
@@ -389,9 +387,20 @@ def score_respondents(
     zeta = np.array([it["zeta"] for it in items])
     factor_id = np.array([it["factor_id"] for it in items], dtype=np.int64)
     n_dims = bundle["n_dims"]
-    mean, sd = serving_prior(bundle) if prior is None else (
-        np.asarray(prior[0], dtype=float),
-        np.asarray(prior[1], dtype=float),
+    n_persons = y.shape[0]
+    output_cells = n_persons * (2 * n_dims + int(bundle["latent_dim"]) + 2)
+    if output_cells > MAX_SERVING_OUTPUT_CELLS:
+        raise ValueError(
+            f"scoring output size ({output_cells} cells) exceeds the "
+            f"{MAX_SERVING_OUTPUT_CELLS}-cell serving limit"
+        )
+    mean, sd = (
+        serving_prior(bundle)
+        if prior is None
+        else (
+            np.asarray(prior[0], dtype=float),
+            np.asarray(prior[1], dtype=float),
+        )
     )
 
     if method == "eapsum":
@@ -421,7 +430,6 @@ def score_respondents(
         return results
 
     core = _core_module()
-    n_persons = y.shape[0]
     y_filled = np.where(observed, y, 0.0)
     if method == "map":
         if core is None:

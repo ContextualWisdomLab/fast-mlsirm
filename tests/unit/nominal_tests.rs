@@ -599,6 +599,20 @@ fn nominal_validation_sampling_rules_and_missing_paths() {
         1,
         2,
         &NominalConfig {
+            max_iter: NM_MAX_ITER + 1,
+            ..base
+        }
+    )
+    .is_err());
+    assert!(validate(
+        &y,
+        None,
+        &pattern,
+        4,
+        2,
+        1,
+        2,
+        &NominalConfig {
             tol: f64::NAN,
             ..base
         }

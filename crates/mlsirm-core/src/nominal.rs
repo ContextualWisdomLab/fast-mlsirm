@@ -63,6 +63,8 @@ const NM_MAX_DIMS: usize = 3;
 const NM_MAX_DIMS_QMC: usize = 6;
 /// Sanity cap on the number of categories.
 const NM_MAX_CAT: usize = 64;
+/// Upper bound on caller-controlled EM iterations.
+const NM_MAX_ITER: usize = 100_000;
 
 /// Configuration for [`fit_nominal`]. Defaults mirror the compensatory MIRT and `fit_nominal`.
 #[derive(Clone, Copy, Debug)]
@@ -137,8 +139,8 @@ fn validate(
     if !(2..=NM_MAX_CAT).contains(&n_cat) {
         return Err(format!("n_cat must be in 2..={NM_MAX_CAT}; got {n_cat}"));
     }
-    if cfg.max_iter == 0 {
-        return Err("max_iter must be positive".into());
+    if !(1..=NM_MAX_ITER).contains(&cfg.max_iter) {
+        return Err(format!("max_iter must be in 1..={NM_MAX_ITER}"));
     }
     if !cfg.tol.is_finite() || cfg.tol <= 0.0 {
         return Err("tol must be finite and positive".into());

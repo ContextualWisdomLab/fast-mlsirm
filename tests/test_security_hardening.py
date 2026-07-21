@@ -25,7 +25,8 @@ from fast_mlsirm.config import (
 )
 from fast_mlsirm.fit import _compact_population_labels
 from fast_mlsirm.estimators.marginal import fit_gpcm_numpy, score_eap
-from fast_mlsirm.io import load_factor_csv, load_params
+from fast_mlsirm.io import load_factor_csv, load_params, save_fit_diagnostics
+from fast_mlsirm.types import FitDiagnostics
 from fast_mlsirm.validation import validate_judge
 
 
@@ -1154,3 +1155,117 @@ def test_score_eap_rejects_unbounded_explicit_dimensions_before_quadrature():
                 model="MIRT",
                 n_dims=100_000_000,
             )
+
+
+# ---- Current-head Strix: bounded fit controls, outputs, and safe writes ----
+class _CurrentHeadBombCore:
+    def fit_rsm(self, *_args):
+        raise AssertionError("unsafe RSM controls reached the native core")
+
+    def fit_mixture(self, *_args):
+        raise AssertionError("unsafe mixture controls reached the native core")
+
+    def fit_nominal_model(self, *_args):
+        raise AssertionError("unsafe nominal controls reached the native core")
+
+    def fit_2pl(self, *_args):
+        raise AssertionError("unsafe 2PL controls reached the native core")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_cat": MAX_POLYTOMOUS_CATEGORIES + 1},
+        {"max_iter": MAX_MAX_ITER + 1},
+    ],
+)
+def test_rsm_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
+    from fast_mlsirm.rsm import fit_rsm
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
+    with pytest.raises(ValueError, match="n_cat|max_iter"):
+        fit_rsm(np.array([[0.0], [1.0]]), **kwargs)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_classes": 65},
+        {"n_starts": 1_001},
+        {"max_iter": MAX_MAX_ITER + 1},
+        {"n_classes": 2, "n_starts": 1_000, "max_iter": 10_000},
+    ],
+)
+def test_mixture_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
+    from fast_mlsirm.mixture import fit_mixture
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
+    with pytest.raises(ValueError, match="n_classes|n_starts|max_iter|mixture budget"):
+        fit_mixture(np.array([[0.0], [1.0]]), **kwargs)
+
+
+def test_mixture_rejects_aggregate_buffer_before_native(monkeypatch):
+    from fast_mlsirm import mixture
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
+    monkeypatch.setattr(mixture, "MAX_MIXTURE_BUFFER_CELLS", 1)
+    with pytest.raises(ValueError, match="buffer"):
+        mixture.fit_mixture(np.array([[0.0], [1.0]]), n_classes=2)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"n_cat": MAX_POLYTOMOUS_CATEGORIES + 1},
+        {"max_iter": MAX_MAX_ITER + 1},
+        {"node_rule": "qmc", "xi_points": 200_001},
+    ],
+)
+def test_nominal_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
+    from fast_mlsirm.nominal import fit_nominal
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
+    controls = {"n_cat": 2, **kwargs}
+    with pytest.raises(ValueError, match="n_cat|max_iter|xi_points"):
+        fit_nominal(np.array([[0.0], [1.0]]), **controls)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_iter": MAX_MAX_ITER + 1},
+        {"node_rule": "qmc", "xi_points": MAX_XI_POINTS + 1},
+    ],
+)
+def test_2pl_rejects_unbounded_controls_before_native(monkeypatch, kwargs):
+    from fast_mlsirm.twopl import fit_2pl
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: _CurrentHeadBombCore())
+    with pytest.raises(ValueError, match="max_iter|xi_points"):
+        fit_2pl(np.array([[0.0], [1.0]]), **kwargs)
+
+
+@pytest.mark.parametrize("method", ["eap", "map", "eapsum"])
+def test_score_respondents_rejects_unbounded_output_before_core(monkeypatch, method):
+    class BombCore:
+        def __getattr__(self, name):
+            raise AssertionError(f"oversized output reached native core: {name}")
+
+    monkeypatch.setattr(serving, "_core_module", lambda: BombCore())
+    monkeypatch.setattr(serving, "MAX_SERVING_OUTPUT_CELLS", 4)
+    with pytest.raises(ValueError, match="output size"):
+        serving.score_respondents(_bundle(), np.array([[1.0]]), method=method)
+
+
+def test_diagnostics_save_replaces_leaf_symlink_without_overwriting_target(tmp_path):
+    external = tmp_path / "external.txt"
+    external.write_text("do not overwrite", encoding="utf-8")
+    output = tmp_path / "fit_diagnostics.json"
+    output.symlink_to(external)
+    diagnostics = FitDiagnostics(itemfit={}, personfit={}, model_fit={})
+
+    save_fit_diagnostics(diagnostics, tmp_path)
+
+    assert external.read_text(encoding="utf-8") == "do not overwrite"
+    assert output.is_file() and not output.is_symlink()
+    assert json.loads(output.read_text(encoding="utf-8"))["model_fit"] == {}

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .config import MAX_MAX_ITER, MAX_XI_POINTS
 from .models import ConfirmatoryModel, ExploratoryModel, IrtModel, _resolve_model
 
 
@@ -161,6 +162,10 @@ def fit_2pl(
     if _gh and q_int not in _SUPPORTED_Q:
         raise ValueError(f"q must be one of {_SUPPORTED_Q}")
     xi_points_int = _finite_integer(xi_points, "xi_points")
+    if not (1 <= max_iter_int <= MAX_MAX_ITER):
+        raise ValueError(f"max_iter must be in 1..{MAX_MAX_ITER}")
+    if not _gh and not (1 <= xi_points_int <= MAX_XI_POINTS):
+        raise ValueError(f"xi_points must be in 1..{MAX_XI_POINTS}")
     # xi_seed is a full-range u64 (default 0x9E37_79B9_7F4A_7C15): validate it as an EXACT integer
     # WITHOUT a float64 round-trip. _finite_integer casts through float(), which silently rounds any
     # value >= 2^53 (the default drifts, breaking Rust<->Python parity) and overflows u64 near the

@@ -933,6 +933,11 @@ fn mirt_validation_covers_every_scalar_shape_and_item_boundary() {
         ..base
     };
     assert!(validate(&y, &observed, &pattern, 2, 1, 1, &cfg).is_err());
+    let cfg = TwoPlConfig {
+        max_iter: MIRT_MAX_ITER + 1,
+        ..base
+    };
+    assert!(validate(&y, &observed, &pattern, 2, 1, 1, &cfg).is_err());
     for tol in [0.0, f64::NAN, f64::INFINITY] {
         let cfg = TwoPlConfig { tol, ..base };
         assert!(validate(&y, &observed, &pattern, 2, 1, 1, &cfg).is_err());
