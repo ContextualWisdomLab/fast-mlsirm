@@ -575,21 +575,40 @@ def _binary_stratum_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
+
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids[None, :]).astype(np.float64)
+    obs_f64 = observed.astype(np.float64)
+
+    counts = strata_mask.T @ obs_f64.sum(axis=1)
+    scores = strata_mask.T @ (y * obs_f64).sum(axis=1)
+    expecteds = strata_mask.T @ (prob * obs_f64).sum(axis=1)
+    raws = strata_mask.T @ (residual * obs_f64).sum(axis=1)
+    varsums = strata_mask.T @ (variance * obs_f64).sum(axis=1)
+    res_sqs = strata_mask.T @ (residual * residual * obs_f64).sum(axis=1)
+    chisqs = strata_mask.T @ (pearson_sq * obs_f64).sum(axis=1)
+    lls = strata_mask.T @ (loglik * obs_f64).sum(axis=1)
+
     rows = []
-    for value in np.unique(ids):
-        rows.append(
-            _binary_scope_row(
-                float(value),
-                ids[:, None] == value,
-                y,
-                observed,
-                prob,
-                variance,
-                residual,
-                pearson_sq,
-                loglik,
-            )
-        )
+    for v_idx in range(len(unique_ids)):
+        c = float(counts[v_idx])
+        vs = float(varsums[v_idx])
+        raw = float(raws[v_idx])
+        ch = float(chisqs[v_idx])
+        ll = float(lls[v_idx])
+        rows.append((
+            float(unique_ids[v_idx]),
+            c,
+            float(scores[v_idx]),
+            float(expecteds[v_idx]),
+            raw,
+            raw / float(np.sqrt(max(vs, 1e-12))),
+            float(res_sqs[v_idx]) / max(vs, 1e-12),
+            ch / max(c, 1.0),
+            ll,
+            -2.0 * ll,
+            ch,
+        ))
     return _binary_scope_table(id_name, rows)
 
 
@@ -608,30 +627,42 @@ def _binary_stratum_item_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
+
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids[None, :]).astype(np.float64)
+    obs_f64 = observed.astype(np.float64)
+
+    counts = strata_mask.T @ obs_f64
+    scores = strata_mask.T @ (y * obs_f64)
+    expecteds = strata_mask.T @ (prob * obs_f64)
+    raws = strata_mask.T @ (residual * obs_f64)
+    varsums = strata_mask.T @ (variance * obs_f64)
+    res_sqs = strata_mask.T @ (residual * residual * obs_f64)
+    chisqs = strata_mask.T @ (pearson_sq * obs_f64)
+    lls = strata_mask.T @ (loglik * obs_f64)
+
     rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(y.shape[1]):
-            scope = np.zeros_like(observed, dtype=bool)
-            scope[row_mask, item] = True
-            if np.any(observed & scope):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_binary_scope_row(
-                            0.0,
-                            scope,
-                            y,
-                            observed,
-                            prob,
-                            variance,
-                            residual,
-                            pearson_sq,
-                            loglik,
-                        )[1:],
-                    )
-                )
+    v_idx, j_idx = np.nonzero(counts > 0)
+    for v, j in zip(v_idx, j_idx):
+        c = float(counts[v, j])
+        vs = float(varsums[v, j])
+        raw = float(raws[v, j])
+        ch = float(chisqs[v, j])
+        ll = float(lls[v, j])
+        rows.append((
+            float(unique_ids[v]),
+            float(j),
+            c,
+            float(scores[v, j]),
+            float(expecteds[v, j]),
+            raw,
+            raw / float(np.sqrt(max(vs, 1e-12))),
+            float(res_sqs[v, j]) / max(vs, 1e-12),
+            ch / max(c, 1.0),
+            ll,
+            -2.0 * ll,
+            ch,
+        ))
     return _binary_scope_item_table(id_name, rows)
 
 
@@ -730,12 +761,28 @@ def _categorical_stratum_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
+
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids[None, :]).astype(np.float64)
+    obs_f64 = observed.astype(np.float64)
+
+    counts = strata_mask.T @ obs_f64.sum(axis=1)
+    lls = strata_mask.T @ (entry_loglik * obs_f64).sum(axis=1)
+    chisqs = strata_mask.T @ (entry_chisq * obs_f64).sum(axis=1)
+
     rows = []
-    for value in np.unique(ids):
-        where = observed & (ids[:, None] == value)
-        rows.append(
-            _categorical_scope_row(float(value), where, entry_loglik, entry_chisq)
-        )
+    for v_idx in range(len(unique_ids)):
+        c = float(counts[v_idx])
+        ll = float(lls[v_idx])
+        ch = float(chisqs[v_idx])
+        rows.append((
+            float(unique_ids[v_idx]),
+            c,
+            ll,
+            -2.0 * ll,
+            ch,
+            ch / max(c, 1.0),
+        ))
     return _categorical_scope_table(id_name, rows)
 
 
@@ -750,22 +797,30 @@ def _categorical_stratum_item_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
+
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids[None, :]).astype(np.float64)
+    obs_f64 = observed.astype(np.float64)
+
+    counts = strata_mask.T @ obs_f64
+    lls = strata_mask.T @ (entry_loglik * obs_f64)
+    chisqs = strata_mask.T @ (entry_chisq * obs_f64)
+
     rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(observed.shape[1]):
-            where = np.zeros_like(observed, dtype=bool)
-            where[row_mask, item] = observed[row_mask, item]
-            if np.any(where):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
-                            1:
-                        ],
-                    )
-                )
+    v_idx, j_idx = np.nonzero(counts > 0)
+    for v, j in zip(v_idx, j_idx):
+        c = float(counts[v, j])
+        ll = float(lls[v, j])
+        ch = float(chisqs[v, j])
+        rows.append((
+            float(unique_ids[v]),
+            float(j),
+            c,
+            ll,
+            -2.0 * ll,
+            ch,
+            ch / max(c, 1.0),
+        ))
     return _categorical_scope_item_table(id_name, rows)
 
 

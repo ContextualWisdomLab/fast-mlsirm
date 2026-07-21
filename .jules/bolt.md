@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Vectorized nested looping over groups and items
+**Learning:** In diagnostics aggregation functions (like `_binary_stratum_item_fit` or `_categorical_stratum_item_fit`), iterating over unique group IDs (strata) and then iterating over each item dimension creates a highly inefficient nested Python loop structure that heavily relies on boolean index slicing (`where = observed & (ids[:, None] == value)`).
+**Action:** Replace nested loops across unique group IDs and item dimensions with 2D mapping mask matrix multiplications (`@`). Convert strata IDs into a 2D boolean float mask (`strata_mask.T` of shape `V x N`, where `V` is the number of unique strata), and then multiply by the data arrays (of shape `N x J`). For example, `counts = strata_mask.T @ observed.astype(np.float64)` directly computes the `V x J` output matrix without any Python loops or boolean slicing allocations. Use `np.nonzero` or zip over non-zero elements to format the output.
