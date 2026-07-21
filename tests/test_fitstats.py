@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import fast_mlsirm.fitstats as fitstats_module
 import numpy as np
 import pytest
 
@@ -11,6 +14,7 @@ from fast_mlsirm.fitstats import (
     benjamini_hochberg,
     chi2_sf,
     _lord_wingersky,
+    empirical_reliability,
     person_fit,
     s_x2,
     select_items,
@@ -34,6 +38,36 @@ def test_benjamini_hochberg_known_case():
     p_with_nan = np.array([0.001, np.nan, 0.9])
     r2 = benjamini_hochberg(p_with_nan, q=0.05)
     assert r2[0] and not r2[2]
+
+
+def test_empirical_reliability_python_wrapper():
+    theta = np.array([[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    theta_sd = np.array([[0.5, 1.0]] * 4)
+    result = SimpleNamespace(
+        params=SimpleNamespace(theta=theta),
+        population={"theta_sd": theta_sd},
+    )
+
+    reliability = empirical_reliability(result)
+
+    np.testing.assert_allclose(reliability, [5.0 / 6.0, 0.0])
+
+
+def test_empirical_reliability_requires_core_and_marginal_sd(monkeypatch):
+    theta = np.zeros((2, 1))
+    result = SimpleNamespace(params=SimpleNamespace(theta=theta), population=None)
+
+    with pytest.raises(ValueError, match="marginal fit with theta_sd"):
+        empirical_reliability(result)
+
+    result.population = {}
+    with pytest.raises(ValueError, match="marginal fit with theta_sd"):
+        empirical_reliability(result)
+
+    result.population = {"theta_sd": np.ones_like(theta)}
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: None)
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        empirical_reliability(result)
 
 
 def test_lord_wingersky_matches_enumeration():
