@@ -1325,12 +1325,13 @@ pub fn tcc_drift(
 #[path = "../../../tests/unit/fitstats_batch3_tests.rs"]
 mod batch3_tests;
 
-/// Chen & Thissen (1997) local-dependence indices for item pairs: the
-/// standardized (signed) LD X2 — the pairwise 2x2 chi-square against the
-/// model-implied joint probabilities, given the sign of the observed-vs-
-/// expected association, plus the G2 variant. Values with |standardized|
-/// above ~10 (the X2 scale) or repeated same-sign clusters indicate local
-/// dependence the latent structure does not absorb.
+/// Chen & Thissen (1997) local-dependence indices for item pairs: the signed
+/// LD X2 — the pairwise 2x2 Pearson chi-square against the model-implied joint
+/// probabilities, given the sign of the observed-vs-expected phi correlation —
+/// plus the signed likelihood-ratio G2 variant. These are the signed raw X2/G2
+/// scales, not standard-normal transforms. Values above about 10 on the X2
+/// scale or repeated same-sign clusters indicate local dependence the latent
+/// structure does not absorb.
 ///
 /// # References (APA 7th ed.)
 ///
@@ -1342,6 +1343,15 @@ pub struct LdIndexResult {
     pub x2_signed: Vec<f64>,
     /// Upper-triangle signed G2 per pair.
     pub g2_signed: Vec<f64>,
+}
+
+fn phi_2x2(p11: f64, p10: f64, p01: f64, p00: f64) -> Option<f64> {
+    let denominator = ((p11 + p10) * (p01 + p00) * (p11 + p01) * (p10 + p00)).sqrt();
+    if denominator.is_finite() && denominator > 0.0 {
+        Some((p11 * p00 - p10 * p01) / denominator)
+    } else {
+        None
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1375,15 +1385,15 @@ pub fn ld_indices(
     let mut g2_signed = Vec::with_capacity(n_pairs);
     for i in 0..n_items {
         for j in (i + 1)..n_items {
-            let (mut p11, mut p10, mut p01) = (0.0_f64, 0.0_f64, 0.0_f64);
+            let (mut p11, mut p10, mut p01, mut p00) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
             for c in 0..cell {
                 let pi = probs[i * cell + c];
                 let pj = probs[j * cell + c];
                 p11 += weights[c] * pi * pj;
                 p10 += weights[c] * pi * (1.0 - pj);
                 p01 += weights[c] * (1.0 - pi) * pj;
+                p00 += weights[c] * (1.0 - pi) * (1.0 - pj);
             }
-            let p00 = (1.0 - p11 - p10 - p01).max(1e-12);
             let (mut o11, mut o10, mut o01, mut o00, mut n) =
                 (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
             for p in 0..n_persons {
@@ -1407,6 +1417,13 @@ pub fn ld_indices(
                 g2_signed.push(f64::NAN);
                 continue;
             }
+            let observed_phi = phi_2x2(o11 / n, o10 / n, o01 / n, o00 / n);
+            let expected_phi = phi_2x2(p11, p10, p01, p00);
+            let (Some(observed_phi), Some(expected_phi)) = (observed_phi, expected_phi) else {
+                x2_signed.push(f64::NAN);
+                g2_signed.push(f64::NAN);
+                continue;
+            };
             let (mut x2, mut g2) = (0.0_f64, 0.0_f64);
             for (o, e) in [(o11, p11), (o10, p10), (o01, p01), (o00, p00)] {
                 let expc = (e * n).max(1e-9);
@@ -1415,9 +1432,13 @@ pub fn ld_indices(
                     g2 += 2.0 * o * (o / expc).ln();
                 }
             }
-            // sign: direction of the observed-vs-expected association
-            // (positive when the pair covaries beyond the model)
-            let sign = if (o11 / n - p11) >= 0.0 { 1.0 } else { -1.0 };
+            // Chen-Thissen direction: compare the phi correlations of the
+            // observed and model-implied 2x2 tables, not a single cell.
+            let sign = if observed_phi >= expected_phi {
+                1.0
+            } else {
+                -1.0
+            };
             x2_signed.push(sign * x2);
             g2_signed.push(sign * g2);
         }

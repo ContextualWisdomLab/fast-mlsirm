@@ -138,3 +138,65 @@ fn ld_indices_flag_a_dependent_pair() {
     let pair_23 = (n_items - 1) + (n_items - 2) + 0; // (2,3) index in triangle
     assert!(res.x2_signed[pair_23].abs() < 50.0);
 }
+
+#[test]
+fn ld_indices_sign_follows_phi_correlation_not_the_11_cell() {
+    let alpha = vec![2.0_f64.ln(); 2];
+    let b = vec![0.0; 2];
+    let zeta = vec![0.0; 2];
+    let fid = vec![0usize; 2];
+    let bank = two_item_bank(&alpha, &b, &zeta, &fid);
+
+    // The fitted model has equal item marginals and positive phi.  This table
+    // has a larger 11 proportion than the model but phi = 0, so Chen-Thissen's
+    // direction is negative even though the isolated 11-cell residual is positive.
+    let mut y = Vec::with_capacity(200);
+    for (yi, yj, count) in [(1.0, 1.0, 45), (1.0, 0.0, 45), (0.0, 1.0, 5), (0.0, 0.0, 5)] {
+        for _ in 0..count {
+            y.extend_from_slice(&[yi, yj]);
+        }
+    }
+    let observed = vec![true; y.len()];
+    let res = ld_indices(
+        &bank,
+        &y,
+        &observed,
+        100,
+        &PriorSpec::standard(1),
+        41,
+        XiRule::GaussHermite { q_xi: 7 },
+    )
+    .unwrap();
+
+    assert!(
+        res.x2_signed[0] < 0.0,
+        "observed phi is below model phi, so LD X2 must be negative: {:?}",
+        res.x2_signed
+    );
+    assert!(res.g2_signed[0] < 0.0);
+}
+
+#[test]
+fn ld_indices_returns_nan_when_phi_is_undefined() {
+    let alpha = vec![2.0_f64.ln(); 2];
+    let b = vec![0.0; 2];
+    let zeta = vec![0.0; 2];
+    let fid = vec![0usize; 2];
+    let bank = two_item_bank(&alpha, &b, &zeta, &fid);
+    let y = vec![0.0; 40];
+    let observed = vec![true; y.len()];
+
+    let res = ld_indices(
+        &bank,
+        &y,
+        &observed,
+        20,
+        &PriorSpec::standard(1),
+        41,
+        XiRule::GaussHermite { q_xi: 7 },
+    )
+    .unwrap();
+
+    assert!(res.x2_signed[0].is_nan());
+    assert!(res.g2_signed[0].is_nan());
+}
