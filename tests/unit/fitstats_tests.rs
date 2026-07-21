@@ -139,6 +139,113 @@ fn sx2_rejects_non_dichotomous_responses() {
 }
 
 #[test]
+fn sx2_rejects_malformed_bank_controls_and_weights() {
+    let (alpha, b, zeta, mut fid, y, observed, _, _) = toy_bank_data();
+    fid.pop();
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let err = s_x2(
+        &bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config::default(),
+        None,
+    )
+    .err()
+    .expect("expected malformed bank error");
+    assert!(err.contains("inconsistent lengths"), "got: {err}");
+
+    let valid_fid = vec![0usize; b.len()];
+    let valid_bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &valid_fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let bad_weight = vec![0.5; 2000];
+    let err = s_x2(
+        &valid_bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config::default(),
+        Some(&bad_weight),
+    )
+    .err()
+    .expect("expected invalid weight error");
+    assert!(err.contains("0/1"), "got: {err}");
+
+    let err = s_x2(
+        &valid_bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config {
+            fdr_q: f64::NAN,
+            ..Default::default()
+        },
+        None,
+    )
+    .err()
+    .expect("expected invalid fdr error");
+    assert!(err.contains("fdr_q"), "got: {err}");
+}
+
+#[test]
+fn sx2_extreme_item_probabilities_remain_finite() {
+    let (alpha, _b, zeta, fid, mut y, observed, _, _) = toy_bank_data();
+    let b = vec![-1000.0; alpha.len()];
+    for (index, value) in y.iter_mut().enumerate() {
+        *value = ((index.wrapping_mul(17).wrapping_add(3)) % 5 < 2) as u8 as f64;
+    }
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let result = s_x2(
+        &bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config::default(),
+        None,
+    )
+    .unwrap();
+    assert!(result.statistic.iter().all(|value| value.is_finite()));
+    assert!(result
+        .rms_residual
+        .iter()
+        .zip(&result.n_score_groups)
+        .all(|(value, &groups)| value.is_finite() || groups == 0));
+}
+
+#[test]
 fn infit_outfit_rejects_wrong_theta_length() {
     let (alpha, b, zeta, fid, y, observed, _, xi) = toy_bank_data();
     let bank = ItemBank {

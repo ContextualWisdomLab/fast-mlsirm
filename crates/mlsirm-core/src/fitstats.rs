@@ -229,7 +229,8 @@ fn icc_nodes(
                         }
                     }
                 }
-                probs[i * cell + c] = 1.0 / (1.0 + (-eta).exp());
+                let bounded_eta = eta.clamp(-700.0, 700.0);
+                probs[i * cell + c] = 1.0 / (1.0 + (-bounded_eta).exp());
             }
         }
     }
@@ -256,8 +257,20 @@ pub fn s_x2(
     cfg: &SX2Config,
     person_weight: Option<&[f64]>,
 ) -> Result<SX2Result, String> {
-    let n_items = bank.b.len();
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
+    let n_items = validate_bank(bank)?;
+    validate_prior(prior, bank.n_dims)?;
+    if !cfg.min_expected.is_finite() || cfg.min_expected <= 0.0 {
+        return Err("min_expected must be finite and positive".into());
+    }
+    if !cfg.fdr_q.is_finite() || cfg.fdr_q <= 0.0 || cfg.fdr_q > 1.0 {
+        return Err("fdr_q must be finite and in (0, 1]".into());
+    }
+    if !cfg.min_effect.is_finite() || cfg.min_effect < 0.0 {
+        return Err("min_effect must be finite and non-negative".into());
+    }
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != n_cells || observed.len() != y.len() {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
     // The summed-score table is indexed by `sum(y as usize)` and sized n_d+1, so a
@@ -272,6 +285,11 @@ pub fn s_x2(
     if let Some(w) = person_weight {
         if w.len() != n_persons {
             return Err("person_weight length must match n_persons".into());
+        }
+        if w.iter()
+            .any(|&value| !value.is_finite() || (value != 0.0 && value != 1.0))
+        {
+            return Err("person_weight must contain only finite 0/1 values".into());
         }
     }
     let (probs, weights, _theta, cell) = icc_nodes(bank, prior, cfg.q_theta, cfg.xi_rule)?;
@@ -352,12 +370,17 @@ pub fn s_x2(
                 let num: f64 = (0..cell)
                     .map(|c| p_flat[li * cell + c] * s_rest[(s - 1) * cell + c] * weights[c])
                     .sum();
-                e[s] = num / denom[s];
+                if denom[s] > 0.0 {
+                    e[s] = num / denom[s];
+                }
             }
             // collapse adjacent score groups to the minimum expected count
             let mut groups: Vec<(f64, f64, f64)> = Vec::new();
             let (mut acc_n, mut acc_r, mut acc_e) = (0.0_f64, 0.0_f64, 0.0_f64);
             for s in 1..n_d {
+                if !e[s].is_finite() {
+                    continue;
+                }
                 acc_n += obs_n[s];
                 acc_r += obs_r[li][s];
                 acc_e += obs_n[s] * e[s];
@@ -380,7 +403,13 @@ pub fn s_x2(
             let (mut x2, mut n_grp) = (0.0_f64, 0usize);
             let (mut rss, mut n_tot) = (0.0_f64, 0.0_f64);
             for &(gn, gr, ge) in &groups {
+                if gn <= 0.0 {
+                    continue;
+                }
                 let e_prop = ge / gn;
+                if e_prop <= 0.0 || e_prop >= 1.0 {
+                    continue;
+                }
                 let o_prop = gr / gn;
                 x2 += gn * (o_prop - e_prop) * (o_prop - e_prop) / (e_prop * (1.0 - e_prop));
                 rss += gn * (o_prop - e_prop) * (o_prop - e_prop);

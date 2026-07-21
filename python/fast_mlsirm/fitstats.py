@@ -32,6 +32,50 @@ from .estimators.marginal import _gh, _xi_grid
 
 MAX_PERSON_FIT_REPLICATES = 10_000
 MAX_PERSON_FIT_WORK_CELLS = 200_000_000
+_SUPPORTED_QUADRATURE = (7, 11, 15, 21, 31, 41)
+
+
+def _validate_sx2_controls(
+    q_theta, q_xi, min_expected, fdr_q, min_effect
+) -> tuple[int, int, float, float, float]:
+    quadrature = []
+    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or int(value) not in _SUPPORTED_QUADRATURE
+        ):
+            raise ValueError(f"{name} must be one of {_SUPPORTED_QUADRATURE}")
+        quadrature.append(int(value))
+
+    numeric = []
+    for name, value in (
+        ("min_expected", min_expected),
+        ("fdr_q", fdr_q),
+        ("min_effect", min_effect),
+    ):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError(f"{name} must be a finite number")
+        converted = float(value)
+        if not np.isfinite(converted):
+            raise ValueError(f"{name} must be a finite number")
+        numeric.append(converted)
+    min_expected_value, fdr_q_value, min_effect_value = numeric
+    if min_expected_value <= 0.0:
+        raise ValueError("min_expected must be positive")
+    if not 0.0 < fdr_q_value <= 1.0:
+        raise ValueError("fdr_q must be in (0, 1]")
+    if min_effect_value < 0.0:
+        raise ValueError("min_effect must be non-negative")
+    return (
+        quadrature[0],
+        quadrature[1],
+        min_expected_value,
+        fdr_q_value,
+        min_effect_value,
+    )
 
 
 def _core_module():
@@ -344,26 +388,63 @@ def s_x2(
     dichotomous item response theory models. *Applied Psychological
     Measurement, 24*(1), 50–64. https://doi.org/10.1177/01466216000241003
     """
+    (
+        q_theta,
+        q_xi,
+        min_expected,
+        fdr_q,
+        min_effect,
+    ) = _validate_sx2_controls(q_theta, q_xi, min_expected, fdr_q, min_effect)
+    try:
+        y0 = np.asarray(responses, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("responses must be a 2-D numeric array") from exc
+    if y0.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y0.shape
+    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    if d_of_i.shape != (n_items,):
+        raise ValueError("factor_id length must match the number of response items")
+    observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
+    if observed0.shape != y0.shape:
+        raise ValueError("mask shape must match responses")
+    if np.any(observed0 & (~np.isfinite(y0) | ((y0 != 0.0) & (y0 != 1.0)))):
+        raise ValueError("observed responses must be dichotomous (0/1)")
+    if person_weight is None:
+        weight = np.ones(n_persons)
+    else:
+        weight = np.asarray(person_weight, dtype=float)
+        if weight.shape != (n_persons,):
+            raise ValueError("person_weight must have length n_persons")
+        if np.any(~np.isfinite(weight)) or np.any((weight != 0.0) & (weight != 1.0)):
+            raise ValueError("person_weight must contain only finite 0/1 values")
+
     core = _core_module()
     if core is not None and prior_mean is None:
-        y0 = np.asarray(responses, dtype=float)
-        observed0 = ~np.isnan(y0) if mask is None else np.asarray(mask, dtype=bool)
-        d_of_i, _fid_ndims = _validate_factor_id(factor_id)
         n_dims = int(d_of_i.max()) + 1
         bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
         res = core.s_x2_stat(
             np.where(observed0, y0, 0.0).ravel(),
             observed0.ravel(),
             int(y0.shape[0]),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            np.zeros(n_dims), np.ones(n_dims),
-            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
-            min_expected=float(min_expected), fdr_q=float(fdr_q),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
+            min_expected=float(min_expected),
+            fdr_q=float(fdr_q),
             min_effect=float(min_effect),
-            person_weight=None
-            if person_weight is None
-            else np.asarray(person_weight, dtype=np.float64),
+            person_weight=None if person_weight is None else weight,
         )
         return SX2Result(
             statistic=np.asarray(res["statistic"]),
@@ -373,14 +454,9 @@ def s_x2(
             n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
             rms_residual=np.asarray(res["rms_residual"]),
         )
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    if mask is None:
-        y = np.where(observed, y, 0.0)
-    n_persons, n_items = y.shape
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    observed = observed0
+    y = np.where(observed, y0, 0.0)
     n_dims = int(d_of_i.max()) + 1
-    weight = np.ones(n_persons) if person_weight is None else np.asarray(person_weight, float)
 
     probs, t_w, x_w, _ = _icc_grid(
         params, d_of_i, model, q_theta, q_xi, eps_distance, prior_mean
@@ -430,7 +506,11 @@ def s_x2(
                 acc_n += obs_n[s_score]
                 acc_r += obs_r[s_score]
                 acc_e += obs_n[s_score] * e[s_score]
-                if acc_n > 0 and acc_e >= min_expected and (acc_n - acc_e) >= min_expected:
+                if (
+                    acc_n > 0
+                    and acc_e >= min_expected
+                    and (acc_n - acc_e) >= min_expected
+                ):
                     groups.append((acc_n, acc_r, acc_e))
                     acc_n, acc_r, acc_e = 0.0, 0.0, 0.0
             if acc_n > 0 and groups:

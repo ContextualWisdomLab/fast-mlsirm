@@ -120,6 +120,72 @@ def test_sx2_flags_misfitting_item_and_spares_good_ones():
     assert out.flagged_bh[others].mean() < 0.5
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"q_theta": 21.5}, "q_theta"),
+        ({"q_xi": True}, "q_xi"),
+        ({"min_expected": 0.0}, "min_expected"),
+        ({"fdr_q": np.nan}, "fdr_q"),
+        ({"min_effect": -0.1}, "min_effect"),
+        ({"person_weight": np.array([1.0, 0.5, 1.0])}, "person_weight"),
+    ],
+)
+def test_sx2_rejects_unsafe_controls_before_native(monkeypatch, kwargs, match):
+    class BombCore:
+        def s_x2_stat(self, *_args, **_kwargs):
+            raise AssertionError("unsafe S-X2 inputs reached the native core")
+
+    y = np.zeros((3, 4))
+    factor_id = np.zeros(4, dtype=np.int64)
+    params = SimpleNamespace(
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        zeta=np.zeros((4, 1)),
+        tau=-30.0,
+    )
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match=match):
+        s_x2(y, factor_id, params, "MIRT", **kwargs)
+
+
+def test_sx2_rejects_factor_length_mismatch_before_native(monkeypatch):
+    class BombCore:
+        def s_x2_stat(self, *_args, **_kwargs):
+            raise AssertionError("unsafe S-X2 inputs reached the native core")
+
+    params = SimpleNamespace(
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        zeta=np.zeros((4, 1)),
+        tau=-30.0,
+    )
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="factor_id length"):
+        s_x2(np.zeros((3, 4)), np.zeros(3, dtype=np.int64), params, "MIRT")
+
+
+def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
+    if fitstats_module._core_module() is None:
+        pytest.skip("compiled core is unavailable")
+    rng = np.random.default_rng(29)
+    y = (rng.random((100, 6)) < 0.5).astype(float)
+    factor_id = np.zeros(6, dtype=np.int64)
+    params = SimpleNamespace(
+        alpha=np.zeros(6),
+        b=np.full(6, -1000.0),
+        zeta=np.zeros((6, 1)),
+        tau=-30.0,
+    )
+    native = s_x2(y, factor_id, params, "MIRT")
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: None)
+    numpy_reference = s_x2(y, factor_id, params, "MIRT")
+    assert np.all(np.isfinite(native.statistic))
+    np.testing.assert_allclose(native.statistic, numpy_reference.statistic)
+    np.testing.assert_allclose(native.rms_residual, numpy_reference.rms_residual)
+    np.testing.assert_array_equal(native.n_score_groups, numpy_reference.n_score_groups)
+
+
 def test_person_fit_flags_random_responders():
     y, fid, theta = _simulate_2pl(seed=4)
     rng = np.random.default_rng(42)
