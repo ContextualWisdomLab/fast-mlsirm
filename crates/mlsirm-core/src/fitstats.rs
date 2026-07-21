@@ -18,7 +18,10 @@
 
 use crate::model_exec_flags;
 use crate::nodes::{build_xi_nodes, XiRule};
-use crate::scoring::{lord_wingersky, validate_bank, validate_prior, ItemBank, PriorSpec};
+use crate::scoring::{
+    lord_wingersky, validate_bank, validate_dichotomous_responses, validate_prior, ItemBank,
+    PriorSpec,
+};
 
 fn at_least_tiny(value: f64, tiny: f64) -> f64 {
     if value.abs() < tiny {
@@ -471,11 +474,9 @@ pub fn person_fit(
     flag_threshold: f64,
 ) -> Result<PersonFitResult, String> {
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
-    let n_items = bank.b.len();
+    let n_items = validate_bank(bank)?;
     let (n_dims, latent_dim) = (bank.n_dims, bank.latent_dim);
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
-    }
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     if theta.len() != n_persons * n_dims || xi.len() != n_persons * latent_dim {
         return Err("theta/xi shapes must match n_persons".into());
     }
@@ -583,10 +584,8 @@ pub fn infit_outfit(
     xi: &[f64],
 ) -> Result<InfitOutfit, String> {
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
-    let n_items = bank.b.len();
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
-    }
+    let n_items = validate_bank(bank)?;
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     if theta.len() != n_persons * bank.n_dims || xi.len() != n_persons * bank.latent_dim {
         return Err(
             "theta/xi must have lengths n_persons * n_dims / n_persons * latent_dim".into(),

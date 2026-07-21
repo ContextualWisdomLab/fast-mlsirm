@@ -15,6 +15,7 @@ from fast_mlsirm.fitstats import (
     chi2_sf,
     _lord_wingersky,
     empirical_reliability,
+    infit_outfit,
     person_fit,
     s_x2,
     select_items,
@@ -200,6 +201,33 @@ def test_person_fit_flags_random_responders():
     m = np.nanmean(pf.lz_star[normal, 0])
     s = np.nanstd(pf.lz_star[normal, 0])
     assert abs(m) < 0.35 and 0.6 < s < 1.6
+
+
+@pytest.mark.parametrize("diagnostic", [person_fit, infit_outfit])
+def test_person_diagnostics_reject_invalid_inputs_before_native(monkeypatch, diagnostic):
+    class BombCore:
+        def __getattr__(self, _name):
+            raise AssertionError("invalid diagnostic inputs reached the native core")
+
+    params = SimpleNamespace(
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        zeta=np.zeros((4, 1)),
+        tau=-30.0,
+        theta=np.zeros((3, 1)),
+        xi=np.zeros((3, 1)),
+    )
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+
+    with pytest.raises(ValueError, match="factor_id length"):
+        diagnostic(
+            np.zeros((3, 4)), np.zeros(3, dtype=np.int64), params, "MIRT"
+        )
+
+    nonbinary = np.zeros((3, 4))
+    nonbinary[0, 0] = 2.0
+    with pytest.raises(ValueError, match="0 or 1"):
+        diagnostic(nonbinary, np.zeros(4, dtype=np.int64), params, "MIRT")
 
 
 def test_select_items_removes_sparse_and_scrambled():

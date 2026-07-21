@@ -267,6 +267,64 @@ fn infit_outfit_rejects_wrong_theta_length() {
 }
 
 #[test]
+fn person_diagnostics_reject_malformed_bank_and_non_dichotomous_responses() {
+    let (alpha, b, zeta, fid, mut y, observed, theta, xi) = toy_bank_data();
+    let malformed_bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid[..fid.len() - 1],
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    for err in [
+        person_fit(
+            &malformed_bank,
+            &y,
+            &observed,
+            2000,
+            &theta,
+            &xi,
+            &[],
+            -1.645,
+        )
+        .err()
+        .expect("expected malformed bank error"),
+        infit_outfit(&malformed_bank, &y, &observed, 2000, &theta, &xi)
+            .err()
+            .expect("expected malformed bank error"),
+    ] {
+        assert!(err.contains("inconsistent lengths"), "got: {err}");
+    }
+
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    y[0] = 2.0;
+    for err in [
+        person_fit(&bank, &y, &observed, 2000, &theta, &xi, &[], -1.645)
+            .err()
+            .expect("expected dichotomous response error"),
+        infit_outfit(&bank, &y, &observed, 2000, &theta, &xi)
+            .err()
+            .expect("expected dichotomous response error"),
+    ] {
+        assert!(err.contains("0 or 1"), "got: {err}");
+    }
+}
+
+#[test]
 fn person_fit_and_msq_finite_for_true_model() {
     let (alpha, b, zeta, fid, y, observed, _theta_true, _xi_true) = toy_bank_data();
     let bank = ItemBank {

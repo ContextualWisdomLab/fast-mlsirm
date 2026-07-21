@@ -109,7 +109,7 @@ pub(crate) fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     Ok(n_items)
 }
 
-fn validate_dichotomous_responses(
+pub(crate) fn validate_dichotomous_responses(
     y: &[f64],
     observed: &[bool],
     n_persons: usize,

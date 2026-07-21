@@ -106,6 +106,24 @@ def _validate_factor_id(factor_id):
     return d, n_dims
 
 
+def _prepare_dichotomous_diagnostic_inputs(responses, factor_id, mask):
+    """Validate shared response inputs for the dichotomous fit diagnostics."""
+    y = np.asarray(responses, dtype=float)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D array")
+    if y.shape[1] == 0:
+        raise ValueError("responses must contain at least one item")
+    d_of_i, _n_dims = _validate_factor_id(factor_id)
+    if d_of_i.size != y.shape[1]:
+        raise ValueError("factor_id length must match the number of response items")
+    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    if observed.shape != y.shape:
+        raise ValueError("mask shape must match responses")
+    if np.any(observed & (y != 0.0) & (y != 1.0)):
+        raise ValueError("observed responses must be 0 or 1")
+    return np.where(observed, y, 0.0), observed, d_of_i
+
+
 def _bank_args(params, factor_id, model, n_dims, eps_distance):
     zeta = np.asarray(params.zeta, dtype=np.float64)
     return dict(
@@ -594,11 +612,10 @@ def person_fit(
     model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}
     uses_space = model != "MIRT"
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    y = np.where(observed, y, 0.0)
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
     n_persons, n_items = y.shape
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     core = _core_module()
     if core is not None:
@@ -690,10 +707,9 @@ def infit_outfit(
     model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}
     uses_space = model != "MIRT"
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    y = np.where(observed, y, 0.0)
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
     core = _core_module()
     if core is not None:
         n_persons = y.shape[0]
