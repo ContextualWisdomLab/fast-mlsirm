@@ -291,13 +291,20 @@ class QMatrixValidation:
     fewest-attribute vector whose PVAF (proportion of variance accounted for)
     reaches ``epsilon``. ``suggested_pvaf``/``provisional_pvaf`` are the per-item
     PVAF of the suggested and the caller's provisional q-vector; ``flagged`` marks
-    the items whose suggested vector differs from the provisional one."""
+    the items whose suggested vector differs from the provisional one. The
+    ``calibration_*`` fields report the exact stopping evidence for the provisional
+    G-DINA calibration used to construct the suggestions."""
 
     suggested_q: np.ndarray
     suggested_pvaf: np.ndarray
     provisional_pvaf: np.ndarray
     flagged: np.ndarray
     epsilon: float
+    calibration_n_iter: int
+    calibration_max_iter: int
+    calibration_termination_reason: str
+    calibration_final_loglik_change: float
+    calibration_tol: float
 
 
 def validate_q_matrix(
@@ -370,6 +377,11 @@ def validate_q_matrix(
         provisional_pvaf=np.asarray(res["provisional_pvaf"], dtype=np.float64),
         flagged=np.asarray(res["flagged"], dtype=bool),
         epsilon=float(res["epsilon"]),
+        calibration_n_iter=int(res["calibration_n_iter"]),
+        calibration_max_iter=int(res["calibration_max_iter"]),
+        calibration_termination_reason=str(res["calibration_termination_reason"]),
+        calibration_final_loglik_change=float(res["calibration_final_loglik_change"]),
+        calibration_tol=float(res["calibration_tol"]),
     )
 
 

@@ -841,6 +841,16 @@ pub struct QValidationResult {
     pub flagged: Vec<bool>,
     /// The PVAF cutoff used.
     pub epsilon: f64,
+    /// M-steps completed by the provisional G-DINA calibration.
+    pub calibration_n_iter: usize,
+    /// Configured M-step limit for the provisional calibration.
+    pub calibration_max_iter: usize,
+    /// Successful calibration stop reason (currently `"tolerance_met"`).
+    pub calibration_termination_reason: &'static str,
+    /// Absolute final change in the provisional calibration log-likelihood.
+    pub calibration_final_loglik_change: f64,
+    /// Absolute log-likelihood-change tolerance used by the calibration.
+    pub calibration_tol: f64,
 }
 
 /// Empirical Q-matrix validation by the PVAF (proportion of variance accounted
@@ -934,6 +944,12 @@ pub fn validate_q_matrix(
         cfg,
     )?;
     ensure_gdina_converged(&res, cfg)?;
+    let calibration_final_loglik_change = res
+        .loglik_trace
+        .windows(2)
+        .last()
+        .map(|w| (w[1] - w[0]).abs())
+        .unwrap_or(f64::INFINITY);
 
     // Recover each item's SATURATED IRF over all 2^K full classes and the class
     // weights pi_c from one posterior pass at the fitted parameters. The provisional
@@ -1127,6 +1143,11 @@ pub fn validate_q_matrix(
         provisional_pvaf,
         flagged,
         epsilon,
+        calibration_n_iter: res.n_iter,
+        calibration_max_iter: cfg.max_iter,
+        calibration_termination_reason: "tolerance_met",
+        calibration_final_loglik_change,
+        calibration_tol: cfg.tol,
     })
 }
 

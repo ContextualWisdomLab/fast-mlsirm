@@ -602,6 +602,17 @@ fn validate_q_matrix(
     out.set_item("flagged", res.flagged)?;
     out.set_item("n_attributes", res.n_attributes)?;
     out.set_item("epsilon", res.epsilon)?;
+    out.set_item("calibration_n_iter", res.calibration_n_iter)?;
+    out.set_item("calibration_max_iter", res.calibration_max_iter)?;
+    out.set_item(
+        "calibration_termination_reason",
+        res.calibration_termination_reason,
+    )?;
+    out.set_item(
+        "calibration_final_loglik_change",
+        res.calibration_final_loglik_change,
+    )?;
+    out.set_item("calibration_tol", res.calibration_tol)?;
     Ok(out.into())
 }
 

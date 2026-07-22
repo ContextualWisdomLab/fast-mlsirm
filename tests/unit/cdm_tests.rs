@@ -1659,6 +1659,7 @@ fn mc_qval_recovery_500() {
 
     for &skew in [false, true].iter() {
         let (mut sum_qrec, mut sum_tpr, mut sum_fpr) = (0.0f64, 0.0f64, 0.0f64);
+        let (mut max_n_iter, mut max_final_delta) = (0usize, 0.0f64);
         for rep in 0..reps {
             let seed = 0x2545F4914F6CDD1Du64
                 .wrapping_mul(rep as u64 + 1)
@@ -1712,6 +1713,24 @@ fn mc_qval_recovery_500() {
                 .unwrap_or_else(|err| {
                     panic!("Q validation failed for skew={skew} rep={rep} seed={seed}: {err}")
                 });
+            assert_eq!(res.calibration_termination_reason, "tolerance_met");
+            assert_eq!(res.calibration_max_iter, cfg.max_iter);
+            assert_eq!(res.calibration_tol, cfg.tol);
+            assert!(
+                0 < res.calibration_n_iter && res.calibration_n_iter < cfg.max_iter,
+                "invalid iteration evidence for skew={skew} rep={rep} seed={seed}: {}/{}",
+                res.calibration_n_iter,
+                cfg.max_iter
+            );
+            assert!(
+                res.calibration_final_loglik_change.is_finite()
+                    && res.calibration_final_loglik_change < cfg.tol,
+                "invalid stopping evidence for skew={skew} rep={rep} seed={seed}: {} >= {}",
+                res.calibration_final_loglik_change,
+                cfg.tol
+            );
+            max_n_iter = max_n_iter.max(res.calibration_n_iter);
+            max_final_delta = max_final_delta.max(res.calibration_final_loglik_change);
 
             let mut qrec = 0usize;
             let (mut tp, mut fp, mut pos, mut neg) = (0usize, 0usize, 0usize, 0usize);
@@ -1743,14 +1762,17 @@ fn mc_qval_recovery_500() {
         println!(
             concat!(
                 "[qval MC skew={}] reps={} converged={}/{} ",
-                "termination=tolerance_met max_iter={} tol={:.1e} ",
+                "termination=tolerance_met iterations_max={}/{} ",
+                "final_delta_max={:.6e} tol={:.1e} ",
                 "q-recovery={:.3} attr-TPR={:.3} attr-FPR={:.3}"
             ),
             skew,
             reps,
             reps,
             reps,
+            max_n_iter,
             cfg.max_iter,
+            max_final_delta,
             cfg.tol,
             sum_qrec / r,
             sum_tpr / r,

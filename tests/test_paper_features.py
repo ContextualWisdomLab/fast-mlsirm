@@ -3295,6 +3295,9 @@ def test_validate_q_matrix_corrects_misspecification():
     assert np.array_equal(res.suggested_q, truth)
     assert not res.flagged.any()
     assert np.all(res.provisional_pvaf > 0.9)
+    assert res.calibration_termination_reason == "tolerance_met"
+    assert 0 < res.calibration_n_iter < res.calibration_max_iter
+    assert 0 <= res.calibration_final_loglik_change < res.calibration_tol
 
     # Over-specify item 0 ({0} -> {0,1}) and under-specify item 6 ({0,1} -> {0}).
     prov = truth.copy()
@@ -3306,6 +3309,9 @@ def test_validate_q_matrix_corrects_misspecification():
     assert res2.flagged[0] and res2.flagged[6]
     # the under-specified item's provisional q falls short of the cutoff
     assert res2.provisional_pvaf[6] < 0.95
+    assert res2.calibration_termination_reason == "tolerance_met"
+    assert 0 < res2.calibration_n_iter < res2.calibration_max_iter
+    assert 0 <= res2.calibration_final_loglik_change < res2.calibration_tol
 
     with pytest.raises(ValueError):
         validate_q_matrix(y.ravel(), truth)  # responses not 2-D
