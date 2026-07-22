@@ -1,6 +1,6 @@
 use super::*;
 use crate::nodes::XiRule;
-use crate::ModelType;
+use crate::{Device, ModelType};
 
 fn bank_fixture() -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>) {
     let alpha = vec![0.2, -0.1, 0.4, 0.0, 0.3, -0.2, 0.1, 0.25];
@@ -130,4 +130,57 @@ fn plausible_values_track_the_posterior() {
     )
     .unwrap();
     assert_eq!(pv, pv2);
+}
+
+#[test]
+fn plausible_values_gpu_matches_seeded_cpu_draws() {
+    let (alpha, b, mut zeta, fid) = bank_fixture();
+    zeta.copy_from_slice(&[-0.9, 0.7, -0.4, 1.1, 0.2, -1.2, 0.8, -0.1]);
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -0.2,
+        factor_id: &fid,
+        model_type: ModelType::Mls2plm,
+        n_dims: 2,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let y = vec![
+        1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+    ];
+    let observed = vec![true; y.len()];
+    let run = |device| {
+        plausible_values_device(
+            &bank,
+            &y,
+            &observed,
+            2,
+            &PriorSpec::standard(2),
+            21,
+            XiRule::GaussHermite { q_xi: 7 },
+            512,
+            91,
+            device,
+        )
+        .unwrap()
+    };
+    let cpu = run(Device::Cpu);
+    let gpu = run(Device::Gpu);
+    let max_abs = cpu
+        .iter()
+        .zip(&gpu)
+        .map(|(left, right)| (left - right).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        max_abs <= 2.0e-5,
+        "same seeded categorical selections must agree within f32 node precision; max_abs={max_abs:e}"
+    );
+    let cpu_mean = cpu.iter().sum::<f64>() / cpu.len() as f64;
+    let gpu_mean = gpu.iter().sum::<f64>() / gpu.len() as f64;
+    eprintln!(
+        "plausible-values parity: max_abs={max_abs:e}, cpu_mean={cpu_mean:.12}, gpu_mean={gpu_mean:.12}"
+    );
+    assert!((cpu_mean - gpu_mean).abs() <= 1.0e-6);
 }

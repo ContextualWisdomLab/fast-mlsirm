@@ -1335,6 +1335,10 @@ pub fn cat_next_item_device(
 /// bank and discrete quadrature-grid sampler are repository implementation
 /// choices; this routine does not propagate item-parameter uncertainty.
 /// Returns row-major `n_persons x n_draws x n_dims`.
+/// `Device::Auto` prefers the Rust wgpu posterior-reduction and sampling
+/// kernels. The f64 CPU fallback uses a fixed number of contiguous person
+/// shards, bounded by available hardware parallelism, to avoid task-pool
+/// oversubscription and unnecessary context switching.
 ///
 /// # References
 ///
@@ -1353,12 +1357,56 @@ pub fn plausible_values(
     n_draws: usize,
     seed: u64,
 ) -> Result<Vec<f64>, String> {
+    plausible_values_device(
+        bank,
+        y,
+        observed,
+        n_persons,
+        prior,
+        q_theta,
+        xi_rule,
+        n_draws,
+        seed,
+        crate::Device::Auto,
+    )
+}
+
+/// Plausible values with explicit Rust GPU/CPU dispatch. The same seeded
+/// uniform stream is supplied to both implementations; `Device::Gpu` warns and
+/// uses the parallel f64 CPU reference if GPU execution is unavailable or its
+/// f32 result fails validation.
+#[allow(clippy::too_many_arguments)]
+pub fn plausible_values_device(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    n_draws: usize,
+    seed: u64,
+    device: crate::Device,
+) -> Result<Vec<f64>, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
     validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     if n_draws == 0 {
         return Err("n_draws must be >= 1".into());
     }
+    let person_draws = n_persons
+        .checked_mul(n_draws)
+        .ok_or_else(|| "n_persons * n_draws overflows usize".to_string())?;
+    person_draws
+        .checked_mul(bank.n_dims)
+        .ok_or_else(|| "plausible-values output length overflows usize".to_string())?;
+    let random_width = bank
+        .n_dims
+        .checked_add(1)
+        .ok_or_else(|| "n_dims + 1 overflows usize".to_string())?;
+    let random_count = person_draws
+        .checked_mul(random_width)
+        .ok_or_else(|| "plausible-values random stream length overflows usize".to_string())?;
     let grids = scoring_grids(bank, q_theta, xi_rule)?;
     let ctx = prior_contexts(prior);
     let config = bank_model_config(bank, n_persons, n_items);
@@ -1373,27 +1421,62 @@ pub fn plausible_values(
         &grids,
     );
     let resp = index_responses(y, observed, n_persons, n_items);
+    let random_uniforms = plausible_uniforms(seed, random_count);
+    Ok(dispatch_plausible_values_device(
+        bank,
+        prior,
+        &grids,
+        &tables,
+        &resp,
+        n_persons,
+        n_items,
+        n_draws,
+        &random_uniforms,
+        device,
+    ))
+}
+
+fn plausible_uniforms(seed: u64, count: usize) -> Vec<f64> {
+    let mut state = seed.max(1);
+    (0..count)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plausible_values_cpu_chunk(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_items: usize,
+    n_draws: usize,
+    random_uniforms: &[f64],
+    start_person: usize,
+    out: &mut [f64],
+) {
     let cell = grids.q_t * grids.n_x;
     let mut l_buf = vec![0.0_f64; bank.n_dims * cell];
     let mut log_zdx = vec![0.0_f64; bank.n_dims * grids.n_x];
-    let mut state = seed.max(1);
-    let mut unif = move || {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((state >> 11) as f64) / ((1u64 << 53) as f64)
-    };
-    let mut out = vec![0.0_f64; n_persons * n_draws * bank.n_dims];
-    for p in 0..n_persons {
+    let out_per_person = n_draws * bank.n_dims;
+    let random_per_person = n_draws * (bank.n_dims + 1);
+    for local_person in 0..out.len() / out_per_person {
+        let p = start_person + local_person;
         let lp = person_pass(
             p,
             0,
-            &tables,
-            &resp,
+            tables,
+            resp,
             bank.factor_id,
             bank.n_dims,
             n_items,
-            &grids,
+            grids,
             &mut l_buf,
             &mut log_zdx,
         );
@@ -1406,7 +1489,8 @@ pub fn plausible_values(
             px[x] = lx.exp();
         }
         for draw in 0..n_draws {
-            let ux = unif();
+            let random_base = p * random_per_person + draw * (bank.n_dims + 1);
+            let ux = random_uniforms[random_base];
             let mut acc = 0.0;
             let mut x_sel = grids.n_x - 1;
             for (x, &w) in px.iter().enumerate() {
@@ -1417,7 +1501,7 @@ pub fn plausible_values(
                 }
             }
             for d in 0..bank.n_dims {
-                let ut = unif();
+                let ut = random_uniforms[random_base + 1 + d];
                 let mut acc_t = 0.0;
                 let mut t_sel = grids.q_t - 1;
                 for t in 0..grids.q_t {
@@ -1430,12 +1514,214 @@ pub fn plausible_values(
                         break;
                     }
                 }
-                out[(p * n_draws + draw) * bank.n_dims + d] =
+                out[(local_person * n_draws + draw) * bank.n_dims + d] =
                     prior.mean[d] + prior.sd[d] * grids.t_nodes[t_sel];
             }
         }
     }
-    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plausible_values_cpu_reduce(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+    n_draws: usize,
+    random_uniforms: &[f64],
+) -> Vec<f64> {
+    let out_per_person = n_draws * bank.n_dims;
+    let mut out = vec![0.0_f64; n_persons * out_per_person];
+    if n_persons == 0 {
+        return out;
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_persons);
+    if worker_count == 1 {
+        plausible_values_cpu_chunk(
+            bank,
+            prior,
+            grids,
+            tables,
+            resp,
+            n_items,
+            n_draws,
+            random_uniforms,
+            0,
+            &mut out,
+        );
+        return out;
+    }
+    let persons_per_worker = n_persons.div_ceil(worker_count);
+    let chunk_len = persons_per_worker * out_per_person;
+    std::thread::scope(|scope| {
+        for (worker, chunk) in out.chunks_mut(chunk_len).enumerate() {
+            let start_person = worker * persons_per_worker;
+            scope.spawn(move || {
+                plausible_values_cpu_chunk(
+                    bank,
+                    prior,
+                    grids,
+                    tables,
+                    resp,
+                    n_items,
+                    n_draws,
+                    random_uniforms,
+                    start_person,
+                    chunk,
+                );
+            });
+        }
+    });
+    out
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn dispatch_plausible_values_device(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+    n_draws: usize,
+    random_uniforms: &[f64],
+    device: crate::Device,
+) -> Vec<f64> {
+    if device != crate::Device::Cpu {
+        if let Some(values) = try_plausible_values_gpu(
+            bank,
+            prior,
+            grids,
+            tables,
+            resp,
+            n_persons,
+            n_items,
+            n_draws,
+            random_uniforms,
+        ) {
+            return values;
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU plausible values requested but no usable GPU adapter was found, the problem exceeds GPU bounds, or f32 validation failed; falling back to the parallel CPU implementation."
+            );
+        }
+    }
+    plausible_values_cpu_reduce(
+        bank,
+        prior,
+        grids,
+        tables,
+        resp,
+        n_persons,
+        n_items,
+        n_draws,
+        random_uniforms,
+    )
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+#[allow(clippy::too_many_arguments)]
+fn dispatch_plausible_values_device(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+    n_draws: usize,
+    random_uniforms: &[f64],
+    device: crate::Device,
+) -> Vec<f64> {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU plausible values requested but this build has no GPU support; falling back to the parallel CPU implementation."
+        );
+    }
+    plausible_values_cpu_reduce(
+        bank,
+        prior,
+        grids,
+        tables,
+        resp,
+        n_persons,
+        n_items,
+        n_draws,
+        random_uniforms,
+    )
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[allow(clippy::too_many_arguments)]
+fn try_plausible_values_gpu(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    resp: &crate::marginal::ResponseIndex,
+    n_persons: usize,
+    n_items: usize,
+    n_draws: usize,
+    random_uniforms: &[f64],
+) -> Option<Vec<f64>> {
+    if n_items > u32::MAX as usize {
+        return None;
+    }
+    let mut pos_off = Vec::with_capacity(n_persons + 1);
+    let mut pos_items = Vec::new();
+    pos_off.push(0);
+    for items in &resp.pos {
+        pos_items.extend(
+            items
+                .iter()
+                .map(|&item| u32::try_from(item).ok())
+                .collect::<Option<Vec<_>>>()?,
+        );
+        pos_off.push(u32::try_from(pos_items.len()).ok()?);
+    }
+    let mut miss_off = Vec::with_capacity(n_persons + 1);
+    let mut miss_items = Vec::new();
+    miss_off.push(0);
+    for items in &resp.miss {
+        miss_items.extend(
+            items
+                .iter()
+                .map(|&item| u32::try_from(item).ok())
+                .collect::<Option<Vec<_>>>()?,
+        );
+        miss_off.push(u32::try_from(miss_items.len()).ok()?);
+    }
+    crate::gpu_plausible::plausible_values_gpu(&crate::gpu_plausible::GpuPlausibleInputs {
+        n_persons,
+        n_items,
+        n_dims: bank.n_dims,
+        q_t: grids.q_t,
+        n_x: grids.n_x,
+        n_draws,
+        logp0: &tables.logp0,
+        logp1: &tables.logp1,
+        c0: &tables.c0,
+        t_logw: &grids.t_logw,
+        x_logw: &grids.x_logw,
+        t_nodes: &grids.t_nodes,
+        prior_mean: &prior.mean,
+        prior_sd: &prior.sd,
+        factor_id: bank.factor_id,
+        pos_off: &pos_off,
+        pos_items: &pos_items,
+        miss_off: &miss_off,
+        miss_items: &miss_items,
+        random_uniforms,
+    })
 }
 
 #[cfg(test)]

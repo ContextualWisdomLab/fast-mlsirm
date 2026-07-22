@@ -54,6 +54,8 @@ mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
 #[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_plausible;
+#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_scoring;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {

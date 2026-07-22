@@ -4,6 +4,9 @@
   to a Rust wgpu kernel, retain an explicit Rust f64 CPU path, and accept the
   same `device="auto"|"gpu"|"cpu"` contract as EAP serving. Non-finite f32
   results are discarded in favor of the finite CPU reference.
+- Plausible-value posterior reduction and seeded sampling now use the same
+  GPU-preferred device contract. Unsupported GPU sizes or results fall back to
+  a deterministic Rust f64 implementation with fixed contiguous CPU shards.
 
 ## Unreleased
 

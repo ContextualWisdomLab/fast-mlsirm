@@ -700,12 +700,15 @@ def plausible_values(
     n_draws: int = 5,
     seed: int = 1,
     prior: tuple[np.ndarray, np.ndarray] | None = None,
+    device: str = "auto",
 ) -> np.ndarray:
     """Draw posterior plausible values for secondary analyses.
 
     The fixed item bank and discrete quadrature-grid sampler are repository
     choices; this function does not propagate item-parameter uncertainty.
     Returns persons x n_draws x n_dims.
+    ``device="auto"`` prefers the Rust wgpu posterior-reduction and sampling
+    kernels and falls back to the bounded parallel Rust f64 CPU path.
 
     References
     ----------
@@ -773,6 +776,7 @@ def plausible_values(
         prior_mean=mean, prior_sd=sd,
         q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
         q_xi=int(bundle["quadrature"]["q_xi"]), n_draws=draw_count, seed=int(seed),
+        device=str(device),
         **_bundle_bank_args(bundle),
     )
     return np.asarray(pv).reshape(y.shape[0], draw_count, bundle["n_dims"])

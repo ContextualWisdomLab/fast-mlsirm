@@ -66,7 +66,8 @@ use mlsirm_core::rt_joint::{fit_speed_accuracy_covariance as core_fit_sa, SpeedA
 use mlsirm_core::scoring::{
     bank_information_device as core_bank_information_device,
     cat_next_item_device as core_cat_next_item_device, eapsum_tables as core_eapsum_tables,
-    empirical_reliability as core_empirical_reliability, plausible_values as core_plausible_values,
+    empirical_reliability as core_empirical_reliability,
+    plausible_values_device as core_plausible_values_device,
     score_eap_device as core_score_eap_device, score_map as core_score_map,
     score_wle as core_score_wle, ItemBank, PriorSpec,
 };
@@ -4377,7 +4378,7 @@ fn cat_next_item(
 #[pyo3(signature = (
     y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
     eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
-    xi_points = 256, xi_seed = 0, n_draws = 5, seed = 1,
+    xi_points = 256, xi_seed = 0, n_draws = 5, seed = 1, device = "auto",
 ))]
 fn plausible_values(
     y: PyReadonlyArray1<'_, f64>,
@@ -4401,6 +4402,7 @@ fn plausible_values(
     xi_seed: u64,
     n_draws: usize,
     seed: u64,
+    device: &str,
 ) -> PyResult<Vec<f64>> {
     bank_from_args!(
         alpha,
@@ -4420,7 +4422,9 @@ fn plausible_values(
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
-    core_plausible_values(
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    core_plausible_values_device(
         &bank,
         y.as_slice()?,
         observed.as_slice()?,
@@ -4430,6 +4434,7 @@ fn plausible_values(
         rule,
         n_draws,
         seed,
+        device,
     )
     .map_err(PyValueError::new_err)
 }

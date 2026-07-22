@@ -303,6 +303,22 @@ def test_plausible_values_rejects_unbounded_output_before_core(monkeypatch):
         serving.plausible_values(bundle, responses, n_draws=100_000)
 
 
+def test_plausible_values_forwards_explicit_device_to_rust(monkeypatch):
+    captured = {}
+
+    class CapturingCore:
+        def plausible_values(self, *args, **kwargs):
+            captured.update(kwargs)
+            return [0.0]
+
+    monkeypatch.setattr(serving, "_core_module", lambda: CapturingCore())
+    result = serving.plausible_values(
+        _bundle(), np.zeros((1, 1)), n_draws=1, device="gpu"
+    )
+    assert result.shape == (1, 1, 1)
+    assert captured["device"] == "gpu"
+
+
 @pytest.mark.parametrize(
     "responses",
     [np.zeros((2, 1, 1)), np.zeros((2, 2)), np.zeros(1)],
