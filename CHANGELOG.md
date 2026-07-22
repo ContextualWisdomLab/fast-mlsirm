@@ -16,6 +16,7 @@
 
 ### Changed
 
+- Added `prefers-reduced-motion` and print media-query support to every
 - Rust EAP scoring now defaults to GPU-preferred `auto` execution in the core,
   PyO3 binding, and serving API. The f64 CPU reduction remains available via
   `device="cpu"`; an explicit unavailable `device="gpu"` request now warns
