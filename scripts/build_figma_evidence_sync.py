@@ -148,6 +148,30 @@ tbody tr { transition: background-color 0.15s ease-in-out; }
 tbody tr:hover { background: #fbfcfa; }
 code { overflow-wrap: anywhere; }
 .note { color: #5e6f76; margin-bottom: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    background: #ffffff;
+  }
+  .report-section,
+  .metric-card,
+  .table-wrap {
+    break-inside: avoid;
+  }
+}
 """
 
 
