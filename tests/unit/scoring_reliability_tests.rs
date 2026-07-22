@@ -20,3 +20,55 @@ fn empirical_reliability_tracks_signal_to_noise() {
     assert!(empirical_reliability(&[0.0, 1.0], &[-0.3, 0.3], 2, 1).is_err());
     assert!(empirical_reliability(&[0.0, 1.0], &[0.3, f64::INFINITY], 2, 1).is_err());
 }
+
+#[test]
+fn empirical_reliability_default_matches_cpu_reference() {
+    let n_persons = 257usize;
+    let n_dims = 3usize;
+    let theta: Vec<f64> = (0..n_persons)
+        .flat_map(|person| {
+            let x = person as f64 / n_persons as f64;
+            [x.sin(), 2.0 * x - 1.0, (3.0 * x).cos()]
+        })
+        .collect();
+    let sd: Vec<f64> = (0..n_persons)
+        .flat_map(|person| {
+            let x = person as f64 / n_persons as f64;
+            [0.2 + x / 10.0, 0.4, 0.1 + x / 20.0]
+        })
+        .collect();
+
+    let reference =
+        empirical_reliability_device(&theta, &sd, n_persons, n_dims, crate::Device::Cpu).unwrap();
+    let default = empirical_reliability(&theta, &sd, n_persons, n_dims).unwrap();
+    for (actual, expected) in default.iter().zip(&reference) {
+        assert!((actual - expected).abs() < 1e-4, "{actual} vs {expected}");
+    }
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+#[test]
+fn empirical_reliability_explicit_gpu_matches_cpu_reference() {
+    let n_persons = 513usize;
+    let n_dims = 2usize;
+    let theta: Vec<f64> = (0..n_persons)
+        .flat_map(|person| {
+            let x = person as f64 / n_persons as f64;
+            [4.0 * x - 2.0, (6.0 * x).sin()]
+        })
+        .collect();
+    let sd: Vec<f64> = (0..n_persons)
+        .flat_map(|person| {
+            let x = person as f64 / n_persons as f64;
+            [0.3 + 0.1 * x, 0.5 - 0.1 * x]
+        })
+        .collect();
+
+    let cpu =
+        empirical_reliability_device(&theta, &sd, n_persons, n_dims, crate::Device::Cpu).unwrap();
+    let gpu = crate::gpu_scoring::empirical_reliability_gpu(&theta, &sd, n_persons, n_dims)
+        .expect("this test requires a usable GPU adapter");
+    for (actual, expected) in gpu.iter().zip(&cpu) {
+        assert!((actual - expected).abs() < 1e-4, "{actual} vs {expected}");
+    }
+}

@@ -53,9 +53,25 @@ def test_empirical_reliability_python_wrapper():
         population={"theta_sd": theta_sd},
     )
 
-    reliability = empirical_reliability(result)
+    reliability = empirical_reliability(result, device="cpu")
 
     np.testing.assert_allclose(reliability, [5.0 / 6.0, 0.0])
+
+
+def test_empirical_reliability_validates_device_before_native(monkeypatch):
+    theta = np.zeros((2, 1))
+    result = SimpleNamespace(
+        params=SimpleNamespace(theta=theta),
+        population={"theta_sd": np.ones_like(theta)},
+    )
+
+    class BombCore:
+        def empirical_reliability(self, *_args, **_kwargs):
+            raise AssertionError("invalid device reached native reliability")
+
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="rust_device"):
+        empirical_reliability(result, device="tpu")
 
 
 def test_empirical_reliability_requires_core_and_marginal_sd(monkeypatch):

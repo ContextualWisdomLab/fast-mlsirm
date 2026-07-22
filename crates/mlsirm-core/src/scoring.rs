@@ -2405,7 +2405,26 @@ pub fn empirical_reliability(
     n_persons: usize,
     n_dims: usize,
 ) -> Result<Vec<f64>, String> {
-    if theta_eap.len() != n_persons * n_dims || theta_sd.len() != theta_eap.len() {
+    empirical_reliability_device(theta_eap, theta_sd, n_persons, n_dims, crate::Device::Auto)
+}
+
+/// Empirical reliability with an explicit execution device. `Auto`/`Gpu`
+/// prefers the Rust wgpu f32 reduction and falls back to the fixed-shard,
+/// parallel Rust f64 reduction. `Gpu` warns when a usable accelerator is not
+/// available; `Cpu` is the hardware-independent numerical reference.
+pub fn empirical_reliability_device(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+    device: crate::Device,
+) -> Result<Vec<f64>, String> {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_dims,
+        "n_persons * n_dims overflows for empirical reliability",
+    )?;
+    if theta_eap.len() != expected_len || theta_sd.len() != theta_eap.len() {
         return Err("theta_eap/theta_sd must be n_persons x n_dims".into());
     }
     if n_persons < 2 {
@@ -2423,29 +2442,123 @@ pub fn empirical_reliability(
     {
         return Err("theta_sd values must be finite and non-negative".into());
     }
-    let mut out = vec![f64::NAN; n_dims];
-    for d in 0..n_dims {
-        let n = n_persons as f64;
-        let mean: f64 = (0..n_persons)
-            .map(|p| theta_eap[p * n_dims + d])
-            .sum::<f64>()
-            / n;
-        let var: f64 = (0..n_persons)
-            .map(|p| {
-                let v = theta_eap[p * n_dims + d] - mean;
-                v * v
+    Ok(dispatch_empirical_reliability_device(
+        theta_eap, theta_sd, n_persons, n_dims, device,
+    ))
+}
+
+fn empirical_reliability_for_dimension(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+    dimension: usize,
+) -> f64 {
+    let n = n_persons as f64;
+    let mean = (0..n_persons)
+        .map(|person| theta_eap[person * n_dims + dimension])
+        .sum::<f64>()
+        / n;
+    let variance = (0..n_persons)
+        .map(|person| {
+            let centered = theta_eap[person * n_dims + dimension] - mean;
+            centered * centered
+        })
+        .sum::<f64>()
+        / n;
+    let mse = (0..n_persons)
+        .map(|person| {
+            let sd = theta_sd[person * n_dims + dimension];
+            sd * sd
+        })
+        .sum::<f64>()
+        / n;
+    let denominator = variance + mse;
+    if denominator > 0.0 {
+        variance / denominator
+    } else {
+        f64::NAN
+    }
+}
+
+fn empirical_reliability_cpu_reduce(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+) -> Vec<f64> {
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_dims);
+    if worker_count <= 1 {
+        return (0..n_dims)
+            .map(|dimension| {
+                empirical_reliability_for_dimension(
+                    theta_eap, theta_sd, n_persons, n_dims, dimension,
+                )
             })
-            .sum::<f64>()
-            / n;
-        let mse: f64 = (0..n_persons)
-            .map(|p| theta_sd[p * n_dims + d] * theta_sd[p * n_dims + d])
-            .sum::<f64>()
-            / n;
-        if var + mse > 0.0 {
-            out[d] = var / (var + mse);
+            .collect();
+    }
+    let dims_per_worker = n_dims.div_ceil(worker_count);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start in (0..n_dims).step_by(dims_per_worker) {
+            let end = (start + dims_per_worker).min(n_dims);
+            handles.push(scope.spawn(move || {
+                (start..end)
+                    .map(|dimension| {
+                        empirical_reliability_for_dimension(
+                            theta_eap, theta_sd, n_persons, n_dims, dimension,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }));
+        }
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("reliability CPU worker panicked"))
+            .collect()
+    })
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn dispatch_empirical_reliability_device(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+    device: crate::Device,
+) -> Vec<f64> {
+    if device != crate::Device::Cpu {
+        if let Some(output) =
+            crate::gpu_scoring::empirical_reliability_gpu(theta_eap, theta_sd, n_persons, n_dims)
+        {
+            return output;
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU empirical reliability requested but no usable GPU adapter was found, the request exceeds GPU bounds, or f32 arithmetic produced an invalid result; falling back to the CPU implementation."
+            );
         }
     }
-    Ok(out)
+    empirical_reliability_cpu_reduce(theta_eap, theta_sd, n_persons, n_dims)
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn dispatch_empirical_reliability_device(
+    theta_eap: &[f64],
+    theta_sd: &[f64],
+    n_persons: usize,
+    n_dims: usize,
+    device: crate::Device,
+) -> Vec<f64> {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU empirical reliability requested but this build has no GPU support; falling back to the CPU implementation."
+        );
+    }
+    empirical_reliability_cpu_reduce(theta_eap, theta_sd, n_persons, n_dims)
 }
 
 #[cfg(test)]

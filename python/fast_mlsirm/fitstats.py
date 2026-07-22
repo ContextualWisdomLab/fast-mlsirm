@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .estimators.marginal import _gh, _xi_grid
+from .backend import normalize_device
 from .math import sigmoid
 from .objective import linear_predictor, prepare_response, validate_factor_id
 
@@ -1609,14 +1610,16 @@ def tcc_drift(
     return res
 
 
-def empirical_reliability(result) -> np.ndarray:
+def empirical_reliability(result, device: str = "auto") -> np.ndarray:
     """Empirical (marginal) EAP reliability per trait dimension:
     `Var(EAP) / (Var(EAP) + mean(SE^2))`.
 
     This follows the posterior variance decomposition in Bechger et al.
     (2003). Reliability does not establish model fit (Stanley & Edwards,
     2016), so report it alongside the fit statistics. Requires a marginal
-    (MMLE) fit with posterior SDs.
+    (MMLE) fit with posterior SDs. ``device="auto"`` prefers the Rust wgpu
+    f32 reduction and falls back to a fixed-shard parallel Rust f64 reduction;
+    use ``device="cpu"`` for the hardware-independent reference.
 
     References
     ----------
@@ -1636,9 +1639,14 @@ def empirical_reliability(result) -> np.ndarray:
         raise ValueError("empirical_reliability needs a marginal fit with theta_sd")
     theta = np.asarray(result.params.theta, dtype=np.float64)
     sd = np.asarray(result.population["theta_sd"], dtype=np.float64)
+    device_name = normalize_device(device)
     return np.asarray(
         core.empirical_reliability(
-            theta.ravel(), sd.ravel(), int(theta.shape[0]), int(theta.shape[1])
+            theta.ravel(),
+            sd.ravel(),
+            int(theta.shape[0]),
+            int(theta.shape[1]),
+            device=device_name,
         )
     )
 

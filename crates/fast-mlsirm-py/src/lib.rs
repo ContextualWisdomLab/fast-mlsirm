@@ -67,7 +67,7 @@ use mlsirm_core::scoring::{
     bank_information_device as core_bank_information_device,
     cat_next_item_device as core_cat_next_item_device,
     eapsum_tables_device as core_eapsum_tables_device,
-    empirical_reliability as core_empirical_reliability,
+    empirical_reliability_device as core_empirical_reliability_device,
     plausible_values_device as core_plausible_values_device,
     score_eap_device as core_score_eap_device, score_eapsum_device as core_score_eapsum_device,
     score_map as core_score_map, score_wle as core_score_wle,
@@ -4926,18 +4926,22 @@ fn tcc_drift(
 /// Stanley, L. M., & Edwards, M. C. (2016). Reliability and model fit.
 /// *Educational and Psychological Measurement, 76*(6), 976–985.
 /// <https://doi.org/10.1177/0013164416638900>
-#[pyfunction]
+#[pyfunction(signature = (theta_eap, theta_sd, n_persons, n_dims, device = "auto"))]
 fn empirical_reliability(
     theta_eap: PyReadonlyArray1<'_, f64>,
     theta_sd: PyReadonlyArray1<'_, f64>,
     n_persons: usize,
     n_dims: usize,
+    device: &str,
 ) -> PyResult<Vec<f64>> {
-    core_empirical_reliability(
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    core_empirical_reliability_device(
         theta_eap.as_slice()?,
         theta_sd.as_slice()?,
         n_persons,
         n_dims,
+        device,
     )
     .map_err(PyValueError::new_err)
 }
