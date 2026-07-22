@@ -109,7 +109,9 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
+        # Optimized alpha gradient: avoid N x J array allocation by using dense matrix multiplication
+        # and advanced integer indexing instead of element-wise multiplication and summation.
+        grad_alpha = (e.T @ params.theta)[np.arange(e.shape[1]), factors] * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
@@ -126,10 +128,10 @@ def neg_loglik_and_grad(
         # Optimized gradient computation: avoid 3D array creation, use 2D matrix multiplication instead
         e_over_d = e / distance
         sum_e_over_d = e_over_d.sum(axis=1, keepdims=True)
-        grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
+        grad_xi = -gamma * (params.xi * sum_e_over_d - e_over_d @ params.zeta)
 
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
-        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+        grad_zeta = gamma * (e_over_d.T @ params.xi - params.zeta * sum_e_over_d_j)
 
         # Optimized gradient computation: avoid intermediate array allocation by using vdot
         grad_tau = float(-gamma * np.vdot(e, distance))
