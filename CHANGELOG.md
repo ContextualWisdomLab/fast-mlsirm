@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Vectorized `_factor_fit` and the binary/categorical stratum item-fit
+  aggregations in `python/fast_mlsirm/diagnostics.py` with boolean mask matrix
+  multiplications, replacing per-group Python loops and boolean-slice
+  allocations with BLAS-backed aggregation.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built

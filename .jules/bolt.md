@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Replacing Subset Loops with Boolean Mask Matrix Multiplication
+**Learning:** In operations that group multi-dimensional data by categorical identifiers (e.g., aggregating item fit statistics by `factor_id`), using a Python `for` loop combined with boolean indexing (`cols = factors == factor; array[:, cols].sum()`) creates intermediate sub-arrays and incurs massive Python overhead for large dimensions.
+**Action:** Replace the Python loop and boolean indexing with a vectorized boolean mask matrix multiplication. Create a mask matrix (e.g., `mask = (factors[:, None] == unique_factors[None, :]).astype(np.float64)`), compute aggregations over the full array axis (e.g., `sum(axis=0)`), and then matrix-multiply the aggregated results with the mask (`aggregated @ mask`) to directly compute the totals per categorical group using fast BLAS operations.

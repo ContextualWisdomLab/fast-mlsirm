@@ -461,36 +461,38 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
-    rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+    unique_factors = np.unique(factors)
+    # Optimized boolean mask matrix multiplication: Avoids slow python loops and intermediate
+    # subset array allocations by converting aggregations to fast dense BLAS operations.
+    mask = (factors[:, None] == unique_factors[None, :]).astype(np.float64)
 
-    table = np.asarray(rows, dtype=np.float64)
-    variance_sum = table[:, 5]
-    count = table[:, 1]
+    obs_sum = observed.sum(axis=0).astype(np.float64)
+    y_obs_sum = (y * observed).sum(axis=0)
+    prob_obs_sum = (prob * observed).sum(axis=0)
+    res_sum = residual.sum(axis=0)
+    var_obs_sum = (variance * observed).sum(axis=0)
+    res_sq_sum = (residual * residual).sum(axis=0)
+    pearson_sum = pearson_sq.sum(axis=0)
+
+    count = obs_sum @ mask
+    score = y_obs_sum @ mask
+    expected_score = prob_obs_sum @ mask
+    raw_residual = res_sum @ mask
+    variance_sum = var_obs_sum @ mask
+    infit_num = res_sq_sum @ mask
+    outfit_num = pearson_sum @ mask
+
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
     return {
-        "factor_id": table[:, 0],
+        "factor_id": unique_factors.astype(np.float64),
         "observed_count": count,
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
-        "infit_mnsq": table[:, 6] / safe_variance,
-        "outfit_mnsq": table[:, 7] / safe_count,
+        "score": score,
+        "expected_score": expected_score,
+        "raw_residual": raw_residual,
+        "standardized_residual": raw_residual / np.sqrt(safe_variance),
+        "infit_mnsq": infit_num / safe_variance,
+        "outfit_mnsq": outfit_num / safe_count,
     }
 
 
@@ -575,21 +577,36 @@ def _binary_stratum_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
-    rows = []
-    for value in np.unique(ids):
-        rows.append(
-            _binary_scope_row(
-                float(value),
-                ids[:, None] == value,
-                y,
-                observed,
-                prob,
-                variance,
-                residual,
-                pearson_sq,
-                loglik,
-            )
-        )
+
+    group_values = np.unique(ids)
+    mask = (ids[:, None] == group_values[None, :]).astype(np.float64)
+
+    count = observed.sum(axis=1) @ mask
+    y_sum = (y * observed).sum(axis=1) @ mask
+    prob_sum = (prob * observed).sum(axis=1) @ mask
+    residual_sum = (residual * observed).sum(axis=1) @ mask
+    variance_sum = (variance * observed).sum(axis=1) @ mask
+    residual_sq_sum = (residual * residual * observed).sum(axis=1) @ mask
+    pearson_sq_sum = (pearson_sq * observed).sum(axis=1) @ mask
+    loglik_sum = (loglik * observed).sum(axis=1) @ mask
+
+    safe_var = np.maximum(variance_sum, 1e-12)
+    safe_count = np.maximum(count, 1.0)
+
+    rows = list(zip(
+        group_values.astype(float),
+        count.astype(float),
+        y_sum.astype(float),
+        prob_sum.astype(float),
+        residual_sum.astype(float),
+        (residual_sum / np.sqrt(safe_var)).astype(float),
+        (residual_sq_sum / safe_var).astype(float),
+        (pearson_sq_sum / safe_count).astype(float),
+        loglik_sum.astype(float),
+        (-2.0 * loglik_sum).astype(float),
+        pearson_sq_sum.astype(float),
+    ))
+
     return _binary_scope_table(id_name, rows)
 
 
@@ -608,30 +625,48 @@ def _binary_stratum_item_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
-    rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(y.shape[1]):
-            scope = np.zeros_like(observed, dtype=bool)
-            scope[row_mask, item] = True
-            if np.any(observed & scope):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_binary_scope_row(
-                            0.0,
-                            scope,
-                            y,
-                            observed,
-                            prob,
-                            variance,
-                            residual,
-                            pearson_sq,
-                            loglik,
-                        )[1:],
-                    )
-                )
+
+    group_values = np.unique(ids)
+    n_items = y.shape[1]
+
+    valid = observed.ravel()
+    group_index = np.searchsorted(group_values, ids)
+    cell_index = (group_index[:, None] * n_items + np.arange(n_items, dtype=np.int64)).ravel()
+
+    bins = cell_index[valid]
+    n_cells = group_values.size * n_items
+
+    count = np.bincount(bins, minlength=n_cells).astype(np.float64)
+    y_sum = np.bincount(bins, weights=y.ravel()[valid], minlength=n_cells)
+    prob_sum = np.bincount(bins, weights=prob.ravel()[valid], minlength=n_cells)
+    residual_sum = np.bincount(bins, weights=residual.ravel()[valid], minlength=n_cells)
+    variance_sum = np.bincount(bins, weights=variance.ravel()[valid], minlength=n_cells)
+    residual_sq_sum = np.bincount(bins, weights=(residual * residual).ravel()[valid], minlength=n_cells)
+    pearson_sq_sum = np.bincount(bins, weights=pearson_sq.ravel()[valid], minlength=n_cells)
+    loglik_sum = np.bincount(bins, weights=loglik.ravel()[valid], minlength=n_cells)
+
+    active = count > 0.0
+    cell_ids = np.repeat(group_values, n_items)[active]
+    item_ids = np.tile(np.arange(n_items, dtype=np.float64), group_values.size)[active]
+
+    safe_var = np.maximum(variance_sum[active], 1e-12)
+    safe_count = np.maximum(count[active], 1.0)
+
+    rows = list(zip(
+        cell_ids.astype(float),
+        item_ids.astype(float),
+        count[active],
+        y_sum[active],
+        prob_sum[active],
+        residual_sum[active],
+        residual_sum[active] / np.sqrt(safe_var),
+        residual_sq_sum[active] / safe_var,
+        pearson_sq_sum[active] / safe_count,
+        loglik_sum[active],
+        -2.0 * loglik_sum[active],
+        pearson_sq_sum[active],
+    ))
+
     return _binary_scope_item_table(id_name, rows)
 
 
@@ -730,12 +765,24 @@ def _categorical_stratum_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
-    rows = []
-    for value in np.unique(ids):
-        where = observed & (ids[:, None] == value)
-        rows.append(
-            _categorical_scope_row(float(value), where, entry_loglik, entry_chisq)
-        )
+    group_values = np.unique(ids)
+    mask = (ids[:, None] == group_values[None, :]).astype(np.float64)
+
+    count = observed.sum(axis=1) @ mask
+    loglik_sum = entry_loglik.sum(axis=1) @ mask
+    chisq_sum = entry_chisq.sum(axis=1) @ mask
+
+    safe_count = np.maximum(count, 1.0)
+
+    rows = list(zip(
+        group_values.astype(float),
+        count.astype(float),
+        loglik_sum.astype(float),
+        (-2.0 * loglik_sum).astype(float),
+        chisq_sum.astype(float),
+        (chisq_sum / safe_count).astype(float),
+    ))
+
     return _categorical_scope_table(id_name, rows)
 
 
@@ -750,22 +797,34 @@ def _categorical_stratum_item_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
-    rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(observed.shape[1]):
-            where = np.zeros_like(observed, dtype=bool)
-            where[row_mask, item] = observed[row_mask, item]
-            if np.any(where):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
-                            1:
-                        ],
-                    )
-                )
+    group_values = np.unique(ids)
+    n_items = observed.shape[1]
+
+    valid = observed.ravel()
+    group_index = np.searchsorted(group_values, ids)
+    cell_index = (group_index[:, None] * n_items + np.arange(n_items, dtype=np.int64)).ravel()
+
+    bins = cell_index[valid]
+    n_cells = group_values.size * n_items
+
+    count = np.bincount(bins, minlength=n_cells).astype(np.float64)
+    loglik = np.bincount(bins, weights=entry_loglik.ravel()[valid], minlength=n_cells)
+    chisq = np.bincount(bins, weights=entry_chisq.ravel()[valid], minlength=n_cells)
+
+    active = count > 0.0
+    cell_ids = np.repeat(group_values, n_items)[active]
+    item_ids = np.tile(np.arange(n_items, dtype=np.float64), group_values.size)[active]
+
+    rows = list(zip(
+        cell_ids.astype(float),
+        item_ids.astype(float),
+        count[active].astype(float),
+        loglik[active].astype(float),
+        (-2.0 * loglik[active]).astype(float),
+        chisq[active].astype(float),
+        (chisq[active] / np.maximum(count[active], 1.0)).astype(float),
+    ))
+
     return _categorical_scope_item_table(id_name, rows)
 
 
