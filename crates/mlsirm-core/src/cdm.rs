@@ -882,8 +882,8 @@ pub struct QValidationResult {
 ///
 /// References (APA 7th ed.):
 ///   de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
-///     validation. *Psychometrika, 81*(2), 253-273.
-///     https://doi.org/10.1007/s11336-015-9467-8
+///     validation. *Psychometrika, 81*(2), 253–273.
+///     <https://doi.org/10.1007/s11336-015-9467-8>
 ///   de la Torre, J. (2008). An empirically based method of Q-matrix validation for
 ///     the DINA model: Development and applications. *Journal of Educational
 ///     Measurement, 45*(4), 343-362. https://doi.org/10.1111/j.1745-3984.2008.00069.x

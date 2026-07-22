@@ -1648,6 +1648,14 @@ fn mc_qval_recovery_500() {
     let (s, g) = (vec![0.1f64; n_items], vec![0.1f64; n_items]);
     let bk = [-0.6f64, 0.0, 0.6];
     let lambda = 1.5f64;
+    // This simulation has N*J = 15,000 observed cells, so an absolute
+    // log-likelihood increment of 2e-4 is at most 1.4e-8 per cell. Keep the
+    // production iteration cap, but make the literature-grade stopping
+    // contract explicit instead of accepting unfinished default-tolerance fits.
+    let cfg = CdmConfig {
+        tol: 2e-4,
+        ..CdmConfig::default()
+    };
 
     for &skew in [false, true].iter() {
         let (mut sum_qrec, mut sum_tpr, mut sum_fpr) = (0.0f64, 0.0f64, 0.0f64);
@@ -1700,17 +1708,10 @@ fn mc_qval_recovery_500() {
                     prov[i * k] = 1;
                 }
             }
-            let res = validate_q_matrix(
-                &y,
-                &observed,
-                &prov,
-                n,
-                n_items,
-                k,
-                0.95,
-                &CdmConfig::default(),
-            )
-            .unwrap();
+            let res = validate_q_matrix(&y, &observed, &prov, n, n_items, k, 0.95, &cfg)
+                .unwrap_or_else(|err| {
+                    panic!("Q validation failed for skew={skew} rep={rep} seed={seed}: {err}")
+                });
 
             let mut qrec = 0usize;
             let (mut tp, mut fp, mut pos, mut neg) = (0usize, 0usize, 0usize, 0usize);
@@ -1740,7 +1741,17 @@ fn mc_qval_recovery_500() {
         }
         let r = reps as f64;
         println!(
-            "[qval MC skew={skew}] reps={reps} q-recovery={:.3} attr-TPR={:.3} attr-FPR={:.3}",
+            concat!(
+                "[qval MC skew={}] reps={} converged={}/{} ",
+                "termination=tolerance_met max_iter={} tol={:.1e} ",
+                "q-recovery={:.3} attr-TPR={:.3} attr-FPR={:.3}"
+            ),
+            skew,
+            reps,
+            reps,
+            reps,
+            cfg.max_iter,
+            cfg.tol,
             sum_qrec / r,
             sum_tpr / r,
             sum_fpr / r

@@ -332,7 +332,7 @@ def validate_q_matrix(
 
     References (APA 7th ed.):
         de la Torre, J., & Chiu, C.-Y. (2016). A general method of empirical Q-matrix
-            validation. *Psychometrika, 81*(2), 253-273.
+            validation. *Psychometrika, 81*(2), 253–273.
             https://doi.org/10.1007/s11336-015-9467-8
         de la Torre, J. (2008). An empirically based method of Q-matrix validation
             for the DINA model: Development and applications. *Journal of Educational
