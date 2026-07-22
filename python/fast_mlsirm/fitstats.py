@@ -1553,12 +1553,45 @@ def tcc_drift(
     q_xi: int = 11,
     eps_distance: float = 1e-8,
 ) -> dict:
-    """Stepwise TCC drift detection between two same-scale calibrations
-    (Guo, Zheng & Chang 2015): flags items whose parameter drift moves the
-    test characteristic curve, in removal order."""
+    """Screen same-scale calibrations with backward TCC-area elimination.
+
+    The repository computes the prior-weighted absolute difference between the
+    two test characteristic curves and removes the active item with the largest
+    unsigned ICC-area contribution until the remaining area is at most
+    ``threshold`` or only two items remain. The result reports the removal
+    order, area trace, iteration limits, and exact termination reason.
+
+    This is a repository-specific heuristic motivated by the TCC-difference
+    objective of Guo et al. (2015), not their complete stepwise TCC method. The
+    published method alternates item-entry and item-removal steps to find a
+    locally optimal linking set without a predetermined critical value. This
+    implementation never re-enters excluded items and uses a caller-supplied
+    fixed threshold; its output must not be interpreted as the paper's
+    source-backed flagging procedure.
+
+    References
+    ----------
+    Guo, R., Zheng, Y., & Chang, H. H. (2015). A stepwise test characteristic
+        curve method to detect item parameter drift. *Journal of Educational
+        Measurement, 52*(3), 280–300. https://doi.org/10.1111/jedm.12077
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("tcc_drift requires the compiled Rust core")
+    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
+            raise ValueError(f"{name} must be an integer")
+        if int(value) < 1:
+            raise ValueError(f"{name} must be at least 1")
+    if isinstance(threshold, (bool, np.bool_)) or not isinstance(
+        threshold, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError("threshold must be a finite non-negative number")
+    threshold_value = float(threshold)
+    if not np.isfinite(threshold_value) or threshold_value < 0.0:
+        raise ValueError("threshold must be a finite non-negative number")
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
     old = _bank_args(params_old, d_of_i, model, n_dims, eps_distance)
@@ -1570,7 +1603,7 @@ def tcc_drift(
             old["factor_id"], old["model"], old["n_dims"], old["latent_dim"],
             old["eps_distance"], np.zeros(n_dims), np.ones(n_dims),
             q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
-            threshold=float(threshold),
+            threshold=threshold_value,
         )
     )
     return res

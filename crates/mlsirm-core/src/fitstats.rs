@@ -1316,17 +1316,37 @@ pub fn person_fit_resampling(
     Ok(p_values)
 }
 
-/// Stepwise test-characteristic-curve drift detection (Guo, Zheng & Chang
-/// 2015): given two calibrations of a common item set on the SAME scale
-/// (e.g. FIPC-linked), compute the weighted area between the two TCCs over
-/// the prior grid, and step-wise remove the item with the largest
-/// contribution until the remaining area falls below `threshold` — the
-/// removed items are the drift suspects.
+/// Repository-specific backward-elimination screen for TCC drift.
+///
+/// Given two calibrations of a common item set on the same scale (for example,
+/// FIPC-linked), this function computes the weighted area between their TCCs
+/// and repeatedly removes the active item with the largest unsigned ICC-area
+/// contribution. It stops when the TCC area is at most `threshold` or only two
+/// items remain.
+///
+/// This is not the complete stepwise TCC method of Guo et al. (2015). Their
+/// procedure alternates item-entry and item-removal steps, updates the linking
+/// set, and stops at a locally optimal set without a predetermined critical
+/// value. This implementation never re-enters an excluded item and uses a
+/// repository-defined fixed stopping threshold, so its output is a heuristic
+/// screen rather than the paper's source-backed flagging procedure.
+///
+/// # References
+///
+/// Guo, R., Zheng, Y., & Chang, H. H. (2015). A stepwise test characteristic
+/// curve method to detect item parameter drift. *Journal of Educational
+/// Measurement, 52*(3), 280–300. https://doi.org/10.1111/jedm.12077
 pub struct TccDriftResult {
     /// Items flagged as drifted, in removal order.
     pub drifted: Vec<usize>,
     /// Weighted TCC area per removal round (before each removal).
     pub area_trace: Vec<f64>,
+    /// Number of item-removal iterations completed.
+    pub iterations: usize,
+    /// Maximum possible removals before only two items remain.
+    pub max_iterations: usize,
+    /// Exact stopping condition: `threshold_met` or `minimum_items_reached`.
+    pub termination_reason: &'static str,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1338,6 +1358,9 @@ pub fn tcc_drift(
     xi_rule: XiRule,
     threshold: f64,
 ) -> Result<TccDriftResult, String> {
+    if !threshold.is_finite() || threshold < 0.0 {
+        return Err("threshold must be finite and non-negative".into());
+    }
     let n_items = bank_old.b.len();
     if bank_new.b.len() != n_items {
         return Err("both calibrations must cover the same item set".into());
@@ -1350,7 +1373,7 @@ pub fn tcc_drift(
     let mut active = vec![true; n_items];
     let mut drifted = Vec::new();
     let mut area_trace = Vec::new();
-    loop {
+    let termination_reason = loop {
         // weighted area between TCCs over active items
         let mut area = 0.0_f64;
         let mut per_item = vec![0.0_f64; n_items];
@@ -1369,8 +1392,11 @@ pub fn tcc_drift(
             }
         }
         area_trace.push(area);
-        if area <= threshold || active.iter().filter(|&&a| a).count() <= 2 {
-            break;
+        if area <= threshold {
+            break "threshold_met";
+        }
+        if active.iter().filter(|&&a| a).count() <= 2 {
+            break "minimum_items_reached";
         }
         let worst = (0..n_items)
             .filter(|&i| active[i])
@@ -1382,10 +1408,14 @@ pub fn tcc_drift(
             .unwrap();
         active[worst] = false;
         drifted.push(worst);
-    }
+    };
+    let iterations = drifted.len();
     Ok(TccDriftResult {
         drifted,
         area_trace,
+        iterations,
+        max_iterations: n_items.saturating_sub(2),
+        termination_reason,
     })
 }
 

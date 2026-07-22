@@ -4539,7 +4539,17 @@ fn person_fit_resampling(
     .map_err(PyValueError::new_err)
 }
 
-/// Stepwise TCC drift detection between two calibrations (Guo et al. 2015).
+/// Repository-specific fixed-threshold, backward-elimination TCC drift screen.
+///
+/// This heuristic is motivated by the TCC-difference objective of Guo et al.
+/// (2015), but it does not implement their alternating entry/removal procedure
+/// or locally optimal linking-set search.
+///
+/// # References
+///
+/// Guo, R., Zheng, Y., & Chang, H. H. (2015). A stepwise test characteristic
+/// curve method to detect item parameter drift. *Journal of Educational
+/// Measurement, 52*(3), 280–300. https://doi.org/10.1111/jedm.12077
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
@@ -4608,6 +4618,9 @@ fn tcc_drift(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("drifted", res.drifted)?;
     out.set_item("area_trace", res.area_trace)?;
+    out.set_item("iterations", res.iterations)?;
+    out.set_item("max_iterations", res.max_iterations)?;
+    out.set_item("termination_reason", res.termination_reason)?;
     Ok(out.into())
 }
 

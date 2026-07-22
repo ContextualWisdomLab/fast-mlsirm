@@ -228,4 +228,48 @@ fn tcc_drift_isolates_the_shifted_item() {
         res.drifted
     );
     assert!(res.area_trace[0] > *res.area_trace.last().unwrap());
+    assert_eq!(res.termination_reason, "threshold_met");
+    assert_eq!(res.iterations, res.drifted.len());
+    assert_eq!(res.max_iterations, 8);
+}
+
+#[test]
+fn tcc_drift_rejects_invalid_thresholds_and_reports_the_item_floor() {
+    let (alpha, b, zeta, fid, _y, _obs) = sim_bank(10, 6, 2);
+    let b_new: Vec<f64> = b.iter().map(|value| value + 0.5).collect();
+    let bank_old = mk_bank(&alpha, &b, &zeta, &fid);
+    let bank_new = mk_bank(&alpha, &b_new, &zeta, &fid);
+    let prior = PriorSpec::standard(1);
+
+    for threshold in [f64::NAN, -1.0] {
+        let err = tcc_drift(
+            &bank_old,
+            &bank_new,
+            &prior,
+            7,
+            XiRule::GaussHermite { q_xi: 3 },
+            threshold,
+        )
+        .err()
+        .expect("invalid threshold must be rejected");
+        assert!(
+            err.contains("finite and non-negative"),
+            "unexpected error: {err}"
+        );
+    }
+
+    let res = tcc_drift(
+        &bank_old,
+        &bank_new,
+        &prior,
+        7,
+        XiRule::GaussHermite { q_xi: 3 },
+        0.0,
+    )
+    .unwrap();
+    assert_eq!(res.termination_reason, "minimum_items_reached");
+    assert_eq!(res.iterations, 4);
+    assert_eq!(res.max_iterations, 4);
+    assert_eq!(res.area_trace.len(), res.iterations + 1);
+    assert!(*res.area_trace.last().unwrap() > 0.0);
 }

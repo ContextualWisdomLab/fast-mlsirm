@@ -14,7 +14,7 @@ reviews, applications, or textbooks that inform documentation, not code.
 | Bock & Mislevy (1982), adaptive EAP estimation | sequential EAP scoring + maximum-information CAT item selection over a frozen bank |
 | Wang, Kuo & Chao (2010), MCAT system | the CAT loop generalized to the multidimensional simple-structure bank (per-dimension information targeting) |
 | Marsman et al. (2016), plausible values | posterior plausible-value draws from the scoring grid (secondary-analysis exports) |
-| Guo, Zheng & Chang (2015), stepwise TCC drift | test-characteristic-curve drift detection between two calibrations of a common bank (stepwise anchor purification) |
+| Guo, Zheng & Chang (2015), stepwise TCC drift | repository-specific fixed-threshold backward-elimination screen over same-scale TCC area; it does not implement the paper's alternating item-entry/removal steps or locally optimal linking-set search |
 | Haberman, Sinharay & Chon (2013), residual item fit | standardized residuals of observed vs estimated ICCs on the score grid |
 | Sinharay (2016), resampling person fit | fixed-EAP conditional Monte Carlo approximation for `l_z*` (add-one-smoothed empirical lower-tail frequencies); the complete generalized resampling procedure, including replicate-wise ability re-estimation, is not implemented |
 | Tay & Drasgow (2012), adjusted chi2/df | Exploratory repository-specific item-pair ratios only. The paper finds a fixed cutoff insufficient and recommends a parametric bootstrap; that inferential procedure is not implemented. |

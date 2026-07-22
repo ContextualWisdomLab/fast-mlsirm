@@ -22,6 +22,7 @@ from fast_mlsirm.fitstats import (
     residual_item_fit,
     s_x2,
     select_items,
+    tcc_drift,
 )
 
 
@@ -365,6 +366,67 @@ def test_person_fit_resampling_rejects_invalid_inputs_before_native(monkeypatch)
 
     with pytest.raises(ValueError, match="at least one person"):
         person_fit_resampling(np.empty((0, 4)), factor_id, params(n_persons=0), "MIRT")
+
+
+def test_tcc_drift_rejects_invalid_controls_before_native(monkeypatch):
+    class BombCore:
+        def tcc_drift(self, *_args, **_kwargs):
+            raise AssertionError("invalid TCC drift controls reached the native core")
+
+    params = SimpleNamespace(
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        zeta=np.zeros((4, 1)),
+        tau=-30.0,
+    )
+    factor_id = np.zeros(4, dtype=np.int64)
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+
+    for bad_threshold in (np.nan, np.inf, -1.0, True, "0.05"):
+        with pytest.raises(ValueError, match="finite non-negative"):
+            tcc_drift(params, params, factor_id, "MIRT", threshold=bad_threshold)
+
+    for name, bad_value in (("q_theta", 7.9), ("q_xi", True), ("q_theta", 0)):
+        with pytest.raises(ValueError, match=name):
+            tcc_drift(
+                params,
+                params,
+                factor_id,
+                "MIRT",
+                **{name: bad_value},
+            )
+
+
+@pytest.mark.skipif(
+    fitstats_module._core_module() is None, reason="compiled core unavailable"
+)
+def test_tcc_drift_reports_threshold_termination():
+    old = SimpleNamespace(
+        alpha=np.zeros(6),
+        b=np.linspace(-1.2, 1.2, 6),
+        zeta=np.zeros((6, 1)),
+        tau=-30.0,
+    )
+    new = SimpleNamespace(
+        alpha=old.alpha.copy(),
+        b=old.b + np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+        zeta=old.zeta.copy(),
+        tau=old.tau,
+    )
+    result = tcc_drift(
+        old,
+        new,
+        np.zeros(6, dtype=np.int64),
+        "MIRT",
+        threshold=0.05,
+        q_theta=7,
+        q_xi=3,
+    )
+    assert result["drifted"] == [2]
+    assert result["termination_reason"] == "threshold_met"
+    assert result["iterations"] == 1
+    assert result["max_iterations"] == 4
+    assert result["area_trace"][-1] <= 0.05
 
 
 def test_select_items_removes_sparse_and_scrambled():
