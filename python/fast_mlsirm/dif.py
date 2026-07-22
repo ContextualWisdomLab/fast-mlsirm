@@ -264,6 +264,118 @@ def _mh_rows(res) -> dict[str, np.ndarray]:
     }
 
 
+def sibtest(
+    responses: np.ndarray,
+    group: np.ndarray,
+    fdr_q: float = 0.05,
+    j_min: int = 5,
+) -> dict[str, np.ndarray]:
+    """Uniform SIBTEST for dichotomous items (compute in Rust; Shealy & Stout, 1993).
+
+    The third observed-score DIF procedure in this module, and the only one that corrects the MATCHING
+    CRITERION itself. :func:`mantel_haenszel_dif` and :func:`logistic_dif` both match on an observed
+    number-correct score, which is unreliable: under IMPACT (a genuine group difference in ability) two
+    examinees from different groups with the same OBSERVED score do not have the same expected TRUE
+    score, because each regresses toward their own group's mean. Matching on the raw score therefore
+    compares non-equivalent examinees and manufactures DIF for items that have none. Item purification
+    cannot substitute for this — it changes which items are in the criterion, not the regression of true
+    score on observed score, so even a perfectly purified criterion stays biased.
+
+    SIBTEST transports each group's conditional mean from that group's own Kelley-regressed true score
+    to a common target (the unweighted midpoint of the two) before comparing. Each item in turn is the
+    studied subtest; the valid subtest is every OTHER item, always disjoint — that is a property of the
+    estimator, not an option.
+
+    Returns per-item arrays: ``beta_uni`` (the regression-corrected weighted mean difference),
+    ``se_beta``, ``b_uni``, ``p_value`` (``b_uni**2`` referred to ``chi2(1)``), ``alpha_ref`` and
+    ``alpha_focal`` (the per-group reliabilities the correction divides by — a low or unstable alpha
+    inflates the correction, so they are reported rather than hidden), ``n_strata_used``, ``flagged_bh``.
+
+    **SIGN WARNING.** ``beta_uni > 0`` means the item is harder for the FOCAL group. This is the
+    OPPOSITE orientation to ``mh_d_dif`` and ``std_p_dif`` from :func:`mantel_haenszel_dif`, which go
+    negative in that same situation. The orientation is kept rather than harmonised because published
+    ``|beta_uni|`` cut-offs assume it; flip one of the two when comparing across procedures.
+
+    **When to prefer it — rarely, on the evidence measured here.** This implementation was compared
+    against :func:`mantel_haenszel_dif` on identical simulated data, 500 replications per cell, 2PL,
+    with NO DIF planted so every rejection is a false positive::
+
+        impact  n per group  items   MH Type I   SIBTEST Type I
+        0.0     1000         5       .044        .056
+        1.0     1000         5       .046        .086
+
+    These are the exact cells the shipped Monte-Carlo regression test runs and the rates it prints, so
+    the table is regenerable from the repository rather than quoted from a study that no longer exists.
+
+    SIBTEST over-rejects in both cells and by roughly DOUBLE under impact — the opposite of the ordering
+    the motivation above might suggest. The cause is the standard error, below. This is not a
+    transcription error (the closed-form anchors reproduce the reference implementation exactly); it is
+    a property of the 1993 estimator, and it is what Jiang and Stout's (1998) paper — "Improved Type I
+    error control and reduced estimation bias for DIF detection using SIBTEST" — exists to fix. Prefer
+    :func:`mantel_haenszel_dif` or :func:`logistic_dif` for routine screening; reach for this when you
+    specifically want the regression-corrected estimand, and read ``beta_uni`` as an effect size rather
+    than trusting ``p_value`` as a calibrated test.
+
+    **Limitations, none of them silent.** ``se_beta`` treats the regression correction as FIXED, so it
+    does not propagate the correction's own estimation error; it is optimistic and the test
+    over-rejects, as measured above. The shipped correction is the single linear one; Jiang and Stout's
+    (1998) two-segment version is a different, later estimator and is not implemented. No guessing
+    correction. No effect-size letter class: published cut-offs disagree and none was verified against a
+    primary source, so the raw effect size ships uncalibrated.
+    Crossing (non-uniform) DIF is NOT covered — Chalmers (2018) shows the Li and Stout (1996) crossing
+    test is insufficient and no normal-theory referral is valid, so use :func:`logistic_dif`, whose
+    ``S x G`` interaction tests crossing directly.
+
+    **Provenance.** The formulas are transcribed from the reference implementation (Chalmers, 2012;
+    the ``SIBTEST`` routine of the ``mirt`` package), which attributes them to Shealy and Stout (1993).
+    The primary text was not consulted, and ``mirt`` was not executed — the transcription was made by
+    reading its source, so the closed-form tests verify this code against the transcribed formulas and
+    no agreement with ``mirt`` output is claimed.
+
+    ``responses`` is a persons x items ``0/1`` array (no missing data) with at least 3 items; ``group``
+    is length-persons with ``0`` = reference and ``1`` = focal. ``j_min`` (default 5) is the number of
+    examinees per group per matching level that must be STRICTLY exceeded for that level to count.
+
+    References (APA 7th ed.):
+        Chalmers, R. P. (2012). mirt: A multidimensional item response theory package for the R
+            environment. *Journal of Statistical Software, 48*(6), 1-29.
+            https://doi.org/10.18637/jss.v048.i06
+        Chalmers, R. P. (2018). Improving the crossing-SIBTEST statistic for detecting non-uniform DIF.
+            *Psychometrika, 83*(2), 376-386. https://doi.org/10.1007/s11336-017-9583-8
+        DeMars, C. E. (2009). Modification of the Mantel-Haenszel and logistic regression DIF procedures
+            to incorporate the SIBTEST regression correction. *Journal of Educational and Behavioral
+            Statistics, 34*(2), 149-170. https://doi.org/10.3102/1076998607313923
+        Jiang, H., & Stout, W. (1998). Improved Type I error control and reduced estimation bias for DIF
+            detection using SIBTEST. *Journal of Educational and Behavioral Statistics, 23*(4), 291-322.
+            https://doi.org/10.3102/10769986023004291
+        Li, H.-H., & Stout, W. (1996). A new procedure for detection of crossing DIF. *Psychometrika,
+            61*(4), 647-677. https://doi.org/10.1007/BF02294041
+        Shealy, R., & Stout, W. (1993). A model-based standardization approach that separates true
+            bias/DIF from group ability differences and detects test bias/DTF as well as item bias/DIF.
+            *Psychometrika, 58*(2), 159-194. https://doi.org/10.1007/BF02294572
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "sibtest"):
+        raise RuntimeError("sibtest requires the compiled Rust core")
+    yy, gg, n_persons, n_items = _dif_inputs(responses, group, fdr_q)
+    if not isinstance(j_min, (int, np.integer)) or j_min < 2:
+        raise ValueError("j_min must be an integer >= 2")
+    res = core.sibtest(yy, gg, n_persons, n_items, float(fdr_q), int(j_min))
+    return {
+        "item": np.asarray(res["item"], dtype=np.int64),
+        "beta_uni": np.asarray(res["beta_uni"], dtype=np.float64),
+        "se_beta": np.asarray(res["se_beta"], dtype=np.float64),
+        "b_uni": np.asarray(res["b_uni"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "alpha_ref": np.asarray(res["alpha_ref"], dtype=np.float64),
+        "alpha_focal": np.asarray(res["alpha_focal"], dtype=np.float64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+        "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
+    }
+
+
 def _logistic_rows(res) -> dict[str, np.ndarray]:
     return {
         "item": np.asarray(res["item"], dtype=np.int64),

@@ -1060,6 +1060,457 @@ pub fn logistic_dif_purified(
     )
 }
 
+// ============================ SIBTEST (uniform) ==============================
+//
+// The third observed-score DIF procedure in this module, and the only one that corrects the MATCHING
+// CRITERION ITSELF rather than the comparison built on top of it.
+//
+// Mantel-Haenszel and the logistic sweep both match on an observed number-correct score. That score is
+// unreliable, and under IMPACT (a real group difference in ability) two examinees from different groups
+// with the same OBSERVED score do not have the same EXPECTED TRUE score — each regresses toward its own
+// group mean. Matching on the raw observed score therefore compares non-equivalent examinees and
+// produces DIF statistics for items that have none. Item purification cannot repair this: the defect is
+// the regression of true score on observed score, not which items are in the sum, so a perfectly
+// purified criterion is still biased. SIBTEST transports each group's conditional mean from its own
+// estimated true score to a common target before comparing, which is the entire point of the procedure.
+//
+// The correction, per retained matching level `k` (`R` = reference/group 0, `F` = focal/group 1):
+//
+// - `V*_Gk = [Xbar_G + alpha_G (k - Xbar_G)] / n_valid` — Kelley's regressed estimate of group `G`'s
+//   true valid-subtest score at observed level `k`, with `alpha_G` that group's coefficient alpha
+//   (KR-20) on the valid subtest and `Xbar_G` its mean valid score.
+// - `V*_k = (V*_Rk + V*_Fk) / 2` — the common target, an UNWEIGHTED midpoint.
+// - `M_Gj = (Ybar_G[j+1] - Ybar_G[j-1]) / (V*_G[j+1] - V*_G[j-1])` — a per-level central difference over
+//   the group's OWN true-score scale, taken at adjacent OBSERVED level positions (not at `k +/- 1`:
+//   levels with no examinees are absent, so arithmetic on `k` would silently use the wrong spacing).
+// - `Ybar*_Gk = Ybar_Gk + M_Gj (V*_k - V*_Gk)` — BOTH endpoints of the transport are true-score
+//   quantities. Subtracting the OBSERVED mean here instead would collapse the whole correction to
+//   `(M_R - M_F)(V*_k - k)`, which vanishes exactly in the null-DIF-with-impact case the method exists
+//   to fix.
+// - `beta_uni = sum_k p_k (Ybar*_Rk - Ybar*_Fk)` with `p_k` the COMBINED-sample proportion at level `k`,
+//   renormalized over the retained strata.
+// - `se_beta = sqrt(sum_k p_k^2 [s2_Fk/J_Fk + s2_Rk/J_Rk])`, `b_uni = beta_uni / se_beta`, referred to
+//   `chi^2(1)` as `b_uni^2` (identical to the two-sided normal test, and reuses `chi2_sf`).
+//
+// SIGN, and it is the OPPOSITE of the rest of this module: `beta_uni > 0` means the item is HARDER FOR
+// THE FOCAL GROUP, because the estimator is reference-minus-focal. `mh_d_dif` and `std_p_dif` above are
+// focal-oriented and go NEGATIVE in that same situation. The orientation is kept rather than harmonised
+// because published `|beta_uni|` cut-offs assume it; a differently-signed quantity carrying the name
+// `beta_uni` would be the larger error. Cross-method comparisons must flip one of the two.
+//
+// WHEN TO PREFER IT — and the honest answer is "rarely, on the evidence measured here". This
+// implementation was compared against `mantel_haenszel_dif` on the same simulated data, 500
+// replications per cell, 2PL, no DIF planted, so every rejection is a false positive. These are the
+// exact cells `sibtest_type_i_error_exceeds_mantel_haenszel_under_impact` runs and the rates it
+// prints, so the table is regenerable from the repo rather than quoted from a vanished study:
+//
+//     impact  n(per group)  items   MH Type I   SIBTEST Type I
+//     0.0     1000          5       .044        .056
+//     1.0     1000          5       .046        .086
+//
+// SIBTEST's Type I error is ABOVE nominal in both cells and roughly DOUBLE Mantel-Haenszel's under
+// impact — the opposite of the ordering one might expect from the motivation above. The cause is the
+// next bullet: the correction is estimated but its variance is not propagated, so `se_beta` is
+// optimistic and the correction's own noise is charged to the signal. This is a property of the 1993
+// estimator rather than a transcription slip — the closed-form anchors reproduce the TRANSCRIBED
+// FORMULAS in exact rational arithmetic (`mirt` itself was never executed; see the provenance note
+// below) — and it is precisely what Jiang and Stout's (1998) paper, titled "Improved Type I error
+// control and reduced estimation bias for DIF detection using SIBTEST", was written to fix. Prefer
+// `mantel_haenszel_dif` or `logistic_dif` for routine screening. Reach for this when you specifically
+// want the regression-corrected estimand, and read `beta_uni` as an effect size rather than trusting
+// `p_value` as a calibrated test.
+//
+// KNOWN LIMITATIONS, none of them silent:
+// - `se_beta` treats the regression correction as FIXED. It is estimated (through `alpha_G` and the
+//   local slopes) and that estimation error is NOT propagated, so the standard error is optimistic and
+//   the test over-rejects — see the measured table above.
+// - The shipped correction is the single linear one. Jiang and Stout's (1998) two-segment piecewise
+//   correction is a different, later estimator and is not implemented.
+// - No guessing correction.
+// - Dichotomous only (`validate_dif_inputs` rejects responses above 1).
+// - No effect-size letter class. Published cut-offs disagree across sources and none was verified
+//   against its primary text, so the raw effect size ships uncalibrated — the same decision already
+//   taken for `delta_r2_uniform` above.
+// - No purified variant. `purify_loop` composes with this in a few lines, but purification needs a
+//   PRACTICAL-significance predicate and there is no verified cut-off to build one from; flagging on
+//   the BH flag alone would contradict this module's own reasoning that the test is over-powered at
+//   large N. Purification would also shorten the valid subtest, lowering the very `alpha_G` the
+//   correction divides by. Deliberately omitted, not overlooked.
+// - Crossing (non-uniform) DIF is NOT covered. Crossing-SIBTEST was evaluated and deliberately not
+//   built: Chalmers (2018) shows Li and Stout's (1996) hypothesis test is insufficient, and no
+//   normal-theory referral for a crossing statistic is valid. Use `logistic_dif`, whose `S x G`
+//   interaction tests crossing directly against a standard 1-df null.
+//
+// PROVENANCE OF THE FORMULAS ABOVE — stated plainly because it bounds what this code may claim. Every
+// equation is transcribed from the reference implementation (Chalmers, 2012; the `SIBTEST` routine of
+// the `mirt` package), which attributes them to Shealy and Stout (1993). THE PRIMARY TEXT WAS NOT
+// CONSULTED, and neither was `mirt` EXECUTED: the transcription was made by reading its source. The
+// closed-form anchors therefore verify this code against the transcribed formulas, NOT against `mirt`
+// output — no cross-implementation agreement is claimed anywhere, and the empty-neighbour divergence
+// below means exact agreement would not hold on all inputs even if it were tested. Where this
+// implementation diverges from that reference it is marked in the code.
+//
+// # References (APA 7th ed.)
+//
+// Chalmers, R. P. (2012). mirt: A multidimensional item response theory package for the R environment.
+//     *Journal of Statistical Software, 48*(6), 1-29. https://doi.org/10.18637/jss.v048.i06
+// Chalmers, R. P. (2018). Improving the crossing-SIBTEST statistic for detecting non-uniform DIF.
+//     *Psychometrika, 83*(2), 376-386. https://doi.org/10.1007/s11336-017-9583-8
+// DeMars, C. E. (2009). Modification of the Mantel-Haenszel and logistic regression DIF procedures to
+//     incorporate the SIBTEST regression correction. *Journal of Educational and Behavioral Statistics,
+//     34*(2), 149-170. https://doi.org/10.3102/1076998607313923
+// Jiang, H., & Stout, W. (1998). Improved Type I error control and reduced estimation bias for DIF
+//     detection using SIBTEST. *Journal of Educational and Behavioral Statistics, 23*(4), 291-322.
+//     https://doi.org/10.3102/10769986023004291
+// Li, H.-H., & Stout, W. (1996). A new procedure for detection of crossing DIF. *Psychometrika, 61*(4),
+//     647-677. https://doi.org/10.1007/BF02294041
+// Shealy, R., & Stout, W. (1993). A model-based standardization approach that separates true
+//     bias/DIF from group ability differences and detects test bias/DTF as well as item bias/DIF.
+//     *Psychometrika, 58*(2), 159-194. https://doi.org/10.1007/BF02294572
+
+/// Configuration for [`sibtest`].
+#[derive(Clone, Copy)]
+pub struct SibtestConfig {
+    /// Benjamini-Hochberg FDR level for the across-item flag.
+    pub fdr_q: f64,
+    /// Minimum examinees per group per matching level, STRICTLY exceeded for a level to be retained.
+    pub j_min: usize,
+}
+
+impl Default for SibtestConfig {
+    fn default() -> Self {
+        Self {
+            fdr_q: 0.05,
+            j_min: 5,
+        }
+    }
+}
+
+/// One studied item's uniform SIBTEST result. `NaN` statistics mean the item carried no usable strata
+/// or a degenerate reliability — never a silent `0.0` (which would read as an affirmative no-DIF claim).
+pub struct SibtestRow {
+    pub item: usize,
+    /// `beta_uni`, the regression-corrected weighted mean difference. **Positive = harder for the FOCAL
+    /// group** (reference minus focal), the OPPOSITE of `mh_d_dif`/`std_p_dif` in this same module.
+    pub beta_uni: f64,
+    /// Standard error of `beta_uni` (treats the regression correction as fixed; see the module notes).
+    pub se_beta: f64,
+    /// `beta_uni / se_beta`; its square is referred to `chi^2(1)`.
+    pub b_uni: f64,
+    /// Upper-tail `p`-value of `b_uni^2` on `chi^2(1)`.
+    pub p_value: f64,
+    /// Coefficient alpha of the valid subtest in the reference group. Exposed because the correction
+    /// DIVIDES by it: a low or unstable alpha inflates the local slope and hence the correction.
+    pub alpha_ref: f64,
+    /// Coefficient alpha of the valid subtest in the focal group.
+    pub alpha_focal: f64,
+    /// Matching levels that survived the retention rule.
+    pub n_strata_used: usize,
+    /// Benjamini-Hochberg FDR rejection flag on `p_value` across the swept items.
+    pub flagged_bh: bool,
+}
+
+/// One matching level's sufficient statistics for [`sibtest_stats`]. Raw moments rather than
+/// correct-counts, so the core computes its own unbiased within-cell variance.
+pub(crate) struct SibCell {
+    pub level: usize,
+    pub j_r: u64,
+    pub sum_y_r: f64,
+    pub sum_y2_r: f64,
+    pub j_f: u64,
+    pub sum_y_f: f64,
+    pub sum_y2_f: f64,
+}
+
+pub(crate) struct SibtestStats {
+    pub beta_uni: f64,
+    pub se_beta: f64,
+    pub b_uni: f64,
+    pub p_value: f64,
+    pub n_strata_used: usize,
+}
+
+const SIB_UNDEFINED: SibtestStats = SibtestStats {
+    beta_uni: f64::NAN,
+    se_beta: f64::NAN,
+    b_uni: f64::NAN,
+    p_value: f64::NAN,
+    n_strata_used: 0,
+};
+
+/// Coefficient alpha (KR-20) of the valid subtest within one group:
+/// `alpha = k/(k-1) * (1 - sum_j var(y_j) / var(sum_j y_j))`.
+///
+/// Biased and unbiased variances cancel in the ratio, so both arguments must merely use the SAME
+/// convention. Returns a non-finite value on a degenerate subtest, which the caller gates on.
+#[inline]
+fn coefficient_alpha(item_var_sum: f64, total_var: f64, n_valid: usize) -> f64 {
+    let k = n_valid as f64;
+    (k / (k - 1.0)) * (1.0 - item_var_sum / total_var)
+}
+
+/// Uniform SIBTEST from one item's per-level sufficient statistics (the calibration-free core, exposed
+/// for the deterministic anchors). `cells` must be sorted by ascending `level` and contain only levels
+/// OBSERVED in the combined sample.
+pub(crate) fn sibtest_stats(
+    cells: &[SibCell],
+    alpha_r: f64,
+    alpha_f: f64,
+    n_valid: usize,
+    j_min: u64,
+) -> SibtestStats {
+    // The correction divides by alpha through the local slope, so a non-positive or non-finite
+    // reliability makes the whole statistic meaningless. Reject rather than clamp.
+    if !(alpha_r.is_finite() && alpha_r > 0.0 && alpha_f.is_finite() && alpha_f > 0.0) {
+        return SIB_UNDEFINED;
+    }
+    // Central differences need an interior level, so at least three observed levels must exist.
+    if n_valid < 2 || cells.len() < 3 {
+        return SIB_UNDEFINED;
+    }
+
+    let (mut n_r, mut n_f, mut sx_r, mut sx_f) = (0u64, 0u64, 0.0f64, 0.0f64);
+    for c in cells {
+        n_r += c.j_r;
+        n_f += c.j_f;
+        sx_r += c.level as f64 * c.j_r as f64;
+        sx_f += c.level as f64 * c.j_f as f64;
+    }
+    if n_r == 0 || n_f == 0 {
+        return SIB_UNDEFINED;
+    }
+    let (xbar_r, xbar_f) = (sx_r / n_r as f64, sx_f / n_f as f64);
+
+    let nv = n_valid as f64;
+    // Kelley's regressed true-score estimate, on the proportion-correct scale of the valid subtest.
+    let vstar = |xbar: f64, alpha: f64, level: usize| (xbar + alpha * (level as f64 - xbar)) / nv;
+    let ybar = |sum: f64, j: u64| sum / j as f64;
+    // Unbiased within-cell variance from raw moments.
+    let cell_var = |sum: f64, sum2: f64, j: u64| {
+        let jf = j as f64;
+        (sum2 - sum * sum / jf) / (jf - 1.0)
+    };
+
+    // A level is retained when both groups are populated well enough for a variance AND both
+    // neighbouring positions can supply a slope. `j_min` is exceeded STRICTLY.
+    let retained = |j: usize| -> bool {
+        // Endpoints have no two-sided neighbours; this also keeps `j - 1` and `j + 1` in range below.
+        if j == 0 || j + 1 == cells.len() {
+            return false;
+        }
+        let c = &cells[j];
+        if !(c.j_r > j_min && c.j_f > j_min) {
+            return false;
+        }
+        if !(cell_var(c.sum_y_r, c.sum_y2_r, c.j_r) > 0.0
+            && cell_var(c.sum_y_f, c.sum_y2_f, c.j_f) > 0.0)
+        {
+            return false;
+        }
+        // DIVERGENCE from the reference implementation, deliberate: it imputes an empty group-by-level
+        // cell's mean to 0.0 and feeds that fabricated zero into the neighbouring central difference,
+        // producing a finite but meaningless slope. Drop the level instead.
+        let (lo, hi) = (&cells[j - 1], &cells[j + 1]);
+        lo.j_r >= 1 && lo.j_f >= 1 && hi.j_r >= 1 && hi.j_f >= 1
+    };
+
+    // Pass 1: the renormalizing constant for the combined-sample weights.
+    let mut w_total = 0.0f64;
+    let mut n_strata_used = 0usize;
+    for j in 0..cells.len() {
+        if retained(j) {
+            w_total += (cells[j].j_r + cells[j].j_f) as f64;
+            n_strata_used += 1;
+        }
+    }
+    if n_strata_used == 0 || !(w_total > 0.0) {
+        return SIB_UNDEFINED;
+    }
+
+    // Pass 2: accumulate the estimate and its variance.
+    let (mut beta, mut var_beta) = (0.0f64, 0.0f64);
+    for j in 0..cells.len() {
+        if !retained(j) {
+            continue;
+        }
+        let (c, lo, hi) = (&cells[j], &cells[j - 1], &cells[j + 1]);
+        let p_k = (c.j_r + c.j_f) as f64 / w_total;
+
+        let vr = vstar(xbar_r, alpha_r, c.level);
+        let vf = vstar(xbar_f, alpha_f, c.level);
+        let target = 0.5 * (vr + vf);
+
+        // Central difference over each group's OWN true-score scale, at adjacent OBSERVED positions.
+        // The denominator is `alpha_G * (level[j+1] - level[j-1]) / n_valid`, which is NOT
+        // `2 * alpha_G / n_valid` unless the levels happen to be contiguous.
+        let m_r = (ybar(hi.sum_y_r, hi.j_r) - ybar(lo.sum_y_r, lo.j_r))
+            / (vstar(xbar_r, alpha_r, hi.level) - vstar(xbar_r, alpha_r, lo.level));
+        let m_f = (ybar(hi.sum_y_f, hi.j_f) - ybar(lo.sum_y_f, lo.j_f))
+            / (vstar(xbar_f, alpha_f, hi.level) - vstar(xbar_f, alpha_f, lo.level));
+
+        let ystar_r = ybar(c.sum_y_r, c.j_r) + m_r * (target - vr);
+        let ystar_f = ybar(c.sum_y_f, c.j_f) + m_f * (target - vf);
+        beta += p_k * (ystar_r - ystar_f);
+
+        let s2_r = cell_var(c.sum_y_r, c.sum_y2_r, c.j_r);
+        let s2_f = cell_var(c.sum_y_f, c.sum_y2_f, c.j_f);
+        var_beta += p_k * p_k * (s2_f / c.j_f as f64 + s2_r / c.j_r as f64);
+    }
+
+    let se_beta = var_beta.sqrt();
+    if !beta.is_finite() || !(se_beta > 0.0) || !se_beta.is_finite() {
+        return SIB_UNDEFINED;
+    }
+    let b_uni = beta / se_beta;
+    // Guard BEFORE squaring: a finite-but-huge ratio overflows to `inf`, and `chi2_sf(inf, .)` is NaN.
+    let p_value = if b_uni.is_finite() {
+        chi2_sf(b_uni * b_uni, 1.0)
+    } else {
+        f64::NAN
+    };
+    SibtestStats {
+        beta_uni: beta,
+        se_beta,
+        b_uni,
+        p_value,
+        n_strata_used,
+    }
+}
+
+/// Uniform SIBTEST sweep (Shealy & Stout, 1993, as implemented in Chalmers, 2012 — see the module
+/// notes, including the provenance statement and why `beta_uni`'s sign is the opposite of
+/// `mh_d_dif`'s).
+///
+/// Each item in turn is the studied subtest `S = {i}`; the valid subtest `V` is every OTHER item, so
+/// `V` and `S` are DISJOINT by construction. That is a property of the estimator rather than a
+/// configuration option, and it is the opposite of the item-included Mantel-Haenszel default above
+/// (Donoghue, Holland & Thayer, 1993), which is equally deliberate there.
+pub fn sibtest(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &SibtestConfig,
+) -> Result<Vec<SibtestRow>, String> {
+    validate_dif_inputs(
+        y,
+        group,
+        n_persons,
+        n_items,
+        &MhDifConfig {
+            exclude_studied_item: false,
+            fdr_q: cfg.fdr_q,
+        },
+    )?;
+    // The valid subtest is every other item, and coefficient alpha needs at least two of them.
+    if n_items < 3 {
+        return Err("sibtest requires n_items >= 3 (the valid subtest needs >= 2 items)".into());
+    }
+    if cfg.j_min < 2 {
+        return Err("j_min must be >= 2 (a within-level variance needs two examinees)".into());
+    }
+
+    let base = base_scores(y, n_persons, n_items, None);
+    let n_valid = n_items - 1;
+    let j_min = cfg.j_min as u64;
+
+    // Per-group per-item response moments, for the coefficient-alpha numerator. One pass, reused by
+    // every item: the numerator for item `i` is the total minus item `i`'s own contribution.
+    let mut n_g = [0u64; 2];
+    let mut item_sum = [vec![0.0f64; n_items], vec![0.0f64; n_items]];
+    for p in 0..n_persons {
+        let g = group[p] as usize;
+        n_g[g] += 1;
+        for i in 0..n_items {
+            item_sum[g][i] += y[p * n_items + i] as f64;
+        }
+    }
+    if n_g[0] == 0 || n_g[1] == 0 {
+        return Err("both groups must be present".into());
+    }
+    // Population (biased) variance throughout; the convention cancels in alpha's ratio.
+    let item_var: Vec<[f64; 2]> = (0..n_items)
+        .map(|i| {
+            let mut v = [0.0f64; 2];
+            for g in 0..2 {
+                // A 0/1 item's mean square equals its mean, so var = mean - mean^2.
+                let m = item_sum[g][i] / n_g[g] as f64;
+                v[g] = m - m * m;
+            }
+            v
+        })
+        .collect();
+    let item_var_total: [f64; 2] = [
+        item_var.iter().map(|v| v[0]).sum(),
+        item_var.iter().map(|v| v[1]).sum(),
+    ];
+
+    let mut rows: Vec<SibtestRow> = Vec::with_capacity(n_items);
+    // `level = base - y_i` lies in `0..n_items`, so one dense accumulator serves every item.
+    let n_levels = n_items;
+    let mut acc: Vec<[f64; 6]> = vec![[0.0; 6]; n_levels];
+    for i in 0..n_items {
+        for slot in acc.iter_mut() {
+            *slot = [0.0; 6];
+        }
+        // Rest-score moments for alpha's denominator, accumulated in the same pass as the cells.
+        let mut rest_sum = [0.0f64; 2];
+        let mut rest_sq = [0.0f64; 2];
+        for p in 0..n_persons {
+            let g = group[p] as usize;
+            let yi = y[p * n_items + i] as f64;
+            let level = base[p] - y[p * n_items + i] as usize;
+            let s = &mut acc[level];
+            let off = if g == 0 { 0 } else { 3 };
+            s[off] += 1.0;
+            s[off + 1] += yi;
+            s[off + 2] += yi * yi;
+            let rest = level as f64;
+            rest_sum[g] += rest;
+            rest_sq[g] += rest * rest;
+        }
+        let cells: Vec<SibCell> = (0..n_levels)
+            .filter(|&l| acc[l][0] + acc[l][3] > 0.0)
+            .map(|l| SibCell {
+                level: l,
+                j_r: acc[l][0] as u64,
+                sum_y_r: acc[l][1],
+                sum_y2_r: acc[l][2],
+                j_f: acc[l][3] as u64,
+                sum_y_f: acc[l][4],
+                sum_y2_f: acc[l][5],
+            })
+            .collect();
+
+        let mut alpha = [f64::NAN; 2];
+        for g in 0..2 {
+            let n = n_g[g] as f64;
+            let mean = rest_sum[g] / n;
+            let total_var = rest_sq[g] / n - mean * mean;
+            alpha[g] = coefficient_alpha(item_var_total[g] - item_var[i][g], total_var, n_valid);
+        }
+
+        let st = sibtest_stats(&cells, alpha[0], alpha[1], n_valid, j_min);
+        rows.push(SibtestRow {
+            item: i,
+            beta_uni: st.beta_uni,
+            se_beta: st.se_beta,
+            b_uni: st.b_uni,
+            p_value: st.p_value,
+            alpha_ref: alpha[0],
+            alpha_focal: alpha[1],
+            n_strata_used: st.n_strata_used,
+            flagged_bh: false,
+        });
+    }
+
+    let pvals: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    for (r, f) in rows.iter_mut().zip(benjamini_hochberg(&pvals, cfg.fdr_q)) {
+        r.flagged_bh = f;
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;

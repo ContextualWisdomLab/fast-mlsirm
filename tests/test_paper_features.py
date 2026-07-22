@@ -2219,6 +2219,84 @@ def test_logistic_dif_zumbo():
         logistic_dif(y, np.zeros(n, dtype=np.int64) + 3)
 
 
+def test_sibtest_uniform():
+    """Uniform SIBTEST (Shealy & Stout, 1993) through the public API.
+    Pins the parts that are actually true: the sign is OPPOSITE to Mantel-Haenszel's, the per-group
+    reliabilities are exposed, planted DIF is detected, and a degenerate item yields NaN rather than a
+    plausible number. Deliberately does NOT assert that SIBTEST beats MH under impact -- measurement
+    says the reverse (it over-rejects), and that is documented in the docstring."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import mantel_haenszel_dif, sibtest
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "sibtest"):
+        pytest.skip("compiled core built without sibtest")
+
+    rng = np.random.default_rng(23)
+    n, J = 3000, 8
+    group = (np.arange(n) % 2).astype(np.int64)
+    theta = rng.standard_normal(n)
+    b = np.tile(-1.1 + 0.23 * np.arange(J), (n, 1))
+    b[group == 1, 4] += 1.1  # item 4 harder for the focal group
+    p = 1.0 / (1.0 + np.exp(-(1.3 * (theta[:, None] - b))))
+    y = (rng.random((n, J)) < p).astype(float)
+
+    sib = sibtest(y, group)
+    mh = mantel_haenszel_dif(y, group)
+    for key in ("beta_uni", "se_beta", "b_uni", "p_value", "alpha_ref", "alpha_focal",
+                "n_strata_used", "flagged_bh"):
+        assert key in sib, key
+    assert sib["beta_uni"].shape == (J,)
+
+    # planted item detected, and the sign conventions are OPPOSITE across the two procedures
+    assert sib["p_value"][4] < 0.01
+    assert sib["beta_uni"][4] > 0.0, "positive beta_uni = harder for the focal group"
+    assert mh["mh_d_dif"][4] < 0.0, "mh_d_dif is focal-oriented and goes the other way"
+    assert sib["beta_uni"][4] * mh["std_p_dif"][4] < 0.0
+
+    # swapping the group labels flips beta_uni and preserves its magnitude
+    sib_sw = sibtest(y, 1 - group)
+    assert sib_sw["beta_uni"][4] < 0.0
+    assert abs(sib_sw["beta_uni"][4] + sib["beta_uni"][4]) < 1e-9
+
+    # reliabilities are real, per-group, and in range
+    assert np.all((sib["alpha_ref"] > 0.0) & (sib["alpha_ref"] < 1.0))
+    assert np.all((sib["alpha_focal"] > 0.0) & (sib["alpha_focal"] < 1.0))
+    assert not np.array_equal(sib["alpha_ref"], sib["alpha_focal"]), "alphas must be per-group"
+    assert np.all(sib["n_strata_used"][np.isfinite(sib["beta_uni"])] > 0)
+
+    # the binding's field mapping is pinned by internal identities, so a swapped pair of dict keys
+    # (se_beta/b_uni, or alpha_ref/alpha_focal) cannot slip through the boundary unnoticed
+    ok = np.isfinite(sib["b_uni"])
+    assert np.array_equal(sib["item"], np.arange(J))
+    assert np.allclose(sib["b_uni"][ok], sib["beta_uni"][ok] / sib["se_beta"][ok], rtol=1e-12)
+    from fast_mlsirm import chi2_sf
+    expected_p = np.array([chi2_sf(v * v, 1.0) for v in sib["b_uni"][ok]])
+    assert np.allclose(sib["p_value"][ok], expected_p, rtol=1e-10)
+
+    # j_min is plumbed through: a stricter floor can only retain fewer strata, and at a floor high
+    # enough to bite on this fixture it must retain strictly fewer (60 is too low to constrain a
+    # 3000-person bank, so asserting on it would prove nothing)
+    strict = sibtest(y, group, j_min=250)
+    assert np.all(strict["n_strata_used"] <= sib["n_strata_used"])
+    assert strict["n_strata_used"].sum() < sib["n_strata_used"].sum()
+
+    # a constant item is undefined, not "no DIF"
+    y2 = y.copy()
+    y2[:, 7] = 1.0
+    deg = sibtest(y2, group)
+    assert np.isnan(deg["beta_uni"][7]) and np.isnan(deg["p_value"][7])
+    assert not deg["flagged_bh"][7]
+
+    # validation
+    with pytest.raises(ValueError):
+        sibtest(y[:, :2], group)
+    with pytest.raises(ValueError):
+        sibtest(y, group, j_min=1)
+
+
 def test_dif_purification():
     """Iterative item purification (Candell & Drasgow, 1988; Clauser et al., 1993) via the public API.
     Seeded regression fixture: several items are shifted UNIDIRECTIONALLY against the focal group, which

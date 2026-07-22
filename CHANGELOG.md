@@ -93,6 +93,76 @@
 
 ### Added
 
+- **Uniform SIBTEST, the regression-corrected observed-score DIF procedure** (`fast_mlsirm.sibtest`;
+  extends `mlsirm_core::dif`; Shealy & Stout, 1993). The third observed-score DIF procedure in the
+  module and the only one that corrects the MATCHING CRITERION itself. Mantel-Haenszel and the logistic
+  sweep both match on an observed number-correct score, which is unreliable: under IMPACT — a genuine
+  group difference in ability — two examinees from different groups with the same OBSERVED score do not
+  have the same expected TRUE score, because each regresses toward their own group's mean. Matching on
+  the raw score therefore compares non-equivalent examinees. Item purification, added earlier in this
+  release, cannot substitute for this: it changes WHICH items form the criterion, not the regression of
+  true score on observed score, so a perfectly purified criterion is still biased. SIBTEST transports
+  each group's conditional mean from that group's own Kelley-regressed true score
+  `V*_Gk = [Xbar_G + alpha_G (k - Xbar_G)] / n_valid` to the unweighted midpoint of the two, using a
+  per-level central difference taken over each group's OWN true-score scale at adjacent OBSERVED level
+  positions, and compares the transported means under combined-sample weights renormalized over the
+  retained strata. The valid and studied subtests are DISJOINT by construction — the opposite of the
+  item-included Mantel-Haenszel default (Donoghue, Holland & Thayer, 1993), and a property of the
+  estimator rather than an option. Per-group coefficient alpha is reported on every row because the
+  correction divides by it.
+  **The headline finding is unflattering and is documented as such.** Measured against
+  `mantel_haenszel_dif` on identical simulated data, 500 replications per cell, no DIF planted so every
+  rejection is a false positive: at zero impact MH holds .044 and SIBTEST .056; at impact 1.0 MH holds
+  .046 while SIBTEST reaches **.086**. SIBTEST over-rejects in both cells and by roughly double under
+  impact — the opposite of the ordering its motivation suggests. This is a property of the 1993
+  estimator rather than a transcription slip (the closed-form anchors reproduce the TRANSCRIBED FORMULAS
+  in exact rational arithmetic; `mirt` itself was never executed, so no cross-implementation agreement
+  is claimed), whose standard error treats the ESTIMATED regression correction as fixed and so never
+  charges the correction's own noise to the variance. It is precisely what Jiang and Stout's (1998)
+  paper — "Improved Type I error control and reduced estimation bias for DIF detection using SIBTEST" —
+  was written to fix, and that two-segment estimator is NOT implemented here. The docs accordingly
+  recommend Mantel-Haenszel or the logistic sweep for routine screening and position SIBTEST as the way
+  to obtain the regression-corrected *estimand*, reading `beta_uni` as an effect size rather than
+  trusting `p_value` as a calibrated test. A 500-replication Monte-Carlo test pins that finding so the
+  claim cannot rot.
+  **Sign.** `beta_uni > 0` means harder for the FOCAL group — the OPPOSITE orientation to `mh_d_dif`
+  and `std_p_dif` in the same module, kept rather than harmonised because published `|beta_uni|`
+  cut-offs assume it, and asserted in both directions by a cross-module anchor whose product assertion
+  would catch a future refactor that "harmonises" both conventions at once.
+  **Provenance, stated because it bounds what the code may claim.** Every formula is transcribed from
+  the reference implementation (Chalmers, 2012; the `SIBTEST` routine of `mirt`), which attributes them
+  to Shealy and Stout (1993); the primary text was not consulted, so no comment cites the 1993 equations
+  directly. One deliberate DIVERGENCE from that reference is marked in the code: where a neighbouring
+  group-by-level cell is empty it imputes the mean to zero and feeds that fabricated value into the
+  central difference, producing a finite but meaningless slope; this implementation drops the level.
+  **Scope deliberately reduced after a spec-verification pass.** Crossing-SIBTEST is NOT built:
+  Chalmers (2018) shows Li and Stout's (1996) hypothesis test is insufficient, no normal-theory referral
+  for a crossing statistic is valid, and `logistic_dif`'s `S x G` interaction already covers crossing
+  DIF against a standard 1-df null. No A/B/C letter class, because published cut-offs disagree and none
+  was verified against its primary source — the same decision already taken for `delta_r2_uniform`. No
+  purified variant, because purification needs a practical-significance predicate that no verified
+  cut-off supports, and it would shorten the valid subtest and so lower the very reliability the
+  correction divides by.
+  **Guards.** Two CLOSED-FORM acceptance anchors, both derived in exact rational arithmetic and
+  re-derived independently before the tests were written, assert to 1e-12: a single-stratum fixture
+  (`beta = -1/10`, `sigma^2 = 23/1950`, `X^2 = 39/46`) and a five-level fixture pinning the weighting
+  (`beta = -16993/88000`). The second is mandatory because the first is structurally blind to every
+  weighting question — one retained stratum always carries weight 1 — and because the UNCORRECTED beta
+  is `+0.11` under both weighting schemes, so the same assertion on an uncorrected statistic would prove
+  nothing. Both were mutation-verified: substituting the observed mean for the true-score subtrahend
+  yields `+0.26` (a sign flip), caught by both anchors; focal-group weights yield `-0.039932`, caught
+  ONLY by the multi-level anchor. A third anchor pins a NON-CONTIGUOUS level vector to `1/128`, where
+  both the hardcoded `2*alpha/n_valid` denominator and arithmetic `k +/- 1` indexing return `1/64` —
+  every other fixture has contiguous levels, so without it both mutants survive the whole suite.
+  Further anchors pin the strict `j_min` inequality on BOTH sides of its conjunction, all four corners
+  of the empty-neighbour guard, the alpha gate on all four degenerate forms, per-group alpha against
+  the direct KR-20 definition on a fixture whose groups differ in reliability (a pooled alpha survives
+  any fixture where they do not), Benjamini-Hochberg in both directions plus `fdr_q` plumbing, and the
+  disjointness of the criterion. That last one asserts the exact invariant rather than a proxy:
+  complementing the studied item's column sends every conditional mean to `1 - Ybar` and every slope to
+  `-M`, so `beta_uni` is exactly NEGATED and `se_beta` exactly invariant, while at least one other item
+  must move — a criterion that ignored the data would be flip-invariant too.
+
 - **Iterative item purification for the observed-score DIF procedures**
   (`fast_mlsirm.mantel_haenszel_dif_purified`, `logistic_dif_purified`; extends `mlsirm_core::dif`;
   Candell & Drasgow, 1988; Clauser et al., 1993; Holland & Thayer, 1988; Lord, 1980). Both DIF

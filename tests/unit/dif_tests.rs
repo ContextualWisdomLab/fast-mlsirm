@@ -1000,3 +1000,488 @@ fn purify_flagged_is_practical_significance_not_just_non_a() {
         "an unfittable item carries no evidence of DIF and must stay in the anchor"
     );
 }
+
+// ---------------- SIBTEST (uniform) ----------------
+
+/// Build one item's per-level cells from `(level, J_R, sum_y_R, J_F, sum_y_F)`. Responses are 0/1, so
+/// the raw second moment equals the first -- the core still computes its own variance from these raw
+/// moments, which keeps the biased-vs-unbiased mutation live.
+fn sib_cells(rows: &[(usize, u64, u64, u64, u64)]) -> Vec<SibCell> {
+    rows.iter()
+        .map(|&(level, j_r, sy_r, j_f, sy_f)| SibCell {
+            level,
+            j_r,
+            sum_y_r: sy_r as f64,
+            sum_y2_r: sy_r as f64,
+            j_f,
+            sum_y_f: sy_f as f64,
+            sum_y2_f: sy_f as f64,
+        })
+        .collect()
+}
+
+/// CLOSED-FORM ACCEPTANCE ANCHOR. Every constant was derived from the estimator in exact rational
+/// arithmetic and re-derived independently before this test was written; nothing here is a
+/// record-what-it-printed baseline. With `Xbar_R = 2.4` and `Xbar_F = 1.8`, the level-2 slopes come out
+/// `M_R = 2.0` and `M_F = 8.0` -- the focal group's smaller alpha compresses its true-score scale, so
+/// the same rise in `Ybar` across the same observed span implies a four times steeper slope -- and the
+/// corrected means are `0.44` and `0.54`, giving `beta = -1/10` and `sigma^2 = 23/1950`.
+///
+/// kills: correction deleted [+0.20]; correction sign flipped [+0.50]; subtracting the OBSERVED mean
+/// instead of `V*_Gk` [+0.26]; the midpoint replaced by each group's own `V*` [+0.20]; Kelley written
+/// as `(1 - alpha)` [-0.25]; a pooled alpha in the `M` denominator [+0.008]; biased cell variance
+/// [se = 0.107238053]; the slope taken over retained levels only [NaN].
+#[test]
+fn sibtest_closed_form_single_stratum_anchor() {
+    let cells = sib_cells(&[(1, 10, 1, 40, 2), (2, 40, 20, 40, 12), (3, 50, 45, 20, 17)]);
+    let st = sibtest_stats(&cells, 0.8, 0.2, 4, 5);
+    assert_eq!(st.n_strata_used, 1, "only level 2 is interior and well-populated");
+    assert!((st.beta_uni - (-0.10)).abs() < 1e-12, "beta_uni = {}", st.beta_uni);
+    assert!((st.se_beta - 0.1086041978694737).abs() < 1e-12, "se = {}", st.se_beta);
+    assert!((st.b_uni - (-0.920774721067277)).abs() < 1e-12, "b_uni = {}", st.b_uni);
+    assert!((st.b_uni * st.b_uni - 39.0 / 46.0).abs() < 1e-12, "X2 must be 39/46");
+    assert!((st.p_value - 0.35716805550697844).abs() < 1e-12, "p = {}", st.p_value);
+}
+
+/// MULTI-LEVEL WEIGHTING ANCHOR. The single-stratum anchor above is structurally blind to every
+/// weighting question, because one retained level always carries weight 1. Here level 0 fails `j_min`
+/// and level 4 is the maximum, so the retained weights are `(1/4, 2/5, 7/20)` and must sum to exactly 1
+/// after renormalization.
+///
+/// The UNCORRECTED beta is `+0.11` under BOTH weighting schemes, so the same assertion made on an
+/// uncorrected statistic would prove nothing; it is asserted on the corrected value.
+///
+/// kills: focal-group weights instead of combined-sample [-0.039932]; weights left unrenormalized; the
+/// `j_min` gate dropped; the min/max exclusion dropped; renormalizing `beta` but not `se` (this pins
+/// `X^2`, which is invariant to renormalization only when BOTH are scaled together).
+#[test]
+fn sibtest_multi_level_weighting_anchor() {
+    let cells = sib_cells(&[
+        (0, 4, 0, 3, 0),
+        (1, 10, 1, 40, 2),
+        (2, 40, 20, 40, 12),
+        (3, 50, 45, 20, 17),
+        (4, 6, 6, 7, 7),
+    ]);
+    let st = sibtest_stats(&cells, 0.8, 0.2, 4, 5);
+    assert_eq!(st.n_strata_used, 3);
+    assert!(
+        (st.beta_uni - (-16993.0 / 88000.0)).abs() < 1e-12,
+        "beta_uni = {} (expected -16993/88000)",
+        st.beta_uni
+    );
+    assert!((st.se_beta - 0.06029378704091735).abs() < 1e-12, "se = {}", st.se_beta);
+    assert!(
+        (st.b_uni * st.b_uni - 10.257219401952296).abs() < 1e-9,
+        "X2 = {}",
+        st.b_uni * st.b_uni
+    );
+}
+
+/// NON-CONTIGUOUS LEVELS. The central difference spans the adjacent OBSERVED positions, whose levels
+/// here differ by 4 rather than 2 because levels 2 and 3 have no examinees at all. A slope built from a
+/// hardcoded `2 * alpha / n_valid` denominator is exactly twice as steep, which is asserted directly.
+///
+/// kills: a hardcoded `2 * alpha / n_valid` denominator; arithmetic `k +/- 1` indexing instead of
+/// positional; a dense `0..=n_valid` level vector, which would fabricate the empty interior levels.
+#[test]
+fn sibtest_uses_observed_level_spacing_not_arithmetic_neighbours() {
+    let cells = sib_cells(&[
+        (0, 20, 2, 20, 3),
+        (1, 30, 9, 30, 12),
+        (4, 30, 24, 30, 21),
+        (5, 20, 18, 20, 17),
+    ]);
+    let st = sibtest_stats(&cells, 0.75, 0.5, 6, 5);
+    assert_eq!(st.n_strata_used, 2, "levels 1 and 4 are the interior positions");
+    // Pinned to the IMPLEMENTATION's output, in exact rational arithmetic: beta = 1/128. Both mutants
+    // named above return 1/64 -- exactly double, because they divide the slope by a span of 2 where
+    // the observed span is 4. An assertion computed from test-local arithmetic instead of from `st`
+    // would be an identity about `f64` and would pass for ANY implementation; this one cannot.
+    assert!(
+        (st.beta_uni - 1.0 / 128.0).abs() < 1e-12,
+        "beta_uni = {} (expected 1/128; the contiguous-span mutants give 1/64)",
+        st.beta_uni
+    );
+}
+
+/// STRICT-INEQUALITY BOUNDARY on `j_min`, tested on BOTH sides of the conjunction: level 1 sits at
+/// exactly `j_min` in the REFERENCE group, level 2 at exactly `j_min` in the FOCAL group, and level 3
+/// at `j_min + 1` in both. Only level 3 may survive. A one-sided fixture would let the untested half of
+/// the gate be weakened or deleted outright.
+///
+/// kills: `>=` written where `>` is meant, in EITHER group's count gate; the focal-group conjunct
+/// dropped entirely.
+#[test]
+fn sibtest_j_min_is_strictly_exceeded_in_both_groups() {
+    let cells = sib_cells(&[
+        (0, 20, 2, 20, 3),
+        (1, 5, 2, 20, 6),
+        (2, 20, 8, 5, 2),
+        (3, 6, 4, 6, 3),
+        (4, 20, 18, 20, 17),
+    ]);
+    let st = sibtest_stats(&cells, 0.8, 0.8, 5, 5);
+    assert_eq!(
+        st.n_strata_used, 1,
+        "levels 1 (J_R == j_min) and 2 (J_F == j_min) must be excluded; only level 3 (j_min + 1 in \
+         both) may survive"
+    );
+}
+
+/// ASYMMETRIC NEIGHBOUR GUARD, and a documented DIVERGENCE from the reference implementation: it
+/// imputes an absent group-by-level cell's mean to 0.0 and feeds that fabricated zero into the
+/// neighbouring central difference, producing a finite but meaningless slope. This implementation drops
+/// the level. The divergence is asserted so it cannot silently drift back.
+///
+/// kills: inheriting the NaN-to-zero imputation, which would retain the level and report a number.
+#[test]
+fn sibtest_drops_levels_whose_neighbour_lacks_a_group() {
+    let full = sib_cells(&[
+        (0, 20, 2, 20, 3),
+        (1, 30, 9, 30, 12),
+        (2, 30, 24, 30, 21),
+        (3, 20, 18, 20, 17),
+    ]);
+    assert_eq!(sibtest_stats(&full, 0.8, 0.8, 4, 5).n_strata_used, 2);
+
+    // The guard is a four-way conjunction (lower/upper x reference/focal). Testing one corner would
+    // leave the other three deletable, so every corner is holed in turn.
+    let base = [(0usize, 20u64, 2u64, 20u64, 3u64), (1, 30, 9, 30, 12), (2, 30, 24, 30, 21), (3, 20, 18, 20, 17)];
+    for (pos, which, dropped) in [
+        (0usize, "reference", 1usize),
+        (0, "focal", 1),
+        (3, "reference", 2),
+        (3, "focal", 2),
+    ] {
+        let mut rows = base;
+        if which == "reference" {
+            rows[pos].1 = 0;
+            rows[pos].2 = 0;
+        } else {
+            rows[pos].3 = 0;
+            rows[pos].4 = 0;
+        }
+        let st = sibtest_stats(&sib_cells(&rows), 0.8, 0.8, 4, 5);
+        assert_eq!(
+            st.n_strata_used, 1,
+            "emptying the {which} group at position {pos} must drop interior level {dropped}"
+        );
+    }
+}
+
+/// ALPHA GATE. The correction divides by the reliability through the local slope, so a non-positive or
+/// non-finite alpha makes the statistic meaningless and must yield a NaN row rather than a clamp.
+///
+/// kills: a gate written only against NaN, which misses `alpha <= 0`; `alpha != 0` in place of
+/// `alpha > 0`.
+#[test]
+fn sibtest_rejects_degenerate_reliability() {
+    let cells = sib_cells(&[
+        (0, 20, 2, 20, 3),
+        (1, 30, 9, 30, 12),
+        (2, 30, 24, 30, 21),
+        (3, 20, 18, 20, 17),
+    ]);
+    for (ar, af, why) in [
+        (-0.3, 0.8, "negative reference alpha"),
+        (0.8, -0.3, "negative focal alpha"),
+        (0.0, 0.8, "zero alpha is degenerate, not merely small"),
+        (f64::NAN, 0.8, "non-finite alpha"),
+    ] {
+        let st = sibtest_stats(&cells, ar, af, 4, 5);
+        assert!(st.beta_uni.is_nan(), "{why}: beta must be NaN");
+        assert!(st.p_value.is_nan(), "{why}: p must be NaN, never 1.0");
+        assert_eq!(st.n_strata_used, 0, "{why}");
+    }
+}
+
+/// The undefined contract is NaN, never a zero-initialized accumulator and never `p = 1.0`. A `0.0`
+/// beta reads as an affirmative "no DIF" claim, and a FINITE `p = 1.0` would be counted by
+/// Benjamini-Hochberg, shrinking every other item's threshold.
+///
+/// kills: `return 0.0` on the degenerate path -- an `.abs() < eps` assertion would pass that mutant, so
+/// `is_nan` is asserted explicitly; a dropped `is_finite` guard before squaring `b_uni`.
+#[test]
+fn sibtest_undefined_is_nan_not_zero_or_one() {
+    let st = sibtest_stats(&sib_cells(&[(0, 30, 3, 30, 4), (1, 30, 20, 30, 18)]), 0.8, 0.8, 4, 5);
+    assert!(st.beta_uni.is_nan() && st.se_beta.is_nan() && st.b_uni.is_nan());
+    assert!(st.p_value.is_nan(), "must not collapse to 1.0");
+    assert_eq!(st.n_strata_used, 0);
+}
+
+/// Seeded 2PL bank with UNEQUAL group sizes and non-mirrored difficulties. Deliberately not 50/50 and
+/// deliberately not symmetric: a balanced, mirrored fixture cancels sign errors.
+fn sibtest_bank(
+    n_ref: usize,
+    n_focal: usize,
+    n_items: usize,
+    dif_items: &[usize],
+    shift: f64,
+    impact: f64,
+    seed: u64,
+) -> (Vec<u8>, Vec<u8>) {
+    let mut rng = Lcg(seed);
+    let n = n_ref + n_focal;
+    let b: Vec<f64> = (0..n_items).map(|i| -1.1 + 0.23 * i as f64).collect();
+    let mut y = vec![0u8; n * n_items];
+    let mut group = vec![0u8; n];
+    for p in 0..n {
+        let g = if p < n_ref { 0u8 } else { 1u8 };
+        group[p] = g;
+        // `impact` is a genuine ability difference, not DIF: it shifts the focal ability distribution.
+        let theta = rng.normal() - if g == 1 { impact } else { 0.0 };
+        for i in 0..n_items {
+            let mut bi = b[i];
+            if g == 1 && dif_items.contains(&i) {
+                bi += shift; // harder for the focal group
+            }
+            let pr = 1.0 / (1.0 + (-(1.3 * (theta - bi))).exp());
+            y[p * n_items + i] = u8::from(rng.next_f64() < pr);
+        }
+    }
+    (y, group)
+}
+
+/// STUDIED-RESPONSE LEAK. SIBTEST's valid subtest and studied subtest are DISJOINT by construction, so
+/// item `i`'s own response must not enter item `i`'s matching criterion at all.
+///
+/// The exact invariant is NOT that item `i`'s row is unchanged -- flipping `y_i` to `1 - y_i` sends
+/// every conditional mean `Ybar_Gk` to `1 - Ybar_Gk` and every slope `M_G` to `-M_G`, so the
+/// transported mean becomes `1 - Ybar*_Gk` and the DIFFERENCE, hence `beta_uni`, is exactly NEGATED
+/// while `se_beta` is invariant (a Bernoulli variance is symmetric under complement). That is what is
+/// asserted, and it is strictly stronger than an integer stratum-count comparison: it pins the whole
+/// real-valued statistic rather than a coarse proxy. If the studied item leaked into its own criterion
+/// the strata themselves would move and neither identity would hold.
+///
+/// The second block -- some OTHER item must react -- is what stops a constant or saturated criterion
+/// from passing vacuously, since a criterion that ignores the data is also flip-invariant.
+///
+/// kills: the item-included Mantel-Haenszel convention reused by mistake; the studied item added back
+/// into its own valid subtest; a criterion that ignores the responses entirely.
+#[test]
+fn sibtest_criterion_excludes_the_studied_item() {
+    let (y, group) = sibtest_bank(400, 250, 7, &[3], 0.9, 0.0, 0x5B1);
+    let cfg = SibtestConfig::default();
+    let base_rows = sibtest(&y, &group, 650, 7, &cfg).unwrap();
+    for i in 0..7 {
+        let mut flipped = y.clone();
+        for p in 0..650 {
+            flipped[p * 7 + i] = 1 - flipped[p * 7 + i];
+        }
+        let rows = sibtest(&flipped, &group, 650, 7, &cfg).unwrap();
+        assert_eq!(
+            rows[i].n_strata_used, base_rows[i].n_strata_used,
+            "item {i}: flipping its own column changed its own stratification"
+        );
+        assert!(
+            (rows[i].beta_uni + base_rows[i].beta_uni).abs() < 1e-12,
+            "item {i}: complementing the studied response must NEGATE beta_uni exactly ({} vs {})",
+            base_rows[i].beta_uni,
+            rows[i].beta_uni
+        );
+        assert!(
+            (rows[i].se_beta - base_rows[i].se_beta).abs() < 1e-12,
+            "item {i}: se_beta must be invariant under complementing the studied response"
+        );
+        // ...but at least one OTHER item must react, or the criterion is not reading the data at all
+        assert!(
+            (0..7).any(|j| j != i && rows[j].beta_uni != base_rows[j].beta_uni),
+            "item {i}: flipping it changed no other item, so the criterion is degenerate"
+        );
+    }
+}
+
+/// CROSS-MODULE SIGN ANCHOR, in both directions. `beta_uni` is reference-minus-focal while `mh_d_dif`
+/// and `std_p_dif` are focal-oriented, so on an item that is harder for the focal group SIBTEST goes
+/// POSITIVE where both Mantel-Haenszel statistics go NEGATIVE. Swapping the group labels must flip all
+/// of them, and the product assertion is what would catch a future "harmonisation" that flips both
+/// modules at once and so preserves every single-module assertion.
+///
+/// kills: a sign flip in either module; an `abs()` collapse (caught by the mirror block); a
+/// simultaneous flip of both conventions (caught by the product).
+#[test]
+fn sibtest_sign_is_opposite_to_mantel_haenszel() {
+    let (y, group) = sibtest_bank(420, 300, 8, &[4], 1.1, 0.0, 0x7C3);
+    let sib = sibtest(&y, &group, 720, 8, &SibtestConfig::default()).unwrap();
+    let mh = mantel_haenszel_dif(&y, &group, 720, 8, &MhDifConfig::default()).unwrap();
+    assert!(sib[4].beta_uni > 0.0, "beta_uni = {} (must be > 0)", sib[4].beta_uni);
+    assert!(mh[4].mh_d_dif < 0.0, "mh_d_dif = {}", mh[4].mh_d_dif);
+    assert!(mh[4].std_p_dif < 0.0, "std_p_dif = {}", mh[4].std_p_dif);
+    assert!(
+        sib[4].beta_uni * mh[4].std_p_dif < 0.0,
+        "the two modules must keep OPPOSITE orientations"
+    );
+
+    // Mirror: swapping the labels flips the sign and (to numerical noise) the magnitude is preserved.
+    let swapped: Vec<u8> = group.iter().map(|&g| 1 - g).collect();
+    let sib_sw = sibtest(&y, &swapped, 720, 8, &SibtestConfig::default()).unwrap();
+    assert!(sib_sw[4].beta_uni < 0.0, "swapping labels must flip beta_uni");
+    assert!(
+        (sib_sw[4].beta_uni + sib[4].beta_uni).abs() < 1e-9,
+        "beta_uni must be antisymmetric in the group labels: {} vs {}",
+        sib[4].beta_uni,
+        sib_sw[4].beta_uni
+    );
+}
+
+/// COEFFICIENT ALPHA is computed PER GROUP and on the VALID subtest only (which is a different item set
+/// for every studied item). Pinned against the direct KR-20 definition recomputed here from the raw
+/// matrix, on a fixture whose groups have deliberately different reliabilities.
+///
+/// kills: a single POOLED alpha, which survives every fixture whose groups happen to be equally
+/// reliable; `n_items` substituted for `n_valid` in the `k/(k-1)` factor; alpha computed over all items
+/// including the studied one.
+#[test]
+fn sibtest_alpha_is_per_group_on_the_valid_subtest() {
+    // the focal group is given a much larger ability spread, so its alpha differs materially
+    let (y, group) = sibtest_bank(500, 400, 6, &[], 0.0, 1.4, 0x2E9);
+    let (n, n_items) = (900usize, 6usize);
+    let rows = sibtest(&y, &group, n, n_items, &SibtestConfig::default()).unwrap();
+
+    for studied in [0usize, 3, 5] {
+        for (g, reported) in [(0u8, rows[studied].alpha_ref), (1u8, rows[studied].alpha_focal)] {
+            let idx: Vec<usize> = (0..n).filter(|&p| group[p] == g).collect();
+            let ng = idx.len() as f64;
+            let valid: Vec<usize> = (0..n_items).filter(|&j| j != studied).collect();
+            let mut item_var_sum = 0.0;
+            for &j in &valid {
+                let m = idx.iter().map(|&p| y[p * n_items + j] as f64).sum::<f64>() / ng;
+                item_var_sum += m - m * m; // 0/1 item: E[y^2] = E[y]
+            }
+            let totals: Vec<f64> = idx
+                .iter()
+                .map(|&p| valid.iter().map(|&j| y[p * n_items + j] as f64).sum::<f64>())
+                .collect();
+            let tm = totals.iter().sum::<f64>() / ng;
+            let tv = totals.iter().map(|t| (t - tm) * (t - tm)).sum::<f64>() / ng;
+            let k = valid.len() as f64;
+            let expected = (k / (k - 1.0)) * (1.0 - item_var_sum / tv);
+            assert!(
+                (reported - expected).abs() < 1e-12,
+                "item {studied} group {g}: alpha {reported} != direct KR-20 {expected}"
+            );
+        }
+    }
+    assert!(
+        (rows[0].alpha_ref - rows[0].alpha_focal).abs() > 0.05,
+        "fixture precondition: the two groups must differ in reliability, else a pooled alpha would \
+         pass this test ({} vs {})",
+        rows[0].alpha_ref,
+        rows[0].alpha_focal
+    );
+}
+
+/// A degenerate item must produce a NaN row that is NOT Benjamini-Hochberg flagged and, critically, is
+/// NOT counted in BH's `m`: a finite `p = 1.0` would silently shrink every other item's threshold.
+///
+/// kills: zero-initialized accumulators reaching the row; an undefined row entering the flag path; a
+/// NaN p-value collapsing to 1.0 through `chi2_sf`.
+#[test]
+fn sibtest_degenerate_item_is_nan_and_not_flagged() {
+    let (mut y, group) = sibtest_bank(380, 260, 5, &[2], 1.2, 0.0, 0x11D);
+    let n = 640usize;
+    for p in 0..n {
+        y[p * 5 + 4] = 1; // constant item: no within-level variance anywhere
+    }
+    let rows = sibtest(&y, &group, n, 5, &SibtestConfig::default()).unwrap();
+    assert!(rows[4].beta_uni.is_nan(), "constant item must be NaN, not 0.0");
+    assert!(rows[4].p_value.is_nan(), "constant item p must be NaN, not 1.0");
+    assert!(!rows[4].flagged_bh, "an undefined row must never be flagged");
+    assert_eq!(rows[4].n_strata_used, 0);
+    // the planted DIF item is still detected alongside it, and IS flagged -- the positive twin of the
+    // assertion above, without which the whole Benjamini-Hochberg block could be deleted and every
+    // test would still pass
+    assert!(rows[2].p_value.is_finite() && rows[2].p_value < 0.05, "p = {}", rows[2].p_value);
+    assert!(rows[2].flagged_bh, "the planted DIF item must be BH-flagged");
+    // `fdr_q` is actually plumbed through rather than ignored. Asserted as NESTING plus a strict
+    // reduction, not as "a tiny q flags nothing": the planted item's p-value is around 1e-16, so it
+    // legitimately survives an arbitrarily small level, and a test demanding otherwise would be
+    // asserting a bug.
+    let strict = sibtest(&y, &group, n, 5, &SibtestConfig { fdr_q: 1e-9, ..SibtestConfig::default() })
+        .unwrap();
+    let (lax_n, strict_n) = (
+        rows.iter().filter(|r| r.flagged_bh).count(),
+        strict.iter().filter(|r| r.flagged_bh).count(),
+    );
+    assert!(
+        strict_n < lax_n,
+        "tightening fdr_q must flag strictly fewer items ({strict_n} vs {lax_n}); the configured \
+         level is being ignored"
+    );
+    assert!(
+        strict.iter().zip(&rows).all(|(s, r)| !s.flagged_bh || r.flagged_bh),
+        "the strict flag set must be nested inside the lax one"
+    );
+    assert!(strict[2].flagged_bh, "p ~ 1e-16 survives any usable level");
+}
+
+/// MONTE-CARLO TYPE I, 500 replications per cell, no DIF planted so every rejection is a false
+/// positive. This exists because the module note now makes a quantitative Type I CLAIM, and a claim in
+/// the docs that nothing checks is how documentation rots.
+///
+/// The finding is deliberately unflattering and is asserted as such: SIBTEST over-rejects, and by more
+/// than Mantel-Haenszel under impact, because `se_beta` treats the estimated regression correction as
+/// fixed. Asserted as loose bounds rather than point values so the test pins the DIRECTION of the
+/// finding without becoming a seed-dependent tripwire.
+#[test]
+#[ignore = "500-replication Monte-Carlo; run explicitly"]
+fn sibtest_type_i_error_exceeds_mantel_haenszel_under_impact() {
+    const REPS: usize = 500;
+    for (impact, n_ref, n_focal, n_items) in [(0.0f64, 1000usize, 1000usize, 5usize), (1.0, 1000, 1000, 5)] {
+        let (mut mh_fp, mut mh_tot, mut sib_fp, mut sib_tot) = (0usize, 0usize, 0usize, 0usize);
+        for rep in 0..REPS {
+            let (y, group) =
+                sibtest_bank(n_ref, n_focal, n_items, &[], 0.0, impact, 0xA000 + rep as u64);
+            let n = n_ref + n_focal;
+            let mh = mantel_haenszel_dif(&y, &group, n, n_items, &MhDifConfig::default()).unwrap();
+            let sib = sibtest(&y, &group, n, n_items, &SibtestConfig::default()).unwrap();
+            for r in &mh {
+                if r.p_value.is_finite() {
+                    mh_tot += 1;
+                    mh_fp += usize::from(r.p_value < 0.05);
+                }
+            }
+            for r in &sib {
+                if r.p_value.is_finite() {
+                    sib_tot += 1;
+                    sib_fp += usize::from(r.p_value < 0.05);
+                }
+            }
+        }
+        let (mh_rate, sib_rate) = (mh_fp as f64 / mh_tot as f64, sib_fp as f64 / sib_tot as f64);
+        println!("impact={impact}: MH type-I={mh_rate}  SIBTEST type-I={sib_rate}");
+        assert!(
+            (0.02..0.09).contains(&mh_rate),
+            "Mantel-Haenszel Type I drifted out of its documented band: {mh_rate}"
+        );
+        assert!(
+            sib_rate > 0.05,
+            "SIBTEST is documented as over-rejecting; if this now holds nominal the docs are stale: \
+             {sib_rate}"
+        );
+        if impact > 0.0 {
+            assert!(
+                sib_rate > mh_rate,
+                "under impact SIBTEST is documented as over-rejecting MORE than Mantel-Haenszel: \
+                 {sib_rate} vs {mh_rate}"
+            );
+        }
+    }
+}
+
+/// Validation is non-vacuous: each guard trips on its own.
+#[test]
+fn sibtest_validates() {
+    let (y, group) = sibtest_bank(60, 60, 4, &[], 0.0, 0.0, 0x99);
+    let ok = SibtestConfig::default();
+    assert!(sibtest(&y, &group, 120, 4, &ok).is_ok());
+    // the valid subtest needs >= 2 items, so a 2-item test cannot be swept
+    let (y2, g2) = sibtest_bank(60, 60, 2, &[], 0.0, 0.0, 0x99);
+    assert!(sibtest(&y2, &g2, 120, 2, &ok).is_err());
+    // a within-level variance needs two examinees
+    assert!(sibtest(&y, &group, 120, 4, &SibtestConfig { j_min: 1, ..ok }).is_err());
+    // shared boundary checks still apply
+    assert!(sibtest(&y, &group, 121, 4, &ok).is_err());
+    assert!(sibtest(&y, &group, 120, 4, &SibtestConfig { fdr_q: 0.0, ..ok }).is_err());
+}

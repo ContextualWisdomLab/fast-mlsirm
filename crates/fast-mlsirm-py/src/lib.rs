@@ -40,7 +40,8 @@ use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, Mixtu
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
+    sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
+    SibtestConfig,
 };
 use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
@@ -3638,6 +3639,54 @@ fn mantel_haenszel_dif(
     Ok(mh_rows_dict(py, &rows)?.into())
 }
 
+/// Uniform SIBTEST (Rust compute path; Shealy & Stout, 1993, as implemented in Chalmers, 2012 — the
+/// primary text was not consulted, see the core module notes). The third observed-score DIF procedure,
+/// and the only one that corrects the MATCHING CRITERION for measurement error: under impact, two
+/// examinees from different groups with the same observed score have different expected TRUE scores, so
+/// each group's conditional mean is transported from its own Kelley-regressed true score to a common
+/// target before being compared. Item purification cannot substitute for this — it fixes which items
+/// are in the criterion, not the regression of true score on observed score.
+///
+/// Each item in turn is the studied subtest; the valid subtest is every OTHER item, always disjoint.
+/// Returns per-item arrays `item`, `beta_uni`, `se_beta`, `b_uni`, `p_value`, `alpha_ref`,
+/// `alpha_focal`, `n_strata_used`, `flagged_bh`.
+///
+/// SIGN WARNING: `beta_uni > 0` means harder for the FOCAL group — the OPPOSITE orientation to
+/// `mantel_haenszel_dif`'s `mh_d_dif` and `std_p_dif`, which go negative in that same case.
+#[pyfunction]
+#[pyo3(signature = (y, group, n_persons, n_items, fdr_q = 0.05, j_min = 5))]
+fn sibtest(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    fdr_q: f64,
+    j_min: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = binary_u8(y.as_slice()?)?;
+    let gv = binary_u8(group.as_slice()?)?;
+    let cfg = SibtestConfig { fdr_q, j_min };
+    let rows = core_sibtest(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
+    out.set_item("beta_uni", rows.iter().map(|r| r.beta_uni).collect::<Vec<_>>())?;
+    out.set_item("se_beta", rows.iter().map(|r| r.se_beta).collect::<Vec<_>>())?;
+    out.set_item("b_uni", rows.iter().map(|r| r.b_uni).collect::<Vec<_>>())?;
+    out.set_item("p_value", rows.iter().map(|r| r.p_value).collect::<Vec<_>>())?;
+    out.set_item("alpha_ref", rows.iter().map(|r| r.alpha_ref).collect::<Vec<_>>())?;
+    out.set_item(
+        "alpha_focal",
+        rows.iter().map(|r| r.alpha_focal).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "n_strata_used",
+        rows.iter().map(|r| r.n_strata_used).collect::<Vec<_>>(),
+    )?;
+    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    Ok(out.into())
+}
+
 /// Per-item arrays for a Mantel-Haenszel sweep, shared by the plain and purified entry points.
 fn mh_rows_dict<'py>(
     py: Python<'py>,
@@ -4698,6 +4747,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(sibtest, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif_purified, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif_purified, m)?)?;
