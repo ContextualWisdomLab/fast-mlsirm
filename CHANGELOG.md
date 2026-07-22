@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Hardened the diagnostics HTML renderer against oversized inputs (16 MiB
+  source JSON bound, bounded row and metric materialization per the Strix
+  vuln-0001 remediation) and switched data table row headers to
+  `<th scope="row">` for screen-reader grid navigation.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built
