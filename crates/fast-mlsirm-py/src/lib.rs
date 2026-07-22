@@ -64,10 +64,11 @@ use mlsirm_core::rt::{
 };
 use mlsirm_core::rt_joint::{fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig};
 use mlsirm_core::scoring::{
-    bank_information as core_bank_information, cat_next_item as core_cat_next_item,
-    eapsum_tables as core_eapsum_tables, empirical_reliability as core_empirical_reliability,
-    plausible_values as core_plausible_values, score_eap_device as core_score_eap_device,
-    score_map as core_score_map, score_wle as core_score_wle, ItemBank, PriorSpec,
+    bank_information_device as core_bank_information_device,
+    cat_next_item_device as core_cat_next_item_device, eapsum_tables as core_eapsum_tables,
+    empirical_reliability as core_empirical_reliability, plausible_values as core_plausible_values,
+    score_eap_device as core_score_eap_device, score_map as core_score_map,
+    score_wle as core_score_wle, ItemBank, PriorSpec,
 };
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -4237,7 +4238,7 @@ fn oakes_standard_errors(
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
     theta, xi, n_points, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
-    eps_distance,
+    eps_distance, device = "auto",
 ))]
 fn bank_information(
     py: Python<'_>,
@@ -4253,6 +4254,7 @@ fn bank_information(
     n_dims: usize,
     latent_dim: usize,
     eps_distance: f64,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     bank_from_args!(
         alpha,
@@ -4267,8 +4269,10 @@ fn bank_information(
         factors,
         bank
     );
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
     let (item_info, test_info) =
-        core_bank_information(&bank, theta.as_slice()?, xi.as_slice()?, n_points)
+        core_bank_information_device(&bank, theta.as_slice()?, xi.as_slice()?, n_points, device)
             .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item_info", item_info)?;
@@ -4296,7 +4300,7 @@ fn bank_information(
 #[pyo3(signature = (
     y, administered, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
     eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
-    xi_points = 256, xi_seed = 0,
+    xi_points = 256, xi_seed = 0, device = "auto",
 ))]
 fn cat_next_item(
     py: Python<'_>,
@@ -4318,6 +4322,7 @@ fn cat_next_item(
     q_xi: usize,
     xi_points: usize,
     xi_seed: u64,
+    device: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     bank_from_args!(
         alpha,
@@ -4337,13 +4342,16 @@ fn cat_next_item(
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
-    let step = core_cat_next_item(
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let step = core_cat_next_item_device(
         &bank,
         y.as_slice()?,
         administered.as_slice()?,
         &prior,
         q_theta,
         rule,
+        device,
     )
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);

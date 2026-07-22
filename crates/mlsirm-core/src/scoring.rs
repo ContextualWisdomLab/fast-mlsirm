@@ -840,10 +840,41 @@ pub fn bank_information(
     xi: &[f64],
     n_points: usize,
 ) -> Result<(Vec<f64>, Vec<f64>), String> {
+    bank_information_device(bank, theta, xi, n_points, crate::Device::Auto)
+}
+
+/// Fixed-bank information with an explicit compute device. `Device::Auto`
+/// prefers the wgpu f32 kernel and falls back to the scalar Rust f64
+/// implementation. `Device::Gpu` warns when no usable adapter is available.
+pub fn bank_information_device(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+    device: crate::Device,
+) -> Result<(Vec<f64>, Vec<f64>), String> {
     let n_items = validate_bank(bank)?;
-    if theta.len() != n_points * bank.n_dims || xi.len() != n_points * bank.latent_dim {
+    let theta_len = crate::checked_mul_usize(n_points, bank.n_dims, "n_points * n_dims overflows")?;
+    let xi_len =
+        crate::checked_mul_usize(n_points, bank.latent_dim, "n_points * latent_dim overflows")?;
+    if theta.len() != theta_len || xi.len() != xi_len {
         return Err("theta/xi shapes must match n_points".into());
     }
+    if theta.iter().chain(xi).any(|value| !value.is_finite()) {
+        return Err("theta/xi values must be finite".into());
+    }
+    Ok(dispatch_information_device(
+        bank, theta, xi, n_points, n_items, device,
+    ))
+}
+
+fn bank_information_cpu_reduce(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+    n_items: usize,
+) -> (Vec<f64>, Vec<f64>) {
     let (free_alpha, _uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
     let gamma = if kind == crate::InteractionKind::Distance {
@@ -880,7 +911,86 @@ pub fn bank_information(
             test_info[p * bank.n_dims + d] += info;
         }
     }
-    Ok((item_info, test_info))
+    (item_info, test_info)
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn try_bank_information_gpu(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+    n_items: usize,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    let (free_alpha, _uses_space) = model_exec_flags(bank.model_type);
+    let kind = crate::interaction_kind(bank.model_type);
+    let interaction_kind = match kind {
+        crate::InteractionKind::None => 0,
+        crate::InteractionKind::Distance => 1,
+        crate::InteractionKind::Inner => 2,
+    };
+    let gamma = if kind == crate::InteractionKind::Distance {
+        bank.tau.exp()
+    } else {
+        0.0
+    };
+    let output =
+        crate::gpu_scoring::bank_information_gpu(&crate::gpu_scoring::GpuInformationInputs {
+            n_points,
+            n_items,
+            n_dims: bank.n_dims,
+            latent_dim: bank.latent_dim,
+            free_alpha,
+            interaction_kind,
+            gamma,
+            eps_distance: bank.eps_distance,
+            alpha: bank.alpha,
+            b: bank.b,
+            zeta: bank.zeta,
+            factor_id: bank.factor_id,
+            theta,
+            xi,
+        })?;
+    Some((output.item_info, output.test_info))
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn dispatch_information_device(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+    n_items: usize,
+    device: crate::Device,
+) -> (Vec<f64>, Vec<f64>) {
+    if device != crate::Device::Cpu {
+        if let Some(output) = try_bank_information_gpu(bank, theta, xi, n_points, n_items) {
+            return output;
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU bank information requested but no usable GPU adapter was found, the output exceeds GPU indexing bounds, or f32 arithmetic produced invalid information; falling back to the CPU implementation."
+            );
+        }
+    }
+    bank_information_cpu_reduce(bank, theta, xi, n_points, n_items)
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn dispatch_information_device(
+    bank: &ItemBank<'_>,
+    theta: &[f64],
+    xi: &[f64],
+    n_points: usize,
+    n_items: usize,
+    device: crate::Device,
+) -> (Vec<f64>, Vec<f64>) {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU bank information requested but this build has no GPU support; falling back to the CPU implementation."
+        );
+    }
+    bank_information_cpu_reduce(bank, theta, xi, n_points, n_items)
 }
 
 /// Warm's (1989) weighted-likelihood ability estimates for a UNIDIMENSIONAL dichotomous test.
@@ -1152,6 +1262,29 @@ pub fn cat_next_item(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<CatStep, String> {
+    cat_next_item_device(
+        bank,
+        y,
+        administered,
+        prior,
+        q_theta,
+        xi_rule,
+        crate::Device::Auto,
+    )
+}
+
+/// One CAT step with an explicit device for both EAP scoring and item
+/// information. `Auto` is GPU-first; CPU remains the f64 fallback.
+#[allow(clippy::too_many_arguments)]
+pub fn cat_next_item_device(
+    bank: &ItemBank<'_>,
+    y: &[f64],
+    administered: &[bool],
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    device: crate::Device,
+) -> Result<CatStep, String> {
     let n_items = validate_bank(bank)?;
     if y.len() != n_items || administered.len() != n_items {
         return Err("y and administered must have length n_items".into());
@@ -1164,7 +1297,7 @@ pub fn cat_next_item(
     {
         return Err("administered responses must be 0 or 1".into());
     }
-    let scores = score_eap(bank, y, administered, 1, prior, q_theta, xi_rule)?;
+    let scores = score_eap_device(bank, y, administered, 1, prior, q_theta, xi_rule, device)?;
     let target_dim = (0..bank.n_dims)
         .max_by(|&a, &b| {
             scores.theta_sd[a]
@@ -1172,7 +1305,8 @@ pub fn cat_next_item(
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .unwrap_or(0);
-    let (item_info, _) = bank_information(bank, &scores.theta_eap, &scores.xi_eap, 1)?;
+    let (item_info, _) =
+        bank_information_device(bank, &scores.theta_eap, &scores.xi_eap, 1, device)?;
     let mut candidates: Vec<usize> = (0..n_items)
         .filter(|&i| !administered[i] && bank.factor_id[i] == target_dim)
         .collect();

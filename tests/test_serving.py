@@ -10,6 +10,8 @@ import pytest
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
 from fast_mlsirm.serving import (
+    bank_information,
+    cat_next_item,
     export_serving_bundle,
     load_serving_bundle,
     score_respondents,
@@ -19,6 +21,74 @@ from fast_mlsirm.types import FitResult, MLSIRMParams
 
 def test_scoring_prefers_gpu_automatically_by_default():
     assert inspect.signature(score_respondents).parameters["device"].default == "auto"
+    assert inspect.signature(bank_information).parameters["device"].default == "auto"
+    assert inspect.signature(cat_next_item).parameters["device"].default == "auto"
+
+
+def test_information_and_cat_device_contract(capfd):
+    parameters = [
+        (0.1, -0.7, -0.3),
+        (0.3, -0.1, 0.2),
+        (-0.2, 0.4, 0.5),
+        (0.0, 0.9, -0.4),
+    ]
+    items = [
+        {
+            "code": f"i{index}",
+            "factor_id": 0,
+            "alpha": alpha,
+            "b": intercept,
+            "zeta": [zeta],
+        }
+        for index, (alpha, intercept, zeta) in enumerate(parameters)
+    ]
+    bundle = {
+        "schema_version": 1,
+        "model": "MLS2PLM",
+        "n_items": len(items),
+        "n_dims": 1,
+        "latent_dim": 1,
+        "quadrature": {"q_theta": 7, "q_xi": 7},
+        "eps_distance": 1e-8,
+        "tau": -0.2,
+        "population": None,
+        "eapsum_tables": None,
+        "items": items,
+    }
+    theta = np.array([-0.8, 0.0, 0.9])
+    cpu_info = bank_information(bundle, theta, device="cpu")
+    gpu_info = bank_information(bundle, theta, device="gpu")
+    assert np.allclose(
+        gpu_info["item_info"], cpu_info["item_info"], atol=2e-4, rtol=0.0
+    )
+    assert np.allclose(
+        gpu_info["test_info"], cpu_info["test_info"], atol=5e-4, rtol=0.0
+    )
+
+    extreme_bundle = dict(bundle)
+    extreme_bundle["items"] = [dict(item) for item in items]
+    extreme_bundle["items"][0]["alpha"] = 100.0
+    extreme_cpu = bank_information(extreme_bundle, theta, device="cpu")
+    extreme_gpu = bank_information(extreme_bundle, theta, device="gpu")
+    assert np.all(np.isfinite(extreme_gpu["item_info"]))
+    assert np.all(np.isfinite(extreme_gpu["test_info"]))
+    assert np.array_equal(extreme_gpu["item_info"], extreme_cpu["item_info"])
+    assert np.array_equal(extreme_gpu["test_info"], extreme_cpu["test_info"])
+    assert "falling back to the CPU implementation" in capfd.readouterr().err
+
+    cpu_cat = cat_next_item(bundle, {"i0": 1}, device="cpu")
+    gpu_cat = cat_next_item(bundle, {"i0": 1}, device="gpu")
+    assert gpu_cat["ranked_codes"] == cpu_cat["ranked_codes"]
+    assert gpu_cat["target_dim"] == cpu_cat["target_dim"]
+    assert np.allclose(
+        gpu_cat["theta_eap"], cpu_cat["theta_eap"], atol=2e-3, rtol=0.0
+    )
+    assert np.allclose(
+        gpu_cat["ranked_info"], cpu_cat["ranked_info"], atol=5e-4, rtol=0.0
+    )
+
+    with pytest.raises(ValueError, match="device must be"):
+        bank_information(bundle, theta, device="tpu")
 
 
 def test_eap_scoring_never_falls_back_to_python(monkeypatch):

@@ -1,5 +1,10 @@
 # Changelog
 
+- Fixed-bank item/test information and CAT information selection now default
+  to a Rust wgpu kernel, retain an explicit Rust f64 CPU path, and accept the
+  same `device="auto"|"gpu"|"cpu"` contract as EAP serving. Non-finite f32
+  results are discarded in favor of the finite CPU reference.
+
 ## Unreleased
 
 ### Changed

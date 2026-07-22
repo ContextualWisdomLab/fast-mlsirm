@@ -31,6 +31,16 @@ fn bank<'a>(
 }
 
 #[test]
+fn bank_information_rejects_overflowing_point_shapes() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+
+    let err = bank_information_device(&bk, &[], &[], usize::MAX, crate::Device::Cpu).unwrap_err();
+
+    assert_eq!(err, "n_points * n_dims overflows");
+}
+
+#[test]
 fn default_eap_policy_matches_auto_device() {
     let (alpha, b, zeta, fid) = small_bank();
     let bk = bank(&alpha, &b, &zeta, &fid);

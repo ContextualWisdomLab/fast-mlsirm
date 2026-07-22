@@ -564,11 +564,15 @@ def _bundle_bank_args(bundle: dict[str, Any]) -> dict[str, Any]:
 
 
 def bank_information(
-    bundle: dict[str, Any], theta: np.ndarray, xi: np.ndarray | None = None
+    bundle: dict[str, Any],
+    theta: np.ndarray,
+    xi: np.ndarray | None = None,
+    device: str = "auto",
 ) -> dict[str, np.ndarray]:
     """Item/test information at the given trait points (Magis 2013 formula;
     Lord's test-information tradition). ``theta`` is points x n_dims; ``xi``
-    defaults to the origin of the latent space."""
+    defaults to the origin of the latent space. ``device="auto"`` prefers the
+    Rust wgpu kernel and falls back to the Rust f64 CPU implementation."""
     _validate_bundle(bundle)
     core = _core_module()
     if core is None:
@@ -616,6 +620,7 @@ def bank_information(
     res = dict(
         core.bank_information(
             theta.ravel(), xi_array.ravel(), int(n_points),
+            device=str(device),
             **_bundle_bank_args(bundle),
         )
     )
@@ -629,6 +634,7 @@ def cat_next_item(
     bundle: dict[str, Any],
     responses_so_far: dict[str, Any],
     prior: tuple[np.ndarray, np.ndarray] | None = None,
+    device: str = "auto",
 ) -> dict[str, Any]:
     """Run one adaptive-EAP CAT step over the frozen bank.
 
@@ -637,6 +643,8 @@ def cat_next_item(
     selection. Selecting the dimension with the largest posterior SD is a
     repository policy, not a procedure prescribed by either source.
     ``responses_so_far`` maps item code to 0/1.
+    ``device="auto"`` prefers Rust wgpu for both EAP and information and falls
+    back to their Rust f64 CPU implementations.
 
     References
     ----------
@@ -678,6 +686,7 @@ def cat_next_item(
             y, administered, prior_mean=mean, prior_sd=sd,
             q_theta=int(bundle["quadrature"]["q_theta"]), xi_rule="gh",
             q_xi=int(bundle["quadrature"]["q_xi"]),
+            device=str(device),
             **_bundle_bank_args(bundle),
         )
     )

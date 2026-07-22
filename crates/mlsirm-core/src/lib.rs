@@ -53,6 +53,8 @@ pub(crate) fn checked_add_usize(a: usize, b: usize, message: &str) -> Result<usi
 mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_scoring;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Mirt,
