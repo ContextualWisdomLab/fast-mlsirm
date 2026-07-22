@@ -31,6 +31,25 @@ fn bank<'a>(
 }
 
 #[test]
+fn default_eap_policy_matches_auto_device() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let prior = PriorSpec::standard(2);
+    let y = vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0];
+    let observed = vec![true; y.len()];
+    let rule = XiRule::GaussHermite { q_xi: 7 };
+
+    let default = score_eap(&bk, &y, &observed, 1, &prior, 15, rule).unwrap();
+    let auto =
+        score_eap_device(&bk, &y, &observed, 1, &prior, 15, rule, crate::Device::Auto).unwrap();
+
+    assert_eq!(default.theta_eap, auto.theta_eap);
+    assert_eq!(default.theta_sd, auto.theta_sd);
+    assert_eq!(default.xi_eap, auto.xi_eap);
+    assert_eq!(default.loglik, auto.loglik);
+}
+
+#[test]
 fn eap_map_agree_and_react_to_data() {
     let (alpha, b, zeta, fid) = small_bank();
     let bk = bank(&alpha, &b, &zeta, &fid);
@@ -201,7 +220,7 @@ fn prior_shift_moves_scores() {
     let bk = bank(&alpha, &b, &zeta, &fid);
     let empty_y = vec![0.0; 6];
     let none_obs = vec![false; 6];
-    let base = score_eap(
+    let base = score_eap_device(
         &bk,
         &empty_y,
         &none_obs,
@@ -209,6 +228,7 @@ fn prior_shift_moves_scores() {
         &PriorSpec::standard(2),
         15,
         XiRule::GaussHermite { q_xi: 7 },
+        crate::Device::Cpu,
     )
     .unwrap();
     assert!(base.theta_eap[0].abs() < 1e-9, "no data -> prior mean");
@@ -216,7 +236,7 @@ fn prior_shift_moves_scores() {
         mean: vec![0.7, -0.2],
         sd: vec![1.0, 1.0],
     };
-    let shifted = score_eap(
+    let shifted = score_eap_device(
         &bk,
         &empty_y,
         &none_obs,
@@ -224,6 +244,7 @@ fn prior_shift_moves_scores() {
         &shifted_prior,
         15,
         XiRule::GaussHermite { q_xi: 7 },
+        crate::Device::Cpu,
     )
     .unwrap();
     assert!((shifted.theta_eap[0] - 0.7).abs() < 1e-9);

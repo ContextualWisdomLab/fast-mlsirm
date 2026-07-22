@@ -49,10 +49,22 @@ fn gpu_eap_matches_cpu_reduction() {
     );
     let resp = index_responses(&y, &observed, n_persons, n_items);
     let cpu = score_eap_cpu_reduce(&bank, &prior, &grids, &tables, &resp, n_persons, n_items);
-    match try_score_eap_gpu(&bank, &prior, &grids, &tables, &resp, n_persons, n_items) {
+    let gpu = try_score_eap_gpu(&bank, &prior, &grids, &tables, &resp, n_persons, n_items);
+    if std::env::var("WGPU_BACKEND").is_ok_and(|backend| backend.eq_ignore_ascii_case("metal")) {
+        assert!(
+            gpu.is_some(),
+            "WGPU_BACKEND=metal was explicit, but no usable Metal adapter was selected"
+        );
+    }
+    match gpu {
         None => eprintln!("no GPU adapter present; skipping GPU EAP parity check"),
         Some(gpu) => {
+            let mut max_abs = [0.0_f64; 4];
             for p in 0..n_persons {
+                max_abs[0] = max_abs[0].max((gpu.loglik[p] - cpu.loglik[p]).abs());
+                max_abs[1] = max_abs[1].max((gpu.theta_eap[p] - cpu.theta_eap[p]).abs());
+                max_abs[2] = max_abs[2].max((gpu.theta_sd[p] - cpu.theta_sd[p]).abs());
+                max_abs[3] = max_abs[3].max((gpu.xi_eap[p] - cpu.xi_eap[p]).abs());
                 assert!(
                     (gpu.loglik[p] - cpu.loglik[p]).abs() < 2e-3,
                     "loglik p={p}: gpu {} vs cpu {}",
@@ -63,6 +75,10 @@ fn gpu_eap_matches_cpu_reduction() {
                 assert!((gpu.theta_sd[p] - cpu.theta_sd[p]).abs() < 2e-3);
                 assert!((gpu.xi_eap[p] - cpu.xi_eap[p]).abs() < 2e-3);
             }
+            eprintln!(
+                "GPU EAP parity max abs: loglik={:.3e}, theta={:.3e}, theta_sd={:.3e}, xi={:.3e}; tolerance=2e-3",
+                max_abs[0], max_abs[1], max_abs[2], max_abs[3]
+            );
         }
     }
 }

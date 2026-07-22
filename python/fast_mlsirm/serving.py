@@ -365,7 +365,7 @@ def score_respondents(
     mask: np.ndarray | None = None,
     method: str = "eap",
     prior: tuple[np.ndarray, np.ndarray] | None = None,
-    device: str = "cpu",
+    device: str = "auto",
 ) -> list[dict[str, Any]]:
     """Score new respondents against a frozen bundle.
 
@@ -381,6 +381,10 @@ def score_respondents(
     ``prior`` overrides the serving prior (mean, sd per dimension): condition
     on a known team with ``mean = u_eap`` or a known group with
     ``(mu_g, sigma_g)``.
+
+    ``device="auto"`` prefers the Rust wgpu scoring kernel and falls back to
+    the Rust CPU implementation when no usable GPU is available. Pass
+    ``device="cpu"`` for the hardware-independent f64 reference reduction.
     """
     _validate_bundle(bundle)
     items = bundle["items"]

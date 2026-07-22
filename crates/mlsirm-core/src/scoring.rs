@@ -186,6 +186,11 @@ fn bank_model_config(bank: &ItemBank<'_>, n_persons: usize, n_items: usize) -> M
 
 /// EAP scoring (Bock & Mislevy 1982) of `n_persons` response vectors against
 /// the frozen bank, under a shared per-dimension prior.
+///
+/// The default execution policy is [`crate::Device::Auto`]: prefer the wgpu
+/// kernel when the crate is built with GPU support and an adapter is usable,
+/// otherwise fall back to the f64 CPU reduction. Use [`score_eap_device`] with
+/// [`crate::Device::Cpu`] when a hardware-independent f64 reference is needed.
 pub fn score_eap(
     bank: &ItemBank<'_>,
     y: &[f64],
@@ -203,13 +208,14 @@ pub fn score_eap(
         prior,
         q_theta,
         xi_rule,
-        crate::Device::Cpu,
+        crate::Device::Auto,
     )
 }
 
 /// EAP scoring with an explicit compute device. `Device::Cpu` keeps the exact
-/// f64 reduction (the default); `Device::Gpu`/`Auto` offloads to the wgpu
-/// `score_pass` kernel (f32, ~1e-4) when an adapter is present, otherwise CPU.
+/// f64 reduction; `Device::Gpu`/`Auto` offloads to the wgpu `score_pass` kernel
+/// (f32, ~1e-4) when an adapter is present, otherwise CPU. An explicit
+/// `Device::Gpu` request emits a warning when it falls back.
 #[allow(clippy::too_many_arguments)]
 pub fn score_eap_device(
     bank: &ItemBank<'_>,
@@ -327,6 +333,11 @@ fn dispatch_eap_device(
         {
             return gpu_out;
         }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU scoring requested but no usable GPU adapter was found or the model exceeds GPU kernel bounds; falling back to the CPU implementation."
+            );
+        }
     }
     score_eap_cpu_reduce(bank, prior, grids, tables, resp, n_persons, n_items)
 }
@@ -341,8 +352,13 @@ fn dispatch_eap_device(
     resp: &crate::marginal::ResponseIndex,
     n_persons: usize,
     n_items: usize,
-    _device: crate::Device,
+    device: crate::Device,
 ) -> EapScores {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU scoring requested but this build has no GPU support; falling back to the CPU implementation."
+        );
+    }
     score_eap_cpu_reduce(bank, prior, grids, tables, resp, n_persons, n_items)
 }
 

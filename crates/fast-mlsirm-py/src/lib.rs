@@ -1854,7 +1854,7 @@ macro_rules! bank_from_args {
 #[pyo3(signature = (
     y, observed, n_persons, alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim,
     eps_distance, prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11,
-    xi_points = 256, xi_seed = 0, device = "cpu",
+    xi_points = 256, xi_seed = 0, device = "auto",
 ))]
 fn score_bank_eap(
     py: Python<'_>,

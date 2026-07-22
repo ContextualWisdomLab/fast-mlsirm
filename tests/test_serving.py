@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 
@@ -13,6 +15,10 @@ from fast_mlsirm.serving import (
     score_respondents,
 )
 from fast_mlsirm.types import FitResult, MLSIRMParams
+
+
+def test_scoring_prefers_gpu_automatically_by_default():
+    assert inspect.signature(score_respondents).parameters["device"].default == "auto"
 
 
 def _fit_small(seed=0):
