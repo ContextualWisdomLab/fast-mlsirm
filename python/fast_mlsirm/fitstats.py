@@ -118,7 +118,12 @@ def _prepare_dichotomous_diagnostic_inputs(responses, factor_id, mask):
     d_of_i, _n_dims = _validate_factor_id(factor_id)
     if d_of_i.size != y.shape[1]:
         raise ValueError("factor_id length must match the number of response items")
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
+    if mask is None:
+        observed = ~np.isnan(y)
+    else:
+        observed = np.asarray(mask)
+        if observed.dtype.kind != "b":
+            raise ValueError("mask must be a boolean array")
     if observed.shape != y.shape:
         raise ValueError("mask shape must match responses")
     if np.any(observed & (y != 0.0) & (y != 1.0)):
@@ -1324,25 +1329,62 @@ def residual_item_fit(
     n_bins: int = 10,
     eps_distance: float = 1e-8,
 ) -> dict:
-    """Residual-based item fit (Haberman, Sinharay & Chon 2013): max |z| over
-    EAP-score bins per item with Bonferroni normal p-values. Designed for
-    long tests; prefer S-X2 below ~25 items (EAP shrinkage bias)."""
+    """Compute a repository-specific EAP-bin residual item-fit screen.
+
+    Persons are sorted by their EAP score for the item's dimension and split
+    into bins. Within each bin, the observed proportion is compared with the
+    mean fitted probability using a plug-in binomial z score. The result is the
+    maximum absolute z score per item with a Bonferroni-adjusted normal
+    p-value.
+
+    This diagnostic follows the residual-analysis motivation of Haberman et
+    al. (2013), but it is not their maximum-likelihood item-response-function
+    versus alternative-ratio comparison or their covariance-standardized
+    residual statistic. EAP shrinkage can make this repository-specific
+    approximation less reliable in short tests; :func:`s_x2` is available as
+    an alternative.
+
+    References
+    ----------
+    Haberman, S. J., Sinharay, S., & Chon, K. H. (2013). Assessing item fit for
+        unidimensional item response theory models using residuals from
+        estimated item response functions. *Psychometrika, 78*(3), 417–440.
+        https://doi.org/10.1007/s11336-012-9305-1
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("residual_item_fit requires the compiled Rust core")
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
+    n_persons = y.shape[0]
+    if n_persons == 0:
+        raise ValueError("responses must contain at least one person")
+    if (
+        isinstance(n_bins, (bool, np.bool_))
+        or not isinstance(n_bins, (int, np.integer))
+        or int(n_bins) < 2
+    ):
+        raise ValueError("n_bins must be an integer >= 2")
+    n_bins_value = int(n_bins)
+    if n_bins_value > n_persons // 5:
+        raise ValueError("n_bins requires at least five persons per bin")
     n_dims = int(d_of_i.max()) + 1
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    theta = np.asarray(params.theta, dtype=np.float64)
+    xi = np.asarray(params.xi, dtype=np.float64)
+    if theta.shape != (n_persons, n_dims):
+        raise ValueError("params.theta shape must be (n_persons, n_dims)")
+    if xi.shape != (n_persons, bank["latent_dim"]):
+        raise ValueError("params.xi shape must be (n_persons, latent_dim)")
+    if not np.all(np.isfinite(theta)) or not np.all(np.isfinite(xi)):
+        raise ValueError("params.theta and params.xi must be finite")
     res = dict(
         core.residual_item_fit(
-            np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
+            y.ravel(), observed.ravel(), int(n_persons),
             bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
             bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            np.asarray(params.theta, dtype=np.float64).ravel(),
-            np.asarray(params.xi, dtype=np.float64).ravel(),
-            n_bins=int(n_bins),
+            theta.ravel(), xi.ravel(), n_bins=n_bins_value,
         )
     )
     res["max_abs_z"] = np.asarray(res["max_abs_z"])

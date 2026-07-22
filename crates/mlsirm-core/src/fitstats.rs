@@ -920,14 +920,25 @@ pub fn dimensionality_residuals(
 #[path = "../../../tests/unit/fitstats_vuong_tests.rs"]
 mod vuong_tests;
 
-/// Residual-based item fit (Haberman, Sinharay & Chon 2013): bin persons by
-/// EAP score on the item's dimension, compare observed proportions against
-/// the model ICC at the bin's mean estimate, and standardize:
+/// Repository-specific residual item-fit screen: bin persons by EAP score on
+/// the item's dimension, compare observed proportions against the mean model
+/// probability in each bin, and standardize:
 /// `z_bin = (obs - exp) / sqrt(exp (1 - exp) / n_bin)`. Reported per item as
 /// the maximum |z| over bins and its Bonferroni-adjusted normal p-value.
-/// Designed for LONG tests (the source's operational setting): with short
-/// tests EAP shrinkage biases the extreme bins and inflates the statistic —
-/// prefer S-X2 below ~25 items.
+///
+/// This plug-in EAP-bin diagnostic follows the residual-analysis motivation of
+/// Haberman et al. (2013), but it does **not** reproduce their comparison of a
+/// maximum-likelihood item response function with an alternative ratio
+/// estimate or their covariance-standardized residual statistic. EAP
+/// shrinkage can make this repository-specific approximation less reliable in
+/// short tests; S-X2 is available as an alternative.
+///
+/// # References
+///
+/// Haberman, S. J., Sinharay, S., & Chon, K. H. (2013). Assessing item fit for
+/// unidimensional item response theory models using residuals from estimated
+/// item response functions. *Psychometrika, 78*(3), 417–440.
+/// <https://doi.org/10.1007/s11336-012-9305-1>
 pub struct ResidualFitResult {
     pub max_abs_z: Vec<f64>,
     pub p_value: Vec<f64>,
@@ -945,15 +956,31 @@ pub fn residual_item_fit(
     n_bins: usize,
 ) -> Result<ResidualFitResult, String> {
     let (free_alpha, uses_space) = crate::model_exec_flags(bank.model_type);
-    let n_items = bank.b.len();
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
+    let n_items = validate_bank(bank)?;
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be positive".into());
     }
-    if theta.len() != n_persons * bank.n_dims || xi.len() != n_persons * bank.latent_dim {
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
+    let theta_cells =
+        crate::checked_mul_usize(n_persons, bank.n_dims, "n_persons * n_dims overflows usize")?;
+    let xi_cells = crate::checked_mul_usize(
+        n_persons,
+        bank.latent_dim,
+        "n_persons * latent_dim overflows usize",
+    )?;
+    if theta.len() != theta_cells || xi.len() != xi_cells {
         return Err("theta/xi shapes must match n_persons".into());
+    }
+    if theta.iter().chain(xi).any(|value| !value.is_finite()) {
+        return Err("theta and xi scores must be finite".into());
     }
     if n_bins < 2 {
         return Err("n_bins must be >= 2".into());
+    }
+    let minimum_observations =
+        crate::checked_mul_usize(n_bins, 5, "n_bins * minimum bin size overflows usize")?;
+    if n_persons < minimum_observations {
+        return Err("n_bins requires at least five persons per bin".into());
     }
     let kind = crate::interaction_kind(bank.model_type);
     let gamma = if kind == crate::InteractionKind::Distance {
@@ -970,7 +997,7 @@ pub fn residual_item_fit(
         let mut idx: Vec<usize> = (0..n_persons)
             .filter(|&p| observed[p * n_items + i])
             .collect();
-        if idx.len() < n_bins * 5 {
+        if idx.len() < minimum_observations {
             continue;
         }
         idx.sort_by(|&a, &b| {
@@ -1009,6 +1036,9 @@ pub fn residual_item_fit(
                             eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
                         }
                     }
+                }
+                if !eta.is_finite() {
+                    return Err("item linear predictors must be finite".into());
                 }
                 exp_sum += 1.0 / (1.0 + (-eta).exp());
             }

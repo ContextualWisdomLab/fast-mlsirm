@@ -17,6 +17,7 @@ from fast_mlsirm.fitstats import (
     empirical_reliability,
     infit_outfit,
     person_fit,
+    residual_item_fit,
     s_x2,
     select_items,
 )
@@ -228,6 +229,49 @@ def test_person_diagnostics_reject_invalid_inputs_before_native(monkeypatch, dia
     nonbinary[0, 0] = 2.0
     with pytest.raises(ValueError, match="0 or 1"):
         diagnostic(nonbinary, np.zeros(4, dtype=np.int64), params, "MIRT")
+
+
+def test_residual_item_fit_rejects_invalid_inputs_before_native(monkeypatch):
+    class BombCore:
+        def residual_item_fit(self, *_args, **_kwargs):
+            raise AssertionError("invalid residual-fit inputs reached the native core")
+
+    params = SimpleNamespace(
+        alpha=np.zeros(4),
+        b=np.zeros(4),
+        zeta=np.zeros((4, 1)),
+        tau=-30.0,
+        theta=np.zeros((10, 1)),
+        xi=np.zeros((10, 1)),
+    )
+    factor_id = np.zeros(4, dtype=np.int64)
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+
+    nonbinary = np.zeros((10, 4))
+    nonbinary[0, 0] = 2.0
+    with pytest.raises(ValueError, match="0 or 1"):
+        residual_item_fit(nonbinary, factor_id, params, "MIRT", n_bins=2)
+
+    params.theta[0, 0] = np.nan
+    with pytest.raises(ValueError, match="must be finite"):
+        residual_item_fit(np.zeros((10, 4)), factor_id, params, "MIRT", n_bins=2)
+    params.theta[0, 0] = 0.0
+
+    with pytest.raises(ValueError, match="integer >= 2"):
+        residual_item_fit(np.zeros((10, 4)), factor_id, params, "MIRT", n_bins=True)
+
+    with pytest.raises(ValueError, match="five persons per bin"):
+        residual_item_fit(np.zeros((10, 4)), factor_id, params, "MIRT", n_bins=3)
+
+    with pytest.raises(ValueError, match="boolean"):
+        residual_item_fit(
+            np.zeros((10, 4)),
+            factor_id,
+            params,
+            "MIRT",
+            mask=np.ones((10, 4)),
+            n_bins=2,
+        )
 
 
 def test_select_items_removes_sparse_and_scrambled():

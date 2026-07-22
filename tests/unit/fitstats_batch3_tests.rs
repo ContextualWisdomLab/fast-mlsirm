@@ -59,8 +59,8 @@ fn mk_bank<'a>(alpha: &'a [f64], b: &'a [f64], zeta: &'a [f64], fid: &'a [usize]
 
 #[test]
 fn residual_fit_and_adjusted_chi2_calibrate_on_true_model() {
-    // long test: the residual method's design regime (EAP shrinkage is
-    // negligible); short tests belong to S-X2
+    // Use a long test so the repository's plug-in EAP-bin approximation is
+    // not dominated by EAP shrinkage.
     let (alpha, b, zeta, fid, y, observed) = sim_bank(1500, 40, 99);
     let bank = mk_bank(&alpha, &b, &zeta, &fid);
     let eap = score_eap(
@@ -93,6 +93,38 @@ fn residual_fit_and_adjusted_chi2_calibrate_on_true_model() {
         "true-model mean adjusted ratio: {}",
         adj.mean_ratio
     );
+}
+
+#[test]
+fn residual_fit_rejects_inputs_that_can_hide_misfit() {
+    let (alpha, b, zeta, fid, mut y, observed) = sim_bank(10, 1, 7);
+    let bank = mk_bank(&alpha, &b, &zeta, &fid);
+    let mut theta = vec![0.0; 10];
+    let xi = vec![0.0; 10];
+
+    theta[0] = f64::NAN;
+    let err = residual_item_fit(&bank, &y, &observed, 10, &theta, &xi, 2)
+        .err()
+        .expect("non-finite EAP scores must be rejected");
+    assert!(err.contains("finite"), "unexpected error: {err}");
+
+    theta[0] = 0.0;
+    y[0] = 2.0;
+    let err = residual_item_fit(&bank, &y, &observed, 10, &theta, &xi, 2)
+        .err()
+        .expect("non-binary observed responses must be rejected");
+    assert!(err.contains("0 or 1"), "unexpected error: {err}");
+
+    y[0] = 0.0;
+    let err = residual_item_fit(&bank, &y, &observed, 10, &theta, &xi, 3)
+        .err()
+        .expect("undersized bins must be rejected");
+    assert!(err.contains("five persons"), "unexpected error: {err}");
+
+    let err = residual_item_fit(&bank, &y, &observed, 10, &theta, &xi, usize::MAX)
+        .err()
+        .expect("overflowing bin work must be rejected");
+    assert!(err.contains("overflows"), "unexpected error: {err}");
 }
 
 #[test]
