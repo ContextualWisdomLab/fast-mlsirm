@@ -4,6 +4,12 @@
 
 ### Changed
 
+- Improved generated report table accessibility: the first identifying column
+  of each data row now renders as `<th scope="row">` for screen-reader grid
+  navigation, with matching CSS updates (header styles scoped to `thead th`,
+  normal-weight `tbody th`, and `font-variant-numeric: tabular-nums` for
+  aligned numeric columns).
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built

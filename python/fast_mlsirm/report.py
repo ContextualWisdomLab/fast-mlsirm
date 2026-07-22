@@ -318,8 +318,10 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     body_rows = []
     for row in rows[:limit]:
         cells = "".join(
-            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
-            for column in columns
+            f'<th scope="row">{escape(_format_value(row.get(column, "")))}</th>'
+            if i == 0
+            else f"<td>{escape(_format_value(row.get(column, '')))}</td>"
+            for i, column in enumerate(columns)
         )
         body_rows.append(f"<tr>{cells}</tr>")
 
@@ -680,20 +682,27 @@ caption {
 }
 
 th,
-td {
+td,
+tbody th {
   padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-th {
+thead th {
   background: #f1f4ef;
   color: #2f3437;
   font-size: 0.8rem;
 }
 
-tr:last-child td {
+tbody th {
+  font-weight: normal;
+}
+
+tr:last-child td,
+tr:last-child th {
   border-bottom: 0;
 }
 
