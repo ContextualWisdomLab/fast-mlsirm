@@ -7,7 +7,9 @@
 - Rust EAP scoring now defaults to GPU-preferred `auto` execution in the core,
   PyO3 binding, and serving API. The f64 CPU reduction remains available via
   `device="cpu"`; an explicit unavailable `device="gpu"` request now warns
-  before falling back instead of silently running on the CPU.
+  before falling back instead of silently running on the CPU. Serving EAP now
+  requires the compiled Rust core instead of silently bypassing device policy
+  through the NumPy reference implementation.
 
 ### Security
 

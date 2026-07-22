@@ -22,7 +22,6 @@ from typing import Any
 import numpy as np
 
 from .config import MAX_LATENT_DIM, VALID_MODELS
-from .estimators.marginal import score_eap
 from .io import _atomic_write_text, _load_json_bounded
 from .types import FitResult
 
@@ -382,9 +381,10 @@ def score_respondents(
     on a known team with ``mean = u_eap`` or a known group with
     ``(mu_g, sigma_g)``.
 
-    ``device="auto"`` prefers the Rust wgpu scoring kernel and falls back to
-    the Rust CPU implementation when no usable GPU is available. Pass
-    ``device="cpu"`` for the hardware-independent f64 reference reduction.
+    EAP and MAP scoring require the compiled Rust core. ``device="auto"``
+    prefers the Rust wgpu scoring kernel and falls back to the Rust CPU
+    implementation when no usable GPU is available. Pass ``device="cpu"`` for
+    the hardware-independent f64 reference reduction.
     """
     _validate_bundle(bundle)
     items = bundle["items"]
@@ -512,44 +512,27 @@ def score_respondents(
     if method != "eap":
         raise ValueError("method must be one of ['eap', 'map', 'eapsum']")
 
-    if core is not None:
-        res = core.score_bank_eap(
-            y_filled.ravel(), observed.ravel(), int(n_persons),
-            alpha, b, zeta.ravel(), float(bundle["tau"]), factor_id,
-            bundle["model"], int(n_dims), int(bundle["latent_dim"]),
-            float(bundle["eps_distance"]), mean, sd,
-            q_theta=int(bundle["quadrature"]["q_theta"]),
-            xi_rule="gh",
-            q_xi=int(bundle["quadrature"]["q_xi"]),
-            device=str(device),
+    if core is None:
+        raise RuntimeError(
+            "EAP scoring requires the compiled Rust core so device selection "
+            "and CPU fallback remain inside Rust"
         )
-        out = {
-            "theta_eap": np.asarray(res["theta_eap"]).reshape(n_persons, n_dims),
-            "theta_sd": np.asarray(res["theta_sd"]).reshape(n_persons, n_dims),
-            "xi_eap": np.asarray(res["xi_eap"]).reshape(
-                n_persons, bundle["latent_dim"]
-            ),
-            "loglik": np.asarray(res["loglik"]),
-        }
-    else:
-        if not (np.allclose(mean, 0.0) and np.allclose(sd, 1.0)):
-            raise ValueError(
-                "non-standard scoring priors require the compiled Rust core"
-            )
-        out = score_eap(
-            y_filled,
-            observed,
-            factor_id,
-            alpha,
-            b,
-            zeta,
-            bundle["tau"],
-            model=bundle["model"],
-            n_dims=n_dims,
-            q_theta=bundle["quadrature"]["q_theta"],
-            q_xi=bundle["quadrature"]["q_xi"],
-            eps_distance=bundle["eps_distance"],
-        )
+    res = core.score_bank_eap(
+        y_filled.ravel(), observed.ravel(), int(n_persons),
+        alpha, b, zeta.ravel(), float(bundle["tau"]), factor_id,
+        bundle["model"], int(n_dims), int(bundle["latent_dim"]),
+        float(bundle["eps_distance"]), mean, sd,
+        q_theta=int(bundle["quadrature"]["q_theta"]),
+        xi_rule="gh",
+        q_xi=int(bundle["quadrature"]["q_xi"]),
+        device=str(device),
+    )
+    out = {
+        "theta_eap": np.asarray(res["theta_eap"]).reshape(n_persons, n_dims),
+        "theta_sd": np.asarray(res["theta_sd"]).reshape(n_persons, n_dims),
+        "xi_eap": np.asarray(res["xi_eap"]).reshape(n_persons, bundle["latent_dim"]),
+        "loglik": np.asarray(res["loglik"]),
+    }
     results = []
     for r in range(y.shape[0]):
         results.append(

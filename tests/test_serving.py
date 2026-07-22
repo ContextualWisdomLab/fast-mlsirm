@@ -21,6 +21,43 @@ def test_scoring_prefers_gpu_automatically_by_default():
     assert inspect.signature(score_respondents).parameters["device"].default == "auto"
 
 
+def test_eap_scoring_never_falls_back_to_python(monkeypatch):
+    import fast_mlsirm.serving as serving
+
+    bundle = {
+        "schema_version": 1,
+        "model": "MIRT",
+        "n_items": 2,
+        "n_dims": 1,
+        "latent_dim": 1,
+        "quadrature": {"q_theta": 7, "q_xi": 7},
+        "eps_distance": 1e-8,
+        "tau": 0.0,
+        "population": None,
+        "eapsum_tables": None,
+        "items": [
+            {
+                "code": "i1",
+                "factor_id": 0,
+                "alpha": 0.0,
+                "b": 0.0,
+                "zeta": [0.0],
+            },
+            {
+                "code": "i2",
+                "factor_id": 0,
+                "alpha": 0.0,
+                "b": 0.0,
+                "zeta": [0.0],
+            },
+        ],
+    }
+    monkeypatch.setattr(serving, "_core_module", lambda: None)
+
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        score_respondents(bundle, {"i1": 1, "i2": 0}, device="gpu")
+
+
 def _fit_small(seed=0):
     rng = np.random.default_rng(seed)
     P, I, D = 300, 10, 2
