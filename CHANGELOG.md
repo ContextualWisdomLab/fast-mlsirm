@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Optimized the `grad_alpha` computation in `python/fast_mlsirm/objective.py`
+  with a BLAS matrix product plus index selection, removing the N×J
+  intermediate array allocation from the gradient hot path without changing
+  numerical results.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built
