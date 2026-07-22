@@ -8,3 +8,7 @@
 ## 2024-10-24 - CSS Bar Chart Animation
 **Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
 **Action:** Use CSS keyframe animations for simple visual improvements in static reports.
+
+## 2024-10-25 - Tabular Nums for Data-Heavy Reports
+**Learning:** In data-heavy static reports, numbers that aren't vertically aligned can be difficult to read and compare across rows or within metrics.
+**Action:** Use `font-variant-numeric: tabular-nums;` on body styles or data-centric components to ensure numerical data vertically aligns perfectly, improving scannability and readability.
