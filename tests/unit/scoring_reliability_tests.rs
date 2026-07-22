@@ -66,8 +66,17 @@ fn empirical_reliability_explicit_gpu_matches_cpu_reference() {
 
     let cpu =
         empirical_reliability_device(&theta, &sd, n_persons, n_dims, crate::Device::Cpu).unwrap();
-    let gpu = crate::gpu_scoring::empirical_reliability_gpu(&theta, &sd, n_persons, n_dims)
-        .expect("this test requires a usable GPU adapter");
+    let gpu = crate::gpu_scoring::empirical_reliability_gpu(&theta, &sd, n_persons, n_dims);
+    if std::env::var("WGPU_BACKEND").is_ok_and(|backend| backend.eq_ignore_ascii_case("metal")) {
+        assert!(
+            gpu.is_some(),
+            "WGPU_BACKEND=metal was explicit, but no usable Metal adapter was selected"
+        );
+    }
+    let Some(gpu) = gpu else {
+        eprintln!("no GPU adapter present; skipping empirical-reliability GPU parity check");
+        return;
+    };
     for (actual, expected) in gpu.iter().zip(&cpu) {
         assert!((actual - expected).abs() < 1e-4, "{actual} vs {expected}");
     }
