@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Reduced peak memory in the `linear_predictor` distance computation
+  (`python/fast_mlsirm/objective.py`) by switching to in-place NumPy
+  operations (`+=`, `out=`), avoiding several N×J intermediate arrays per
+  objective evaluation without changing numerical results.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built
