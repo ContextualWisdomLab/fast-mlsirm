@@ -14,6 +14,7 @@
 //!   the marginal `N(0, sqrt(1 + sigma_u^2))` for an unknown cluster.
 
 use crate::marginal::{build_tables, index_responses, person_pass, Contexts, Grids};
+use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
 use crate::nodes::{build_xi_nodes, XiRule};
 use crate::quadrature::gh_rule;
 use crate::{model_exec_flags, ModelConfig, ModelType};
@@ -1339,10 +1340,18 @@ fn dispatch_information_device(
 /// - `I(theta) = sum_i P_i'^2 / (P_i Q_i)` (test information, [`item_information_4pl`] per item);
 /// - `J(theta) = sum_i P_i' P_i'' / (P_i Q_i)` (the Warm correction; computed DIRECTLY from `P' P''`).
 ///
-/// `J` is **not** `I'(theta)/2`: they coincide only for the 2PL/Rasch (`c = 0, d = 1`), where the
-/// weight is `sqrt(I)` (the Jeffreys prior); for the 3PL/4PL `J != I'` (the second derivative carries
-/// `1 - 2 s` while `I'` carries `1 - 2 P`), so a `sqrt(I)`-weighted estimator applies the wrong 3PL/4PL
-/// correction. Two properties Warm establishes: the estimator removes the leading MLE bias, and — unlike
+/// `J` is **not** `I'(theta)/2`. For the 2PL/Rasch (`c = 0, d = 1`) `J = I'(theta)` EXACTLY, which is
+/// why the Warm weight is `sqrt(I)` (the Jeffreys prior) there. In general, differentiating
+/// `I = sum_i P_i'^2 / (P_i Q_i)` and using `(P Q)' = P'(Q - P)` gives `I' = 2J - T` with
+///
+/// ```text
+///   T = sum_i P_i'^3 (1 - 2 P_i) / (P_i Q_i)^2,
+/// ```
+///
+/// and `T = J` only when `c = 0, d = 1`; any `c > 0` or `d < 1` gives `J != I'`, so a `sqrt(I)`-weighted
+/// estimator applies the wrong 3PL/4PL correction. `I' = 2J - T` is pinned by
+/// `wle_information_derivative_identity`, because this comment has been wrong twice: it first claimed
+/// the coincidence was with `I'/2`, and the correction of that claim dropped the `(1 - 2 P)` factor. Two properties Warm establishes: the estimator removes the leading MLE bias, and — unlike
 /// the MLE, which is `+/-infinity` for the all-correct / all-incorrect pattern — it yields a FINITE
 /// estimate there. The estimate is the GLOBAL maximizer of the weighted log-likelihood `Phi`
 /// (`Phi' = g`), located by a grid scan of `g` (its trapezoidal cumulative integral recovers `Phi`) plus
@@ -1532,6 +1541,324 @@ pub fn score_wle(
             grid_theta(best_k)
         } else {
             // Interior max: Phi' = g crosses + -> - in [node-1, node+1]; refine by bisection.
+            let mut evaluate = |theta| eval(p, theta).0;
+            refine_wle_root(
+                grid_theta(best_k - 1),
+                grid_theta(best_k + 1),
+                tol,
+                &mut evaluate,
+            )
+            .map_err(|reason| format!("{reason} for person {p}"))?
+        };
+        out.theta[p] = theta_hat;
+        let info = eval(p, theta_hat).1;
+        out.se[p] = if info > 1e-12 {
+            (1.0 / info).sqrt()
+        } else {
+            f64::NAN
+        };
+    }
+    Ok(out)
+}
+
+/// Per-category Warm quantities for ONE polytomous item at `theta`, returned as
+/// `(P_k, P'_k / P_k, P''_k / P_k)`.
+///
+/// The ratios are formed DIVISION-FREE from the sigmoids rather than by dividing derivatives by `P`,
+/// so an underflowing extreme-tail category still contributes a finite score: `P'_k / P_k` and
+/// `P''_k / P_k` are bounded even where `P_k` is not representable. Nothing here needs a probability
+/// floor.
+fn poly_wle_ratios(
+    theta: f64,
+    slope: f64,
+    cat_params: &[f64],
+    model: PolyModel,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let a = slope;
+    let base = a * theta;
+    let k_cat = cat_params.len() + 1;
+    match model {
+        PolyModel::Gpcm => {
+            // psi_k = k * base + c_k with c_0 = 0, matching `gpcm_logprobs`.
+            let scores: Vec<f64> = (0..k_cat).map(|c| c as f64).collect();
+            let mut intercepts = vec![0.0_f64; k_cat];
+            intercepts[1..].copy_from_slice(cat_params);
+            let p: Vec<f64> = gpcm_logprobs(base, &scores, &intercepts)
+                .iter()
+                .map(|l| l.exp())
+                .collect();
+            let e: f64 = scores.iter().zip(&p).map(|(s, pp)| s * pp).sum();
+            let v: f64 = scores
+                .iter()
+                .zip(&p)
+                .map(|(s, pp)| pp * (s - e) * (s - e))
+                .sum();
+            // P'_k/P_k = a (k - E);  P''_k/P_k = (P'_k/P_k)^2 - a^2 Var(k).
+            let r1: Vec<f64> = scores.iter().map(|s| a * (s - e)).collect();
+            let r2: Vec<f64> = r1.iter().map(|r| r * r - a * a * v).collect();
+            (p, r1, r2)
+        }
+        PolyModel::Grm => {
+            // s_0 = 1, s_j = sigmoid(base + beta_{j-1}) for j = 1..K-1, s_K = 0, matching
+            // `grm_logprobs`. Then v_0 = v_K = 0 automatically.
+            let p: Vec<f64> = grm_logprobs(base, cat_params)
+                .iter()
+                .map(|l| l.exp())
+                .collect();
+            let mut s = vec![0.0_f64; k_cat + 1];
+            s[0] = 1.0;
+            for j in 1..k_cat {
+                s[j] = sigmoid(base + cat_params[j - 1]);
+            }
+            let v: Vec<f64> = s.iter().map(|sj| sj * (1.0 - sj)).collect();
+            // P'_k/P_k = a (1 - s_k - s_{k+1});  P''_k/P_k = (P'_k/P_k)^2 - a^2 (v_k + v_{k+1}).
+            let r1: Vec<f64> = (0..k_cat).map(|k| a * (1.0 - s[k] - s[k + 1])).collect();
+            let r2: Vec<f64> = (0..k_cat)
+                .map(|k| r1[k] * r1[k] - a * a * (v[k] + v[k + 1]))
+                .collect();
+            (p, r1, r2)
+        }
+    }
+}
+
+/// Test information and Warm correction numerator for ONE polytomous item at `theta`:
+/// `(I, J) = (sum_k P'_k^2 / P_k, sum_k P'_k P''_k / P_k)`, accumulated from
+/// [`poly_wle_ratios`] as `sum_k P_k r1_k^2` and `sum_k P_k r1_k r2_k`.
+///
+/// Exposed so the tests can pin `J` against an independently obtained `I'(theta)` — see the
+/// verification note on [`score_wle_poly`]. `J` is what the estimator actually uses; the identity
+/// `J = I'` is a test oracle only and is never substituted for this computation.
+///
+/// Test-only: [`score_wle_poly`]'s hot loop inlines the same accumulation alongside the score term
+/// rather than calling this, so gating it keeps `cargo build` warning-free.
+#[cfg(test)]
+pub(crate) fn poly_wle_terms(
+    theta: f64,
+    slope: f64,
+    cat_params: &[f64],
+    model: PolyModel,
+) -> (f64, f64) {
+    let (p, r1, r2) = poly_wle_ratios(theta, slope, cat_params, model);
+    let mut info = 0.0_f64;
+    let mut jterm = 0.0_f64;
+    for k in 0..p.len() {
+        info += p[k] * r1[k] * r1[k];
+        jterm += p[k] * r1[k] * r2[k];
+    }
+    (info, jterm)
+}
+
+/// Warm's (1989) weighted-likelihood ability estimates for a UNIDIMENSIONAL POLYTOMOUS test
+/// (GRM or GPCM). The maximum-likelihood estimate carries an `O(1/n)` bias; Warm removes its leading
+/// term by weighting the likelihood by `w` with `w'/w = J/(2 I)`, giving
+///
+/// ```text
+///   dlnL/dtheta + J(theta) / (2 I(theta)) = 0,
+/// ```
+///
+/// accumulated over the person's observed items with, per item and category `k = 0..K-1`,
+///
+/// ```text
+///   score = P'_y / P_y,   I = sum_k P'_k^2 / P_k,   J = sum_k P'_k P''_k / P_k.
+/// ```
+///
+/// This is the exact generalization of the dichotomous `sum_i P_i' P_i'' / (P_i Q_i)` in
+/// [`score_wle`], which is the two-category case of the same sum. `J` is computed DIRECTLY from `P'`
+/// and `P''`; it is never written as `I'(theta) / (2 I)`.
+///
+/// # Verification status
+///
+/// CONFIRMED FROM AN INDEPENDENT IMPLEMENTATION'S SOURCE, not from a primary paper: that the
+/// polytomous Warm correction is `J/(2 I)` with `J = sum_k P'_k P''_k / P_k`. The `catR` package
+/// computes exactly this (`R/Ji.R`, polytomous branch `dP*d2P/P` row-summed; `R/thetaEst.R`, method
+/// `"WL"`, `sum(Ji)/(2*sum(Ii))`), and its Jeffreys-prior branch uses a DIFFERENT expression,
+/// `sum(dIi)/(2*sum(Ii))` — the two estimators are distinct there and are kept distinct here
+/// (Magis & Raiche, 2012). The primary-source polytomous derivation was NOT read for this work.
+///
+/// PROVED AND VERIFIED IN THIS REPOSITORY, not taken from a source: `J(theta) = I'(theta)` for both
+/// families shipped here. From `I' = 2J - T` with `T = sum_k P'^3_k / P_k^2` one gets
+/// `J - I' = -E[l' l'']`, and
+///   * GPCM: `l''_k = -a^2 Var_P(k)` does not depend on `k`, so `E[l' l''] = -Var * E[l'] = 0`;
+///   * GRM: with `s_j = sigmoid(a theta + beta_{j-1})`, `s_0 = 1`, `s_K = 0`, `v_j = s_j (1 - s_j)`,
+///     `E[l' l''] = -a^3 sum_k (v_k - v_{k+1})(v_k + v_{k+1}) = -a^3 (v_0^2 - v_K^2) = 0` by
+///     telescoping.
+/// Checked numerically at 80-digit precision against fully numeric derivatives of `P` (K = 4 and
+/// K = 5, asymmetric non-centred parameters, off-centre theta): relative `|J - I'| <= 1.1e-30`. The
+/// WLE therefore coincides with the Jeffreys modal estimate here. The identity is used ONLY as a test
+/// oracle, never as an implementation shortcut: it is a property of a single slope per item with the
+/// logistic link and no lower asymptote, and it FAILS — verified at the same precision — for a graded
+/// model with per-boundary slopes (relative `|J - I'|` of 0.92 and 1.17 at the two thetas the test
+/// uses) and for the 3PL (0.47 at `c = 0.25`, the case [`score_wle`] already handles). Both figures are
+/// the values the shipped fixtures actually assert.
+///
+/// A CONSEQUENCE WORTH STATING: since the identity is exact here, an implementation that replaced `J`
+/// with a numerical derivative of `I` would be behaviour-preserving for GRM and GPCM, and no
+/// polytomous test can detect the substitution. The anchors that do are in the dichotomous suite,
+/// where a lower asymptote breaks the identity. A family added later must re-derive `J`.
+///
+/// NOT VERIFIED, AND DELIBERATELY NOT CITED: Penfield and Bergeron (2005) treat the GPCM but their
+/// equations were not obtainable and are not the source of anything here.
+///
+/// # Numerics
+///
+/// Per-category quantities are formed division-free from the sigmoids, so no category probability ever
+/// appears in a denominator. GPCM: `P'_k/P_k = a(k - E)`, `P''_k/P_k = (P'_k/P_k)^2 - a^2 Var(k)`.
+/// GRM: `P'_k/P_k = a(1 - s_k - s_{k+1})`, `P''_k/P_k = (P'_k/P_k)^2 - a^2 (v_k + v_{k+1})`; the
+/// resulting `I = a^2 sum_k P_k (1 - s_k - s_{k+1})^2` is algebraically identical to
+/// [`crate::poly::poly_item_information`]'s `a^2 sum_k (v_k - v_{k+1})^2 / P_k`, since
+/// `v_k - v_{k+1} = P_k (1 - s_k - s_{k+1})`.
+///
+/// The estimate is the GLOBAL maximizer of the weighted log-likelihood `Phi` (`Phi' = g`). Both
+/// polytomous log-likelihoods are log-concave, but `ln w` is not, and `Phi` is genuinely multimodal: a
+/// 3-item GPCM bank in the test suite has stationary points at `+0.0988`, `+0.3774` and `+1.3314` with
+/// `Phi = -4.7208 / -4.7694 / -3.8787` while `max lnL'' = -5.6e-5 < 0`, so a solver that brackets the
+/// first sign change from the left errs by 1.23 logits (2.36 for the GRM fixture). The grid scan plus
+/// local refinement of [`score_wle`] is therefore reused unchanged, including its refusal to return an
+/// unresolved mode beyond 65,536 intervals. That bounded adaptive search is a repository implementation
+/// choice, not a procedure specified by Warm.
+///
+/// PCM is this GPCM path with `a = 1` (a reparameterization, not a separate code path). RSM is NOT
+/// supported: it is a constrained GPCM in theory, but the fitted `(delta_i, shared tau)`
+/// parameterization is not convertible through any exposed API ([`crate::rsm::rsm_logprobs`] builds
+/// the equivalent intercepts internally and does not return them).
+///
+/// `y[p * n_items + i]` is the observed category in `0..n_cat`; `observed = None` means complete data.
+/// A person with no observed items gets `NaN` theta/se with `boundary` set.
+///
+/// # References (APA 7th ed.)
+///
+/// Magis, D., & Raiche, G. (2012). Random generation of response patterns under computerized adaptive
+/// testing with the R package catR. *Journal of Statistical Software, 48*(8), 1-31.
+/// <https://doi.org/10.18637/jss.v048.i08>
+///
+/// Muraki, E. (1992). A generalized partial credit model: Application of an EM algorithm.
+/// *Applied Psychological Measurement, 16*(2), 159-176. <https://doi.org/10.1177/014662169201600206>
+///
+/// Samejima, F. (1969). Estimation of latent ability using a response pattern of graded scores.
+/// *Psychometrika, 34*(S1), 1-97. <https://doi.org/10.1007/BF03372160>
+///
+/// Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory.
+/// *Psychometrika, 54*(3), 427-450. <https://doi.org/10.1007/BF02294627>
+#[allow(clippy::too_many_arguments)]
+pub fn score_wle_poly(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: &[f64],
+    cat_params: &[f64],
+    model: PolyModel,
+    theta_bound: f64,
+    tol: f64,
+) -> Result<WleScores, String> {
+    if n_cat < 2 {
+        return Err("n_cat must be >= 2".into());
+    }
+    if n_items == 0 {
+        return Err("need at least one item".into());
+    }
+    let cells = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != cells {
+        return Err("y must have length n_persons * n_items".into());
+    }
+    if let Some(o) = observed {
+        if o.len() != cells {
+            return Err("observed must have length n_persons * n_items".into());
+        }
+    }
+    let n_par = crate::checked_mul_usize(n_items, n_cat - 1, "n_items * (n_cat - 1) overflows usize")?;
+    if slope.len() != n_items || cat_params.len() != n_par {
+        return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
+    }
+    if slope.iter().chain(cat_params.iter()).any(|v| !v.is_finite()) {
+        return Err("slope and cat_params must be finite".into());
+    }
+    for (idx, &cat) in y.iter().enumerate() {
+        if observed.map_or(true, |o| o[idx]) && cat >= n_cat {
+            return Err("observed responses must be in 0..n_cat".into());
+        }
+    }
+    if !theta_bound.is_finite() || theta_bound <= 0.0 {
+        return Err("theta_bound must be finite and positive".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+
+    let seen = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    // (g, I) at theta for person p, where g = score + J/(2 I) is the Warm estimating function.
+    let eval = |p: usize, theta: f64| -> (f64, f64) {
+        let (mut score, mut info, mut jterm) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for i in 0..n_items {
+            if !seen(p, i) {
+                continue;
+            }
+            let pars = &cat_params[i * (n_cat - 1)..(i + 1) * (n_cat - 1)];
+            let (p_k, r1, r2) = poly_wle_ratios(theta, slope[i], pars, model);
+            score += r1[y[p * n_items + i]];
+            for k in 0..p_k.len() {
+                info += p_k[k] * r1[k] * r1[k];
+                jterm += p_k[k] * r1[k] * r2[k];
+            }
+        }
+        (score + jterm / (2.0 * info.max(1e-12)), info)
+    };
+
+    const MIN_GRID: usize = 512;
+    const MAX_GRID: usize = 65_536;
+    const INTERVALS_PER_LOGIT: f64 = 4.0;
+    let max_abs_a = slope.iter().fold(0.0_f64, |acc, &v| acc.max(v.abs()));
+    if max_abs_a == 0.0 {
+        return Err("at least one item must have nonzero discrimination".into());
+    }
+    // The theta-scale of the narrowest feature of Phi is set by the total information:
+    // I = a^2 Var_P(k) and sd(k) <= (K-1)/2, so a mode can be as narrow as O(2/(a(K-1)))
+    // rather than O(1/a). Scaling the grid by (n_cat - 1) is a derived worst-case margin
+    // whose only cost is nodes; NO configuration in which the unscaled max|a| rule actually
+    // returns the wrong global mode was reproduced when this was reviewed (0 misses in 400
+    // steep GPCM draws, K = 5, a ~ U(4,12), theta_bound = 8, against a 262,144-node reference).
+    let required_grid =
+        (2.0 * theta_bound * max_abs_a * INTERVALS_PER_LOGIT * (n_cat - 1) as f64).ceil();
+    if !required_grid.is_finite() || required_grid > MAX_GRID as f64 {
+        return Err(format!(
+            "theta_bound and item discrimination require more than {MAX_GRID} WLE grid intervals"
+        ));
+    }
+    let grid = (required_grid as usize).max(MIN_GRID);
+    let h = 2.0 * (theta_bound / grid as f64);
+    let grid_theta = |k: usize| theta_bound * (2.0 * k as f64 / grid as f64 - 1.0);
+    let mut gvals = vec![0.0f64; grid + 1];
+    let mut out = WleScores {
+        theta: vec![0.0; n_persons],
+        se: vec![0.0; n_persons],
+        boundary: vec![false; n_persons],
+    };
+    for p in 0..n_persons {
+        if (0..n_items).all(|i| !seen(p, i)) {
+            out.theta[p] = f64::NAN;
+            out.se[p] = f64::NAN;
+            out.boundary[p] = true;
+            continue;
+        }
+        for (k, gval) in gvals.iter_mut().enumerate() {
+            *gval = finite_wle_value(
+                eval(p, grid_theta(k)).0,
+                format!("non-finite WLE estimating function for person {p}"),
+            )?;
+        }
+        let (mut phi, mut best_phi, mut best_k) = (0.0f64, 0.0f64, 0usize);
+        for k in 1..=grid {
+            phi += 0.5 * (gvals[k - 1] + gvals[k]) * h;
+            if phi > best_phi {
+                best_phi = phi;
+                best_k = k;
+            }
+        }
+        let theta_hat = if best_k == 0 || best_k == grid {
+            out.boundary[p] = true;
+            grid_theta(best_k)
+        } else {
             let mut evaluate = |theta| eval(p, theta).0;
             refine_wle_root(
                 grid_theta(best_k - 1),
@@ -2136,3 +2463,7 @@ mod gpu_score_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/scoring_wle_tests.rs"]
 mod wle_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/scoring_wle_poly_tests.rs"]
+mod wle_poly_tests;

@@ -51,7 +51,7 @@ from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as lo
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
                   sibtest as sibtest)
-from .wle import score_wle as score_wle
+from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
 from .simulation import simulate as simulate
 from .test_design import assemble_test_form as assemble_test_form, item_information as item_information, select_cat_item as select_cat_item
@@ -172,6 +172,7 @@ __all__ = [
     "logistic_dif_purified",
     "sibtest",
     "score_wle",
+    "score_wle_poly",
     "fit_rasch_cml",
     "andersen_lr_test",
     "u3_person_fit_polytomous",

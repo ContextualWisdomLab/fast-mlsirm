@@ -70,7 +70,8 @@ use mlsirm_core::scoring::{
     empirical_reliability as core_empirical_reliability,
     plausible_values_device as core_plausible_values_device,
     score_eap_device as core_score_eap_device, score_eapsum_device as core_score_eapsum_device,
-    score_map as core_score_map, score_wle as core_score_wle, EapSumTable, ItemBank, PriorSpec,
+    score_map as core_score_map, score_wle as core_score_wle,
+    score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1985,8 +1986,9 @@ fn score_bank_map(
 
 /// Warm's (1989) weighted-likelihood ability estimates for a unidimensional dichotomous test (Rust
 /// compute path). The bias-reduced maximum-likelihood estimator: solves
-/// `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with `J = sum_i P_i' P_i''/(P_i Q_i)` (computed directly,
-/// not `I'/2`, which differs for the 3PL/4PL), yielding a FINITE estimate for the all-correct /
+/// `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with `J = sum_i P_i' P_i''/(P_i Q_i)` (computed directly;
+/// it equals `I'` for the 2PL/Rasch only, and is neither `I'` nor `I'/2` for the 3PL/4PL), yielding a
+/// FINITE estimate for the all-correct /
 /// all-incorrect patterns where the MLE diverges. `a`/`b`/`c`/`d` are per-item NATURAL-scale parameters
 /// (`a` the slope, NOT log-alpha) with `0 <= c_i < d_i <= 1` (2PL: `c=0, d=1`); `y`/`observed` are
 /// row-major `n_persons * n_items` (`0/1`; missing items dropped per person). Returns a dict with
@@ -2987,6 +2989,65 @@ fn poly_cat_simulate(
     out.set_item("theta_eap", res.theta_eap)?;
     out.set_item("theta_sd", res.theta_sd)?;
     out.set_item("n_used", res.n_used)?;
+    Ok(out.into())
+}
+
+/// Warm's (1989) weighted-likelihood ability estimates for a unidimensional POLYTOMOUS test, GRM or
+/// GPCM (Rust compute path). The polytomous counterpart of `score_wle`: solves
+/// `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with `I = sum_k P'_k^2 / P_k` and
+/// `J = sum_k P'_k P''_k / P_k` summed over the person's observed items — the exact generalization of
+/// the dichotomous `sum_i P' P''/(P Q)`, which is its two-category case. `J` is computed DIRECTLY, not
+/// as a derivative of `I`.
+///
+/// Unlike `score_poly_eap` this applies NO prior, so the estimate is not shrunk toward a population
+/// mean — the usual requirement when reporting individual scores. It stays FINITE for the all-lowest
+/// and all-highest response patterns, where the maximum-likelihood estimate diverges.
+///
+/// PCM is this GPCM path with `slope = 1`. RSM is NOT supported: its fitted `(delta, shared tau)`
+/// parameterization is not convertible through any exposed API.
+///
+/// The correction is confirmed against the `catR` package's source rather than a primary paper; see
+/// the core `score_wle_poly` docs for the full verification status, including the in-repository proof
+/// that `J = I'` holds for both shipped families (used only as a test oracle, never as a shortcut).
+///
+/// `y` is row-major `n_persons * n_items` with categories in `0..n_cat`; `cat_params` is flattened
+/// `n_items * (n_cat - 1)`. Returns a dict with `theta`, `se` and `boundary`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, n_persons, n_items, n_cat, slope, cat_params, observed = None, model = "grm", theta_bound = 20.0, tol = 1e-8))]
+fn score_wle_poly(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    n_cat: usize,
+    slope: PyReadonlyArray1<'_, f64>,
+    cat_params: PyReadonlyArray1<'_, f64>,
+    observed: Option<PyReadonlyArray1<'_, bool>>,
+    model: &str,
+    theta_bound: f64,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = parse_poly_model(model)?;
+    let yv = poly_responses(y.as_slice()?, n_cat)?;
+    let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let out_scores = core_score_wle_poly(
+        &yv,
+        obs,
+        n_persons,
+        n_items,
+        n_cat,
+        slope.as_slice()?,
+        cat_params.as_slice()?,
+        m,
+        theta_bound,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta", out_scores.theta)?;
+    out.set_item("se", out_scores.se)?;
+    out.set_item("boundary", out_scores.boundary)?;
     Ok(out.into())
 }
 
@@ -4953,6 +5014,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_person_fit, m)?)?;
     m.add_function(wrap_pyfunction!(poly_cat_simulate, m)?)?;
     m.add_function(wrap_pyfunction!(score_poly_eap, m)?)?;
+    m.add_function(wrap_pyfunction!(score_wle_poly, m)?)?;
     m.add_function(wrap_pyfunction!(poly_information_curves, m)?)?;
     m.add_function(wrap_pyfunction!(poly_item_fit_sx2, m)?)?;
     m.add_function(wrap_pyfunction!(fit_poly_lsirm, m)?)?;

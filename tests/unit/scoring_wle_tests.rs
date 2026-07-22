@@ -420,3 +420,51 @@ fn wle_reduces_mle_bias_500() {
         "WLE did not reduce aggregate bias: {wle_abs} vs {mle_abs}"
     );
 }
+
+/// Pins the identity `I' = 2J - T` with `T = sum_i P_i'^3 (1 - 2 P_i) / (P_i Q_i)^2`, stated in the
+/// [`score_wle`] doc block. Both `J` and `T` are formed from the SHIPPED `item_information_4pl` and
+/// the same closed forms the estimator uses, while `I'` comes from a central difference of
+/// `item_information_4pl` — a different code path — so neither side is a private restatement.
+///
+/// This exists because that sentence has been wrong twice: it first claimed `J` coincides with `I'/2`
+/// for the 2PL, and the correction of that claim dropped the `(1 - 2 P)` factor from `T`. A formula
+/// asserted in prose and checked by nothing is how that happens.
+///
+/// kills: `T` written without the `(1 - 2 P)` factor (off by ~5x at the 2PL point below); a claim that
+/// `T = J` for the 3PL, where the two genuinely differ.
+#[test]
+fn wle_information_derivative_identity() {
+    let jt = |a: f64, b: f64, c: f64, d: f64, t: f64| -> (f64, f64) {
+        let s = sig(a * (t - b));
+        let dc = d - c;
+        let p = c + dc * s;
+        let pq = p * (1.0 - p);
+        let p1 = a * dc * s * (1.0 - s);
+        let p2 = a * a * dc * s * (1.0 - s) * (1.0 - 2.0 * s);
+        (p1 * p2 / pq, p1 * p1 * p1 * (1.0 - 2.0 * p) / (pq * pq))
+    };
+    let h = 1e-5;
+    for (a, b, c, d, t, two_pl) in [
+        (1.5f64, 0.2, 0.0, 1.0, 0.7, true),
+        (1.5, 0.2, 0.25, 1.0, -1.6, false),
+        (1.2, -0.4, 0.0, 0.95, 0.3, false),
+    ] {
+        let (j, tt) = jt(a, b, c, d, t);
+        // `item_information_4pl` takes the PROBABILITY, so the finite difference is over theta via P.
+        let pf = |x: f64| c + (d - c) * sig(a * (x - b));
+        let iprime = (item_information_4pl(a, pf(t + h), c, d)
+            - item_information_4pl(a, pf(t - h), c, d))
+            / (2.0 * h);
+        assert!(
+            (2.0 * j - tt - iprime).abs() / iprime.abs().max(1e-8) < 1e-5,
+            "I' = 2J - T failed at a={a} b={b} c={c} d={d} theta={t}: 2J-T={} I'={iprime}",
+            2.0 * j - tt
+        );
+        // T = J exactly for the 2PL/Rasch (hence J = I' and the weight is sqrt(I)); NOT otherwise.
+        let same = (tt - j).abs() / j.abs().max(1e-8) < 1e-9;
+        assert_eq!(
+            same, two_pl,
+            "T == J must hold for the 2PL only: a={a} c={c} d={d} gave T={tt} J={j}"
+        );
+    }
+}

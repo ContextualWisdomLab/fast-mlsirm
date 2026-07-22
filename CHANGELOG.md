@@ -114,6 +114,73 @@
 
 ### Added
 
+- **Warm's weighted-likelihood ability estimation for POLYTOMOUS items** (`fast_mlsirm.score_wle_poly`;
+  new `score_wle_poly` in `mlsirm_core::scoring`; Warm, 1989). The library already had the full
+  polytomous model family and polytomous EAP scoring, but its only bias-reduced ML ability estimator was
+  dichotomous-only. EAP shrinks toward the population mean, which is exactly what individual score
+  reporting must not do, so this closes a real gap rather than adding a third way to do the same thing.
+  Solves `dlnL/dtheta + J/(2I) = 0` with `I = sum_k P'_k^2 / P_k` and `J = sum_k P'_k P''_k / P_k`
+  accumulated over the person's observed items — the exact generalization of the shipped dichotomous
+  `sum_i P' P''/(P Q)`, which is its two-category case. `J` is computed DIRECTLY, never as a derivative
+  of `I`. GRM and GPCM; PCM is the GPCM path at `slope = 1`. RSM is deliberately NOT supported and the
+  code says why: its fitted `(delta, shared tau)` parameterization is not convertible through any
+  exposed API, since `rsm_logprobs` builds the equivalent intercepts internally and does not return
+  them.
+  **Verification status is stated in the code, because it bounds what may be claimed.** That the
+  polytomous Warm correction is `J/(2I)` with `J = sum_k P'P''/P` is confirmed from the `catR` package's
+  SOURCE, not from a primary paper — and `catR` keeps its Jeffreys-prior branch as a separate
+  expression, so the two estimators are kept distinct here too (Magis & Raîche, 2012). Penfield and
+  Bergeron (2005) treat the GPCM but their equations were not obtainable, so nothing here rests on them
+  and they are not cited as a source. Separately, and PROVED in-repository rather than taken from a
+  source: `J = I'` holds exactly for both shipped families. From `I' = 2J - T` one gets
+  `J - I' = -E[l' l'']`, which vanishes because the GPCM's `l''` is category-free and the GRM's sum
+  telescopes through `v_0 = v_K = 0`; checked numerically at 80-digit precision against fully numeric
+  derivatives (relative `|J - I'| <= 1.1e-30`). The WLE therefore coincides with the Jeffreys modal
+  estimate for these two families — but the identity is used ONLY as a test oracle and never as an
+  implementation shortcut, because it fails for a graded model with per-boundary slopes and for the 3PL,
+  both of which are pinned as negative controls.
+  **Numerics.** Per-category quantities are formed division-free from the sigmoids — GPCM
+  `P'_k/P_k = a(k - E)`, `P''_k/P_k = (P'_k/P_k)^2 - a^2 Var(k)`; GRM `P'_k/P_k = a(1 - s_k - s_{k+1})`,
+  `P''_k/P_k = (P'_k/P_k)^2 - a^2(v_k + v_{k+1})` — so no category probability ever appears in a
+  denominator and no probability floor is needed anywhere. The resulting GRM information is algebraically
+  identical to the shipped `poly_item_information`, via `v_k - v_{k+1} = P_k(1 - s_k - s_{k+1})`.
+  **Both polytomous log-likelihoods are log-concave, yet the weighted objective is genuinely
+  multimodal**, because the Warm weight is not: a 3-item GPCM bank in the test suite has stationary
+  points at `+0.0988`, `+0.3774` and `+1.3314` while `max lnL'' = -5.6e-5 < 0`, so a solver that brackets
+  the first sign change from the left errs by 1.23 logits (2.36 on the GRM fixture). The global grid
+  scan of `score_wle` is therefore reused unchanged, including its refusal to return an unresolved mode
+  beyond 65,536 intervals; the grid demand additionally scales with `n_cat - 1`, documented as a derived
+  worst-case margin for which no wrong-mode counterexample was reproduced.
+  **Guards.** Eleven anchors, the important ones mutation-verified with the measured result recorded.
+  `J == I'` is pinned with BOTH sides coming from different crate code paths (the accumulator versus a
+  central difference of the shipped `poly_item_information`), and the reference magnitudes are pinned to
+  1e-5 rather than merely asserted non-zero, so a zeroed or sign-flipped `jterm` fails. `K = 2`
+  reproduces the dichotomous `score_wle` for both families — non-discriminating as a design argument,
+  but the only anchor that catches a layout transpose, a `cat_params` stride bug or a missing
+  chain-rule `a`. The two global-mode fixtures assert the returned value is the dominant mode and not
+  the leftmost stationary point; a mutation that stops the scan at the first rise of `Phi` fails eight
+  of the ten polytomous tests, and the narrower "take the leftmost stationary point" substitution fails
+  the two global-mode fixtures specifically. The estimating equation is re-derived from finite
+  differences of the log-probability routines alone, and the all-lowest/all-highest patterns are
+  asserted finite alongside a check that the UNWEIGHTED score really does keep a constant sign there,
+  so the "the MLE diverges" premise is verified rather than assumed.
+  **One coverage limit is stated rather than papered over.** Because `J = I'` is EXACT for both shipped
+  families, an implementation that replaced `J` with a numerical derivative of `I` would be
+  behaviour-preserving and NO polytomous test can detect it — a mutation confirmed to leave the whole
+  polytomous suite green. The discriminating anchors for that substitution live in the dichotomous
+  suite, where a lower asymptote breaks the identity. The accompanying test therefore documents that the
+  identity is family-specific (exhibiting a per-boundary-slope graded model and a 3PL where it fails,
+  with measured relative gaps of 0.92/1.17 and 0.47) and is labelled a lemma about the ORACLE, not a
+  test of the code.
+  **Also corrects an error in the dichotomous WLE documentation shipped earlier in this release**: it
+  claimed `J` coincides with `I'/2` for the 2PL/Rasch. The correct statement is `J = I'` exactly there,
+  from `I' = 2J - T` with `T = sum_i P_i'^3 (1 - 2 P_i)/(P_i Q_i)^2`, and `T = J` only when
+  `c = 0, d = 1` — which is why the weight is `sqrt(I)`. Fixed in the Rust, PyO3 and Python docstrings;
+  the historical entry below is left as written. The identity is now PINNED by
+  `wle_information_derivative_identity`, because the first attempt at this correction was itself wrong
+  (it dropped the `(1 - 2 P)` factor from `T`, giving a value ~5x off at the 2PL) and nothing caught it.
+  A formula asserted in prose and checked by no test is how that happens twice.
+
 - **Uniform SIBTEST, the regression-corrected observed-score DIF procedure** (`fast_mlsirm.sibtest`;
   extends `mlsirm_core::dif`; Shealy & Stout, 1993). The third observed-score DIF procedure in the
   module and the only one that corrects the MATCHING CRITERION itself. Mantel-Haenszel and the logistic

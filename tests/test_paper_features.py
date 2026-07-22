@@ -2219,6 +2219,63 @@ def test_logistic_dif_zumbo():
         logistic_dif(y, np.zeros(n, dtype=np.int64) + 3)
 
 
+def test_score_wle_poly():
+    """Warm (1989) WLE for polytomous items via the public API.
+    Pins the two properties that distinguish it from the EAP already shipped: it is NOT shrunk toward
+    a prior mean, and it stays finite for the all-lowest/all-highest patterns where ML diverges.
+    Also pins the K=2 reduction to the dichotomous score_wle, which is the plumbing anchor."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import score_wle, score_wle_poly
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "score_wle_poly"):
+        pytest.skip("compiled core built without score_wle_poly")
+
+    slope = np.array([1.7, 0.9, 1.3, 1.1, 0.8])
+    cat = np.array([[1.6, 0.1, -1.2], [2.4, -0.5, -1.9], [0.8, -0.2, -2.6],
+                    [1.2, 0.3, -1.5], [2.0, -0.7, -2.1]])
+    y = np.array([[1, 3, 2, 0, 2], [0, 0, 0, 0, 0], [3, 3, 3, 3, 3]], float)
+
+    for model in ("grm", "gpcm"):
+        r = score_wle_poly(y, slope, cat, 4, model=model)
+        for key in ("theta", "se", "boundary"):
+            assert key in r
+        assert r["theta"].shape == (3,)
+        assert np.all(np.isfinite(r["theta"])), f"{model}: WLE must be finite for every pattern"
+        assert not r["boundary"].any(), f"{model}: no pattern should hit the bound here"
+        # the extreme patterns are where ML diverges; WLE must be finite AND ordered
+        assert r["theta"][1] < r["theta"][0] < r["theta"][2]
+        assert np.all(r["se"] > 0)
+
+    # K=2 must reproduce the dichotomous estimator exactly (both families ARE the 2PL there)
+    a = np.array([1.4, 0.8, 2.1, 1.1, 0.6])
+    b = np.array([-0.9, 0.3, 1.4, -1.7, 0.8])
+    ybin = np.array([[1, 1, 0, 1, 0], [0, 1, 0, 0, 0], [1, 1, 1, 1, 0]], float)
+    dich = score_wle(a, b, ybin, theta_bound=6.0, tol=1e-10)
+    cat2 = (-a * b).reshape(-1, 1)
+    for model in ("gpcm", "grm"):
+        poly = score_wle_poly(ybin, a, cat2, 2, model=model, theta_bound=6.0, tol=1e-10)
+        np.testing.assert_allclose(poly["theta"], dich["theta"], atol=1e-6)
+        np.testing.assert_allclose(poly["se"], dich["se"], atol=1e-6)
+
+    # missing data: a person with nothing observed is undefined, not average
+    ymiss = y.copy()
+    ymiss[1, :] = np.nan
+    r = score_wle_poly(ymiss, slope, cat, 4, model="grm")
+    assert np.isnan(r["theta"][1]) and r["boundary"][1]
+    assert np.isfinite(r["theta"][0])
+
+    # validation
+    with pytest.raises(ValueError):
+        score_wle_poly(y, slope, cat, 1, model="grm")
+    with pytest.raises(ValueError):
+        score_wle_poly(np.full_like(y, 9.0), slope, cat, 4, model="grm")
+    with pytest.raises(ValueError):
+        score_wle_poly(y, slope, cat[:, :2], 4, model="grm")
+
+
 def test_sibtest_uniform():
     """Uniform SIBTEST (Shealy & Stout, 1993) through the public API.
     Pins the parts that are actually true: the sign is OPPOSITE to Mantel-Haenszel's, the per-group
