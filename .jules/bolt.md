@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-07-22 - Replacing Group-Item Nested Loops with Matrix Multiplication
+**Learning:** Using nested loops over `np.unique(group_ids)` and `range(n_items)` to allocate and evaluate boolean masks `np.zeros_like(observed, dtype=bool)` repeatedly causes immense $O(N \times J \times G)$ allocation overhead, which acts as a massive bottleneck in group-level diagnostics calculation.
+**Action:** Replace nested loops involving aggregation by subgroups and items by defining a 2D mapping mask (`(ids[:, None] == unique_ids).astype(np.float64)`) and using matrix multiplication `count = strata_mask.T @ observed.astype(np.float64)` to convert operations into highly optimized C/BLAS executions. Always use boolean filters like `valid = count > 0` to skip redundant calculations.
