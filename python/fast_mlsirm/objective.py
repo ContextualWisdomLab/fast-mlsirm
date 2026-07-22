@@ -59,11 +59,12 @@ def linear_predictor(
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
-        dist_sq = np.maximum(dist_sq, 0.0)
-        distance = np.sqrt(dist_sq + eps_distance)
+        dist_sq = -2.0 * np.dot(params.xi, params.zeta.T)
+        dist_sq += np.einsum('ij,ij->i', params.xi, params.xi)[:, None]
+        dist_sq += np.einsum('ij,ij->i', params.zeta, params.zeta)[None, :]
+        np.maximum(dist_sq, 0.0, out=dist_sq)
+        dist_sq += eps_distance
+        distance = np.sqrt(dist_sq, out=dist_sq)
         gamma = params.gamma
     else:
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)

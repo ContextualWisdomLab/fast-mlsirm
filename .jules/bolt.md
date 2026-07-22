@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2024-07-18 - NumPy In-Place Operations for Distance Calculation
+**Learning:** In the `fast_mlsirm` distance calculation, creating multiple intermediate arrays of size `(N, J)` during arithmetic operations (addition, `np.maximum`, `np.sqrt`) is a significant bottleneck. Using `dist_sq += ...` and `out=` kwargs (e.g. `np.sqrt(dist_sq, out=dist_sq)`) reduces memory overhead and improves performance drastically for large matrices.
+**Action:** Always prefer in-place NumPy operations (like `+=`, `-=`, and `out=`) when calculating large pairwise metrics if it is safe to overwrite the array, ensuring memory efficiency and faster execution times without introducing regressions.
