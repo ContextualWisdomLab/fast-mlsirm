@@ -38,8 +38,9 @@ use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::dif::{
-    logistic_dif as core_logistic_dif, mantel_haenszel_dif as core_mh_dif, LogisticDifConfig,
-    MhDifConfig,
+    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
+    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
+    LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
 };
 use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
@@ -2064,6 +2065,14 @@ fn logistic_dif(
     };
     let rows =
         core_logistic_dif(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
+    Ok(logistic_rows_dict(py, &rows)?.into())
+}
+
+/// Per-item arrays for a logistic-regression DIF sweep, shared by the plain and purified entry points.
+fn logistic_rows_dict<'py>(
+    py: Python<'py>,
+    rows: &[LogisticDifRow],
+) -> PyResult<pyo3::Bound<'py, pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
     out.set_item("chi2_uniform", rows.iter().map(|r| r.chi2_uniform).collect::<Vec<_>>())?;
@@ -2086,7 +2095,34 @@ fn logistic_dif(
     )?;
     out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
     out.set_item("converged", rows.iter().map(|r| r.converged).collect::<Vec<_>>())?;
-    Ok(out.into())
+    Ok(out)
+}
+
+/// Attach the purification-loop metadata to a per-item row dict.
+///
+/// The loop's scalar convergence flag is `purify_converged`, NOT `converged`: `logistic_rows_dict`
+/// already publishes a per-item `converged` array (did each item's IRLS fit succeed), and
+/// `PyDict::set_item` overwrites, so reusing the name silently destroyed a length-`J` array and
+/// returned a bare `bool` under a key the caller expects to be indexable. The two flags answer
+/// different questions and both are needed, so they get different names on BOTH entry points — the
+/// Mantel-Haenszel dict has no `converged` key of its own, but an asymmetric spelling would be its own
+/// trap.
+fn purify_meta(
+    out: &pyo3::Bound<'_, pyo3::types::PyDict>,
+    anchor: Vec<bool>,
+    n_anchor: usize,
+    rounds: usize,
+    converged: bool,
+) -> PyResult<()> {
+    debug_assert!(
+        !out.contains("purify_converged").unwrap_or(false),
+        "purification metadata would overwrite an existing per-item key"
+    );
+    out.set_item("anchor", anchor)?;
+    out.set_item("n_anchor", n_anchor)?;
+    out.set_item("rounds", rounds)?;
+    out.set_item("purify_converged", converged)?;
+    Ok(())
 }
 
 /// Convert an `i64` response slice to `0/1` bytes, rejecting anything else.
@@ -3586,6 +3622,14 @@ fn mantel_haenszel_dif(
         fdr_q,
     };
     let rows = core_mh_dif(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
+    Ok(mh_rows_dict(py, &rows)?.into())
+}
+
+/// Per-item arrays for a Mantel-Haenszel sweep, shared by the plain and purified entry points.
+fn mh_rows_dict<'py>(
+    py: Python<'py>,
+    rows: &[MhDifRow],
+) -> PyResult<pyo3::Bound<'py, pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
     out.set_item("alpha_mh", rows.iter().map(|r| r.alpha_mh).collect::<Vec<_>>())?;
@@ -3599,6 +3643,89 @@ fn mantel_haenszel_dif(
         rows.iter().map(|r| r.ets_class.as_str()).collect::<Vec<_>>(),
     )?;
     out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    Ok(out)
+}
+
+/// Mantel-Haenszel DIF with an ITERATIVELY PURIFIED matching criterion (Rust compute path; Candell &
+/// Drasgow, 1988; Clauser, Mazor & Hambleton, 1993). The criterion is rebuilt from the currently
+/// unflagged (anchor) items and the sweep re-run until the flagged set stabilises or `max_rounds` is
+/// reached, which reduces the contamination the raw number-correct total suffers when it contains the
+/// very items under test. Returns the same per-item arrays as `mantel_haenszel_dif` plus `anchor`
+/// (bool per item), `n_anchor`, `rounds`, and `purify_converged` (scalar).
+///
+/// IMPORTANT: the anchor is selected from the same data that is then tested against it, so the returned
+/// p-values are conditional on a data-dependent selection. They are NOT guaranteed super-uniform under
+/// the null and Benjamini-Hochberg does NOT control the FDR at `fdr_q` for a purified sweep — treat
+/// `flagged_bh` here as a screening device. Purification reduces rather than removes contamination and
+/// can fail when DIF is unbalanced in direction (Wang & Su, 2004); Mantel-Haenszel is also blind to
+/// crossing DIF, so a purely non-uniform item stays in the anchor and keeps contaminating it.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, group, n_persons, n_items, exclude_studied_item = false, fdr_q = 0.05, max_rounds = 3, min_anchor_items = 4))]
+fn mantel_haenszel_dif_purified(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    exclude_studied_item: bool,
+    fdr_q: f64,
+    max_rounds: usize,
+    min_anchor_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = binary_u8(y.as_slice()?)?;
+    let gv = binary_u8(group.as_slice()?)?;
+    let cfg = MhDifConfig {
+        exclude_studied_item,
+        fdr_q,
+    };
+    let purify = PurifyConfig {
+        max_rounds,
+        min_anchor_items,
+    };
+    let res = core_mh_purified(&yv, &gv, n_persons, n_items, &cfg, &purify)
+        .map_err(PyValueError::new_err)?;
+    let out = mh_rows_dict(py, &res.rows)?;
+    purify_meta(&out, res.anchor, res.n_anchor, res.rounds, res.converged)?;
+    Ok(out.into())
+}
+
+/// Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (Rust compute path).
+/// Same purification loop as `mantel_haenszel_dif_purified`, with the flag taken from `jg_class` (the
+/// 2-df omnibus test). Returns the `logistic_dif` per-item arrays — including its PER-ITEM `converged`
+/// array — plus `anchor`, `n_anchor`, `rounds`, and the scalar `purify_converged`. The same caveat
+/// applies: the anchor is data-selected, so the p-values carry no FDR guarantee and the flags are a
+/// screening device.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (y, group, n_persons, n_items, exclude_studied_item = false, fdr_q = 0.05, max_iter = 50, max_rounds = 3, min_anchor_items = 4))]
+fn logistic_dif_purified(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    exclude_studied_item: bool,
+    fdr_q: f64,
+    max_iter: usize,
+    max_rounds: usize,
+    min_anchor_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let yv = binary_u8(y.as_slice()?)?;
+    let gv = binary_u8(group.as_slice()?)?;
+    let cfg = LogisticDifConfig {
+        exclude_studied_item,
+        fdr_q,
+        max_iter,
+    };
+    let purify = PurifyConfig {
+        max_rounds,
+        min_anchor_items,
+    };
+    let res = core_logistic_purified(&yv, &gv, n_persons, n_items, &cfg, &purify)
+        .map_err(PyValueError::new_err)?;
+    let out = logistic_rows_dict(py, &res.rows)?;
+    purify_meta(&out, res.anchor, res.n_anchor, res.rounds, res.converged)?;
     Ok(out.into())
 }
 
@@ -4530,6 +4657,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(mantel_haenszel_dif_purified, m)?)?;
+    m.add_function(wrap_pyfunction!(logistic_dif_purified, m)?)?;
     m.add_function(wrap_pyfunction!(score_wle, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rasch_cml, m)?)?;
     m.add_function(wrap_pyfunction!(andersen_lr_test, m)?)?;

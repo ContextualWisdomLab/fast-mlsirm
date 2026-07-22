@@ -2219,6 +2219,74 @@ def test_logistic_dif_zumbo():
         logistic_dif(y, np.zeros(n, dtype=np.int64) + 3)
 
 
+def test_dif_purification():
+    """Iterative item purification (Candell & Drasgow, 1988; Clauser et al., 1993) via the public API.
+    Seeded regression fixture: several items are shifted UNIDIRECTIONALLY against the focal group, which
+    depresses that group's number-correct total, so CLEAN items pick up spurious DIF. Rebuilding the
+    criterion from the unflagged anchor reduces those false flags while the planted items stay flagged.
+    The precondition is asserted first so the test cannot pass on a fixture with no contamination."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import (logistic_dif_purified, mantel_haenszel_dif,
+                             mantel_haenszel_dif_purified)
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mantel_haenszel_dif_purified"):
+        pytest.skip("compiled core built without mantel_haenszel_dif_purified")
+
+    def bank(dif_items, shift, seed, n=3000, n_items=12):
+        rng = np.random.default_rng(seed)
+        b = -0.9 + 0.16 * np.arange(n_items)
+        group = (np.arange(n) % 2).astype(np.int64)
+        theta = rng.standard_normal(n)
+        bmat = np.tile(b, (n, 1))
+        for i in dif_items:
+            bmat[group == 1, i] += shift  # all against the SAME group
+        p = 1.0 / (1.0 + np.exp(-(1.2 * (theta[:, None] - bmat))))
+        return (rng.random((n, n_items)) < p).astype(float), group
+
+    dif_items = [2, 5, 8]
+    y, group = bank(dif_items, 1.2, 41)
+    plain = mantel_haenszel_dif(y, group)
+    pur = mantel_haenszel_dif_purified(y, group)
+    for key in ("anchor", "n_anchor", "rounds", "purify_converged"):
+        assert key in pur
+    assert pur["anchor"].shape == (12,)
+
+    clean = [i for i in range(12) if i not in dif_items]
+    before = [j for j in clean if plain["ets_class"][j] != "A"]
+    assert before, "fixture precondition: the unpurified sweep false-flagged no clean item"
+    after = [j for j in clean if pur["ets_class"][j] != "A"]
+    assert len(after) < len(before), f"purification did not reduce false flags: {before} -> {after}"
+    # true positives retained, and the planted items are what left the anchor
+    for d in dif_items:
+        assert pur["ets_class"][d] in ("B", "C")
+        assert not pur["anchor"][d]
+    # the criterion genuinely changed
+    assert any(abs(pur["chi2_mh"][j] - plain["chi2_mh"][j]) > 1e-6 for j in clean)
+
+    # a clean bank needs no purification and reproduces the plain sweep exactly
+    y0, g0 = bank([], 0.0, 7)
+    p0 = mantel_haenszel_dif(y0, g0)
+    q0 = mantel_haenszel_dif_purified(y0, g0)
+    assert q0["rounds"] == 0 and q0["purify_converged"] and q0["n_anchor"] == 12
+    np.testing.assert_array_equal(q0["chi2_mh"], p0["chi2_mh"])
+
+    # the logistic variant runs and also drops the planted items from its anchor
+    lp = logistic_dif_purified(y, group)
+    assert all(not lp["anchor"][d] for d in dif_items)
+    # the loop's scalar flag must NOT collide with logistic_dif's PER-ITEM convergence array: the two
+    # answer different questions, and a same-named scalar silently destroyed the array at the boundary
+    assert np.asarray(lp["converged"], dtype=bool).shape == (12,)
+    assert isinstance(lp["purify_converged"], bool)
+
+    # the interpretation limits must survive to __doc__ -- a docstring written as `"""..""" + NOTE`
+    # is a BinOp, not a constant, so the compiler discards it and help() shows nothing
+    for fn in (mantel_haenszel_dif_purified, logistic_dif_purified):
+        assert fn.__doc__ and "FDR" in fn.__doc__, f"{fn.__name__} lost its caveat"
+
+
 def test_score_wle_warm():
     """Warm's WLE (1989) via the public API: FINITE estimates for the perfect/zero patterns where the
     MLE diverges (correct > incorrect), monotone in the raw score, SE = 1/sqrt(I), 3PL support, and

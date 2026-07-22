@@ -339,32 +339,67 @@ pub fn mantel_haenszel_dif(
     n_items: usize,
     cfg: &MhDifConfig,
 ) -> Result<Vec<MhDifRow>, String> {
+    mh_sweep(y, group, n_persons, n_items, cfg, None)
+}
+
+/// Per-person base score for the matching criterion: the full number-correct total when `anchor` is
+/// `None` (the shipped behaviour), else the anchor-subtest total.
+fn base_scores(y: &[u8], n_persons: usize, n_items: usize, anchor: Option<&[bool]>) -> Vec<usize> {
+    (0..n_persons)
+        .map(|p| {
+            (0..n_items)
+                .filter(|&j| anchor.map_or(true, |m| m[j]))
+                .map(|j| y[p * n_items + j] as usize)
+                .sum()
+        })
+        .collect()
+}
+
+/// Matching score for studied item `i` from its `base` (see [`base_scores`]). The criterion is the sum
+/// over `anchor UNION {i}`: the studied item is added back only when it is NOT itself an anchor item,
+/// so an anchor item is never double-counted. `exclude_studied_item` then removes it again, giving the
+/// pure rest/anchor score. With `anchor = None` this reduces exactly to the shipped total-score rule.
+#[inline]
+fn matching_for_item(base: usize, yi: usize, in_anchor: bool, exclude_studied: bool) -> usize {
+    let mut s = base;
+    if !in_anchor {
+        s += yi;
+    }
+    if exclude_studied {
+        s -= yi;
+    }
+    s
+}
+
+/// The Mantel-Haenszel sweep, optionally against a purified (anchor-only) matching criterion.
+/// `anchor = None` reproduces [`mantel_haenszel_dif`] exactly.
+fn mh_sweep(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &MhDifConfig,
+    anchor: Option<&[bool]>,
+) -> Result<Vec<MhDifRow>, String> {
     validate_dif_inputs(y, group, n_persons, n_items, cfg)?;
 
-    // Number-correct total per examinee (item-included matching).
-    let totals: Vec<usize> = (0..n_persons)
-        .map(|p| (0..n_items).map(|j| y[p * n_items + j] as usize).sum())
-        .collect();
+    let base = base_scores(y, n_persons, n_items, anchor);
     // Reusable per-item response and matching-level buffers.
     let mut resp = vec![0u8; n_persons];
     let mut matching = vec![0usize; n_persons];
-    // Item-included matching has levels 0..=n_items; the rest score has 0..=n_items-1.
-    let n_levels = if cfg.exclude_studied_item {
-        n_items // 0..=n_items-1
-    } else {
-        n_items + 1 // 0..=n_items
-    };
+    // Any anchor-based score is bounded by n_items (an item added back was excluded from the anchor),
+    // and empty strata are skipped by the marginal gates in `mh_item_stats`, so one level count serves
+    // every item and every anchor.
+    let n_levels = n_items + 1;
 
     let mut rows: Vec<MhDifRow> = Vec::with_capacity(n_items);
     for i in 0..n_items {
+        let in_anchor = anchor.map_or(true, |m| m[i]);
         for p in 0..n_persons {
             let yi = y[p * n_items + i];
             resp[p] = yi;
-            matching[p] = if cfg.exclude_studied_item {
-                totals[p] - yi as usize
-            } else {
-                totals[p]
-            };
+            matching[p] =
+                matching_for_item(base[p], yi as usize, in_anchor, cfg.exclude_studied_item);
         }
         let st = mh_item_stats(&resp, group, &matching, n_levels);
         rows.push(MhDifRow {
@@ -418,7 +453,8 @@ pub fn mantel_haenszel_dif(
 // carries no letter class: the Jodoin-Gierl cut-offs were calibrated on the 2-df quantity.
 //
 // Caveats, same as the Mantel-Haenszel path above: the studied item is INCLUDED in the matching score
-// by default and item purification is out of scope, so the criterion carries the same contamination.
+// by default, and this entry point does no purification, so its criterion carries the same
+// contamination (see `logistic_dif_purified` and the purification notes further down).
 // Logistic-regression DIF additionally assumes the logit is LINEAR in the matching score — curvature in
 // the true regression, or group differences in the score distribution interacting with that curvature,
 // can be absorbed by the `S x G` term, so a non-uniform flag is not by itself evidence of crossing ICCs.
@@ -749,6 +785,19 @@ pub fn logistic_dif(
     n_items: usize,
     cfg: &LogisticDifConfig,
 ) -> Result<Vec<LogisticDifRow>, String> {
+    logistic_sweep(y, group, n_persons, n_items, cfg, None)
+}
+
+/// The logistic-regression sweep, optionally against a purified (anchor-only) matching criterion.
+/// `anchor = None` reproduces [`logistic_dif`] exactly.
+fn logistic_sweep(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &LogisticDifConfig,
+    anchor: Option<&[bool]>,
+) -> Result<Vec<LogisticDifRow>, String> {
     if cfg.max_iter == 0 {
         return Err("max_iter must be >= 1".into());
     }
@@ -758,23 +807,19 @@ pub fn logistic_dif(
     };
     validate_dif_inputs(y, group, n_persons, n_items, &mh_cfg)?;
 
-    let totals: Vec<f64> = (0..n_persons)
-        .map(|p| (0..n_items).map(|j| y[p * n_items + j] as f64).sum())
-        .collect();
+    let base = base_scores(y, n_persons, n_items, anchor);
     let gf: Vec<f64> = group.iter().map(|&g| g as f64).collect();
     let mut resp = vec![0.0f64; n_persons];
     let mut score = vec![0.0f64; n_persons];
 
     let mut rows: Vec<LogisticDifRow> = Vec::with_capacity(n_items);
     for i in 0..n_items {
+        let in_anchor = anchor.map_or(true, |m| m[i]);
         for p in 0..n_persons {
-            let yi = y[p * n_items + i] as f64;
-            resp[p] = yi;
-            score[p] = if cfg.exclude_studied_item {
-                totals[p] - yi
-            } else {
-                totals[p]
-            };
+            let yi = y[p * n_items + i];
+            resp[p] = yi as f64;
+            score[p] =
+                matching_for_item(base[p], yi as usize, in_anchor, cfg.exclude_studied_item) as f64;
         }
         let st = logistic_item_stats(&resp, &score, &gf, n_persons, cfg.max_iter);
         // A failed fit must yield a NaN p-value, NOT 1.0. `chi2_sf` maps a NaN statistic to 1.0
@@ -811,6 +856,201 @@ pub fn logistic_dif(
         r.jg_class = jg_classify(r.delta_r2, f);
     }
     Ok(rows)
+}
+
+// ===================== Iterative item purification ==========================
+//
+// Both sweeps above match on the number-correct total, which CONTAINS the items being tested. Items
+// with DIF therefore contaminate the matching criterion, inflating the Type I error rate for clean
+// items and attenuating power for genuine ones. Purification rebuilds the criterion from the currently
+// UNFLAGGED (anchor) items and re-runs the sweep, iterating until the flagged set stops changing:
+// Candell and Drasgow (1988) proposed iterating to stability, while the single-pass "two-stage"
+// procedure traces to Lord (1980) and Holland and Thayer's (1988) recommendation of one re-run. Gains
+// past the first round or two are small (Clauser, Mazor & Hambleton, 1993; Fidalgo, Mellenbergh &
+// Muniz, 2000), hence a small default round cap.
+//
+// The criterion for a studied item is the sum over `anchor UNION {studied}` — item-included matching is
+// what makes the null-DIF condition hold (Holland & Thayer, 1988; Zwick, 1990) — so a flagged item is
+// removed from every OTHER item's criterion but still scored against itself plus the anchor.
+//
+// IMPORTANT LIMITS, none of which purification removes:
+//
+// - The final anchor is SELECTED FROM THE SAME DATA that is then tested against it, so the reported
+//   p-values are conditional on a data-dependent selection. They are not guaranteed super-uniform under
+//   the null, and Benjamini-Hochberg does NOT control the FDR at `fdr_q` for a purified sweep. Purified
+//   flags are a SCREENING device, not an error-rate guarantee.
+// - Purification REDUCES rather than removes contamination, and can fail outright when DIF is
+//   unbalanced in direction (Wang & Su, 2004): anchor quality dominates.
+// - Mantel-Haenszel's blind spot for crossing DIF is inherited, and purification cannot repair it: an
+//   item MH does not flag stays in the anchor every round and keeps contaminating the "purified"
+//   criterion. The blindness is NOT a property of non-uniform DIF as such but of the signed area
+//   between the two curves over the matched ability distribution (Wang & Su, 2004): a crossing at the
+//   centre of that distribution cancels and is invisible, while the same item with its crossing off
+//   centre leaves a net signed difference that MH detects (empirically: `a_ref = 2.0` vs `a_foc = 0.4`
+//   with equal `b`, standard-normal ability in both groups, crossing at `theta = 0` gives `D-DIF` about
+//   0.00 and class `A`; moving the crossing to `theta = +0.8` gives `D-DIF` about +1.80 and class `C`).
+//   So MH purification is unreliable, not uniformly blind, whenever non-uniform DIF is plausible — use
+//   the logistic variant, whose interaction term tests the crossing directly.
+// - The two procedures do not inherit matched Type I control: `MhDifRow::ets_class` is conditioned on
+//   the raw .05 MH p-value while `LogisticDifRow::jg_class` is conditioned on the BH flag.
+//
+// # References (APA 7th ed.)
+//
+// Candell, G. L., & Drasgow, F. (1988). An iterative procedure for linking metrics and assessing item
+//     bias in item response theory. *Applied Psychological Measurement, 12*(3), 253-260.
+//     https://doi.org/10.1177/014662168801200304
+// Clauser, B., Mazor, K., & Hambleton, R. K. (1993). The effects of purification of the matching
+//     criterion on the identification of DIF using the Mantel-Haenszel procedure. *Applied Measurement
+//     in Education, 6*(4), 269-279. https://doi.org/10.1207/s15324818ame0604_2
+// Fidalgo, A. M., Mellenbergh, G. J., & Muniz, J. (2000). Effects of amount of DIF, test length, and
+//     purification type on robustness and power of Mantel-Haenszel procedures. *Methods of Psychological
+//     Research Online, 5*(3), 43-53.
+// Lord, F. M. (1980). *Applications of item response theory to practical testing problems*. Erlbaum.
+// Zwick, R. (1990). When do item response function and Mantel-Haenszel definitions of differential item
+//     functioning coincide? *Journal of Educational Statistics, 15*(3), 185-197.
+//     https://doi.org/10.3102/10769986015003185
+// Wang, W.-C., & Su, Y.-H. (2004). Effects of average signed area between two item characteristic
+//     curves and test purification procedures on the DIF detection via the Mantel-Haenszel method.
+//     *Applied Measurement in Education, 17*(2), 113-144.
+//     https://doi.org/10.1207/s15324818ame1702_2
+
+/// Configuration for the purification loop wrapping a DIF sweep.
+#[derive(Clone, Copy)]
+pub struct PurifyConfig {
+    /// Maximum purification rounds after the initial full-test sweep. Gains past one or two rounds are
+    /// small, so this is deliberately small rather than open-ended.
+    pub max_rounds: usize,
+    /// Minimum anchor items required to keep purifying. A short number-correct criterion is coarse and
+    /// unreliable, which itself inflates Mantel-Haenszel Type I error (Donoghue, Holland & Thayer,
+    /// 1993); there is no canonical minimum in the literature, so this is a guard, not a standard.
+    pub min_anchor_items: usize,
+}
+
+impl Default for PurifyConfig {
+    fn default() -> Self {
+        Self {
+            max_rounds: 3,
+            min_anchor_items: 4,
+        }
+    }
+}
+
+/// Outcome of a purified DIF sweep: the final per-item rows plus what the purification actually did.
+///
+/// The `p_value`/`flagged_bh` fields of `rows` are conditional on `anchor`, which was selected from the
+/// same data — see the module notes: they do NOT carry an FDR guarantee and are a screening device.
+pub struct PurifiedDif<R> {
+    /// Per-item rows from the final sweep (against the `anchor` criterion below).
+    pub rows: Vec<R>,
+    /// The anchor mask the final rows were computed against (`true` = used in the matching criterion).
+    pub anchor: Vec<bool>,
+    /// Anchor items in `anchor`.
+    pub n_anchor: usize,
+    /// Purification rounds performed after the initial full-test sweep (`0` = no purification applied).
+    pub rounds: usize,
+    /// `true` when the flagged set stabilised; `false` when the round cap was hit (including an
+    /// oscillating flag set) or purification stopped on the anchor guards, in which case `rows` are
+    /// simply the last computed round.
+    pub converged: bool,
+}
+
+/// Generic purification loop. `sweep` runs a DIF sweep against an anchor mask (`None` = the whole
+/// test); `is_flagged` decides which rows are removed from the next round's criterion.
+///
+/// Round 0 passes `None`, i.e. it dispatches to the *same* code path as the unpurified entry point
+/// rather than to an all-`true` mask that merely evaluates the same way. That is also why nothing is
+/// sized from a caller-supplied item count before the first sweep: `n_items` is untrusted at the FFI
+/// boundary, and every dimension check lives inside the sweep. The anchor mask is allocated from the
+/// returned row count, so it can only be as large as a validated sweep.
+fn purify_loop<R>(
+    cfg: &PurifyConfig,
+    mut sweep: impl FnMut(Option<&[bool]>) -> Result<Vec<R>, String>,
+    is_flagged: impl Fn(&R) -> bool,
+) -> Result<PurifiedDif<R>, String> {
+    if cfg.max_rounds == 0 {
+        return Err("max_rounds must be >= 1".into());
+    }
+    let mut rows = sweep(None)?;
+    let mut flagged: Vec<bool> = rows.iter().map(&is_flagged).collect();
+    let mut anchor = vec![true; flagged.len()];
+
+    let mut rounds = 0usize;
+    let mut converged = false;
+    while rounds < cfg.max_rounds {
+        let next: Vec<bool> = flagged.iter().map(|&f| !f).collect();
+        if next == anchor {
+            converged = true; // flagged set stable: the criterion would not change
+            break;
+        }
+        let n_anchor = next.iter().filter(|&&a| a).count();
+        // Guard BEFORE sweeping: never match on an empty or uselessly short criterion. A constant
+        // anchor total would also put everyone in one stratum.
+        // ponytail: a 1-2 item anchor is equally meaningless but only the configured floor is checked.
+        if n_anchor < cfg.min_anchor_items.max(1) {
+            break; // keep the last usable rows; converged stays false
+        }
+        anchor = next;
+        rows = sweep(Some(&anchor))?;
+        rounds += 1;
+        let new_flagged: Vec<bool> = rows.iter().map(&is_flagged).collect();
+        if new_flagged == flagged {
+            converged = true;
+            break;
+        }
+        flagged = new_flagged;
+    }
+    let n_anchor = anchor.iter().filter(|&&a| a).count();
+    Ok(PurifiedDif {
+        rows,
+        anchor,
+        n_anchor,
+        rounds,
+        converged,
+    })
+}
+
+/// An item is removed from the purified criterion only on PRACTICAL significance (`B` or `C`).
+/// Deliberately not `class != A`: `Undefined` is also `!= A`, and an unfittable item carries no evidence
+/// of DIF, so purging it would shrink the anchor for free. Deliberately not the raw BH flag either: the
+/// Mantel-Haenszel chi-square is over-powered at large N (see [`EtsClass`], whose whole purpose is that
+/// practical-significance screen), which is exactly the regime where purification matters.
+#[inline]
+fn purify_flagged(class: EtsClass) -> bool {
+    matches!(class, EtsClass::B | EtsClass::C)
+}
+
+/// [`mantel_haenszel_dif`] with an iteratively purified matching criterion (see the module notes on
+/// purification, including why the resulting p-values carry no FDR guarantee).
+pub fn mantel_haenszel_dif_purified(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &MhDifConfig,
+    purify: &PurifyConfig,
+) -> Result<PurifiedDif<MhDifRow>, String> {
+    purify_loop(
+        purify,
+        |anchor| mh_sweep(y, group, n_persons, n_items, cfg, anchor),
+        |r: &MhDifRow| purify_flagged(r.ets_class),
+    )
+}
+
+/// [`logistic_dif`] with an iteratively purified matching criterion. The purification flag is taken
+/// from `jg_class`, i.e. from the 2-df omnibus test that Benjamini-Hochberg already targets.
+pub fn logistic_dif_purified(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &LogisticDifConfig,
+    purify: &PurifyConfig,
+) -> Result<PurifiedDif<LogisticDifRow>, String> {
+    purify_loop(
+        purify,
+        |anchor| logistic_sweep(y, group, n_persons, n_items, cfg, anchor),
+        |r: &LogisticDifRow| purify_flagged(r.jg_class),
+    )
 }
 
 #[cfg(test)]

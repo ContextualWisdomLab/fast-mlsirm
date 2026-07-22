@@ -93,6 +93,65 @@
 
 ### Added
 
+- **Iterative item purification for the observed-score DIF procedures**
+  (`fast_mlsirm.mantel_haenszel_dif_purified`, `logistic_dif_purified`; extends `mlsirm_core::dif`;
+  Candell & Drasgow, 1988; Clauser et al., 1993; Holland & Thayer, 1988; Lord, 1980). Both DIF
+  procedures added earlier in this release match examinees on the observed total score, which is
+  itself built from the items under test — so when DIF items push a group's total in a CONSISTENT
+  direction, the matching criterion is biased and clean items inherit spurious DIF (a false-positive
+  inflation documented at both entry points). Purification breaks that circularity by re-running the
+  sweep with the criterion rebuilt from the currently-unflagged ANCHOR set only: round 0 is the
+  ordinary all-items sweep, each later round drops the flagged items from the criterion, and the loop
+  stops when the flagged set comes back UNCHANGED from one round to the next (`converged = true`) or the
+  round cap is hit. That is a stability test, not general cycle detection: a flagged set that oscillates
+  between two states runs to the cap and is reported as `converged = false`, which is the honest answer
+  rather than a spurious fixed point. The studied item is always added back into its own matching score
+  even when it is not in the anchor, so every item is matched on `anchor UNION {studied}` — item-included
+  matching is what makes the null-DIF condition hold (Holland & Thayer, 1988; Zwick, 1990), and it also
+  makes round 0 identical to the unpurified sweep by construction: round 0 passes no anchor at all and so
+  dispatches to the very same code path rather than to an all-true mask that merely evaluates the same.
+  `PurifyConfig { max_rounds, min_anchor_items }` bounds the loop and refuses to purify below a usable
+  anchor length (default 4), returning the last valid round with `converged = false` rather than a
+  criterion built from a handful of items. Nothing is sized from the caller-supplied item count before
+  that first sweep, since dimension validation lives inside the sweep and the count is untrusted at the
+  FFI boundary.
+  **Interpretation limits, documented at the API.** Purification REDUCES contamination, it does not
+  remove it: the anchor is itself estimated, so the residual bias depends on how well round 0 separated
+  the bank. More importantly the returned p-values carry **no Benjamini-Hochberg or Type-I guarantee** —
+  the item set was selected using the same data, so the procedure is a screening device for flagging,
+  not a calibrated test; the reported statistics must not be quoted as if they came from a single
+  pre-registered sweep. Mantel-Haenszel purification also inherits MH's crossing-DIF blind spot and
+  cannot repair it — an item MH never flags stays in the anchor every round and keeps contaminating the
+  "purified" criterion. That blind spot is a property of the SIGNED AREA between the two curves over the
+  matched ability distribution (Wang & Su, 2004) rather than of non-uniform DIF as such: a crossing at
+  the centre of that distribution cancels and is invisible, while the same item with its crossing off
+  centre leaves a net difference MH detects, so MH purification is unreliable rather than uniformly blind
+  under non-uniform DIF. `logistic_dif_purified`, whose interaction term tests the crossing directly, is
+  the variant to use there. **Guards.** A contamination fixture plants unidirectional DIF and asserts, in order, the
+  PRECONDITION that the unpurified sweep really does false-flag clean items (so the test cannot pass on
+  a fixture with nothing to fix), that purification strictly reduces those false flags, that the true
+  positives are retained and are the items that left the anchor, and that the sweep statistics numerically
+  changed; a clean bank asserts round 0 reproduces the shipped sweep EXACTLY (`n_anchor == n_items`,
+  `rounds == 0`); and the cap and short-anchor exits are each pinned to report `converged = false`
+  instead of silently returning a degenerate criterion. An adversarial implementation review then found
+  those flag-counting fixtures could not see the arithmetic underneath them, and two structural anchors
+  were added, each mutation-verified to fail on the defect it targets. (i) The returned `rows` must equal
+  a fresh sweep against the returned `anchor`, swept over round caps, anchor floors and both matching
+  conventions (which also covers `exclude_studied_item = true`, previously untested under purification):
+  returning an earlier round's rows while reporting the final anchor is the highest-severity failure mode
+  of a purification loop and is invisible to a "did it flag the right items" test, because intermediate
+  rounds usually flag the same items. (ii) The purified row for an item must equal the ORDINARY sweep run
+  on a reduced test consisting of exactly `anchor UNION {studied}` — an independent reference rather than
+  the implementation's own arithmetic — checked for both a non-anchor item (the add-back branch) and an
+  anchor item, with a deliberately NON-CONTIGUOUS anchor so an index-map error cannot hide behind a
+  prefix. The anchor predicate is also pinned directly on all four ETS classes, since no simulated bank
+  distinguishes "B or C" from "not A" (a clean 2PL never produces `Undefined`). The same review caught a
+  key collision in the Python bindings: `logistic_dif_purified` wrote the loop's scalar convergence flag
+  over `logistic_dif`'s PER-ITEM `converged` array, destroying it at the boundary — the loop flag is now
+  `purify_converged` on both entry points — and found that both Python docstrings were written as
+  `"""..."""` + a module constant, which is a `BinOp` rather than a constant expression, so the compiler
+  never filled `__doc__` and the entire "not a calibrated test" caveat was invisible to `help()`.
+
 - **Zumbo logistic-regression DIF, with non-uniform detection** (`fast_mlsirm.logistic_dif`; extends
   `mlsirm_core::dif`; Zumbo, 1999; Swaminathan & Rogers, 1990). Regresses each item response on the
   observed matching score `S`, the group `G`, and their interaction in three NESTED logistic models
@@ -128,7 +187,7 @@
   four-parameter model, and the unpinned classifier. Convergence uses the standard GLM relative-deviance
   test paired with a coefficient-bound separation check, since near the optimum the attainable score
   floor exceeds any usable absolute gradient tolerance. Same matching-criterion contamination as
-  Mantel-Haenszel (no purification), plus the logit-linearity-in-`S` assumption, both documented.
+  Mantel-Haenszel (see `logistic_dif_purified`), plus the logit-linearity-in-`S` assumption, both documented.
 
 - **Rasch conditional maximum likelihood + Andersen's LR test** (`fast_mlsirm.fit_rasch_cml`,
   `andersen_lr_test`; new `mlsirm_core::rasch_cml`; Andersen, 1970, 1972, 1973). CML estimation of the
@@ -212,7 +271,8 @@
   the clean items A and agreeing with the parametric IRT-LR DIF on the flagged item. Because the MH
   chi-square is over-powered at large N and the studied item mildly contaminates the matching total, the
   A/B/C classification (not the raw significance) is the practical-significance guard — documented, with
-  item purification and SIBTEST (Shealy & Stout, 1993) noted as future work. Spec-verified
+  item purification (since shipped as `mantel_haenszel_dif_purified`) and SIBTEST (Shealy & Stout, 1993)
+  noted as future work. Spec-verified
   (GO-WITH-MUST-FIXES: STD-P-DIF sign, `Var_m > 0` stratum gate, degenerate-odds guards, zero-clamped
   continuity numerator).
 

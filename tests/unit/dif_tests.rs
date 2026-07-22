@@ -683,3 +683,293 @@ fn logistic_private_failures_and_rest_score_path_are_explicit() {
         .collect();
     assert!(!logistic_item_stats(&interaction_separated, &score, &group, 40, 50).converged);
 }
+
+// ---------------- iterative item purification ----------------
+
+/// Build a seeded bank whose `dif_items` are shifted UNIDIRECTIONALLY against the focal group.
+/// The direction matters: bidirectional shifts cancel in the number-correct total and produce no
+/// criterion contamination at all, which would make the whole fixture vacuous.
+fn purification_bank(
+    n: usize,
+    n_items: usize,
+    dif_items: &[usize],
+    shift: f64,
+    seed: u64,
+) -> (Vec<u8>, Vec<u8>) {
+    let mut rng = Lcg(seed);
+    let b: Vec<f64> = (0..n_items).map(|i| -0.9 + 0.16 * i as f64).collect();
+    let mut y = vec![0u8; n * n_items];
+    let mut group = vec![0u8; n];
+    for p in 0..n {
+        let g = (p % 2) as u8;
+        group[p] = g;
+        let theta = rng.normal(); // identical ability distributions in both groups
+        for i in 0..n_items {
+            let mut bi = b[i];
+            if g == 1 && dif_items.contains(&i) {
+                bi += shift; // every planted item is harder for the SAME group
+            }
+            let pr = 1.0 / (1.0 + (-(1.2 * (theta - bi))).exp());
+            y[p * n_items + i] = if rng.next_f64() < pr { 1 } else { 0 };
+        }
+    }
+    (y, group)
+}
+
+/// SEEDED REGRESSION FIXTURE (not a general property of purification): with several items shifted
+/// against the focal group, the unpurified number-correct criterion is depressed for that group, so
+/// CLEAN items pick up spurious DIF. Rebuilding the criterion from the unflagged anchor reduces
+/// those false flags while the planted items stay flagged. The precondition is asserted first —
+/// without it the test would pass trivially on a simulation that produced no contamination.
+#[test]
+fn purification_reduces_criterion_contamination_false_flags() {
+    let (n, n_items) = (3000usize, 12usize);
+    let dif_items = [2usize, 5, 8];
+    let (y, group) = purification_bank(n, n_items, &dif_items, 1.2, 0x9F1E2);
+    let cfg = MhDifConfig::default();
+    let plain = mantel_haenszel_dif(&y, &group, n, n_items, &cfg).unwrap();
+    let pur =
+        mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+            .unwrap();
+
+    let clean: Vec<usize> = (0..n_items).filter(|i| !dif_items.contains(i)).collect();
+    let false_before: Vec<usize> = clean
+        .iter()
+        .copied()
+        .filter(|&j| plain[j].ets_class != EtsClass::A)
+        .collect();
+    // PRECONDITION: the fixture must actually exhibit contamination, else nothing is being tested.
+    assert!(
+        !false_before.is_empty(),
+        "fixture precondition failed: no clean item false-flagged. classes={:?} deltas={:?}",
+        plain.iter().map(|r| r.ets_class).collect::<Vec<_>>(),
+        plain.iter().map(|r| (r.mh_d_dif * 100.0).round() / 100.0).collect::<Vec<_>>()
+    );
+    let false_after: Vec<usize> = clean
+        .iter()
+        .copied()
+        .filter(|&j| pur.rows[j].ets_class != EtsClass::A)
+        .collect();
+    assert!(
+        false_after.len() < false_before.len(),
+        "purification did not reduce false flags: {false_before:?} -> {false_after:?}; \
+         rounds={} n_anchor={} classes={:?} deltas={:?}",
+        pur.rounds,
+        pur.n_anchor,
+        plain.iter().map(|r| r.ets_class).collect::<Vec<_>>(),
+        plain.iter().map(|r| (r.mh_d_dif * 100.0).round() / 100.0).collect::<Vec<_>>()
+    );
+    // TRUE POSITIVES retained - otherwise "removes false flags" is satisfiable by flagging nothing.
+    for &d in &dif_items {
+        assert!(
+            matches!(pur.rows[d].ets_class, EtsClass::B | EtsClass::C),
+            "planted item {d} lost after purification: {:?}",
+            pur.rows[d].ets_class
+        );
+        assert!(!pur.anchor[d], "planted item {d} left in the anchor");
+    }
+    // The criterion genuinely changed: at least one clean item's statistic moved. Without this an
+    // implementation that simply returned the unpurified rows would pass everything above.
+    assert!(
+        clean
+            .iter()
+            .any(|&j| (pur.rows[j].chi2_mh - plain[j].chi2_mh).abs() > 1e-6),
+        "purified statistics identical to the unpurified sweep"
+    );
+    assert!(pur.rounds >= 1 && pur.n_anchor == n_items - dif_items.len());
+}
+
+/// A clean bank needs no purification: nothing is flagged, so the anchor stays the whole test, no
+/// rounds run, and round 0 reproduces the shipped unpurified sweep EXACTLY (pinning the refactor's
+/// no-op path - `anchor = None` and an all-true anchor must agree bit for bit).
+#[test]
+fn purification_is_a_no_op_on_a_clean_bank() {
+    let (n, n_items) = (2000usize, 10usize);
+    let (y, group) = purification_bank(n, n_items, &[], 0.0, 0x5AFE);
+    let cfg = MhDifConfig::default();
+    let plain = mantel_haenszel_dif(&y, &group, n, n_items, &cfg).unwrap();
+    let pur =
+        mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+            .unwrap();
+    assert!(pur.converged && pur.rounds == 0);
+    assert!(pur.anchor.iter().all(|&a| a) && pur.n_anchor == n_items);
+    for i in 0..n_items {
+        assert_eq!(
+            pur.rows[i].chi2_mh, plain[i].chi2_mh,
+            "round 0 must equal the shipped sweep exactly at item {i}"
+        );
+        assert_eq!(pur.rows[i].alpha_mh, plain[i].alpha_mh);
+        assert_eq!(pur.rows[i].ets_class, plain[i].ets_class);
+    }
+}
+
+/// The round cap is observable: with `max_rounds = 1` on a bank that is still changing, the loop
+/// stops after one purification round and reports `converged = false` with the round-1 rows.
+#[test]
+fn purification_round_cap_reports_non_convergence() {
+    let (n, n_items) = (3000usize, 12usize);
+    let dif_items = [2usize, 5, 8];
+    let (y, group) = purification_bank(n, n_items, &dif_items, 1.2, 0x9F1E2);
+    let cfg = MhDifConfig::default();
+    let capped = mantel_haenszel_dif_purified(
+        &y,
+        &group,
+        n,
+        n_items,
+        &cfg,
+        &PurifyConfig { max_rounds: 1, ..PurifyConfig::default() },
+    )
+    .unwrap();
+    assert_eq!(
+        capped.rounds, 1,
+        "rounds={} converged={} n_anchor={} anchor={:?}",
+        capped.rounds, capped.converged, capped.n_anchor, capped.anchor
+    );
+    assert!(!capped.converged, "hitting the round cap must report converged = false");
+    // max_rounds = 0 is rejected rather than silently meaning "no purification"
+    assert!(mantel_haenszel_dif_purified(
+        &y,
+        &group,
+        n,
+        n_items,
+        &cfg,
+        &PurifyConfig { max_rounds: 0, ..PurifyConfig::default() }
+    )
+    .is_err());
+}
+
+/// The anchor guard fires BEFORE sweeping on a uselessly short criterion: with `min_anchor_items`
+/// set above what the flagged set leaves, purification stops and returns the last usable rows with
+/// `converged = false` rather than matching on a near-empty anchor. Also exercises the logistic
+/// variant of the purified entry point.
+#[test]
+fn purification_stops_on_a_too_short_anchor() {
+    let (n, n_items) = (3000usize, 12usize);
+    let dif_items = [2usize, 5, 8];
+    let (y, group) = purification_bank(n, n_items, &dif_items, 1.2, 0x9F1E2);
+    let strict = PurifyConfig { max_rounds: 3, min_anchor_items: n_items };
+    let pur = mantel_haenszel_dif_purified(
+        &y,
+        &group,
+        n,
+        n_items,
+        &MhDifConfig::default(),
+        &strict,
+    )
+    .unwrap();
+    // the guard tripped immediately: no round ran, the anchor is still the full test
+    assert_eq!(pur.rounds, 0);
+    assert!(!pur.converged && pur.n_anchor == n_items);
+    // the logistic purified entry point runs and removes the planted items from its anchor
+    let lp = logistic_dif_purified(
+        &y,
+        &group,
+        n,
+        n_items,
+        &LogisticDifConfig::default(),
+        &PurifyConfig::default(),
+    )
+    .unwrap();
+    assert!(lp.n_anchor <= n_items);
+    for &d in &dif_items {
+        assert!(!lp.anchor[d], "logistic purification left planted item {d} in the anchor");
+    }
+}
+
+/// STRUCTURAL ANCHOR for the returned rows: `rows` must be the sweep against the REPORTED `anchor`,
+/// on every exit path. Returning an earlier round's rows while reporting the final anchor is the
+/// highest-severity failure mode of a purification loop and is invisible to a "did it flag the right
+/// items" test, because the intermediate rounds usually flag the same items. Swept over round caps,
+/// anchor floors and BOTH matching conventions so the `exclude_studied_item = true` branch of
+/// [`matching_for_item`] — untested by the fixtures above — is covered here.
+#[test]
+fn purified_rows_are_the_sweep_against_the_reported_anchor() {
+    let (n, n_items) = (1200usize, 12usize);
+    let (y, group) = purification_bank(n, n_items, &[2, 5, 8], 1.2, 0x51A7);
+    let mut seen_purified_round = false;
+    for exclude_studied_item in [false, true] {
+        let cfg = MhDifConfig { exclude_studied_item, ..MhDifConfig::default() };
+        for max_rounds in [1usize, 2, 5] {
+            for min_anchor_items in [1usize, 4, 9] {
+                let purify = PurifyConfig { max_rounds, min_anchor_items };
+                let res =
+                    mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &purify).unwrap();
+                seen_purified_round |= res.rounds > 0;
+                // A fresh sweep against the reported anchor must reproduce the reported rows.
+                let refr = mh_sweep(&y, &group, n, n_items, &cfg, Some(&res.anchor)).unwrap();
+                for i in 0..n_items {
+                    assert_eq!(
+                        res.rows[i].chi2_mh, refr[i].chi2_mh,
+                        "item {i}: rows do not match the reported anchor \
+                         (exclude={exclude_studied_item} max_rounds={max_rounds} \
+                          min_anchor={min_anchor_items} rounds={} n_anchor={})",
+                        res.rounds, res.n_anchor
+                    );
+                    assert_eq!(res.rows[i].mh_d_dif, refr[i].mh_d_dif, "item {i} d-DIF");
+                }
+                assert_eq!(res.n_anchor, res.anchor.iter().filter(|&&a| a).count());
+            }
+        }
+    }
+    // Guard the guard: if no configuration ever purified, the assertions above are vacuous.
+    assert!(seen_purified_round, "no configuration performed a purification round");
+}
+
+/// VALUE ANCHOR for the criterion itself, against an independent reference rather than against the
+/// implementation's own arithmetic. Purification matches every item on `anchor UNION {studied}`, so
+/// the purified row for item `i` must equal the ORDINARY unpurified sweep run on a test consisting of
+/// exactly those columns. Checked for both a non-anchor item (the add-back branch) and an anchor item
+/// (no add-back), with a deliberately NON-CONTIGUOUS anchor so an index-map or layout error cannot
+/// hide behind a prefix. This is what fails if the add-back is dropped, doubled, or applied to the
+/// wrong branch — none of which the flag-counting fixtures can see.
+#[test]
+fn purified_item_is_matched_on_the_anchor_union_itself() {
+    let (n, n_items) = (1500usize, 10usize);
+    let (y, group) = purification_bank(n, n_items, &[3], 1.0, 0x2C4B);
+    // scattered anchor: items 1, 4, 6, 9 are OUT
+    let anchor: Vec<bool> = (0..n_items).map(|i| !matches!(i, 1 | 4 | 6 | 9)).collect();
+    for exclude_studied_item in [false, true] {
+        let cfg = MhDifConfig { exclude_studied_item, ..MhDifConfig::default() };
+        let swept = mh_sweep(&y, &group, n, n_items, &cfg, Some(&anchor)).unwrap();
+        for studied in [4usize, 5] {
+            // columns of the reference test: anchor UNION {studied}, original order preserved
+            let cols: Vec<usize> =
+                (0..n_items).filter(|&j| anchor[j] || j == studied).collect();
+            let pos = cols.iter().position(|&j| j == studied).unwrap();
+            let mut reduced = vec![0u8; n * cols.len()];
+            for p in 0..n {
+                for (c, &j) in cols.iter().enumerate() {
+                    reduced[p * cols.len() + c] = y[p * n_items + j];
+                }
+            }
+            let refr =
+                mantel_haenszel_dif(&reduced, &group, n, cols.len(), &cfg).unwrap();
+            let (a, b) = (&swept[studied], &refr[pos]);
+            assert_eq!(
+                a.chi2_mh, b.chi2_mh,
+                "item {studied} (in_anchor={}, exclude={exclude_studied_item}) is not matched on \
+                 anchor UNION itself",
+                anchor[studied]
+            );
+            assert_eq!(a.alpha_mh, b.alpha_mh, "item {studied} alpha_MH");
+            assert_eq!(a.mh_d_dif, b.mh_d_dif, "item {studied} ETS delta");
+            assert_eq!(a.std_p_dif, b.std_p_dif, "item {studied} STD P-DIF");
+            assert_eq!(a.ets_class, b.ets_class, "item {studied} ETS class");
+        }
+    }
+}
+
+/// The anchor rule is PRACTICAL significance, not `class != A`. `Undefined` is also `!= A`, so the
+/// lazier predicate would purge unfittable items — which carry no evidence of DIF — and shrink the
+/// anchor for free. No simulated bank distinguishes the two (a clean 2PL never produces `Undefined`),
+/// so the predicate is pinned directly.
+#[test]
+fn purify_flagged_is_practical_significance_not_just_non_a() {
+    assert!(!purify_flagged(EtsClass::A));
+    assert!(purify_flagged(EtsClass::B));
+    assert!(purify_flagged(EtsClass::C));
+    assert!(
+        !purify_flagged(EtsClass::Undefined),
+        "an unfittable item carries no evidence of DIF and must stay in the anchor"
+    );
+}
