@@ -16,6 +16,10 @@
 
 ### Changed
 
+- Vectorized the MMLE-EM M-step Newton-Raphson updates across items with an
+  active-convergence mask in `python/fast_mlsirm/estimators/mmle.py`, replacing
+  the per-item Python loop with batched BLAS-backed matrix operations while
+  preserving the per-item convergence and singular-Hessian break semantics.
 - Rust EAP scoring now defaults to GPU-preferred `auto` execution in the core,
   PyO3 binding, and serving API. The f64 CPU reduction remains available via
   `device="cpu"`; an explicit unavailable `device="gpu"` request now warns
@@ -2062,9 +2066,9 @@
 ### Changed
 
 - `estimator="mmle"` with a spatial/multidimensional model now fits (routed to
-  the marginal estimator) instead of raising `NotImplementedError`; plain
-  `ULS2PLM`/`ULSRM` without a population structure keep the legacy
-  unidimensional fast path and its exact previous behavior.
+the marginal estimator) instead of raising `NotImplementedError`; plain
+`ULS2PLM`/`ULSRM` without a population structure keep the legacy
+unidimensional fast path and its exact previous behavior.
 
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
