@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Vectorized the MMLE-EM M-step Newton-Raphson updates across items with an
+  active-convergence mask in `python/fast_mlsirm/estimators/mmle.py`, replacing
+  the per-item Python loop with batched BLAS-backed matrix operations while
+  preserving the per-item convergence and singular-Hessian break semantics.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built

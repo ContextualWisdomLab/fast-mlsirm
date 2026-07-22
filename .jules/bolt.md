@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2026-07-14 - Vectorizing outer Python loops in EM optimization
+**Learning:** During iterative EM/MMLE steps, doing updates via Python outer `for` loops (e.g. iterating over all items to compute Newton-Raphson updates using `.sum()`) incurs massive Python interpretation and scalar computation overhead, becoming a major performance bottleneck for large item counts.
+**Action:** Replace the Python loop over dimensions with fully vectorized batch operations using boolean state masks (`active_mask`) and 2D matrix multiplications (`@` or `np.dot`). This utilizes highly optimized underlying BLAS implementations and can yield 50%+ reduction in computation time for the iteration block.
