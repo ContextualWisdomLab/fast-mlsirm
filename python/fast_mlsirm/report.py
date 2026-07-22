@@ -17,6 +17,8 @@ def render_diagnostics_report(
     """Render saved diagnostics JSON as a standalone HTML report."""
 
     source = Path(diagnostics_path)
+    if source.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("diagnostics JSON exceeds 16 MiB limit")
     payload = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("diagnostics JSON must contain an object")
@@ -154,7 +156,12 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
     if not isinstance(candidates, list):
         raise ValueError("candidates must be a list")
 
-    rows = [row for row in candidates if isinstance(row, dict)]
+    rows = []
+    for row in candidates:
+        if isinstance(row, dict):
+            rows.append(row)
+        if len(rows) >= 100:
+            break
     sections = []
     no_metric_sections = []
     best_section = _metric_section("Best Candidate", best)
@@ -180,7 +187,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     cards = []
-    for key, value in metrics.items():
+    for key, value in list(metrics.items())[:24]:
         cards.append(
             "\n".join(
                 [
@@ -269,11 +276,16 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    numeric_rows = [
-        (index, row, float(row[value_key]))
-        for index, row in enumerate(rows)
-        if _is_number(row.get(value_key))
-    ]
+    numeric_rows = []
+    for index, row in enumerate(rows):
+        val = row.get(value_key)
+        if _is_number(val):
+            try:
+                numeric_rows.append((index, row, float(val)))
+            except (OverflowError, ValueError, TypeError):
+                pass
+        if len(numeric_rows) >= 12:
+            break
     values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
@@ -318,8 +330,10 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     body_rows = []
     for row in rows[:limit]:
         cells = "".join(
-            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
-            for column in columns
+            f'<th scope="row">{escape(_format_value(row.get(column, "")))}</th>'
+            if i == 0
+            else f"<td>{escape(_format_value(row.get(column, '')))}</td>"
+            for i, column in enumerate(columns)
         )
         body_rows.append(f"<tr>{cells}</tr>")
 
@@ -356,14 +370,14 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
     if not isinstance(section, dict) or not section:
         return []
 
-    columns = list(section)
+    columns = list(section)[:20]
     lengths = [_value_length(section[column]) for column in columns]
     row_count = max(lengths) if lengths else 0
     if row_count == 0:
         return []
 
     rows = []
-    for index in range(row_count):
+    for index in range(min(row_count, 100)):
         row = {}
         for column in columns:
             row[column] = _index_value(section[column], index)
@@ -377,6 +391,8 @@ def _columns(rows: list[dict[str, Any]]) -> list[str]:
         for key in row:
             if key not in ordered:
                 ordered.append(key)
+                if len(ordered) >= 20:
+                    return ordered
     return ordered
 
 
@@ -416,14 +432,17 @@ def _format_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        return str(value)
+        s = str(value)
+        return s if len(s) <= 100 else s[:100] + "..."
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return str(value)
         return f"{value:.4g}"
     if value is None:
         return ""
-    return str(value)
+    s = str(value)
+    return s if len(s) <= 100 else s[:100] + "..."
+
 
 
 def _format_label_value(value: Any) -> str:
@@ -433,11 +452,12 @@ def _format_label_value(value: Any) -> str:
 
 
 def _is_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError, TypeError):
+        return False
 
 
 def _content_security_policy() -> str:
@@ -679,21 +699,28 @@ caption {
   border: 0;
 }
 
-th,
+thead th,
+tbody th,
 td {
   padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-th {
+thead th {
   background: #f1f4ef;
   color: #2f3437;
   font-size: 0.8rem;
 }
 
-tr:last-child td {
+tbody th {
+  font-weight: normal;
+}
+
+tr:last-child td,
+tr:last-child tbody th {
   border-bottom: 0;
 }
 

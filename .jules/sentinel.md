@@ -22,3 +22,7 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** MD5 hashing in `fast_mlsirm/report.py` triggered a high severity warning by Bandit, because by default it is assumed to be used for security purposes which is unsafe due to weak hashing.
 **Learning:** For non-security purposes like generating unique dom ids, `hashlib.md5()` triggers a vulnerability warning unless `usedforsecurity=False` is passed. This allows bypassing FIPS compliance limitations as well as suppressing false positive warnings.
 **Prevention:** Always add `usedforsecurity=False` parameter to `hashlib.md5` and other weak hashing functions unless they are genuinely used for secure cryptography (which they shouldn't be).
+## 2024-05-15 - Strix Availability Remediation (vuln-0001)
+**Vulnerability:** Diagnostics HTML renderer previously materialized entire attacker-sized JSON collections without limits, leading to excessive memory (CWE-400, CVSS 5.5).
+**Learning:** Rendering components that accept JSON input must bound the size of inputs and collection iterations to prevent DoS.
+**Prevention:** Apply a strict 16 MiB boundary check on source JSON read and bound column iterations directly in row materialization (`_rows_from_columnar`).
