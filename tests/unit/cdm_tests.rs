@@ -2631,19 +2631,31 @@ fn ho_structural_newton_preserves_em_ascent() {
             ..CdmConfig::default()
         };
         let res = fit_ho_cdm(&y, &observed, &q, n, n_items, n_attr, CdmModel::Dina, &cfg).unwrap();
+        let final_delta = res.loglik_trace[res.loglik_trace.len() - 1]
+            - res.loglik_trace[res.loglik_trace.len() - 2];
+        assert_eq!(res.max_iter, cfg.max_iter);
+        assert_eq!(res.stopping_tolerance, cfg.tol);
+        assert_eq!(res.final_loglik_change, final_delta);
         assert!(
             nondecreasing(&res.loglik_trace),
             "higher-order GEM lowered log-likelihood for seed {seed}: {:?}",
             res.loglik_trace
         );
         if seed == 6 {
-            let delta = res.loglik_trace[res.loglik_trace.len() - 1]
-                - res.loglik_trace[res.loglik_trace.len() - 2];
             assert!(res.converged, "safeguarded seed-6 fit did not converge");
+            assert_eq!(res.termination_reason, "tolerance_met");
+            assert!(res.n_iter < res.max_iter);
             assert!(
-                (0.0..cfg.tol).contains(&delta),
-                "convergence must be a non-negative improvement below tol; delta={delta:e}"
+                (0.0..cfg.tol).contains(&res.final_loglik_change),
+                "convergence must be a non-negative improvement below tol; delta={:e}",
+                res.final_loglik_change
             );
+        } else {
+            assert!(!res.converged);
+            assert_eq!(res.termination_reason, "max_iter_reached");
+            assert_eq!(res.n_iter, res.max_iter);
+            assert!(res.final_loglik_change.is_finite());
+            assert!(res.final_loglik_change >= res.stopping_tolerance);
         }
     }
 }

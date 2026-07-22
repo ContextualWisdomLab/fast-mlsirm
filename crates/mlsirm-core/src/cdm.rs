@@ -1539,6 +1539,14 @@ pub struct HoCdmResult {
     pub loglik_trace: Vec<f64>,
     pub n_iter: usize,
     pub converged: bool,
+    /// Configured outer EM iteration limit.
+    pub max_iter: usize,
+    /// Stable public reason for termination: `tolerance_met` or `max_iter_reached`.
+    pub termination_reason: &'static str,
+    /// Last observed-data log-likelihood increment at the returned parameters.
+    pub final_loglik_change: f64,
+    /// Requested absolute log-likelihood-change stopping tolerance.
+    pub stopping_tolerance: f64,
     /// `2*J + 2*K`.
     pub n_parameters: usize,
 }
@@ -1676,7 +1684,7 @@ fn newton_attr_2pl(mut a: f64, mut d: f64, r: &[f64], w: &[f64], newton_iter: us
 /// References (APA 7th ed.):
 ///   de la Torre, J., & Douglas, J. A. (2004). Higher-order latent trait models for
 ///     cognitive diagnosis. *Psychometrika, 69*(3), 333-353.
-///     https://doi.org/10.1007/BF02295640
+///     <https://doi.org/10.1007/BF02295640>
 #[allow(clippy::too_many_arguments)]
 pub fn fit_ho_cdm(
     y: &[f64],
@@ -1926,6 +1934,16 @@ pub fn fit_ho_cdm(
     if !converged {
         loglik_trace.push(final_ll);
     }
+    let final_loglik_change = loglik_trace
+        .windows(2)
+        .last()
+        .map(|pair| pair[1] - pair[0])
+        .unwrap_or(f64::NAN);
+    let termination_reason = if converged {
+        "tolerance_met"
+    } else {
+        "max_iter_reached"
+    };
 
     let profile_prob = ho_pi_from_params(&a, &d, n_attributes);
     Ok(HoCdmResult {
@@ -1941,6 +1959,10 @@ pub fn fit_ho_cdm(
         loglik_trace,
         n_iter,
         converged,
+        max_iter: cfg.max_iter,
+        termination_reason,
+        final_loglik_change,
+        stopping_tolerance: cfg.tol,
         n_parameters: 2 * n_items + 2 * n_attributes,
     })
 }

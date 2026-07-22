@@ -3522,6 +3522,9 @@ def test_fit_ho_cdm_recovers_higher_order_structure():
 
     res = fit_ho_cdm(y, q, model="dina")
     assert isinstance(res, HoCdmFit) and res.converged
+    assert res.termination_reason == "tolerance_met"
+    assert 0 < res.n_iter < res.max_iter == 500
+    assert 0 <= res.final_loglik_change < res.stopping_tolerance == 1e-6
     assert np.all(np.diff(res.loglik_trace) >= -1e-6)  # monotone ascent
     assert res.n_parameters == 2 * n_items + 2 * k
     assert abs(res.profile_prob.sum() - 1.0) < 1e-9
@@ -3532,6 +3535,13 @@ def test_fit_ho_cdm_recovers_higher_order_structure():
     # attribute classification agreement
     est = res.attribute_mastery()
     assert (est == alpha).mean() > 0.85
+
+    limited = fit_ho_cdm(y, q, model="dina", max_iter=1, tol=1e-12)
+    assert not limited.converged
+    assert limited.termination_reason == "max_iter_reached"
+    assert limited.n_iter == limited.max_iter == 1
+    assert np.isfinite(limited.final_loglik_change)
+    assert limited.final_loglik_change >= limited.stopping_tolerance == 1e-12
 
     with pytest.raises(ValueError):
         fit_ho_cdm(y.ravel(), q)  # responses not 2-D

@@ -506,7 +506,9 @@ class HoCdmFit:
     per-item DINA parameters; ``profile_prob`` the implied ``2^K`` class distribution;
     ``theta`` the per-person EAP trait; ``map_profile``/``attr_prob`` the per-person
     MAP profile and marginal attribute mastery. The higher-order parameters are a
-    genuine (identified) restriction only for ``K >= 3``."""
+    genuine (identified) restriction only for ``K >= 3``. ``termination_reason``,
+    ``n_iter``/``max_iter``, ``final_loglik_change``, and ``stopping_tolerance``
+    report the outer EM stopping evidence."""
 
     model: str
     slip: np.ndarray
@@ -520,6 +522,10 @@ class HoCdmFit:
     loglik_trace: np.ndarray
     n_iter: int
     converged: bool
+    max_iter: int
+    termination_reason: str
+    final_loglik_change: float
+    stopping_tolerance: float
     n_parameters: int
 
     def attribute_mastery(self) -> np.ndarray:
@@ -598,6 +604,10 @@ def fit_ho_cdm(
         loglik_trace=np.asarray(res["loglik_trace"], dtype=np.float64),
         n_iter=int(res["n_iter"]),
         converged=bool(res["converged"]),
+        max_iter=int(res["max_iter"]),
+        termination_reason=str(res["termination_reason"]),
+        final_loglik_change=float(res["final_loglik_change"]),
+        stopping_tolerance=float(res["stopping_tolerance"]),
         n_parameters=int(res["n_parameters"]),
     )
 

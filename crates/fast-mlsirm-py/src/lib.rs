@@ -745,6 +745,10 @@ fn fit_ho_cdm(
     out.set_item("loglik_trace", res.loglik_trace)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    out.set_item("max_iter", res.max_iter)?;
+    out.set_item("termination_reason", res.termination_reason)?;
+    out.set_item("final_loglik_change", res.final_loglik_change)?;
+    out.set_item("stopping_tolerance", res.stopping_tolerance)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
 }
