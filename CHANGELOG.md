@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Added a keyboard-visible focus outline (`main:focus-visible`) to the
+  skip-to-content target in generated diagnostics reports so keyboard users
+  can see where focus lands, with a rendering regression test in
+  `tests/test_report.py`.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built

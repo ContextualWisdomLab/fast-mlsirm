@@ -233,6 +233,29 @@ def test_render_report_requires_html_output(tmp_path):
         render_diagnostics_report(source, out)
 
 
+def test_render_main_region_has_keyboard_focus_style(tmp_path):
+    source = tmp_path / "dimension_diagnostics.json"
+    out = tmp_path / "dimensions.html"
+    source.write_text(
+        json.dumps(
+            {
+                "candidates": [{"latent_dim": 2.0, "heldout_loglik": -8.0}],
+                "best": {"latent_dim": 2.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    render_diagnostics_report(source, out)
+
+    html = out.read_text(encoding="utf-8")
+    assert 'id="main-content"' in html
+    assert 'tabindex="-1"' in html
+    assert "main:focus-visible {" in html
+    assert "main:focus {" in html
+    assert "outline: 3px solid #0f766e;" in html
+
+
 def test_render_table_region_has_keyboard_focus_style(tmp_path):
     source = tmp_path / "dimension_diagnostics.json"
     out = tmp_path / "dimensions.html"
