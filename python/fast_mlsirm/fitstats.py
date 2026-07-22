@@ -1465,15 +1465,33 @@ def person_fit_resampling(
     seed: int = 1,
     eps_distance: float = 1e-8,
 ) -> np.ndarray:
-    """Parametric-bootstrap person-fit p-values (Sinharay 2016): empirical
-    `P(l_z*_rep <= l_z*_obs)` per person, replicates simulated at the EAP
-    estimates — robust where the asymptotic N(0,1) reference degrades."""
+    """Fixed-estimate Monte Carlo person-fit p-values.
+
+    Replicate responses are sampled conditionally at the supplied EAP estimates,
+    and :math:`l_z^*` is recomputed at those same estimates. The returned lower-
+    tail frequency uses add-one smoothing. Persons with too few observed items
+    receive ``NaN``.
+
+    This repository-specific approximation does not re-estimate EAP scores for
+    each replicate, so it is not the complete generalized resampling procedure
+    and does not by itself guarantee nominal Type-I error control (Sinharay,
+    2016).
+
+    References
+    ----------
+    Sinharay, S. (2016). Assessment of person fit using resampling-based
+    approaches. *Journal of Educational Measurement, 53*(1), 63–85.
+    https://doi.org/10.1111/jedm.12101
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("person_fit_resampling requires the compiled Rust core")
-    y = np.asarray(responses, dtype=float)
-    if y.ndim != 2:
-        raise ValueError("responses must be a 2-D persons x items array")
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
+    n_persons = y.shape[0]
+    if n_persons == 0:
+        raise ValueError("responses must contain at least one person")
     if (
         not isinstance(n_replicates, (int, np.integer))
         or isinstance(n_replicates, (bool, np.bool_))
@@ -1482,25 +1500,45 @@ def person_fit_resampling(
         raise ValueError(
             f"n_replicates must be an integer between 1 and {MAX_PERSON_FIT_REPLICATES}"
         )
+    if (
+        not isinstance(seed, (int, np.integer))
+        or isinstance(seed, (bool, np.bool_))
+        or not 0 <= int(seed) <= np.iinfo(np.uint64).max
+    ):
+        raise ValueError("seed must be an integer between 0 and 2**64 - 1")
     if y.size * int(n_replicates) > MAX_PERSON_FIT_WORK_CELLS:
         raise ValueError("person-fit resampling exceeds the aggregate work limit")
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
     n_dims = int(d_of_i.max()) + 1
-    n_persons = y.shape[0]
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
+    theta = np.asarray(params.theta, dtype=np.float64)
+    if theta.shape != (n_persons, n_dims):
+        raise ValueError("params.theta shape must be (n_persons, n_dims)")
+    if not np.all(np.isfinite(theta)):
+        raise ValueError("params.theta must be finite")
+    xi = np.asarray(params.xi, dtype=np.float64)
+    if xi.shape != (n_persons, bank["latent_dim"]):
+        raise ValueError("params.xi shape must be (n_persons, latent_dim)")
+    if not np.all(np.isfinite(xi)):
+        raise ValueError("params.xi must be finite")
     pm = None
     if prior_mean is not None:
-        pm = np.broadcast_to(
-            np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
-        ).ravel().copy()
+        try:
+            prior = np.broadcast_to(
+                np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "prior_mean must broadcast to (n_persons, n_dims)"
+            ) from exc
+        if not np.all(np.isfinite(prior)):
+            raise ValueError("prior_mean must be finite")
+        pm = prior.ravel().copy()
     pv = core.person_fit_resampling(
-        np.where(observed, y, 0.0).ravel(), observed.ravel(), int(n_persons),
+        y.ravel(), observed.ravel(), int(n_persons),
         bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
         bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-        np.asarray(params.theta, dtype=np.float64).ravel(),
-        np.asarray(params.xi, dtype=np.float64).ravel(),
-        prior_mean=pm, n_replicates=int(n_replicates), seed=int(seed),
+        theta.ravel(), xi.ravel(), prior_mean=pm,
+        n_replicates=int(n_replicates), seed=int(seed),
     )
     return np.asarray(pv)
 

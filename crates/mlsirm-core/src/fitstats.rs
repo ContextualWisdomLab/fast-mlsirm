@@ -483,6 +483,15 @@ pub fn person_fit(
     if !prior_mean.is_empty() && prior_mean.len() != n_persons * n_dims {
         return Err("prior_mean must be empty or n_persons x n_dims".into());
     }
+    if theta.iter().any(|value| !value.is_finite()) || xi.iter().any(|value| !value.is_finite()) {
+        return Err("theta and xi must be finite".into());
+    }
+    if prior_mean.iter().any(|value| !value.is_finite()) {
+        return Err("prior_mean must be finite".into());
+    }
+    if !flag_threshold.is_finite() {
+        return Err("flag_threshold must be finite".into());
+    }
     let kind = crate::interaction_kind(bank.model_type);
     let gamma = if kind == crate::InteractionKind::Distance {
         bank.tau.exp()
@@ -1171,13 +1180,20 @@ pub fn adjusted_chi2_pairs(
     })
 }
 
-/// Parametric-bootstrap person fit (Sinharay 2016, "Assessment of person fit
-/// using resampling-based approaches"): for each person, simulate replicate
-/// response vectors from the fitted model AT the person's EAP estimates,
-/// compute `l_z*` for each replicate, and report the empirical p-value
-/// `P(l_z*_rep <= l_z*_obs)` — small values flag aberrance without relying
-/// on the asymptotic N(0,1) reference (which degrades for short/sparse
-/// tests).
+/// Fixed-estimate Monte Carlo calibration inspired by resampling-based PFA.
+///
+/// For each person, this repository-specific approximation simulates response
+/// vectors conditional on the supplied EAP estimates, recomputes `l_z*` at
+/// those same estimates, and reports the add-one-smoothed lower-tail frequency
+/// `P(l_z*_rep <= l_z*_obs)`. It does not re-estimate ability for each
+/// replicate, so it is not Sinharay's complete generalized procedure and does
+/// not guarantee nominal Type-I error control.
+///
+/// # References
+///
+/// Sinharay, S. (2016). Assessment of person fit using resampling-based
+/// approaches. *Journal of Educational Measurement, 53*(1), 63–85.
+/// <https://doi.org/10.1111/jedm.12101>
 #[allow(clippy::too_many_arguments)]
 pub fn person_fit_resampling(
     bank: &ItemBank<'_>,
@@ -1194,6 +1210,9 @@ pub fn person_fit_resampling(
     let n_items = bank.b.len();
     const MAX_REPLICATES: usize = 10_000;
     const MAX_WORK_CELLS: usize = 200_000_000;
+    if n_persons == 0 {
+        return Err("person-fit resampling requires at least one person".into());
+    }
     if !(1..=MAX_REPLICATES).contains(&n_replicates) {
         return Err(format!("n_replicates must be in 1..={MAX_REPLICATES}"));
     }
@@ -1214,7 +1233,7 @@ pub fn person_fit_resampling(
         0.0
     };
     let _ = uses_space;
-    let mut state = seed.max(1);
+    let mut state = seed;
     let mut unif = move || {
         state = state
             .wrapping_mul(6364136223846793005)

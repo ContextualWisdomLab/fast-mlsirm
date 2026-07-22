@@ -4464,7 +4464,7 @@ fn adjusted_chi2_pairs(
     Ok(out.into())
 }
 
-/// Parametric-bootstrap person-fit p-values (Sinharay 2016).
+/// Fixed-estimate Monte Carlo person-fit p-values inspired by Sinharay (2016).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (

@@ -587,6 +587,13 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(
         person_fit_resampling(&bank, &y, &observed, usize::MAX, &theta, &xi, &[], 2, 1).is_err()
     );
+
+    let mut nonfinite_theta = theta.clone();
+    nonfinite_theta[0] = f64::NAN;
+    assert!(person_fit(&bank, &y, &observed, 3, &nonfinite_theta, &xi, &[], -1.0).is_err());
+    assert!(person_fit(&bank, &y, &observed, 3, &theta, &xi, &[f64::NAN; 3], -1.0).is_err());
+    assert!(person_fit(&bank, &y, &observed, 3, &theta, &xi, &[], f64::NAN).is_err());
+    assert!(person_fit_resampling(&bank, &[], &[], 0, &[], &[], &[], 2, 1).is_err());
     assert!(adjusted_chi2_pairs(
         &bank,
         &y[..2],
@@ -803,4 +810,34 @@ fn fitstats_public_boundaries_and_interaction_paths() {
         7,
     )
     .is_err());
+}
+
+#[test]
+fn person_fit_resampling_distinguishes_zero_and_one_seeds() {
+    let probs = [0.25_f64, 0.5, 0.75];
+    let alpha = [0.0; 3];
+    let b = probs.map(|p| (p / (1.0 - p)).ln());
+    let zeta = [0.0; 3];
+    let factor = [0_usize; 3];
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &factor,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let y = [0.0; 3];
+    let observed = [true; 3];
+    let theta = [0.0];
+    let xi = [0.0];
+
+    let seed_zero = person_fit_resampling(&bank, &y, &observed, 1, &theta, &xi, &[], 1, 0).unwrap();
+    let seed_one = person_fit_resampling(&bank, &y, &observed, 1, &theta, &xi, &[], 1, 1).unwrap();
+
+    assert_eq!(seed_zero, vec![1.0]);
+    assert_eq!(seed_one, vec![0.5]);
 }

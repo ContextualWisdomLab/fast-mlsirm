@@ -18,6 +18,7 @@ from fast_mlsirm.fitstats import (
     empirical_reliability,
     infit_outfit,
     person_fit,
+    person_fit_resampling,
     residual_item_fit,
     s_x2,
     select_items,
@@ -314,6 +315,56 @@ def test_adjusted_chi2_pairs_rejects_invalid_inputs_and_preserves_undefined_max(
     assert np.isnan(sparse["ratio"]).all()
     assert np.isnan(sparse["mean_ratio"])
     assert np.isnan(sparse["max_ratio"])
+
+
+def test_person_fit_resampling_rejects_invalid_inputs_before_native(monkeypatch):
+    class BombCore:
+        def person_fit_resampling(self, *_args, **_kwargs):
+            raise AssertionError("invalid resampling inputs reached the native core")
+
+    def params(n_persons=3):
+        return SimpleNamespace(
+            alpha=np.zeros(4),
+            b=np.zeros(4),
+            zeta=np.zeros((4, 1)),
+            tau=-30.0,
+            theta=np.zeros((n_persons, 1)),
+            xi=np.zeros((n_persons, 1)),
+        )
+
+    y = np.zeros((3, 4))
+    factor_id = np.zeros(4, dtype=np.int64)
+    monkeypatch.setattr(fitstats_module, "_core_module", lambda: BombCore())
+
+    nonbinary = y.copy()
+    nonbinary[0, 0] = 2.0
+    with pytest.raises(ValueError, match="0 or 1"):
+        person_fit_resampling(nonbinary, factor_id, params(), "MIRT")
+
+    with pytest.raises(ValueError, match="boolean"):
+        person_fit_resampling(y, factor_id, params(), "MIRT", mask=np.ones_like(y))
+
+    bad_theta = params()
+    bad_theta.theta[0, 0] = np.nan
+    with pytest.raises(ValueError, match="must be finite"):
+        person_fit_resampling(y, factor_id, bad_theta, "MIRT")
+
+    bad_xi_shape = params()
+    bad_xi_shape.xi = np.zeros((3, 2))
+    with pytest.raises(ValueError, match="params.xi shape"):
+        person_fit_resampling(y, factor_id, bad_xi_shape, "MIRT")
+
+    with pytest.raises(ValueError, match="prior_mean must be finite"):
+        person_fit_resampling(
+            y, factor_id, params(), "MIRT", prior_mean=np.array([np.nan])
+        )
+
+    for bad_seed in (True, 1.5, -1, 2**64):
+        with pytest.raises(ValueError, match="seed"):
+            person_fit_resampling(y, factor_id, params(), "MIRT", seed=bad_seed)
+
+    with pytest.raises(ValueError, match="at least one person"):
+        person_fit_resampling(np.empty((0, 4)), factor_id, params(n_persons=0), "MIRT")
 
 
 def test_select_items_removes_sparse_and_scrambled():
