@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Replaced element-wise multiply-and-sum patterns with BLAS matrix products in
+  the MMLE EAP step (`theta = posterior @ nodes`) and the `grad_alpha`
+  computation, avoiding N×Q and N×J intermediate allocations; synchronized the
+  binding crate's `Cargo.lock` pollster entry with the root workspace.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built
