@@ -608,30 +608,43 @@ def _binary_stratum_item_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
+
+    # Optimized group-item aggregation: Replace O(N*J*G) nested loop allocations with C/BLAS matrix multiplications
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids).astype(np.float64)
+
+    count = strata_mask.T @ observed.astype(np.float64)
+    valid = count > 0
+
+    id_vals = np.repeat(unique_ids[:, None], y.shape[1], axis=1)[valid].astype(np.float64)
+    item_vals = np.repeat(np.arange(y.shape[1])[None, :], len(unique_ids), axis=0)[valid].astype(np.float64)
+
+    count_valid = count[valid]
+
+    score = (strata_mask.T @ np.where(observed, y, 0.0))[valid]
+    expected = (strata_mask.T @ np.where(observed, prob, 0.0))[valid]
+    variance_sum = (strata_mask.T @ np.where(observed, variance, 0.0))[valid]
+    raw = (strata_mask.T @ np.where(observed, residual, 0.0))[valid]
+    res_sq_sum = (strata_mask.T @ np.where(observed, residual * residual, 0.0))[valid]
+    chisq = (strata_mask.T @ np.where(observed, pearson_sq, 0.0))[valid]
+    ll = (strata_mask.T @ loglik)[valid]
+
     rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(y.shape[1]):
-            scope = np.zeros_like(observed, dtype=bool)
-            scope[row_mask, item] = True
-            if np.any(observed & scope):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_binary_scope_row(
-                            0.0,
-                            scope,
-                            y,
-                            observed,
-                            prob,
-                            variance,
-                            residual,
-                            pearson_sq,
-                            loglik,
-                        )[1:],
-                    )
-                )
+    for i in range(len(id_vals)):
+        rows.append((
+            float(id_vals[i]),
+            float(item_vals[i]),
+            float(count_valid[i]),
+            float(score[i]),
+            float(expected[i]),
+            float(raw[i]),
+            float(raw[i] / np.sqrt(max(variance_sum[i], 1e-12))),
+            float(res_sq_sum[i] / max(variance_sum[i], 1e-12)),
+            float(chisq[i] / max(count_valid[i], 1.0)),
+            float(ll[i]),
+            float(-2.0 * ll[i]),
+            float(chisq[i]),
+        ))
     return _binary_scope_item_table(id_name, rows)
 
 
@@ -750,22 +763,32 @@ def _categorical_stratum_item_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
+
+    # Optimized group-item aggregation: Replace O(N*J*G) nested loop allocations with C/BLAS matrix multiplications
+    unique_ids = np.unique(ids)
+    strata_mask = (ids[:, None] == unique_ids).astype(np.float64)
+
+    count = strata_mask.T @ observed.astype(np.float64)
+    valid = count > 0
+
+    id_vals = np.repeat(unique_ids[:, None], observed.shape[1], axis=1)[valid].astype(np.float64)
+    item_vals = np.repeat(np.arange(observed.shape[1])[None, :], len(unique_ids), axis=0)[valid].astype(np.float64)
+
+    count_valid = count[valid]
+    loglik = (strata_mask.T @ np.where(observed, entry_loglik, 0.0))[valid]
+    chisq = (strata_mask.T @ np.where(observed, entry_chisq, 0.0))[valid]
+
     rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(observed.shape[1]):
-            where = np.zeros_like(observed, dtype=bool)
-            where[row_mask, item] = observed[row_mask, item]
-            if np.any(where):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
-                            1:
-                        ],
-                    )
-                )
+    for i in range(len(id_vals)):
+        rows.append((
+            float(id_vals[i]),
+            float(item_vals[i]),
+            float(count_valid[i]),
+            float(loglik[i]),
+            float(-2.0 * loglik[i]),
+            float(chisq[i]),
+            float(chisq[i] / max(count_valid[i], 1.0)),
+        ))
     return _categorical_scope_item_table(id_name, rows)
 
 
