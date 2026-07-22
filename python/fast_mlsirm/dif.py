@@ -151,7 +151,8 @@ def mantel_haenszel_dif_purified(
 
     Returns everything :func:`mantel_haenszel_dif` returns, plus ``anchor`` (bool per item), ``n_anchor``,
     ``rounds`` (purification rounds after the initial full-test sweep; ``0`` means none were applied),
-    and ``purify_converged`` (``False`` when the round cap or the anchor guard stopped the loop).
+    ``purify_converged``, and ``purify_termination_reason`` (``stable_flag_set``,
+    ``max_rounds_reached``, or ``insufficient_anchor_items``).
 
     IMPORTANT — the anchor is selected from the SAME data that is then tested against it, so the returned
     p-values are conditional on a data-dependent selection: they are not guaranteed super-uniform under
@@ -208,8 +209,9 @@ def logistic_dif_purified(
 
     Returns everything :func:`logistic_dif` returns — including its PER-ITEM ``converged`` array, one
     flag per item's IRLS fit — plus ``anchor``, ``n_anchor``, ``rounds``, and the scalar
-    ``purify_converged`` for the purification loop itself. The two are deliberately named differently:
-    they answer different questions and both are needed.
+    ``purify_converged`` and ``purify_termination_reason`` for the purification loop itself. The
+    per-item and loop-level diagnostics are deliberately named differently because they answer
+    different questions.
 
     IMPORTANT — the anchor is selected from the SAME data that is then tested against it, so the returned
     p-values are conditional on a data-dependent selection: they are not guaranteed super-uniform under
@@ -244,6 +246,7 @@ def _purify_meta(res) -> dict[str, np.ndarray]:
         "n_anchor": int(res["n_anchor"]),
         "rounds": int(res["rounds"]),
         "purify_converged": bool(res["purify_converged"]),
+        "purify_termination_reason": str(res["purify_termination_reason"]),
     }
 
 

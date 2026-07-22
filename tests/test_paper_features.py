@@ -2250,7 +2250,13 @@ def test_dif_purification():
     y, group = bank(dif_items, 1.2, 41)
     plain = mantel_haenszel_dif(y, group)
     pur = mantel_haenszel_dif_purified(y, group)
-    for key in ("anchor", "n_anchor", "rounds", "purify_converged"):
+    for key in (
+        "anchor",
+        "n_anchor",
+        "rounds",
+        "purify_converged",
+        "purify_termination_reason",
+    ):
         assert key in pur
     assert pur["anchor"].shape == (12,)
 
@@ -2271,6 +2277,7 @@ def test_dif_purification():
     p0 = mantel_haenszel_dif(y0, g0)
     q0 = mantel_haenszel_dif_purified(y0, g0)
     assert q0["rounds"] == 0 and q0["purify_converged"] and q0["n_anchor"] == 12
+    assert q0["purify_termination_reason"] == "stable_flag_set"
     np.testing.assert_array_equal(q0["chi2_mh"], p0["chi2_mh"])
 
     # the logistic variant runs and also drops the planted items from its anchor

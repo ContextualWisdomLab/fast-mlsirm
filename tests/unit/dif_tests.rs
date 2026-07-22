@@ -728,9 +728,8 @@ fn purification_reduces_criterion_contamination_false_flags() {
     let (y, group) = purification_bank(n, n_items, &dif_items, 1.2, 0x9F1E2);
     let cfg = MhDifConfig::default();
     let plain = mantel_haenszel_dif(&y, &group, n, n_items, &cfg).unwrap();
-    let pur =
-        mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
-            .unwrap();
+    let pur = mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+        .unwrap();
 
     let clean: Vec<usize> = (0..n_items).filter(|i| !dif_items.contains(i)).collect();
     let false_before: Vec<usize> = clean
@@ -743,7 +742,10 @@ fn purification_reduces_criterion_contamination_false_flags() {
         !false_before.is_empty(),
         "fixture precondition failed: no clean item false-flagged. classes={:?} deltas={:?}",
         plain.iter().map(|r| r.ets_class).collect::<Vec<_>>(),
-        plain.iter().map(|r| (r.mh_d_dif * 100.0).round() / 100.0).collect::<Vec<_>>()
+        plain
+            .iter()
+            .map(|r| (r.mh_d_dif * 100.0).round() / 100.0)
+            .collect::<Vec<_>>()
     );
     let false_after: Vec<usize> = clean
         .iter()
@@ -757,7 +759,10 @@ fn purification_reduces_criterion_contamination_false_flags() {
         pur.rounds,
         pur.n_anchor,
         plain.iter().map(|r| r.ets_class).collect::<Vec<_>>(),
-        plain.iter().map(|r| (r.mh_d_dif * 100.0).round() / 100.0).collect::<Vec<_>>()
+        plain
+            .iter()
+            .map(|r| (r.mh_d_dif * 100.0).round() / 100.0)
+            .collect::<Vec<_>>()
     );
     // TRUE POSITIVES retained - otherwise "removes false flags" is satisfiable by flagging nothing.
     for &d in &dif_items {
@@ -788,9 +793,8 @@ fn purification_is_a_no_op_on_a_clean_bank() {
     let (y, group) = purification_bank(n, n_items, &[], 0.0, 0x5AFE);
     let cfg = MhDifConfig::default();
     let plain = mantel_haenszel_dif(&y, &group, n, n_items, &cfg).unwrap();
-    let pur =
-        mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
-            .unwrap();
+    let pur = mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &PurifyConfig::default())
+        .unwrap();
     assert!(pur.converged && pur.rounds == 0);
     assert!(pur.anchor.iter().all(|&a| a) && pur.n_anchor == n_items);
     for i in 0..n_items {
@@ -817,7 +821,10 @@ fn purification_round_cap_reports_non_convergence() {
         n,
         n_items,
         &cfg,
-        &PurifyConfig { max_rounds: 1, ..PurifyConfig::default() },
+        &PurifyConfig {
+            max_rounds: 1,
+            ..PurifyConfig::default()
+        },
     )
     .unwrap();
     assert_eq!(
@@ -825,7 +832,11 @@ fn purification_round_cap_reports_non_convergence() {
         "rounds={} converged={} n_anchor={} anchor={:?}",
         capped.rounds, capped.converged, capped.n_anchor, capped.anchor
     );
-    assert!(!capped.converged, "hitting the round cap must report converged = false");
+    assert!(
+        !capped.converged,
+        "hitting the round cap must report converged = false"
+    );
+    assert_eq!(capped.termination_reason, "max_rounds_reached");
     // max_rounds = 0 is rejected rather than silently meaning "no purification"
     assert!(mantel_haenszel_dif_purified(
         &y,
@@ -833,7 +844,10 @@ fn purification_round_cap_reports_non_convergence() {
         n,
         n_items,
         &cfg,
-        &PurifyConfig { max_rounds: 0, ..PurifyConfig::default() }
+        &PurifyConfig {
+            max_rounds: 0,
+            ..PurifyConfig::default()
+        }
     )
     .is_err());
 }
@@ -847,19 +861,17 @@ fn purification_stops_on_a_too_short_anchor() {
     let (n, n_items) = (3000usize, 12usize);
     let dif_items = [2usize, 5, 8];
     let (y, group) = purification_bank(n, n_items, &dif_items, 1.2, 0x9F1E2);
-    let strict = PurifyConfig { max_rounds: 3, min_anchor_items: n_items };
-    let pur = mantel_haenszel_dif_purified(
-        &y,
-        &group,
-        n,
-        n_items,
-        &MhDifConfig::default(),
-        &strict,
-    )
-    .unwrap();
+    let strict = PurifyConfig {
+        max_rounds: 3,
+        min_anchor_items: n_items,
+    };
+    let pur =
+        mantel_haenszel_dif_purified(&y, &group, n, n_items, &MhDifConfig::default(), &strict)
+            .unwrap();
     // the guard tripped immediately: no round ran, the anchor is still the full test
     assert_eq!(pur.rounds, 0);
     assert!(!pur.converged && pur.n_anchor == n_items);
+    assert_eq!(pur.termination_reason, "insufficient_anchor_items");
     // the logistic purified entry point runs and removes the planted items from its anchor
     let lp = logistic_dif_purified(
         &y,
@@ -872,7 +884,10 @@ fn purification_stops_on_a_too_short_anchor() {
     .unwrap();
     assert!(lp.n_anchor <= n_items);
     for &d in &dif_items {
-        assert!(!lp.anchor[d], "logistic purification left planted item {d} in the anchor");
+        assert!(
+            !lp.anchor[d],
+            "logistic purification left planted item {d} in the anchor"
+        );
     }
 }
 
@@ -888,10 +903,16 @@ fn purified_rows_are_the_sweep_against_the_reported_anchor() {
     let (y, group) = purification_bank(n, n_items, &[2, 5, 8], 1.2, 0x51A7);
     let mut seen_purified_round = false;
     for exclude_studied_item in [false, true] {
-        let cfg = MhDifConfig { exclude_studied_item, ..MhDifConfig::default() };
+        let cfg = MhDifConfig {
+            exclude_studied_item,
+            ..MhDifConfig::default()
+        };
         for max_rounds in [1usize, 2, 5] {
             for min_anchor_items in [1usize, 4, 9] {
-                let purify = PurifyConfig { max_rounds, min_anchor_items };
+                let purify = PurifyConfig {
+                    max_rounds,
+                    min_anchor_items,
+                };
                 let res =
                     mantel_haenszel_dif_purified(&y, &group, n, n_items, &cfg, &purify).unwrap();
                 seen_purified_round |= res.rounds > 0;
@@ -912,7 +933,10 @@ fn purified_rows_are_the_sweep_against_the_reported_anchor() {
         }
     }
     // Guard the guard: if no configuration ever purified, the assertions above are vacuous.
-    assert!(seen_purified_round, "no configuration performed a purification round");
+    assert!(
+        seen_purified_round,
+        "no configuration performed a purification round"
+    );
 }
 
 /// VALUE ANCHOR for the criterion itself, against an independent reference rather than against the
@@ -929,12 +953,16 @@ fn purified_item_is_matched_on_the_anchor_union_itself() {
     // scattered anchor: items 1, 4, 6, 9 are OUT
     let anchor: Vec<bool> = (0..n_items).map(|i| !matches!(i, 1 | 4 | 6 | 9)).collect();
     for exclude_studied_item in [false, true] {
-        let cfg = MhDifConfig { exclude_studied_item, ..MhDifConfig::default() };
+        let cfg = MhDifConfig {
+            exclude_studied_item,
+            ..MhDifConfig::default()
+        };
         let swept = mh_sweep(&y, &group, n, n_items, &cfg, Some(&anchor)).unwrap();
         for studied in [4usize, 5] {
             // columns of the reference test: anchor UNION {studied}, original order preserved
-            let cols: Vec<usize> =
-                (0..n_items).filter(|&j| anchor[j] || j == studied).collect();
+            let cols: Vec<usize> = (0..n_items)
+                .filter(|&j| anchor[j] || j == studied)
+                .collect();
             let pos = cols.iter().position(|&j| j == studied).unwrap();
             let mut reduced = vec![0u8; n * cols.len()];
             for p in 0..n {
@@ -942,8 +970,7 @@ fn purified_item_is_matched_on_the_anchor_union_itself() {
                     reduced[p * cols.len() + c] = y[p * n_items + j];
                 }
             }
-            let refr =
-                mantel_haenszel_dif(&reduced, &group, n, cols.len(), &cfg).unwrap();
+            let refr = mantel_haenszel_dif(&reduced, &group, n, cols.len(), &cfg).unwrap();
             let (a, b) = (&swept[studied], &refr[pos]);
             assert_eq!(
                 a.chi2_mh, b.chi2_mh,

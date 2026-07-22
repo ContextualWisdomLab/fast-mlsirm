@@ -952,6 +952,8 @@ pub struct PurifiedDif<R> {
     /// oscillating flag set) or purification stopped on the anchor guards, in which case `rows` are
     /// simply the last computed round.
     pub converged: bool,
+    /// `stable_flag_set`, `max_rounds_reached`, or `insufficient_anchor_items`.
+    pub termination_reason: &'static str,
 }
 
 /// Generic purification loop. `sweep` runs a DIF sweep against an anchor mask (`None` = the whole
@@ -976,10 +978,12 @@ fn purify_loop<R>(
 
     let mut rounds = 0usize;
     let mut converged = false;
+    let mut termination_reason = "max_rounds_reached";
     while rounds < cfg.max_rounds {
         let next: Vec<bool> = flagged.iter().map(|&f| !f).collect();
         if next == anchor {
             converged = true; // flagged set stable: the criterion would not change
+            termination_reason = "stable_flag_set";
             break;
         }
         let n_anchor = next.iter().filter(|&&a| a).count();
@@ -987,6 +991,7 @@ fn purify_loop<R>(
         // anchor total would also put everyone in one stratum.
         // ponytail: a 1-2 item anchor is equally meaningless but only the configured floor is checked.
         if n_anchor < cfg.min_anchor_items.max(1) {
+            termination_reason = "insufficient_anchor_items";
             break; // keep the last usable rows; converged stays false
         }
         anchor = next;
@@ -995,6 +1000,7 @@ fn purify_loop<R>(
         let new_flagged: Vec<bool> = rows.iter().map(&is_flagged).collect();
         if new_flagged == flagged {
             converged = true;
+            termination_reason = "stable_flag_set";
             break;
         }
         flagged = new_flagged;
@@ -1006,6 +1012,7 @@ fn purify_loop<R>(
         n_anchor,
         rounds,
         converged,
+        termination_reason,
     })
 }
 

@@ -2113,6 +2113,7 @@ fn purify_meta(
     n_anchor: usize,
     rounds: usize,
     converged: bool,
+    termination_reason: &str,
 ) -> PyResult<()> {
     debug_assert!(
         !out.contains("purify_converged").unwrap_or(false),
@@ -2122,6 +2123,7 @@ fn purify_meta(
     out.set_item("n_anchor", n_anchor)?;
     out.set_item("rounds", rounds)?;
     out.set_item("purify_converged", converged)?;
+    out.set_item("purify_termination_reason", termination_reason)?;
     Ok(())
 }
 
@@ -3651,7 +3653,8 @@ fn mh_rows_dict<'py>(
 /// unflagged (anchor) items and the sweep re-run until the flagged set stabilises or `max_rounds` is
 /// reached, which reduces the contamination the raw number-correct total suffers when it contains the
 /// very items under test. Returns the same per-item arrays as `mantel_haenszel_dif` plus `anchor`
-/// (bool per item), `n_anchor`, `rounds`, and `purify_converged` (scalar).
+/// (bool per item), `n_anchor`, `rounds`, `purify_converged` (scalar), and
+/// `purify_termination_reason`.
 ///
 /// IMPORTANT: the anchor is selected from the same data that is then tested against it, so the returned
 /// p-values are conditional on a data-dependent selection. They are NOT guaranteed super-uniform under
@@ -3686,14 +3689,22 @@ fn mantel_haenszel_dif_purified(
     let res = core_mh_purified(&yv, &gv, n_persons, n_items, &cfg, &purify)
         .map_err(PyValueError::new_err)?;
     let out = mh_rows_dict(py, &res.rows)?;
-    purify_meta(&out, res.anchor, res.n_anchor, res.rounds, res.converged)?;
+    purify_meta(
+        &out,
+        res.anchor,
+        res.n_anchor,
+        res.rounds,
+        res.converged,
+        res.termination_reason,
+    )?;
     Ok(out.into())
 }
 
 /// Zumbo logistic-regression DIF with an ITERATIVELY PURIFIED matching criterion (Rust compute path).
 /// Same purification loop as `mantel_haenszel_dif_purified`, with the flag taken from `jg_class` (the
 /// 2-df omnibus test). Returns the `logistic_dif` per-item arrays — including its PER-ITEM `converged`
-/// array — plus `anchor`, `n_anchor`, `rounds`, and the scalar `purify_converged`. The same caveat
+/// array — plus `anchor`, `n_anchor`, `rounds`, scalar `purify_converged`, and
+/// `purify_termination_reason`. The same caveat
 /// applies: the anchor is data-selected, so the p-values carry no FDR guarantee and the flags are a
 /// screening device.
 #[pyfunction]
@@ -3725,7 +3736,14 @@ fn logistic_dif_purified(
     let res = core_logistic_purified(&yv, &gv, n_persons, n_items, &cfg, &purify)
         .map_err(PyValueError::new_err)?;
     let out = logistic_rows_dict(py, &res.rows)?;
-    purify_meta(&out, res.anchor, res.n_anchor, res.rounds, res.converged)?;
+    purify_meta(
+        &out,
+        res.anchor,
+        res.n_anchor,
+        res.rounds,
+        res.converged,
+        res.termination_reason,
+    )?;
     Ok(out.into())
 }
 
