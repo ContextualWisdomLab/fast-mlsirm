@@ -76,6 +76,14 @@ pub struct EapSumTable {
     pub sd: Vec<f64>,
 }
 
+/// Summed-score lookup results for complete dichotomous response vectors.
+#[derive(Debug)]
+pub struct EapSumScores {
+    pub theta_eap: Vec<f64>,
+    pub theta_sd: Vec<f64>,
+    pub n_observed: Vec<usize>,
+}
+
 pub(crate) fn validate_bank(bank: &ItemBank<'_>) -> Result<usize, String> {
     let n_items = bank.b.len();
     let expected_zeta = n_items
@@ -725,11 +733,32 @@ pub fn lord_wingersky(probs: &[f64], n_items: usize, n_nodes: usize) -> Vec<f64>
 /// Summed-score EAP tables (Thissen et al. 1995), one per trait dimension:
 /// `E[theta_d | summed score over the dimension's items]`, with the item
 /// success probabilities marginalized over the latent-space nodes.
+///
+/// # References
+///
+/// Thissen, D., Pommerich, M., Billeaud, K., & Williams, V. S. L. (1995).
+/// Item response theory for scores on tests including polytomous items with
+/// ordered responses. *Applied Psychological Measurement, 19*(1), 39–49.
+/// https://doi.org/10.1177/014662169501900105
 pub fn eapsum_tables(
     bank: &ItemBank<'_>,
     prior: &PriorSpec,
     q_theta: usize,
     xi_rule: XiRule,
+) -> Result<Vec<EapSumTable>, String> {
+    eapsum_tables_device(bank, prior, q_theta, xi_rule, crate::Device::Auto)
+}
+
+/// Build summed-score conversion tables with an explicit execution device.
+/// `Auto`/`Gpu` offloads the Lord-Wingersky recursion and posterior moment
+/// reduction to wgpu when possible; the bounded Rust CPU path is the f64
+/// reference and fallback.
+pub fn eapsum_tables_device(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    q_theta: usize,
+    xi_rule: XiRule,
+    device: crate::Device,
 ) -> Result<Vec<EapSumTable>, String> {
     let n_items = validate_bank(bank)?;
     validate_prior(prior, bank.n_dims)?;
@@ -746,70 +775,369 @@ pub fn eapsum_tables(
         &ctx,
         &grids,
     );
-    let cell = grids.q_t * grids.n_x;
+    Ok(dispatch_eapsum_tables_device(
+        bank, prior, &grids, &tables, n_items, device,
+    ))
+}
 
-    let mut out = Vec::new();
-    for d in 0..bank.n_dims {
-        let items: Vec<usize> = (0..n_items).filter(|&i| bank.factor_id[i] == d).collect();
-        let n_d = items.len();
-        if n_d == 0 {
-            out.push(EapSumTable {
-                dim: d,
-                n_items_dim: 0,
-                score_prob: vec![1.0],
-                eap: vec![prior.mean[d]],
-                sd: vec![prior.sd[d]],
-            });
-            continue;
-        }
-        // success probabilities on the joint (t, x) node set
-        let mut probs = vec![0.0_f64; n_d * cell];
-        for (row, &i) in items.iter().enumerate() {
-            for c in 0..cell {
-                probs[row * cell + c] = tables.logp1[i * cell + c].exp();
-            }
-        }
-        let score_dist = lord_wingersky(&probs, n_d, cell);
-        // joint node weights and theta values
-        let mut w = vec![0.0_f64; cell];
-        let mut theta_val = vec![0.0_f64; cell];
-        for (t, &node_t) in grids.t_nodes.iter().enumerate() {
-            let theta = prior.mean[d] + prior.sd[d] * node_t;
-            for x in 0..grids.n_x {
-                let c = t * grids.n_x + x;
-                w[c] = (grids.t_logw[t] + grids.x_logw[x]).exp();
-                theta_val[c] = theta;
-            }
-        }
-        let mut score_prob = vec![0.0_f64; n_d + 1];
-        let mut eap = vec![0.0_f64; n_d + 1];
-        let mut sd = vec![0.0_f64; n_d + 1];
-        for s in 0..=n_d {
-            let (mut p0, mut m1, mut m2) = (0.0_f64, 0.0_f64, 0.0_f64);
-            for c in 0..cell {
-                let v = w[c] * score_dist[s * cell + c];
-                p0 += v;
-                m1 += v * theta_val[c];
-                m2 += v * theta_val[c] * theta_val[c];
-            }
-            score_prob[s] = p0;
-            if p0 > 0.0 {
-                eap[s] = m1 / p0;
-                sd[s] = (m2 / p0 - eap[s] * eap[s]).max(0.0).sqrt();
-            } else {
-                eap[s] = prior.mean[d];
-                sd[s] = prior.sd[d];
-            }
-        }
-        out.push(EapSumTable {
+fn eapsum_table_for_dim(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    n_items: usize,
+    d: usize,
+) -> EapSumTable {
+    let cell = grids.q_t * grids.n_x;
+    let items: Vec<usize> = (0..n_items).filter(|&i| bank.factor_id[i] == d).collect();
+    let n_d = items.len();
+    if n_d == 0 {
+        return EapSumTable {
             dim: d,
-            n_items_dim: n_d,
-            score_prob,
-            eap,
-            sd,
+            n_items_dim: 0,
+            score_prob: vec![1.0],
+            eap: vec![prior.mean[d]],
+            sd: vec![prior.sd[d]],
+        };
+    }
+    let mut probs = vec![0.0_f64; n_d * cell];
+    for (row, &i) in items.iter().enumerate() {
+        for c in 0..cell {
+            probs[row * cell + c] = tables.logp1[i * cell + c].exp();
+        }
+    }
+    let score_dist = lord_wingersky(&probs, n_d, cell);
+    let mut w = vec![0.0_f64; cell];
+    let mut theta_val = vec![0.0_f64; cell];
+    for (t, &node_t) in grids.t_nodes.iter().enumerate() {
+        let theta = prior.mean[d] + prior.sd[d] * node_t;
+        for x in 0..grids.n_x {
+            let c = t * grids.n_x + x;
+            w[c] = (grids.t_logw[t] + grids.x_logw[x]).exp();
+            theta_val[c] = theta;
+        }
+    }
+    let mut score_prob = vec![0.0_f64; n_d + 1];
+    let mut eap = vec![0.0_f64; n_d + 1];
+    let mut sd = vec![0.0_f64; n_d + 1];
+    for s in 0..=n_d {
+        let (mut p0, mut m1, mut m2) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for c in 0..cell {
+            let v = w[c] * score_dist[s * cell + c];
+            p0 += v;
+            m1 += v * theta_val[c];
+            m2 += v * theta_val[c] * theta_val[c];
+        }
+        score_prob[s] = p0;
+        if p0 > 0.0 {
+            eap[s] = m1 / p0;
+            sd[s] = (m2 / p0 - eap[s] * eap[s]).max(0.0).sqrt();
+        } else {
+            eap[s] = prior.mean[d];
+            sd[s] = prior.sd[d];
+        }
+    }
+    EapSumTable {
+        dim: d,
+        n_items_dim: n_d,
+        score_prob,
+        eap,
+        sd,
+    }
+}
+
+fn eapsum_tables_cpu_reduce(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    n_items: usize,
+) -> Vec<EapSumTable> {
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(bank.n_dims);
+    if worker_count <= 1 {
+        return (0..bank.n_dims)
+            .map(|d| eapsum_table_for_dim(bank, prior, grids, tables, n_items, d))
+            .collect();
+    }
+    let dims_per_worker = bank.n_dims.div_ceil(worker_count);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start in (0..bank.n_dims).step_by(dims_per_worker) {
+            let end = (start + dims_per_worker).min(bank.n_dims);
+            handles.push(scope.spawn(move || {
+                (start..end)
+                    .map(|d| eapsum_table_for_dim(bank, prior, grids, tables, n_items, d))
+                    .collect::<Vec<_>>()
+            }));
+        }
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("EAPsum CPU worker panicked"))
+            .collect()
+    })
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn dispatch_eapsum_tables_device(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    n_items: usize,
+    device: crate::Device,
+) -> Vec<EapSumTable> {
+    if device != crate::Device::Cpu {
+        let inputs = crate::gpu_eapsum::GpuEapSumTableInputs {
+            n_items,
+            n_dims: bank.n_dims,
+            q_t: grids.q_t,
+            n_x: grids.n_x,
+            factor_id: bank.factor_id,
+            logp1: &tables.logp1,
+            t_logw: &grids.t_logw,
+            x_logw: &grids.x_logw,
+            t_nodes: &grids.t_nodes,
+            prior_mean: &prior.mean,
+            prior_sd: &prior.sd,
+        };
+        if let Some(gpu) = crate::gpu_eapsum::eapsum_tables_gpu(&inputs) {
+            return gpu;
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU EAPsum tables requested but no usable GPU adapter was found or the table exceeds GPU bounds; falling back to the CPU implementation."
+            );
+        }
+    }
+    eapsum_tables_cpu_reduce(bank, prior, grids, tables, n_items)
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn dispatch_eapsum_tables_device(
+    bank: &ItemBank<'_>,
+    prior: &PriorSpec,
+    grids: &crate::marginal::Grids,
+    tables: &crate::marginal::Tables,
+    n_items: usize,
+    device: crate::Device,
+) -> Vec<EapSumTable> {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU EAPsum tables requested but this build has no GPU support; falling back to the CPU implementation."
+        );
+    }
+    eapsum_tables_cpu_reduce(bank, prior, grids, tables, n_items)
+}
+
+fn validate_eapsum_lookup(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    tables: &[EapSumTable],
+) -> Result<usize, String> {
+    if n_dims == 0 {
+        return Err("n_dims must be positive".into());
+    }
+    let n_items = factor_id.len();
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
+    if factor_id.iter().any(|&d| d >= n_dims) {
+        return Err("factor_id values must be in 0..n_dims-1".into());
+    }
+    if observed.iter().any(|&value| !value) {
+        return Err("eapsum scoring requires complete responses within each dimension".into());
+    }
+    if tables.len() != n_dims {
+        return Err("eapsum tables must contain exactly one table per dimension".into());
+    }
+    let mut seen = vec![false; n_dims];
+    for table in tables {
+        if table.dim >= n_dims || seen[table.dim] {
+            return Err("eapsum table dimensions must be unique values in 0..n_dims-1".into());
+        }
+        seen[table.dim] = true;
+        let expected_items = factor_id.iter().filter(|&&d| d == table.dim).count();
+        if table.n_items_dim != expected_items
+            || table.eap.len() != expected_items + 1
+            || table.sd.len() != expected_items + 1
+        {
+            return Err("eapsum table lengths do not match factor_id".into());
+        }
+        if table.eap.iter().any(|value| !value.is_finite())
+            || table
+                .sd
+                .iter()
+                .any(|value| !value.is_finite() || *value < 0.0)
+        {
+            return Err("eapsum table values must be finite and SDs non-negative".into());
+        }
+    }
+    Ok(n_items)
+}
+
+fn score_eapsum_cpu_chunk(
+    y: &[f64],
+    n_items: usize,
+    factor_id: &[usize],
+    tables_by_dim: &[&EapSumTable],
+    start_person: usize,
+    theta: &mut [f64],
+    theta_sd: &mut [f64],
+) {
+    let n_dims = tables_by_dim.len();
+    for local_person in 0..theta.len() / n_dims {
+        let person = start_person + local_person;
+        for d in 0..n_dims {
+            let score = (0..n_items)
+                .filter(|&item| factor_id[item] == d)
+                .map(|item| y[person * n_items + item] as usize)
+                .sum::<usize>();
+            theta[local_person * n_dims + d] = tables_by_dim[d].eap[score];
+            theta_sd[local_person * n_dims + d] = tables_by_dim[d].sd[score];
+        }
+    }
+}
+
+fn score_eapsum_cpu_reduce(
+    y: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    factor_id: &[usize],
+    tables: &[EapSumTable],
+) -> EapSumScores {
+    let n_dims = tables.len();
+    let mut tables_by_dim = vec![&tables[0]; n_dims];
+    for table in tables {
+        tables_by_dim[table.dim] = table;
+    }
+    let mut theta_eap = vec![0.0; n_persons * n_dims];
+    let mut theta_sd = vec![0.0; n_persons * n_dims];
+    if n_persons > 0 {
+        let worker_count = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .min(n_persons);
+        let persons_per_worker = n_persons.div_ceil(worker_count);
+        let chunk_len = persons_per_worker * n_dims;
+        std::thread::scope(|scope| {
+            for (worker, (theta, sd)) in theta_eap
+                .chunks_mut(chunk_len)
+                .zip(theta_sd.chunks_mut(chunk_len))
+                .enumerate()
+            {
+                let start_person = worker * persons_per_worker;
+                let tables_by_dim = &tables_by_dim;
+                scope.spawn(move || {
+                    score_eapsum_cpu_chunk(
+                        y,
+                        n_items,
+                        factor_id,
+                        tables_by_dim,
+                        start_person,
+                        theta,
+                        sd,
+                    );
+                });
+            }
         });
     }
-    Ok(out)
+    EapSumScores {
+        theta_eap,
+        theta_sd,
+        n_observed: vec![n_items; n_persons],
+    }
+}
+
+/// Apply summed-score conversion tables to complete response vectors. The
+/// default follows the Rust GPU-first policy and retains the parallel f64 CPU
+/// lookup as a hardware-independent fallback.
+pub fn score_eapsum(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    tables: &[EapSumTable],
+) -> Result<EapSumScores, String> {
+    score_eapsum_device(
+        y,
+        observed,
+        n_persons,
+        factor_id,
+        n_dims,
+        tables,
+        crate::Device::Auto,
+    )
+}
+
+pub fn score_eapsum_device(
+    y: &[f64],
+    observed: &[bool],
+    n_persons: usize,
+    factor_id: &[usize],
+    n_dims: usize,
+    tables: &[EapSumTable],
+    device: crate::Device,
+) -> Result<EapSumScores, String> {
+    let n_items = validate_eapsum_lookup(y, observed, n_persons, factor_id, n_dims, tables)?;
+    Ok(dispatch_score_eapsum_device(
+        y, n_persons, n_items, factor_id, tables, device,
+    ))
+}
+
+#[cfg(all(feature = "gpu", not(coverage)))]
+fn dispatch_score_eapsum_device(
+    y: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    factor_id: &[usize],
+    tables: &[EapSumTable],
+    device: crate::Device,
+) -> EapSumScores {
+    if device != crate::Device::Cpu {
+        let inputs = crate::gpu_eapsum::GpuEapSumLookupInputs {
+            y,
+            n_persons,
+            n_items,
+            n_dims: tables.len(),
+            factor_id,
+            tables,
+        };
+        if let Some((theta_eap, theta_sd)) = crate::gpu_eapsum::score_eapsum_gpu(&inputs) {
+            return EapSumScores {
+                theta_eap,
+                theta_sd,
+                n_observed: vec![n_items; n_persons],
+            };
+        }
+        if device == crate::Device::Gpu {
+            eprintln!(
+                "fast-mlsirm: GPU EAPsum scoring requested but no usable GPU adapter was found or the request exceeds GPU bounds; falling back to the CPU implementation."
+            );
+        }
+    }
+    score_eapsum_cpu_reduce(y, n_persons, n_items, factor_id, tables)
+}
+
+#[cfg(any(not(feature = "gpu"), coverage))]
+fn dispatch_score_eapsum_device(
+    y: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    factor_id: &[usize],
+    tables: &[EapSumTable],
+    device: crate::Device,
+) -> EapSumScores {
+    if device == crate::Device::Gpu {
+        eprintln!(
+            "fast-mlsirm: GPU EAPsum scoring requested but this build has no GPU support; falling back to the CPU implementation."
+        );
+    }
+    score_eapsum_cpu_reduce(y, n_persons, n_items, factor_id, tables)
 }
 
 #[cfg(test)]

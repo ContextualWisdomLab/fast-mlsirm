@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import fast_mlsirm.serving as serving
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.estimators.marginal import fit_marginal_numpy
 from fast_mlsirm.fit import fit
@@ -61,7 +62,10 @@ def test_eapsum_tables_in_bundle_and_lookup_scoring():
         assert all(b >= a - 1e-9 for a, b in zip(t["eap"], t["eap"][1:]))
     # complete response vector -> lookup scoring works and tracks EAP scoring
     full = {c: int(v) for c, v in zip(codes, y[0])}
-    via_table = score_respondents(bundle, full, method="eapsum")[0]
+    via_table = score_respondents(bundle, full, method="eapsum", device="auto")[0]
+    via_table_cpu = score_respondents(bundle, full, method="eapsum", device="cpu")[0]
+    np.testing.assert_allclose(via_table["theta"], via_table_cpu["theta"], atol=2e-4)
+    np.testing.assert_allclose(via_table["theta_sd"], via_table_cpu["theta_sd"], atol=2e-4)
     via_eap = score_respondents(bundle, full, method="eap")[0]
     for d in range(bundle["n_dims"]):
         # summed-score EAP loses the latent-space detail; loose agreement only
@@ -69,6 +73,13 @@ def test_eapsum_tables_in_bundle_and_lookup_scoring():
     # incomplete pattern must be rejected for the lookup path
     with pytest.raises(ValueError, match="complete responses"):
         score_respondents(bundle, {codes[0]: 1}, method="eapsum")
+
+
+def test_eapsum_scoring_fails_closed_without_rust(monkeypatch):
+    _, _, bundle, codes = _bundle(seed=12)
+    monkeypatch.setattr(serving, "_core_module", lambda: None)
+    with pytest.raises(RuntimeError, match="compiled Rust core"):
+        score_respondents(bundle, {code: 1 for code in codes}, method="eapsum")
 
 
 def test_prior_override_conditions_scores():

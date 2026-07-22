@@ -381,10 +381,10 @@ def score_respondents(
     on a known team with ``mean = u_eap`` or a known group with
     ``(mu_g, sigma_g)``.
 
-    EAP and MAP scoring require the compiled Rust core. ``device="auto"``
-    prefers the Rust wgpu scoring kernel and falls back to the Rust CPU
-    implementation when no usable GPU is available. Pass ``device="cpu"`` for
-    the hardware-independent f64 reference reduction.
+    All scoring methods require the compiled Rust core. ``device="auto"``
+    prefers the Rust wgpu scoring or EAPsum lookup kernel and falls back to the
+    parallel Rust CPU implementation when no usable GPU is available. Pass
+    ``device="cpu"`` for the hardware-independent f64 reference reduction.
     """
     _validate_bundle(bundle)
     items = bundle["items"]
@@ -461,27 +461,43 @@ def score_respondents(
         tables = bundle.get("eapsum_tables")
         if not tables:
             raise ValueError("bundle has no eapsum_tables; re-export the bundle")
-        results = []
-        for r in range(y.shape[0]):
-            theta, theta_sd = [], []
-            for t in sorted(tables, key=lambda t: t["dim"]):
-                d_items = [j for j, it in enumerate(items) if it["factor_id"] == t["dim"]]
-                if not all(observed[r, j] for j in d_items):
-                    raise ValueError(
-                        "eapsum scoring requires complete responses within each dimension"
-                    )
-                score = int(sum(y[r, j] for j in d_items))
-                theta.append(float(t["eap"][score]))
-                theta_sd.append(float(t["sd"][score]))
-            results.append(
-                {
-                    "theta": theta,
-                    "theta_sd": theta_sd,
-                    "method": "eapsum",
-                    "n_observed": int(observed[r].sum()),
-                }
+        core = _core_module()
+        if core is None:
+            raise RuntimeError(
+                "EAPsum scoring requires the compiled Rust core so device selection "
+                "and CPU fallback remain inside Rust"
             )
-        return results
+        sorted_tables = sorted(tables, key=lambda table: table["dim"])
+        table_offsets = [0]
+        table_eap: list[float] = []
+        table_sd: list[float] = []
+        for table in sorted_tables:
+            table_eap.extend(table["eap"])
+            table_sd.extend(table["sd"])
+            table_offsets.append(len(table_eap))
+        res = core.score_eapsum(
+            np.where(observed, y, 0.0).ravel(),
+            observed.ravel(),
+            int(n_persons),
+            factor_id,
+            int(n_dims),
+            np.asarray(table_offsets, dtype=np.int64),
+            np.asarray(table_eap, dtype=float),
+            np.asarray(table_sd, dtype=float),
+            device=str(device),
+        )
+        theta = np.asarray(res["theta_eap"]).reshape(n_persons, n_dims)
+        theta_sd = np.asarray(res["theta_sd"]).reshape(n_persons, n_dims)
+        n_observed = np.asarray(res["n_observed"], dtype=np.int64)
+        return [
+            {
+                "theta": [float(value) for value in theta[r]],
+                "theta_sd": [float(value) for value in theta_sd[r]],
+                "method": "eapsum",
+                "n_observed": int(n_observed[r]),
+            }
+            for r in range(n_persons)
+        ]
 
     core = _core_module()
     y_filled = np.where(observed, y, 0.0)

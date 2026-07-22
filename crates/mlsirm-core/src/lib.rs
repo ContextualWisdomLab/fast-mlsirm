@@ -52,6 +52,8 @@ pub(crate) fn checked_add_usize(a: usize, b: usize, message: &str) -> Result<usi
 #[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_eapsum;
+#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_plausible;

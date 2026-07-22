@@ -7,6 +7,10 @@
 - Plausible-value posterior reduction and seeded sampling now use the same
   GPU-preferred device contract. Unsupported GPU sizes or results fall back to
   a deterministic Rust f64 implementation with fixed contiguous CPU shards.
+- EAPsum table recursion, posterior moments, and respondent lookup now remain
+  in Rust and prefer wgpu. Explicit CPU execution retains the f64 reference;
+  unavailable or unsupported GPU work falls back to fixed contiguous Rust CPU
+  workers instead of performing respondent score aggregation in Python.
 
 ## Unreleased
 

@@ -26,6 +26,12 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
+use mlsirm_core::dif::{
+    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
+    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
+    sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
+    PurifyConfig, SibtestConfig,
+};
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
@@ -37,15 +43,6 @@ use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
-use mlsirm_core::dif::{
-    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
-    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
-    SibtestConfig,
-};
-use mlsirm_core::rasch_cml::{
-    andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
-};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::poly::{
@@ -58,6 +55,9 @@ use mlsirm_core::poly::{
     u3_poly_person_fit as core_u3_poly_person_fit, PolyModel,
 };
 use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
+use mlsirm_core::rasch_cml::{
+    andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
+};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -65,11 +65,12 @@ use mlsirm_core::rt::{
 use mlsirm_core::rt_joint::{fit_speed_accuracy_covariance as core_fit_sa, SpeedAccuracyConfig};
 use mlsirm_core::scoring::{
     bank_information_device as core_bank_information_device,
-    cat_next_item_device as core_cat_next_item_device, eapsum_tables as core_eapsum_tables,
+    cat_next_item_device as core_cat_next_item_device,
+    eapsum_tables_device as core_eapsum_tables_device,
     empirical_reliability as core_empirical_reliability,
     plausible_values_device as core_plausible_values_device,
-    score_eap_device as core_score_eap_device, score_map as core_score_map,
-    score_wle as core_score_wle, ItemBank, PriorSpec,
+    score_eap_device as core_score_eap_device, score_eapsum_device as core_score_eapsum_device,
+    score_map as core_score_map, score_wle as core_score_wle, EapSumTable, ItemBank, PriorSpec,
 };
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -2093,16 +2094,34 @@ fn logistic_rows_dict<'py>(
 ) -> PyResult<pyo3::Bound<'py, pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
-    out.set_item("chi2_uniform", rows.iter().map(|r| r.chi2_uniform).collect::<Vec<_>>())?;
-    out.set_item("p_uniform", rows.iter().map(|r| r.p_uniform).collect::<Vec<_>>())?;
+    out.set_item(
+        "chi2_uniform",
+        rows.iter().map(|r| r.chi2_uniform).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "p_uniform",
+        rows.iter().map(|r| r.p_uniform).collect::<Vec<_>>(),
+    )?;
     out.set_item(
         "chi2_nonuniform",
         rows.iter().map(|r| r.chi2_nonuniform).collect::<Vec<_>>(),
     )?;
-    out.set_item("p_nonuniform", rows.iter().map(|r| r.p_nonuniform).collect::<Vec<_>>())?;
-    out.set_item("chi2_total", rows.iter().map(|r| r.chi2_total).collect::<Vec<_>>())?;
-    out.set_item("p_total", rows.iter().map(|r| r.p_total).collect::<Vec<_>>())?;
-    out.set_item("delta_r2", rows.iter().map(|r| r.delta_r2).collect::<Vec<_>>())?;
+    out.set_item(
+        "p_nonuniform",
+        rows.iter().map(|r| r.p_nonuniform).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "chi2_total",
+        rows.iter().map(|r| r.chi2_total).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "p_total",
+        rows.iter().map(|r| r.p_total).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "delta_r2",
+        rows.iter().map(|r| r.delta_r2).collect::<Vec<_>>(),
+    )?;
     out.set_item(
         "delta_r2_uniform",
         rows.iter().map(|r| r.delta_r2_uniform).collect::<Vec<_>>(),
@@ -2111,8 +2130,14 @@ fn logistic_rows_dict<'py>(
         "jg_class",
         rows.iter().map(|r| r.jg_class.as_str()).collect::<Vec<_>>(),
     )?;
-    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
-    out.set_item("converged", rows.iter().map(|r| r.converged).collect::<Vec<_>>())?;
+    out.set_item(
+        "flagged_bh",
+        rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "converged",
+        rows.iter().map(|r| r.converged).collect::<Vec<_>>(),
+    )?;
     Ok(out)
 }
 
@@ -2179,7 +2204,8 @@ fn fit_rasch_cml(
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let yv = binary_u8(y.as_slice()?)?;
-    let res = core_fit_rasch_cml(&yv, n_persons, n_items, max_iter, tol).map_err(PyValueError::new_err)?;
+    let res = core_fit_rasch_cml(&yv, n_persons, n_items, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("beta", res.beta)?;
     out.set_item("se", res.se)?;
@@ -2243,7 +2269,7 @@ fn andersen_lr_test(
 #[pyo3(signature = (
     alpha, b, zeta, tau, factor_id, model, n_dims, latent_dim, eps_distance,
     prior_mean, prior_sd, q_theta = 21, xi_rule = "gh", q_xi = 11, xi_points = 256,
-    xi_seed = 0,
+    xi_seed = 0, device = "auto",
 ))]
 fn eapsum_tables(
     py: Python<'_>,
@@ -2263,6 +2289,7 @@ fn eapsum_tables(
     q_xi: usize,
     xi_points: usize,
     xi_seed: u64,
+    device: &str,
 ) -> PyResult<Vec<Py<pyo3::types::PyDict>>> {
     bank_from_args!(
         alpha,
@@ -2282,7 +2309,10 @@ fn eapsum_tables(
         sd: prior_sd.as_slice()?.to_vec(),
     };
     let rule = parse_xi_rule(xi_rule, q_xi, xi_points, xi_seed)?;
-    let tables = core_eapsum_tables(&bank, &prior, q_theta, rule).map_err(PyValueError::new_err)?;
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let tables = core_eapsum_tables_device(&bank, &prior, q_theta, rule, device)
+        .map_err(PyValueError::new_err)?;
     let mut out = Vec::new();
     for t in tables {
         let d = pyo3::types::PyDict::new(py);
@@ -2294,6 +2324,88 @@ fn eapsum_tables(
         out.push(d.into());
     }
     Ok(out)
+}
+
+/// Apply EAPsum tables to complete dichotomous response vectors in Rust.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    y, observed, n_persons, factor_id, n_dims, table_offsets, table_eap, table_sd,
+    device = "auto",
+))]
+fn score_eapsum(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    n_persons: usize,
+    factor_id: PyReadonlyArray1<'_, i64>,
+    n_dims: usize,
+    table_offsets: PyReadonlyArray1<'_, i64>,
+    table_eap: PyReadonlyArray1<'_, f64>,
+    table_sd: PyReadonlyArray1<'_, f64>,
+    device: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let factors: Vec<usize> = factor_id
+        .as_slice()?
+        .iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("factor_id values must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let offsets: Vec<usize> = table_offsets
+        .as_slice()?
+        .iter()
+        .map(|&value| {
+            usize::try_from(value)
+                .map_err(|_| PyValueError::new_err("table offsets must be non-negative"))
+        })
+        .collect::<PyResult<_>>()?;
+    let eap = table_eap.as_slice()?;
+    let sd = table_sd.as_slice()?;
+    if offsets.len() != n_dims + 1 || offsets.first() != Some(&0) {
+        return Err(PyValueError::new_err(
+            "table_offsets must have length n_dims + 1 and start at zero",
+        ));
+    }
+    if offsets.windows(2).any(|pair| pair[1] <= pair[0])
+        || offsets.last() != Some(&eap.len())
+        || eap.len() != sd.len()
+    {
+        return Err(PyValueError::new_err(
+            "table offsets must be strictly increasing and end at the table value length",
+        ));
+    }
+    let tables: Vec<EapSumTable> = (0..n_dims)
+        .map(|dim| {
+            let start = offsets[dim];
+            let end = offsets[dim + 1];
+            EapSumTable {
+                dim,
+                n_items_dim: end - start - 1,
+                score_prob: Vec::new(),
+                eap: eap[start..end].to_vec(),
+                sd: sd[start..end].to_vec(),
+            }
+        })
+        .collect();
+    let device = Device::parse(device)
+        .ok_or_else(|| PyValueError::new_err("device must be one of ['cpu', 'gpu', 'auto']"))?;
+    let result = core_score_eapsum_device(
+        y.as_slice()?,
+        observed.as_slice()?,
+        n_persons,
+        &factors,
+        n_dims,
+        &tables,
+        device,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta_eap", result.theta_eap)?;
+    out.set_item("theta_sd", result.theta_sd)?;
+    out.set_item("n_observed", result.n_observed)?;
+    Ok(out.into())
 }
 
 /// Orlando-Thissen S-X2 with the large-N practical-significance effect size.
@@ -3676,11 +3788,23 @@ fn sibtest(
     let rows = core_sibtest(&yv, &gv, n_persons, n_items, &cfg).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
-    out.set_item("beta_uni", rows.iter().map(|r| r.beta_uni).collect::<Vec<_>>())?;
-    out.set_item("se_beta", rows.iter().map(|r| r.se_beta).collect::<Vec<_>>())?;
+    out.set_item(
+        "beta_uni",
+        rows.iter().map(|r| r.beta_uni).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "se_beta",
+        rows.iter().map(|r| r.se_beta).collect::<Vec<_>>(),
+    )?;
     out.set_item("b_uni", rows.iter().map(|r| r.b_uni).collect::<Vec<_>>())?;
-    out.set_item("p_value", rows.iter().map(|r| r.p_value).collect::<Vec<_>>())?;
-    out.set_item("alpha_ref", rows.iter().map(|r| r.alpha_ref).collect::<Vec<_>>())?;
+    out.set_item(
+        "p_value",
+        rows.iter().map(|r| r.p_value).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "alpha_ref",
+        rows.iter().map(|r| r.alpha_ref).collect::<Vec<_>>(),
+    )?;
     out.set_item(
         "alpha_focal",
         rows.iter().map(|r| r.alpha_focal).collect::<Vec<_>>(),
@@ -3689,7 +3813,10 @@ fn sibtest(
         "n_strata_used",
         rows.iter().map(|r| r.n_strata_used).collect::<Vec<_>>(),
     )?;
-    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    out.set_item(
+        "flagged_bh",
+        rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>(),
+    )?;
     Ok(out.into())
 }
 
@@ -3700,17 +3827,40 @@ fn mh_rows_dict<'py>(
 ) -> PyResult<pyo3::Bound<'py, pyo3::types::PyDict>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("item", rows.iter().map(|r| r.item).collect::<Vec<_>>())?;
-    out.set_item("alpha_mh", rows.iter().map(|r| r.alpha_mh).collect::<Vec<_>>())?;
-    out.set_item("chi2_mh", rows.iter().map(|r| r.chi2_mh).collect::<Vec<_>>())?;
-    out.set_item("p_value", rows.iter().map(|r| r.p_value).collect::<Vec<_>>())?;
-    out.set_item("mh_d_dif", rows.iter().map(|r| r.mh_d_dif).collect::<Vec<_>>())?;
-    out.set_item("se_d_dif", rows.iter().map(|r| r.se_d_dif).collect::<Vec<_>>())?;
-    out.set_item("std_p_dif", rows.iter().map(|r| r.std_p_dif).collect::<Vec<_>>())?;
+    out.set_item(
+        "alpha_mh",
+        rows.iter().map(|r| r.alpha_mh).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "chi2_mh",
+        rows.iter().map(|r| r.chi2_mh).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "p_value",
+        rows.iter().map(|r| r.p_value).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "mh_d_dif",
+        rows.iter().map(|r| r.mh_d_dif).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "se_d_dif",
+        rows.iter().map(|r| r.se_d_dif).collect::<Vec<_>>(),
+    )?;
+    out.set_item(
+        "std_p_dif",
+        rows.iter().map(|r| r.std_p_dif).collect::<Vec<_>>(),
+    )?;
     out.set_item(
         "ets_class",
-        rows.iter().map(|r| r.ets_class.as_str()).collect::<Vec<_>>(),
+        rows.iter()
+            .map(|r| r.ets_class.as_str())
+            .collect::<Vec<_>>(),
     )?;
-    out.set_item("flagged_bh", rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>())?;
+    out.set_item(
+        "flagged_bh",
+        rows.iter().map(|r| r.flagged_bh).collect::<Vec<_>>(),
+    )?;
     Ok(out)
 }
 
@@ -4758,6 +4908,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(score_bank_eap, m)?)?;
     m.add_function(wrap_pyfunction!(score_bank_map, m)?)?;
     m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
+    m.add_function(wrap_pyfunction!(score_eapsum, m)?)?;
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;

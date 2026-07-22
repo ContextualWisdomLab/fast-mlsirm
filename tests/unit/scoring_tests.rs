@@ -303,6 +303,53 @@ fn eapsum_tables_are_monotone_in_score() {
 }
 
 #[test]
+fn eapsum_lookup_runs_in_rust_and_rejects_incomplete_patterns() {
+    let (alpha, b, zeta, fid) = small_bank();
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let prior = PriorSpec::standard(2);
+    let tables = eapsum_tables_device(
+        &bk,
+        &prior,
+        21,
+        XiRule::GaussHermite { q_xi: 7 },
+        crate::Device::Cpu,
+    )
+    .unwrap();
+    let y = vec![
+        1.0, 0.0, 1.0, 0.0, 1.0, 0.0, // score (3, 0)
+        0.0, 1.0, 0.0, 1.0, 0.0, 1.0, // score (0, 3)
+    ];
+    let observed = vec![true; y.len()];
+    let result =
+        score_eapsum_device(&y, &observed, 2, &fid, 2, &tables, crate::Device::Cpu).unwrap();
+    assert_eq!(
+        result.theta_eap,
+        vec![
+            tables[0].eap[3],
+            tables[1].eap[0],
+            tables[0].eap[0],
+            tables[1].eap[3]
+        ]
+    );
+    assert_eq!(
+        result.theta_sd,
+        vec![
+            tables[0].sd[3],
+            tables[1].sd[0],
+            tables[0].sd[0],
+            tables[1].sd[3]
+        ]
+    );
+    assert_eq!(result.n_observed, vec![6, 6]);
+
+    let mut incomplete = observed;
+    incomplete[0] = false;
+    let error =
+        score_eapsum_device(&y, &incomplete, 2, &fid, 2, &tables, crate::Device::Cpu).unwrap_err();
+    assert!(error.contains("complete responses"));
+}
+
+#[test]
 fn multilevel_marginal_prior_widens_sd() {
     let (alpha, b, zeta, fid) = small_bank();
     let bk = bank(&alpha, &b, &zeta, &fid);
