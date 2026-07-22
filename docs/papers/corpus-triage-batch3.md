@@ -17,7 +17,7 @@ reviews, applications, or textbooks that inform documentation, not code.
 | Guo, Zheng & Chang (2015), stepwise TCC drift | test-characteristic-curve drift detection between two calibrations of a common bank (stepwise anchor purification) |
 | Haberman, Sinharay & Chon (2013), residual item fit | standardized residuals of observed vs estimated ICCs on the score grid |
 | Sinharay (2016), resampling person fit | parametric-bootstrap null for `l_z*` (empirical p-values) |
-| Tay & Drasgow (2012), adjusted chi2/df | N-adjusted item-pair chi-square/df ratios (Drasgow tradition; complements S-X2) |
+| Tay & Drasgow (2012), adjusted chi2/df | Exploratory repository-specific item-pair ratios only. The paper finds a fixed cutoff insufficient and recommends a parametric bootstrap; that inferential procedure is not implemented. |
 
 ## Already covered (earlier basis)
 

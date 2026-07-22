@@ -1402,19 +1402,48 @@ def adjusted_chi2_pairs(
     q_xi: int = 11,
     eps_distance: float = 1e-8,
 ) -> dict:
-    """N-adjusted pairwise chi2/df ratios (Tay & Drasgow 2012); values above
-    ~3 flag pairwise misfit / local dependence."""
+    """Compute exploratory pairwise adjusted chi-square/df ratios.
+
+    For each item pair, this repository constructs a model-implied 2x2 table
+    under a standard-normal trait prior, computes Pearson chi-square with three
+    degrees of freedom, and rescales it to a reference sample size of 3000.
+    Fewer than 20 jointly observed responses leave that pair undefined (``NaN``).
+
+    Tay and Drasgow (2012) studied the earlier mean adjusted chi-square/df
+    tradition. Their simulations found that a fixed cutoff such as 3 was
+    insufficient across sample sizes and test lengths, and they recommended a
+    parametric bootstrap. This function is a repository-specific pairwise
+    simplification: it does not implement that bootstrap, and its outputs are
+    not source-backed hypothesis tests or universal local-dependence flags.
+
+    References
+    ----------
+    Tay, L., & Drasgow, F. (2012). Adjusting the adjusted chi-square/df ratio
+        statistic for dichotomous item response theory analyses: Does the model
+        fit? *Educational and Psychological Measurement, 72*(3), 510–528.
+        https://doi.org/10.1177/0013164411416976
+    """
     core = _core_module()
     if core is None:
         raise RuntimeError("adjusted_chi2_pairs requires the compiled Rust core")
-    y = np.asarray(responses, dtype=float)
-    observed = ~np.isnan(y) if mask is None else np.asarray(mask, dtype=bool)
-    d_of_i, _fid_ndims = _validate_factor_id(factor_id)
+    y, observed, d_of_i = _prepare_dichotomous_diagnostic_inputs(
+        responses, factor_id, mask
+    )
+    n_persons, n_items = y.shape
+    if n_persons == 0:
+        raise ValueError("responses must contain at least one person")
+    if n_items < 2:
+        raise ValueError("adjusted pairwise fit requires at least two items")
+    for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
+            raise ValueError(f"{name} must be an integer")
     n_dims = int(d_of_i.max()) + 1
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
     res = dict(
         core.adjusted_chi2_pairs(
-            np.where(observed, y, 0.0).ravel(), observed.ravel(), int(y.shape[0]),
+            y.ravel(), observed.ravel(), int(n_persons),
             bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
             bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
             np.zeros(n_dims), np.ones(n_dims),

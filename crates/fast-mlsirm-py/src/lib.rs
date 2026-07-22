@@ -4272,7 +4272,7 @@ fn residual_item_fit(
     Ok(out.into())
 }
 
-/// Adjusted pairwise chi2/df ratios (Tay & Drasgow 2012).
+/// Repository-specific exploratory pairwise adjusted chi2/df ratios.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (

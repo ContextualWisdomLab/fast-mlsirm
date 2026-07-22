@@ -427,8 +427,29 @@ fn fitstats_public_boundaries_and_interaction_paths() {
         )
         .unwrap();
         assert_eq!(sx2.statistic.len(), 3);
-        let residual = residual_item_fit(&bank, &y, &observed, 3, &theta, &xi, 2).unwrap();
-        assert!(residual.max_abs_z.iter().all(|value| value.is_nan()));
+        let residual_y: Vec<f64> = (0..10)
+            .flat_map(|person| {
+                [
+                    (person % 2) as f64,
+                    ((person + 1) % 2) as f64,
+                    (person % 3 == 0) as u8 as f64,
+                ]
+            })
+            .collect();
+        let residual_observed = vec![true; residual_y.len()];
+        let residual_theta: Vec<f64> = (0..10).map(|person| person as f64 / 3.0 - 1.5).collect();
+        let residual_xi: Vec<f64> = (0..10).map(|person| person as f64 / 10.0 - 0.5).collect();
+        let residual = residual_item_fit(
+            &bank,
+            &residual_y,
+            &residual_observed,
+            10,
+            &residual_theta,
+            &residual_xi,
+            2,
+        )
+        .unwrap();
+        assert_eq!(residual.max_abs_z.len(), 3);
         let resampled =
             person_fit_resampling(&bank, &y, &observed, 3, &theta, &xi, &theta, 1, 0).unwrap();
         assert_eq!(resampled.len(), 3);

@@ -1061,12 +1061,24 @@ pub fn residual_item_fit(
     })
 }
 
-/// Adjusted chi-square-to-df ratios for item pairs (Drasgow tradition;
-/// Tay & Drasgow 2012, "Adjusting the adjusted chi2/df ratio statistic for
-/// dichotomous IRT analyses"): the pairwise 2x2 table chi-square against the
-/// model-implied joint probabilities, rescaled to a reference sample size of
-/// 3000: `adj = ((chi2 - df) * 3000 / N + df) / df`. Values above ~3 flag
-/// pairwise misfit / local dependence.
+/// Exploratory adjusted chi-square-to-df ratios for item pairs.
+///
+/// Each upper-triangle pair uses a model-implied 2x2 table, then rescales its
+/// Pearson statistic to a reference sample size of 3000:
+/// `adj = ((chi2 - df) * 3000 / N + df) / df`, with `df = 3`. This pairwise
+/// construction is specific to this repository. Tay and Drasgow (2012)
+/// evaluated the earlier mean adjusted chi-square/df tradition, found a fixed
+/// cutoff such as 3 insufficient across sample sizes and test lengths, and
+/// recommended a parametric bootstrap. This function does not implement that
+/// bootstrap and its ratios must not be treated as source-backed hypothesis
+/// tests or universal local-dependence flags.
+///
+/// # References
+///
+/// Tay, L., & Drasgow, F. (2012). Adjusting the adjusted chi-square/df ratio
+/// statistic for dichotomous item response theory analyses: Does the model fit?
+/// *Educational and Psychological Measurement, 72*(3), 510–528.
+/// <https://doi.org/10.1177/0013164411416976>
 pub struct AdjustedChi2Result {
     /// Upper-triangle pair values, row-major pair order.
     pub ratio: Vec<f64>,
@@ -1084,13 +1096,20 @@ pub fn adjusted_chi2_pairs(
     q_theta: usize,
     xi_rule: XiRule,
 ) -> Result<AdjustedChi2Result, String> {
-    let n_items = bank.b.len();
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
-        return Err("y and observed must both have length n_persons * n_items".into());
+    let n_items = validate_bank(bank)?;
+    if n_items < 2 {
+        return Err("adjusted pairwise fit requires at least two items".into());
     }
+    if n_persons == 0 {
+        return Err("adjusted pairwise fit requires at least one person".into());
+    }
+    validate_prior(prior, bank.n_dims)?;
+    validate_dichotomous_responses(y, observed, n_persons, n_items)?;
     let (probs, weights, _theta, cell) = icc_nodes(bank, prior, q_theta, xi_rule)?;
-    let mut ratio = Vec::with_capacity(n_items * (n_items - 1) / 2);
-    let (mut sum, mut max, mut count) = (0.0_f64, 0.0_f64, 0usize);
+    let pair_count =
+        crate::checked_mul_usize(n_items, n_items - 1, "item-pair count overflows usize")? / 2;
+    let mut ratio = Vec::with_capacity(pair_count);
+    let (mut sum, mut max, mut count) = (0.0_f64, f64::NEG_INFINITY, 0usize);
     for i in 0..n_items {
         for j in (i + 1)..n_items {
             // model-implied joint cell probabilities (marginal over the grid)
@@ -1148,7 +1167,7 @@ pub fn adjusted_chi2_pairs(
         } else {
             f64::NAN
         },
-        max_ratio: max,
+        max_ratio: if count > 0 { max } else { f64::NAN },
     })
 }
 

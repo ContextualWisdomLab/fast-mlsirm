@@ -11,6 +11,7 @@ import pytest
 from fast_mlsirm.config import FitConfig
 from fast_mlsirm.fit import fit
 from fast_mlsirm.fitstats import (
+    adjusted_chi2_pairs,
     benjamini_hochberg,
     chi2_sf,
     _lord_wingersky,
@@ -272,6 +273,47 @@ def test_residual_item_fit_rejects_invalid_inputs_before_native(monkeypatch):
             mask=np.ones((10, 4)),
             n_bins=2,
         )
+
+
+@pytest.mark.skipif(
+    fitstats_module._core_module() is None, reason="compiled core unavailable"
+)
+def test_adjusted_chi2_pairs_rejects_invalid_inputs_and_preserves_undefined_max():
+    def params(n_persons):
+        return SimpleNamespace(
+            alpha=np.zeros(2),
+            b=np.zeros(2),
+            zeta=np.zeros((2, 1)),
+            tau=-30.0,
+            theta=np.zeros((n_persons, 1)),
+            xi=np.zeros((n_persons, 1)),
+        )
+
+    factor_id = np.zeros(2, dtype=np.int64)
+    nonbinary = np.zeros((20, 2))
+    nonbinary[0, 0] = 2.0
+    with pytest.raises(ValueError, match="0 or 1"):
+        adjusted_chi2_pairs(
+            nonbinary, factor_id, params(20), "MIRT", q_theta=7, q_xi=3
+        )
+
+    with pytest.raises(ValueError, match="boolean"):
+        adjusted_chi2_pairs(
+            np.zeros((20, 2)),
+            factor_id,
+            params(20),
+            "MIRT",
+            mask=np.ones((20, 2)),
+            q_theta=7,
+            q_xi=3,
+        )
+
+    sparse = adjusted_chi2_pairs(
+        np.zeros((19, 2)), factor_id, params(19), "MIRT", q_theta=7, q_xi=3
+    )
+    assert np.isnan(sparse["ratio"]).all()
+    assert np.isnan(sparse["mean_ratio"])
+    assert np.isnan(sparse["max_ratio"])
 
 
 def test_select_items_removes_sparse_and_scrambled():

@@ -96,6 +96,41 @@ fn residual_fit_and_adjusted_chi2_calibrate_on_true_model() {
 }
 
 #[test]
+fn adjusted_chi2_rejects_nonbinary_data_and_marks_empty_summary_undefined() {
+    let (alpha, b, zeta, fid, mut y, observed) = sim_bank(20, 2, 17);
+    let bank = mk_bank(&alpha, &b, &zeta, &fid);
+    let prior = PriorSpec::standard(1);
+    y[0] = 2.0;
+    let err = adjusted_chi2_pairs(
+        &bank,
+        &y,
+        &observed,
+        20,
+        &prior,
+        7,
+        XiRule::GaussHermite { q_xi: 3 },
+    )
+    .err()
+    .expect("non-binary observed responses must be rejected");
+    assert!(err.contains("0 or 1"), "unexpected error: {err}");
+
+    let (_, _, _, _, sparse_y, sparse_observed) = sim_bank(19, 2, 18);
+    let sparse = adjusted_chi2_pairs(
+        &bank,
+        &sparse_y,
+        &sparse_observed,
+        19,
+        &prior,
+        7,
+        XiRule::GaussHermite { q_xi: 3 },
+    )
+    .unwrap();
+    assert!(sparse.ratio.iter().all(|value| value.is_nan()));
+    assert!(sparse.mean_ratio.is_nan());
+    assert!(sparse.max_ratio.is_nan());
+}
+
+#[test]
 fn residual_fit_rejects_inputs_that_can_hide_misfit() {
     let (alpha, b, zeta, fid, mut y, observed) = sim_bank(10, 1, 7);
     let bank = mk_bank(&alpha, &b, &zeta, &fid);
