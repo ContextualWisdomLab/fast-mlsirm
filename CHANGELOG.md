@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Applied `font-variant-numeric: tabular-nums` to the generated diagnostics
+  report and every report-generating script (benchmark report, buyer packet,
+  commercial release, Figma evidence sync, PR queue governance, procurement
+  due diligence, release evidence index) so numeric columns align vertically.
+
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so
   `fit(estimator="mmle")` now runs on the Rust core when the extension is built
