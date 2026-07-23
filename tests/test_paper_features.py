@@ -5334,3 +5334,94 @@ def test_detect_analysis_rejects_degenerate_inputs():
     # astype(int64) (which would collapse distinct labels into one cluster)
     with pytest.raises(ValueError, match="64-bit"):
         detect_analysis(base, [2.0**63, 2.0**63, 2.0**63 + 2048, 0.0])
+
+
+def test_classification_accuracy_matches_independent_reference():
+    """Rudner and Lee classification accuracy/consistency (Rudner, 2001,
+    2005; Lee, 2010, as cited in Lathrop's cacIRT sources): every assert
+    reads crate outputs returned through the wrapper against literals from
+    an independent NumPy transcription (exact math.erf / own recursion,
+    never this crate). Rudner tolerance 1e-6 covers the crate erfc
+    approximation (|err| < 1.2e-7); Lee values are exact-recursion, pinned
+    at 1e-12. Weights are deliberately unnormalized (kills a forgot-to-
+    normalize mutation); Lee cut 2.4 is non-integer (kills floor-vs-ceil);
+    theta[2] == cut -0.4 anchors left-closed categorization."""
+    from fast_mlsirm import lee_classification, rudner_classification
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rudner_classification"):
+        pytest.skip("compiled core built without classification")
+
+    r = rudner_classification(
+        theta=[-1.7, -0.63, -0.4, 0.11, 0.52, 1.28, 1.95],
+        sem=[0.85, 0.42, 0.31, 0.27, 0.33, 0.48, 0.66],
+        cutscores=(-0.4, 0.85),
+        weights=[0.4, 1.1, 1.7, 2.3, 1.9, 0.8, 0.3],
+    )
+    tol = 1e-6
+    assert abs(r.per_cut_accuracy[0] - 0.8506551287597999) < tol
+    assert abs(r.per_cut_consistency[1] - 0.9068646398531202) < tol
+    assert abs(r.simultaneous_accuracy - 0.7952699812339523) < tol
+    assert abs(r.simultaneous_consistency - 0.7315355182946305) < tol
+    assert r.conditional_accuracy.shape == (2, 7)
+    assert abs(r.conditional_accuracy[1, 4] - 0.8413447460685428) < tol
+    # theta exactly on the cut -> upper category (left-closed)
+    assert abs(r.conditional_simultaneous_accuracy[2] - 0.4999723782624206) < tol
+
+    p = np.array(
+        [
+            [0.08, 0.15, 0.22, 0.31, 0.12, 0.19],
+            [0.23, 0.34, 0.41, 0.52, 0.28, 0.37],
+            [0.47, 0.55, 0.61, 0.68, 0.51, 0.58],
+            [0.66, 0.72, 0.79, 0.83, 0.69, 0.76],
+            [0.81, 0.87, 0.90, 0.93, 0.84, 0.88],
+        ]
+    )
+    le = lee_classification(
+        p, cutscores=(2.4, 4.0), weights=[0.6, 1.4, 2.0, 1.4, 0.6]
+    )
+    tol = 1e-12
+    assert abs(le.per_cut_accuracy[0] - 0.8221250493919999) < tol
+    assert abs(le.per_cut_consistency[1] - 0.7071425914148844) < tol
+    assert abs(le.simultaneous_accuracy - 0.6284128106933332) < tol
+    assert abs(le.simultaneous_consistency - 0.5754886794891432) < tol
+    assert abs(le.conditional_consistency[1, 2] - 0.5012741633381826) < tol
+    assert abs(le.conditional_simultaneous_accuracy[2] - 0.2992865452) < tol
+
+    # true score exactly on an integer cut -> upper category (left-closed);
+    # dyadic probs make the sum exact in binary64
+    edge = lee_classification([[0.5, 0.5, 0.5, 0.5, 0.25, 0.75]], cutscores=(3.0,))
+    assert abs(edge.per_cut_accuracy[0] - 0.6640625) < tol
+    assert abs(edge.per_cut_consistency[0] - 0.5538330078125) < tol
+
+
+def test_classification_rejects_degenerate_inputs():
+    """Trust-boundary rejections; asserts read the ValueError/RuntimeError
+    raised by the wrapper/crate at the Rust boundary."""
+    from fast_mlsirm import lee_classification, rudner_classification
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rudner_classification"):
+        pytest.skip("compiled core built without classification")
+
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5], (0.0,))  # length mismatch
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.0], (0.0,))  # sem <= 0
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.5], (0.3, 0.3))  # cuts not increasing
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.5], (0.0,), weights=[0.0, 0.0])
+
+    good = [[0.2, 0.4], [0.6, 0.8]]
+    with pytest.raises(ValueError):
+        lee_classification([[1.0, 0.4], [0.6, 0.8]], (1.5,))  # P == 1
+    with pytest.raises(ValueError):
+        lee_classification(good, (2.5,))  # raw cut > n_items
+    with pytest.raises(ValueError):
+        lee_classification(good, (0.2, 0.9))  # ceil-collision at 1
+    with pytest.raises(ValueError):
+        lee_classification(np.array([0.2, 0.4]), (1.5,))  # 1-D probs
+
