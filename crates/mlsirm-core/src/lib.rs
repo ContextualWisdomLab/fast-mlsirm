@@ -3,6 +3,7 @@ pub mod cdm;
 pub mod crm;
 pub mod dif;
 pub mod equating;
+pub mod facets;
 pub mod fitstats;
 pub mod gpcm;
 pub mod grm;
