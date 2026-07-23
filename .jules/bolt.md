@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Vectorizing Nested Categorical Aggregations using Boolean Masks
+**Learning:** 파이썬 루프 안에서 그룹별 요약을 수행하는 것은 큰 성능 저하를 야기합니다. 특히 `.diagnostics` 모듈과 같이 범주형 부분집합을 집계할 때 이 문제가 두드러집니다.
+**Action:** 그룹(예: `strata`나 `factor_id`)별 집계를 계산할 때는 파이썬 루프를 제거하고 그룹 식별자를 2D 부울 맵핑 마스크(예: `mask = (ids[:, None] == unique_ids)`)로 투영(브로드캐스트)하여 행렬 곱셈을 사용해 O(1) 수준으로 빠르게 계산해야 합니다.
