@@ -114,6 +114,22 @@
 
 ### Added
 
+- **Cronbach alpha + Feldt exact-F confidence interval**
+  (`fast_mlsirm.cronbach_alpha`, `fast_mlsirm.feldt_alpha_ci`; in
+  `mlsirm_core::reliability`; Feldt, 1965, as cited in and implemented by
+  Revelle's CRAN `psych` 2.6.5 source `alpha.ci` in `R/alpha.R`, read line
+  by line; Cronbach, 1951, covariance form verified against the same
+  source). `cronbach_alpha` computes the raw-covariance form
+  `p/(p-1) * (1 - tr(C)/sum(C))`; `feldt_alpha_ci` inverts the pivot
+  `(1-alpha)/(1-alpha_hat) ~ F(n-1, (n-1)(p-1))` into a two-sided interval
+  (`lower = 1-(1-alpha_hat)*qF(1-delta/2)`, upper mirrored) plus the
+  implied average inter-item correlation `r_bar`. The F quantile is
+  computed in-crate via a Lentz continued-fraction regularized incomplete
+  beta and bisection (verified against `scipy.stats.f.ppf` fixture
+  literals at 1e-9). Bounds are not clamped; negative alpha is accepted
+  into the CI, matching psych. Divergences (documented in the module):
+  raw-data input only, zero-variance items rejected, confidence `level`
+  argument instead of `p.val`, hard errors instead of NA.
 - **ten Berge & Zegers mu reliability series** (`fast_mlsirm.tenberge_mu`;
   in `mlsirm_core::reliability`; ten Berge & Zegers, 1978, as cited in and
   implemented by Revelle's CRAN `psych` 2.6.5 source `tenberge.R`, read
