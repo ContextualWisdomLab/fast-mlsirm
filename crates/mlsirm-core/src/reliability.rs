@@ -502,7 +502,7 @@ pub fn cronbach_alpha(data: &[f64], n: usize, p: usize) -> Result<f64, String> {
 /// Regularized incomplete beta I_x(a, b) via Lentz continued fraction
 /// (Numerical Recipes 3rd ed., sec. 6.4 `betacf` form; transcribed and
 /// verified against scipy.stats fixtures in the test suite).
-fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }

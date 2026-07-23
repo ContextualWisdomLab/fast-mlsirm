@@ -5721,3 +5721,67 @@ def test_feldt_ci_rejects_degenerate_inputs():
         feldt_alpha_ci(0.8, 30, 6, level=1.0)
     with pytest.raises(ValueError):
         feldt_alpha_ci(0.8, 2, 6)
+
+
+def test_livingston_lewis_matches_independent_reference():
+    """Livingston-Lewis single-administration classification (Livingston &
+    Lewis, 1995, as implemented in CRAN betafunctions 1.9.0 LL.CA, read in
+    full): every assert reads crate outputs returned through the wrapper
+    against literals from an independent scipy.integrate.quad replication
+    of the pipeline (never this crate). The fixture takes the genuine
+    four-parameter path (kills a dropped-failsafe-branch confusion) and has
+    round(48 * 0.56) = 27 != floor = 26 (anchors round-ties-even in k).
+    Integral tolerance 1e-7 covers the crate Gauss-Legendre quadrature."""
+    from fast_mlsirm import livingston_lewis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "livingston_lewis"):
+        pytest.skip("compiled core built without livingston_lewis")
+
+    scores = [11, 14, 16, 17, 19, 20, 21, 22, 23, 23, 24, 25, 25, 26, 27,
+              27, 28, 29, 30, 31, 31, 32, 33, 34, 35, 36, 38, 39, 41, 44]
+    r = livingston_lewis(scores, 0.82, 0.0, 50.0, 28.0)
+    assert abs(r.effective_test_length - 47.50171019930535) < 1e-9
+    assert r.etl_rounded == 48
+    assert not r.used_two_parameter
+    assert abs(r.lower - 0.19555999873721175) < 1e-9
+    assert abs(r.upper - 0.9652932601665462) < 1e-9
+    assert abs(r.alpha - 2.7763142806015297) < 1e-9
+    assert abs(r.beta - 3.2986812798601846) < 1e-9
+    tol = 1e-7
+    assert abs(r.p_tp - 0.40501323923680005) < tol
+    assert abs(r.p_fp - 0.07917200341607164) < tol
+    assert abs(r.p_tf - 0.46137445417258505) < tol
+    assert abs(r.p_ff - 0.05444030317454212) < tol
+    assert abs(r.accuracy - 0.866387693409385) < tol
+    assert abs(r.sensitivity - 0.8815107553881857) < tol
+    assert abs(r.specificity - 0.8535333969826517) < tol
+    assert abs(r.p_ii - 0.4232336892048015) < tol
+    assert abs(r.p_ij - 0.0925810681423261) < tol
+    assert r.p_ji == r.p_ij  # symmetric by construction (single threshold)
+    assert abs(r.p_jj - 0.39160417451054624) < tol
+    assert abs(r.consistency - 0.8148378637153477) < tol
+    assert abs(r.chance_consistency - 0.5005002130998969) < tol
+    assert abs(r.kappa - 0.6293048743148242) < tol
+
+
+def test_livingston_lewis_rejects_degenerate_inputs():
+    """Trust-boundary rejections; asserts read the ValueError raised by the
+    wrapper/crate at the Rust boundary."""
+    from fast_mlsirm import livingston_lewis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "livingston_lewis"):
+        pytest.skip("compiled core built without livingston_lewis")
+
+    good = [11.0, 14.0, 20.0, 25.0, 31.0, 36.0, 41.0, 44.0]
+    with pytest.raises(ValueError):
+        livingston_lewis(good, 1.0, 0.0, 50.0, 28.0)  # reliability >= 1
+    with pytest.raises(ValueError):
+        livingston_lewis(good, 0.82, 0.0, 50.0, 50.0)  # cut not inside
+    with pytest.raises(ValueError):
+        livingston_lewis(good, 0.82, 12.0, 50.0, 28.0)  # score below min
+    with pytest.raises(ValueError):
+        livingston_lewis([20.0, 20.0, 20.0], 0.82, 0.0, 50.0, 10.0)  # var 0

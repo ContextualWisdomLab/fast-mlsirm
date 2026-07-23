@@ -45,6 +45,7 @@ from .detect import (
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
+    livingston_lewis as livingston_lewis,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -182,6 +183,7 @@ __all__ = [
     "detect_analysis",
     "rudner_classification",
     "lee_classification",
+    "livingston_lewis",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
