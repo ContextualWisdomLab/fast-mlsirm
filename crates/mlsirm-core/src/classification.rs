@@ -323,6 +323,405 @@ pub fn lee_classification(
     Ok(assemble(n_points, cutscores, &wn, masses, |i| ts[i]))
 }
 
+// ===================== Livingston & Lewis (1995) =====================
+
+/// Livingston-Lewis classification consistency and accuracy summary.
+///
+/// Orientation: "pass" means observed score `>= cut`. Accuracy cells are
+/// joint proportions over (true state, observed state) and sum to 1;
+/// consistency cells are joint proportions over two hypothetical independent
+/// administrations, normalized to sum to 1 (`i` = fail, `j` = pass).
+#[derive(Clone, Debug)]
+pub struct LivingstonLewisResult {
+    /// Unrounded effective test length (Livingston & Lewis, 1995, as
+    /// implemented in betafunctions' `ETL`).
+    pub effective_test_length: f64,
+    /// `round-ties-even(effective_test_length)`, the `N` used in all
+    /// binomial integrals (mirrors R `round()`).
+    pub etl_rounded: u64,
+    /// Lower location of the fitted beta true-score distribution.
+    pub lower: f64,
+    /// Upper location of the fitted beta true-score distribution.
+    pub upper: f64,
+    /// First shape parameter of the fitted beta true-score distribution.
+    pub alpha: f64,
+    /// Second shape parameter of the fitted beta true-score distribution.
+    pub beta: f64,
+    /// True iff the two-parameter fail-safe replaced the four-parameter fit.
+    pub used_two_parameter: bool,
+    /// P(true pass, observed pass).
+    pub p_tp: f64,
+    /// P(true fail, observed pass) — false positive.
+    pub p_fp: f64,
+    /// P(true fail, observed fail).
+    pub p_tf: f64,
+    /// P(true pass, observed fail) — false negative.
+    pub p_ff: f64,
+    /// `p_tp + p_tf`.
+    pub accuracy: f64,
+    /// `p_tp / (p_tp + p_ff)` — P(observed pass | true pass); `NaN` when
+    /// the true-pass margin vanishes (cut outside the fitted support).
+    pub sensitivity: f64,
+    /// `p_tf / (p_tf + p_fp)` — P(observed fail | true fail); `NaN` when
+    /// the true-fail margin vanishes.
+    pub specificity: f64,
+    /// Consistency cell: fail on both administrations.
+    pub p_ii: f64,
+    /// Consistency cell: fail then pass (equals `p_ji` by construction here).
+    pub p_ij: f64,
+    /// Consistency cell: pass then fail.
+    pub p_ji: f64,
+    /// Consistency cell: pass on both administrations.
+    pub p_jj: f64,
+    /// `p_ii + p_jj` — expected agreement between two administrations.
+    pub consistency: f64,
+    /// Chance agreement `(p_ii+p_ij)(p_ii+p_ji) + (p_ij+p_jj)(p_ji+p_jj)`.
+    pub chance_consistency: f64,
+    /// Cohen's kappa `(p - p_c) / (1 - p_c)`; `NaN` when `p_c == 1`.
+    pub kappa: f64,
+}
+
+/// Gauss-Legendre nodes/weights on `[-1, 1]` by Newton iteration on the
+/// Legendre polynomial recurrence (Press et al., 2007, sec. 4.6 `gauleg`;
+/// transcribed from the textbook algorithm and verified in the test suite
+/// against the exact 2-node rule and polynomial-exactness identities).
+fn gauss_legendre(n: usize) -> (Vec<f64>, Vec<f64>) {
+    let mut x = vec![0.0; n];
+    let mut w = vec![0.0; n];
+    let m = n.div_ceil(2);
+    for i in 0..m {
+        // Initial guess: Chebyshev approximation to the i-th root.
+        let mut z = (std::f64::consts::PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+        let mut pp = 0.0;
+        for _ in 0..100 {
+            let mut p1 = 1.0;
+            let mut p2 = 0.0;
+            for j in 0..n {
+                let p3 = p2;
+                p2 = p1;
+                let jf = j as f64;
+                p1 = ((2.0 * jf + 1.0) * z * p2 - jf * p3) / (jf + 1.0);
+            }
+            pp = n as f64 * (z * p1 - p2) / (z * z - 1.0);
+            let z1 = z;
+            z = z1 - p1 / pp;
+            if (z - z1).abs() < 1e-15 {
+                break;
+            }
+        }
+        x[i] = -z;
+        x[n - 1 - i] = z;
+        w[i] = 2.0 / ((1.0 - z * z) * pp * pp);
+        w[n - 1 - i] = w[i];
+    }
+    (x, w)
+}
+
+/// `integral_{t0}^{t1} t^(a-1) (1-t)^(b-1) g(t) dt / B(a, b)`. Endpoint
+/// singularities (shape < 1) are absorbed exactly by power substitutions
+/// (spec rev 2): on `t <= 1/2` with `a < 1` substitute `v = t^a` so
+/// `t^(a-1) dt = dv / a`; on `t >= 1/2` with `b < 1` symmetrically
+/// `w = (1-t)^b`. For shape >= 1 the integrand is bounded and integrated
+/// directly (substituting there would introduce a `v^(1/a)` derivative kink
+/// at 0 and LOSE accuracy — measured 2e-5 mass error on a smooth
+/// alpha ~ 8.5 case). Each piece: 64-node Gauss-Legendre over 8
+/// subintervals, geometrically graded toward the splitting endpoint on the
+/// direct path to handle the unbounded `t^(a-1)` derivative for
+/// 1 < shape < 2.
+fn beta_weighted_integral(a: f64, b: f64, t0: f64, t1: f64, g: impl Fn(f64) -> f64) -> f64 {
+    let ln_b = crate::fitstats::ln_gamma(a) + crate::fitstats::ln_gamma(b)
+        - crate::fitstats::ln_gamma(a + b);
+    let (nodes, weights) = gauss_legendre(64);
+    let gl = |lo: f64, hi: f64, f: &dyn Fn(f64) -> f64| -> f64 {
+        let c = 0.5 * (lo + hi);
+        let h = 0.5 * (hi - lo);
+        nodes
+            .iter()
+            .zip(&weights)
+            .map(|(z, wt)| wt * f(c + h * z))
+            .sum::<f64>()
+            * h
+    };
+    // Uniform 8-subinterval composite.
+    let composite = |lo: f64, hi: f64, f: &dyn Fn(f64) -> f64| -> f64 {
+        if hi <= lo {
+            return 0.0;
+        }
+        let n_sub = 8;
+        let h = (hi - lo) / n_sub as f64;
+        (0..n_sub)
+            .map(|s| gl(lo + s as f64 * h, lo + (s + 1) as f64 * h, f))
+            .sum()
+    };
+    // Composite geometrically graded toward `lo` (ratio 4 per level).
+    let graded = |lo: f64, hi: f64, f: &dyn Fn(f64) -> f64| -> f64 {
+        if hi <= lo {
+            return 0.0;
+        }
+        let mut total = 0.0;
+        let mut right = hi;
+        let len = hi - lo;
+        for lev in 1..8 {
+            let left = lo + len * 4.0_f64.powi(-lev);
+            total += gl(left, right, f);
+            right = left;
+        }
+        total + gl(lo, right, f)
+    };
+    let mut total = 0.0;
+    // Left piece: t in [t0, min(t1, 1/2)].
+    let tl = t1.min(0.5);
+    if t0 < tl {
+        if a < 1.0 {
+            let f = |v: f64| {
+                let t = v.powf(1.0 / a);
+                (1.0 - t).powf(b - 1.0) * g(t) / a
+            };
+            total += composite(t0.powf(a), tl.powf(a), &f);
+        } else {
+            let f = |t: f64| t.powf(a - 1.0) * (1.0 - t).powf(b - 1.0) * g(t);
+            total += graded(t0, tl, &f);
+        }
+    }
+    // Right piece: t in [max(t0, 1/2), t1].
+    let tr = t0.max(0.5);
+    if tr < t1 {
+        if b < 1.0 {
+            let f = |wv: f64| {
+                let t = 1.0 - wv.powf(1.0 / b);
+                t.powf(a - 1.0) * g(t) / b
+            };
+            total += composite((1.0 - t1).powf(b), (1.0 - tr).powf(b), &f);
+        } else {
+            let f = |t: f64| t.powf(a - 1.0) * (1.0 - t).powf(b - 1.0) * g(t);
+            // graded toward t1 (the potentially singular-derivative end):
+            // mirror through u = t0 + t1 - t is unnecessary — grade by
+            // integrating the reflected function.
+            let fr = |u: f64| f(tr + t1 - u);
+            total += graded(tr, t1, &fr);
+        }
+    }
+    total / ln_b.exp()
+}
+
+/// Falling factorial `a (a-1) ... (a-r+1)` with the oracle's clamp: for the
+/// data path the caller zeroes values below `r` (betafunctions `dfac`).
+fn falling_factorial(a: f64, r: u32) -> f64 {
+    (0..r).map(|j| a - j as f64).product()
+}
+
+/// Livingston-Lewis (1995) classification accuracy and consistency for one
+/// cut score, from observed scores and a reliability estimate.
+///
+/// Pipeline (spec `ll_spec.md` rev 2; each step verified line-by-line against
+/// the CRAN betafunctions 1.9.0 sources, the only obtainable oracle — the
+/// 1995 paper itself is paywalled and was NOT read):
+///
+/// 1. Effective test length `ETL = ((m-min)(max-m) - r s^2) / (s^2 (1-r))`
+///    with sample variance (`ddof = n-1`); integrals use
+///    `N = round_ties_even(ETL)`, moment estimation uses the unrounded ETL
+///    (matching `LL.CA`'s call order).
+/// 2. True-score raw moments by the binomial factorial-moment identity
+///    (`HB.tsm` with Lord's k = 0): `m_i = mean(ff(x', i)) / ff(ETL, i)` on
+///    `x' = (x-min)/(max-min) * ETL`, `ff(x', i) := 0` when `x' < i`.
+/// 3. Four-parameter beta moment fit (`Beta.4p.fit`); fail-safe to the
+///    standard two-parameter fit (`AMS`/`BMS` at `l=0, u=1`) when the 4P
+///    solution has `l < 0`, `u > 1`, or is numerically invalid (the last is
+///    a documented divergence: the oracle only checks the location bounds).
+/// 4. Accuracy cells `integral f(p) * BinTail(p)` split at the rescaled cut;
+///    consistency cells `integral f(p) * Tail * Tail` (Hanson-style, per the
+///    oracle's own docs; Hanson 1991 NOT read). Passing threshold
+///    `k = round_ties_even(N c)` is used in BOTH blocks — a documented
+///    divergence from the oracle, which mixes `round` (accuracy) and `floor`
+///    (consistency) and is therefore asymmetric in `p_ij`/`p_ji`; under the
+///    single threshold `p_ij == p_ji` by construction.
+///
+/// Orientation: pass = observed `>= cut`; the oracle's `caStats` labels fail
+/// as "positive", so its sensitivity is this function's specificity.
+///
+/// # References
+///
+/// Haakstad, H. (2023). *betafunctions: Functions for working with two- and
+/// four-parameter beta probability distributions* (Version 1.9.0)
+/// \[R package\]. CRAN. <https://CRAN.R-project.org/package=betafunctions>
+///
+/// Hanson, B. A. (1991). *Method of moments estimates for the four-parameter
+/// beta compound binomial model and the calculation of classification
+/// consistency indexes* (ACT Research Report 91-5). (As cited in Haakstad,
+/// 2023; not read.)
+///
+/// Livingston, S. A., & Lewis, C. (1995). Estimating the consistency and
+/// accuracy of classifications based on test scores. *Journal of Educational
+/// Measurement, 32*(2), 179-197.
+/// https://doi.org/10.1111/j.1745-3984.1995.tb00462.x (As implemented in
+/// Haakstad, 2023; the paper itself was not obtainable.)
+///
+/// Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P.
+/// (2007). *Numerical recipes: The art of scientific computing* (3rd ed.).
+/// Cambridge University Press. (Sec. 4.6 Gauss-Legendre `gauleg`.)
+pub fn livingston_lewis(
+    scores: &[f64],
+    reliability: f64,
+    min: f64,
+    max: f64,
+    cut: f64,
+) -> Result<LivingstonLewisResult, String> {
+    let n = scores.len();
+    if n < 10 {
+        return Err("at least 10 observed scores are required".into());
+    }
+    if !min.is_finite() || !max.is_finite() || min >= max {
+        return Err("min and max must be finite with min < max".into());
+    }
+    if scores
+        .iter()
+        .any(|x| !x.is_finite() || *x < min || *x > max)
+    {
+        return Err("scores must be finite and within [min, max]".into());
+    }
+    if !cut.is_finite() || cut <= min || cut >= max {
+        return Err("cut must be strictly inside (min, max)".into());
+    }
+    if !reliability.is_finite() || reliability <= 0.0 || reliability >= 1.0 {
+        return Err("reliability must be in the open interval (0, 1)".into());
+    }
+    let nf = n as f64;
+    let mean = scores.iter().sum::<f64>() / nf;
+    let s2 = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nf - 1.0);
+    if s2 <= 0.0 {
+        return Err("observed-score variance must be positive".into());
+    }
+    let etl = ((mean - min) * (max - mean) - reliability * s2) / (s2 * (1.0 - reliability));
+    if !etl.is_finite() || etl < 2.0 {
+        return Err(format!(
+            "effective test length {etl:.4} is not usable (needs >= 2); \
+             check the reliability and score bounds"
+        ));
+    }
+    // True-score raw moments (HB.tsm, k = 0) on the unrounded ETL scale.
+    let mut m = [0.0_f64; 5];
+    for (i, mi) in m.iter_mut().enumerate().skip(1) {
+        let r = i as u32;
+        let num = scores
+            .iter()
+            .map(|x| {
+                let xp = (x - min) / (max - min) * etl;
+                if xp < r as f64 {
+                    0.0
+                } else {
+                    falling_factorial(xp, r)
+                }
+            })
+            .sum::<f64>()
+            / nf;
+        *mi = num / falling_factorial(etl, r);
+    }
+    let m1 = m[1];
+    let ts2 = m[2] - m1 * m1;
+    if !(ts2 > 0.0) {
+        return Err("estimated true-score variance is not positive".into());
+    }
+    let g3 = (m[3] - 3.0 * m1 * m[2] + 2.0 * m1.powi(3)) / ts2.powf(1.5);
+    let g4 = (m[4] - 4.0 * m1 * m[3] + 6.0 * m1 * m1 * m[2] - 3.0 * m1.powi(4)) / (ts2 * ts2);
+    // Four-parameter beta moment fit with two-parameter fail-safe.
+    let mut used_two_parameter = true;
+    let (mut a, mut b, mut lower, mut upper) = (f64::NAN, f64::NAN, 0.0, 1.0);
+    let rr = 6.0 * (g4 - g3 * g3 - 1.0) / (6.0 + 3.0 * g3 * g3 - 2.0 * g4);
+    let d =
+        1.0 - 24.0 * (rr + 1.0) / ((rr + 2.0) * (rr + 3.0) * g4 - 3.0 * (rr - 6.0) * (rr + 1.0));
+    if d.is_finite() && d >= 0.0 {
+        let sq = d.sqrt();
+        let (a4, b4) = if g3 < 0.0 {
+            (rr / 2.0 * (1.0 + sq), rr / 2.0 * (1.0 - sq))
+        } else {
+            (rr / 2.0 * (1.0 - sq), rr / 2.0 * (1.0 + sq))
+        };
+        if a4.is_finite() && b4.is_finite() && a4 > 0.0 && b4 > 0.0 {
+            let spread = (ts2 * (a4 + b4 + 1.0)).sqrt() / (a4 * b4).sqrt();
+            let l4 = m1 - a4 * spread;
+            let u4 = m1 + b4 * spread;
+            if l4 >= 0.0 && u4 <= 1.0 {
+                a = a4;
+                b = b4;
+                lower = l4;
+                upper = u4;
+                used_two_parameter = false;
+            }
+        }
+    }
+    if used_two_parameter {
+        let scale = m1 * (1.0 - m1) / ts2 - 1.0;
+        a = m1 * scale;
+        b = (1.0 - m1) * scale;
+        lower = 0.0;
+        upper = 1.0;
+    }
+    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
+        return Err("beta true-score fit produced invalid shape parameters".into());
+    }
+    let n_int = etl.round_ties_even();
+    let nn = n_int as u64;
+    let c = (cut - min) / (max - min);
+    let k = (n_int * c).round_ties_even();
+    // P(X <= k-1 | N, p) via the binomial-beta CDF identity
+    // P(X <= m) = I_{1-p}(N-m, m+1) with m = k-1.
+    let fail_prob = |t: f64| -> f64 {
+        let p = (lower + (upper - lower) * t).clamp(0.0, 1.0);
+        if k <= 0.0 {
+            0.0
+        } else if k - 1.0 >= n_int {
+            1.0
+        } else {
+            crate::reliability::inc_beta(n_int - k + 1.0, k, 1.0 - p)
+        }
+    };
+    // x-domain cut mapped to the beta t-domain (density is zero outside).
+    let tc = ((c - lower) / (upper - lower)).clamp(0.0, 1.0);
+    let p_tp = beta_weighted_integral(a, b, tc, 1.0, |t| 1.0 - fail_prob(t));
+    let p_fp = beta_weighted_integral(a, b, 0.0, tc, |t| 1.0 - fail_prob(t));
+    let p_ff = beta_weighted_integral(a, b, tc, 1.0, &fail_prob);
+    let p_tf = beta_weighted_integral(a, b, 0.0, tc, &fail_prob);
+    let p_ii_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t).powi(2));
+    let p_ij_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t) * (1.0 - fail_prob(t)));
+    let p_jj_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| (1.0 - fail_prob(t)).powi(2));
+    let tot = p_ii_raw + 2.0 * p_ij_raw + p_jj_raw;
+    if !(tot > 0.0) {
+        return Err("consistency integrals degenerated to zero mass".into());
+    }
+    let p_ii = p_ii_raw / tot;
+    let p_ij = p_ij_raw / tot;
+    let p_jj = p_jj_raw / tot;
+    let consistency = p_ii + p_jj;
+    let chance_consistency = (p_ii + p_ij) * (p_ii + p_ij) + (p_ij + p_jj) * (p_ij + p_jj);
+    // Conditional ratios are undefined when their margin (or the chance
+    // correction) vanishes, e.g. a cut outside the fitted beta support;
+    // return an explicit NaN rather than an unstable near-0/0 quotient.
+    let ratio = |num: f64, den: f64| if den > 1e-12 { num / den } else { f64::NAN };
+    Ok(LivingstonLewisResult {
+        effective_test_length: etl,
+        etl_rounded: nn,
+        lower,
+        upper,
+        alpha: a,
+        beta: b,
+        used_two_parameter,
+        p_tp,
+        p_fp,
+        p_tf,
+        p_ff,
+        accuracy: p_tp + p_tf,
+        sensitivity: ratio(p_tp, p_tp + p_ff),
+        specificity: ratio(p_tf, p_tf + p_fp),
+        p_ii,
+        p_ij,
+        p_ji: p_ij,
+        p_jj,
+        consistency,
+        chance_consistency,
+        kappa: ratio(consistency - chance_consistency, 1.0 - chance_consistency),
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/classification_tests.rs"]
 mod tests;

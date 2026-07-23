@@ -28,6 +28,7 @@ use mlsirm_core::cdm::{
 };
 use mlsirm_core::classification::{
     lee_classification as core_lee_classification,
+    livingston_lewis as core_livingston_lewis,
     rudner_classification as core_rudner_classification, ClassificationResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
@@ -1758,6 +1759,48 @@ fn lee_classification(
     )
     .map_err(PyValueError::new_err)?;
     classification_result_to_dict(py, res)
+}
+
+/// Livingston & Lewis (1995, as implemented in CRAN betafunctions 1.9.0
+/// `LL.CA`) classification accuracy and consistency from a single test
+/// administration (`mlsirm_core::classification`). `scores` are raw
+/// observed scores in `[min_score, max_score]`; `reliability` is in (0, 1)
+/// and `cut` is strictly inside `(min_score, max_score)`. Pass = observed
+/// score >= cut.
+#[pyfunction]
+fn livingston_lewis(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    reliability: f64,
+    min_score: f64,
+    max_score: f64,
+    cut: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_livingston_lewis(scores.as_slice()?, reliability, min_score, max_score, cut)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("effective_test_length", res.effective_test_length)?;
+    out.set_item("etl_rounded", res.etl_rounded)?;
+    out.set_item("lower", res.lower)?;
+    out.set_item("upper", res.upper)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("beta", res.beta)?;
+    out.set_item("used_two_parameter", res.used_two_parameter)?;
+    out.set_item("p_tp", res.p_tp)?;
+    out.set_item("p_fp", res.p_fp)?;
+    out.set_item("p_tf", res.p_tf)?;
+    out.set_item("p_ff", res.p_ff)?;
+    out.set_item("accuracy", res.accuracy)?;
+    out.set_item("sensitivity", res.sensitivity)?;
+    out.set_item("specificity", res.specificity)?;
+    out.set_item("p_ii", res.p_ii)?;
+    out.set_item("p_ij", res.p_ij)?;
+    out.set_item("p_ji", res.p_ji)?;
+    out.set_item("p_jj", res.p_jj)?;
+    out.set_item("consistency", res.consistency)?;
+    out.set_item("chance_consistency", res.chance_consistency)?;
+    out.set_item("kappa", res.kappa)?;
+    Ok(out.into())
 }
 
 /// Horn's parallel analysis for principal-component retention
@@ -5480,6 +5523,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
