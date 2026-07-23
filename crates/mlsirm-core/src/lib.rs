@@ -6,6 +6,7 @@ pub mod detect;
 pub mod dif;
 pub mod equating;
 pub mod facets;
+pub mod factor;
 pub mod fitstats;
 pub mod gpcm;
 pub mod grm;

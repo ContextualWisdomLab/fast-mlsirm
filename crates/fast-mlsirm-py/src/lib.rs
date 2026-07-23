@@ -45,6 +45,11 @@ use mlsirm_core::fitstats::{
     person_fit_resampling as core_person_fit_resampling,
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
+use mlsirm_core::factor::{
+    minres_fa_corr as core_minres_fa_corr, minres_fa_data as core_minres_fa_data,
+    omega_total_1f_corr as core_omega_total_1f_corr,
+    omega_total_1f_data as core_omega_total_1f_data, MinresFaResult,
+};
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
@@ -1872,6 +1877,79 @@ fn d_study_rows_to_py(
             Ok(d.into())
         })
         .collect()
+}
+
+fn minres_fa_to_py(py: Python<'_>, res: &MinresFaResult) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("loadings", res.loadings.to_vec())?;
+    out.set_item("uniquenesses", res.uniquenesses.to_vec())?;
+    out.set_item("communalities", res.communalities.to_vec())?;
+    out.set_item("objective", res.objective)?;
+    out.set_item("kkt_violation", res.kkt_violation)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+/// Minres (ULS) exploratory factor analysis (`mlsirm_core::factor`;
+/// transcription of psych fa.R, fm = "minres"). `corr` is a flattened
+/// row-major `p x p` correlation matrix. `loadings` in the result dict is
+/// flattened row-major `p x n_factors` (unrotated, column sums >= 0).
+#[pyfunction]
+fn minres_fa(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+    n_factors: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_minres_fa_corr(corr.as_slice()?, p, n_factors).map_err(PyValueError::new_err)?;
+    minres_fa_to_py(py, &res)
+}
+
+/// [`minres_fa`] from raw data (`n x p` flattened row-major; Pearson
+/// correlations computed internally, complete data required).
+#[pyfunction]
+fn minres_fa_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+    n_factors: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_minres_fa_data(data.as_slice()?, n, p, n_factors).map_err(PyValueError::new_err)?;
+    minres_fa_to_py(py, &res)
+}
+
+/// McDonald's omega_total for the 1-factor case from a correlation matrix
+/// (`mlsirm_core::factor`): `(sum lambda)^2 / ((sum lambda)^2 + sum psi)`
+/// on a 1-factor minres fit. Returns the omega plus the embedded fit dict.
+#[pyfunction]
+fn omega_total_1f(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_omega_total_1f_corr(corr.as_slice()?, p).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("omega_total", res.omega_total)?;
+    out.set_item("fa", minres_fa_to_py(py, &res.fa)?)?;
+    Ok(out.into())
+}
+
+/// [`omega_total_1f`] from raw data (`n x p` flattened row-major).
+#[pyfunction]
+fn omega_total_1f_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_omega_total_1f_data(data.as_slice()?, n, p).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("omega_total", res.omega_total)?;
+    out.set_item("fa", minres_fa_to_py(py, &res.fa)?)?;
+    Ok(out.into())
 }
 
 /// Horn's parallel analysis for principal-component retention
@@ -5597,6 +5675,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;

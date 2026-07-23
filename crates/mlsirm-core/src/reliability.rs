@@ -368,7 +368,7 @@ fn binomial(n: usize, k: usize) -> u128 {
 
 /// Gauss-Jordan inverse with partial pivoting. Errors when a pivot falls
 /// below `1e-12` (singular / numerically singular input).
-fn invert_symmetric(matrix: &[f64], p: usize) -> Result<Vec<f64>, String> {
+pub(crate) fn invert_symmetric(matrix: &[f64], p: usize) -> Result<Vec<f64>, String> {
     let mut a = matrix.to_vec();
     let mut inv = vec![0.0_f64; p * p];
     for i in 0..p {

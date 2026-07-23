@@ -60,6 +60,12 @@ from .reliability import (
     feldt_alpha_ci as feldt_alpha_ci,
     AlphaCiResult as AlphaCiResult,
 )
+from .factor import (
+    minres_fa as minres_fa,
+    minres_fa_from_data as minres_fa_from_data,
+    omega_total_1f as omega_total_1f,
+    omega_total_1f_from_data as omega_total_1f_from_data,
+)
 from .gtheory import (
     gtheory_pi as gtheory_pi,
     gtheory_pio as gtheory_pio,
@@ -200,6 +206,10 @@ __all__ = [
     "AlphaCiResult",
     "gtheory_pi",
     "gtheory_pio",
+    "minres_fa",
+    "minres_fa_from_data",
+    "omega_total_1f",
+    "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
     "ClassificationResult",

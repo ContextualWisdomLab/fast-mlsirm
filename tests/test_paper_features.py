@@ -5865,3 +5865,54 @@ def test_gtheory_pio_matches_paper_tables_and_rejects_bad_input():
         gtheory_pio(scores[:1])  # n_p < 2
     with pytest.raises(ValueError):
         gtheory_pi(np.array([[1.0, np.nan], [2.0, 3.0]]))  # non-finite
+
+
+def test_minres_fa_oracle_parity_9x2():
+    """Rust minres FA matches the pinned scipy L-BFGS-B oracle (session
+    oracle_minres.py) on the 9-var / 2-factor exact-structure matrix.
+    Asserts read crate outputs via the binding (loadings/uniquenesses/
+    objective/converged)."""
+    import numpy as np
+
+    from fast_mlsirm import minres_fa
+
+    lam = np.zeros((9, 2))
+    lam[:5, 0] = [0.8, 0.7, 0.6, 0.5, 0.4]
+    lam[4:, 1] = [0.3, 0.7, 0.6, 0.5, 0.45]
+    s = lam @ lam.T
+    np.fill_diagonal(s, 1.0)
+    r = minres_fa(s, 2)
+    assert r.converged
+    assert r.objective < 1e-9
+    assert r.loadings.shape == (9, 2)
+    want_row0 = (0.780565885133, -0.175262374782)
+    assert abs(r.loadings[0, 0] - want_row0[0]) < 5e-5
+    assert abs(r.loadings[0, 1] - want_row0[1]) < 5e-5
+    want_psi = [0.36, 0.51, 0.64, 0.75, 0.75, 0.51, 0.64, 0.75, 0.7975]
+    assert np.allclose(r.uniquenesses, want_psi, atol=5e-5)
+    assert np.allclose(r.communalities, (r.loadings**2).sum(axis=1), atol=1e-12)
+
+
+def test_omega_total_1f_oracle_parity():
+    """omega_total_1f on the pinned 6-var sampled-data correlation matrix
+    reproduces the oracle omega (0.825058734426). Asserts read the crate
+    omega and embedded fit via the binding."""
+    import numpy as np
+
+    from fast_mlsirm import omega_total_1f
+
+    r6 = np.array(
+        [
+            [1.0, 0.498568868921, 0.625966200012, 0.370348287807, 0.540999349418, 0.424034177377],
+            [0.498568868921, 1.0, 0.511016876110, 0.334681533406, 0.380581491599, 0.347762451610],
+            [0.625966200012, 0.511016876110, 1.0, 0.345954222399, 0.593952865689, 0.454414314062],
+            [0.370348287807, 0.334681533406, 0.345954222399, 1.0, 0.327886204696, 0.311070632680],
+            [0.540999349418, 0.380581491599, 0.593952865689, 0.327886204696, 1.0, 0.415636442046],
+            [0.424034177377, 0.347762451610, 0.454414314062, 0.311070632680, 0.415636442046, 1.0],
+        ]
+    )
+    o = omega_total_1f(r6)
+    assert o.fa.converged
+    assert abs(o.omega_total - 0.825058734426) < 1e-5
+    assert abs(o.fa.loadings[0, 0] - 0.774100663868) < 5e-5
+    assert abs(o.fa.uniquenesses[2] - 0.345079760758) < 5e-5
