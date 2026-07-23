@@ -293,5 +293,6 @@ pub fn detect_analysis(
     })
 }
 
+#[cfg(test)]
 #[path = "../../../tests/unit/detect_tests.rs"]
 mod tests;
