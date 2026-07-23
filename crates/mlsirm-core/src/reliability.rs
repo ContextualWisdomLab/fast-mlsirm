@@ -410,6 +410,251 @@ fn invert_symmetric(matrix: &[f64], p: usize) -> Result<Vec<f64>, String> {
     Ok(inv)
 }
 
+/// Result of a Feldt (1965) confidence interval for coefficient alpha.
+///
+/// Feldt, L. S. (1965). The approximate sampling distribution of
+/// Kuder-Richardson reliability coefficient twenty. Psychometrika, 30(3),
+/// 357-370. https://doi.org/10.1007/BF02289499 (paper unobtainable; formula
+/// as cited in and verified against Revelle, W. (2025), psych R package
+/// v2.6.5, `alpha.ci` in R/alpha.R, read in full).
+#[derive(Debug, Clone, Copy)]
+pub struct AlphaCiResult {
+    /// The point estimate passed in.
+    pub alpha: f64,
+    /// Lower confidence bound (may be negative; not clamped, matching psych).
+    pub lower: f64,
+    /// Upper confidence bound.
+    pub upper: f64,
+    /// Average inter-item correlation implied by alpha:
+    /// `r_bar = alpha / (p - alpha*(p-1))` (Spearman-Brown inversion).
+    pub r_bar: f64,
+    /// Numerator degrees of freedom, `n - 1`.
+    pub df1: f64,
+    /// Denominator degrees of freedom, `(n - 1) * (p - 1)`.
+    pub df2: f64,
+}
+
+/// Cronbach's coefficient alpha from raw data (covariance form).
+///
+/// `alpha = p/(p-1) * (1 - tr(C)/sum(C))` on the sample covariance matrix C
+/// (denominator n-1; the n vs n-1 choice cancels in the ratio).
+///
+/// Cronbach, L. J. (1951). Coefficient alpha and the internal structure of
+/// tests. Psychometrika, 16(3), 297-334. https://doi.org/10.1007/BF02310555
+/// (covariance form verified against Revelle (2025) psych v2.6.5 R/alpha.R
+/// raw-alpha computation; the 1951 paper itself was not re-read for this
+/// implementation).
+///
+/// `data` is row-major n x p. Divergences from psych::alpha: raw-data input
+/// only (no reverse-keying/check.keys), zero-variance items are rejected
+/// rather than dropped with a warning, hard errors instead of NA.
+pub fn cronbach_alpha(data: &[f64], n: usize, p: usize) -> Result<f64, String> {
+    if n < 3 {
+        return Err("cronbach_alpha needs at least 3 persons".into());
+    }
+    if p < 2 {
+        return Err("cronbach_alpha needs at least 2 items".into());
+    }
+    if data.len() != n * p {
+        return Err(format!("data length {} != n*p = {}", data.len(), n * p));
+    }
+    if data.iter().any(|v| !v.is_finite()) {
+        return Err("data contains non-finite values".into());
+    }
+    let nf = n as f64;
+    let mut means = vec![0.0; p];
+    for row in data.chunks_exact(p) {
+        for (m, v) in means.iter_mut().zip(row) {
+            *m += v;
+        }
+    }
+    for m in &mut means {
+        *m /= nf;
+    }
+    // Covariance matrix accumulators: trace and full sum are all we need.
+    let mut trace = 0.0;
+    let mut total = 0.0;
+    for j in 0..p {
+        for k in j..p {
+            let mut acc = 0.0;
+            for row in data.chunks_exact(p) {
+                acc += (row[j] - means[j]) * (row[k] - means[k]);
+            }
+            let cov = acc / (nf - 1.0);
+            if j == k {
+                if cov <= 0.0 {
+                    return Err(format!("item {j} has non-positive variance"));
+                }
+                trace += cov;
+                total += cov;
+            } else {
+                total += 2.0 * cov;
+            }
+        }
+    }
+    if total <= 0.0 {
+        return Err("total-score variance (sum of covariance matrix) is not positive".into());
+    }
+    let pf = p as f64;
+    Ok(pf / (pf - 1.0) * (1.0 - trace / total))
+}
+
+/// Regularized incomplete beta I_x(a, b) via Lentz continued fraction
+/// (Numerical Recipes 3rd ed., sec. 6.4 `betacf` form; transcribed and
+/// verified against scipy.stats fixtures in the test suite).
+fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let ln_front = crate::fitstats::ln_gamma(a + b)
+        - crate::fitstats::ln_gamma(a)
+        - crate::fitstats::ln_gamma(b)
+        + a * x.ln()
+        + b * (1.0 - x).ln();
+    // Symmetry: use the tail where the continued fraction converges fast.
+    if x < (a + 1.0) / (a + b + 2.0) {
+        ln_front.exp() * beta_cf(a, b, x) / a
+    } else {
+        1.0 - ln_front.exp() * beta_cf(b, a, 1.0 - x) / b
+    }
+}
+
+fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
+    const TINY: f64 = 1e-300;
+    const EPS: f64 = 1e-15;
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < TINY {
+        d = TINY;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+    for m in 1..=300 {
+        let mf = m as f64;
+        let m2 = 2.0 * mf;
+        // even step
+        let aa = mf * (b - mf) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+        // odd step
+        let aa = -(a + mf) * (qab + mf) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < TINY {
+            d = TINY;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < TINY {
+            c = TINY;
+        }
+        d = 1.0 / d;
+        let del = d * c;
+        h *= del;
+        if (del - 1.0).abs() < EPS {
+            break;
+        }
+    }
+    h
+}
+
+/// F-distribution CDF: P(F <= x; d1, d2) = I_z(d1/2, d2/2) with
+/// z = d1*x / (d1*x + d2).
+fn f_cdf(x: f64, d1: f64, d2: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let z = d1 * x / (d1 * x + d2);
+    inc_beta(d1 / 2.0, d2 / 2.0, z)
+}
+
+/// F-distribution quantile by bisection on z in (0, 1), then
+/// x = d2*z / (d1*(1 - z)). Endpoints: prob <= 0 -> 0, prob >= 1 -> +inf
+/// (matching qf/scipy; bisection alone would return a finite cap).
+fn f_quantile(prob: f64, d1: f64, d2: f64) -> f64 {
+    if prob <= 0.0 {
+        return 0.0;
+    }
+    if prob >= 1.0 {
+        return f64::INFINITY;
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        let x = d2 * mid / (d1 * (1.0 - mid));
+        if f_cdf(x, d1, d2) < prob {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let z = 0.5 * (lo + hi);
+    d2 * z / (d1 * (1.0 - z))
+}
+
+/// Feldt (1965) exact-F confidence interval for coefficient alpha.
+///
+/// The pivot (1-alpha)/(1-alpha_hat) is approximately F(n-1, (n-1)(p-1)), so
+/// for a two-sided interval at confidence `level` (delta = 1 - level):
+///
+/// `lower = 1 - (1-alpha_hat) * F^-1(1-delta/2; df1, df2)`
+/// `upper = 1 - (1-alpha_hat) * F^-1(delta/2;   df1, df2)`
+///
+/// Feldt, L. S. (1965). The approximate sampling distribution of
+/// Kuder-Richardson reliability coefficient twenty. Psychometrika, 30(3),
+/// 357-370. https://doi.org/10.1007/BF02289499 (paper unobtainable; bound
+/// mapping verified line-by-line against Revelle (2025) psych v2.6.5
+/// `alpha.ci`, and numerically against scipy.stats.f.ppf fixtures).
+///
+/// Negative `alpha` is allowed (alpha can be negative); bounds are not
+/// clamped, matching psych. Divergence from psych: takes the confidence
+/// `level` (e.g. 0.95) rather than p.val, and errors instead of NA.
+pub fn feldt_alpha_ci(alpha: f64, n: usize, p: usize, level: f64) -> Result<AlphaCiResult, String> {
+    if !alpha.is_finite() {
+        return Err("alpha must be finite".into());
+    }
+    if alpha >= 1.0 {
+        return Err("alpha must be < 1 (pivot degenerate at alpha = 1)".into());
+    }
+    if n < 3 {
+        return Err("feldt_alpha_ci needs at least 3 persons".into());
+    }
+    if p < 2 {
+        return Err("feldt_alpha_ci needs at least 2 items".into());
+    }
+    if !(level > 0.0 && level < 1.0) {
+        return Err("level must be in (0, 1)".into());
+    }
+    let df1 = (n - 1) as f64;
+    let df2 = ((n - 1) * (p - 1)) as f64;
+    let delta = 1.0 - level;
+    let one_minus = 1.0 - alpha;
+    let lower = 1.0 - one_minus * f_quantile(1.0 - delta / 2.0, df1, df2);
+    let upper = 1.0 - one_minus * f_quantile(delta / 2.0, df1, df2);
+    let pf = p as f64;
+    let r_bar = alpha / (pf - alpha * (pf - 1.0));
+    Ok(AlphaCiResult {
+        alpha,
+        lower,
+        upper,
+        r_bar,
+        df1,
+        df2,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

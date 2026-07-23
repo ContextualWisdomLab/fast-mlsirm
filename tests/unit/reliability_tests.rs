@@ -321,3 +321,225 @@ fn mc_tenberge_alpha_recovery_and_ordering() {
     );
     assert_eq!(ordered, reps);
 }
+
+// ---------------------------------------------------------------------------
+// Cronbach alpha + Feldt (1965) CI tests.
+//
+// Fixture literals from an independent NumPy+scipy replication
+// (feldt_fixture.py; scipy.stats.f.ppf), pinned at 1e-9. Every assert reads
+// crate outputs (cronbach_alpha / feldt_alpha_ci return values).
+//
+// Mutation kills verified by hand (see PR evidence):
+//   M1 swap delta/2 <-> 1-delta/2 in feldt_alpha_ci   -> fixture lower/upper FAIL
+//   M2 flip z orientation in f_cdf (d2/(d1x+d2))      -> fixture FAIL
+//   M3 df2 = n-1 instead of (n-1)(p-1)                -> fixtures A/B FAIL
+//       (p=2 fixture passes under M3: (n-1)(p-1) == n-1 there by identity)
+//   M4 tr/sum inversion in cronbach_alpha             -> fixture FAIL
+// Equivalent mutant (survives, disclosed): dropping the symmetry branch in
+// inc_beta ("if true") still converges within 300 CF iterations at these dfs;
+// the branch is convergence acceleration, not correctness, for this domain.
+// Known limit: bisection iteration-count mutations (200 -> 50) survive at
+// 1e-9 (2^-50 interval still beats the tolerance); the scipy literals are the
+// discriminating anchor for everything coarser.
+// ---------------------------------------------------------------------------
+
+const ATOL: f64 = 1e-9;
+
+#[test]
+fn alpha_fixture_a_unequal_variances() {
+    let d = gen_data(
+        30,
+        6,
+        42,
+        &[0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        &[10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        &[1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    );
+    let a = cronbach_alpha(&d, 30, 6).unwrap();
+    assert!((a - 0.26300193786625514).abs() < ATOL, "alpha {a}");
+    let ci = feldt_alpha_ci(a, 30, 6, 0.95).unwrap();
+    assert!(
+        (ci.lower - -0.23710034474579156).abs() < ATOL,
+        "lower {}",
+        ci.lower
+    );
+    assert!(
+        (ci.upper - 0.6065060295943752).abs() < ATOL,
+        "upper {}",
+        ci.upper
+    );
+    assert!(
+        (ci.r_bar - 0.05613713592263862).abs() < ATOL,
+        "r_bar {}",
+        ci.r_bar
+    );
+    assert_eq!(ci.df1, 29.0);
+    assert_eq!(ci.df2, 145.0);
+    // Narrower level nests strictly inside (kills tail-swap mutations too).
+    let ci90 = feldt_alpha_ci(a, 30, 6, 0.90).unwrap();
+    assert!(
+        (ci90.lower - -0.13926063775356812).abs() < ATOL,
+        "lower90 {}",
+        ci90.lower
+    );
+    assert!(
+        (ci90.upper - 0.563407303756001).abs() < ATOL,
+        "upper90 {}",
+        ci90.upper
+    );
+    assert!(ci.lower < ci90.lower && ci90.upper < ci.upper);
+    assert!(ci90.lower < a && a < ci90.upper);
+}
+
+#[test]
+fn alpha_fixture_b() {
+    let d = gen_data(
+        24,
+        5,
+        99,
+        &[0.7, 0.6, 0.5, 0.4, 0.3],
+        &[0.0, 1.0, 2.0, 3.0, 4.0],
+        &[1.0, 1.0, 1.0, 1.0, 1.0],
+    );
+    let a = cronbach_alpha(&d, 24, 5).unwrap();
+    assert!((a - 0.3580775296654029).abs() < ATOL, "alpha {a}");
+    let ci = feldt_alpha_ci(a, 24, 5, 0.95).unwrap();
+    assert!(
+        (ci.lower - -0.16244546058178866).abs() < ATOL,
+        "lower {}",
+        ci.lower
+    );
+    assert!(
+        (ci.upper - 0.6888373608056122).abs() < ATOL,
+        "upper {}",
+        ci.upper
+    );
+    assert!(
+        (ci.r_bar - 0.10036677558170307).abs() < ATOL,
+        "r_bar {}",
+        ci.r_bar
+    );
+}
+
+#[test]
+fn alpha_fixture_negative_p2() {
+    // Anti-correlated pair -> negative alpha; p=2 boundary; CI must not clamp.
+    let mut d = gen_data(20, 2, 7, &[0.8, 0.8], &[0.0, 0.0], &[1.0, 1.0]);
+    for row in d.chunks_exact_mut(2) {
+        row[1] = -row[1];
+    }
+    let a = cronbach_alpha(&d, 20, 2).unwrap();
+    assert!((a - -1.2239392688014856).abs() < ATOL, "alpha {a}");
+    let ci = feldt_alpha_ci(a, 20, 2, 0.95).unwrap();
+    assert!(
+        (ci.lower - -4.618673441887094).abs() < ATOL,
+        "lower {}",
+        ci.lower
+    );
+    assert!(
+        (ci.upper - 0.11973779532270723).abs() < ATOL,
+        "upper {}",
+        ci.upper
+    );
+    assert!(
+        (ci.r_bar - -0.3796409196183434).abs() < ATOL,
+        "r_bar {}",
+        ci.r_bar
+    );
+    assert_eq!(ci.df2, 19.0);
+}
+
+#[test]
+fn alpha_zscored_equals_lambda3() {
+    // Covariance of z-scored columns is the correlation matrix, so alpha on
+    // z-scores must match guttman lambda3 on the raw data (tolerance 1e-10,
+    // not exact: means/sds are recomputed in floating point).
+    let d = gen_data(
+        30,
+        6,
+        42,
+        &[0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        &[10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        &[1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    );
+    let g = guttman_lambdas(&d, 30, 6, 15000, 1).unwrap();
+    let (n, p) = (30usize, 6usize);
+    let mut z = d.clone();
+    for j in 0..p {
+        let mean = (0..n).map(|i| d[i * p + j]).sum::<f64>() / n as f64;
+        let var = (0..n).map(|i| (d[i * p + j] - mean).powi(2)).sum::<f64>() / (n as f64 - 1.0);
+        let sd = var.sqrt();
+        for i in 0..n {
+            z[i * p + j] = (d[i * p + j] - mean) / sd;
+        }
+    }
+    let a = cronbach_alpha(&z, n, p).unwrap();
+    assert!(
+        (a - g.lambda3).abs() < 1e-10,
+        "alpha {a} vs lambda3 {}",
+        g.lambda3
+    );
+}
+
+#[test]
+fn feldt_ci_extreme_level_endpoints() {
+    // Regression (impl-review D1): level so close to 1 that the quantile
+    // probability rounds to 1.0 must give an infinite bound (as qf/scipy),
+    // not a finite bisection cap. Asserts read crate outputs.
+    let level = 1.0 - f64::EPSILON / 2.0; // nextdown(1.0), passes level < 1
+    let ci = feldt_alpha_ci(0.8, 30, 6, level).unwrap();
+    assert_eq!(ci.lower, f64::NEG_INFINITY, "lower {}", ci.lower);
+    // delta/2 is tiny but nonzero, so the upper bound is finite and < 1.
+    assert!(ci.upper.is_finite() && ci.upper < 1.0, "upper {}", ci.upper);
+}
+
+#[test]
+fn alpha_rejections() {
+    let d = gen_data(
+        10,
+        3,
+        5,
+        &[0.5, 0.5, 0.5],
+        &[0.0, 0.0, 0.0],
+        &[1.0, 1.0, 1.0],
+    );
+    assert!(cronbach_alpha(&d[..6], 2, 3).is_err());
+    assert!(cronbach_alpha(&d[..10], 5, 2).is_ok());
+    assert!(cronbach_alpha(&d, 10, 4).is_err()); // length mismatch
+    let mut bad = d.clone();
+    bad[0] = f64::NAN;
+    assert!(cronbach_alpha(&bad, 10, 3).is_err());
+    let mut flat = d.clone();
+    for row in flat.chunks_exact_mut(3) {
+        row[0] = 1.0; // zero-variance item
+    }
+    assert!(cronbach_alpha(&flat, 10, 3).is_err());
+    assert!(feldt_alpha_ci(1.0, 30, 6, 0.95).is_err());
+    assert!(feldt_alpha_ci(f64::NAN, 30, 6, 0.95).is_err());
+    assert!(feldt_alpha_ci(0.8, 2, 6, 0.95).is_err());
+    assert!(feldt_alpha_ci(0.8, 30, 1, 0.95).is_err());
+    assert!(feldt_alpha_ci(0.8, 30, 6, 0.0).is_err());
+    assert!(feldt_alpha_ci(0.8, 30, 6, 1.0).is_err());
+}
+
+#[test]
+#[ignore = "monte carlo: 500 reps"]
+fn alpha_feldt_ci_coverage_mc() {
+    // Tau-equivalent model: p=8, loading 0.7, scale 1 -> true reliability of
+    // the sum score rho = 31.36/39.36 (see guttman MC derivation). Empirical
+    // 95% CI coverage over 500 reps should land in [0.925, 0.975]; every rep
+    // reads crate outputs.
+    let rho = 31.36 / 39.36;
+    let reps: u64 = 500;
+    let mut covered = 0;
+    for r in 0..reps {
+        let d = gen_data(300, 8, 1000 + r, &[0.7; 8], &[0.0; 8], &[1.0; 8]);
+        let a = cronbach_alpha(&d, 300, 8).unwrap();
+        let ci = feldt_alpha_ci(a, 300, 8, 0.95).unwrap();
+        if ci.lower <= rho && rho <= ci.upper {
+            covered += 1;
+        }
+    }
+    let cov = covered as f64 / reps as f64;
+    assert!((0.925..=0.975).contains(&cov), "coverage {cov}");
+}
