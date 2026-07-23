@@ -62,6 +62,7 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::subscores::subscores as core_subscores;
+use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -1633,6 +1634,52 @@ fn subscore_analysis(
     out.set_item("subscore_s", flatten(res.subscore_s))?;
     out.set_item("subscore_x", flatten(res.subscore_x))?;
     out.set_item("subscore_sx", flatten(res.subscore_sx))?;
+    Ok(out.into())
+}
+
+/// Confirmatory DETECT dimensionality analysis (Zhang & Stout, 1999, as
+/// implemented by CRAN sirt's sum-score `scale_score=FALSE` path). `x` is a
+/// flattened row-major `n_persons * n_items` binary (0/1, no missing)
+/// response matrix; `cluster[j]` is the opaque integer cluster label of item
+/// `j`. Returns a dict with `detect`, `assi`, `ratio`, `madcov100`,
+/// `mcov100`, `n_pairs`, and the per-pair `pair_i`, `pair_j`, `ccov`.
+#[pyfunction]
+fn detect_analysis(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    cluster: Vec<i64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let flat = x.as_slice()?;
+    // Validate BEFORE any allocation: unchecked n_persons * n_items can wrap
+    // on 64-bit and then panic with capacity overflow.
+    if n_persons < 2 || n_items < 2 || cluster.len() != n_items {
+        return Err(PyValueError::new_err(
+            "need n_persons >= 2, n_items >= 2, and one cluster label per item",
+        ));
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| PyValueError::new_err("n_persons * n_items overflows"))?;
+    if flat.len() != expected {
+        return Err(PyValueError::new_err(format!(
+            "x has {} entries, expected n_persons * n_items = {expected}",
+            flat.len(),
+        )));
+    }
+    let res = core_detect_analysis(flat, n_persons, n_items, &cluster)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("detect", res.detect)?;
+    out.set_item("assi", res.assi)?;
+    out.set_item("ratio", res.ratio)?;
+    out.set_item("madcov100", res.madcov100)?;
+    out.set_item("mcov100", res.mcov100)?;
+    out.set_item("n_pairs", res.n_pairs)?;
+    out.set_item("pair_i", res.pair_i)?;
+    out.set_item("pair_j", res.pair_j)?;
+    out.set_item("ccov", res.ccov)?;
     Ok(out.into())
 }
 
@@ -5236,6 +5283,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mokken_aisp, m)?)?;
     m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
     m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
