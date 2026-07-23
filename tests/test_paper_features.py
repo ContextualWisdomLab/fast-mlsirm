@@ -5425,3 +5425,87 @@ def test_classification_rejects_degenerate_inputs():
     with pytest.raises(ValueError):
         lee_classification(np.array([0.2, 0.4]), (1.5,))  # 1-D probs
 
+
+
+def test_parallel_analysis_matches_numpy_fixture():
+    """Horn parallel analysis (paran PCA path): fixture literals computed by
+    an independent NumPy replication that mirrors the crate LCG stream with
+    np.uint64 arithmetic and uses np.corrcoef + np.linalg.eigvalsh. Every
+    assert reads crate outputs returned through the wrapper. Duplicate
+    columns give analytic observed eigenvalues {2, 0}; the random benchmark,
+    bias, adjustment, and retention are pinned deterministically
+    (n=12, p=2, iterations=20, centile=0, seed=7)."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    x = np.arange(1.0, 13.0)
+    res = parallel_analysis(
+        np.column_stack([x, x]), n_iterations=20, centile=0, seed=7
+    )
+    tol = 1e-9
+    assert abs(res.eigenvalues[0] - 2.0) < tol
+    assert abs(res.eigenvalues[1]) < tol
+    assert abs(res.random_eigenvalues[0] - 1.265490626983912) < tol
+    assert abs(res.random_eigenvalues[1] - 0.734509373016088) < tol
+    assert abs(res.bias[0] - 0.265490626983912) < tol
+    assert abs(res.adjusted_eigenvalues[0] - 1.734509373016088) < tol
+    assert abs(res.adjusted_eigenvalues[1] - 0.265490626983912) < tol
+    assert res.retained == 1
+
+
+def test_parallel_analysis_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    good = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 5.0], [4.0, 4.5]])
+    with pytest.raises(ValueError):
+        parallel_analysis(good[:2], n_iterations=5)  # n_persons < 3
+    with pytest.raises(ValueError):
+        parallel_analysis(good[:, :1], n_iterations=5)  # n_items < 2
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=0)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, centile=100)
+    bad = good.copy()
+    bad[1, 1] = np.nan
+    with pytest.raises(ValueError):
+        parallel_analysis(bad, n_iterations=5)
+    const = good.copy()
+    const[:, 0] = 1.0
+    with pytest.raises(ValueError):
+        parallel_analysis(const, n_iterations=5)  # zero variance
+    with pytest.raises(ValueError):
+        parallel_analysis(np.array([1.0, 2.0, 3.0]), n_iterations=5)  # 1-D
+
+
+def test_parallel_analysis_rejects_negative_scalars_and_huge_data():
+    """Impl-review regressions: negative scalars raise ValueError (not
+    PyO3 OverflowError) via wrapper validation; finite-but-huge data that
+    overflows the correlation computation is rejected by the crate."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    good = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 5.0], [4.0, 4.5]])
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=-1)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, centile=-3)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, seed=-1)
+    big = 1e308
+    huge = np.array([[big, big], [big, -big], [-big, big], [-big, -big]])
+    with pytest.raises(ValueError):
+        parallel_analysis(huge, n_iterations=5)

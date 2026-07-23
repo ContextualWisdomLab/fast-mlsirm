@@ -68,6 +68,7 @@ use mlsirm_core::classification::{
 };
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
+use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -1752,6 +1753,38 @@ fn lee_classification(
     )
     .map_err(PyValueError::new_err)?;
     classification_result_to_dict(py, res)
+}
+
+/// Horn's parallel analysis for principal-component retention
+/// (`mlsirm_core::parallel`; oracle: CRAN paran 1.5.6, PCA path). `data` is
+/// a flattened row-major `n_persons * n_items` matrix; `centile` is 0 for
+/// the mean benchmark or 1..=99 for Glorfeld's upper-centile variant.
+#[pyfunction]
+fn parallel_analysis(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_iterations: usize,
+    centile: u32,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_parallel_analysis(
+        data.as_slice()?,
+        n_persons,
+        n_items,
+        n_iterations,
+        centile,
+        seed,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("retained", res.retained)?;
+    out.set_item("eigenvalues", res.eigenvalues)?;
+    out.set_item("random_eigenvalues", res.random_eigenvalues)?;
+    out.set_item("bias", res.bias)?;
+    out.set_item("adjusted_eigenvalues", res.adjusted_eigenvalues)?;
+    Ok(out.into())
 }
 
 /// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
@@ -5357,6 +5390,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
