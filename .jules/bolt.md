@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Replacing Newton-Raphson Item Loop in MMLE
+**Learning:** In MMLE estimators, running a Python `for` loop over each item to compute Newton-Raphson parameter updates incurs massive execution overhead when `n_items` is large (e.g., hundreds or thousands). Repeatedly creating boolean masks, scalar selections, and vector updates in Python significantly degrades performance.
+**Action:** Replace `for i in range(n_items):` update loops with a fully vectorized approach using a boolean `active_mask` to track unconverged/non-singular items. Vectorize the mathematical computations using 2D matrix multiplications (`@`) for aggregations over quadrature nodes. This avoids scalar operation overhead and drastically reduces computation time.
