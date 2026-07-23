@@ -7,6 +7,7 @@ pub mod facets;
 pub mod fitstats;
 pub mod gpcm;
 pub mod grm;
+pub mod ksirt;
 pub mod linking;
 pub mod lltm;
 pub mod marginal;

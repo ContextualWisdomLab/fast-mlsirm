@@ -208,7 +208,7 @@ pub fn coef_h(x: &[i64], n_persons: usize, n_items: usize) -> Result<MokkenH, St
 /// Standard-normal upper quantile via inverse complementary error function
 /// (Acklam-style rational approximation; |error| < 1.15e-9, sufficient for
 /// an alpha cut-off). Returns z such that P(N(0,1) > z) = p.
-fn normal_upper_quantile(p: f64) -> f64 {
+pub(crate) fn normal_upper_quantile(p: f64) -> f64 {
     // invert the CDF at 1 - p using Peter Acklam's approximation
     let q = 1.0 - p;
     debug_assert!(q > 0.0 && q < 1.0);

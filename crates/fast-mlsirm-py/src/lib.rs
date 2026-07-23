@@ -60,6 +60,7 @@ use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
+use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -1511,6 +1512,65 @@ fn mokken_aisp(
     alpha: f64,
 ) -> PyResult<Vec<u32>> {
     core_mokken_aisp(x.as_slice()?, n_persons, n_items, c, alpha).map_err(PyValueError::new_err)
+}
+
+/// Kernel-smoothing nonparametric option characteristic curves
+/// (`mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza, Punzo, &
+/// McGuire, 2014, https://doi.org/10.18637/jss.v058.i06). `x` is a
+/// row-major complete `n_persons * n_items` pre-scored response matrix.
+/// Returns a dict with `theta` (`N`), `grid` (`Q`), `bandwidth` (`J`), and
+/// per-item lists `options`, `occ` (flattened `m_j * Q`, row-major by
+/// option), `expected` (`Q`), plus `expected_total` (`Q`).
+#[pyfunction]
+#[pyo3(signature = (x, n_persons, n_items, kernel = "gaussian", nevalpoints = 51, bandwidth = None))]
+fn ksirt_occ(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    kernel: &str,
+    nevalpoints: usize,
+    bandwidth: Option<Vec<f64>>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let flat = x.as_slice()?;
+    if flat.len() != n_persons * n_items {
+        return Err(PyValueError::new_err(format!(
+            "x has {} entries, expected n_persons * n_items = {}",
+            flat.len(),
+            n_persons * n_items
+        )));
+    }
+    let kern = match kernel {
+        "gaussian" => KsirtKernel::Gaussian,
+        "quadratic" => KsirtKernel::Quadratic,
+        "uniform" => KsirtKernel::Uniform,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown kernel '{other}' (expected gaussian, quadratic, or uniform)"
+            )))
+        }
+    };
+    let rows: Vec<Vec<f64>> = (0..n_persons)
+        .map(|i| flat[i * n_items..(i + 1) * n_items].to_vec())
+        .collect();
+    let res = core_ksirt(&rows, kern, nevalpoints, bandwidth.as_deref())
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta", res.theta)?;
+    out.set_item("grid", res.grid)?;
+    out.set_item("bandwidth", res.bandwidth)?;
+    out.set_item("expected_total", res.expected_total)?;
+    let options: Vec<Vec<f64>> = res.items.iter().map(|it| it.options.clone()).collect();
+    let occ: Vec<Vec<f64>> = res
+        .items
+        .iter()
+        .map(|it| it.occ.iter().flatten().copied().collect())
+        .collect();
+    let expected: Vec<Vec<f64>> = res.items.iter().map(|it| it.expected.clone()).collect();
+    out.set_item("options", options)?;
+    out.set_item("occ", occ)?;
+    out.set_item("expected", expected)?;
+    Ok(out.into())
 }
 
 /// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
@@ -5111,6 +5171,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_facets, m)?)?;
     m.add_function(wrap_pyfunction!(mokken_coef_h, m)?)?;
     m.add_function(wrap_pyfunction!(mokken_aisp, m)?)?;
+    m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

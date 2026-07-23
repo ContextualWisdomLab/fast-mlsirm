@@ -114,6 +114,26 @@
 
 ### Added
 
+- **Kernel-smoothing nonparametric IRT** (`fast_mlsirm.ksirt_analysis`; new
+  `mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza et al., 2014).
+  Estimates option characteristic curves by Nadaraya-Watson kernel regression
+  (gaussian/quadratic/uniform kernels) of option indicators on rank-based
+  ordinal ability estimates `qnorm(rank/(n+1))`, on an equally spaced
+  evaluation grid, with Silverman-rule default bandwidths, plus expected item
+  score and expected total score curves. Formulas verified against the
+  KernSmoothIRT JSS paper (Mazza et al., 2014, Sections 2-2.3) and the
+  KernSmoothIRT R/C++ package source read line-by-line; standard errors and
+  cross-validation bandwidth selection are deliberately out of scope (the R
+  implementation's SE accumulator is order-dependent and unverifiable from
+  read sources). For LLM-as-a-Judge item-quality management this reveals
+  non-monotone or poorly discriminating evaluation items without a parametric
+  model. Rust-only numerics; the Python wrapper validates and marshals. Tests
+  pin a hand-computed 4-person fixture (rank->theta qnorm literals, grid
+  endpoints, Silverman constant), enforce structural invariants
+  (row-sums-to-one with positive denominators, compact-support zeros,
+  zero-denominator fallback), and include a 500-replication Monte Carlo
+  recovery study (`#[ignore]`) under normal and skewed ability generation
+  using the rank-invariance composition oracle.
 - **Mokken scale analysis** (`fast_mlsirm.mokken_analysis`; new
   `mlsirm_core::mokken`; Mokken, 1971, as cited in van der Ark, 2007).
   Computes the Loevinger scalability coefficients `Hij`, `Hi`, `H` and their

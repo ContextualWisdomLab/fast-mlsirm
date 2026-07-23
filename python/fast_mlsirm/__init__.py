@@ -33,6 +33,7 @@ from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalRe
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
+from .ksirt import ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -149,6 +150,8 @@ __all__ = [
     "FacetsFit",
     "mokken_analysis",
     "MokkenResult",
+    "ksirt_analysis",
+    "KsirtResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",
