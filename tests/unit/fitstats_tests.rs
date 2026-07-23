@@ -19,6 +19,22 @@ fn bh_step_up_known_case() {
     assert!(r[0] && r[1]);
 }
 
+#[test]
+fn leniency_residuals_respect_mask_and_sign() {
+    let y = vec![1.0, 1.0, 0.0, 0.0];
+    let observed = vec![true, true, true, false];
+    let prob = vec![0.2, 0.2, 0.2, 0.2];
+    let result = leniency_residuals(&y, &observed, &prob, 2).unwrap();
+    // Reads crate-returned values and kills mutations that flip residual sign
+    // or ignore observed-mask filtering.
+    assert!(result.residual[0] > 0.75);
+    assert!(result.residual[1] < -0.15);
+    assert!(result.residual[0] > result.residual[1]);
+    assert_eq!(result.n_observed, vec![2, 1]);
+    assert!(result.abs_p95 > result.residual[1].abs());
+    assert!(result.abs_p95 < result.residual[0].abs());
+}
+
 fn toy_bank_data() -> (
     Vec<f64>,
     Vec<f64>,

@@ -143,6 +143,146 @@ pub fn benjamini_hochberg(p_values: &[f64], q: f64) -> Vec<bool> {
     reject
 }
 
+pub struct LeniencyResidualResult {
+    pub residual: Vec<f64>,
+    pub observed_mean: Vec<f64>,
+    pub expected_mean: Vec<f64>,
+    pub n_observed: Vec<usize>,
+    pub mean: f64,
+    pub sd: f64,
+    pub abs_p95: f64,
+}
+
+fn linear_quantile(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let clamped = q.clamp(0.0, 1.0);
+    let pos = clamped * (sorted.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let w = pos - lo as f64;
+        sorted[lo] * (1.0 - w) + sorted[hi] * w
+    }
+}
+
+/// Per-person observed-vs-expected pass-rate residuals.
+///
+/// This is the Rust compute kernel behind the response-bias proxy adaptation:
+/// `leniency_i = mean_j(y_ij) - mean_j(p_ij)` over observed cells only.
+/// It is intentionally descriptive and does not identify the tridimensional
+/// MRFA acquiescence / social-desirability factors in Ferrando et al. (2009).
+///
+/// # References
+///
+/// Ferrando, P. J., Lorenzo-Seva, U., & Chico, E. (2009). A general
+/// factor-analytic procedure for assessing response bias in questionnaire
+/// measures. *Structural Equation Modeling: A Multidisciplinary Journal,
+/// 16*(2), 364-381. https://doi.org/10.1080/10705510902751374
+pub fn leniency_residuals(
+    y: &[f64],
+    observed: &[bool],
+    prob: &[f64],
+    n_persons: usize,
+) -> Result<LeniencyResidualResult, String> {
+    if n_persons == 0 {
+        return Err("n_persons must be positive".into());
+    }
+    if y.len() != observed.len() || y.len() != prob.len() {
+        return Err("y, observed, and prob must share the same length".into());
+    }
+    if y.len() % n_persons != 0 {
+        return Err("response length must be divisible by n_persons".into());
+    }
+    let n_items = y.len() / n_persons;
+    if n_items == 0 {
+        return Err("n_items must be positive".into());
+    }
+    if y.iter()
+        .zip(observed.iter())
+        .any(|(&response, &seen)| seen && !(response == 0.0 || response == 1.0))
+    {
+        return Err("observed responses must be 0/1 for leniency residuals".into());
+    }
+    if prob
+        .iter()
+        .zip(observed.iter())
+        .any(|(&value, &seen)| seen && !(value.is_finite() && (0.0..=1.0).contains(&value)))
+    {
+        return Err("observed probabilities must be finite and in [0, 1]".into());
+    }
+
+    let mut residual = vec![f64::NAN; n_persons];
+    let mut observed_mean = vec![f64::NAN; n_persons];
+    let mut expected_mean = vec![f64::NAN; n_persons];
+    let mut n_observed = vec![0usize; n_persons];
+    for p in 0..n_persons {
+        let row = p * n_items;
+        let mut obs_sum = 0.0_f64;
+        let mut exp_sum = 0.0_f64;
+        let mut n = 0usize;
+        for i in 0..n_items {
+            let idx = row + i;
+            if !observed[idx] {
+                continue;
+            }
+            obs_sum += y[idx];
+            exp_sum += prob[idx];
+            n += 1;
+        }
+        n_observed[p] = n;
+        if n > 0 {
+            let obs = obs_sum / n as f64;
+            let exp = exp_sum / n as f64;
+            observed_mean[p] = obs;
+            expected_mean[p] = exp;
+            residual[p] = obs - exp;
+        }
+    }
+
+    let finite: Vec<f64> = residual.iter().copied().filter(|v| v.is_finite()).collect();
+    let mean = if finite.is_empty() {
+        f64::NAN
+    } else {
+        finite.iter().sum::<f64>() / finite.len() as f64
+    };
+    let sd = if finite.is_empty() {
+        f64::NAN
+    } else {
+        let var = finite
+            .iter()
+            .map(|value| {
+                let delta = *value - mean;
+                delta * delta
+            })
+            .sum::<f64>()
+            / finite.len() as f64;
+        var.sqrt()
+    };
+    let abs_p95 = if finite.is_empty() {
+        f64::NAN
+    } else {
+        let mut abs_values: Vec<f64> = finite.iter().map(|value| value.abs()).collect();
+        abs_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        linear_quantile(&abs_values, 0.95)
+    };
+    Ok(LeniencyResidualResult {
+        residual,
+        observed_mean,
+        expected_mean,
+        n_observed,
+        mean,
+        sd,
+        abs_p95,
+    })
+}
+
 pub struct SX2Result {
     pub statistic: Vec<f64>,
     pub g2_statistic: Vec<f64>,

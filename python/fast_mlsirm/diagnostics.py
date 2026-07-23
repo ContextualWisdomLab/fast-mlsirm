@@ -23,6 +23,15 @@ MAX_DIM_DIAGNOSTIC_FITS = 1_000
 MAX_DIM_DIAGNOSTIC_MASK_CELLS = 20_000_000
 
 
+def _core_module():
+    try:
+        from . import _core  # type: ignore
+
+        return _core
+    except Exception:  # pragma: no cover
+        return None
+
+
 def predict_proba(
     params: MLSIRMParams,
     factor_id: np.ndarray,
@@ -38,6 +47,62 @@ def predict_proba(
         factors = factors[np.asarray(items, dtype=np.int64)]
     eta, _ = linear_predictor(sub, factors, model=model)
     return sigmoid(eta)
+
+
+def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -> dict[str, np.ndarray | float]:
+    """Compute an observed-minus-expected pass-rate proxy for response leniency.
+
+    This is an adaptation inspired by the content-independent response-bias
+    framing in Ferrando, Lorenzo-Seva, and Chico (2009), but it intentionally
+    does not claim to identify their tridimensional MRFA acquiescence or social
+    desirability factors.
+
+    References
+    ----------
+    Ferrando, P. J., Lorenzo-Seva, U., & Chico, E. (2009). A general
+    factor-analytic procedure for assessing response bias in questionnaire
+    measures. *Structural Equation Modeling: A Multidisciplinary Journal,
+    16*(2), 364-381. https://doi.org/10.1080/10705510902751374
+    """
+    core = _core_module()
+    if core is not None and hasattr(core, "leniency_residuals_stat"):
+        result = core.leniency_residuals_stat(
+            y=np.ascontiguousarray(y.reshape(-1), dtype=np.float64),
+            observed=np.ascontiguousarray(observed.reshape(-1), dtype=np.bool_),
+            prob=np.ascontiguousarray(prob.reshape(-1), dtype=np.float64),
+            n_persons=int(y.shape[0]),
+        )
+        return {
+            "residual": np.asarray(result["residual"], dtype=float),
+            "observed_mean": np.asarray(result["observed_mean"], dtype=float),
+            "expected_mean": np.asarray(result["expected_mean"], dtype=float),
+            "n_observed": np.asarray(result["n_observed"], dtype=float),
+            "mean": float(result["mean"]),
+            "sd": float(result["sd"]),
+            "abs_p95": float(result["abs_p95"]),
+        }
+
+    counts = observed.sum(axis=1).astype(float)
+    observed_sum = np.where(observed, y, 0.0).sum(axis=1)
+    expected_sum = np.where(observed, prob, 0.0).sum(axis=1)
+    valid = counts > 0.0
+    observed_mean = np.full(y.shape[0], np.nan, dtype=float)
+    expected_mean = np.full(y.shape[0], np.nan, dtype=float)
+    residual = np.full(y.shape[0], np.nan, dtype=float)
+    observed_mean[valid] = observed_sum[valid] / counts[valid]
+    expected_mean[valid] = expected_sum[valid] / counts[valid]
+    residual[valid] = observed_mean[valid] - expected_mean[valid]
+    finite = residual[np.isfinite(residual)]
+    abs_values = np.abs(finite)
+    return {
+        "residual": residual,
+        "observed_mean": observed_mean,
+        "expected_mean": expected_mean,
+        "n_observed": counts,
+        "mean": float(np.mean(finite)) if finite.size else float("nan"),
+        "sd": float(np.std(finite)) if finite.size else float("nan"),
+        "abs_p95": float(np.quantile(abs_values, 0.95)) if abs_values.size else float("nan"),
+    }
 
 
 def fit_diagnostics(
@@ -113,6 +178,9 @@ def fit_diagnostics(
     _attach_person_strata(
         personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0]
     )
+    leniency = _leniency_residuals(y, observed, prob)
+    personfit["leniency_residual"] = leniency["residual"]
+    personfit["leniency_n_observed"] = leniency["n_observed"]
     factorfit = _factor_fit(
         factor_id, y, observed, prob, variance, residual, pearson_sq
     )
@@ -132,6 +200,9 @@ def fit_diagnostics(
         "expected_mean": float(prob[observed].mean()),
         "mean_abs_residual": float(np.abs(residual[observed]).mean()),
         "pearson_chisq": float(pearson_sq.sum()),
+        "leniency_mean": float(leniency["mean"]),
+        "leniency_sd": float(leniency["sd"]),
+        "leniency_abs_p95": float(leniency["abs_p95"]),
     }
     if include_m2:
         from .fitstats import m2, m2_multigroup, m2_multilevel

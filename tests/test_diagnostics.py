@@ -143,6 +143,38 @@ def test_fit_diagnostics_strata_contract():
     assert np.allclose(diagnostics.clusterfit["cluster_id"], [10.0, 20.0])
 
 
+def test_fit_diagnostics_leniency_residual_respects_mask_and_sign():
+    params = MLSIRMParams(
+        theta=np.zeros((2, 1)),
+        alpha=np.zeros(2),
+        b=np.full(2, np.log(0.2 / 0.8)),
+        xi=np.zeros((2, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    responses = np.array([[1.0, 1.0], [0.0, 0.0]])
+    mask = np.array([[True, True], [True, False]])
+
+    diagnostics = fit_diagnostics(
+        responses,
+        params,
+        np.zeros(2, dtype=int),
+        mask=mask,
+        model="MIRT",
+    )
+
+    # Reads crate-returned person-level residual outputs and fails if the
+    # implementation mutates to the wrong sign or ignores masking.
+    residual = diagnostics.personfit["leniency_residual"]
+    n_obs = diagnostics.personfit["leniency_n_observed"]
+    assert residual[0] > 0.75
+    assert residual[1] < -0.15
+    assert residual[0] > residual[1]
+    assert np.allclose(n_obs, [2.0, 1.0])
+    assert diagnostics.model_fit["leniency_abs_p95"] > abs(residual[1])
+    assert diagnostics.model_fit["leniency_abs_p95"] < abs(residual[0])
+
+
 def test_fit_diagnostics_requires_estimator_and_population_for_structured_m2():
     params = MLSIRMParams(
         theta=np.zeros((4, 1)),

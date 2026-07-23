@@ -9,8 +9,9 @@ use mlsirm_core::equating::{
     EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
 };
 use mlsirm_core::fitstats::{
-    infit_outfit as core_infit_outfit, m2_rmsea2 as core_m2, person_fit as core_person_fit,
-    poly_local_dependence as core_poly_ld, poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
+    infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
+    m2_rmsea2 as core_m2, person_fit as core_person_fit, poly_local_dependence as core_poly_ld,
+    poly_m2 as core_poly_m2, s_x2 as core_s_x2, SX2Config,
 };
 use mlsirm_core::linking::{irt_link as core_irt_link, LinkMethod};
 use mlsirm_core::marginal::{
@@ -2500,6 +2501,34 @@ fn s_x2_stat(
     Ok(out.into())
 }
 
+/// Per-person observed-vs-expected pass-rate residuals (Rust compute path).
+#[pyfunction]
+#[pyo3(signature = (y, observed, prob, n_persons))]
+fn leniency_residuals_stat(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, f64>,
+    observed: PyReadonlyArray1<'_, bool>,
+    prob: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_leniency_residuals(
+        y.as_slice()?,
+        observed.as_slice()?,
+        prob.as_slice()?,
+        n_persons,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("residual", res.residual)?;
+    out.set_item("observed_mean", res.observed_mean)?;
+    out.set_item("expected_mean", res.expected_mean)?;
+    out.set_item("n_observed", res.n_observed)?;
+    out.set_item("mean", res.mean)?;
+    out.set_item("sd", res.sd)?;
+    out.set_item("abs_p95", res.abs_p95)?;
+    Ok(out.into())
+}
+
 /// IRT scale linking (moment / Haebara / Stocking-Lord) for a common-item
 /// design. `theta`/`weight` are used by the characteristic-curve methods.
 #[pyfunction]
@@ -4982,6 +5011,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(eapsum_tables, m)?)?;
     m.add_function(wrap_pyfunction!(score_eapsum, m)?)?;
     m.add_function(wrap_pyfunction!(s_x2_stat, m)?)?;
+    m.add_function(wrap_pyfunction!(leniency_residuals_stat, m)?)?;
     m.add_function(wrap_pyfunction!(m2_stat, m)?)?;
     m.add_function(wrap_pyfunction!(poly_m2, m)?)?;
     m.add_function(wrap_pyfunction!(poly_local_dependence, m)?)?;
