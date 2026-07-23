@@ -18,6 +18,19 @@
 pub(crate) const POLY_MAX_CAT: usize = 64;
 pub(crate) const POLY_MAX_ITER: usize = 100_000;
 
+fn validate_observed_categories(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_cat: usize,
+) -> Result<(), String> {
+    for (idx, &value) in y.iter().enumerate() {
+        if observed.map_or(true, |o| o[idx]) && value >= n_cat {
+            return Err("observed response categories must be < n_cat".into());
+        }
+    }
+    Ok(())
+}
+
 #[inline]
 fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
@@ -1270,14 +1283,12 @@ pub fn fit_poly_multigroup(
     if group_n.iter().any(|&c| c == 0) {
         return Err("every group 0..n_groups-1 must contain at least one person".into());
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
     if let Some(o) = observed {
         if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
+    validate_observed_categories(y, observed, n_cat)?;
     if let Some(j) = studied_item {
         if j >= n_items {
             return Err("studied_item out of range".into());
@@ -1724,14 +1735,12 @@ pub fn u3_poly_person_fit(
     if y.len() != n_persons * n_items {
         return Err("y must have length n_persons * n_items".into());
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
     if let Some(o) = observed {
         if o.len() != n_persons * n_items {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
+    validate_observed_categories(y, observed, n_cat)?;
     if let Some(c) = cutoff {
         if !c.is_finite() {
             return Err("cutoff must be finite".into());
@@ -2240,9 +2249,7 @@ pub fn poly_s_x2(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
+    validate_observed_categories(y, observed, n_cat)?;
 
     let z = n_cat - 1; // highest category score Z
     let f_max = n_items * z; // perfect summed score F

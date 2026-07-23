@@ -512,7 +512,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
-    let group_y = [0usize, 1, 1, 2, 0, 2, 1, 2];
+    let group_y = [0usize, 99, 1, 2, 0, 2, 1, 2];
     let group_id = [0usize, 0, 1, 1];
     let group_observed = [true, false, true, true, true, true, true, true];
     let grouped = fit_poly_multigroup(
@@ -530,6 +530,26 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         1e9,
     )
     .unwrap();
+    // Reads crate output. Kills the mutation that validates masked categories
+    // before consulting `observed`.
+    assert!(grouped.loglik.is_finite());
+    let mut group_observed_bad = group_observed;
+    group_observed_bad[1] = true;
+    assert!(fit_poly_multigroup(
+        &group_y,
+        Some(&group_observed_bad),
+        &group_id,
+        2,
+        4,
+        2,
+        3,
+        PolyModel::Grm,
+        Some(0),
+        7,
+        1,
+        1e9,
+    )
+    .is_err());
     assert!(grouped.converged);
     assert_eq!(grouped.termination_reason, "tolerance");
     assert!(poly_dif_sweep(
@@ -575,9 +595,15 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         assert!(result.is_err());
     }
     let none_observed = [false, false, true, false];
-    let u3 = u3_poly_person_fit(&y, Some(&none_observed), 2, 2, 3, Some(-1.0)).unwrap();
+    let y_masked = [99usize, 99, 1, 99];
+    let u3 = u3_poly_person_fit(&y_masked, Some(&none_observed), 2, 2, 3, Some(-1.0)).unwrap();
+    // Reads crate output. Kills the mutation that validates masked categories
+    // before consulting `observed`.
     assert!(u3.u3poly[0].is_nan());
-    assert!(u3.flagged[1]);
+    assert_eq!(u3.flagged.len(), 2);
+    assert!(
+        u3_poly_person_fit(&y_masked, Some(&[true, false, true, false]), 2, 2, 3, None).is_err()
+    );
 
     for model in [PolyModel::Gpcm, PolyModel::Grm] {
         let cutoff = u3_poly_bootstrap_cutoff(4, 2, 3, &slope, &cat, model, 0.1, 2, 0).unwrap();
@@ -696,7 +722,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         assert!(result.is_err());
     }
     let empty_sx2 = poly_s_x2(
-        &y,
+        &[99, 99, 1, 99],
         Some(&[false; 4]),
         2,
         2,
@@ -708,7 +734,22 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         f64::INFINITY,
     )
     .unwrap();
+    // Reads crate output. Kills the mutation that validates masked categories
+    // before consulting `observed`.
     assert_eq!(empty_sx2.n_cells, vec![0, 0]);
+    assert!(poly_s_x2(
+        &[0, 99, 1, 2],
+        Some(&[true, true, true, true]),
+        2,
+        2,
+        3,
+        &slope,
+        &cat,
+        PolyModel::Gpcm,
+        7,
+        f64::INFINITY,
+    )
+    .is_err());
     let residual_sx2 = poly_s_x2(
         &[0, 1],
         None,
