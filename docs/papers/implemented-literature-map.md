@@ -1,10 +1,10 @@
 # Implemented-literature map
 
-Where each paper of the supplied reading set landed in the codebase. Full
-implementation-ready extractions live beside this file's sources in the
-project research notes (`docs-research/group_{a,b,c}_specs.md` of the
-analysis workspace); the estimator/scoring foundations are in
-`mmle-lsirm-formula-compilation.md`.
+Where each paper of the supplied reading set landed in the codebase. The
+implementation-ready extractions live in this repository at
+`docs/papers/group_a_specs.md`, `docs/papers/group_b_specs.md`, and
+`docs/papers/group_c_specs.md`; the estimator/scoring foundations are in
+`docs/papers/mmle-lsirm-formula-compilation.md`.
 
 | Paper | Status | Where |
 |---|---|---|

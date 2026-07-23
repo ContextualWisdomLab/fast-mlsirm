@@ -14,8 +14,8 @@
 //!   the marginal `N(0, sqrt(1 + sigma_u^2))` for an unknown cluster.
 
 use crate::marginal::{build_tables, index_responses, person_pass, Contexts, Grids};
-use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
 use crate::nodes::{build_xi_nodes, XiRule};
+use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
 use crate::quadrature::gh_rule;
 use crate::{model_exec_flags, ModelConfig, ModelType};
 
@@ -269,55 +269,95 @@ fn score_eap_cpu_reduce(
     n_persons: usize,
     n_items: usize,
 ) -> EapScores {
+    if n_persons == 0 {
+        return EapScores {
+            theta_eap: Vec::new(),
+            theta_sd: Vec::new(),
+            xi_eap: Vec::new(),
+            loglik: Vec::new(),
+        };
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_persons.max(1));
+    let chunk_size = n_persons.div_ceil(worker_count);
     let cell = grids.q_t * grids.n_x;
-    let mut l_buf = vec![0.0_f64; bank.n_dims * cell];
-    let mut log_zdx = vec![0.0_f64; bank.n_dims * grids.n_x];
-
+    let dim_count = bank.n_dims;
+    let latent_dim = bank.latent_dim;
+    let chunks = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start in (0..n_persons).step_by(chunk_size) {
+            let end = (start + chunk_size).min(n_persons);
+            handles.push(scope.spawn(move || {
+                let mut l_buf = vec![0.0_f64; dim_count * cell];
+                let mut log_zdx = vec![0.0_f64; dim_count * grids.n_x];
+                let local_len = end - start;
+                let mut theta_eap = vec![0.0_f64; local_len * dim_count];
+                let mut theta_sd = vec![0.0_f64; local_len * dim_count];
+                let mut xi_eap = vec![0.0_f64; local_len * latent_dim];
+                let mut loglik = vec![0.0_f64; local_len];
+                for (local_p, p) in (start..end).enumerate() {
+                    let lp = person_pass(
+                        p,
+                        0,
+                        tables,
+                        resp,
+                        bank.factor_id,
+                        dim_count,
+                        n_items,
+                        grids,
+                        &mut l_buf,
+                        &mut log_zdx,
+                    );
+                    loglik[local_p] = lp;
+                    let mut theta_m2 = vec![0.0_f64; dim_count];
+                    for x in 0..grids.n_x {
+                        let mut lx = grids.x_logw[x] - lp;
+                        for d in 0..dim_count {
+                            lx += log_zdx[d * grids.n_x + x];
+                        }
+                        let px = lx.exp();
+                        for k in 0..latent_dim {
+                            xi_eap[local_p * latent_dim + k] +=
+                                px * grids.x_grid[x * latent_dim + k];
+                        }
+                        for d in 0..dim_count {
+                            for (t, &node_t) in grids.t_nodes.iter().enumerate() {
+                                let theta = prior.mean[d] + prior.sd[d] * node_t;
+                                let pt = (grids.t_logw[t] + l_buf[d * cell + t * grids.n_x + x]
+                                    - log_zdx[d * grids.n_x + x])
+                                    .exp();
+                                theta_eap[local_p * dim_count + d] += px * pt * theta;
+                                theta_m2[d] += px * pt * theta * theta;
+                            }
+                        }
+                    }
+                    for d in 0..dim_count {
+                        let m = theta_eap[local_p * dim_count + d];
+                        theta_sd[local_p * dim_count + d] = (theta_m2[d] - m * m).max(0.0).sqrt();
+                    }
+                }
+                (start, end, theta_eap, theta_sd, xi_eap, loglik)
+            }));
+        }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("score_eap CPU worker panicked"))
+            .collect::<Vec<_>>()
+    });
     let mut out = EapScores {
-        theta_eap: vec![0.0; n_persons * bank.n_dims],
-        theta_sd: vec![0.0; n_persons * bank.n_dims],
-        xi_eap: vec![0.0; n_persons * bank.latent_dim],
+        theta_eap: vec![0.0; n_persons * dim_count],
+        theta_sd: vec![0.0; n_persons * dim_count],
+        xi_eap: vec![0.0; n_persons * latent_dim],
         loglik: vec![0.0; n_persons],
     };
-    for p in 0..n_persons {
-        let lp = person_pass(
-            p,
-            0,
-            tables,
-            resp,
-            bank.factor_id,
-            bank.n_dims,
-            n_items,
-            grids,
-            &mut l_buf,
-            &mut log_zdx,
-        );
-        out.loglik[p] = lp;
-        let mut theta_m2 = vec![0.0_f64; bank.n_dims];
-        for x in 0..grids.n_x {
-            let mut lx = grids.x_logw[x] - lp;
-            for d in 0..bank.n_dims {
-                lx += log_zdx[d * grids.n_x + x];
-            }
-            let px = lx.exp();
-            for k in 0..bank.latent_dim {
-                out.xi_eap[p * bank.latent_dim + k] += px * grids.x_grid[x * bank.latent_dim + k];
-            }
-            for d in 0..bank.n_dims {
-                for (t, &node_t) in grids.t_nodes.iter().enumerate() {
-                    let theta = prior.mean[d] + prior.sd[d] * node_t;
-                    let pt = (grids.t_logw[t] + l_buf[d * cell + t * grids.n_x + x]
-                        - log_zdx[d * grids.n_x + x])
-                        .exp();
-                    out.theta_eap[p * bank.n_dims + d] += px * pt * theta;
-                    theta_m2[d] += px * pt * theta * theta;
-                }
-            }
-        }
-        for d in 0..bank.n_dims {
-            let m = out.theta_eap[p * bank.n_dims + d];
-            out.theta_sd[p * bank.n_dims + d] = (theta_m2[d] - m * m).max(0.0).sqrt();
-        }
+    for (start, end, theta_eap, theta_sd, xi_eap, loglik) in chunks {
+        let local_len = end - start;
+        out.theta_eap[start * dim_count..end * dim_count].copy_from_slice(&theta_eap);
+        out.theta_sd[start * dim_count..end * dim_count].copy_from_slice(&theta_sd);
+        out.xi_eap[start * latent_dim..end * latent_dim].copy_from_slice(&xi_eap);
+        out.loglik[start..end].copy_from_slice(&loglik[..local_len]);
     }
     out
 }
@@ -1204,6 +1244,9 @@ fn bank_information_cpu_reduce(
     n_points: usize,
     n_items: usize,
 ) -> (Vec<f64>, Vec<f64>) {
+    if n_points == 0 {
+        return (Vec::new(), Vec::new());
+    }
     let (free_alpha, _uses_space) = model_exec_flags(bank.model_type);
     let kind = crate::interaction_kind(bank.model_type);
     let gamma = if kind == crate::InteractionKind::Distance {
@@ -1211,34 +1254,62 @@ fn bank_information_cpu_reduce(
     } else {
         0.0
     };
-    let mut item_info = vec![0.0_f64; n_points * n_items];
-    let mut test_info = vec![0.0_f64; n_points * bank.n_dims];
-    for p in 0..n_points {
-        for i in 0..n_items {
-            let d = bank.factor_id[i];
-            let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
-            let mut eta = a * theta[p * bank.n_dims + d] + bank.b[i];
-            match kind {
-                crate::InteractionKind::None => {}
-                crate::InteractionKind::Distance => {
-                    let mut dist2 = bank.eps_distance;
-                    for k in 0..bank.latent_dim {
-                        let diff = xi[p * bank.latent_dim + k] - bank.zeta[i * bank.latent_dim + k];
-                        dist2 += diff * diff;
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(n_points.max(1));
+    let chunk_size = n_points.div_ceil(worker_count);
+    let dim_count = bank.n_dims;
+    let latent_dim = bank.latent_dim;
+    let chunks = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for start in (0..n_points).step_by(chunk_size) {
+            let end = (start + chunk_size).min(n_points);
+            handles.push(scope.spawn(move || {
+                let local_len = end - start;
+                let mut item_info = vec![0.0_f64; local_len * n_items];
+                let mut test_info = vec![0.0_f64; local_len * dim_count];
+                for (local_p, p) in (start..end).enumerate() {
+                    for i in 0..n_items {
+                        let d = bank.factor_id[i];
+                        let a = if free_alpha { bank.alpha[i].exp() } else { 1.0 };
+                        let mut eta = a * theta[p * dim_count + d] + bank.b[i];
+                        match kind {
+                            crate::InteractionKind::None => {}
+                            crate::InteractionKind::Distance => {
+                                let mut dist2 = bank.eps_distance;
+                                for k in 0..latent_dim {
+                                    let diff =
+                                        xi[p * latent_dim + k] - bank.zeta[i * latent_dim + k];
+                                    dist2 += diff * diff;
+                                }
+                                eta -= gamma * dist2.sqrt();
+                            }
+                            crate::InteractionKind::Inner => {
+                                for k in 0..latent_dim {
+                                    eta += bank.zeta[i * latent_dim + k] * xi[p * latent_dim + k];
+                                }
+                            }
+                        }
+                        let prob = sigmoid(eta);
+                        let info = item_information_4pl(a, prob, 0.0, 1.0);
+                        item_info[local_p * n_items + i] = info;
+                        test_info[local_p * dim_count + d] += info;
                     }
-                    eta -= gamma * dist2.sqrt();
                 }
-                crate::InteractionKind::Inner => {
-                    for k in 0..bank.latent_dim {
-                        eta += bank.zeta[i * bank.latent_dim + k] * xi[p * bank.latent_dim + k];
-                    }
-                }
-            }
-            let prob = sigmoid(eta);
-            let info = item_information_4pl(a, prob, 0.0, 1.0);
-            item_info[p * n_items + i] = info;
-            test_info[p * bank.n_dims + d] += info;
+                (start, end, item_info, test_info)
+            }));
         }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("bank_information CPU worker panicked"))
+            .collect::<Vec<_>>()
+    });
+    let mut item_info = vec![0.0_f64; n_points * n_items];
+    let mut test_info = vec![0.0_f64; n_points * dim_count];
+    for (start, end, local_item, local_test) in chunks {
+        item_info[start * n_items..end * n_items].copy_from_slice(&local_item);
+        test_info[start * dim_count..end * dim_count].copy_from_slice(&local_test);
     }
     (item_info, test_info)
 }
@@ -1758,7 +1829,8 @@ pub fn score_wle_poly(
     if n_items == 0 {
         return Err("need at least one item".into());
     }
-    let cells = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    let cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
     if y.len() != cells {
         return Err("y must have length n_persons * n_items".into());
     }
@@ -1767,11 +1839,16 @@ pub fn score_wle_poly(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    let n_par = crate::checked_mul_usize(n_items, n_cat - 1, "n_items * (n_cat - 1) overflows usize")?;
+    let n_par =
+        crate::checked_mul_usize(n_items, n_cat - 1, "n_items * (n_cat - 1) overflows usize")?;
     if slope.len() != n_items || cat_params.len() != n_par {
         return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
     }
-    if slope.iter().chain(cat_params.iter()).any(|v| !v.is_finite()) {
+    if slope
+        .iter()
+        .chain(cat_params.iter())
+        .any(|v| !v.is_finite())
+    {
         return Err("slope and cat_params must be finite".into());
     }
     for (idx, &cat) in y.iter().enumerate() {
