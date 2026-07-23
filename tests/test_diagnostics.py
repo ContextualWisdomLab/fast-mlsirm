@@ -145,15 +145,15 @@ def test_fit_diagnostics_strata_contract():
 
 def test_fit_diagnostics_leniency_residual_respects_mask_and_sign():
     params = MLSIRMParams(
-        theta=np.zeros((2, 1)),
+        theta=np.zeros((3, 1)),
         alpha=np.zeros(2),
         b=np.full(2, np.log(0.2 / 0.8)),
-        xi=np.zeros((2, 1)),
+        xi=np.zeros((3, 1)),
         zeta=np.zeros((2, 1)),
         tau=0.0,
     )
-    responses = np.array([[1.0, 1.0], [0.0, 0.0]])
-    mask = np.array([[True, True], [True, False]])
+    responses = np.array([[1.0, 1.0], [0.0, 0.0], [1.0, 0.0]])
+    mask = np.array([[True, True], [True, False], [False, False]])
 
     diagnostics = fit_diagnostics(
         responses,
@@ -164,13 +164,16 @@ def test_fit_diagnostics_leniency_residual_respects_mask_and_sign():
     )
 
     # Reads crate-returned person-level residual outputs and fails if the
-    # implementation mutates to the wrong sign or ignores masking.
+    # implementation mutates to the wrong sign, ignores masking, or leaks an
+    # empty masked row into finite public outputs / summary statistics.
     residual = diagnostics.personfit["leniency_residual"]
     n_obs = diagnostics.personfit["leniency_n_observed"]
     assert residual[0] > 0.75
     assert residual[1] < -0.15
     assert residual[0] > residual[1]
-    assert np.allclose(n_obs, [2.0, 1.0])
+    assert residual[2] == 0.0
+    assert np.allclose(n_obs, [2.0, 1.0, 0.0])
+    assert diagnostics.model_fit["leniency_mean"] > 0.29
     assert diagnostics.model_fit["leniency_abs_p95"] > abs(residual[1])
     assert diagnostics.model_fit["leniency_abs_p95"] < abs(residual[0])
 

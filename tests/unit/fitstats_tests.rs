@@ -21,16 +21,19 @@ fn bh_step_up_known_case() {
 
 #[test]
 fn leniency_residuals_respect_mask_and_sign() {
-    let y = vec![1.0, 1.0, 0.0, 0.0];
-    let observed = vec![true, true, true, false];
-    let prob = vec![0.2, 0.2, 0.2, 0.2];
-    let result = leniency_residuals(&y, &observed, &prob, 2).unwrap();
+    let y = vec![1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+    let observed = vec![true, true, true, false, false, false];
+    let prob = vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2];
+    let result = leniency_residuals(&y, &observed, &prob, 3).unwrap();
     // Reads crate-returned values and kills mutations that flip residual sign
-    // or ignore observed-mask filtering.
+    // or ignore observed-mask filtering; the empty third row kills mutations
+    // that leak NaN/empty rows into public outputs or summary statistics.
     assert!(result.residual[0] > 0.75);
     assert!(result.residual[1] < -0.15);
     assert!(result.residual[0] > result.residual[1]);
-    assert_eq!(result.n_observed, vec![2, 1]);
+    assert_eq!(result.residual[2], 0.0);
+    assert_eq!(result.n_observed, vec![2, 1, 0]);
+    assert!(result.mean > 0.29);
     assert!(result.abs_p95 > result.residual[1].abs());
     assert!(result.abs_p95 < result.residual[0].abs());
 }
