@@ -5266,3 +5266,71 @@ def test_subscore_analysis_rejects_degenerate_inputs():
     nanx[0, 0] = np.nan
     with pytest.raises(ValueError, match="complete"):
         subscore_analysis(nanx, [0, 0, 1, 1])
+
+
+def test_detect_analysis_matches_independent_reference():
+    """Confirmatory DETECT (Zhang & Stout, 1999, via sirt's sum-score path).
+
+    All asserts read crate outputs (DetectResult fields returned through the
+    PyO3 binding). Literals come from an independent NumPy transcription of
+    the R semantics that never imports this package. Killed by: delta sign
+    swap, dropped bias correction, n-1 covariance divisor, index-scaling
+    (x100) errors, label-as-index bugs."""
+    from fast_mlsirm import detect_analysis
+
+    x = np.array(
+        [
+            [1, 0, 0, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 1, 1, 1],
+            [1, 0, 1, 0, 1],
+            [0, 0, 0, 1, 1],
+            [0, 1, 0, 1, 1],
+            [0, 0, 1, 1, 1],
+            [0, 1, 0, 1, 1],
+            [1, 0, 1, 0, 1],
+        ],
+        dtype=float,
+    )
+    res = detect_analysis(x, [0, 0, 1, 1, 0])
+    assert res.detect == pytest.approx(-0.2830687830687831, abs=1e-12)
+    assert res.assi == pytest.approx(-0.2, abs=1e-12)
+    assert res.ratio == pytest.approx(-0.05439755973563803, abs=1e-12)
+    assert res.madcov100 == pytest.approx(5.203703703703703, abs=1e-12)
+    assert res.mcov100 == pytest.approx(-3.5105820105820107, abs=1e-12)
+    assert res.n_pairs == 10
+    assert res.ccov[0] == pytest.approx(-0.10317460317460317, abs=1e-12)
+    assert res.ccov[3] == 0.0  # constant item 4: exact zero ccov
+    # hostile labels behave identically (equality-only comparison)
+    big = detect_analysis(
+        x, np.array([-(2**63), -(2**63), 2**63 - 1, 2**63 - 1, -(2**63)])
+    )
+    assert big.detect == pytest.approx(res.detect, abs=1e-12)
+
+
+def test_detect_analysis_rejects_degenerate_inputs():
+    """Trust-boundary rejections; asserts read ValueError raised by the
+    wrapper/crate before or at the Rust boundary."""
+    from fast_mlsirm import detect_analysis
+
+    base = np.array(
+        [[1, 0, 1, 0], [0, 1, 1, 0], [1, 1, 0, 1], [0, 0, 1, 1]], dtype=float
+    )
+    with pytest.raises(ValueError):
+        detect_analysis(base, [0, 0, 1])  # cluster length mismatch
+    with pytest.raises(ValueError, match="complete"):
+        nanx = base.copy()
+        nanx[0, 0] = np.nan
+        detect_analysis(nanx, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        half = base.copy()
+        half[1, 2] = 0.5  # non-binary
+        detect_analysis(half, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        detect_analysis(base[:1], [0, 0, 1, 1])  # 1 person
+    with pytest.raises(ValueError):
+        detect_analysis(np.ones((4, 2)), [0, 1])  # all-zero ccov: RATIO 0/0
+    # float labels beyond i64 must be rejected, not silently wrapped by
+    # astype(int64) (which would collapse distinct labels into one cluster)
+    with pytest.raises(ValueError, match="64-bit"):
+        detect_analysis(base, [2.0**63, 2.0**63, 2.0**63 + 2048, 0.0])
