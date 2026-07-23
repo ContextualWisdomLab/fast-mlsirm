@@ -461,36 +461,33 @@ def _factor_fit(
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
 
-    rows = []
-    for factor in np.unique(factors):
-        cols = factors == factor
-        rows.append(
-            (
-                float(factor),
-                float(observed[:, cols].sum()),
-                float((y[:, cols] * observed[:, cols]).sum()),
-                float((prob[:, cols] * observed[:, cols]).sum()),
-                float(residual[:, cols].sum()),
-                float((variance[:, cols] * observed[:, cols]).sum()),
-                float((residual[:, cols] * residual[:, cols]).sum()),
-                float(pearson_sq[:, cols].sum()),
-            )
-        )
+    unique_factors = np.unique(factors)
+    # Optimized performance: Broadcast categorical dimension identifiers into a 2D
+    # boolean mapping mask and aggregate values using fast BLAS matrix multiplication
+    # instead of a slow nested Python loop over each distinct factor dimension.
+    mask = (factors[:, None] == unique_factors).astype(np.float64)
+    obs_cast = observed.astype(np.float64)
 
-    table = np.asarray(rows, dtype=np.float64)
-    variance_sum = table[:, 5]
-    count = table[:, 1]
+    count = (obs_cast @ mask).sum(axis=0)
+    score = (y @ mask).sum(axis=0)
+    expected = ((prob * obs_cast) @ mask).sum(axis=0)
+    raw = (residual @ mask).sum(axis=0)
+    variance_sum = ((variance * obs_cast) @ mask).sum(axis=0)
+    infit = ((residual * residual) @ mask).sum(axis=0)
+    outfit = (pearson_sq @ mask).sum(axis=0)
+
     safe_count = np.maximum(count, 1.0)
     safe_variance = np.maximum(variance_sum, 1e-12)
+
     return {
-        "factor_id": table[:, 0],
+        "factor_id": unique_factors.astype(np.float64),
         "observed_count": count,
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 4] / np.sqrt(safe_variance),
-        "infit_mnsq": table[:, 6] / safe_variance,
-        "outfit_mnsq": table[:, 7] / safe_count,
+        "score": score,
+        "expected_score": expected,
+        "raw_residual": raw,
+        "standardized_residual": raw / np.sqrt(safe_variance),
+        "infit_mnsq": infit / safe_variance,
+        "outfit_mnsq": outfit / safe_count,
     }
 
 
@@ -575,22 +572,39 @@ def _binary_stratum_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
-    rows = []
-    for value in np.unique(ids):
-        rows.append(
-            _binary_scope_row(
-                float(value),
-                ids[:, None] == value,
-                y,
-                observed,
-                prob,
-                variance,
-                residual,
-                pearson_sq,
-                loglik,
-            )
-        )
-    return _binary_scope_table(id_name, rows)
+
+    unique_ids = np.unique(ids)
+    # Optimized performance: Broadcast categorical stratum identifiers into a 2D
+    # boolean mapping mask and aggregate values using fast BLAS matrix multiplication
+    # instead of a slow nested Python loop over each distinct stratum group.
+    mask = (ids[:, None] == unique_ids).astype(np.float64)
+    obs_cast = observed.astype(np.float64)
+
+    count = (mask.T @ obs_cast).sum(axis=1)
+    score = (mask.T @ (y * obs_cast)).sum(axis=1)
+    expected = (mask.T @ (prob * obs_cast)).sum(axis=1)
+    raw = (mask.T @ (residual * obs_cast)).sum(axis=1)
+    var_sum = (mask.T @ (variance * obs_cast)).sum(axis=1)
+    infit = (mask.T @ (residual * residual * obs_cast)).sum(axis=1)
+    outfit = (mask.T @ (pearson_sq * obs_cast)).sum(axis=1)
+    ll = (mask.T @ (loglik * obs_cast)).sum(axis=1)
+
+    safe_count = np.maximum(count, 1.0)
+    safe_var = np.maximum(var_sum, 1e-12)
+
+    return {
+        id_name: unique_ids.astype(np.float64),
+        "observed_count": count,
+        "score": score,
+        "expected_score": expected,
+        "raw_residual": raw,
+        "standardized_residual": raw / np.sqrt(safe_var),
+        "infit_mnsq": infit / safe_var,
+        "outfit_mnsq": outfit / safe_count,
+        "loglik": ll,
+        "deviance": -2.0 * ll,
+        "pearson_chisq": outfit,
+    }
 
 
 def _binary_stratum_item_fit(
@@ -608,101 +622,49 @@ def _binary_stratum_item_fit(
 
     ids = _person_strata(strata, y.shape[0], id_name)
     loglik = np.where(observed, y * np.log(prob) + (1.0 - y) * np.log1p(-prob), 0.0)
-    rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(y.shape[1]):
-            scope = np.zeros_like(observed, dtype=bool)
-            scope[row_mask, item] = True
-            if np.any(observed & scope):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_binary_scope_row(
-                            0.0,
-                            scope,
-                            y,
-                            observed,
-                            prob,
-                            variance,
-                            residual,
-                            pearson_sq,
-                            loglik,
-                        )[1:],
-                    )
-                )
-    return _binary_scope_item_table(id_name, rows)
 
+    unique_ids = np.unique(ids)
+    # Optimized performance: Broadcast categorical stratum identifiers into a 2D
+    # boolean mapping mask and aggregate values using fast BLAS matrix multiplication
+    # instead of a slow nested Python loop over each distinct stratum group and item.
+    mask = (ids[:, None] == unique_ids).astype(np.float64)
+    obs_cast = observed.astype(np.float64)
 
-def _binary_scope_row(
-    id_value: float,
-    scope: np.ndarray,
-    y: np.ndarray,
-    observed: np.ndarray,
-    prob: np.ndarray,
-    variance: np.ndarray,
-    residual: np.ndarray,
-    pearson_sq: np.ndarray,
-    loglik: np.ndarray,
-) -> tuple[float, ...]:
-    where = observed & scope
-    count = float(where.sum())
-    variance_sum = float((variance * where).sum())
-    raw = float((residual * where).sum())
-    chisq = float((pearson_sq * where).sum())
-    ll = float((loglik * where).sum())
-    return (
-        id_value,
-        count,
-        float((y * where).sum()),
-        float((prob * where).sum()),
-        raw,
-        raw / float(np.sqrt(max(variance_sum, 1e-12))),
-        float((residual * residual * where).sum()) / max(variance_sum, 1e-12),
-        chisq / max(count, 1.0),
-        ll,
-        -2.0 * ll,
-        chisq,
-    )
+    count = mask.T @ obs_cast
+    score = mask.T @ (y * obs_cast)
+    expected = mask.T @ (prob * obs_cast)
+    raw = mask.T @ (residual * obs_cast)
+    var_sum = mask.T @ (variance * obs_cast)
+    infit = mask.T @ (residual * residual * obs_cast)
+    outfit = mask.T @ (pearson_sq * obs_cast)
+    ll = mask.T @ (loglik * obs_cast)
 
+    valid = count > 0
+    s_idx, j_idx = np.nonzero(valid)
 
-def _binary_scope_table(
-    id_name: str, rows: list[tuple[float, ...]]
-) -> dict[str, np.ndarray]:
-    table = np.asarray(rows, dtype=np.float64)
+    v_count = count[valid]
+    v_var_sum = var_sum[valid]
+    v_raw = raw[valid]
+    v_infit = infit[valid]
+    v_outfit = outfit[valid]
+    v_ll = ll[valid]
+
+    safe_count = np.maximum(v_count, 1.0)
+    safe_var = np.maximum(v_var_sum, 1e-12)
+
     return {
-        id_name: table[:, 0],
-        "observed_count": table[:, 1],
-        "score": table[:, 2],
-        "expected_score": table[:, 3],
-        "raw_residual": table[:, 4],
-        "standardized_residual": table[:, 5],
-        "infit_mnsq": table[:, 6],
-        "outfit_mnsq": table[:, 7],
-        "loglik": table[:, 8],
-        "deviance": table[:, 9],
-        "pearson_chisq": table[:, 10],
-    }
-
-
-def _binary_scope_item_table(
-    id_name: str, rows: list[tuple[float, ...]]
-) -> dict[str, np.ndarray]:
-    table = np.asarray(rows, dtype=np.float64)
-    return {
-        id_name: table[:, 0],
-        "item_id": table[:, 1],
-        "observed_count": table[:, 2],
-        "score": table[:, 3],
-        "expected_score": table[:, 4],
-        "raw_residual": table[:, 5],
-        "standardized_residual": table[:, 6],
-        "infit_mnsq": table[:, 7],
-        "outfit_mnsq": table[:, 8],
-        "loglik": table[:, 9],
-        "deviance": table[:, 10],
-        "pearson_chisq": table[:, 11],
+        id_name: unique_ids[s_idx].astype(np.float64),
+        "item_id": j_idx.astype(np.float64),
+        "observed_count": v_count,
+        "score": score[valid],
+        "expected_score": expected[valid],
+        "raw_residual": v_raw,
+        "standardized_residual": v_raw / np.sqrt(safe_var),
+        "infit_mnsq": v_infit / safe_var,
+        "outfit_mnsq": v_outfit / safe_count,
+        "loglik": v_ll,
+        "deviance": -2.0 * v_ll,
+        "pearson_chisq": v_outfit,
     }
 
 
@@ -730,13 +692,28 @@ def _categorical_stratum_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
-    rows = []
-    for value in np.unique(ids):
-        where = observed & (ids[:, None] == value)
-        rows.append(
-            _categorical_scope_row(float(value), where, entry_loglik, entry_chisq)
-        )
-    return _categorical_scope_table(id_name, rows)
+
+    unique_ids = np.unique(ids)
+    # Optimized performance: Broadcast categorical stratum identifiers into a 2D
+    # boolean mapping mask and aggregate values using fast BLAS matrix multiplication
+    # instead of a slow nested Python loop over each distinct stratum group.
+    mask = (ids[:, None] == unique_ids).astype(np.float64)
+    obs_cast = observed.astype(np.float64)
+
+    count = (mask.T @ obs_cast).sum(axis=1)
+    loglik = (mask.T @ (entry_loglik * obs_cast)).sum(axis=1)
+    chisq = (mask.T @ (entry_chisq * obs_cast)).sum(axis=1)
+
+    safe_count = np.maximum(count, 1.0)
+
+    return {
+        id_name: unique_ids.astype(np.float64),
+        "observed_count": count,
+        "loglik": loglik,
+        "deviance": -2.0 * loglik,
+        "pearson_chisq": chisq,
+        "outfit_mnsq": chisq / safe_count,
+    }
 
 
 def _categorical_stratum_item_fit(
@@ -750,63 +727,35 @@ def _categorical_stratum_item_fit(
         return None
 
     ids = _person_strata(strata, observed.shape[0], id_name)
-    rows = []
-    for value in np.unique(ids):
-        row_mask = ids == value
-        for item in range(observed.shape[1]):
-            where = np.zeros_like(observed, dtype=bool)
-            where[row_mask, item] = observed[row_mask, item]
-            if np.any(where):
-                rows.append(
-                    (
-                        float(value),
-                        float(item),
-                        *_categorical_scope_row(0.0, where, entry_loglik, entry_chisq)[
-                            1:
-                        ],
-                    )
-                )
-    return _categorical_scope_item_table(id_name, rows)
 
+    unique_ids = np.unique(ids)
+    # Optimized performance: Broadcast categorical stratum identifiers into a 2D
+    # boolean mapping mask and aggregate values using fast BLAS matrix multiplication
+    # instead of a slow nested Python loop over each distinct stratum group and item.
+    mask = (ids[:, None] == unique_ids).astype(np.float64)
+    obs_cast = observed.astype(np.float64)
 
-def _categorical_scope_row(
-    id_value: float,
-    where: np.ndarray,
-    entry_loglik: np.ndarray,
-    entry_chisq: np.ndarray,
-) -> tuple[float, ...]:
-    count = float(where.sum())
-    loglik = float(entry_loglik[where].sum())
-    chisq = float(entry_chisq[where].sum())
-    return (id_value, count, loglik, -2.0 * loglik, chisq, chisq / max(count, 1.0))
+    count = mask.T @ obs_cast
+    loglik = mask.T @ (entry_loglik * obs_cast)
+    chisq = mask.T @ (entry_chisq * obs_cast)
 
+    valid = count > 0
+    s_idx, j_idx = np.nonzero(valid)
 
-def _categorical_scope_table(
-    id_name: str, rows: list[tuple[float, ...]]
-) -> dict[str, np.ndarray]:
-    table = np.asarray(rows, dtype=np.float64)
+    v_count = count[valid]
+    v_loglik = loglik[valid]
+    v_chisq = chisq[valid]
+
+    safe_count = np.maximum(v_count, 1.0)
+
     return {
-        id_name: table[:, 0],
-        "observed_count": table[:, 1],
-        "loglik": table[:, 2],
-        "deviance": table[:, 3],
-        "pearson_chisq": table[:, 4],
-        "outfit_mnsq": table[:, 5],
-    }
-
-
-def _categorical_scope_item_table(
-    id_name: str, rows: list[tuple[float, ...]]
-) -> dict[str, np.ndarray]:
-    table = np.asarray(rows, dtype=np.float64)
-    return {
-        id_name: table[:, 0],
-        "item_id": table[:, 1],
-        "observed_count": table[:, 2],
-        "loglik": table[:, 3],
-        "deviance": table[:, 4],
-        "pearson_chisq": table[:, 5],
-        "outfit_mnsq": table[:, 6],
+        id_name: unique_ids[s_idx].astype(np.float64),
+        "item_id": j_idx.astype(np.float64),
+        "observed_count": v_count,
+        "loglik": v_loglik,
+        "deviance": -2.0 * v_loglik,
+        "pearson_chisq": v_chisq,
+        "outfit_mnsq": v_chisq / safe_count,
     }
 
 
