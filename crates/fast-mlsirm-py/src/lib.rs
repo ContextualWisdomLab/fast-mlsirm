@@ -62,6 +62,10 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::subscores::subscores as core_subscores;
+use mlsirm_core::classification::{
+    lee_classification as core_lee_classification,
+    rudner_classification as core_rudner_classification, ClassificationResult,
+};
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
@@ -1681,6 +1685,73 @@ fn detect_analysis(
     out.set_item("pair_j", res.pair_j)?;
     out.set_item("ccov", res.ccov)?;
     Ok(out.into())
+}
+
+fn classification_result_to_dict(
+    py: Python<'_>,
+    res: ClassificationResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("per_cut_accuracy", res.per_cut_accuracy)?;
+    out.set_item("per_cut_consistency", res.per_cut_consistency)?;
+    out.set_item("simultaneous_accuracy", res.simultaneous_accuracy)?;
+    out.set_item("simultaneous_consistency", res.simultaneous_consistency)?;
+    out.set_item("conditional_accuracy", res.conditional_accuracy)?;
+    out.set_item("conditional_consistency", res.conditional_consistency)?;
+    out.set_item(
+        "conditional_simultaneous_accuracy",
+        res.conditional_simultaneous_accuracy,
+    )?;
+    out.set_item(
+        "conditional_simultaneous_consistency",
+        res.conditional_simultaneous_consistency,
+    )?;
+    Ok(out.into())
+}
+
+/// Rudner (2001, 2005) normal-approximation classification accuracy and
+/// consistency (`mlsirm_core::classification`). All slices are per
+/// evaluation point except `cutscores` (strictly increasing theta cuts).
+#[pyfunction]
+fn rudner_classification(
+    py: Python<'_>,
+    theta: PyReadonlyArray1<'_, f64>,
+    sem: PyReadonlyArray1<'_, f64>,
+    weights: PyReadonlyArray1<'_, f64>,
+    cutscores: Vec<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_rudner_classification(
+        theta.as_slice()?,
+        sem.as_slice()?,
+        weights.as_slice()?,
+        &cutscores,
+    )
+    .map_err(PyValueError::new_err)?;
+    classification_result_to_dict(py, res)
+}
+
+/// Lee (2010, as implemented in CRAN cacIRT) summed-score classification
+/// accuracy and consistency (`mlsirm_core::classification`). `probs` is a
+/// flattened row-major `n_points * n_items` matrix of correct-response
+/// probabilities strictly inside (0, 1); `cutscores` are raw-score cuts.
+#[pyfunction]
+fn lee_classification(
+    py: Python<'_>,
+    probs: PyReadonlyArray1<'_, f64>,
+    n_points: usize,
+    n_items: usize,
+    weights: PyReadonlyArray1<'_, f64>,
+    cutscores: Vec<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_lee_classification(
+        probs.as_slice()?,
+        n_points,
+        n_items,
+        weights.as_slice()?,
+        &cutscores,
+    )
+    .map_err(PyValueError::new_err)?;
+    classification_result_to_dict(py, res)
 }
 
 /// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
@@ -5284,6 +5355,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
     m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

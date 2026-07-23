@@ -114,6 +114,34 @@
 
 ### Added
 
+- **IRT classification accuracy and consistency**
+  (`fast_mlsirm.rudner_classification`, `fast_mlsirm.lee_classification`; new
+  `mlsirm_core::classification`; Rudner, 2001, 2005; Lee, 2010, as cited in
+  Lathrop's CRAN `cacIRT` sources). Rudner's normal-approximation method
+  treats the observed score at ability theta as N(theta, sem^2) and reports
+  per-cut and simultaneous accuracy/consistency, conditional and marginal
+  (weights normalized internally; uniform weights reproduce cacIRT's
+  person-level `Rud.P`, quadrature weights the distribution-level `Rud.D`).
+  Lee's summed-score method replaces the normal approximation with the exact
+  Lord-Wingersky (1984) score distribution reused from
+  `mlsirm_core::scoring`; raw cuts split scores at `ceil(cut)` and the true
+  category is the raw-score interval containing the expected true score.
+  Category intervals are left-closed everywhere (cacIRT's `Lee.D` alone is
+  right-closed — documented divergence); item probabilities must lie
+  strictly inside (0, 1) (rejecting P == 0 is stricter than the oracle,
+  which only breaks at P == 1); simultaneous outputs are always populated
+  (cacIRT emits them only for two or more cuts). Polytomous Lee, `np.cac`,
+  and the MLE/SEM ability helpers are out of scope. Rudner outputs inherit
+  the crate `erfc` accuracy (|err| < 1.2e-7); Lee outputs are exact to f64
+  rounding. For LLM-as-a-Judge quality management this quantifies how
+  reliably a judge's cut score separates pass from fail. Rust-only numerics;
+  the Python wrapper validates and marshals. Tests pin marginals and
+  conditionals against literals from an independent NumPy transcription
+  (exact `math.erf`, own recursion), anchor left-closed cuts with a theta
+  exactly on a cut and a dyadic true score exactly on a raw cut, use
+  unnormalized weights and a non-integer raw cut as mutation anchors (four
+  mutation spot-checks killed), and include a 500-replication ignored Monte
+  Carlo ordering long informative tests above short noisy ones.
 - **Confirmatory DETECT dimensionality analysis** (`fast_mlsirm.detect_analysis`;
   new `mlsirm_core::detect`; Zhang & Stout, 1999, as cited in Robitzsch, 2024).
   Estimates pairwise conditional covariances of binary items with sum-score
