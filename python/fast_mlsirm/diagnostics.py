@@ -86,22 +86,22 @@ def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -
     observed_sum = np.where(observed, y, 0.0).sum(axis=1)
     expected_sum = np.where(observed, prob, 0.0).sum(axis=1)
     valid = counts > 0.0
-    observed_mean = np.full(y.shape[0], np.nan, dtype=float)
-    expected_mean = np.full(y.shape[0], np.nan, dtype=float)
-    residual = np.full(y.shape[0], np.nan, dtype=float)
+    observed_mean = np.zeros(y.shape[0], dtype=float)
+    expected_mean = np.zeros(y.shape[0], dtype=float)
+    residual = np.zeros(y.shape[0], dtype=float)
     observed_mean[valid] = observed_sum[valid] / counts[valid]
     expected_mean[valid] = expected_sum[valid] / counts[valid]
     residual[valid] = observed_mean[valid] - expected_mean[valid]
-    finite = residual[np.isfinite(residual)]
-    abs_values = np.abs(finite)
+    valid_residual = residual[valid]
+    abs_values = np.abs(valid_residual)
     return {
         "residual": residual,
         "observed_mean": observed_mean,
         "expected_mean": expected_mean,
         "n_observed": counts,
-        "mean": float(np.mean(finite)) if finite.size else float("nan"),
-        "sd": float(np.std(finite)) if finite.size else float("nan"),
-        "abs_p95": float(np.quantile(abs_values, 0.95)) if abs_values.size else float("nan"),
+        "mean": float(np.mean(valid_residual)) if valid_residual.size else 0.0,
+        "sd": float(np.std(valid_residual)) if valid_residual.size else 0.0,
+        "abs_p95": float(np.quantile(abs_values, 0.95)) if abs_values.size else 0.0,
     }
 
 

@@ -218,10 +218,11 @@ pub fn leniency_residuals(
         return Err("observed probabilities must be finite and in [0, 1]".into());
     }
 
-    let mut residual = vec![f64::NAN; n_persons];
-    let mut observed_mean = vec![f64::NAN; n_persons];
-    let mut expected_mean = vec![f64::NAN; n_persons];
+    let mut residual = vec![0.0_f64; n_persons];
+    let mut observed_mean = vec![0.0_f64; n_persons];
+    let mut expected_mean = vec![0.0_f64; n_persons];
     let mut n_observed = vec![0usize; n_persons];
+    let mut summary_values = Vec::with_capacity(n_persons);
     for p in 0..n_persons {
         let row = p * n_items;
         let mut obs_sum = 0.0_f64;
@@ -243,32 +244,32 @@ pub fn leniency_residuals(
             observed_mean[p] = obs;
             expected_mean[p] = exp;
             residual[p] = obs - exp;
+            summary_values.push(residual[p]);
         }
     }
 
-    let finite: Vec<f64> = residual.iter().copied().filter(|v| v.is_finite()).collect();
-    let mean = if finite.is_empty() {
-        f64::NAN
+    let mean = if summary_values.is_empty() {
+        0.0
     } else {
-        finite.iter().sum::<f64>() / finite.len() as f64
+        summary_values.iter().sum::<f64>() / summary_values.len() as f64
     };
-    let sd = if finite.is_empty() {
-        f64::NAN
+    let sd = if summary_values.is_empty() {
+        0.0
     } else {
-        let var = finite
+        let var = summary_values
             .iter()
             .map(|value| {
                 let delta = *value - mean;
                 delta * delta
             })
             .sum::<f64>()
-            / finite.len() as f64;
+            / summary_values.len() as f64;
         var.sqrt()
     };
-    let abs_p95 = if finite.is_empty() {
-        f64::NAN
+    let abs_p95 = if summary_values.is_empty() {
+        0.0
     } else {
-        let mut abs_values: Vec<f64> = finite.iter().map(|value| value.abs()).collect();
+        let mut abs_values: Vec<f64> = summary_values.iter().map(|value| value.abs()).collect();
         abs_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         linear_quantile(&abs_values, 0.95)
     };
