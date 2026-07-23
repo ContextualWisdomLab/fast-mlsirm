@@ -69,6 +69,7 @@ use mlsirm_core::classification::{
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
+use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -1787,7 +1788,36 @@ fn parallel_analysis(
     Ok(out.into())
 }
 
-/// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
+/// Guttman (1945) lambda reliability coefficients plus split-half summaries
+/// (`mlsirm_core::reliability`; oracle: CRAN psych 2.6.5 `guttman`/
+/// `splitHalf`). `data` is a flattened row-major `n_persons * n_items`
+/// matrix of complete finite scores. `n_sample_splits` bounds the split
+/// enumeration (exhaustive when C(p, floor(p/2)) fits the budget, else
+/// LCG-sampled with `seed`).
+#[pyfunction]
+fn guttman_lambdas(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    n_sample_splits: usize,
+    seed: u64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_guttman_lambdas(data.as_slice()?, n_persons, n_items, n_sample_splits, seed)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lambda1", res.lambda1)?;
+    out.set_item("lambda2", res.lambda2)?;
+    out.set_item("lambda3", res.lambda3)?;
+    out.set_item("lambda4", res.lambda4)?;
+    out.set_item("lambda5", res.lambda5)?;
+    out.set_item("lambda6", res.lambda6)?;
+    out.set_item("beta", res.beta)?;
+    out.set_item("mean_split", res.mean_split)?;
+    out.set_item("n_splits", res.n_splits)?;
+    out.set_item("exhaustive", res.exhaustive)?;
+    Ok(out.into())
+}
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
 /// "2pl". `n_classes` latent classes each get their own item parameters. Returns a dict
 /// with `a`/`b` (class-major `C*J`), `pi` (`C`), `class_posterior` (`N*C`), `map_class`
@@ -5391,6 +5421,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

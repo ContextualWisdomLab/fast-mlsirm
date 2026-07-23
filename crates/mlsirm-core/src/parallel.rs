@@ -1,4 +1,4 @@
-//! Horn's parallel analysis for principal-component retention.
+﻿//! Horn's parallel analysis for principal-component retention.
 //!
 //! Compares the eigenvalues of the Pearson correlation matrix of an observed
 //! `n x p` data matrix against the mean (or a Glorfeld upper-centile) of
@@ -182,7 +182,7 @@ pub(crate) fn retained_count(adjusted: &[f64]) -> usize {
 }
 
 /// Pearson correlation matrix of the columns of a row-major `n x p` matrix.
-fn correlation_matrix(data: &[f64], n: usize, p: usize) -> Result<Vec<f64>, String> {
+pub(crate) fn correlation_matrix(data: &[f64], n: usize, p: usize) -> Result<Vec<f64>, String> {
     let mut means = vec![0.0_f64; p];
     for row in 0..n {
         for (j, m) in means.iter_mut().enumerate() {
@@ -293,7 +293,7 @@ fn type7_quantile(values: &mut [f64], prob: f64) -> f64 {
 }
 
 #[inline]
-fn lcg_uniform(state: &mut u64) -> f64 {
+pub(crate) fn lcg_uniform(state: &mut u64) -> f64 {
     *state = state
         .wrapping_mul(6364136223846793005)
         .wrapping_add(1442695040888963407);
@@ -302,7 +302,7 @@ fn lcg_uniform(state: &mut u64) -> f64 {
 
 /// Box-Muller normal on LCG uniforms (crate idiom, mirrored in the NumPy
 /// fixture script for the pinned test literals).
-fn normal_draw(state: &mut u64) -> f64 {
+pub(crate) fn normal_draw(state: &mut u64) -> f64 {
     let u1 = lcg_uniform(state).max(1e-12);
     let u2 = lcg_uniform(state);
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()

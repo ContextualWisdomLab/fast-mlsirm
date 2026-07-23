@@ -50,6 +50,10 @@ from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
     ParallelAnalysisResult as ParallelAnalysisResult,
 )
+from .reliability import (
+    guttman_lambdas as guttman_lambdas,
+    GuttmanResult as GuttmanResult,
+)
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -174,6 +178,8 @@ __all__ = [
     "rudner_classification",
     "lee_classification",
     "parallel_analysis",
+    "guttman_lambdas",
+    "GuttmanResult",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",

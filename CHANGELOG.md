@@ -114,6 +114,25 @@
 
 ### Added
 
+- **Guttman lambda reliability coefficients** (`fast_mlsirm.guttman_lambdas`;
+  new `mlsirm_core::reliability`; Guttman, 1945, as cited in and implemented
+  by Revelle's CRAN `psych` 2.6.5 sources `guttman.R`/`splitHalf.R`/`smc.R`,
+  read line by line). On the Pearson correlation matrix: lambda1-lambda3
+  (lambda3 = coefficient alpha), lambda5 (best covariance column), lambda6
+  (squared multiple correlations via a plain symmetric inverse), plus
+  split-half summaries — lambda4 (best split), beta (worst split, floored at
+  0), and the mean split over all `C(p, floor(p/2))` subsets when that count
+  fits the `n_sample_splits` budget (psych's brute-force cutoff 15000),
+  otherwise over LCG-sampled splits. Declared divergences (documented in the
+  module): no `check.keys` auto-reversal, absolute split-half correlations
+  in both branches (psych's sampled branch is signed), hard error on
+  singular correlation matrices instead of psych's pseudoinverse, crate-LCG
+  sampling (psych-inspired, not bit-identical to any R run), and duplicate
+  sampled subsets allowed. Verified against an independent NumPy replication
+  (`np.corrcoef` + `np.linalg.inv` + `itertools.combinations`) on three
+  fixtures (even-p exhaustive, odd-p exhaustive, sampled) pinned at `1e-9`,
+  plus a 500-replication tau-equivalent Monte Carlo (`#[ignore]`) recovering
+  the analytic sum-score reliability within 0.01.
 - **Horn's parallel analysis** (`fast_mlsirm.parallel_analysis`; new
   `mlsirm_core::parallel`; Horn, 1965, and Glorfeld, 1995, as cited in and
   implemented by Dinno's CRAN `paran` 1.5.6 sources, read line by line).
