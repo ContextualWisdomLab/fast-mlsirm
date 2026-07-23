@@ -655,6 +655,82 @@ pub fn feldt_alpha_ci(alpha: f64, n: usize, p: usize, level: f64) -> Result<Alph
     })
 }
 
+/// Person separation reliability (eRm `SepRel`; Wright & Stone, 1999, as
+/// cited in Mair et al.'s eRm documentation — neither primary source read).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeparationReliabilityResult {
+    /// `(ssd - mse) / ssd`; unclamped (negative when `mse > ssd`), NaN when
+    /// `ssd <= 1e-12`.
+    pub sep_rel: f64,
+    /// Sample variance of the measures (n-1 denominator, matching R `var`).
+    pub ssd: f64,
+    /// Mean squared standard error, `mean(se_i^2)`.
+    pub mse: f64,
+    /// Separation index `G = sqrt((ssd - mse) / mse)`. HAND-DERIVED, not in
+    /// the read source: adjusted true SD over RMSE of measurement, so
+    /// `G^2 = R / (1 - R)`. NaN when `mse <= 1e-12` or `ssd < mse`.
+    pub sep_index: f64,
+}
+
+/// Person separation reliability `(SSD - MSE) / SSD` (transcribed from CRAN
+/// eRm `R/SepRel.R`, read in full; the docs cite Wright & Stone, 1999, not
+/// read). `measures` are point estimates (any estimation method — eRm's
+/// docs stress values differ across methods) and `se` their standard
+/// errors.
+///
+/// Caller responsibility (eRm plumbing NOT reproduced here): eRm drops
+/// persons with extreme raw scores (interpolated thetas) and missing
+/// estimates before applying the formula — pass already-cleaned vectors.
+/// The eRm-backed claim covers person measures; applying this to item
+/// measures is a generic extension of the same algebra, not sourced.
+pub fn separation_reliability(
+    measures: &[f64],
+    se: &[f64],
+) -> Result<SeparationReliabilityResult, String> {
+    let n = measures.len();
+    if n < 2 {
+        return Err("separation_reliability: need at least 2 measures".into());
+    }
+    if se.len() != n {
+        return Err(format!(
+            "separation_reliability: se length {} does not match measures length {n}",
+            se.len()
+        ));
+    }
+    if measures.iter().any(|v| !v.is_finite()) {
+        return Err("separation_reliability: measures must be finite".into());
+    }
+    if se.iter().any(|v| !v.is_finite() || *v < 0.0) {
+        return Err("separation_reliability: standard errors must be finite and >= 0".into());
+    }
+    let nf = n as f64;
+    let mean = measures.iter().sum::<f64>() / nf;
+    let ssd = measures.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nf - 1.0);
+    let mse = se.iter().map(|s| s * s).sum::<f64>() / nf;
+    if !ssd.is_finite() || !mse.is_finite() {
+        return Err(
+            "separation_reliability: variance/MSE overflowed to non-finite (inputs too large)"
+                .into(),
+        );
+    }
+    let sep_rel = if ssd <= 1e-12 {
+        f64::NAN
+    } else {
+        (ssd - mse) / ssd
+    };
+    let sep_index = if mse <= 1e-12 || ssd < mse {
+        f64::NAN
+    } else {
+        ((ssd - mse) / mse).sqrt()
+    };
+    Ok(SeparationReliabilityResult {
+        sep_rel,
+        ssd,
+        mse,
+        sep_index,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

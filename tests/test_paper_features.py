@@ -5916,3 +5916,27 @@ def test_omega_total_1f_oracle_parity():
     assert abs(o.omega_total - 0.825058734426) < 1e-5
     assert abs(o.fa.loadings[0, 0] - 0.774100663868) < 5e-5
     assert abs(o.fa.uniquenesses[2] - 0.345079760758) < 5e-5
+
+
+def test_separation_reliability_matches_numpy_oracle():
+    # Pinned numpy oracle (ddof=1 var; mean se^2); asserts read wrapper
+    # outputs which read the Rust crate values.
+    from fast_mlsirm import separation_reliability
+
+    x = np.array([-1.8, -0.6, 0.15, 0.9, 2.1, -0.35, 1.4])
+    se = np.array([0.45, 0.38, 0.35, 0.37, 0.52, 0.36, 0.41])
+    r = separation_reliability(x, se)
+    assert abs(r.ssd - 1.743690476190) < 1e-10
+    assert abs(r.mse - 0.167771428571) < 1e-10
+    assert abs(r.sep_rel - 0.903783709975) < 1e-10
+    assert abs(r.sep_index - 3.064841016127) < 1e-10
+
+
+def test_separation_reliability_negative_unclamped():
+    from fast_mlsirm import separation_reliability
+
+    r = separation_reliability(
+        np.array([0.0, 0.1, -0.1, 0.05]), np.array([1.0, 1.0, 1.0, 1.0])
+    )
+    assert r.sep_rel < 0.0
+    assert np.isnan(r.sep_index)

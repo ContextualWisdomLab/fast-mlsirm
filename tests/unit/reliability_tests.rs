@@ -543,3 +543,103 @@ fn alpha_feldt_ci_coverage_mc() {
     let cov = covered as f64 / reps as f64;
     assert!((0.925..=0.975).contains(&cov), "coverage {cov}");
 }
+
+// ---------------------------------------------------------------------------
+// separation_reliability (eRm SepRel transcription + hand-derived G)
+//
+// Mutation-kill audit (all asserts read crate outputs):
+// - M1 EXECUTED: swap numerator to (mse - ssd) => fixture sep_rel FAILs.
+// - M2 EXECUTED: population variance (n denominator) => ssd + sep_rel FAIL.
+// - M3 EXECUTED: drop the square on se in mse => mse + sep_rel FAIL.
+// - Disclosed non-discriminating identity: G^2 = R/(1-R) holds for ANY
+//   shared (ssd, mse), so it cannot catch shared-formula bugs; the pinned
+//   numpy fixture values (ssd, mse, R, G all asserted) are the anchors.
+
+/// Pinned numpy oracle (ddof=1 var; mean se^2), 12 decimals.
+/// Asserts read: crate ssd, mse, sep_rel, sep_index.
+#[test]
+fn seprel_numpy_oracle_fixture() {
+    let x = [-1.8, -0.6, 0.15, 0.9, 2.1, -0.35, 1.4];
+    let se = [0.45, 0.38, 0.35, 0.37, 0.52, 0.36, 0.41];
+    let r = separation_reliability(&x, &se).unwrap();
+    assert!((r.ssd - 1.743690476190).abs() < 1e-10, "ssd = {}", r.ssd);
+    assert!((r.mse - 0.167771428571).abs() < 1e-10, "mse = {}", r.mse);
+    assert!(
+        (r.sep_rel - 0.903783709975).abs() < 1e-10,
+        "sep_rel = {}",
+        r.sep_rel
+    );
+    assert!(
+        (r.sep_index - 3.064841016127).abs() < 1e-10,
+        "sep_index = {}",
+        r.sep_index
+    );
+}
+
+/// Negative-reliability path (mse > ssd): sep_rel negative and unclamped
+/// (eRm does not clamp), G NaN. Asserts read crate outputs.
+#[test]
+fn seprel_negative_unclamped_and_g_nan() {
+    let x = [0.0, 0.1, -0.1, 0.05];
+    let se = [1.0, 1.0, 1.0, 1.0];
+    let r = separation_reliability(&x, &se).unwrap();
+    assert!(r.sep_rel < 0.0, "sep_rel = {}", r.sep_rel);
+    assert!(r.sep_index.is_nan());
+    // Degenerate ssd = 0 -> sep_rel NaN (documented crate guard).
+    let r0 = separation_reliability(&[1.5, 1.5, 1.5], &[0.2, 0.2, 0.2]).unwrap();
+    assert!(r0.sep_rel.is_nan());
+}
+
+/// Error contract. Asserts read crate Err values.
+#[test]
+fn seprel_error_paths() {
+    assert!(separation_reliability(&[1.0], &[0.1]).is_err());
+    assert!(separation_reliability(&[1.0, 2.0], &[0.1]).is_err());
+    assert!(separation_reliability(&[1.0, f64::NAN], &[0.1, 0.1]).is_err());
+    assert!(separation_reliability(&[1.0, 2.0], &[0.1, -0.1]).is_err());
+    assert!(separation_reliability(&[1.0, 2.0], &[0.1, f64::INFINITY]).is_err());
+}
+
+/// 500-rep MC (spec rev 2 design): x = theta + N(0, se) noise with
+/// theta ~ N(0, 1), constant se = 0.5, n = 1000 per rep. Population
+/// R = 1 / (1 + 0.25) = 0.8. Asserts read crate sep_rel across reps.
+#[test]
+#[ignore]
+fn seprel_mc_recovery_500() {
+    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut next_u = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut next_normal = || {
+        let (u1, u2): (f64, f64) = (next_u().max(1e-12), next_u());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    };
+    let n = 1000usize;
+    let se_true = 0.5f64;
+    let reps = 500;
+    let mut sum_r = 0.0;
+    for _ in 0..reps {
+        let x: Vec<f64> = (0..n)
+            .map(|_| next_normal() + se_true * next_normal())
+            .collect();
+        let se = vec![se_true; n];
+        sum_r += separation_reliability(&x, &se).unwrap().sep_rel;
+    }
+    let mean_r = sum_r / reps as f64;
+    let pop_r = 1.0 / (1.0 + se_true * se_true);
+    assert!(
+        (mean_r - pop_r).abs() < 0.01,
+        "mean sep_rel = {mean_r} vs population {pop_r}"
+    );
+}
+
+/// Impl-review regression: finite-but-huge inputs must Err, not leak
+/// non-finite ssd/mse. Asserts read crate Err values.
+#[test]
+fn seprel_overflow_guard() {
+    assert!(separation_reliability(&[1e308, 1e308], &[0.1, 0.1]).is_err());
+    assert!(separation_reliability(&[0.0, 1.0], &[1e200, 1e200]).is_err());
+}

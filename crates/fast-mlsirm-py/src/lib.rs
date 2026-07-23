@@ -81,6 +81,7 @@ use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
     cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
+    separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -2068,6 +2069,25 @@ fn feldt_alpha_ci(
     out.set_item("r_bar", res.r_bar)?;
     out.set_item("df1", res.df1)?;
     out.set_item("df2", res.df2)?;
+    Ok(out.into())
+}
+
+/// Person separation reliability `(SSD - MSE) / SSD`
+/// (`mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`).
+/// Returns a dict with `sep_rel`, `ssd`, `mse`, `sep_index`.
+#[pyfunction]
+fn separation_reliability(
+    py: Python<'_>,
+    measures: PyReadonlyArray1<'_, f64>,
+    se: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_separation_reliability(measures.as_slice()?, se.as_slice()?)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("sep_rel", res.sep_rel)?;
+    out.set_item("ssd", res.ssd)?;
+    out.set_item("mse", res.mse)?;
+    out.set_item("sep_index", res.sep_index)?;
     Ok(out.into())
 }
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
@@ -5684,6 +5704,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

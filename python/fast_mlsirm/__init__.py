@@ -59,6 +59,8 @@ from .reliability import (
     cronbach_alpha as cronbach_alpha,
     feldt_alpha_ci as feldt_alpha_ci,
     AlphaCiResult as AlphaCiResult,
+    separation_reliability as separation_reliability,
+    SeparationReliabilityResult as SeparationReliabilityResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -204,6 +206,8 @@ __all__ = [
     "cronbach_alpha",
     "feldt_alpha_ci",
     "AlphaCiResult",
+    "separation_reliability",
+    "SeparationReliabilityResult",
     "gtheory_pi",
     "gtheory_pio",
     "minres_fa",
