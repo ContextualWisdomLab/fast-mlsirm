@@ -215,6 +215,9 @@ pub fn fit_poly_lsirm(
     max_iter: usize,
     tol: f64,
 ) -> Result<PolyLsirmFit, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("n_persons and n_items must be positive".into());
+    }
     if !(2..=POLY_MAX_CAT).contains(&n_cat) {
         return Err(format!("n_cat must be in 2..={POLY_MAX_CAT}"));
     }
@@ -233,6 +236,13 @@ pub fn fit_poly_lsirm(
         }
     }
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            if is_obs(p, i) && y[p * n_items + i] >= n_cat {
+                return Err("observed response categories must be < n_cat".into());
+            }
+        }
+    }
     let (theta, t_w) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
     let t_logw: Vec<f64> = t_w.iter().map(|w| w.ln()).collect();
     let (xi_grid, x_logw) = xi_tensor_grid(q_xi, latent_dim)?;

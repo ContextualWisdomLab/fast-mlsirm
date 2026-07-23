@@ -857,6 +857,33 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(
         poly_local_dependence(&[0, 2], None, 1, 2, 2, &[1.0, 1.0], &[0.0, 0.0], pm, 7).is_err()
     );
+    let masked_ld = poly_local_dependence(
+        &[0, 99],
+        Some(&[true, false]),
+        1,
+        2,
+        2,
+        &[1.0, 1.0],
+        &[0.0, 0.0],
+        pm,
+        7,
+    )
+    .unwrap();
+    // Reads crate output (`x2`). Kills the mutation that validates all y cells
+    // without checking `observed`.
+    assert!(masked_ld.x2[0].is_nan());
+    assert!(poly_local_dependence(
+        &[0, 99],
+        Some(&[true, true]),
+        1,
+        2,
+        2,
+        &[1.0, 1.0],
+        &[0.0, 0.0],
+        pm,
+        7,
+    )
+    .is_err());
     let poly_y: Vec<usize> = (0..20).flat_map(|p| [p % 3, (p + 1) % 3]).collect();
     for model in [crate::poly::PolyModel::Gpcm, crate::poly::PolyModel::Grm] {
         let result = poly_local_dependence(
@@ -896,6 +923,40 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(poly_m2(&[0, 0, 0], None, 1, 3, 2, &[1.0; 2], &[0.0; 3], pm, 7).is_err());
     assert!(poly_m2(&[0, 0, 0], None, 1, 3, 2, &[1.0; 3], &[0.0; 2], pm, 7).is_err());
     assert!(poly_m2(&[0, 0, 2], None, 1, 3, 2, &[1.0; 3], &[0.0; 3], pm, 7).is_err());
+    let mut masked_y: Vec<usize> = (0..20)
+        .flat_map(|p| [p % 2, (p / 2) % 2, (p / 3) % 2, (p / 5) % 2])
+        .collect();
+    let mut masked_obs = vec![true; masked_y.len()];
+    masked_y[2] = 99;
+    masked_obs[2] = false;
+    let masked_poly_m2 = poly_m2(
+        &masked_y,
+        Some(&masked_obs),
+        20,
+        4,
+        2,
+        &[1.0; 4],
+        &[0.0; 4],
+        pm,
+        7,
+    )
+    .unwrap();
+    // Reads crate output (`n_complete`). Kills the mutation that validates all y
+    // cells without checking `observed`.
+    assert_eq!(masked_poly_m2.n_complete, 19);
+    masked_obs[2] = true;
+    assert!(poly_m2(
+        &masked_y,
+        Some(&masked_obs),
+        20,
+        4,
+        2,
+        &[1.0; 4],
+        &[0.0; 4],
+        pm,
+        7
+    )
+    .is_err());
     assert!(poly_m2(&[], None, 0, 3, 2, &[1.0; 3], &[0.0; 3], pm, 7).is_err());
     assert!(poly_m2(&[], None, 0, 4, 2, &[1.0; 4], &[0.0; 4], pm, 7).is_err());
     let four_y: Vec<usize> = (0..12)

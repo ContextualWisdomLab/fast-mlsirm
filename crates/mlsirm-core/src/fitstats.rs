@@ -2247,6 +2247,21 @@ fn validate_optional_observed_length(
     }
 }
 
+fn validate_observed_categories(
+    y: &[usize],
+    observed: Option<&[bool]>,
+    n_cat: usize,
+) -> Result<(), String> {
+    if y.iter()
+        .enumerate()
+        .any(|(idx, &value)| observed.map_or(true, |o| o[idx]) && value >= n_cat)
+    {
+        Err("observed response categories must be < n_cat".into())
+    } else {
+        Ok(())
+    }
+}
+
 /// Local-dependence diagnostics for every item pair of a fitted unidimensional
 /// GRM/GPCM (Chen & Thissen, 1997), the ordered-category generalization of the
 /// binary pairwise chi-square in [`adjusted_chi2_pairs`]. For each pair `(i,j)`
@@ -2297,9 +2312,7 @@ pub fn poly_local_dependence(
     if cat_params.len() != n_items * (n_cat - 1) {
         return Err("cat_params must have length n_items*(n_cat-1)".into());
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
+    validate_observed_categories(y, observed, n_cat)?;
     let z = n_cat - 1;
 
     // per-item, per-node category probabilities P_i(a | theta_t)
@@ -2466,9 +2479,7 @@ pub fn poly_m2(
     if cat_params.len() != n_items * (n_cat - 1) {
         return Err("cat_params must have length n_items*(n_cat-1)".into());
     }
-    if y.iter().any(|&v| v >= n_cat) {
-        return Err("response categories must be < n_cat".into());
-    }
+    validate_observed_categories(y, observed, n_cat)?;
 
     let z = n_cat - 1; // highest threshold index
                        // moment layout: item-major univariate (i,c), then bivariate pairs (i<j)x(c,d)

@@ -72,12 +72,29 @@ fn poly_marginal_boundaries_and_grm_paths_are_explicit() {
     assert_eq!(objective, 0.0);
     assert_eq!(gradient, vec![0.0; 4]);
 
-    assert!(fit_poly_lsirm(&[], None, 0, 0, 2, 0, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
+    assert!(fit_poly_lsirm(&[], None, 0, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
+    assert!(fit_poly_lsirm(&[], None, 1, 0, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
     assert!(fit_poly_lsirm(&[], None, 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
     assert!(fit_poly_lsirm(&[0], Some(&[]), 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6,).is_err());
+    assert!(fit_poly_lsirm(
+        &[3],
+        Some(&[true]),
+        1,
+        1,
+        3,
+        1,
+        PolyModel::Grm,
+        7,
+        7,
+        1,
+        1e-6,
+    )
+    .is_err());
 
+    // Reads crate output (`fit.loglik`, dimensions below). Kills the mutation
+    // that validates masked cells or indexes `freq[y]` without the observed guard.
     let fit = fit_poly_lsirm(
-        &[0, 2],
+        &[0, 99],
         Some(&[true, false]),
         2,
         1,

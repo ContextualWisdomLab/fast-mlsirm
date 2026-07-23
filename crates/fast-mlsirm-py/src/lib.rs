@@ -86,15 +86,20 @@ fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     }
 }
 
-fn poly_responses(y: &[i64], n_cat: usize) -> PyResult<Vec<usize>> {
+fn poly_responses(y: &[i64], observed: Option<&[bool]>, n_cat: usize) -> PyResult<Vec<usize>> {
+    if observed.is_some_and(|o| o.len() != y.len()) {
+        return Err(PyValueError::new_err(
+            "observed must have the same length as responses",
+        ));
+    }
     let mut yv = Vec::with_capacity(y.len());
-    for &v in y {
-        if v < 0 || v as usize >= n_cat {
+    for (idx, &v) in y.iter().enumerate() {
+        if observed.map_or(true, |o| o[idx]) && (v < 0 || v as usize >= n_cat) {
             return Err(PyValueError::new_err(
-                "responses must be integer categories in 0..n_cat-1",
+                "observed responses must be integer categories in 0..n_cat-1",
             ));
         }
-        yv.push(v as usize);
+        yv.push(if v < 0 { 0 } else { v as usize });
     }
     Ok(yv)
 }
@@ -2830,8 +2835,8 @@ fn fit_poly_unidim(
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let fit = core_fit_poly_unidim(
         &yv, obs, n_persons, n_items, n_cat, m, q_theta, max_iter, tol,
     )
@@ -2874,8 +2879,8 @@ fn fit_nominal(
     max_iter: usize,
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let fit = core_fit_nominal(&yv, obs, n_persons, n_items, n_cat, q_theta, max_iter, tol)
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
@@ -2921,8 +2926,8 @@ fn poly_person_fit(
     flag_threshold: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let res = core_poly_person_fit(
         &yv,
         obs,
@@ -3031,8 +3036,8 @@ fn score_wle_poly(
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let out_scores = core_score_wle_poly(
         &yv,
         obs,
@@ -3071,8 +3076,8 @@ fn score_poly_eap(
     q_theta: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let (eap, sd) = core_score_poly_eap(
         &yv,
         obs,
@@ -3142,8 +3147,8 @@ fn poly_item_fit_sx2(
     min_expected: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let res = core_poly_s_x2(
         &yv,
         obs,
@@ -3186,8 +3191,8 @@ fn fit_poly_lsirm(
     tol: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let fit = core_fit_poly_lsirm(
         &yv, obs, n_persons, n_items, n_cat, latent_dim, m, q_theta, q_xi, max_iter, tol,
     )
@@ -3573,8 +3578,8 @@ fn poly_m2(
     q_theta: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let res = core_poly_m2(
         &yv,
         obs,
@@ -3632,8 +3637,8 @@ fn poly_local_dependence(
     q_theta: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let res = core_poly_ld(
         &yv,
         obs,
@@ -3701,8 +3706,8 @@ fn poly_dif(
     fdr_q: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = parse_poly_model(model)?;
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let gid: Vec<usize> = group_id
         .as_slice()?
         .iter()
@@ -4047,8 +4052,8 @@ fn u3_person_fit(
     observed: Option<PyReadonlyArray1<'_, bool>>,
     cutoff: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let yv = poly_responses(y.as_slice()?, n_cat)?;
     let obs = observed.as_ref().map(|o| o.as_slice()).transpose()?;
+    let yv = poly_responses(y.as_slice()?, obs, n_cat)?;
     let res = core_u3_poly_person_fit(&yv, obs, n_persons, n_items, n_cat, cutoff)
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
