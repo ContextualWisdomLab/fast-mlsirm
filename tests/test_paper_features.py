@@ -5609,3 +5609,59 @@ def test_guttman_lambdas_rejects_degenerate_inputs():
     dup[:, 1] = dup[:, 0]  # singular correlation matrix -> lambda6 inverse
     with pytest.raises(ValueError):
         guttman_lambdas(dup)
+
+
+def test_tenberge_mu_matches_numpy_fixture():
+    """ten Berge & Zegers mu series (psych 2.6.5 tenberge.R contract):
+    fixture A literals from an independent NumPy replication (np.corrcoef +
+    explicit off-diagonal power sums). Every assert reads TenBergeResult
+    fields returned by the crate through the wrapper."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    data = _guttman_gen_data(
+        30,
+        6,
+        42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    t = tenberge_mu(data)
+    tol = 1e-9
+    assert abs(t.mu0 - 0.49281789125204223) < tol
+    assert abs(t.mu1 - 0.5561900258418755) < tol
+    assert abs(t.mu2 - 0.566334883191414) < tol
+    assert abs(t.mu3 - 0.5694865282091219) < tol
+    assert t.mu0 <= t.mu1 <= t.mu2 <= t.mu3
+
+
+def test_tenberge_mu_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    rng = np.random.default_rng(9)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:, :2])  # n_items < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(np.array([1.0, 2.0, 3.0]))  # 1-D
+    bad = good.copy()
+    bad[0, 0] = np.inf
+    with pytest.raises(ValueError):
+        tenberge_mu(bad)
+    const = good.copy()
+    const[:, 3] = 0.25
+    with pytest.raises(ValueError):
+        tenberge_mu(const)  # zero variance

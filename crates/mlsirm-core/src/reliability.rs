@@ -240,6 +240,101 @@ pub fn guttman_lambdas(
     })
 }
 
+/// ten Berge & Zegers mu coefficient series (mu0..mu3).
+#[derive(Debug, Clone)]
+pub struct TenBergeResult {
+    /// mu0 = coefficient alpha (equals Guttman lambda3 exactly).
+    pub mu0: f64,
+    /// mu1 (equals Guttman lambda2 exactly).
+    pub mu1: f64,
+    pub mu2: f64,
+    pub mu3: f64,
+}
+
+/// ten Berge & Zegers (1978) mu0-mu3 reliability lower bounds for a
+/// row-major `n_persons x n_items` data matrix (complete, finite).
+///
+/// Transcribed from psych 2.6.5 `tenberge.R` lines 4-12, read line by line
+/// (Revelle, 2025); ten Berge & Zegers (1978), *Psychometrika, 43*(4),
+/// 575-579, https://doi.org/10.1007/BF02293811, was NOT read — attribution
+/// is "as cited in / as implemented by Revelle (2025)". With `Vt = sum(R)`,
+/// `S_k = sum_{i != j} R_ij^k`, and `c = p/(p-1)` applied to the INNERMOST
+/// radical only:
+///
+/// ```text
+/// mu0 = c * S_1 / Vt                                (tenberge.R line 9)
+/// mu1 = (S_1 + sqrt(c * S_2)) / Vt                  (line 10)
+/// mu2 = (S_1 + sqrt(S_2 + sqrt(c * S_4))) / Vt      (line 11)
+/// mu3 = (S_1 + sqrt(S_2 + sqrt(S_4 + sqrt(c * S_8)))) / Vt   (line 12)
+/// ```
+///
+/// Verified identities (disclosed, pinned independently in tests):
+/// `mu0 == guttman lambda3` (alpha; since `S_1 = Vt - p`) and
+/// `mu1 == guttman lambda2` (character-identical formula in guttman.R).
+/// `mu0 <= mu1 <= mu2 <= mu3` holds for every valid correlation matrix by
+/// Cauchy-Schwarz over the `p*(p-1)` off-diagonal cells
+/// (`sqrt(c * S_{2k}) >= S_k / (p-1)` step-wise) given `Vt > 0`.
+///
+/// Divergences from psych (deliberate): raw-data input only (no
+/// correlation-matrix passthrough via the fragile `dim[1] > n` heuristic,
+/// no `use = "pairwise"`); hard errors on degenerate input instead of NA
+/// propagation. `S_1` is summed directly over off-diagonal cells rather
+/// than as `Vt - p` to avoid cancellation.
+pub fn tenberge_mu(
+    data: &[f64],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<TenBergeResult, String> {
+    if n_persons < 3 {
+        return Err("tenberge_mu needs n_persons >= 3".into());
+    }
+    if n_items < 3 {
+        return Err("tenberge_mu needs n_items >= 3".into());
+    }
+    let cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("data dimensions overflow usize")?;
+    if data.len() != cells {
+        return Err(format!(
+            "data length {} does not match n_persons * n_items = {cells}",
+            data.len()
+        ));
+    }
+    if data.iter().any(|v| !v.is_finite()) {
+        return Err("data must be finite (no NaN/inf; complete data required)".into());
+    }
+    let p = n_items;
+    let r = correlation_matrix(data, n_persons, p)?;
+    let vt: f64 = r.iter().sum();
+    if !vt.is_finite() || vt <= 0.0 {
+        return Err(format!(
+            "sum of the correlation matrix is {vt}; total-score variance must be positive"
+        ));
+    }
+    let (mut s1, mut s2, mut s4, mut s8) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    for i in 0..p {
+        for j in 0..p {
+            if i == j {
+                continue;
+            }
+            let x = r[i * p + j];
+            let x2 = x * x;
+            let x4 = x2 * x2;
+            s1 += x;
+            s2 += x2;
+            s4 += x4;
+            s8 += x4 * x4;
+        }
+    }
+    let c = p as f64 / (p as f64 - 1.0);
+    Ok(TenBergeResult {
+        mu0: c * s1 / vt,
+        mu1: (s1 + (c * s2).sqrt()) / vt,
+        mu2: (s1 + (s2 + (c * s4).sqrt()).sqrt()) / vt,
+        mu3: (s1 + (s2 + (s4 + (c * s8).sqrt()).sqrt()).sqrt()) / vt,
+    })
+}
+
 /// `|4 * S_AB / Vt|` for the split with subset A = `a_idx` (sorted item
 /// indices) — splitHalf.R line 17 with abs per divergence 5.
 fn split_rb(r: &[f64], p: usize, vt: f64, a_idx: &[usize]) -> f64 {
