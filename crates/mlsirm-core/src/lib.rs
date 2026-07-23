@@ -27,6 +27,7 @@ pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
 pub mod scoring;
+pub mod subscores;
 pub mod testlet;
 pub mod twopl;
 

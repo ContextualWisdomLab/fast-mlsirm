@@ -114,6 +114,32 @@
 
 ### Added
 
+- **Haberman subscore added-value analysis** (`fast_mlsirm.subscore_analysis`;
+  new `mlsirm_core::subscores`; Haberman, 2008, as cited in Sinharay, 2010).
+  For each subscale of a disjoint, exhaustive item partition computes the
+  PRMSEs of the three classical-test-theory true-subscore estimators — from
+  the observed subscore (`= Cronbach alpha`), from the observed total
+  (`rho^2(s_t, x_t) * alpha_x` with the true-score covariance row sum over
+  subscore columns only), and from both jointly (Wainer-style augmentation via
+  `tau`/`beta`/`gamma`) — plus per-person estimator matrices, the
+  `(K+1)^2` score correlation matrix, disattenuated subscore correlations, and
+  added-value decisions (Haberman's `PRMSE_s > PRMSE_x`; Sinharay's 2010
+  `+ 0.01` margin for augmentation, labeled — CRAN `CTTsub`'s relative rule is
+  documented but not implemented). Formulas verified against the Appendix of
+  Sinharay (2010, ETS RR-10-16) and the CRAN `subscore` R source read
+  line-by-line; degenerate samples (alpha outside `(0, 1]`, zero variance,
+  subscore collinear with the total) are rejected instead of propagating NaN.
+  For LLM-as-a-Judge item-quality management this decides whether per-domain
+  judge subscores add diagnostic value over the overall score. Rust-only
+  numerics; the Python wrapper validates and marshals. Tests pin every
+  reported statistic against literals from an independent NumPy transcription
+  of the R semantics on an asymmetric fixture with mixed added-value
+  outcomes, include rejection tests for the structural and degeneracy guards
+  (the defensive computed-PRMSE-range guard is not separately exercised), a
+  conditional dominance
+  sweep on guard-passing random data, and a 500-rep `#[ignore]` Monte Carlo
+  MSE comparison; three mutation spot-checks (dropped `m/(m-1)`, rowsum
+  including the total column, `tau` numerator sign flip) were run and killed.
 - **Kernel-smoothing nonparametric IRT** (`fast_mlsirm.ksirt_analysis`; new
   `mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza et al., 2014).
   Estimates option characteristic curves by Nadaraya-Watson kernel regression

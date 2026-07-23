@@ -5157,3 +5157,112 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
         ksirt_analysis(ok, bandwidth=np.array([0.5]))
     with pytest.raises(ValueError, match="positive"):
         ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+
+
+def test_subscore_analysis_matches_independent_reference():
+    """Haberman (2008, as cited in Sinharay, 2010) subscore added-value
+    analysis: every assert reads the SubscoreResult returned by the crate via
+    the PyO3 binding, pinned against literals from an independent NumPy
+    transcription of the CRAN subscore R semantics (ddof=1). The fixture is
+    asymmetric across subscales (added_value_sx = [False, True]), so
+    decision-rule and PRMSE mutants (rowsum including the total column,
+    missing true-variance diagonal, dropped +0.01 margin) all fail here."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import SubscoreResult, subscore_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "subscore_analysis"):
+        pytest.skip("compiled core built without subscore_analysis")
+
+    x = np.array(
+        [
+            [0, 0, 0, 1], [0, 1, 0, 0], [1, 1, 0, 1], [0, 0, 1, 0],
+            [1, 1, 1, 1], [1, 0, 1, 1], [0, 0, 0, 0], [1, 1, 1, 0],
+            [0, 1, 1, 1], [1, 1, 0, 0],
+        ],
+        dtype=float,
+    )
+    res = subscore_analysis(x, [0, 0, 1, 1])
+    assert isinstance(res, SubscoreResult)
+    np.testing.assert_allclose(
+        res.alpha, [0.5797101449275359, 0.33333333333333326], atol=1e-10
+    )
+    assert abs(res.alpha_total - 0.44742729306487705) < 1e-12
+    np.testing.assert_allclose(
+        res.prmse_x, [0.41946308724832204, 0.3020134228187919], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.prmse_sx, [0.5872524752475244, 0.3663366336633662], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.tau, [0.1385414635898375, 0.27024443691002326], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.beta, [0.49752475247524747, 0.21782178217821788], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.gamma, [0.07178217821782161, 0.09900990099009896], atol=1e-10
+    )
+    assert res.added_value_s.tolist() == [True, True]
+    assert res.added_value_sx.tolist() == [False, True]
+    assert res.corr.shape == (3, 3)
+    assert abs(res.corr[0, 2] - 0.7791290756515445) < 1e-10
+    assert np.isnan(res.disattenuated_corr[0, 0])
+    assert abs(res.disattenuated_corr[0, 1] - 0.35355339059327384) < 1e-10
+    # person-0 estimates from all three estimators
+    np.testing.assert_allclose(
+        res.subscore_s[0], [0.4623188405797105, 1.0], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.subscore_x[0], [0.7308724832214768, 0.778523489932886], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.subscore_sx[0], [0.47376237623762407, 0.8910891089108911], atol=1e-10
+    )
+    assert res.observed.shape == (10, 2) and res.total.shape == (10,)
+
+
+def test_subscore_analysis_rejects_degenerate_inputs():
+    """Guard behavior (spec-review mandated): duplicated subscales make a
+    subscore collinear with the total (tau divides by 1 - r^2 = 0) and must
+    raise, as must negative within-subscale alpha, bad partitions, and
+    incomplete data. Every assert reads the ValueError raised by the crate
+    through the binding; removing any Rust-side guard turns these into NaN
+    results or panics and fails the test."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import subscore_analysis
+
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "subscore_analysis"):
+        pytest.skip("compiled core built without subscore_analysis")
+
+    base = np.array(
+        [
+            [0, 0, 0, 1], [0, 1, 0, 0], [1, 1, 0, 1], [0, 0, 1, 0],
+            [1, 1, 1, 1], [1, 0, 1, 1], [0, 0, 0, 0], [1, 1, 1, 0],
+            [0, 1, 1, 1], [1, 1, 0, 0],
+        ],
+        dtype=float,
+    )
+    dup = base[:, [0, 1, 0, 1]]
+    with pytest.raises(ValueError, match="collinear"):
+        subscore_analysis(dup, [0, 0, 1, 1])
+    rev = base.copy()
+    rev[:, 1] = 1.0 - rev[:, 0]  # reversed item -> negative alpha
+    with pytest.raises(ValueError, match="outside"):
+        subscore_analysis(rev, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 0, 1])  # groups length mismatch
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 0, 0, 0])  # single subscale
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 1, 1, 1])  # singleton subscale
+    nanx = base.copy()
+    nanx[0, 0] = np.nan
+    with pytest.raises(ValueError, match="complete"):
+        subscore_analysis(nanx, [0, 0, 1, 1])
