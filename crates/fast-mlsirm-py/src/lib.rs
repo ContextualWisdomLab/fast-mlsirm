@@ -60,6 +60,7 @@ use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
+use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -1468,6 +1469,48 @@ fn fit_facets(
     out.set_item("connected", res.connected)?;
     out.set_item("n_parameters", res.n_parameters)?;
     Ok(out.into())
+}
+
+/// Mokken scalability coefficients (`mlsirm_core::mokken::coef_h`).
+/// `x` is a row-major complete `n_persons * n_items` integer score matrix.
+/// Returns a dict with `hij`/`zij` (flattened `J*J`, NaN diagonal), `hi`,
+/// `zi` (`J`), and scalars `h`, `z`. Sample statistics follow the mokken R
+/// package (van der Ark, 2007, https://doi.org/10.18637/jss.v020.i11).
+#[pyfunction]
+#[pyo3(signature = (x, n_persons, n_items))]
+fn mokken_coef_h(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_mokken_coef_h(x.as_slice()?, n_persons, n_items)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("hij", res.hij)?;
+    out.set_item("hi", res.hi)?;
+    out.set_item("h", res.h)?;
+    out.set_item("zij", res.zij)?;
+    out.set_item("zi", res.zi)?;
+    out.set_item("z", res.z)?;
+    Ok(out.into())
+}
+
+/// Mokken automated item selection procedure (`mlsirm_core::mokken::aisp`,
+/// the "search normal" algorithm of the mokken R package). Returns per-item
+/// scale labels: 0 = unscalable, 1, 2, ... in formation order. `c` is the
+/// scalability lower bound (rule of thumb 0.3), `alpha` the nominal
+/// significance level.
+#[pyfunction]
+#[pyo3(signature = (x, n_persons, n_items, c = 0.3, alpha = 0.05))]
+fn mokken_aisp(
+    x: PyReadonlyArray1<'_, i64>,
+    n_persons: usize,
+    n_items: usize,
+    c: f64,
+    alpha: f64,
+) -> PyResult<Vec<u32>> {
+    core_mokken_aisp(x.as_slice()?, n_persons, n_items, c, alpha).map_err(PyValueError::new_err)
 }
 
 /// Marginal-EM fit of a mixed Rasch / mixture-IRT model (`mlsirm_core::mixture`, Rost,
@@ -5066,6 +5109,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fit_crm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_rsm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_facets, m)?)?;
+    m.add_function(wrap_pyfunction!(mokken_coef_h, m)?)?;
+    m.add_function(wrap_pyfunction!(mokken_aisp, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
