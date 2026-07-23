@@ -4998,3 +4998,81 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
     yb[6, 1, 1] = 0.0
     resb = fit_facets(yb, n_cat=2, max_iter=50)
     assert resb.connected is True
+
+
+def test_mokken_analysis_coefficients_and_cluster_recovery():
+    """Mokken scale analysis (van der Ark, 2007): every assert reads crate
+    outputs (hij/hi/h/zij/scale from mokken_coef_h / mokken_aisp via the
+    wrapper). A perfect Guttman scalogram must give H = 1 exactly (kills
+    covmax mutants), and a two-cluster simulation must be partitioned into
+    exactly two AISP scales (kills selection-logic mutants)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import MokkenResult, mokken_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mokken_coef_h"):
+        pytest.skip("compiled core built without mokken_coef_h")
+
+    # perfect Guttman scalogram -> H exactly 1
+    guttman = np.array(
+        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 1, 1]], dtype=float
+    )
+    g = mokken_analysis(guttman)
+    assert isinstance(g, MokkenResult)
+    assert abs(g.h - 1.0) < 1e-12
+    off = ~np.eye(3, dtype=bool)
+    assert np.allclose(g.hij[off], 1.0)
+    assert np.all(np.isnan(np.diag(g.hij)))
+
+    # two independent Rasch clusters -> two scales
+    rng = np.random.default_rng(2013)
+    n, per = 1500, 4
+    bs = np.array([-0.8, -0.3, 0.3, 0.8])
+    t1 = rng.normal(size=(n, 1)) * 1.6
+    t2 = rng.normal(size=(n, 1)) * 1.6
+    xa = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t1 - bs)))).astype(int)
+    xb = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t2 - bs)))).astype(int)
+    res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3)
+    a, b = res.scale[0], res.scale[4]
+    assert a > 0 and b > 0 and a != b, res.scale
+    assert np.all(res.scale[:4] == a) and np.all(res.scale[4:] == b), res.scale
+    # crate zij symmetry read-back on real data
+    assert np.allclose(res.zij[off_idx := ~np.eye(8, dtype=bool)],
+                       res.zij.T[off_idx])
+
+
+def test_mokken_analysis_rejects_malformed_input():
+    """Wrapper validation: incomplete, non-integer, negative, non-2D data and
+    out-of-range c/alpha raise ValueError (each assert exercises the wrapper
+    guard in front of the crate; kills guard-deletion mutants)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import mokken_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mokken_coef_h"):
+        pytest.skip("compiled core built without mokken_coef_h")
+
+    ok = np.array([[0, 1], [1, 0], [1, 1], [0, 0], [1, 0], [0, 1]], dtype=float)
+    with pytest.raises(ValueError, match="complete"):
+        bad = ok.copy()
+        bad[0, 0] = np.nan
+        mokken_analysis(bad)
+    with pytest.raises(ValueError, match="integer"):
+        mokken_analysis(ok + 0.5)
+    with pytest.raises(ValueError, match="non-negative"):
+        mokken_analysis(ok - 1.0)
+    with pytest.raises(ValueError, match="2-D"):
+        mokken_analysis(ok.reshape(-1))
+    with pytest.raises(ValueError, match="lower_bound"):
+        mokken_analysis(ok, lower_bound=1.0)
+    with pytest.raises(ValueError, match="alpha"):
+        mokken_analysis(ok, alpha=0.0)
+    # crate-side guard surfaces as ValueError too (zero-variance item)
+    cst = ok.copy()
+    cst[:, 0] = 1.0
+    with pytest.raises(ValueError, match="zero variance"):
+        mokken_analysis(cst)
