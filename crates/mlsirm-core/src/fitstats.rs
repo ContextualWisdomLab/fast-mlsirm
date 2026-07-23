@@ -2,13 +2,13 @@
 //! NumPy implementations in `python/fast_mlsirm/fitstats.py` are the parity
 //! reference and fallback).
 //!
-//! - S-X² (Orlando & Thissen 2000) with the Lord-Wingersky recursion on the
-//!   joint `(theta, xi)` node set, per trait dimension, with score-group
-//!   collapsing and — because the statistic is over-powered at large `N` — a
-//!   practical-significance effect size: the `N_s`-weighted RMS of the
-//!   observed-minus-expected proportions (cf. Sinharay & Haberman 2014,
-//!   "How often is the misfit of item response theory models practically
-//!   significant?").
+//! - S-X² (Orlando & Thissen 2000) and S-G² (Sinharay & Lu 2008) with the
+//!   Lord-Wingersky recursion on the joint `(theta, xi)` node set, per trait
+//!   dimension, with score-group collapsing and — because the statistic is
+//!   over-powered at large `N` — a practical-significance effect size: the
+//!   `N_s`-weighted RMS of the observed-minus-expected proportions (cf.
+//!   Sinharay & Haberman 2014, "How often is the misfit of item response
+//!   theory models practically significant?").
 //! - `l_z` (Drasgow, Levine & Williams 1985) and `l_z*` (Snijders 2001, MAP
 //!   `r_0 = -(theta - prior_mean)` correction) at EAP estimates with the
 //!   latent-space position fixed at its EAP.
@@ -28,6 +28,14 @@ fn at_least_tiny(value: f64, tiny: f64) -> f64 {
         tiny
     } else {
         value
+    }
+}
+
+fn xlogx_over_y(x: f64, y: f64) -> f64 {
+    if x == 0.0 {
+        0.0
+    } else {
+        x * (x / y).ln()
     }
 }
 
@@ -137,8 +145,10 @@ pub fn benjamini_hochberg(p_values: &[f64], q: f64) -> Vec<bool> {
 
 pub struct SX2Result {
     pub statistic: Vec<f64>,
+    pub g2_statistic: Vec<f64>,
     pub df: Vec<f64>,
     pub p_value: Vec<f64>,
+    pub g2_p_value: Vec<f64>,
     /// `N_s`-weighted RMS of `(O_s - E_s)` — the practical-significance
     /// effect size guarding against over-powered flags at large N.
     pub rms_residual: Vec<f64>,
@@ -240,7 +250,8 @@ fn icc_nodes(
     Ok((probs, weights, theta_by_dim, cell))
 }
 
-/// Orlando-Thissen S-X² per item (summed scores within each trait dimension).
+/// Orlando-Thissen S-X² and Sinharay-Lu S-G² per item (summed scores within
+/// each trait dimension).
 /// Persons with missing responses inside a dimension are excluded from that
 /// dimension's observed table; `person_weight` (0/1) can screen aberrant
 /// respondents out of the flagging statistics.
@@ -250,6 +261,10 @@ fn icc_nodes(
 /// Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
 /// dichotomous item response theory models. *Applied Psychological Measurement,
 /// 24*(1), 50–64. <https://doi.org/10.1177/01466216000241003>
+///
+/// Sinharay, S., & Lu, Y. (2008). A further look at the correlation between
+/// item parameters and item fit statistics. *Journal of Educational
+/// Measurement, 45*(1), 1–15.
 #[allow(clippy::too_many_arguments)]
 pub fn s_x2(
     bank: &ItemBank<'_>,
@@ -313,8 +328,10 @@ pub fn s_x2(
 
     let mut out = SX2Result {
         statistic: vec![f64::NAN; n_items],
+        g2_statistic: vec![f64::NAN; n_items],
         df: vec![f64::NAN; n_items],
         p_value: vec![f64::NAN; n_items],
+        g2_p_value: vec![f64::NAN; n_items],
         rms_residual: vec![f64::NAN; n_items],
         flagged_bh: vec![false; n_items],
         n_score_groups: vec![0; n_items],
@@ -403,7 +420,7 @@ pub fn s_x2(
                     groups.push((acc_n, acc_r, acc_e));
                 }
             }
-            let (mut x2, mut n_grp) = (0.0_f64, 0usize);
+            let (mut x2, mut g2, mut n_grp) = (0.0_f64, 0.0_f64, 0usize);
             let (mut rss, mut n_tot) = (0.0_f64, 0.0_f64);
             for &(gn, gr, ge) in &groups {
                 if gn <= 0.0 {
@@ -415,11 +432,15 @@ pub fn s_x2(
                 }
                 let o_prop = gr / gn;
                 x2 += gn * (o_prop - e_prop) * (o_prop - e_prop) / (e_prop * (1.0 - e_prop));
+                g2 += 2.0
+                    * gn
+                    * (xlogx_over_y(o_prop, e_prop) + xlogx_over_y(1.0 - o_prop, 1.0 - e_prop));
                 rss += gn * (o_prop - e_prop) * (o_prop - e_prop);
                 n_tot += gn;
                 n_grp += 1;
             }
             out.statistic[i] = x2;
+            out.g2_statistic[i] = g2;
             out.n_score_groups[i] = n_grp;
             out.rms_residual[i] = if n_tot > 0.0 {
                 (rss / n_tot).sqrt()
@@ -430,6 +451,7 @@ pub fn s_x2(
             if df >= 1.0 {
                 out.df[i] = df;
                 out.p_value[i] = chi2_sf(x2, df);
+                out.g2_p_value[i] = chi2_sf(g2, df);
             }
         }
     }

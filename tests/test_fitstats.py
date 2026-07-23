@@ -202,9 +202,25 @@ def test_sx2_extreme_probabilities_preserve_native_numpy_parity(monkeypatch):
     monkeypatch.setattr(fitstats_module, "_core_module", lambda: None)
     numpy_reference = s_x2(y, factor_id, params, "MIRT")
     assert np.all(np.isfinite(native.statistic))
+    assert np.all(np.isfinite(native.g2_statistic))
     np.testing.assert_allclose(native.statistic, numpy_reference.statistic)
+    np.testing.assert_allclose(native.g2_statistic, numpy_reference.g2_statistic)
     np.testing.assert_allclose(native.rms_residual, numpy_reference.rms_residual)
     np.testing.assert_array_equal(native.n_score_groups, numpy_reference.n_score_groups)
+
+
+def test_sx2_g2_p_values_follow_chi2_mapping():
+    y, fid, _ = _simulate_2pl(seed=13, n_persons=1200, n_items=10)
+    res = _fit_mirt(y, fid)
+    out = s_x2(y, fid, res.params, "MIRT", q_theta=15)
+    finite = np.isfinite(out.df) & (out.df >= 1) & np.isfinite(out.g2_statistic)
+    assert finite.any()
+    expected = np.array(
+        [chi2_sf(float(g2), float(df)) for g2, df in zip(out.g2_statistic[finite], out.df[finite])]
+    )
+    np.testing.assert_allclose(
+        out.g2_p_value[finite], expected
+    )
 
 
 def test_person_fit_flags_random_responders():

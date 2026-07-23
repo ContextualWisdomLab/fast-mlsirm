@@ -81,6 +81,11 @@ def _validate_sx2_controls(
     )
 
 
+def _xlogx_over_y(x: float, y: float) -> float:
+    """Stable `x * log(x / y)` with the `x -> 0` limit fixed to 0."""
+    return 0.0 if x == 0.0 else x * math.log(x / y)
+
+
 def _core_module():
     """The compiled Rust core, when built — the compute path for every
     statistic here (the NumPy bodies below are the parity reference and
@@ -374,8 +379,10 @@ def _lord_wingersky(probs: np.ndarray) -> np.ndarray:
 @dataclass
 class SX2Result:
     statistic: np.ndarray
+    g2_statistic: np.ndarray
     df: np.ndarray
     p_value: np.ndarray
+    g2_p_value: np.ndarray
     flagged_bh: np.ndarray
     n_score_groups: np.ndarray
     # N_s-weighted RMS of (O - E): the practical-significance effect size that
@@ -413,6 +420,10 @@ def s_x2(
     Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices for
     dichotomous item response theory models. *Applied Psychological
     Measurement, 24*(1), 50–64. https://doi.org/10.1177/01466216000241003
+
+    Sinharay, S., & Lu, Y. (2008). A further look at the correlation between
+    item parameters and item fit statistics. *Journal of Educational
+    Measurement, 45*(1), 1-15.
     """
     (
         q_theta,
@@ -474,8 +485,14 @@ def s_x2(
         )
         return SX2Result(
             statistic=np.asarray(res["statistic"]),
+            g2_statistic=np.asarray(
+                res.get("g2_statistic", np.full_like(res["statistic"], np.nan))
+            ),
             df=np.asarray(res["df"]),
             p_value=np.asarray(res["p_value"]),
+            g2_p_value=np.asarray(
+                res.get("g2_p_value", np.full_like(res["p_value"], np.nan))
+            ),
             flagged_bh=np.asarray(res["flagged_bh"], dtype=bool),
             n_score_groups=np.asarray(res["n_score_groups"], dtype=int),
             rms_residual=np.asarray(res["rms_residual"]),
@@ -492,8 +509,10 @@ def s_x2(
         n_free += params.zeta.shape[1]
 
     stat = np.full(n_items, np.nan)
+    g2_stat = np.full(n_items, np.nan)
     dof = np.full(n_items, np.nan)
     pval = np.full(n_items, np.nan)
+    g2_pval = np.full(n_items, np.nan)
     rms = np.full(n_items, np.nan)
     n_groups_out = np.zeros(n_items, dtype=int)
 
@@ -544,7 +563,7 @@ def s_x2(
                 groups[-1] = (n0 + acc_n, r0 + acc_r, e0 + acc_e)
             elif acc_n > 0:
                 groups.append((acc_n, acc_r, acc_e))
-            x2, n_grp = 0.0, 0
+            x2, g2, n_grp = 0.0, 0.0, 0
             rss, n_tot = 0.0, 0.0
             for gn, gr, ge in groups:
                 if gn <= 0:
@@ -554,22 +573,30 @@ def s_x2(
                     continue
                 o_prop = gr / gn
                 x2 += gn * (o_prop - e_prop) ** 2 / (e_prop * (1.0 - e_prop))
+                g2 += 2.0 * gn * (
+                    _xlogx_over_y(o_prop, e_prop)
+                    + _xlogx_over_y(1.0 - o_prop, 1.0 - e_prop)
+                )
                 rss += gn * (o_prop - e_prop) ** 2
                 n_tot += gn
                 n_grp += 1
             df_i = n_grp - n_free
             stat[i] = x2
+            g2_stat[i] = g2
             n_groups_out[i] = n_grp
             rms[i] = np.sqrt(rss / n_tot) if n_tot > 0 else np.nan
             if df_i >= 1:
                 dof[i] = df_i
                 pval[i] = chi2_sf(x2, df_i)
+                g2_pval[i] = chi2_sf(g2, df_i)
     flagged = benjamini_hochberg(pval, fdr_q)
     flagged &= np.where(np.isfinite(rms), rms, -np.inf) >= min_effect
     return SX2Result(
         statistic=stat,
+        g2_statistic=g2_stat,
         df=dof,
         p_value=pval,
+        g2_p_value=g2_pval,
         flagged_bh=flagged,
         n_score_groups=n_groups_out,
         rms_residual=rms,

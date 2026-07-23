@@ -243,6 +243,109 @@ fn sx2_extreme_item_probabilities_remain_finite() {
         .iter()
         .zip(&result.n_score_groups)
         .all(|(value, &groups)| value.is_finite() || groups == 0));
+    assert!(result
+        .g2_statistic
+        .iter()
+        .zip(&result.n_score_groups)
+        .all(|(value, &groups)| value.is_finite() || groups == 0));
+    assert!(result
+        .g2_p_value
+        .iter()
+        .zip(&result.df)
+        .all(|(value, &df)| value.is_finite() || !df.is_finite() || df < 1.0));
+}
+
+#[test]
+fn sx2_g2_p_values_follow_chi2_sf_mapping() {
+    let (alpha, b, zeta, fid, y, observed, _, _) = toy_bank_data();
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let result = s_x2(
+        &bank,
+        &y,
+        &observed,
+        2000,
+        &PriorSpec::standard(1),
+        &SX2Config::default(),
+        None,
+    )
+    .unwrap();
+    // Reads crate-returned g2_statistic/g2_p_value and fails if the implementation
+    // mutates to use the wrong p-value mapping.
+    for i in 0..result.df.len() {
+        if result.df[i].is_finite() && result.df[i] >= 1.0 && result.g2_statistic[i].is_finite() {
+            let expected = chi2_sf(result.g2_statistic[i], result.df[i]);
+            assert!(
+                (result.g2_p_value[i] - expected).abs() < 1e-12,
+                "item {i} mismatch: {} vs {}",
+                result.g2_p_value[i],
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn sx2_g2_stays_finite_when_observed_success_rate_hits_zero() {
+    let n_items = 20usize;
+    let n_persons = 2000usize;
+    let alpha = vec![0.0; n_items];
+    let b = vec![0.0; n_items];
+    let zeta = vec![0.0; n_items];
+    let fid = vec![0usize; n_items];
+    let y = vec![0.0_f64; n_persons * n_items];
+    let observed = vec![true; n_persons * n_items];
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let result = s_x2(
+        &bank,
+        &y,
+        &observed,
+        n_persons,
+        &PriorSpec::standard(1),
+        &SX2Config::default(),
+        None,
+    )
+    .unwrap();
+    // Reads crate-returned g2_statistic and kills the mutation where x*ln(x/y)
+    // is implemented naively (log(0) * 0 => NaN).
+    let finite: Vec<(f64, f64)> = result
+        .g2_statistic
+        .iter()
+        .zip(&result.statistic)
+        .filter_map(|(&g2, &x2)| {
+            if g2.is_finite() && x2.is_finite() {
+                Some((g2, x2))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(!finite.is_empty());
+    assert!(finite.iter().all(|(g2, _)| *g2 >= 0.0));
+    assert!(result
+        .g2_p_value
+        .iter()
+        .zip(&result.df)
+        .all(|(value, &df)| value.is_finite() || !df.is_finite() || df < 1.0));
 }
 
 #[test]

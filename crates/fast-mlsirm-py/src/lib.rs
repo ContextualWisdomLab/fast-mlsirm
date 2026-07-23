@@ -2485,8 +2485,10 @@ fn s_x2_stat(
     .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("statistic", res.statistic)?;
+    out.set_item("g2_statistic", res.g2_statistic)?;
     out.set_item("df", res.df)?;
     out.set_item("p_value", res.p_value)?;
+    out.set_item("g2_p_value", res.g2_p_value)?;
     out.set_item("rms_residual", res.rms_residual)?;
     out.set_item("flagged_bh", res.flagged_bh)?;
     out.set_item("n_score_groups", res.n_score_groups)?;
