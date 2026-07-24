@@ -280,6 +280,42 @@ fn sh_input_validation() {
     .is_err());
 }
 
+// Exact-boundary policy pin: `r_max == test_length / n_items` passes the
+// necessary feasibility bound, but the no-forced-administration policy means
+// the stochastic gate can exhaust the pool mid-test; the crate then returns
+// the documented pool-exhausted error rather than forcing an item. This
+// regression reads the crate `Err` (round-2 impl-review reproducer) and
+// fails if the policy silently changes to forced administration or the
+// validation starts rejecting the exact boundary.
+#[test]
+fn sh_exact_feasibility_boundary_policy() {
+    let a = vec![1.0, 1.1, 1.2, 1.3];
+    let b = vec![-1.0, -0.3, 0.3, 1.0];
+    let c = vec![0.0; 4];
+    let cfg = SympsonHetterConfig {
+        r_max: 0.5, // == test_length / n_items exactly
+        test_length: 2,
+        n_simulees: 200,
+        max_iter: 5,
+        tol: 0.02,
+        seed: 7,
+        q_theta: 3,
+    };
+    let err = sympson_hetter(&a, &b, &c, &cfg).unwrap_err();
+    assert!(
+        err.contains("item pool exhausted"),
+        "expected the documented pool-exhausted policy error, got: {}",
+        err
+    );
+    // Just below the bound is rejected up front by validation instead.
+    let below = SympsonHetterConfig {
+        r_max: 0.5 - 1e-12,
+        ..cfg
+    };
+    let err2 = sympson_hetter(&a, &b, &c, &below).unwrap_err();
+    assert!(err2.contains("infeasible"), "got: {}", err2);
+}
+
 // >= 500-replication Monte Carlo: across seeds the calibrated max exposure
 // stays at the target (within MC noise) and the counting identity holds in
 // every replication. Run with `cargo test -- --ignored`.

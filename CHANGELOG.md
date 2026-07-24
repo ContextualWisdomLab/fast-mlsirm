@@ -132,7 +132,9 @@
   theorem (van der Linden, 2003, abstract); the returned `k` is always the
   vector that produced the reported final-cycle rates. Feasibility bound
   `r_max >= test_length/n_items` (exact counting identity
-  `sum_i P(A_i) = test_length`, derived here) is enforced; `r_max = 1`
+  `sum_i P(A_i) = test_length`, derived here) is enforced; the bound is
+  necessary, not sufficient — a tight `r_max` near the bound may still
+  exhaust the pool mid-test and fail with the documented error. `r_max = 1`
   reduces exactly to unconstrained max-info CAT (no exposure RNG
   consumed); an exhausted pool raises an error (repository policy, not a
   classical prescription). Adversarially spec-verified before

@@ -6072,3 +6072,7 @@ class TestSympsonHetter:
             fm.sympson_hetter(a, b, r_max=0.25, test_length=5, n_simulees=True)
         with pytest.raises(ValueError):
             fm.sympson_hetter(a, b, r_max=0.25, test_length=5, seed=-1)
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=float("inf"))
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=np.float64("nan"))

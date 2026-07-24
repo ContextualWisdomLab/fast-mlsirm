@@ -105,6 +105,8 @@ def sympson_hetter(
             value, (int, np.integer, float, np.floating)
         ):
             raise ValueError(f"{name} must be an integer, got {value!r}")
+        if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+            raise ValueError(f"{name} must be an integer, got {value!r}")
         iv = int(value)
         if iv != value:
             raise ValueError(f"{name} must be an integer, got {value!r}")

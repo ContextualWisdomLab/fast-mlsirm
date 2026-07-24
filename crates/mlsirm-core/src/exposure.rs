@@ -45,7 +45,12 @@
 //! Feasibility (derived here from the counting identity, not from a source):
 //! each simulee is administered exactly `test_length` items, so
 //! `sum_i P(A_i) = test_length` and `max_i P(A_i) >= test_length / n_items`;
-//! `r_max` below that bound is rejected as infeasible.
+//! `r_max` below that bound is rejected as infeasible. The bound is
+//! NECESSARY, not sufficient: at or near `r_max = test_length / n_items`
+//! every item must be administered on nearly every selection, so the
+//! stochastic gate can still exhaust the pool mid-test and the run then
+//! fails with the documented pool-exhausted error rather than force-
+//! administering an item (see the exhausted-pool policy above).
 //!
 //! When `r_max >= 1` every `k_i` stays 1, the uniform gate is skipped
 //! entirely (no exposure RNG is consumed), and the procedure reduces exactly
