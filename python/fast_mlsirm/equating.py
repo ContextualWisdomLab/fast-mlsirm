@@ -9,6 +9,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+MAX_EQUATING_BOOTSTRAP_REPLICATES = 10_000
+MAX_EQUATING_BOOTSTRAP_CELLS = 1_000_000
+
 
 @dataclass
 class EquateResult:
@@ -340,9 +343,18 @@ def equating_standard_errors(
     if route == "bootstrap":
         if not hasattr(core, "bootstrap_see"):
             raise RuntimeError("bootstrap SEE requires the compiled Rust core")
+        nb = int(n_boot)
+        if nb < 2 or nb > MAX_EQUATING_BOOTSTRAP_REPLICATES:
+            raise ValueError(
+                f"n_boot must be an integer between 2 and {MAX_EQUATING_BOOTSTRAP_REPLICATES}"
+            )
+        if nb * (int(kx) + 1) > MAX_EQUATING_BOOTSTRAP_CELLS:
+            raise ValueError(
+                f"n_boot * (k_x + 1) must be <= {MAX_EQUATING_BOOTSTRAP_CELLS}"
+            )
         res = core.bootstrap_see(
             xs, ys, int(kx), int(ky),
-            method=str(method), n_boot=int(n_boot), ci_level=float(ci_level), seed=int(seed),
+            method=str(method), n_boot=nb, ci_level=float(ci_level), seed=int(seed),
         )
     elif route == "analytic":
         if not hasattr(core, "analytic_see"):

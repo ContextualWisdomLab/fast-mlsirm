@@ -616,6 +616,9 @@ pub fn equate_neat_linear(
 
 // ===================== standard errors of equating =====================
 
+pub const MAX_EQUATING_BOOTSTRAP_REPLICATES: usize = 10_000;
+pub const MAX_EQUATING_BOOTSTRAP_CELLS: usize = 1_000_000;
+
 /// Per-score-point standard errors of equating ([`bootstrap_see`] /
 /// [`analytic_see`]): the sampling error of the conversion `y_equivalents[x]`.
 pub struct SeeResult {
@@ -681,14 +684,26 @@ pub fn bootstrap_see(
     if n_boot < 2 {
         return Err("n_boot must be >= 2".into());
     }
-    let point = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
-    let (nx, ny) = (x_scores.len(), y_scores.len());
-    let ncol = k_x + 1;
+    if n_boot > MAX_EQUATING_BOOTSTRAP_REPLICATES {
+        return Err(format!(
+            "n_boot must be <= {MAX_EQUATING_BOOTSTRAP_REPLICATES}"
+        ));
+    }
+    let ncol = k_x
+        .checked_add(1)
+        .ok_or("k_x + 1 exceeds the bootstrap buffer size")?;
     let rep_cells = crate::checked_mul_usize(
         n_boot,
         ncol,
         "n_boot * (k_x + 1) exceeds the bootstrap buffer size",
     )?;
+    if rep_cells > MAX_EQUATING_BOOTSTRAP_CELLS {
+        return Err(format!(
+            "n_boot * (k_x + 1) must be <= {MAX_EQUATING_BOOTSTRAP_CELLS}"
+        ));
+    }
+    let point = equate_eg(x_scores, y_scores, k_x, k_y, method)?;
+    let (nx, ny) = (x_scores.len(), y_scores.len());
     let mut reps = vec![0.0_f64; rep_cells];
     let mut st = seed.max(1);
     let mut u = || {

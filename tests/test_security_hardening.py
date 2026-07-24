@@ -30,6 +30,13 @@ from fast_mlsirm.types import FitDiagnostics
 from fast_mlsirm.validation import validate_judge
 
 
+def _symlink_or_skip(link, target):
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
 # ---- VULN-0001: sparse/invalid population labels ---------------------------
 def test_population_labels_compacted_not_unbounded():
     ids, n = _compact_population_labels(np.array([0, 999_999_999]), 2, "group_id")
@@ -1346,7 +1353,7 @@ def test_diagnostics_save_replaces_leaf_symlink_without_overwriting_target(tmp_p
     external = tmp_path / "external.txt"
     external.write_text("do not overwrite", encoding="utf-8")
     output = tmp_path / "fit_diagnostics.json"
-    output.symlink_to(external)
+    _symlink_or_skip(output, external)
     diagnostics = FitDiagnostics(itemfit={}, personfit={}, model_fit={})
 
     save_fit_diagnostics(diagnostics, tmp_path)
@@ -1365,7 +1372,7 @@ def test_cli_score_replaces_leaf_symlink_without_overwriting_target(
     external = tmp_path / "external.txt"
     external.write_text("do not overwrite", encoding="utf-8")
     output = tmp_path / "scores.json"
-    output.symlink_to(external)
+    _symlink_or_skip(output, external)
     monkeypatch.setattr(serving, "load_serving_bundle", lambda _path: _bundle())
     monkeypatch.setattr(
         serving, "score_respondents", lambda _bundle, _payload: [{"theta": [0.0]}]
@@ -1390,6 +1397,25 @@ def test_cli_score_replaces_leaf_symlink_without_overwriting_target(
     )
     assert external.read_text(encoding="utf-8") == "do not overwrite"
     assert output.is_file() and not output.is_symlink()
+
+
+def test_equating_bootstrap_see_rejects_unbounded_replicates_before_core(monkeypatch):
+    import fast_mlsirm.equating as equating
+    import fast_mlsirm.fitstats as fitstats
+
+    class BombCore:
+        def bootstrap_see(self, *_args, **_kwargs):
+            raise AssertionError("core must not receive unbounded n_boot")
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="n_boot"):
+        equating.equating_standard_errors(
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            k_x=1,
+            k_y=1,
+            n_boot=equating.MAX_EQUATING_BOOTSTRAP_REPLICATES + 1,
+        )
 
 
 def test_candidate_loader_rejects_count_and_aggregate_budgets(monkeypatch):

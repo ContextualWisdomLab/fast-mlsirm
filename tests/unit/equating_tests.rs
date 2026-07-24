@@ -1299,6 +1299,17 @@ fn see_bootstrap_sanity_and_guards() {
         "oversized n_boot must return an error instead of panicking"
     );
     assert!(oversized.unwrap().is_err());
+    let oversized_k = std::panic::catch_unwind(|| {
+        bootstrap_see(&x1, &y1, usize::MAX, k, EquateMethod::Mean, 100, 0.95, 1)
+    });
+    assert!(
+        oversized_k.is_ok(),
+        "oversized k_x must return an error instead of panicking"
+    );
+    assert!(oversized_k.unwrap().is_err());
+    // Reads the crate-returned error path and kills mutations that remove the
+    // explicit bootstrap work cap while leaving overflow-only checks in place.
+    assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 10_001, 0.95, 1).is_err());
     assert!(analytic_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 0.95).is_err());
 }
 

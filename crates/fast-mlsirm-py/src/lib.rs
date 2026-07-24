@@ -7,6 +7,7 @@ use mlsirm_core::equating::{
     equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
     loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
     EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
+    MAX_EQUATING_BOOTSTRAP_CELLS, MAX_EQUATING_BOOTSTRAP_REPLICATES,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -2781,6 +2782,22 @@ fn bootstrap_see(
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
+    if !(2..=MAX_EQUATING_BOOTSTRAP_REPLICATES).contains(&n_boot) {
+        return Err(PyValueError::new_err(format!(
+            "n_boot must be an integer between 2 and {MAX_EQUATING_BOOTSTRAP_REPLICATES}"
+        )));
+    }
+    let ncol = k_x
+        .checked_add(1)
+        .ok_or_else(|| PyValueError::new_err("k_x + 1 exceeds the bootstrap buffer size"))?;
+    let rep_cells = n_boot.checked_mul(ncol).ok_or_else(|| {
+        PyValueError::new_err("n_boot * (k_x + 1) exceeds the bootstrap buffer size")
+    })?;
+    if rep_cells > MAX_EQUATING_BOOTSTRAP_CELLS {
+        return Err(PyValueError::new_err(format!(
+            "n_boot * (k_x + 1) must be <= {MAX_EQUATING_BOOTSTRAP_CELLS}"
+        )));
+    }
     let res = core_bootstrap_see(
         x_scores.as_slice()?,
         y_scores.as_slice()?,
