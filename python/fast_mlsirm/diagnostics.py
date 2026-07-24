@@ -2,18 +2,34 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import replace
+from typing import Any
 
 import numpy as np
 
 from .config import FitConfig
 from .math import sigmoid, standardize
-from .objective import linear_predictor, model_flags, prepare_response
+from .objective import linear_predictor, model_flags, prepare_response, validate_factor_id
 from .types import (
     DimensionalityDiagnostics,
     FitDiagnostics,
     MLSIRMParams,
     RecoveryReport,
 )
+
+
+MAX_DIM_DIAGNOSTIC_CANDIDATES = 32
+MAX_DIM_DIAGNOSTIC_FOLDS = 100
+MAX_DIM_DIAGNOSTIC_FITS = 1_000
+MAX_DIM_DIAGNOSTIC_MASK_CELLS = 20_000_000
+
+
+def _core_module():
+    try:
+        from . import _core  # type: ignore
+
+        return _core
+    except Exception:  # pragma: no cover
+        return None
 
 
 def predict_proba(
@@ -23,12 +39,70 @@ def predict_proba(
     items: np.ndarray | None = None,
     model: str = "MLS2PLM",
 ) -> np.ndarray:
+    factors = validate_factor_id(
+        factor_id, len(params.b), params.theta.shape[1]
+    )
     sub = _subset_params(params, persons, items)
-    factors = np.asarray(factor_id, dtype=np.int64)
     if items is not None:
         factors = factors[np.asarray(items, dtype=np.int64)]
     eta, _ = linear_predictor(sub, factors, model=model)
     return sigmoid(eta)
+
+
+def _leniency_residuals(y: np.ndarray, observed: np.ndarray, prob: np.ndarray) -> dict[str, np.ndarray | float]:
+    """Compute an observed-minus-expected pass-rate proxy for response leniency.
+
+    This is an adaptation inspired by the content-independent response-bias
+    framing in Ferrando, Lorenzo-Seva, and Chico (2009), but it intentionally
+    does not claim to identify their tridimensional MRFA acquiescence or social
+    desirability factors.
+
+    References
+    ----------
+    Ferrando, P. J., Lorenzo-Seva, U., & Chico, E. (2009). A general
+    factor-analytic procedure for assessing response bias in questionnaire
+    measures. *Structural Equation Modeling: A Multidisciplinary Journal,
+    16*(2), 364-381. https://doi.org/10.1080/10705510902751374
+    """
+    core = _core_module()
+    if core is not None and hasattr(core, "leniency_residuals_stat"):
+        result = core.leniency_residuals_stat(
+            y=np.ascontiguousarray(y.reshape(-1), dtype=np.float64),
+            observed=np.ascontiguousarray(observed.reshape(-1), dtype=np.bool_),
+            prob=np.ascontiguousarray(prob.reshape(-1), dtype=np.float64),
+            n_persons=int(y.shape[0]),
+        )
+        return {
+            "residual": np.asarray(result["residual"], dtype=float),
+            "observed_mean": np.asarray(result["observed_mean"], dtype=float),
+            "expected_mean": np.asarray(result["expected_mean"], dtype=float),
+            "n_observed": np.asarray(result["n_observed"], dtype=float),
+            "mean": float(result["mean"]),
+            "sd": float(result["sd"]),
+            "abs_p95": float(result["abs_p95"]),
+        }
+
+    counts = observed.sum(axis=1).astype(float)
+    observed_sum = np.where(observed, y, 0.0).sum(axis=1)
+    expected_sum = np.where(observed, prob, 0.0).sum(axis=1)
+    valid = counts > 0.0
+    observed_mean = np.zeros(y.shape[0], dtype=float)
+    expected_mean = np.zeros(y.shape[0], dtype=float)
+    residual = np.zeros(y.shape[0], dtype=float)
+    observed_mean[valid] = observed_sum[valid] / counts[valid]
+    expected_mean[valid] = expected_sum[valid] / counts[valid]
+    residual[valid] = observed_mean[valid] - expected_mean[valid]
+    valid_residual = residual[valid]
+    abs_values = np.abs(valid_residual)
+    return {
+        "residual": residual,
+        "observed_mean": observed_mean,
+        "expected_mean": expected_mean,
+        "n_observed": counts,
+        "mean": float(np.mean(valid_residual)) if valid_residual.size else 0.0,
+        "sd": float(np.std(valid_residual)) if valid_residual.size else 0.0,
+        "abs_p95": float(np.quantile(abs_values, 0.95)) if abs_values.size else 0.0,
+    }
 
 
 def fit_diagnostics(
@@ -42,14 +116,57 @@ def fit_diagnostics(
     *,
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
+    include_m2: bool = False,
+    m2_q_theta: int = 21,
+    m2_q_u: int = 11,
+    m2_q_xi: int = 11,
+    estimator: str | None = None,
+    population: dict[str, Any] | None = None,
+    convergence_status: str | None = None,
 ) -> FitDiagnostics:
+    """Compute item, person, and model diagnostics for binary responses.
+
+    Set ``include_m2=True`` for M2 limited-information global fit, including
+    M2-based RMSEA, bivariate SRMR/SRMSR, and CFI/TLIRT against a fitted
+    complete-independence baseline. Pass the actual ``estimator`` when M2 is
+    requested. Multiple-group MMLE additionally needs ``population['mu']`` and
+    ``population['sigma']``; multilevel MMLE needs ``population['sigma_u']``.
+    Clustered data use a between-cluster covariance rather than an iid M2.
+    When the calibration convergence status is available, pass it so
+    inferential fit indices cannot be computed from an unfinished fit.
+    """
+    if include_m2 and estimator is None:
+        raise ValueError("include_m2 requires the actual estimator: jmle, cmle, or mmle")
+    if include_m2 and convergence_status is not None:
+        status = str(convergence_status).strip().lower()
+        if status != "converged":
+            raise ValueError(
+                "limited-information diagnostics require converged parameters; "
+                f"the fitted model did not converge (status={status or 'unknown'})"
+            )
+    if include_m2 and population is not None:
+        unsupported = []
+        if "pi_zero" in population:
+            unsupported.append("zero inflation")
+        if "delta" in population:
+            unsupported.append("item covariates")
+        if unsupported:
+            terms = " and ".join(unsupported)
+            raise ValueError(
+                "limited-information M2 does not yet support calibrations with "
+                f"{terms}; the required model moments and free-parameter columns "
+                "would otherwise be omitted"
+            )
+    if include_m2 and group_id is not None and cluster_id is not None:
+        raise ValueError("M2 accepts group_id or cluster_id, not both")
     y, observed = prepare_response(responses, mask)
     prob = np.clip(predict_proba(params, factor_id, model=model), eps, 1.0 - eps)
     if prob.shape != y.shape:
         raise ValueError("parameter dimensions must match responses and factor_id")
 
+    prob = np.where(observed, prob, 0.5)
     variance = np.maximum(prob * (1.0 - prob), eps)
-    residual = (y - prob) * observed
+    residual = np.where(observed, y - prob, 0.0)
     pearson_sq = np.where(observed, residual * residual / variance, 0.0)
     n_parameters = (
         int(parameter_count)
@@ -62,6 +179,9 @@ def fit_diagnostics(
     _attach_person_strata(
         personfit, group_id=group_id, cluster_id=cluster_id, n_persons=y.shape[0]
     )
+    leniency = _leniency_residuals(y, observed, prob)
+    personfit["leniency_residual"] = leniency["residual"]
+    personfit["leniency_n_observed"] = leniency["n_observed"]
     factorfit = _factor_fit(
         factor_id, y, observed, prob, variance, residual, pearson_sq
     )
@@ -81,7 +201,102 @@ def fit_diagnostics(
         "expected_mean": float(prob[observed].mean()),
         "mean_abs_residual": float(np.abs(residual[observed]).mean()),
         "pearson_chisq": float(pearson_sq.sum()),
+        "leniency_mean": float(leniency["mean"]),
+        "leniency_sd": float(leniency["sd"]),
+        "leniency_abs_p95": float(leniency["abs_p95"]),
     }
+    if include_m2:
+        from .fitstats import m2, m2_multigroup, m2_multilevel
+
+        estimator_name = str(estimator).lower()
+        if group_id is not None:
+            if estimator_name != "mmle":
+                raise ValueError("multiple-group M2 currently requires estimator='mmle'")
+            if population is None or "mu" not in population or "sigma" not in population:
+                raise ValueError("multiple-group M2 requires population mu and sigma")
+            limited = m2_multigroup(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                group_id=group_id,
+                population_mean=population["mu"],
+                population_sd=population["sigma"],
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_xi=m2_q_xi,
+            )
+        elif cluster_id is not None:
+            if estimator_name != "mmle":
+                raise ValueError("multilevel M2 currently requires estimator='mmle'")
+            if population is None or "sigma_u" not in population:
+                raise ValueError("multilevel M2 requires population sigma_u")
+            limited = m2_multilevel(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                cluster_id=cluster_id,
+                sigma_u=population["sigma_u"],
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_u=m2_q_u,
+                q_xi=m2_q_xi,
+            )
+        else:
+            prior_mean = prior_sd = None
+            if population is not None and "mu" in population and "sigma" in population:
+                mu = np.asarray(population["mu"], dtype=float)
+                sigma = np.asarray(population["sigma"], dtype=float)
+                if mu.shape[0] == 1 and sigma.shape[0] == 1:
+                    prior_mean, prior_sd = mu[0], sigma[0]
+            limited = m2(
+                responses=y,
+                factor_id=factor_id,
+                params=params,
+                model=model,
+                mask=observed,
+                q_theta=m2_q_theta,
+                q_xi=m2_q_xi,
+                estimator=estimator_name,
+                prior_mean=prior_mean,
+                prior_sd=prior_sd,
+                estimate_population=(
+                    population is not None and population.get("kind") == "singlefree"
+                ),
+                fixed_items=(
+                    None if population is None else population.get("fixed_items")
+                ),
+                tau_fixed=(
+                    False
+                    if population is None
+                    else bool(population.get("tau_fixed", False))
+                ),
+            )
+        model_fit.update(
+            {
+                "m2": limited.m2,
+                "m2_df": limited.df,
+                "m2_p_value": limited.p_value,
+                "rmsea": limited.rmsea2,
+                "rmsea2": limited.rmsea2,
+                "rmsea_ci_lower": limited.rmsea2_ci_lower,
+                "rmsea_ci_upper": limited.rmsea2_ci_upper,
+                "srmr": limited.srmsr,
+                "srmsr": limited.srmsr,
+                "cfi": limited.cfi,
+                "tli": limited.tli,
+                "null_m2": limited.null_m2,
+                "null_m2_df": limited.null_df,
+                "m2_n_complete": float(limited.n_complete),
+                "m2_inference_valid": limited.inference_valid,
+                "m2_inference_note": limited.inference_note,
+                "m2_n_groups": float(limited.n_groups),
+                "m2_n_clusters": (
+                    float(limited.n_clusters) if limited.n_clusters is not None else float("nan")
+                ),
+            }
+        )
     return FitDiagnostics(
         itemfit=itemfit,
         personfit=personfit,
@@ -116,11 +331,16 @@ def dimensionality_diagnostics(
     from .fit import fit
 
     y, observed = prepare_response(responses, mask)
+    dims = _validated_latent_dims(latent_dims)
     folds = _validation_folds(observed, k_folds, seed)
+    if len(dims) * k_folds > MAX_DIM_DIAGNOSTIC_FITS:
+        raise ValueError(
+            "latent dimension candidates x k_folds exceeds the diagnostic fit limit"
+        )
     base = config or FitConfig(model=model)
     candidates: list[dict[str, float]] = []
 
-    for latent_dim in _validated_latent_dims(latent_dims):
+    for latent_dim in dims:
         totals = {"loglik": 0.0, "abs_residual": 0.0, "sq_residual": 0.0, "n": 0.0}
         for fold_idx, validation_mask in enumerate(folds):
             train_mask = observed & ~validation_mask
@@ -521,11 +741,13 @@ def _category_fit(
 ) -> dict[str, np.ndarray]:
     observed_count = observed.sum(axis=0).astype(np.float64)
     obs_cast = observed.astype(prob.dtype, copy=False)
+    prob_seen = np.where(observed[:, :, None], prob, 0.0)
+    residual_seen = np.where(observed[:, :, None], residual, 0.0)
     score = np.einsum("ij,ijk->jk", obs_cast, onehot)
-    expected = np.einsum("ij,ijk->jk", obs_cast, prob)
-    variance = np.einsum("ij,ijk->jk", obs_cast, prob * (1.0 - prob))
+    expected = prob_seen.sum(axis=0)
+    variance = (prob_seen * (1.0 - prob_seen)).sum(axis=0)
     item_ids, category_ids = np.indices(score.shape)
-    raw = residual.sum(axis=0)
+    raw = residual_seen.sum(axis=0)
     return {
         "item_id": item_ids.ravel().astype(np.float64),
         "category_id": category_ids.ravel().astype(np.float64),
@@ -863,19 +1085,31 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
 
 
 def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
-    dims = [int(value) for value in latent_dims]
+    dims = list(dict.fromkeys(int(value) for value in latent_dims))
     if not dims:
         raise ValueError("latent_dims must not be empty")
     if any(value < 1 for value in dims):
         raise ValueError("latent_dims must be >= 1")
+    if len(dims) > MAX_DIM_DIAGNOSTIC_CANDIDATES:
+        raise ValueError(
+            f"latent_dims must contain at most {MAX_DIM_DIAGNOSTIC_CANDIDATES} unique values"
+        )
     return dims
 
 
 def _validation_folds(
     observed: np.ndarray, k_folds: int, seed: int
 ) -> list[np.ndarray]:
-    if k_folds < 2:
-        raise ValueError("k_folds must be >= 2")
+    if (
+        not isinstance(k_folds, (int, np.integer))
+        or isinstance(k_folds, (bool, np.bool_))
+        or not 2 <= int(k_folds) <= MAX_DIM_DIAGNOSTIC_FOLDS
+    ):
+        raise ValueError(
+            f"k_folds must be an integer between 2 and {MAX_DIM_DIAGNOSTIC_FOLDS}"
+        )
+    if observed.size * int(k_folds) > MAX_DIM_DIAGNOSTIC_MASK_CELLS:
+        raise ValueError("k-fold validation masks exceed the aggregate size limit")
 
     row_counts = observed.sum(axis=1)
     col_counts = observed.sum(axis=0)
@@ -959,7 +1193,10 @@ def _prepare_categorical_response(
     yy = np.where(observed, y, 0).astype(np.int64)
     if np.any(observed & ((yy < 0) | (yy >= prob.shape[2]))):
         raise ValueError("observed responses must be valid category ids")
+    if not np.all(np.isfinite(prob[observed])):
+        raise ValueError("observed probabilities must be finite")
 
+    prob = np.where(observed[:, :, None], prob, 1.0 / prob.shape[2])
     prob = np.clip(prob, eps, 1.0)
     prob = prob / prob.sum(axis=2, keepdims=True)
     return yy, observed, prob

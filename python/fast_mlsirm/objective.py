@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from .backend import load_rust_core, normalize_backend, normalize_device, resolve_backend
-from .config import FitConfig, PenaltyConfig
+from .config import VALID_MODELS, FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
 
@@ -32,16 +32,20 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
 
 
 def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.ndarray:
-    factors = np.asarray(factor_id, dtype=np.int64)
-    if factors.shape != (n_items,):
+    raw = np.asarray(factor_id)
+    if raw.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
-    if np.any(factors < 0) or np.any(factors >= n_dims):
+    if raw.dtype.kind not in {"i", "u"}:
+        raise ValueError("factor_id must contain integer values")
+    if raw.size and (np.any(raw < 0) or int(raw.max()) >= n_dims):
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    return factors
+    return raw.astype(np.int64, copy=False)
 
 
 def model_flags(model: str) -> tuple[bool, bool]:
     name = model.upper()
+    if name not in VALID_MODELS:
+        raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
     free_alpha = name not in {"MLSRM", "ULSRM"}
     uses_space = name != "MIRT"
     return free_alpha, uses_space
@@ -53,23 +57,40 @@ def linear_predictor(
     model: str = "MLS2PLM",
     eps_distance: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray]:
-    free_alpha, uses_space = model_flags(model)
+    """Return the model linear predictor and any distance matrix.
+
+    ``BIFAC2PLM`` uses a general-factor inner product as in Gibbons and
+    Hedeker (1992). LSIRM models instead use this repository's negative
+    distance interaction.
+
+    References (APA 7th ed.):
+        Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item
+            bi-factor analysis. *Psychometrika, 57*(3), 423–436.
+            https://doi.org/10.1007/BF02295430
+    """
+    name = model.upper()
+    free_alpha, uses_space = model_flags(name)
     a = params.a if free_alpha else np.ones_like(params.alpha)
     theta_factor = params.theta[:, factor_id]
 
-    if uses_space:
+    if name == "BIFAC2PLM":
+        # The bifactor's general-factor contribution is bilinear, not a
+        # latent-space distance penalty (Gibbons & Hedeker, 1992).
+        distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
+        interaction = np.dot(params.xi, params.zeta.T)
+    elif uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
         xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
         zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
         dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
-        gamma = params.gamma
+        interaction = -params.gamma * distance
     else:
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
-        gamma = 0.0
+        interaction = 0.0
 
-    eta = a[None, :] * theta_factor + params.b[None, :] - gamma * distance
+    eta = a[None, :] * theta_factor + params.b[None, :] + interaction
     return eta, distance
 
 
@@ -83,13 +104,16 @@ def neg_loglik_and_grad(
     device: str | None = None,
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
+    model = config.normalized_model()
+    if model == "BIFAC2PLM":
+        raise ValueError("BIFAC2PLM is supported by the marginal estimator only")
+
     requested_backend = normalize_backend(backend)
     normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
     if normalized_backend == "rust":
         resolved_device = normalize_device(device if device is not None else config.rust_device)
         return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask, resolved_device)
 
-    model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
