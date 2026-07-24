@@ -102,6 +102,9 @@ use mlsirm_core::scoring::{
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
+use mlsirm_core::utility::{
+    selection_utility as core_selection_utility, taylor_russell as core_taylor_russell,
+};
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
@@ -1990,6 +1993,48 @@ fn glb_fa_to_py(
         numpy::PyArray1::from_slice(py, &res.communalities),
     )?;
     out.set_item("nf", res.nf)?;
+    Ok(out.into())
+}
+
+/// Brogden-Cronbach-Gleser selection utility with Naylor-Shine selected-group
+/// mean (`mlsirm_core::utility::selection_utility`; verified against the CRAN
+/// iopsych 0.90.1 utilityBcg/ux source and a scipy oracle). Returns
+/// {xc, ux, pux, utility_gain}.
+#[pyfunction]
+fn selection_utility(
+    py: Python<'_>,
+    n: f64,
+    sdy: f64,
+    rxy: f64,
+    sr: f64,
+    cost_total: f64,
+    period: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_selection_utility(n, sdy, rxy, sr, cost_total, period)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("xc", res.xc)?;
+    out.set_item("ux", res.ux)?;
+    out.set_item("pux", res.pux)?;
+    out.set_item("utility_gain", res.utility_gain)?;
+    Ok(out.into())
+}
+
+/// Taylor-Russell (1939) success ratio under the standard bivariate-normal
+/// selection model (`mlsirm_core::utility::taylor_russell`). Returns
+/// {success_ratio, base_rate, q_joint}.
+#[pyfunction]
+fn taylor_russell(
+    py: Python<'_>,
+    rxy: f64,
+    sr: f64,
+    br: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_taylor_russell(rxy, sr, br).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("success_ratio", res.success_ratio)?;
+    out.set_item("base_rate", res.base_rate)?;
+    out.set_item("q_joint", res.q_joint)?;
     Ok(out.into())
 }
 
@@ -5741,6 +5786,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(glb_fa, m)?)?;
     m.add_function(wrap_pyfunction!(glb_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
+    m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
