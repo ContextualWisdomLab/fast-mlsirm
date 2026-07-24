@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-07-24 - Optimize large broadcasted array multiplications using BLAS
+**Learning:** In NumPy, evaluating expressions like `(e * params.theta[:, factors]).sum(axis=0)` allocates an intermediate O(N*J) 2D array by broadcasting 1D over 2D. This causes a major memory allocation bottleneck and forces O(N*J) operations in Python loops for element-wise multiplications, which is highly inefficient for large shapes.
+**Action:** When computing sums of products across columns with index mapping, transform it to a matrix multiplication format like `(e.T @ matrix)[np.arange(J), indices]`. This skips the O(N*J) intermediate allocation entirely and offloads the heavy work to a highly optimized O(J*D) BLAS routine, offering order-of-magnitude speedups.
