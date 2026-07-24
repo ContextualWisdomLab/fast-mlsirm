@@ -319,6 +319,26 @@ fn equating_boundary_contracts_and_kernel_helpers() {
         AnchorKind::Internal,
     )
     .is_err());
+    let oversized = std::panic::catch_unwind(|| {
+        equate_neat_linear(
+            &total,
+            &anchor,
+            &total,
+            &anchor,
+            usize::MAX,
+            1,
+            0.5,
+            NeatLinearMethod::Tucker,
+            AnchorKind::Internal,
+        )
+    });
+    assert!(
+        oversized.is_ok(),
+        "oversized k_x must return an error instead of panicking"
+    );
+    // Reads the core-returned error path and kills mutations that let
+    // NEAT-linear allocate conversion tables from unchecked k_x.
+    assert!(oversized.unwrap().is_err());
     assert!(equate_neat_linear(
         &[1.0, 1.0],
         &anchor,

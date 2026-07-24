@@ -565,6 +565,11 @@ pub fn equate_neat_linear(
     if k_x == 0 || k_y == 0 {
         return Err("k_x and k_y must be positive".into());
     }
+    if k_x > MAX_EQUATING_SCORE_POINTS || k_y > MAX_EQUATING_SCORE_POINTS {
+        return Err(format!(
+            "score ceiling must be <= {MAX_EQUATING_SCORE_POINTS}"
+        ));
+    }
     if x_total.len() != x_anchor.len() || y_total.len() != y_anchor.len() {
         return Err("total and anchor vectors must have equal length within each group".into());
     }
@@ -615,9 +620,17 @@ pub fn equate_neat_linear(
     }
     let a = var_sy.sqrt() / var_sx.sqrt();
     let b = mu_sy - a * mu_sx;
-    let y_eq: Vec<f64> = (0..=k_x).map(|x| a * x as f64 + b).collect();
+    let n_x = k_x
+        .checked_add(1)
+        .ok_or("k_x + 1 exceeds the equating buffer size")?;
+    let mut x_scores = Vec::with_capacity(n_x);
+    let mut y_eq = Vec::with_capacity(n_x);
+    for x in 0..=k_x {
+        x_scores.push(x as f64);
+        y_eq.push(a * x as f64 + b);
+    }
     Ok(EquateResult {
-        x_scores: (0..=k_x).map(|x| x as f64).collect(),
+        x_scores,
         y_equivalents: y_eq,
         mu_x: mu_sx,
         sigma_x: var_sx.sqrt(),
