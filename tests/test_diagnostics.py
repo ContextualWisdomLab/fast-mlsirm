@@ -178,6 +178,41 @@ def test_fit_diagnostics_leniency_residual_respects_mask_and_sign():
     assert diagnostics.model_fit["leniency_abs_p95"] < abs(residual[0])
 
 
+def test_fit_diagnostics_masks_nan_binary_probabilities(monkeypatch):
+    params = MLSIRMParams(
+        theta=np.zeros((2, 1)),
+        alpha=np.zeros(2),
+        b=np.zeros(2),
+        xi=np.zeros((2, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    responses = np.array([[1.0, 0.0], [0.0, 1.0]])
+    mask = np.array([[True, True], [False, False]])
+
+    import fast_mlsirm.diagnostics as diagnostics_module
+
+    monkeypatch.setattr(
+        diagnostics_module,
+        "predict_proba",
+        lambda *_args, **_kwargs: np.array([[0.8, 0.2], [np.nan, np.nan]]),
+    )
+    diagnostics = fit_diagnostics(
+        responses,
+        params,
+        np.zeros(2, dtype=int),
+        mask=mask,
+        model="MIRT",
+    )
+
+    # Reads implementation-returned binary personfit values and kills mutations
+    # that let masked 0 * NaN probabilities leak into public diagnostics.
+    assert np.all(np.isfinite(diagnostics.personfit["expected_score"]))
+    assert np.all(np.isfinite(diagnostics.personfit["raw_residual"]))
+    assert np.all(np.isfinite(diagnostics.personfit["standardized_residual"]))
+    assert np.all(np.isfinite(diagnostics.personfit["infit_mnsq"]))
+
+
 def test_fit_diagnostics_requires_estimator_and_population_for_structured_m2():
     params = MLSIRMParams(
         theta=np.zeros((4, 1)),

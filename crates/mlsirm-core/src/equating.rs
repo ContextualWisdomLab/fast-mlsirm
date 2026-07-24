@@ -594,6 +594,12 @@ pub fn equate_neat_linear(
     {
         return Err("scores must be finite".into());
     }
+    if x_total.iter().any(|&s| s < -0.5 || s >= k_x as f64 + 0.5) {
+        return Err("x_total score out of range".into());
+    }
+    if y_total.iter().any(|&s| s < -0.5 || s >= k_y as f64 + 0.5) {
+        return Err("y_total score out of range".into());
+    }
     let (m1x, v1x, m1v, v1v, cov1) = paired_moments(x_total, x_anchor);
     let (m2y, v2y, m2v, v2v, cov2) = paired_moments(y_total, y_anchor);
     if v1v <= 0.0 || v2v <= 0.0 {

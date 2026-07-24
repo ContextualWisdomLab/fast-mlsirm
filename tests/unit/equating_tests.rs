@@ -327,6 +327,30 @@ fn equating_boundary_contracts_and_kernel_helpers() {
     )
     .is_err());
     assert!(equate_neat_linear(
+        &[0.0, 1000.0],
+        &anchor,
+        &total,
+        &anchor,
+        1,
+        1,
+        0.5,
+        NeatLinearMethod::Tucker,
+        AnchorKind::Internal,
+    )
+    .is_err());
+    assert!(equate_neat_linear(
+        &total,
+        &anchor,
+        &[0.0, 1000.0],
+        &anchor,
+        1,
+        1,
+        0.5,
+        NeatLinearMethod::Tucker,
+        AnchorKind::Internal,
+    )
+    .is_err());
+    assert!(equate_neat_linear(
         &total,
         &[1.0, 0.0],
         &total,

@@ -164,8 +164,9 @@ def fit_diagnostics(
     if prob.shape != y.shape:
         raise ValueError("parameter dimensions must match responses and factor_id")
 
+    prob = np.where(observed, prob, 0.5)
     variance = np.maximum(prob * (1.0 - prob), eps)
-    residual = (y - prob) * observed
+    residual = np.where(observed, y - prob, 0.0)
     pearson_sq = np.where(observed, residual * residual / variance, 0.0)
     n_parameters = (
         int(parameter_count)
