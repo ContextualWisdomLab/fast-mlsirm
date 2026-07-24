@@ -573,6 +573,11 @@ pub fn glb_fa_corr(corr: &[f64], p: usize) -> Result<GlbFaResult, String> {
             sum_rr += if i == j { fnf.communalities[i] } else { v };
         }
     }
+    if sum_r.abs() <= 1e-8 {
+        return Err(format!(
+            "glb_fa: sum(R) too close to zero ({sum_r}); reliability ratio undefined"
+        ));
+    }
     Ok(GlbFaResult {
         glb: sum_rr / sum_r,
         communalities: fnf.communalities,

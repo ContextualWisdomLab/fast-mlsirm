@@ -459,6 +459,17 @@ fn glbfa_error_paths() {
         }
     }
     assert!(glb_fa_corr(&bad, 3).is_err());
+    // Regression (review-thread): glb denominator sum(R) can be zero for
+    // valid (possibly indefinite) symmetric unit-diagonal inputs; this must
+    // return an Err, not inf/NaN.
+    #[rustfmt::skip]
+    let zero_sum: [f64; 9] = [
+        1.0, -0.15885683833831, -0.4821664994140733,
+        -0.15885683833831, 1.0, -0.8589766622476167,
+        -0.4821664994140733, -0.8589766622476167, 1.0,
+    ];
+    let err = glb_fa_corr(&zero_sum, 3).unwrap_err();
+    assert!(err.contains("sum(R) too close to zero"), "err = {err}");
 }
 
 /// 500-rep MC: 1-factor model, loadings [.7,.6,.8,.5,.65,.75], n = 1000
