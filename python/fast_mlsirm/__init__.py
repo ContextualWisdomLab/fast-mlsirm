@@ -65,6 +65,8 @@ from .reliability import (
 from .factor import (
     minres_fa as minres_fa,
     minres_fa_from_data as minres_fa_from_data,
+    glb_fa as glb_fa,
+    glb_fa_from_data as glb_fa_from_data,
     omega_total_1f as omega_total_1f,
     omega_total_1f_from_data as omega_total_1f_from_data,
 )
@@ -212,6 +214,8 @@ __all__ = [
     "gtheory_pio",
     "minres_fa",
     "minres_fa_from_data",
+    "glb_fa",
+    "glb_fa_from_data",
     "omega_total_1f",
     "omega_total_1f_from_data",
     "GTheoryResult",

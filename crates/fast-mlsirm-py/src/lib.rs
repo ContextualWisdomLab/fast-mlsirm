@@ -46,6 +46,7 @@ use mlsirm_core::fitstats::{
     residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::factor::{
+    glb_fa_corr as core_glb_fa_corr, glb_fa_data as core_glb_fa_data,
     minres_fa_corr as core_minres_fa_corr, minres_fa_data as core_minres_fa_data,
     omega_total_1f_corr as core_omega_total_1f_corr,
     omega_total_1f_data as core_omega_total_1f_data, MinresFaResult,
@@ -1950,6 +1951,45 @@ fn omega_total_1f_from_data(
     let out = pyo3::types::PyDict::new(py);
     out.set_item("omega_total", res.omega_total)?;
     out.set_item("fa", minres_fa_to_py(py, &res.fa)?)?;
+    Ok(out.into())
+}
+
+/// Factor-analytic greatest lower bound to reliability (psych glb.fa
+/// transcription in `mlsirm_core::factor::glb_fa_corr`; NOT the algebraic
+/// glb, which needs an SDP solver). Returns {glb, communalities, nf}.
+#[pyfunction]
+fn glb_fa(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_glb_fa_corr(corr.as_slice()?, p).map_err(PyValueError::new_err)?;
+    glb_fa_to_py(py, &res)
+}
+
+/// [`glb_fa`] from raw data (`n x p` flattened row-major, complete data).
+#[pyfunction]
+fn glb_fa_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_glb_fa_data(data.as_slice()?, n, p).map_err(PyValueError::new_err)?;
+    glb_fa_to_py(py, &res)
+}
+
+fn glb_fa_to_py(
+    py: Python<'_>,
+    res: &mlsirm_core::factor::GlbFaResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("glb", res.glb)?;
+    out.set_item(
+        "communalities",
+        numpy::PyArray1::from_slice(py, &res.communalities),
+    )?;
+    out.set_item("nf", res.nf)?;
     Ok(out.into())
 }
 
@@ -5699,6 +5739,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(minres_fa_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(omega_total_1f, m)?)?;
     m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;

@@ -5940,3 +5940,38 @@ def test_separation_reliability_negative_unclamped():
     )
     assert r.sep_rel < 0.0
     assert np.isnan(r.sep_index)
+
+
+def test_glb_fa_oracle_s9():
+    """S9 oracle fixture from oracle_glbfa.py (asserts read wrapper->crate
+    outputs; mutation kills executed at the Rust level)."""
+    import numpy as np
+    from fast_mlsirm import glb_fa
+
+    L = np.zeros((9, 2))
+    L[:5, 0] = [0.8, 0.7, 0.6, 0.5, 0.4]
+    L[4:, 1] = [0.3, 0.7, 0.6, 0.5, 0.45]
+    R = L @ L.T
+    np.fill_diagonal(R, 1.0)
+    res = glb_fa(R)
+    assert res.nf == 2
+    assert abs(res.glb - 0.730905233399) < 1e-5
+    assert res.communalities.shape == (9,)
+
+
+def test_glb_fa_from_data_and_errors():
+    import numpy as np
+    import pytest
+    from fast_mlsirm import glb_fa, glb_fa_from_data
+
+    rng = np.random.default_rng(7)
+    f = rng.standard_normal(500)
+    lam = np.array([0.7, 0.6, 0.8, 0.5, 0.65, 0.75])
+    x = np.outer(f, lam) + rng.standard_normal((500, 6)) * np.sqrt(1 - lam**2)
+    res = glb_fa_from_data(x)
+    assert 0.5 < res.glb <= 1.0
+    assert 1 <= res.nf < 6
+    with pytest.raises(ValueError):
+        glb_fa(np.ones((2, 3)))
+    with pytest.raises(ValueError):
+        glb_fa_from_data(np.full((5, 4), np.nan))
