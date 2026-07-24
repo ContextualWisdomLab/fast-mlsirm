@@ -2,3 +2,17 @@
 resolver = "2"
 members = ["crates/mlsirm-core"]
 exclude = ["crates/fast-mlsirm-py"]
+
+# Repository-owned OpenCode coverage contract. Deliberately ignored statistical
+# studies remain runnable with `cargo test --release -- --ignored`, but their
+# test implementations are not production code and live in the repository's
+# `tests/unit` tree, which llvm-cov excludes from production-source reporting.
+# Every compiled production line remains in scope.
+[workspace.metadata.opencode.coverage]
+minimum_lines = 100
+
+# The suite contains high-dimensional numerical recovery tests. Optimizing test
+# binaries keeps the trusted coverage job inside its 900-second command limit
+# without shrinking ordinary test data or changing production compilation.
+[profile.test]
+opt-level = 2

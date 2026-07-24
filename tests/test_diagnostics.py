@@ -22,6 +22,30 @@ def test_predict_proba_matches_simulation():
     assert np.allclose(probs, data.probabilities)
 
 
+def test_predict_proba_bifactor_uses_inner_product():
+    params = MLSIRMParams(
+        theta=np.array([[-0.5], [0.75]]),
+        alpha=np.log(np.array([1.2, 0.8])),
+        b=np.array([-0.2, 0.3]),
+        xi=np.array([[-1.1], [0.6]]),
+        zeta=np.array([[0.9], [-0.7]]),
+        # tau is not part of the bifactor predictor; a large value makes a
+        # mistaken distance penalty visibly disagree with the reference.
+        tau=np.log(4.0),
+    )
+    factor_id = np.array([0, 0], dtype=np.int64)
+    eta = (
+        np.exp(params.alpha)[None, :] * params.theta[:, factor_id]
+        + params.b[None, :]
+        + params.xi @ params.zeta.T
+    )
+    expected = 1.0 / (1.0 + np.exp(-eta))
+
+    np.testing.assert_allclose(
+        predict_proba(params, factor_id, model="BIFAC2PLM"), expected
+    )
+
+
 def test_predict_proba_subset_persons():
     data = simulate(MLS2PLMConfig(n_persons=10, n_dims=2, items_per_dim=2, seed=42))
 
@@ -117,6 +141,95 @@ def test_fit_diagnostics_strata_contract():
     assert np.allclose(diagnostics.groupfit["observed_count"], [4.0, 4.0])
     assert diagnostics.group_itemfit["item_id"].shape == (4,)
     assert np.allclose(diagnostics.clusterfit["cluster_id"], [10.0, 20.0])
+
+
+def test_fit_diagnostics_leniency_residual_respects_mask_and_sign():
+    params = MLSIRMParams(
+        theta=np.zeros((3, 1)),
+        alpha=np.zeros(2),
+        b=np.full(2, np.log(0.2 / 0.8)),
+        xi=np.zeros((3, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=0.0,
+    )
+    responses = np.array([[1.0, 1.0], [0.0, 0.0], [1.0, 0.0]])
+    mask = np.array([[True, True], [True, False], [False, False]])
+
+    diagnostics = fit_diagnostics(
+        responses,
+        params,
+        np.zeros(2, dtype=int),
+        mask=mask,
+        model="MIRT",
+    )
+
+    # Reads crate-returned person-level residual outputs and fails if the
+    # implementation mutates to the wrong sign, ignores masking, or leaks an
+    # empty masked row into finite public outputs / summary statistics.
+    residual = diagnostics.personfit["leniency_residual"]
+    n_obs = diagnostics.personfit["leniency_n_observed"]
+    assert residual[0] > 0.75
+    assert residual[1] < -0.15
+    assert residual[0] > residual[1]
+    assert residual[2] == 0.0
+    assert np.allclose(n_obs, [2.0, 1.0, 0.0])
+    assert diagnostics.model_fit["leniency_mean"] > 0.29
+    assert diagnostics.model_fit["leniency_abs_p95"] > abs(residual[1])
+    assert diagnostics.model_fit["leniency_abs_p95"] < abs(residual[0])
+
+
+def test_fit_diagnostics_requires_estimator_and_population_for_structured_m2():
+    params = MLSIRMParams(
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+    responses = np.zeros((4, 3))
+
+    with pytest.raises(ValueError, match="actual estimator"):
+        fit_diagnostics(
+            responses,
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            group_id=np.array([0, 0, 1, 1]),
+            include_m2=True,
+        )
+    with pytest.raises(ValueError, match="population mu and sigma"):
+        fit_diagnostics(
+            responses,
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            group_id=np.array([0, 0, 1, 1]),
+            include_m2=True,
+            estimator="mmle",
+        )
+
+
+def test_fit_diagnostics_rejects_nonconverged_parameters_for_m2():
+    params = MLSIRMParams(
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+
+    with pytest.raises(ValueError, match="did not converge.*max_iter_reached"):
+        fit_diagnostics(
+            np.zeros((4, 3)),
+            params,
+            np.zeros(3, dtype=int),
+            model="MIRT",
+            include_m2=True,
+            estimator="mmle",
+            convergence_status="max_iter_reached",
+        )
 
 
 def test_dimensionality_diagnostics_returns_best_candidate():

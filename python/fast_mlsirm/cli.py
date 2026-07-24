@@ -17,9 +17,24 @@ from .diagnostics import (
     response_process_fit_diagnostics,
 )
 from .fit import fit
-from .io import load_factor_csv, load_params, save_dimensionality_diagnostics, save_fit_diagnostics, save_fit_result, save_simulation
+from .io import (
+    _atomic_write_text,
+    _load_json_bounded,
+    _load_numpy_bounded,
+    load_factor_csv,
+    load_params,
+    save_dimensionality_diagnostics,
+    save_fit_diagnostics,
+    save_fit_result,
+    save_simulation,
+)
 from .report import render_diagnostics_report
 from .simulation import simulate
+
+
+MAX_CANDIDATE_COUNT = 128
+MAX_CANDIDATE_ELEMENTS = 50_000_000
+MAX_CANDIDATE_BYTES = 512 * 1024 * 1024
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
@@ -28,6 +43,34 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Write one machine-readable JSON status object to stdout.",
     )
+
+
+def _load_fit_context(
+    params_path: str | Path,
+) -> tuple[str | None, dict | None, str | None]:
+    """Recover estimator, population, and convergence metadata beside params."""
+    path = Path(params_path)
+    summary_path = path.with_name("fit_summary.json")
+    if not summary_path.exists():
+        return None, None, None
+    summary = _load_json_bounded(summary_path, source="fit summary")
+    optimizer = str(summary.get("optimizer", "")).lower()
+    estimator = "mmle" if optimizer.startswith("mmle") else "jmle" if optimizer else None
+    raw_status = summary.get("convergence_status")
+    convergence_status = (
+        str(raw_status).strip().lower() if raw_status is not None else None
+    )
+    if not convergence_status:
+        convergence_status = None
+    population = summary.get("population")
+    if population is not None:
+        population = dict(population)
+        with _load_numpy_bounded(path) as arrays:
+            if "pop_mu" in arrays:
+                population["mu"] = np.asarray(arrays["pop_mu"], dtype=float)
+            if "pop_sigma" in arrays:
+                population["sigma"] = np.asarray(arrays["pop_sigma"], dtype=float)
+    return estimator, population, convergence_status
 
 
 def _progress(args: argparse.Namespace, message: str) -> None:
@@ -48,7 +91,7 @@ def _output_file(run_dir: str, filename: str) -> str:
 
 
 def _load_response_and_factors(responses_path: str, factors_path: str) -> tuple[np.ndarray, np.ndarray]:
-    responses = np.load(responses_path, allow_pickle=False)
+    responses = _load_numpy_bounded(responses_path)
     factors = load_factor_csv(factors_path)
     _validate_response_and_factors(responses, factors)
     return responses, factors
@@ -96,6 +139,13 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
     fit_cmd.add_argument("--model", default="MLS2PLM", help="Model type to fit (default: MLS2PLM).")
     fit_cmd.add_argument("--latent-dim", type=int, default=2, help="Latent dimensionality for person traits (default: 2).")
+    fit_cmd.add_argument("--estimator", choices=["jmle", "mmle"], default="jmle", help="Estimator: penalized joint MLE, or marginal MLE via EM (persons integrated out; default: jmle).")
+    fit_cmd.add_argument("--group-id", help="Optional .npy person group IDs: estimation-level multigroup calibration (estimator=mmle; group 0 is the N(0,1) reference).")
+    fit_cmd.add_argument("--cluster-id", help="Optional .npy person cluster IDs: estimation-level multilevel random intercept (estimator=mmle).")
+    fit_cmd.add_argument("--q-theta", type=int, default=21, help="Marginal estimator: Gauss-Hermite nodes per trait dimension (default: 21).")
+    fit_cmd.add_argument("--q-xi", type=int, default=11, help="Marginal estimator: Gauss-Hermite nodes per latent-space axis (default: 11).")
+    fit_cmd.add_argument("--q-u", type=int, default=15, help="Marginal estimator: Gauss-Hermite nodes for the multilevel intercept (default: 15).")
+    fit_cmd.add_argument("--tolerance", type=float, default=1e-6, help="Convergence tolerance (default: 1e-6).")
     fit_cmd.add_argument("--optimizer", choices=["adam", "lbfgs", "adam_lbfgs"], default="adam_lbfgs", help="Optimizer to use (default: adam_lbfgs).")
     fit_cmd.add_argument("--max-iter", type=int, default=100, help="Maximum number of iterations for the optimizer (default: 100).")
     fit_cmd.add_argument("--n-restarts", type=int, default=1, help="Number of random restarts (default: 1).")
@@ -104,6 +154,16 @@ def _main(argv: list[str] | None = None) -> int:
     fit_cmd.add_argument("--rust-device", choices=["auto", "cpu", "gpu"], default="auto", help="Execution device for the rust backend: wgpu GPGPU when available, else CPU fallback (default: auto). Ignored for the numpy backend.")
     fit_cmd.add_argument("--out", required=True, help="Directory path to save the fitted parameters.")
     _add_json_flag(fit_cmd)
+
+    score_cmd = sub.add_parser(
+        "score",
+        help="Score new respondents against a frozen serving bundle (EAP).",
+        description="Score new respondents against a frozen serving bundle (EAP, item parameters fixed).",
+    )
+    score_cmd.add_argument("--bundle", required=True, help="Path to a serving bundle JSON (see fast_mlsirm.serving.export_serving_bundle).")
+    score_cmd.add_argument("--responses", required=True, help="Responses: a JSON file (dict or list of dicts mapping item code -> 0/1) or a .npy matrix in bundle item order (NaN = missing).")
+    score_cmd.add_argument("--out", help="Optional path for the scores JSON (default: stdout).")
+    _add_json_flag(score_cmd)
 
     diagnose = sub.add_parser(
         "diagnose-fit",
@@ -114,8 +174,21 @@ def _main(argv: list[str] | None = None) -> int:
     diagnose.add_argument("--factors", required=True, help="Path to the item factors CSV file.")
     diagnose.add_argument("--params", required=True, help="Path to fitted params.npz.")
     diagnose.add_argument("--model", default="MLS2PLM", help="Model type used for the fitted parameters (default: MLS2PLM).")
+    diagnose.add_argument(
+        "--estimator",
+        choices=["jmle", "cmle", "mmle"],
+        help="Estimator used for calibration; inferred from fit_summary.json when omitted.",
+    )
     diagnose.add_argument("--group-id", help="Optional .npy person group IDs for multigroup summaries.")
     diagnose.add_argument("--cluster-id", help="Optional .npy person cluster IDs for multilevel summaries.")
+    diagnose.add_argument(
+        "--limited-information",
+        action="store_true",
+        help=(
+            "Also compute M2, RMSEA, SRMR, CFI, and TLI. Multiple-group fits "
+            "use stacked moments; multilevel fits use cluster-robust covariance."
+        ),
+    )
     diagnose.add_argument("--out", required=True, help="Directory path to save fit_diagnostics.json.")
     _add_json_flag(diagnose)
 
@@ -249,13 +322,60 @@ def _main(argv: list[str] | None = None) -> int:
             },
         )
 
+    if args.command == "score":
+        from .serving import load_serving_bundle, score_respondents
+
+        _progress(args, "⏳ Scoring respondents against the serving bundle...")
+        try:
+            bundle = load_serving_bundle(args.bundle)
+            if args.responses.endswith(".npy"):
+                payload = _load_numpy_bounded(args.responses)
+            else:
+                payload = _load_json_bounded(
+                    args.responses,
+                    source="response JSON",
+                )
+            scores = score_respondents(bundle, payload)
+        except (ValueError, OSError, json.JSONDecodeError) as e:
+            if os.environ.get("FAST_MLSIRM_DEBUG"):
+                raise
+            print(f"❌ Error: Scoring failed - {str(e)}", file=sys.stderr)
+            return 1
+        if args.out:
+            _atomic_write_text(
+                args.out, json.dumps(scores, ensure_ascii=False, indent=2)
+            )
+        return _complete(
+            args,
+            json.dumps(scores, ensure_ascii=False, indent=2)
+            if not args.out
+            else f"✅ Scores written to {args.out}",
+            {
+                "command": "score",
+                "status": "ok",
+                "n_scored": len(scores),
+                "scores": scores,
+            },
+        )
+
     if args.command == "diagnose-fit":
         _progress(args, f"⏳ Computing {args.model} fit diagnostics...")
         try:
             responses, factors = _load_response_and_factors(args.responses, args.factors)
             params = load_params(args.params)
+            saved_estimator, population, convergence_status = _load_fit_context(args.params)
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
+            if (
+                args.limited_information
+                and convergence_status is not None
+                and convergence_status != "converged"
+            ):
+                raise ValueError(
+                    "limited-information diagnostics require converged parameters; "
+                    "the fitted model did not converge "
+                    f"(status={convergence_status})"
+                )
         except FileNotFoundError as e:
             if os.environ.get("FAST_MLSIRM_DEBUG"):
                 raise
@@ -279,6 +399,10 @@ def _main(argv: list[str] | None = None) -> int:
             model=args.model,
             group_id=group_id,
             cluster_id=cluster_id,
+            include_m2=args.limited_information,
+            estimator=args.estimator or saved_estimator,
+            population=population,
+            convergence_status=convergence_status,
         )
         save_fit_diagnostics(diagnostics, args.out)
         return _complete(
@@ -346,8 +470,8 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-response-process":
         _progress(args, f"⏳ Computing {args.item_type} {args.response_process} fit diagnostics...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
-            probabilities = np.load(args.probabilities, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
+            probabilities = _load_numpy_bounded(args.probabilities)
             group_id = _load_optional_npy(args.group_id)
             cluster_id = _load_optional_npy(args.cluster_id)
         except FileNotFoundError as e:
@@ -391,7 +515,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-response-candidates":
         _progress(args, f"⏳ Comparing {args.item_type} {args.response_process} response candidates...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
         except FileNotFoundError as e:
             if os.environ.get("FAST_MLSIRM_DEBUG"):
@@ -433,7 +557,7 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-fixed-item-calibration":
         _progress(args, "⏳ Scoring fixed-item calibration candidates...")
         try:
-            responses = np.load(args.responses, allow_pickle=False)
+            responses = _load_numpy_bounded(args.responses)
             candidate_probabilities = _load_candidate_probabilities(args.candidate)
             fixed_items = _load_optional_npy(args.fixed_items)
         except FileNotFoundError as e:
@@ -534,12 +658,19 @@ def _main(argv: list[str] | None = None) -> int:
                 model=args.model,
                 latent_dim=args.latent_dim,
                 optimizer=args.optimizer,
+                estimator=args.estimator,
                 max_iter=args.max_iter,
                 n_restarts=args.n_restarts,
                 seed=args.seed,
                 backend=args.backend,
                 rust_device=args.rust_device,
+                q_theta=args.q_theta,
+                q_xi=args.q_xi,
+                q_u=args.q_u,
+                tolerance=args.tolerance,
             ),
+            group_id=_load_optional_npy(args.group_id),
+            cluster_id=_load_optional_npy(args.cluster_id),
         )
     except ValueError as e:
         if os.environ.get("FAST_MLSIRM_DEBUG"):
@@ -588,18 +719,35 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:
-    return None if path is None else np.load(path, allow_pickle=False)
+    return None if path is None else _load_numpy_bounded(path)
 
 
 def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
+    if len(specs) > MAX_CANDIDATE_COUNT:
+        raise ValueError(
+            f"candidate count exceeds the {MAX_CANDIDATE_COUNT}-candidate limit"
+        )
     candidates = {}
+    total_elements = 0
+    total_bytes = 0
     for spec in specs:
         label, path = spec.split("=", 1) if "=" in spec else (Path(spec).stem, spec)
         if not label:
             raise ValueError("candidate label must not be empty")
         if label in candidates:
             raise ValueError(f"duplicate candidate label: {label}")
-        candidates[label] = np.load(path, allow_pickle=False)
+        candidate = _load_numpy_bounded(path)
+        if not isinstance(candidate, np.ndarray):
+            candidate.close()
+            raise ValueError("candidate probability inputs must be single .npy arrays")
+        total_elements += int(candidate.size)
+        total_bytes += int(candidate.nbytes)
+        if (
+            total_elements > MAX_CANDIDATE_ELEMENTS
+            or total_bytes > MAX_CANDIDATE_BYTES
+        ):
+            raise ValueError("candidate probability inputs exceed the aggregate size limit")
+        candidates[label] = candidate
     return candidates
 
 

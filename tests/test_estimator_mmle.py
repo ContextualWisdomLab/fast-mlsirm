@@ -49,10 +49,37 @@ def test_reserved_estimators_raise(estimator):
         fit(y, factors, FitConfig(model="ULS2PLM", estimator=estimator), mask=mask)
 
 
-def test_mmle_rejects_spatial_models_until_supported():
+def test_mmle_spatial_models_route_to_marginal_estimator():
+    y, factors, mask, *_ = _simulate_2pl(n_persons=60, n_items=6)
+    result = fit(
+        y,
+        factors,
+        FitConfig(model="MLS2PLM", estimator="mmle", max_iter=5, q_theta=7, q_xi=7),
+        mask=mask,
+    )
+    assert result.optimizer.startswith("mmle_marginal_em/")
+    assert result.population is not None and result.population["kind"] == "single"
+
+
+def test_mmle_population_structures_require_mmle_estimator():
     y, factors, mask, *_ = _simulate_2pl(n_persons=50, n_items=5)
-    with pytest.raises(NotImplementedError, match="only unidimensional 2PL"):
-        fit(y, factors, FitConfig(model="MLS2PLM", estimator="mmle"), mask=mask)
+    with pytest.raises(ValueError, match="require estimator='mmle'"):
+        fit(
+            y,
+            factors,
+            FitConfig(model="ULS2PLM", estimator="jmle"),
+            mask=mask,
+            group_id=np.zeros(50, dtype=np.int64),
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        fit(
+            y,
+            factors,
+            FitConfig(model="ULS2PLM", estimator="mmle"),
+            mask=mask,
+            group_id=np.zeros(50, dtype=np.int64),
+            cluster_id=np.zeros(50, dtype=np.int64),
+        )
 
 
 def test_invalid_estimator_rejected_by_validate():
