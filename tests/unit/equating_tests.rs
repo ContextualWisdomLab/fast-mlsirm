@@ -386,6 +386,20 @@ fn equating_boundary_contracts_and_kernel_helpers() {
         AnchorKind::Internal,
     )
     .is_err());
+    let huge_anchor = equate_neat_linear(
+        &total,
+        &[1.0e308, -1.0e308],
+        &total,
+        &[1.0e308, -1.0e308],
+        1,
+        1,
+        0.5,
+        NeatLinearMethod::Tucker,
+        AnchorKind::Internal,
+    );
+    // Reads the core-returned result path and kills mutations that allow finite
+    // but overflowing anchor moments to produce NaN conversion tables.
+    assert!(huge_anchor.is_err());
     let oversized = std::panic::catch_unwind(|| {
         equate_neat_linear(
             &total,

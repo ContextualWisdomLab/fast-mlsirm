@@ -602,6 +602,12 @@ pub fn equate_neat_linear(
     }
     let (m1x, v1x, m1v, v1v, cov1) = paired_moments(x_total, x_anchor);
     let (m2y, v2y, m2v, v2v, cov2) = paired_moments(y_total, y_anchor);
+    if [m1x, v1x, m1v, v1v, cov1, m2y, v2y, m2v, v2v, cov2]
+        .iter()
+        .any(|v| !v.is_finite())
+    {
+        return Err("derived NEAT linear moments must be finite".into());
+    }
     if v1v <= 0.0 || v2v <= 0.0 {
         return Err("anchor variance must be positive in both groups".into());
     }
@@ -620,6 +626,9 @@ pub fn equate_neat_linear(
             }
         }
     };
+    if !g1.is_finite() || !g2.is_finite() {
+        return Err("NEAT linear regression coefficients must be finite".into());
+    }
     let w2 = 1.0 - w1;
     let dmu = m1v - m2v;
     let dv = v1v - v2v;
@@ -627,11 +636,20 @@ pub fn equate_neat_linear(
     let mu_sy = m2y + w1 * g2 * dmu;
     let var_sx = v1x - w2 * g1 * g1 * dv + w1 * w2 * g1 * g1 * dmu * dmu;
     let var_sy = v2y + w1 * g2 * g2 * dv + w1 * w2 * g2 * g2 * dmu * dmu;
+    if [dmu, dv, mu_sx, mu_sy, var_sx, var_sy]
+        .iter()
+        .any(|v| !v.is_finite())
+    {
+        return Err("synthetic NEAT linear moments must be finite".into());
+    }
     if var_sx <= 0.0 || var_sy <= 0.0 {
         return Err("synthetic variance is non-positive (degenerate equating)".into());
     }
     let a = var_sy.sqrt() / var_sx.sqrt();
     let b = mu_sy - a * mu_sx;
+    if !a.is_finite() || !b.is_finite() {
+        return Err("NEAT linear conversion coefficients must be finite".into());
+    }
     let n_x = k_x
         .checked_add(1)
         .ok_or("k_x + 1 exceeds the equating buffer size")?;
@@ -640,6 +658,9 @@ pub fn equate_neat_linear(
     for x in 0..=k_x {
         x_scores.push(x as f64);
         y_eq.push(a * x as f64 + b);
+    }
+    if y_eq.iter().any(|v| !v.is_finite()) {
+        return Err("NEAT linear conversion table must be finite".into());
     }
     Ok(EquateResult {
         x_scores,

@@ -594,6 +594,13 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
+    let overflow_u3 =
+        std::panic::catch_unwind(|| u3_poly_person_fit(&[], None, usize::MAX / 2 + 1, 2, 3, None));
+    assert!(
+        overflow_u3.is_ok(),
+        "overflowed U3 shape must return an error instead of panicking"
+    );
+    assert!(overflow_u3.unwrap().is_err());
     let none_observed = [false, false, true, false];
     let y_masked = [99usize, 99, 1, 99];
     let u3 = u3_poly_person_fit(&y_masked, Some(&none_observed), 2, 2, 3, Some(-1.0)).unwrap();
@@ -721,6 +728,25 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
+    let overflow_sx2 = std::panic::catch_unwind(|| {
+        poly_s_x2(
+            &[],
+            None,
+            usize::MAX / 2 + 1,
+            2,
+            3,
+            &slope,
+            &cat,
+            PolyModel::Gpcm,
+            7,
+            1.0,
+        )
+    });
+    assert!(
+        overflow_sx2.is_ok(),
+        "overflowed poly S-X2 shape must return an error instead of panicking"
+    );
+    assert!(overflow_sx2.unwrap().is_err());
     let empty_sx2 = poly_s_x2(
         &[99, 99, 1, 99],
         Some(&[false; 4]),

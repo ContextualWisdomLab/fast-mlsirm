@@ -2133,7 +2133,12 @@ pub fn m2_rmsea2(
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len || observed.len() != expected_len {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);
@@ -2443,14 +2448,24 @@ pub fn poly_local_dependence(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     validate_optional_observed_length(observed, y.len())?;
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
-    if cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if cat_params.len() != expected_cat_params {
         return Err("cat_params must have length n_items*(n_cat-1)".into());
     }
     validate_observed_categories(y, observed, n_cat)?;
@@ -2610,14 +2625,24 @@ pub fn poly_m2(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     validate_optional_observed_length(observed, y.len())?;
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
-    if cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if cat_params.len() != expected_cat_params {
         return Err("cat_params must have length n_items*(n_cat-1)".into());
     }
     validate_observed_categories(y, observed, n_cat)?;

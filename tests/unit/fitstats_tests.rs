@@ -158,6 +158,38 @@ fn sx2_rejects_non_dichotomous_responses() {
 }
 
 #[test]
+fn m2_rejects_overflowed_person_item_shape_without_panic() {
+    let (alpha, b, zeta, fid, y, observed, _, _) = toy_bank_data();
+    let bank = ItemBank {
+        alpha: &alpha,
+        b: &b,
+        zeta: &zeta,
+        tau: -30.0,
+        factor_id: &fid,
+        model_type: ModelType::Mirt,
+        n_dims: 1,
+        latent_dim: 1,
+        eps_distance: 1e-8,
+    };
+    let oversized = std::panic::catch_unwind(|| {
+        m2_rmsea2(
+            &bank,
+            &y,
+            &observed,
+            usize::MAX / b.len() + 1,
+            &PriorSpec::standard(1),
+            7,
+            XiRule::GaussHermite { q_xi: 3 },
+        )
+    });
+    assert!(
+        oversized.is_ok(),
+        "overflowed n_persons*n_items must return an error instead of panicking"
+    );
+    assert!(oversized.unwrap().is_err());
+}
+
+#[test]
 fn sx2_rejects_malformed_bank_controls_and_weights() {
     let (alpha, b, zeta, mut fid, y, observed, _, _) = toy_bank_data();
     fid.pop();
@@ -856,6 +888,24 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     );
 
     let pm = crate::poly::PolyModel::Gpcm;
+    let overflow_ld = std::panic::catch_unwind(|| {
+        poly_local_dependence(
+            &[],
+            None,
+            usize::MAX / 2 + 1,
+            2,
+            2,
+            &[1.0, 1.0],
+            &[0.0, 0.0],
+            pm,
+            7,
+        )
+    });
+    assert!(
+        overflow_ld.is_ok(),
+        "overflowed poly LD shape must return an error instead of panicking"
+    );
+    assert!(overflow_ld.unwrap().is_err());
     assert!(poly_local_dependence(&[], None, 0, 1, 2, &[1.0], &[0.0], pm, 7).is_err());
     assert!(poly_local_dependence(&[], None, 0, 2, 1, &[1.0, 1.0], &[], pm, 7).is_err());
     assert!(poly_local_dependence(&[0], None, 1, 2, 2, &[1.0, 1.0], &[0.0, 0.0], pm, 7).is_err());
@@ -925,6 +975,24 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(sparse_pair.x2[0].is_nan());
 
     assert!(poly_m2(&[], None, 0, 2, 2, &[1.0; 2], &[0.0; 2], pm, 7).is_err());
+    let overflow_m2 = std::panic::catch_unwind(|| {
+        poly_m2(
+            &[],
+            None,
+            usize::MAX / 3 + 1,
+            3,
+            2,
+            &[1.0; 3],
+            &[0.0; 3],
+            pm,
+            7,
+        )
+    });
+    assert!(
+        overflow_m2.is_ok(),
+        "overflowed poly M2 shape must return an error instead of panicking"
+    );
+    assert!(overflow_m2.unwrap().is_err());
     assert!(poly_m2(&[], None, 0, 3, 1, &[1.0; 3], &[], pm, 7).is_err());
     assert!(poly_m2(&[0], None, 1, 3, 2, &[1.0; 3], &[0.0; 3], pm, 7).is_err());
     assert!(poly_m2(

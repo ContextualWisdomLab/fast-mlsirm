@@ -406,11 +406,16 @@ pub fn fit_poly_unidim(
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != expected_len {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -887,7 +892,12 @@ pub fn poly_person_fit(
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
-    if cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if cat_params.len() != expected_cat_params {
         return Err("cat_params must have length n_items*(n_cat-1)".into());
     }
     if !(prior_sd > 0.0) {
@@ -1033,7 +1043,12 @@ pub fn poly_cat_simulate(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if slope.len() != n_items || cat_params.len() != expected_cat_params {
         return Err("slope/cat_params must match n_items and n_cat".into());
     }
     if n_items < 2 {
@@ -1732,11 +1747,16 @@ pub fn u3_poly_person_fit(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != expected_len {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -1880,7 +1900,12 @@ pub fn u3_poly_bootstrap_cutoff(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if slope.len() != n_items || cat_params.len() != expected_cat_params {
         return Err("slope/cat_params must match n_items and n_cat".into());
     }
     if n_persons < 1 || n_items < 1 {
@@ -2235,17 +2260,27 @@ pub fn poly_s_x2(
     if n_items < 2 {
         return Err("n_items must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
-    if cat_params.len() != n_items * (n_cat - 1) {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if cat_params.len() != expected_cat_params {
         return Err("cat_params must have length n_items * (n_cat - 1)".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != expected_len {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
