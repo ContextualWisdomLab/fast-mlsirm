@@ -93,11 +93,12 @@ fn validate(x: &[i64], n_persons: usize, n_items: usize) -> Result<(), String> {
     if n_items < 2 {
         return Err("mokken requires at least 2 items".to_string());
     }
-    if x.len() != n_persons * n_items {
+    let expected = crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if x.len() != expected {
         return Err(format!(
             "responses length {} != n_persons*n_items {}",
             x.len(),
-            n_persons * n_items
+            expected
         ));
     }
     if x.iter().any(|&v| v < 0) {

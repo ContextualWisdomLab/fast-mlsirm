@@ -240,7 +240,7 @@ fn aisp_recovers_two_clusters() {
     let mut rng = Rng::new(2013);
     let n = 1500;
     let bs = [-0.8, -0.3, 0.3, 0.8];
-    // cluster A: items 0..4 driven by theta1; cluster B: items 4..8 by theta2
+    // cluster A: items 0..=3 driven by theta1; cluster B: items 4..=7 by theta2
     let j = 8;
     let mut x = vec![0i64; n * j];
     for p in 0..n {
