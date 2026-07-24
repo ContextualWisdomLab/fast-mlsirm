@@ -131,10 +131,12 @@
   documented here as a TOTAL cost — iopsych labels it per-applicant but
   never multiplies by `n`), and Taylor-Russell success ratio
   `P(Y>yc | X>xc) = Q(xc,yc,rxy)/sr` with the bivariate-normal upper tail
-  `Q` evaluated by a conditional-normal Gauss-Legendre integral (verified
-  ~1e-15 against scipy's BVN CDF during adversarial spec review; the
-  iopsych `qa/(qa+qb)` form was proven equal to `Q/sr` algebraically and
-  numerically). Adversarially spec-verified before implementation; five
+  `Q` evaluated by a conditional-normal Gauss-Legendre integral (~1e-15
+  vs scipy's BVN CDF at moderate `|rxy|` during adversarial spec review,
+  better than 1e-6 across the whole accepted `|rxy|` range —
+  regression-tested; the committed oracle generator is
+  `tests/oracles/oracle_utility.py`; the iopsych `qa/(qa+qb)` form was
+  proven equal to `Q/sr` algebraically and numerically). Adversarially spec-verified before implementation; five
   scipy-pinned oracle fixtures including negative validity; rho=0
   analytic anchor (success == base rate); strict rxy monotonicity; a
   500-rep x 20,000-person Monte Carlo recovery run (`#[ignore]`; success

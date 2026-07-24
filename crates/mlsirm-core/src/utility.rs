@@ -34,8 +34,11 @@
 //!
 //! `Q` is evaluated by the elementary conditional-normal representation
 //! `Q(h, k, rho) = int_h^inf phi(x) Phi((rho x - k)/sqrt(1-rho^2)) dx`
-//! with composite Gauss-Legendre quadrature (verified to ~1e-15 against
-//! scipy's bivariate normal CDF at asymmetric points including negative rho).
+//! with composite Gauss-Legendre quadrature. Accuracy vs the scipy oracle
+//! (`tests/oracles/oracle_utility.py`): ~1e-15 at moderate `|rho|`
+//! (spec-review fixtures, asymmetric points incl. negative rho), and
+//! better than 1e-6 across the whole accepted `|rho|` range
+//! (regression-tested at `|rho| = 0.999999`; observed error ~1e-11 there).
 //!
 //! # Scope
 //!
@@ -57,6 +60,7 @@
 //! Taylor, H. C., & Russell, J. T. (1939). The relationship of validity
 //! coefficients to the practical effectiveness of tests in selection:
 //! Discussion and tables. *Journal of Applied Psychology, 23*(5), 565-578.
+//! <https://doi.org/10.1037/h0057079>
 //!
 //! (Citation note: the Naylor-Shine and Taylor-Russell papers' formulas are
 //! standard truncated-normal/BVN results that were independently re-derived
@@ -108,7 +112,9 @@ fn norm_cdf(x: f64) -> f64 {
 /// Upper-tail bivariate-normal probability `Q(h, k, rho) = P(X > h, Y > k)`
 /// for standard margins, via the conditional-normal representation
 /// `int_h^inf phi(x) Phi((rho x - k)/sqrt(1 - rho^2)) dx` (elementary result;
-/// verified against scipy's BVN CDF to ~1e-15 during spec review).
+/// ~1e-15 vs scipy's BVN CDF at moderate `|rho|` during spec review, and
+/// regression-tested to better than 1e-6 at the accepted `|rho|` extremes —
+/// see `tests/oracles/oracle_utility.py`).
 ///
 /// Composite Gauss-Legendre quadrature (16-point panels) over
 /// `[h, max(h, 8) + 2]`; beyond that upper limit `phi(x) < 1e-22` and the

@@ -1,8 +1,9 @@
 //! Tests for selection utility analysis (`utility.rs`).
 //!
 //! Mutation-kill audit (all asserts read crate return values; oracle values
-//! pinned from scipy via files/oracle_utility.py, scipy.stats.norm +
-//! multivariate_normal, and verified adversarially in utility_spec_review.md):
+//! pinned from scipy via `tests/oracles/oracle_utility.py` — runnable, and
+//! regenerates every fixture below — verified adversarially during spec
+//! review):
 //!
 //! - M1 `pux = rxy * ux` -> `pux = ux` (drop rxy): killed by
 //!   `utility_pux_fixture` (mutant 1.158975380667 vs good 0.579487690333).
@@ -74,7 +75,7 @@ fn utility_bcg_fixtures() {
 #[test]
 fn taylor_russell_oracle_fixtures() {
     let cases: [(f64, f64, f64, f64, f64); 5] = [
-        // (rxy, sr, br, success, q) from oracle_utility.py
+        // (rxy, sr, br, success, q) from tests/oracles/oracle_utility.py
         (0.5, 0.5, 0.6, 0.760872752614590, 0.380436376307295),
         (0.5, 0.3, 0.2, 0.384157434057053, 0.115247230217116),
         (0.3, 0.05, 0.8, 0.935885600599995, 0.046794280030000),
@@ -192,7 +193,7 @@ fn utility_mc_recovery_500() {
     assert_close(ybar_mc, pux, 4e-3, "MC mean criterion of selected");
 }
 
-/// Impl-review regressions (utility_impl_review.md).
+/// Adversarial impl-review regressions.
 ///
 /// HIGH: sr/br so small that `1.0 - v` rounds to 1.0 previously produced
 /// NaN or silent-zero Ok results; must be Err.
@@ -214,7 +215,8 @@ fn utility_subulp_ratio_rejected() {
 
 /// MEDIUM: near-degenerate rho (transition width sqrt(1-rho^2) << old fixed
 /// 0.25 panels) was off by ~1e-3. Oracle: scipy.integrate.quad on the same
-/// conditional integral (epsrel 1e-12, impl review).
+/// conditional integral, epsrel 1e-12 (`q_quad` in
+/// tests/oracles/oracle_utility.py — regenerates both fixtures below).
 #[test]
 fn taylor_russell_near_degenerate_rho() {
     let r = taylor_russell(-0.999999, 0.9, 0.9).unwrap();

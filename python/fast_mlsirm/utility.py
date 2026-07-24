@@ -30,7 +30,8 @@ References (APA 7th ed.):
     Taylor, H. C., & Russell, J. T. (1939). The relationship of validity
         coefficients to the practical effectiveness of tests in selection:
         Discussion and tables. *Journal of Applied Psychology, 23*(5),
-        565-578. (As cited in iopsych; not read.)
+        565-578. https://doi.org/10.1037/h0057079 (As cited in iopsych;
+        not read.)
 """
 
 from __future__ import annotations

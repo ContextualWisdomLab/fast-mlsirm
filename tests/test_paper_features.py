@@ -5980,7 +5980,7 @@ def test_glb_fa_from_data_and_errors():
 class TestSelectionUtility:
     """Selection utility (Taylor-Russell / Naylor-Shine / BCG) wrappers.
 
-    Oracle values pinned from scipy (files/oracle_utility.py); asserts read
+    Oracle values pinned from scipy (tests/oracles/oracle_utility.py); asserts read
     the crate outputs returned through the wrapper. Tolerance 1e-7 reflects
     the crate's Acklam inverse-normal precision, not slack.
     """
