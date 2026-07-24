@@ -4970,6 +4970,16 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
         fit_facets(valid + 0.5, n_cat=2)
     with pytest.raises(ValueError, match="in 0..1"):
         fit_facets(valid * 3, n_cat=2)
+    nan_missing = valid.copy()
+    nan_missing[0, 0, 0] = np.nan
+    neg_missing = valid.copy()
+    neg_missing[0, 0, 0] = -1
+    res_nan = fit_facets(nan_missing, n_cat=2, q_theta=7, max_iter=5)
+    res_neg = fit_facets(neg_missing, n_cat=2, q_theta=7, max_iter=5)
+    assert np.allclose(res_neg.item_difficulty, res_nan.item_difficulty)
+    assert np.allclose(res_neg.rater_severity, res_nan.rater_severity)
+    assert np.allclose(res_neg.thresholds, res_nan.thresholds)
+    assert np.allclose(res_neg.theta, res_nan.theta)
     with pytest.raises(ValueError, match="rater 1 has no observed"):
         bad = valid.copy()
         bad[:, :, 1] = np.nan

@@ -61,10 +61,10 @@ def fit_facets(
     difficulty and respondent ability.
 
     ``responses`` is a ``persons x items x raters`` array of integer category
-    indices ``0..n_cat-1``; ``NaN`` marks unscored cells (sparse judging plans),
-    dropped under a missing-at-random assumption. ``n_cat`` defaults to
-    ``max(responses) + 1``. Every item and every rater needs at least one
-    observed rating.
+    indices ``0..n_cat-1``; ``NaN`` or negative sentinels mark unscored cells
+    (sparse judging plans), dropped under a missing-at-random assumption.
+    ``n_cat`` defaults to ``max(responses) + 1``. Every item and every rater
+    needs at least one observed rating.
 
     References (APA 7th ed.):
         Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
@@ -106,15 +106,12 @@ def fit_facets(
         raise ValueError(
             "responses must contain at least one person, one item and one rater"
         )
-    missing = np.isnan(y)
-    if np.any(~missing & ~np.isfinite(y)):
+    if np.any(np.isinf(y)):
         raise ValueError("observed responses must be finite integer categories")
-    observed = ~missing
+    observed = np.isfinite(y) & (y >= 0)
     obs_values = y[observed]
-    if obs_values.size and (
-        np.any(obs_values != np.floor(obs_values)) or np.any(obs_values < 0)
-    ):
-        raise ValueError("observed responses must be non-negative integer categories")
+    if obs_values.size and np.any(obs_values != np.floor(obs_values)):
+        raise ValueError("observed responses must be integer categories")
     if n_cat is None:
         if obs_values.size == 0:
             raise ValueError("responses has no observed values")
