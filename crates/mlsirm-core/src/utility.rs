@@ -57,7 +57,7 @@
 //! Cronbach, L. J., & Gleser, G. C. (1965). *Psychological tests and
 //! personnel decisions* (2nd ed.). University of Illinois Press.
 //!
-//! Goebl, A., & Jones, J. (2016). *iopsych: Methods for industrial/
+//! Goebl, A., Jones, J., & Beatty, A. (2016). *iopsych: Methods for industrial/
 //! organizational psychology* (Version 0.90.1) \[R package\]. CRAN.
 //! <https://cran.r-project.org/package=iopsych>
 //!
@@ -141,7 +141,7 @@ fn bvn_upper(h: f64, k: f64, rho: f64) -> f64 {
         0.2816035507792589,
         0.4580167776572274,
         0.6178762444026438,
-        0.7554044083550030,
+        0.755404408355003,
         0.8656312023878318,
         0.9445750230732326,
         0.9894009349916499,

@@ -121,8 +121,8 @@
 
 - **Selection utility analysis** (`fast_mlsirm.selection_utility` /
   `taylor_russell`; in `mlsirm_core::utility`; transcribed from CRAN
-  iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl &
-  Jones, 2016; the original Taylor & Russell, 1939, Naylor & Shine, 1965,
+  iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl,
+  Jones, & Beatty, 2016; the original Taylor & Russell, 1939, Naylor & Shine, 1965,
   and Cronbach & Gleser, 1965 sources were not read and are cited as
   attributed). Formulas under the standard bivariate-normal selection
   model: selection intensity `ux = phi(xc)/sr`, Naylor-Shine selected-group

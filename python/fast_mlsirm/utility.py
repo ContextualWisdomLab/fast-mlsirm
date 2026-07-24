@@ -3,7 +3,7 @@ Brogden-Cronbach-Gleser). All numeric work happens in the Rust core
 (``mlsirm_core::utility``); this module only validates and marshals.
 
 Source status: the formulas are a transcription of the CRAN iopsych 0.90.1
-package (Goebl & Jones — READ: ``R/utility.R`` ``utilityBcg``/``trModel``/
+package (Goebl, Jones, & Beatty — READ: ``R/utility.R`` ``utilityBcg``/``trModel``/
 ``.utilitySwitch`` and ``R/ai.R`` ``ux``), independently re-derived from the
 standard bivariate-normal selection model and verified against a scipy
 oracle (``scipy.stats.norm``, ``scipy.stats.multivariate_normal``). The
@@ -20,7 +20,7 @@ References (APA 7th ed.):
     Cronbach, L. J., & Gleser, G. C. (1965). *Psychological tests and
         personnel decisions* (2nd ed.). University of Illinois Press.
         (As cited in iopsych; not read.)
-    Goebl, A., & Jones, J. (2016). *iopsych: Methods for industrial/
+    Goebl, A., Jones, J., & Beatty, A. (2016). *iopsych: Methods for industrial/
         organizational psychology* (Version 0.90.1) [R package].
         https://CRAN.R-project.org/package=iopsych
     Naylor, J. C., & Shine, L. C. (1965). A table for determining the
