@@ -70,6 +70,7 @@ use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
+use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -1816,6 +1817,27 @@ fn guttman_lambdas(
     out.set_item("mean_split", res.mean_split)?;
     out.set_item("n_splits", res.n_splits)?;
     out.set_item("exhaustive", res.exhaustive)?;
+    Ok(out.into())
+}
+
+/// ten Berge & Zegers (1978) mu0-mu3 reliability lower bounds
+/// (`mlsirm_core::reliability`; oracle: CRAN psych 2.6.5 `tenberge.R`).
+/// `data` is a flattened row-major `n_persons * n_items` matrix of complete
+/// finite scores.
+#[pyfunction]
+fn tenberge_mu(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_tenberge_mu(data.as_slice()?, n_persons, n_items).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mu0", res.mu0)?;
+    out.set_item("mu1", res.mu1)?;
+    out.set_item("mu2", res.mu2)?;
+    out.set_item("mu3", res.mu3)?;
     Ok(out.into())
 }
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
@@ -5422,6 +5444,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
+    m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;

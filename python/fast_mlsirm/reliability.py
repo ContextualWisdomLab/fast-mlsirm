@@ -95,3 +95,63 @@ def guttman_lambdas(
         n_splits=int(res["n_splits"]),
         exhaustive=bool(res["exhaustive"]),
     )
+
+
+@dataclass
+class TenBergeResult:
+    """ten Berge & Zegers mu reliability lower bounds.
+
+    ``mu0`` equals coefficient alpha (Guttman lambda3) and ``mu1`` equals
+    Guttman lambda2 exactly; the series satisfies
+    ``mu0 <= mu1 <= mu2 <= mu3``."""
+
+    mu0: float
+    mu1: float
+    mu2: float
+    mu3: float
+
+
+_TENBERGE_REFERENCES = """References (APA 7th ed.):
+        Revelle, W. (2025). *psych: Procedures for psychological,
+            psychometric, and personality research* (Version 2.6.5)
+            [R package]. https://CRAN.R-project.org/package=psych
+        ten Berge, J. M. F., & Zegers, F. E. (1978). A series of lower
+            bounds to the reliability of a test. *Psychometrika, 43*(4),
+            575-579. https://doi.org/10.1007/BF02293811 (as cited in
+            Revelle, 2025)
+    """
+
+
+def tenberge_mu(data: np.ndarray) -> TenBergeResult:
+    """ten Berge & Zegers mu0-mu3 reliability lower bounds (compute in
+    Rust; algorithm transcribed from the psych 2.6.5 R source
+    ``tenberge.R``, read line by line; ten Berge & Zegers, 1978, not read —
+    attribution as cited in Revelle, 2025).
+
+    Computed on the Pearson correlation matrix of ``data`` (an
+    ``n_persons x n_items`` array, complete and finite) with ``Vt = sum(R)``,
+    off-diagonal power sums ``S_k``, and ``c = p/(p-1)`` on the innermost
+    radical only: ``mu0 = c*S_1/Vt`` (= alpha), ``mu1 = (S_1 +
+    sqrt(c*S_2))/Vt``, ``mu2`` and ``mu3`` nest one and two more radicals.
+    Divergences from psych (documented in the Rust module): raw-data input
+    only and hard errors on degenerate input. In LLM-as-a-Judge quality
+    management the series tightens the lower bound on rubric internal
+    consistency beyond alpha.
+
+    """ + _TENBERGE_REFERENCES
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        raise RuntimeError("tenberge_mu requires the compiled Rust core")
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    if x.ndim != 2:
+        raise ValueError("data must be a 2-D persons x items array")
+    n_persons, n_items = x.shape
+    res = core.tenberge_mu(x.reshape(-1), int(n_persons), int(n_items))
+    return TenBergeResult(
+        mu0=float(res["mu0"]),
+        mu1=float(res["mu1"]),
+        mu2=float(res["mu2"]),
+        mu3=float(res["mu3"]),
+    )

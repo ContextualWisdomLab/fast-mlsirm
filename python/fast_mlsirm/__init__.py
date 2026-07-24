@@ -53,6 +53,8 @@ from .parallel_analysis import (
 from .reliability import (
     guttman_lambdas as guttman_lambdas,
     GuttmanResult as GuttmanResult,
+    tenberge_mu as tenberge_mu,
+    TenBergeResult as TenBergeResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
@@ -180,6 +182,8 @@ __all__ = [
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
+    "tenberge_mu",
+    "TenBergeResult",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",

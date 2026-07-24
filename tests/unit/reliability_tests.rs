@@ -197,3 +197,127 @@ fn mc_tau_equivalent_alpha_recovery() {
     // holds sample-wise; violations flag algebra mutations.
     assert_eq!(ge, reps);
 }
+
+// --- ten Berge & Zegers mu coefficients -------------------------------
+//
+// Fixture literals from an independent NumPy replication of tenberge.R
+// (session files/tenberge_fixture.py: np.corrcoef + explicit off-diagonal
+// power sums). Every assert reads TenBergeResult fields from the crate.
+//
+// Mutation kills verified by hand (each FAILED, then restored):
+// - M1 drop the innermost `c` factor in mu2/mu3 -> mu2/mu3 pins (~5e-4
+//   shift; tolerance 1e-9 kills it).
+// - M2 use s2 where s4 belongs in mu2 -> mu2 pin.
+// - M3 flatten one sqrt nesting level in mu3 -> mu3 pin.
+//
+// Disclosed identities: mu0 == guttman lambda3 and mu1 == guttman lambda2
+// by exact algebra; both are pinned to independent NumPy literals (not to
+// each other), so only jointly consistent mutations survive. S_2 over all
+// cells vs 2x the upper triangle is identical for symmetric R; unkillable.
+
+#[test]
+fn tenberge_fixture_a() {
+    let data = gen_data(
+        30,
+        6,
+        42,
+        &[0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        &[10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        &[1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    );
+    let t = tenberge_mu(&data, 30, 6).expect("tenberge A");
+    assert!((t.mu0 - 0.49281789125204223).abs() < TOL);
+    assert!((t.mu1 - 0.5561900258418755).abs() < TOL);
+    assert!((t.mu2 - 0.566334883191414).abs() < TOL);
+    assert!((t.mu3 - 0.5694865282091219).abs() < TOL);
+    // Cauchy-Schwarz series ordering, read from crate outputs.
+    assert!(t.mu0 <= t.mu1 && t.mu1 <= t.mu2 && t.mu2 <= t.mu3);
+}
+
+#[test]
+fn tenberge_fixture_b() {
+    let data = gen_data(
+        24,
+        5,
+        99,
+        &[0.8, 0.7, 0.6, 0.5, 0.4],
+        &[1.0, 2.0, 3.0, 4.0, 5.0],
+        &[1.0, 1.0, 2.0, 1.0, 0.5],
+    );
+    let t = tenberge_mu(&data, 24, 5).expect("tenberge B");
+    assert!((t.mu0 - 0.45381230433689973).abs() < TOL);
+    assert!((t.mu1 - 0.5427967072982294).abs() < TOL);
+    assert!((t.mu2 - 0.554450883437996).abs() < TOL);
+    assert!((t.mu3 - 0.5577786174323536).abs() < TOL);
+    assert!(t.mu0 <= t.mu1 && t.mu1 <= t.mu2 && t.mu2 <= t.mu3);
+}
+
+#[test]
+fn tenberge_matches_guttman_identities() {
+    // mu0 == lambda3 and mu1 == lambda2 (exact algebra, both sides crate
+    // outputs from independent code paths: direct off-diag sums vs Vt - p).
+    let data = gen_data(
+        30,
+        6,
+        42,
+        &[0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        &[10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        &[1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    );
+    let t = tenberge_mu(&data, 30, 6).expect("mu");
+    let g = guttman_lambdas(&data, 30, 6, 15000, 1).expect("lambdas");
+    assert!((t.mu0 - g.lambda3).abs() < 1e-12);
+    assert!((t.mu1 - g.lambda2).abs() < 1e-12);
+}
+
+#[test]
+fn tenberge_rejections() {
+    let ok = gen_data(10, 4, 3, &[0.5; 4], &[0.0; 4], &[1.0; 4]);
+    assert!(tenberge_mu(&ok[..8], 2, 4).is_err()); // n < 3
+    assert!(tenberge_mu(&ok[..20], 10, 2).is_err()); // p < 3
+    assert!(tenberge_mu(&ok[..30], 10, 4).is_err()); // wrong length
+    let mut nan = ok.clone();
+    nan[7] = f64::INFINITY;
+    assert!(tenberge_mu(&nan, 10, 4).is_err());
+    let mut constant = ok.clone();
+    for i in 0..10 {
+        constant[i * 4 + 2] = -1.0;
+    }
+    assert!(tenberge_mu(&constant, 10, 4).is_err()); // zero variance
+}
+
+/// >= 500-replication Monte Carlo: same tau-equivalent design as the
+/// Guttman MC. mu0 == alpha is consistent (asymptotically unbiased) for
+/// rho_sum = (p^2 l^2)/(p^2 l^2 + p s^2) = 31.36/39.36 with l=0.7, s=1,
+/// p=8, n=300. Also asserts the series ordering sample-wise on crate
+/// outputs across all reps.
+#[test]
+#[ignore]
+fn mc_tenberge_alpha_recovery_and_ordering() {
+    let p = 8;
+    let reps = 500;
+    let mut sum_mu0 = 0.0_f64;
+    let mut ordered = 0usize;
+    for rep in 0..reps {
+        let data = gen_data(
+            300,
+            p,
+            2000 + rep as u64,
+            &vec![0.7; p],
+            &vec![0.0; p],
+            &vec![1.0; p],
+        );
+        let t = tenberge_mu(&data, 300, p).expect("mc rep");
+        sum_mu0 += t.mu0;
+        if t.mu0 <= t.mu1 && t.mu1 <= t.mu2 && t.mu2 <= t.mu3 {
+            ordered += 1;
+        }
+    }
+    let mean_mu0 = sum_mu0 / reps as f64;
+    let rho = (64.0 * 0.49) / (64.0 * 0.49 + 8.0);
+    assert!(
+        (mean_mu0 - rho).abs() < 0.01,
+        "mean mu0 {mean_mu0} vs analytic {rho}"
+    );
+    assert_eq!(ordered, reps);
+}
