@@ -268,7 +268,7 @@ pub fn gtheory_pio(
     if n_p < 2 || n_i < 2 || n_o < 2 {
         return Err("gtheory_pio: need at least 2 levels per facet".to_string());
     }
-    let n_pi = crate::checked_mul_usize(n_p, n_i, "n_p * n_i * n_o overflows usize")?;
+    let n_pi = crate::checked_mul_usize(n_p, n_i, "n_p * n_i overflows usize")?;
     validate(x, crate::checked_mul_usize(n_pi, n_o, "n_p * n_i * n_o overflows usize")?, "gtheory_pio")?;
     if n_prime.iter().any(|&(a, b)| a == 0 || b == 0) {
         return Err("gtheory_pio: n_prime entries must be >= 1".to_string());
