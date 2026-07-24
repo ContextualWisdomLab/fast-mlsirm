@@ -5975,3 +5975,38 @@ def test_glb_fa_from_data_and_errors():
         glb_fa(np.ones((2, 3)))
     with pytest.raises(ValueError):
         glb_fa_from_data(np.full((5, 4), np.nan))
+
+
+class TestSelectionUtility:
+    """Selection utility (Taylor-Russell / Naylor-Shine / BCG) wrappers.
+
+    Oracle values pinned from scipy (tests/oracles/oracle_utility.py); asserts read
+    the crate outputs returned through the wrapper. Tolerance 1e-7 reflects
+    the crate's Acklam inverse-normal precision, not slack.
+    """
+
+    def test_selection_utility_oracle(self):
+        import fast_mlsirm as fm
+
+        r = fm.selection_utility(n=1, sdy=10000, rxy=0.5, sr=0.3)
+        assert abs(r.pux - 0.579487690333456) < 1e-7
+        assert abs(r.utility_gain - 5794.8769033346) < 1e-3
+        r2 = fm.selection_utility(n=50, sdy=8000, rxy=0.4, sr=0.2,
+                                  cost_total=25000, period=3)
+        assert abs(r2.utility_gain - 646908.6089787399) < 1e-2
+
+    def test_taylor_russell_oracle_and_errors(self):
+        import pytest
+
+        import fast_mlsirm as fm
+
+        r = fm.taylor_russell(rxy=0.5, sr=0.3, br=0.2)
+        assert abs(r.success_ratio - 0.384157434057053) < 1e-7
+        assert abs(r.q_joint - 0.115247230217116) < 1e-7
+        # rho=0 analytic anchor: success == br
+        r0 = fm.taylor_russell(rxy=0.0, sr=0.3, br=0.7)
+        assert abs(r0.success_ratio - 0.7) < 1e-6
+        with pytest.raises(ValueError):
+            fm.taylor_russell(rxy=1.0, sr=0.3, br=0.5)
+        with pytest.raises(ValueError):
+            fm.selection_utility(n=0, sdy=1, rxy=0.5, sr=0.3)

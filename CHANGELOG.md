@@ -119,6 +119,38 @@
 
 ### Added
 
+- **Selection utility analysis** (`fast_mlsirm.selection_utility` /
+  `taylor_russell`; in `mlsirm_core::utility`; transcribed from CRAN
+  iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl,
+  Jones, & Beatty, 2016; the original Taylor & Russell, 1939, Naylor & Shine, 1965,
+  and Cronbach & Gleser, 1965 sources were not read and are cited as
+  attributed). Formulas under the standard bivariate-normal selection
+  model: selection intensity `ux = phi(xc)/sr`, Naylor-Shine selected-group
+  criterion mean `pux = rxy*ux`, BCG utility gain
+  `n*period*sdy*pux - cost_total` (the iopsych `cost` argument is
+  documented here as a TOTAL cost — iopsych labels it per-applicant but
+  never multiplies by `n`), and Taylor-Russell success ratio
+  `P(Y>yc | X>xc) = Q(xc,yc,rxy)/sr` with the bivariate-normal upper tail
+  `Q` evaluated by a conditional-normal Gauss-Legendre integral (~1e-15
+  vs scipy's BVN CDF at moderate `|rxy|` during adversarial spec review,
+  better than 1e-6 across the whole accepted `|rxy|` range —
+  regression-tested; the committed oracle generator is
+  `tests/oracles/oracle_utility.py`; the iopsych `qa/(qa+qb)` form was
+  proven equal to `Q/sr` algebraically and numerically). Adversarially spec-verified before implementation; five
+  scipy-pinned oracle fixtures including negative validity; rho=0
+  analytic anchor (success == base rate); strict rxy monotonicity; a
+  500-rep x 20,000-person Monte Carlo recovery run (`#[ignore]`; success
+  ratio within 4.3e-5, pux within 3.8e-4); four executed mutation kills
+  (dropped `rxy` in pux, sign flip in the Q integrand, `1-sr` denominator
+  in ux, sr/br role swap). Documented identity limitation: the mutant
+  `Q(h,k) -> Q(k,h)` alone is output-identical everywhere by BVN exchange
+  symmetry — no test claims to kill it; cutoff-role bugs are anchored by
+  the role-swap kill instead. Post-implementation adversarial review
+  hardening: sub-ulp ratios (where `1.0 - v` rounds to 1.0) are rejected
+  instead of returning NaN/silent zeros; the BVN panel width scales with
+  `sqrt(1 - rho^2)` so `|rxy|` near 1 stays accurate (Err beyond
+  `sqrt(1-rxy^2) < 1e-4`); `q_joint` is bounded by `min(sr, br)`; all
+  three regression-tested against scipy `quad` oracles.
 - **Factor-analytic greatest lower bound** (`fast_mlsirm.glb_fa` /
   `glb_fa_from_data`; in `mlsirm_core::factor::glb_fa_corr`; transcribed
   from CRAN psych `glbs.R` `glb.fa`, read in full — Revelle, 2025; NOT the
