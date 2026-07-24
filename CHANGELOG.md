@@ -119,6 +119,31 @@
 
 ### Added
 
+- **Sympson-Hetter item-exposure control** (`fast_mlsirm.sympson_hetter`;
+  in `mlsirm_core::exposure`). Iterative Monte-Carlo calibration of the
+  exposure-control parameters `k_i = P(A_i | S_i)` for dichotomous 3PL
+  max-information CAT with interim EAP: per-encounter uniform gate
+  (administer iff `u <= k_i`, rejected items blocked for the remainder of
+  that simulee's test), update `k_i <- min(1, r_max / P(S_i))` (Barrada,
+  Olea, & Ponsoda, 2007, Eq. 1-3; algorithm confirmed from Georgiadou,
+  Triantafillou, & Economides, 2007 — both read in full; Sympson & Hetter,
+  1985, cited as origin, not read). The stopping rule
+  `max P(A) <= r_max + tol` is a practical criterion, not a convergence
+  theorem (van der Linden, 2003, abstract); the returned `k` is always the
+  vector that produced the reported final-cycle rates. Feasibility bound
+  `r_max >= test_length/n_items` (exact counting identity
+  `sum_i P(A_i) = test_length`, derived here) is enforced; the bound is
+  necessary, not sufficient — a tight `r_max` near the bound may still
+  exhaust the pool mid-test and fail with the documented error. `r_max = 1`
+  reduces exactly to unconstrained max-info CAT (no exposure RNG
+  consumed); an exhausted pool raises an error (repository policy, not a
+  classical prescription). Adversarially spec-verified before
+  implementation (REDUCED SCOPE: no theta-stratified variants, no
+  forced-administration fallback, no "classical iteration count" claim);
+  a 500-rep Monte Carlo calibration run (`#[ignore]`); four executed
+  mutation kills (gate flip, `P(A)` update denominator, no-blocking —
+  killed by divergence/non-termination — and swapped selection/exposure
+  bookkeeping).
 - **Selection utility analysis** (`fast_mlsirm.selection_utility` /
   `taylor_russell`; in `mlsirm_core::utility`; transcribed from CRAN
   iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl,
