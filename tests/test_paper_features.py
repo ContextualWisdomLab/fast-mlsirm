@@ -3,6 +3,8 @@ validation gates, IRTree expansion, DIF analysis, Vuong, Q3/GDDM, and ICs."""
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -5509,3 +5511,157 @@ def test_parallel_analysis_rejects_negative_scalars_and_huge_data():
     huge = np.array([[big, big], [big, -big], [-big, big], [-big, -big]])
     with pytest.raises(ValueError):
         parallel_analysis(huge, n_iterations=5)
+
+
+def _guttman_gen_data(n, p, seed, loadings, means, scales):
+    """NumPy mirror of the crate LCG used to build the Guttman fixture data
+    (test-input construction only; all asserted values come from the crate)."""
+    state = np.uint64(max(seed, 1))
+    mul = np.uint64(6364136223846793005)
+    add = np.uint64(1442695040888963407)
+
+    def uniform():
+        nonlocal state
+        with np.errstate(over="ignore"):
+            state = state * mul + add
+        return float(state >> np.uint64(11)) / float(1 << 53)
+
+    def normal():
+        u1 = max(uniform(), 1e-12)
+        u2 = uniform()
+        return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+
+    out = np.empty((n, p))
+    for i in range(n):
+        f = normal()
+        for j in range(p):
+            e = normal()
+            out[i, j] = means[j] + scales[j] * (loadings[j] * f + e)
+    return out
+
+
+def test_guttman_lambdas_matches_numpy_fixture():
+    """Guttman lambdas (psych 2.6.5 contract): fixture A literals computed by
+    an independent NumPy replication (np.corrcoef, np.linalg.inv,
+    itertools.combinations). Every assert reads GuttmanResult fields returned
+    by the crate through the wrapper (n=30, p=6, exhaustive C(6,3)=20)."""
+    from fast_mlsirm import guttman_lambdas
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "guttman_lambdas"):
+        pytest.skip("compiled core built without guttman_lambdas")
+
+    data = _guttman_gen_data(
+        30,
+        6,
+        42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    g = guttman_lambdas(data)
+    tol = 1e-9
+    assert abs(g.lambda1 - 0.41068157604336863) < tol
+    assert abs(g.lambda2 - 0.5561900258418755) < tol
+    assert abs(g.lambda3 - 0.49281789125204234) < tol
+    assert abs(g.lambda4 - 0.6842463861953535) < tol
+    assert abs(g.lambda5 - 0.5602004712206824) < tol
+    assert abs(g.lambda6 - 0.59150154331973) < tol
+    assert abs(g.beta - 0.1784553694910821) < tol
+    assert abs(g.mean_split - 0.4928178912520423) < tol
+    assert g.n_splits == 20
+    assert g.exhaustive
+
+
+def test_guttman_lambdas_rejects_degenerate_inputs():
+    """Trust-boundary rejections: wrapper scalars raise ValueError (not
+    PyO3 OverflowError); shape/finite/variance/singularity checks raise at
+    the Rust boundary."""
+    from fast_mlsirm import guttman_lambdas
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "guttman_lambdas"):
+        pytest.skip("compiled core built without guttman_lambdas")
+
+    rng = np.random.default_rng(3)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        guttman_lambdas(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        guttman_lambdas(good[:, :2])  # n_items < 3
+    with pytest.raises(ValueError):
+        guttman_lambdas(good, n_sample_splits=0)
+    with pytest.raises(ValueError):
+        guttman_lambdas(good, seed=-1)
+    with pytest.raises(ValueError):
+        guttman_lambdas(np.array([1.0, 2.0, 3.0]))  # 1-D
+    bad = good.copy()
+    bad[1, 1] = np.nan
+    with pytest.raises(ValueError):
+        guttman_lambdas(bad)
+    const = good.copy()
+    const[:, 0] = 1.0
+    with pytest.raises(ValueError):
+        guttman_lambdas(const)  # zero variance
+    dup = good.copy()
+    dup[:, 1] = dup[:, 0]  # singular correlation matrix -> lambda6 inverse
+    with pytest.raises(ValueError):
+        guttman_lambdas(dup)
+
+
+def test_tenberge_mu_matches_numpy_fixture():
+    """ten Berge & Zegers mu series (psych 2.6.5 tenberge.R contract):
+    fixture A literals from an independent NumPy replication (np.corrcoef +
+    explicit off-diagonal power sums). Every assert reads TenBergeResult
+    fields returned by the crate through the wrapper."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    data = _guttman_gen_data(
+        30,
+        6,
+        42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    t = tenberge_mu(data)
+    tol = 1e-9
+    assert abs(t.mu0 - 0.49281789125204223) < tol
+    assert abs(t.mu1 - 0.5561900258418755) < tol
+    assert abs(t.mu2 - 0.566334883191414) < tol
+    assert abs(t.mu3 - 0.5694865282091219) < tol
+    assert t.mu0 <= t.mu1 <= t.mu2 <= t.mu3
+
+
+def test_tenberge_mu_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    rng = np.random.default_rng(9)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:, :2])  # n_items < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(np.array([1.0, 2.0, 3.0]))  # 1-D
+    bad = good.copy()
+    bad[0, 0] = np.inf
+    with pytest.raises(ValueError):
+        tenberge_mu(bad)
+    const = good.copy()
+    const[:, 3] = 0.25
+    with pytest.raises(ValueError):
+        tenberge_mu(const)  # zero variance
