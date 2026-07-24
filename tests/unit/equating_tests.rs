@@ -1327,6 +1327,19 @@ fn see_bootstrap_sanity_and_guards() {
     let d1 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
     let d2 = bootstrap_see(&x1, &y1, k, k, EquateMethod::Linear, 300, 0.95, 99).unwrap();
     assert_eq!(d1.se, d2.se);
+    let linear_with_degenerate_resamples = bootstrap_see(
+        &[0.0, 1.0],
+        &[0.0, 1.0],
+        1,
+        1,
+        EquateMethod::Linear,
+        10,
+        0.95,
+        1,
+    );
+    // Reads the crate-returned SEE result and kills mutations that propagate
+    // degenerate linear bootstrap replicate errors to valid original samples.
+    assert!(linear_with_degenerate_resamples.is_ok());
     // guards
     assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 1, 0.95, 1).is_err());
     assert!(bootstrap_see(&x1, &y1, k, k, EquateMethod::Mean, 100, 1.5, 1).is_err());

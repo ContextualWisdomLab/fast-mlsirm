@@ -755,15 +755,31 @@ pub fn bootstrap_see(
     };
     let mut xb = vec![0.0_f64; nx];
     let mut yb = vec![0.0_f64; ny];
-    for b in 0..n_boot {
+    let max_attempts = n_boot.saturating_mul(100);
+    let mut b = 0usize;
+    let mut attempts = 0usize;
+    while b < n_boot {
+        attempts += 1;
+        if attempts > max_attempts {
+            return Err(
+                "bootstrap SEE could not draw enough non-degenerate linear resamples".into(),
+            );
+        }
         for v in xb.iter_mut() {
             *v = x_scores[((u() * nx as f64) as usize).min(nx - 1)];
         }
         for v in yb.iter_mut() {
             *v = y_scores[((u() * ny as f64) as usize).min(ny - 1)];
         }
+        if method == EquateMethod::Linear {
+            let first = (xb[0] + 0.5).floor();
+            if xb.iter().all(|&x| (x + 0.5).floor() == first) {
+                continue;
+            }
+        }
         let r = equate_eg(&xb, &yb, k_x, k_y, method)?;
         reps[b * ncol..(b + 1) * ncol].copy_from_slice(&r.y_equivalents);
+        b += 1;
     }
     let alpha = 1.0 - ci_level;
     let mut se = vec![0.0_f64; ncol];
