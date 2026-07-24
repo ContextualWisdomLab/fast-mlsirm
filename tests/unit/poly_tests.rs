@@ -18,6 +18,14 @@ fn fitters_reject_unbounded_categories_and_iterations() {
         1e-6,
     )
     .is_err());
+    let bad_category = std::panic::catch_unwind(|| {
+        fit_poly_unidim(&[3], None, 1, 1, 3, PolyModel::Grm, 7, 1, 1e-6)
+    });
+    assert!(
+        bad_category.is_ok(),
+        "fit_poly_unidim must return an error for out-of-range categories"
+    );
+    assert!(bad_category.unwrap().is_err());
 }
 
 #[test]

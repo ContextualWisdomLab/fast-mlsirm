@@ -419,6 +419,7 @@ pub fn fit_poly_unidim(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
+    validate_observed_categories(y, observed, n_cat)?;
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
     let (nodes, weights) = crate::quadrature::require_gh_rule(q_theta, "q_theta")?;
     let log_w: Vec<f64> = weights.iter().map(|w| w.ln()).collect();
