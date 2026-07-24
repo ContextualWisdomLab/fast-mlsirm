@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .backend import normalize_backend, normalize_device
@@ -37,9 +38,9 @@ class MLS2PLMConfig:
             raise ValueError("items_per_dim must be >= 1")
         if self.latent_dim < 1:
             raise ValueError("latent_dim must be >= 1")
-        if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
+        if not math.isfinite(self.phi) or not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
             raise ValueError("phi must produce a positive-definite equicorrelation matrix")
-        if self.gamma < 0:
+        if not math.isfinite(self.gamma) or self.gamma < 0:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("dtype must be float32 or float64")
@@ -101,11 +102,11 @@ class FitConfig:
             raise ValueError("max_iter must be >= 1")
         if self.n_restarts < 1:
             raise ValueError("n_restarts must be >= 1")
-        if self.learning_rate <= 0:
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0")
-        if self.init_gamma <= 0:
+        if not math.isfinite(self.init_gamma) or self.init_gamma <= 0:
             raise ValueError("init_gamma must be > 0")
-        if self.eps_distance <= 0:
+        if not math.isfinite(self.eps_distance) or self.eps_distance <= 0:
             raise ValueError("eps_distance must be > 0")
         normalize_backend(self.backend)
         normalize_device(self.rust_device)
