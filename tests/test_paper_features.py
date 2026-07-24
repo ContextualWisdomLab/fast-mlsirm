@@ -4883,3 +4883,128 @@ def test_fit_testlet_recovers_local_dependence():
 
     with pytest.raises(RuntimeError, match="max_iter_reached"):
         fit_testlet(y[:40], tid, model="rasch", max_iter=1, require_convergence=True)
+
+
+def test_fit_facets_recovers_rater_severity():
+    """Many-facet Rasch model (Linacre, 1989): recover asymmetric rater
+    severities, item difficulties, and shared thresholds from a sparse judging
+    plan; single-rater case must agree with fit_rsm (RSM reduction).
+
+    Asserts read crate outputs (res.rater_severity / item_difficulty /
+    thresholds / theta / loglik_trace / n_parameters / connected). A severity
+    sign-flip or a d/c dimension-map swap in the Rust core fails the recovery
+    and reduction checks."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_facets, fit_rsm, FacetsFit
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_facets"):
+        pytest.skip("compiled core built without fit_facets")
+
+    rng = np.random.default_rng(1989)
+    n, n_items, n_raters, n_cat = 1500, 8, 4, 4
+    d_true = -0.9 + 0.25 * np.arange(n_items)
+    c_true = np.array([1.1, -0.2, -0.4, -0.5])  # asymmetric, sums to 0
+    f_true = np.array([0.7, 0.1, -0.8])  # sums to 0
+    theta = rng.standard_normal(n)
+    tk = np.concatenate([[0.0], np.cumsum(f_true)])
+    ks = np.arange(n_cat)
+
+    y = np.full((n, n_items, n_raters), np.nan)
+    for p in range(n):
+        for i in range(n_items):
+            for j in range(n_raters):
+                if rng.random() < 0.4:  # sparse plan
+                    continue
+                psi = ks * theta[p] - ks * (d_true[i] + c_true[j]) - tk
+                pr = np.exp(psi - psi.max())
+                y[p, i, j] = rng.choice(n_cat, p=pr / pr.sum())
+
+    res = fit_facets(y, n_cat=n_cat)
+    assert isinstance(res, FacetsFit) and res.converged and res.connected
+    assert np.all(np.diff(res.loglik_trace) >= -1e-6)
+    assert res.n_parameters == n_items + (n_raters - 1) + (n_cat - 2)
+    assert abs(res.rater_severity.sum()) < 1e-6
+    assert abs(res.thresholds.sum()) < 1e-6
+    assert np.sqrt(np.mean((res.rater_severity - c_true) ** 2)) < 0.12
+    assert np.sqrt(np.mean((res.item_difficulty - d_true) ** 2)) < 0.15
+    assert np.sqrt(np.mean((res.thresholds - f_true) ** 2)) < 0.12
+    assert np.corrcoef(res.theta, theta)[0, 1] > 0.85
+
+    # single-rater reduction: MFRM with J=1 must match RSM (severity absorbed)
+    y1 = y[:400, :, :1]
+    keep = ~np.isnan(y1).all(axis=(1, 2))
+    y1 = y1[keep]
+    r_f = fit_facets(y1, n_cat=n_cat)
+    r_r = fit_rsm(y1[:, :, 0], n_cat=n_cat)
+    assert np.allclose(r_f.rater_severity, [0.0])
+    assert np.allclose(r_f.item_difficulty, r_r.item_location, atol=5e-3)
+    assert np.allclose(r_f.thresholds, r_r.thresholds, atol=5e-3)
+
+
+def test_fit_facets_rejects_malformed_and_flags_disconnected():
+    """MFRM input validation plus Linacre's connectedness diagnostic: a judging
+    plan whose item-rater graph splits into components must set connected=False
+    (asserts read res.connected from the crate). The False assert kills a
+    deleted union-find pass; the True assert on the bridged plan kills the
+    join-only-item-item-edges mutant, which would leave rater nodes isolated
+    and report every design as disconnected."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import fit_facets
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "fit_facets"):
+        pytest.skip("compiled core built without fit_facets")
+
+    valid = np.zeros((4, 2, 2))
+    valid[::2] = 1.0
+    with pytest.raises(ValueError, match="3-D"):
+        fit_facets(np.zeros((4, 2)), n_cat=2)
+    with pytest.raises(ValueError, match="at least one person"):
+        fit_facets(np.empty((0, 2, 2)), n_cat=2)
+    with pytest.raises(ValueError, match="integer categories"):
+        fit_facets(valid + 0.5, n_cat=2)
+    with pytest.raises(ValueError, match="in 0..1"):
+        fit_facets(valid * 3, n_cat=2)
+    nan_missing = valid.copy()
+    nan_missing[0, 0, 0] = np.nan
+    neg_missing = valid.copy()
+    neg_missing[0, 0, 0] = -1
+    res_nan = fit_facets(nan_missing, n_cat=2, q_theta=7, max_iter=5)
+    res_neg = fit_facets(neg_missing, n_cat=2, q_theta=7, max_iter=5)
+    assert np.allclose(res_neg.item_difficulty, res_nan.item_difficulty)
+    assert np.allclose(res_neg.rater_severity, res_nan.rater_severity)
+    assert np.allclose(res_neg.thresholds, res_nan.thresholds)
+    assert np.allclose(res_neg.theta, res_nan.theta)
+    with pytest.raises(ValueError, match="rater 1 has no observed"):
+        bad = valid.copy()
+        bad[:, :, 1] = np.nan
+        fit_facets(bad, n_cat=2)
+    with pytest.raises(ValueError, match="q_theta"):
+        fit_facets(valid, n_cat=2, q_theta=10)
+    with pytest.raises(ValueError, match="max_iter"):
+        fit_facets(valid, n_cat=2, max_iter=0)
+    with pytest.raises(ValueError, match="tol"):
+        fit_facets(valid, n_cat=2, tol=0.0)
+
+    # disconnected plan: persons 0-19 see (item0, rater0), persons 20-39 see
+    # (item1, rater1) -- no shared element links the two components
+    rng = np.random.default_rng(7)
+    y = np.full((40, 2, 2), np.nan)
+    y[:20, 0, 0] = rng.integers(0, 2, 20)
+    y[20:, 1, 1] = rng.integers(0, 2, 20)
+    y[0, 0, 0], y[1, 0, 0] = 0.0, 1.0
+    y[20, 1, 1], y[21, 1, 1] = 0.0, 1.0
+    res = fit_facets(y, n_cat=2, max_iter=50)
+    assert res.connected is False
+
+    # bridged plan: person 5 also sees (item1, rater1), joining the components
+    yb = y.copy()
+    yb[5, 1, 1] = 1.0
+    yb[6, 1, 1] = 0.0
+    resb = fit_facets(yb, n_cat=2, max_iter=50)
+    assert resb.connected is True

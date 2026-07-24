@@ -114,6 +114,25 @@
 
 ### Added
 
+- **Many-Facet Rasch Model (MFRM) rater-severity calibration** (`fast_mlsirm.fit_facets`;
+  new `mlsirm_core::facets`; Linacre, 1989; Eckes, 2015). Fits
+  `ln[P(k)/P(k-1)] = theta_p - d_i - c_j - f_k` — the rating scale model
+  (Andrich, 1978) with a rater facet — to a `persons x items x raters` array with
+  NaN-missing sparse judging plans. For LLM-as-a-Judge calibration this puts each
+  judge's severity `c_j` on a common logit scale adjusted for item difficulty and
+  respondent ability. Estimation is marginal-ML EM on a Gauss-Hermite grid
+  (Bock & Aitkin, 1981), NOT Linacre's JMLE, and the docs say so: estimates match
+  the Facets program only up to the JMLE-vs-MMLE difference. Identification:
+  `theta ~ N(0,1)`, severities and thresholds centered to sum 0
+  (`n_parameters = I + (J-1) + (K-2)`). Reports Linacre's connectedness
+  diagnostic via union-find over the person-mediated item∪rater co-observation
+  graph; `connected=False` means cross-component severity comparisons rest
+  solely on the shared trait prior, not the rating design. Rust-only numerics;
+  the Python wrapper validates and marshals. Tests include FD gradient anchors,
+  the J=1 RSM-reduction identity, asymmetric-severity recovery, sparse and
+  disconnected designs, and an `#[ignore]` 500-replicate Monte Carlo
+  (normal + skew-normal traits) bounding severity bias and RMSE; a gradient
+  sign-flip mutant was verified to fail 4 tests.
 - **Warm's weighted-likelihood ability estimation for POLYTOMOUS items** (`fast_mlsirm.score_wle_poly`;
   new `score_wle_poly` in `mlsirm_core::scoring`; Warm, 1989). The library already had the full
   polytomous model family and polytomous EAP scoring, but its only bias-reduced ML ability estimator was
