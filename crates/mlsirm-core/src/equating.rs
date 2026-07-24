@@ -221,7 +221,19 @@ fn bivariate(total: &[f64], anchor: &[f64], k_s: usize, k_v: usize) -> Result<Ve
     if total.is_empty() {
         return Err("score vectors must be non-empty".into());
     }
-    let mut tab = vec![0.0_f64; (k_s + 1) * (k_v + 1)];
+    if k_s > MAX_EQUATING_SCORE_POINTS || k_v > MAX_EQUATING_SCORE_POINTS {
+        return Err(format!(
+            "score ceiling must be <= {MAX_EQUATING_SCORE_POINTS}"
+        ));
+    }
+    let n_s = k_s
+        .checked_add(1)
+        .ok_or("score ceiling exceeds the bivariate buffer size")?;
+    let n_v = k_v
+        .checked_add(1)
+        .ok_or("anchor ceiling exceeds the bivariate buffer size")?;
+    let n_cells = crate::checked_mul_usize(n_s, n_v, "bivariate score table exceeds buffer size")?;
+    let mut tab = vec![0.0_f64; n_cells];
     for (&s, &v) in total.iter().zip(anchor) {
         if !s.is_finite() || !v.is_finite() {
             return Err("scores must be finite".into());

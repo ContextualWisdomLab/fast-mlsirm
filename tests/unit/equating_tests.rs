@@ -1321,6 +1321,36 @@ fn see_bootstrap_sanity_and_guards() {
     assert!(analytic_see(&x1, &y1, k, k, EquateMethod::Equipercentile, 0.95).is_err());
 }
 
+#[test]
+fn neat_frequency_rejects_oversized_anchor_ceiling_without_panic() {
+    let x = vec![0.0, 1.0, 1.0, 2.0];
+    let xv = vec![0.0, 1.0, 1.0, 2.0];
+    let y = vec![0.0, 1.0, 2.0, 2.0];
+    let yv = vec![0.0, 1.0, 1.0, 2.0];
+
+    let oversized = std::panic::catch_unwind(|| {
+        equate_neat(
+            &x,
+            &xv,
+            &y,
+            &yv,
+            2,
+            2,
+            usize::MAX,
+            0.5,
+            NeatMethod::FrequencyEstimation,
+        )
+    });
+
+    assert!(
+        oversized.is_ok(),
+        "oversized k_v must return an error instead of panicking"
+    );
+    // Reads the core-returned error path and kills mutations that leave
+    // bivariate's `(k_s + 1) * (k_v + 1)` allocation unchecked.
+    assert!(oversized.unwrap().is_err());
+}
+
 // The bootstrap SE approximates the TRUE sampling SD of e_Y(x) (from an outer
 // Monte-Carlo that redraws fresh 2PL samples) within Monte-Carlo tolerance.
 #[test]
