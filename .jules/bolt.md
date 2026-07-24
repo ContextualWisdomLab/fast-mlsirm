@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Vectorizing Newton steps over item dimensions
+**Learning:** In MMLE algorithms like `fit_mmle_2pl`, replacing a Python loop that runs Newton steps for individual items (`for i in range(n_items):`) with fully vectorized NumPy operations yields a massive performance improvement (e.g. ~7x for 1000 items). Vectorizing `da`, `db`, gradients, and Hessians with matrix multiplication (`@`) and `.sum(axis=1)` skips Python loop overhead effectively while a masking condition (`np.abs(det) >= 1e-12`) limits parameter updates properly.
+**Action:** Always replace explicit python loops across categorical dimensions (like items) performing iterative optimizations (like Newton Steps) with vectorized tensor/matrix equivalents.

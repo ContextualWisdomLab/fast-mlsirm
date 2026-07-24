@@ -109,7 +109,7 @@ def fit_mmle_2pl(
         stab = np.exp(log_joint - max_lj)
         denom = stab.sum(axis=1, keepdims=True)
         posterior = stab / denom  # (n_persons, Q)
-        person_loglik = (max_lj[:, 0] + np.log(denom[:, 0]))
+        person_loglik = max_lj[:, 0] + np.log(denom[:, 0])
         total_loglik = float(person_loglik.sum())
         loglik_trace.append(total_loglik)
 
@@ -121,30 +121,37 @@ def fit_mmle_2pl(
 
         a_new = a.copy()
         b_new = b.copy()
-        for i in range(n_items):
-            ai, bi = a[i], b[i]
-            # Newton steps on the item's expected log-likelihood over nodes.
-            for _ in range(25):
-                eta = ai * nodes + bi
-                p = _sigmoid(eta)
-                w = n_iq[i] * p * (1.0 - p)
-                resid = r_iq[i] - n_iq[i] * p
-                g_a = float((resid * nodes).sum()) - ridge_a * ai
-                g_b = float(resid.sum()) - ridge_b * bi
-                h_aa = -float((w * nodes * nodes).sum()) - ridge_a
-                h_bb = -float(w.sum()) - ridge_b
-                h_ab = -float((w * nodes).sum())
-                det = h_aa * h_bb - h_ab * h_ab
-                if abs(det) < 1e-12:
-                    break
-                da = (h_bb * g_a - h_ab * g_b) / det
-                db = (h_aa * g_b - h_ab * g_a) / det
-                ai -= da
-                bi -= db
-                ai = float(np.clip(ai, 1e-3, 10.0))
-                if abs(da) + abs(db) < 1e-8:
-                    break
-            a_new[i], b_new[i] = ai, bi
+        nodes_sq = nodes * nodes
+
+        # Vectorized Newton steps on the expected log-likelihood over nodes for all items.
+        for _ in range(25):
+            eta = a_new[:, None] * nodes[None, :] + b_new[:, None]
+            p = _sigmoid(eta)
+            w = n_iq * p * (1.0 - p)
+            resid = r_iq - n_iq * p
+
+            g_a = resid @ nodes - ridge_a * a_new
+            g_b = resid.sum(axis=1) - ridge_b * b_new
+            h_aa = -(w @ nodes_sq) - ridge_a
+            h_bb = -w.sum(axis=1) - ridge_b
+            h_ab = -(w @ nodes)
+
+            det = h_aa * h_bb - h_ab * h_ab
+            mask = np.abs(det) >= 1e-12
+            if not np.any(mask):
+                break
+
+            da = np.zeros_like(a_new)
+            db = np.zeros_like(b_new)
+            da[mask] = (h_bb[mask] * g_a[mask] - h_ab[mask] * g_b[mask]) / det[mask]
+            db[mask] = (h_aa[mask] * g_b[mask] - h_ab[mask] * g_a[mask]) / det[mask]
+
+            a_new -= da
+            b_new -= db
+            a_new = np.clip(a_new, 1e-3, 10.0)
+
+            if np.max(np.abs(da) + np.abs(db)) < 1e-8:
+                break
 
         a, b = a_new, b_new
 
