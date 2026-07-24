@@ -114,6 +114,38 @@
 
 ### Added
 
+- **Person separation reliability** (`fast_mlsirm.separation_reliability`;
+  in `mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`, read
+  in full — Mair et al., 2025; the statistic is attributed there to Wright
+  & Stone, 1999, not read). `R = (SSD - MSE)/SSD` with `SSD = var(measures)`
+  (n-1 denominator) and `MSE = mean(se^2)`, unclamped; plus the hand-derived
+  separation index `G = sqrt((SSD - MSE)/MSE)` (adjusted true SD over RMSE,
+  `G^2 = R/(1-R)`; not in the read source). eRm's extreme-score/NA
+  filtering is documented as caller responsibility. Verified against a
+  pinned numpy fixture (SSD, MSE, R, G at 12 decimals), a negative-R path,
+  and a 500-rep Monte Carlo recovery (`#[ignore]`; population R = 0.8
+  recovered to 0.01); three executed mutation kills (swapped numerator,
+  population variance, unsquared se).
+- **Minres (ULS) exploratory factor analysis and McDonald's omega_total
+  (1-factor)** (`fast_mlsirm.minres_fa`, `minres_fa_from_data`,
+  `omega_total_1f`, `omega_total_1f_from_data`; in `mlsirm_core::factor`;
+  line-by-line transcription of CRAN psych `fa.R`'s minres path — Revelle,
+  2025, read; McDonald, 1999, cited-not-read, the omega formula is
+  hand-derived from the standardized 1-factor model). Uniquenesses are
+  box-constrained to `[0.005, 1]` and optimized by projected
+  Barzilai-Borwein descent with an Armijo safeguard and finite-difference
+  fallback (psych's `FAgr.minres` direction is not the exact gradient of
+  the lower-triangle objective — a verified limitation); convergence is
+  certified by a finite-difference box-KKT check whose maximum violation
+  is returned (`kkt_violation`). Loadings are unrotated, columns in
+  descending-eigenvalue order with column sums >= 0. REDUCED SCOPE: no
+  rotation, no Schmid-Leiman / omega_hierarchical, no ML/WLS/GLS, no
+  factor scores. Tests pin parity at 5e-5 against an independent scipy
+  L-BFGS-B transcription oracle, anchor the absolute objective value of a
+  deliberately misfitting 1-factor fit (the only assert that can kill the
+  lower-triangle-vs-all-off-diagonal x2 mutation — disclosed), verify
+  rank-1 exact recovery and structure invariants, execute four mutation
+  kills, and include a 500-rep `#[ignore]` Monte Carlo recovery study.
 - **Generalizability theory G/D studies for crossed designs**
   (`fast_mlsirm.gtheory_pi`, `fast_mlsirm.gtheory_pio`; in
   `mlsirm_core::gtheory`; Huebner & Lucht, 2019, read in full — the EMS
