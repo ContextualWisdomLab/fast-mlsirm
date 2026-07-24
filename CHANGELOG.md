@@ -114,6 +114,52 @@
 
 ### Added
 
+- **Haberman subscore added-value analysis** (`fast_mlsirm.subscore_analysis`;
+  new `mlsirm_core::subscores`; Haberman, 2008, as cited in Sinharay, 2010).
+  For each subscale of a disjoint, exhaustive item partition computes the
+  PRMSEs of the three classical-test-theory true-subscore estimators — from
+  the observed subscore (`= Cronbach alpha`), from the observed total
+  (`rho^2(s_t, x_t) * alpha_x` with the true-score covariance row sum over
+  subscore columns only), and from both jointly (Wainer-style augmentation via
+  `tau`/`beta`/`gamma`) — plus per-person estimator matrices, the
+  `(K+1)^2` score correlation matrix, disattenuated subscore correlations, and
+  added-value decisions (Haberman's `PRMSE_s > PRMSE_x`; Sinharay's 2010
+  `+ 0.01` margin for augmentation, labeled — CRAN `CTTsub`'s relative rule is
+  documented but not implemented). Formulas verified against the Appendix of
+  Sinharay (2010, ETS RR-10-16) and the CRAN `subscore` R source read
+  line-by-line; degenerate samples (alpha outside `(0, 1]`, zero variance,
+  subscore collinear with the total) are rejected instead of propagating NaN.
+  For LLM-as-a-Judge item-quality management this decides whether per-domain
+  judge subscores add diagnostic value over the overall score. Rust-only
+  numerics; the Python wrapper validates and marshals. Tests pin every
+  reported statistic against literals from an independent NumPy transcription
+  of the R semantics on an asymmetric fixture with mixed added-value
+  outcomes, include rejection tests for the structural and degeneracy guards
+  (the defensive computed-PRMSE-range guard is not separately exercised), a
+  conditional dominance
+  sweep on guard-passing random data, and a 500-rep `#[ignore]` Monte Carlo
+  MSE comparison; three mutation spot-checks (dropped `m/(m-1)`, rowsum
+  including the total column, `tau` numerator sign flip) were run and killed.
+- **Kernel-smoothing nonparametric IRT** (`fast_mlsirm.ksirt_analysis`; new
+  `mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza et al., 2014).
+  Estimates option characteristic curves by Nadaraya-Watson kernel regression
+  (gaussian/quadratic/uniform kernels) of option indicators on rank-based
+  ordinal ability estimates `qnorm(rank/(n+1))`, on an equally spaced
+  evaluation grid, with Silverman-rule default bandwidths, plus expected item
+  score and expected total score curves. Formulas verified against the
+  KernSmoothIRT JSS paper (Mazza et al., 2014, Sections 2-2.3) and the
+  KernSmoothIRT R/C++ package source read line-by-line; standard errors and
+  cross-validation bandwidth selection are deliberately out of scope (the R
+  implementation's SE accumulator is order-dependent and unverifiable from
+  read sources). For LLM-as-a-Judge item-quality management this reveals
+  non-monotone or poorly discriminating evaluation items without a parametric
+  model. Rust-only numerics; the Python wrapper validates and marshals. Tests
+  pin a hand-computed 4-person fixture (rank->theta qnorm literals, grid
+  endpoints, Silverman constant), enforce structural invariants
+  (row-sums-to-one with positive denominators, compact-support zeros,
+  zero-denominator fallback), and include a 500-replication Monte Carlo
+  recovery study (`#[ignore]`) under normal and skewed ability generation
+  using the rank-invariance composition oracle.
 - **Mokken scale analysis** (`fast_mlsirm.mokken_analysis`; new
   `mlsirm_core::mokken`; Mokken, 1971, as cited in van der Ark, 2007).
   Computes the Loevinger scalability coefficients `Hij`, `Hi`, `H` and their
