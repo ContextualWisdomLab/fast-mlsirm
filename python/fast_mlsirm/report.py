@@ -484,7 +484,7 @@ body {
 
 .skip-link:focus-visible {
   top: 0;
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 2px;
 }
 
