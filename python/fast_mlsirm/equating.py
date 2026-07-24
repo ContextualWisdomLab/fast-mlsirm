@@ -11,6 +11,7 @@ import numpy as np
 
 MAX_EQUATING_BOOTSTRAP_REPLICATES = 10_000
 MAX_EQUATING_BOOTSTRAP_CELLS = 1_000_000
+MAX_EQUATING_SCORE_POINTS = 10_000
 
 
 @dataclass
@@ -39,7 +40,10 @@ class EquateResult:
 
 def _infer_k(scores: np.ndarray, k, name: str) -> int:
     if k is not None:
-        return int(k)
+        out = int(k)
+        if out <= 0 or out > MAX_EQUATING_SCORE_POINTS:
+            raise ValueError(f"{name} must be an integer between 1 and {MAX_EQUATING_SCORE_POINTS}")
+        return out
     arr = np.asarray(scores, dtype=np.float64)
     if arr.size == 0:
         raise ValueError(f"{name}: score vector must be non-empty")
@@ -48,7 +52,10 @@ def _infer_k(scores: np.ndarray, k, name: str) -> int:
     # Inferring the maximum score from the observed data under-counts the true
     # ceiling when the top score was never earned, which shifts the whole
     # percentile-rank scale; pass an explicit k for anything but exploratory use.
-    return int(np.round(arr.max()))
+    out = int(np.round(arr.max()))
+    if out <= 0 or out > MAX_EQUATING_SCORE_POINTS:
+        raise ValueError(f"{name} must be an integer between 1 and {MAX_EQUATING_SCORE_POINTS}")
+    return out
 
 
 def _build(res, method: str, design: str) -> EquateResult:

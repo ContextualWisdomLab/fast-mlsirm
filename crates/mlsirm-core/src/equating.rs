@@ -90,13 +90,23 @@ impl NeatMethod {
 
 // --- discrete-frequency utilities (none of this exists elsewhere in the crate) ---
 
+pub const MAX_EQUATING_SCORE_POINTS: usize = 10_000;
+
 /// Relative-frequency vector `g(0..=k)` from raw integer scores. Errors on empty
 /// input or a score outside `0..=k`.
 fn rel_freq(scores: &[f64], k: usize) -> Result<Vec<f64>, String> {
     if scores.is_empty() {
         return Err("score vector must be non-empty".into());
     }
-    let mut freq = vec![0.0_f64; k + 1];
+    if k > MAX_EQUATING_SCORE_POINTS {
+        return Err(format!(
+            "score ceiling must be <= {MAX_EQUATING_SCORE_POINTS}"
+        ));
+    }
+    let n_points = k
+        .checked_add(1)
+        .ok_or("score ceiling exceeds the frequency buffer size")?;
+    let mut freq = vec![0.0_f64; n_points];
     for &s in scores {
         if !s.is_finite() {
             return Err("scores must be finite".into());

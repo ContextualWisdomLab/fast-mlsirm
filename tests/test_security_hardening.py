@@ -1418,6 +1418,25 @@ def test_equating_bootstrap_see_rejects_unbounded_replicates_before_core(monkeyp
         )
 
 
+def test_equating_rejects_oversized_score_ceiling_before_core(monkeypatch):
+    import fast_mlsirm.equating as equating
+    import fast_mlsirm.fitstats as fitstats
+
+    class BombCore:
+        def bootstrap_see(self, *_args, **_kwargs):
+            raise AssertionError("core must not receive oversized k_y")
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="k_y"):
+        equating.equating_standard_errors(
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            k_x=1,
+            k_y=equating.MAX_EQUATING_SCORE_POINTS + 1,
+            n_boot=2,
+        )
+
+
 def test_candidate_loader_rejects_count_and_aggregate_budgets(monkeypatch):
     import fast_mlsirm.cli as cli
 

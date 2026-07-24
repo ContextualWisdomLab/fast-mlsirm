@@ -740,11 +740,13 @@ def _category_fit(
 ) -> dict[str, np.ndarray]:
     observed_count = observed.sum(axis=0).astype(np.float64)
     obs_cast = observed.astype(prob.dtype, copy=False)
+    prob_seen = np.where(observed[:, :, None], prob, 0.0)
+    residual_seen = np.where(observed[:, :, None], residual, 0.0)
     score = np.einsum("ij,ijk->jk", obs_cast, onehot)
-    expected = np.einsum("ij,ijk->jk", obs_cast, prob)
-    variance = np.einsum("ij,ijk->jk", obs_cast, prob * (1.0 - prob))
+    expected = prob_seen.sum(axis=0)
+    variance = (prob_seen * (1.0 - prob_seen)).sum(axis=0)
     item_ids, category_ids = np.indices(score.shape)
-    raw = residual.sum(axis=0)
+    raw = residual_seen.sum(axis=0)
     return {
         "item_id": item_ids.ravel().astype(np.float64),
         "category_id": category_ids.ravel().astype(np.float64),
@@ -1190,7 +1192,10 @@ def _prepare_categorical_response(
     yy = np.where(observed, y, 0).astype(np.int64)
     if np.any(observed & ((yy < 0) | (yy >= prob.shape[2]))):
         raise ValueError("observed responses must be valid category ids")
+    if not np.all(np.isfinite(prob[observed])):
+        raise ValueError("observed probabilities must be finite")
 
+    prob = np.where(observed[:, :, None], prob, 1.0 / prob.shape[2])
     prob = np.clip(prob, eps, 1.0)
     prob = prob / prob.sum(axis=2, keepdims=True)
     return yy, observed, prob

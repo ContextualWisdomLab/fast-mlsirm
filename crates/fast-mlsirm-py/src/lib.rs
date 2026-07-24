@@ -7,7 +7,7 @@ use mlsirm_core::equating::{
     equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
     loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
     EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
-    MAX_EQUATING_BOOTSTRAP_CELLS, MAX_EQUATING_BOOTSTRAP_REPLICATES,
+    MAX_EQUATING_BOOTSTRAP_CELLS, MAX_EQUATING_BOOTSTRAP_REPLICATES, MAX_EQUATING_SCORE_POINTS,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -2591,6 +2591,15 @@ fn equate_result_dict(py: Python<'_>, res: EquateResult) -> PyResult<Py<pyo3::ty
     Ok(out.into())
 }
 
+fn validate_equating_score_ceiling(name: &str, value: usize) -> PyResult<()> {
+    if value == 0 || value > MAX_EQUATING_SCORE_POINTS {
+        return Err(PyValueError::new_err(format!(
+            "{name} must be an integer between 1 and {MAX_EQUATING_SCORE_POINTS}"
+        )));
+    }
+    Ok(())
+}
+
 /// Univariate log-linear presmoothing of a score-frequency distribution (Rust
 /// compute path; Holland & Thayer, 2000). `counts` are raw frequencies over
 /// scores 0..=k; `degree` moments are preserved. Returns a dict with the smoothed
@@ -2637,6 +2646,8 @@ fn equate_observed_scores_ext(
     bandwidth_x: Option<f64>,
     bandwidth_y: Option<f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
     let cont = Continuization::parse(continuization).ok_or_else(|| {
         PyValueError::new_err(format!("unknown continuization: {continuization}"))
     })?;
@@ -2670,6 +2681,8 @@ fn equate_observed_scores(
     k_y: usize,
     method: &str,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
     let res = core_equate_eg(x_scores.as_slice()?, y_scores.as_slice()?, k_x, k_y, m)
@@ -2696,6 +2709,9 @@ fn equate_neat(
     method: &str,
     w1: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
+    validate_equating_score_ceiling("k_v", k_v)?;
     let m = NeatMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown NEAT method: {method}")))?;
     let res = core_equate_neat(
@@ -2731,6 +2747,8 @@ fn equate_neat_linear(
     anchor_kind: &str,
     w1: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
     let m = NeatLinearMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown linear NEAT method: {method}")))?;
     let ak = AnchorKind::parse(anchor_kind)
@@ -2780,6 +2798,8 @@ fn bootstrap_see(
     ci_level: f64,
     seed: u64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
     if !(2..=MAX_EQUATING_BOOTSTRAP_REPLICATES).contains(&n_boot) {
@@ -2826,6 +2846,8 @@ fn analytic_see(
     method: &str,
     ci_level: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
+    validate_equating_score_ceiling("k_x", k_x)?;
+    validate_equating_score_ceiling("k_y", k_y)?;
     let m = EquateMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown equating method: {method}")))?;
     let res = core_analytic_see(

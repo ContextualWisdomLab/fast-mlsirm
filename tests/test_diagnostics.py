@@ -266,6 +266,25 @@ def test_response_process_fit_diagnostics_polytomous_contract():
     assert diagnostics.categoryfit["item_id"].shape == (6,)
 
 
+def test_response_process_fit_diagnostics_masks_nan_category_probabilities():
+    responses = np.array([[0, -1], [2, 1]])
+    probabilities = np.full((2, 2, 3), 1.0 / 3.0)
+    probabilities[0, 1, :] = np.nan
+
+    diagnostics = response_process_fit_diagnostics(
+        responses,
+        probabilities,
+        item_type="polytomous",
+        response_process="cumulative",
+    )
+
+    # Reads implementation-returned categoryfit values and kills mutations that
+    # let masked 0 * NaN probability rows leak into public diagnostics.
+    assert np.all(np.isfinite(diagnostics.categoryfit["expected_score"]))
+    assert np.all(np.isfinite(diagnostics.categoryfit["raw_residual"]))
+    assert np.all(np.isfinite(diagnostics.categoryfit["standardized_residual"]))
+
+
 def test_response_process_fit_diagnostics_dichotomous_matrix():
     responses = np.array([[1, 0], [0, 1]])
     probabilities = np.full((2, 2), 0.5)
