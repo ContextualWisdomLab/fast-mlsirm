@@ -6010,3 +6010,57 @@ class TestSelectionUtility:
             fm.taylor_russell(rxy=1.0, sr=0.3, br=0.5)
         with pytest.raises(ValueError):
             fm.selection_utility(n=0, sdy=1, rxy=0.5, sr=0.3)
+
+
+class TestSympsonHetter:
+    """Sympson-Hetter exposure control wrapper (mlsirm_core::exposure).
+
+    Every assert reads crate outputs returned through the wrapper; the sum
+    identity sum(exposure) == test_length is an exact counting identity of
+    the returned rates, not a local recomputation of the algorithm.
+    """
+
+    @staticmethod
+    def _pool():
+        import numpy as np
+
+        n = 30
+        x = np.arange(n, dtype=float)
+        a = 0.6 + 1.4 * np.abs(np.sin(x * 0.37))
+        b = -2.4 + 4.8 * x / (n - 1) + 0.3 * np.sin(x * 0.71)
+        return a, b
+
+    def test_controls_max_exposure_and_identities(self):
+        import fast_mlsirm as fm
+
+        a, b = self._pool()
+        r = fm.sympson_hetter(
+            a, b, r_max=0.25, test_length=5, n_simulees=1500,
+            max_iter=12, tol=0.02, seed=42, q_theta=31,
+        )
+        assert r.converged
+        assert r.max_exposure <= 0.25 + 0.02 + 1e-12
+        assert abs(float(r.exposure.sum()) - 5.0) < 1e-9
+        assert (r.exposure <= r.selection + 1e-12).all()
+        assert ((r.k > 0.0) & (r.k <= 1.0)).all()
+        assert r.n_iter == len(r.history_max_exposure)
+        assert abs(r.max_exposure - float(r.history_max_exposure[-1])) < 1e-15
+
+    def test_rmax_one_unconstrained_and_errors(self):
+        import numpy as np
+        import pytest
+
+        import fast_mlsirm as fm
+
+        a, b = self._pool()
+        r = fm.sympson_hetter(
+            a, b, r_max=1.0, test_length=5, n_simulees=400,
+            max_iter=6, seed=7, q_theta=21,
+        )
+        assert r.n_iter == 1
+        assert (r.k == 1.0).all()
+        assert np.array_equal(r.exposure, r.selection)
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.05, test_length=5)  # infeasible
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=0)
