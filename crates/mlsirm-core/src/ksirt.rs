@@ -223,10 +223,19 @@ where
         options.dedup();
         let option_index: Vec<usize> = x
             .iter()
-            .map(|row| {
+            .enumerate()
+            .map(|(i, row)| {
+                let value = row.as_ref()[j];
                 options
-                    .binary_search_by(|option| option.partial_cmp(&row.as_ref()[j]).unwrap())
-                    .expect("option present by construction")
+                    .binary_search_by(|option| match option.partial_cmp(&value) {
+                        Some(ordering) => ordering,
+                        None => unreachable!(
+                            "ksirt validates finite responses before option indexing"
+                        ),
+                    })
+                    .unwrap_or_else(|_| {
+                        panic!("option for subject {i} item {j} value {value} not found")
+                    })
             })
             .collect();
         let m = options.len();
