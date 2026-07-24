@@ -121,30 +121,58 @@ def fit_mmle_2pl(
 
         a_new = a.copy()
         b_new = b.copy()
-        for i in range(n_items):
-            ai, bi = a[i], b[i]
-            # Newton steps on the item's expected log-likelihood over nodes.
-            for _ in range(25):
-                eta = ai * nodes + bi
-                p = _sigmoid(eta)
-                w = n_iq[i] * p * (1.0 - p)
-                resid = r_iq[i] - n_iq[i] * p
-                g_a = float((resid * nodes).sum()) - ridge_a * ai
-                g_b = float(resid.sum()) - ridge_b * bi
-                h_aa = -float((w * nodes * nodes).sum()) - ridge_a
-                h_bb = -float(w.sum()) - ridge_b
-                h_ab = -float((w * nodes).sum())
-                det = h_aa * h_bb - h_ab * h_ab
-                if abs(det) < 1e-12:
-                    break
-                da = (h_bb * g_a - h_ab * g_b) / det
-                db = (h_aa * g_b - h_ab * g_a) / det
-                ai -= da
-                bi -= db
-                ai = float(np.clip(ai, 1e-3, 10.0))
-                if abs(da) + abs(db) < 1e-8:
-                    break
-            a_new[i], b_new[i] = ai, bi
+        active = np.ones(n_items, dtype=bool)
+
+        # Vectorized Newton steps on the items' expected log-likelihood over nodes.
+        for _ in range(25):
+            if not np.any(active):
+                break
+
+            ai = a_new[active]
+            bi = b_new[active]
+
+            eta = ai[:, None] * nodes[None, :] + bi[:, None]
+            p = _sigmoid(eta)
+
+            n_iq_act = n_iq[active]
+            r_iq_act = r_iq[active]
+
+            w = n_iq_act * p * (1.0 - p)
+            resid = r_iq_act - n_iq_act * p
+
+            g_a = (resid * nodes[None, :]).sum(axis=1) - ridge_a * ai
+            g_b = resid.sum(axis=1) - ridge_b * bi
+
+            h_aa = -(w * (nodes**2)[None, :]).sum(axis=1) - ridge_a
+            h_bb = -w.sum(axis=1) - ridge_b
+            h_ab = -(w * nodes[None, :]).sum(axis=1)
+
+            det = h_aa * h_bb - h_ab * h_ab
+            valid = np.abs(det) >= 1e-12
+            if not np.any(valid):
+                active[active] = valid
+                continue
+
+            da = np.zeros_like(ai)
+            db = np.zeros_like(bi)
+
+            da[valid] = (h_bb[valid] * g_a[valid] - h_ab[valid] * g_b[valid]) / det[valid]
+            db[valid] = (h_aa[valid] * g_b[valid] - h_ab[valid] * g_a[valid]) / det[valid]
+
+            a_new[active] -= da
+            b_new[active] -= db
+            a_new[active] = np.clip(a_new[active], 1e-3, 10.0)
+
+            converged = (np.abs(da) + np.abs(db)) < 1e-8
+
+            # Sub-update active mask for valid subset
+            still_active = ~converged
+            still_active[~valid] = False # drop elements with invalid determinant
+
+            # Overall active mask update
+            new_active = active.copy()
+            new_active[active] = still_active
+            active = new_active
 
         a, b = a_new, b_new
 
