@@ -254,11 +254,30 @@ fn equating_boundary_contracts_and_kernel_helpers() {
         NeatMethod::FrequencyEstimation,
     )
     .is_err());
-
     assert_eq!(NeatLinearMethod::parse("not-a-method"), None);
     assert_eq!(AnchorKind::parse("not-an-anchor"), None);
     let total = [0.0, 1.0];
     let anchor = [0.0, 1.0];
+    let oversized_fe = std::panic::catch_unwind(|| {
+        equate_neat(
+            &total,
+            &anchor,
+            &total,
+            &anchor,
+            MAX_EQUATING_SCORE_POINTS,
+            1,
+            MAX_EQUATING_SCORE_POINTS,
+            0.5,
+            NeatMethod::FrequencyEstimation,
+        )
+    });
+    assert!(
+        oversized_fe.is_ok(),
+        "oversized FE bivariate table must return an error instead of panicking"
+    );
+    // Reads the core-returned error path and kills mutations that keep only
+    // per-axis caps while allowing multi-GB bivariate table allocation.
+    assert!(oversized_fe.unwrap().is_err());
     assert!(equate_neat_linear(
         &total,
         &anchor,

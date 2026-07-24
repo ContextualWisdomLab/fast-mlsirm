@@ -1437,6 +1437,28 @@ def test_equating_rejects_oversized_score_ceiling_before_core(monkeypatch):
         )
 
 
+def test_equating_rejects_oversized_bivariate_table_before_core(monkeypatch):
+    import fast_mlsirm.equating as equating
+    import fast_mlsirm.fitstats as fitstats
+
+    class BombCore:
+        def equate_neat(self, *_args, **_kwargs):
+            raise AssertionError("core must not receive oversized bivariate table")
+
+    monkeypatch.setattr(fitstats, "_core_module", lambda: BombCore())
+    with pytest.raises(ValueError, match="bivariate score table"):
+        equating.equate_neat(
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            method="frequency_estimation",
+            k_x=equating.MAX_EQUATING_SCORE_POINTS,
+            k_y=1,
+            k_v=equating.MAX_EQUATING_SCORE_POINTS,
+        )
+
+
 def test_candidate_loader_rejects_count_and_aggregate_budgets(monkeypatch):
     import fast_mlsirm.cli as cli
 

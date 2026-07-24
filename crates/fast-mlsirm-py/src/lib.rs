@@ -7,7 +7,8 @@ use mlsirm_core::equating::{
     equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
     loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
     EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
-    MAX_EQUATING_BOOTSTRAP_CELLS, MAX_EQUATING_BOOTSTRAP_REPLICATES, MAX_EQUATING_SCORE_POINTS,
+    MAX_EQUATING_BIVARIATE_CELLS, MAX_EQUATING_BOOTSTRAP_CELLS, MAX_EQUATING_BOOTSTRAP_REPLICATES,
+    MAX_EQUATING_SCORE_POINTS,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -2600,6 +2601,24 @@ fn validate_equating_score_ceiling(name: &str, value: usize) -> PyResult<()> {
     Ok(())
 }
 
+fn validate_equating_bivariate_cells(k_s: usize, k_v: usize) -> PyResult<()> {
+    let n_s = k_s
+        .checked_add(1)
+        .ok_or_else(|| PyValueError::new_err("score ceiling exceeds the bivariate buffer size"))?;
+    let n_v = k_v
+        .checked_add(1)
+        .ok_or_else(|| PyValueError::new_err("anchor ceiling exceeds the bivariate buffer size"))?;
+    let n_cells = n_s
+        .checked_mul(n_v)
+        .ok_or_else(|| PyValueError::new_err("bivariate score table exceeds buffer size"))?;
+    if n_cells > MAX_EQUATING_BIVARIATE_CELLS {
+        return Err(PyValueError::new_err(format!(
+            "bivariate score table must be <= {MAX_EQUATING_BIVARIATE_CELLS} cells"
+        )));
+    }
+    Ok(())
+}
+
 /// Univariate log-linear presmoothing of a score-frequency distribution (Rust
 /// compute path; Holland & Thayer, 2000). `counts` are raw frequencies over
 /// scores 0..=k; `degree` moments are preserved. Returns a dict with the smoothed
@@ -2714,6 +2733,10 @@ fn equate_neat(
     validate_equating_score_ceiling("k_v", k_v)?;
     let m = NeatMethod::parse(method)
         .ok_or_else(|| PyValueError::new_err(format!("unknown NEAT method: {method}")))?;
+    if m == NeatMethod::FrequencyEstimation {
+        validate_equating_bivariate_cells(k_x, k_v)?;
+        validate_equating_bivariate_cells(k_y, k_v)?;
+    }
     let res = core_equate_neat(
         x_total.as_slice()?,
         x_anchor.as_slice()?,

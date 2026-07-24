@@ -12,6 +12,7 @@ import numpy as np
 MAX_EQUATING_BOOTSTRAP_REPLICATES = 10_000
 MAX_EQUATING_BOOTSTRAP_CELLS = 1_000_000
 MAX_EQUATING_SCORE_POINTS = 10_000
+MAX_EQUATING_BIVARIATE_CELLS = 1_000_000
 
 
 @dataclass
@@ -56,6 +57,13 @@ def _infer_k(scores: np.ndarray, k, name: str) -> int:
     if out <= 0 or out > MAX_EQUATING_SCORE_POINTS:
         raise ValueError(f"{name} must be an integer between 1 and {MAX_EQUATING_SCORE_POINTS}")
     return out
+
+
+def _check_bivariate_cells(k_s: int, k_v: int) -> None:
+    if (int(k_s) + 1) * (int(k_v) + 1) > MAX_EQUATING_BIVARIATE_CELLS:
+        raise ValueError(
+            f"bivariate score table must be <= {MAX_EQUATING_BIVARIATE_CELLS} cells"
+        )
 
 
 def _build(res, method: str, design: str) -> EquateResult:
@@ -158,6 +166,10 @@ def equate_neat(
     kx = _infer_k(xt, k_x, "k_x")
     ky = _infer_k(yt, k_y, "k_y")
     kv = _infer_k(np.concatenate([xa, ya]), k_v, "k_v")
+    method_key = str(method).lower().replace("-", "").replace("_", "")
+    if method_key in {"frequencyestimation", "fe", "poststratification"}:
+        _check_bivariate_cells(kx, kv)
+        _check_bivariate_cells(ky, kv)
     res = core.equate_neat(
         xt, xa, yt, ya, int(kx), int(ky), int(kv), method=str(method), w1=float(w1)
     )

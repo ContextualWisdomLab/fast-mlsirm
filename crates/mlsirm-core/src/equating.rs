@@ -91,6 +91,7 @@ impl NeatMethod {
 // --- discrete-frequency utilities (none of this exists elsewhere in the crate) ---
 
 pub const MAX_EQUATING_SCORE_POINTS: usize = 10_000;
+pub const MAX_EQUATING_BIVARIATE_CELLS: usize = 1_000_000;
 
 /// Relative-frequency vector `g(0..=k)` from raw integer scores. Errors on empty
 /// input or a score outside `0..=k`.
@@ -233,6 +234,11 @@ fn bivariate(total: &[f64], anchor: &[f64], k_s: usize, k_v: usize) -> Result<Ve
         .checked_add(1)
         .ok_or("anchor ceiling exceeds the bivariate buffer size")?;
     let n_cells = crate::checked_mul_usize(n_s, n_v, "bivariate score table exceeds buffer size")?;
+    if n_cells > MAX_EQUATING_BIVARIATE_CELLS {
+        return Err(format!(
+            "bivariate score table must be <= {MAX_EQUATING_BIVARIATE_CELLS} cells"
+        ));
+    }
     let mut tab = vec![0.0_f64; n_cells];
     for (&s, &v) in total.iter().zip(anchor) {
         if !s.is_finite() || !v.is_finite() {
