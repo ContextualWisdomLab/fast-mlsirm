@@ -50,8 +50,16 @@
 //!
 //! # References
 //!
+//! Abramowitz, M., & Stegun, I. A. (Eds.). (1964). *Handbook of mathematical
+//! functions with formulas, graphs, and mathematical tables* (Applied
+//! Mathematics Series 55). National Bureau of Standards.
+//!
 //! Cronbach, L. J., & Gleser, G. C. (1965). *Psychological tests and
 //! personnel decisions* (2nd ed.). University of Illinois Press.
+//!
+//! Goebl, A., & Jones, J. (2016). *iopsych: Methods for industrial/
+//! organizational psychology* (Version 0.90.1) \[R package\]. CRAN.
+//! <https://cran.r-project.org/package=iopsych>
 //!
 //! Naylor, J. C., & Shine, L. C. (1965). A table for determining the increase
 //! in mean criterion score obtained by using a selection device. *Journal of
