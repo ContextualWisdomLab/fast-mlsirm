@@ -47,6 +47,9 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
+use mlsirm_core::gtheory::{
+    gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, GTheoryDStudyRow,
+};
 use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
@@ -1801,6 +1804,74 @@ fn livingston_lewis(
     out.set_item("chance_consistency", res.chance_consistency)?;
     out.set_item("kappa", res.kappa)?;
     Ok(out.into())
+}
+
+/// One-facet crossed `p x i` generalizability analysis
+/// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 3-4). `x` is a
+/// flattened row-major `n_p x n_i` score matrix; `n_i_prime` lists the
+/// proposed D-study item counts.
+#[pyfunction]
+fn gtheory_pi(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_p: usize,
+    n_i: usize,
+    n_i_prime: Vec<usize>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_gtheory_pi(x.as_slice()?, n_p, n_i, &n_i_prime).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("df", res.df.to_vec())?;
+    out.set_item("ss", res.ss.to_vec())?;
+    out.set_item("ms", res.ms.to_vec())?;
+    out.set_item("var_raw", res.var_raw.to_vec())?;
+    out.set_item("var", res.var.to_vec())?;
+    out.set_item("d_study", d_study_rows_to_py(py, &res.d_study)?)?;
+    Ok(out.into())
+}
+
+/// Two-facet crossed `p x i x o` generalizability analysis
+/// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 5-6). `x` is
+/// flattened `x[p*n_i*n_o + i*n_o + o]`; `n_prime` lists proposed
+/// `(n_i', n_o')` D-study pairs. Component order in all arrays:
+/// (p, i, o, pi, po, io, pio).
+#[pyfunction]
+fn gtheory_pio(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_p: usize,
+    n_i: usize,
+    n_o: usize,
+    n_prime: Vec<(usize, usize)>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_gtheory_pio(x.as_slice()?, n_p, n_i, n_o, &n_prime)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("df", res.df.to_vec())?;
+    out.set_item("ss", res.ss.to_vec())?;
+    out.set_item("ms", res.ms.to_vec())?;
+    out.set_item("var_raw", res.var_raw.to_vec())?;
+    out.set_item("var", res.var.to_vec())?;
+    out.set_item("d_study", d_study_rows_to_py(py, &res.d_study)?)?;
+    Ok(out.into())
+}
+
+fn d_study_rows_to_py(
+    py: Python<'_>,
+    rows: &[GTheoryDStudyRow],
+) -> PyResult<Vec<Py<pyo3::types::PyDict>>> {
+    rows.iter()
+        .map(|r| {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("n_i_prime", r.n_i_prime)?;
+            d.set_item("n_o_prime", r.n_o_prime)?;
+            d.set_item("rel_error_var", r.rel_error_var)?;
+            d.set_item("abs_error_var", r.abs_error_var)?;
+            d.set_item("generalizability", r.generalizability)?;
+            d.set_item("dependability", r.dependability)?;
+            Ok(d.into())
+        })
+        .collect()
 }
 
 /// Horn's parallel analysis for principal-component retention
@@ -5524,6 +5595,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;

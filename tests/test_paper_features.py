@@ -5785,3 +5785,83 @@ def test_livingston_lewis_rejects_degenerate_inputs():
         livingston_lewis(good, 0.82, 12.0, 50.0, 28.0)  # score below min
     with pytest.raises(ValueError):
         livingston_lewis([20.0, 20.0, 20.0], 0.82, 0.0, 50.0, 10.0)  # var 0
+
+def test_gtheory_pi_matches_paper_tables():
+    """Huebner & Lucht (2019) appendix pi_dat; asserts read the crate's
+    var/var_raw/d_study outputs (Tables 3-4 reproduced by the Rust tests
+    to full precision; pinned literals from the same verified pipeline)."""
+    from fast_mlsirm import gtheory_pi
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "gtheory_pi"):
+        pytest.skip("compiled core built without gtheory_pi")
+
+    x = np.array(
+        [
+            [9.0, 9.0, 7.0, 4.0],
+            [9.0, 8.0, 4.0, 6.0],
+            [8.0, 8.0, 6.0, 2.0],
+            [9.0, 8.0, 6.0, 3.0],
+            [10.0, 9.0, 8.0, 7.0],
+            [6.0, 4.0, 5.0, 1.0],
+        ]
+    )
+    r = gtheory_pi(x, n_i_prime=[4, 8])
+    tol = 1e-9
+    assert abs(r.var[0] - 1.905555555556) < tol
+    assert abs(r.var[1] - 4.027777777778) < tol
+    assert abs(r.var[2] - 1.277777777778) < tol
+    assert r.var == r.var_raw  # all raw components positive here
+    d4 = r.d_study[0]
+    assert d4.n_i_prime == 4
+    assert abs(d4.rel_error_var - 1.277777777778 / 4.0) < tol
+    assert abs(d4.generalizability - 0.856429463171) < tol
+    assert abs(d4.dependability - 0.589600343790) < tol
+    d8 = r.d_study[1]
+    # sigma^2(p) invariant across n' (weak identity); delta halves.
+    assert abs(d8.rel_error_var - d4.rel_error_var / 2.0) < tol
+    assert d8.generalizability > d4.generalizability
+
+
+def test_gtheory_pio_matches_paper_tables_and_rejects_bad_input():
+    """Huebner & Lucht (2019) appendix pio_cross_dat (6 x 4 x 2); asserts
+    read the crate's 7-component var vector (order p,i,o,pi,po,io,pio) and
+    D-study coefficients pinned from the verified pipeline (Tables 5-6)."""
+    from fast_mlsirm import gtheory_pi, gtheory_pio
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "gtheory_pio"):
+        pytest.skip("compiled core built without gtheory_pio")
+
+    # pio_cross_dat in crate layout x[p*n_i*n_o + i*n_o + o], i.e. a
+    # (6, 4, 2) persons x items x occasions array.
+    scores = np.array(
+        [
+            9.0, 9.0, 9.0, 8.0, 7.0, 5.0, 4.0, 5.0,
+            9.0, 6.0, 8.0, 5.0, 4.0, 3.0, 6.0, 3.0,
+            8.0, 8.0, 8.0, 7.0, 6.0, 3.0, 2.0, 2.0,
+            9.0, 9.0, 8.0, 6.0, 6.0, 6.0, 3.0, 2.0,
+            10.0, 8.0, 9.0, 8.0, 8.0, 9.0, 7.0, 7.0,
+            6.0, 3.0, 4.0, 2.0, 5.0, 3.0, 1.0, 2.0,
+        ]
+    ).reshape(6, 4, 2)
+    r = gtheory_pio(scores, n_prime=[(4, 2)])
+    tol = 1e-9
+    want = [
+        2.483333333333, 3.066666666667, 0.577777777778, 0.766666666667,
+        0.088888888889, 0.022222222222, 0.831944444444,
+    ]
+    for got, w in zip(r.var, want):
+        assert abs(got - w) < tol
+    d = r.d_study[0]
+    assert d.n_i_prime == 4 and d.n_o_prime == 2
+    # delta = pi/4 + po/2 + pio/8 (kills a dropped-term mutation).
+    assert abs(d.rel_error_var - (want[3] / 4.0 + want[4] / 2.0 + want[6] / 8.0)) < tol
+    assert 0.0 < d.dependability < d.generalizability < 1.0
+
+    with pytest.raises(ValueError):
+        gtheory_pio(scores[:1])  # n_p < 2
+    with pytest.raises(ValueError):
+        gtheory_pi(np.array([[1.0, np.nan], [2.0, 3.0]]))  # non-finite
