@@ -494,12 +494,12 @@ main {
   padding: 32px 20px 48px;
 }
 
-main:focus {
+main:focus:not(:focus-visible) {
   outline: none;
 }
 
 main:focus-visible {
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 3px;
 }
 
