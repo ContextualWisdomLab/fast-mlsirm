@@ -134,3 +134,55 @@ def omega_total_1f_from_data(data: np.ndarray) -> OmegaResult:
     return OmegaResult(
         omega_total=float(out["omega_total"]), fa=_fa_from_dict(out["fa"], p, 1)
     )
+
+@dataclass
+class GlbFaResult:
+    """Factor-analytic greatest lower bound to reliability (psych glb.fa
+    transcription). ``nf`` is the fitted factor count after psych's df
+    adjustment; ``communalities`` come from that nf-factor minres fit.
+
+    REDUCED SCOPE: this is NOT the algebraic glb of Jackson & Agunwamba
+    (as computed by psych ``glb.algebraic``, which needs an SDP solver);
+    it is the factor-analytic approximation from psych ``glbs.R``
+    (Revelle, 2025 — READ). Sijtsma (2009) was NOT read; cite the psych
+    transcription only. Correlation-matrix or complete-data input only
+    (no cov2cor / pairwise-deletion branches)."""
+
+    glb: float
+    communalities: np.ndarray
+    nf: int
+
+
+def _glbfa_from_dict(d: dict) -> GlbFaResult:
+    return GlbFaResult(
+        glb=float(d["glb"]),
+        communalities=np.asarray(d["communalities"], dtype=np.float64),
+        nf=int(d["nf"]),
+    )
+
+
+def glb_fa(corr: np.ndarray) -> GlbFaResult:
+    """Factor-analytic glb from a ``(p, p)`` correlation matrix (psych
+    ``glb.fa`` transcription; Revelle, 2025). See :class:`GlbFaResult`
+    for the scope reduction (not the algebraic glb).
+
+    %s""" % _REFERENCES
+    from . import _core
+
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
+    if r.ndim != 2 or r.shape[0] != r.shape[1]:
+        raise ValueError("corr must be a square (p, p) matrix")
+    return _glbfa_from_dict(_core.glb_fa(r.reshape(-1), int(r.shape[0])))
+
+
+def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
+    """:func:`glb_fa` from a complete ``(n, p)`` data matrix.
+
+    %s""" % _REFERENCES
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    if x.ndim != 2:
+        raise ValueError("data must be a 2-D (n, p) matrix")
+    n, p = map(int, x.shape)
+    return _glbfa_from_dict(_core.glb_fa_from_data(x.reshape(-1), n, p))

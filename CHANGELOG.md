@@ -111,9 +111,30 @@
     panic); `fitstats::infit_outfit` validates `theta`/`xi` lengths before
     indexing; `scoring::validate_prior` rejects non-finite prior `mean`/`sd`
     (a `NaN` `sd` passed the bare `sd <= 0` check).
+- `factor::validate_corr` now rejects off-diagonal correlations outside
+  `[-1, 1]` (impl-review finding): an impossible value like `1e308` passed
+  the old finiteness/symmetry checks and panicked inside the eigen sort
+  instead of returning an error (affected `minres_fa`, `omega_total_1f`,
+  and the new `glb_fa`); regression-tested.
 
 ### Added
 
+- **Factor-analytic greatest lower bound** (`fast_mlsirm.glb_fa` /
+  `glb_fa_from_data`; in `mlsirm_core::factor::glb_fa_corr`; transcribed
+  from CRAN psych `glbs.R` `glb.fa`, read in full — Revelle, 2025; NOT the
+  algebraic glb of `glb.algebraic`, which requires an SDP solver; Sijtsma,
+  2009, not read). Algorithm: 1-factor minres fit, eigenvalues of `R` with
+  the diagonal replaced by the model communalities, `nf` = count of
+  positive eigenvalues with psych's single df-based decrement, then
+  `glb = sum(rr)/sum(R)` with `diag(rr)` from an `nf`-factor refit.
+  Verified against a pinned independent scipy oracle on a 9-variable
+  2-factor population matrix (glb to 1e-5), a sampled 6-variable matrix
+  and a df-adjustment fixture (both df = 0 saturated fits, wider bands
+  documented), plus a 500-rep Monte Carlo run (`#[ignore]`; observed mean
+  glb 0.863 vs population omega 0.830 — the expected upward bias of glb
+  under multi-factor detection is documented, not hidden). Three executed
+  mutation kills (skipped diagonal substitution, 1-factor communalities in
+  the ratio, dropped df decrement).
 - **Person separation reliability** (`fast_mlsirm.separation_reliability`;
   in `mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`, read
   in full — Mair et al., 2025; the statistic is attributed there to Wright

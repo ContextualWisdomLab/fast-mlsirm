@@ -303,6 +303,14 @@ fn validate_corr(s: &[f64], p: usize, what: &str) -> Result<(), String> {
             if (s[i * p + j] - s[j * p + i]).abs() > 1e-8 {
                 return Err(format!("{what}: matrix must be symmetric"));
             }
+            // Impossible correlations overflow downstream eigen/minres
+            // arithmetic (impl-review finding); reject at the boundary.
+            if s[i * p + j].abs() > 1.0 + 1e-8 {
+                return Err(format!(
+                    "{what}: off-diagonal {} at ({i}, {j}) outside [-1, 1]",
+                    s[i * p + j]
+                ));
+            }
         }
     }
     Ok(())
@@ -490,6 +498,108 @@ pub fn omega_total_1f_data(data: &[f64], n: usize, p: usize) -> Result<OmegaResu
     }
     let r = correlation_matrix(data, n, p)?;
     omega_total_1f_corr(&r, p)
+}
+
+/// Factor-analytic greatest lower bound to reliability (psych `glb.fa`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlbFaResult {
+    /// `sum(rr) / sum(R)` where `rr` is `R` with its diagonal replaced by
+    /// the `nf`-factor minres communalities.
+    pub glb: f64,
+    /// Communalities from the `nf`-factor fit.
+    pub communalities: Vec<f64>,
+    /// Number of factors actually fitted (after the df adjustment).
+    pub nf: usize,
+}
+
+/// Factor-analytic greatest lower bound to reliability, transcribed from
+/// CRAN psych `glbs.R` `glb.fa` (read in full; Revelle, 2025):
+///
+/// 1. 1-factor minres fit; `values` = eigenvalues of `R` with the diagonal
+///    replaced by the 1-factor model communalities (psych `fa()$values`
+///    for `fm = "minres"`, traced in fa.R).
+/// 2. `nf` = number of `values > 0` (strict).
+/// 3. `df = p(p-1)/2 - nf*p + nf(nf-1)/2`; if `df < 0`, `nf -= 1` (single
+///    decrement, exactly as psych — not a loop).
+/// 4. Refit minres with `nf` factors; `glb = sum(rr)/sum(R)` with
+///    `diag(rr)` = the `nf`-factor communalities.
+///
+/// This is NOT the true (algebraic) greatest lower bound: psych's
+/// `glb.algebraic` solves a semidefinite program via Rcsdp (read; out of
+/// scope here). Sijtsma (2009) and ten Berge & Socan (2004) discuss the
+/// glb but were not read; the implementation claim is the psych `glb.fa`
+/// transcription alone.
+///
+/// Divergences from psych (documented): input must already be a
+/// correlation matrix (psych accepts rectangular data via
+/// `cor(use = "pairwise")` and square covariance via `cov2cor`; use
+/// [`glb_fa_data`] for the complete-data Pearson path); no `key`
+/// reverse-scoring (caller responsibility); hard errors instead of R
+/// error/warning strings; if the adjusted `nf` reaches 0 or `p` this
+/// returns an error (psych's behavior there is unconfirmed from the read
+/// source).
+///
+/// References (APA 7th ed.):
+/// Revelle, W. (2025). psych: Procedures for psychological, psychometric,
+///   and personality research (Version 2.6.5) [R package].
+///   https://CRAN.R-project.org/package=psych
+pub fn glb_fa_corr(corr: &[f64], p: usize) -> Result<GlbFaResult, String> {
+    let f1 = minres_fa_corr(corr, p, 1)?;
+    // S = R with diag replaced by 1-factor communalities.
+    let mut s = corr.to_vec();
+    for j in 0..p {
+        s[j * p + j] = f1.communalities[j];
+    }
+    let (values, _) = symmetric_eigen_desc(&s, p)?;
+    let mut nf = values.iter().filter(|&&v| v > 0.0).count();
+    if nf >= 1 {
+        let df = (p * (p - 1) / 2) as i64 - (nf * p) as i64 + (nf * (nf - 1) / 2) as i64;
+        if df < 0 {
+            nf -= 1;
+        }
+    }
+    if nf < 1 || nf >= p {
+        return Err(format!(
+            "glb_fa: adjusted factor count {nf} outside 1..{p} (unsupported input)"
+        ));
+    }
+    let fnf = minres_fa_corr(corr, p, nf)?;
+    let mut sum_rr = 0.0;
+    let mut sum_r = 0.0;
+    for i in 0..p {
+        for j in 0..p {
+            let v = corr[i * p + j];
+            sum_r += v;
+            sum_rr += if i == j { fnf.communalities[i] } else { v };
+        }
+    }
+    Ok(GlbFaResult {
+        glb: sum_rr / sum_r,
+        communalities: fnf.communalities,
+        nf,
+    })
+}
+
+/// [`glb_fa_corr`] from raw data (`n x p` row-major, complete and finite);
+/// computes the Pearson correlation matrix first.
+pub fn glb_fa_data(data: &[f64], n: usize, p: usize) -> Result<GlbFaResult, String> {
+    let np = n
+        .checked_mul(p)
+        .ok_or_else(|| format!("glb_fa: dimension overflow (n = {n}, p = {p})"))?;
+    if data.len() != np {
+        return Err(format!(
+            "glb_fa: data length {} does not match n * p = {np}",
+            data.len(),
+        ));
+    }
+    if data.iter().any(|v| !v.is_finite()) {
+        return Err("glb_fa: data must be finite (complete data required)".into());
+    }
+    if n < 3 {
+        return Err("glb_fa: need at least 3 observations".into());
+    }
+    let r = correlation_matrix(data, n, p)?;
+    glb_fa_corr(&r, p)
 }
 
 #[cfg(test)]
