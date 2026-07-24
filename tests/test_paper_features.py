@@ -6064,3 +6064,11 @@ class TestSympsonHetter:
             fm.sympson_hetter(a, b, r_max=0.05, test_length=5)  # infeasible
         with pytest.raises(ValueError):
             fm.sympson_hetter(a, b, r_max=0.25, test_length=0)
+        # Boundary coercion discipline: non-integral floats, bools, and
+        # negative seeds are ValueError, not silent truncation/OverflowError.
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=5.9)
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=5, n_simulees=True)
+        with pytest.raises(ValueError):
+            fm.sympson_hetter(a, b, r_max=0.25, test_length=5, seed=-1)

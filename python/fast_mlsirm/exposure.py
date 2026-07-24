@@ -99,17 +99,30 @@ def sympson_hetter(
     if c is None:
         c = np.zeros_like(a)
     c = np.ascontiguousarray(c, dtype=np.float64)
+
+    def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
+        if isinstance(value, bool) or not isinstance(
+            value, (int, np.integer, float, np.floating)
+        ):
+            raise ValueError(f"{name} must be an integer, got {value!r}")
+        iv = int(value)
+        if iv != value:
+            raise ValueError(f"{name} must be an integer, got {value!r}")
+        if iv < minimum or (maximum is not None and iv > maximum):
+            raise ValueError(f"{name} out of range: {iv}")
+        return iv
+
     r = _core.py_sympson_hetter(
         a,
         b,
         c,
         float(r_max),
-        int(test_length),
-        int(n_simulees),
-        int(max_iter),
+        _as_int("test_length", test_length),
+        _as_int("n_simulees", n_simulees),
+        _as_int("max_iter", max_iter),
         float(tol),
-        int(seed),
-        int(q_theta),
+        _as_int("seed", seed, maximum=2**64 - 1),
+        _as_int("q_theta", q_theta),
     )
     return SympsonHetterResult(
         k=np.asarray(r["k"]),

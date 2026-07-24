@@ -280,9 +280,9 @@ fn sh_input_validation() {
     .is_err());
 }
 
-/// >= 500-replication Monte Carlo: across seeds the calibrated max exposure
-/// stays at the target (within MC noise) and the counting identity holds in
-/// every replication. Run with `cargo test -- --ignored`.
+// >= 500-replication Monte Carlo: across seeds the calibrated max exposure
+// stays at the target (within MC noise) and the counting identity holds in
+// every replication. Run with `cargo test -- --ignored`.
 #[test]
 #[ignore]
 fn sh_monte_carlo_500() {

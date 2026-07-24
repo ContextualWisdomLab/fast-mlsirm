@@ -13,8 +13,8 @@
 //! calibration on a sample from a typical ability distribution) and Barrada,
 //! Olea & Ponsoda (2007, Eq. 1-3: the target `max_i P(A_i) <= r_max` and the
 //! update `k_i <- 1` if `P(S_i) <= r_max`, else `k_i <- r_max / P(S_i)`),
-//! plus the mirtCAT R source (implementation evidence for the per-encounter
-//! uniform draw and item invalidation).
+//! plus the mirtCAT R source (Chalmers, 2016; implementation evidence for
+//! the per-encounter uniform draw and item invalidation).
 //!
 //! Algorithm (one calibration cycle):
 //!
@@ -61,6 +61,12 @@
 //! maximum exposure rate in computerized adaptive testing. *Methodology,
 //! 3*(1), 14-23. <https://doi.org/10.1027/1614-2241.3.1.14>
 //!
+//! Chalmers, R. P. (2016). Generating adaptive and non-adaptive test
+//! interfaces for multidimensional item response theory applications.
+//! *Journal of Statistical Software, 71*(5), 1-38.
+//! <https://doi.org/10.18637/jss.v071.i05> (mirtCAT; the package R source
+//! was read as implementation evidence.)
+//!
 //! Georgiadou, E., Triantafillou, E., & Economides, A. A. (2007). A review of
 //! item exposure control strategies for computerized adaptive testing
 //! developed from 1983 to 2005. *Journal of Technology, Learning, and
@@ -72,9 +78,10 @@
 //! Research and Development Center. (As cited in Georgiadou et al., 2007, and
 //! Barrada et al., 2007; not read.)
 //!
-//! van der Linden, W. J. (2003). *Some alternatives to Sympson-Hetter
-//! item-exposure control in computerized adaptive testing* (ERIC ED473529).
-//! (Abstract only was read.)
+//! van der Linden, W. J. (2003). Some alternatives to Sympson-Hetter
+//! item-exposure control in computerized adaptive testing. *Journal of
+//! Educational and Behavioral Statistics, 28*(3), 249-265. (Abstract only
+//! was read.)
 
 use crate::scoring::item_information_4pl;
 
@@ -158,8 +165,8 @@ fn p3pl(theta: f64, a: f64, b: f64, c: f64) -> f64 {
 }
 
 /// EAP over a uniform grid on [-4, 4] with an N(0,1) prior, given the
-/// administered responses so far (Bock & Mislevy, 1982, style point EAP;
-/// the uniform grid is a repository implementation choice).
+/// administered responses so far (standard posterior-mean point estimate on
+/// a discrete grid; the uniform grid is a repository implementation choice).
 fn eap_interim(
     a: &[f64],
     b: &[f64],
