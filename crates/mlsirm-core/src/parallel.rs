@@ -1,4 +1,4 @@
-﻿//! Horn's parallel analysis for principal-component retention.
+//! Horn's parallel analysis for principal-component retention.
 //!
 //! Compares the eigenvalues of the Pearson correlation matrix of an observed
 //! `n x p` data matrix against the mean (or a Glorfeld upper-centile) of
