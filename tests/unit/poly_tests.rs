@@ -155,6 +155,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         fit_poly_unidim(&[], None, 0, 1, 3, PolyModel::Gpcm, 7, 1, 1e-6),
         fit_poly_unidim(&y, None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 0.0),
         fit_poly_unidim(&y[..3], None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 1e-6),
+        fit_poly_unidim(&[0, 1, 3, 1], None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 1e-6),
         fit_poly_unidim(
             &y,
             Some(&observed[..3]),

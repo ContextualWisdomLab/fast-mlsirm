@@ -300,8 +300,10 @@ fn sx2_g2_p_values_follow_chi2_sf_mapping() {
     .unwrap();
     // Reads crate-returned g2_statistic/g2_p_value and fails if the implementation
     // mutates to use the wrong p-value mapping.
+    let mut checked = 0usize;
     for i in 0..result.df.len() {
         if result.df[i].is_finite() && result.df[i] >= 1.0 && result.g2_statistic[i].is_finite() {
+            checked += 1;
             let expected = chi2_sf(result.g2_statistic[i], result.df[i]);
             assert!(
                 (result.g2_p_value[i] - expected).abs() < 1e-12,
@@ -311,6 +313,7 @@ fn sx2_g2_p_values_follow_chi2_sf_mapping() {
             );
         }
     }
+    assert!(checked > 0, "expected at least one finite G2 cell to validate");
 }
 
 #[test]
