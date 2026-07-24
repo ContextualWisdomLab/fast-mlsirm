@@ -132,21 +132,25 @@ pub struct KsirtResult {
 /// to item `j`; the distinct values of column `j` form the option set.
 /// `bandwidth` overrides the Silverman default `1.06 * n^{-1/5}` (per-item
 /// values, all > 0). See the module docs for the algorithm and sources.
-pub fn ksirt(
-    x: &[Vec<f64>],
+pub fn ksirt<R>(
+    x: &[R],
     kernel: KsirtKernel,
     nevalpoints: usize,
     bandwidth: Option<&[f64]>,
-) -> Result<KsirtResult, String> {
+) -> Result<KsirtResult, String>
+where
+    R: AsRef<[f64]>,
+{
     let n = x.len();
     if n < 2 {
         return Err("ksirt requires at least 2 subjects".to_string());
     }
-    let k = x[0].len();
+    let k = x[0].as_ref().len();
     if k == 0 {
         return Err("ksirt requires at least 1 item".to_string());
     }
     for (i, row) in x.iter().enumerate() {
+        let row = row.as_ref();
         if row.len() != k {
             return Err(format!(
                 "ragged response matrix: row {i} has {} items, expected {k}",
@@ -186,7 +190,7 @@ pub fn ksirt(
 
     // Step 1: total scores -> ranks (ties by first occurrence, matching
     // R's ties.method="first"; ksIRT.R line 121) -> normal quantiles.
-    let totals: Vec<f64> = x.iter().map(|row| row.iter().sum()).collect();
+    let totals: Vec<f64> = x.iter().map(|row| row.as_ref().iter().sum()).collect();
     let mut order: Vec<usize> = (0..n).collect();
     // stable sort keeps original subject order within ties => "first"
     order.sort_by(|&a, &b| totals[a].partial_cmp(&totals[b]).unwrap());
@@ -214,9 +218,17 @@ pub fn ksirt(
     let mut items = Vec::with_capacity(k);
     let mut expected_total = vec![0.0; q];
     for j in 0..k {
-        let mut options: Vec<f64> = x.iter().map(|row| row[j]).collect();
+        let mut options: Vec<f64> = x.iter().map(|row| row.as_ref()[j]).collect();
         options.sort_by(|a, b| a.partial_cmp(b).unwrap());
         options.dedup();
+        let option_index: Vec<usize> = x
+            .iter()
+            .map(|row| {
+                options
+                    .binary_search_by(|option| option.partial_cmp(&row.as_ref()[j]).unwrap())
+                    .expect("option present by construction")
+            })
+            .collect();
         let m = options.len();
         let mut occ = vec![vec![0.0; q]; m];
         let mut expected = vec![0.0; q];
@@ -229,11 +241,7 @@ pub fn ksirt(
             if denom <= 0.0 {
                 continue; // all weights zero: occ stays 0 (R fallback)
             }
-            for (i, &w) in kw.iter().enumerate() {
-                let l = options
-                    .iter()
-                    .position(|&o| o == x[i][j])
-                    .expect("option present by construction");
+            for (&l, &w) in option_index.iter().zip(&kw) {
                 occ[l][s] += w / denom;
             }
             for l in 0..m {

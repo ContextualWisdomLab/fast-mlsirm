@@ -1551,9 +1551,7 @@ fn ksirt_occ(
             )))
         }
     };
-    let rows: Vec<Vec<f64>> = (0..n_persons)
-        .map(|i| flat[i * n_items..(i + 1) * n_items].to_vec())
-        .collect();
+    let rows: Vec<&[f64]> = flat.chunks_exact(n_items).collect();
     let res = core_ksirt(&rows, kern, nevalpoints, bandwidth.as_deref())
         .map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
