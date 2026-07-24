@@ -156,6 +156,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         fit_poly_unidim(&y, None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 0.0),
         fit_poly_unidim(&y[..3], None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 1e-6),
         fit_poly_unidim(&[0, 1, 3, 1], None, 2, 2, 3, PolyModel::Gpcm, 7, 1, 1e-6),
+        fit_poly_unidim(&[], None, usize::MAX, 2, 3, PolyModel::Gpcm, 7, 1, 1e-6),
         fit_poly_unidim(
             &y,
             Some(&observed[..3]),
@@ -590,6 +591,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         u3_poly_person_fit(&y, None, 2, 2, 1, None),
         u3_poly_person_fit(&y[..3], None, 2, 2, 3, None),
         u3_poly_person_fit(&[0, 1, 3, 1], None, 2, 2, 3, None),
+        u3_poly_person_fit(&[], None, usize::MAX, 2, 3, None),
         u3_poly_person_fit(&y, Some(&observed[..3]), 2, 2, 3, None),
         u3_poly_person_fit(&y, None, 2, 2, 3, Some(f64::NAN)),
     ] {
@@ -695,6 +697,18 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
         ),
         poly_s_x2(&y, None, 2, 2, 3, &[1.0], &cat, PolyModel::Gpcm, 7, 1.0),
         poly_s_x2(&y, None, 2, 2, 3, &slope, &[0.0], PolyModel::Gpcm, 7, 1.0),
+        poly_s_x2(
+            &[],
+            None,
+            usize::MAX,
+            2,
+            3,
+            &slope,
+            &cat,
+            PolyModel::Gpcm,
+            7,
+            1.0,
+        ),
         poly_s_x2(
             &y,
             Some(&observed[..3]),

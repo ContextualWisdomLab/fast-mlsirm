@@ -406,11 +406,13 @@ pub fn fit_poly_unidim(
     if !tol.is_finite() || tol <= 0.0 {
         return Err("tol must be finite and > 0".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -1733,11 +1735,13 @@ pub fn u3_poly_person_fit(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -2236,17 +2240,24 @@ pub fn poly_s_x2(
     if n_items < 2 {
         return Err("n_items must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells =
+        crate::checked_mul_usize(n_persons, n_items, "n_persons * n_items overflows usize")?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if slope.len() != n_items {
         return Err("slope must have length n_items".into());
     }
-    if cat_params.len() != n_items * (n_cat - 1) {
+    let n_item_steps = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) overflows usize",
+    )?;
+    if cat_params.len() != n_item_steps {
         return Err("cat_params must have length n_items * (n_cat - 1)".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
