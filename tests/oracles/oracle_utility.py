@@ -1,8 +1,12 @@
 """Independent scipy oracle for selection utility analysis.
 
-Regenerates every numeric fixture pinned in ``tests/unit/utility_tests.rs``
-and ``tests/test_paper_features.py::TestSelectionUtility``. Run with any
-Python that has numpy + scipy (values were pinned with scipy 1.x)::
+Regenerates the numeric fixtures pinned in ``tests/unit/utility_tests.rs``
+and ``tests/test_paper_features.py::TestSelectionUtility``. Values are
+printed at full ``repr`` precision; the test files pin these values either
+verbatim or rounded to fewer digits, always within the tolerance asserted
+by the test (the rho=0 fixture ``q = 0.21`` is the analytic ``sr*br``).
+Run with any Python that has numpy + scipy (values were pinned with
+scipy 1.x)::
 
     python tests/oracles/oracle_utility.py
 
@@ -65,10 +69,14 @@ def bcg(n, sdy, rxy, sr, cost_total, period):
 
 
 if __name__ == "__main__":
+    def r(x):
+        return repr(float(x))
+
     print("=== ux / pux fixtures ===")
     for sr in [0.05, 0.3, 0.5, 0.9]:
-        print(f"sr={sr}: xc={norm.ppf(1 - sr):.15f} ux={ux(sr):.15f}")
-    print(f"pux(rxy=.5, sr=.3) = {0.5 * ux(0.3):.15f}")
+        print(f"sr={sr}: xc={r(norm.ppf(1 - sr))} ux={r(ux(sr))}")
+    print(f"pux(rxy=.5, sr=.3)  = {r(0.5 * ux(0.3))}")
+    print(f"pux(rxy=-.5, sr=.3) = {r(-0.5 * ux(0.3))}")
 
     print("\n=== Taylor-Russell fixtures (mvn-CDF oracle) ===")
     for (rxy, sr, br) in [
@@ -80,22 +88,24 @@ if __name__ == "__main__":
         (0.0, 0.3, 0.7),
     ]:
         s, q = taylor_russell(rxy, sr, br)
-        print(f"rxy={rxy} sr={sr} br={br}: success={s:.15f} q={q:.15f}")
+        print(f"rxy={rxy} sr={sr} br={br}: success={r(s)} q={r(q)}")
+    s, _ = taylor_russell(0.7, 0.9999, 0.37, q=q_quad)
+    print(f"sr->1 limit fixture (rxy=.7, sr=.9999, br=.37): success={r(s)}")
 
     print("\n=== BCG fixtures ===")
-    print(f"bcg(1, 10000, .5, .3, 0, 1)   = {bcg(1, 10000, .5, .3, 0, 1):.10f}")
-    print(f"bcg(50, 8000, .4, .2, 25000, 3) = {bcg(50, 8000, .4, .2, 25000, 3):.10f}")
+    print(f"bcg(1, 10000, .5, .3, 0, 1)     = {r(bcg(1, 10000, .5, .3, 0, 1))}")
+    print(f"bcg(50, 8000, .4, .2, 25000, 3) = {r(bcg(50, 8000, .4, .2, 25000, 3))}")
 
     print("\n=== near-degenerate-rho regression fixtures (quad oracle) ===")
     for (rxy, sr, br) in [(-0.999999, 0.9, 0.9), (0.999999, 1e-12, 1e-12)]:
         s, q = taylor_russell(rxy, sr, br, q=q_quad)
-        print(f"rxy={rxy} sr={sr} br={br}: success={s:.15f} q={q:.20g}")
+        print(f"rxy={rxy} sr={sr} br={br}: success={r(s)} q={r(q)}")
 
     print("\n=== mutation predictions ===")
-    print(f"M1 (drop rxy) pux at sr=.3: {ux(0.3):.15f} vs good {0.5 * ux(0.3):.15f}")
+    print(f"M1 (drop rxy) pux at sr=.3: {r(ux(0.3))} vs good {r(0.5 * ux(0.3))}")
     xc03, yc08 = norm.ppf(1 - 0.3), norm.ppf(1 - 0.8)
     print(
         "M4 (sr<->br role swap) at rho=.5, sr=.3, br=.8: "
-        f"good success={q_mvn(xc03, yc08, 0.5) / 0.3:.15f} "
-        f"mutant={q_mvn(yc08, xc03, 0.5) / 0.8:.15f}"
+        f"good success={r(q_mvn(xc03, yc08, 0.5) / 0.3)} "
+        f"mutant={r(q_mvn(yc08, xc03, 0.5) / 0.8)}"
     )
