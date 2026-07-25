@@ -2,9 +2,11 @@
 //!
 //! Implements (1) a reduced-scope, no-missing, conditional Wollack-style
 //! omega answer-copying statistic, (2) the K-index of matching incorrect
-//! answers exactly as implemented by CopyDetect's internal `k()`, and
+//! answers exactly as implemented by CopyDetect's internal `k()`,
 //! (3) the generalized binomial test (GBT) tail kernel exactly as
-//! implemented by aberrance's `compute_GBT`.
+//! implemented by aberrance's `compute_GBT`, and (4) the K1/K2/S1/S2
+//! answer-copying indices exactly as implemented by CopyDetect's internal
+//! `ks12()`.
 //!
 //! The omega formula and p-value direction are verified
 //! against the inspectable CRAN `CopyDetect` implementation (Zopluoglu;
@@ -24,7 +26,7 @@
 //! supply the suspected copier's per-item option probabilities (e.g. from a
 //! nominal response model at the copier's ability estimate, the canonical
 //! CopyDetect path). Missing-response handling, NRM fitting inside this
-//! function, g2, S1/S2/K1/K2/M4 variants, and continuity corrections
+//! function, g2, M4 variants, and continuity corrections
 //! are out of scope.
 //!
 //! The K-index (`k_index`) is a faithful port of CopyDetect
@@ -68,6 +70,34 @@
 //! masses may underflow ordinary `f64` — this is an exact-DP-in-f64
 //! limitation, O(n^2) time, O(n) memory.
 //!
+//! The K1/K2/S1/S2 indices (`k_variants`) are a faithful port of CopyDetect
+//! `R/similarity1.r` internal `ks12()` (READ in full), specialized to the
+//! no-missing, scored-0/1 contract. Number-incorrect subgroups EXCLUDE the
+//! source row (`subgroups.ind[subgroups.ind!=pa[2]]`) — the opposite of the
+//! base `k()` convention used by `k_index` above. Per-subgroup means of
+//! matching-incorrect counts (`pr`) are regressed on the proportion-
+//! incorrect design (`Qrs = j/n`, ordinary least squares, linear for K1 and
+//! quadratic for K2) and, for S1/S2, `ws*pr` (plus a weighted-correct-match
+//! shift `ceil(pj)` for S2) is fitted by a log-link Poisson GLM on the raw
+//! count design (`Qrs3 = j`). Predictions are taken at the copier's design
+//! point (`qc = wc/n` for OLS, integer `wc` for the GLMs — extracted by
+//! integer slot, never float equality). Clamps are CopyDetect's:
+//! `p1,p2 >= 1 -> 0.999`, `<= 0 -> 0.001`; `s1 >= ws -> ws`;
+//! `s2 >= n -> n`. K1/K2 are binomial upper tails `P(Bin(ws, p) >= m)`;
+//! S1/S2 are Poisson WINDOW probabilities `P(m <= Pois(s1) <= ws)` and
+//! `P(mm <= Pois(s2) <= n)` with `mm = ceil(sum weight[wc][cm]) + m`
+//! (raw ceiling, no epsilon, for CopyDetect fidelity — float-boundary
+//! sensitivity near integer sums is inherited from R). The match weights
+//! use `g = 0.2`, `d2 = -(1+g)/g = -6`,
+//! `weight = (((1+g)/(1-g))*e)^(prob*d2)`, so weights lie in `(0, 1]` and
+//! `mm <= m + |cm| <= n`. R's Poisson family would warn on the non-integer
+//! responses, but `ks12()` suppresses warnings (`options(warn=-1)`) and
+//! uses the coefficients; the same score equations are solved here by a
+//! guarded Newton/IRLS with step-halving. NOT READ: Sotaridona & Meijer
+//! (2002) and (2003), the originating K1/K2 and S1/S2 papers — all four
+//! indices are cited only as implemented by CopyDetect; the READ RR-01-07
+//! report corroborates only the K-variant regression framing.
+//!
 //! In LLM-as-a-Judge item-quality management this flags judge pairs whose
 //! agreement on option-level choices exceeds what the suspected copier's own
 //! response model can explain.
@@ -96,6 +126,9 @@
 //! Sotaridona, L. S., & Meijer, R. R. (2002). Statistical properties of the
 //!   K-index for detecting answer copying. *Journal of Educational
 //!   Measurement, 39*(2), 115-132. (NOT read.)
+//! Sotaridona, L. S., & Meijer, R. R. (2003). Two new statistics to detect
+//!   answer copying. *Journal of Educational Measurement, 40*(1), 53-69.
+//!   (NOT read; S1/S2 cited only as implemented by CopyDetect.)
 //! van der Linden, W. J., & Sotaridona, L. (2006). Detecting answer copying
 //!   when the regular response process follows a known response model.
 //!   *Journal of Educational and Behavioral Statistics, 31*(3), 283-304.
@@ -473,6 +506,399 @@ pub fn gbt(matches: &[f64], match_probs: &[f64]) -> Result<GbtResult, String> {
     })
 }
 
+/// Result of the K1/K2/S1/S2 answer-copying indices (CopyDetect `ks12()`).
+#[derive(Debug, Clone)]
+pub struct KVariantsResult {
+    /// Copier's number-incorrect score `wc`.
+    pub wc: usize,
+    /// Source's number-incorrect score `ws`.
+    pub ws: usize,
+    /// Matching incorrect responses `m`.
+    pub m: usize,
+    /// S2 shifted match count `mm = ceil(sum weight[wc][cm]) + m`.
+    pub mm: usize,
+    /// Per-subgroup mean matching-incorrect proportion, length `n_items+1`;
+    /// `NaN` where the (source-excluded) subgroup is empty.
+    pub pr: Vec<f64>,
+    /// Per-subgroup mean weighted correct-match sum, length `n_items+1`;
+    /// `NaN` where the subgroup is empty.
+    pub pj: Vec<f64>,
+    /// Clamped linear-OLS prediction at `qc` (K1 binomial probability).
+    pub p1: f64,
+    /// Clamped quadratic-OLS prediction at `qc` (K2 binomial probability).
+    pub p2: f64,
+    /// Capped Poisson-GLM prediction at `wc` (S1 rate).
+    pub s1: f64,
+    /// Capped Poisson-GLM prediction at `wc` (S2 rate).
+    pub s2: f64,
+    /// K1 index `P(Bin(ws, p1) >= m)`; small values suggest copying.
+    pub k1: f64,
+    /// K2 index `P(Bin(ws, p2) >= m)`.
+    pub k2: f64,
+    /// S1 index `P(m <= Pois(s1) <= ws)`.
+    pub s1_index: f64,
+    /// S2 index `P(mm <= Pois(s2) <= n_items)`.
+    pub s2_index: f64,
+}
+
+/// Poisson window probability `P(a <= X <= b)` for `X ~ Pois(lambda)`,
+/// summed term-by-term in log space via `ln_gamma` (no complement
+/// subtraction, so R's `(1-ppois(a-1,l))-(1-ppois(b,l))` cancellation risk
+/// is avoided). `a > b` yields 0; `lambda == 0` yields `1{a == 0}`.
+fn pois_window(lambda: f64, a: usize, b: usize) -> f64 {
+    if a > b {
+        return 0.0;
+    }
+    if lambda <= 0.0 {
+        return if a == 0 { 1.0 } else { 0.0 };
+    }
+    let ll = lambda.ln();
+    let mut s = 0.0f64;
+    for k in a..=b {
+        s += (-lambda + k as f64 * ll - crate::fitstats::ln_gamma(k as f64 + 1.0)).exp();
+    }
+    s.clamp(0.0, 1.0)
+}
+
+/// Rank-checked least squares for the tiny `ks12()` designs (2 or 3
+/// columns), solved via classical Gram-Schmidt QR to match R `lm`'s QR
+/// semantics rather than raw normal equations. Returns `Err` on a
+/// rank-deficient design (R would drop the aliased column; that silent
+/// behavior is NOT ported -- the caller's data is degenerate).
+fn ols_qr(xs: &[Vec<f64>], y: &[f64]) -> Result<Vec<f64>, String> {
+    let ncol = xs.len();
+    let nrow = y.len();
+    if nrow < ncol {
+        return Err(format!(
+            "k_variants: {} complete design points cannot identify {} coefficients",
+            nrow, ncol
+        ));
+    }
+    // QR by modified Gram-Schmidt on the columns.
+    let mut q: Vec<Vec<f64>> = Vec::with_capacity(ncol);
+    let mut r = vec![vec![0.0f64; ncol]; ncol];
+    for (j, col) in xs.iter().enumerate() {
+        let mut v = col.clone();
+        for (i, qi) in q.iter().enumerate() {
+            let dot: f64 = qi.iter().zip(v.iter()).map(|(a, b)| a * b).sum();
+            r[i][j] = dot;
+            for (vk, qk) in v.iter_mut().zip(qi.iter()) {
+                *vk -= dot * qk;
+            }
+        }
+        let nrm = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let scale = col.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0);
+        if nrm <= 1e-10 * scale {
+            return Err("k_variants: rank-deficient regression design".to_string());
+        }
+        r[j][j] = nrm;
+        for vk in v.iter_mut() {
+            *vk /= nrm;
+        }
+        q.push(v);
+    }
+    // beta = R^-1 Q^T y (back substitution).
+    let qty: Vec<f64> = q
+        .iter()
+        .map(|qi| qi.iter().zip(y.iter()).map(|(a, b)| a * b).sum())
+        .collect();
+    let mut beta = vec![0.0f64; ncol];
+    for i in (0..ncol).rev() {
+        let mut s = qty[i];
+        for j in (i + 1)..ncol {
+            s -= r[i][j] * beta[j];
+        }
+        beta[i] = s / r[i][i];
+    }
+    Ok(beta)
+}
+
+/// Two-parameter log-link Poisson GLM `y ~ exp(b0 + b1 x)` solved by
+/// guarded Newton on the score equations `sum(y-mu) = 0`,
+/// `sum((y-mu) x) = 0` (exactly what R's `glm(..., family=poisson())`
+/// converges to; non-integer `y` is permitted -- `ks12()` suppresses R's
+/// warning and uses the coefficients). Start `b = (ln mean(y), 0)`;
+/// step-halving (up to 30 halvings) enforces monotone log-likelihood
+/// `sum(y*eta - mu)`; `eta` is bounded to avoid overflow; tolerance 1e-12
+/// on the step, max 200 iterations, `Err` on nonconvergence.
+fn poisson_glm2(x: &[f64], y: &[f64]) -> Result<(f64, f64), String> {
+    let n = y.len();
+    if n < 2 {
+        return Err("k_variants: Poisson GLM needs at least 2 complete design points".to_string());
+    }
+    if x.iter().any(|v| !v.is_finite()) || y.iter().any(|v| !v.is_finite() || *v < 0.0) {
+        return Err(
+            "k_variants: Poisson GLM requires finite x and finite nonnegative y".to_string(),
+        );
+    }
+    let x0 = x[0];
+    if x.iter().all(|&v| v == x0) {
+        return Err("k_variants: rank-deficient regression design".to_string());
+    }
+    let mean_y = y.iter().sum::<f64>() / n as f64;
+    let mut b0 = mean_y.max(1e-9).ln();
+    let mut b1 = 0.0f64;
+    const ETA_CAP: f64 = 500.0;
+    let loglik = |b0: f64, b1: f64| -> f64 {
+        let mut s = 0.0;
+        for (&xi, &yi) in x.iter().zip(y.iter()) {
+            let eta = (b0 + b1 * xi).clamp(-ETA_CAP, ETA_CAP);
+            s += yi * eta - eta.exp();
+        }
+        s
+    };
+    let mut ll = loglik(b0, b1);
+    for _ in 0..200 {
+        let (mut g0, mut g1) = (0.0f64, 0.0f64);
+        let (mut h00, mut h01, mut h11) = (0.0f64, 0.0f64, 0.0f64);
+        for (&xi, &yi) in x.iter().zip(y.iter()) {
+            let eta = (b0 + b1 * xi).clamp(-ETA_CAP, ETA_CAP);
+            let mu = eta.exp();
+            g0 += yi - mu;
+            g1 += (yi - mu) * xi;
+            h00 += mu;
+            h01 += mu * xi;
+            h11 += mu * xi * xi;
+        }
+        let det = h00 * h11 - h01 * h01;
+        if !det.is_finite() || det.abs() < 1e-300 {
+            return Err("k_variants: singular Hessian in Poisson GLM".to_string());
+        }
+        let d0 = (h11 * g0 - h01 * g1) / det;
+        let d1 = (h00 * g1 - h01 * g0) / det;
+        // Step-halving: keep the log-likelihood monotone.
+        let mut step = 1.0f64;
+        let (mut nb0, mut nb1, mut nll);
+        loop {
+            nb0 = b0 + step * d0;
+            nb1 = b1 + step * d1;
+            nll = loglik(nb0, nb1);
+            if nll >= ll - 1e-12 || step < 1e-9 {
+                break;
+            }
+            step *= 0.5;
+        }
+        let moved = (step * d0).abs().max((step * d1).abs());
+        b0 = nb0;
+        b1 = nb1;
+        ll = nll;
+        if moved < 1e-12 {
+            return Ok((b0, b1));
+        }
+    }
+    Err("k_variants: Poisson GLM did not converge in 200 iterations".to_string())
+}
+
+/// K1/K2/S1/S2 answer-copying indices, exactly as implemented by the CRAN
+/// CopyDetect package's internal `ks12()` (READ: `R/similarity1.r`),
+/// specialized to complete scored 0/1 data. See the module header for the
+/// full algorithm, clamps, and citation scope. Small index values suggest
+/// copying. Errors: invalid inputs (as `k_index`), `ws == 0`, or
+/// regression designs with too few / rank-deficient complete subgroups
+/// (K2's quadratic needs 3 distinct nonempty number-incorrect scores).
+pub fn k_variants(
+    responses: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    copier: usize,
+    source: usize,
+) -> Result<KVariantsResult, String> {
+    if n_persons < 2 {
+        return Err("k_variants: need at least 2 persons".to_string());
+    }
+    if n_items == 0 {
+        return Err("k_variants: need at least 1 item".to_string());
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "k_variants: n_persons * n_items overflows".to_string())?;
+    if responses.len() != expected {
+        return Err(format!(
+            "k_variants: responses length {} != n_persons {} x n_items {}",
+            responses.len(),
+            n_persons,
+            n_items
+        ));
+    }
+    if copier >= n_persons || source >= n_persons {
+        return Err(format!(
+            "k_variants: copier {} / source {} out of range (n_persons {})",
+            copier, source, n_persons
+        ));
+    }
+    if copier == source {
+        return Err("k_variants: copier and source must be distinct".to_string());
+    }
+    for (idx, &v) in responses.iter().enumerate() {
+        if v != 0.0 && v != 1.0 {
+            return Err(format!(
+                "k_variants: responses[{}] = {} (entries must be exactly 0 or 1)",
+                idx, v
+            ));
+        }
+    }
+
+    let n = n_items;
+    let row = |r: usize| &responses[r * n..(r + 1) * n];
+    let incorrect = |r: usize| row(r).iter().filter(|&&x| x == 0.0).count();
+    let wc = incorrect(copier);
+    let ws = incorrect(source);
+    if ws == 0 {
+        return Err(
+            "k_variants: source has no incorrect responses (ws = 0); the indices are degenerate"
+                .to_string(),
+        );
+    }
+    let src = row(source);
+    let mut m = 0usize;
+    let mut cm: Vec<usize> = Vec::new();
+    for i in 0..n {
+        let c = row(copier)[i];
+        if c == 0.0 && src[i] == 0.0 {
+            m += 1;
+        }
+        if c == 1.0 && src[i] == 1.0 {
+            cm.push(i);
+        }
+    }
+    let qc = wc as f64 / n as f64;
+
+    // Number-incorrect subgroups j = 0..=n, EXCLUDING the source row
+    // (ks12(): `subgroups.ind[subgroups.ind!=pa[2]]`; the copier stays in).
+    let mut subgroups: Vec<Vec<usize>> = vec![Vec::new(); n + 1];
+    for r in 0..n_persons {
+        if r != source {
+            subgroups[incorrect(r)].push(r);
+        }
+    }
+
+    let g = 0.2f64;
+    let d2 = -(1.0 + g) / g; // -6
+    let base = ((1.0 + g) / (1.0 - g)) * std::f64::consts::E;
+
+    let mut pr = vec![f64::NAN; n + 1];
+    let mut pj = vec![f64::NAN; n + 1];
+    // weight row at the copier's own subgroup (j = wc), needed for `mm`.
+    let mut weight_wc = vec![f64::NAN; n];
+    for (j, members) in subgroups.iter().enumerate() {
+        if members.is_empty() {
+            continue;
+        }
+        let cnt = members.len() as f64;
+        // pr[j]: mean matching-incorrect count with the source, over ws.
+        let mut agg_sum = 0usize;
+        // prob[j][i]: subgroup proportion correct on items the source got
+        // correct (0 elsewhere -- `smatrix==1` fails there).
+        let mut prob = vec![0.0f64; n];
+        for &r in members {
+            let rr = row(r);
+            for i in 0..n {
+                if rr[i] == 0.0 && src[i] == 0.0 {
+                    agg_sum += 1;
+                }
+                if rr[i] == 1.0 && src[i] == 1.0 {
+                    prob[i] += 1.0;
+                }
+            }
+        }
+        for p in prob.iter_mut() {
+            *p /= cnt;
+        }
+        pr[j] = (agg_sum as f64 / cnt) / ws as f64;
+        let w: Vec<f64> = prob.iter().map(|&p| base.powf(p * d2)).collect();
+        // pj[j] = mean over members of sum_i cor_match[r][i] * w[i].
+        let mut pj_sum = 0.0f64;
+        for &r in members {
+            let rr = row(r);
+            for i in 0..n {
+                if rr[i] == 1.0 && src[i] == 1.0 {
+                    pj_sum += w[i];
+                }
+            }
+        }
+        pj[j] = pj_sum / cnt;
+        if j == wc {
+            weight_wc.copy_from_slice(&w);
+        }
+    }
+    // The copier always belongs to its own (source-excluded) subgroup.
+    debug_assert!(pr[wc].is_finite());
+
+    // Complete cases: subgroup scores j with pr[j] finite (na.omit).
+    let complete: Vec<usize> = (0..=n).filter(|&j| pr[j].is_finite()).collect();
+    let qrs: Vec<f64> = complete.iter().map(|&j| j as f64 / n as f64).collect();
+    let qrs3: Vec<f64> = complete.iter().map(|&j| j as f64).collect();
+    let pr_c: Vec<f64> = complete.iter().map(|&j| pr[j]).collect();
+    let ones = vec![1.0f64; complete.len()];
+
+    // K1: OLS pr ~ 1 + Qrs, predicted at qc.
+    let b1v = ols_qr(&[ones.clone(), qrs.clone()], &pr_c)?;
+    let p1_raw = b1v[0] + b1v[1] * qc;
+    // K2: OLS pr ~ 1 + Qrs + Qrs^2.
+    let qrs2: Vec<f64> = qrs.iter().map(|&x| x * x).collect();
+    let b2v = ols_qr(&[ones, qrs, qrs2], &pr_c)?;
+    let p2_raw = b2v[0] + b2v[1] * qc + b2v[2] * qc * qc;
+
+    // S1: Poisson GLM ws*pr ~ Qrs3, predicted at integer wc.
+    let y1: Vec<f64> = pr_c.iter().map(|&p| ws as f64 * p).collect();
+    let (a0, a1) = poisson_glm2(&qrs3, &y1)?;
+    let s1_raw = ((a0 + a1 * wc as f64).clamp(-500.0, 500.0)).exp();
+    // S2: Poisson GLM ws*pr + ceil(pj) ~ Qrs3.
+    let y2: Vec<f64> = complete
+        .iter()
+        .zip(y1.iter())
+        .map(|(&j, &v)| v + pj[j].ceil())
+        .collect();
+    let (c0, c1) = poisson_glm2(&qrs3, &y2)?;
+    let s2_raw = ((c0 + c1 * wc as f64).clamp(-500.0, 500.0)).exp();
+
+    // CopyDetect clamps.
+    let clamp_p = |p: f64| {
+        if p >= 1.0 {
+            0.999
+        } else if p <= 0.0 {
+            0.001
+        } else {
+            p
+        }
+    };
+    let p1 = clamp_p(p1_raw);
+    let p2 = clamp_p(p2_raw);
+    let s1 = if s1_raw >= ws as f64 {
+        ws as f64
+    } else {
+        s1_raw
+    };
+    let s2 = if s2_raw >= n as f64 { n as f64 } else { s2_raw };
+
+    // mm = ceil(sum weight[wc][cm]) + m; raw ceiling (CopyDetect fidelity;
+    // float-boundary flips near integer sums are inherited). Weights are in
+    // (0, 1] so mm <= m + |cm| <= n.
+    let wsum: f64 = cm.iter().map(|&i| weight_wc[i]).sum();
+    let mm = wsum.ceil() as usize + m;
+
+    let k1 = binom_sf_ge(ws, p1, m);
+    let k2 = binom_sf_ge(ws, p2, m);
+    let s1_index = pois_window(s1, m, ws);
+    let s2_index = pois_window(s2, mm, n);
+
+    Ok(KVariantsResult {
+        wc,
+        ws,
+        m,
+        mm,
+        pr,
+        pj,
+        p1,
+        p2,
+        s1,
+        s2,
+        k1,
+        k2,
+        s1_index,
+        s2_index,
+    })
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/security_tests.rs"]
 mod tests;
