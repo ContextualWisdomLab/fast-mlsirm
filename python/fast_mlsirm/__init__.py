@@ -47,6 +47,10 @@ from .classification import (
     lee_classification as lee_classification,
     ClassificationResult as ClassificationResult,
 )
+from .parallel_analysis import (
+    parallel_analysis as parallel_analysis,
+    ParallelAnalysisResult as ParallelAnalysisResult,
+)
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -170,6 +174,7 @@ __all__ = [
     "detect_analysis",
     "rudner_classification",
     "lee_classification",
+    "parallel_analysis",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",
