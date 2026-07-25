@@ -130,7 +130,8 @@
   job (aberrance directional and CopyDetect symmetric recipes both fit);
   missing data out of scope (the packages conflict). van der Linden &
   Sotaridona (2006) NOT read — cited only as implemented. Returns the full
-  pmf plus the p-value; O(n^2) nonnegative f64 DP (no cancellation).
+  pmf plus the p-value; O(n^2) time / O(n) memory nonnegative f64 DP — no
+  cancellation, but tiny extreme large-n masses may underflow.
 - **K-index of matching incorrect answers (CopyDetect-faithful)**
   (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
   `py_k_index`): binomial upper-tail index of copier-source shared incorrect
