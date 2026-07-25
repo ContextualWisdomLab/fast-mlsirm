@@ -815,3 +815,242 @@ pub fn kl_select(
         delta,
     })
 }
+
+// ===================== Owen (1975) approximate Bayesian sequential CAT =====================
+//
+// Owen's restricted-Bayes sequential procedure for the three-parameter
+// normal-ogive model: after each response the exact posterior is replaced by
+// a normal with the posterior's exact first two moments, giving closed-form
+// mean/variance recursions.
+//
+// Source status: the original JASA article (Owen, 1975) was NOT read (behind
+// a paywall at review time). Every formula below was verified by the
+// adversarial spec review against (a) van der Linden (1998), whose Appendix
+// reproduces Owen's update equations A.1-A.6 including the guessing
+// parameter, and (b) the open-source `irt` R package implementation
+// (`src/est_ability_owen.cpp`, lines 31-56), and (c) an independent
+// derivation via the joint-Gaussian representation `Y = a(theta - b) + Z`,
+// `Z ~ N(0, 1)`: conditioning on `{Y > 0}` / `{Y < 0}` yields the
+// truncated-bivariate-normal moment identities used here. High-precision
+// numerical integration of the exact posterior confirmed all three pinned
+// oracle cases to ~1e-13.
+//
+// Model: `P(X = 1 | theta) = c + (1 - c) Phi(a (theta - b))` with prior
+// `theta ~ N(mu, sig2)`. Let `s2 = 1/a^2 + sig2`, `s = sqrt(s2)`, and
+// `D = (mu - b)/s`.
+//
+// Correct response (`A = c + (1 - c) Phi(D)`, `K = (1 - c) phi(D) / A`):
+//   `mu'   = mu + (sig2 / s) K`
+//   `sig2' = sig2 - (sig2^2 / s2) K (K + D)`
+// Incorrect response (`c` cancels after normalization; `L = phi(D) / (1 - Phi(D))`):
+//   `mu'   = mu - (sig2 / s) L`
+//   `sig2' = sig2 - (sig2^2 / s2) L (L - D)`
+//
+// Item selection is Owen's popular rule -- administer the unadministered item
+// whose difficulty is closest to the current posterior mean (`|b_i - mu|`;
+// argmin over a finite pool, ties to the lowest index). Minimum expected
+// posterior variance is a distinct, more expensive criterion van der Linden
+// (1998) attributes to Owen only as an alternative; it is NOT implemented
+// here. Owen's stopping rule is a posterior-variance threshold; the fixed
+// test length is an implementation cap, not the paper's rule.
+//
+// References (APA 7th):
+// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response in
+//     the context of adaptive mental testing. *Journal of the American
+//     Statistical Association, 70*(350), 351-356.
+//     https://doi.org/10.1080/01621459.1975.10479871 (NOT read; historical target)
+// van der Linden, W. J. (1998). *Bayesian item selection criteria for adaptive
+//     testing* (Research Report 98-01). University of Twente. (ERIC ED424235;
+//     Appendix Eqs. A.1-A.6 verified)
+// Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
+//     a microcomputer environment. *Applied Psychological Measurement, 6*(4),
+//     431-444. https://doi.org/10.1177/014662168200600405 (READ; framing of
+//     posterior-mean estimate and variance-based termination)
+
+/// Result of [`owen_cat`].
+#[derive(Clone, Debug)]
+pub struct OwenCatResult {
+    /// Items administered, in administration order.
+    pub administered: Vec<usize>,
+    /// Posterior mean after each administered item.
+    pub mu_trace: Vec<f64>,
+    /// Posterior variance after each administered item.
+    pub sig2_trace: Vec<f64>,
+    /// Final posterior mean (Owen's ability estimate).
+    pub mu: f64,
+    /// Final posterior variance.
+    pub sig2: f64,
+}
+
+/// Standard normal CDF via the crate's `erfc` approximation (|error| < 1.2e-7;
+/// see `fitstats::erfc`). Oracle tests use tolerances wider than this bound.
+#[inline]
+fn norm_cdf(z: f64) -> f64 {
+    0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2)
+}
+
+#[inline]
+fn norm_pdf(z: f64) -> f64 {
+    (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt()
+}
+
+/// One Owen (1975) posterior moment update for a single 3PNO item. Returns
+/// `(mu', sig2')`. See the section comment for the exact formulas, their
+/// verification status, and references.
+///
+/// Errors on non-finite inputs, `a <= 0`, `c` outside `[0, 1)`,
+/// `sig2 <= 0`, or when the update degenerates (non-finite or non-positive
+/// `sig2'`) because the prior mean sits so deep in the response's
+/// improbable tail that the normal approximation breaks down (e.g. an
+/// incorrect response at `D >~ 27`, where `Phi(-D)` underflows to zero).
+pub fn owen_update(
+    a: f64,
+    b: f64,
+    c: f64,
+    response: bool,
+    mu: f64,
+    sig2: f64,
+) -> Result<(f64, f64), String> {
+    if !a.is_finite() || a <= 0.0 {
+        return Err(format!("owen_update: a must be finite positive, got {a}"));
+    }
+    if !b.is_finite() {
+        return Err("owen_update: b must be finite".to_string());
+    }
+    if !c.is_finite() || !(0.0..1.0).contains(&c) {
+        return Err(format!("owen_update: c must be in [0, 1), got {c}"));
+    }
+    if !mu.is_finite() {
+        return Err("owen_update: mu must be finite".to_string());
+    }
+    if !sig2.is_finite() || sig2 <= 0.0 {
+        return Err(format!(
+            "owen_update: sig2 must be finite positive, got {sig2}"
+        ));
+    }
+    let s2 = 1.0 / (a * a) + sig2;
+    let s = s2.sqrt();
+    let d = (mu - b) / s;
+    let (new_mu, new_sig2) = if response {
+        let big_a = c + (1.0 - c) * norm_cdf(d);
+        let k = (1.0 - c) * norm_pdf(d) / big_a;
+        (mu + (sig2 / s) * k, sig2 - (sig2 * sig2 / s2) * k * (k + d))
+    } else {
+        // 1 - Phi(d) computed as Phi(-d) = 0.5 erfc(d / sqrt 2): the erfc
+        // approximation carries an exact exp(-z^2) factor, so the tail is
+        // relatively accurate, whereas `1.0 - norm_cdf(d)` cancels
+        // catastrophically for d >~ 5 (impl-review finding: at d = 8 the
+        // subtractive form inflated sig2' by ~5x instead of shrinking it).
+        let l = norm_pdf(d) / norm_cdf(-d);
+        (mu - (sig2 / s) * l, sig2 - (sig2 * sig2 / s2) * l * (l - d))
+    };
+    if !new_mu.is_finite() || !new_sig2.is_finite() || new_sig2 <= 0.0 {
+        return Err(format!(
+            "owen_update: degenerate posterior (mu' = {new_mu}, sig2' = {new_sig2}); \
+             inputs are too extreme for the normal approximation"
+        ));
+    }
+    Ok((new_mu, new_sig2))
+}
+
+/// Owen (1975) sequential CAT against a caller-supplied full-pool response
+/// vector: repeatedly administer the unadministered item minimizing
+/// `|b_i - mu|` (ties to the lowest index), update the posterior moments with
+/// [`owen_update`], and stop after `test_length` items or as soon as the
+/// posterior variance drops to `sig2_stop` or below (Owen's variance-threshold
+/// stopping rule), whichever comes first.
+///
+/// `responses[i]` must be 0 or 1 and is consulted only if item `i` is
+/// administered. Errors on empty/mismatched inputs, invalid item parameters,
+/// invalid prior, `test_length` of 0 or exceeding the pool, or a
+/// non-finite/non-positive `sig2_stop`.
+pub fn owen_cat(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    mu0: f64,
+    sig2_0: f64,
+    test_length: usize,
+    sig2_stop: Option<f64>,
+) -> Result<OwenCatResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("owen_cat: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "owen_cat: length mismatch (a={}, b={}, c={}, responses={})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("owen_cat: a[{i}] must be finite positive"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("owen_cat: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("owen_cat: c[{i}] must be in [0, 1)"));
+        }
+        if responses[i] > 1 {
+            return Err(format!("owen_cat: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !mu0.is_finite() {
+        return Err("owen_cat: mu0 must be finite".to_string());
+    }
+    if !sig2_0.is_finite() || sig2_0 <= 0.0 {
+        return Err("owen_cat: sig2_0 must be finite positive".to_string());
+    }
+    if test_length == 0 || test_length > n {
+        return Err(format!(
+            "owen_cat: test_length must be in 1..={n}, got {test_length}"
+        ));
+    }
+    if let Some(t) = sig2_stop {
+        if !t.is_finite() || t <= 0.0 {
+            return Err("owen_cat: sig2_stop must be finite positive".to_string());
+        }
+    }
+
+    let mut administered = Vec::with_capacity(test_length);
+    let mut mu_trace = Vec::with_capacity(test_length);
+    let mut sig2_trace = Vec::with_capacity(test_length);
+    let mut used = vec![false; n];
+    let (mut mu, mut sig2) = (mu0, sig2_0);
+    for _ in 0..test_length {
+        let mut best: Option<(f64, usize)> = None;
+        for i in 0..n {
+            if used[i] {
+                continue;
+            }
+            let dist = (b[i] - mu).abs();
+            if best.map_or(true, |(bd, _)| dist < bd) {
+                best = Some((dist, i));
+            }
+        }
+        let (_, item) = best.expect("test_length <= n guarantees a free item");
+        used[item] = true;
+        let (m, v) = owen_update(a[item], b[item], c[item], responses[item] == 1, mu, sig2)?;
+        mu = m;
+        sig2 = v;
+        administered.push(item);
+        mu_trace.push(mu);
+        sig2_trace.push(sig2);
+        if sig2_stop.is_some_and(|t| sig2 <= t) {
+            break;
+        }
+    }
+    Ok(OwenCatResult {
+        administered,
+        mu_trace,
+        sig2_trace,
+        mu,
+        sig2,
+    })
+}

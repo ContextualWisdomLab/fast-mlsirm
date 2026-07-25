@@ -93,6 +93,8 @@ from .exposure import (
     AStratifiedResult as AStratifiedResult,
     kl_information as kl_information,
     kl_select as kl_select,
+    owen_update as owen_update,
+    owen_cat as owen_cat,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -246,6 +248,8 @@ __all__ = [
     "a_stratified",
     "kl_information",
     "kl_select",
+    "owen_update",
+    "owen_cat",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",

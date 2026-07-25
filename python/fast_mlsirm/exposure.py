@@ -331,3 +331,125 @@ def kl_select(
         "selected": int(res["selected"]),
         "delta": float(res["delta"]),
     }
+
+
+def owen_update(
+    a: float,
+    b: float,
+    c: float = 0.0,
+    *,
+    correct: bool,
+    mu: float,
+    sig2: float,
+) -> tuple[float, float]:
+    """Owen (1975) approximate Bayesian posterior update for one 3PNO item.
+
+    Given a normal prior ``theta ~ N(mu, sig2)`` and a response to a
+    three-parameter normal-ogive item ``P(X=1|theta) = c +
+    (1-c) Phi(a (theta - b))``, returns the updated normal-approximation
+    posterior moments ``(mu', sig2')`` from Owen's closed-form truncated-
+    normal moment matching. All numeric work happens in the Rust core
+    (``mlsirm_core::exposure::owen_update``); this wrapper only validates
+    and marshals.
+
+    Source status: Owen (1975) itself was NOT read (paywalled). The update
+    formulas are implemented as reproduced by van der Linden (1998,
+    Appendix Eqs. A.1-A.6) and cross-checked against the R ``irt`` package
+    ``src/est_ability_owen.cpp``; the adversarial spec review additionally
+    verified three pinned oracle cases against high-precision numerical
+    integration of the exact posterior (~1e-13 agreement).
+
+    References (APA 7th ed.):
+        Owen, R. J. (1975). A Bayesian sequential procedure for quantal
+            response in the context of adaptive mental testing. *Journal of
+            the American Statistical Association, 70*(350), 351-356.
+            https://doi.org/10.1080/01621459.1975.10479871
+        van der Linden, W. J. (1998). *Bayesian item selection criteria for
+            adaptive testing* (Research Report 98-01). University of Twente.
+        Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of
+            ability in a microcomputer environment. *Applied Psychological
+            Measurement, 6*(4), 431-444.
+            https://doi.org/10.1177/014662168200600405
+    """
+    from . import _core
+
+    return _core.py_owen_update(
+        float(a), float(b), float(c), bool(correct), float(mu), float(sig2)
+    )
+
+
+def owen_cat(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    mu0: float = 0.0,
+    sig2_0: float = 1.0,
+    test_length: int,
+    sig2_stop: float | None = None,
+) -> dict:
+    """Owen (1975) approximate Bayesian sequential CAT.
+
+    Selects items by Owen's b-matching rule ``argmin_i |b_i - mu|`` over the
+    unadministered pool (ties to the lowest index), applies the
+    :func:`owen_update` posterior step after each response, and stops when
+    the posterior variance drops to ``sig2_stop`` (Owen's stopping rule) or
+    after ``test_length`` items. ``responses`` is a full-pool 0/1 vector
+    consulted for whichever item is selected — a fixed-person simulation
+    contract, not item-by-item elicitation. Returns a dict with
+    ``administered``, ``mu_trace``, ``sig2_trace``, ``mu`` and ``sig2``, all
+    computed by the Rust core (``mlsirm_core::exposure::owen_cat``).
+
+    Source status: see :func:`owen_update` (Owen 1975 NOT read; formulas per
+    van der Linden 1998 with R ``irt`` cross-check). The b-matching
+    selection and variance-threshold stopping rules are Owen's per the same
+    secondary sources; ``test_length`` is an implementation cap.
+
+    References (APA 7th ed.):
+        Owen, R. J. (1975). A Bayesian sequential procedure for quantal
+            response in the context of adaptive mental testing. *Journal of
+            the American Statistical Association, 70*(350), 351-356.
+            https://doi.org/10.1080/01621459.1975.10479871
+        van der Linden, W. J. (1998). *Bayesian item selection criteria for
+            adaptive testing* (Research Report 98-01). University of Twente.
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    responses = np.asarray(responses)
+    if responses.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    # Validate BEFORE the uint8 cast: astype(np.uint8) silently truncates
+    # (1.2 -> 1, 0.9 -> 0) and wraps negatives (-1 -> 255), and complex
+    # inputs would silently drop the imaginary part, laundering invalid
+    # inputs past the Rust-side 0/1 check.
+    if np.iscomplexobj(responses):
+        raise ValueError("responses must contain only 0 or 1")
+    if not np.isin(responses.astype(np.float64), (0.0, 1.0)).all():
+        raise ValueError("responses must contain only 0 or 1")
+    r = _core.py_owen_cat(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(responses, dtype=np.uint8),
+        float(mu0),
+        float(sig2_0),
+        _as_int("test_length", test_length, minimum=1),
+        None if sig2_stop is None else float(sig2_stop),
+    )
+    return {
+        "administered": list(r["administered"]),
+        "mu_trace": np.asarray(r["mu_trace"]),
+        "sig2_trace": np.asarray(r["sig2_trace"]),
+        "mu": float(r["mu"]),
+        "sig2": float(r["sig2"]),
+    }
