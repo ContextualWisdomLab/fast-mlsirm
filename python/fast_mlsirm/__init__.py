@@ -45,6 +45,7 @@ from .detect import (
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
+    livingston_lewis as livingston_lewis,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -58,8 +59,43 @@ from .reliability import (
     cronbach_alpha as cronbach_alpha,
     feldt_alpha_ci as feldt_alpha_ci,
     AlphaCiResult as AlphaCiResult,
+    separation_reliability as separation_reliability,
+    SeparationReliabilityResult as SeparationReliabilityResult,
+)
+from .factor import (
+    minres_fa as minres_fa,
+    minres_fa_from_data as minres_fa_from_data,
+    glb_fa as glb_fa,
+    glb_fa_from_data as glb_fa_from_data,
+    omega_total_1f as omega_total_1f,
+    omega_total_1f_from_data as omega_total_1f_from_data,
+    velicer_map as velicer_map,
+    velicer_map_from_data as velicer_map_from_data,
+    VelicerMapResult as VelicerMapResult,
+)
+from .gtheory import (
+    gtheory_pi as gtheory_pi,
+    gtheory_pio as gtheory_pio,
+    GTheoryResult as GTheoryResult,
+    GTheoryDStudyRow as GTheoryDStudyRow,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
+from .utility import (
+    selection_utility as selection_utility,
+    taylor_russell as taylor_russell,
+    SelectionUtilityResult as SelectionUtilityResult,
+    TaylorRussellResult as TaylorRussellResult,
+)
+from .exposure import (
+    sympson_hetter as sympson_hetter,
+    SympsonHetterResult as SympsonHetterResult,
+    a_stratified as a_stratified,
+    AStratifiedResult as AStratifiedResult,
+    kl_information as kl_information,
+    kl_select as kl_select,
+    owen_update as owen_update,
+    owen_cat as owen_cat,
+)
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -78,7 +114,8 @@ from .polytomous import fit_polytomous as fit_polytomous, PolytomousFit as Polyt
 from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as logistic_dif,
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
-                  sibtest as sibtest)
+                  sibtest as sibtest,
+                  raju_area as raju_area)
 from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
 from .simulation import simulate as simulate
@@ -182,6 +219,7 @@ __all__ = [
     "detect_analysis",
     "rudner_classification",
     "lee_classification",
+    "livingston_lewis",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
@@ -190,6 +228,33 @@ __all__ = [
     "cronbach_alpha",
     "feldt_alpha_ci",
     "AlphaCiResult",
+    "separation_reliability",
+    "SeparationReliabilityResult",
+    "gtheory_pi",
+    "gtheory_pio",
+    "minres_fa",
+    "minres_fa_from_data",
+    "glb_fa",
+    "glb_fa_from_data",
+    "velicer_map",
+    "velicer_map_from_data",
+    "VelicerMapResult",
+    "selection_utility",
+    "taylor_russell",
+    "SelectionUtilityResult",
+    "TaylorRussellResult",
+    "sympson_hetter",
+    "SympsonHetterResult",
+    "a_stratified",
+    "kl_information",
+    "kl_select",
+    "owen_update",
+    "owen_cat",
+    "AStratifiedResult",
+    "omega_total_1f",
+    "omega_total_1f_from_data",
+    "GTheoryResult",
+    "GTheoryDStudyRow",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",
@@ -220,6 +285,7 @@ __all__ = [
     "mantel_haenszel_dif_purified",
     "logistic_dif_purified",
     "sibtest",
+    "raju_area",
     "score_wle",
     "score_wle_poly",
     "fit_rasch_cml",

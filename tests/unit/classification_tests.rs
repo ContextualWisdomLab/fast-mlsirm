@@ -202,3 +202,317 @@ fn monte_carlo_accuracy_orders_test_quality() {
         "con wins {wins_con}/{reps}"
     );
 }
+
+// ===================== Livingston & Lewis (1995) =====================
+//
+// Every assert below reads fields of the `LivingstonLewisResult` returned by
+// `livingston_lewis` (crate outputs). Fixture literals come from an
+// independent Python replication of spec ll_spec.md rev 2 (session artifact
+// ll_fixture.py: scipy adaptive quadrature vs the crate substituted
+// Gauss-Legendre — independent integration methods), tolerance 1e-7 for
+// integral-derived fields and 1e-9 for pre-integration arithmetic.
+//
+// Mutation-kill map (spot-checked by actually applying each mutation):
+// - M1 swap upper/lower binomial tail in accuracy integrands ->
+//   p_tp/p_ff literals FAIL.
+// - M2 use unrounded ETL in the passing threshold -> k shifts, literals FAIL
+//   (fixture A has ETL = 91.123, materially non-integer).
+// - M4 threshold off-by-one (k-1 -> k) -> literals FAIL (fixture A has
+//   round(N c) = 55 != floor = 54, locking round-ties-even).
+// - M5 sample variance ddof n-1 -> n -> ETL literal FAILs.
+// - Failsafe drop (keep invalid 4P) -> fixture A/B (2P path) FAIL.
+//
+// Disclosed limitation: p_ij == p_ji is BY CONSTRUCTION under the
+// single-threshold contract, so no mutation distinguishable through the
+// p_ji field alone exists; the discriminating anchor for threshold handling
+// is the fixture-A k = 55 vs floor 54 literal set.
+
+use super::{livingston_lewis, LivingstonLewisResult};
+
+/// LCG mirrored bit-for-bit in ll_fixture.py.
+struct Lcg {
+    s: u64,
+}
+
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Self {
+            s: seed
+                .wrapping_mul(2862933555777941757)
+                .wrapping_add(3037000493),
+        }
+    }
+    fn unif(&mut self) -> f64 {
+        self.s = self
+            .s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (self.s >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+fn gen_scores(n: usize, n_items: usize, seed: u64, lo: f64, hi: f64, bates_k: usize) -> Vec<f64> {
+    let mut r = Lcg::new(seed);
+    (0..n)
+        .map(|_| {
+            let mut acc = 0.0;
+            for _ in 0..bates_k {
+                acc += r.unif();
+            }
+            let p = lo + (hi - lo) * acc / bates_k as f64;
+            let mut x = 0u32;
+            for _ in 0..n_items {
+                if r.unif() < p {
+                    x += 1;
+                }
+            }
+            x as f64
+        })
+        .collect()
+}
+
+fn gen_scores_beta(
+    n: usize,
+    n_items: usize,
+    seed: u64,
+    a: f64,
+    b: f64,
+    lo: f64,
+    hi: f64,
+) -> Vec<f64> {
+    let mut r = Lcg::new(seed);
+    (0..n)
+        .map(|_| {
+            let p = loop {
+                let x = r.unif().powf(1.0 / a);
+                let y = r.unif().powf(1.0 / b);
+                if x + y <= 1.0 {
+                    break lo + (hi - lo) * (x / (x + y));
+                }
+            };
+            let mut s = 0u32;
+            for _ in 0..n_items {
+                if r.unif() < p {
+                    s += 1;
+                }
+            }
+            s as f64
+        })
+        .collect()
+}
+
+fn fixture_a() -> LivingstonLewisResult {
+    let scores = gen_scores(250, 60, 42, 0.15, 0.95, 4);
+    livingston_lewis(&scores, 0.85, 0.0, 60.0, 36.0).unwrap()
+}
+
+#[test]
+fn ll_matches_independent_reference_two_parameter() {
+    // Kills M1/M2/M4/M5 and the failsafe drop (see map above); fixture A has
+    // round(91 * 0.6) = 55 while floor = 54, anchoring round-ties-even.
+    let r = fixture_a();
+    assert!((r.effective_test_length - 91.12301435951845).abs() < 1e-9);
+    assert_eq!(r.etl_rounded, 91);
+    assert!(r.used_two_parameter);
+    assert_eq!(r.lower, 0.0);
+    assert_eq!(r.upper, 1.0);
+    assert!((r.alpha - 8.526094673559584).abs() < 1e-9);
+    assert!((r.beta - 7.63609667022833).abs() < 1e-9);
+    let tol = 1e-7;
+    assert!((r.p_tp - 0.23854946889141398).abs() < tol);
+    assert!((r.p_fp - 0.06401868217743813).abs() < tol);
+    assert!((r.p_tf - 0.6521887072379015).abs() < tol);
+    assert!((r.p_ff - 0.04524314169324793).abs() < tol);
+    assert!((r.accuracy - 0.8907381761293154).abs() < tol);
+    assert!((r.sensitivity - 0.8405767451096093).abs() < tol);
+    assert!((r.specificity - 0.9106143232762532).abs() < tol);
+    assert!((r.p_ii - 0.6209475077858381).abs() < tol);
+    assert!((r.p_ij - 0.07648434114531032).abs() < tol);
+    assert!((r.p_jj - 0.22608380992354124).abs() < tol);
+    assert!((r.consistency - 0.8470313177093793).abs() < tol);
+    assert!((r.chance_consistency - 0.5779586699447437).abs() < tol);
+    assert!((r.kappa - 0.6375504686458243).abs() < tol);
+}
+
+#[test]
+fn ll_extreme_cut_distinguishes_rounded_etl_in_k() {
+    // Same data as fixture A but cut = 59: round(N*c) = round(91*59/60) = 89
+    // while round(etl*c) = round(89.604) = 90, so this fixture kills the
+    // mutation that computes k from the unrounded ETL (which fixtures A/B/P
+    // cannot distinguish). Reference literals from ll_fixture.py (scipy quad).
+    let scores = gen_scores(250, 60, 42, 0.15, 0.95, 4);
+    let r = livingston_lewis(&scores, 0.85, 0.0, 60.0, 59.0).unwrap();
+    assert_eq!(r.etl_rounded, 91);
+    let tol = 1e-8;
+    assert!((r.p_fp - 2.152128586520244e-06).abs() < tol);
+    assert!((r.p_tf - 0.9999978476968782).abs() < 1e-7);
+    assert!((r.kappa - 0.04370046162326584).abs() < 1e-7);
+}
+
+#[test]
+fn ll_failsafe_engages_on_skewed_data() {
+    // Ceiling-skewed data: the 4P moment fit lands out of bounds and the 2P
+    // failsafe must engage. Kills a dropped-failsafe mutation.
+    let scores = gen_scores(150, 40, 7, 0.70, 1.0, 2);
+    let r = livingston_lewis(&scores, 0.80, 0.0, 40.0, 30.0).unwrap();
+    assert!(r.used_two_parameter);
+    assert!((r.effective_test_length - 90.29478586833179).abs() < 1e-9);
+    assert!((r.alpha - 19.251648456163373).abs() < 1e-9);
+    assert!((r.beta - 3.522383629203395).abs() < 1e-9);
+    let tol = 1e-7;
+    assert!((r.p_tp - 0.8432448010046247).abs() < tol);
+    assert!((r.p_fp - 0.025111134448713338).abs() < tol);
+    assert!((r.p_tf - 0.0853397836347724).abs() < tol);
+    assert!((r.p_ff - 0.046304280911892266).abs() < tol);
+    assert!((r.accuracy - 0.9285845846393972).abs() < tol);
+    assert!((r.consistency - 0.89849902437627).abs() < tol);
+    assert!((r.kappa - 0.5560427413146216).abs() < tol);
+}
+
+#[test]
+fn ll_four_parameter_path() {
+    // Beta(2, 1.5) true scores on [0.2, 0.95]: valid 4P solution with
+    // non-trivial location parameters. Kills mutations in the 4P branch
+    // (l/u formulas, g3-sign branch, spread term) that the 2P fixtures
+    // cannot see.
+    let scores = gen_scores_beta(300, 50, 1, 2.0, 1.5, 0.2, 0.95);
+    let r = livingston_lewis(&scores, 0.9, 0.0, 50.0, 30.0).unwrap();
+    assert!(!r.used_two_parameter);
+    assert!((r.effective_test_length - 61.449520085331116).abs() < 1e-9);
+    assert_eq!(r.etl_rounded, 61);
+    assert!((r.lower - 0.24143017903895592).abs() < 1e-9);
+    assert!((r.upper - 0.9393717155534436).abs() < 1e-9);
+    assert!((r.alpha - 1.7565737858531474).abs() < 1e-9);
+    assert!((r.beta - 1.3137395685852833).abs() < 1e-9);
+    let tol = 1e-7;
+    assert!((r.p_tp - 0.5543443184884189).abs() < tol);
+    assert!((r.p_fp - 0.044475496859695596).abs() < tol);
+    assert!((r.p_tf - 0.3583220858730486).abs() < tol);
+    assert!((r.p_ff - 0.04285809877883742).abs() < tol);
+    assert!((r.accuracy - 0.9126664043614675).abs() < tol);
+    assert!((r.sensitivity - 0.928235222196601).abs() < tol);
+    assert!((r.specificity - 0.8895835060430215).abs() < tol);
+    assert!((r.p_ii - 0.33976752439044877).abs() < tol);
+    assert!((r.p_ij - 0.06141266026143706).abs() < tol);
+    assert!((r.p_jj - 0.537407155086677).abs() < tol);
+    assert!((r.consistency - 0.8771746794771258).abs() < tol);
+    assert!((r.chance_consistency - 0.5195307118108707).abs() < tol);
+    assert!((r.kappa - 0.7443638468843696).abs() < tol);
+}
+
+#[test]
+fn ll_structural_invariants_read_crate_fields() {
+    // All operands are crate outputs; these anchors tie the derived fields
+    // (accuracy, consistency, kappa) to the cell fields so a mutation that
+    // desynchronizes them (e.g. computing kappa from raw unnormalized cells)
+    // fails here even if it preserved the individual pinned literals.
+    let r = fixture_a();
+    assert!((r.p_tp + r.p_fp + r.p_tf + r.p_ff - 1.0).abs() < 1e-9);
+    assert!((r.p_ii + r.p_ij + r.p_ji + r.p_jj - 1.0).abs() < 1e-12);
+    assert_eq!(r.p_ij, r.p_ji); // by construction (disclosed above)
+    assert!((r.accuracy - (r.p_tp + r.p_tf)).abs() < 1e-15);
+    assert!((r.consistency - (r.p_ii + r.p_jj)).abs() < 1e-15);
+    let pc = (r.p_ii + r.p_ij) * (r.p_ii + r.p_ji) + (r.p_ij + r.p_jj) * (r.p_ji + r.p_jj);
+    assert!((r.chance_consistency - pc).abs() < 1e-15);
+    assert!((r.kappa - (r.consistency - pc) / (1.0 - pc)).abs() < 1e-12);
+}
+
+#[test]
+fn ll_rejects_malformed_input() {
+    let ok = gen_scores(30, 20, 3, 0.2, 0.9, 3);
+    assert!(livingston_lewis(&ok[..5], 0.8, 0.0, 20.0, 10.0).is_err());
+    assert!(livingston_lewis(&ok, 0.8, 20.0, 0.0, 10.0).is_err());
+    assert!(livingston_lewis(&ok, 0.8, 0.0, 20.0, 0.0).is_err());
+    assert!(livingston_lewis(&ok, 0.8, 0.0, 20.0, 20.0).is_err());
+    assert!(livingston_lewis(&ok, 0.0, 0.0, 20.0, 10.0).is_err());
+    assert!(livingston_lewis(&ok, 1.0, 0.0, 20.0, 10.0).is_err());
+    assert!(livingston_lewis(&ok, f64::NAN, 0.0, 20.0, 10.0).is_err());
+    let mut with_nan = ok.clone();
+    with_nan[0] = f64::NAN;
+    assert!(livingston_lewis(&with_nan, 0.8, 0.0, 20.0, 10.0).is_err());
+    let mut out_of_range = ok.clone();
+    out_of_range[0] = 25.0;
+    assert!(livingston_lewis(&out_of_range, 0.8, 0.0, 20.0, 10.0).is_err());
+    let constant = vec![7.0; 30];
+    assert!(livingston_lewis(&constant, 0.8, 0.0, 20.0, 10.0).is_err());
+}
+
+#[test]
+#[ignore = "500-rep Monte Carlo; run with --ignored"]
+fn ll_mc_consistency_recovers_empirical_agreement() {
+    // Value recovery: crate `consistency` (model-based, from ONE
+    // administration + reliability) vs the empirical agreement rate of two
+    // independent simulated administrations. Both operands per rep: one is
+    // the crate output, the other simulation truth.
+    let n_items = 60usize;
+    let n = 400usize;
+    let reps = 500u64;
+    let mut diff_sum = 0.0;
+    for rep in 0..reps {
+        let mut r = Lcg::new(9000 + rep);
+        let mut x1 = Vec::with_capacity(n);
+        let mut agree = 0usize;
+        let cut = 33.0;
+        let mut s1 = Vec::with_capacity(n);
+        let mut s2 = Vec::with_capacity(n);
+        for _ in 0..n {
+            let mut acc = 0.0;
+            for _ in 0..4 {
+                acc += r.unif();
+            }
+            let p = 0.2 + 0.7 * acc / 4.0;
+            let mut a = 0u32;
+            let mut b = 0u32;
+            for _ in 0..n_items {
+                if r.unif() < p {
+                    a += 1;
+                }
+                if r.unif() < p {
+                    b += 1;
+                }
+            }
+            if (a as f64 >= cut) == (b as f64 >= cut) {
+                agree += 1;
+            }
+            x1.push(a as f64);
+            s1.push(a as f64);
+            s2.push(b as f64);
+        }
+        // Parallel-forms reliability = corr(X1, X2) for this rep.
+        let m1 = s1.iter().sum::<f64>() / n as f64;
+        let m2 = s2.iter().sum::<f64>() / n as f64;
+        let (mut c12, mut v1, mut v2) = (0.0, 0.0, 0.0);
+        for i in 0..n {
+            c12 += (s1[i] - m1) * (s2[i] - m2);
+            v1 += (s1[i] - m1) * (s1[i] - m1);
+            v2 += (s2[i] - m2) * (s2[i] - m2);
+        }
+        let rel = c12 / (v1.sqrt() * v2.sqrt());
+        let est = livingston_lewis(&x1, rel, 0.0, n_items as f64, cut).unwrap();
+        diff_sum += est.consistency - agree as f64 / n as f64;
+    }
+    let bias = diff_sum / reps as f64;
+    assert!(bias.abs() < 0.02, "mean consistency bias {bias}");
+}
+
+#[test]
+fn ll_conditional_ratios_nan_when_margin_vanishes() {
+    // Cut far below the fitted 4P support: the true-fail margin is zero, so
+    // specificity must be NaN while the aggregate cells stay finite and sum
+    // to 1. With cut = 0.1 on fixture A data, k = round(91 * c) = 0 forces
+    // fail_prob == 0, giving consistency == chance == 1 and kappa NaN.
+    // Limitation: at exactly-zero denominators IEEE 0/0 is already NaN, so
+    // a dropped `ratio` guard is NOT killed here; the guard's value is for
+    // tiny nonzero denominators (documented, no discriminating fixture).
+    let scores = gen_scores_beta(300, 50, 1, 2.0, 1.5, 0.2, 0.95);
+    let r = livingston_lewis(&scores, 0.9, 0.0, 50.0, 5.0).unwrap();
+    assert!(r.specificity.is_nan());
+    assert!(r.sensitivity.is_finite());
+    assert!((r.p_tp + r.p_fp + r.p_tf + r.p_ff - 1.0).abs() < 1e-9);
+
+    let scores_a = gen_scores(250, 60, 42, 0.15, 0.95, 4);
+    let r = livingston_lewis(&scores_a, 0.85, 0.0, 60.0, 0.1).unwrap();
+    assert!(r.kappa.is_nan());
+    assert!((r.consistency - 1.0).abs() < 1e-9);
+    assert!((r.accuracy - 1.0).abs() < 1e-9);
+}

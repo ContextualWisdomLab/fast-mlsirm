@@ -31,6 +31,41 @@ class ClassificationResult:
     conditional_simultaneous_consistency: np.ndarray
 
 
+@dataclass
+class LivingstonLewisResult:
+    """Livingston-Lewis single-administration classification results.
+
+    ``p_tp``/``p_fp``/``p_tf``/``p_ff`` are the accuracy cells (pass =
+    observed score at or above the cut; ``t``/``f`` = true pass/fail);
+    ``p_ii``/``p_ij``/``p_ji``/``p_jj`` are consistency cells over two
+    hypothetical parallel forms, with ``p_ij == p_ji`` by construction
+    (single rounded threshold in both blocks — betafunctions' round/floor
+    mix makes its cells asymmetric; divergence documented in the Rust
+    core)."""
+
+    effective_test_length: float
+    etl_rounded: int
+    lower: float
+    upper: float
+    alpha: float
+    beta: float
+    used_two_parameter: bool
+    p_tp: float
+    p_fp: float
+    p_tf: float
+    p_ff: float
+    accuracy: float
+    sensitivity: float
+    specificity: float
+    p_ii: float
+    p_ij: float
+    p_ji: float
+    p_jj: float
+    consistency: float
+    chance_consistency: float
+    kappa: float
+
+
 _REFERENCES = """References (APA 7th ed.):
         Lathrop, Q. N. (2015). *cacIRT: Classification accuracy and
             consistency under item response theory* (Version 1.4)
@@ -151,3 +186,73 @@ def lee_classification(
         p.reshape(-1), int(n_points), int(n_items), w, cuts
     )
     return _to_result(res, len(cuts), n_points)
+
+
+def livingston_lewis(
+    scores: np.ndarray,
+    reliability: float,
+    min_score: float,
+    max_score: float,
+    cut: float,
+) -> LivingstonLewisResult:
+    """Livingston-Lewis classification accuracy/consistency from a single
+    test administration (compute in Rust; Livingston & Lewis, 1995, as
+    implemented in CRAN betafunctions 1.9.0 ``LL.CA``, read line by line —
+    the original article was not consulted directly).
+
+    Proportional true scores are modeled as a four-parameter beta fitted by
+    the method of moments (Hanson, 1991, as cited in Haakstad, 2022), with
+    a two-parameter [0, 1] fail-safe when the four-parameter fit is out of
+    bounds or numerically invalid; the observed-score model is binomial
+    with ``N = round(effective test length)``. Pass = observed score >=
+    ``cut``; sensitivity/specificity follow this pass-positive orientation
+    (betafunctions labels *fail* as positive, so its sensitivity is this
+    function's specificity). ``reliability`` is any single-administration
+    estimate (e.g. alpha). In LLM-as-a-Judge quality management this
+    estimates how accurately and repeatably a judge's cut score classifies
+    outputs given the score reliability. Sensitivity, specificity, and
+    kappa are ``NaN`` when their margin or chance denominator vanishes
+    (e.g. a cut outside the fitted beta support).
+
+    """ + _REFERENCES + """
+        Haakstad, H. (2022). *betafunctions: Functions for working with
+            two- and four-parameter beta probability distributions and
+            psychometric analysis of classifications* (Version 1.9.0)
+            [R package]. https://CRAN.R-project.org/package=betafunctions
+        Hanson, B. A. (1991). *Method of moments estimates for the
+            four-parameter beta compound binomial model and the calculation
+            of classification consistency indexes* (ACT Research Report
+            91-5). (as cited in Haakstad, 2022)
+        Livingston, S. A., & Lewis, C. (1995). Estimating the consistency
+            and accuracy of classifications based on test scores. *Journal
+            of Educational Measurement, 32*(2), 179-197. (as cited in
+            Haakstad, 2022)
+    """
+    core = _core_or_raise("livingston_lewis")
+    x = np.ascontiguousarray(np.asarray(scores, dtype=np.float64).reshape(-1))
+    res = core.livingston_lewis(
+        x, float(reliability), float(min_score), float(max_score), float(cut)
+    )
+    return LivingstonLewisResult(
+        effective_test_length=float(res["effective_test_length"]),
+        etl_rounded=int(res["etl_rounded"]),
+        lower=float(res["lower"]),
+        upper=float(res["upper"]),
+        alpha=float(res["alpha"]),
+        beta=float(res["beta"]),
+        used_two_parameter=bool(res["used_two_parameter"]),
+        p_tp=float(res["p_tp"]),
+        p_fp=float(res["p_fp"]),
+        p_tf=float(res["p_tf"]),
+        p_ff=float(res["p_ff"]),
+        accuracy=float(res["accuracy"]),
+        sensitivity=float(res["sensitivity"]),
+        specificity=float(res["specificity"]),
+        p_ii=float(res["p_ii"]),
+        p_ij=float(res["p_ij"]),
+        p_ji=float(res["p_ji"]),
+        p_jj=float(res["p_jj"]),
+        consistency=float(res["consistency"]),
+        chance_consistency=float(res["chance_consistency"]),
+        kappa=float(res["kappa"]),
+    )

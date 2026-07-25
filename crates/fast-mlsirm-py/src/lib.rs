@@ -27,7 +27,7 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::classification::{
-    lee_classification as core_lee_classification,
+    lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
     rudner_classification as core_rudner_classification, ClassificationResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
@@ -35,10 +35,22 @@ use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
-    PurifyConfig, SibtestConfig,
+    raju_area as core_raju_area, sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow,
+    MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
+};
+use mlsirm_core::exposure::{
+    a_stratified as core_a_stratified, kl_information as core_kl_information,
+    kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
+    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
+use mlsirm_core::factor::{
+    glb_fa_corr as core_glb_fa_corr, glb_fa_data as core_glb_fa_data,
+    minres_fa_corr as core_minres_fa_corr, minres_fa_data as core_minres_fa_data,
+    omega_total_1f_corr as core_omega_total_1f_corr,
+    omega_total_1f_data as core_omega_total_1f_data, velicer_map_corr as core_velicer_map_corr,
+    velicer_map_data as core_velicer_map_data, MinresFaResult,
+};
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
@@ -46,6 +58,9 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
+use mlsirm_core::gtheory::{
+    gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, GTheoryDStudyRow,
+};
 use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
@@ -72,6 +87,7 @@ use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
     cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
+    separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -91,6 +107,9 @@ use mlsirm_core::scoring::{
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
+use mlsirm_core::utility::{
+    selection_utility as core_selection_utility, taylor_russell as core_taylor_russell,
+};
 
 fn parse_poly_model(model: &str) -> PyResult<PolyModel> {
     match model.to_lowercase().as_str() {
@@ -1545,24 +1564,11 @@ fn ksirt_occ(
     bandwidth: Option<Vec<f64>>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let flat = x.as_slice()?;
-    if n_persons < 2 {
-        return Err(PyValueError::new_err(
-            "ksirt requires at least 2 subjects".to_string(),
-        ));
-    }
-    if n_items < 1 {
-        return Err(PyValueError::new_err(
-            "ksirt requires at least 1 item".to_string(),
-        ));
-    }
-    let expected_len = n_persons.checked_mul(n_items).ok_or_else(|| {
-        PyValueError::new_err("n_persons * n_items overflowed usize".to_string())
-    })?;
-    if flat.len() != expected_len {
+    if flat.len() != n_persons * n_items {
         return Err(PyValueError::new_err(format!(
             "x has {} entries, expected n_persons * n_items = {}",
             flat.len(),
-            expected_len
+            n_persons * n_items
         )));
     }
     let kern = match kernel {
@@ -1773,6 +1779,555 @@ fn lee_classification(
     classification_result_to_dict(py, res)
 }
 
+/// Livingston & Lewis (1995, as implemented in CRAN betafunctions 1.9.0
+/// `LL.CA`) classification accuracy and consistency from a single test
+/// administration (`mlsirm_core::classification`). `scores` are raw
+/// observed scores in `[min_score, max_score]`; `reliability` is in (0, 1)
+/// and `cut` is strictly inside `(min_score, max_score)`. Pass = observed
+/// score >= cut.
+#[pyfunction]
+fn livingston_lewis(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    reliability: f64,
+    min_score: f64,
+    max_score: f64,
+    cut: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_livingston_lewis(scores.as_slice()?, reliability, min_score, max_score, cut)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("effective_test_length", res.effective_test_length)?;
+    out.set_item("etl_rounded", res.etl_rounded)?;
+    out.set_item("lower", res.lower)?;
+    out.set_item("upper", res.upper)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("beta", res.beta)?;
+    out.set_item("used_two_parameter", res.used_two_parameter)?;
+    out.set_item("p_tp", res.p_tp)?;
+    out.set_item("p_fp", res.p_fp)?;
+    out.set_item("p_tf", res.p_tf)?;
+    out.set_item("p_ff", res.p_ff)?;
+    out.set_item("accuracy", res.accuracy)?;
+    out.set_item("sensitivity", res.sensitivity)?;
+    out.set_item("specificity", res.specificity)?;
+    out.set_item("p_ii", res.p_ii)?;
+    out.set_item("p_ij", res.p_ij)?;
+    out.set_item("p_ji", res.p_ji)?;
+    out.set_item("p_jj", res.p_jj)?;
+    out.set_item("consistency", res.consistency)?;
+    out.set_item("chance_consistency", res.chance_consistency)?;
+    out.set_item("kappa", res.kappa)?;
+    Ok(out.into())
+}
+
+/// One-facet crossed `p x i` generalizability analysis
+/// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 3-4). `x` is a
+/// flattened row-major `n_p x n_i` score matrix; `n_i_prime` lists the
+/// proposed D-study item counts.
+#[pyfunction]
+fn gtheory_pi(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_p: usize,
+    n_i: usize,
+    n_i_prime: Vec<usize>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_gtheory_pi(x.as_slice()?, n_p, n_i, &n_i_prime).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("df", res.df.to_vec())?;
+    out.set_item("ss", res.ss.to_vec())?;
+    out.set_item("ms", res.ms.to_vec())?;
+    out.set_item("var_raw", res.var_raw.to_vec())?;
+    out.set_item("var", res.var.to_vec())?;
+    out.set_item("d_study", d_study_rows_to_py(py, &res.d_study)?)?;
+    Ok(out.into())
+}
+
+/// Two-facet crossed `p x i x o` generalizability analysis
+/// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 5-6). `x` is
+/// flattened `x[p*n_i*n_o + i*n_o + o]`; `n_prime` lists proposed
+/// `(n_i', n_o')` D-study pairs. Component order in all arrays:
+/// (p, i, o, pi, po, io, pio).
+#[pyfunction]
+fn gtheory_pio(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_p: usize,
+    n_i: usize,
+    n_o: usize,
+    n_prime: Vec<(usize, usize)>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_gtheory_pio(x.as_slice()?, n_p, n_i, n_o, &n_prime).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("df", res.df.to_vec())?;
+    out.set_item("ss", res.ss.to_vec())?;
+    out.set_item("ms", res.ms.to_vec())?;
+    out.set_item("var_raw", res.var_raw.to_vec())?;
+    out.set_item("var", res.var.to_vec())?;
+    out.set_item("d_study", d_study_rows_to_py(py, &res.d_study)?)?;
+    Ok(out.into())
+}
+
+fn d_study_rows_to_py(
+    py: Python<'_>,
+    rows: &[GTheoryDStudyRow],
+) -> PyResult<Vec<Py<pyo3::types::PyDict>>> {
+    rows.iter()
+        .map(|r| {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("n_i_prime", r.n_i_prime)?;
+            d.set_item("n_o_prime", r.n_o_prime)?;
+            d.set_item("rel_error_var", r.rel_error_var)?;
+            d.set_item("abs_error_var", r.abs_error_var)?;
+            d.set_item("generalizability", r.generalizability)?;
+            d.set_item("dependability", r.dependability)?;
+            Ok(d.into())
+        })
+        .collect()
+}
+
+fn minres_fa_to_py(py: Python<'_>, res: &MinresFaResult) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("loadings", res.loadings.to_vec())?;
+    out.set_item("uniquenesses", res.uniquenesses.to_vec())?;
+    out.set_item("communalities", res.communalities.to_vec())?;
+    out.set_item("objective", res.objective)?;
+    out.set_item("kkt_violation", res.kkt_violation)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+/// Minres (ULS) exploratory factor analysis (`mlsirm_core::factor`;
+/// transcription of psych fa.R, fm = "minres"). `corr` is a flattened
+/// row-major `p x p` correlation matrix. `loadings` in the result dict is
+/// flattened row-major `p x n_factors` (unrotated, column sums >= 0).
+#[pyfunction]
+fn minres_fa(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+    n_factors: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_minres_fa_corr(corr.as_slice()?, p, n_factors).map_err(PyValueError::new_err)?;
+    minres_fa_to_py(py, &res)
+}
+
+/// [`minres_fa`] from raw data (`n x p` flattened row-major; Pearson
+/// correlations computed internally, complete data required).
+#[pyfunction]
+fn minres_fa_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+    n_factors: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_minres_fa_data(data.as_slice()?, n, p, n_factors).map_err(PyValueError::new_err)?;
+    minres_fa_to_py(py, &res)
+}
+
+/// McDonald's omega_total for the 1-factor case from a correlation matrix
+/// (`mlsirm_core::factor`): `(sum lambda)^2 / ((sum lambda)^2 + sum psi)`
+/// on a 1-factor minres fit. Returns the omega plus the embedded fit dict.
+#[pyfunction]
+fn omega_total_1f(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_omega_total_1f_corr(corr.as_slice()?, p).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("omega_total", res.omega_total)?;
+    out.set_item("fa", minres_fa_to_py(py, &res.fa)?)?;
+    Ok(out.into())
+}
+
+/// [`omega_total_1f`] from raw data (`n x p` flattened row-major).
+#[pyfunction]
+fn omega_total_1f_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_omega_total_1f_data(data.as_slice()?, n, p).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("omega_total", res.omega_total)?;
+    out.set_item("fa", minres_fa_to_py(py, &res.fa)?)?;
+    Ok(out.into())
+}
+
+/// Factor-analytic greatest lower bound to reliability (psych glb.fa
+/// transcription in `mlsirm_core::factor::glb_fa_corr`; NOT the algebraic
+/// glb, which needs an SDP solver). Returns {glb, communalities, nf}.
+#[pyfunction]
+fn glb_fa(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_glb_fa_corr(corr.as_slice()?, p).map_err(PyValueError::new_err)?;
+    glb_fa_to_py(py, &res)
+}
+
+/// [`glb_fa`] from raw data (`n x p` flattened row-major, complete data).
+#[pyfunction]
+fn glb_fa_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_glb_fa_data(data.as_slice()?, n, p).map_err(PyValueError::new_err)?;
+    glb_fa_to_py(py, &res)
+}
+
+fn glb_fa_to_py(
+    py: Python<'_>,
+    res: &mlsirm_core::factor::GlbFaResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("glb", res.glb)?;
+    out.set_item(
+        "communalities",
+        numpy::PyArray1::from_slice(py, &res.communalities),
+    )?;
+    out.set_item("nf", res.nf)?;
+    Ok(out.into())
+}
+
+/// Velicer's minimum average partial (MAP) test
+/// (`mlsirm_core::factor::velicer_map_corr`). `corr` is a flattened
+/// row-major `p x p` correlation matrix; rows `m = 0..=max_m`. Returns
+/// {f2, f4, retained_f2, retained_f4}; invalid rows (singular partial
+/// covariance normalization, e.g. identity R for m >= 1) are NaN and
+/// excluded from the retained-count argmin.
+///
+/// Retained count follows O'Connor's canonical programs (`m` at the
+/// minimum, with `m = 0` = the unpartialed baseline); note
+/// `fungible::faMAP` prints a 1-based row position (off by one). The
+/// fourth-power (revised) criterion uses ELEMENTWISE fourth powers per
+/// O'Connor's code; see the core docs for the unresolved
+/// `EFA.dimensions` matrix-power conflict.
+///
+/// References (APA 7th ed.):
+///
+/// Velicer, W. F. (1976). Determining the number of components from the
+///   matrix of partial correlations. *Psychometrika, 41*(3), 321-327.
+///   https://doi.org/10.1007/BF02293557 (Not read; formula support is the
+///   read O'Connor map.m/map.sps programs and psych VSS.R map().)
+/// O'Connor, B. P. (2000). SPSS and SAS programs for determining the
+///   number of components using parallel analysis and Velicer's MAP test.
+///   *Behavior Research Methods, Instruments, & Computers, 32*(3),
+///   396-402. https://doi.org/10.3758/BF03200807 (Programs read; paper
+///   not read.)
+/// Velicer, W. F., Eaton, C. A., & Fava, J. L. (2000). Construct
+///   explication through factor or component analysis. In R. D. Goffin &
+///   E. Helmes (Eds.), *Problems and solutions in human assessment*
+///   (pp. 41-71). Kluwer. (Not read; fourth-power origin per O'Connor's
+///   code comments.)
+/// Revelle, W. (2025). *psych: Procedures for psychological,
+///   psychometric, and personality research* (Version 2.6.5) [R package].
+///   https://CRAN.R-project.org/package=psych (VSS.R map() read.)
+#[pyfunction]
+fn velicer_map(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+    max_m: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_velicer_map_corr(corr.as_slice()?, p, max_m).map_err(PyValueError::new_err)?;
+    velicer_map_to_py(py, &res)
+}
+
+/// [`velicer_map`] from raw data (`n x p` flattened row-major, complete
+/// data; Pearson correlations computed internally).
+#[pyfunction]
+fn velicer_map_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+    max_m: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_velicer_map_data(data.as_slice()?, n, p, max_m).map_err(PyValueError::new_err)?;
+    velicer_map_to_py(py, &res)
+}
+
+fn velicer_map_to_py(
+    py: Python<'_>,
+    res: &mlsirm_core::factor::VelicerMapResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("f2", numpy::PyArray1::from_slice(py, &res.f2))?;
+    out.set_item("f4", numpy::PyArray1::from_slice(py, &res.f4))?;
+    out.set_item("retained_f2", res.retained_f2)?;
+    out.set_item("retained_f4", res.retained_f4)?;
+    Ok(out.into())
+}
+
+/// Brogden-Cronbach-Gleser selection utility with Naylor-Shine selected-group
+/// mean (`mlsirm_core::utility::selection_utility`; verified against the CRAN
+/// iopsych 0.90.1 utilityBcg/ux source and a scipy oracle). Returns
+/// {xc, ux, pux, utility_gain}.
+#[pyfunction]
+fn selection_utility(
+    py: Python<'_>,
+    n: f64,
+    sdy: f64,
+    rxy: f64,
+    sr: f64,
+    cost_total: f64,
+    period: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_selection_utility(n, sdy, rxy, sr, cost_total, period)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("xc", res.xc)?;
+    out.set_item("ux", res.ux)?;
+    out.set_item("pux", res.pux)?;
+    out.set_item("utility_gain", res.utility_gain)?;
+    Ok(out.into())
+}
+
+/// Taylor-Russell (1939) success ratio under the standard bivariate-normal
+/// selection model (`mlsirm_core::utility::taylor_russell`). Returns
+/// {success_ratio, base_rate, q_joint}.
+#[pyfunction]
+fn taylor_russell(py: Python<'_>, rxy: f64, sr: f64, br: f64) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_taylor_russell(rxy, sr, br).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("success_ratio", res.success_ratio)?;
+    out.set_item("base_rate", res.base_rate)?;
+    out.set_item("q_joint", res.q_joint)?;
+    Ok(out.into())
+}
+
+/// Sympson-Hetter item-exposure-control calibration for max-info CAT
+/// (`mlsirm_core::exposure::sympson_hetter`; algorithm confirmed against
+/// Georgiadou, Triantafillou, & Economides, 2007, and Barrada, Olea, &
+/// Ponsoda, 2007, Eq. 1-3). Returns {k, exposure, selection, max_exposure,
+/// n_iter, converged, history_max_exposure}.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_sympson_hetter(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    r_max: f64,
+    test_length: usize,
+    n_simulees: usize,
+    max_iter: usize,
+    tol: f64,
+    seed: u64,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = SympsonHetterConfig {
+        r_max,
+        test_length,
+        n_simulees,
+        max_iter,
+        tol,
+        seed,
+        q_theta,
+    };
+    let res = core_sympson_hetter(a.as_slice()?, b.as_slice()?, c.as_slice()?, &cfg)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("k", numpy::PyArray1::from_slice(py, &res.k))?;
+    out.set_item("exposure", numpy::PyArray1::from_slice(py, &res.exposure))?;
+    out.set_item("selection", numpy::PyArray1::from_slice(py, &res.selection))?;
+    out.set_item("max_exposure", res.max_exposure)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item(
+        "history_max_exposure",
+        numpy::PyArray1::from_slice(py, &res.history_max_exposure),
+    )?;
+    Ok(out.into())
+}
+
+/// a-stratified multistage CAT simulation
+/// (`mlsirm_core::exposure::a_stratified`).
+/// Returns {exposure, max_exposure, stratum, stage_lengths, theta_rmse,
+/// theta_bias}.
+///
+/// Source status: design after Chang & Ying (1999), cited from its
+/// abstract only; the b-matching selection rule and ascending-a strata are
+/// confirmed from Barrada, Mazuela, & Olea (2006), read in full. Full
+/// references and repository-choice labels are in the core rustdoc
+/// (`mlsirm_core::exposure::a_stratified`) and the Python docstring
+/// (`fast_mlsirm.exposure.a_stratified`).
+///
+/// References:
+/// Barrada, J. R., Mazuela, P., & Olea, J. (2006). Maximum information
+/// stratification method for controlling item exposure in computerized
+/// adaptive testing. Psicothema, 18(1), 156-159.
+/// Chang, H.-H., & Ying, Z. (1999). a-stratified multistage computerized
+/// adaptive testing. Applied Psychological Measurement, 23(3), 211-222.
+/// https://doi.org/10.1177/01466219922031338
+#[pyfunction]
+fn py_a_stratified(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    n_strata: usize,
+    test_length: usize,
+    n_simulees: usize,
+    seed: u64,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = AStratifiedConfig {
+        n_strata,
+        test_length,
+        n_simulees,
+        seed,
+        q_theta,
+    };
+    let res = core_a_stratified(a.as_slice()?, b.as_slice()?, c.as_slice()?, &cfg)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("exposure", numpy::PyArray1::from_slice(py, &res.exposure))?;
+    out.set_item("max_exposure", res.max_exposure)?;
+    out.set_item("stratum", res.stratum)?;
+    out.set_item("stage_lengths", res.stage_lengths)?;
+    out.set_item("theta_rmse", res.theta_rmse)?;
+    out.set_item("theta_bias", res.theta_bias)?;
+    Ok(out.into())
+}
+
+/// Chang-Ying (1996) Kullback-Leibler information index and CAT item
+/// selection (`mlsirm_core::exposure::{kl_information, kl_select}`).
+/// `kl_information` returns the UNNORMALIZED area of the pointwise Bernoulli
+/// KL divergence over `[theta0 - delta, theta0 + delta]`; `kl_select` uses
+/// `delta = r / sqrt(n_administered)` (requires `n_administered >= 1`) and
+/// returns {index, selected, delta}. Full sources and the contract are in
+/// the core rustdoc.
+///
+/// References:
+/// Chang, H.-H., & Ying, Z. (1996). A global information approach to
+/// computerized adaptive testing. Applied Psychological Measurement, 20(3),
+/// 213-229. https://doi.org/10.1177/014662169602000303
+#[pyfunction]
+fn py_kl_information(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    theta0: f64,
+    delta: f64,
+) -> PyResult<Py<numpy::PyArray1<f64>>> {
+    let v = core_kl_information(a.as_slice()?, b.as_slice()?, c.as_slice()?, theta0, delta)
+        .map_err(PyValueError::new_err)?;
+    Ok(numpy::PyArray1::from_slice(py, &v).into())
+}
+
+/// See `py_kl_information`; `administered` is a boolean mask over the pool.
+#[pyfunction]
+fn py_kl_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    theta0: f64,
+    n_administered: usize,
+    r: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_kl_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        administered.as_slice()?,
+        theta0,
+        n_administered,
+        r,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("index", numpy::PyArray1::from_slice(py, &res.index))?;
+    out.set_item("selected", res.selected)?;
+    out.set_item("delta", res.delta)?;
+    Ok(out.into())
+}
+
+/// Owen (1975) approximate Bayesian single-item posterior update for the
+/// 3PNO model (`mlsirm_core::exposure::owen_update`). Returns the updated
+/// `(mu, sig2)` normal-approximation posterior moments. Owen (1975) itself
+/// was NOT read (paywalled); the formulas are implemented as reproduced by
+/// van der Linden (1998, Appendix Eqs. A.1-A.6) and cross-checked against
+/// the R `irt` package `src/est_ability_owen.cpp`. See the core rustdoc for
+/// the full citation-governance note.
+///
+/// References:
+/// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+/// in the context of adaptive mental testing. Journal of the American
+/// Statistical Association, 70(350), 351-356.
+/// https://doi.org/10.1080/01621459.1975.10479871
+/// van der Linden, W. J. (1998). Bayesian item selection criteria for
+/// adaptive testing (Research Report 98-01). University of Twente.
+#[pyfunction]
+fn py_owen_update(
+    a: f64,
+    b: f64,
+    c: f64,
+    correct: bool,
+    mu: f64,
+    sig2: f64,
+) -> PyResult<(f64, f64)> {
+    core_owen_update(a, b, c, correct, mu, sig2).map_err(PyValueError::new_err)
+}
+
+/// Owen (1975) sequential CAT driver (`mlsirm_core::exposure::owen_cat`):
+/// b-matching selection (argmin |b_i - mu|, ties to the lowest index),
+/// Owen posterior updates, optional posterior-variance stopping. `responses`
+/// is a full-pool 0/1 vector consulted for whichever item is selected.
+/// Returns {administered, mu_trace, sig2_trace, mu, sig2}.
+#[pyfunction]
+#[pyo3(signature = (a, b, c, responses, mu0, sig2_0, test_length, sig2_stop=None))]
+#[allow(clippy::too_many_arguments)]
+fn py_owen_cat(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    mu0: f64,
+    sig2_0: f64,
+    test_length: usize,
+    sig2_stop: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_owen_cat(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        responses.as_slice()?,
+        mu0,
+        sig2_0,
+        test_length,
+        sig2_stop,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("administered", res.administered)?;
+    out.set_item("mu_trace", numpy::PyArray1::from_slice(py, &res.mu_trace))?;
+    out.set_item(
+        "sig2_trace",
+        numpy::PyArray1::from_slice(py, &res.sig2_trace),
+    )?;
+    out.set_item("mu", res.mu)?;
+    out.set_item("sig2", res.sig2)?;
+    Ok(out.into())
+}
+
 /// Horn's parallel analysis for principal-component retention
 /// (`mlsirm_core::parallel`; oracle: CRAN paran 1.5.6, PCA path). `data` is
 /// a flattened row-major `n_persons * n_items` matrix; `centile` is 0 for
@@ -1889,6 +2444,25 @@ fn feldt_alpha_ci(
     out.set_item("r_bar", res.r_bar)?;
     out.set_item("df1", res.df1)?;
     out.set_item("df2", res.df2)?;
+    Ok(out.into())
+}
+
+/// Person separation reliability `(SSD - MSE) / SSD`
+/// (`mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`).
+/// Returns a dict with `sep_rel`, `ssd`, `mse`, `sep_index`.
+#[pyfunction]
+fn separation_reliability(
+    py: Python<'_>,
+    measures: PyReadonlyArray1<'_, f64>,
+    se: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_separation_reliability(measures.as_slice()?, se.as_slice()?)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("sep_rel", res.sep_rel)?;
+    out.set_item("ssd", res.ssd)?;
+    out.set_item("mse", res.mse)?;
+    out.set_item("sep_index", res.sep_index)?;
     Ok(out.into())
 }
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
@@ -4400,6 +4974,65 @@ fn sibtest(
     Ok(out.into())
 }
 
+/// Raju (1988/1990) signed/unsigned ICC-area DIF for 2PL (or common-c 3PL)
+/// items already linked to a common scale (Rust compute path; formula oracle:
+/// difR `RajuZ.R`/`difRaju.R` READ in full — the primary Raju papers were NOT
+/// read; both areas and all delta-method partials were re-derived by hand and
+/// quadrature/FD-verified in adversarial spec review; see the core module).
+///
+/// Signed: `h = b_foc - b_ref` (positive = harder for focal). Unsigned:
+/// `h = |H|`, the total area between the ICCs. `z = H / se(H)` from unscaled
+/// quantities; for common-c 3PL, `h` and `se` are reported scaled by `(1-c)`.
+/// Returns arrays `h`, `se`, `z`, `p_value` plus `dif_items` and `signed`.
+#[pyfunction]
+#[pyo3(signature = (a_ref, b_ref, se_a_ref, se_b_ref, cov_ab_ref, a_foc, b_foc, se_a_foc, se_b_foc, cov_ab_foc, guess = None, signed = false, alpha = 0.05))]
+#[allow(clippy::too_many_arguments)]
+fn raju_area(
+    py: Python<'_>,
+    a_ref: PyReadonlyArray1<'_, f64>,
+    b_ref: PyReadonlyArray1<'_, f64>,
+    se_a_ref: PyReadonlyArray1<'_, f64>,
+    se_b_ref: PyReadonlyArray1<'_, f64>,
+    cov_ab_ref: PyReadonlyArray1<'_, f64>,
+    a_foc: PyReadonlyArray1<'_, f64>,
+    b_foc: PyReadonlyArray1<'_, f64>,
+    se_a_foc: PyReadonlyArray1<'_, f64>,
+    se_b_foc: PyReadonlyArray1<'_, f64>,
+    cov_ab_foc: PyReadonlyArray1<'_, f64>,
+    guess: Option<PyReadonlyArray1<'_, f64>>,
+    signed: bool,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let guess_vec = match &guess {
+        Some(g) => Some(g.as_slice()?.to_vec()),
+        None => None,
+    };
+    let res = core_raju_area(
+        a_ref.as_slice()?,
+        b_ref.as_slice()?,
+        se_a_ref.as_slice()?,
+        se_b_ref.as_slice()?,
+        cov_ab_ref.as_slice()?,
+        a_foc.as_slice()?,
+        b_foc.as_slice()?,
+        se_a_foc.as_slice()?,
+        se_b_foc.as_slice()?,
+        cov_ab_foc.as_slice()?,
+        guess_vec.as_deref(),
+        signed,
+        alpha,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("h", numpy::PyArray1::from_slice(py, &res.h))?;
+    out.set_item("se", numpy::PyArray1::from_slice(py, &res.se))?;
+    out.set_item("z", numpy::PyArray1::from_slice(py, &res.z))?;
+    out.set_item("p_value", numpy::PyArray1::from_slice(py, &res.p_value))?;
+    out.set_item("dif_items", res.dif_items)?;
+    out.set_item("signed", res.signed)?;
+    Ok(out.into())
+}
+
 /// Per-item arrays for a Mantel-Haenszel sweep, shared by the plain and purified entry points.
 fn mh_rows_dict<'py>(
     py: Python<'py>,
@@ -5493,11 +6126,31 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
+    m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(minres_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f, m)?)?;
+    m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa, m)?)?;
+    m.add_function(wrap_pyfunction!(glb_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
+    m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
+    m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_information, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
@@ -5514,6 +6167,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
     m.add_function(wrap_pyfunction!(sibtest, m)?)?;
+    m.add_function(wrap_pyfunction!(raju_area, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif_purified, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif_purified, m)?)?;

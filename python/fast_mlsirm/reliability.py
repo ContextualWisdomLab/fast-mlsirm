@@ -246,3 +246,58 @@ def feldt_alpha_ci(
 
 
 feldt_alpha_ci.__doc__ += "\n" + _FELDT_REFERENCES
+
+@dataclass
+class SeparationReliabilityResult:
+    """Person separation reliability (eRm ``SepRel``).
+
+    ``sep_rel = (ssd - mse) / ssd`` is unclamped (negative when
+    ``mse > ssd``, NaN when ``ssd`` is ~0). ``sep_index`` is the
+    hand-derived separation index ``G = sqrt((ssd - mse) / mse)``
+    (adjusted true SD over RMSE; not in the read source), NaN when
+    ``mse`` is ~0 or ``ssd < mse``."""
+
+    sep_rel: float
+    ssd: float
+    mse: float
+    sep_index: float
+
+
+def separation_reliability(
+    measures: np.ndarray, se: np.ndarray
+) -> SeparationReliabilityResult:
+    """Person separation reliability (compute in Rust; formula transcribed
+    from CRAN eRm ``R/SepRel.R``, read in full: ``SSD = var(measures)``
+    with n-1 denominator, ``MSE = mean(se**2)``,
+    ``R = (SSD - MSE) / SSD``). eRm's docs attribute the statistic to
+    Wright and Stone (1999), not read.
+
+    Callers must pass already-cleaned vectors: eRm drops persons with
+    extreme raw scores (interpolated thetas) and missing estimates before
+    applying the formula; that filtering is not reproduced here. In
+    LLM-as-a-Judge quality management this measures how reliably judge
+    severity estimates separate the judged units given their standard
+    errors.
+
+    References (APA 7th ed.):
+        Mair, P., Hatzinger, R., & Maier, M. J. (2025). *eRm: Extended
+            Rasch modeling* [R package]. https://CRAN.R-project.org/package=eRm
+        Wright, B. D., & Stone, M. H. (1999). *Measurement essentials*
+            (2nd ed.). Wide Range. (as cited in Mair et al., 2025; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "separation_reliability"):
+        raise RuntimeError("separation_reliability requires the compiled Rust core")
+    x = np.ascontiguousarray(np.asarray(measures, dtype=np.float64))
+    s = np.ascontiguousarray(np.asarray(se, dtype=np.float64))
+    if x.ndim != 1 or s.ndim != 1:
+        raise ValueError("measures and se must be 1-D arrays")
+    res = core.separation_reliability(x, s)
+    return SeparationReliabilityResult(
+        sep_rel=float(res["sep_rel"]),
+        ssd=float(res["ssd"]),
+        mse=float(res["mse"]),
+        sep_index=float(res["sep_index"]),
+    )

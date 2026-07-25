@@ -111,9 +111,259 @@
     panic); `fitstats::infit_outfit` validates `theta`/`xi` lengths before
     indexing; `scoring::validate_prior` rejects non-finite prior `mean`/`sd`
     (a `NaN` `sd` passed the bare `sd <= 0` check).
+- `factor::validate_corr` now rejects off-diagonal correlations outside
+  `[-1, 1]` (impl-review finding): an impossible value like `1e308` passed
+  the old finiteness/symmetry checks and panicked inside the eigen sort
+  instead of returning an error (affected `minres_fa`, `omega_total_1f`,
+  and the new `glb_fa`); regression-tested.
 
 ### Added
 
+- **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
+  `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
+  normal-approximation posterior moment updates for the 3PNO model
+  (`P = c + (1-c)Phi(a(theta-b))`) and a sequential driver with Owen's
+  b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
+  posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
+  itself NOT read (paywalled); formulas implemented as reproduced by
+  van der Linden (1998, Research Report 98-01, Appendix A.1-A.6) and
+  cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
+  oracles verified against exact-posterior numerical integration (~1e-13)
+  by the adversarial spec review.
+
+- **Chang-Ying KL global-information CAT selection**
+  (`fast_mlsirm.kl_information`, `fast_mlsirm.kl_select`; in
+  `mlsirm_core::exposure`). Kullback-Leibler item index as the UNNORMALIZED
+  area of the pointwise Bernoulli divergence (expectation under the
+  provisional `theta0`) over `[theta0 - delta, theta0 + delta]` via composite
+  Simpson (2048 panels), and next-item selection with the paper's shrinking
+  half-width `delta = r / sqrt(n_administered)` (requires `n >= 1`; `r = 3`
+  default per Study 1). Administered items keep their computed index; masking
+  applies to selection only. Small-delta Fisher limit
+  `I(theta0) * delta^3 / 3` anchored by test. Paper READ (Chang & Ying, 1996,
+  doi:10.1177/014662169602000303); cross-checked against catR `KL.R`.
+
+- **Raju ICC-area DIF** (`fast_mlsirm.raju_area`; in `mlsirm_core::dif`).
+  Parametric signed/unsigned area between two logistic ICCs on a common
+  scale, with Raju's delta-method Z tests. Signed area `h = b_F - b_R`
+  (positive = harder for focal); unsigned `h = |H|` from Raju's closed form
+  via a numerically stable softplus, with a continuous equal-slope fallback
+  `|b_F - b_R|`; common-guessing 3PL reports `h`/`se` scaled by `(1 - c)`
+  with the Z from unscaled quantities. Primary papers NOT read (Raju 1988,
+  Psychometrika 53(4), 495-502, doi:10.1007/BF02294403; Raju 1990, APM
+  14(2), 197-207, doi:10.1177/014662169001400208 — both paywalled); formula
+  oracle is the difR source (`RajuZ.R`, `difRaju.R`; Magis et al. 2010,
+  Behavior Research Methods 42, 847-862, doi:10.3758/BRM.42.3.847 — code
+  read in full, package paper not read). Both areas and all four
+  delta-method partials re-derived by hand and verified against numeric
+  quadrature/finite differences in adversarial spec review; documented difR
+  divergences: its gradient is the uniform negation of dH (variance-
+  equivalent) and its `exp(Y)==Inf` overflow branch carries the sign
+  opposite to the closed-form positive-side limit (unreachable here via
+  softplus + `|H|`). Monte-Carlo (500 reps, parametric asymptotic):
+  signed test holds nominal level and power; the unsigned Z is measurably
+  anti-conservative under an exact equal-slope null (~.14 at nominal .05),
+  documented in the API rather than hidden.
+
+- **Velicer minimum average partial (MAP) test** (`fast_mlsirm.velicer_map`,
+  `velicer_map_from_data`; in `mlsirm_core::factor`). Component-retention
+  test of Velicer (1976, Psychometrika 41(3), 321-327,
+  doi:10.1007/BF02293557 — NOT read; formula
+  support is the read implementations below): PCA loadings from the
+  eigendecomposition of R, partial covariance `C* = R - A_m A_m'` rescaled
+  to a partial correlation matrix, and `f2[m]` = mean squared off-diagonal
+  partial correlation for `m = 0..max_m` (with the `m = 0` baseline being
+  R itself); retained components = the `m` at the minimum. Also computes
+  the revised elementwise fourth-power criterion `f4` (Velicer, Eaton, &
+  Fava, 2000, in Goffin & Helmes, Problems and Solutions in Human
+  Assessment, 41-71 — not read; attributed per O'Connor's code comments).
+  Algorithm and retention rule verified against Brian O'Connor's canonical
+  MAP programs (map.m and map.sps, oconnor-psych.ok.ubc.ca/nfactors — read
+  in full; O'Connor, 2000, Behavior Research Methods, Instruments, &
+  Computers 32(3), 396-402, paper itself not read) and psych VSS.R `map()`
+  (Revelle, 2025 — read). Documented divergences found by adversarial
+  review: `fungible::faMAP` prints a 1-based row position (off by one vs
+  O'Connor's count — not reproduced); `EFA.dimensions::MAP` now uses matrix
+  powers for the fourth-power criterion, conflicting with O'Connor's
+  elementwise form (unresolved from primary literature; we follow
+  O'Connor). Rows with singular partial-covariance normalization (e.g.
+  identity R for `m >= 1`) are NaN and excluded from the argmin. Rust core
+  with PyO3 binding and thin NumPy wrapper; Harman-8 full-vector oracle
+  parity (independent NumPy transcription), identity guard, and a
+  500-replication Monte-Carlo recovery test (`#[ignore]`).
+- **a-stratified multistage CAT item selection** (`fast_mlsirm.a_stratified`;
+  in `mlsirm_core::exposure`). Simulation of Chang & Ying's (1999)
+  a-stratified design: the pool is split into `n_strata` contiguous strata by
+  ascending discrimination `a` (stable sort, near-equal sizes with the first
+  `n mod K` strata one item larger — repository choice; catR places the
+  remainder last), the test is partitioned into matching stages, and within
+  the active stratum the next item is `argmin |b_i - theta_hat|`
+  (b-matching, ties to the lowest original index). The b-matching selection
+  rule and ascending-a strata are confirmed from Barrada, Mazuela, & Olea
+  (2006, Psicothema 18(1), 156-159 — read in full); Chang & Ying (1999,
+  Applied Psychological Measurement 23(3), 211-222) is cited as the design's
+  origin from its abstract. Interim EAP on a uniform grid and the initial
+  `theta_hat = 0` are repository choices (the paper used ML-based interim
+  estimation). Returns per-item exposure rates, stratum assignment, stage
+  lengths, and theta RMSE/bias; the per-stratum counting identity
+  `sum_{i in stratum k} P(A_i) = stage_lengths[k]` holds exactly and is
+  regression-tested against returned values. Stratum-level b-blocking
+  (Chang, Qian, & Ying, 2001, "a-stratified multistage computerized adaptive
+  testing with b blocking", Applied Psychological Measurement 25(4),
+  333-341 — not read; excluded per adversarial spec review) is out of
+  scope. Rust core with PyO3 binding
+  and thin NumPy wrapper; mutation-audited tests plus a 500-replication
+  Monte-Carlo comparison (`#[ignore]`) showing lower exposure imbalance
+  (summed squared deviation from the uniform rate `L/n`) than
+  max-information selection.
+- **Sympson-Hetter item-exposure control** (`fast_mlsirm.sympson_hetter`;
+  in `mlsirm_core::exposure`). Iterative Monte-Carlo calibration of the
+  exposure-control parameters `k_i = P(A_i | S_i)` for dichotomous 3PL
+  max-information CAT with interim EAP: per-encounter uniform gate
+  (administer iff `u <= k_i`, rejected items blocked for the remainder of
+  that simulee's test), update `k_i <- min(1, r_max / P(S_i))` (Barrada,
+  Olea, & Ponsoda, 2007, Eq. 1-3; algorithm confirmed from Georgiadou,
+  Triantafillou, & Economides, 2007 — both read in full; Sympson & Hetter,
+  1985, cited as origin, not read). The stopping rule
+  `max P(A) <= r_max + tol` is a practical criterion, not a convergence
+  theorem (van der Linden, 2003, abstract); the returned `k` is always the
+  vector that produced the reported final-cycle rates. Feasibility bound
+  `r_max >= test_length/n_items` (exact counting identity
+  `sum_i P(A_i) = test_length`, derived here) is enforced; the bound is
+  necessary, not sufficient — a tight `r_max` near the bound may still
+  exhaust the pool mid-test and fail with the documented error. `r_max = 1`
+  reduces exactly to unconstrained max-info CAT (no exposure RNG
+  consumed); an exhausted pool raises an error (repository policy, not a
+  classical prescription). Adversarially spec-verified before
+  implementation (REDUCED SCOPE: no theta-stratified variants, no
+  forced-administration fallback, no "classical iteration count" claim);
+  a 500-rep Monte Carlo calibration run (`#[ignore]`); four executed
+  mutation kills (gate flip, `P(A)` update denominator, no-blocking —
+  killed by divergence/non-termination — and swapped selection/exposure
+  bookkeeping).
+- **Selection utility analysis** (`fast_mlsirm.selection_utility` /
+  `taylor_russell`; in `mlsirm_core::utility`; transcribed from CRAN
+  iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl,
+  Jones, & Beatty, 2016; the original Taylor & Russell, 1939, Naylor & Shine, 1965,
+  and Cronbach & Gleser, 1965 sources were not read and are cited as
+  attributed). Formulas under the standard bivariate-normal selection
+  model: selection intensity `ux = phi(xc)/sr`, Naylor-Shine selected-group
+  criterion mean `pux = rxy*ux`, BCG utility gain
+  `n*period*sdy*pux - cost_total` (the iopsych `cost` argument is
+  documented here as a TOTAL cost — iopsych labels it per-applicant but
+  never multiplies by `n`), and Taylor-Russell success ratio
+  `P(Y>yc | X>xc) = Q(xc,yc,rxy)/sr` with the bivariate-normal upper tail
+  `Q` evaluated by a conditional-normal Gauss-Legendre integral (~1e-15
+  vs scipy's BVN CDF at moderate `|rxy|` during adversarial spec review,
+  better than 1e-6 across the whole accepted `|rxy|` range —
+  regression-tested; the committed oracle generator is
+  `tests/oracles/oracle_utility.py`; the iopsych `qa/(qa+qb)` form was
+  proven equal to `Q/sr` algebraically and numerically). Adversarially spec-verified before implementation; five
+  scipy-pinned oracle fixtures including negative validity; rho=0
+  analytic anchor (success == base rate); strict rxy monotonicity; a
+  500-rep x 20,000-person Monte Carlo recovery run (`#[ignore]`; success
+  ratio within 4.3e-5, pux within 3.8e-4); four executed mutation kills
+  (dropped `rxy` in pux, sign flip in the Q integrand, `1-sr` denominator
+  in ux, sr/br role swap). Documented identity limitation: the mutant
+  `Q(h,k) -> Q(k,h)` alone is output-identical everywhere by BVN exchange
+  symmetry — no test claims to kill it; cutoff-role bugs are anchored by
+  the role-swap kill instead. Post-implementation adversarial review
+  hardening: sub-ulp ratios (where `1.0 - v` rounds to 1.0) are rejected
+  instead of returning NaN/silent zeros; the BVN panel width scales with
+  `sqrt(1 - rho^2)` so `|rxy|` near 1 stays accurate (Err beyond
+  `sqrt(1-rxy^2) < 1e-4`); `q_joint` is bounded by `min(sr, br)`; all
+  three regression-tested against scipy `quad` oracles.
+- **Factor-analytic greatest lower bound** (`fast_mlsirm.glb_fa` /
+  `glb_fa_from_data`; in `mlsirm_core::factor::glb_fa_corr`; transcribed
+  from CRAN psych `glbs.R` `glb.fa`, read in full — Revelle, 2025; NOT the
+  algebraic glb of `glb.algebraic`, which requires an SDP solver; Sijtsma,
+  2009, not read). Algorithm: 1-factor minres fit, eigenvalues of `R` with
+  the diagonal replaced by the model communalities, `nf` = count of
+  positive eigenvalues with psych's single df-based decrement, then
+  `glb = sum(rr)/sum(R)` with `diag(rr)` from an `nf`-factor refit.
+  Verified against a pinned independent scipy oracle on a 9-variable
+  2-factor population matrix (glb to 1e-5), a sampled 6-variable matrix
+  and a df-adjustment fixture (both df = 0 saturated fits, wider bands
+  documented), plus a 500-rep Monte Carlo run (`#[ignore]`; observed mean
+  glb 0.863 vs population omega 0.830 — the expected upward bias of glb
+  under multi-factor detection is documented, not hidden). Three executed
+  mutation kills (skipped diagonal substitution, 1-factor communalities in
+  the ratio, dropped df decrement).
+- **Person separation reliability** (`fast_mlsirm.separation_reliability`;
+  in `mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`, read
+  in full — Mair et al., 2025; the statistic is attributed there to Wright
+  & Stone, 1999, not read). `R = (SSD - MSE)/SSD` with `SSD = var(measures)`
+  (n-1 denominator) and `MSE = mean(se^2)`, unclamped; plus the hand-derived
+  separation index `G = sqrt((SSD - MSE)/MSE)` (adjusted true SD over RMSE,
+  `G^2 = R/(1-R)`; not in the read source). eRm's extreme-score/NA
+  filtering is documented as caller responsibility. Verified against a
+  pinned numpy fixture (SSD, MSE, R, G at 12 decimals), a negative-R path,
+  and a 500-rep Monte Carlo recovery (`#[ignore]`; population R = 0.8
+  recovered to 0.01); three executed mutation kills (swapped numerator,
+  population variance, unsquared se).
+- **Minres (ULS) exploratory factor analysis and McDonald's omega_total
+  (1-factor)** (`fast_mlsirm.minres_fa`, `minres_fa_from_data`,
+  `omega_total_1f`, `omega_total_1f_from_data`; in `mlsirm_core::factor`;
+  line-by-line transcription of CRAN psych `fa.R`'s minres path — Revelle,
+  2025, read; McDonald, 1999, cited-not-read, the omega formula is
+  hand-derived from the standardized 1-factor model). Uniquenesses are
+  box-constrained to `[0.005, 1]` and optimized by projected
+  Barzilai-Borwein descent with an Armijo safeguard and finite-difference
+  fallback (psych's `FAgr.minres` direction is not the exact gradient of
+  the lower-triangle objective — a verified limitation); convergence is
+  certified by a finite-difference box-KKT check whose maximum violation
+  is returned (`kkt_violation`). Loadings are unrotated, columns in
+  descending-eigenvalue order with column sums >= 0. REDUCED SCOPE: no
+  rotation, no Schmid-Leiman / omega_hierarchical, no ML/WLS/GLS, no
+  factor scores. Tests pin parity at 5e-5 against an independent scipy
+  L-BFGS-B transcription oracle, anchor the absolute objective value of a
+  deliberately misfitting 1-factor fit (the only assert that can kill the
+  lower-triangle-vs-all-off-diagonal x2 mutation — disclosed), verify
+  rank-1 exact recovery and structure invariants, execute four mutation
+  kills, and include a 500-rep `#[ignore]` Monte Carlo recovery study.
+- **Generalizability theory G/D studies for crossed designs**
+  (`fast_mlsirm.gtheory_pi`, `fast_mlsirm.gtheory_pio`; in
+  `mlsirm_core::gtheory`; Huebner & Lucht, 2019, read in full — the EMS
+  inversions the paper defers to Brennan, 2001, and Shavelson & Webb,
+  1991, both cited-not-read, are hand-derived and numerically verified
+  against the paper's published Tables 3-6). One-facet `p x i` and
+  two-facet `p x i x o` random-effects ANOVA variance components, plus
+  D-study relative/absolute error variances, generalizability coefficient
+  E-rho^2, and dependability Phi over proposed facet sizes. Negative raw
+  components are reported as-is in `var_raw` and clamped to zero in `var`
+  for the D study (documented clamped-ANOVA implementation policy);
+  coefficients are NaN when their denominator is <= 1e-12. Rust tests
+  reproduce the paper's worked examples at full precision, add
+  independent RNG-pinned fixtures (including a natural negative-component
+  anchor), executed mutation kills (M1/M3/M5/M6), and a 500-rep
+  `#[ignore]` Monte-Carlo recovery test.
+- **Livingston-Lewis classification accuracy and consistency**
+  (`fast_mlsirm.livingston_lewis`; in `mlsirm_core::classification`;
+  Livingston & Lewis, 1995, as implemented in Haakstad's CRAN
+  `betafunctions` 1.9.0 source `LL.CA` in `R/classification.R`, read line
+  by line — the original article was not consulted directly; Hanson, 1991,
+  four-parameter beta moment fit, as cited in Haakstad, 2022). From a
+  single administration: effective test length
+  `((m-min)(max-m) - r s^2)/(s^2 (1-r))`, true-score raw moments via the
+  factorial-moment identity on the unrounded-ETL scale, four-parameter
+  beta method-of-moments fit with a two-parameter [0, 1] fail-safe, then
+  accuracy cells (tp/fp/tf/ff), sensitivity/specificity, consistency
+  cells, and Cohen's kappa under a binomial observed-score model with
+  `N = round(ETL)`. Integrals use singularity-safe composite
+  Gauss-Legendre quadrature (power substitution when a shape parameter is
+  below one; endpoint-graded panels otherwise), verified against
+  `scipy.integrate.quad` replication literals at 1e-7. Divergences
+  (documented in the module): a single round-ties-even threshold
+  `k = round(N c)` in both the accuracy and consistency blocks (the oracle
+  mixes `round` in accuracy with `floor` in consistency, making its
+  consistency cells asymmetric; here `p_ij == p_ji` by construction);
+  pass = observed score >= cut is the positive class (the oracle labels
+  fail as positive); the fail-safe also engages on numerically invalid
+  four-parameter fits (the oracle only checks out-of-bounds support); hard
+  errors instead of NA/NaN propagation for invalid inputs, while the
+  conditional ratios (sensitivity, specificity, kappa) are an explicit
+  `NaN` when their margin or chance denominator vanishes (e.g. a cut
+  outside the fitted beta support).
 - **Cronbach alpha + Feldt exact-F confidence interval**
   (`fast_mlsirm.cronbach_alpha`, `fast_mlsirm.feldt_alpha_ci`; in
   `mlsirm_core::reliability`; Feldt, 1965, as cited in and implemented by

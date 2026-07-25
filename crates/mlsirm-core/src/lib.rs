@@ -5,10 +5,13 @@ pub mod classification;
 pub mod detect;
 pub mod dif;
 pub mod equating;
+pub mod exposure;
 pub mod facets;
+pub mod factor;
 pub mod fitstats;
 pub mod gpcm;
 pub mod grm;
+pub mod gtheory;
 pub mod ksirt;
 pub mod linking;
 pub mod lltm;
@@ -34,6 +37,7 @@ pub mod scoring;
 pub mod subscores;
 pub mod testlet;
 pub mod twopl;
+pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.
 ///

@@ -368,7 +368,7 @@ fn binomial(n: usize, k: usize) -> u128 {
 
 /// Gauss-Jordan inverse with partial pivoting. Errors when a pivot falls
 /// below `1e-12` (singular / numerically singular input).
-fn invert_symmetric(matrix: &[f64], p: usize) -> Result<Vec<f64>, String> {
+pub(crate) fn invert_symmetric(matrix: &[f64], p: usize) -> Result<Vec<f64>, String> {
     let mut a = matrix.to_vec();
     let mut inv = vec![0.0_f64; p * p];
     for i in 0..p {
@@ -502,7 +502,7 @@ pub fn cronbach_alpha(data: &[f64], n: usize, p: usize) -> Result<f64, String> {
 /// Regularized incomplete beta I_x(a, b) via Lentz continued fraction
 /// (Numerical Recipes 3rd ed., sec. 6.4 `betacf` form; transcribed and
 /// verified against scipy.stats fixtures in the test suite).
-fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }
@@ -570,6 +570,16 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
     h
 }
 
+/// F-distribution CDF: P(F <= x; d1, d2) = I_z(d1/2, d2/2) with
+/// z = d1*x / (d1*x + d2).
+fn f_cdf(x: f64, d1: f64, d2: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let z = d1 * x / (d1 * x + d2);
+    inc_beta(d1 / 2.0, d2 / 2.0, z)
+}
+
 /// F-distribution quantile by bisection on z in (0, 1), then
 /// x = d2*z / (d1*(1 - z)). Endpoints: prob <= 0 -> 0, prob >= 1 -> +inf
 /// (matching qf/scipy; bisection alone would return a finite cap).
@@ -583,8 +593,8 @@ fn f_quantile(prob: f64, d1: f64, d2: f64) -> f64 {
     let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        let cdf = inc_beta(d1 / 2.0, d2 / 2.0, mid);
-        if cdf < prob {
+        let x = d2 * mid / (d1 * (1.0 - mid));
+        if f_cdf(x, d1, d2) < prob {
             lo = mid;
         } else {
             hi = mid;
@@ -642,6 +652,82 @@ pub fn feldt_alpha_ci(alpha: f64, n: usize, p: usize, level: f64) -> Result<Alph
         r_bar,
         df1,
         df2,
+    })
+}
+
+/// Person separation reliability (eRm `SepRel`; Wright & Stone, 1999, as
+/// cited in Mair et al.'s eRm documentation — neither primary source read).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeparationReliabilityResult {
+    /// `(ssd - mse) / ssd`; unclamped (negative when `mse > ssd`), NaN when
+    /// `ssd <= 1e-12`.
+    pub sep_rel: f64,
+    /// Sample variance of the measures (n-1 denominator, matching R `var`).
+    pub ssd: f64,
+    /// Mean squared standard error, `mean(se_i^2)`.
+    pub mse: f64,
+    /// Separation index `G = sqrt((ssd - mse) / mse)`. HAND-DERIVED, not in
+    /// the read source: adjusted true SD over RMSE of measurement, so
+    /// `G^2 = R / (1 - R)`. NaN when `mse <= 1e-12` or `ssd < mse`.
+    pub sep_index: f64,
+}
+
+/// Person separation reliability `(SSD - MSE) / SSD` (transcribed from CRAN
+/// eRm `R/SepRel.R`, read in full; the docs cite Wright & Stone, 1999, not
+/// read). `measures` are point estimates (any estimation method — eRm's
+/// docs stress values differ across methods) and `se` their standard
+/// errors.
+///
+/// Caller responsibility (eRm plumbing NOT reproduced here): eRm drops
+/// persons with extreme raw scores (interpolated thetas) and missing
+/// estimates before applying the formula — pass already-cleaned vectors.
+/// The eRm-backed claim covers person measures; applying this to item
+/// measures is a generic extension of the same algebra, not sourced.
+pub fn separation_reliability(
+    measures: &[f64],
+    se: &[f64],
+) -> Result<SeparationReliabilityResult, String> {
+    let n = measures.len();
+    if n < 2 {
+        return Err("separation_reliability: need at least 2 measures".into());
+    }
+    if se.len() != n {
+        return Err(format!(
+            "separation_reliability: se length {} does not match measures length {n}",
+            se.len()
+        ));
+    }
+    if measures.iter().any(|v| !v.is_finite()) {
+        return Err("separation_reliability: measures must be finite".into());
+    }
+    if se.iter().any(|v| !v.is_finite() || *v < 0.0) {
+        return Err("separation_reliability: standard errors must be finite and >= 0".into());
+    }
+    let nf = n as f64;
+    let mean = measures.iter().sum::<f64>() / nf;
+    let ssd = measures.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nf - 1.0);
+    let mse = se.iter().map(|s| s * s).sum::<f64>() / nf;
+    if !ssd.is_finite() || !mse.is_finite() {
+        return Err(
+            "separation_reliability: variance/MSE overflowed to non-finite (inputs too large)"
+                .into(),
+        );
+    }
+    let sep_rel = if ssd <= 1e-12 {
+        f64::NAN
+    } else {
+        (ssd - mse) / ssd
+    };
+    let sep_index = if mse <= 1e-12 || ssd < mse {
+        f64::NAN
+    } else {
+        ((ssd - mse) / mse).sqrt()
+    };
+    Ok(SeparationReliabilityResult {
+        sep_rel,
+        ssd,
+        mse,
+        sep_index,
     })
 }
 
