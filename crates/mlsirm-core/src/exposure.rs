@@ -1295,7 +1295,7 @@ pub fn ccat_select(
 //
 // References (APA 7th):
 // van der Linden, W. J. (1998). Bayesian item selection criteria for
-//     adaptive testing (Research Report 98-01). University of Twente.
+//     adaptive testing (Research Report 96-01). University of Twente.
 //     (ERIC ED424235 report text READ; Psychometrika 63(2) body NOT read)
 // van der Linden, W. J. (1998). Bayesian item selection criteria for
 //     adaptive testing. Psychometrika, 63(2), 201-216.

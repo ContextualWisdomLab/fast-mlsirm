@@ -6603,3 +6603,10 @@ class TestEpvSelect:
             epv_select(a, b, c, administered=np.array([0, 0]), mu=0.0, sig2=1.0)
         with pytest.raises(ValueError):
             epv_select(a, b, c, administered=np.array([[False, False]]), mu=0.0, sig2=1.0)
+        # complex laundering guard: rejected BEFORE the float64 cast
+        with pytest.raises(ValueError):
+            epv_select(np.array([1 + 2j, 1.2]), b, c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, np.array([0.0 + 1j, 0.5]), c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, np.array([0.0, 0.1 + 1j]), administered=adm, mu=0.0, sig2=1.0)

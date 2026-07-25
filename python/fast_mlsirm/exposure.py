@@ -588,6 +588,11 @@ def epv_select(
     """
     from . import _core
 
+    # Reject complex input BEFORE the float64 casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     if a.ndim != 1 or b.ndim != 1:
