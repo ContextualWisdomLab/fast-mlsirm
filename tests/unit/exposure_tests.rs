@@ -1315,3 +1315,23 @@ fn ccat_mc500_invariants() {
         }
     }
 }
+
+/// Regression (impl-review MAJOR): with c = 0 and an extreme finite theta0
+/// the logistic underflows to P = 0 and the naive q/p * r^2 info form is
+/// inf * 0 = NaN, which silently corrupted the within-group argmax (NaN
+/// item stayed selected because `x > NaN` is false). The limit is 0, so
+/// item 1 (P = 0.5, I = 0.25) must win and info[0] must be exactly 0.
+#[test]
+fn ccat_underflow_info_is_zero_not_nan() {
+    let a = vec![1.0, 1.0];
+    let b = vec![0.0, -1e308];
+    let c = vec![0.0, 0.0];
+    let g = vec![0usize, 0];
+    let t = vec![1.0];
+    let adm = [false, false];
+    let r = ccat_select(&a, &b, &c, &g, &t, &adm, -1e308).unwrap();
+    assert_eq!(r.selected, 1);
+    assert!(r.info.iter().all(|x| x.is_finite()), "info must be finite");
+    assert_eq!(r.info[0], 0.0);
+    assert!((r.info[1] - 0.25).abs() < 1e-12);
+}

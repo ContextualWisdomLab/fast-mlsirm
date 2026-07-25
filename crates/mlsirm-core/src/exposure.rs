@@ -1213,10 +1213,18 @@ pub fn ccat_select(
         }
     };
 
-    // Logistic 3PL Fisher information at theta0 for every item.
+    // Logistic 3PL Fisher information at theta0 for every item. When c = 0
+    // and the logistic underflows to P = 0 (extreme |a(theta0 - b)|), the
+    // naive q/p * r^2 form is inf * 0 = NaN; the true limit is 0 (with
+    // c = 0, I = a^2 q p -> 0 as p -> 0), so the p = 0 case returns the
+    // limiting value directly. NaN here would corrupt the argmax below
+    // (impl-review finding; regression-tested).
     let info: Vec<f64> = (0..n)
         .map(|i| {
             let p = p3pl(theta0, a[i], b[i], c[i]);
+            if p == 0.0 {
+                return 0.0;
+            }
             let q = 1.0 - p;
             let r = (p - c[i]) / (1.0 - c[i]);
             a[i] * a[i] * (q / p) * r * r
