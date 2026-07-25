@@ -1,6 +1,7 @@
 pub mod agreement;
 pub mod cdm;
 pub mod crm;
+pub mod detect;
 pub mod dif;
 pub mod equating;
 pub mod facets;

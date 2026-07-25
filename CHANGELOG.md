@@ -114,6 +114,30 @@
 
 ### Added
 
+- **Confirmatory DETECT dimensionality analysis** (`fast_mlsirm.detect_analysis`;
+  new `mlsirm_core::detect`; Zhang & Stout, 1999, as cited in Robitzsch, 2024).
+  Estimates pairwise conditional covariances of binary items with sum-score
+  conditioning — the bias-corrected average of the total-score and pair
+  rest-score conditionings, per-group ML covariance aggregated with
+  group-frequency weights — and computes the DETECT, ASSI, RATIO, MADCOV100,
+  and MCOV100 indices against a known item clustering (labels opaque,
+  equality-only). Transcribed line-by-line from the CRAN `sirt` R sources
+  (`detect.index.R`, `ccov.np.R`, `ccov_np_compute_ccov_sum_score.R`,
+  `conf.detect.R`); matches the explicit `ccov.np(use_sum_score=TRUE,
+  scale_score=FALSE)` path — the kernel-smoothed default, missing data
+  (sirt pairwise-deletes), sqrt(N)-weighted variants (coincide with
+  unweighted under complete data), exploratory cluster search, and polytomous
+  DETECT are documented as out of scope. All-zero conditional covariances
+  (RATIO `0/0`, NaN in R) are rejected with an error. For LLM-as-a-Judge
+  item-quality management this diagnoses whether a rubric partition of judge
+  items behaves as distinct dimensions. Rust-only numerics; the Python
+  wrapper validates and marshals. Tests pin all five indices and every
+  per-pair conditional covariance against literals from an independent NumPy
+  transcription (which cannot discriminate the z-standardized default path,
+  since unique-value grouping is invariant to monotone transforms — the scope
+  statement pins that contract), plus hostile `i64::MIN`/`i64::MAX` labels
+  and a 500-replication Monte Carlo (`#[ignore]`) separating 2D simple
+  structure from unidimensional data.
 - **Haberman subscore added-value analysis** (`fast_mlsirm.subscore_analysis`;
   new `mlsirm_core::subscores`; Haberman, 2008, as cited in Sinharay, 2010).
   For each subscale of a disjoint, exhaustive item partition computes the
