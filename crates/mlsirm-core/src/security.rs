@@ -9,6 +9,10 @@
 //! `p.value <- pnorm(w.value, lower.tail=FALSE)`) and the independent CRAN
 //! `aberrance` implementation (`compute_OMG <- function(s, p, c = 0)
 //! (sum(s - p) + c) / sqrt(sum(p * (1 - p)))` with upper-tail p-values).
+//! Documented conflict: CopyDetect's PRINTED documentation shows the sign
+//! flipped (`(exp.match - obs.match)/sd.match`), but both source files
+//! compute `(obs.match - exp.match)/sd.match` with an upper-tail p; the
+//! source convention is implemented here.
 //! Wollack (1997) is the originating citation for omega, but this
 //! implementation does NOT claim to reproduce all paper procedures (the
 //! original article was not directly readable during verification); callers
