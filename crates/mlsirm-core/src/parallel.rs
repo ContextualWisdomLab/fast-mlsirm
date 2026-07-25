@@ -127,50 +127,33 @@ pub fn parallel_analysis(
     // Random benchmark: n_iterations standard-normal data sets from a single
     // deterministic LCG stream (crate idiom; see module docs, divergence 2).
     let mut state = seed.max(1);
+    let sim_len = n_iterations
+        .checked_mul(n_items)
+        .ok_or("n_iterations * n_items overflows usize")?;
+    let mut sim = vec![0.0_f64; sim_len];
     let mut rand_data = vec![0.0_f64; cells];
-    let mut random_eigenvalues = vec![0.0_f64; n_items];
+    for k in 0..n_iterations {
+        for cell in rand_data.iter_mut() {
+            *cell = normal_draw(&mut state);
+        }
+        let rc = correlation_matrix(&rand_data, n_persons, n_items)
+            .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
+        let ev = symmetric_eigenvalues_desc(&rc, n_items)
+            .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
+        sim[k * n_items..(k + 1) * n_items].copy_from_slice(&ev);
+    }
 
-    if centile == 0 {
-        // Mean path: accumulate per-position sums in a single pass to avoid
-        // an O(n_iterations * n_items) intermediate buffer.
+    let mut random_eigenvalues = vec![0.0_f64; n_items];
+    let mut column = vec![0.0_f64; n_iterations];
+    for q in 0..n_items {
         for k in 0..n_iterations {
-            for cell in rand_data.iter_mut() {
-                *cell = normal_draw(&mut state);
-            }
-            let rc = correlation_matrix(&rand_data, n_persons, n_items)
-                .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
-            let ev = symmetric_eigenvalues_desc(&rc, n_items)
-                .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
-            for (r, e) in random_eigenvalues.iter_mut().zip(&ev) {
-                *r += e;
-            }
+            column[k] = sim[k * n_items + q];
         }
-        for r in random_eigenvalues.iter_mut() {
-            *r /= n_iterations as f64;
-        }
-    } else {
-        // Quantile path: must store all per-iteration eigenvalues.
-        let sim_len = n_iterations
-            .checked_mul(n_items)
-            .ok_or("n_iterations * n_items overflows usize")?;
-        let mut sim = vec![0.0_f64; sim_len];
-        for k in 0..n_iterations {
-            for cell in rand_data.iter_mut() {
-                *cell = normal_draw(&mut state);
-            }
-            let rc = correlation_matrix(&rand_data, n_persons, n_items)
-                .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
-            let ev = symmetric_eigenvalues_desc(&rc, n_items)
-                .map_err(|e| format!("random benchmark iteration {k}: {e}"))?;
-            sim[k * n_items..(k + 1) * n_items].copy_from_slice(&ev);
-        }
-        let mut column = vec![0.0_f64; n_iterations];
-        for q in 0..n_items {
-            for k in 0..n_iterations {
-                column[k] = sim[k * n_items + q];
-            }
-            random_eigenvalues[q] = type7_quantile(&mut column, f64::from(centile) / 100.0);
-        }
+        random_eigenvalues[q] = if centile == 0 {
+            column.iter().sum::<f64>() / n_iterations as f64
+        } else {
+            type7_quantile(&mut column, f64::from(centile) / 100.0)
+        };
     }
 
     let bias: Vec<f64> = random_eigenvalues.iter().map(|r| r - 1.0).collect();
@@ -199,7 +182,7 @@ pub(crate) fn retained_count(adjusted: &[f64]) -> usize {
 }
 
 /// Pearson correlation matrix of the columns of a row-major `n x p` matrix.
-fn correlation_matrix(data: &[f64], n: usize, p: usize) -> Result<Vec<f64>, String> {
+pub(crate) fn correlation_matrix(data: &[f64], n: usize, p: usize) -> Result<Vec<f64>, String> {
     let mut means = vec![0.0_f64; p];
     for row in 0..n {
         for (j, m) in means.iter_mut().enumerate() {
@@ -310,7 +293,7 @@ fn type7_quantile(values: &mut [f64], prob: f64) -> f64 {
 }
 
 #[inline]
-fn lcg_uniform(state: &mut u64) -> f64 {
+pub(crate) fn lcg_uniform(state: &mut u64) -> f64 {
     *state = state
         .wrapping_mul(6364136223846793005)
         .wrapping_add(1442695040888963407);
@@ -319,7 +302,7 @@ fn lcg_uniform(state: &mut u64) -> f64 {
 
 /// Box-Muller normal on LCG uniforms (crate idiom, mirrored in the NumPy
 /// fixture script for the pinned test literals).
-fn normal_draw(state: &mut u64) -> f64 {
+pub(crate) fn normal_draw(state: &mut u64) -> f64 {
     let u1 = lcg_uniform(state).max(1e-12);
     let u2 = lcg_uniform(state);
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()

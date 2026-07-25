@@ -114,6 +114,41 @@
 
 ### Added
 
+- **ten Berge & Zegers mu reliability series** (`fast_mlsirm.tenberge_mu`;
+  in `mlsirm_core::reliability`; ten Berge & Zegers, 1978, as cited in and
+  implemented by Revelle's CRAN `psych` 2.6.5 source `tenberge.R`, read
+  line by line). On the Pearson correlation matrix with `Vt = sum(R)`,
+  off-diagonal power sums `S_k`, and `c = p/(p-1)` on the innermost radical
+  only: `mu0 = c*S_1/Vt` (= coefficient alpha = Guttman lambda3),
+  `mu1 = (S_1 + sqrt(c*S_2))/Vt` (= Guttman lambda2), `mu2` and `mu3` nest
+  one and two further radicals over `S_4` and `S_8`. The series ordering
+  `mu0 <= mu1 <= mu2 <= mu3` follows from Cauchy-Schwarz over the `p*(p-1)`
+  off-diagonal cells and is asserted on crate outputs. Divergences from
+  psych (documented in the module): raw-data input only (no
+  correlation-matrix passthrough, no `use = "pairwise"`), hard errors on
+  degenerate input, `S_1` summed directly to avoid cancellation. Verified
+  against an independent NumPy replication on two fixtures pinned at
+  `1e-9`, exact-identity cross-checks against `guttman_lambdas`, and a
+  500-replication tau-equivalent Monte Carlo (`#[ignore]`).
+- **Guttman lambda reliability coefficients** (`fast_mlsirm.guttman_lambdas`;
+  new `mlsirm_core::reliability`; Guttman, 1945, as cited in and implemented
+  by Revelle's CRAN `psych` 2.6.5 sources `guttman.R`/`splitHalf.R`/`smc.R`,
+  read line by line). On the Pearson correlation matrix: lambda1-lambda3
+  (lambda3 = coefficient alpha), lambda5 (best covariance column), lambda6
+  (squared multiple correlations via a plain symmetric inverse), plus
+  split-half summaries — lambda4 (best split), beta (worst split, floored at
+  0), and the mean split over all `C(p, floor(p/2))` subsets when that count
+  fits the `n_sample_splits` budget (psych's brute-force cutoff 15000),
+  otherwise over LCG-sampled splits. Declared divergences (documented in the
+  module): no `check.keys` auto-reversal, absolute split-half correlations
+  in both branches (psych's sampled branch is signed), hard error on
+  singular correlation matrices instead of psych's pseudoinverse, crate-LCG
+  sampling (psych-inspired, not bit-identical to any R run), and duplicate
+  sampled subsets allowed. Verified against an independent NumPy replication
+  (`np.corrcoef` + `np.linalg.inv` + `itertools.combinations`) on three
+  fixtures (even-p exhaustive, odd-p exhaustive, sampled) pinned at `1e-9`,
+  plus a 500-replication tau-equivalent Monte Carlo (`#[ignore]`) recovering
+  the analytic sum-score reliability within 0.01.
 - **Horn's parallel analysis** (`fast_mlsirm.parallel_analysis`; new
   `mlsirm_core::parallel`; Horn, 1965, and Glorfeld, 1995, as cited in and
   implemented by Dinno's CRAN `paran` 1.5.6 sources, read line by line).
