@@ -6251,3 +6251,57 @@ def test_raju_area_error_paths():
         raju_area(ok, b, se, se, np.array([-0.011]), ok, b, se, se, cov)
     with pytest.raises(ValueError, match="1-D"):
         raju_area(np.ones((1, 1)), b, se, se, cov, ok, b, se, se, cov)
+
+
+class TestKlInformation:
+    """Chang-Ying (1996) KL global-information CAT selection (paper READ via
+    Digital Conservancy; cross-checked against catR KL.R). Pinned oracles were
+    computed twice independently (Decimal 60-digit Simpson). Every assert
+    reads crate outputs returned through the binding."""
+
+    def test_pinned_oracle_and_select(self):
+        import fast_mlsirm as fm
+
+        # 2PL pinned area oracle (kills sign/Q-term/quadrature mutations).
+        v = fm.kl_information(
+            np.array([1.2]), np.array([0.3]), theta0=0.5, delta=1.0
+        )
+        assert abs(float(v[0]) - 0.114454883565329) < 1e-12
+
+        # Selection-pool oracle: full index vector + argmax + delta = r/sqrt(n).
+        a = np.array([0.8, 1.5, 1.0, 2.0, 0.6])
+        b = np.array([-1.0, 0.4, 0.0, 1.2, 0.3])
+        c = np.array([0.0, 0.0, 0.15, 0.1, 0.0])
+        adm = np.zeros(5, dtype=bool)
+        r = fm.kl_select(
+            a, b, c, administered=adm, theta0=0.25, n_administered=4, r=3.0
+        )
+        assert r["selected"] == 1
+        assert abs(r["delta"] - 1.5) < 1e-15
+        expected = np.array([
+            0.139656556289429, 0.562390595050374, 0.194256509461839,
+            0.349021047637362, 0.0992541089721506,
+        ])
+        assert np.max(np.abs(r["index"] - expected)) < 1e-12
+        # Masking applies to selection only: administered item keeps its index.
+        adm2 = adm.copy(); adm2[1] = True
+        r2 = fm.kl_select(
+            a, b, c, administered=adm2, theta0=0.25, n_administered=4, r=3.0
+        )
+        assert r2["selected"] == 3
+        assert abs(r2["index"][1] - expected[1]) < 1e-12
+
+    def test_validation(self):
+        import fast_mlsirm as fm
+
+        a = np.array([1.0, 1.2]); b = np.array([0.0, 0.5])
+        adm = np.zeros(2, dtype=bool)
+        with pytest.raises(ValueError):
+            fm.kl_information(a.reshape(1, 2), b, theta0=0.0, delta=1.0)
+        with pytest.raises(ValueError):
+            fm.kl_select(a, b, administered=adm, theta0=0.0, n_administered=0)
+        with pytest.raises(ValueError):
+            fm.kl_select(
+                a, b, administered=np.ones(2, dtype=bool),
+                theta0=0.0, n_administered=3,
+            )

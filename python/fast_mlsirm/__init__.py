@@ -91,6 +91,8 @@ from .exposure import (
     SympsonHetterResult as SympsonHetterResult,
     a_stratified as a_stratified,
     AStratifiedResult as AStratifiedResult,
+    kl_information as kl_information,
+    kl_select as kl_select,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -242,6 +244,8 @@ __all__ = [
     "sympson_hetter",
     "SympsonHetterResult",
     "a_stratified",
+    "kl_information",
+    "kl_select",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",
