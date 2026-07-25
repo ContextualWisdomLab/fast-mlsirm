@@ -107,6 +107,7 @@ use mlsirm_core::scoring::{
     score_map as core_score_map, score_wle as core_score_wle,
     score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
+use mlsirm_core::security::gbt as core_gbt;
 use mlsirm_core::security::k_index as core_k_index;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::subscores::subscores as core_subscores;
@@ -147,7 +148,7 @@ use mlsirm_core::{
     neg_loglik_and_grad_device as core_neg_loglik_and_grad_device, Device, ModelConfig, ModelType,
     Params, PenaltyConfig,
 };
-use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -1829,6 +1830,31 @@ fn py_k_index(
     out.set_item("emp_agg", res.emp_agg)?;
     out.set_item("p", res.p)?;
     out.set_item("k_index", res.k_index)?;
+    Ok(out.into())
+}
+
+/// Generalized binomial test (GBT) tail kernel
+/// (`mlsirm_core::security::gbt`), a faithful port of the CRAN aberrance
+/// package's `compute_GBT` (READ: `src/compute.cpp`), corroborated by
+/// CopyDetect's internal `GBT()` (READ: `R/similarity1.r`). NOT READ:
+/// van der Linden & Sotaridona (2006, *JEBS, 31*(3), 283-304); GBT is
+/// cited only as implemented by those packages. Probability construction
+/// is the caller's job (aberrance directional or CopyDetect symmetric
+/// recipe). Returns a dict with `observed_matches`, `match_dist` (exact
+/// Poisson-binomial pmf, length n_items + 1), and the inclusive upper-tail
+/// `p_value` `P(M >= observed_matches)`.
+#[pyfunction]
+fn py_gbt(
+    py: Python<'_>,
+    matches: PyReadonlyArray1<'_, f64>,
+    match_probs: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_gbt(matches.as_slice()?, match_probs.as_slice()?).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("observed_matches", res.observed_matches)?;
+    out.set_item("match_dist", PyArray1::from_slice(py, &res.match_dist))?;
+    out.set_item("p_value", res.p_value)?;
     Ok(out.into())
 }
 
@@ -6455,6 +6481,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
     m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
     m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
+    m.add_function(wrap_pyfunction!(py_gbt, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

@@ -7083,3 +7083,54 @@ class TestKIndex:
         r = k_index(x, copier=0, source=1)
         assert r.m == 0
         assert r.k_index == 1.0
+
+class TestGbt:
+    """GBT tail kernel: asserts read fast_mlsirm.gbt outputs (crate-backed).
+
+    Oracle: exact Python fractions.Fraction reference from the adversarial
+    spec review (files/gbt_spec_review.md); kills tail-direction,
+    off-by-one, and convolution-mixing mutants.
+    """
+
+    def test_pinned_oracle(self):
+        import numpy as np
+
+        from fast_mlsirm import gbt
+
+        matches = np.array([1, 1, 0, 1, 1, 1, 0, 1, 1, 0], dtype=np.int64)
+        probs = np.array(
+            [0.62, 0.55, 0.48, 0.71, 0.52, 0.66, 0.43, 0.58, 0.73, 0.49]
+        )
+        r = gbt(matches, probs)
+        assert r.observed_matches == 7
+        assert abs(r.p_value - 0.32225898631286054) < 1e-12
+        assert r.match_dist.shape == (11,)
+        assert abs(r.match_dist[0] - 0.00013873169507258882) < 1e-12
+        assert abs(r.match_dist[7] - 0.19449839960529633) < 1e-12
+        assert abs(r.match_dist.sum() - 1.0) < 1e-12
+
+    def test_structural_obs_zero_tail_is_one(self):
+        import numpy as np
+
+        from fast_mlsirm import gbt
+
+        r = gbt(np.zeros(4), np.array([0.3, 0.9, 0.5, 0.1]))
+        assert r.observed_matches == 0
+        assert r.p_value == 1.0
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import gbt
+
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.5]), np.array([0.5, 0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.0]), np.array([0.5, 1.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.0]), np.array([0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0 + 0j, 0.0]), np.array([0.5, 0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([True, False]), np.array([0.5, 0.5]))

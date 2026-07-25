@@ -1,8 +1,10 @@
 //! Test-security statistics: answer-copying detection.
 //!
 //! Implements (1) a reduced-scope, no-missing, conditional Wollack-style
-//! omega answer-copying statistic and (2) the K-index of matching incorrect
-//! answers exactly as implemented by CopyDetect's internal `k()`.
+//! omega answer-copying statistic, (2) the K-index of matching incorrect
+//! answers exactly as implemented by CopyDetect's internal `k()`, and
+//! (3) the generalized binomial test (GBT) tail kernel exactly as
+//! implemented by aberrance's `compute_GBT`.
 //!
 //! The omega formula and p-value direction are verified
 //! against the inspectable CRAN `CopyDetect` implementation (Zopluoglu;
@@ -22,7 +24,7 @@
 //! supply the suspected copier's per-item option probabilities (e.g. from a
 //! nominal response model at the copier's ability estimate, the canonical
 //! CopyDetect path). Missing-response handling, NRM fitting inside this
-//! function, GBT, g2, S1/S2/K1/K2/M4 variants, and continuity corrections
+//! function, g2, S1/S2/K1/K2/M4 variants, and continuity corrections
 //! are out of scope.
 //!
 //! The K-index (`k_index`) is a faithful port of CopyDetect
@@ -41,6 +43,30 @@
 //! READ: Holland (1996) ETS RR-96-07 and Sotaridona & Meijer (2002), so
 //! this implementation must not be described as a direct transcription of
 //! those papers.
+//!
+//! The GBT kernel (`gbt`) is a faithful port of the CRAN aberrance
+//! package's `src/compute.cpp` `compute_GBT` (READ): given per-item 0/1
+//! match indicators and per-item model match probabilities, it computes the
+//! exact Poisson-binomial distribution of the number of matches by a
+//! Bernoulli-convolution DP and returns the INCLUSIVE upper tail
+//! `P(M >= observed)`. The CopyDetect package's internal `GBT()`
+//! (`R/similarity1.r`, READ) computes the same exact distribution and the
+//! same inclusive upper tail via an equivalent matrix recursion, providing
+//! independent corroboration of the kernel. The two packages differ only in
+//! how the per-item match probabilities are CONSTRUCTED (aberrance:
+//! directional `P(examinee B produces A's observed response)` per
+//! `R/detect-ac.R`; CopyDetect: symmetric
+//! `Pi = P1c*P2c + (1-P1c)*(1-P2c)`, both-correct-or-both-incorrect).
+//! Probability construction is therefore OUT of scope here: callers supply
+//! `match_probs` using either recipe. Missing data is out of scope (the two
+//! packages conflict: aberrance skips pairs with any NA, CopyDetect
+//! zero-fills common missing). NOT READ: van der Linden & Sotaridona (2006)
+//! and (2004), the originating papers; GBT is cited only as implemented by
+//! the two packages above. Numerics: the DP uses only nonnegative products
+//! and sums of probabilities (no cancellation, no binomial-coefficient
+//! overflow); for very large `n` with extreme probabilities, tiny tail
+//! masses may underflow ordinary `f64` — this is an exact-DP-in-f64
+//! limitation, O(n^2) time, O(n) memory.
 //!
 //! In LLM-as-a-Judge item-quality management this flags judge pairs whose
 //! agreement on option-level choices exceeds what the suspected copier's own
@@ -70,6 +96,12 @@
 //! Sotaridona, L. S., & Meijer, R. R. (2002). Statistical properties of the
 //!   K-index for detecting answer copying. *Journal of Educational
 //!   Measurement, 39*(2), 115-132. (NOT read.)
+//! van der Linden, W. J., & Sotaridona, L. (2006). Detecting answer copying
+//!   when the regular response process follows a known response model.
+//!   *Journal of Educational and Behavioral Statistics, 31*(3), 283-304.
+//!   https://doi.org/10.3102/10769986031003283 (originating GBT paper; NOT
+//!   read — the statistic is implemented as ported from the aberrance and
+//!   CopyDetect sources.)
 
 /// Result of the Wollack-style omega answer-copying test.
 #[derive(Debug, Clone)]
@@ -356,6 +388,88 @@ pub fn k_index(
         emp_agg,
         p,
         k_index: k,
+    })
+}
+
+/// Result of the generalized binomial test (GBT) tail kernel.
+#[derive(Debug, Clone)]
+pub struct GbtResult {
+    /// Observed number of matching items, `sum(matches)`.
+    pub observed_matches: usize,
+    /// Exact Poisson-binomial pmf of the number of matches, length
+    /// `n_items + 1`; `match_dist[k] = P(M = k)`.
+    pub match_dist: Vec<f64>,
+    /// Inclusive upper tail `P(M >= observed_matches)`; small values
+    /// suggest copying.
+    pub p_value: f64,
+}
+
+/// Generalized binomial test (GBT) tail kernel, exactly as implemented by
+/// the CRAN aberrance package's `compute_GBT` (READ: `src/compute.cpp`) and
+/// corroborated by CopyDetect's internal `GBT()` (READ: `R/similarity1.r`).
+///
+/// `matches[i]` is exactly 0.0/1.0 indicating whether the copier's and
+/// source's responses on item `i` are identical; `match_probs[i]` is the
+/// model probability of a match on item `i` (finite, in closed `[0, 1]`;
+/// deterministic 0/1 probabilities are handled exactly by the DP).
+/// Probability CONSTRUCTION is the caller's job: aberrance uses the
+/// directional `P(examinee B produces A's observed response)`, CopyDetect
+/// the symmetric `Pi = P1c*P2c + (1-P1c)*(1-P2c)` — either recipe fits.
+///
+/// The exact distribution of the match count `M` is built by the standard
+/// Bernoulli-convolution DP (seeded at `f = [1]` and folding one item at a
+/// time, algebraically identical to aberrance's `f[0]=1-p[0], f[1]=p[0]`
+/// seed-then-loop form), and the p-value is the INCLUSIVE upper tail
+/// `sum_{k=obs}^{n} f[k]`, clamped into `[0, 1]`. `obs = 0` naturally
+/// yields `p = 1`; no special-casing.
+pub fn gbt(matches: &[f64], match_probs: &[f64]) -> Result<GbtResult, String> {
+    let n = matches.len();
+    if n == 0 {
+        return Err("gbt: need at least 1 item".to_string());
+    }
+    if match_probs.len() != n {
+        return Err(format!(
+            "gbt: matches length {} != match_probs length {}",
+            n,
+            match_probs.len()
+        ));
+    }
+    for (i, &x) in matches.iter().enumerate() {
+        if x != 0.0 && x != 1.0 {
+            return Err(format!(
+                "gbt: matches[{}] = {} (entries must be exactly 0 or 1)",
+                i, x
+            ));
+        }
+    }
+    for (i, &p) in match_probs.iter().enumerate() {
+        if !p.is_finite() || !(0.0..=1.0).contains(&p) {
+            return Err(format!(
+                "gbt: match_probs[{}] = {} (must be finite and in [0, 1])",
+                i, p
+            ));
+        }
+    }
+
+    let obs = matches.iter().filter(|&&x| x == 1.0).count();
+
+    // Bernoulli-convolution DP over items; f[k] = P(M = k) after each fold.
+    let mut f = vec![0.0f64; n + 1];
+    f[0] = 1.0;
+    for (i, &p) in match_probs.iter().enumerate() {
+        let q = 1.0 - p;
+        // Descending update so f[j-1] is still the previous item's value.
+        for j in (1..=(i + 1)).rev() {
+            f[j] = q * f[j] + p * f[j - 1];
+        }
+        f[0] *= q;
+    }
+
+    let p_value = f[obs..].iter().sum::<f64>().clamp(0.0, 1.0);
+    Ok(GbtResult {
+        observed_matches: obs,
+        match_dist: f,
+        p_value,
     })
 }
 

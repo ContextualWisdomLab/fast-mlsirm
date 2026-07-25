@@ -234,3 +234,83 @@ def k_index(
         p=float(res["p"]),
         k_index=float(res["k_index"]),
     )
+
+@dataclass
+class GbtResult:
+    """Result of the generalized binomial test (GBT) tail kernel."""
+
+    observed_matches: int
+    match_dist: np.ndarray
+    p_value: float
+
+
+def gbt(matches, match_probs):
+    """Generalized binomial test (GBT) answer-copying tail kernel.
+
+    Computes the exact Poisson-binomial distribution of the number of
+    matching responses between two examinees and the INCLUSIVE upper-tail
+    p-value ``P(M >= observed_matches)`` (small values suggest copying),
+    exactly as implemented by the CRAN aberrance package's ``compute_GBT``
+    (READ: ``src/compute.cpp``) and corroborated by CopyDetect's internal
+    ``GBT()`` (READ: ``R/similarity1.r``, same distribution and the same
+    inclusive tail). NOT READ: van der Linden & Sotaridona (2006, *JEBS,
+    31*(3), 283-304), the originating paper; GBT is cited only as
+    implemented by those packages.
+
+    Probability CONSTRUCTION is the caller's job — the two packages differ:
+    aberrance supplies the directional ``P(examinee B produces A's observed
+    response)`` per item; CopyDetect supplies the symmetric
+    ``Pi = P1c*P2c + (1-P1c)*(1-P2c)`` (both correct or both incorrect).
+    Either recipe fits this kernel. Missing data is out of scope (the
+    packages conflict on it).
+
+    In LLM-as-a-Judge quality management this flags judge pairs whose
+    per-item agreement exceeds what the response models for the two judges
+    can explain.
+
+    ``matches`` is a length-``n_items`` vector with entries exactly 0 or 1
+    (response identity indicators); ``match_probs`` the per-item model
+    match probabilities in the closed interval [0, 1].
+
+    References
+    ----------
+    van der Linden, W. J., & Sotaridona, L. (2006). Detecting answer
+    copying when the regular response process follows a known response
+    model. *Journal of Educational and Behavioral Statistics, 31*(3),
+    283-304. https://doi.org/10.3102/10769986031003283 (NOT READ.)
+    *aberrance* (R package). CRAN. (READ: ``src/compute.cpp``
+    ``compute_GBT``; ported implementation.)
+    Zopluoglu, C. (2018). *CopyDetect* (R package). (READ:
+    ``R/similarity1.r`` internal ``GBT()``; corroboration.)
+    """
+    m = np.asarray(matches)
+    p = np.asarray(match_probs)
+    for name, a in (("matches", m), ("match_probs", p)):
+        if a.ndim != 1:
+            raise ValueError(f"{name} must be a 1-D vector")
+        if a.shape[0] < 1:
+            raise ValueError(f"{name} must be non-empty")
+        if np.iscomplexobj(a):
+            raise ValueError(f"{name} must be real-valued")
+        if a.dtype.kind not in ("i", "u", "f"):
+            raise ValueError(f"{name} must be an integer or float array")
+    if m.shape[0] != p.shape[0]:
+        raise ValueError("matches and match_probs must have equal length")
+    mf = np.ascontiguousarray(m, dtype=np.float64)
+    pf = np.ascontiguousarray(p, dtype=np.float64)
+    if not np.all((mf == 0.0) | (mf == 1.0)):
+        raise ValueError("matches entries must be exactly 0 or 1")
+    if not np.all(np.isfinite(pf)) or np.any(pf < 0.0) or np.any(pf > 1.0):
+        raise ValueError("match_probs must be finite and in [0, 1]")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_gbt"):
+        raise RuntimeError("gbt requires the compiled Rust core")
+    res = core.py_gbt(mf, pf)
+    return GbtResult(
+        observed_matches=int(res["observed_matches"]),
+        match_dist=np.asarray(res["match_dist"], dtype=np.float64),
+        p_value=float(res["p_value"]),
+    )
