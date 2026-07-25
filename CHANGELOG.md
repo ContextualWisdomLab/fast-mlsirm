@@ -124,7 +124,9 @@
   `py_k_index`): binomial upper-tail index of copier-source shared incorrect
   answers against a number-incorrect subgroup baseline, ported exactly from
   the CRAN CopyDetect package's internal `k()` (`R/similarity1.r`, READ;
-  corroborated by `R/similarity2.r`). The subgroup includes the copier and,
+  corroborated by `R/similarity2.r`), with the binomial tail summed in log
+  space (no factorial overflow or extreme-p underflow). The subgroup
+  includes the copier and,
   when scores match, the source (CopyDetect convention). Holland (1996,
   RR-96-07) and Sotaridona & Meijer (2002) NOT read — cited only as
   implemented; Sotaridona & Meijer (2001, ERIC ED467373) read for

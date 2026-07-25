@@ -384,3 +384,19 @@ fn monte_carlo_k_index_size_and_power() {
     assert!(size < 0.10, "empirical size {}", size);
     assert!(power > 0.5, "empirical power {}", power);
 }
+
+/// Regression for the impl-review finding: the linear-space recurrence
+/// underflowed at extreme p / large n ((1-p)^1000 == 0), returning K = 0.
+/// Exact reference computed with Python fractions.Fraction on the exact
+/// binary value of 0.99: P(Bin(1000, 0.99) >= 990) = 0.58304080330109709.
+/// Asserts read: binom_sf_ge (the crate's binomial kernel used by k_index).
+/// Killed by: any complement/linear-space form that underflows (returns 0),
+/// and by tail flips (lower tail = 0.475...).
+#[test]
+fn k_index_binomial_tail_extreme_p_regression() {
+    let k = binom_sf_ge(1000, 0.99, 990);
+    assert!((k - 0.58304080330109709).abs() < 1e-12, "tail {}", k);
+    // Symmetric moderate case stays exact too.
+    let k2 = binom_sf_ge(5, 0.53333333333333333, 2);
+    assert!((k2 - 0.85139489711934158).abs() < 1e-12, "tail {}", k2);
+}

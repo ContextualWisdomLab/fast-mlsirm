@@ -211,10 +211,13 @@ pub struct KIndexResult {
     pub k_index: f64,
 }
 
-/// Binomial upper tail `P(Bin(n, p) >= m)` for `0 <= p <= 1`, computed with
-/// a coefficient-free term recurrence (no factorials/binomial coefficients
-/// materialized), summing whichever tail has fewer terms and clamping
-/// roundoff into `[0, 1]`.
+/// Binomial upper tail `P(Bin(n, p) >= m)` for `0 <= p <= 1`, computed by
+/// summing the upper-tail terms directly in log space (term recurrence for
+/// the log-probabilities, then a max-shifted exponential sum). No binomial
+/// coefficients are materialized and no complement subtraction is
+/// performed, so extreme `p` / large `n` neither overflow nor underflow
+/// (e.g. `n = 1000, p = 0.99, m = 990`, where the linear-space term
+/// `(1-p)^n` underflows to zero). Result clamped into `[0, 1]`.
 fn binom_sf_ge(n: usize, p: f64, m: usize) -> f64 {
     if m == 0 {
         return 1.0;
@@ -228,25 +231,23 @@ fn binom_sf_ge(n: usize, p: f64, m: usize) -> f64 {
     if p >= 1.0 {
         return 1.0; // m <= n here
     }
-    let ratio = p / (1.0 - p);
-    // t_k = C(n,k) p^k (1-p)^(n-k); t_0 = (1-p)^n; t_{k+1} = t_k*(n-k)/(k+1)*ratio.
-    let mut t = (1.0 - p).powi(n as i32);
-    let (lo, hi, complement) = if m <= n / 2 {
-        (0usize, m - 1, true) // sum lower tail 0..m-1, return 1 - it
-    } else {
-        (m, n, false)
-    };
-    let mut acc = 0.0;
-    for k in 0..=hi {
-        if k >= lo {
-            acc += t;
+    let lp = p.ln();
+    let lq = (1.0 - p).ln();
+    // log t_k where t_k = C(n,k) p^k (1-p)^(n-k):
+    // log t_0 = n log(1-p); log t_{k+1} = log t_k + log((n-k)/(k+1)) + log(p/(1-p)).
+    let mut lt = n as f64 * lq;
+    let mut logs = Vec::with_capacity(n - m + 1);
+    for k in 0..=n {
+        if k >= m {
+            logs.push(lt);
         }
-        if k < hi {
-            t *= (n - k) as f64 / (k + 1) as f64 * ratio;
+        if k < n {
+            lt += ((n - k) as f64 / (k + 1) as f64).ln() + lp - lq;
         }
     }
-    let out = if complement { 1.0 - acc } else { acc };
-    out.clamp(0.0, 1.0)
+    let mx = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let s: f64 = logs.iter().map(|&l| (l - mx).exp()).sum();
+    (mx + s.ln()).exp().clamp(0.0, 1.0)
 }
 
 /// K-index of matching incorrect answers, exactly as implemented by the
