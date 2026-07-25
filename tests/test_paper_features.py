@@ -5157,6 +5157,8 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
         ksirt_analysis(ok, bandwidth=np.array([0.5]))
     with pytest.raises(ValueError, match="positive"):
         ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+    with pytest.raises(ValueError, match="at least 1 item"):
+        core.ksirt_occ(np.array([], dtype=float), 2, 0, "gaussian", 5, None)
 
 
 def test_subscore_analysis_matches_independent_reference():
