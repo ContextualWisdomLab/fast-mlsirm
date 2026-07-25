@@ -41,6 +41,8 @@ from .subscores import (
 from .detect import (
     detect_analysis as detect_analysis,
     DetectResult as DetectResult,
+    dimtest as dimtest,
+    DimtestResult as DimtestResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
@@ -221,6 +223,7 @@ __all__ = [
     "subscore_analysis",
     "SubscoreResult",
     "detect_analysis",
+    "dimtest",
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
@@ -265,6 +268,7 @@ __all__ = [
     "GTheoryDStudyRow",
     "ClassificationResult",
     "DetectResult",
+    "DimtestResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

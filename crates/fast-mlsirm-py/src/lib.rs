@@ -32,6 +32,7 @@ use mlsirm_core::classification::{
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
+use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
@@ -1711,6 +1712,48 @@ fn detect_analysis(
     out.set_item("pair_i", res.pair_i)?;
     out.set_item("pair_j", res.pair_j)?;
     out.set_item("ccov", res.ccov)?;
+    Ok(out.into())
+}
+
+/// Confirmatory Stout-style DIMTEST statistic of essential unidimensionality
+/// (`mlsirm_core::detect::dimtest`).
+///
+/// Formulas transcribed from Nandakumar & Stout's 1992 ERIC technical-report
+/// version (ED351383) of "Refinements of Stout's Procedure for Assessing
+/// Latent Trait Unidimensionality" (published 1993, *Journal of Educational
+/// Statistics, 18*(1), 41-68), which describes Stout (1987, Sec. 4).
+/// Kieftenbeld & Nandakumar (2015, PMC5978610) was READ for the original
+/// second-AT bias correction vs. later bootstrap DIMTEST distinction.
+/// NOT READ: Stout (1987) original Psychometrika article, Stout et al.
+/// (2001), Froelich & Habing (2008), and DIM-Pack source code; Stout (1987)
+/// is cited only as described by Nandakumar & Stout (1992/1993).
+///
+/// `x` is a flattened row-major `n_persons * n_items` binary (0/1, no
+/// missing) response matrix; `at1`/`at2` are caller-supplied assessment
+/// subtest item indices (equal length >= 4, disjoint); PT is the complement.
+/// Persons are grouped by raw PT score; groups with fewer than 20 examinees
+/// are discarded. Returns a dict with `t`, `t_l`, `t_b`, `p_value`
+/// (one-sided upper tail), `groups_used`, `n_discarded`, and
+/// `retained_pt_scores`.
+#[pyfunction]
+fn py_dimtest(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    at1: Vec<usize>,
+    at2: Vec<usize>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let flat = x.as_slice()?;
+    let res = core_dimtest(flat, n_persons, n_items, &at1, &at2).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("t", res.t)?;
+    out.set_item("t_l", res.t_l)?;
+    out.set_item("t_b", res.t_b)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("groups_used", res.groups_used)?;
+    out.set_item("n_discarded", res.n_discarded)?;
+    out.set_item("retained_pt_scores", res.retained_pt_scores)?;
     Ok(out.into())
 }
 
@@ -6334,6 +6377,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
     m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
