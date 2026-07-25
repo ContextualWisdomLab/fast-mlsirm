@@ -119,6 +119,17 @@
 
 ### Added
 
+- **Mantel polytomous DIF + standardized mean difference (Zwick, Donoghue & Grima)**
+  (`fast_mlsirm.mantel_smd_dif`; in Rust `mlsirm_core::dif::mantel_smd_dif`, PyO3
+  `py_mantel_smd_dif`): ordinal-item DIF screening — examinees matched on the
+  full total score, per-stratum focal score sums compared with their
+  conditional hypergeometric expectation/variance (Mantel χ², df = 1, Eqs. 8–9
+  of ETS RR-93-14), plus the standardized mean difference effect size (Eq. 11,
+  focal-weighted focal-minus-reference item mean difference; weights
+  renormalized over usable strata — documented deviation matching the crate's
+  standardized P-DIF convention). For 0/1 items the χ² reduces to the MH
+  chi-square without continuity correction. Integer non-negative scores only
+  (reduced scope; no missing-data support).
 - **Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)**
   (`fast_mlsirm.eb_mh_dif`; in Rust `mlsirm_core::dif::eb_mh_dif`, PyO3
   `py_eb_mh_dif`): shrinkage enhancement of MH D-DIF statistics — prior

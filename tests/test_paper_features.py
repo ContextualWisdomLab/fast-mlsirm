@@ -7479,3 +7479,53 @@ class TestEbMhDif:
             eb_mh_dif(np.array([1 + 2j, 1.0]), [1.0, 1.0])
         with pytest.raises(ValueError):
             eb_mh_dif([[1.0, 2.0]], [1.0, 1.0])
+
+class TestMantelSmd:
+    """Mantel (1963) polytomous DIF + SMD (Zwick, Donoghue & Grima, 1993)."""
+
+    def _fixture(self):
+        import numpy as np
+
+        y = np.array(
+            [
+                [2, 1, 0], [1, 0, 2], [2, 2, 1], [0, 1, 1], [1, 2, 0], [2, 0, 0],
+                [1, 1, 1], [0, 0, 0], [2, 1, 0], [0, 2, 2], [0, 1, 0], [1, 0, 1],
+            ]
+        )
+        group = np.array([0] * 6 + [1] * 6)
+        return y, group
+
+    def test_pinned_fixture(self):
+        import numpy as np
+        from fast_mlsirm import mantel_smd_dif
+
+        y, group = self._fixture()
+        res = mantel_smd_dif(y, group)
+        # Exact-rational pins from the session oracle (crate values asserted).
+        np.testing.assert_allclose(res["chi2"], [3 / 77, 5 / 37, 2 / 133], atol=1e-12)
+        np.testing.assert_allclose(res["smd"], [1 / 9, -1 / 6, 1 / 18], atol=1e-12)
+        assert list(res["n_strata_used"]) == [2, 2, 2]
+        assert np.all((res["p_value"] > 0) & (res["p_value"] < 1))
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import mantel_smd_dif
+
+        y, group = self._fixture()
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y.astype(complex), group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y + 0.5, group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(-y, group)
+        yn = y.astype(float)
+        yn[0, 0] = np.nan
+        with pytest.raises(ValueError):
+            mantel_smd_dif(yn, group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y, np.zeros(12, dtype=int))
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y, group[:5])
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y.ravel(), group)

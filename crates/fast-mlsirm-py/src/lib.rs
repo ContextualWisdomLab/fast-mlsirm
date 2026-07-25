@@ -36,9 +36,10 @@ use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
     delta_plot as core_delta_plot, eb_mh_dif as core_eb_mh_dif, logistic_dif as core_logistic_dif,
     logistic_dif_purified as core_logistic_purified, mantel_haenszel_dif as core_mh_dif,
-    mantel_haenszel_dif_purified as core_mh_purified, raju_area as core_raju_area,
-    sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust, LogisticDifConfig, LogisticDifRow,
-    MhDifConfig, MhDifRow, PurifyConfig, PurifyType as DeltaPurifyType, SibtestConfig,
+    mantel_haenszel_dif_purified as core_mh_purified, mantel_smd_dif as core_mantel_smd_dif,
+    raju_area as core_raju_area, sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust,
+    LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
+    PurifyType as DeltaPurifyType, SibtestConfig,
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
@@ -2084,6 +2085,34 @@ fn py_eb_mh_dif(
     out.set_item("post_mean", PyArray1::from_slice(py, &res.post_mean))?;
     out.set_item("post_var", PyArray1::from_slice(py, &res.post_var))?;
     out.set_item("cat_probs", PyArray1::from_slice(py, &probs_flat))?;
+    Ok(out.into())
+}
+
+/// Mantel (1963) polytomous DIF chi-square + standardized mean difference
+/// (`mlsirm_core::dif::mantel_smd_dif`; Zwick, Donoghue & Grima, 1993,
+/// ERIC ED386493 — see the core section header for citation governance and
+/// the documented SMD used-strata renormalization deviation). Takes
+/// row-major ordinal integer scores (`n_persons * n_items`) and 0/1 group
+/// labels; returns per-item vectors.
+#[pyfunction]
+fn py_mantel_smd_dif(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, i64>,
+    group: PyReadonlyArray1<'_, u8>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let rows = core_mantel_smd_dif(y.as_slice()?, group.as_slice()?, n_persons, n_items)
+        .map_err(PyValueError::new_err)?;
+    let chi2: Vec<f64> = rows.iter().map(|r| r.chi2).collect();
+    let p_value: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let smd: Vec<f64> = rows.iter().map(|r| r.smd).collect();
+    let used: Vec<f64> = rows.iter().map(|r| r.n_strata_used as f64).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("chi2", PyArray1::from_slice(py, &chi2))?;
+    out.set_item("p_value", PyArray1::from_slice(py, &p_value))?;
+    out.set_item("smd", PyArray1::from_slice(py, &smd))?;
+    out.set_item("n_strata_used", PyArray1::from_slice(py, &used))?;
     Ok(out.into())
 }
 
@@ -6716,6 +6745,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_person_fit_np, m)?)?;
     m.add_function(wrap_pyfunction!(py_delta_plot, m)?)?;
     m.add_function(wrap_pyfunction!(py_eb_mh_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_mantel_smd_dif, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

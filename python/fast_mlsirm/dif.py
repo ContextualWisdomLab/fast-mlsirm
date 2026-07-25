@@ -589,3 +589,81 @@ def logistic_dif(
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
         "converged": np.asarray(res["converged"], dtype=bool),
     }
+
+
+def mantel_smd_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Mantel (1963) polytomous DIF chi-square + standardized mean difference (compute in Rust).
+
+    The ordinal-item extension of the Mantel-Haenszel sweep: examinees are matched on the total
+    score (including the studied item, the crate convention shared with
+    :func:`mantel_haenszel_dif`), and within each matching stratum the focal group's observed item
+    score sum ``F_k`` is compared with its conditional (hypergeometric) expectation and variance
+    (Zwick, Donoghue & Grima, 1993, Eq. 8-9). ``chi2`` is ``(sum F_k - sum E(F_k))^2 / sum
+    Var(F_k)``, referred to ``chi2(1)`` for ``p_value``. ``smd`` is the standardized mean
+    difference (Eq. 11): the focal-weighted mean item-score difference (focal minus reference);
+    negative = focal group scores lower than comparable reference examinees. Documented deviation:
+    the SMD focal weights are renormalized over the *used* strata (both groups present) rather
+    than the literal all-focal denominator, matching the crate's standardized P-DIF convention.
+    For 0/1 items ``chi2`` reduces to the MH chi-square *without* the continuity correction.
+
+    ``responses`` is a persons x items array of non-negative integer ordinal scores (no missing
+    data; drop or impute beforehand -- reduced scope). ``group`` is a length-persons array with
+    ``0`` = reference and ``1`` = focal (both must be present). Returns per-item arrays ``chi2``,
+    ``p_value``, ``smd``, ``n_strata_used``; NaN statistics mark items with no usable stratum or
+    zero conditional variance.
+
+    References (APA 7th ed.):
+        Mantel, N. (1963). Chi-square tests with one degree of freedom: Extensions of the
+            Mantel-Haenszel procedure. *Journal of the American Statistical Association, 58*(303),
+            690-700. https://doi.org/10.1080/01621459.1963.10500879 [NOT READ; formulas taken from
+            Zwick, Donoghue & Grima (1993) as read.]
+        Zwick, R., Donoghue, J. R., & Grima, A. (1993). *Assessment of differential item
+            functioning for performance tasks* (ETS Research Report RR-93-14; ERIC ED386493). ETS.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_mantel_smd_dif"):
+        raise RuntimeError("mantel_smd_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(yf == np.round(yf)):
+        raise ValueError("responses must be integer-valued ordinal scores")
+    if np.any(yf < 0):
+        raise ValueError("responses must be non-negative")
+    if np.any(np.abs(yf) > 2**53):
+        raise ValueError("responses exceed the exactly representable integer range")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+
+    res = core.py_mantel_smd_dif(
+        yf.astype(np.int64).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+    )
+    return {
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "smd": np.asarray(res["smd"], dtype=np.float64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+    }
