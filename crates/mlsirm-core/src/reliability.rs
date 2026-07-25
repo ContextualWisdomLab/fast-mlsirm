@@ -455,8 +455,9 @@ pub fn cronbach_alpha(data: &[f64], n: usize, p: usize) -> Result<f64, String> {
     if p < 2 {
         return Err("cronbach_alpha needs at least 2 items".into());
     }
-    if data.len() != n * p {
-        return Err(format!("data length {} != n*p = {}", data.len(), n * p));
+    let cells = n.checked_mul(p).ok_or("n * p overflows usize")?;
+    if data.len() != cells {
+        return Err(format!("data length {} != n*p = {}", data.len(), cells));
     }
     if data.iter().any(|v| !v.is_finite()) {
         return Err("data contains non-finite values".into());
@@ -628,7 +629,9 @@ pub fn feldt_alpha_ci(alpha: f64, n: usize, p: usize, level: f64) -> Result<Alph
         return Err("level must be in (0, 1)".into());
     }
     let df1 = (n - 1) as f64;
-    let df2 = ((n - 1) * (p - 1)) as f64;
+    let df2 = (n - 1)
+        .checked_mul(p - 1)
+        .ok_or("(n - 1) * (p - 1) overflows usize")? as f64;
     let delta = 1.0 - level;
     let one_minus = 1.0 - alpha;
     let lower = 1.0 - one_minus * f_quantile(1.0 - delta / 2.0, df1, df2);
