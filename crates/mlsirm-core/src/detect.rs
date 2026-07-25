@@ -374,6 +374,117 @@ pub struct DimtestResult {
 /// contract exact.
 const DIMTEST_JMIN: usize = 20;
 
+/// Groups persons by raw PT total score, keeping only groups with at least
+/// `DIMTEST_JMIN` examinees. Returns `(groups, retained_pt_scores,
+/// n_discarded)` with groups in ascending PT-score order. Factored out of
+/// `dimtest` so tests can pin per-group intermediates against the oracle.
+fn dimtest_pt_groups(
+    responses: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    pt: &[usize],
+) -> (Vec<Vec<usize>>, Vec<i64>, usize) {
+    let mut pt_score: Vec<i64> = vec![0; n_persons];
+    for (p, s) in pt_score.iter_mut().enumerate() {
+        *s = pt.iter().map(|&i| responses[p * n_items + i] as i64).sum();
+    }
+    let mut order: Vec<usize> = (0..n_persons).collect();
+    order.sort_unstable_by_key(|&p| pt_score[p]);
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut retained_pt_scores: Vec<i64> = Vec::new();
+    let mut n_discarded = 0usize;
+    let mut start = 0;
+    while start < order.len() {
+        let s = pt_score[order[start]];
+        let mut end = start + 1;
+        while end < order.len() && pt_score[order[end]] == s {
+            end += 1;
+        }
+        if end - start >= DIMTEST_JMIN {
+            groups.push(order[start..end].to_vec());
+            retained_pt_scores.push(s);
+        } else {
+            n_discarded += end - start;
+        }
+        start = end;
+    }
+    (groups, retained_pt_scores, n_discarded)
+}
+
+/// Per-group DIMTEST intermediates for one assessment subtest, exposed so
+/// tests can pin every step of the Nandakumar & Stout (1992/1993) formula
+/// against an independent oracle (not just the top-level statistics).
+#[derive(Debug, Clone, Copy)]
+struct DimtestGroupDiag {
+    /// Retained group size `J_k`.
+    jk: usize,
+    /// Mean raw AT total score in the group.
+    mean: f64,
+    /// ML (divide-by-`J_k`) variance of the AT total, `sigma_hat_k^2`.
+    v: f64,
+    /// Unidimensional-null variance `sigma_hat_U,k^2 = sum_i p_i (1 - p_i)`.
+    u: f64,
+    /// ML fourth central moment of the AT total, `mu4_k`.
+    mu4: f64,
+    /// `delta4_k = sum_i p_i (1 - p_i) (1 - 2 p_i)^2`.
+    delta4: f64,
+    /// Refined bias-correction denominator squared, `S_k^2`.
+    s2: f64,
+    /// Group contribution `(sigma_hat_k^2 - sigma_hat_U,k^2) / S_k`.
+    contribution: f64,
+}
+
+/// Computes the DIMTEST intermediates for one retained group and one
+/// assessment subtest, on the raw-total-score scale.
+fn dimtest_group_diag(
+    idx: &[usize],
+    responses: &[f64],
+    n_items: usize,
+    subtest: &[usize],
+) -> Result<DimtestGroupDiag, String> {
+    let jk = idx.len() as f64;
+    // Raw AT total per retained person in this group.
+    let totals: Vec<f64> = idx
+        .iter()
+        .map(|&p| subtest.iter().map(|&i| responses[p * n_items + i]).sum())
+        .collect();
+    let mean = totals.iter().sum::<f64>() / jk;
+    let mut v = 0.0;
+    let mut mu4 = 0.0;
+    for &a in &totals {
+        let d = a - mean;
+        v += d * d;
+        mu4 += d * d * d * d;
+    }
+    v /= jk;
+    mu4 /= jk;
+    // Item proportions correct within the group.
+    let mut u = 0.0;
+    let mut delta4 = 0.0;
+    for &i in subtest {
+        let p = idx.iter().map(|&q| responses[q * n_items + i]).sum::<f64>() / jk;
+        let pq = p * (1.0 - p);
+        u += pq;
+        let c = 1.0 - 2.0 * p;
+        delta4 += pq * c * c;
+    }
+    let aterm = (mu4 - v * v).max(0.0);
+    let s2 = (aterm + delta4 + 2.0 * (aterm * delta4).sqrt()) / jk;
+    if s2 <= 0.0 {
+        return Err("dimtest: a retained group has zero standard error (S_k = 0)".to_string());
+    }
+    Ok(DimtestGroupDiag {
+        jk: idx.len(),
+        mean,
+        v,
+        u,
+        mu4,
+        delta4,
+        s2,
+        contribution: (v - u) / s2.sqrt(),
+    })
+}
+
 /// Normalized subgroup sum for one assessment subtest: returns
 /// `K^{-1/2} sum_k (sigma_hat_k^2 - sigma_hat_U,k^2) / S_k` computed on the
 /// raw-total-score scale, which is algebraically identical to the
@@ -388,38 +499,7 @@ fn dimtest_stat(
     let k_groups = groups.len() as f64;
     let mut sum = 0.0;
     for idx in groups {
-        let jk = idx.len() as f64;
-        // Raw AT total per retained person in this group.
-        let totals: Vec<f64> = idx
-            .iter()
-            .map(|&p| subtest.iter().map(|&i| responses[p * n_items + i]).sum())
-            .collect();
-        let mean = totals.iter().sum::<f64>() / jk;
-        let mut v = 0.0;
-        let mut mu4 = 0.0;
-        for &a in &totals {
-            let d = a - mean;
-            v += d * d;
-            mu4 += d * d * d * d;
-        }
-        v /= jk;
-        mu4 /= jk;
-        // Item proportions correct within the group.
-        let mut u = 0.0;
-        let mut delta4 = 0.0;
-        for &i in subtest {
-            let p = idx.iter().map(|&q| responses[q * n_items + i]).sum::<f64>() / jk;
-            let pq = p * (1.0 - p);
-            u += pq;
-            let c = 1.0 - 2.0 * p;
-            delta4 += pq * c * c;
-        }
-        let aterm = (mu4 - v * v).max(0.0);
-        let s2 = (aterm + delta4 + 2.0 * (aterm * delta4).sqrt()) / jk;
-        if s2 <= 0.0 {
-            return Err("dimtest: a retained group has zero standard error (S_k = 0)".to_string());
-        }
-        sum += (v - u) / s2.sqrt();
+        sum += dimtest_group_diag(idx, responses, n_items, subtest)?.contribution;
     }
     Ok(sum / k_groups.sqrt())
 }
@@ -489,30 +569,8 @@ pub fn dimtest(
     }
 
     // Group persons by raw PT total score (exact integers in f64).
-    let mut pt_score: Vec<i64> = vec![0; n_persons];
-    for (p, s) in pt_score.iter_mut().enumerate() {
-        *s = pt.iter().map(|&i| responses[p * n_items + i] as i64).sum();
-    }
-    let mut order: Vec<usize> = (0..n_persons).collect();
-    order.sort_unstable_by_key(|&p| pt_score[p]);
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    let mut retained_pt_scores: Vec<i64> = Vec::new();
-    let mut n_discarded = 0usize;
-    let mut start = 0;
-    while start < order.len() {
-        let s = pt_score[order[start]];
-        let mut end = start + 1;
-        while end < order.len() && pt_score[order[end]] == s {
-            end += 1;
-        }
-        if end - start >= DIMTEST_JMIN {
-            groups.push(order[start..end].to_vec());
-            retained_pt_scores.push(s);
-        } else {
-            n_discarded += end - start;
-        }
-        start = end;
-    }
+    let (groups, retained_pt_scores, n_discarded) =
+        dimtest_pt_groups(responses, n_persons, n_items, &pt);
     if groups.len() < 2 {
         return Err(format!(
             "dimtest: only {} PT-score group(s) with >= {} examinees; need at least 2",

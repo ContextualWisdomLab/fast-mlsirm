@@ -198,6 +198,8 @@ def dimtest(
     resp = np.asarray(responses)
     if np.iscomplexobj(resp):
         raise ValueError("responses must be real-valued")
+    if resp.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
     y = resp.astype(np.float64, copy=False)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")
@@ -211,6 +213,8 @@ def dimtest(
         arr = np.asarray(a).reshape(-1)
         if np.iscomplexobj(arr):
             raise ValueError(f"{name} indices must be real integers")
+        if arr.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError(f"{name} indices must be a numeric array")
         af = arr.astype(np.float64)
         if arr.size == 0 or not np.all(np.isfinite(af)) or np.any(af != np.round(af)):
             raise ValueError(f"{name} indices must be non-empty integers")
