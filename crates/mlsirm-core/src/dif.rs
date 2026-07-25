@@ -2334,6 +2334,206 @@ pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
         cat_probs,
     })
 }
+
+// ===========================================================================
+// Mantel (1963) polytomous DIF test + standardized mean difference (SMD)
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Zwick, R., Donoghue, J. R.,
+// & Grima, A. (1993). Assessing differential item functioning in performance
+// tests (ETS research report; ERIC ED386493), formula section pp. 14-18:
+// Eq. 8 (Mantel chi-squared), Eq. 9 (F_k, E(F_k), Var(F_k)), Eq. 11 (SMD),
+// including the stated dichotomous reduction "identical to the
+// Mantel-Haenszel (1959) statistic without the continuity correction" and
+// the SMD sign convention "a negative SMD value implies that, conditional on
+// the matching variable, the F group has a lower mean item score". The
+// journal version is Zwick, Donoghue, & Grima (1993), Journal of Educational
+// Measurement, 30(3), 233-251 (NOT read; the RR text above was used).
+//
+// NOT READ (cited by the read report as origins; attribution is via Zwick
+// et al.'s presentation): Mantel (1963, JASA 58, 690-700) for the ordered-
+// category test; Dorans & Schmitt (1991) for SMD; Mantel & Haenszel (1959).
+//
+// Implementation choices NOT printed in the read source (all verified
+// against the crate's own conventions, not against external software):
+// - Matching variable: full observed total score including the studied item
+//   (mirrors `base_scores` with `anchor = None`, the crate's dichotomous MH
+//   convention).
+// - Stratum inclusion: a stratum contributes only when BOTH groups are
+//   present there (E(F_k)/Var(F_k) and the reference conditional mean are
+//   undefined otherwise); `n_++k >= 2` then holds automatically, so the
+//   Var denominator `n_++k - 1` never vanishes from a singleton.
+// - SMD focal weights are renormalized over the USED strata,
+//   `p_Fk = n_F+k / sum_used n_F+k`. This DEVIATES from the literal Eq. 11
+//   denominator `n_F++` (all focal members) whenever strata are excluded;
+//   it matches the crate's STD P-DIF accumulation convention. With no
+//   excluded focal members the two coincide.
+// - Category scores y_t are the observed integer item scores used as-is
+//   (the paper allows arbitrary "not necessarily integer" table scores;
+//   REDUCED SCOPE: no separate score-vector API).
+// - Out of scope: the GMH nominal statistic (Eq. 10), the SMD standard
+//   error (derived in Zwick 1992a, NOT read), missing data, purification,
+//   and alternative SMD weights (paper footnote 8).
+// - Degenerate items (no usable strata, or zero variance sum) yield NaN
+//   statistics with `n_strata_used` reporting the usable-stratum count
+//   (SIBTEST NaN-row precedent).
+// ===========================================================================
+
+/// Per-item output of [`mantel_smd_dif`].
+#[derive(Debug, Clone)]
+pub struct MantelSmdRow {
+    /// Item index.
+    pub item: usize,
+    /// Mantel (1963) chi-squared statistic, 1 df (Eq. 8). NaN when no stratum
+    /// is usable or the summed variance is zero.
+    pub chi2: f64,
+    /// Upper-tail chi-squared(1) p-value for `chi2`; NaN when `chi2` is NaN.
+    pub p_value: f64,
+    /// Standardized mean difference (Eq. 11), focal minus focal-weighted
+    /// reference conditional mean; negative = focal lower. NaN when no
+    /// stratum is usable.
+    pub smd: f64,
+    /// Number of strata with both groups present that entered the sums.
+    pub n_strata_used: usize,
+}
+
+/// Mantel (1963) ordered-category DIF test with the SMD effect size
+/// (Zwick, Donoghue, & Grima, 1993, Eqs. 8, 9, 11).
+///
+/// `y` is row-major `n_persons x n_items` with ordinal integer scores
+/// `0..=max`; `group` is `0` (reference) / `1` (focal). Persons are matched
+/// on their full total score. For dichotomous 0/1 data the chi-squared
+/// equals the Mantel-Haenszel statistic WITHOUT the continuity correction
+/// (read source, below Eq. 9).
+pub fn mantel_smd_dif(
+    y: &[i64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<Vec<MantelSmdRow>, String> {
+    if n_persons < 2 || n_items < 1 {
+        return Err("need n_persons >= 2 and n_items >= 1".into());
+    }
+    let cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflow")?;
+    if cells > MAX_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {cells} exceeds the cap {MAX_CELLS}"
+        ));
+    }
+    if y.len() != cells {
+        return Err(format!("y has {} entries; expected {cells}", y.len()));
+    }
+    if group.len() != n_persons {
+        return Err(format!(
+            "group has {} entries; expected {n_persons}",
+            group.len()
+        ));
+    }
+    if y.iter().any(|&v| v < 0) {
+        return Err("item scores must be non-negative integers (no missing-data support)".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("group labels must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("both a reference (0) and a focal (1) group must be present".into());
+    }
+    // Full-total matching (crate MH convention). Totals are bounded by
+    // i64 sums of validated non-negative entries; checked to reject overflow.
+    let mut totals = vec![0i64; n_persons];
+    for p in 0..n_persons {
+        let mut t: i64 = 0;
+        for i in 0..n_items {
+            t = t
+                .checked_add(y[p * n_items + i])
+                .ok_or("total score overflow")?;
+        }
+        totals[p] = t;
+    }
+    // Map totals to dense stratum ids.
+    let mut levels: Vec<i64> = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    let stratum: Vec<usize> = totals
+        .iter()
+        .map(|t| levels.binary_search(t).expect("level present"))
+        .collect();
+    let n_strata = levels.len();
+
+    let mut rows = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        // Per-stratum accumulators over persons (scores as f64 after the
+        // integer domain checks; exact for |y| < 2^53).
+        let mut n_r = vec![0.0f64; n_strata]; // n_R+k
+        let mut n_f = vec![0.0f64; n_strata]; // n_F+k
+        let mut s1 = vec![0.0f64; n_strata]; // sum_t y_t n_+tk
+        let mut s2 = vec![0.0f64; n_strata]; // sum_t y_t^2 n_+tk
+        let mut f_sum = vec![0.0f64; n_strata]; // F_k = sum_t y_t n_Ftk
+        let mut r_sum = vec![0.0f64; n_strata]; // sum_t y_t n_Rtk
+        for p in 0..n_persons {
+            let k = stratum[p];
+            let v = y[p * n_items + item] as f64;
+            s1[k] += v;
+            s2[k] += v * v;
+            if group[p] == 1 {
+                n_f[k] += 1.0;
+                f_sum[k] += v;
+            } else {
+                n_r[k] += 1.0;
+                r_sum[k] += v;
+            }
+        }
+        let (mut num, mut var, mut nf_used) = (0.0f64, 0.0f64, 0.0f64);
+        let mut used = 0usize;
+        // First pass: chi-squared sums and the used focal count.
+        for k in 0..n_strata {
+            if n_r[k] == 0.0 || n_f[k] == 0.0 {
+                continue; // E/Var and m_Rk undefined without both groups.
+            }
+            used += 1;
+            let n = n_r[k] + n_f[k]; // n_++k >= 2 here by construction.
+                                     // Eq. 9.
+            let e_fk = n_f[k] / n * s1[k];
+            let var_fk = n_r[k] * n_f[k] / (n * n * (n - 1.0)) * (n * s2[k] - s1[k] * s1[k]);
+            num += f_sum[k] - e_fk;
+            var += var_fk;
+            nf_used += n_f[k];
+        }
+        // Second pass: SMD with used-strata-renormalized focal weights
+        // (documented deviation from the literal Eq. 11 denominator).
+        let mut smd = f64::NAN;
+        if used > 0 && nf_used > 0.0 {
+            let mut acc = 0.0f64;
+            for k in 0..n_strata {
+                if n_r[k] == 0.0 || n_f[k] == 0.0 {
+                    continue;
+                }
+                let p_fk = n_f[k] / nf_used;
+                let m_fk = f_sum[k] / n_f[k];
+                let m_rk = r_sum[k] / n_r[k];
+                acc += p_fk * (m_fk - m_rk);
+            }
+            smd = acc;
+        }
+        let (chi2, p_value) = if used > 0 && var > 0.0 && num.is_finite() {
+            let c = num * num / var; // Eq. 8, df = 1.
+            (c, chi2_sf(c, 1.0))
+        } else {
+            (f64::NAN, f64::NAN)
+        };
+        rows.push(MantelSmdRow {
+            item,
+            chi2,
+            p_value,
+            smd,
+            n_strata_used: used,
+        });
+    }
+    Ok(rows)
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;
