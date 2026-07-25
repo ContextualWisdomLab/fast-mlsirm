@@ -2290,7 +2290,14 @@ pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
             cat_probs.push(eb_point_mass_cats(mu));
             continue;
         }
-        let w = tau2 / (tau2 + sig2);
+        let denom = tau2 + sig2;
+        if !denom.is_finite() {
+            return Err(
+                "posterior weight denominator tau2 + se^2 is not finite (inputs too large)"
+                    .to_string(),
+            );
+        }
+        let w = tau2 / denom;
         let m = w * x + (1.0 - w) * mu;
         let v = w * sig2;
         if !m.is_finite() || !v.is_finite() {

@@ -2816,6 +2816,10 @@ fn eb_mh_dif_errors() {
     assert!(eb_mh_dif(&[1.0, 2.0], &[1e200, 1.0]).is_err());
     // Variance overflow from huge mh.
     assert!(eb_mh_dif(&[1e300, -1e300], &[1.0, 1.0]).is_err());
+    // Posterior denominator overflow: tau2 and se^2 individually finite but
+    // tau2 + se^2 = inf. Reads the crate Err (impl-review regression: the
+    // pre-fix code silently returned weight = 0 here).
+    assert!(eb_mh_dif(&[9e153, -9e153], &[1e154, 1.0]).is_err());
 }
 
 /// MC-500 (supplemental, seeded): EB posterior means beat raw MH in RMSE
