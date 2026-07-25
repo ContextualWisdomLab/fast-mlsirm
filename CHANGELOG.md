@@ -114,6 +114,26 @@
 
 ### Added
 
+- **Mokken scale analysis** (`fast_mlsirm.mokken_analysis`; new
+  `mlsirm_core::mokken`; Mokken, 1971, as cited in van der Ark, 2007).
+  Computes the Loevinger scalability coefficients `Hij`, `Hi`, `H` and their
+  Mokken Z statistics, and partitions items into Mokken scales with the
+  automated item selection procedure (AISP, "search normal"), with sample
+  statistics and selection mechanics verified line-by-line against the mokken
+  R package source (van der Ark, 2007; Straat et al., 2013): `Hij =
+  S_ij/Smax_ij` with `Smax` from the comonotone (sorted-column) coupling,
+  `Hi`/`H` as ratios of pairwise sums, and per-scale Bonferroni-adjusted Z
+  gates. For LLM-as-a-Judge item-quality management this flags evaluation
+  items that fail to scale (label 0) and detects multidimensional item pools
+  before parametric calibration. Complete integer data required (dichotomous
+  or polytomous). Rust-only numerics; the Python wrapper validates and
+  marshals. Tests include a brute-force covariance oracle, an exact Guttman
+  `H = 1` anchor, a hand-computed Z fixture, a Z-gate anchor whose deletion
+  seeds a spurious scale (this test caught a real sign error in the normal
+  quantile during development), a hand-constructed Criterion-1 design whose
+  negative-`Hij` exclusion is the only active gate (mutation-verified), a
+  two-cluster AISP recovery, and an `#[ignore]` 500-replicate Monte Carlo
+  (normal + skewed traits).
 - **Many-Facet Rasch Model (MFRM) rater-severity calibration** (`fast_mlsirm.fit_facets`;
   new `mlsirm_core::facets`; Linacre, 1989; Eckes, 2015). Fits
   `ln[P(k)/P(k-1)] = theta_p - d_i - c_j - f_k` — the rating scale model
