@@ -34,10 +34,11 @@ use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
-    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
-    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    raju_area as core_raju_area, sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow,
-    MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
+    delta_plot as core_delta_plot, logistic_dif as core_logistic_dif,
+    logistic_dif_purified as core_logistic_purified, mantel_haenszel_dif as core_mh_dif,
+    mantel_haenszel_dif_purified as core_mh_purified, raju_area as core_raju_area,
+    sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust, LogisticDifConfig, LogisticDifRow,
+    MhDifConfig, MhDifRow, PurifyConfig, PurifyType as DeltaPurifyType, SibtestConfig,
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
@@ -1961,6 +1962,102 @@ fn py_person_fit_np(
     out.set_item("zu3", PyArray1::from_slice(py, &res.zu3))?;
     out.set_item("c_sato", PyArray1::from_slice(py, &res.c_sato))?;
     out.set_item("cstar", PyArray1::from_slice(py, &res.cstar))?;
+    Ok(out.into())
+}
+
+/// Angoff Delta plot DIF detection (`mlsirm_core::dif::delta_plot`), a
+/// response-type-only port of the deltaPlotR R package (see the core module
+/// section header for citation governance and reduced scope). `responses` is
+/// a row-major `n_persons * n_items` 0/1 matrix (NaN = missing); `group` has
+/// one 0 (reference) / 1 (focal) entry per person. `extreme` is
+/// `("constraint", lo, hi)` or `("add", nr_add)`; `threshold` is
+/// `("norm", alpha)` or `("fixed", thr)`; `purify` is None or one of
+/// "IPP1"/"IPP2"/"IPP3". Item indices in `dif_items` are 0-based.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_delta_plot(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    group: PyReadonlyArray1<'_, u8>,
+    n_persons: usize,
+    n_items: usize,
+    extreme_kind: &str,
+    extreme_a: f64,
+    extreme_b: f64,
+    threshold_kind: &str,
+    threshold_value: f64,
+    purify: Option<&str>,
+    max_iter: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let extreme = match extreme_kind {
+        "constraint" => ExtremeAdjust::Constraint {
+            lo: extreme_a,
+            hi: extreme_b,
+        },
+        "add" => {
+            if !(extreme_a.is_finite() && extreme_a >= 1.0 && extreme_a.fract() == 0.0) {
+                return Err(PyValueError::new_err(
+                    "nr_add must be a positive integer >= 1",
+                ));
+            }
+            ExtremeAdjust::Add {
+                nr_add: extreme_a as usize,
+            }
+        }
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown extreme adjustment '{other}' (use 'constraint' or 'add')"
+            )))
+        }
+    };
+    let threshold = match threshold_kind {
+        "norm" => DeltaThreshold::Norm {
+            alpha: threshold_value,
+        },
+        "fixed" => DeltaThreshold::Fixed(threshold_value),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown threshold '{other}' (use 'norm' or 'fixed')"
+            )))
+        }
+    };
+    let purify = match purify {
+        None => None,
+        Some("IPP1") => Some(DeltaPurifyType::Ipp1),
+        Some("IPP2") => Some(DeltaPurifyType::Ipp2),
+        Some("IPP3") => Some(DeltaPurifyType::Ipp3),
+        Some(other) => {
+            return Err(PyValueError::new_err(format!(
+                "unknown purification '{other}' (use 'IPP1', 'IPP2', or 'IPP3')"
+            )))
+        }
+    };
+    let res = core_delta_plot(
+        responses.as_slice()?,
+        group.as_slice()?,
+        n_persons,
+        n_items,
+        extreme,
+        threshold,
+        purify,
+        max_iter,
+    )
+    .map_err(PyValueError::new_err)?;
+    let flat2 = |v: &[[f64; 2]]| -> Vec<f64> { v.iter().flat_map(|r| [r[0], r[1]]).collect() };
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("props", PyArray1::from_slice(py, &flat2(&res.props)))?;
+    out.set_item(
+        "adj_props",
+        PyArray1::from_slice(py, &flat2(&res.adj_props)),
+    )?;
+    out.set_item("deltas", PyArray1::from_slice(py, &flat2(&res.deltas)))?;
+    let dist_flat: Vec<f64> = res.dist.iter().flatten().copied().collect();
+    out.set_item("dist", PyArray1::from_slice(py, &dist_flat))?;
+    out.set_item("axis_par", PyArray1::from_slice(py, &flat2(&res.axis_par)))?;
+    out.set_item("thresholds", PyArray1::from_slice(py, &res.thresholds))?;
+    out.set_item("dif_items", res.dif_items)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
     Ok(out.into())
 }
 
@@ -6591,6 +6688,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_k_variants, m)?)?;
     m.add_function(wrap_pyfunction!(py_hofstee, m)?)?;
     m.add_function(wrap_pyfunction!(py_person_fit_np, m)?)?;
+    m.add_function(wrap_pyfunction!(py_delta_plot, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
