@@ -1213,21 +1213,39 @@ pub fn ccat_select(
         }
     };
 
-    // Logistic 3PL Fisher information at theta0 for every item. When c = 0
-    // and the logistic underflows to P = 0 (extreme |a(theta0 - b)|), the
-    // naive q/p * r^2 form is inf * 0 = NaN; the true limit is 0 (with
-    // c = 0, I = a^2 q p -> 0 as p -> 0), so the p = 0 case returns the
-    // limiting value directly. NaN here would corrupt the argmax below
-    // (impl-review finding; regression-tested).
+    // Logistic 3PL Fisher information at theta0 for every item, computed in
+    // log space for numerical robustness (impl-review rounds 1-2 findings;
+    // regression-tested): the naive q/p * r^2 form produced NaN via inf * 0
+    // at logistic underflow (P -> c, including subnormal c) and spurious
+    // +inf from multiplication order at extreme a, and a pointwise p == 0
+    // guard masked genuinely informative extreme items. Algebra: with
+    // z = a(theta0 - b) and L = sigmoid(z), P = c + (1 - c) L, so
+    // r = (P - c)/(1 - c) = L exactly and
+    // I = a^2 (1 - c)(1 - L) L^2 / (c + (1 - c) L); when c = 0 this reduces
+    // to I = a^2 L (1 - L). ln L = -softplus(-z) and ln(1-L) = -softplus(z)
+    // are stable for all finite (or overflowed-to-inf) z. A genuinely
+    // astronomical information (a >= ~1e155 near theta0 = b) still
+    // overflows to +inf, which orders correctly in the argmax below.
+    let softplus = |x: f64| {
+        if x > 0.0 {
+            x + (-x).exp().ln_1p()
+        } else {
+            x.exp().ln_1p()
+        }
+    };
     let info: Vec<f64> = (0..n)
         .map(|i| {
-            let p = p3pl(theta0, a[i], b[i], c[i]);
-            if p == 0.0 {
-                return 0.0;
-            }
-            let q = 1.0 - p;
-            let r = (p - c[i]) / (1.0 - c[i]);
-            a[i] * a[i] * (q / p) * r * r
+            let z = a[i] * (theta0 - b[i]);
+            let ln_l = -softplus(-z);
+            let ln_1ml = -softplus(z);
+            let ln_i = if c[i] == 0.0 {
+                2.0 * a[i].ln() + ln_l + ln_1ml
+            } else {
+                // p >= c > 0, so ln(p) is finite even when L underflows.
+                let p = c[i] + (1.0 - c[i]) * ln_l.exp();
+                2.0 * a[i].ln() + (1.0 - c[i]).ln() + ln_1ml + 2.0 * ln_l - p.ln()
+            };
+            ln_i.exp()
         })
         .collect();
 

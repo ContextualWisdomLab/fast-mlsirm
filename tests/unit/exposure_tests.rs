@@ -1335,3 +1335,61 @@ fn ccat_underflow_info_is_zero_not_nan() {
     assert_eq!(r.info[0], 0.0);
     assert!((r.info[1] - 0.25).abs() < 1e-12);
 }
+
+/// Regressions (impl-review round 2): three extreme-but-valid inputs broke
+/// the naive q/p * r^2 info form; the log-space form must handle all.
+/// Expected values computed with 80-digit Decimal arithmetic from
+/// I = a^2 L (1 - L), L = sigmoid(a(theta0 - b)), c = 0. Every assert
+/// reads CcatSelectResult fields.
+#[test]
+fn ccat_info_extreme_inputs_stable() {
+    // (1) subnormal c > 0 with underflowed L: naive form gave
+    // inf * 0 = NaN and wrongly selected item 0.
+    let r = ccat_select(
+        &[1.0, 1.0],
+        &[1000.0, 0.0],
+        &[5e-324, 0.0],
+        &[0, 0],
+        &[1.0],
+        &[false, false],
+        0.0,
+    )
+    .unwrap();
+    assert_eq!(r.selected, 1);
+    assert!(r.info.iter().all(|x| x.is_finite()), "info must be finite");
+    assert!((r.info[1] - 0.25).abs() < 1e-12);
+    // (2) a = 1e154, z = -709: naive multiplication order overflowed
+    // info[0] to +inf (true value 1.2167807506233457) and selected item 0
+    // over the genuinely better item 1 (I = 2.25).
+    let r = ccat_select(
+        &[1e154, 3.0],
+        &[709e-154, 0.0],
+        &[0.0, 0.0],
+        &[0, 0],
+        &[1.0],
+        &[false, false],
+        0.0,
+    )
+    .unwrap();
+    assert!(r.info[0].is_finite());
+    assert!((r.info[0] / 1.2167807506233457 - 1.0).abs() < 1e-9);
+    assert!((r.info[1] - 2.25).abs() < 1e-12);
+    assert_eq!(r.selected, 1);
+    // (3) a = 1e162, z = -745 (L subnormal): the interim p == 0 guard
+    // masked a genuinely informative item (true info[0] =
+    // 2.8223507304721003 > 2.25); item 0 must win.
+    let r = ccat_select(
+        &[1e162, 3.0],
+        &[745e-162, 0.0],
+        &[0.0, 0.0],
+        &[0, 0],
+        &[1.0],
+        &[false, false],
+        0.0,
+    )
+    .unwrap();
+    assert!(r.info[0].is_finite());
+    assert!((r.info[0] / 2.8223507304721003 - 1.0).abs() < 1e-9);
+    assert_eq!(r.selected, 0);
+    assert!(r.info[0] > r.info[1]);
+}
