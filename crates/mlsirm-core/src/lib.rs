@@ -36,6 +36,7 @@ pub mod scoring;
 pub mod subscores;
 pub mod testlet;
 pub mod twopl;
+pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.
 ///
