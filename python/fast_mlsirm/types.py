@@ -56,13 +56,20 @@ class FitResult:
     objective_trace: list[float]
     convergence_status: str
     n_iter: int
+    # Marginal (MMLE) fits: population-structure estimates and posterior SDs.
+    # Keys (present when applicable): "kind", "mu", "sigma" (multigroup),
+    # "sigma_u", "u_eap", "icc" (multilevel), "theta_sd".
+    population: dict[str, Any] | None = None
+    # Marginal fits: information criteria (Kang, Cohen & Sung 2009) —
+    # {"aic", "bic", "aicc", "sabic", "caic", "n_parameters", "n"}.
+    ic: dict[str, Any] | None = None
 
 
 @dataclass
 class FitDiagnostics:
     itemfit: dict[str, np.ndarray]
     personfit: dict[str, np.ndarray]
-    model_fit: dict[str, float]
+    model_fit: dict[str, Any]
     factorfit: dict[str, np.ndarray] | None = None
     categoryfit: dict[str, np.ndarray] | None = None
     groupfit: dict[str, np.ndarray] | None = None

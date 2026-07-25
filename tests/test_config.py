@@ -94,3 +94,16 @@ def test_fitconfig_invalid_eps_distance():
 def test_fitconfig_invalid_backend():
     with pytest.raises(ValueError, match="backend must be one of"):
         FitConfig(backend="cuda").validate()
+
+
+@pytest.mark.parametrize("name", ["xi_points", "xi_seed"])
+@pytest.mark.parametrize("value", [True, 8.75, "9"])
+def test_fitconfig_rejects_noninteger_xi_controls(name, value):
+    with pytest.raises(ValueError, match=rf"{name} must be an integer"):
+        FitConfig(**{name: value}).validate()
+
+
+@pytest.mark.parametrize("value", [-1, 1 << 64])
+def test_fitconfig_rejects_xi_seed_outside_u64(value):
+    with pytest.raises(ValueError, match="xi_seed must fit an unsigned 64-bit integer"):
+        FitConfig(xi_seed=value).validate()
