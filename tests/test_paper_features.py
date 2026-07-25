@@ -7529,3 +7529,7 @@ class TestMantelSmd:
             mantel_smd_dif(y, group[:5])
         with pytest.raises(ValueError):
             mantel_smd_dif(y.ravel(), group)
+        big = y.astype(np.int64).copy()
+        big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
+        with pytest.raises(ValueError):
+            mantel_smd_dif(big, group)
