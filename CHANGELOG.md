@@ -119,6 +119,21 @@
 
 ### Added
 
+- **Angoff Delta plot DIF detection (deltaPlotR-faithful, response input)**
+  (`fast_mlsirm.delta_plot`; in Rust `mlsirm_core::dif::delta_plot`, PyO3
+  `py_delta_plot`): transformed item difficulties `4·qnorm(1−p)+13`, the
+  R-compatible major axis with `max(b1, b2)` root selection (kept even
+  under negative delta covariance, regression-tested), perpendicular
+  distances, normal-approximation or fixed detection thresholds, extreme
+  proportion handling (`constraint` clamp or `add` correction), and IPP1/
+  IPP2/IPP3 iterative item purification with R's membership-row
+  convergence semantics — ported from the CRAN deltaPlotR R package's
+  `deltaPlot.R` and `adjustExtreme.R` (READ at commit e2aeeb6; Angoff &
+  Ford 1973 and Magis & Facon 2012/2014 are cited only as implemented).
+  Response-type input only (the R proportion/delta paths, printing, and
+  plotting are out of scope); non-{0,1,NaN} responses are rejected rather
+  than silently averaged, and returned item indices are 0-based.
+
 - **Nonparametric person-fit statistics (PerFit-faithful, complete data)**
   (`fast_mlsirm.person_fit_np`; in Rust
   `mlsirm_core::personfit_np::person_fit_np`, PyO3 `py_person_fit_np`):

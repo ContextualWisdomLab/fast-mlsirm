@@ -7331,3 +7331,104 @@ class TestPersonFitNp:
         x = np.array([[True, True, False], [False, True, True]])
         res = person_fit_np(x)
         assert res.g.shape == (2,)
+
+class TestDeltaPlot:
+    """Angoff Delta plot DIF (deltaPlotR response-type port).
+
+    Every assertion reads values returned by the crate through the
+    Python wrapper; pinned values come from a NumPy oracle
+    transcription of deltaPlot.R with exact normal quantiles (crate
+    uses Acklam's approximation, hence 1e-6 tolerances)."""
+
+    @staticmethod
+    def _main_fixture():
+        import numpy as np
+
+        rng = np.random.default_rng(2037)
+        n, ni = 80, 10
+        theta = rng.normal(0, 1, n)
+        group = np.array([0] * 40 + [1] * 40)
+        bd = np.linspace(-1.5, 1.5, ni)
+        eta = theta[:, None] - bd[None, :]
+        eta[group == 1, 3] -= 2.2
+        resp = (rng.random((n, ni)) < 1 / (1 + np.exp(-eta))).astype(float)
+        return resp, group
+
+    def test_main_fixture_pins(self):
+        import numpy as np
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        r = delta_plot(resp, group)
+        assert abs(r.props[3, 0] - 0.625) < 1e-15
+        assert abs(r.props[3, 1] - 0.225) < 1e-15
+        assert abs(r.deltas[3, 0] - 11.7254425441425) < 1e-6
+        assert abs(r.axis_par[0, 1] - 1.0498623805872538) < 1e-6
+        assert abs(r.dist[0, 3] - -2.968831851786941) < 1e-6
+        assert abs(r.thresholds[0] - 2.4061275783230864) < 1e-6
+        assert list(r.dif_items) == [3]
+        assert r.n_iter == 1 and r.converged
+        assert r.dist.shape == (1, 10)
+        assert np.isfinite(r.dist).all()
+
+    def test_purification_and_fixed_threshold(self):
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        r3 = delta_plot(resp, group, purify="IPP3")
+        assert r3.n_iter == 2 and r3.converged
+        assert list(r3.dif_items) == [3]
+        assert abs(r3.thresholds[1] - 1.2874360054118958) < 1e-6
+        rf = delta_plot(resp, group, threshold="fixed", fixed_threshold=1.0)
+        assert list(rf.dif_items) == [3, 7, 8]
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        with pytest.raises(ValueError):
+            delta_plot(resp[:, :1], group)
+        with pytest.raises(ValueError):
+            delta_plot(resp, group[:-1])
+        with pytest.raises(ValueError):
+            delta_plot(resp + 0j, group)  # complex laundering
+        bad = resp.copy()
+        bad[0, 0] = 2.0
+        with pytest.raises(ValueError):
+            delta_plot(bad, group)
+        with pytest.raises(ValueError):
+            delta_plot(resp, np.full_like(group, 2))
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, threshold="bogus")
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, purify="IPP9")
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, alpha=0.0)
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, extreme="add", nr_add=0)
+
+    def test_missing_and_add_mode(self):
+        import numpy as np
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        miss = resp.copy()
+        miss[0, 0] = np.nan
+        r = delta_plot(miss, group)
+        expect = resp[1:40, 0].sum() / 39.0
+        assert abs(r.props[0, 0] - expect) < 1e-15
+        # add-mode: exact-1 ref proportion becomes (sum+1)/(n+2)
+        small = np.array(
+            [[1, 1], [1, 0], [1, 1], [1, 0], [0, 0], [1, 1], [1, 1], [0, 1]],
+            dtype=float,
+        )
+        g = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        ra = delta_plot(
+            small, g, extreme="add", nr_add=1, threshold="fixed", fixed_threshold=9.9
+        )
+        assert abs(ra.adj_props[0, 0] - 5.0 / 6.0) < 1e-15
