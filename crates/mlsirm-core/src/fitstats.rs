@@ -2436,23 +2436,23 @@ pub fn poly_local_dependence(
     model: crate::poly::PolyModel,
     q_theta: usize,
 ) -> Result<PolyLdResult, String> {
-    use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
+    use crate::poly::{gpcm_logprobs, grm_logprobs, validate_poly_item_parameters, PolyModel};
     if n_items < 2 {
         return Err("local dependence needs at least 2 items".into());
     }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     validate_optional_observed_length(observed, y.len())?;
-    if slope.len() != n_items {
-        return Err("slope must have length n_items".into());
-    }
-    if cat_params.len() != n_items * (n_cat - 1) {
-        return Err("cat_params must have length n_items*(n_cat-1)".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     validate_observed_categories(y, observed, n_cat)?;
     let z = n_cat - 1;
 
@@ -2603,23 +2603,23 @@ pub fn poly_m2(
     model: crate::poly::PolyModel,
     q_theta: usize,
 ) -> Result<M2Result, String> {
-    use crate::poly::{gpcm_logprobs, grm_logprobs, PolyModel};
+    use crate::poly::{gpcm_logprobs, grm_logprobs, validate_poly_item_parameters, PolyModel};
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if y.len() != n_persons * n_items {
+    let expected_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != expected_len {
         return Err("y must have length n_persons * n_items".into());
     }
     validate_optional_observed_length(observed, y.len())?;
-    if slope.len() != n_items {
-        return Err("slope must have length n_items".into());
-    }
-    if cat_params.len() != n_items * (n_cat - 1) {
-        return Err("cat_params must have length n_items*(n_cat-1)".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     validate_observed_categories(y, observed, n_cat)?;
 
     let z = n_cat - 1; // highest threshold index

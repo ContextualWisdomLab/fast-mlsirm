@@ -2,9 +2,10 @@
 //! EM — the Rust compute path for the GRM/GPCM cell embedded in an interaction
 //! map. Unidimensional trait `theta` with a `latent_dim`-dimensional latent
 //! space; the person latent position `xi` is integrated over a tensor
-//! Gauss-Hermite grid and the item position `zeta_i` is estimated. This is the
-//! `fixed_gamma = 1` identification of Go et al. (2024) lsirm12pl (the distance
-//! weight is fixed to standardize the map scale).
+//! Gauss-Hermite grid and the item position `zeta_i` is estimated. The distance
+//! weight is fixed at 1 as this crate's scale-identification choice; Go et al.'s
+//! lsirm12pl keeps a `gamma` term for continuous responses and leaves ordinal
+//! LSIRM as future work.
 //!
 //! Fully additive: reuses the [`crate::poly`] cells/gradients and the exact
 //! `d eta / d zeta` distance derivative from the binary M-step
@@ -227,11 +228,16 @@ pub fn fit_poly_lsirm(
     if latent_dim < 1 || latent_dim > 3 {
         return Err("latent_dim must be 1..3 for the tensor grid".into());
     }
-    if y.len() != n_persons * n_items {
+    let n_cells = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
