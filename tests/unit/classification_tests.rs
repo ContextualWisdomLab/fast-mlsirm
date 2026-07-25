@@ -214,7 +214,7 @@ fn monte_carlo_accuracy_orders_test_quality() {
 //
 // Mutation-kill map (spot-checked by actually applying each mutation):
 // - M1 swap upper/lower binomial tail in accuracy integrands ->
-//   p_tp/p_fn literals FAIL.
+//   p_tp/p_ff literals FAIL.
 // - M2 use unrounded ETL in the passing threshold -> k shifts, literals FAIL
 //   (fixture A has ETL = 91.123, materially non-integer).
 // - M4 threshold off-by-one (k-1 -> k) -> literals FAIL (fixture A has
@@ -321,8 +321,8 @@ fn ll_matches_independent_reference_two_parameter() {
     let tol = 1e-7;
     assert!((r.p_tp - 0.23854946889141398).abs() < tol);
     assert!((r.p_fp - 0.06401868217743813).abs() < tol);
-    assert!((r.p_tn - 0.6521887072379015).abs() < tol);
-    assert!((r.p_fn - 0.04524314169324793).abs() < tol);
+    assert!((r.p_tf - 0.6521887072379015).abs() < tol);
+    assert!((r.p_ff - 0.04524314169324793).abs() < tol);
     assert!((r.accuracy - 0.8907381761293154).abs() < tol);
     assert!((r.sensitivity - 0.8405767451096093).abs() < tol);
     assert!((r.specificity - 0.9106143232762532).abs() < tol);
@@ -345,7 +345,7 @@ fn ll_extreme_cut_distinguishes_rounded_etl_in_k() {
     assert_eq!(r.etl_rounded, 91);
     let tol = 1e-8;
     assert!((r.p_fp - 2.152128586520244e-06).abs() < tol);
-    assert!((r.p_tn - 0.9999978476968782).abs() < 1e-7);
+    assert!((r.p_tf - 0.9999978476968782).abs() < 1e-7);
     assert!((r.kappa - 0.04370046162326584).abs() < 1e-7);
 }
 
@@ -362,8 +362,8 @@ fn ll_failsafe_engages_on_skewed_data() {
     let tol = 1e-7;
     assert!((r.p_tp - 0.8432448010046247).abs() < tol);
     assert!((r.p_fp - 0.025111134448713338).abs() < tol);
-    assert!((r.p_tn - 0.0853397836347724).abs() < tol);
-    assert!((r.p_fn - 0.046304280911892266).abs() < tol);
+    assert!((r.p_tf - 0.0853397836347724).abs() < tol);
+    assert!((r.p_ff - 0.046304280911892266).abs() < tol);
     assert!((r.accuracy - 0.9285845846393972).abs() < tol);
     assert!((r.consistency - 0.89849902437627).abs() < tol);
     assert!((r.kappa - 0.5560427413146216).abs() < tol);
@@ -387,8 +387,8 @@ fn ll_four_parameter_path() {
     let tol = 1e-7;
     assert!((r.p_tp - 0.5543443184884189).abs() < tol);
     assert!((r.p_fp - 0.044475496859695596).abs() < tol);
-    assert!((r.p_tn - 0.3583220858730486).abs() < tol);
-    assert!((r.p_fn - 0.04285809877883742).abs() < tol);
+    assert!((r.p_tf - 0.3583220858730486).abs() < tol);
+    assert!((r.p_ff - 0.04285809877883742).abs() < tol);
     assert!((r.accuracy - 0.9126664043614675).abs() < tol);
     assert!((r.sensitivity - 0.928235222196601).abs() < tol);
     assert!((r.specificity - 0.8895835060430215).abs() < tol);
@@ -407,10 +407,10 @@ fn ll_structural_invariants_read_crate_fields() {
     // desynchronizes them (e.g. computing kappa from raw unnormalized cells)
     // fails here even if it preserved the individual pinned literals.
     let r = fixture_a();
-    assert!((r.p_tp + r.p_fp + r.p_tn + r.p_fn - 1.0).abs() < 1e-9);
+    assert!((r.p_tp + r.p_fp + r.p_tf + r.p_ff - 1.0).abs() < 1e-9);
     assert!((r.p_ii + r.p_ij + r.p_ji + r.p_jj - 1.0).abs() < 1e-12);
     assert_eq!(r.p_ij, r.p_ji); // by construction (disclosed above)
-    assert!((r.accuracy - (r.p_tp + r.p_tn)).abs() < 1e-15);
+    assert!((r.accuracy - (r.p_tp + r.p_tf)).abs() < 1e-15);
     assert!((r.consistency - (r.p_ii + r.p_jj)).abs() < 1e-15);
     let pc = (r.p_ii + r.p_ij) * (r.p_ii + r.p_ji) + (r.p_ij + r.p_jj) * (r.p_ji + r.p_jj);
     assert!((r.chance_consistency - pc).abs() < 1e-15);
@@ -508,7 +508,7 @@ fn ll_conditional_ratios_nan_when_margin_vanishes() {
     let r = livingston_lewis(&scores, 0.9, 0.0, 50.0, 5.0).unwrap();
     assert!(r.specificity.is_nan());
     assert!(r.sensitivity.is_finite());
-    assert!((r.p_tp + r.p_fp + r.p_tn + r.p_fn - 1.0).abs() < 1e-9);
+    assert!((r.p_tp + r.p_fp + r.p_tf + r.p_ff - 1.0).abs() < 1e-9);
 
     let scores_a = gen_scores(250, 60, 42, 0.15, 0.95, 4);
     let r = livingston_lewis(&scores_a, 0.85, 0.0, 60.0, 0.1).unwrap();

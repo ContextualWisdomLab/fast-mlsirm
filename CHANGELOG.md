@@ -114,6 +114,22 @@
 
 ### Added
 
+- **Generalizability theory G/D studies for crossed designs**
+  (`fast_mlsirm.gtheory_pi`, `fast_mlsirm.gtheory_pio`; in
+  `mlsirm_core::gtheory`; Huebner & Lucht, 2019, read in full — the EMS
+  inversions the paper defers to Brennan, 2001, and Shavelson & Webb,
+  1991, both cited-not-read, are hand-derived and numerically verified
+  against the paper's published Tables 3-6). One-facet `p x i` and
+  two-facet `p x i x o` random-effects ANOVA variance components, plus
+  D-study relative/absolute error variances, generalizability coefficient
+  E-rho^2, and dependability Phi over proposed facet sizes. Negative raw
+  components are reported as-is in `var_raw` and clamped to zero in `var`
+  for the D study (documented clamped-ANOVA implementation policy);
+  coefficients are NaN when their denominator is <= 1e-12. Rust tests
+  reproduce the paper's worked examples at full precision, add
+  independent RNG-pinned fixtures (including a natural negative-component
+  anchor), executed mutation kills (M1/M3/M5/M6), and a 500-rep
+  `#[ignore]` Monte-Carlo recovery test.
 - **Livingston-Lewis classification accuracy and consistency**
   (`fast_mlsirm.livingston_lewis`; in `mlsirm_core::classification`;
   Livingston & Lewis, 1995, as implemented in Haakstad's CRAN

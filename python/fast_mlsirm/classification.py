@@ -35,23 +35,13 @@ class ClassificationResult:
 class LivingstonLewisResult:
     """Livingston-Lewis single-administration classification results.
 
-    Accuracy cells — joint proportions over (true state, observed state),
-    where "pass" means observed score at or above the cut:
-
-    * ``p_tp``: P(true pass, observed pass) — true positive.
-    * ``p_fp``: P(true fail, observed pass) — false positive.
-    * ``p_tn``: P(true fail, observed fail) — true negative.
-    * ``p_fn``: P(true pass, observed fail) — false negative.
-
-    The four cells sum to 1.  ``accuracy = p_tp + p_tn``;
-    ``sensitivity = p_tp / (p_tp + p_fn)`` (P(pass | true pass));
-    ``specificity = p_tn / (p_tn + p_fp)`` (P(fail | true fail)).
-
-    Consistency cells — joint proportions over two hypothetical parallel
-    forms (``i`` = fail, ``j`` = pass), with ``p_ij == p_ji`` by
-    construction (single rounded threshold in both blocks — betafunctions'
-    round/floor mix makes its cells asymmetric; divergence documented in
-    the Rust core)."""
+    ``p_tp``/``p_fp``/``p_tf``/``p_ff`` are the accuracy cells (pass =
+    observed score at or above the cut; ``t``/``f`` = true pass/fail);
+    ``p_ii``/``p_ij``/``p_ji``/``p_jj`` are consistency cells over two
+    hypothetical parallel forms, with ``p_ij == p_ji`` by construction
+    (single rounded threshold in both blocks — betafunctions' round/floor
+    mix makes its cells asymmetric; divergence documented in the Rust
+    core)."""
 
     effective_test_length: float
     etl_rounded: int
@@ -62,8 +52,8 @@ class LivingstonLewisResult:
     used_two_parameter: bool
     p_tp: float
     p_fp: float
-    p_tn: float
-    p_fn: float
+    p_tf: float
+    p_ff: float
     accuracy: float
     sensitivity: float
     specificity: float
@@ -253,8 +243,8 @@ def livingston_lewis(
         used_two_parameter=bool(res["used_two_parameter"]),
         p_tp=float(res["p_tp"]),
         p_fp=float(res["p_fp"]),
-        p_tn=float(res["p_tn"]),
-        p_fn=float(res["p_fn"]),
+        p_tf=float(res["p_tf"]),
+        p_ff=float(res["p_ff"]),
         accuracy=float(res["accuracy"]),
         sensitivity=float(res["sensitivity"]),
         specificity=float(res["specificity"]),
