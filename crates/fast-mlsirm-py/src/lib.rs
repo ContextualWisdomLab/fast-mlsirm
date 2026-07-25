@@ -1806,6 +1806,9 @@ fn livingston_lewis(
     out.set_item("p_fp", res.p_fp)?;
     out.set_item("p_tf", res.p_tf)?;
     out.set_item("p_ff", res.p_ff)?;
+    // Backward-compatible aliases for existing callers.
+    out.set_item("p_fn", res.p_ff)?;
+    out.set_item("p_tn", res.p_tf)?;
     out.set_item("accuracy", res.accuracy)?;
     out.set_item("sensitivity", res.sensitivity)?;
     out.set_item("specificity", res.specificity)?;
