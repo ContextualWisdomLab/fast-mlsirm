@@ -84,7 +84,7 @@ fn gammainc_upper_reg(a: f64, x: f64) -> f64 {
 }
 
 /// Lanczos log-gamma (g = 7, n = 9), |error| < 1e-13 on the positive axis.
-fn ln_gamma(x: f64) -> f64 {
+pub(crate) fn ln_gamma(x: f64) -> f64 {
     const COEF: [f64; 9] = [
         0.99999999999980993,
         676.5203681218851,

@@ -5159,6 +5159,8 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
         ksirt_analysis(ok, bandwidth=np.array([0.5]))
     with pytest.raises(ValueError, match="positive"):
         ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+    with pytest.raises(ValueError, match="at least 1 item"):
+        core.ksirt_occ(np.array([], dtype=float), 2, 0, "gaussian", 5, None)
 
 
 def test_subscore_analysis_matches_independent_reference():
@@ -5665,3 +5667,59 @@ def test_tenberge_mu_rejects_degenerate_inputs():
     const[:, 3] = 0.25
     with pytest.raises(ValueError):
         tenberge_mu(const)  # zero variance
+
+
+def test_cronbach_alpha_and_feldt_ci_fixture():
+    """Pinned against an independent NumPy+scipy replication (scipy.stats.f.ppf).
+
+    Reads crate outputs via fast_mlsirm.cronbach_alpha / feldt_alpha_ci.
+    """
+    from fast_mlsirm import cronbach_alpha, feldt_alpha_ci
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "feldt_alpha_ci"):
+        pytest.skip("compiled core built without feldt_alpha_ci")
+
+    data = _guttman_gen_data(
+        30, 6, 42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    tol = 1e-9
+    a = cronbach_alpha(data)
+    assert abs(a - 0.26300193786625514) < tol
+    ci = feldt_alpha_ci(a, 30, 6, level=0.95)
+    assert abs(ci.lower - -0.23710034474579156) < tol
+    assert abs(ci.upper - 0.6065060295943752) < tol
+    assert abs(ci.r_bar - 0.05613713592263862) < tol
+    assert ci.df1 == 29.0 and ci.df2 == 145.0
+    assert ci.lower < a < ci.upper
+
+
+def test_feldt_ci_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import cronbach_alpha, feldt_alpha_ci
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "feldt_alpha_ci"):
+        pytest.skip("compiled core built without feldt_alpha_ci")
+
+    rng = np.random.default_rng(11)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        cronbach_alpha(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        cronbach_alpha(np.array([1.0, 2.0]))  # 1-D
+    flat = good.copy()
+    flat[:, 0] = 3.0
+    with pytest.raises(ValueError):
+        cronbach_alpha(flat)  # zero-variance item
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(1.0, 30, 6)  # alpha >= 1
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(0.8, 30, 6, level=1.0)
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(0.8, 2, 6)
