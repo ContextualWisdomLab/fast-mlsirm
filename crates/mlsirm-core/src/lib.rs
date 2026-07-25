@@ -5,6 +5,7 @@ pub mod classification;
 pub mod detect;
 pub mod dif;
 pub mod equating;
+pub mod exposure;
 pub mod facets;
 pub mod factor;
 pub mod fitstats;

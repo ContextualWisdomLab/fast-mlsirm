@@ -40,6 +40,7 @@ use mlsirm_core::dif::{
     PurifyConfig, SibtestConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
+use mlsirm_core::exposure::{sympson_hetter as core_sympson_hetter, SympsonHetterConfig};
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
@@ -2035,6 +2036,51 @@ fn taylor_russell(
     out.set_item("success_ratio", res.success_ratio)?;
     out.set_item("base_rate", res.base_rate)?;
     out.set_item("q_joint", res.q_joint)?;
+    Ok(out.into())
+}
+
+/// Sympson-Hetter item-exposure-control calibration for max-info CAT
+/// (`mlsirm_core::exposure::sympson_hetter`; algorithm confirmed against
+/// Georgiadou, Triantafillou, & Economides, 2007, and Barrada, Olea, &
+/// Ponsoda, 2007, Eq. 1-3). Returns {k, exposure, selection, max_exposure,
+/// n_iter, converged, history_max_exposure}.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_sympson_hetter(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    r_max: f64,
+    test_length: usize,
+    n_simulees: usize,
+    max_iter: usize,
+    tol: f64,
+    seed: u64,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = SympsonHetterConfig {
+        r_max,
+        test_length,
+        n_simulees,
+        max_iter,
+        tol,
+        seed,
+        q_theta,
+    };
+    let res = core_sympson_hetter(a.as_slice()?, b.as_slice()?, c.as_slice()?, &cfg)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("k", numpy::PyArray1::from_slice(py, &res.k))?;
+    out.set_item("exposure", numpy::PyArray1::from_slice(py, &res.exposure))?;
+    out.set_item("selection", numpy::PyArray1::from_slice(py, &res.selection))?;
+    out.set_item("max_exposure", res.max_exposure)?;
+    out.set_item("n_iter", res.n_iter)?;
+    out.set_item("converged", res.converged)?;
+    out.set_item(
+        "history_max_exposure",
+        numpy::PyArray1::from_slice(py, &res.history_max_exposure),
+    )?;
     Ok(out.into())
 }
 
@@ -5789,6 +5835,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
     m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
