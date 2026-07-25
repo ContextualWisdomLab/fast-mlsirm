@@ -31,8 +31,8 @@ def _index_vector(arr: np.ndarray, name: str, n_options: int) -> np.ndarray:
         raise ValueError(f"{name} must be non-empty")
     if np.iscomplexobj(a):
         raise ValueError(f"{name} must be real-valued")
-    if a.dtype.kind not in ("b", "i", "u", "f"):
-        raise ValueError(f"{name} must be numeric")
+    if a.dtype.kind not in ("i", "u", "f"):
+        raise ValueError(f"{name} must be an integer or float index array")
     af = a.astype(np.float64)
     if not np.all(np.isfinite(af)):
         raise ValueError(f"{name} must be finite")
@@ -82,8 +82,8 @@ def wollack_omega(
     (NOT READ; cited as implemented by CopyDetect and aberrance.)
     Zopluoglu, C. (2018). *CopyDetect: Computing response similarity indices
     for multiple-choice tests* (R package). (READ: R sources.)
-    Man, K., & Harring, J. R. (2023). *aberrance* (R package, compute_OMG).
-    (READ: R sources.)
+    *aberrance* (R package) [Computer software]. CRAN; `compute_OMG` in
+    `R/detect-ac.R`/`R/compute.R`. (READ: R sources; independent check.)
     """
     if not isinstance(n_options, (int, np.integer)) or isinstance(n_options, bool):
         raise ValueError("n_options must be an integer")

@@ -6980,3 +6980,14 @@ class TestWollackOmega:
         copier, source, probs = self._fixture()
         r = wollack_omega(copier.astype(float), source.astype(float), probs, 5)
         assert r.observed_matches == 6
+    def test_rejects_bool_indices(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega((copier == 2), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, (source == 1), probs, 5)
