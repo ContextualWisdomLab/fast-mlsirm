@@ -1559,11 +1559,24 @@ fn ksirt_occ(
     bandwidth: Option<Vec<f64>>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let flat = x.as_slice()?;
-    if flat.len() != n_persons * n_items {
+    if n_persons < 2 {
+        return Err(PyValueError::new_err(
+            "ksirt requires at least 2 subjects".to_string(),
+        ));
+    }
+    if n_items < 1 {
+        return Err(PyValueError::new_err(
+            "ksirt requires at least 1 item".to_string(),
+        ));
+    }
+    let expected_len = n_persons.checked_mul(n_items).ok_or_else(|| {
+        PyValueError::new_err("n_persons * n_items overflowed usize".to_string())
+    })?;
+    if flat.len() != expected_len {
         return Err(PyValueError::new_err(format!(
             "x has {} entries, expected n_persons * n_items = {}",
             flat.len(),
-            n_persons * n_items
+            expected_len
         )));
     }
     let kern = match kernel {
