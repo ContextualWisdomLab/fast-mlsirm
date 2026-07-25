@@ -26,13 +26,19 @@ use mlsirm_core::cdm::{
     fit_seq_gdina_qr as core_fit_seq_gdina_qr, gdina_wald_selection as core_gdina_wald_selection,
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
+use mlsirm_core::classification::{
+    lee_classification as core_lee_classification,
+    rudner_classification as core_rudner_classification, ClassificationResult,
+};
 use mlsirm_core::crm::fit_crm as core_fit_crm;
+use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
     sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
     PurifyConfig, SibtestConfig,
 };
+use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
     person_fit_resampling as core_person_fit_resampling,
@@ -40,12 +46,15 @@ use mlsirm_core::fitstats::{
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
+use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
 use mlsirm_core::mhrm::{fit_mhrm as core_fit_mhrm, MhrmConfig, MhrmModel};
 use mlsirm_core::mixed::{fit_mixed_items as core_fit_mixed_items, MixedItemKind, MixedItemSpec};
 use mlsirm_core::mixture::{fit_mixture as core_fit_mixture, MixtureConfig, MixtureModel};
 use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
+use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
+use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -59,18 +68,11 @@ use mlsirm_core::poly_marginal::fit_poly_lsirm as core_fit_poly_lsirm;
 use mlsirm_core::rasch_cml::{
     andersen_lr_test as core_andersen_lr, fit_rasch_cml as core_fit_rasch_cml,
 };
-use mlsirm_core::facets::fit_facets as core_fit_facets;
-use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
-use mlsirm_core::subscores::subscores as core_subscores;
-use mlsirm_core::classification::{
-    lee_classification as core_lee_classification,
-    rudner_classification as core_rudner_classification, ClassificationResult,
-};
-use mlsirm_core::detect::detect_analysis as core_detect_analysis;
-use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
-use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
+use mlsirm_core::reliability::{
+    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
+};
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
     fit_rt_lognormal as core_fit_rt, rt_person_fit as core_rt_person_fit, RtConfig,
@@ -86,6 +88,7 @@ use mlsirm_core::scoring::{
     score_map as core_score_map, score_wle as core_score_wle,
     score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
+use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
 
@@ -1494,8 +1497,8 @@ fn mokken_coef_h(
     n_persons: usize,
     n_items: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let res = core_mokken_coef_h(x.as_slice()?, n_persons, n_items)
-        .map_err(PyValueError::new_err)?;
+    let res =
+        core_mokken_coef_h(x.as_slice()?, n_persons, n_items).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("hij", res.hij)?;
     out.set_item("hi", res.hi)?;
@@ -1675,8 +1678,8 @@ fn detect_analysis(
             flat.len(),
         )));
     }
-    let res = core_detect_analysis(flat, n_persons, n_items, &cluster)
-        .map_err(PyValueError::new_err)?;
+    let res =
+        core_detect_analysis(flat, n_persons, n_items, &cluster).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("detect", res.detect)?;
     out.set_item("assi", res.assi)?;
@@ -1838,6 +1841,41 @@ fn tenberge_mu(
     out.set_item("mu1", res.mu1)?;
     out.set_item("mu2", res.mu2)?;
     out.set_item("mu3", res.mu3)?;
+    Ok(out.into())
+}
+
+/// Cronbach's (1951) coefficient alpha from raw data (covariance form;
+/// `mlsirm_core::reliability`). `data` is a flattened row-major
+/// `n_persons * n_items` matrix of complete finite scores.
+#[pyfunction]
+fn cronbach_alpha(
+    data: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<f64> {
+    core_cronbach_alpha(data.as_slice()?, n_persons, n_items).map_err(PyValueError::new_err)
+}
+
+/// Feldt (1965) exact-F confidence interval for coefficient alpha
+/// (`mlsirm_core::reliability`; oracle: CRAN psych 2.6.5 `alpha.ci`).
+/// `level` is the two-sided confidence level, e.g. 0.95.
+#[pyfunction]
+fn feldt_alpha_ci(
+    py: Python<'_>,
+    alpha: f64,
+    n_persons: usize,
+    n_items: usize,
+    level: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_feldt_alpha_ci(alpha, n_persons, n_items, level).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("lower", res.lower)?;
+    out.set_item("upper", res.upper)?;
+    out.set_item("r_bar", res.r_bar)?;
+    out.set_item("df1", res.df1)?;
+    out.set_item("df2", res.df2)?;
     Ok(out.into())
 }
 /// 1990). `y`/`observed` are row-major `n_persons * n_items`; `model` is "rasch" or
@@ -5445,6 +5483,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
+    m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
     m.add_function(wrap_pyfunction!(fit_testlet, m)?)?;
