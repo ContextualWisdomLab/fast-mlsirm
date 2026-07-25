@@ -2133,7 +2133,10 @@ pub fn m2_rmsea2(
     if n_items < 3 {
         return Err("M2 needs at least 3 items".into());
     }
-    if y.len() != n_persons * n_items || observed.len() != y.len() {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflows usize")?;
+    if y.len() != n_cells || observed.len() != n_cells {
         return Err("y and observed must both have length n_persons * n_items".into());
     }
     let (free_alpha, uses_space) = model_exec_flags(bank.model_type);

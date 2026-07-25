@@ -208,6 +208,9 @@ fn rt_rejects_every_shape_data_and_observation_boundary() {
     .is_err());
     assert!(fit_rt_lognormal(&[0.0], None, 1, 1, default).is_err());
     assert!(fit_rt_lognormal(&[1.0, 1.0], Some(&[true, false]), 1, 2, default).is_err());
+    let overflow = std::panic::catch_unwind(|| fit_rt_lognormal(&[], None, usize::MAX, 2, default));
+    assert!(overflow.is_ok(), "overflowed RT shape must return an error instead of panicking");
+    assert!(overflow.unwrap().is_err());
 }
 
 // Tier-1 recovery guard + monotone loglik.

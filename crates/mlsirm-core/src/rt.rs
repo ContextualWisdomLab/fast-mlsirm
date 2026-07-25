@@ -96,11 +96,14 @@ pub fn fit_rt_lognormal(
     if n_persons == 0 || n_items == 0 {
         return Err("n_persons and n_items must be positive".into());
     }
-    if times.len() != n_persons * n_items {
+    let n_cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflows usize")?;
+    if times.len() != n_cells {
         return Err("times must have length n_persons * n_items".into());
     }
     if let Some(o) = observed {
-        if o.len() != n_persons * n_items {
+        if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());
         }
     }
@@ -124,7 +127,7 @@ pub fn fit_rt_lognormal(
     let is_obs = |p: usize, i: usize| observed.map_or(true, |o| o[p * n_items + i]);
 
     // log-times where observed
-    let mut y = vec![0.0_f64; n_persons * n_items];
+    let mut y = vec![0.0_f64; n_cells];
     for p in 0..n_persons {
         for i in 0..n_items {
             if is_obs(p, i) {

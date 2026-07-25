@@ -126,6 +126,28 @@ fn m2_rejects_length_mismatch() {
 }
 
 #[test]
+fn m2_rejects_overflowed_shape_without_panicking() {
+    let (alpha, b, zeta, fid) = (vec![0.0; 4], vec![0.0; 4], vec![0.0; 4], vec![0usize; 4]);
+    let bk = bank(&alpha, &b, &zeta, &fid);
+    let overflow = std::panic::catch_unwind(|| {
+        m2_rmsea2(
+            &bk,
+            &[],
+            &[],
+            usize::MAX / 4 + 1,
+            &PriorSpec::standard(1),
+            11,
+            XiRule::GaussHermite { q_xi: 7 },
+        )
+    });
+    assert!(
+        overflow.is_ok(),
+        "overflowed M2 shape must return an error instead of panicking"
+    );
+    assert!(overflow.unwrap().is_err());
+}
+
+#[test]
 fn m2_rejects_nonpositive_df() {
     // 3 MIRT items: s = 3 + 3 = 6 moments, p = 2*3 = 6 params -> df <= 0
     let (alpha, b, zeta, fid) = (vec![0.0; 3], vec![0.0; 3], vec![0.0; 3], vec![0usize; 3]);
