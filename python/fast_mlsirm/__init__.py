@@ -86,6 +86,8 @@ from .utility import (
 from .exposure import (
     sympson_hetter as sympson_hetter,
     SympsonHetterResult as SympsonHetterResult,
+    a_stratified as a_stratified,
+    AStratifiedResult as AStratifiedResult,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -232,6 +234,8 @@ __all__ = [
     "TaylorRussellResult",
     "sympson_hetter",
     "SympsonHetterResult",
+    "a_stratified",
+    "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",
     "GTheoryResult",

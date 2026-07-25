@@ -1,4 +1,5 @@
-"""Sympson-Hetter item-exposure control for computerized adaptive testing.
+"""Item-exposure control designs for computerized adaptive testing:
+Sympson-Hetter calibration and the a-stratified multistage design.
 All numeric work happens in the Rust core (``mlsirm_core::exposure``); this
 module only validates and marshals.
 
@@ -48,6 +49,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+
+
+def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(
+        value, (int, np.integer, float, np.floating)
+    ):
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    iv = int(value)
+    if iv != value:
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    if iv < minimum or (maximum is not None and iv > maximum):
+        raise ValueError(f"{name} out of range: {iv}")
+    return iv
 
 
 @dataclass
@@ -100,20 +116,6 @@ def sympson_hetter(
         c = np.zeros_like(a)
     c = np.ascontiguousarray(c, dtype=np.float64)
 
-    def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
-        if isinstance(value, bool) or not isinstance(
-            value, (int, np.integer, float, np.floating)
-        ):
-            raise ValueError(f"{name} must be an integer, got {value!r}")
-        if isinstance(value, (float, np.floating)) and not np.isfinite(value):
-            raise ValueError(f"{name} must be an integer, got {value!r}")
-        iv = int(value)
-        if iv != value:
-            raise ValueError(f"{name} must be an integer, got {value!r}")
-        if iv < minimum or (maximum is not None and iv > maximum):
-            raise ValueError(f"{name} out of range: {iv}")
-        return iv
-
     _usize_max = int(np.iinfo(np.uintp).max)
     r = _core.py_sympson_hetter(
         a,
@@ -135,4 +137,87 @@ def sympson_hetter(
         n_iter=int(r["n_iter"]),
         converged=bool(r["converged"]),
         history_max_exposure=np.asarray(r["history_max_exposure"]),
+    )
+
+@dataclass
+class AStratifiedResult:
+    """a-stratified multistage CAT simulation output.
+
+    ``exposure`` holds the administration rates ``P(A_i)``; ``stratum`` the
+    0-based stratum index per item (ascending discrimination);
+    ``stage_lengths`` the number of items administered per stage
+    (``sum == test_length``); ``theta_rmse``/``theta_bias`` the final-EAP
+    recovery against the simulated true thetas."""
+
+    exposure: np.ndarray
+    max_exposure: float
+    stratum: np.ndarray
+    stage_lengths: np.ndarray
+    theta_rmse: float
+    theta_bias: float
+
+
+def a_stratified(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    n_strata: int = 4,
+    test_length: int = 20,
+    n_simulees: int = 1000,
+    seed: int = 20250724,
+    q_theta: int = 41,
+) -> AStratifiedResult:
+    """Simulate the a-stratified multistage CAT design (Chang & Ying, 1999).
+
+    The pool is sorted ascending by discrimination and split into
+    ``n_strata`` contiguous strata; stage ``k`` administers items only from
+    stratum ``k``, choosing the item minimizing ``|b_i - theta_hat|``
+    (b-matching — the selection rule as restated by Barrada, Mazuela, &
+    Olea, 2006; the Chang & Ying full text was not read). The near-equal
+    stratum/stage partitions (first strata one larger), the interim EAP
+    estimator, and the initial ``theta_hat = 0`` are repository
+    implementation choices, not claims from the paper. b-blocking (Chang,
+    Qian, & Ying, 2001) is out of scope.
+
+    References (APA 7th ed.):
+        Barrada, J. R., Mazuela, P., & Olea, J. (2006). Maximum information
+            stratification method for controlling item exposure in
+            computerized adaptive testing. *Psicothema, 18*(1), 156-159.
+            (Read in full.)
+        Chang, H.-H., & Ying, Z. (1999). a-Stratified multistage
+            computerized adaptive testing. *Applied Psychological
+            Measurement, 23*(3), 211-222.
+            https://doi.org/10.1177/01466219922031338 (Abstract only.)
+        Chang, H.-H., Qian, J., & Ying, Z. (2001). a-Stratified multistage
+            computerized adaptive testing with b blocking. *Applied
+            Psychological Measurement, 25*(4), 333-341. (Not read; cited
+            only as the deferred b-blocking extension.)
+    """
+    from . import _core
+
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+
+    _usize_max = int(np.iinfo(np.uintp).max)
+    r = _core.py_a_stratified(
+        a,
+        b,
+        c,
+        _as_int("n_strata", n_strata, maximum=_usize_max),
+        _as_int("test_length", test_length, maximum=_usize_max),
+        _as_int("n_simulees", n_simulees, maximum=_usize_max),
+        _as_int("seed", seed, maximum=2**64 - 1),
+        _as_int("q_theta", q_theta, maximum=_usize_max),
+    )
+    return AStratifiedResult(
+        exposure=np.asarray(r["exposure"]),
+        max_exposure=float(r["max_exposure"]),
+        stratum=np.asarray(r["stratum"], dtype=np.intp),
+        stage_lengths=np.asarray(r["stage_lengths"], dtype=np.intp),
+        theta_rmse=float(r["theta_rmse"]),
+        theta_bias=float(r["theta_bias"]),
     )

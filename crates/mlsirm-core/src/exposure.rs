@@ -1,4 +1,6 @@
-//! Sympson-Hetter item exposure control for computerized adaptive testing.
+//! Item-exposure control designs for computerized adaptive testing:
+//! Sympson-Hetter calibration ([`sympson_hetter`]) and the a-stratified
+//! multistage selection design ([`a_stratified`]; see its docs below).
 //!
 //! Implements the unconditional Sympson-Hetter (1985) probabilistic exposure
 //! filter and its iterative calibration for a fixed-length, unidimensional,
@@ -365,3 +367,245 @@ pub fn sympson_hetter(
 #[cfg(test)]
 #[path = "../../../tests/unit/exposure_tests.rs"]
 mod tests;
+
+// ===================== a-stratified multistage CAT =====================
+
+/// Configuration for [`a_stratified`] simulation.
+#[derive(Clone, Debug)]
+pub struct AStratifiedConfig {
+    /// Number of strata `K` (also the number of stages).
+    pub n_strata: usize,
+    /// Fixed test length `L` (items administered per simulee).
+    pub test_length: usize,
+    /// Number of simulees in the evaluation run.
+    pub n_simulees: usize,
+    /// RNG seed (deterministic LCG; the crate's inline PRNG idiom).
+    pub seed: u64,
+    /// EAP quadrature points over `[-4, 4]`.
+    pub q_theta: usize,
+}
+
+impl Default for AStratifiedConfig {
+    fn default() -> Self {
+        Self {
+            n_strata: 4,
+            test_length: 20,
+            n_simulees: 1000,
+            seed: 20250724,
+            q_theta: 41,
+        }
+    }
+}
+
+/// Result of an a-stratified CAT simulation run.
+#[derive(Clone, Debug)]
+pub struct AStratifiedResult {
+    /// Administration rates `P(A_i) = count_i / n_simulees`.
+    pub exposure: Vec<f64>,
+    /// `max_i P(A_i)`.
+    pub max_exposure: f64,
+    /// Stratum index (`0..n_strata`, ascending discrimination) per item.
+    pub stratum: Vec<usize>,
+    /// Items administered in each stage (`sum = test_length`).
+    pub stage_lengths: Vec<usize>,
+    /// RMSE of the final EAP against the simulated true thetas.
+    pub theta_rmse: f64,
+    /// Mean of `theta_hat - theta_true`.
+    pub theta_bias: f64,
+}
+
+/// a-stratified multistage CAT item-selection design (Chang & Ying, 1999),
+/// evaluated by simulation.
+///
+/// Source status: the Chang & Ying (1999) full text was NOT read; the
+/// high-level design (early stages administer low-discrimination items,
+/// later stages higher-discrimination items) was confirmed from the
+/// publisher abstract, and the explicit selection rule was confirmed from
+/// Barrada, Mazuela & Olea (2006, read in full), which restates the AS
+/// method: sort the pool ascending by `a`, form contiguous strata, and at
+/// each step administer the eligible item minimizing `|b_i - theta_hat|`
+/// (b-matching, NOT maximum information — the point of the design is that
+/// max-info greedily overexposes high-`a` items).
+///
+/// Algorithm:
+/// 1. Sort items ascending by `(a_i, index)` (stable tie-break; the index
+///    tie-break is a repository choice). Partition the sorted order into
+///    `K` contiguous strata; stratum sizes are near-equal with the first
+///    `n mod K` strata one larger (remainder placement is a repository
+///    choice — sources leave the partition sizes to the designer).
+/// 2. Partition `test_length` into `K` stage lengths the same way (the
+///    near-equal split is a repository choice; the paper-supported rule is
+///    only that stage `k` draws exclusively from stratum `k`, in order).
+/// 3. Within stage `k`, administer the not-yet-administered item of stratum
+///    `k` minimizing `|b_i - theta_hat|`; ties break to the lowest original
+///    item index (repository choice).
+/// 4. Simulate `y ~ Bernoulli(P_3PL(theta_true))` with `theta_true ~
+///    N(0, 1)` and update `theta_hat` by interim EAP after each item. The
+///    EAP estimator, its grid, and the initial `theta_hat = 0` are
+///    repository implementation choices for parity with [`sympson_hetter`];
+///    they are NOT claimed as Chang & Ying's estimator (their simulations
+///    used ML-based estimation).
+///
+/// `c` is deliberately unused in stratification and selection (AS ignores
+/// the guessing parameter; Barrada et al., 2006) but is used in the
+/// simulated 3PL responses and the EAP update.
+///
+/// Deferred (out of scope): b-blocking stratification (Chang, Qian & Ying,
+/// 2001) and maximum-information stratification variants.
+///
+/// Exact per-stratum counting identity (derived here): every simulee takes
+/// exactly `stage_lengths[k]` items from stratum `k`, so
+/// `sum_{i in stratum k} P(A_i) = stage_lengths[k]` and globally
+/// `sum_i P(A_i) = test_length`.
+///
+/// # References
+///
+/// Barrada, J. R., Mazuela, P., & Olea, J. (2006). Maximum information
+/// stratification method for controlling item exposure in computerized
+/// adaptive testing. *Psicothema, 18*(1), 156-159. (Read in full; source
+/// for the AS selection and stratification rules as restated there.)
+///
+/// Chang, H.-H., & Ying, Z. (1999). a-Stratified multistage computerized
+/// adaptive testing. *Applied Psychological Measurement, 23*(3), 211-222.
+/// <https://doi.org/10.1177/01466219922031338> (Abstract only was read;
+/// cited as the origin of the design.)
+///
+/// Chang, H.-H., Qian, J., & Ying, Z. (2001). a-Stratified multistage
+/// computerized adaptive testing with b blocking. *Applied Psychological
+/// Measurement, 25*(4), 333-341. (Not read; cited only to name the deferred
+/// b-blocking extension.)
+pub fn a_stratified(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    cfg: &AStratifiedConfig,
+) -> Result<AStratifiedResult, String> {
+    let n_items = a.len();
+    if b.len() != n_items || c.len() != n_items {
+        return Err("a, b, c must have equal lengths".into());
+    }
+    if n_items == 0 {
+        return Err("item pool is empty".into());
+    }
+    if a.iter().any(|v| !v.is_finite() || *v <= 0.0) {
+        return Err("discriminations a must be finite and positive".into());
+    }
+    if b.iter().any(|v| !v.is_finite()) {
+        return Err("difficulties b must be finite".into());
+    }
+    if c.iter().any(|v| !v.is_finite() || *v < 0.0 || *v >= 1.0) {
+        return Err("guessing c must be finite and in [0, 1)".into());
+    }
+    if cfg.test_length == 0 || cfg.test_length > n_items {
+        return Err("test_length must be in 1..=n_items".into());
+    }
+    if cfg.n_strata == 0 || cfg.n_strata > cfg.test_length {
+        return Err(
+            "n_strata must be in 1..=test_length (every stage administers >= 1 item)".into(),
+        );
+    }
+    if cfg.n_simulees == 0 {
+        return Err("n_simulees must be positive".into());
+    }
+    if cfg.q_theta < 3 {
+        return Err("q_theta must be at least 3".into());
+    }
+
+    let k_strata = cfg.n_strata;
+    // Near-equal partition with the first (remainder) parts one larger
+    // (repository choice; documented above).
+    let part = |total: usize| -> Vec<usize> {
+        let q = total / k_strata;
+        let r = total % k_strata;
+        (0..k_strata).map(|s| q + usize::from(s < r)).collect()
+    };
+    let stratum_sizes = part(n_items);
+    let stage_lengths = part(cfg.test_length);
+    for s in 0..k_strata {
+        if stratum_sizes[s] < stage_lengths[s] {
+            return Err(format!(
+                "stratum {} has {} items but stage {} needs {}: pool cannot support this design",
+                s, stratum_sizes[s], s, stage_lengths[s]
+            ));
+        }
+    }
+
+    // Stable ascending sort by (a, original index).
+    let mut order: Vec<usize> = (0..n_items).collect();
+    order.sort_by(|&i, &j| a[i].partial_cmp(&a[j]).expect("finite a").then(i.cmp(&j)));
+    let mut stratum = vec![0usize; n_items];
+    let mut members: Vec<Vec<usize>> = Vec::with_capacity(k_strata);
+    {
+        let mut pos = 0usize;
+        for (s, &sz) in stratum_sizes.iter().enumerate() {
+            let slice = &order[pos..pos + sz];
+            for &i in slice {
+                stratum[i] = s;
+            }
+            members.push(slice.to_vec());
+            pos += sz;
+        }
+    }
+
+    let grid: Vec<f64> = (0..cfg.q_theta)
+        .map(|q| -4.0 + 8.0 * q as f64 / (cfg.q_theta - 1) as f64)
+        .collect();
+    let log_prior: Vec<f64> = grid.iter().map(|&t| -0.5 * t * t).collect();
+
+    let mut rng = Lcg(cfg.seed.wrapping_mul(2654435761).wrapping_add(1));
+    let mut a_count = vec![0u64; n_items];
+    let mut eap_scratch: Vec<f64> = Vec::with_capacity(cfg.q_theta);
+    let mut sq_err = 0.0;
+    let mut bias = 0.0;
+
+    for _p in 0..cfg.n_simulees {
+        let theta_true = rng.normal();
+        let mut used = vec![false; n_items];
+        let mut responses: Vec<(usize, f64)> = Vec::with_capacity(cfg.test_length);
+        let mut theta_hat = 0.0;
+
+        for (stage, &len) in stage_lengths.iter().enumerate() {
+            for _ in 0..len {
+                // SELECT: b-matching within the active stratum only.
+                let mut best: Option<usize> = None;
+                let mut best_d = f64::INFINITY;
+                for &i in &members[stage] {
+                    if used[i] {
+                        continue;
+                    }
+                    let d = (b[i] - theta_hat).abs();
+                    let better = match best {
+                        None => true,
+                        Some(j) => d < best_d || (d == best_d && i < j),
+                    };
+                    if better {
+                        best_d = d;
+                        best = Some(i);
+                    }
+                }
+                let s = best.expect("stratum sizes validated >= stage lengths");
+                used[s] = true;
+                a_count[s] += 1;
+                let p_true = p3pl(theta_true, a[s], b[s], c[s]);
+                let y = if rng.next_f64() < p_true { 1.0 } else { 0.0 };
+                responses.push((s, y));
+                theta_hat = eap_interim(a, b, c, &responses, &grid, &log_prior, &mut eap_scratch);
+            }
+        }
+        let e = theta_hat - theta_true;
+        sq_err += e * e;
+        bias += e;
+    }
+
+    let n = cfg.n_simulees as f64;
+    let exposure: Vec<f64> = a_count.iter().map(|&x| x as f64 / n).collect();
+    let max_exposure = exposure.iter().cloned().fold(0.0_f64, f64::max);
+    Ok(AStratifiedResult {
+        exposure,
+        max_exposure,
+        stratum,
+        stage_lengths,
+        theta_rmse: (sq_err / n).sqrt(),
+        theta_bias: bias / n,
+    })
+}
