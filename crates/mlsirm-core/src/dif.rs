@@ -1511,6 +1511,249 @@ pub fn sibtest(
     Ok(rows)
 }
 
+// ===================== Raju (1988/1990) ICC area DIF ==========================
+//
+// Closed-form signed and unsigned areas between two logistic ICCs, with Raju's
+// delta-method Z tests. The item parameters must already be on a COMMON scale;
+// use [`crate::linking::irt_link`] (e.g. `LinkMethod::MeanSigma`) beforehand —
+// linking is deliberately not re-implemented here.
+//
+// SOURCE STATUS. The primary papers were NOT read (paywalled):
+// Raju, N. S. (1988). The area between two item characteristic curves.
+//     *Psychometrika, 53*(4), 495-502. https://doi.org/10.1007/BF02294403
+// Raju, N. S. (1990). Determining the significance of estimated signed and
+//     unsigned areas between two item response functions. *Applied
+//     Psychological Measurement, 14*(2), 197-207.
+//     https://doi.org/10.1177/014662169001400208
+// The formula oracle is difR's `RajuZ.R` / `difRaju.R` (READ in full):
+// Magis, D., Beland, S., Tuerlinckx, F., & De Boeck, P. (2010). A general
+//     framework and an R package for the detection of dichotomous differential
+//     item functioning. *Behavior Research Methods, 42*, 847-862.
+//     https://doi.org/10.3758/BRM.42.3.847 (package paper NOT read; code READ).
+// Both areas and all four partial derivatives were additionally re-derived by
+// hand and verified against numeric quadrature / finite differences during
+// adversarial spec review; difR's gradient is the uniform NEGATION of grad H
+// (variance-equivalent), and difR's `exp(Y)==Inf` overflow branch carries the
+// sign opposite to the closed-form positive-side limit (moot here: this
+// implementation uses a stable softplus and exposes only |H| for the unsigned
+// statistic).
+
+/// Raju ICC-area DIF output. One entry per item.
+#[derive(Debug, Clone)]
+pub struct RajuAreaResult {
+    /// Area statistic. Signed: `h = b_F - b_R = integral (P_R - P_F) dtheta`
+    /// under `P_G(theta) = logistic(a_G (theta - b_G))` — positive means the
+    /// item is HARDER for the focal group. Unsigned: `h = |H| >= 0`, the total
+    /// area `integral |P_F - P_R| dtheta`. For 3PL, scaled by `(1 - c)`.
+    pub h: Vec<f64>,
+    /// Delta-method standard error of `h` (scaled by `(1 - c)` for 3PL).
+    pub se: Vec<f64>,
+    /// `Z = H / se(H)` from the UNSCALED quantities (difR convention; the
+    /// `(1 - c)` factor cancels). Signed for `signed = true`, else `>= 0`.
+    pub z: Vec<f64>,
+    /// Two-sided `p = 2 (1 - Phi(|z|))`.
+    pub p_value: Vec<f64>,
+    /// Items with `|z| > z_{1 - alpha/2}` (0-based).
+    pub dif_items: Vec<usize>,
+    /// Which statistic was computed.
+    pub signed: bool,
+}
+
+/// Numerically stable `ln(1 + e^y)`.
+fn softplus(y: f64) -> f64 {
+    if y > 0.0 {
+        y + (-y).exp().ln_1p()
+    } else {
+        y.exp().ln_1p()
+    }
+}
+
+/// Raju's (1988) signed/unsigned area DIF test with Raju's (1990) delta-method
+/// Z statistics (difR `RajuZ` oracle; see the section comment for source
+/// status — primary papers NOT read, difR code READ, formulas re-derived and
+/// quadrature/FD-verified in adversarial spec review).
+///
+/// ICC convention: `P_G(theta) = 1 / (1 + exp(-a_G (theta - b_G)))`. Verified
+/// identity (hand-derived; pinned by a quadrature test):
+/// `integral (P_R - P_F) dtheta = b_F - b_R`, so the signed statistic
+/// `h = b_F - b_R` is positive when the item is harder for the focal group.
+///
+/// Unsigned area (Raju 1988 closed form, hand-re-derived via the single
+/// crossing point): with `Y = a_F a_R (b_F - b_R) / (a_F - a_R)`,
+/// `H = 2 (a_F - a_R) / (a_F a_R) * ln(1 + e^Y) - (b_F - b_R)` and
+/// `h = |H| = integral |P_F - P_R| dtheta`. The two-sided equal-slope limit of
+/// the signed auxiliary `H` is not unique (`Y -> +inf` gives `+(b_F - b_R)`,
+/// `Y -> -inf` gives `-(b_F - b_R)`); only `|H| -> |b_F - b_R|` is continuous,
+/// which is why only `|H|` is exposed. Exact `a_F == a_R` uses that limit with
+/// the b-only variance (slope partials vanish).
+///
+/// Variance (delta method, independent group calibrations; partials FD-verified):
+/// `grad H = (2(L - Y s)/a_F^2, 2s - 1, 2(Y s - L)/a_R^2, 1 - 2s)` in the order
+/// `(a_F, b_F, a_R, b_R)` with `s = logistic(Y)`, `L = softplus(Y)`;
+/// `Var(H) = sum_G [A_G^2 se(a_G)^2 + B_G^2 se(b_G)^2 + 2 A_G B_G cov_G]`.
+/// The signed path uses only the difficulty SEs: `Var = se(b_F)^2 + se(b_R)^2`.
+///
+/// `guess`: optional per-item pseudo-guessing `c` COMMON to both groups
+/// (3PL with unequal group `c` has no closed form here and is rejected by
+/// contract); `h` and `se` are reported scaled by `(1 - c)`, `z` is the
+/// unscaled ratio (difR convention).
+///
+/// Flags `dif_items` at `|z| > z_{1 - alpha/2}`. Caveat (Monte-Carlo verified
+/// in this crate's test suite): under an exact null with equal true slopes the
+/// unsigned `|H|` statistic is anti-conservative (its leading term is
+/// quadratic, so the normal-theory Z over-rejects); the signed test is exact
+/// there. Prefer the signed test when uniform DIF is the alternative.
+#[allow(clippy::too_many_arguments)]
+pub fn raju_area(
+    a_ref: &[f64],
+    b_ref: &[f64],
+    se_a_ref: &[f64],
+    se_b_ref: &[f64],
+    cov_ab_ref: &[f64],
+    a_foc: &[f64],
+    b_foc: &[f64],
+    se_a_foc: &[f64],
+    se_b_foc: &[f64],
+    cov_ab_foc: &[f64],
+    guess: Option<&[f64]>,
+    signed: bool,
+    alpha: f64,
+) -> Result<RajuAreaResult, String> {
+    let n = a_ref.len();
+    if n == 0 {
+        return Err("raju_area: no items".into());
+    }
+    let same_len = [
+        b_ref.len(),
+        se_a_ref.len(),
+        se_b_ref.len(),
+        cov_ab_ref.len(),
+        a_foc.len(),
+        b_foc.len(),
+        se_a_foc.len(),
+        se_b_foc.len(),
+        cov_ab_foc.len(),
+    ]
+    .iter()
+    .all(|&l| l == n);
+    if !same_len {
+        return Err("raju_area: parameter slices must all have the same length".into());
+    }
+    if let Some(c) = guess {
+        if c.len() != n {
+            return Err("raju_area: guess length mismatch".into());
+        }
+        if c.iter()
+            .any(|&v| !v.is_finite() || !(0.0..1.0).contains(&v))
+        {
+            return Err("raju_area: pseudo-guessing c must be finite in [0, 1)".into());
+        }
+    }
+    if !(alpha > 0.0 && alpha < 1.0) {
+        return Err("raju_area: alpha must be in (0, 1)".into());
+    }
+    for i in 0..n {
+        let finite = [
+            a_ref[i],
+            b_ref[i],
+            se_a_ref[i],
+            se_b_ref[i],
+            cov_ab_ref[i],
+            a_foc[i],
+            b_foc[i],
+            se_a_foc[i],
+            se_b_foc[i],
+            cov_ab_foc[i],
+        ]
+        .iter()
+        .all(|v| v.is_finite());
+        if !finite {
+            return Err(format!("raju_area: non-finite parameter at item {i}"));
+        }
+        if a_ref[i] <= 0.0 || a_foc[i] <= 0.0 {
+            return Err(format!("raju_area: discriminations must be > 0 (item {i})"));
+        }
+        if se_a_ref[i] < 0.0 || se_b_ref[i] < 0.0 || se_a_foc[i] < 0.0 || se_b_foc[i] < 0.0 {
+            return Err(format!(
+                "raju_area: standard errors must be >= 0 (item {i})"
+            ));
+        }
+        // Cauchy-Schwarz / PSD bound per group: |cov(a, b)| <= se_a * se_b.
+        // Without this, an invalid covariance can still leave the assembled
+        // variance positive and silently corrupt the SE and Z.
+        if cov_ab_ref[i].abs() > se_a_ref[i] * se_b_ref[i]
+            || cov_ab_foc[i].abs() > se_a_foc[i] * se_b_foc[i]
+        {
+            return Err(format!(
+                "raju_area: |cov_ab| exceeds se_a * se_b (item {i}); the group \
+                 sampling covariance matrix is not positive semi-definite"
+            ));
+        }
+    }
+
+    let mut h = vec![0.0; n];
+    let mut se = vec![0.0; n];
+    let mut z = vec![0.0; n];
+    let mut p_value = vec![0.0; n];
+    for i in 0..n {
+        let delta = b_foc[i] - b_ref[i];
+        // Unscaled (H, Var(H)); the (1 - c) report scaling happens at the end.
+        let (h_raw, var) = if signed {
+            (delta, se_b_foc[i] * se_b_foc[i] + se_b_ref[i] * se_b_ref[i])
+        } else if a_foc[i] == a_ref[i] {
+            // Equal-slope limit: |H| -> |delta|; slope partials vanish, so the
+            // variance is the b-only delta method (|dH/db_F| = |dH/db_R| = 1).
+            (
+                delta.abs(),
+                se_b_foc[i] * se_b_foc[i] + se_b_ref[i] * se_b_ref[i],
+            )
+        } else {
+            let (af, ar) = (a_foc[i], a_ref[i]);
+            let d = af - ar;
+            let y = af * ar * delta / d;
+            let l = softplus(y);
+            let s = 1.0 / (1.0 + (-y).exp());
+            let h_aux = 2.0 * d / (af * ar) * l - delta;
+            // grad H in (a_F, b_F, a_R, b_R); FD-verified in spec review.
+            let g_af = 2.0 * (l - y * s) / (af * af);
+            let g_bf = 2.0 * s - 1.0;
+            let g_ar = 2.0 * (y * s - l) / (ar * ar);
+            let g_br = 1.0 - 2.0 * s;
+            let v = g_af * g_af * se_a_foc[i] * se_a_foc[i]
+                + g_bf * g_bf * se_b_foc[i] * se_b_foc[i]
+                + 2.0 * g_af * g_bf * cov_ab_foc[i]
+                + g_ar * g_ar * se_a_ref[i] * se_a_ref[i]
+                + g_br * g_br * se_b_ref[i] * se_b_ref[i]
+                + 2.0 * g_ar * g_br * cov_ab_ref[i];
+            (h_aux.abs(), v)
+        };
+        if !var.is_finite() || var <= 0.0 {
+            return Err(format!(
+                "raju_area: assembled variance is not positive at item {i} \
+                 (check covariances against the standard errors)"
+            ));
+        }
+        let sd = var.sqrt();
+        let zi = h_raw / sd;
+        let scale = guess.map_or(1.0, |c| 1.0 - c[i]);
+        h[i] = scale * h_raw;
+        se[i] = scale * sd;
+        z[i] = zi;
+        // p = 2 (1 - Phi(|z|)) = erfc(|z| / sqrt(2)).
+        p_value[i] = crate::fitstats::erfc(zi.abs() / std::f64::consts::SQRT_2);
+    }
+    let z_crit = crate::mokken::normal_upper_quantile(alpha / 2.0);
+    let dif_items = (0..n).filter(|&i| z[i].abs() > z_crit).collect();
+    Ok(RajuAreaResult {
+        h,
+        se,
+        z,
+        p_value,
+        dif_items,
+        signed,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;
