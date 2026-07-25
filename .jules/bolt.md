@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2023-10-24 - Avoiding Advanced Indexing Allocations with Matrix Multiplication
+**Learning:** Using advanced indexing on 2D arrays combined with broadcasting (e.g. `a[None, :] * theta[:, factor_id]`) creates a large intermediate O(N*J) allocation before a subsequent reduction/addition.
+**Action:** Replace nested loops and advanced indexing over categorical group subsets with a 2D boolean mapping mask (zero-initialized mapping matrix) and a BLAS matrix multiplication (e.g. `idx[np.arange(J), factor_id] = a` then `theta @ idx.T`). This is faster and avoids the memory overhead of intermediate broadcased arrays.

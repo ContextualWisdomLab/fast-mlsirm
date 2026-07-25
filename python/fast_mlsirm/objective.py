@@ -55,7 +55,12 @@ def linear_predictor(
 ) -> tuple[np.ndarray, np.ndarray]:
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    theta_factor = params.theta[:, factor_id]
+
+    # Optimized eta computation: replace advanced indexing & broadcasting with matrix multiplication
+    # Avoids intermediate array allocation O(N*J) before sum
+    idx = np.zeros((len(factor_id), params.theta.shape[1]), dtype=params.theta.dtype)
+    idx[np.arange(len(factor_id)), factor_id] = a
+    eta = params.theta @ idx.T
 
     if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
@@ -69,7 +74,7 @@ def linear_predictor(
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
         gamma = 0.0
 
-    eta = a[None, :] * theta_factor + params.b[None, :] - gamma * distance
+    eta += params.b[None, :] - gamma * distance
     return eta, distance
 
 
