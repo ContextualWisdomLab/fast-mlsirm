@@ -637,6 +637,10 @@ def mantel_smd_dif(
     n_persons, n_items = y.shape
     if n_persons == 0 or n_items == 0:
         raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
     yf = np.asarray(y, dtype=np.float64)
     if not np.all(np.isfinite(yf)):
         raise ValueError("responses must be finite (no missing-data support)")

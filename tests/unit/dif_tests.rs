@@ -2920,15 +2920,11 @@ fn mantel_smd_pinned_fixture() {
 }
 
 /// Dichotomous 0/1 reduction (read source, below Eq. 9): the Mantel chi2
-/// equals the MH chi2 WITHOUT the continuity correction. The anchor
-/// recomputes the corrected crate MH value and undoes the correction using
-/// the crate-reported variance-free identity: chi2_mh = (|d|-0.5)^2/V and
-/// chi2_mantel = d^2/V give V = (|d|-0.5)^2/chi2_mh, so
-/// chi2_mantel * (|d|-0.5)^2 == chi2_mh * d^2 cannot be formed without d;
-/// instead we pin both statistics on a fixture where d is recovered from
-/// the Mantel side: d^2 = chi2_mantel * V. The relational anchor asserted
-/// here reads BOTH crate implementations: sqrt(chi2_mh/chi2_mantel) must
-/// equal (|d| - 0.5)/|d| for the common d, i.e. chi2_mh < chi2_mantel.
+/// equals the MH chi2 WITHOUT the continuity correction. Anchored by an
+/// independent in-test 2x2 hypergeometric tabulation (classical
+/// m_1k m_0k variance route, distinct from the crate's generic
+/// n s2 - s1^2 polytomous route) asserted EQUAL to the crate value, plus
+/// the relational check corrected MH <= uncorrected Mantel.
 #[test]
 fn mantel_smd_dichotomous_matches_mh_without_correction() {
     // 16 persons x 2 binary items, both groups spread over several totals.
@@ -2941,23 +2937,53 @@ fn mantel_smd_dichotomous_matches_mh_without_correction() {
     let rows = mantel_smd_dif(&y, &group, 16, 2).unwrap();
     let y8: Vec<u8> = y.iter().map(|&v| v as u8).collect();
     let mh = mantel_haenszel_dif(&y8, &group, 16, 2, &MhDifConfig::default()).unwrap();
+    // Independent 2x2 hypergeometric tabulation of the UNCORRECTED MH
+    // chi-square, computed here from the raw fixture through the classical
+    // m_1k m_0k variance form (the crate uses the generic polytomous form
+    // n s2 - s1^2; for 0/1 scores s1 = s2 = m_1k so the two routes agree
+    // only if the crate algebra is right). Equality assert reads the crate
+    // chi2; an inflated or deflated implementation fails here.
+    let totals: Vec<i64> = (0..16).map(|p| y[2 * p] + y[2 * p + 1]).collect();
+    let mut levels = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
     for i in 0..2 {
+        let (mut num, mut var) = (0.0f64, 0.0f64);
+        for &t in &levels {
+            let (mut nr, mut nf, mut m1, mut b) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for p in 0..16 {
+                if totals[p] != t {
+                    continue;
+                }
+                let v = y[2 * p + i] as f64;
+                m1 += v;
+                if group[p] == 1 {
+                    nf += 1.0;
+                    b += v;
+                } else {
+                    nr += 1.0;
+                }
+            }
+            if nr == 0.0 || nf == 0.0 {
+                continue;
+            }
+            let n = nr + nf;
+            num += b - nf * m1 / n;
+            var += nr * nf * m1 * (n - m1) / (n * n * (n - 1.0));
+        }
+        let chi2_ind = num * num / var;
         let cm: f64 = rows[i].chi2;
         let ch: f64 = mh[i].chi2_mh;
         assert!(cm.is_finite() && ch.is_finite(), "item {i}");
+        assert!(
+            (cm - chi2_ind).abs() < 1e-12,
+            "item {i}: crate Mantel {cm} != independent uncorrected MH {chi2_ind}"
+        );
         // Continuity correction shrinks |d| by 0.5, so corrected <= uncorrected.
         assert!(
             ch <= cm + 1e-12,
             "item {i}: corrected MH {ch} should not exceed Mantel {cm}"
         );
-        // Recover |d| from each side and check they agree on the SAME
-        // hypergeometric residual: |d| = 0.5 / (1 - sqrt(ch/cm)).
-        if cm > 0.0 && ch > 0.0 && ch < cm {
-            let d_abs = 0.5 / (1.0 - (ch / cm).sqrt());
-            // d is a half-integer-free sum of hypergeometric residuals;
-            // sanity band read from crate values only.
-            assert!(d_abs.is_finite() && d_abs > 0.5, "item {i} d_abs {d_abs}");
-        }
     }
 }
 
