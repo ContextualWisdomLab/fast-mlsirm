@@ -40,10 +40,10 @@ use mlsirm_core::dif::{
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
-    epv_select as core_epv_select, kl_information as core_kl_information,
-    kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
-    sprt_classify as core_sprt_classify, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
-    SympsonHetterConfig,
+    ci_classify as core_ci_classify, epv_select as core_epv_select,
+    kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
+    owen_update as core_owen_update, sprt_classify as core_sprt_classify,
+    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2479,6 +2479,60 @@ fn py_sprt_classify(
     out.set_item("n_used", res.n_used)?;
     out.set_item("llr", res.llr)?;
     out.set_item("llr_trace", numpy::PyArray1::from_slice(py, &res.llr_trace))?;
+    Ok(out.into())
+}
+
+/// Single-cut binary-response confidence-interval (ACI) classification for
+/// CAT (`mlsirm_core::exposure::ci_classify`). Interim EAP on a fixed
+/// 41-point [-4, 4] grid with standard-normal prior; SE is the EAP posterior
+/// SD; interval `theta_hat +/- z_crit * se` vs `theta_cut` with STRICT
+/// first-crossing decisions ("above"/"below"/"continue"). Trace entries past
+/// `n_used` are offline counterfactual replay values.
+///
+/// References (APA 7th; see the core module comment for read/not-read
+/// source status):
+/// Nydick, S. W. (2014). catIrt (R package). (READ: termCI.R, eapEst.R,
+/// catIrt.Rd at commit c9e979e4812c27d95d367a7f097edfe8e93ac8eb)
+/// Kingsbury, G. G., & Weiss, D. J. (1983). In D. J. Weiss (Ed.), New
+/// horizons in testing (pp. 257-283). Academic Press. (NOT read;
+/// historical origin)
+/// Thompson, N. A. (2007). Practical Assessment, Research & Evaluation,
+/// 12(1). (NOT read for the CI method section; background only)
+#[pyfunction]
+fn py_ci_classify(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    theta_cut: f64,
+    z_crit: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_ci_classify(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        responses.as_slice()?,
+        theta_cut,
+        z_crit,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("decision", res.decision)?;
+    out.set_item("n_used", res.n_used)?;
+    out.set_item(
+        "theta_trace",
+        numpy::PyArray1::from_slice(py, &res.theta_trace),
+    )?;
+    out.set_item("se_trace", numpy::PyArray1::from_slice(py, &res.se_trace))?;
+    out.set_item(
+        "lower_trace",
+        numpy::PyArray1::from_slice(py, &res.lower_trace),
+    )?;
+    out.set_item(
+        "upper_trace",
+        numpy::PyArray1::from_slice(py, &res.upper_trace),
+    )?;
     Ok(out.into())
 }
 
@@ -6303,6 +6357,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_sprt_classify, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ci_classify, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

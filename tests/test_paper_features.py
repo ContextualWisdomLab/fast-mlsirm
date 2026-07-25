@@ -6701,3 +6701,111 @@ class TestSprtClassify:
                 alpha=0.6,
                 beta=0.5,
             )
+
+class TestCiClassify:
+    """ci_classify wrapper: every assert reads crate-returned dict values."""
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import ci_classify
+
+        r = ci_classify(
+            np.full(6, 1.5),
+            np.array([-1.5, -0.9, -0.3, 0.3, 0.9, 1.5]),
+            np.zeros(6),
+            responses=np.array([1, 1, 1, 1, 1, 0]),
+            theta_cut=0.0,
+            z_crit=1.6448536269514722,
+        )
+        assert r["decision"] == "above"
+        assert r["n_used"] == 5
+        theta = np.array(
+            [
+                0.18783548849905624,
+                0.40433637208107137,
+                0.65453031321107147,
+                0.93795666218057705,
+                1.251068565832161,
+                1.004851105902542,
+            ]
+        )
+        se = np.array(
+            [
+                0.91459937771477151,
+                0.84249780260178286,
+                0.78082991898905685,
+                0.72897935456728113,
+                0.68628322205747161,
+                0.60091214158918393,
+            ]
+        )
+        np.testing.assert_allclose(r["theta_trace"], theta, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(r["se_trace"], se, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(
+            r["lower_trace"], theta - 1.6448536269514722 * se, rtol=0, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            r["upper_trace"], theta + 1.6448536269514722 * se, rtol=0, atol=1e-12
+        )
+        # First-strict-crossing anchor: k=5 is the first lower bound > cut.
+        assert r["lower_trace"][3] <= 0.0 < r["lower_trace"][4]
+
+    def test_default_c_and_bool_responses(self):
+        from fast_mlsirm import ci_classify
+
+        r = ci_classify(
+            np.array([1.0, 1.1]),
+            np.array([0.0, 0.2]),
+            responses=np.array([True, False]),
+            theta_cut=0.0,
+            z_crit=1.96,
+        )
+        assert r["decision"] == "continue"
+        assert r["n_used"] == 2
+        assert r["theta_trace"].shape == (2,)
+        assert np.all(r["se_trace"] > 0.0)
+        assert np.all(r["lower_trace"] <= 0.0)
+        assert np.all(r["upper_trace"] >= 0.0)
+
+    def test_rejects_bad_responses(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="0 and 1"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 2]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1.0, 0.5]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+
+    def test_rejects_complex_input(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="real-valued"):
+            ci_classify(
+                np.array([1.0 + 1j, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+
+    def test_core_validation_propagates(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="z_crit"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                z_crit=0.0,
+            )
