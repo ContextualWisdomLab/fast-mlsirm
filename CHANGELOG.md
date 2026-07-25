@@ -114,6 +114,33 @@
 
 ### Added
 
+- **Livingston-Lewis classification accuracy and consistency**
+  (`fast_mlsirm.livingston_lewis`; in `mlsirm_core::classification`;
+  Livingston & Lewis, 1995, as implemented in Haakstad's CRAN
+  `betafunctions` 1.9.0 source `LL.CA` in `R/classification.R`, read line
+  by line — the original article was not consulted directly; Hanson, 1991,
+  four-parameter beta moment fit, as cited in Haakstad, 2022). From a
+  single administration: effective test length
+  `((m-min)(max-m) - r s^2)/(s^2 (1-r))`, true-score raw moments via the
+  factorial-moment identity on the unrounded-ETL scale, four-parameter
+  beta method-of-moments fit with a two-parameter [0, 1] fail-safe, then
+  accuracy cells (tp/fp/tf/ff), sensitivity/specificity, consistency
+  cells, and Cohen's kappa under a binomial observed-score model with
+  `N = round(ETL)`. Integrals use singularity-safe composite
+  Gauss-Legendre quadrature (power substitution when a shape parameter is
+  below one; endpoint-graded panels otherwise), verified against
+  `scipy.integrate.quad` replication literals at 1e-7. Divergences
+  (documented in the module): a single round-ties-even threshold
+  `k = round(N c)` in both the accuracy and consistency blocks (the oracle
+  mixes `round` in accuracy with `floor` in consistency, making its
+  consistency cells asymmetric; here `p_ij == p_ji` by construction);
+  pass = observed score >= cut is the positive class (the oracle labels
+  fail as positive); the fail-safe also engages on numerically invalid
+  four-parameter fits (the oracle only checks out-of-bounds support); hard
+  errors instead of NA/NaN propagation for invalid inputs, while the
+  conditional ratios (sensitivity, specificity, kappa) are an explicit
+  `NaN` when their margin or chance denominator vanishes (e.g. a cut
+  outside the fitted beta support).
 - **Cronbach alpha + Feldt exact-F confidence interval**
   (`fast_mlsirm.cronbach_alpha`, `fast_mlsirm.feldt_alpha_ci`; in
   `mlsirm_core::reliability`; Feldt, 1965, as cited in and implemented by

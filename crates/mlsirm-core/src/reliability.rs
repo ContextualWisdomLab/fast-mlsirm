@@ -502,7 +502,7 @@ pub fn cronbach_alpha(data: &[f64], n: usize, p: usize) -> Result<f64, String> {
 /// Regularized incomplete beta I_x(a, b) via Lentz continued fraction
 /// (Numerical Recipes 3rd ed., sec. 6.4 `betacf` form; transcribed and
 /// verified against scipy.stats fixtures in the test suite).
-fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }
@@ -570,6 +570,16 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
     h
 }
 
+/// F-distribution CDF: P(F <= x; d1, d2) = I_z(d1/2, d2/2) with
+/// z = d1*x / (d1*x + d2).
+fn f_cdf(x: f64, d1: f64, d2: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let z = d1 * x / (d1 * x + d2);
+    inc_beta(d1 / 2.0, d2 / 2.0, z)
+}
+
 /// F-distribution quantile by bisection on z in (0, 1), then
 /// x = d2*z / (d1*(1 - z)). Endpoints: prob <= 0 -> 0, prob >= 1 -> +inf
 /// (matching qf/scipy; bisection alone would return a finite cap).
@@ -583,8 +593,8 @@ fn f_quantile(prob: f64, d1: f64, d2: f64) -> f64 {
     let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        let cdf = inc_beta(d1 / 2.0, d2 / 2.0, mid);
-        if cdf < prob {
+        let x = d2 * mid / (d1 * (1.0 - mid));
+        if f_cdf(x, d1, d2) < prob {
             lo = mid;
         } else {
             hi = mid;
