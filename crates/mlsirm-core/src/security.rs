@@ -31,9 +31,10 @@
 //! Zopluoglu, C. (2018). *CopyDetect: Computing response similarity indices
 //!   for multiple-choice tests* (R package version 1.3) [Computer software].
 //!   CRAN. (READ: `R/similarity1.r`, `R/similarity2.r`)
-//! Man, K., & Harring, J. R. (2023). *aberrance: Detect aberrant behavior in
-//!   test data* (R package) [Computer software]. CRAN. (READ:
-//!   `R/detect-ac.R` `compute_OMG`, `R/compute.R`; independent check)
+//! *aberrance: Detect aberrant behavior in test data* (R package)
+//!   [Computer software]. CRAN. (READ: `R/detect-ac.R` `compute_OMG`,
+//!   `R/compute.R`; independent check. Authorship not established from the
+//!   sources read, so no authors are claimed.)
 
 /// Result of the Wollack-style omega answer-copying test.
 #[derive(Debug, Clone)]
