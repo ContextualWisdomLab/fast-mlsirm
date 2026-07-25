@@ -119,6 +119,19 @@
 
 ### Added
 
+- **Confidence-interval (ACI) classification for CAT**
+  (`fast_mlsirm.ci_classify`; in Rust `mlsirm_core::exposure::ci_classify`,
+  PyO3 `py_ci_classify`): single-cut binary-response classification by
+  interim EAP ability estimate on a fixed 41-point `[-4, 4]` grid with
+  standard-normal prior, SE = EAP posterior SD, interval
+  `theta_hat +/- z_crit * se` vs `theta_cut` with STRICT first-crossing
+  decisions -> `"above"`/`"below"`/`"continue"` with 1-based `n_used`; full
+  theta/se/lower/upper traces are returned as offline diagnostics (entries
+  past `n_used` are counterfactual replay values). Verified against R catIrt
+  `termCI.R`/`eapEst.R`/`catIrt.Rd` at commit
+  `c9e979e4812c27d95d367a7f097edfe8e93ac8eb` (READ); Kingsbury & Weiss
+  (1983), Thompson (2007), and Eggen & Straetmans (2000) were NOT
+  method-section verified and are historical/background context only.
 - **Wald SPRT classification for CAT** (`fast_mlsirm.sprt_classify`; in
   `mlsirm_core::exposure`). Single-cut binary-response sequential probability
   ratio test: point hypotheses at `theta_cut -/+ delta`, cumulative binary
