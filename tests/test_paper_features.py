@@ -6892,6 +6892,17 @@ class TestDimtest:
         with pytest.raises(ValueError, match="integers"):
             dimtest(y, at1=[0.5, 1, 2, 3], at2=[4, 5, 6, 7])
 
+    def test_rejects_string_responses_and_indices(self):
+        # Regression: dtype-kind check must run BEFORE astype casts, so
+        # string arrays are rejected rather than silently coerced.
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y.astype(str), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y, at1=["0", "1", "2", "3", "4"], at2=[5, 6, 7, 8, 9])
+
     def test_too_few_groups_errors(self):
         from fast_mlsirm import dimtest
 
