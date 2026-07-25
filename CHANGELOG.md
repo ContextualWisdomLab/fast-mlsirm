@@ -119,6 +119,23 @@
 
 ### Added
 
+- **Hofstee compromise standard setting (psychometricsGP-faithful)**
+  (`fast_mlsirm.hofstee`; in Rust
+  `mlsirm_core::standard_setting::hofstee`, PyO3 `py_hofstee`): the
+  Hofstee compromise cut score, a computational port of the
+  psychometricsGP R package's `fn_plot_hofstee()` (`R/fn_plot_hofstee.R`,
+  READ — the only inspectable implementation found; single-source port,
+  stated openly; plotting excluded; Hofstee 1983 itself NOT READ, cited
+  only as implemented). Intersects the piecewise-linear cumulative
+  relative frequency ogive over integer score bins 0..=100 (right-closed
+  bins `(s-1, s]`, divide-first `(count/n)*100` arithmetic preserved)
+  with the descending diagonal `(min_cut, max_fail)` → `(max_cut,
+  min_fail)`; when they do not cross, the R fallback pins the cut to
+  `min_cut`/`max_cut` with a strict `<` fail count and two-decimal
+  DIRECTED rounding (ceil up-branch / floor down-branch), `failed=True`.
+  Reduced scope per adversarial spec review: collinear ogive-diagonal
+  overlap and zero-length diagonals are rejected (`spatstat`
+  `crossing.psp` degenerate semantics unverified against an R runtime).
 - **K1/K2/S1/S2 answer-copying indices (CopyDetect-faithful)**
   (`fast_mlsirm.k_variants`; in Rust `mlsirm_core::security::k_variants`,
   PyO3 `py_k_variants`): the four regression-baseline copying indices,

@@ -7224,3 +7224,58 @@ class TestKVariants:
             v = getattr(r, field)
             assert isinstance(v, float)
             assert 0.0 <= v or field in ("s1", "s2")
+
+class TestHofstee:
+    def test_pinned_oracle_main(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        rng = np.random.default_rng(2026)
+        scores = np.round(np.clip(rng.normal(68, 9, 40), 0, 100), 1)
+        r = hofstee(scores, 62.5, 75.0, 0.0, 20.0)
+        assert r.failed is False
+        assert abs(r.cut_score - 62.804878048780488) < 1e-12
+        assert abs(r.fail_rate - 19.512195121951219) < 1e-12
+        assert r.cum_freq_percent.shape == (101,)
+        assert r.cum_freq_percent[62] == 17.5
+        assert r.cum_freq_percent[63] == 20.0
+        # divide-first arithmetic order (23/40)*100:
+        assert r.cum_freq_percent[70] == 57.49999999999999
+
+    def test_fallback_and_reduced_scope(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        r = hofstee(np.full(10, 30.0), 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 100.0, True)
+        r = hofstee([30.0, 30.0, 90.0], 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 66.67, True)
+        import pytest
+
+        with pytest.raises(ValueError, match="zero-length"):
+            hofstee([50.0], 70.0, 70.0, 20.0, 20.0)
+        with pytest.raises(ValueError, match="collinear overlap"):
+            hofstee([10.0, 90.0], 40.0, 60.0, 50.0, 50.0)
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import hofstee
+
+        with pytest.raises(ValueError):
+            hofstee([], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([np.nan], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0 + 1j], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([[50.0]], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 62.5, 75.0, 0.0, True)
+        with pytest.raises(ValueError):
+            hofstee([101.0], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 75.0, 62.5, 0.0, 20.0)

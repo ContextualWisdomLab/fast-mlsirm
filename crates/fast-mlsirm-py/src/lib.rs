@@ -111,6 +111,7 @@ use mlsirm_core::security::gbt as core_gbt;
 use mlsirm_core::security::k_index as core_k_index;
 use mlsirm_core::security::k_variants as core_k_variants;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
+use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1896,6 +1897,33 @@ fn py_k_variants(
     out.set_item("k2", res.k2)?;
     out.set_item("s1_index", res.s1_index)?;
     out.set_item("s2_index", res.s2_index)?;
+    Ok(out.into())
+}
+
+/// Hofstee compromise standard-setting cut score
+/// (`mlsirm_core::standard_setting::hofstee`), a port of the
+/// psychometricsGP R package's `fn_plot_hofstee()` computation (plotting
+/// excluded). See the core module header for citation governance and the
+/// reduced scope (collinear-overlap and zero-length diagonals rejected).
+#[pyfunction]
+fn py_hofstee(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    min_cut: f64,
+    max_cut: f64,
+    min_fail: f64,
+    max_fail: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hofstee(scores.as_slice()?, min_cut, max_cut, min_fail, max_fail)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("cut_score", res.cut_score)?;
+    out.set_item("fail_rate", res.fail_rate)?;
+    out.set_item("failed", res.failed)?;
+    out.set_item(
+        "cum_freq_percent",
+        PyArray1::from_slice(py, &res.cum_freq_percent),
+    )?;
     Ok(out.into())
 }
 
@@ -6524,6 +6552,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
     m.add_function(wrap_pyfunction!(py_gbt, m)?)?;
     m.add_function(wrap_pyfunction!(py_k_variants, m)?)?;
+    m.add_function(wrap_pyfunction!(py_hofstee, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

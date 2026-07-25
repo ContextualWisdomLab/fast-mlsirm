@@ -35,6 +35,7 @@ pub mod rt;
 pub mod rt_joint;
 pub mod scoring;
 pub mod security;
+pub mod standard_setting;
 pub mod subscores;
 pub mod testlet;
 pub mod twopl;
