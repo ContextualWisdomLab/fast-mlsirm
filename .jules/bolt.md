@@ -33,3 +33,11 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-05-19 - Fast extraction of gradients over factors
+**Learning:** Operations like `(e * params.theta[:, factors]).sum(axis=0) * a` allocate a full `(N, J)` array as an intermediate step just to select and sum elements according to factors.
+**Action:** Replace `(e * theta[:, factors]).sum(axis=0)` with matrix multiplication and index selection: `(e.T @ theta)[np.arange(e.shape[1]), factors]` to entirely avoid the large `(N, J)` intermediate allocation and significantly speed up gradient calculations.
+
+## 2024-05-19 - Skipping array allocations in element-wise sums
+**Learning:** Calculating statistics like `(y * observed).sum(axis=0)` and `(resid2 / v * observed).sum(axis=0)` allocates full-sized intermediate memory for the multiplication/division result before performing the sum, causing a major bottleneck when arrays are large (e.g., N=5000, J=100).
+**Action:** Substitute `(A * B).sum(axis=...)` patterns with `np.einsum('ij,ij->j', A, B.astype(np.float64, copy=False))` to instruct NumPy to perform the multiplication and summation simultaneously in C, bypassing intermediate array allocations entirely.
