@@ -59,6 +59,14 @@ from .reliability import (
     cronbach_alpha as cronbach_alpha,
     feldt_alpha_ci as feldt_alpha_ci,
     AlphaCiResult as AlphaCiResult,
+    separation_reliability as separation_reliability,
+    SeparationReliabilityResult as SeparationReliabilityResult,
+)
+from .factor import (
+    minres_fa as minres_fa,
+    minres_fa_from_data as minres_fa_from_data,
+    omega_total_1f as omega_total_1f,
+    omega_total_1f_from_data as omega_total_1f_from_data,
 )
 from .gtheory import (
     gtheory_pi as gtheory_pi,
@@ -198,8 +206,14 @@ __all__ = [
     "cronbach_alpha",
     "feldt_alpha_ci",
     "AlphaCiResult",
+    "separation_reliability",
+    "SeparationReliabilityResult",
     "gtheory_pi",
     "gtheory_pio",
+    "minres_fa",
+    "minres_fa_from_data",
+    "omega_total_1f",
+    "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
     "ClassificationResult",
