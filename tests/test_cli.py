@@ -173,6 +173,105 @@ def test_cli_fit_rust_device_recorded(tmp_path, capsys):
     assert summary["rust_device"] == "gpu"
 
 
+def test_cli_score_json_payload_reports_scores(capsys):
+    payload = {"item-1": 1}
+    scores = [{"theta": [0.25], "theta_sd": [0.5], "method": "eap"}]
+    args = [
+        "score",
+        "--bundle",
+        "bundle.json",
+        "--responses",
+        "responses.json",
+        "--json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle", return_value={"bundle": True}
+    ) as load_bundle, patch(
+        "fast_mlsirm.cli._load_json_bounded", return_value=payload
+    ) as load_responses, patch(
+        "fast_mlsirm.serving.score_respondents", return_value=scores
+    ) as score, patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 0
+
+    load_bundle.assert_called_once_with("bundle.json")
+    load_responses.assert_called_once_with(
+        "responses.json", source="response JSON"
+    )
+    score.assert_called_once_with({"bundle": True}, payload)
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "command": "score",
+        "status": "ok",
+        "n_scored": 1,
+        "scores": scores,
+    }
+
+
+def test_cli_score_npy_payload_writes_output(tmp_path):
+    payload = np.array([[1.0, 0.0]])
+    scores = [{"theta": [0.1], "theta_sd": [0.4], "method": "eap"}]
+    output = tmp_path / "scores.json"
+    args = [
+        "score",
+        "--bundle",
+        "bundle.json",
+        "--responses",
+        "responses.npy",
+        "--out",
+        str(output),
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle", return_value={"bundle": True}
+    ), patch(
+        "fast_mlsirm.cli._load_numpy_bounded", return_value=payload
+    ) as load_responses, patch(
+        "fast_mlsirm.serving.score_respondents", return_value=scores
+    ) as score, patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 0
+
+    load_responses.assert_called_once_with("responses.npy")
+    score.assert_called_once_with({"bundle": True}, payload)
+    assert json.loads(output.read_text(encoding="utf-8")) == scores
+
+
+def test_cli_score_reports_validation_error(capsys):
+    args = [
+        "score",
+        "--bundle",
+        "bad.json",
+        "--responses",
+        "responses.json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle",
+        side_effect=ValueError("invalid bundle"),
+    ), patch.object(sys, "argv", ["fast-mlsirm", *args]):
+        assert main() == 1
+
+    assert "Scoring failed - invalid bundle" in capsys.readouterr().err
+
+
+def test_cli_score_debug_reraises_validation_error(monkeypatch):
+    monkeypatch.setenv("FAST_MLSIRM_DEBUG", "1")
+    args = [
+        "score",
+        "--bundle",
+        "bad.json",
+        "--responses",
+        "responses.json",
+    ]
+
+    with patch(
+        "fast_mlsirm.serving.load_serving_bundle",
+        side_effect=ValueError("invalid bundle"),
+    ), patch.object(sys, "argv", ["fast-mlsirm", *args]), pytest.raises(
+        ValueError, match="invalid bundle"
+    ):
+        main()
+
 def test_cli_diagnose_fit_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
     fit_dir = tmp_path / "fit_out"
@@ -201,6 +300,58 @@ def test_cli_diagnose_fit_success(tmp_path):
         assert main() == 0
 
     assert (diag_dir / "fit_diagnostics.json").exists()
+
+
+def test_cli_limited_information_rejects_saved_nonconverged_fit(tmp_path, capsys):
+    responses = tmp_path / "responses.npy"
+    factors = tmp_path / "item_factor.csv"
+    params = tmp_path / "params.npz"
+    out_dir = tmp_path / "diag_out"
+    np.save(responses, np.zeros((4, 3)))
+    factors.write_text("item_id,factor_id\n0,0\n1,0\n2,0\n", encoding="utf-8")
+    np.savez(
+        params,
+        theta=np.zeros((4, 1)),
+        alpha=np.zeros(3),
+        b=np.zeros(3),
+        xi=np.zeros((4, 1)),
+        zeta=np.zeros((3, 1)),
+        tau=0.0,
+    )
+    (tmp_path / "fit_summary.json").write_text(
+        json.dumps(
+            {
+                "optimizer": "mmle_em/numpy",
+                "convergence_status": "max_iter_reached",
+                "n_iter": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = [
+        "diagnose-fit",
+        "--responses",
+        str(responses),
+        "--factors",
+        str(factors),
+        "--params",
+        str(params),
+        "--model",
+        "MIRT",
+        "--limited-information",
+        "--out",
+        str(out_dir),
+    ]
+
+    with patch("fast_mlsirm.cli.fit_diagnostics") as diagnostics, patch(
+        "fast_mlsirm.cli.save_fit_diagnostics"
+    ), patch.object(sys, "argv", ["fast-mlsirm"] + args):
+        assert main() == 1
+
+    diagnostics.assert_not_called()
+    assert "did not converge" in capsys.readouterr().err
+    assert not out_dir.exists()
+
 
 def test_cli_diagnose_dimensions_success(tmp_path):
     sim_dir = tmp_path / "sim_out"
