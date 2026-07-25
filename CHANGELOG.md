@@ -119,6 +119,18 @@
 
 ### Added
 
+- **Generalized binomial test (GBT) tail kernel (aberrance-faithful)**
+  (`fast_mlsirm.gbt`; in Rust `mlsirm_core::security::gbt`, PyO3 `py_gbt`):
+  exact Poisson-binomial distribution of the copier-source match count via
+  Bernoulli-convolution DP and the INCLUSIVE upper-tail p-value
+  `P(M >= observed)`, ported exactly from the CRAN aberrance package's
+  `compute_GBT` (`src/compute.cpp`, READ) and corroborated by CopyDetect's
+  internal `GBT()` (`R/similarity1.r`, READ — same distribution, same
+  inclusive tail). Per-item match-probability construction is the caller's
+  job (aberrance directional and CopyDetect symmetric recipes both fit);
+  missing data out of scope (the packages conflict). van der Linden &
+  Sotaridona (2006) NOT read — cited only as implemented. Returns the full
+  pmf plus the p-value; O(n^2) nonnegative f64 DP (no cancellation).
 - **K-index of matching incorrect answers (CopyDetect-faithful)**
   (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
   `py_k_index`): binomial upper-tail index of copier-source shared incorrect

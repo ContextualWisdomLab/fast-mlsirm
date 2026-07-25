@@ -142,6 +142,12 @@ impl TestLcg {
             .wrapping_add(1442695040888963407);
         ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
     }
+    /// Standard normal via Box-Muller (test-local; used by the MC harness).
+    fn normal(&mut self) -> f64 {
+        let u1 = self.next_f64().max(1e-300);
+        let u2 = self.next_f64();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
 }
 
 /// Monte Carlo null calibration and power (500 reps). Under the null the
@@ -399,4 +405,179 @@ fn k_index_binomial_tail_extreme_p_regression() {
     // Symmetric moderate case stays exact too.
     let k2 = binom_sf_ge(5, 0.53333333333333333, 2);
     assert!((k2 - 0.85139489711934158).abs() < 1e-12, "tail {}", k2);
+}
+
+// ---------------------------------------------------------------------------
+// GBT (generalized binomial test) tail kernel
+// ---------------------------------------------------------------------------
+
+/// Fixture from files/gbt_spec.md: 10 items; copier [1,0,1,1,0,1,0,0,1,1]
+/// vs source [1,0,0,1,0,1,1,0,1,0] gives matches below with obs = 7.
+fn gbt_fixture() -> (Vec<f64>, Vec<f64>) {
+    let matches = vec![1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0];
+    let probs = vec![0.62, 0.55, 0.48, 0.71, 0.52, 0.66, 0.43, 0.58, 0.73, 0.49];
+    (matches, probs)
+}
+
+/// Pinned oracle: exact reference computed independently with Python
+/// fractions.Fraction on the exact binary float values, implementing the
+/// aberrance compute_GBT recursion verbatim (verified again by the
+/// adversarial spec review's own script). Asserts read: gbt()'s
+/// observed_matches, match_dist and p_value (crate outputs).
+/// Killed by: M1 exclusive tail (0.1277605867075642), M2 lower tail
+/// (0.8722394132924358), M3 duplicate item 0 i.e. probs [p0]+p
+/// (0.47925477021800067), M4 tail from obs-1 (0.5754779926114737),
+/// M5 swapped convolution mixing q*f[j-1]+p*f[j] (tail 0.06957009419363154
+/// and pmf reversed — the pinned pmf entries kill it too).
+#[test]
+fn gbt_pinned_oracle() {
+    let (m, p) = gbt_fixture();
+    let r = gbt(&m, &p).unwrap();
+    assert_eq!(r.observed_matches, 7);
+    assert!(
+        (r.p_value - 0.32225898631286054).abs() < 1e-12,
+        "p {}",
+        r.p_value
+    );
+    assert_eq!(r.match_dist.len(), 11);
+    let pmf = [
+        0.00013873169507258882,
+        0.0020878412745965764,
+        0.013861663456144322,
+        0.05348185776781805,
+        0.1328495797358767,
+        0.2221023334590181,
+        0.25321900629861316,
+        0.19449839960529633,
+        0.09637293070413779,
+        0.027829568425056288,
+        0.0035580875783701245,
+    ];
+    for (k, &want) in pmf.iter().enumerate() {
+        assert!(
+            (r.match_dist[k] - want).abs() < 1e-12,
+            "pmf[{}] = {} want {}",
+            k,
+            r.match_dist[k],
+            want
+        );
+    }
+    let total: f64 = r.match_dist.iter().sum();
+    assert!((total - 1.0).abs() < 1e-12, "pmf total {}", total);
+}
+
+/// Structural invariants with exactly known values (all asserts read crate
+/// outputs). (a) all 10 items match with probs 0.5: p = P(M >= 10) =
+/// 2^-10 = 1/1024 exactly — kills tail off-by-one in either direction
+/// (exclusive tail would be 0, tail from obs-1 would add mass).
+/// (b) obs = 0: inclusive upper tail is 1 — kills exclusive-tail mutants
+/// structurally. (c) deterministic probs [1,1,0]: M is a.s. 2, so
+/// matches [1,1,0] (obs 2) gives p = 1 and matches [1,1,1] (obs 3) gives
+/// p = 0 — kills mishandling of boundary probabilities.
+#[test]
+fn gbt_structural_invariants() {
+    let r = gbt(&[1.0; 10], &[0.5; 10]).unwrap();
+    assert_eq!(r.observed_matches, 10);
+    assert!((r.p_value - 1.0 / 1024.0).abs() < 1e-15, "p {}", r.p_value);
+
+    let r0 = gbt(&[0.0; 4], &[0.3, 0.9, 0.5, 0.1]).unwrap();
+    assert_eq!(r0.observed_matches, 0);
+    assert!((r0.p_value - 1.0).abs() < 1e-15, "p {}", r0.p_value);
+
+    let rd = gbt(&[1.0, 1.0, 0.0], &[1.0, 1.0, 0.0]).unwrap();
+    assert_eq!(rd.observed_matches, 2);
+    assert!((rd.p_value - 1.0).abs() < 1e-15, "p {}", rd.p_value);
+    assert!((rd.match_dist[2] - 1.0).abs() < 1e-15);
+
+    let ri = gbt(&[1.0, 1.0, 1.0], &[1.0, 1.0, 0.0]).unwrap();
+    assert_eq!(ri.observed_matches, 3);
+    assert!(ri.p_value.abs() < 1e-15, "p {}", ri.p_value);
+}
+
+/// Error paths: every rejected input returns Err (asserts read gbt()'s
+/// Result). Killed by removing any validation branch.
+#[test]
+fn gbt_error_paths() {
+    assert!(gbt(&[], &[]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5]).is_err());
+    assert!(gbt(&[1.0, 0.5], &[0.5, 0.5]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, 1.5]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, -0.1]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, f64::NAN]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, f64::INFINITY]).is_err());
+}
+
+/// Monte Carlo size/power, 500 reps (ignored: heavy). Null: two independent
+/// Rasch-like examinees; per-item match probability computed from the SAME
+/// model that generates responses, so the GBT p-value is exact and the
+/// rejection rate at alpha = .05 must be at most about nominal (discrete
+/// conservative test). Alternative: copier copies the source's response on
+/// a fixed 40% of items while match_probs stay model-implied. Asserts read:
+/// gbt()'s p_value across replications.
+#[test]
+#[ignore]
+fn monte_carlo_gbt_size_and_power() {
+    let n_items = 40usize;
+    let reps = 500usize;
+    let alpha = 0.05f64;
+    let mut rng = TestLcg(20260726);
+    let mut null_rej = 0usize;
+    let mut alt_rej = 0usize;
+    for _ in 0..reps {
+        // Item easiness in [-1.5, 1.5]; two independent abilities N(0,1).
+        let mut b = vec![0.0f64; n_items];
+        for bi in b.iter_mut() {
+            *bi = -1.5 + 3.0 * rng.next_f64();
+        }
+        let t1 = rng.normal();
+        let t2 = rng.normal();
+        let p1: Vec<f64> = b
+            .iter()
+            .map(|&bi| 1.0 / (1.0 + (-(t1 - bi)).exp()))
+            .collect();
+        let p2: Vec<f64> = b
+            .iter()
+            .map(|&bi| 1.0 / (1.0 + (-(t2 - bi)).exp()))
+            .collect();
+        let x1: Vec<f64> = p1
+            .iter()
+            .map(|&p| if rng.next_f64() < p { 1.0 } else { 0.0 })
+            .collect();
+        let x2: Vec<f64> = p2
+            .iter()
+            .map(|&p| if rng.next_f64() < p { 1.0 } else { 0.0 })
+            .collect();
+        // Symmetric CopyDetect-style match probabilities (caller recipe).
+        let mp: Vec<f64> = p1
+            .iter()
+            .zip(&p2)
+            .map(|(&a, &c)| a * c + (1.0 - a) * (1.0 - c))
+            .collect();
+        let matches: Vec<f64> = x1
+            .iter()
+            .zip(&x2)
+            .map(|(&a, &c)| if a == c { 1.0 } else { 0.0 })
+            .collect();
+        if gbt(&matches, &mp).unwrap().p_value < alpha {
+            null_rej += 1;
+        }
+        // Alternative: copy source's responses on the first 40% of items.
+        let n_copy = (n_items as f64 * 0.4) as usize;
+        let mut x1c = x1.clone();
+        for i in 0..n_copy {
+            x1c[i] = x2[i];
+        }
+        let matches_c: Vec<f64> = x1c
+            .iter()
+            .zip(&x2)
+            .map(|(&a, &c)| if a == c { 1.0 } else { 0.0 })
+            .collect();
+        if gbt(&matches_c, &mp).unwrap().p_value < alpha {
+            alt_rej += 1;
+        }
+    }
+    let size = null_rej as f64 / reps as f64;
+    let power = alt_rej as f64 / reps as f64;
+    assert!(size < 0.08, "empirical size {}", size);
+    assert!(power > 0.5, "empirical power {}", power);
 }
