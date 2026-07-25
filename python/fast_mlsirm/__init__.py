@@ -45,7 +45,19 @@ from .detect import (
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
-    ClassificationResult as ClassificationResult,
+)
+from .parallel_analysis import (
+    parallel_analysis as parallel_analysis,
+    ParallelAnalysisResult as ParallelAnalysisResult,
+)
+from .reliability import (
+    guttman_lambdas as guttman_lambdas,
+    GuttmanResult as GuttmanResult,
+    tenberge_mu as tenberge_mu,
+    TenBergeResult as TenBergeResult,
+    cronbach_alpha as cronbach_alpha,
+    feldt_alpha_ci as feldt_alpha_ci,
+    AlphaCiResult as AlphaCiResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
@@ -170,6 +182,14 @@ __all__ = [
     "detect_analysis",
     "rudner_classification",
     "lee_classification",
+    "parallel_analysis",
+    "guttman_lambdas",
+    "GuttmanResult",
+    "tenberge_mu",
+    "TenBergeResult",
+    "cronbach_alpha",
+    "feldt_alpha_ci",
+    "AlphaCiResult",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",

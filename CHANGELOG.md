@@ -114,6 +114,77 @@
 
 ### Added
 
+- **Cronbach alpha + Feldt exact-F confidence interval**
+  (`fast_mlsirm.cronbach_alpha`, `fast_mlsirm.feldt_alpha_ci`; in
+  `mlsirm_core::reliability`; Feldt, 1965, as cited in and implemented by
+  Revelle's CRAN `psych` 2.6.5 source `alpha.ci` in `R/alpha.R`, read line
+  by line; Cronbach, 1951, covariance form verified against the same
+  source). `cronbach_alpha` computes the raw-covariance form
+  `p/(p-1) * (1 - tr(C)/sum(C))`; `feldt_alpha_ci` inverts the pivot
+  `(1-alpha)/(1-alpha_hat) ~ F(n-1, (n-1)(p-1))` into a two-sided interval
+  (`lower = 1-(1-alpha_hat)*qF(1-delta/2)`, upper mirrored) plus the
+  implied average inter-item correlation `r_bar`. The F quantile is
+  computed in-crate via a Lentz continued-fraction regularized incomplete
+  beta and bisection (verified against `scipy.stats.f.ppf` fixture
+  literals at 1e-9). Bounds are not clamped; negative alpha is accepted
+  into the CI, matching psych. Divergences (documented in the module):
+  raw-data input only, zero-variance items rejected, confidence `level`
+  argument instead of `p.val`, hard errors instead of NA.
+- **ten Berge & Zegers mu reliability series** (`fast_mlsirm.tenberge_mu`;
+  in `mlsirm_core::reliability`; ten Berge & Zegers, 1978, as cited in and
+  implemented by Revelle's CRAN `psych` 2.6.5 source `tenberge.R`, read
+  line by line). On the Pearson correlation matrix with `Vt = sum(R)`,
+  off-diagonal power sums `S_k`, and `c = p/(p-1)` on the innermost radical
+  only: `mu0 = c*S_1/Vt` (= coefficient alpha = Guttman lambda3),
+  `mu1 = (S_1 + sqrt(c*S_2))/Vt` (= Guttman lambda2), `mu2` and `mu3` nest
+  one and two further radicals over `S_4` and `S_8`. The series ordering
+  `mu0 <= mu1 <= mu2 <= mu3` follows from Cauchy-Schwarz over the `p*(p-1)`
+  off-diagonal cells and is asserted on crate outputs. Divergences from
+  psych (documented in the module): raw-data input only (no
+  correlation-matrix passthrough, no `use = "pairwise"`), hard errors on
+  degenerate input, `S_1` summed directly to avoid cancellation. Verified
+  against an independent NumPy replication on two fixtures pinned at
+  `1e-9`, exact-identity cross-checks against `guttman_lambdas`, and a
+  500-replication tau-equivalent Monte Carlo (`#[ignore]`).
+- **Guttman lambda reliability coefficients** (`fast_mlsirm.guttman_lambdas`;
+  new `mlsirm_core::reliability`; Guttman, 1945, as cited in and implemented
+  by Revelle's CRAN `psych` 2.6.5 sources `guttman.R`/`splitHalf.R`/`smc.R`,
+  read line by line). On the Pearson correlation matrix: lambda1-lambda3
+  (lambda3 = coefficient alpha), lambda5 (best covariance column), lambda6
+  (squared multiple correlations via a plain symmetric inverse), plus
+  split-half summaries — lambda4 (best split), beta (worst split, floored at
+  0), and the mean split over all `C(p, floor(p/2))` subsets when that count
+  fits the `n_sample_splits` budget (psych's brute-force cutoff 15000),
+  otherwise over LCG-sampled splits. Declared divergences (documented in the
+  module): no `check.keys` auto-reversal, absolute split-half correlations
+  in both branches (psych's sampled branch is signed), hard error on
+  singular correlation matrices instead of psych's pseudoinverse, crate-LCG
+  sampling (psych-inspired, not bit-identical to any R run), and duplicate
+  sampled subsets allowed. Verified against an independent NumPy replication
+  (`np.corrcoef` + `np.linalg.inv` + `itertools.combinations`) on three
+  fixtures (even-p exhaustive, odd-p exhaustive, sampled) pinned at `1e-9`,
+  plus a 500-replication tau-equivalent Monte Carlo (`#[ignore]`) recovering
+  the analytic sum-score reliability within 0.01.
+- **Horn's parallel analysis** (`fast_mlsirm.parallel_analysis`; new
+  `mlsirm_core::parallel`; Horn, 1965, and Glorfeld, 1995, as cited in and
+  implemented by Dinno's CRAN `paran` 1.5.6 sources, read line by line).
+  PCA path: eigenvalues of the observed Pearson correlation matrix (cyclic
+  Jacobi, eigenvalues only, hard error on non-convergence) are adjusted by
+  the sampling bias `random_eigenvalue - 1` estimated from `n_iterations`
+  standard-normal data sets of the same shape; components are retained
+  while the adjusted eigenvalue stays above 1, scanning left to right and
+  stopping at the first failure (later resurgences do not count, matching
+  paran's loop-and-break). `centile = 0` uses the per-position mean
+  benchmark; `1..=99` uses that upper centile via the R type-7 quantile
+  (Glorfeld's conservative variant). Deliberate divergences (documented in
+  the module): PCA only (paran's `cfa` generalized-inverse path is out of
+  scope), a single deterministic crate-LCG random stream (paran-inspired,
+  not bit-identical to any R run), and narrowed guards (`n_persons >= 3`,
+  `n_items >= 2`, finite complete data, positive column variance, explicit
+  `n_iterations`; the Python wrapper supplies paran's `30 * n_items`
+  default). Fixture literals verified against an independent NumPy
+  replication that mirrors the LCG stream exactly.
+
 - **IRT classification accuracy and consistency**
   (`fast_mlsirm.rudner_classification`, `fast_mlsirm.lee_classification`; new
   `mlsirm_core::classification`; Rudner, 2001, 2005; Lee, 2010, as cited in

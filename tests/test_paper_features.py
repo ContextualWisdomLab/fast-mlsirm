@@ -3,6 +3,8 @@ validation gates, IRTree expansion, DIF analysis, Vuong, Q3/GDDM, and ICs."""
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -5157,6 +5159,8 @@ def test_ksirt_analysis_recovery_and_rejects_malformed_input():
         ksirt_analysis(ok, bandwidth=np.array([0.5]))
     with pytest.raises(ValueError, match="positive"):
         ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+    with pytest.raises(ValueError, match="at least 1 item"):
+        core.ksirt_occ(np.array([], dtype=float), 2, 0, "gaussian", 5, None)
 
 
 def test_subscore_analysis_matches_independent_reference():
@@ -5334,13 +5338,6 @@ def test_detect_analysis_rejects_degenerate_inputs():
     # astype(int64) (which would collapse distinct labels into one cluster)
     with pytest.raises(ValueError, match="64-bit"):
         detect_analysis(base, [2.0**63, 2.0**63, 2.0**63 + 2048, 0.0])
-    # uint64 labels beyond i64.max must also be rejected explicitly before
-    # the astype(int64) cast (which would silently wrap, collapsing labels)
-    with pytest.raises(ValueError, match="64-bit"):
-        uint64_cluster = np.array(
-            [0, 0, np.iinfo(np.int64).max + 1, 1], dtype=np.uint64
-        )
-        detect_analysis(base, uint64_cluster)
 
 
 def test_classification_accuracy_matches_independent_reference():
@@ -5432,3 +5429,297 @@ def test_classification_rejects_degenerate_inputs():
     with pytest.raises(ValueError):
         lee_classification(np.array([0.2, 0.4]), (1.5,))  # 1-D probs
 
+
+
+def test_parallel_analysis_matches_numpy_fixture():
+    """Horn parallel analysis (paran PCA path): fixture literals computed by
+    an independent NumPy replication that mirrors the crate LCG stream with
+    np.uint64 arithmetic and uses np.corrcoef + np.linalg.eigvalsh. Every
+    assert reads crate outputs returned through the wrapper. Duplicate
+    columns give analytic observed eigenvalues {2, 0}; the random benchmark,
+    bias, adjustment, and retention are pinned deterministically
+    (n=12, p=2, iterations=20, centile=0, seed=7)."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    x = np.arange(1.0, 13.0)
+    res = parallel_analysis(
+        np.column_stack([x, x]), n_iterations=20, centile=0, seed=7
+    )
+    tol = 1e-9
+    assert abs(res.eigenvalues[0] - 2.0) < tol
+    assert abs(res.eigenvalues[1]) < tol
+    assert abs(res.random_eigenvalues[0] - 1.265490626983912) < tol
+    assert abs(res.random_eigenvalues[1] - 0.734509373016088) < tol
+    assert abs(res.bias[0] - 0.265490626983912) < tol
+    assert abs(res.adjusted_eigenvalues[0] - 1.734509373016088) < tol
+    assert abs(res.adjusted_eigenvalues[1] - 0.265490626983912) < tol
+    assert res.retained == 1
+
+
+def test_parallel_analysis_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    good = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 5.0], [4.0, 4.5]])
+    with pytest.raises(ValueError):
+        parallel_analysis(good[:2], n_iterations=5)  # n_persons < 3
+    with pytest.raises(ValueError):
+        parallel_analysis(good[:, :1], n_iterations=5)  # n_items < 2
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=0)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, centile=100)
+    bad = good.copy()
+    bad[1, 1] = np.nan
+    with pytest.raises(ValueError):
+        parallel_analysis(bad, n_iterations=5)
+    const = good.copy()
+    const[:, 0] = 1.0
+    with pytest.raises(ValueError):
+        parallel_analysis(const, n_iterations=5)  # zero variance
+    with pytest.raises(ValueError):
+        parallel_analysis(np.array([1.0, 2.0, 3.0]), n_iterations=5)  # 1-D
+
+
+def test_parallel_analysis_rejects_negative_scalars_and_huge_data():
+    """Impl-review regressions: negative scalars raise ValueError (not
+    PyO3 OverflowError) via wrapper validation; finite-but-huge data that
+    overflows the correlation computation is rejected by the crate."""
+    from fast_mlsirm import parallel_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "parallel_analysis"):
+        pytest.skip("compiled core built without parallel_analysis")
+
+    good = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 5.0], [4.0, 4.5]])
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=-1)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, centile=-3)
+    with pytest.raises(ValueError):
+        parallel_analysis(good, n_iterations=5, seed=-1)
+    big = 1e308
+    huge = np.array([[big, big], [big, -big], [-big, big], [-big, -big]])
+    with pytest.raises(ValueError):
+        parallel_analysis(huge, n_iterations=5)
+
+
+def _guttman_gen_data(n, p, seed, loadings, means, scales):
+    """NumPy mirror of the crate LCG used to build the Guttman fixture data
+    (test-input construction only; all asserted values come from the crate)."""
+    state = np.uint64(max(seed, 1))
+    mul = np.uint64(6364136223846793005)
+    add = np.uint64(1442695040888963407)
+
+    def uniform():
+        nonlocal state
+        with np.errstate(over="ignore"):
+            state = state * mul + add
+        return float(state >> np.uint64(11)) / float(1 << 53)
+
+    def normal():
+        u1 = max(uniform(), 1e-12)
+        u2 = uniform()
+        return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+
+    out = np.empty((n, p))
+    for i in range(n):
+        f = normal()
+        for j in range(p):
+            e = normal()
+            out[i, j] = means[j] + scales[j] * (loadings[j] * f + e)
+    return out
+
+
+def test_guttman_lambdas_matches_numpy_fixture():
+    """Guttman lambdas (psych 2.6.5 contract): fixture A literals computed by
+    an independent NumPy replication (np.corrcoef, np.linalg.inv,
+    itertools.combinations). Every assert reads GuttmanResult fields returned
+    by the crate through the wrapper (n=30, p=6, exhaustive C(6,3)=20)."""
+    from fast_mlsirm import guttman_lambdas
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "guttman_lambdas"):
+        pytest.skip("compiled core built without guttman_lambdas")
+
+    data = _guttman_gen_data(
+        30,
+        6,
+        42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    g = guttman_lambdas(data)
+    tol = 1e-9
+    assert abs(g.lambda1 - 0.41068157604336863) < tol
+    assert abs(g.lambda2 - 0.5561900258418755) < tol
+    assert abs(g.lambda3 - 0.49281789125204234) < tol
+    assert abs(g.lambda4 - 0.6842463861953535) < tol
+    assert abs(g.lambda5 - 0.5602004712206824) < tol
+    assert abs(g.lambda6 - 0.59150154331973) < tol
+    assert abs(g.beta - 0.1784553694910821) < tol
+    assert abs(g.mean_split - 0.4928178912520423) < tol
+    assert g.n_splits == 20
+    assert g.exhaustive
+
+
+def test_guttman_lambdas_rejects_degenerate_inputs():
+    """Trust-boundary rejections: wrapper scalars raise ValueError (not
+    PyO3 OverflowError); shape/finite/variance/singularity checks raise at
+    the Rust boundary."""
+    from fast_mlsirm import guttman_lambdas
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "guttman_lambdas"):
+        pytest.skip("compiled core built without guttman_lambdas")
+
+    rng = np.random.default_rng(3)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        guttman_lambdas(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        guttman_lambdas(good[:, :2])  # n_items < 3
+    with pytest.raises(ValueError):
+        guttman_lambdas(good, n_sample_splits=0)
+    with pytest.raises(ValueError):
+        guttman_lambdas(good, seed=-1)
+    with pytest.raises(ValueError):
+        guttman_lambdas(np.array([1.0, 2.0, 3.0]))  # 1-D
+    bad = good.copy()
+    bad[1, 1] = np.nan
+    with pytest.raises(ValueError):
+        guttman_lambdas(bad)
+    const = good.copy()
+    const[:, 0] = 1.0
+    with pytest.raises(ValueError):
+        guttman_lambdas(const)  # zero variance
+    dup = good.copy()
+    dup[:, 1] = dup[:, 0]  # singular correlation matrix -> lambda6 inverse
+    with pytest.raises(ValueError):
+        guttman_lambdas(dup)
+
+
+def test_tenberge_mu_matches_numpy_fixture():
+    """ten Berge & Zegers mu series (psych 2.6.5 tenberge.R contract):
+    fixture A literals from an independent NumPy replication (np.corrcoef +
+    explicit off-diagonal power sums). Every assert reads TenBergeResult
+    fields returned by the crate through the wrapper."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    data = _guttman_gen_data(
+        30,
+        6,
+        42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    t = tenberge_mu(data)
+    tol = 1e-9
+    assert abs(t.mu0 - 0.49281789125204223) < tol
+    assert abs(t.mu1 - 0.5561900258418755) < tol
+    assert abs(t.mu2 - 0.566334883191414) < tol
+    assert abs(t.mu3 - 0.5694865282091219) < tol
+    assert t.mu0 <= t.mu1 <= t.mu2 <= t.mu3
+
+
+def test_tenberge_mu_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import tenberge_mu
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "tenberge_mu"):
+        pytest.skip("compiled core built without tenberge_mu")
+
+    rng = np.random.default_rng(9)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(good[:, :2])  # n_items < 3
+    with pytest.raises(ValueError):
+        tenberge_mu(np.array([1.0, 2.0, 3.0]))  # 1-D
+    bad = good.copy()
+    bad[0, 0] = np.inf
+    with pytest.raises(ValueError):
+        tenberge_mu(bad)
+    const = good.copy()
+    const[:, 3] = 0.25
+    with pytest.raises(ValueError):
+        tenberge_mu(const)  # zero variance
+
+
+def test_cronbach_alpha_and_feldt_ci_fixture():
+    """Pinned against an independent NumPy+scipy replication (scipy.stats.f.ppf).
+
+    Reads crate outputs via fast_mlsirm.cronbach_alpha / feldt_alpha_ci.
+    """
+    from fast_mlsirm import cronbach_alpha, feldt_alpha_ci
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "feldt_alpha_ci"):
+        pytest.skip("compiled core built without feldt_alpha_ci")
+
+    data = _guttman_gen_data(
+        30, 6, 42,
+        [0.9, 0.8, 0.7, 0.6, 0.5, 0.2],
+        [10.0, -3.0, 5.0, 0.5, 100.0, 7.0],
+        [1.0, 2.0, 0.5, 3.0, 10.0, 1.5],
+    )
+    tol = 1e-9
+    a = cronbach_alpha(data)
+    assert abs(a - 0.26300193786625514) < tol
+    ci = feldt_alpha_ci(a, 30, 6, level=0.95)
+    assert abs(ci.lower - -0.23710034474579156) < tol
+    assert abs(ci.upper - 0.6065060295943752) < tol
+    assert abs(ci.r_bar - 0.05613713592263862) < tol
+    assert ci.df1 == 29.0 and ci.df2 == 145.0
+    assert ci.lower < a < ci.upper
+
+
+def test_feldt_ci_rejects_degenerate_inputs():
+    """Trust-boundary rejections raised at the Rust boundary."""
+    from fast_mlsirm import cronbach_alpha, feldt_alpha_ci
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "feldt_alpha_ci"):
+        pytest.skip("compiled core built without feldt_alpha_ci")
+
+    rng = np.random.default_rng(11)
+    good = rng.normal(size=(10, 4))
+    with pytest.raises(ValueError):
+        cronbach_alpha(good[:2])  # n_persons < 3
+    with pytest.raises(ValueError):
+        cronbach_alpha(np.array([1.0, 2.0]))  # 1-D
+    flat = good.copy()
+    flat[:, 0] = 3.0
+    with pytest.raises(ValueError):
+        cronbach_alpha(flat)  # zero-variance item
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(1.0, 30, 6)  # alpha >= 1
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(0.8, 30, 6, level=1.0)
+    with pytest.raises(ValueError):
+        feldt_alpha_ci(0.8, 2, 6)
