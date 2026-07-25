@@ -288,6 +288,9 @@ fn gt_error_paths() {
     // Zero proposed size.
     assert!(gtheory_pi(&[1., 2., 3., 5.], 2, 2, &[0]).is_err());
     assert!(gtheory_pio(&[0.0; 8], 2, 2, 2, &[(1, 0)]).is_err());
+    // Dimension-product overflow guards.
+    assert!(gtheory_pi(&[1.0, 2.0], usize::MAX, 2, &[1]).is_err());
+    assert!(gtheory_pio(&[0.0; 8], usize::MAX, 2, 2, &[(1, 1)]).is_err());
 }
 
 /// 500-rep Monte Carlo: simulate the fully random p x i model with known

@@ -171,6 +171,11 @@ fn validate(x: &[f64], expected_len: usize, what: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn checked_mul_usize(a: usize, b: usize, what: &str) -> Result<usize, String> {
+    a.checked_mul(b)
+        .ok_or_else(|| format!("{what}: dimension product overflows usize"))
+}
+
 /// Generalizability analysis for the one-facet crossed `p x i` design
 /// (Huebner & Lucht, 2019, "One-facet p x i design" section).
 ///
@@ -185,7 +190,8 @@ pub fn gtheory_pi(
     if n_p < 2 || n_i < 2 {
         return Err("gtheory_pi: need at least 2 persons and 2 items".to_string());
     }
-    validate(x, n_p * n_i, "gtheory_pi")?;
+    let n_pi = checked_mul_usize(n_p, n_i, "gtheory_pi")?;
+    validate(x, n_pi, "gtheory_pi")?;
     if n_i_prime.iter().any(|&n| n == 0) {
         return Err("gtheory_pi: n_i_prime entries must be >= 1".to_string());
     }
@@ -268,22 +274,26 @@ pub fn gtheory_pio(
     if n_p < 2 || n_i < 2 || n_o < 2 {
         return Err("gtheory_pio: need at least 2 levels per facet".to_string());
     }
-    validate(x, n_p * n_i * n_o, "gtheory_pio")?;
+    let n_pi = checked_mul_usize(n_p, n_i, "gtheory_pio")?;
+    let n_io = checked_mul_usize(n_i, n_o, "gtheory_pio")?;
+    let n_po = checked_mul_usize(n_p, n_o, "gtheory_pio")?;
+    let n_pio = checked_mul_usize(n_pi, n_o, "gtheory_pio")?;
+    validate(x, n_pio, "gtheory_pio")?;
     if n_prime.iter().any(|&(a, b)| a == 0 || b == 0) {
         return Err("gtheory_pio: n_prime entries must be >= 1".to_string());
     }
 
     let (fp, fi, fo) = (n_p as f64, n_i as f64, n_o as f64);
     let total = fp * fi * fo;
-    let at = |p: usize, i: usize, o: usize| x[p * n_i * n_o + i * n_o + o];
+    let at = |p: usize, i: usize, o: usize| x[p * n_io + i * n_o + o];
     let grand = x.iter().sum::<f64>() / total;
 
     let mut mp = vec![0.0; n_p];
     let mut mi = vec![0.0; n_i];
     let mut mo = vec![0.0; n_o];
-    let mut mpi = vec![0.0; n_p * n_i];
-    let mut mpo = vec![0.0; n_p * n_o];
-    let mut mio = vec![0.0; n_i * n_o];
+    let mut mpi = vec![0.0; n_pi];
+    let mut mpo = vec![0.0; n_po];
+    let mut mio = vec![0.0; n_io];
     for p in 0..n_p {
         for i in 0..n_i {
             for o in 0..n_o {
