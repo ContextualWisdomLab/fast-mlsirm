@@ -1485,3 +1485,531 @@ fn sibtest_validates() {
     assert!(sibtest(&y, &group, 121, 4, &ok).is_err());
     assert!(sibtest(&y, &group, 120, 4, &SibtestConfig { fdr_q: 0.0, ..ok }).is_err());
 }
+
+// ===================== Raju (1988/1990) ICC area DIF ==========================
+//
+// MUTATION AUDIT (all asserts below read crate outputs from `raju_area`):
+// - RAJU-M1 EXECUTED: drop the (1 - c) report scaling (`let scale = ... 1.0 - c[i]`
+//   -> `1.0`) => raju_3pl_common_c_scaling FAILs (h/se no longer 0.65x).
+// - RAJU-M2 EXECUTED: flip a covariance cross-term sign
+//   (`+ 2.0 * g_ar * g_br * cov_ab_ref[i]` -> `- ...`) => raju_fd_variance_anchor
+//   FAILs (assembled se differs from the FD delta method).
+// - RAJU-M3 EXECUTED: softplus -> identity (`2.0 * d / (af * ar) * l` -> `* y`)
+//   => raju_small_y_softplus_anchor FAILs (1.3203... vs 0.01).
+// - RAJU-M4 EXECUTED: detection quantile alpha/2 -> alpha
+//   (`normal_upper_quantile(alpha / 2.0)` -> `(alpha)`) => raju_flag_threshold
+//   FAILs (z = 1.8 gets flagged at z_crit ~ 1.645).
+// Disclosed identity limitation: the R/F swap test on the unsigned h is an
+// invariance (|H| symmetric), so it cannot kill orientation mutations by
+// itself; the discriminating anchors are the signed quadrature test (pins
+// h = b_F - b_R against a numeric integral of P_R - P_F) and the pinned
+// unsigned oracle vector.
+
+/// Signed orientation: crate h must equal both b_F - b_R and the numeric
+/// quadrature of integral (P_R - P_F) dtheta under the documented ICC.
+/// Asserts read: crate `h`, `z`, `p_value` (signed path).
+#[test]
+fn raju_signed_orientation_quadrature() {
+    let (af, bf, ar, br) = (1.2, 0.5, 0.8, -0.3);
+    let r = raju_area(
+        &[ar],
+        &[br],
+        &[0.1],
+        &[0.09],
+        &[0.0],
+        &[af],
+        &[bf],
+        &[0.11],
+        &[0.07],
+        &[0.0],
+        None,
+        true,
+        0.05,
+    )
+    .unwrap();
+    assert!((r.h[0] - (bf - br)).abs() < 1e-12, "h = {}", r.h[0]);
+    // Trapezoid quadrature of (P_R - P_F) over [-40, 40].
+    let (mut acc, step) = (0.0, 5e-4);
+    let m = (80.0 / step) as usize;
+    for k in 0..=m {
+        let th = -40.0 + k as f64 * step;
+        let pf = 1.0 / (1.0 + (-af * (th - bf)).exp());
+        let pr = 1.0 / (1.0 + (-ar * (th - br)).exp());
+        let w = if k == 0 || k == m { 0.5 } else { 1.0 };
+        acc += w * (pr - pf) * step;
+    }
+    assert!(
+        (r.h[0] - acc).abs() < 1e-6,
+        "quadrature {acc} vs h {}",
+        r.h[0]
+    );
+    let sd = (0.09f64 * 0.09 + 0.07 * 0.07).sqrt();
+    assert!((r.z[0] - r.h[0] / sd).abs() < 1e-12);
+    assert!(r.p_value[0] > 0.0 && r.p_value[0] < 1.0);
+}
+
+/// Unsigned closed form pinned to independently computed constants (NumPy,
+/// matching the spec reviewer's quadrature); includes a crossing case where
+/// UA > |SA| (kills an `abs(signed)` implementation) and quadrature agreement.
+/// Asserts read: crate `h` (unsigned path).
+#[test]
+fn raju_unsigned_oracle() {
+    let a_f = [1.2, 0.8, 1.5, 0.6];
+    let b_f = [0.5, 0.0, -1.0, 0.8];
+    let a_r = [0.8, 1.7, 0.7, 1.4];
+    let b_r = [-0.3, 0.9, 1.1, -0.4];
+    let se = [0.1; 4];
+    let cov = [0.0; 4];
+    let r = raju_area(
+        &a_r, &b_r, &se, &se, &cov, &a_f, &b_f, &se, &se, &cov, None, false, 0.05,
+    )
+    .unwrap();
+    let expect = [
+        0.9140059278766983,
+        1.2023709167732664,
+        2.193856226242703,
+        1.6756394651297617,
+    ];
+    for i in 0..4 {
+        assert!(
+            (r.h[i] - expect[i]).abs() < 1e-9,
+            "item {i}: {} vs {}",
+            r.h[i],
+            expect[i]
+        );
+        assert!(r.z[i] > 0.0 && r.p_value[i] < 1.0);
+    }
+    // Crossing case: unsigned area strictly exceeds |signed| = 0.8.
+    assert!(r.h[0] > 0.8 + 1e-3);
+    // Quadrature of |P_F - P_R| for item 0.
+    let (mut acc, step) = (0.0, 5e-4);
+    let m = (80.0 / step) as usize;
+    for k in 0..=m {
+        let th = -40.0 + k as f64 * step;
+        let pf = 1.0 / (1.0 + (-a_f[0] * (th - b_f[0])).exp());
+        let pr = 1.0 / (1.0 + (-a_r[0] * (th - b_r[0])).exp());
+        let w = if k == 0 || k == m { 0.5 } else { 1.0 };
+        acc += w * (pf - pr).abs() * step;
+    }
+    assert!(
+        (r.h[0] - acc).abs() < 1e-6,
+        "quadrature {acc} vs {}",
+        r.h[0]
+    );
+}
+
+/// FD delta-method anchor: assembled Var must match finite differences of the
+/// crate's own H surface (extracted via near-zero SEs) combined with the same
+/// covariances — kills any wrong analytic partial (spec FLAG-2 class).
+/// Asserts read: crate `se` and crate `h` at perturbed parameters.
+#[test]
+fn raju_fd_variance_anchor() {
+    let (af, bf, ar, br) = (1.2f64, 0.5, 0.8, -0.3);
+    let (se_af, se_bf, se_ar, se_br) = (0.11f64, 0.09, 0.13, 0.07);
+    let (cov_f, cov_r) = (0.004f64, -0.003);
+    let r = raju_area(
+        &[ar],
+        &[br],
+        &[se_ar],
+        &[se_br],
+        &[cov_r],
+        &[af],
+        &[bf],
+        &[se_af],
+        &[se_bf],
+        &[cov_f],
+        None,
+        false,
+        0.05,
+    )
+    .unwrap();
+    // Independently assembled reference (NumPy, spec review): se = 0.1804448217.
+    assert!(
+        (r.se[0] - 0.1804448217314667).abs() < 1e-9,
+        "se {}",
+        r.se[0]
+    );
+    // FD partials of the crate's |H| surface (H > 0 in this neighborhood).
+    let tiny = 1e-30;
+    let h_at = |af: f64, bf: f64, ar: f64, br: f64| -> f64 {
+        raju_area(
+            &[ar],
+            &[br],
+            &[tiny],
+            &[tiny],
+            &[0.0],
+            &[af],
+            &[bf],
+            &[tiny],
+            &[tiny],
+            &[0.0],
+            None,
+            false,
+            0.05,
+        )
+        .unwrap()
+        .h[0]
+    };
+    let e = 1e-6;
+    let g_af = (h_at(af + e, bf, ar, br) - h_at(af - e, bf, ar, br)) / (2.0 * e);
+    let g_bf = (h_at(af, bf + e, ar, br) - h_at(af, bf - e, ar, br)) / (2.0 * e);
+    let g_ar = (h_at(af, bf, ar + e, br) - h_at(af, bf, ar - e, br)) / (2.0 * e);
+    let g_br = (h_at(af, bf, ar, br + e) - h_at(af, bf, ar, br - e)) / (2.0 * e);
+    let var_fd = g_af * g_af * se_af * se_af
+        + g_bf * g_bf * se_bf * se_bf
+        + 2.0 * g_af * g_bf * cov_f
+        + g_ar * g_ar * se_ar * se_ar
+        + g_br * g_br * se_br * se_br
+        + 2.0 * g_ar * g_br * cov_r;
+    assert!(
+        (r.se[0] - var_fd.sqrt()).abs() < 1e-6,
+        "crate se {} vs FD {}",
+        r.se[0],
+        var_fd.sqrt()
+    );
+}
+
+/// Equal-slope behavior from BOTH sides (Y -> +inf and Y -> -inf) plus the
+/// exact fallback: |H| must be continuous at |delta| for every sign combo of
+/// delta and (a_F - a_R) — kills sign(Y)-assumption and branch-sign mutations
+/// (spec FLAG-1). Asserts read: crate `h`, `se` for each call.
+#[test]
+fn raju_equal_slope_both_sides() {
+    let se = [0.08f64];
+    let cov = [0.0f64];
+    for &delta in &[0.6f64, -0.6] {
+        for &eps in &[1e-9f64, -1e-9] {
+            let r = raju_area(
+                &[1.0],
+                &[0.0],
+                &se,
+                &se,
+                &cov,
+                &[1.0 + eps],
+                &[delta],
+                &se,
+                &se,
+                &cov,
+                None,
+                false,
+                0.05,
+            )
+            .unwrap();
+            assert!(
+                (r.h[0] - delta.abs()).abs() < 1e-6,
+                "delta {delta} eps {eps}: h {}",
+                r.h[0]
+            );
+        }
+        // Exact equality fallback: h = |delta| exactly, b-only variance.
+        let r = raju_area(
+            &[1.0],
+            &[0.0],
+            &se,
+            &se,
+            &cov,
+            &[1.0],
+            &[delta],
+            &se,
+            &se,
+            &cov,
+            None,
+            false,
+            0.05,
+        )
+        .unwrap();
+        assert_eq!(r.h[0], delta.abs());
+        assert!((r.se[0] - (2.0f64 * 0.08 * 0.08).sqrt()).abs() < 1e-15);
+    }
+}
+
+/// Swapping reference and focal groups negates the signed h and z exactly and
+/// leaves the unsigned h invariant. Asserts read: crate outputs of both calls.
+#[test]
+fn raju_swap_asymmetry() {
+    let (a1, b1, a2, b2) = ([1.2], [0.5], [0.8], [-0.3]);
+    let se = [0.1];
+    let cov = [0.002];
+    let fwd = raju_area(
+        &a2, &b2, &se, &se, &cov, &a1, &b1, &se, &se, &cov, None, true, 0.05,
+    )
+    .unwrap();
+    let rev = raju_area(
+        &a1, &b1, &se, &se, &cov, &a2, &b2, &se, &se, &cov, None, true, 0.05,
+    )
+    .unwrap();
+    assert_eq!(fwd.h[0], -rev.h[0]);
+    assert_eq!(fwd.z[0], -rev.z[0]);
+    let fwd_u = raju_area(
+        &a2, &b2, &se, &se, &cov, &a1, &b1, &se, &se, &cov, None, false, 0.05,
+    )
+    .unwrap();
+    let rev_u = raju_area(
+        &a1, &b1, &se, &se, &cov, &a2, &b2, &se, &se, &cov, None, false, 0.05,
+    )
+    .unwrap();
+    assert!((fwd_u.h[0] - rev_u.h[0]).abs() < 1e-12);
+}
+
+/// 3PL common-c convention: h and se scale by (1 - c); z and p are invariant
+/// to c (difR convention: Z from unscaled H / sH). Asserts read: crate `h`,
+/// `se`, `z`, `p_value` of the 2PL and 3PL calls.
+#[test]
+fn raju_3pl_common_c_scaling() {
+    let (a_r, b_r, a_f, b_f) = ([0.8], [-0.3], [1.2], [0.5]);
+    let se = [0.1];
+    let cov = [0.0];
+    for &signed in &[true, false] {
+        let two = raju_area(
+            &a_r, &b_r, &se, &se, &cov, &a_f, &b_f, &se, &se, &cov, None, signed, 0.05,
+        )
+        .unwrap();
+        let three = raju_area(
+            &a_r,
+            &b_r,
+            &se,
+            &se,
+            &cov,
+            &a_f,
+            &b_f,
+            &se,
+            &se,
+            &cov,
+            Some(&[0.35]),
+            signed,
+            0.05,
+        )
+        .unwrap();
+        assert!(
+            (three.h[0] - 0.65 * two.h[0]).abs() < 1e-12,
+            "signed {signed}"
+        );
+        assert!((three.se[0] - 0.65 * two.se[0]).abs() < 1e-12);
+        assert!((three.z[0] - two.z[0]).abs() < 1e-12);
+        assert!((three.p_value[0] - two.p_value[0]).abs() < 1e-12);
+    }
+}
+
+/// Small-Y anchor: delta near zero with unequal slopes still has a LARGE
+/// unsigned area (softplus(Y) ~ ln 2, not ~ Y). Pinned to an independently
+/// computed constant; kills replacing softplus with the identity.
+/// Asserts read: crate `h`.
+#[test]
+fn raju_small_y_softplus_anchor() {
+    let r = raju_area(
+        &[0.6],
+        &[0.0],
+        &[0.1],
+        &[0.1],
+        &[0.0],
+        &[1.4],
+        &[0.01],
+        &[0.1],
+        &[0.1],
+        &[0.0],
+        None,
+        false,
+        0.05,
+    )
+    .unwrap();
+    assert!((r.h[0] - 1.32030659380312).abs() < 1e-9, "h {}", r.h[0]);
+}
+
+/// Detection threshold uses z_{1 - alpha/2}: z = 1.8 must NOT be flagged at
+/// alpha = .05 (z_crit ~ 1.960) while z = 2.2 must be; both z values are read
+/// back from the crate. Kills the alpha/2 -> alpha quantile mutation
+/// (z_crit ~ 1.645 would flag 1.8).
+#[test]
+fn raju_flag_threshold() {
+    // Signed path: h = delta, se = sqrt(2) * se_b. Tune se_b for exact z.
+    let se_for = |target_z: f64, delta: f64| (delta / target_z) / std::f64::consts::SQRT_2;
+    let s1 = se_for(1.8, 0.36);
+    let s2 = se_for(2.2, 0.44);
+    let r = raju_area(
+        &[1.0, 1.0],
+        &[0.0, 0.0],
+        &[0.0, 0.0],
+        &[s1, s2],
+        &[0.0, 0.0],
+        &[1.0, 1.0],
+        &[0.36, 0.44],
+        &[0.0, 0.0],
+        &[s1, s2],
+        &[0.0, 0.0],
+        None,
+        true,
+        0.05,
+    )
+    .unwrap();
+    assert!((r.z[0] - 1.8).abs() < 1e-9 && (r.z[1] - 2.2).abs() < 1e-9);
+    assert_eq!(r.dif_items, vec![1]);
+}
+
+/// Error paths: every rejection is a crate Err (asserts read crate results).
+#[test]
+fn raju_error_paths() {
+    let ok = [1.0];
+    let se = [0.1];
+    let cov = [0.0];
+    let call = |a_r: &[f64], alpha: f64, guess: Option<&[f64]>, cov_r: &[f64]| {
+        raju_area(
+            a_r,
+            &[0.0],
+            &se,
+            &se,
+            cov_r,
+            &ok,
+            &[0.5],
+            &se,
+            &se,
+            &cov,
+            guess,
+            false,
+            alpha,
+        )
+    };
+    assert!(call(&[], 0.05, None, &cov).is_err()); // length mismatch / empty
+    assert!(call(&[-1.0], 0.05, None, &cov).is_err()); // a <= 0
+    assert!(call(&[f64::NAN], 0.05, None, &cov).is_err()); // non-finite
+    assert!(call(&ok, 0.0, None, &cov).is_err()); // alpha out of range
+    assert!(call(&ok, 1.0, None, &cov).is_err());
+    assert!(call(&ok, 0.05, Some(&[1.0]), &cov).is_err()); // c >= 1
+    assert!(call(&ok, 0.05, Some(&[-0.1]), &cov).is_err()); // c < 0
+    assert!(call(&ok, 0.05, Some(&[0.2, 0.2]), &cov).is_err()); // guess len
+    // PSD guard: |cov| > se_a * se_b must be rejected with the
+    // positive-semi-definite message even though the assembled variance
+    // would still be positive (se = .1 gives bound .01; -.011 violates it).
+    let err = call(&[0.8], 0.05, None, &[-0.011]).unwrap_err();
+    assert!(err.contains("positive semi-definite"), "err = {err}");
+    // Grossly invalid covariance is caught by the same guard.
+    assert!(call(&[0.8], 0.05, None, &[-9.0]).is_err());
+    // Negative SE.
+    assert!(raju_area(
+        &ok,
+        &[0.0],
+        &[-0.1],
+        &se,
+        &cov,
+        &ok,
+        &[0.5],
+        &se,
+        &se,
+        &cov,
+        None,
+        false,
+        0.05
+    )
+    .is_err());
+}
+
+/// MC-500 (#[ignore]): parametric asymptotic Monte Carlo. Per group, draw
+/// (a_hat, b_hat) from N(truth, Sigma) with Sigma the inverse 2PL Fisher
+/// information at N = 1500 (crate 41-node Gauss-Hermite, theta ~ N(0, 1));
+/// one null item (delta_b = 0) and one DIF item (delta_b = 0.6), alpha .05.
+/// Signed test: Type I <= .08 (exact linear statistic) and power >= .85.
+/// Unsigned test: power >= .85, plus a DOCUMENTED loose null band (<= .25) —
+/// see the in-test comment for why |H| is anti-conservative at an exact
+/// equal-slope null. Asserts read: crate `dif_items` per replication.
+/// Evidence run, not a CI gate.
+#[test]
+#[ignore]
+fn raju_mc_500() {
+    // 2PL Fisher information per person at (a, b), theta ~ N(0,1), via the
+    // crate's 41-node probabilists' Gauss-Hermite rule (weights sum to 1, so
+    // E[f(theta)] = sum w_q f(node_q) directly).
+    let info = |a: f64, b: f64| -> [f64; 3] {
+        let mut m = [0.0f64; 3]; // [I_aa, I_ab, I_bb]
+        for (&th, &wt) in crate::mmle::GH_NODES
+            .iter()
+            .zip(crate::mmle::GH_WEIGHTS.iter())
+        {
+            let p = 1.0 / (1.0 + (-a * (th - b)).exp());
+            let pq = p * (1.0 - p);
+            let (ga, gb) = (th - b, -a);
+            m[0] += wt * pq * ga * ga;
+            m[1] += wt * pq * ga * gb;
+            m[2] += wt * pq * gb * gb;
+        }
+        m
+    };
+    let n_per_group = 1500.0;
+    let draw = |lcg: &mut Lcg, a: f64, b: f64| -> (f64, f64, f64, f64, f64) {
+        let m = info(a, b);
+        let (iaa, iab, ibb) = (m[0] * n_per_group, m[1] * n_per_group, m[2] * n_per_group);
+        let det = iaa * ibb - iab * iab;
+        let (vaa, vab, vbb) = (ibb / det, -iab / det, iaa / det);
+        // Cholesky of the 2x2 covariance.
+        let l11 = vaa.sqrt();
+        let l21 = vab / l11;
+        let l22 = (vbb - l21 * l21).sqrt();
+        let (z1, z2) = (lcg.normal(), lcg.normal());
+        (
+            a + l11 * z1,
+            b + l21 * z1 + l22 * z2,
+            vaa.sqrt(),
+            vbb.sqrt(),
+            vab,
+        )
+    };
+    let mut lcg = Lcg(0xD1FA_4EA5_EED0);
+    let (mut s_null_rej, mut s_dif_rej) = (0u32, 0u32);
+    let (mut u_null_rej, mut u_dif_rej) = (0u32, 0u32);
+    let reps = 500;
+    for _ in 0..reps {
+        // Items: 0 null (b = 0.2 both groups), 1 DIF (b_F = b_R + 0.6).
+        let truth = [(1.1, 0.2, 1.1, 0.2), (0.9, -0.1, 0.9, 0.5)];
+        let (mut ar, mut br, mut sar, mut sbr, mut cvr) = (vec![], vec![], vec![], vec![], vec![]);
+        let (mut af, mut bf, mut saf, mut sbf, mut cvf) = (vec![], vec![], vec![], vec![], vec![]);
+        for &(a_r, b_r, a_f, b_f) in &truth {
+            let (a, b, sa, sb, cv) = draw(&mut lcg, a_r, b_r);
+            ar.push(a);
+            br.push(b);
+            sar.push(sa);
+            sbr.push(sb);
+            cvr.push(cv);
+            let (a, b, sa, sb, cv) = draw(&mut lcg, a_f, b_f);
+            af.push(a);
+            bf.push(b);
+            saf.push(sa);
+            sbf.push(sb);
+            cvf.push(cv);
+        }
+        let s = raju_area(
+            &ar, &br, &sar, &sbr, &cvr, &af, &bf, &saf, &sbf, &cvf, None, true, 0.05,
+        )
+        .unwrap();
+        if s.dif_items.contains(&0) {
+            s_null_rej += 1;
+        }
+        if s.dif_items.contains(&1) {
+            s_dif_rej += 1;
+        }
+        let u = raju_area(
+            &ar, &br, &sar, &sbr, &cvr, &af, &bf, &saf, &sbf, &cvf, None, false, 0.05,
+        )
+        .unwrap();
+        if u.dif_items.contains(&0) {
+            u_null_rej += 1;
+        }
+        if u.dif_items.contains(&1) {
+            u_dif_rej += 1;
+        }
+    }
+    let s_type_i = f64::from(s_null_rej) / f64::from(reps);
+    let s_power = f64::from(s_dif_rej) / f64::from(reps);
+    let u_type_i = f64::from(u_null_rej) / f64::from(reps);
+    let u_power = f64::from(u_dif_rej) / f64::from(reps);
+    // Signed statistic: H = b_F - b_R is exactly linear in the estimates, so
+    // the delta method is exact and the nominal alpha = .05 level holds.
+    assert!(s_type_i <= 0.08, "signed null Type I = {s_type_i}");
+    assert!(s_power >= 0.85, "signed DIF power = {s_power}");
+    // Unsigned statistic under an EXACT null with equal true slopes: |H| has a
+    // folded (non-normal) sampling distribution — the leading term of H is
+    // O(db^2 / da), the same order as the linear term — so the normal-theory
+    // Z is anti-conservative at the null (observed ~0.14 here). This is a
+    // documented property of Raju's UA Z test in this worst-case null
+    // configuration, not an implementation error; the strict level gate is
+    // carried by the signed test above. Loose sanity band + power only.
+    assert!(u_type_i <= 0.25, "unsigned null Type I = {u_type_i}");
+    assert!(u_power >= 0.85, "unsigned DIF power = {u_power}");
+}

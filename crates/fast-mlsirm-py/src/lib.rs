@@ -35,8 +35,8 @@ use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
-    PurifyConfig, SibtestConfig,
+    raju_area as core_raju_area, sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow,
+    MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
@@ -4849,6 +4849,65 @@ fn sibtest(
     Ok(out.into())
 }
 
+/// Raju (1988/1990) signed/unsigned ICC-area DIF for 2PL (or common-c 3PL)
+/// items already linked to a common scale (Rust compute path; formula oracle:
+/// difR `RajuZ.R`/`difRaju.R` READ in full — the primary Raju papers were NOT
+/// read; both areas and all delta-method partials were re-derived by hand and
+/// quadrature/FD-verified in adversarial spec review; see the core module).
+///
+/// Signed: `h = b_foc - b_ref` (positive = harder for focal). Unsigned:
+/// `h = |H|`, the total area between the ICCs. `z = H / se(H)` from unscaled
+/// quantities; for common-c 3PL, `h` and `se` are reported scaled by `(1-c)`.
+/// Returns arrays `h`, `se`, `z`, `p_value` plus `dif_items` and `signed`.
+#[pyfunction]
+#[pyo3(signature = (a_ref, b_ref, se_a_ref, se_b_ref, cov_ab_ref, a_foc, b_foc, se_a_foc, se_b_foc, cov_ab_foc, guess = None, signed = false, alpha = 0.05))]
+#[allow(clippy::too_many_arguments)]
+fn raju_area(
+    py: Python<'_>,
+    a_ref: PyReadonlyArray1<'_, f64>,
+    b_ref: PyReadonlyArray1<'_, f64>,
+    se_a_ref: PyReadonlyArray1<'_, f64>,
+    se_b_ref: PyReadonlyArray1<'_, f64>,
+    cov_ab_ref: PyReadonlyArray1<'_, f64>,
+    a_foc: PyReadonlyArray1<'_, f64>,
+    b_foc: PyReadonlyArray1<'_, f64>,
+    se_a_foc: PyReadonlyArray1<'_, f64>,
+    se_b_foc: PyReadonlyArray1<'_, f64>,
+    cov_ab_foc: PyReadonlyArray1<'_, f64>,
+    guess: Option<PyReadonlyArray1<'_, f64>>,
+    signed: bool,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let guess_vec = match &guess {
+        Some(g) => Some(g.as_slice()?.to_vec()),
+        None => None,
+    };
+    let res = core_raju_area(
+        a_ref.as_slice()?,
+        b_ref.as_slice()?,
+        se_a_ref.as_slice()?,
+        se_b_ref.as_slice()?,
+        cov_ab_ref.as_slice()?,
+        a_foc.as_slice()?,
+        b_foc.as_slice()?,
+        se_a_foc.as_slice()?,
+        se_b_foc.as_slice()?,
+        cov_ab_foc.as_slice()?,
+        guess_vec.as_deref(),
+        signed,
+        alpha,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("h", numpy::PyArray1::from_slice(py, &res.h))?;
+    out.set_item("se", numpy::PyArray1::from_slice(py, &res.se))?;
+    out.set_item("z", numpy::PyArray1::from_slice(py, &res.z))?;
+    out.set_item("p_value", numpy::PyArray1::from_slice(py, &res.p_value))?;
+    out.set_item("dif_items", res.dif_items)?;
+    out.set_item("signed", res.signed)?;
+    Ok(out.into())
+}
+
 /// Per-item arrays for a Mantel-Haenszel sweep, shared by the plain and purified entry points.
 fn mh_rows_dict<'py>(
     py: Python<'py>,
@@ -5979,6 +6038,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(poly_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif, m)?)?;
     m.add_function(wrap_pyfunction!(sibtest, m)?)?;
+    m.add_function(wrap_pyfunction!(raju_area, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif, m)?)?;
     m.add_function(wrap_pyfunction!(mantel_haenszel_dif_purified, m)?)?;
     m.add_function(wrap_pyfunction!(logistic_dif_purified, m)?)?;

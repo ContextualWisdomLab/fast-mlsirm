@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import (
+    raju_area,
     velicer_map,
     velicer_map_from_data,
     FitConfig,
@@ -6196,3 +6197,57 @@ class TestVelicerMap:
             velicer_map(np.ones((3, 2)))
         with pytest.raises(ValueError):
             velicer_map(self.HARMAN8, max_m=8)  # > p - 1
+
+
+def test_raju_area_unsigned_oracle():
+    """Wrapper returns the crate's unsigned areas; pinned to independently
+    computed constants (asserts read the crate h/z/p returned via the pyd)."""
+    a_f = np.array([1.2, 0.8, 1.5, 0.6])
+    b_f = np.array([0.5, 0.0, -1.0, 0.8])
+    a_r = np.array([0.8, 1.7, 0.7, 1.4])
+    b_r = np.array([-0.3, 0.9, 1.1, -0.4])
+    se = np.full(4, 0.1)
+    cov = np.zeros(4)
+    res = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov)
+    expect = [0.9140059278766983, 1.2023709167732664, 2.193856226242703, 1.6756394651297617]
+    assert np.allclose(res["h"], expect, atol=1e-9)
+    assert res["signed"] is False
+    assert np.all(res["z"] > 0) and np.all(res["p_value"] < 1)
+    # Crossing item: unsigned area strictly exceeds |signed area| = 0.8.
+    assert res["h"][0] > 0.8 + 1e-3
+
+
+def test_raju_area_signed_orientation_and_3pl():
+    """Signed h = b_foc - b_ref (positive = harder for focal); common-c 3PL
+    scales h/se by (1 - c) and leaves z untouched (crate values throughout)."""
+    a_r, b_r = np.array([0.8]), np.array([-0.3])
+    a_f, b_f = np.array([1.2]), np.array([0.5])
+    se, cov = np.array([0.1]), np.array([0.0])
+    s = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, signed=True)
+    assert abs(s["h"][0] - 0.8) < 1e-12
+    two = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov)
+    three = raju_area(a_r, b_r, se, se, cov, a_f, b_f, se, se, cov, guess=np.array([0.35]))
+    assert abs(three["h"][0] - 0.65 * two["h"][0]) < 1e-12
+    assert abs(three["se"][0] - 0.65 * two["se"][0]) < 1e-12
+    assert abs(three["z"][0] - two["z"][0]) < 1e-12
+    # Detection flag reads the crate dif_items: strong DIF must be flagged.
+    tiny = np.array([0.01])
+    strong = raju_area(a_r, b_r, tiny, tiny, cov, a_f, b_f, tiny, tiny, cov, signed=True)
+    assert list(strong["dif_items"]) == [0]
+
+
+def test_raju_area_error_paths():
+    ok, se, cov = np.array([1.0]), np.array([0.1]), np.array([0.0])
+    b = np.array([0.0])
+    with pytest.raises(ValueError, match="discriminations"):
+        raju_area(np.array([-1.0]), b, se, se, cov, ok, b, se, se, cov)
+    with pytest.raises(ValueError, match="alpha"):
+        raju_area(ok, b, se, se, cov, ok, b, se, se, cov, alpha=0.0)
+    with pytest.raises(ValueError, match="guessing"):
+        raju_area(ok, b, se, se, cov, ok, b, se, se, cov, guess=np.array([1.0]))
+    with pytest.raises(ValueError, match="length"):
+        raju_area(ok, b, se, se, cov, np.array([1.0, 1.0]), b, se, se, cov)
+    with pytest.raises(ValueError, match="semi-definite"):
+        raju_area(ok, b, se, se, np.array([-0.011]), ok, b, se, se, cov)
+    with pytest.raises(ValueError, match="1-D"):
+        raju_area(np.ones((1, 1)), b, se, se, cov, ok, b, se, se, cov)

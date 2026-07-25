@@ -376,6 +376,107 @@ def sibtest(
     }
 
 
+def raju_area(
+    a_ref: np.ndarray,
+    b_ref: np.ndarray,
+    se_a_ref: np.ndarray,
+    se_b_ref: np.ndarray,
+    cov_ab_ref: np.ndarray,
+    a_foc: np.ndarray,
+    b_foc: np.ndarray,
+    se_a_foc: np.ndarray,
+    se_b_foc: np.ndarray,
+    cov_ab_foc: np.ndarray,
+    guess: np.ndarray | None = None,
+    signed: bool = False,
+    alpha: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Raju's ICC-area DIF with signed/unsigned Z tests (compute in Rust; Raju, 1988, 1990).
+
+    Unlike the observed-score procedures in this module (:func:`mantel_haenszel_dif`,
+    :func:`logistic_dif`, :func:`sibtest`), this is a PARAMETRIC test on separately calibrated 2PL
+    (or common-guessing 3PL) item parameter estimates: it measures the area between the reference and
+    focal groups' item characteristic curves. The two calibrations MUST already be on a common scale --
+    link them first (e.g. :func:`fast_mlsirm.irt_link` with the mean-sigma method); linking is
+    deliberately not re-done inside this function.
+
+    Under ``P_G(theta) = 1 / (1 + exp(-a_G (theta - b_G)))``:
+
+    - Signed area (``signed=True``): ``h = b_foc - b_ref`` -- the integral of ``P_ref - P_foc`` over
+      theta, POSITIVE when the item is harder for the focal group. Exact linear statistic; its Z test
+      holds the nominal level (Monte-Carlo verified in the crate's test suite).
+    - Unsigned area (``signed=False``, default): ``h = |H|``, the total area
+      ``integral |P_foc - P_ref|``, from Raju's closed form with a numerically stable softplus; equal
+      discriminations fall back to ``|b_foc - b_ref|`` continuously. CAVEAT: under an exact null with
+      equal true slopes the folded statistic makes the normal-theory Z anti-conservative (over-rejects;
+      measured ~0.14 at nominal .05 in the crate's Monte-Carlo) -- prefer the signed test when uniform
+      DIF is the alternative.
+
+    ``se`` is the delta-method standard error using each group's ``se_a``, ``se_b``, and ``cov_ab``
+    (the a-b sampling covariance from that group's calibration; pass zeros if unavailable, at the cost
+    of a misstated variance). Each group's covariance must satisfy the positive-semi-definite bound
+    ``|cov_ab| <= se_a * se_b`` or the call is rejected. ``z = H / se(H)`` from unscaled quantities; with a common per-item
+    pseudo-guessing ``guess`` (3PL), ``h`` and ``se`` are reported scaled by ``(1 - c)`` while ``z``
+    is unchanged (the convention of the difR reference implementation). ``dif_items`` flags
+    ``|z| > z_{1-alpha/2}``.
+
+    **Provenance.** The primary papers (Raju, 1988, 1990) were NOT read (paywalled). The formula
+    oracle is the difR package source (``RajuZ.R``, ``difRaju.R``; Magis et al., 2010 -- code READ in
+    full, package paper not read). Both areas and all four delta-method partials were additionally
+    re-derived by hand and verified against numeric quadrature and finite differences during
+    adversarial spec review; difR's gradient is the uniform negation of the derivative of ``H``
+    (variance-equivalent), and its ``exp(Y)`` overflow branch carries a sign this implementation's
+    softplus formulation never needs.
+
+    References (APA 7th ed.):
+        Magis, D., Beland, S., Tuerlinckx, F., & De Boeck, P. (2010). A general framework and an R
+            package for the detection of dichotomous differential item functioning. *Behavior Research
+            Methods, 42*, 847-862. https://doi.org/10.3758/BRM.42.3.847
+        Raju, N. S. (1988). The area between two item characteristic curves. *Psychometrika, 53*(4),
+            495-502. https://doi.org/10.1007/BF02294403
+        Raju, N. S. (1990). Determining the significance of estimated signed and unsigned areas between
+            two item response functions. *Applied Psychological Measurement, 14*(2), 197-207.
+            https://doi.org/10.1177/014662169001400208
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "raju_area"):
+        raise RuntimeError("raju_area requires the compiled Rust core")
+    def _vec(v, name: str) -> np.ndarray:
+        arr = np.asarray(v, dtype=np.float64)
+        if arr.ndim != 1:
+            raise ValueError(f"{name} must be a 1-D array, got ndim={arr.ndim}")
+        return np.ascontiguousarray(arr)
+
+    names = (
+        "a_ref",
+        "b_ref",
+        "se_a_ref",
+        "se_b_ref",
+        "cov_ab_ref",
+        "a_foc",
+        "b_foc",
+        "se_a_foc",
+        "se_b_foc",
+        "cov_ab_foc",
+    )
+    vals = (a_ref, b_ref, se_a_ref, se_b_ref, cov_ab_ref, a_foc, b_foc, se_a_foc, se_b_foc, cov_ab_foc)
+    arrs = [_vec(v, name) for v, name in zip(vals, names)]
+    g = None
+    if guess is not None:
+        g = _vec(guess, "guess")
+    res = core.raju_area(*arrs, g, bool(signed), float(alpha))
+    return {
+        "h": np.asarray(res["h"], dtype=np.float64),
+        "se": np.asarray(res["se"], dtype=np.float64),
+        "z": np.asarray(res["z"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "dif_items": np.asarray(res["dif_items"], dtype=np.int64),
+        "signed": bool(res["signed"]),
+    }
+
+
 def _logistic_rows(res) -> dict[str, np.ndarray]:
     return {
         "item": np.asarray(res["item"], dtype=np.int64),

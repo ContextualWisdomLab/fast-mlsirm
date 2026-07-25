@@ -119,6 +119,28 @@
 
 ### Added
 
+- **Raju ICC-area DIF** (`fast_mlsirm.raju_area`; in `mlsirm_core::dif`).
+  Parametric signed/unsigned area between two logistic ICCs on a common
+  scale, with Raju's delta-method Z tests. Signed area `h = b_F - b_R`
+  (positive = harder for focal); unsigned `h = |H|` from Raju's closed form
+  via a numerically stable softplus, with a continuous equal-slope fallback
+  `|b_F - b_R|`; common-guessing 3PL reports `h`/`se` scaled by `(1 - c)`
+  with the Z from unscaled quantities. Primary papers NOT read (Raju 1988,
+  Psychometrika 53(4), 495-502, doi:10.1007/BF02294403; Raju 1990, APM
+  14(2), 197-207, doi:10.1177/014662169001400208 — both paywalled); formula
+  oracle is the difR source (`RajuZ.R`, `difRaju.R`; Magis et al. 2010,
+  Behavior Research Methods 42, 847-862, doi:10.3758/BRM.42.3.847 — code
+  read in full, package paper not read). Both areas and all four
+  delta-method partials re-derived by hand and verified against numeric
+  quadrature/finite differences in adversarial spec review; documented difR
+  divergences: its gradient is the uniform negation of dH (variance-
+  equivalent) and its `exp(Y)==Inf` overflow branch carries the sign
+  opposite to the closed-form positive-side limit (unreachable here via
+  softplus + `|H|`). Monte-Carlo (500 reps, parametric asymptotic):
+  signed test holds nominal level and power; the unsigned Z is measurably
+  anti-conservative under an exact equal-slope null (~.14 at nominal .05),
+  documented in the API rather than hidden.
+
 - **Velicer minimum average partial (MAP) test** (`fast_mlsirm.velicer_map`,
   `velicer_map_from_data`; in `mlsirm_core::factor`). Component-retention
   test of Velicer (1976, Psychometrika 41(3), 321-327,
