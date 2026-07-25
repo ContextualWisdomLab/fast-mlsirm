@@ -2498,6 +2498,8 @@ fn py_sprt_classify(
 /// historical origin)
 /// Thompson, N. A. (2007). Practical Assessment, Research & Evaluation,
 /// 12(1). (NOT read for the CI method section; background only)
+/// Eggen, T. J. H. M., & Straetmans, G. J. J. M. (2000). Educational and
+/// Psychological Measurement, 60(5), 713-734. (NOT read; historical)
 #[pyfunction]
 fn py_ci_classify(
     py: Python<'_>,
