@@ -40,8 +40,8 @@ use mlsirm_core::dif::{
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, kl_information as core_kl_information,
-    kl_select as core_kl_select, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
-    SympsonHetterConfig,
+    kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
+    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2256,6 +2256,75 @@ fn py_kl_select(
     out.set_item("index", numpy::PyArray1::from_slice(py, &res.index))?;
     out.set_item("selected", res.selected)?;
     out.set_item("delta", res.delta)?;
+    Ok(out.into())
+}
+
+/// Owen (1975) approximate Bayesian single-item posterior update for the
+/// 3PNO model (`mlsirm_core::exposure::owen_update`). Returns the updated
+/// `(mu, sig2)` normal-approximation posterior moments. Owen (1975) itself
+/// was NOT read (paywalled); the formulas are implemented as reproduced by
+/// van der Linden (1998, Appendix Eqs. A.1-A.6) and cross-checked against
+/// the R `irt` package `src/est_ability_owen.cpp`. See the core rustdoc for
+/// the full citation-governance note.
+///
+/// References:
+/// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+/// in the context of adaptive mental testing. Journal of the American
+/// Statistical Association, 70(350), 351-356.
+/// https://doi.org/10.1080/01621459.1975.10479871
+/// van der Linden, W. J. (1998). Bayesian item selection criteria for
+/// adaptive testing (Research Report 98-01). University of Twente.
+#[pyfunction]
+fn py_owen_update(
+    a: f64,
+    b: f64,
+    c: f64,
+    correct: bool,
+    mu: f64,
+    sig2: f64,
+) -> PyResult<(f64, f64)> {
+    core_owen_update(a, b, c, correct, mu, sig2).map_err(PyValueError::new_err)
+}
+
+/// Owen (1975) sequential CAT driver (`mlsirm_core::exposure::owen_cat`):
+/// b-matching selection (argmin |b_i - mu|, ties to the lowest index),
+/// Owen posterior updates, optional posterior-variance stopping. `responses`
+/// is a full-pool 0/1 vector consulted for whichever item is selected.
+/// Returns {administered, mu_trace, sig2_trace, mu, sig2}.
+#[pyfunction]
+#[pyo3(signature = (a, b, c, responses, mu0, sig2_0, test_length, sig2_stop=None))]
+#[allow(clippy::too_many_arguments)]
+fn py_owen_cat(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    mu0: f64,
+    sig2_0: f64,
+    test_length: usize,
+    sig2_stop: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_owen_cat(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        responses.as_slice()?,
+        mu0,
+        sig2_0,
+        test_length,
+        sig2_stop,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("administered", res.administered)?;
+    out.set_item("mu_trace", numpy::PyArray1::from_slice(py, &res.mu_trace))?;
+    out.set_item(
+        "sig2_trace",
+        numpy::PyArray1::from_slice(py, &res.sig2_trace),
+    )?;
+    out.set_item("mu", res.mu)?;
+    out.set_item("sig2", res.sig2)?;
     Ok(out.into())
 }
 
@@ -6075,6 +6144,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
     m.add_function(wrap_pyfunction!(py_kl_information, m)?)?;
     m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
+    m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

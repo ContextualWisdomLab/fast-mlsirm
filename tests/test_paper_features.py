@@ -6305,3 +6305,83 @@ class TestKlInformation:
                 a, b, administered=np.ones(2, dtype=bool),
                 theta0=0.0, n_administered=3,
             )
+
+
+class TestOwenCat:
+    """Owen (1975) approximate Bayesian sequential CAT (Rust core).
+
+    Every assert reads crate outputs returned through the binding; oracles
+    are the adversarial-spec-review pinned values (exact-posterior numerical
+    integration). Killing mutations: update sign flips / wrong denominators
+    change the pinned moments; argmin->argmax changes the administered order.
+    """
+
+    def test_pinned_update_oracles(self):
+        import fast_mlsirm as fm
+
+        mu, s2 = fm.owen_update(1.5, 0.3, 0.0, correct=True, mu=0.2, sig2=1.2)
+        assert abs(mu - 0.993708628794091) < 5e-7
+        assert abs(s2 - 0.627945890895211) < 5e-7
+        mu, s2 = fm.owen_update(1.5, 0.3, 0.0, correct=False, mu=0.2, sig2=1.2)
+        assert abs(mu - -0.500813523713129) < 5e-7
+        assert abs(s2 - 0.657719958655775) < 5e-7
+        mu, s2 = fm.owen_update(1.5, 0.3, 0.2, correct=True, mu=0.2, sig2=1.2)
+        assert abs(mu - 0.717701908086462) < 5e-7
+        assert abs(s2 - 0.969762981710486) < 5e-7
+
+    def test_cat_trajectory_oracle(self):
+        import fast_mlsirm as fm
+
+        a = np.array([0.9, 1.4, 1.1, 2.0, 0.7, 1.6])
+        b = np.array([-1.2, 0.5, 0.0, 1.0, -0.4, 0.2])
+        c = np.array([0.0, 0.1, 0.0, 0.15, 0.0, 0.0])
+        resp = np.array([1, 0, 1, 0, 1, 1])
+        r = fm.owen_cat(a, b, c, responses=resp, test_length=4)
+        assert r["administered"] == [2, 1, 5, 3]
+        assert abs(r["mu"] - 0.33188033525266003) < 1e-5
+        assert abs(r["sig2"] - 0.20724352639310067) < 1e-5
+        assert abs(r["mu_trace"][0] - 0.5903867604819626) < 1e-5
+        assert abs(r["sig2_trace"][1] - 0.4123387131860715) < 1e-5
+        # Variance-threshold stopping (Owen's rule).
+        r = fm.owen_cat(a, b, c, responses=resp, test_length=4, sig2_stop=0.7)
+        assert len(r["administered"]) == 1
+        assert r["sig2"] <= 0.7
+
+    def test_validation(self):
+        import fast_mlsirm as fm
+
+        a = np.array([1.0, 1.2])
+        b = np.array([0.0, 0.5])
+        resp = np.array([1, 0])
+        with pytest.raises(ValueError):
+            fm.owen_update(1.0, 0.0, 1.0, correct=True, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            fm.owen_cat(a, b, responses=resp, test_length=3)
+        with pytest.raises(ValueError):
+            fm.owen_cat(a, b, responses=np.array([2, 0]), test_length=1)
+        with pytest.raises(ValueError):
+            fm.owen_cat(a, b, responses=resp, test_length=1, sig2_stop=0.0)
+
+    def test_response_validation_before_cast(self):
+        # Impl-review finding: the uint8 cast used to launder 1.2 -> 1,
+        # 0.9/-0.2/nan -> 0, and -1 -> 255 past validation.
+        import fast_mlsirm as fm
+
+        a = np.array([1.0, 1.2])
+        b = np.array([0.0, 0.5])
+        for bad in ([1.2, 0], [0.9, 1], [-0.2, 1], [np.nan, 1], [-1, 0]):
+            with pytest.raises(ValueError):
+                fm.owen_cat(a, b, responses=np.array(bad), test_length=1)
+
+    def test_complex_responses_rejected(self):
+        # Round-2 impl-review finding: astype(float64) silently dropped the
+        # imaginary part, laundering complex inputs past validation.
+        import fast_mlsirm as fm
+
+        with pytest.raises(ValueError):
+            fm.owen_cat(
+                np.array([1.0, 1.2]),
+                np.array([0.0, 0.5]),
+                responses=np.array([1 + 2j, 0 + 0j]),
+                test_length=1,
+            )

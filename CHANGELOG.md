@@ -119,6 +119,18 @@
 
 ### Added
 
+- **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
+  `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
+  normal-approximation posterior moment updates for the 3PNO model
+  (`P = c + (1-c)Phi(a(theta-b))`) and a sequential driver with Owen's
+  b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
+  posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
+  itself NOT read (paywalled); formulas implemented as reproduced by
+  van der Linden (1998, Research Report 98-01, Appendix A.1-A.6) and
+  cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
+  oracles verified against exact-posterior numerical integration (~1e-13)
+  by the adversarial spec review.
+
 - **Chang-Ying KL global-information CAT selection**
   (`fast_mlsirm.kl_information`, `fast_mlsirm.kl_select`; in
   `mlsirm_core::exposure`). Kullback-Leibler item index as the UNNORMALIZED

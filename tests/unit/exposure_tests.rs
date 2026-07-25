@@ -28,8 +28,8 @@
 //! `sh_controls_max_exposure`.
 
 use crate::exposure::{
-    a_stratified, eap_interim, kl_information, kl_select, p3pl, sympson_hetter, AStratifiedConfig,
-    Lcg, SympsonHetterConfig,
+    a_stratified, eap_interim, kl_information, kl_select, owen_cat, owen_update, p3pl,
+    sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
 };
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -858,4 +858,237 @@ fn kl_mc500_paired_cat_recovery() {
         rmse_kl + 0.01 < rmse_rand,
         "paired superiority failed: kl = {rmse_kl}, random = {rmse_rand}"
     );
+}
+
+// ===================== Owen (1975) approximate Bayesian sequential CAT =====================
+//
+// Mutation-kill audit (kills executed and recorded in the PR evidence):
+// every assert reads owen_update / owen_cat crate outputs. Pinned oracles
+// come from the adversarial spec review's high-precision numerical
+// integration of the EXACT posterior (agreement with the closed forms at
+// ~1e-13); test tolerance 5e-7 absorbs the crate's erfc approximation error
+// (|err| < 1.2e-7) while still killing O(0.01)+ formula mutations.
+//
+// - OWEN-M1 incorrect-update sign flip (mu + instead of -): killed by
+//   owen_pinned_update_oracles (incorrect mean oracle) and owen_mirror_symmetry.
+// - OWEN-M2 sig2/s -> sig2/s2 in the mean shift: killed by both pinned mean
+//   oracles.
+// - OWEN-M3 drop the D term in the variance update (K*(K+D) -> K*K): killed
+//   by the pinned variance oracles.
+// - OWEN-M4 selection argmin -> argmax: killed by owen_cat_trajectory_oracle
+//   (administered order changes).
+
+/// Pinned posterior-moment oracles at (a=1.5, b=0.3, mu=0.2, sig2=1.2),
+/// independently verified by numerical integration of the exact posterior
+/// (spec review oracle table). All asserts read owen_update outputs.
+#[test]
+fn owen_pinned_update_oracles() {
+    let (mu, sig2) = owen_update(1.5, 0.3, 0.0, true, 0.2, 1.2).unwrap();
+    assert!(
+        (mu - 0.993708628794091).abs() < 5e-7,
+        "c=0 correct mu = {mu}"
+    );
+    assert!(
+        (sig2 - 0.627945890895211).abs() < 5e-7,
+        "c=0 correct sig2 = {sig2}"
+    );
+    let (mu, sig2) = owen_update(1.5, 0.3, 0.0, false, 0.2, 1.2).unwrap();
+    assert!(
+        (mu - -0.500813523713129).abs() < 5e-7,
+        "c=0 incorrect mu = {mu}"
+    );
+    assert!(
+        (sig2 - 0.657719958655775).abs() < 5e-7,
+        "c=0 incorrect sig2 = {sig2}"
+    );
+    let (mu, sig2) = owen_update(1.5, 0.3, 0.2, true, 0.2, 1.2).unwrap();
+    assert!(
+        (mu - 0.717701908086462).abs() < 5e-7,
+        "c=0.2 correct mu = {mu}"
+    );
+    assert!(
+        (sig2 - 0.969762981710486).abs() < 5e-7,
+        "c=0.2 correct sig2 = {sig2}"
+    );
+}
+
+/// Structural invariants that discriminate directional mutations: with c = 0
+/// and mu = b the correct/incorrect updates are exact mirrors (equal-magnitude
+/// opposite mean shifts, identical variances); both variances shrink; and as
+/// c -> 1 a correct response carries no information so mu' -> mu. All asserts
+/// read owen_update outputs.
+#[test]
+fn owen_mirror_symmetry_and_shrinkage() {
+    let (mu_c, s2_c) = owen_update(1.3, 0.4, 0.0, true, 0.4, 0.9).unwrap();
+    let (mu_i, s2_i) = owen_update(1.3, 0.4, 0.0, false, 0.4, 0.9).unwrap();
+    // Tolerance 1e-6, not 1e-12: the crate's rational erfc approximation
+    // (|err| < 1.2e-7) perturbs Phi(0) away from exactly 0.5, so the exact
+    // mirror identity holds only up to approximation error. Still kills a
+    // sign-flip mutation (shift magnitude ~0.5).
+    assert!(
+        ((mu_c - 0.4) + (mu_i - 0.4)).abs() < 1e-6,
+        "mirror mean shifts: {mu_c} vs {mu_i}"
+    );
+    assert!((s2_c - s2_i).abs() < 1e-6, "mirror variances");
+    assert!(s2_c < 0.9 && s2_i < 0.9, "variance must shrink at c = 0");
+    // Guessing damps the correct-response information: mean shift and
+    // variance reduction both smaller than at c = 0.
+    let (mu_g, s2_g) = owen_update(1.3, 0.4, 0.9, true, 0.4, 0.9).unwrap();
+    assert!(mu_g - 0.4 > 0.0 && mu_g - 0.4 < mu_c - 0.4, "c damps shift");
+    assert!(s2_g > s2_c, "c damps variance reduction");
+}
+
+/// Pinned 4-step CAT trajectory on a 6-item 3PNO pool: administration order
+/// and both moment traces (tolerance 1e-5: four compounded erfc-approximation
+/// steps). Kills selection mutations (argmin -> argmax changes the order) and
+/// any update mutation (traces change). All asserts read owen_cat outputs.
+#[test]
+fn owen_cat_trajectory_oracle() {
+    let a = [0.9, 1.4, 1.1, 2.0, 0.7, 1.6];
+    let b = [-1.2, 0.5, 0.0, 1.0, -0.4, 0.2];
+    let c = [0.0, 0.1, 0.0, 0.15, 0.0, 0.0];
+    let resp = [1u8, 0, 1, 0, 1, 1];
+    let r = owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 4, None).unwrap();
+    assert_eq!(r.administered, vec![2, 1, 5, 3]);
+    let mu_exp = [
+        0.5903867604819626,
+        0.07540289320219584,
+        0.48423427681776365,
+        0.33188033525266003,
+    ];
+    let s2_exp = [
+        0.6514434730476137,
+        0.4123387131860715,
+        0.27135396476526175,
+        0.20724352639310067,
+    ];
+    for k in 0..4 {
+        assert!(
+            (r.mu_trace[k] - mu_exp[k]).abs() < 1e-5,
+            "mu_trace[{k}] = {}",
+            r.mu_trace[k]
+        );
+        assert!(
+            (r.sig2_trace[k] - s2_exp[k]).abs() < 1e-5,
+            "sig2_trace[{k}] = {}",
+            r.sig2_trace[k]
+        );
+    }
+    assert!((r.mu - mu_exp[3]).abs() < 1e-5);
+    assert!((r.sig2 - s2_exp[3]).abs() < 1e-5);
+    // Variance-threshold stopping (Owen's rule): a loose threshold stops
+    // after the first item even though test_length allows more.
+    let r = owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 4, Some(0.7)).unwrap();
+    assert_eq!(r.administered.len(), 1);
+    assert!(r.sig2 <= 0.7, "stop threshold respected, sig2 = {}", r.sig2);
+}
+
+/// Error paths: every case reads the returned Err.
+#[test]
+fn owen_error_paths() {
+    assert!(owen_update(0.0, 0.0, 0.0, true, 0.0, 1.0).is_err());
+    assert!(owen_update(1.0, 0.0, 1.0, true, 0.0, 1.0).is_err());
+    assert!(owen_update(1.0, 0.0, -0.1, true, 0.0, 1.0).is_err());
+    assert!(owen_update(1.0, f64::NAN, 0.0, true, 0.0, 1.0).is_err());
+    assert!(owen_update(1.0, 0.0, 0.0, true, 0.0, 0.0).is_err());
+    assert!(owen_update(1.0, 0.0, 0.0, true, f64::INFINITY, 1.0).is_err());
+    let a = [1.0, 1.2];
+    let b = [0.0, 0.5];
+    let c = [0.0, 0.0];
+    let resp = [1u8, 0];
+    assert!(owen_cat(&[], &[], &[], &[], 0.0, 1.0, 1, None).is_err());
+    assert!(owen_cat(&a, &b[..1], &c, &resp, 0.0, 1.0, 1, None).is_err());
+    assert!(owen_cat(&a, &b, &c, &[2u8, 0], 0.0, 1.0, 1, None).is_err());
+    assert!(owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 0, None).is_err());
+    assert!(owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 3, None).is_err());
+    assert!(owen_cat(&a, &b, &c, &resp, 0.0, 0.0, 1, None).is_err());
+    assert!(owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 1, Some(0.0)).is_err());
+    assert!(owen_cat(&a, &b, &c, &resp, 0.0, 1.0, 1, Some(f64::NAN)).is_err());
+}
+
+/// MC-500 (#[ignore]): Owen CAT ability recovery on a 40-item 2PL pool with
+/// generated 3PNO responses, paired against a random-order arm using COMMON
+/// random numbers (shared theta_true and per-item response uniforms), the
+/// same design as the KL MC test. Gates read only crate outputs (final mu
+/// per replicate).
+#[test]
+#[ignore]
+fn owen_mc500_paired_recovery() {
+    let n_items = 40usize;
+    let mut a = Vec::with_capacity(n_items);
+    let mut b = Vec::with_capacity(n_items);
+    for i in 0..n_items {
+        a.push(0.5 + 1.5 * ((i % 8) as f64) / 7.0);
+        b.push(-2.0 + 4.0 * (i as f64) / ((n_items - 1) as f64));
+    }
+    let c = vec![0.0; n_items];
+    let test_len = 15usize;
+    let n_rep = 500usize;
+    let mut rng = Lcg(0x0EE1_1975);
+    let (mut sse_owen, mut sse_rand) = (0.0f64, 0.0f64);
+    for rep in 0..n_rep {
+        let theta = rng.normal();
+        // Common random numbers: one uniform per item, shared across arms.
+        let mut resp = vec![0u8; n_items];
+        for i in 0..n_items {
+            let p = c[i] + (1.0 - c[i]) * crate::exposure::norm_cdf(a[i] * (theta - b[i]));
+            resp[i] = u8::from(rng.next_f64() < p);
+        }
+        let r = owen_cat(&a, &b, &c, &resp, 0.0, 1.0, test_len, None).unwrap();
+        let e = r.mu - theta;
+        sse_owen += e * e;
+        // Random arm: deterministic pseudo-random order seeded by rep, same
+        // responses, same Owen updates.
+        let mut order: Vec<usize> = (0..n_items).collect();
+        let mut sh = Lcg(0x5EED_0000 ^ rep as u64);
+        for i in (1..n_items).rev() {
+            let j = (sh.next_f64() * ((i + 1) as f64)) as usize;
+            order.swap(i, j.min(i));
+        }
+        let (mut mu, mut s2) = (0.0f64, 1.0f64);
+        for &item in order.iter().take(test_len) {
+            let (m, v) = owen_update(a[item], b[item], c[item], resp[item] == 1, mu, s2).unwrap();
+            mu = m;
+            s2 = v;
+        }
+        let e = mu - theta;
+        sse_rand += e * e;
+    }
+    let rmse_owen = (sse_owen / n_rep as f64).sqrt();
+    let rmse_rand = (sse_rand / n_rep as f64).sqrt();
+    assert!(rmse_owen < 0.45, "Owen RMSE = {rmse_owen}");
+    assert!(
+        rmse_owen + 0.01 < rmse_rand,
+        "adaptive must beat random: {rmse_owen} vs {rmse_rand}"
+    );
+}
+
+/// Regression for the impl-review tail-cancellation finding: at D = 8 the
+/// subtractive form `1 - Phi(D)` cancels catastrophically (it returned
+/// sig2' ~ 2.58, an INFLATED variance); the fixed `Phi(-D)` form must match
+/// the exact-erfc reference (5.571034034310448, 0.507162441721855) computed
+/// with math.erfc. Tolerance 1e-4: the crate erfc's ~1e-7 relative tail
+/// error is amplified by L*(L-D). Both asserts read owen_update outputs;
+/// the pre-fix mutant fails both by ~0.4 and ~2.07 respectively.
+#[test]
+fn owen_incorrect_tail_stability() {
+    let mu0 = 11.313708498984761; // D = mu0 / sqrt(2) = 8
+    let (mu, sig2) = owen_update(1.0, 0.0, 0.0, false, mu0, 1.0).unwrap();
+    assert!((mu - 5.571034034310448).abs() < 1e-4, "tail mu = {mu}");
+    assert!(
+        (sig2 - 0.507162441721855).abs() < 1e-4,
+        "tail sig2 = {sig2}"
+    );
+    assert!(
+        sig2 < 1.0,
+        "an observed response must not inflate the variance"
+    );
+}
+
+/// Doc-claim anchor (round-2 review): a deep-tail incorrect response where
+/// Phi(-D) underflows must return the documented degenerate-posterior Err,
+/// never a silent garbage update. Reads the crate's Err.
+#[test]
+fn owen_deep_tail_returns_err() {
+    assert!(owen_update(1.0, 0.0, 0.0, false, 141.421356237, 1.0).is_err());
 }
