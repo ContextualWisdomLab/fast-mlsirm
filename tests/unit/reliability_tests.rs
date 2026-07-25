@@ -520,6 +520,8 @@ fn alpha_rejections() {
     assert!(feldt_alpha_ci(0.8, 30, 1, 0.95).is_err());
     assert!(feldt_alpha_ci(0.8, 30, 6, 0.0).is_err());
     assert!(feldt_alpha_ci(0.8, 30, 6, 1.0).is_err());
+    assert!(cronbach_alpha(&[1.0, 2.0], usize::MAX, 2).is_err()); // n*p overflow
+    assert!(feldt_alpha_ci(0.8, usize::MAX, usize::MAX, 0.95).is_err()); // df2 overflow
 }
 
 #[test]
