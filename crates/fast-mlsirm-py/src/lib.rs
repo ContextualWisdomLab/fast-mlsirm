@@ -107,6 +107,7 @@ use mlsirm_core::scoring::{
     score_map as core_score_map, score_wle as core_score_wle,
     score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
+use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1754,6 +1755,43 @@ fn py_dimtest(
     out.set_item("groups_used", res.groups_used)?;
     out.set_item("n_discarded", res.n_discarded)?;
     out.set_item("retained_pt_scores", res.retained_pt_scores)?;
+    Ok(out.into())
+}
+
+/// Wollack-style omega answer-copying statistic
+/// (`mlsirm_core::security::wollack_omega`).
+///
+/// Formula verified against two READ implementations: the CRAN CopyDetect
+/// package R source (`similarity1.r`/`similarity2.r`, computing
+/// `(obs - E) / sqrt(V)` with an upper-tail normal p) and the independent
+/// `aberrance` package (`compute_OMG` in `detect-ac.R`/`compute.R`).
+/// NOT READ: Wollack (1997, *Applied Psychological Measurement, 21*(4),
+/// 307-320) original article (access blocked); it is cited only as
+/// implemented by those sources. CopyDetect's printed documentation shows
+/// the sign flipped (`(E - obs)/sqrt(V)`) but both source files use
+/// `(obs - E)/sqrt(V)`; the source convention is implemented here.
+///
+/// `probs` is a flattened row-major `n_items * n_options` matrix of the
+/// COPIER's model-implied option-response probabilities (each row summing
+/// to 1); `copier`/`source` are observed option indices. Returns a dict
+/// with `observed_matches`, `expected_matches`, `variance`, `omega`, and
+/// upper-tail `p_value`.
+#[pyfunction]
+fn py_wollack_omega(
+    py: Python<'_>,
+    copier: Vec<usize>,
+    source: Vec<usize>,
+    probs: PyReadonlyArray1<'_, f64>,
+    n_options: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_wollack_omega(&copier, &source, probs.as_slice()?, n_options)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("observed_matches", res.observed_matches)?;
+    out.set_item("expected_matches", res.expected_matches)?;
+    out.set_item("variance", res.variance)?;
+    out.set_item("omega", res.omega)?;
+    out.set_item("p_value", res.p_value)?;
     Ok(out.into())
 }
 
@@ -6378,6 +6416,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
+    m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

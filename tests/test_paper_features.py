@@ -6893,3 +6893,90 @@ class TestDimtest:
         y = self._fixture()[:30]
         with pytest.raises(ValueError, match="need at least 2"):
             dimtest(y, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+class TestWollackOmega:
+    """Omega answer-copying statistic (Wollack, 1997, as implemented by
+    CopyDetect/aberrance; oracle values pinned from an independent Python
+    computation in the adversarial spec review)."""
+
+    @staticmethod
+    def _fixture():
+        import numpy as np
+
+        probs = np.array(
+            [
+                [0.05, 0.10, 0.70, 0.10, 0.05],
+                [0.20, 0.20, 0.20, 0.20, 0.20],
+                [0.60, 0.15, 0.10, 0.10, 0.05],
+                [0.12, 0.38, 0.25, 0.15, 0.10],
+                [0.30, 0.25, 0.20, 0.15, 0.10],
+                [0.08, 0.12, 0.16, 0.24, 0.40],
+                [0.45, 0.05, 0.25, 0.15, 0.10],
+                [0.11, 0.22, 0.33, 0.22, 0.12],
+                [0.18, 0.32, 0.22, 0.18, 0.10],
+                [0.07, 0.14, 0.21, 0.28, 0.30],
+            ]
+        )
+        source = np.array([2, 3, 0, 1, 4, 4, 2, 1, 0, 3])
+        copier = np.array([2, 1, 0, 1, 3, 4, 0, 1, 2, 3])
+        return copier, source, probs
+
+    def test_pinned_oracle(self):
+        # Asserts read WollackOmegaResult fields returned by the crate.
+        # Killed by: sqrt(V) vs V, copier-prob lookup, two-sided p,
+        # continuity correction (mutation values in the Rust test file).
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier, source, probs, 5)
+        assert r.observed_matches == 6
+        assert abs(r.expected_matches - 3.3100000000000001) < 1e-12
+        assert abs(r.variance - 1.8839000000000001) < 1e-12
+        assert abs(r.omega - 1.9598523632230238) < 1e-12
+        assert abs(r.p_value - 0.02500652442931299) < 5e-7
+
+    def test_flat_probs_equivalent(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r2 = wollack_omega(copier, source, probs, 5)
+        r1 = wollack_omega(copier, source, probs.ravel(), 5)
+        assert r1.omega == r2.omega
+        assert r1.p_value == r2.p_value
+
+    def test_rejects_bad_inputs(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega(np.array(["2", "1"]), source[:2], probs[:2], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier.astype(complex), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier + 0.5, source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs.astype(complex), 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source[:9], probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs[:, :4], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs, 0)
+        bad = copier.copy()
+        bad[0] = 5
+        with pytest.raises(ValueError):
+            wollack_omega(bad, source, probs, 5)
+        badp = probs.copy()
+        badp[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, badp, 5)
+
+    def test_accepts_float_integer_indices(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier.astype(float), source.astype(float), probs, 5)
+        assert r.observed_matches == 6
