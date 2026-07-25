@@ -349,20 +349,20 @@ pub struct LivingstonLewisResult {
     pub beta: f64,
     /// True iff the two-parameter fail-safe replaced the four-parameter fit.
     pub used_two_parameter: bool,
-    /// P(true pass, observed pass) — true positive.
+    /// P(true pass, observed pass).
     pub p_tp: f64,
     /// P(true fail, observed pass) — false positive.
     pub p_fp: f64,
-    /// P(true fail, observed fail) — true negative.
-    pub p_tn: f64,
+    /// P(true fail, observed fail).
+    pub p_tf: f64,
     /// P(true pass, observed fail) — false negative.
-    pub p_fn: f64,
-    /// `p_tp + p_tn`.
+    pub p_ff: f64,
+    /// `p_tp + p_tf`.
     pub accuracy: f64,
-    /// `p_tp / (p_tp + p_fn)` — P(observed pass | true pass); `NaN` when
+    /// `p_tp / (p_tp + p_ff)` — P(observed pass | true pass); `NaN` when
     /// the true-pass margin vanishes (cut outside the fitted support).
     pub sensitivity: f64,
-    /// `p_tn / (p_tn + p_fp)` — P(observed fail | true fail); `NaN` when
+    /// `p_tf / (p_tf + p_fp)` — P(observed fail | true fail); `NaN` when
     /// the true-fail margin vanishes.
     pub specificity: f64,
     /// Consistency cell: fail on both administrations.
@@ -417,15 +417,6 @@ fn gauss_legendre(n: usize) -> (Vec<f64>, Vec<f64>) {
     (x, w)
 }
 
-/// Cached 64-node Gauss-Legendre rule; computed once and reused across all
-/// `beta_weighted_integral` calls within a process.
-static GL64: std::sync::OnceLock<(Vec<f64>, Vec<f64>)> = std::sync::OnceLock::new();
-
-#[inline]
-fn gl64() -> &'static (Vec<f64>, Vec<f64>) {
-    GL64.get_or_init(|| gauss_legendre(64))
-}
-
 /// `integral_{t0}^{t1} t^(a-1) (1-t)^(b-1) g(t) dt / B(a, b)`. Endpoint
 /// singularities (shape < 1) are absorbed exactly by power substitutions
 /// (spec rev 2): on `t <= 1/2` with `a < 1` substitute `v = t^a` so
@@ -440,14 +431,13 @@ fn gl64() -> &'static (Vec<f64>, Vec<f64>) {
 fn beta_weighted_integral(a: f64, b: f64, t0: f64, t1: f64, g: impl Fn(f64) -> f64) -> f64 {
     let ln_b = crate::fitstats::ln_gamma(a) + crate::fitstats::ln_gamma(b)
         - crate::fitstats::ln_gamma(a + b);
-    let rule = gl64();
-    let (nodes, weights) = (&rule.0, &rule.1);
+    let (nodes, weights) = gauss_legendre(64);
     let gl = |lo: f64, hi: f64, f: &dyn Fn(f64) -> f64| -> f64 {
         let c = 0.5 * (lo + hi);
         let h = 0.5 * (hi - lo);
         nodes
             .iter()
-            .zip(weights.iter())
+            .zip(&weights)
             .map(|(z, wt)| wt * f(c + h * z))
             .sum::<f64>()
             * h
@@ -551,20 +541,20 @@ fn falling_factorial(a: f64, r: u32) -> f64 {
 ///
 /// # References
 ///
-/// Haakstad, H. (2022). *betafunctions: Functions for working with two- and
+/// Haakstad, H. (2023). *betafunctions: Functions for working with two- and
 /// four-parameter beta probability distributions* (Version 1.9.0)
 /// \[R package\]. CRAN. <https://CRAN.R-project.org/package=betafunctions>
 ///
 /// Hanson, B. A. (1991). *Method of moments estimates for the four-parameter
 /// beta compound binomial model and the calculation of classification
 /// consistency indexes* (ACT Research Report 91-5). (As cited in Haakstad,
-/// 2022; not read.)
+/// 2023; not read.)
 ///
 /// Livingston, S. A., & Lewis, C. (1995). Estimating the consistency and
 /// accuracy of classifications based on test scores. *Journal of Educational
 /// Measurement, 32*(2), 179-197.
 /// https://doi.org/10.1111/j.1745-3984.1995.tb00462.x (As implemented in
-/// Haakstad, 2022; the paper itself was not obtainable.)
+/// Haakstad, 2023; the paper itself was not obtainable.)
 ///
 /// Press, W. H., Teukolsky, S. A., Vetterling, W. T., & Flannery, B. P.
 /// (2007). *Numerical recipes: The art of scientific computing* (3rd ed.).
@@ -689,8 +679,8 @@ pub fn livingston_lewis(
     let tc = ((c - lower) / (upper - lower)).clamp(0.0, 1.0);
     let p_tp = beta_weighted_integral(a, b, tc, 1.0, |t| 1.0 - fail_prob(t));
     let p_fp = beta_weighted_integral(a, b, 0.0, tc, |t| 1.0 - fail_prob(t));
-    let p_fn = beta_weighted_integral(a, b, tc, 1.0, &fail_prob);
-    let p_tn = beta_weighted_integral(a, b, 0.0, tc, &fail_prob);
+    let p_ff = beta_weighted_integral(a, b, tc, 1.0, &fail_prob);
+    let p_tf = beta_weighted_integral(a, b, 0.0, tc, &fail_prob);
     let p_ii_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t).powi(2));
     let p_ij_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail_prob(t) * (1.0 - fail_prob(t)));
     let p_jj_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| (1.0 - fail_prob(t)).powi(2));
@@ -717,11 +707,11 @@ pub fn livingston_lewis(
         used_two_parameter,
         p_tp,
         p_fp,
-        p_tn,
-        p_fn,
-        accuracy: p_tp + p_tn,
-        sensitivity: ratio(p_tp, p_tp + p_fn),
-        specificity: ratio(p_tn, p_tn + p_fp),
+        p_tf,
+        p_ff,
+        accuracy: p_tp + p_tf,
+        sensitivity: ratio(p_tp, p_tp + p_ff),
+        specificity: ratio(p_tf, p_tf + p_fp),
         p_ii,
         p_ij,
         p_ji: p_ij,

@@ -60,6 +60,12 @@ from .reliability import (
     feldt_alpha_ci as feldt_alpha_ci,
     AlphaCiResult as AlphaCiResult,
 )
+from .gtheory import (
+    gtheory_pi as gtheory_pi,
+    gtheory_pio as gtheory_pio,
+    GTheoryResult as GTheoryResult,
+    GTheoryDStudyRow as GTheoryDStudyRow,
+)
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -192,6 +198,10 @@ __all__ = [
     "cronbach_alpha",
     "feldt_alpha_ci",
     "AlphaCiResult",
+    "gtheory_pi",
+    "gtheory_pio",
+    "GTheoryResult",
+    "GTheoryDStudyRow",
     "ClassificationResult",
     "DetectResult",
     "fit_mixed_items",
