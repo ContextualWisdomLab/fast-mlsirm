@@ -65,6 +65,8 @@ from .reliability import (
 from .factor import (
     minres_fa as minres_fa,
     minres_fa_from_data as minres_fa_from_data,
+    glb_fa as glb_fa,
+    glb_fa_from_data as glb_fa_from_data,
     omega_total_1f as omega_total_1f,
     omega_total_1f_from_data as omega_total_1f_from_data,
 )
@@ -75,6 +77,12 @@ from .gtheory import (
     GTheoryDStudyRow as GTheoryDStudyRow,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
+from .utility import (
+    selection_utility as selection_utility,
+    taylor_russell as taylor_russell,
+    SelectionUtilityResult as SelectionUtilityResult,
+    TaylorRussellResult as TaylorRussellResult,
+)
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -212,6 +220,12 @@ __all__ = [
     "gtheory_pio",
     "minres_fa",
     "minres_fa_from_data",
+    "glb_fa",
+    "glb_fa_from_data",
+    "selection_utility",
+    "taylor_russell",
+    "SelectionUtilityResult",
+    "TaylorRussellResult",
     "omega_total_1f",
     "omega_total_1f_from_data",
     "GTheoryResult",
