@@ -7416,3 +7416,50 @@ class TestDeltaPlot:
             small, g, extreme="add", nr_add=1, threshold="fixed", fixed_threshold=9.9
         )
         assert abs(ra.adj_props[0, 0] - 5.0 / 6.0) < 1e-15
+
+class TestEbMhDif:
+    """Empirical Bayes MH DIF (Zwick & Thayer, 2003, ED481063). Pins read
+    crate-returned values; oracle in the session spec artifacts."""
+
+    def test_pinned_main_fixture(self):
+        import numpy as np
+
+        from fast_mlsirm import eb_mh_dif
+
+        r = eb_mh_dif([1.2, -0.4, 0.3, -2.1], [0.5, 0.8, 0.4, 1.0])
+        assert abs(r.mu - (-0.25)) < 1e-12
+        assert abs(r.tau2 - 1.4375) < 1e-12
+        assert abs(r.weight[0] - 23.0 / 27.0) < 1e-12
+        assert abs(r.post_mean[3] - (-523.0 / 390.0)) < 1e-12
+        assert abs(r.post_var[0] - 23.0 / 108.0) < 1e-12
+        assert r.cat_probs.shape == (4, 5)
+        # Item 4 C- probability (independent math.erfc oracle).
+        assert abs(r.cat_probs[3, 0] - 0.4180002533326439) < 5e-7
+        assert np.allclose(r.cat_probs.sum(axis=1), 1.0, atol=1e-9)
+
+    def test_degenerate_floor(self):
+        from fast_mlsirm import eb_mh_dif
+
+        r = eb_mh_dif([0.5, 0.5, 0.5], [1.0, 1.0, 1.0])
+        assert r.tau2 == 0.0
+        assert abs(r.tau2_raw - (-1.0)) < 1e-12
+        assert list(r.cat_probs[0]) == [0.0, 0.0, 1.0, 0.0, 0.0]
+
+    def test_validation_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import eb_mh_dif
+
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0, 2.0], [1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0], [1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([np.nan, 1.0], [1.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0, 2.0], [0.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif(np.array([1 + 2j, 1.0]), [1.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([[1.0, 2.0]], [1.0, 1.0])

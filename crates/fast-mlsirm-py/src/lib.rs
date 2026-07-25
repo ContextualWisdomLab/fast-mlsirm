@@ -34,7 +34,7 @@ use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
-    delta_plot as core_delta_plot, logistic_dif as core_logistic_dif,
+    delta_plot as core_delta_plot, eb_mh_dif as core_eb_mh_dif, logistic_dif as core_logistic_dif,
     logistic_dif_purified as core_logistic_purified, mantel_haenszel_dif as core_mh_dif,
     mantel_haenszel_dif_purified as core_mh_purified, raju_area as core_raju_area,
     sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust, LogisticDifConfig, LogisticDifRow,
@@ -2058,6 +2058,32 @@ fn py_delta_plot(
     out.set_item("dif_items", res.dif_items)?;
     out.set_item("n_iter", res.n_iter)?;
     out.set_item("converged", res.converged)?;
+    Ok(out.into())
+}
+
+/// Empirical Bayes Mantel-Haenszel DIF (`mlsirm_core::dif::eb_mh_dif`;
+/// Zwick & Thayer, 2003, ERIC ED481063 — see the core section header for
+/// citation governance and implementation choices). Takes per-item MH D-DIF
+/// statistics and standard errors on the ETS delta scale; returns prior
+/// estimates, shrinkage weights, posterior means/variances, and the five
+/// ETS category probabilities flattened row-major (`n_items * 5`, columns
+/// `[C-, B-, A, B+, C+]`).
+#[pyfunction]
+fn py_eb_mh_dif(
+    py: Python<'_>,
+    mh: PyReadonlyArray1<'_, f64>,
+    se: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_eb_mh_dif(mh.as_slice()?, se.as_slice()?).map_err(PyValueError::new_err)?;
+    let probs_flat: Vec<f64> = res.cat_probs.iter().flatten().copied().collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mu", res.mu)?;
+    out.set_item("tau2", res.tau2)?;
+    out.set_item("tau2_raw", res.tau2_raw)?;
+    out.set_item("weight", PyArray1::from_slice(py, &res.weight))?;
+    out.set_item("post_mean", PyArray1::from_slice(py, &res.post_mean))?;
+    out.set_item("post_var", PyArray1::from_slice(py, &res.post_var))?;
+    out.set_item("cat_probs", PyArray1::from_slice(py, &probs_flat))?;
     Ok(out.into())
 }
 
@@ -6689,6 +6715,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_hofstee, m)?)?;
     m.add_function(wrap_pyfunction!(py_person_fit_np, m)?)?;
     m.add_function(wrap_pyfunction!(py_delta_plot, m)?)?;
+    m.add_function(wrap_pyfunction!(py_eb_mh_dif, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
