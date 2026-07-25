@@ -21,6 +21,7 @@ pub mod mokken;
 pub mod nodes;
 pub mod nominal;
 pub mod oakes;
+pub mod parallel;
 pub mod poly;
 pub mod poly_marginal;
 pub(crate) mod quadrature;

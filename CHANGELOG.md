@@ -114,6 +114,26 @@
 
 ### Added
 
+- **Horn's parallel analysis** (`fast_mlsirm.parallel_analysis`; new
+  `mlsirm_core::parallel`; Horn, 1965, and Glorfeld, 1995, as cited in and
+  implemented by Dinno's CRAN `paran` 1.5.6 sources, read line by line).
+  PCA path: eigenvalues of the observed Pearson correlation matrix (cyclic
+  Jacobi, eigenvalues only, hard error on non-convergence) are adjusted by
+  the sampling bias `random_eigenvalue - 1` estimated from `n_iterations`
+  standard-normal data sets of the same shape; components are retained
+  while the adjusted eigenvalue stays above 1, scanning left to right and
+  stopping at the first failure (later resurgences do not count, matching
+  paran's loop-and-break). `centile = 0` uses the per-position mean
+  benchmark; `1..=99` uses that upper centile via the R type-7 quantile
+  (Glorfeld's conservative variant). Deliberate divergences (documented in
+  the module): PCA only (paran's `cfa` generalized-inverse path is out of
+  scope), a single deterministic crate-LCG random stream (paran-inspired,
+  not bit-identical to any R run), and narrowed guards (`n_persons >= 3`,
+  `n_items >= 2`, finite complete data, positive column variance, explicit
+  `n_iterations`; the Python wrapper supplies paran's `30 * n_items`
+  default). Fixture literals verified against an independent NumPy
+  replication that mirrors the LCG stream exactly.
+
 - **IRT classification accuracy and consistency**
   (`fast_mlsirm.rudner_classification`, `fast_mlsirm.lee_classification`; new
   `mlsirm_core::classification`; Rudner, 2001, 2005; Lee, 2010, as cited in
