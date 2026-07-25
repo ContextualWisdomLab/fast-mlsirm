@@ -47,7 +47,8 @@ use mlsirm_core::factor::{
     glb_fa_corr as core_glb_fa_corr, glb_fa_data as core_glb_fa_data,
     minres_fa_corr as core_minres_fa_corr, minres_fa_data as core_minres_fa_data,
     omega_total_1f_corr as core_omega_total_1f_corr,
-    omega_total_1f_data as core_omega_total_1f_data, MinresFaResult,
+    omega_total_1f_data as core_omega_total_1f_data, velicer_map_corr as core_velicer_map_corr,
+    velicer_map_data as core_velicer_map_data, MinresFaResult,
 };
 use mlsirm_core::fitstats::{
     adjusted_chi2_pairs as core_adjusted_chi2_pairs,
@@ -1996,6 +1997,77 @@ fn glb_fa_to_py(
         numpy::PyArray1::from_slice(py, &res.communalities),
     )?;
     out.set_item("nf", res.nf)?;
+    Ok(out.into())
+}
+
+/// Velicer's minimum average partial (MAP) test
+/// (`mlsirm_core::factor::velicer_map_corr`). `corr` is a flattened
+/// row-major `p x p` correlation matrix; rows `m = 0..=max_m`. Returns
+/// {f2, f4, retained_f2, retained_f4}; invalid rows (singular partial
+/// covariance normalization, e.g. identity R for m >= 1) are NaN and
+/// excluded from the retained-count argmin.
+///
+/// Retained count follows O'Connor's canonical programs (`m` at the
+/// minimum, with `m = 0` = the unpartialed baseline); note
+/// `fungible::faMAP` prints a 1-based row position (off by one). The
+/// fourth-power (revised) criterion uses ELEMENTWISE fourth powers per
+/// O'Connor's code; see the core docs for the unresolved
+/// `EFA.dimensions` matrix-power conflict.
+///
+/// References (APA 7th ed.):
+///
+/// Velicer, W. F. (1976). Determining the number of components from the
+///   matrix of partial correlations. *Psychometrika, 41*(3), 321-327.
+///   https://doi.org/10.1007/BF02293557 (Not read; formula support is the
+///   read O'Connor map.m/map.sps programs and psych VSS.R map().)
+/// O'Connor, B. P. (2000). SPSS and SAS programs for determining the
+///   number of components using parallel analysis and Velicer's MAP test.
+///   *Behavior Research Methods, Instruments, & Computers, 32*(3),
+///   396-402. https://doi.org/10.3758/BF03200807 (Programs read; paper
+///   not read.)
+/// Velicer, W. F., Eaton, C. A., & Fava, J. L. (2000). Construct
+///   explication through factor or component analysis. In R. D. Goffin &
+///   E. Helmes (Eds.), *Problems and solutions in human assessment*
+///   (pp. 41-71). Kluwer. (Not read; fourth-power origin per O'Connor's
+///   code comments.)
+/// Revelle, W. (2025). *psych: Procedures for psychological,
+///   psychometric, and personality research* (Version 2.6.5) [R package].
+///   https://CRAN.R-project.org/package=psych (VSS.R map() read.)
+#[pyfunction]
+fn velicer_map(
+    py: Python<'_>,
+    corr: PyReadonlyArray1<'_, f64>,
+    p: usize,
+    max_m: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_velicer_map_corr(corr.as_slice()?, p, max_m).map_err(PyValueError::new_err)?;
+    velicer_map_to_py(py, &res)
+}
+
+/// [`velicer_map`] from raw data (`n x p` flattened row-major, complete
+/// data; Pearson correlations computed internally).
+#[pyfunction]
+fn velicer_map_from_data(
+    py: Python<'_>,
+    data: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    p: usize,
+    max_m: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res =
+        core_velicer_map_data(data.as_slice()?, n, p, max_m).map_err(PyValueError::new_err)?;
+    velicer_map_to_py(py, &res)
+}
+
+fn velicer_map_to_py(
+    py: Python<'_>,
+    res: &mlsirm_core::factor::VelicerMapResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("f2", numpy::PyArray1::from_slice(py, &res.f2))?;
+    out.set_item("f4", numpy::PyArray1::from_slice(py, &res.f4))?;
+    out.set_item("retained_f2", res.retained_f2)?;
+    out.set_item("retained_f4", res.retained_f4)?;
     Ok(out.into())
 }
 
@@ -5879,6 +5951,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(omega_total_1f_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(glb_fa, m)?)?;
     m.add_function(wrap_pyfunction!(glb_fa_from_data, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map, m)?)?;
+    m.add_function(wrap_pyfunction!(velicer_map_from_data, m)?)?;
     m.add_function(wrap_pyfunction!(selection_utility, m)?)?;
     m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;

@@ -630,6 +630,189 @@ pub fn glb_fa_data(data: &[f64], n: usize, p: usize) -> Result<GlbFaResult, Stri
     glb_fa_corr(&r, p)
 }
 
+/// Velicer's minimum average partial (MAP) test output.
+///
+/// `f2[m]` / `f4[m]` for `m = 0..=max_m`: the average squared (resp.
+/// elementwise fourth-power) off-diagonal partial correlation after
+/// partialing out the first `m` principal components. Rows where the
+/// partial covariance has a non-positive or non-finite diagonal entry are
+/// invalid and stored as `NaN`; they are excluded from the argmin.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VelicerMapResult {
+    pub f2: Vec<f64>,
+    pub f4: Vec<f64>,
+    /// Number of components retained by the original (squared) criterion:
+    /// the `m` (0-based, `m = 0` = baseline `R` itself) minimizing `f2`.
+    pub retained_f2: usize,
+    /// Retained count by the revised fourth-power criterion.
+    pub retained_f4: usize,
+}
+
+/// Velicer's minimum average partial (MAP) test on a correlation matrix.
+///
+/// Algorithm (O'Connor's canonical MATLAB/SPSS MAP programs, READ;
+/// cross-checked against psych `VSS.R` `map()`, READ):
+///
+/// 1. Eigendecompose `R`; PCA loadings `A = V diag(sqrt(lambda))` with
+///    columns in descending-eigenvalue order.
+/// 2. Baseline `m = 0`: `f2[0] = (sum(R.^2) - p) / (p(p-1))`, i.e. the
+///    mean squared off-diagonal of `R` itself; `f4[0]` likewise with
+///    fourth powers.
+/// 3. For `m = 1..=max_m`: partial covariance `C* = R - A_m A_m'`
+///    (`A_m` = first `m` columns), rescale
+///    `R* = D^{-1/2} C* D^{-1/2}` with `D = diag(C*)`, then
+///    `f2[m] = (sum(R*.^2) - p) / (p(p-1))` and `f4[m]` with fourth
+///    powers. If any `diag(C*)` entry is `<= 1e-12` or non-finite the row
+///    is invalid (`NaN`) — e.g. `R = I` after one component.
+/// 4. Retained components = the `m` attaining the minimum over valid rows
+///    (O'Connor: `nfacts = s - 1` with row 1 being `m = 0`).
+///
+/// Compatibility note (adversarial spec review): `fungible::faMAP` returns
+/// `which.min(fm)`, a 1-based row POSITION whose first row is the `m = 0`
+/// baseline — off by one relative to O'Connor's canonical count; that
+/// convention is a bug and is NOT reproduced here. psych's internal
+/// `map()` omits the `m = 0` baseline entirely and returns raw values
+/// only.
+///
+/// Fourth-power caveat: the elementwise fourth power follows O'Connor's
+/// code and `fungible::faMAP` (both READ). `EFA.dimensions::MAP` has since
+/// switched to matrix powers claiming the elementwise form was wrong; the
+/// Velicer, Eaton & Fava (2000) chapter was NOT read, so this conflict is
+/// unresolved from primary literature — we follow O'Connor's de facto
+/// standard code path.
+///
+/// `max_m` must satisfy `max_m <= p - 1` (canonical upper bound);
+/// `max_m = 0` computes the baseline only.
+///
+/// References (APA 7th ed.):
+///
+/// Velicer, W. F. (1976). Determining the number of components from the
+///   matrix of partial correlations. *Psychometrika, 41*(3), 321-327.
+///   https://doi.org/10.1007/BF02293557 (Not read; formula support is the
+///   read implementations below.)
+/// O'Connor, B. P. (2000). SPSS and SAS programs for determining the
+///   number of components using parallel analysis and Velicer's MAP test.
+///   *Behavior Research Methods, Instruments, & Computers, 32*(3),
+///   396-402. https://doi.org/10.3758/BF03200807 (Paper not read; the
+///   accompanying map.m / map.sps programs were read in full.)
+/// Velicer, W. F., Eaton, C. A., & Fava, J. L. (2000). Construct
+///   explication through factor or component analysis: A review and
+///   evaluation of alternative procedures for determining the number of
+///   factors or components. In R. D. Goffin & E. Helmes (Eds.), *Problems
+///   and solutions in human assessment* (pp. 41-71). Kluwer. (Not read;
+///   cited as the origin of the fourth-power revision per O'Connor's code
+///   comments.)
+/// Revelle, W. (2025). *psych: Procedures for psychological, psychometric,
+///   and personality research* (Version 2.6.5) [R package].
+///   https://CRAN.R-project.org/package=psych (VSS.R `map()` read.)
+pub fn velicer_map_corr(corr: &[f64], p: usize, max_m: usize) -> Result<VelicerMapResult, String> {
+    validate_corr(corr, p, "velicer_map")?;
+    if max_m > p - 1 {
+        return Err(format!(
+            "velicer_map: max_m = {max_m} exceeds canonical bound p - 1 = {}",
+            p - 1
+        ));
+    }
+    let (eigval, eigvec) = symmetric_eigen_desc(corr, p)?;
+    // Loadings A = V diag(sqrt(lambda)); materially negative eigenvalues
+    // mean the input is not a correlation matrix of anything. Check the
+    // full spectrum (a trailing negative eigenvalue is just as disqualifying
+    // as a leading one, even when max_m = 0).
+    if eigval.iter().any(|&l| l < -1e-8) {
+        return Err("velicer_map: correlation matrix has a materially negative eigenvalue".into());
+    }
+    let denom = (p * (p - 1)) as f64;
+    let mut f2 = vec![f64::NAN; max_m + 1];
+    let mut f4 = vec![f64::NAN; max_m + 1];
+    let (mut s2, mut s4) = (0.0, 0.0);
+    for i in 0..p {
+        for j in 0..p {
+            if i != j {
+                let v = corr[i * p + j];
+                s2 += v * v;
+                s4 += v * v * v * v;
+            }
+        }
+    }
+    f2[0] = s2 / denom;
+    f4[0] = s4 / denom;
+    for m in 1..=max_m {
+        // C* = R - A_m A_m'
+        let mut c = corr.to_vec();
+        for i in 0..p {
+            for j in 0..p {
+                let mut dot = 0.0;
+                for k in 0..m {
+                    dot += eigvec[i * p + k] * eigvec[j * p + k] * eigval[k].max(0.0);
+                }
+                c[i * p + j] -= dot;
+            }
+        }
+        let diag_ok = (0..p).all(|i| {
+            let d = c[i * p + i];
+            d.is_finite() && d > 1e-12
+        });
+        if !diag_ok {
+            continue; // invalid row stays NaN (e.g. identity R after 1 pc)
+        }
+        let d: Vec<f64> = (0..p).map(|i| 1.0 / c[i * p + i].sqrt()).collect();
+        let (mut s2, mut s4) = (0.0, 0.0);
+        for i in 0..p {
+            for j in 0..p {
+                if i != j {
+                    let v = c[i * p + j] * d[i] * d[j];
+                    s2 += v * v;
+                    s4 += v * v * v * v;
+                }
+            }
+        }
+        f2[m] = s2 / denom;
+        f4[m] = s4 / denom;
+    }
+    let argmin_valid = |f: &[f64]| -> usize {
+        let mut best = 0usize;
+        for (m, &v) in f.iter().enumerate() {
+            if v.is_finite() && (!f[best].is_finite() || v < f[best]) {
+                best = m;
+            }
+        }
+        best
+    };
+    Ok(VelicerMapResult {
+        retained_f2: argmin_valid(&f2),
+        retained_f4: argmin_valid(&f4),
+        f2,
+        f4,
+    })
+}
+
+/// [`velicer_map_corr`] from raw data (`n x p` row-major, complete and
+/// finite); computes the Pearson correlation matrix first.
+pub fn velicer_map_data(
+    data: &[f64],
+    n: usize,
+    p: usize,
+    max_m: usize,
+) -> Result<VelicerMapResult, String> {
+    let np = n
+        .checked_mul(p)
+        .ok_or_else(|| format!("velicer_map: dimension overflow (n = {n}, p = {p})"))?;
+    if data.len() != np {
+        return Err(format!(
+            "velicer_map: data length {} does not match n * p = {np}",
+            data.len(),
+        ));
+    }
+    if data.iter().any(|v| !v.is_finite()) {
+        return Err("velicer_map: data must be finite (complete data required)".into());
+    }
+    if n < 3 {
+        return Err("velicer_map: need at least 3 observations".into());
+    }
+    let r = correlation_matrix(data, n, p)?;
+    velicer_map_corr(&r, p, max_m)
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/factor_tests.rs"]
 mod tests;
