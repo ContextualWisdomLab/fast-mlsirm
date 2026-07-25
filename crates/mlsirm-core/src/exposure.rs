@@ -609,3 +609,209 @@ pub fn a_stratified(
         theta_bias: bias / n,
     })
 }
+
+// ===================== Kullback-Leibler (global information) item selection =====================
+//
+// Chang and Ying's (1996) global-information criterion for CAT item selection.
+//
+// Source status: the original paper WAS consulted (Chang & Ying, 1996,
+// Definitions 2.1-2.2 define item/test KL information with the expectation
+// taken under the true parameter and note non-negativity and non-symmetry;
+// Equation 17 constructs the interval index around the provisional estimate;
+// Equation 18 motivates the shrinking half-width `delta_n = r / sqrt(n)`, with
+// `r = 3` used in their Study 1). The Bernoulli form below was additionally
+// verified against the catR implementation (Magis & Raiche, 2012, `KL.R`),
+// which computes `P(th0) log[P(th0)/P(th)] + Q(th0) log[Q(th0)/Q(th)]`.
+//
+// Contract (explicit): [`kl_information`] returns the UNNORMALIZED area
+// `integral_{theta0-delta}^{theta0+delta} K_i(theta || theta0) d theta`, not the
+// interval average. For a common `delta` across items the argmax is identical;
+// the pinned oracle constants in the tests are areas.
+//
+// Small-delta connection to Fisher information (derived here, verified
+// independently by the adversarial spec review): with `u = theta - theta0`,
+// `K(theta || theta0) = (1/2) I(theta0) u^2 + O(u^3)`, so the area is
+// `I(theta0) delta^3 / 3 + O(delta^5)` -- the criterion collapses to local
+// (Fisher) maximum-information selection as the interval shrinks.
+//
+// Integration is composite Simpson with 2048 panels (an implementation choice,
+// not from the paper; error O(h^4) is ~1e-12 at CAT-scale half-widths, well
+// inside the 1e-9 oracle tolerance used by the tests).
+//
+// References (APA 7th):
+// Chang, H.-H., & Ying, Z. (1996). A global information approach to
+//     computerized adaptive testing. *Applied Psychological Measurement,
+//     20*(3), 213-229. https://doi.org/10.1177/014662169602000303
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+//     under computerized adaptive testing with the R package catR. *Journal
+//     of Statistical Software, 48*(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+
+/// Result of [`kl_select`].
+#[derive(Clone, Debug)]
+pub struct KlSelectResult {
+    /// KL information index (unnormalized area) per pool item. Administered
+    /// items keep their computed index (masking applies to selection only).
+    pub index: Vec<f64>,
+    /// Selected item: argmax of `index` over non-administered items
+    /// (ties broken toward the LOWEST index, deterministically).
+    pub selected: usize,
+    /// The half-width actually used: `r / sqrt(n_administered)`.
+    pub delta: f64,
+}
+
+/// Numerically stable `ln(1 + exp(z))` (softplus).
+#[inline]
+fn softplus(z: f64) -> f64 {
+    if z > 0.0 {
+        z + (-z).exp().ln_1p()
+    } else {
+        z.exp().ln_1p()
+    }
+}
+
+/// `(ln P, ln Q)` for one 3PL item, computed in log space so extreme
+/// `a * (theta - b)` never saturates: `Q = (1 - c) * sigma(-z)` gives
+/// `ln Q = ln(1 - c) - softplus(z)` exactly, and for `c = 0`
+/// `ln P = -softplus(-z)`. For `c > 0`, `P >= c` is bounded away from 0, so
+/// the direct log is stable.
+#[inline]
+fn ln_pq_3pl(a: f64, b: f64, c: f64, theta: f64) -> (f64, f64) {
+    let z = a * (theta - b);
+    let ln_q = (1.0 - c).ln() - softplus(z);
+    let ln_p = if c == 0.0 {
+        -softplus(-z)
+    } else {
+        (c + (1.0 - c) / (1.0 + (-z).exp())).ln()
+    };
+    (ln_p, ln_q)
+}
+
+/// Pointwise Bernoulli KL divergence `K_i(theta || theta0)` for one 3PL item:
+/// expectation under `theta0` (Chang & Ying, 1996, Definition 2.1). Computed
+/// as `P0 (ln P0 - ln P) + Q0 (ln Q0 - ln Q)` entirely in log space -- no
+/// probability clamping, so high-discrimination tails are integrated exactly
+/// (a hard clamp at 1e-12 was measured to underestimate the
+/// `a = 20, delta = 3` area by ~30%; see the pinned extreme-oracle test).
+#[inline]
+fn kl_pointwise(a: f64, b: f64, c: f64, theta: f64, theta0: f64) -> f64 {
+    let (ln_p0, ln_q0) = ln_pq_3pl(a, b, c, theta0);
+    let (ln_p, ln_q) = ln_pq_3pl(a, b, c, theta);
+    // Zero-weight terms contribute 0 by the KL convention `0 ln 0 = 0`;
+    // without the guard a saturated log pair (ln_q0 = ln_q = -inf at
+    // extreme finite `a * (theta - b)`) yields `0 * NaN`.
+    let term = |w: f64, d: f64| if w == 0.0 { 0.0 } else { w * d };
+    term(ln_p0.exp(), ln_p0 - ln_p) + term(ln_q0.exp(), ln_q0 - ln_q)
+}
+
+/// Chang-Ying (1996) KL information index for every item: the unnormalized
+/// area of `K_i(theta || theta0)` over `[theta0 - delta, theta0 + delta]`
+/// (Eq. 17 form; see the section comment for the exact contract and sources).
+///
+/// `a`, `b`, `c` are 3PL parameters (`c = 0` gives 2PL). Errors on empty or
+/// mismatched inputs, non-finite values, `a <= 0`, `c` outside `[0, 1)`, or
+/// non-finite/non-positive `delta`.
+pub fn kl_information(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    theta0: f64,
+    delta: f64,
+) -> Result<Vec<f64>, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("kl_information: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n {
+        return Err(format!(
+            "kl_information: length mismatch (a={}, b={}, c={})",
+            n,
+            b.len(),
+            c.len()
+        ));
+    }
+    if !theta0.is_finite() {
+        return Err("kl_information: theta0 must be finite".to_string());
+    }
+    if !delta.is_finite() || delta <= 0.0 {
+        return Err("kl_information: delta must be finite and > 0".to_string());
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || !b[i].is_finite() || !c[i].is_finite() {
+            return Err(format!("kl_information: non-finite parameter (item {i})"));
+        }
+        if a[i] <= 0.0 {
+            return Err(format!("kl_information: a must be > 0 (item {i})"));
+        }
+        if !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("kl_information: c must be in [0, 1) (item {i})"));
+        }
+    }
+    // Composite Simpson, 2048 panels (even), over [theta0 - delta, theta0 + delta].
+    const PANELS: usize = 2048;
+    let h = 2.0 * delta / PANELS as f64;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let (ai, bi, ci) = (a[i], b[i], c[i]);
+        let mut s = kl_pointwise(ai, bi, ci, theta0 - delta, theta0)
+            + kl_pointwise(ai, bi, ci, theta0 + delta, theta0);
+        for k in 1..PANELS {
+            let t = theta0 - delta + k as f64 * h;
+            let w = if k % 2 == 1 { 4.0 } else { 2.0 };
+            s += w * kl_pointwise(ai, bi, ci, t, theta0);
+        }
+        out.push(s * h / 3.0);
+    }
+    Ok(out)
+}
+
+/// Select the next CAT item by the Chang-Ying (1996) KL criterion:
+/// `argmax_i KL_i(theta0)` over non-administered items, with half-width
+/// `delta = r / sqrt(n_administered)` (Eq. 18 rule; the paper's Study 1 uses
+/// `r = 3`). Requires `n_administered >= 1` -- the shrinking-interval rule is
+/// undefined at `n = 0`; for a first-item or fixed-interval variant call
+/// [`kl_information`] with an explicit `delta` and take the argmax yourself.
+pub fn kl_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    administered: &[bool],
+    theta0: f64,
+    n_administered: usize,
+    r: f64,
+) -> Result<KlSelectResult, String> {
+    if administered.len() != a.len() {
+        return Err(format!(
+            "kl_select: administered mask length {} != pool size {}",
+            administered.len(),
+            a.len()
+        ));
+    }
+    if n_administered == 0 {
+        return Err(
+            "kl_select: n_administered must be >= 1 (delta = r / sqrt(n) is undefined at n = 0; \
+             use kl_information with an explicit delta for the first item)"
+                .to_string(),
+        );
+    }
+    if !r.is_finite() || r <= 0.0 {
+        return Err("kl_select: r must be finite and > 0".to_string());
+    }
+    if administered.iter().all(|&u| u) {
+        return Err("kl_select: all items already administered".to_string());
+    }
+    let delta = r / (n_administered as f64).sqrt();
+    let index = kl_information(a, b, c, theta0, delta)?;
+    let mut selected = usize::MAX;
+    let mut best = f64::NEG_INFINITY;
+    for (i, &v) in index.iter().enumerate() {
+        if !administered[i] && v > best {
+            best = v;
+            selected = i;
+        }
+    }
+    Ok(KlSelectResult {
+        index,
+        selected,
+        delta,
+    })
+}

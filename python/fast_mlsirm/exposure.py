@@ -221,3 +221,113 @@ def a_stratified(
         theta_rmse=float(r["theta_rmse"]),
         theta_bias=float(r["theta_bias"]),
     )
+
+def kl_information(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    theta0: float,
+    delta: float,
+) -> np.ndarray:
+    """Chang-Ying (1996) Kullback-Leibler information index per item.
+
+    Returns the UNNORMALIZED area of the pointwise Bernoulli KL divergence
+    ``K_i(theta || theta0) = P_i(theta0) ln[P_i(theta0)/P_i(theta)] +
+    Q_i(theta0) ln[Q_i(theta0)/Q_i(theta)]`` over
+    ``[theta0 - delta, theta0 + delta]`` for each 3PL item (``c = 0`` gives
+    2PL) — Chang and Ying's Equation 17 interval index in area form (for a
+    common ``delta`` the argmax is identical to the interval average). As
+    ``delta -> 0`` the area approaches ``I_i(theta0) * delta**3 / 3`` with
+    ``I_i`` the Fisher information, the paper's connection between global and
+    local information (verified independently by the adversarial spec
+    review; anchored by a crate test). All numeric work happens in the Rust
+    core (``mlsirm_core::exposure::kl_information``); this wrapper only
+    validates and marshals. Inputs must be 1-D.
+
+    Source status: the pointwise Bernoulli form and expectation-under-theta0
+    direction were confirmed against Chang and Ying (1996, Definitions
+    2.1-2.2, Eq. 17-18) and the catR implementation (Magis & Raiche, 2012,
+    ``KL.R``).
+
+    References (APA 7th ed.):
+        Chang, H.-H., & Ying, Z. (1996). A global information approach to
+            computerized adaptive testing. *Applied Psychological
+            Measurement, 20*(3), 213-229.
+            https://doi.org/10.1177/014662169602000303
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    return np.asarray(
+        _core.py_kl_information(
+            np.ascontiguousarray(a),
+            np.ascontiguousarray(b),
+            np.ascontiguousarray(c),
+            float(theta0),
+            float(delta),
+        )
+    )
+
+
+def kl_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    administered: np.ndarray,
+    theta0: float,
+    n_administered: int,
+    r: float = 3.0,
+) -> dict:
+    """Select the next CAT item by the Chang-Ying (1996) KL criterion.
+
+    Computes ``argmax_i KL_i(theta0)`` over items where ``administered`` is
+    False, with half-width ``delta = r / sqrt(n_administered)`` (the paper's
+    Equation 18 shrinking-interval rule; their Study 1 uses ``r = 3``).
+    Requires ``n_administered >= 1`` — the rule is undefined at ``n = 0``;
+    for the first item call :func:`kl_information` with an explicit
+    ``delta``. Returns ``{"index", "selected", "delta"}`` where ``index`` is
+    the full per-item KL vector (administered items keep their value; masking
+    applies to selection only). All numeric work happens in the Rust core
+    (``mlsirm_core::exposure::kl_select``). See :func:`kl_information` for
+    sources and references.
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    mask = np.asarray(administered, dtype=np.bool_)
+    if c.ndim != 1 or mask.ndim != 1:
+        raise ValueError("c and administered must be 1-D arrays")
+    res = _core.py_kl_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(mask),
+        float(theta0),
+        _as_int("n_administered", n_administered, minimum=1),
+        float(r),
+    )
+    return {
+        "index": np.asarray(res["index"]),
+        "selected": int(res["selected"]),
+        "delta": float(res["delta"]),
+    }

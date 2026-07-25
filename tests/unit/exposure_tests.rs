@@ -27,7 +27,10 @@
 //! `sh_rmax_one_is_unconstrained`; the discriminating anchor for the gate is
 //! `sh_controls_max_exposure`.
 
-use crate::exposure::{a_stratified, sympson_hetter, AStratifiedConfig, SympsonHetterConfig};
+use crate::exposure::{
+    a_stratified, eap_interim, kl_information, kl_select, p3pl, sympson_hetter, AStratifiedConfig,
+    Lcg, SympsonHetterConfig,
+};
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     // Deterministic, asymmetric 30-item 2PL pool: a in [0.6, 2.0],
@@ -628,5 +631,231 @@ fn as_monte_carlo_500() {
         mean_rmse < 0.7,
         "mean theta RMSE {} unexpectedly poor",
         mean_rmse
+    );
+}
+
+// ===================== Chang-Ying (1996) KL information selection =====================
+//
+// Mutation-kill audit (executed kills recorded in the PR evidence). Every
+// assert reads crate outputs (`kl_information` vectors, `KlSelectResult`
+// fields, or returned `Err`); no assert recomputes the integral locally.
+//
+// - KL-M1 direction flip (`p0/p` -> `p/p0` inside both logs): killed by
+//   `kl_pinned_oracles` (reverse-KL areas differ from the pinned constants).
+// - KL-M2 drop the Q-term of the pointwise KL: killed by `kl_pinned_oracles`
+//   and by `kl_fisher_small_delta_anchor` (the Taylor coefficient changes,
+//   so the ratio gate fails).
+// - KL-M3 `delta = r / n` instead of `r / sqrt(n)`: killed by
+//   `kl_select_full_vector_oracle`, which asserts BOTH the returned `delta`
+//   AND the full index vector against independent constants at n = 4
+//   (an argmax-only test would NOT reliably catch this; that limitation is
+//   disclosed here per the spec review).
+// - KL-M4 argmax -> argmin: killed by `kl_select_full_vector_oracle` (the
+//   pool has a unique maximum, item 1, and a unique minimum, item 4, and no
+//   masking removes the minimum).
+//
+// Oracle provenance: every pinned constant was computed independently TWICE
+// before implementation (adversarial spec review: 80-digit Decimal Simpson;
+// implementer: 60-digit Decimal Simpson, 4000 panels); the two computations
+// agree to 15 significant digits. Values are UNNORMALIZED areas (see the
+// contract in the exposure.rs section comment).
+
+/// Pinned KL-index areas, plus the 3PL mirrored-b asymmetry pair: with c > 0
+/// the index is NOT invariant under b -> 2*theta0 - b, so a mirror-blind
+/// implementation cannot pass. All asserts read kl_information outputs.
+#[test]
+fn kl_pinned_oracles() {
+    let v = kl_information(&[1.2], &[0.3], &[0.0], 0.5, 1.0).unwrap();
+    assert!(
+        (v[0] - 0.114454883565329).abs() < 1e-9,
+        "2PL area = {}",
+        v[0]
+    );
+    let v = kl_information(&[1.0], &[0.0], &[0.2], 0.0, 0.5).unwrap();
+    assert!(
+        (v[0] - 0.00687308819864807).abs() < 1e-9,
+        "3PL area = {}",
+        v[0]
+    );
+    // Mirrored-b pair (asymmetry anchor).
+    let hi = kl_information(&[1.0], &[0.7], &[0.2], 0.0, 0.5).unwrap()[0];
+    let lo = kl_information(&[1.0], &[-0.7], &[0.2], 0.0, 0.5).unwrap()[0];
+    assert!((hi - 0.00524190785695519).abs() < 1e-9, "b=+0.7 = {hi}");
+    assert!((lo - 0.00666896390226957).abs() < 1e-9, "b=-0.7 = {lo}");
+    assert!(lo > hi, "3PL c > 0 must break the b-mirror symmetry");
+    // Extreme high-discrimination oracle (a = 20, delta = 3): tail
+    // probabilities reach ~1e-26, so any hard probability clamp (e.g. at
+    // 1e-12) truncates the log tails and underestimates the area (the
+    // pre-fix clamped implementation returned 59.7296..., ~30% low).
+    // Oracle recomputed independently: Decimal 60-digit Simpson converges
+    // to 85.923363619982739465... at 2048-16384 panels. Kills any
+    // reintroduced probability clamping or saturating ICC evaluation.
+    let v = kl_information(&[20.0], &[0.0], &[0.0], 0.0, 3.0).unwrap();
+    assert!(
+        (v[0] - 85.9233636199827395).abs() < 1e-9,
+        "extreme a=20 area = {}",
+        v[0]
+    );
+    // Saturated finite inputs must stay finite (0 ln 0 = 0 convention):
+    // a = 1e308 drives z to inf so ln Q0 = ln Q = -inf; an unguarded
+    // 0 * (-inf - -inf) product returns NaN (round-2 review finding).
+    let v = kl_information(&[1e308], &[0.0], &[0.0], 2.0, 1.0).unwrap();
+    assert!(
+        v[0].is_finite() && v[0] >= 0.0,
+        "saturated area must be finite nonneg, got {}",
+        v[0]
+    );
+}
+
+/// Small-delta Fisher anchor: area / (I(theta0) * delta^3 / 3) -> 1. The
+/// numerator reads the crate area; the denominator is the INDEPENDENT
+/// closed-form limit (2PL Fisher information a^2 p q), not a recomputation
+/// of the integral, so the anchor discriminates.
+#[test]
+fn kl_fisher_small_delta_anchor() {
+    let (a, b, t0) = (1.2f64, 0.3f64, 0.5f64);
+    let p = 1.0 / (1.0 + (-a * (t0 - b)).exp());
+    let fisher = a * a * p * (1.0 - p);
+    let delta = 1e-3;
+    let area = kl_information(&[a], &[b], &[0.0], t0, delta).unwrap()[0];
+    let ratio = area / (fisher * delta * delta * delta / 3.0);
+    assert!((ratio - 1.0).abs() < 1e-4, "ratio = {ratio}");
+}
+
+/// Full-vector selection oracle at n = 4 (delta = 3/2): asserts the returned
+/// delta, all five index values against independent constants, the argmax
+/// (item 1, unique max), and masking (with item 1 administered the argmax
+/// moves to item 3). Item 4 is the unique minimum and stays available, so
+/// argmax -> argmin (KL-M4) and delta = r/n (KL-M3: delta would be 0.75 and
+/// every index value changes) both fail here. Asserts read KlSelectResult.
+#[test]
+fn kl_select_full_vector_oracle() {
+    let a = [0.8, 1.5, 1.0, 2.0, 0.6];
+    let b = [-1.0, 0.4, 0.0, 1.2, 0.3];
+    let c = [0.0, 0.0, 0.15, 0.1, 0.0];
+    let expected = [
+        0.139656556289429,
+        0.562390595050374,
+        0.194256509461839,
+        0.349021047637362,
+        0.0992541089721506,
+    ];
+    let r = kl_select(&a, &b, &c, &[false; 5], 0.25, 4, 3.0).unwrap();
+    assert!((r.delta - 1.5).abs() < 1e-15, "delta = {}", r.delta);
+    for i in 0..5 {
+        assert!(
+            (r.index[i] - expected[i]).abs() < 1e-9,
+            "index[{i}] = {}",
+            r.index[i]
+        );
+    }
+    assert_eq!(r.selected, 1);
+    // Masking: administered items keep their index but cannot be selected.
+    let mask = [false, true, false, false, false];
+    let r2 = kl_select(&a, &b, &c, &mask, 0.25, 4, 3.0).unwrap();
+    assert_eq!(r2.selected, 3);
+    assert!((r2.index[1] - expected[1]).abs() < 1e-9);
+}
+
+/// K(theta0 || theta0) = 0 and the area is strictly positive for delta > 0
+/// (Gibbs / non-negativity). Reads crate outputs.
+#[test]
+fn kl_nonnegativity_and_zero_at_center() {
+    let area = kl_information(&[1.0], &[0.0], &[0.0], 0.0, 2.0).unwrap()[0];
+    assert!(area > 0.0);
+    let tiny = kl_information(&[1.0], &[0.0], &[0.0], 0.0, 1e-9).unwrap()[0];
+    // Floating rounding can leave the near-zero area at +/- a few ulps.
+    assert!(tiny.abs() < 1e-15, "tiny = {tiny}");
+}
+
+/// Every rejection is a crate Err.
+#[test]
+fn kl_error_paths() {
+    assert!(kl_information(&[], &[], &[], 0.0, 1.0).is_err()); // empty
+    assert!(kl_information(&[1.0], &[0.0, 1.0], &[0.0], 0.0, 1.0).is_err()); // mismatch
+    assert!(kl_information(&[1.0], &[0.0], &[0.0], f64::NAN, 1.0).is_err()); // theta0
+    assert!(kl_information(&[1.0], &[0.0], &[0.0], 0.0, 0.0).is_err()); // delta <= 0
+    assert!(kl_information(&[1.0], &[0.0], &[0.0], 0.0, f64::INFINITY).is_err());
+    assert!(kl_information(&[-1.0], &[0.0], &[0.0], 0.0, 1.0).is_err()); // a <= 0
+    assert!(kl_information(&[1.0], &[f64::NAN], &[0.0], 0.0, 1.0).is_err()); // non-finite
+    assert!(kl_information(&[1.0], &[0.0], &[1.0], 0.0, 1.0).is_err()); // c >= 1
+    assert!(kl_information(&[1.0], &[0.0], &[-0.1], 0.0, 1.0).is_err()); // c < 0
+    let (a, b, c) = ([1.0], [0.0], [0.0]);
+    assert!(kl_select(&a, &b, &c, &[false, false], 0.0, 1, 3.0).is_err()); // mask len
+    assert!(kl_select(&a, &b, &c, &[false], 0.0, 0, 3.0).is_err()); // n = 0
+    assert!(kl_select(&a, &b, &c, &[false], 0.0, 1, 0.0).is_err()); // r <= 0
+    assert!(kl_select(&a, &b, &c, &[true], 0.0, 1, 3.0).is_err()); // exhausted
+}
+
+/// MC-500 (#[ignore]): paired-design CAT comparison, KL selection vs random
+/// selection. 40-item deterministic 2PL pool, 500 simulees, test length 15,
+/// COMMON random numbers: both arms share each simulee's true theta and the
+/// same response-uniform stream indexed by administration position, so the
+/// arms differ ONLY in the selection rule. First item is fixed (argmin |b|)
+/// in both arms because delta = r/sqrt(n) needs n >= 1. Gates (adversarial
+/// spec review ruling 5): RMSE_KL < 0.45 sanity ceiling and paired
+/// superiority RMSE_KL + 0.01 < RMSE_random under the fixed seed
+/// (seed-locked diagnostic, margin piloted before pinning). The KL arm's
+/// selections read kl_select crate outputs each step.
+#[test]
+#[ignore]
+fn kl_mc500_paired_cat_recovery() {
+    let n_items = 40usize;
+    let mut a = vec![0.0; n_items];
+    let mut b = vec![0.0; n_items];
+    let c = vec![0.0; n_items];
+    for i in 0..n_items {
+        a[i] = 0.5 + 1.5 * ((i % 8) as f64) / 7.0;
+        b[i] = -2.0 + 4.0 * (i as f64) / ((n_items - 1) as f64);
+    }
+    let first = (0..n_items)
+        .min_by(|&i, &j| b[i].abs().partial_cmp(&b[j].abs()).unwrap())
+        .unwrap();
+    let grid: Vec<f64> = (0..81).map(|q| -4.0 + 8.0 * (q as f64) / 80.0).collect();
+    let log_prior: Vec<f64> = grid.iter().map(|t| -0.5 * t * t).collect();
+    let test_len = 15usize;
+    let n_sim = 500usize;
+    let mut rng = Lcg(0xC4A6_1996);
+    let mut scratch: Vec<f64> = Vec::with_capacity(grid.len());
+    let (mut sse_kl, mut sse_rand) = (0.0f64, 0.0f64);
+    for _ in 0..n_sim {
+        let theta_true = rng.normal();
+        let u: Vec<f64> = (0..test_len).map(|_| rng.next_f64()).collect();
+        let pick: Vec<f64> = (0..test_len).map(|_| rng.next_f64()).collect();
+        for arm in 0..2 {
+            let mut used = vec![false; n_items];
+            let mut responses: Vec<(usize, f64)> = Vec::with_capacity(test_len);
+            let mut theta_hat = 0.0f64;
+            for k in 0..test_len {
+                let item = if k == 0 {
+                    first
+                } else if arm == 0 {
+                    kl_select(&a, &b, &c, &used, theta_hat, k, 3.0)
+                        .unwrap()
+                        .selected
+                } else {
+                    let avail: Vec<usize> = (0..n_items).filter(|&i| !used[i]).collect();
+                    avail[((pick[k] * avail.len() as f64) as usize).min(avail.len() - 1)]
+                };
+                used[item] = true;
+                let p = p3pl(theta_true, a[item], b[item], c[item]);
+                let y = if u[k] < p { 1.0 } else { 0.0 };
+                responses.push((item, y));
+                theta_hat = eap_interim(&a, &b, &c, &responses, &grid, &log_prior, &mut scratch);
+            }
+            let e = theta_hat - theta_true;
+            if arm == 0 {
+                sse_kl += e * e;
+            } else {
+                sse_rand += e * e;
+            }
+        }
+    }
+    let rmse_kl = (sse_kl / n_sim as f64).sqrt();
+    let rmse_rand = (sse_rand / n_sim as f64).sqrt();
+    assert!(rmse_kl < 0.45, "rmse_kl = {rmse_kl}");
+    assert!(
+        rmse_kl + 0.01 < rmse_rand,
+        "paired superiority failed: kl = {rmse_kl}, random = {rmse_rand}"
     );
 }

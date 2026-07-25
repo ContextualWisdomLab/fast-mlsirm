@@ -119,6 +119,18 @@
 
 ### Added
 
+- **Chang-Ying KL global-information CAT selection**
+  (`fast_mlsirm.kl_information`, `fast_mlsirm.kl_select`; in
+  `mlsirm_core::exposure`). Kullback-Leibler item index as the UNNORMALIZED
+  area of the pointwise Bernoulli divergence (expectation under the
+  provisional `theta0`) over `[theta0 - delta, theta0 + delta]` via composite
+  Simpson (2048 panels), and next-item selection with the paper's shrinking
+  half-width `delta = r / sqrt(n_administered)` (requires `n >= 1`; `r = 3`
+  default per Study 1). Administered items keep their computed index; masking
+  applies to selection only. Small-delta Fisher limit
+  `I(theta0) * delta^3 / 3` anchored by test. Paper READ (Chang & Ying, 1996,
+  doi:10.1177/014662169602000303); cross-checked against catR `KL.R`.
+
 - **Raju ICC-area DIF** (`fast_mlsirm.raju_area`; in `mlsirm_core::dif`).
   Parametric signed/unsigned area between two logistic ICCs on a common
   scale, with Raju's delta-method Z tests. Signed area `h = b_F - b_R`

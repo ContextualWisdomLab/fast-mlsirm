@@ -39,7 +39,8 @@ use mlsirm_core::dif::{
     MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
 };
 use mlsirm_core::exposure::{
-    a_stratified as core_a_stratified, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
+    a_stratified as core_a_stratified, kl_information as core_kl_information,
+    kl_select as core_kl_select, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
     SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
@@ -2200,6 +2201,61 @@ fn py_a_stratified(
     out.set_item("stage_lengths", res.stage_lengths)?;
     out.set_item("theta_rmse", res.theta_rmse)?;
     out.set_item("theta_bias", res.theta_bias)?;
+    Ok(out.into())
+}
+
+/// Chang-Ying (1996) Kullback-Leibler information index and CAT item
+/// selection (`mlsirm_core::exposure::{kl_information, kl_select}`).
+/// `kl_information` returns the UNNORMALIZED area of the pointwise Bernoulli
+/// KL divergence over `[theta0 - delta, theta0 + delta]`; `kl_select` uses
+/// `delta = r / sqrt(n_administered)` (requires `n_administered >= 1`) and
+/// returns {index, selected, delta}. Full sources and the contract are in
+/// the core rustdoc.
+///
+/// References:
+/// Chang, H.-H., & Ying, Z. (1996). A global information approach to
+/// computerized adaptive testing. Applied Psychological Measurement, 20(3),
+/// 213-229. https://doi.org/10.1177/014662169602000303
+#[pyfunction]
+fn py_kl_information(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    theta0: f64,
+    delta: f64,
+) -> PyResult<Py<numpy::PyArray1<f64>>> {
+    let v = core_kl_information(a.as_slice()?, b.as_slice()?, c.as_slice()?, theta0, delta)
+        .map_err(PyValueError::new_err)?;
+    Ok(numpy::PyArray1::from_slice(py, &v).into())
+}
+
+/// See `py_kl_information`; `administered` is a boolean mask over the pool.
+#[pyfunction]
+fn py_kl_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    theta0: f64,
+    n_administered: usize,
+    r: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_kl_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        administered.as_slice()?,
+        theta0,
+        n_administered,
+        r,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("index", numpy::PyArray1::from_slice(py, &res.index))?;
+    out.set_item("selected", res.selected)?;
+    out.set_item("delta", res.delta)?;
     Ok(out.into())
 }
 
@@ -6017,6 +6073,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
     m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_information, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
