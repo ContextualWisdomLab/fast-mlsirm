@@ -2927,11 +2927,14 @@ fn mantel_smd_pinned_fixture() {
 /// the relational check corrected MH <= uncorrected Mantel.
 #[test]
 fn mantel_smd_dichotomous_matches_mh_without_correction() {
-    // 16 persons x 2 binary items, both groups spread over several totals.
+    // 16 persons x 2 binary items, both groups spread over several totals,
+    // chosen so the summed residual is NONZERO (num = -7/9 for item 0,
+    // chi2 = 49/50 exactly): a zero-residual fixture would make chi2 = 0
+    // regardless of the variance and could not detect variance mutations.
     #[rustfmt::skip]
     let y: Vec<i64> = vec![
-        1, 1,  1, 0,  0, 1,  0, 0,  1, 1,  1, 0,  0, 1,  1, 1, // R
-        1, 0,  0, 0,  1, 1,  0, 1,  0, 0,  1, 0,  0, 1,  1, 1, // F
+        1, 0,  1, 1,  1, 0,  0, 1,  1, 1,  1, 0,  0, 0,  1, 1, // R
+        0, 1,  0, 0,  1, 0,  0, 1,  1, 1,  0, 0,  0, 1,  1, 0, // F
     ];
     let group: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
     let rows = mantel_smd_dif(&y, &group, 16, 2).unwrap();
@@ -2975,6 +2978,10 @@ fn mantel_smd_dichotomous_matches_mh_without_correction() {
         let cm: f64 = rows[i].chi2;
         let ch: f64 = mh[i].chi2_mh;
         assert!(cm.is_finite() && ch.is_finite(), "item {i}");
+        // Exact-rational pin (49/50 for both items; 2-item designs are
+        // mirror-symmetric) read from the crate value: kills variance and
+        // expectation mutations that a zero-residual fixture cannot see.
+        assert!((cm - 0.98).abs() < 1e-12, "item {i} chi2 {cm} != 49/50");
         assert!(
             (cm - chi2_ind).abs() < 1e-12,
             "item {i}: crate Mantel {cm} != independent uncorrected MH {chi2_ind}"
