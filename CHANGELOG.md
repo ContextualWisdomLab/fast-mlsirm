@@ -119,6 +119,19 @@
 
 ### Added
 
+- **Kingsbury-Zara constrained CAT (CCAT) content balancing**
+  (`fast_mlsirm.ccat_select`; in `mlsirm_core::exposure`). Single-step
+  content-balanced item selection: eligible groups with zero administered
+  items have priority, otherwise the eligible group with the maximal
+  target-minus-empirical-proportion discrepancy is chosen; within the chosen
+  group the unadministered item with maximal logistic 3PL Fisher information
+  `a^2 (Q/P) ((P-c)/(1-c))^2` is selected. Ties go to the lowest index
+  (documented deterministic deviation from catR's random tie-break).
+  Kingsbury & Zara (1989, doi:10.1207/s15324818ame0204_6) itself NOT read
+  (paywalled); the rule is implemented as reproduced by the R catR package
+  (`nextItem.R` `cbControl` branch; READ), and the information formula was
+  verified against catR `Ii.R`/`Pi.R`. Pinned oracles computed in exact
+  arithmetic by the adversarial spec review.
 - **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
   `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
   normal-approximation posterior moment updates for the 3PNO model

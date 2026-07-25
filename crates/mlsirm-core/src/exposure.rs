@@ -1054,3 +1054,189 @@ pub fn owen_cat(
         sig2,
     })
 }
+
+// ===================== Kingsbury-Zara (1989) constrained CAT content balancing =====================
+//
+// Kingsbury and Zara (1989) introduced constrained CAT (C-CAT) procedures
+// for selecting items under content-area constraints. CITATION GOVERNANCE:
+// the primary full text was NOT read (not obtainable in this environment);
+// the exact content-balancing rule implemented here follows the catR
+// `nextItem` documentation and source reproduction of the Kingsbury-Zara
+// content-balancing control (READ: catR/R/nextItem.R, cbControl branch, and
+// the nextItem manual page): first cover any content group with zero
+// administered items, then select from the eligible group maximizing
+// `target_prop - empirical_prop`, and finally choose the most informative
+// item within that group. catR breaks group/item ties RANDOMLY; this
+// implementation deterministically takes the LOWEST index (documented
+// deviation for reproducible tests). Skipping groups with no unadministered
+// item is an implementation safety rule, not verified K&Z text.
+//
+// The logistic 3PL Fisher information used within the chosen group,
+//   I_i(theta) = a_i^2 * (Q_i / P_i) * ((P_i - c_i) / (1 - c_i))^2,
+// was verified against catR's `Ii.R` (I = dP^2 / (P Q)) with `Pi.R`'s
+// P/dP at D = 1, d = 1, which reduce algebraically to this form
+// (adversarial spec review, ccat_spec_review.md).
+//
+// References:
+// Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items
+// for computerized adaptive tests. Applied Measurement in Education, 2(4),
+// 359-375. https://doi.org/10.1207/s15324818ame0204_6 (NOT read; rule per
+// the catR reproduction cited below)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+// under computerized adaptive testing with the R package catR. Journal of
+// Statistical Software, 48(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+
+/// Result of one Kingsbury-Zara constrained-CAT selection step.
+#[derive(Debug, Clone)]
+pub struct CcatSelectResult {
+    /// Selected item index (unadministered, inside `group`).
+    pub selected: usize,
+    /// Content group the selection was constrained to.
+    pub group: usize,
+    /// Per-group `target - empirical` discrepancies (diagnostics; the
+    /// zero-coverage priority rule may override the argmax of this vector).
+    pub discrepancy: Vec<f64>,
+    /// Logistic 3PL Fisher information at `theta0` for ALL items
+    /// (administered items keep their value; masking applies to selection
+    /// only, matching `kl_select`).
+    pub info: Vec<f64>,
+}
+
+/// One Kingsbury-Zara content-balanced CAT selection step. See the section
+/// comment for the exact rule, its source status, and references.
+///
+/// `groups[i]` is the content area of item `i` (must be `< targets.len()`);
+/// `targets` are strictly positive proportions summing to 1 (tol 1e-8).
+/// Errors on empty/mismatched inputs, invalid item parameters, non-finite
+/// `theta0`, invalid targets, or when no group has an unadministered item.
+pub fn ccat_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    groups: &[usize],
+    targets: &[f64],
+    administered: &[bool],
+    theta0: f64,
+) -> Result<CcatSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("ccat_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || groups.len() != n || administered.len() != n {
+        return Err(format!(
+            "ccat_select: length mismatch (a: {n}, b: {}, c: {}, groups: {}, administered: {})",
+            b.len(),
+            c.len(),
+            groups.len(),
+            administered.len()
+        ));
+    }
+    let n_groups = targets.len();
+    if n_groups == 0 {
+        return Err("ccat_select: targets must be non-empty".to_string());
+    }
+    if !theta0.is_finite() {
+        return Err("ccat_select: theta0 must be finite".to_string());
+    }
+    let mut tsum = 0.0;
+    for (g, &t) in targets.iter().enumerate() {
+        if !t.is_finite() || t <= 0.0 {
+            return Err(format!(
+                "ccat_select: targets must be finite positive, got targets[{g}] = {t}"
+            ));
+        }
+        tsum += t;
+    }
+    if (tsum - 1.0).abs() > 1e-8 {
+        return Err(format!("ccat_select: targets must sum to 1, got {tsum}"));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!(
+                "ccat_select: a must be finite positive, got a[{i}] = {}",
+                a[i]
+            ));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("ccat_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "ccat_select: c must be in [0, 1), got c[{i}] = {}",
+                c[i]
+            ));
+        }
+        if groups[i] >= n_groups {
+            return Err(format!(
+                "ccat_select: groups[{i}] = {} out of range for {n_groups} targets",
+                groups[i]
+            ));
+        }
+    }
+
+    // Administered counts and eligibility (a group is eligible if it still
+    // has at least one unadministered item).
+    let mut k_g = vec![0usize; n_groups];
+    let mut eligible = vec![false; n_groups];
+    let mut k = 0usize;
+    for i in 0..n {
+        if administered[i] {
+            k_g[groups[i]] += 1;
+            k += 1;
+        } else {
+            eligible[groups[i]] = true;
+        }
+    }
+    if !eligible.iter().any(|&e| e) {
+        return Err("ccat_select: all items administered".to_string());
+    }
+
+    let discrepancy: Vec<f64> = (0..n_groups)
+        .map(|g| targets[g] - if k > 0 { k_g[g] as f64 / k as f64 } else { 0.0 })
+        .collect();
+
+    // catR rule: any eligible group with zero administered items has
+    // priority (lowest index = documented deterministic substitute for
+    // catR's random tie); otherwise the eligible group with the maximal
+    // target-minus-empirical discrepancy wins (strict > keeps the lowest
+    // index on ties).
+    let group = match (0..n_groups).find(|&g| eligible[g] && k_g[g] == 0) {
+        Some(g) => g,
+        None => {
+            let mut best: Option<(f64, usize)> = None;
+            for g in 0..n_groups {
+                if eligible[g] && best.map_or(true, |(bd, _)| discrepancy[g] > bd) {
+                    best = Some((discrepancy[g], g));
+                }
+            }
+            best.expect("at least one eligible group").1
+        }
+    };
+
+    // Logistic 3PL Fisher information at theta0 for every item.
+    let info: Vec<f64> = (0..n)
+        .map(|i| {
+            let p = p3pl(theta0, a[i], b[i], c[i]);
+            let q = 1.0 - p;
+            let r = (p - c[i]) / (1.0 - c[i]);
+            a[i] * a[i] * (q / p) * r * r
+        })
+        .collect();
+
+    // Most informative unadministered item within the chosen group; strict >
+    // keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if groups[i] == group && !administered[i] && best.map_or(true, |(bi, _)| info[i] > bi) {
+            best = Some((info[i], i));
+        }
+    }
+    let selected = best.expect("chosen group is eligible").1;
+
+    Ok(CcatSelectResult {
+        selected,
+        group,
+        discrepancy,
+        info,
+    })
+}

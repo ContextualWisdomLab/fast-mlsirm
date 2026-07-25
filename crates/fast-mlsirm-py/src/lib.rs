@@ -39,9 +39,10 @@ use mlsirm_core::dif::{
     MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
 };
 use mlsirm_core::exposure::{
-    a_stratified as core_a_stratified, kl_information as core_kl_information,
-    kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
-    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
+    a_stratified as core_a_stratified, ccat_select as core_ccat_select,
+    kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
+    owen_update as core_owen_update, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
+    SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2325,6 +2326,58 @@ fn py_owen_cat(
     )?;
     out.set_item("mu", res.mu)?;
     out.set_item("sig2", res.sig2)?;
+    Ok(out.into())
+}
+
+/// Kingsbury & Zara (1989) constrained CAT (CCAT) content-balanced item
+/// selection (`mlsirm_core::exposure::ccat_select`). The primary source was
+/// NOT read (paywalled; https://doi.org/10.1207/s15324818ame0204_6); the rule
+/// is implemented as reproduced by the R catR package (`nextItem.R`,
+/// `cbControl`): any eligible group with zero administered items has
+/// priority, otherwise the eligible group with the maximal
+/// target-minus-empirical-proportion discrepancy wins; within the chosen
+/// group the most informative unadministered item (logistic 3PL Fisher
+/// information, no D constant) is selected. Ties go to the lowest index
+/// (documented deviation from catR's random tie-break). Returns
+/// {selected, group, discrepancy, info}.
+///
+/// References:
+/// Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items
+/// for computerized adaptive tests. Applied Measurement in Education, 2(4),
+/// 359-375. https://doi.org/10.1207/s15324818ame0204_6
+/// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+/// under computerized adaptive testing with the R package catR. Journal of
+/// Statistical Software, 48(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_ccat_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    groups: PyReadonlyArray1<'_, usize>,
+    targets: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    theta0: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_ccat_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        groups.as_slice()?,
+        targets.as_slice()?,
+        administered.as_slice()?,
+        theta0,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("selected", res.selected)?;
+    out.set_item("group", res.group)?;
+    out.set_item(
+        "discrepancy",
+        numpy::PyArray1::from_slice(py, &res.discrepancy),
+    )?;
+    out.set_item("info", numpy::PyArray1::from_slice(py, &res.info))?;
     Ok(out.into())
 }
 
@@ -6146,6 +6199,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
     m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

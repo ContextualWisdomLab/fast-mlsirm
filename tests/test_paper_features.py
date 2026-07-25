@@ -6385,3 +6385,112 @@ class TestOwenCat:
                 responses=np.array([1 + 2j, 0 + 0j]),
                 test_length=1,
             )
+
+
+class TestCcatSelect:
+    """Kingsbury & Zara (1989) CCAT content balancing (Rust core parity)."""
+
+    def _pool(self):
+        import numpy as np
+
+        return dict(
+            a=np.array([1.0, 1.5, 0.8, 2.0, 1.2, 0.9]),
+            b=np.array([-0.5, 0.2, 0.0, 0.8, -0.2, 0.4]),
+            c=np.array([0.0, 0.1, 0.0, 0.2, 0.0, 0.0]),
+            groups=np.array([0, 0, 1, 1, 0, 1]),
+            targets=np.array([0.6, 0.4]),
+        )
+
+    def test_pinned_oracle(self):
+        # Every assert reads the dict returned by the crate binding.
+        import numpy as np
+
+        from fast_mlsirm import ccat_select
+
+        p = self._pool()
+        r = ccat_select(
+            p["a"],
+            p["b"],
+            p["c"],
+            groups=p["groups"],
+            targets=p["targets"],
+            administered=np.array([True, False, False, True, False, False]),
+            theta0=0.1,
+        )
+        assert r["group"] == 0
+        assert r["selected"] == 1
+        assert abs(r["discrepancy"][0] - 0.1) < 1e-12
+        assert abs(r["info"][1] - 0.451012779418390198) < 1e-12
+        assert abs(r["info"][4] - 0.348583393587808097) < 1e-12
+
+    def test_balancing_overrides_global_max_info(self):
+        import numpy as np
+
+        from fast_mlsirm import ccat_select
+
+        p = self._pool()
+        r = ccat_select(
+            p["a"],
+            p["b"],
+            p["c"],
+            groups=p["groups"],
+            targets=p["targets"],
+            administered=np.array([True, False, False, False, False, False]),
+            theta0=0.1,
+        )
+        assert r["group"] == 1
+        assert r["selected"] == 3
+        # unconstrained max-info would have picked item 1
+        assert int(np.argmax(np.where([True] + [False] * 5, -np.inf, r["info"]))) == 1
+
+    def test_group_validation_before_cast(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import ccat_select
+
+        p = self._pool()
+        adm = np.array([False] * 6)
+        for bad in (
+            np.array([0, 0, 1, 1, 0, -1]),
+            np.array([0.0, 0.5, 1.0, 1.0, 0.0, 1.0]),
+            np.array([0, 0, 1, 1, 0, 1], dtype=complex),
+        ):
+            with pytest.raises(ValueError):
+                ccat_select(
+                    p["a"],
+                    p["b"],
+                    p["c"],
+                    groups=bad,
+                    targets=p["targets"],
+                    administered=adm,
+                    theta0=0.0,
+                )
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import ccat_select
+
+        p = self._pool()
+        with pytest.raises(ValueError):
+            ccat_select(
+                p["a"],
+                p["b"],
+                p["c"],
+                groups=p["groups"],
+                targets=np.array([0.5, 0.6]),
+                administered=np.array([False] * 6),
+                theta0=0.0,
+            )
+        with pytest.raises(ValueError):
+            ccat_select(
+                p["a"],
+                p["b"],
+                p["c"],
+                groups=p["groups"],
+                targets=p["targets"],
+                administered=np.array([True] * 6),
+                theta0=0.0,
+            )

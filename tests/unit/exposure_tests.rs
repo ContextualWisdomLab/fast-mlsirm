@@ -28,7 +28,7 @@
 //! `sh_controls_max_exposure`.
 
 use crate::exposure::{
-    a_stratified, eap_interim, kl_information, kl_select, owen_cat, owen_update, p3pl,
+    a_stratified, ccat_select, eap_interim, kl_information, kl_select, owen_cat, owen_update, p3pl,
     sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
 };
 
@@ -1091,4 +1091,227 @@ fn owen_incorrect_tail_stability() {
 #[test]
 fn owen_deep_tail_returns_err() {
     assert!(owen_update(1.0, 0.0, 0.0, false, 141.421356237, 1.0).is_err());
+}
+
+// ===================== Kingsbury-Zara CCAT content balancing =====================
+//
+// Mutation-kill audit (kills executed, recorded in the PR evidence): every
+// assert reads CcatSelectResult fields or the returned Err. Pinned oracles
+// from the adversarial spec review (>= 30 significant digits, exact
+// arithmetic); f64 tolerance 1e-12.
+//
+// - CCAT-M1 gap argmax -> argmin: killed by ccat_pinned_oracle (group flips
+//   to 1).
+// - CCAT-M2 within-group info argmax -> argmin: killed by ccat_pinned_oracle
+//   (item 1 -> item 4).
+// - CCAT-M3 zero-coverage priority dropped (always gap rule): killed by
+//   ccat_zero_coverage_priority (gap rule would pick group 0, priority
+//   demands group 2).
+// - CCAT-M4 info formula drops the guessing factor ((P-c)/(1-c))^2: killed
+//   by ccat_pinned_oracle info values.
+
+fn ccat_pool() -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<usize>, Vec<f64>) {
+    (
+        vec![1.0, 1.5, 0.8, 2.0, 1.2, 0.9],
+        vec![-0.5, 0.2, 0.0, 0.8, -0.2, 0.4],
+        vec![0.0, 0.1, 0.0, 0.2, 0.0, 0.0],
+        vec![0, 0, 1, 1, 0, 1],
+        vec![0.6, 0.4],
+    )
+}
+
+/// Pinned oracle (spec review): both groups covered, group 0 has the larger
+/// gap (0.1 vs -0.1); items 1 and 4 compete on information and item 1 wins.
+/// Info values pinned to the review's exact-arithmetic computation.
+#[test]
+fn ccat_pinned_oracle() {
+    let (a, b, c, g, t) = ccat_pool();
+    let adm = [true, false, false, true, false, false];
+    let r = ccat_select(&a, &b, &c, &g, &t, &adm, 0.1).unwrap();
+    assert_eq!(r.group, 0);
+    assert_eq!(r.selected, 1);
+    assert!((r.discrepancy[0] - 0.1).abs() < 1e-12);
+    assert!((r.discrepancy[1] - -0.1).abs() < 1e-12);
+    assert!((r.info[1] - 0.451012779418390197920232968).abs() < 1e-12);
+    assert!((r.info[4] - 0.348583393587808097407435360).abs() < 1e-12);
+    assert!((r.info[3] - 0.280386779886269687918289656).abs() < 1e-12);
+}
+
+/// Discriminating content-balancing oracle (spec review): unconstrained
+/// max-info would pick item 1 (group 0, I = 0.4510...), but group 1 has
+/// zero coverage after administering item 0, so CCAT must pick group 1 and
+/// its most informative item 3 (I = 0.2804 > I_5 = 0.1989 > I_2 = 0.1597).
+/// Kills a "global max info" mutant of the whole feature.
+#[test]
+fn ccat_balancing_overrides_global_max_info() {
+    let (a, b, c, g, t) = ccat_pool();
+    let adm = [true, false, false, false, false, false];
+    let r = ccat_select(&a, &b, &c, &g, &t, &adm, 0.1).unwrap();
+    assert_eq!(r.group, 1);
+    assert_eq!(r.selected, 3);
+    // The globally most informative item is NOT the selection.
+    let imax = (0..6)
+        .filter(|&i| !adm[i])
+        .max_by(|&x, &y| r.info[x].partial_cmp(&r.info[y]).unwrap())
+        .unwrap();
+    assert_eq!(imax, 1);
+    assert_ne!(r.selected, imax);
+}
+
+/// Zero-coverage priority beats the raw gap rule (catR nextItem.R branch:
+/// `min(empProp) == 0` short-circuits the gap comparison). 13-item pool,
+/// 3 groups, 10 administered (1 from group 0, 9 from group 1, 0 from
+/// group 2): gaps are [0.7, -0.8, 0.1], so the plain gap rule would choose
+/// group 0, but group 2 is uncovered and must win.
+#[test]
+fn ccat_zero_coverage_priority() {
+    let n = 13;
+    let a = vec![1.0; n];
+    let mut b = vec![0.0; n];
+    b[11] = 0.3; // group-2 items differ so item choice is non-trivial
+    b[12] = 0.1;
+    let c = vec![0.0; n];
+    // groups: 0,0,0 | 1 x 9 | 2,2  -> targets [0.8, 0.1, 0.1]
+    let mut g = vec![0usize; 3];
+    g.extend(std::iter::repeat(1usize).take(8));
+    g.extend([2usize, 2]);
+    let t = vec![0.8, 0.1, 0.1];
+    let mut adm = vec![false; n];
+    adm[0] = true;
+    adm[2] = true; // two from group 0
+    for x in adm.iter_mut().take(11).skip(3) {
+        *x = true; // eight from group 1
+    }
+    // k = 10, k_g = [2, 8, 0] -> f = [0.2, 0.8, 0.0], gaps [0.6, -0.7, 0.1]:
+    // the plain gap rule would choose group 0, but group 2 is uncovered.
+    let r = ccat_select(&a, &b, &c, &g, &t, &adm, 0.0).unwrap();
+    assert_eq!(r.group, 2, "uncovered group must have priority");
+    // gap rule alone would have chosen group 0:
+    let gap_argmax = (0..3)
+        .max_by(|&x, &y| r.discrepancy[x].partial_cmp(&r.discrepancy[y]).unwrap())
+        .unwrap();
+    assert_eq!(gap_argmax, 0);
+    // within group 2, item 12 (b = 0.1 closer to theta0 = 0 than b = 0.3)
+    // has higher information at equal a, c:
+    assert_eq!(r.selected, 12);
+    assert!(r.info[12] > r.info[11]);
+}
+
+/// Exhausted groups are skipped: group 1 has the max gap but no
+/// unadministered items, so the next-best eligible group is chosen.
+#[test]
+fn ccat_exhausted_group_skipped() {
+    let a = vec![1.0, 1.0, 1.0, 1.0];
+    let b = vec![0.0, 0.1, 0.2, 0.3];
+    let c = vec![0.0; 4];
+    let g = vec![0usize, 0, 1, 1];
+    let t = vec![0.2, 0.8];
+    // Both group-1 items administered: k = 2, f = [0, 1], gaps [0.2, -0.2],
+    // group 1 exhausted -> eligible only group 0... but k_0 = 0 so the
+    // zero-priority rule also lands on group 0. Force covered case instead:
+    let adm = [true, false, true, true];
+    // k = 3, k_0 = 1, k_1 = 2 -> f = [1/3, 2/3], gaps [ -0.1333, 0.1333 ].
+    // Group 1 has the max gap but is exhausted; group 0 must be chosen.
+    let r = ccat_select(&a, &b, &c, &g, &t, &adm, 0.0).unwrap();
+    assert_eq!(r.group, 0);
+    assert_eq!(r.selected, 1);
+    assert!(r.discrepancy[1] > r.discrepancy[0], "gap favored group 1");
+}
+
+/// Error paths: every case reads the returned Err.
+#[test]
+fn ccat_error_paths() {
+    let a = vec![1.0, 1.0];
+    let b = vec![0.0, 0.0];
+    let c = vec![0.0, 0.0];
+    let g = vec![0usize, 1];
+    let t = vec![0.5, 0.5];
+    let adm = [false, false];
+    assert!(ccat_select(&[], &[], &[], &[], &[], &[], 0.0).is_err());
+    assert!(ccat_select(&a, &b[..1], &c, &g, &t, &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &c, &[0, 2], &t, &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &c, &g, &[0.5, 0.6], &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &c, &g, &[1.0, 0.0], &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &c, &g, &[], &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &c, &g, &t, &adm, f64::NAN).is_err());
+    assert!(ccat_select(&a, &b, &c, &g, &t, &[true, true], 0.0).is_err());
+    assert!(ccat_select(&[1.0, -1.0], &b, &c, &g, &t, &adm, 0.0).is_err());
+    assert!(ccat_select(&a, &b, &[0.0, 1.0], &g, &t, &adm, 0.0).is_err());
+}
+
+/// MC-500 (#[ignore]): 500 random pools/masks; structural invariants of the
+/// catR-reproduced rule, all read from CcatSelectResult: the selection is
+/// unadministered and inside the chosen group; the chosen group is eligible;
+/// if every eligible group is covered, the chosen group attains the maximal
+/// eligible discrepancy; if some eligible group is uncovered, the chosen
+/// group is the lowest-index uncovered eligible group; the selected item
+/// maximizes info within the chosen group (lowest index on ties).
+#[test]
+#[ignore]
+fn ccat_mc500_invariants() {
+    let mut rng = Lcg(0x0CCA_1989);
+    for rep in 0..500 {
+        let n = 5 + (rng.next_f64() * 20.0) as usize;
+        let n_groups = 2 + (rng.next_f64() * 3.0) as usize;
+        let mut a = Vec::with_capacity(n);
+        let mut b = Vec::with_capacity(n);
+        let mut c = Vec::with_capacity(n);
+        let mut g = Vec::with_capacity(n);
+        for i in 0..n {
+            a.push(0.5 + 1.5 * rng.next_f64());
+            b.push(-2.0 + 4.0 * rng.next_f64());
+            c.push(0.25 * rng.next_f64());
+            g.push(if i < n_groups {
+                i // guarantee every group is non-empty
+            } else {
+                (rng.next_f64() * n_groups as f64) as usize % n_groups
+            });
+        }
+        let mut t: Vec<f64> = (0..n_groups).map(|_| 0.1 + rng.next_f64()).collect();
+        let s: f64 = t.iter().sum();
+        for x in t.iter_mut() {
+            *x /= s;
+        }
+        let mut adm: Vec<bool> = (0..n).map(|_| rng.next_f64() < 0.5).collect();
+        if adm.iter().all(|&x| x) {
+            adm[rep % n] = false;
+        }
+        let theta0 = -1.0 + 2.0 * rng.next_f64();
+        let r = ccat_select(&a, &b, &c, &g, &t, &adm, theta0).unwrap();
+        assert!(!adm[r.selected], "rep {rep}: selected already administered");
+        assert_eq!(g[r.selected], r.group, "rep {rep}: item outside group");
+        let eligible: Vec<usize> = (0..n_groups)
+            .filter(|&gg| (0..n).any(|i| g[i] == gg && !adm[i]))
+            .collect();
+        assert!(eligible.contains(&r.group), "rep {rep}: ineligible group");
+        let k_g: Vec<usize> = (0..n_groups)
+            .map(|gg| (0..n).filter(|&i| g[i] == gg && adm[i]).count())
+            .collect();
+        let uncovered: Vec<usize> = eligible
+            .iter()
+            .cloned()
+            .filter(|&gg| k_g[gg] == 0)
+            .collect();
+        if let Some(&first) = uncovered.first() {
+            assert_eq!(r.group, first, "rep {rep}: zero-coverage priority");
+        } else {
+            let best = eligible
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, |m, gg| m.max(r.discrepancy[gg]));
+            assert!(
+                r.discrepancy[r.group] >= best - 1e-15,
+                "rep {rep}: gap rule violated"
+            );
+        }
+        for i in 0..n {
+            if g[i] == r.group && !adm[i] {
+                assert!(
+                    r.info[r.selected] >= r.info[i]
+                        || (r.info[r.selected] == r.info[i] && r.selected <= i),
+                    "rep {rep}: info rule violated"
+                );
+            }
+        }
+    }
 }
