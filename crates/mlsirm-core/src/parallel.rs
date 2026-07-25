@@ -120,6 +120,9 @@ pub fn parallel_analysis(
     if data.iter().any(|v| !v.is_finite()) {
         return Err("data must be finite (no NaN/inf; complete data required)".into());
     }
+    let sim_len = n_iterations
+        .checked_mul(n_items)
+        .ok_or("n_iterations * n_items overflows usize")?;
 
     let corr = correlation_matrix(data, n_persons, n_items)?;
     let eigenvalues = symmetric_eigenvalues_desc(&corr, n_items)?;
@@ -150,9 +153,6 @@ pub fn parallel_analysis(
         }
     } else {
         // Quantile path: must store all per-iteration eigenvalues.
-        let sim_len = n_iterations
-            .checked_mul(n_items)
-            .ok_or("n_iterations * n_items overflows usize")?;
         let mut sim = vec![0.0_f64; sim_len];
         for k in 0..n_iterations {
             for cell in rand_data.iter_mut() {
