@@ -386,8 +386,9 @@ def fit_lsirm_polytomous(
 ) -> PolyLsirmFit:
     """Fit a latent-space polytomous LSIRM (GRM/GPCM cell in an interaction map)
     by marginal EM — all compute in the Rust core (``poly_marginal``). The
-    distance weight is fixed to 1 (Go et al. 2024 identification); positions are
-    identified up to rotation/reflection/translation. ``NaN`` marks missing.
+    distance weight is fixed to 1 as this crate's scale-identification choice;
+    positions are identified up to rotation/reflection/translation. ``NaN`` marks
+    missing.
     ``n_cat`` is limited to 2..64 and ``max_iter`` to 1..100,000.
     """
     m = str(model).lower()

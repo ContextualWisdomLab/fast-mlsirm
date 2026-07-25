@@ -75,6 +75,28 @@ fn poly_marginal_boundaries_and_grm_paths_are_explicit() {
     assert!(fit_poly_lsirm(&[], None, 0, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
     assert!(fit_poly_lsirm(&[], None, 1, 0, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
     assert!(fit_poly_lsirm(&[], None, 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6).is_err());
+    let overflow_lsirm = std::panic::catch_unwind(|| {
+        fit_poly_lsirm(
+            &[],
+            None,
+            usize::MAX / 2 + 1,
+            2,
+            2,
+            1,
+            PolyModel::Grm,
+            7,
+            7,
+            1,
+            1e-6,
+        )
+    });
+    assert!(
+        overflow_lsirm.is_ok(),
+        "overflowed poly LSIRM shape must return an error instead of panicking"
+    );
+    // Reads crate Result. Kills the mutation that multiplies n_persons*n_items
+    // directly before checking response length.
+    assert!(overflow_lsirm.unwrap().is_err());
     assert!(fit_poly_lsirm(&[0], Some(&[]), 1, 1, 2, 1, PolyModel::Grm, 7, 7, 1, 1e-6,).is_err());
     assert!(fit_poly_lsirm(
         &[3],
