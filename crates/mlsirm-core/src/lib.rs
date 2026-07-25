@@ -1,7 +1,7 @@
 pub mod agreement;
 pub mod cdm;
-pub mod crm;
 pub mod classification;
+pub mod crm;
 pub mod detect;
 pub mod dif;
 pub mod equating;
@@ -34,6 +34,7 @@ pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
 pub mod scoring;
+pub mod security;
 pub mod subscores;
 pub mod testlet;
 pub mod twopl;

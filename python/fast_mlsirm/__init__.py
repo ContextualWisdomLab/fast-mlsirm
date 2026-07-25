@@ -44,6 +44,10 @@ from .detect import (
     dimtest as dimtest,
     DimtestResult as DimtestResult,
 )
+from .security import (
+    wollack_omega as wollack_omega,
+    WollackOmegaResult as WollackOmegaResult,
+)
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
@@ -224,6 +228,7 @@ __all__ = [
     "SubscoreResult",
     "detect_analysis",
     "dimtest",
+    "wollack_omega",
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
@@ -269,6 +274,7 @@ __all__ = [
     "ClassificationResult",
     "DetectResult",
     "DimtestResult",
+    "WollackOmegaResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

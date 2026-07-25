@@ -119,6 +119,27 @@
 
 ### Added
 
+- **Omega answer-copying statistic (Wollack-style)**
+  (`fast_mlsirm.wollack_omega`; in Rust `mlsirm_core::security::wollack_omega`,
+  PyO3 `py_wollack_omega`): standardized index of answer similarity between a
+  suspected copier and a source. `h` counts identical observed options,
+  `p_i = P_i[source_i]` is the copier's model-implied probability of the
+  source's observed option, `omega = (h - sum p_i)/sqrt(sum p_i (1 - p_i))`
+  with a one-sided upper-tail normal p-value. Formula verified against two
+  independently READ implementations: the CRAN CopyDetect R sources
+  (`similarity1.r`/`similarity2.r`) and the aberrance package
+  (`compute_OMG`); NOT read: Wollack (1997, *Applied Psychological
+  Measurement, 21*(4), 307-320) itself (access blocked) — cited only as
+  implemented by those sources. CopyDetect's printed docs flip the sign
+  (`(E-h)/sqrt(V)`) but both source files use `(h-E)/sqrt(V)`; the source
+  convention is implemented. Scope: omega only — no g2/GBT/K-index, no
+  continuity correction, no missing responses; the caller supplies the
+  copier's fitted option probabilities (e.g. from a nominal response model).
+  Pinned against an independent Python oracle at 1e-12 (p-values 5e-7 via
+  crate erfc); error paths, structural single-item-extension invariant, and
+  a 500-rep Monte Carlo size/power check (`#[ignore]`); 3 executed mutation
+  kills (V-vs-sqrt(V) scaling, copier-probability lookup, two-sided p).
+
 - **DIMTEST test of essential unidimensionality (original Stout-style
   AT1/AT2 statistic)** (`fast_mlsirm.dimtest`; in Rust
   `mlsirm_core::detect::dimtest`, PyO3 `py_dimtest`): confirmatory
