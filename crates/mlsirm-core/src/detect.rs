@@ -216,8 +216,7 @@ pub fn detect_analysis(
     for &x in responses {
         if x != 0.0 && x != 1.0 {
             return Err(
-                "detect: responses must be exactly 0 or 1 (missing data not supported)"
-                    .to_string(),
+                "detect: responses must be exactly 0 or 1 (missing data not supported)".to_string(),
             );
         }
     }
@@ -287,8 +286,7 @@ pub fn detect_analysis(
     }
     if sum_abs == 0.0 {
         return Err(
-            "detect: all conditional covariances are zero; RATIO is undefined (0/0)"
-                .to_string(),
+            "detect: all conditional covariances are zero; RATIO is undefined (0/0)".to_string(),
         );
     }
     Ok(DetectResult {
@@ -301,6 +299,241 @@ pub fn detect_analysis(
         pair_i,
         pair_j,
         ccov,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Confirmatory Stout-style DIMTEST statistic for complete binary responses.
+//
+// READ sources: formulas for the original AT1/AT2 statistic were transcribed
+// from Nandakumar & Stout's 1992 ERIC technical-report version (ED351383) of
+// "Refinements of Stout's Procedure for Assessing Latent Trait
+// Unidimensionality" (published 1993, Journal of Educational Statistics,
+// 18(1), 41-68), especially the section that describes Stout (1987, Sec. 4):
+// the AT1/AT2/PT split, PT-score subgroups with too-few-examinee elimination
+// (Jmin = 20 recommended), the subgroup variance estimates
+// `sigma_hat_k^2` (ML, divide by J_k) and unidimensional
+// `sigma_hat_U,k^2 = M^-2 sum_i p_hat_i(1 - p_hat_i)`, the standard-error
+// estimate
+// `S_k^2 = [(mu_hat_4,k - sigma_hat_k^4) + delta_hat_4,k / M^4
+//           + 2 sqrt((mu_hat_4,k - sigma_hat_k^4) delta_hat_4,k / M^4)] / J_k`
+// with `delta_hat_4,k = sum_i p_hat_i(1-p_hat_i)(1-2 p_hat_i)^2`, the
+// normalized sum `T_L = K^{-1/2} sum_k (sigma_hat_k^2 - sigma_hat_U,k^2)/S_k`,
+// the same computation on AT2 giving T_B, the bias-corrected statistic
+// `T = (T_L - T_B)/sqrt(2)`, and the one-sided rejection rule `T > Z_alpha`.
+// Kieftenbeld & Nandakumar (2015, PMC5978610) was READ for the distinction
+// between the original second-AT bias correction and the later
+// bootstrap-based "current" DIMTEST (Stout et al., 2001).
+//
+// NOT READ: Stout (1987) original Psychometrika article, Stout et al. (2001),
+// Froelich & Habing (2008), and the DIM-Pack source code were not available
+// as inspectable sources. Stout (1987) is cited only as described by
+// Nandakumar & Stout (1992/1993).
+//
+// Scope: caller-supplied confirmatory AT1/AT2 only. No ATFIND, no automatic
+// difficulty matching, no DIMTEST 2 / bootstrap bias correction, no
+// polytomous items, no missing data.
+//
+// References:
+//
+// Nandakumar, R., & Stout, W. (1993). Refinements of Stout's procedure for
+// assessing latent trait unidimensionality. Journal of Educational
+// Statistics, 18(1), 41-68. https://doi.org/10.2307/1165182 (READ as the
+// 1992 ERIC technical report ED351383)
+//
+// Stout, W. (1987). A nonparametric approach for assessing latent trait
+// unidimensionality. Psychometrika, 52(4), 589-617. (NOT read; as described
+// by Nandakumar & Stout, 1992/1993)
+//
+// Kieftenbeld, V., & Nandakumar, R. (2015). Alternative hypothesis testing
+// procedures for DIMTEST. Applied Psychological Measurement, 39(6), 480-493.
+// (READ via PMC5978610)
+// ---------------------------------------------------------------------------
+
+/// Result of the confirmatory Stout-style DIMTEST statistic.
+#[derive(Debug, Clone)]
+pub struct DimtestResult {
+    /// Bias-corrected statistic `T = (T_L - T_B) / sqrt(2)`.
+    pub t: f64,
+    /// AT1 statistic `T_L`.
+    pub t_l: f64,
+    /// AT2 bias-correction statistic `T_B`.
+    pub t_b: f64,
+    /// One-sided upper-tail p-value `1 - Phi(T)`.
+    pub p_value: f64,
+    /// Number of retained PT-score groups (`J_k >= 20`).
+    pub groups_used: usize,
+    /// Number of examinees discarded with too-small groups.
+    pub n_discarded: usize,
+    /// Raw PT total scores of the retained groups, ascending.
+    pub retained_pt_scores: Vec<i64>,
+}
+
+/// Minimum retained PT-score group size (Nandakumar & Stout, 1992/1993:
+/// "Jmin=20 recommended"). Fixed, not caller-tunable, to keep the pinned
+/// contract exact.
+const DIMTEST_JMIN: usize = 20;
+
+/// Normalized subgroup sum for one assessment subtest: returns
+/// `K^{-1/2} sum_k (sigma_hat_k^2 - sigma_hat_U,k^2) / S_k` computed on the
+/// raw-total-score scale, which is algebraically identical to the
+/// average-score (divide-by-M) scale because numerator and S_k both scale by
+/// `M^2` exactly.
+fn dimtest_stat(
+    groups: &[Vec<usize>],
+    responses: &[f64],
+    n_items: usize,
+    subtest: &[usize],
+) -> Result<f64, String> {
+    let k_groups = groups.len() as f64;
+    let mut sum = 0.0;
+    for idx in groups {
+        let jk = idx.len() as f64;
+        // Raw AT total per retained person in this group.
+        let totals: Vec<f64> = idx
+            .iter()
+            .map(|&p| subtest.iter().map(|&i| responses[p * n_items + i]).sum())
+            .collect();
+        let mean = totals.iter().sum::<f64>() / jk;
+        let mut v = 0.0;
+        let mut mu4 = 0.0;
+        for &a in &totals {
+            let d = a - mean;
+            v += d * d;
+            mu4 += d * d * d * d;
+        }
+        v /= jk;
+        mu4 /= jk;
+        // Item proportions correct within the group.
+        let mut u = 0.0;
+        let mut delta4 = 0.0;
+        for &i in subtest {
+            let p = idx.iter().map(|&q| responses[q * n_items + i]).sum::<f64>() / jk;
+            let pq = p * (1.0 - p);
+            u += pq;
+            let c = 1.0 - 2.0 * p;
+            delta4 += pq * c * c;
+        }
+        let aterm = (mu4 - v * v).max(0.0);
+        let s2 = (aterm + delta4 + 2.0 * (aterm * delta4).sqrt()) / jk;
+        if s2 <= 0.0 {
+            return Err("dimtest: a retained group has zero standard error (S_k = 0)".to_string());
+        }
+        sum += (v - u) / s2.sqrt();
+    }
+    Ok(sum / k_groups.sqrt())
+}
+
+/// Confirmatory Stout-style DIMTEST of essential unidimensionality.
+///
+/// `responses` is row-major `n_persons x n_items` with entries exactly 0.0 or
+/// 1.0 (missing data rejected). `at1` and `at2` are caller-supplied item
+/// index sets (assessment subtests); the partitioning subtest PT is the
+/// complement. Persons are grouped by raw PT total score; groups with fewer
+/// than 20 examinees are discarded. Returns `T = (T_L - T_B)/sqrt(2)` with a
+/// one-sided upper-tail p-value.
+pub fn dimtest(
+    responses: &[f64],
+    n_persons: usize,
+    n_items: usize,
+    at1: &[usize],
+    at2: &[usize],
+) -> Result<DimtestResult, String> {
+    if n_persons == 0 {
+        return Err("dimtest: need at least 1 person".to_string());
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or_else(|| "dimtest: n_persons * n_items overflows".to_string())?;
+    if responses.len() != expected {
+        return Err(format!(
+            "dimtest: responses length {} != n_persons {} x n_items {}",
+            responses.len(),
+            n_persons,
+            n_items
+        ));
+    }
+    for &x in responses {
+        if x != 0.0 && x != 1.0 {
+            return Err(
+                "dimtest: responses must be exactly 0 or 1 (missing data not supported)"
+                    .to_string(),
+            );
+        }
+    }
+    if at1.len() < 4 || at1.len() != at2.len() {
+        return Err("dimtest: AT1 and AT2 must have equal length >= 4 items".to_string());
+    }
+    let mut role = vec![0u8; n_items]; // 0 = PT, 1 = AT1, 2 = AT2
+    for &i in at1 {
+        if i >= n_items {
+            return Err(format!("dimtest: AT1 index {} out of range", i));
+        }
+        if role[i] != 0 {
+            return Err(format!("dimtest: duplicate AT1 index {}", i));
+        }
+        role[i] = 1;
+    }
+    for &i in at2 {
+        if i >= n_items {
+            return Err(format!("dimtest: AT2 index {} out of range", i));
+        }
+        if role[i] != 0 {
+            return Err(format!("dimtest: AT2 index {} duplicates AT1/AT2", i));
+        }
+        role[i] = 2;
+    }
+    let pt: Vec<usize> = (0..n_items).filter(|&i| role[i] == 0).collect();
+    if pt.is_empty() {
+        return Err("dimtest: partitioning subtest PT is empty".to_string());
+    }
+
+    // Group persons by raw PT total score (exact integers in f64).
+    let mut pt_score: Vec<i64> = vec![0; n_persons];
+    for (p, s) in pt_score.iter_mut().enumerate() {
+        *s = pt.iter().map(|&i| responses[p * n_items + i] as i64).sum();
+    }
+    let mut order: Vec<usize> = (0..n_persons).collect();
+    order.sort_unstable_by_key(|&p| pt_score[p]);
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut retained_pt_scores: Vec<i64> = Vec::new();
+    let mut n_discarded = 0usize;
+    let mut start = 0;
+    while start < order.len() {
+        let s = pt_score[order[start]];
+        let mut end = start + 1;
+        while end < order.len() && pt_score[order[end]] == s {
+            end += 1;
+        }
+        if end - start >= DIMTEST_JMIN {
+            groups.push(order[start..end].to_vec());
+            retained_pt_scores.push(s);
+        } else {
+            n_discarded += end - start;
+        }
+        start = end;
+    }
+    if groups.len() < 2 {
+        return Err(format!(
+            "dimtest: only {} PT-score group(s) with >= {} examinees; need at least 2",
+            groups.len(),
+            DIMTEST_JMIN
+        ));
+    }
+
+    let t_l = dimtest_stat(&groups, responses, n_items, at1)?;
+    let t_b = dimtest_stat(&groups, responses, n_items, at2)?;
+    let t = (t_l - t_b) / std::f64::consts::SQRT_2;
+    // One-sided upper tail: 1 - Phi(t) = 0.5 * erfc(t / sqrt(2)).
+    let p_value = 0.5 * crate::fitstats::erfc(t / std::f64::consts::SQRT_2);
+    Ok(DimtestResult {
+        t,
+        t_l,
+        t_b,
+        p_value,
+        groups_used: groups.len(),
+        n_discarded,
+        retained_pt_scores,
     })
 }
 

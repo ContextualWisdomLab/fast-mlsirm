@@ -119,6 +119,28 @@
 
 ### Added
 
+- **DIMTEST test of essential unidimensionality (original Stout-style
+  AT1/AT2 statistic)** (`fast_mlsirm.dimtest`; in Rust
+  `mlsirm_core::detect::dimtest`, PyO3 `py_dimtest`): confirmatory
+  hypothesis test with caller-supplied assessment subtests AT1/AT2 (equal
+  length >= 4, disjoint) and the complementary partitioning subtest PT;
+  examinees are grouped by raw PT total score (groups smaller than 20
+  discarded), within each retained group the observed ML variance of AT
+  totals is compared to the local-independence variance
+  `sum_i p_i (1 - p_i)` normalized by Stout's standard-error estimate
+  `S_k`, giving `T_L = K^{-1/2} sum_k (sigma_k^2 - sigma_U,k^2)/S_k`, the
+  AT2 bias correction `T_B`, and `T = (T_L - T_B)/sqrt(2)` with a one-sided
+  upper-tail normal p-value. Formulas transcribed from Nandakumar & Stout's
+  1992 ERIC technical report ED351383 (published 1993, *Journal of
+  Educational Statistics, 18*(1), 41-68), which describes Stout (1987,
+  Sec. 4); Kieftenbeld & Nandakumar (2015, PMC5978610) READ for the
+  original-vs-bootstrap bias-correction distinction. NOT read: Stout (1987)
+  original article, Stout et al. (2001), Froelich & Habing (2008), DIM-Pack
+  sources — no ATFIND, no DIMTEST 2 / bootstrap correction, no polytomous
+  items, no missing data. Pinned against an independent NumPy oracle
+  (500x18 two-dimensional fixture, agreement 1e-12 on `T_L`/`T_B`/`T`;
+  p-value at 5e-7 due to the crate's Numerical Recipes `erfc`).
+
 - **Confidence-interval (ACI) classification for CAT**
   (`fast_mlsirm.ci_classify`; in Rust `mlsirm_core::exposure::ci_classify`,
   PyO3 `py_ci_classify`): single-cut binary-response classification by

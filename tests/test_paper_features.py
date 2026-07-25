@@ -6809,3 +6809,76 @@ class TestCiClassify:
                 theta_cut=0.0,
                 z_crit=0.0,
             )
+
+class TestDimtest:
+    """Stout-style DIMTEST (Nandakumar & Stout, 1993 formulas).
+
+    The oracle values were computed by an independent NumPy script (never
+    imports the crate); the dataset is regenerated here from the same seed.
+    Every assert reads values returned by the crate via the wrapper.
+    """
+
+    @staticmethod
+    def _fixture():
+        import math
+
+        rng = np.random.default_rng(20260726)
+        n = 500
+        z1 = rng.standard_normal(n)
+        z2 = 0.30 * z1 + math.sqrt(1 - 0.09) * rng.standard_normal(n)
+        items = [(0, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.20, b) for b in (-1.4, -1.0, -0.6, -0.2, 0.2, 0.6, 1.0, 1.4)]
+        p = np.empty((n, len(items)))
+        for j, (dim, a, b) in enumerate(items):
+            th = z1 if dim == 0 else z2
+            p[:, j] = 1 / (1 + np.exp(-a * (th - b)))
+        return (rng.random(p.shape) < p).astype(np.float64)
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        r = dimtest(y, at1=np.arange(5), at2=np.arange(5, 10))
+        assert abs(r.t_l - 8.5848469411043151) < 1e-12
+        assert abs(r.t_b - 3.6579307315481961) < 1e-12
+        assert abs(r.t - 3.4838558621150524) < 1e-12
+        # crate erfc is a 1.2e-7-accurate approximation; anchor p at 5e-7.
+        assert abs(r.p_value - 0.000247122791999742) < 5e-7
+        assert r.groups_used == 8
+        assert r.n_discarded == 17
+        assert r.retained_pt_scores.tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def test_rejects_overlap_and_short_at(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="duplicates"):
+            dimtest(y, at1=[0, 1, 2, 3], at2=[3, 4, 5, 6])
+        with pytest.raises(ValueError, match=">= 4"):
+            dimtest(y, at1=[0, 1, 2], at2=[3, 4, 5])
+
+    def test_rejects_non_binary_and_complex(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        bad = y.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            dimtest(bad, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="real-valued"):
+            dimtest(y.astype(complex), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+    def test_rejects_fractional_indices(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="integers"):
+            dimtest(y, at1=[0.5, 1, 2, 3], at2=[4, 5, 6, 7])
+
+    def test_too_few_groups_errors(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()[:30]
+        with pytest.raises(ValueError, match="need at least 2"):
+            dimtest(y, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
