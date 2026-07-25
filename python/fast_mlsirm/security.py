@@ -129,3 +129,108 @@ def wollack_omega(
         omega=float(res["omega"]),
         p_value=float(res["p_value"]),
     )
+
+@dataclass
+class KIndexResult:
+    """K-index of matching incorrect answers for one (copier, source) pair.
+
+    ``k_index`` is the binomial upper tail ``P(Bin(ws, p) >= m)``; small
+    values suggest the copier's incorrect answers match the source's more
+    often than the number-incorrect subgroup baseline predicts."""
+
+    wc: int
+    ws: int
+    m: int
+    subgroup: np.ndarray
+    emp_agg: np.ndarray
+    p: float
+    k_index: float
+
+
+def k_index(
+    responses: np.ndarray,
+    copier: int,
+    source: int,
+) -> KIndexResult:
+    """K-index of matching incorrect answers (compute in Rust), a faithful
+    port of the CRAN CopyDetect package's internal ``k()``.
+
+    ``wc``/``ws`` are the copier's/source's number-incorrect scores and
+    ``m`` counts items both answered incorrectly. The subgroup is EVERY
+    examinee whose number-incorrect equals ``wc`` -- including the copier
+    itself and, when scores match, the source (CopyDetect convention; the
+    paper-style source exclusion is NOT applied, and the copier's
+    self-inclusion biases ``p`` upward, making K conservative). ``p =
+    mean(emp_agg) / ws`` where ``emp_agg[r]`` counts items incorrect for
+    both subgroup member ``r`` and the source; ``K = P(Bin(ws, p) >= m)``.
+    A source with no incorrect answers (``ws == 0``) is degenerate and
+    raises. READ: CopyDetect ``R/similarity1.r`` (ported function),
+    corroborated by ``R/similarity2.r``. The aberrance package was checked
+    and has NO K-index. NOT READ: Holland (1996, ETS RR-96-07) and
+    Sotaridona & Meijer (2002, *JEM, 39*(2), 115-132); the K-index is cited
+    only as implemented by CopyDetect. Sotaridona & Meijer (2001, Twente
+    RR-01-07, ERIC ED467373) was READ for background corroboration only.
+
+    In LLM-as-a-Judge quality management this flags judge pairs whose
+    shared errors exceed the error-rate-matched baseline (e.g. one judge
+    copying another's mistakes).
+
+    ``responses`` is an ``n_persons x n_items`` scored matrix with entries
+    exactly 0 (incorrect) or 1 (correct), no missing data;
+    ``copier``/``source`` are distinct row indices.
+
+    References
+    ----------
+    Holland, P. W. (1996). *Assessing unusual agreement between the
+    incorrect answers of two examinees using the K-index* (RR-96-07). ETS.
+    (NOT READ.)
+    Sotaridona, L. S., & Meijer, R. R. (2001). *Two new statistics to
+    detect answer copying* (RR-01-07; ERIC ED467373). University of Twente.
+    (READ; background only.)
+    Sotaridona, L. S., & Meijer, R. R. (2002). Statistical properties of
+    the K-index for detecting answer copying. *Journal of Educational
+    Measurement, 39*(2), 115-132. (NOT READ.)
+    Zopluoglu, C. (2018). *CopyDetect* (R package). (READ: R sources;
+    ported implementation.)
+    """
+    for name, idx in (("copier", copier), ("source", source)):
+        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
+            raise ValueError(f"{name} must be an integer row index")
+        if idx < 0:
+            raise ValueError(f"{name} must be nonnegative")
+    copier = int(copier)
+    source = int(source)
+
+    x = np.asarray(responses)
+    if x.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items matrix")
+    if x.shape[0] < 2 or x.shape[1] < 1:
+        raise ValueError("responses needs at least 2 persons and 1 item")
+    if np.iscomplexobj(x):
+        raise ValueError("responses must be real-valued")
+    if x.dtype.kind not in ("i", "u", "f"):
+        raise ValueError("responses must be an integer or float array")
+    xf = np.ascontiguousarray(x, dtype=np.float64)
+    if not np.all((xf == 0.0) | (xf == 1.0)):
+        raise ValueError("responses entries must be exactly 0 or 1 (no missing)")
+    n_persons, n_items = xf.shape
+    if copier >= n_persons or source >= n_persons:
+        raise ValueError("copier and source must be valid row indices")
+    if copier == source:
+        raise ValueError("copier and source must be distinct")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_k_index"):
+        raise RuntimeError("k_index requires the compiled Rust core")
+    res = core.py_k_index(xf.ravel(), n_persons, n_items, copier, source)
+    return KIndexResult(
+        wc=int(res["wc"]),
+        ws=int(res["ws"]),
+        m=int(res["m"]),
+        subgroup=np.asarray(res["subgroup"], dtype=np.int64),
+        emp_agg=np.asarray(res["emp_agg"], dtype=np.int64),
+        p=float(res["p"]),
+        k_index=float(res["k_index"]),
+    )

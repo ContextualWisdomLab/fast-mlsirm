@@ -107,6 +107,7 @@ use mlsirm_core::scoring::{
     score_map as core_score_map, score_wle as core_score_wle,
     score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
+use mlsirm_core::security::k_index as core_k_index;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
@@ -1792,6 +1793,42 @@ fn py_wollack_omega(
     out.set_item("variance", res.variance)?;
     out.set_item("omega", res.omega)?;
     out.set_item("p_value", res.p_value)?;
+    Ok(out.into())
+}
+
+/// K-index of matching incorrect answers
+/// (`mlsirm_core::security::k_index`), a faithful port of the CRAN
+/// CopyDetect package's internal `k()` (READ: `R/similarity1.r`,
+/// corroborated by `R/similarity2.r`). NOT READ: Holland (1996, ETS
+/// RR-96-07) and Sotaridona & Meijer (2002, *JEM, 39*(2), 115-132); the
+/// K-index is cited only as implemented by CopyDetect. The subgroup is
+/// every examinee whose number-incorrect equals the copier's — including
+/// the copier itself and, when scores match, the source (CopyDetect
+/// convention; the paper-style source exclusion is NOT applied).
+///
+/// `responses` is a flattened row-major `n_persons * n_items` scored 0/1
+/// matrix (no missing data). Returns a dict with `wc`, `ws`, `m`,
+/// `subgroup`, `emp_agg`, `p`, and the upper-tail `k_index`
+/// `P(Bin(ws, p) >= m)`.
+#[pyfunction]
+fn py_k_index(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    copier: usize,
+    source: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_k_index(responses.as_slice()?, n_persons, n_items, copier, source)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("wc", res.wc)?;
+    out.set_item("ws", res.ws)?;
+    out.set_item("m", res.m)?;
+    out.set_item("subgroup", res.subgroup)?;
+    out.set_item("emp_agg", res.emp_agg)?;
+    out.set_item("p", res.p)?;
+    out.set_item("k_index", res.k_index)?;
     Ok(out.into())
 }
 
@@ -6417,6 +6454,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
     m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
+    m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

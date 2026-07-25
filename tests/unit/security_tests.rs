@@ -205,3 +205,182 @@ fn monte_carlo_omega_size_and_power() {
     assert!(size < 0.10, "empirical size {}", size);
     assert!(power > 0.8, "empirical power {}", power);
 }
+
+// ---------------------------------------------------------------------------
+// K-index tests. Oracle: independent Python computation (math.comb exact
+// binomial) from the adversarial spec review; fixture 10 persons x 10 items,
+// copier = row 2, source = row 7.
+// ---------------------------------------------------------------------------
+
+fn k_fixture() -> Vec<f64> {
+    let rows: [[u8; 10]; 10] = [
+        [1, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+        [0, 0, 1, 0, 1, 1, 0, 0, 1, 0],
+        [1, 0, 0, 1, 0, 1, 0, 0, 0, 1],
+        [1, 1, 1, 0, 0, 0, 1, 1, 0, 0],
+        [1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 1, 1, 0, 1, 1],
+        [0, 1, 0, 1, 1, 0, 0, 1, 0, 1],
+        [0, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+        [0, 1, 0, 1, 1, 1, 1, 0, 0, 1],
+        [1, 0, 1, 1, 0, 1, 1, 0, 0, 1],
+    ];
+    rows.iter().flatten().map(|&x| x as f64).collect()
+}
+
+/// Asserts read: KIndexResult.{wc, ws, m, subgroup, emp_agg, p, k_index}
+/// returned by the crate on the pinned fixture. Killed by: p from the
+/// copier pair only (K -> 0.66304000000000007), lower tail
+/// (K -> 0.43768493827160498), off-by-one upper tail P(Bin >= m+1)
+/// (K -> 0.56231506172839507), matching correct (1,1) pairs
+/// (K -> 0.86831275720164613), subgroup keyed on the source's ws
+/// (K -> 0.96921999999999997) — all differ from the true K by > 1e-6.
+#[test]
+fn k_index_pinned_oracle() {
+    let x = k_fixture();
+    let r = k_index(&x, 10, 10, 2, 7).unwrap();
+    assert_eq!(r.wc, 6);
+    assert_eq!(r.ws, 5);
+    assert_eq!(r.m, 2);
+    assert_eq!(r.subgroup, vec![1, 2, 5]);
+    assert_eq!(r.emp_agg, vec![3, 2, 3]);
+    assert!((r.p - 0.53333333333333333).abs() < 1e-12, "p {}", r.p);
+    assert!(
+        (r.k_index - 0.85139489711934158).abs() < 1e-12,
+        "K {}",
+        r.k_index
+    );
+}
+
+/// Subgroup membership: the copier is always in its own subgroup, and the
+/// source IS included when its number-incorrect equals the copier's
+/// (CopyDetect convention, paper-source-excluded convention NOT applied).
+/// Asserts read: KIndexResult.subgroup from the crate.
+#[test]
+fn k_index_subgroup_includes_copier_and_matching_source() {
+    let x = k_fixture();
+    let base = k_index(&x, 10, 10, 2, 7).unwrap();
+    assert!(base.subgroup.contains(&2), "copier not in subgroup");
+    // Row 7 (ws = 5) is not in the wc = 6 subgroup here.
+    assert!(!base.subgroup.contains(&7));
+    // Make row 0 the source: it has 5 incorrect. Copier row 7 has wc = 5,
+    // so the source (row 0) shares the number-incorrect score and must be
+    // included in the subgroup.
+    let r = k_index(&x, 10, 10, 7, 0).unwrap();
+    assert_eq!(r.wc, 5);
+    assert!(r.subgroup.contains(&7), "copier not in subgroup");
+    assert!(
+        r.subgroup.contains(&0),
+        "source with matching wc must be included (CopyDetect convention)"
+    );
+}
+
+/// Degenerate branches read back from crate outputs: m == 0 -> K = 1;
+/// p == 1 -> K = 1. Killed by inverted tails or wrong m handling.
+#[test]
+fn k_index_degenerate_branches() {
+    // Copier all correct except item 9; source incorrect only at items 0-1;
+    // no shared incorrect item -> m = 0 -> K = 1.
+    let mut x = vec![1.0; 3 * 10];
+    x[9] = 0.0; // person 0 (copier) misses item 9
+    x[10] = 0.0; // person 1 (source) misses items 0, 1
+    x[11] = 0.0;
+    let r = k_index(&x, 3, 10, 0, 1).unwrap();
+    assert_eq!(r.m, 0);
+    assert_eq!(r.k_index, 1.0);
+    // p == 1: every subgroup member incorrect exactly on the source's
+    // incorrect items. Two persons, both incorrect on items 0..2 only.
+    let mut y = vec![1.0; 2 * 6];
+    for i in 0..3 {
+        y[i] = 0.0;
+        y[6 + i] = 0.0;
+    }
+    let r1 = k_index(&y, 2, 6, 0, 1).unwrap();
+    assert_eq!(r1.ws, 3);
+    assert_eq!(r1.m, 3);
+    assert!((r1.p - 1.0).abs() < 1e-15, "p {}", r1.p);
+    assert_eq!(r1.k_index, 1.0);
+}
+
+/// Error paths. Asserts read: Err values returned by the crate.
+#[test]
+fn k_index_error_paths() {
+    let x = k_fixture();
+    assert!(k_index(&x, 1, 10, 0, 0).is_err()); // n_persons < 2
+    assert!(k_index(&x, 10, 0, 2, 7).is_err()); // n_items = 0
+    assert!(k_index(&x[..99], 10, 10, 2, 7).is_err()); // bad length
+    assert!(k_index(&x, 10, 10, 10, 7).is_err()); // copier out of range
+    assert!(k_index(&x, 10, 10, 2, 10).is_err()); // source out of range
+    assert!(k_index(&x, 10, 10, 3, 3).is_err()); // copier == source
+    let mut bad = x.clone();
+    bad[5] = 0.5;
+    assert!(k_index(&bad, 10, 10, 2, 7).is_err()); // non-binary
+    let mut nan = x.clone();
+    nan[5] = f64::NAN;
+    assert!(k_index(&nan, 10, 10, 2, 7).is_err()); // NaN
+                                                   // ws == 0: source (row 4 modified) all correct.
+    let mut allc = x.clone();
+    for i in 0..10 {
+        allc[4 * 10 + i] = 1.0;
+    }
+    assert!(k_index(&allc, 10, 10, 2, 4).is_err());
+}
+
+/// Monte Carlo null calibration and power (500 reps). Under the null all
+/// examinees answer independently with per-item difficulty; K is discrete
+/// and conservative, so the size at alpha = 0.05 must stay below 0.10.
+/// Under copying (copier copies the source's full answer on 90% of items)
+/// small K values should appear much more often. Asserts read:
+/// KIndexResult.k_index from the crate per replication.
+#[test]
+#[ignore]
+fn monte_carlo_k_index_size_and_power() {
+    let n_persons = 200;
+    let n_items = 40;
+    let reps = 500;
+    let mut rng = TestLcg(20260727);
+    let mut null_rej = 0usize;
+    let mut alt_rej = 0usize;
+    let mut used = 0usize;
+    for _ in 0..reps {
+        // Item difficulties: P(correct) in [0.3, 0.8].
+        let diffs: Vec<f64> = (0..n_items)
+            .map(|i| 0.3 + 0.5 * (i as f64) / (n_items as f64 - 1.0))
+            .collect();
+        let mut x = vec![0.0f64; n_persons * n_items];
+        for r in 0..n_persons {
+            for i in 0..n_items {
+                x[r * n_items + i] = if rng.next_f64() < diffs[i] { 1.0 } else { 0.0 };
+            }
+        }
+        // Ensure source (row 1) has at least one incorrect answer.
+        if (0..n_items).all(|i| x[n_items + i] == 1.0) {
+            x[n_items] = 0.0;
+        }
+        let rn = k_index(&x, n_persons, n_items, 0, 1).unwrap();
+        if rn.k_index < 0.05 {
+            null_rej += 1;
+        }
+        // Alternative: copier copies the source's answer (correct or
+        // incorrect) on 90% of items. Copying whole responses keeps the
+        // copier's number-incorrect near the source's typical score, so the
+        // subgroup stays populated (copying only incorrect answers inflates
+        // wc into a sparse subgroup where the self-inclusion bias makes K
+        // conservative -- a documented property of the CopyDetect k()).
+        let mut y = x.clone();
+        for i in 0..n_items {
+            if rng.next_f64() < 0.9 {
+                y[i] = y[n_items + i];
+            }
+        }
+        let ra = k_index(&y, n_persons, n_items, 0, 1).unwrap();
+        if ra.k_index < 0.05 {
+            alt_rej += 1;
+        }
+        used += 1;
+    }
+    let size = null_rej as f64 / used as f64;
+    let power = alt_rej as f64 / used as f64;
+    assert!(size < 0.10, "empirical size {}", size);
+    assert!(power > 0.5, "empirical power {}", power);
+}
