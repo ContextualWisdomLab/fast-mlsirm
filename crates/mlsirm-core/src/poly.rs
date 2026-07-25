@@ -31,6 +31,38 @@ fn validate_observed_categories(
     Ok(())
 }
 
+pub(crate) fn validate_poly_item_parameters(
+    slope: &[f64],
+    cat_params: &[f64],
+    n_items: usize,
+    n_cat: usize,
+    model: PolyModel,
+) -> Result<(), String> {
+    let expected_cat_params = crate::checked_mul_usize(
+        n_items,
+        n_cat - 1,
+        "n_items * (n_cat - 1) exceeds the category-parameter buffer size",
+    )?;
+    if slope.len() != n_items || cat_params.len() != expected_cat_params {
+        return Err("slope/cat_params must match n_items and n_cat".into());
+    }
+    if slope
+        .iter()
+        .chain(cat_params.iter())
+        .any(|value| !value.is_finite())
+    {
+        return Err("slope/cat_params must be finite".into());
+    }
+    if model == PolyModel::Grm {
+        for thresholds in cat_params.chunks_exact(n_cat - 1) {
+            if thresholds.windows(2).any(|pair| pair[0] <= pair[1]) {
+                return Err("GRM thresholds must be strictly decreasing within each item".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 #[inline]
 fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
@@ -887,12 +919,7 @@ pub fn poly_person_fit(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items {
-        return Err("slope must have length n_items".into());
-    }
-    if cat_params.len() != n_items * (n_cat - 1) {
-        return Err("cat_params must have length n_items*(n_cat-1)".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     if !(prior_sd > 0.0) {
         return Err("prior_sd must be positive".into());
     }
@@ -1036,8 +1063,9 @@ pub fn poly_cat_simulate(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
-        return Err("slope/cat_params must match n_items and n_cat".into());
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
+    if true_theta.iter().any(|value| !value.is_finite()) {
+        return Err("true_theta must be finite".into());
     }
     if n_items < 2 {
         return Err("CAT needs a bank of at least 2 items".into());
@@ -1885,9 +1913,7 @@ pub fn u3_poly_bootstrap_cutoff(
     if n_cat < 2 {
         return Err("n_cat must be >= 2".into());
     }
-    if slope.len() != n_items || cat_params.len() != n_items * (n_cat - 1) {
-        return Err("slope/cat_params must match n_items and n_cat".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     if n_persons < 1 || n_items < 1 {
         return Err("need at least one person and item".into());
     }
@@ -1918,8 +1944,18 @@ pub fn u3_poly_bootstrap_cutoff(
             PolyModel::Grm => grm_logprobs(base, cp),
         }
     };
-    let mut pool: Vec<f64> = Vec::with_capacity(n_rep * n_persons);
-    let mut y = vec![0usize; n_persons * n_items];
+    let pool_capacity = crate::checked_mul_usize(
+        n_rep,
+        n_persons,
+        "n_rep * n_persons exceeds the bootstrap buffer size",
+    )?;
+    let response_len = crate::checked_mul_usize(
+        n_persons,
+        n_items,
+        "n_persons * n_items exceeds the response buffer size",
+    )?;
+    let mut pool: Vec<f64> = Vec::with_capacity(pool_capacity);
+    let mut y = vec![0usize; response_len];
     for _rep in 0..n_rep {
         for p in 0..n_persons {
             let u1 = u().max(1e-12);
@@ -1942,10 +1978,9 @@ pub fn u3_poly_bootstrap_cutoff(
         let res = u3_poly_person_fit(&y, None, n_persons, n_items, n_cat, None)?;
         pool.extend(res.u3poly.into_iter().filter(|v| v.is_finite()));
     }
-    debug_assert!(
-        !pool.is_empty(),
-        "validated complete bootstrap samples have finite boundary U3 values"
-    );
+    if pool.is_empty() {
+        return Err("bootstrap produced no finite U3 values".into());
+    }
     pool.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let np = pool.len();
     let idx = (np as f64 - 1.0) * (1.0 - alpha);
@@ -2036,16 +2071,9 @@ pub fn poly_information_curves(
     if theta.is_empty() {
         return Err("theta must be non-empty".into());
     }
-    let expected_cat_params =
-        crate::checked_mul_usize(n_items, n_cat - 1, "n_items * (n_cat - 1) overflows usize")?;
-    if slope.len() != n_items || cat_params.len() != expected_cat_params {
-        return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
-    }
-    if theta.iter().any(|value| !value.is_finite())
-        || slope.iter().any(|value| !value.is_finite())
-        || cat_params.iter().any(|value| !value.is_finite())
-    {
-        return Err("theta, slope, and cat_params must be finite".into());
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
+    if theta.iter().any(|value| !value.is_finite()) {
+        return Err("theta must be finite".into());
     }
     let output_len = crate::checked_mul_usize(theta.len(), n_items, "output size overflows")?;
     let mut out = vec![0.0_f64; output_len];
@@ -2094,14 +2122,7 @@ pub fn score_poly_eap(
             return Err("observed must have length n_persons * n_items".into());
         }
     }
-    let n_params =
-        crate::checked_mul_usize(n_items, n_cat - 1, "n_items * (n_cat - 1) overflows usize")?;
-    if slope.len() != n_items || cat_params.len() != n_params {
-        return Err("slope/cat_params sizes inconsistent with n_items/n_cat".into());
-    }
-    if slope.iter().any(|v| !v.is_finite()) || cat_params.iter().any(|v| !v.is_finite()) {
-        return Err("slope and cat_params must be finite".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     for (idx, &yc) in y.iter().enumerate() {
         if observed.map_or(true, |o| o[idx]) && yc >= n_cat {
             return Err(format!(
@@ -2245,17 +2266,7 @@ pub fn poly_s_x2(
     if y.len() != n_cells {
         return Err("y must have length n_persons * n_items".into());
     }
-    if slope.len() != n_items {
-        return Err("slope must have length n_items".into());
-    }
-    let n_item_steps = crate::checked_mul_usize(
-        n_items,
-        n_cat - 1,
-        "n_items * (n_cat - 1) overflows usize",
-    )?;
-    if cat_params.len() != n_item_steps {
-        return Err("cat_params must have length n_items * (n_cat - 1)".into());
-    }
+    validate_poly_item_parameters(slope, cat_params, n_items, n_cat, model)?;
     if let Some(o) = observed {
         if o.len() != n_cells {
             return Err("observed must have length n_persons * n_items".into());

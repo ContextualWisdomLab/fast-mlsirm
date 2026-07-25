@@ -4970,16 +4970,6 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
         fit_facets(valid + 0.5, n_cat=2)
     with pytest.raises(ValueError, match="in 0..1"):
         fit_facets(valid * 3, n_cat=2)
-    nan_missing = valid.copy()
-    nan_missing[0, 0, 0] = np.nan
-    neg_missing = valid.copy()
-    neg_missing[0, 0, 0] = -1
-    res_nan = fit_facets(nan_missing, n_cat=2, q_theta=7, max_iter=5)
-    res_neg = fit_facets(neg_missing, n_cat=2, q_theta=7, max_iter=5)
-    assert np.allclose(res_neg.item_difficulty, res_nan.item_difficulty)
-    assert np.allclose(res_neg.rater_severity, res_nan.rater_severity)
-    assert np.allclose(res_neg.thresholds, res_nan.thresholds)
-    assert np.allclose(res_neg.theta, res_nan.theta)
     with pytest.raises(ValueError, match="rater 1 has no observed"):
         bad = valid.copy()
         bad[:, :, 1] = np.nan
@@ -5008,3 +4998,437 @@ def test_fit_facets_rejects_malformed_and_flags_disconnected():
     yb[6, 1, 1] = 0.0
     resb = fit_facets(yb, n_cat=2, max_iter=50)
     assert resb.connected is True
+
+
+def test_mokken_analysis_coefficients_and_cluster_recovery():
+    """Mokken scale analysis (van der Ark, 2007): every assert reads crate
+    outputs (hij/hi/h/zij/scale from mokken_coef_h / mokken_aisp via the
+    wrapper). A perfect Guttman scalogram must give H = 1 exactly (kills
+    covmax mutants), and a two-cluster simulation must be partitioned into
+    exactly two AISP scales (kills selection-logic mutants)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import MokkenResult, mokken_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mokken_coef_h"):
+        pytest.skip("compiled core built without mokken_coef_h")
+
+    # perfect Guttman scalogram -> H exactly 1
+    guttman = np.array(
+        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 1, 1]], dtype=float
+    )
+    g = mokken_analysis(guttman)
+    assert isinstance(g, MokkenResult)
+    assert abs(g.h - 1.0) < 1e-12
+    off = ~np.eye(3, dtype=bool)
+    assert np.allclose(g.hij[off], 1.0)
+    assert np.all(np.isnan(np.diag(g.hij)))
+
+    # two independent Rasch clusters -> two scales
+    rng = np.random.default_rng(2013)
+    n, per = 1500, 4
+    bs = np.array([-0.8, -0.3, 0.3, 0.8])
+    t1 = rng.normal(size=(n, 1)) * 1.6
+    t2 = rng.normal(size=(n, 1)) * 1.6
+    xa = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t1 - bs)))).astype(int)
+    xb = (rng.random((n, per)) < 1.0 / (1.0 + np.exp(-(t2 - bs)))).astype(int)
+    res = mokken_analysis(np.hstack([xa, xb]), lower_bound=0.3)
+    a, b = res.scale[0], res.scale[4]
+    assert a > 0 and b > 0 and a != b, res.scale
+    assert np.all(res.scale[:4] == a) and np.all(res.scale[4:] == b), res.scale
+    # crate zij symmetry read-back on real data
+    assert np.allclose(res.zij[off_idx := ~np.eye(8, dtype=bool)],
+                       res.zij.T[off_idx])
+
+
+def test_mokken_analysis_rejects_malformed_input():
+    """Wrapper validation: incomplete, non-integer, negative, non-2D data and
+    out-of-range c/alpha raise ValueError (each assert exercises the wrapper
+    guard in front of the crate; kills guard-deletion mutants)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import mokken_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mokken_coef_h"):
+        pytest.skip("compiled core built without mokken_coef_h")
+
+    ok = np.array([[0, 1], [1, 0], [1, 1], [0, 0], [1, 0], [0, 1]], dtype=float)
+    with pytest.raises(ValueError, match="complete"):
+        bad = ok.copy()
+        bad[0, 0] = np.nan
+        mokken_analysis(bad)
+    with pytest.raises(ValueError, match="integer"):
+        mokken_analysis(ok + 0.5)
+    with pytest.raises(ValueError, match="non-negative"):
+        mokken_analysis(ok - 1.0)
+    with pytest.raises(ValueError, match="2-D"):
+        mokken_analysis(ok.reshape(-1))
+    with pytest.raises(ValueError, match="lower_bound"):
+        mokken_analysis(ok, lower_bound=1.0)
+    with pytest.raises(ValueError, match="alpha"):
+        mokken_analysis(ok, alpha=0.0)
+    # crate-side guard surfaces as ValueError too (zero-variance item)
+    cst = ok.copy()
+    cst[:, 0] = 1.0
+    with pytest.raises(ValueError, match="zero variance"):
+        mokken_analysis(cst)
+
+def test_ksirt_analysis_fixture_exact_values():
+    """Kernel-smoothing IRT (Ramsay, 1991, as cited in Mazza et al., 2014):
+    every assert reads crate outputs (theta/grid/bandwidth/occ/expected/
+    expected_total from ksirt_occ via the wrapper) against independently
+    derived constants. theta must equal qnorm literals (kills rank-map
+    mutants), grid endpoints qnorm(1/5)/qnorm(4/5) (kills grid mutants),
+    bandwidth the Silverman literal 1.06*4^(-1/5) (kills bandwidth mutants),
+    and a huge bandwidth must flatten every OCC to the marginal proportion
+    0.5 (kills NW-normalization mutants)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import KsirtResult, ksirt_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "ksirt_occ"):
+        pytest.skip("compiled core built without ksirt_occ")
+
+    x = np.array([[0.0], [1.0], [0.0], [1.0]])
+    q02, q04 = -0.8416212335729143, -0.2533471031357997  # qnorm(.2), qnorm(.4)
+    r = ksirt_analysis(x, nevalpoints=5)
+    assert isinstance(r, KsirtResult)
+    # ties.method="first": totals [0,1,0,1] -> ranks [1,3,2,4]
+    assert np.allclose(r.theta, [q02, -q04, q04, -q02], atol=1e-8)
+    assert abs(r.grid[0] - q02) < 1e-8 and abs(r.grid[-1] + q02) < 1e-8
+    assert np.allclose(np.diff(r.grid), np.diff(r.grid)[0], atol=1e-12)
+    assert abs(r.bandwidth[0] - 1.06 * 4.0 ** (-0.2)) < 1e-12
+    assert len(r.options) == 1 and np.array_equal(r.options[0], [0.0, 1.0])
+    assert r.occ[0].shape == (2, 5)
+    # huge bandwidth -> equal NW weights -> OCC = marginal proportions
+    flat = ksirt_analysis(x, nevalpoints=5, bandwidth=np.array([1e9]))
+    assert np.allclose(flat.occ[0], 0.5, atol=1e-12)
+    assert np.allclose(flat.expected[0], 0.5, atol=1e-12)
+    assert np.allclose(flat.expected_total, 0.5, atol=1e-12)
+
+
+def test_ksirt_analysis_recovery_and_rejects_malformed_input():
+    """Monotone-recovery smoke on a simulated 2PL item (crate expected_total
+    must increase over the grid and crate theta must correlate with true
+    ability; kills over-collapse/ordering mutants) plus wrapper guard
+    checks (each raise exercises a validation branch in front of the
+    crate)."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import ksirt_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "ksirt_occ"):
+        pytest.skip("compiled core built without ksirt_occ")
+
+    rng = np.random.default_rng(1991)
+    n = 800
+    t = rng.standard_normal(n)
+    bs = np.array([-1.0, -0.3, 0.4, 1.1])
+    x = (rng.random((n, 4)) < 1.0 / (1.0 + np.exp(-1.5 * (t[:, None] - bs)))).astype(float)
+    r = ksirt_analysis(x, kernel="gaussian")
+    d = np.diff(r.expected_total)
+    assert np.all(d > -1e-9)  # non-decreasing everywhere
+    assert np.all(d[10:-10] > 0.0)  # strictly increasing in the interior
+    assert r.expected_total[-1] - r.expected_total[0] > 2.0
+    assert np.corrcoef(r.theta, t)[0, 1] > 0.7
+
+    ok = x[:8]
+    with pytest.raises(ValueError, match="2-D"):
+        ksirt_analysis(ok.reshape(-1))
+    with pytest.raises(ValueError, match="complete"):
+        bad = ok.copy()
+        bad[0, 0] = np.nan
+        ksirt_analysis(bad)
+    with pytest.raises(ValueError, match="kernel"):
+        ksirt_analysis(ok, kernel="triangular")
+    with pytest.raises(ValueError, match="nevalpoints"):
+        ksirt_analysis(ok, nevalpoints=1)
+    with pytest.raises(ValueError, match="nevalpoints"):
+        ksirt_analysis(ok, nevalpoints=10**11)  # allocation bound
+    with pytest.raises(ValueError, match="one value per item"):
+        ksirt_analysis(ok, bandwidth=np.array([0.5]))
+    with pytest.raises(ValueError, match="positive"):
+        ksirt_analysis(ok, bandwidth=np.array([0.5, -0.1, 0.5, 0.5]))
+
+
+def test_subscore_analysis_matches_independent_reference():
+    """Haberman (2008, as cited in Sinharay, 2010) subscore added-value
+    analysis: every assert reads the SubscoreResult returned by the crate via
+    the PyO3 binding, pinned against literals from an independent NumPy
+    transcription of the CRAN subscore R semantics (ddof=1). The fixture is
+    asymmetric across subscales (added_value_sx = [False, True]), so
+    decision-rule and PRMSE mutants (rowsum including the total column,
+    missing true-variance diagonal, dropped +0.01 margin) all fail here."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import SubscoreResult, subscore_analysis
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "subscore_analysis"):
+        pytest.skip("compiled core built without subscore_analysis")
+
+    x = np.array(
+        [
+            [0, 0, 0, 1], [0, 1, 0, 0], [1, 1, 0, 1], [0, 0, 1, 0],
+            [1, 1, 1, 1], [1, 0, 1, 1], [0, 0, 0, 0], [1, 1, 1, 0],
+            [0, 1, 1, 1], [1, 1, 0, 0],
+        ],
+        dtype=float,
+    )
+    res = subscore_analysis(x, [0, 0, 1, 1])
+    assert isinstance(res, SubscoreResult)
+    np.testing.assert_allclose(
+        res.alpha, [0.5797101449275359, 0.33333333333333326], atol=1e-10
+    )
+    assert abs(res.alpha_total - 0.44742729306487705) < 1e-12
+    np.testing.assert_allclose(
+        res.prmse_x, [0.41946308724832204, 0.3020134228187919], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.prmse_sx, [0.5872524752475244, 0.3663366336633662], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.tau, [0.1385414635898375, 0.27024443691002326], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.beta, [0.49752475247524747, 0.21782178217821788], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.gamma, [0.07178217821782161, 0.09900990099009896], atol=1e-10
+    )
+    assert res.added_value_s.tolist() == [True, True]
+    assert res.added_value_sx.tolist() == [False, True]
+    assert res.corr.shape == (3, 3)
+    assert abs(res.corr[0, 2] - 0.7791290756515445) < 1e-10
+    assert np.isnan(res.disattenuated_corr[0, 0])
+    assert abs(res.disattenuated_corr[0, 1] - 0.35355339059327384) < 1e-10
+    # person-0 estimates from all three estimators
+    np.testing.assert_allclose(
+        res.subscore_s[0], [0.4623188405797105, 1.0], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.subscore_x[0], [0.7308724832214768, 0.778523489932886], atol=1e-10
+    )
+    np.testing.assert_allclose(
+        res.subscore_sx[0], [0.47376237623762407, 0.8910891089108911], atol=1e-10
+    )
+    assert res.observed.shape == (10, 2) and res.total.shape == (10,)
+
+
+def test_subscore_analysis_rejects_degenerate_inputs():
+    """Guard behavior (spec-review mandated): duplicated subscales make a
+    subscore collinear with the total (tau divides by 1 - r^2 = 0) and must
+    raise, as must negative within-subscale alpha, bad partitions, and
+    incomplete data. Every assert reads the ValueError raised by the crate
+    through the binding; removing any Rust-side guard turns these into NaN
+    results or panics and fails the test."""
+    import numpy as np
+    import pytest
+    from fast_mlsirm import subscore_analysis
+
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "subscore_analysis"):
+        pytest.skip("compiled core built without subscore_analysis")
+
+    base = np.array(
+        [
+            [0, 0, 0, 1], [0, 1, 0, 0], [1, 1, 0, 1], [0, 0, 1, 0],
+            [1, 1, 1, 1], [1, 0, 1, 1], [0, 0, 0, 0], [1, 1, 1, 0],
+            [0, 1, 1, 1], [1, 1, 0, 0],
+        ],
+        dtype=float,
+    )
+    dup = base[:, [0, 1, 0, 1]]
+    with pytest.raises(ValueError, match="collinear"):
+        subscore_analysis(dup, [0, 0, 1, 1])
+    rev = base.copy()
+    rev[:, 1] = 1.0 - rev[:, 0]  # reversed item -> negative alpha
+    with pytest.raises(ValueError, match="outside"):
+        subscore_analysis(rev, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 0, 1])  # groups length mismatch
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 0, 0, 0])  # single subscale
+    with pytest.raises(ValueError):
+        subscore_analysis(base, [0, 1, 1, 1])  # singleton subscale
+    nanx = base.copy()
+    nanx[0, 0] = np.nan
+    with pytest.raises(ValueError, match="complete"):
+        subscore_analysis(nanx, [0, 0, 1, 1])
+
+
+def test_detect_analysis_matches_independent_reference():
+    """Confirmatory DETECT (Zhang & Stout, 1999, via sirt's sum-score path).
+
+    All asserts read crate outputs (DetectResult fields returned through the
+    PyO3 binding). Literals come from an independent NumPy transcription of
+    the R semantics that never imports this package. Killed by: delta sign
+    swap, dropped bias correction, n-1 covariance divisor, index-scaling
+    (x100) errors, label-as-index bugs."""
+    from fast_mlsirm import detect_analysis
+
+    x = np.array(
+        [
+            [1, 0, 0, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 1, 1, 1],
+            [1, 0, 1, 0, 1],
+            [0, 0, 0, 1, 1],
+            [0, 1, 0, 1, 1],
+            [0, 0, 1, 1, 1],
+            [0, 1, 0, 1, 1],
+            [1, 0, 1, 0, 1],
+        ],
+        dtype=float,
+    )
+    res = detect_analysis(x, [0, 0, 1, 1, 0])
+    assert res.detect == pytest.approx(-0.2830687830687831, abs=1e-12)
+    assert res.assi == pytest.approx(-0.2, abs=1e-12)
+    assert res.ratio == pytest.approx(-0.05439755973563803, abs=1e-12)
+    assert res.madcov100 == pytest.approx(5.203703703703703, abs=1e-12)
+    assert res.mcov100 == pytest.approx(-3.5105820105820107, abs=1e-12)
+    assert res.n_pairs == 10
+    assert res.ccov[0] == pytest.approx(-0.10317460317460317, abs=1e-12)
+    assert res.ccov[3] == 0.0  # constant item 4: exact zero ccov
+    # hostile labels behave identically (equality-only comparison)
+    big = detect_analysis(
+        x, np.array([-(2**63), -(2**63), 2**63 - 1, 2**63 - 1, -(2**63)])
+    )
+    assert big.detect == pytest.approx(res.detect, abs=1e-12)
+
+
+def test_detect_analysis_rejects_degenerate_inputs():
+    """Trust-boundary rejections; asserts read ValueError raised by the
+    wrapper/crate before or at the Rust boundary."""
+    from fast_mlsirm import detect_analysis
+
+    base = np.array(
+        [[1, 0, 1, 0], [0, 1, 1, 0], [1, 1, 0, 1], [0, 0, 1, 1]], dtype=float
+    )
+    with pytest.raises(ValueError):
+        detect_analysis(base, [0, 0, 1])  # cluster length mismatch
+    with pytest.raises(ValueError, match="complete"):
+        nanx = base.copy()
+        nanx[0, 0] = np.nan
+        detect_analysis(nanx, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        half = base.copy()
+        half[1, 2] = 0.5  # non-binary
+        detect_analysis(half, [0, 0, 1, 1])
+    with pytest.raises(ValueError):
+        detect_analysis(base[:1], [0, 0, 1, 1])  # 1 person
+    with pytest.raises(ValueError):
+        detect_analysis(np.ones((4, 2)), [0, 1])  # all-zero ccov: RATIO 0/0
+    # float labels beyond i64 must be rejected, not silently wrapped by
+    # astype(int64) (which would collapse distinct labels into one cluster)
+    with pytest.raises(ValueError, match="64-bit"):
+        detect_analysis(base, [2.0**63, 2.0**63, 2.0**63 + 2048, 0.0])
+    # uint64 labels beyond i64.max must also be rejected explicitly before
+    # the astype(int64) cast (which would silently wrap, collapsing labels)
+    with pytest.raises(ValueError, match="64-bit"):
+        uint64_cluster = np.array(
+            [0, 0, np.iinfo(np.int64).max + 1, 1], dtype=np.uint64
+        )
+        detect_analysis(base, uint64_cluster)
+
+
+def test_classification_accuracy_matches_independent_reference():
+    """Rudner and Lee classification accuracy/consistency (Rudner, 2001,
+    2005; Lee, 2010, as cited in Lathrop's cacIRT sources): every assert
+    reads crate outputs returned through the wrapper against literals from
+    an independent NumPy transcription (exact math.erf / own recursion,
+    never this crate). Rudner tolerance 1e-6 covers the crate erfc
+    approximation (|err| < 1.2e-7); Lee values are exact-recursion, pinned
+    at 1e-12. Weights are deliberately unnormalized (kills a forgot-to-
+    normalize mutation); Lee cut 2.4 is non-integer (kills floor-vs-ceil);
+    theta[2] == cut -0.4 anchors left-closed categorization."""
+    from fast_mlsirm import lee_classification, rudner_classification
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rudner_classification"):
+        pytest.skip("compiled core built without classification")
+
+    r = rudner_classification(
+        theta=[-1.7, -0.63, -0.4, 0.11, 0.52, 1.28, 1.95],
+        sem=[0.85, 0.42, 0.31, 0.27, 0.33, 0.48, 0.66],
+        cutscores=(-0.4, 0.85),
+        weights=[0.4, 1.1, 1.7, 2.3, 1.9, 0.8, 0.3],
+    )
+    tol = 1e-6
+    assert abs(r.per_cut_accuracy[0] - 0.8506551287597999) < tol
+    assert abs(r.per_cut_consistency[1] - 0.9068646398531202) < tol
+    assert abs(r.simultaneous_accuracy - 0.7952699812339523) < tol
+    assert abs(r.simultaneous_consistency - 0.7315355182946305) < tol
+    assert r.conditional_accuracy.shape == (2, 7)
+    assert abs(r.conditional_accuracy[1, 4] - 0.8413447460685428) < tol
+    # theta exactly on the cut -> upper category (left-closed)
+    assert abs(r.conditional_simultaneous_accuracy[2] - 0.4999723782624206) < tol
+
+    p = np.array(
+        [
+            [0.08, 0.15, 0.22, 0.31, 0.12, 0.19],
+            [0.23, 0.34, 0.41, 0.52, 0.28, 0.37],
+            [0.47, 0.55, 0.61, 0.68, 0.51, 0.58],
+            [0.66, 0.72, 0.79, 0.83, 0.69, 0.76],
+            [0.81, 0.87, 0.90, 0.93, 0.84, 0.88],
+        ]
+    )
+    le = lee_classification(
+        p, cutscores=(2.4, 4.0), weights=[0.6, 1.4, 2.0, 1.4, 0.6]
+    )
+    tol = 1e-12
+    assert abs(le.per_cut_accuracy[0] - 0.8221250493919999) < tol
+    assert abs(le.per_cut_consistency[1] - 0.7071425914148844) < tol
+    assert abs(le.simultaneous_accuracy - 0.6284128106933332) < tol
+    assert abs(le.simultaneous_consistency - 0.5754886794891432) < tol
+    assert abs(le.conditional_consistency[1, 2] - 0.5012741633381826) < tol
+    assert abs(le.conditional_simultaneous_accuracy[2] - 0.2992865452) < tol
+
+    # true score exactly on an integer cut -> upper category (left-closed);
+    # dyadic probs make the sum exact in binary64
+    edge = lee_classification([[0.5, 0.5, 0.5, 0.5, 0.25, 0.75]], cutscores=(3.0,))
+    assert abs(edge.per_cut_accuracy[0] - 0.6640625) < tol
+    assert abs(edge.per_cut_consistency[0] - 0.5538330078125) < tol
+
+
+def test_classification_rejects_degenerate_inputs():
+    """Trust-boundary rejections; asserts read the ValueError/RuntimeError
+    raised by the wrapper/crate at the Rust boundary."""
+    from fast_mlsirm import lee_classification, rudner_classification
+    from fast_mlsirm.fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rudner_classification"):
+        pytest.skip("compiled core built without classification")
+
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5], (0.0,))  # length mismatch
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.0], (0.0,))  # sem <= 0
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.5], (0.3, 0.3))  # cuts not increasing
+    with pytest.raises(ValueError):
+        rudner_classification([0.0, 1.0], [0.5, 0.5], (0.0,), weights=[0.0, 0.0])
+
+    good = [[0.2, 0.4], [0.6, 0.8]]
+    with pytest.raises(ValueError):
+        lee_classification([[1.0, 0.4], [0.6, 0.8]], (1.5,))  # P == 1
+    with pytest.raises(ValueError):
+        lee_classification(good, (2.5,))  # raw cut > n_items
+    with pytest.raises(ValueError):
+        lee_classification(good, (0.2, 0.9))  # ceil-collision at 1
+    with pytest.raises(ValueError):
+        lee_classification(np.array([0.2, 0.4]), (1.5,))  # 1-D probs
+

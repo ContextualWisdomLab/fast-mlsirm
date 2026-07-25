@@ -33,6 +33,21 @@ from .nominal import fit_nominal as fit_nominal, NominalResponseFit as NominalRe
 from .grm import fit_grm as fit_grm, GrmFit as GrmFit
 from .gpcm import fit_gpcm as fit_gpcm, GpcmFit as GpcmFit
 from .facets import fit_facets as fit_facets, FacetsFit as FacetsFit
+from .ksirt import ksirt_analysis as ksirt_analysis, KsirtResult as KsirtResult
+from .subscores import (
+    subscore_analysis as subscore_analysis,
+    SubscoreResult as SubscoreResult,
+)
+from .detect import (
+    detect_analysis as detect_analysis,
+    DetectResult as DetectResult,
+)
+from .classification import (
+    rudner_classification as rudner_classification,
+    lee_classification as lee_classification,
+    ClassificationResult as ClassificationResult,
+)
+from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
@@ -146,6 +161,17 @@ __all__ = [
     "RsmFit",
     "fit_facets",
     "FacetsFit",
+    "mokken_analysis",
+    "MokkenResult",
+    "ksirt_analysis",
+    "KsirtResult",
+    "subscore_analysis",
+    "SubscoreResult",
+    "detect_analysis",
+    "rudner_classification",
+    "lee_classification",
+    "ClassificationResult",
+    "DetectResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

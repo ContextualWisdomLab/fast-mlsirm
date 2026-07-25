@@ -114,6 +114,124 @@
 
 ### Added
 
+- **IRT classification accuracy and consistency**
+  (`fast_mlsirm.rudner_classification`, `fast_mlsirm.lee_classification`; new
+  `mlsirm_core::classification`; Rudner, 2001, 2005; Lee, 2010, as cited in
+  Lathrop's CRAN `cacIRT` sources). Rudner's normal-approximation method
+  treats the observed score at ability theta as N(theta, sem^2) and reports
+  per-cut and simultaneous accuracy/consistency, conditional and marginal
+  (weights normalized internally; uniform weights reproduce cacIRT's
+  person-level `Rud.P`, quadrature weights the distribution-level `Rud.D`).
+  Lee's summed-score method replaces the normal approximation with the exact
+  Lord-Wingersky (1984) score distribution reused from
+  `mlsirm_core::scoring`; raw cuts split scores at `ceil(cut)` and the true
+  category is the raw-score interval containing the expected true score.
+  Category intervals are left-closed everywhere (cacIRT's `Lee.D` alone is
+  right-closed — documented divergence); item probabilities must lie
+  strictly inside (0, 1) (rejecting P == 0 is stricter than the oracle,
+  which only breaks at P == 1); simultaneous outputs are always populated
+  (cacIRT emits them only for two or more cuts). Polytomous Lee, `np.cac`,
+  and the MLE/SEM ability helpers are out of scope. Rudner outputs inherit
+  the crate `erfc` accuracy (|err| < 1.2e-7); Lee outputs are exact to f64
+  rounding. For LLM-as-a-Judge quality management this quantifies how
+  reliably a judge's cut score separates pass from fail. Rust-only numerics;
+  the Python wrapper validates and marshals. Tests pin marginals and
+  conditionals against literals from an independent NumPy transcription
+  (exact `math.erf`, own recursion), anchor left-closed cuts with a theta
+  exactly on a cut and a dyadic true score exactly on a raw cut, use
+  unnormalized weights and a non-integer raw cut as mutation anchors (four
+  mutation spot-checks killed), and include a 500-replication ignored Monte
+  Carlo ordering long informative tests above short noisy ones.
+- **Confirmatory DETECT dimensionality analysis** (`fast_mlsirm.detect_analysis`;
+  new `mlsirm_core::detect`; Zhang & Stout, 1999, as cited in Robitzsch, 2024).
+  Estimates pairwise conditional covariances of binary items with sum-score
+  conditioning — the bias-corrected average of the total-score and pair
+  rest-score conditionings, per-group ML covariance aggregated with
+  group-frequency weights — and computes the DETECT, ASSI, RATIO, MADCOV100,
+  and MCOV100 indices against a known item clustering (labels opaque,
+  equality-only). Transcribed line-by-line from the CRAN `sirt` R sources
+  (`detect.index.R`, `ccov.np.R`, `ccov_np_compute_ccov_sum_score.R`,
+  `conf.detect.R`); matches the explicit `ccov.np(use_sum_score=TRUE,
+  scale_score=FALSE)` path — the kernel-smoothed default, missing data
+  (sirt pairwise-deletes), sqrt(N)-weighted variants (coincide with
+  unweighted under complete data), exploratory cluster search, and polytomous
+  DETECT are documented as out of scope. All-zero conditional covariances
+  (RATIO `0/0`, NaN in R) are rejected with an error. For LLM-as-a-Judge
+  item-quality management this diagnoses whether a rubric partition of judge
+  items behaves as distinct dimensions. Rust-only numerics; the Python
+  wrapper validates and marshals. Tests pin all five indices and every
+  per-pair conditional covariance against literals from an independent NumPy
+  transcription (which cannot discriminate the z-standardized default path,
+  since unique-value grouping is invariant to monotone transforms — the scope
+  statement pins that contract), plus hostile `i64::MIN`/`i64::MAX` labels
+  and a 500-replication Monte Carlo (`#[ignore]`) separating 2D simple
+  structure from unidimensional data.
+- **Haberman subscore added-value analysis** (`fast_mlsirm.subscore_analysis`;
+  new `mlsirm_core::subscores`; Haberman, 2008, as cited in Sinharay, 2010).
+  For each subscale of a disjoint, exhaustive item partition computes the
+  PRMSEs of the three classical-test-theory true-subscore estimators — from
+  the observed subscore (`= Cronbach alpha`), from the observed total
+  (`rho^2(s_t, x_t) * alpha_x` with the true-score covariance row sum over
+  subscore columns only), and from both jointly (Wainer-style augmentation via
+  `tau`/`beta`/`gamma`) — plus per-person estimator matrices, the
+  `(K+1)^2` score correlation matrix, disattenuated subscore correlations, and
+  added-value decisions (Haberman's `PRMSE_s > PRMSE_x`; Sinharay's 2010
+  `+ 0.01` margin for augmentation, labeled — CRAN `CTTsub`'s relative rule is
+  documented but not implemented). Formulas verified against the Appendix of
+  Sinharay (2010, ETS RR-10-16) and the CRAN `subscore` R source read
+  line-by-line; degenerate samples (alpha outside `(0, 1]`, zero variance,
+  subscore collinear with the total) are rejected instead of propagating NaN.
+  For LLM-as-a-Judge item-quality management this decides whether per-domain
+  judge subscores add diagnostic value over the overall score. Rust-only
+  numerics; the Python wrapper validates and marshals. Tests pin every
+  reported statistic against literals from an independent NumPy transcription
+  of the R semantics on an asymmetric fixture with mixed added-value
+  outcomes, include rejection tests for the structural and degeneracy guards
+  (the defensive computed-PRMSE-range guard is not separately exercised), a
+  conditional dominance
+  sweep on guard-passing random data, and a 500-rep `#[ignore]` Monte Carlo
+  MSE comparison; three mutation spot-checks (dropped `m/(m-1)`, rowsum
+  including the total column, `tau` numerator sign flip) were run and killed.
+- **Kernel-smoothing nonparametric IRT** (`fast_mlsirm.ksirt_analysis`; new
+  `mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza et al., 2014).
+  Estimates option characteristic curves by Nadaraya-Watson kernel regression
+  (gaussian/quadratic/uniform kernels) of option indicators on rank-based
+  ordinal ability estimates `qnorm(rank/(n+1))`, on an equally spaced
+  evaluation grid, with Silverman-rule default bandwidths, plus expected item
+  score and expected total score curves. Formulas verified against the
+  KernSmoothIRT JSS paper (Mazza et al., 2014, Sections 2-2.3) and the
+  KernSmoothIRT R/C++ package source read line-by-line; standard errors and
+  cross-validation bandwidth selection are deliberately out of scope (the R
+  implementation's SE accumulator is order-dependent and unverifiable from
+  read sources). For LLM-as-a-Judge item-quality management this reveals
+  non-monotone or poorly discriminating evaluation items without a parametric
+  model. Rust-only numerics; the Python wrapper validates and marshals. Tests
+  pin a hand-computed 4-person fixture (rank->theta qnorm literals, grid
+  endpoints, Silverman constant), enforce structural invariants
+  (row-sums-to-one with positive denominators, compact-support zeros,
+  zero-denominator fallback), and include a 500-replication Monte Carlo
+  recovery study (`#[ignore]`) under normal and skewed ability generation
+  using the rank-invariance composition oracle.
+- **Mokken scale analysis** (`fast_mlsirm.mokken_analysis`; new
+  `mlsirm_core::mokken`; Mokken, 1971, as cited in van der Ark, 2007).
+  Computes the Loevinger scalability coefficients `Hij`, `Hi`, `H` and their
+  Mokken Z statistics, and partitions items into Mokken scales with the
+  automated item selection procedure (AISP, "search normal"), with sample
+  statistics and selection mechanics verified line-by-line against the mokken
+  R package source (van der Ark, 2007; Straat et al., 2013): `Hij =
+  S_ij/Smax_ij` with `Smax` from the comonotone (sorted-column) coupling,
+  `Hi`/`H` as ratios of pairwise sums, and per-scale Bonferroni-adjusted Z
+  gates. For LLM-as-a-Judge item-quality management this flags evaluation
+  items that fail to scale (label 0) and detects multidimensional item pools
+  before parametric calibration. Complete integer data required (dichotomous
+  or polytomous). Rust-only numerics; the Python wrapper validates and
+  marshals. Tests include a brute-force covariance oracle, an exact Guttman
+  `H = 1` anchor, a hand-computed Z fixture, a Z-gate anchor whose deletion
+  seeds a spurious scale (this test caught a real sign error in the normal
+  quantile during development), a hand-constructed Criterion-1 design whose
+  negative-`Hij` exclusion is the only active gate (mutation-verified), a
+  two-cluster AISP recovery, and an `#[ignore]` 500-replicate Monte Carlo
+  (normal + skewed traits).
 - **Many-Facet Rasch Model (MFRM) rater-severity calibration** (`fast_mlsirm.fit_facets`;
   new `mlsirm_core::facets`; Linacre, 1989; Eckes, 2015). Fits
   `ln[P(k)/P(k-1)] = theta_p - d_i - c_j - f_k` — the rating scale model

@@ -877,8 +877,32 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     assert!(poly_local_dependence(&[0, 0], None, 1, 2, 2, &[1.0], &[0.0, 0.0], pm, 7).is_err());
     assert!(poly_local_dependence(&[0, 0], None, 1, 2, 2, &[1.0, 1.0], &[0.0], pm, 7).is_err());
     assert!(
+        poly_local_dependence(&[0, 0], None, 1, 2, 2, &[f64::NAN, 1.0], &[0.0, 0.0], pm, 7)
+            .is_err()
+    );
+    assert!(
         poly_local_dependence(&[0, 2], None, 1, 2, 2, &[1.0, 1.0], &[0.0, 0.0], pm, 7).is_err()
     );
+    let overflow_ld = std::panic::catch_unwind(|| {
+        poly_local_dependence(
+            &[],
+            None,
+            usize::MAX / 2 + 1,
+            2,
+            2,
+            &[1.0, 1.0],
+            &[0.0, 0.0],
+            pm,
+            7,
+        )
+    });
+    assert!(
+        overflow_ld.is_ok(),
+        "overflowed LD shape must return an error instead of panicking"
+    );
+    // Reads crate Result. Kills the mutation that multiplies n_persons*n_items
+    // directly before checking response length.
+    assert!(overflow_ld.unwrap().is_err());
     let masked_ld = poly_local_dependence(
         &[0, 99],
         Some(&[true, false]),
@@ -915,7 +939,7 @@ fn fitstats_public_boundaries_and_interaction_paths() {
             2,
             3,
             &[1.0, 0.8],
-            &[-0.5, 0.5, -0.25, 0.75],
+            &[0.5, -0.5, 0.75, -0.25],
             model,
             7,
         )
@@ -944,7 +968,28 @@ fn fitstats_public_boundaries_and_interaction_paths() {
     .is_err());
     assert!(poly_m2(&[0, 0, 0], None, 1, 3, 2, &[1.0; 2], &[0.0; 3], pm, 7).is_err());
     assert!(poly_m2(&[0, 0, 0], None, 1, 3, 2, &[1.0; 3], &[0.0; 2], pm, 7).is_err());
+    assert!(poly_m2(&[0, 0, 0], None, 1, 3, 2, &[f64::NAN; 3], &[0.0; 3], pm, 7).is_err());
     assert!(poly_m2(&[0, 0, 2], None, 1, 3, 2, &[1.0; 3], &[0.0; 3], pm, 7).is_err());
+    let overflow_m2 = std::panic::catch_unwind(|| {
+        poly_m2(
+            &[],
+            None,
+            usize::MAX / 3 + 1,
+            3,
+            2,
+            &[1.0; 3],
+            &[0.0; 3],
+            pm,
+            7,
+        )
+    });
+    assert!(
+        overflow_m2.is_ok(),
+        "overflowed M2 shape must return an error instead of panicking"
+    );
+    // Reads crate Result. Kills the mutation that multiplies n_persons*n_items
+    // directly before checking response length.
+    assert!(overflow_m2.unwrap().is_err());
     let mut masked_y: Vec<usize> = (0..20)
         .flat_map(|p| [p % 2, (p / 2) % 2, (p / 3) % 2, (p / 5) % 2])
         .collect();

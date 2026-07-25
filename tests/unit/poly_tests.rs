@@ -259,6 +259,44 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
+    let overflow_person_fit = std::panic::catch_unwind(|| {
+        poly_person_fit(
+            &[],
+            None,
+            1,
+            2,
+            usize::MAX / 2 + 2,
+            &[1.0, 1.0],
+            &[],
+            PolyModel::Gpcm,
+            7,
+            0.0,
+            1.0,
+            -2.0,
+        )
+    });
+    assert!(
+        overflow_person_fit.is_ok(),
+        "overflowed poly person-fit item shape must return an error instead of panicking"
+    );
+    // Reads crate Result. Kills the mutation that multiplies n_items*(n_cat-1)
+    // directly before validating category-parameter length.
+    assert!(overflow_person_fit.unwrap().is_err());
+    let equal_grm_thresholds = score_poly_eap(
+        &[1],
+        None,
+        1,
+        1,
+        3,
+        &[1.0],
+        &[0.0, 0.0],
+        PolyModel::Grm,
+        7,
+    );
+    let equal_grm_error = equal_grm_thresholds.expect_err("equal GRM thresholds accepted");
+    // Reads crate error text. Kills the mutation that permits a zero-probability
+    // middle category and lets Result APIs return Ok(NaN).
+    assert!(equal_grm_error.contains("thresholds"));
     let sparse_observed = [false, false, true, true];
     let person_fit = poly_person_fit(
         &y,
@@ -597,6 +635,66 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
+    let overflow_u3 =
+        std::panic::catch_unwind(|| u3_poly_person_fit(&[], None, usize::MAX / 2 + 1, 2, 3, None));
+    assert!(
+        overflow_u3.is_ok(),
+        "overflowed U3 shape must return an error instead of panicking"
+    );
+    assert!(overflow_u3.unwrap().is_err());
+    let empty_bootstrap = std::panic::catch_unwind(|| {
+        u3_poly_bootstrap_cutoff(1, 1, 3, &[0.0], &[0.0, 0.0], PolyModel::Gpcm, 0.05, 1, 1)
+    });
+    assert!(
+        empty_bootstrap.is_ok(),
+        "U3 bootstrap must return an error when all simulated U3 values are non-finite"
+    );
+    assert!(empty_bootstrap.unwrap().is_err());
+    let nan_cutoff = u3_poly_bootstrap_cutoff(
+        1,
+        1,
+        3,
+        &[f64::NAN],
+        &[0.0, 0.0],
+        PolyModel::Gpcm,
+        0.05,
+        1,
+        7,
+    );
+    assert!(nan_cutoff.is_err());
+    let unordered_grm_cutoff = u3_poly_bootstrap_cutoff(
+        1,
+        1,
+        3,
+        &[1.0],
+        &[-1.0, 1.0],
+        PolyModel::Grm,
+        0.05,
+        1,
+        7,
+    );
+    let unordered_grm_error = unordered_grm_cutoff.expect_err("unordered GRM thresholds accepted");
+    // Reads crate error text. Kills the mutation that bypasses shared GRM
+    // threshold validation and lets grm_logprobs produce non-finite bootstrap draws.
+    assert!(unordered_grm_error.contains("thresholds"));
+    let overflow_cutoff = std::panic::catch_unwind(|| {
+        u3_poly_bootstrap_cutoff(
+            usize::MAX / 2 + 1,
+            2,
+            3,
+            &[0.0, 0.0],
+            &[0.0; 4],
+            PolyModel::Gpcm,
+            0.05,
+            1,
+            7,
+        )
+    });
+    assert!(
+        overflow_cutoff.is_ok(),
+        "U3 cutoff must return an error for overflowed bootstrap buffers"
+    );
+    assert!(overflow_cutoff.unwrap().is_err());
     let none_observed = [false, false, true, false];
     let y_masked = [99usize, 99, 1, 99];
     let u3 = u3_poly_person_fit(&y_masked, Some(&none_observed), 2, 2, 3, Some(-1.0)).unwrap();
@@ -627,6 +725,8 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
 
     assert!(poly_information_curves(&[0.0], &slope, &cat, 2, 1, PolyModel::Gpcm).is_err());
     assert!(poly_information_curves(&[0.0], &slope, &[0.0], 2, 3, PolyModel::Gpcm).is_err());
+    let unordered_grm = [-1.0, 1.0, 0.5, -0.5];
+    assert!(poly_information_curves(&[0.0], &slope, &unordered_grm, 2, 3, PolyModel::Grm).is_err());
     for model in [PolyModel::Gpcm, PolyModel::Grm] {
         let information =
             poly_information_curves(&[-1.0, 0.0, 1.0], &slope, &cat, 2, 3, model).unwrap();
@@ -651,6 +751,7 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
             7,
         ),
         score_poly_eap(&y, None, 2, 2, 3, &[1.0], &cat, PolyModel::Gpcm, 7),
+        score_poly_eap(&y, None, 2, 2, 3, &slope, &unordered_grm, PolyModel::Grm, 7),
     ] {
         assert!(result.is_err());
     }
@@ -736,6 +837,38 @@ fn poly_public_boundaries_and_small_diagnostic_paths() {
     ] {
         assert!(result.is_err());
     }
+    let overflow_sx2 = std::panic::catch_unwind(|| {
+        poly_s_x2(
+            &[],
+            None,
+            usize::MAX / 2 + 1,
+            2,
+            3,
+            &slope,
+            &cat,
+            PolyModel::Gpcm,
+            7,
+            1.0,
+        )
+    });
+    assert!(
+        overflow_sx2.is_ok(),
+        "overflowed poly S-X2 shape must return an error instead of panicking"
+    );
+    assert!(overflow_sx2.unwrap().is_err());
+    assert!(poly_s_x2(
+        &y,
+        None,
+        2,
+        2,
+        3,
+        &[f64::NAN, 1.0],
+        &cat,
+        PolyModel::Gpcm,
+        7,
+        1.0,
+    )
+    .is_err());
     let empty_sx2 = poly_s_x2(
         &[99, 99, 1, 99],
         Some(&[false; 4]),
@@ -2167,6 +2300,63 @@ fn poly_cat_recovers_and_beats_random() {
             (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
         })
         .collect();
+    let bad_cat = std::panic::catch_unwind(|| {
+        poly_cat_simulate(
+            &[0.0],
+            &[f64::NAN; 2],
+            &[0.0; 4],
+            2,
+            k,
+            PolyModel::Gpcm,
+            21,
+            0.30,
+            1,
+            2,
+            true,
+            111,
+        )
+    });
+    assert!(
+        bad_cat.is_ok(),
+        "poly_cat_simulate must return an error for non-finite item parameters"
+    );
+    assert!(bad_cat.unwrap().is_err());
+    let bad_grm_cat = std::panic::catch_unwind(|| {
+        poly_cat_simulate(
+            &[0.0],
+            &[1.0; 2],
+            &[-1.0, 1.0, 0.5, -0.5],
+            2,
+            k,
+            PolyModel::Grm,
+            21,
+            0.30,
+            1,
+            2,
+            true,
+            113,
+        )
+    });
+    assert!(
+        bad_grm_cat.is_ok(),
+        "poly_cat_simulate must return an error for unordered GRM thresholds"
+    );
+    assert!(bad_grm_cat.unwrap().is_err());
+    assert!(poly_cat_simulate(
+        &[f64::NAN],
+        &slope,
+        &cat,
+        n_items,
+        k,
+        PolyModel::Gpcm,
+        21,
+        0.30,
+        5,
+        30,
+        false,
+        112,
+    )
+    .is_err());
     // adaptive, variable length: stop at SE < 0.30
     let var = poly_cat_simulate(
         &true_theta,
