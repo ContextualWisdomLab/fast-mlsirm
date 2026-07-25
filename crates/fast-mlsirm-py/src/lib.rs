@@ -27,8 +27,7 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::classification::{
-    lee_classification as core_lee_classification,
-    livingston_lewis as core_livingston_lewis,
+    lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
     rudner_classification as core_rudner_classification, ClassificationResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
@@ -39,18 +38,21 @@ use mlsirm_core::dif::{
     sibtest as core_sibtest, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
     PurifyConfig, SibtestConfig,
 };
-use mlsirm_core::facets::fit_facets as core_fit_facets;
-use mlsirm_core::exposure::{sympson_hetter as core_sympson_hetter, SympsonHetterConfig};
-use mlsirm_core::fitstats::{
-    adjusted_chi2_pairs as core_adjusted_chi2_pairs,
-    person_fit_resampling as core_person_fit_resampling,
-    residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
+use mlsirm_core::exposure::{
+    a_stratified as core_a_stratified, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
+    SympsonHetterConfig,
 };
+use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
     glb_fa_corr as core_glb_fa_corr, glb_fa_data as core_glb_fa_data,
     minres_fa_corr as core_minres_fa_corr, minres_fa_data as core_minres_fa_data,
     omega_total_1f_corr as core_omega_total_1f_corr,
     omega_total_1f_data as core_omega_total_1f_data, MinresFaResult,
+};
+use mlsirm_core::fitstats::{
+    adjusted_chi2_pairs as core_adjusted_chi2_pairs,
+    person_fit_resampling as core_person_fit_resampling,
+    residual_item_fit as core_residual_item_fit, tcc_drift as core_tcc_drift,
 };
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
@@ -1855,8 +1857,8 @@ fn gtheory_pio(
     n_o: usize,
     n_prime: Vec<(usize, usize)>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let res = core_gtheory_pio(x.as_slice()?, n_p, n_i, n_o, &n_prime)
-        .map_err(PyValueError::new_err)?;
+    let res =
+        core_gtheory_pio(x.as_slice()?, n_p, n_i, n_o, &n_prime).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("df", res.df.to_vec())?;
     out.set_item("ss", res.ss.to_vec())?;
@@ -2025,12 +2027,7 @@ fn selection_utility(
 /// selection model (`mlsirm_core::utility::taylor_russell`). Returns
 /// {success_ratio, base_rate, q_joint}.
 #[pyfunction]
-fn taylor_russell(
-    py: Python<'_>,
-    rxy: f64,
-    sr: f64,
-    br: f64,
-) -> PyResult<Py<pyo3::types::PyDict>> {
+fn taylor_russell(py: Python<'_>, rxy: f64, sr: f64, br: f64) -> PyResult<Py<pyo3::types::PyDict>> {
     let res = core_taylor_russell(rxy, sr, br).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("success_ratio", res.success_ratio)?;
@@ -2081,6 +2078,56 @@ fn py_sympson_hetter(
         "history_max_exposure",
         numpy::PyArray1::from_slice(py, &res.history_max_exposure),
     )?;
+    Ok(out.into())
+}
+
+/// a-stratified multistage CAT simulation
+/// (`mlsirm_core::exposure::a_stratified`).
+/// Returns {exposure, max_exposure, stratum, stage_lengths, theta_rmse,
+/// theta_bias}.
+///
+/// Source status: design after Chang & Ying (1999), cited from its
+/// abstract only; the b-matching selection rule and ascending-a strata are
+/// confirmed from Barrada, Mazuela, & Olea (2006), read in full. Full
+/// references and repository-choice labels are in the core rustdoc
+/// (`mlsirm_core::exposure::a_stratified`) and the Python docstring
+/// (`fast_mlsirm.exposure.a_stratified`).
+///
+/// References:
+/// Barrada, J. R., Mazuela, P., & Olea, J. (2006). Maximum information
+/// stratification method for controlling item exposure in computerized
+/// adaptive testing. Psicothema, 18(1), 156-159.
+/// Chang, H.-H., & Ying, Z. (1999). a-stratified multistage computerized
+/// adaptive testing. Applied Psychological Measurement, 23(3), 211-222.
+/// https://doi.org/10.1177/01466219922031338
+#[pyfunction]
+fn py_a_stratified(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    n_strata: usize,
+    test_length: usize,
+    n_simulees: usize,
+    seed: u64,
+    q_theta: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = AStratifiedConfig {
+        n_strata,
+        test_length,
+        n_simulees,
+        seed,
+        q_theta,
+    };
+    let res = core_a_stratified(a.as_slice()?, b.as_slice()?, c.as_slice()?, &cfg)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("exposure", numpy::PyArray1::from_slice(py, &res.exposure))?;
+    out.set_item("max_exposure", res.max_exposure)?;
+    out.set_item("stratum", res.stratum)?;
+    out.set_item("stage_lengths", res.stage_lengths)?;
+    out.set_item("theta_rmse", res.theta_rmse)?;
+    out.set_item("theta_bias", res.theta_bias)?;
     Ok(out.into())
 }
 
@@ -5836,6 +5883,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(taylor_russell, m)?)?;
     m.add_function(wrap_pyfunction!(parallel_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(py_sympson_hetter, m)?)?;
+    m.add_function(wrap_pyfunction!(py_a_stratified, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

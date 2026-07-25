@@ -6074,3 +6074,61 @@ class TestSympsonHetter:
             fm.sympson_hetter(a, b, r_max=0.25, test_length=float("inf"))
         with pytest.raises(ValueError):
             fm.sympson_hetter(a, b, r_max=0.25, test_length=np.float64("nan"))
+
+
+class TestAStratified:
+    """a-stratified multistage CAT wrapper (mlsirm_core::exposure).
+
+    Every assert reads crate outputs returned through the wrapper; the
+    per-stratum sum identity sum(exposure[stratum == k]) == stage_lengths[k]
+    is an exact counting identity of returned values, not a local
+    recomputation of the algorithm.
+    """
+
+    @staticmethod
+    def _pool():
+        n = 30
+        x = np.arange(n, dtype=float)
+        a = 0.6 + 1.4 * np.abs(np.sin(x * 0.37))
+        b = -2.4 + 4.8 * x / (n - 1) + 0.3 * np.sin(x * 0.71)
+        return a, b
+
+    def test_per_stratum_identity_and_strata(self):
+        import fast_mlsirm as fm
+
+        a, b = self._pool()
+        r = fm.a_stratified(
+            a, b, n_strata=4, test_length=10, n_simulees=200,
+            seed=42, q_theta=31,
+        )
+        assert list(r.stage_lengths) == [3, 3, 2, 2]
+        for k in range(4):
+            got = float(r.exposure[r.stratum == k].sum())
+            assert abs(got - r.stage_lengths[k]) < 1e-9
+        assert abs(float(r.exposure.sum()) - 10.0) < 1e-9
+        assert r.max_exposure == float(r.exposure.max())
+        assert np.isfinite(r.theta_rmse) and r.theta_rmse >= 0.0
+        assert np.isfinite(r.theta_bias)
+        # Strata are ascending in a: mean a must not decrease across strata
+        # (reads the crate stratum assignment).
+        means = [float(a[r.stratum == k].mean()) for k in range(4)]
+        assert all(m2 >= m1 for m1, m2 in zip(means, means[1:]))
+
+    def test_validation_and_boundary_coercion(self):
+        import fast_mlsirm as fm
+
+        a, b = self._pool()
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=0, test_length=10)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=11, test_length=10)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=4, test_length=31)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=4, test_length=10.5)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=True, test_length=10)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=4, test_length=10, seed=-1)
+        with pytest.raises(ValueError):
+            fm.a_stratified(a, b, n_strata=4, test_length=float("nan"))

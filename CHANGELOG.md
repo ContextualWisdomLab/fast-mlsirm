@@ -119,6 +119,31 @@
 
 ### Added
 
+- **a-stratified multistage CAT item selection** (`fast_mlsirm.a_stratified`;
+  in `mlsirm_core::exposure`). Simulation of Chang & Ying's (1999)
+  a-stratified design: the pool is split into `n_strata` contiguous strata by
+  ascending discrimination `a` (stable sort, near-equal sizes with the first
+  `n mod K` strata one item larger — repository choice; catR places the
+  remainder last), the test is partitioned into matching stages, and within
+  the active stratum the next item is `argmin |b_i - theta_hat|`
+  (b-matching, ties to the lowest original index). The b-matching selection
+  rule and ascending-a strata are confirmed from Barrada, Mazuela, & Olea
+  (2006, Psicothema 18(1), 156-159 — read in full); Chang & Ying (1999,
+  Applied Psychological Measurement 23(3), 211-222) is cited as the design's
+  origin from its abstract. Interim EAP on a uniform grid and the initial
+  `theta_hat = 0` are repository choices (the paper used ML-based interim
+  estimation). Returns per-item exposure rates, stratum assignment, stage
+  lengths, and theta RMSE/bias; the per-stratum counting identity
+  `sum_{i in stratum k} P(A_i) = stage_lengths[k]` holds exactly and is
+  regression-tested against returned values. Stratum-level b-blocking
+  (Chang, Qian, & Ying, 2001, "a-stratified multistage computerized adaptive
+  testing with b blocking", Applied Psychological Measurement 25(4),
+  333-341 — not read; excluded per adversarial spec review) is out of
+  scope. Rust core with PyO3 binding
+  and thin NumPy wrapper; mutation-audited tests plus a 500-replication
+  Monte-Carlo comparison (`#[ignore]`) showing lower exposure imbalance
+  (summed squared deviation from the uniform rate `L/n`) than
+  max-information selection.
 - **Sympson-Hetter item-exposure control** (`fast_mlsirm.sympson_hetter`;
   in `mlsirm_core::exposure`). Iterative Monte-Carlo calibration of the
   exposure-control parameters `k_i = P(A_i | S_i)` for dichotomous 3PL
