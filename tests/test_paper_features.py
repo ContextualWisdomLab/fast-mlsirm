@@ -5756,6 +5756,8 @@ def test_livingston_lewis_matches_independent_reference():
     assert abs(r.p_fp - 0.07917200341607164) < tol
     assert abs(r.p_tf - 0.46137445417258505) < tol
     assert abs(r.p_ff - 0.05444030317454212) < tol
+    assert r.p_fn == r.p_ff
+    assert r.p_tn == r.p_tf
     assert abs(r.accuracy - 0.866387693409385) < tol
     assert abs(r.sensitivity - 0.8815107553881857) < tol
     assert abs(r.specificity - 0.8535333969826517) < tol

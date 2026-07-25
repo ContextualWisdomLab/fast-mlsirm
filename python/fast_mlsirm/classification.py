@@ -36,7 +36,9 @@ class LivingstonLewisResult:
     """Livingston-Lewis single-administration classification results.
 
     ``p_tp``/``p_fp``/``p_tf``/``p_ff`` are the accuracy cells (pass =
-    observed score at or above the cut; ``t``/``f`` = true pass/fail);
+    observed score at or above the cut; ``t``/``f`` = true pass/fail).
+    Backward-compatible aliases ``p_fn`` (for ``p_ff``) and ``p_tn`` (for
+    ``p_tf``) are kept for existing callers.
     ``p_ii``/``p_ij``/``p_ji``/``p_jj`` are consistency cells over two
     hypothetical parallel forms, with ``p_ij == p_ji`` by construction
     (single rounded threshold in both blocks — betafunctions' round/floor
@@ -64,6 +66,14 @@ class LivingstonLewisResult:
     consistency: float
     chance_consistency: float
     kappa: float
+
+    @property
+    def p_fn(self) -> float:
+        return self.p_ff
+
+    @property
+    def p_tn(self) -> float:
+        return self.p_tf
 
 
 _REFERENCES = """References (APA 7th ed.):
@@ -243,8 +253,8 @@ def livingston_lewis(
         used_two_parameter=bool(res["used_two_parameter"]),
         p_tp=float(res["p_tp"]),
         p_fp=float(res["p_fp"]),
-        p_tf=float(res["p_tf"]),
-        p_ff=float(res["p_ff"]),
+        p_tf=float(res["p_tf"] if "p_tf" in res else res["p_tn"]),
+        p_ff=float(res["p_ff"] if "p_ff" in res else res["p_fn"]),
         accuracy=float(res["accuracy"]),
         sensitivity=float(res["sensitivity"]),
         specificity=float(res["specificity"]),
