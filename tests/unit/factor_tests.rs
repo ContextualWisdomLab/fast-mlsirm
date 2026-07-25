@@ -522,3 +522,206 @@ fn glbfa_mc_recovery_500() {
         "mean glb = {mean_glb} vs population omega {pop_omega}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Velicer MAP (velicer_map_corr / velicer_map_data)
+//
+// Oracle: independent NumPy transcription of O'Connor's map.m formulas run
+// against Harman's 8-physical-variables correlation matrix (session
+// files/map_spec.md; values recomputed 2026-07-24, matching the adversarial
+// spec reviewer's own O'Connor-based vector to 6 dp).
+//
+// Mutation-kill audit (every assert reads crate outputs):
+// - MAP-M1 EXECUTED: drop eigenvalue weighting in the component removal
+//   (`eigval[k].max(0.0)` -> `1.0`, i.e. loadings without sqrt(lambda))
+//   => Harman f2 vector FAILs.
+// - MAP-M2 EXECUTED: skip the D^{-1/2} rescaling (partial covariance used
+//   directly) => Harman f2 vector FAILs.
+// - MAP-M3 EXECUTED: faMAP-style off-by-one retained count
+//   (`best = m` -> `best = m + 1` equivalent: argmin over 1-based rows)
+//   => `retained_f2 == 2` FAILs (returns 3).
+// - MAP-M4 EXECUTED: squared -> absolute value in the f2 accumulation
+//   => Harman f2 vector FAILs.
+// - MAP-M5 EXECUTED: full-spectrum negative-eigenvalue guard reverted to
+//   the leading `eigval[..max_m]` slice => map_error_paths non-PSD case
+//   FAILs (trailing negative eigenvalue slips through for every max_m).
+// Principle limitation (disclosed): retained-count asserts alone cannot
+// kill M1/M2/M4 on every fixture; the numeric full-vector pins below are
+// the discriminating anchors (adversarial spec-review requirement).
+
+const HARMAN8: [f64; 64] = [
+    1.000, 0.846, 0.805, 0.859, 0.473, 0.398, 0.301, 0.382, //
+    0.846, 1.000, 0.881, 0.826, 0.376, 0.326, 0.277, 0.415, //
+    0.805, 0.881, 1.000, 0.801, 0.380, 0.319, 0.237, 0.345, //
+    0.859, 0.826, 0.801, 1.000, 0.436, 0.329, 0.327, 0.365, //
+    0.473, 0.376, 0.380, 0.436, 1.000, 0.762, 0.730, 0.629, //
+    0.398, 0.326, 0.319, 0.329, 0.762, 1.000, 0.583, 0.577, //
+    0.301, 0.277, 0.237, 0.327, 0.730, 0.583, 1.000, 0.539, //
+    0.382, 0.415, 0.345, 0.365, 0.629, 0.577, 0.539, 1.000,
+];
+
+/// Full-vector oracle parity on Harman-8. Asserts read: crate `f2`, `f4`,
+/// `retained_f2`, `retained_f4`. Kills MAP-M1..M4.
+#[test]
+fn map_harman8_oracle() {
+    let r = velicer_map_corr(&HARMAN8, 8, 7).unwrap();
+    let f2_oracle = [
+        0.312474786,
+        0.245120888,
+        0.066444959,
+        0.127594380,
+        0.204202701,
+        0.271829458,
+        0.434591269,
+        1.0,
+    ];
+    let f4_oracle = [
+        0.155060932,
+        0.073578687,
+        0.011930167,
+        0.051913581,
+        0.116013162,
+        0.152571355,
+        0.331202709,
+        1.0,
+    ];
+    for m in 0..=7 {
+        assert!(
+            (r.f2[m] - f2_oracle[m]).abs() < 1e-7,
+            "f2[{m}] = {} vs oracle {}",
+            r.f2[m],
+            f2_oracle[m]
+        );
+        assert!(
+            (r.f4[m] - f4_oracle[m]).abs() < 1e-7,
+            "f4[{m}] = {} vs oracle {}",
+            r.f4[m],
+            f4_oracle[m]
+        );
+    }
+    assert_eq!(
+        r.retained_f2, 2,
+        "O'Connor canonical count (faMAP would say 3)"
+    );
+    assert_eq!(r.retained_f4, 2);
+}
+
+/// Identity matrix: baseline f2[0] = 0, retain 0, and all m >= 1 rows are
+/// invalid (partial covariance diagonal hits 0) => NaN, not a panic or Inf.
+/// Asserts read: crate `f2`, `f4`, `retained_f2`. Guards the
+/// singular-normalization contract from the spec review.
+#[test]
+fn map_identity_guard() {
+    let p = 5;
+    let mut eye = vec![0.0; p * p];
+    for i in 0..p {
+        eye[i * p + i] = 1.0;
+    }
+    let r = velicer_map_corr(&eye, p, p - 1).unwrap();
+    assert_eq!(r.f2[0], 0.0);
+    assert_eq!(r.f4[0], 0.0);
+    assert_eq!(r.retained_f2, 0);
+    for m in 1..p {
+        assert!(r.f2[m].is_nan(), "f2[{m}] should be invalid on identity R");
+        assert!(r.f4[m].is_nan());
+    }
+}
+
+/// Data path agrees with the corr path on data whose Pearson matrix is
+/// computed internally. Asserts read: crate outputs from both entry points.
+#[test]
+fn map_data_matches_corr() {
+    // 2-factor structured data via fixed LCG (same generator as MC tests).
+    let mut state: u64 = 0xABCDEF987654321;
+    let mut next_u = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut next_normal = move || {
+        let (u1, u2): (f64, f64) = (next_u().max(1e-12), next_u());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    };
+    let (n, p) = (400usize, 6usize);
+    let mut data = vec![0.0; n * p];
+    for row in data.chunks_mut(p) {
+        let (f1, f2) = (next_normal(), next_normal());
+        for (j, x) in row.iter_mut().enumerate() {
+            let common = if j < 3 { 0.75 * f1 } else { 0.75 * f2 };
+            *x = common + (1.0 - 0.75f64 * 0.75).sqrt() * next_normal();
+        }
+    }
+    let via_data = velicer_map_data(&data, n, p, 5).unwrap();
+    let r = correlation_matrix(&data, n, p).unwrap();
+    let via_corr = velicer_map_corr(&r, p, 5).unwrap();
+    assert_eq!(via_data, via_corr);
+    assert_eq!(via_data.retained_f2, 2, "2-factor structure recovered");
+}
+
+/// Error paths. Asserts read: crate error strings.
+#[test]
+fn map_error_paths() {
+    let e = velicer_map_corr(&HARMAN8, 8, 8).unwrap_err();
+    assert!(e.contains("max_m"), "{e}");
+    let bad = vec![0.5; 9]; // diagonal != 1
+    assert!(velicer_map_corr(&bad, 3, 1).is_err());
+    assert!(velicer_map_corr(&HARMAN8[..63], 8, 1).is_err()); // wrong length
+    let mut asym = HARMAN8.to_vec();
+    asym[1] = 0.9; // break symmetry
+    assert!(velicer_map_corr(&asym, 8, 1).is_err());
+    assert!(velicer_map_data(&[1.0, f64::NAN, 0.0, 1.0, 2.0, 3.0], 2, 3, 1).is_err());
+    // Materially non-PSD "correlation" matrix (det < 0, one eigenvalue
+    // < -1e-8) must be rejected for every max_m, including the m = 0
+    // baseline-only case (trailing-eigenvalue guard; kills a mutation
+    // restoring the old `eigval[..max_m]` slice).
+    #[rustfmt::skip]
+    let npsd = [
+        1.0, 0.9, 0.9,
+        0.9, 1.0, -0.9,
+        0.9, -0.9, 1.0,
+    ];
+    for m in 0..=2 {
+        let e = velicer_map_corr(&npsd, 3, m).unwrap_err();
+        assert!(e.contains("negative eigenvalue"), "max_m={m}: {e}");
+    }
+}
+
+/// MC-500 (#[ignore]): sample-correlation recovery of a 3-factor
+/// population; majority of replications must retain exactly 3 by f2.
+/// Asserts read: crate `retained_f2` per replication.
+#[test]
+#[ignore]
+fn map_mc_recovery_500() {
+    let mut state: u64 = 0x5EED5EED5EED5EED;
+    let mut next_u = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut next_normal = move || {
+        let (u1, u2): (f64, f64) = (next_u().max(1e-12), next_u());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    };
+    let (n, p, reps) = (500usize, 9usize, 500usize);
+    let mut correct = 0usize;
+    for _ in 0..reps {
+        let mut data = vec![0.0; n * p];
+        for row in data.chunks_mut(p) {
+            let f = [next_normal(), next_normal(), next_normal()];
+            for (j, x) in row.iter_mut().enumerate() {
+                let common = 0.8 * f[j / 3];
+                *x = common + (1.0 - 0.64f64).sqrt() * next_normal();
+            }
+        }
+        if velicer_map_data(&data, n, p, p - 1).unwrap().retained_f2 == 3 {
+            correct += 1;
+        }
+    }
+    eprintln!("map_mc_recovery_500: {correct}/{reps} retained 3");
+    assert!(
+        correct * 10 >= reps * 9,
+        "only {correct}/{reps} replications retained the true 3 components"
+    );
+}

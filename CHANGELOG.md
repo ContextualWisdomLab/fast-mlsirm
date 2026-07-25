@@ -119,6 +119,32 @@
 
 ### Added
 
+- **Velicer minimum average partial (MAP) test** (`fast_mlsirm.velicer_map`,
+  `velicer_map_from_data`; in `mlsirm_core::factor`). Component-retention
+  test of Velicer (1976, Psychometrika 41(3), 321-327,
+  doi:10.1007/BF02293557 — NOT read; formula
+  support is the read implementations below): PCA loadings from the
+  eigendecomposition of R, partial covariance `C* = R - A_m A_m'` rescaled
+  to a partial correlation matrix, and `f2[m]` = mean squared off-diagonal
+  partial correlation for `m = 0..max_m` (with the `m = 0` baseline being
+  R itself); retained components = the `m` at the minimum. Also computes
+  the revised elementwise fourth-power criterion `f4` (Velicer, Eaton, &
+  Fava, 2000, in Goffin & Helmes, Problems and Solutions in Human
+  Assessment, 41-71 — not read; attributed per O'Connor's code comments).
+  Algorithm and retention rule verified against Brian O'Connor's canonical
+  MAP programs (map.m and map.sps, oconnor-psych.ok.ubc.ca/nfactors — read
+  in full; O'Connor, 2000, Behavior Research Methods, Instruments, &
+  Computers 32(3), 396-402, paper itself not read) and psych VSS.R `map()`
+  (Revelle, 2025 — read). Documented divergences found by adversarial
+  review: `fungible::faMAP` prints a 1-based row position (off by one vs
+  O'Connor's count — not reproduced); `EFA.dimensions::MAP` now uses matrix
+  powers for the fourth-power criterion, conflicting with O'Connor's
+  elementwise form (unresolved from primary literature; we follow
+  O'Connor). Rows with singular partial-covariance normalization (e.g.
+  identity R for `m >= 1`) are NaN and excluded from the argmin. Rust core
+  with PyO3 binding and thin NumPy wrapper; Harman-8 full-vector oracle
+  parity (independent NumPy transcription), identity guard, and a
+  500-replication Monte-Carlo recovery test (`#[ignore]`).
 - **a-stratified multistage CAT item selection** (`fast_mlsirm.a_stratified`;
   in `mlsirm_core::exposure`). Simulation of Chang & Ying's (1999)
   a-stratified design: the pool is split into `n_strata` contiguous strata by

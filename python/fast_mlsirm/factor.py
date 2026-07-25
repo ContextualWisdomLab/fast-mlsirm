@@ -199,3 +199,90 @@ def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
     return _glbfa_from_dict(_core.glb_fa_from_data(x.reshape(-1), n, p))
+
+
+@dataclass
+class VelicerMapResult:
+    """Velicer's minimum average partial (MAP) test.
+
+    ``f2[m]`` / ``f4[m]`` for ``m = 0..max_m``: average squared (resp.
+    elementwise fourth-power) off-diagonal partial correlation after
+    partialing out the first ``m`` principal components; ``m = 0`` is the
+    unpartialed baseline. Invalid rows (singular partial-covariance
+    normalization, e.g. an identity matrix for ``m >= 1``) are NaN and
+    excluded from the retained-count argmin.
+
+    ``retained_f2`` follows O'Connor's canonical MAP programs (READ):
+    the ``m`` attaining the minimum. Note ``fungible::faMAP`` prints a
+    1-based row position instead — off by one; that convention is a bug
+    and is not reproduced. The fourth-power criterion is elementwise per
+    O'Connor's code; ``EFA.dimensions`` now uses matrix powers, an
+    unresolved conflict pending the Velicer, Eaton & Fava (2000) chapter
+    (NOT read)."""
+
+    f2: np.ndarray
+    f4: np.ndarray
+    retained_f2: int
+    retained_f4: int
+
+
+_MAP_REFERENCES = """References (APA 7th ed.):
+        Velicer, W. F. (1976). Determining the number of components from
+            the matrix of partial correlations. *Psychometrika, 41*(3),
+            321-327. https://doi.org/10.1007/BF02293557 (NOT read; formula
+            support is the read implementations below.)
+        O'Connor, B. P. (2000). SPSS and SAS programs for determining the
+            number of components using parallel analysis and Velicer's MAP
+            test. *Behavior Research Methods, Instruments, & Computers,
+            32*(3), 396-402. https://doi.org/10.3758/BF03200807 (Paper NOT
+            read; the map.m/map.sps programs it distributes were READ in
+            full and are the algorithm oracle.)
+        Velicer, W. F., Eaton, C. A., & Fava, J. L. (2000). Construct
+            explication through factor or component analysis. In R. D.
+            Goffin & E. Helmes (Eds.), *Problems and solutions in human
+            assessment* (pp. 41-71). Kluwer. (NOT read; the fourth-power
+            criterion is attributed to it per O'Connor's code comments.)
+        Revelle, W. (2025). *psych: Procedures for psychological,
+            psychometric, and personality research* (Version 2.6.5)
+            [R package]. https://CRAN.R-project.org/package=psych
+            (VSS.R map() READ.)
+    """
+
+
+def _map_from_dict(d: dict) -> VelicerMapResult:
+    return VelicerMapResult(
+        f2=np.asarray(d["f2"], dtype=np.float64),
+        f4=np.asarray(d["f4"], dtype=np.float64),
+        retained_f2=int(d["retained_f2"]),
+        retained_f4=int(d["retained_f4"]),
+    )
+
+
+def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
+    """Velicer's MAP test from a ``(p, p)`` correlation matrix.
+
+    ``max_m`` defaults to ``p - 1`` (the canonical upper bound).
+
+    %s""" % _MAP_REFERENCES
+    from . import _core
+
+    r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
+    if r.ndim != 2 or r.shape[0] != r.shape[1]:
+        raise ValueError("corr must be a square (p, p) matrix")
+    p = int(r.shape[0])
+    m = p - 1 if max_m is None else int(max_m)
+    return _map_from_dict(_core.velicer_map(r.reshape(-1), p, m))
+
+
+def velicer_map_from_data(data: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
+    """:func:`velicer_map` from a complete ``(n, p)`` data matrix.
+
+    %s""" % _MAP_REFERENCES
+    from . import _core
+
+    x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    if x.ndim != 2:
+        raise ValueError("data must be a 2-D (n, p) matrix")
+    n, p = map(int, x.shape)
+    m = p - 1 if max_m is None else int(max_m)
+    return _map_from_dict(_core.velicer_map_from_data(x.reshape(-1), n, p, m))

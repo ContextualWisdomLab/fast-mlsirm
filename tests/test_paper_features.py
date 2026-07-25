@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import (
+    velicer_map,
+    velicer_map_from_data,
     FitConfig,
     dif_analysis,
     dimensionality_residuals,
@@ -2364,7 +2366,9 @@ def test_dif_purification():
     The precondition is asserted first so the test cannot pass on a fixture with no contamination."""
     import numpy as np
     import pytest
-    from fast_mlsirm import (logistic_dif_purified, mantel_haenszel_dif,
+    from fast_mlsirm import (
+    velicer_map,
+    velicer_map_from_data,logistic_dif_purified, mantel_haenszel_dif,
                              mantel_haenszel_dif_purified)
     from fast_mlsirm.fitstats import _core_module
 
@@ -2673,6 +2677,8 @@ def test_u3_person_fit_polytomous():
     import numpy as np
     import pytest
     from fast_mlsirm import (
+    velicer_map,
+    velicer_map_from_data,
         fit_polytomous,
         u3_cutoff_polytomous,
         u3_person_fit_polytomous,
@@ -2805,6 +2811,8 @@ def test_kernel_equating_and_presmoothing():
     import numpy as np
     import pytest
     from fast_mlsirm import (
+    velicer_map,
+    velicer_map_from_data,
         equate_observed_scores,
         equate_observed_scores_kernel,
         loglinear_smooth,
@@ -6132,3 +6140,59 @@ class TestAStratified:
             fm.a_stratified(a, b, n_strata=4, test_length=10, seed=-1)
         with pytest.raises(ValueError):
             fm.a_stratified(a, b, n_strata=4, test_length=float("nan"))
+
+
+class TestVelicerMap:
+    """Velicer (1976) minimum average partial test (O'Connor programs READ;
+    core oracle: independent NumPy transcription on Harman-8). Every assert
+    reads crate outputs through the binding."""
+
+    HARMAN8 = np.array(
+        [
+            [1.000, 0.846, 0.805, 0.859, 0.473, 0.398, 0.301, 0.382],
+            [0.846, 1.000, 0.881, 0.826, 0.376, 0.326, 0.277, 0.415],
+            [0.805, 0.881, 1.000, 0.801, 0.380, 0.319, 0.237, 0.345],
+            [0.859, 0.826, 0.801, 1.000, 0.436, 0.329, 0.327, 0.365],
+            [0.473, 0.376, 0.380, 0.436, 1.000, 0.762, 0.730, 0.629],
+            [0.398, 0.326, 0.319, 0.329, 0.762, 1.000, 0.583, 0.577],
+            [0.301, 0.277, 0.237, 0.327, 0.730, 0.583, 1.000, 0.539],
+            [0.382, 0.415, 0.345, 0.365, 0.629, 0.577, 0.539, 1.000],
+        ]
+    )
+
+    def test_harman8_oracle(self):
+        # Reads crate f2/f4/retained via the binding; kills any wrapper
+        # reshaping or dict-key regression on top of the Rust-side kills.
+        res = velicer_map(self.HARMAN8)
+        np.testing.assert_allclose(
+            res.f2,
+            [0.312474786, 0.245120888, 0.066444959, 0.127594380,
+             0.204202701, 0.271829458, 0.434591269, 1.0],
+            atol=1e-7,
+        )
+        assert res.retained_f2 == 2
+        assert res.retained_f4 == 2
+        assert res.f4[2] == pytest.approx(0.011930167, abs=1e-7)
+
+    def test_identity_invalid_rows(self):
+        res = velicer_map(np.eye(5))
+        assert res.f2[0] == 0.0
+        assert res.retained_f2 == 0
+        assert np.isnan(res.f2[1:]).all()
+
+    def test_data_path_and_default_max_m(self):
+        rng = np.random.default_rng(7)
+        f = rng.standard_normal((300, 2))
+        lam = np.zeros((6, 2))
+        lam[:3, 0] = 0.8
+        lam[3:, 1] = 0.8
+        data = f @ lam.T + np.sqrt(1 - 0.64) * rng.standard_normal((300, 6))
+        res = velicer_map_from_data(data)
+        assert len(res.f2) == 6  # max_m defaults to p - 1 -> rows 0..5
+        assert res.retained_f2 == 2
+
+    def test_validation(self):
+        with pytest.raises(ValueError):
+            velicer_map(np.ones((3, 2)))
+        with pytest.raises(ValueError):
+            velicer_map(self.HARMAN8, max_m=8)  # > p - 1

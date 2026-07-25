@@ -69,6 +69,9 @@ from .factor import (
     glb_fa_from_data as glb_fa_from_data,
     omega_total_1f as omega_total_1f,
     omega_total_1f_from_data as omega_total_1f_from_data,
+    velicer_map as velicer_map,
+    velicer_map_from_data as velicer_map_from_data,
+    VelicerMapResult as VelicerMapResult,
 )
 from .gtheory import (
     gtheory_pi as gtheory_pi,
@@ -228,6 +231,9 @@ __all__ = [
     "minres_fa_from_data",
     "glb_fa",
     "glb_fa_from_data",
+    "velicer_map",
+    "velicer_map_from_data",
+    "VelicerMapResult",
     "selection_utility",
     "taylor_russell",
     "SelectionUtilityResult",
