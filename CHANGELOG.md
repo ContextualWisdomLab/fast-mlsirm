@@ -128,8 +128,11 @@
   `"continue"` with 1-based `n_used`; the full `llr_trace` is returned as an
   offline diagnostic (entries past `n_used` are counterfactual replay
   values). Verified against R catIrt `termSPRT.R`/`logLik.brm.R`/`p.brm.R`
-  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983) and Eggen (1999)
-  are cited as historical origins via Thompson (not directly read). Pinned
+  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983), Eggen (1999),
+  and Wald (1947) are cited as historical origins via Thompson (not directly
+  read). Log-likelihood ratios are computed in stable log space (softplus /
+  log-sigmoid), so extreme-but-valid parameters that saturate the response
+  probability to numerical 0/1 yield finite LLRs instead of errors. Pinned
   17-digit interior-crossing oracle, error-path and 500-rep Monte-Carlo
   structural-invariant tests; 4 executed mutation kills (swapped boundaries,
   dropped guessing floor, collapsed null hypothesis, off-by-one `n_used`).

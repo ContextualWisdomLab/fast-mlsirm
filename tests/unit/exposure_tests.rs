@@ -1814,3 +1814,28 @@ fn sprt_mc500_invariants() {
         }
     }
 }
+
+/// Regression for the saturation defect (impl review): extreme but valid
+/// parameters (a = 50, delta = 20 -> z = -/+1000) drive the 2PL response
+/// probability to numerical 0/1. The stable log-space forms must return a
+/// finite LLR (+1000 for a correct response, -1000 for a wrong one, since
+/// ln P -> -softplus(-z) and ln(1-P) -> -softplus(z)), not Err. Asserts
+/// read crate outputs (decision, n_used, llr, llr_trace).
+#[test]
+fn sprt_extreme_parameters_stay_finite() {
+    let r = sprt_classify(&[50.0], &[0.0], &[0.0], &[1], 0.0, 20.0, 0.05, 0.05).unwrap();
+    assert_eq!(r.decision, "above");
+    assert_eq!(r.n_used, 1);
+    assert!((r.llr - 1000.0).abs() < 1e-9, "llr = {}", r.llr);
+    assert_eq!(r.llr_trace.len(), 1);
+    let r0 = sprt_classify(&[50.0], &[0.0], &[0.0], &[0], 0.0, 20.0, 0.05, 0.05).unwrap();
+    assert_eq!(r0.decision, "below");
+    assert_eq!(r0.n_used, 1);
+    assert!((r0.llr + 1000.0).abs() < 1e-9, "llr = {}", r0.llr);
+    // Nonzero guessing floor at the same extremity: ln P is bounded below
+    // by ln(c), so the correct-response increment is ln(~1) - ln(c) =
+    // -ln(0.2) exactly at saturation.
+    let rc = sprt_classify(&[50.0], &[0.0], &[0.2], &[1], 0.0, 20.0, 0.05, 0.05).unwrap();
+    assert!((rc.llr - (-0.2_f64.ln())).abs() < 1e-12, "llr = {}", rc.llr);
+    assert!(rc.llr.is_finite());
+}

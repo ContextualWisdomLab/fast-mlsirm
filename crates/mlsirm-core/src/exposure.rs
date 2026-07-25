@@ -1530,9 +1530,25 @@ pub fn sprt_classify(
     let lower = (beta / (1.0 - alpha)).ln();
     let theta0 = theta_cut - delta;
     let theta1 = theta_cut + delta;
-    // D = 1 logistic 3PL (crate CAT convention; catIrt p.brm.R).
-    let p3 = |ai: f64, bi: f64, ci: f64, theta: f64| -> f64 {
-        ci + (1.0 - ci) / (1.0 + (-ai * (theta - bi)).exp())
+    // Stable softplus ln(1 + e^z): shift by max(z, 0) so exp never overflows.
+    let softplus = |z: f64| -> f64 {
+        if z > 0.0 {
+            z + (-z).exp().ln_1p()
+        } else {
+            z.exp().ln_1p()
+        }
+    };
+    // Stable log-probabilities under the D = 1 logistic 3PL
+    // P = c + (1 - c) sigmoid(z), z = a (theta - b) (crate CAT convention;
+    // catIrt p.brm.R). ln(1 - P) = ln(1 - c) - softplus(z) always; ln(P)
+    // needs the log-sigmoid branch -softplus(-z) only when c = 0 (for c > 0
+    // the direct form is bounded below by c and stays finite).
+    let ln_p = |z: f64, ci: f64| -> f64 {
+        if ci > 0.0 {
+            (ci + (1.0 - ci) / (1.0 + (-z).exp())).ln()
+        } else {
+            -softplus(-z)
+        }
     };
 
     let mut llr_trace = Vec::with_capacity(n);
@@ -1540,13 +1556,17 @@ pub fn sprt_classify(
     let mut decision = "continue";
     let mut n_used = n;
     for i in 0..n {
-        let p0 = p3(a[i], b[i], c[i], theta0);
-        let p1 = p3(a[i], b[i], c[i], theta1);
+        let z0 = a[i] * (theta0 - b[i]);
+        let z1 = a[i] * (theta1 - b[i]);
         let inc = if responses[i] == 1 {
-            (p1 / p0).ln()
+            // ln(P(theta1)) - ln(P(theta0)), each log computed stably.
+            ln_p(z1, c[i]) - ln_p(z0, c[i])
         } else {
-            ((1.0 - p1) / (1.0 - p0)).ln()
+            // ln(1-P(theta1)) - ln(1-P(theta0)); the ln(1-c) terms cancel.
+            softplus(z0) - softplus(z1)
         };
+        // Defensive: unreachable for validated inputs with the stable forms
+        // above (kept as a hard failure rather than silently propagating).
         if !inc.is_finite() {
             return Err(format!(
                 "sprt_classify: non-finite log-likelihood-ratio increment at item {i}"

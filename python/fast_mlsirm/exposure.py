@@ -653,8 +653,8 @@ def sprt_classify(
 
     Source status: the boundary and likelihood-ratio forms were verified
     against R catIrt ``termSPRT.R``/``logLik.brm.R``/``p.brm.R`` (READ) and
-    Thompson (2007, p. 7; READ). Reckase (1983) and Eggen (1999) were NOT
-    read and are cited as historical origins via Thompson.
+    Thompson (2007, p. 7; READ). Reckase (1983), Eggen (1999), and Wald
+    (1947) were NOT read and are cited as historical origins via Thompson.
 
     References (APA 7th ed.):
         Thompson, N. A. (2007). A practitioner's guide for variable-length
@@ -668,7 +668,8 @@ def sprt_classify(
         Reckase, M. D. (1983). A procedure for decision making using
             tailored testing. In D. J. Weiss (Ed.), *New horizons in
             testing* (pp. 237-255). Academic Press.
-        Wald, A. (1947). *Sequential analysis*. Wiley.
+        Wald, A. (1947). *Sequential analysis*. Wiley. (NOT read; boundary
+            forms verified through the READ sources above.)
     """
     from . import _core
 

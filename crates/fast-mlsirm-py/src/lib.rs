@@ -2449,6 +2449,8 @@ fn py_epv_select(
 /// 249-261. (NOT read; historical citation via Thompson)
 /// Reckase, M. D. (1983). A procedure for decision making using tailored
 /// testing. (NOT read; historical citation via Thompson)
+/// Wald, A. (1947). Sequential analysis. Wiley. (NOT read; boundary forms
+/// verified through the READ sources above)
 #[pyfunction]
 fn py_sprt_classify(
     py: Python<'_>,
