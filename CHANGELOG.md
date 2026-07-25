@@ -129,8 +129,10 @@
   `k()` convention — a deliberate CopyDetect asymmetry, regression-anchored
   in tests). K1/K2 fit linear/quadratic least squares of subgroup incorrect-
   match rates and take binomial upper tails `P(Bin(ws, p) >= m)`; S1/S2 fit
-  log-linear Poisson GLMs of (weighted) match counts and take Poisson upper
-  tails, with S2 adding the `(1.5e)^(-6·prob)` weighted correct-match term
+  log-linear Poisson GLMs of (weighted) match counts and take bounded
+  Poisson WINDOW probabilities (`P(m <= X <= ws)` / `P(mm <= X <= n_items)`,
+  not plain upper tails — CopyDetect subtracts the tail beyond the cap),
+  with S2 adding the `(1.5e)^(-6·prob)` weighted correct-match term
   and a RAW ceiling (`mm = ceil(sum) + m`, no epsilon — float noise at
   integer boundaries can bump `mm`, documented). Numerics: rank-checked
   modified Gram-Schmidt QR for the OLS fits (degenerate designs raise, no

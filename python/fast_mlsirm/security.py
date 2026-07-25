@@ -319,10 +319,13 @@ def gbt(matches, match_probs):
 class KVariantsResult:
     """K1/K2/S1/S2 answer-copying indices for one (copier, source) pair.
 
-    All four are upper-tail p-values (small values suggest copying):
-    ``k1``/``k2`` are binomial tails ``P(Bin(ws, p) >= m)`` at the
+    All four are p-values (small values suggest copying): ``k1``/``k2``
+    are inclusive binomial upper tails ``P(Bin(ws, p) >= m)`` at the
     linearly/quadratically regressed match rate; ``s1_index``/``s2_index``
-    are Poisson tails at the log-linearly regressed match count."""
+    are bounded Poisson WINDOW probabilities ``P(m <= Pois(s1) <= ws)``
+    and ``P(mm <= Pois(s2) <= n_items)`` at the log-linearly regressed
+    match count (the tail beyond ``ws``/``n_items`` is subtracted,
+    matching CopyDetect's ``ppois`` differences)."""
 
     wc: int
     ws: int
@@ -357,8 +360,11 @@ def k_variants(
     and K2 a quadratic least-squares regression of ``pr`` on the subgroup
     error rate and evaluates the binomial tail ``P(Bin(ws, p) >= m)`` at
     the copier's error rate; S1/S2 fit log-linear (Poisson GLM)
-    regressions of the (weighted) match counts and evaluate Poisson upper
-    tails. Regression is rank-checked QR least squares and a guarded
+    regressions of the (weighted) match counts and evaluate bounded
+    Poisson WINDOW probabilities ``P(m <= Pois(s1) <= ws)`` and
+    ``P(mm <= Pois(s2) <= n_items)`` (not plain upper tails — CopyDetect
+    subtracts the tail beyond ``ws``/``n_items``). Regression is
+    rank-checked QR least squares and a guarded
     Newton GLM with step-halving; degenerate designs raise. READ:
     CopyDetect ``R/similarity1.r`` internal ``ks12()`` (ported function;
     it SUPPRESSES R's non-integer Poisson warning for the S2 fit). NOT
