@@ -40,9 +40,9 @@ use mlsirm_core::dif::{
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
-    kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
-    owen_update as core_owen_update, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
-    SympsonHetterConfig,
+    epv_select as core_epv_select, kl_information as core_kl_information,
+    kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
+    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2378,6 +2378,55 @@ fn py_ccat_select(
         numpy::PyArray1::from_slice(py, &res.discrepancy),
     )?;
     out.set_item("info", numpy::PyArray1::from_slice(py, &res.info))?;
+    Ok(out.into())
+}
+
+/// Owen-approximate posterior-predictive expected posterior variance (EPV)
+/// item selection (`mlsirm_core::exposure::epv_select`). This is NOT van der
+/// Linden's (1998) exact MEPV criterion: the posterior is Owen's (1975) normal
+/// approximation N(mu, sig2), the predictive probability is
+/// p*_i = c_i + (1 - c_i) * Phi(a_i (mu - b_i) / sqrt(1 + a_i^2 sig2)), and
+/// the outcome variances come from `owen_update` rather than exact numerical
+/// posteriors. Selects the unadministered item minimizing
+/// EPV_i = p*_i sig2_i^+ + (1 - p*_i) sig2_i^-; ties go to the lowest index.
+/// Returns {selected, epv, predictive}.
+///
+/// References:
+/// van der Linden, W. J. (1998). Bayesian item selection criteria for
+/// adaptive testing. Psychometrika, 63(2), 201-216.
+/// https://doi.org/10.1007/BF02294775 (read as ERIC ED424235 research
+/// report; the exact-MEPV contract was verified against catR EPV.R and
+/// mirtCAT, and this routine deliberately substitutes Owen updates).
+/// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+/// in the context of adaptive mental testing. Journal of the American
+/// Statistical Association, 70(350), 351-356. (NOT read; update formulas
+/// follow the crate's `owen_update`.)
+#[pyfunction]
+fn py_epv_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    mu: f64,
+    sig2: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_epv_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        administered.as_slice()?,
+        mu,
+        sig2,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("selected", res.selected)?;
+    out.set_item("epv", numpy::PyArray1::from_slice(py, &res.epv))?;
+    out.set_item(
+        "predictive",
+        numpy::PyArray1::from_slice(py, &res.predictive),
+    )?;
     Ok(out.into())
 }
 
@@ -6200,6 +6249,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
     m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
     m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

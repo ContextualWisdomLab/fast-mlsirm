@@ -1266,3 +1266,140 @@ pub fn ccat_select(
         info,
     })
 }
+
+// ===================== Owen-approximate posterior-predictive EPV item selection =====================
+//
+// `epv_select` implements Owen-approximate posterior-predictive EPV
+// (expected posterior variance) item selection for the three-parameter
+// normal-ogive model maintained by [`owen_update`]. For each item it
+// computes the normal-posterior predictive probability
+//   p*_i = c_i + (1 - c_i) Phi(a_i (mu - b_i) / sqrt(1 + a_i^2 sig2)),
+// obtains the two Owen normal-approximation outcome variances from
+// [`owen_update`], and scores
+//   EPV_i = p*_i sig2_plus_i + (1 - p*_i) sig2_minus_i,
+// selecting the unadministered argmin (ties to the lowest index).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, epv_spec_review.md):
+// this is NOT the exact van der Linden (1998) MEPV criterion, which is
+// defined with response probabilities at the current ability estimate and
+// true/numerical posterior variances (READ: van der Linden's freely
+// available University of Twente/ERIC report, Research Report 96-01, ERIC
+// ED424235, Eq. (14); catR EPV.R/EPV.Rd; mirtCAT selection_criteria.R
+// 'MEPV'). The Psychometrika 63(2) journal body and Owen (1975) were NOT
+// read. The predictive identity E[Phi(alpha + beta Z)] =
+// Phi(alpha / sqrt(1 + beta^2)) for Z ~ N(0,1) applied to
+// P(theta) = c + (1 - c) Phi(a (theta - b)) under theta ~ N(mu, sig2) was
+// hand-derived and verified in the spec review; the outcome variances are
+// the crate's Owen closed-form updates, so the whole criterion is an
+// explicitly labeled Owen approximation of the posterior-predictive EPV.
+//
+// References (APA 7th):
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing (Research Report 98-01). University of Twente.
+//     (ERIC ED424235 report text READ; Psychometrika 63(2) body NOT read)
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing. Psychometrika, 63(2), 201-216.
+//     https://doi.org/10.1007/BF02294775 (metadata only)
+// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+//     in the context of adaptive mental testing. Journal of the American
+//     Statistical Association, 70(350), 351-356. (NOT read; update formulas
+//     per the crate's owen_update, verified against the 1998 report appendix)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+//     under computerized adaptive testing with the R package catR. Journal
+//     of Statistical Software, 48(8), 1-31.
+//     https://doi.org/10.18637/jss.v048.i08 (READ: EPV.R structural form)
+
+/// Result of one [`epv_select`] step.
+#[derive(Debug, Clone)]
+pub struct EpvSelectResult {
+    /// Selected item (unadministered argmin of `epv`, ties to lowest index).
+    pub selected: usize,
+    /// Owen-approximate expected posterior variance for every item.
+    pub epv: Vec<f64>,
+    /// Posterior-predictive success probability `p*_i` for every item.
+    pub predictive: Vec<f64>,
+}
+
+/// One Owen-approximate posterior-predictive EPV selection step: given the
+/// current normal posterior `theta ~ N(mu, sig2)`, score every item in the
+/// pool (administered or not) and select the unadministered item minimizing
+/// the expected posterior variance (ties to the lowest index). See the
+/// section comment for the exact criterion, its scope label, and references.
+///
+/// Errors on empty/mismatched inputs, invalid item parameters (mirroring
+/// [`owen_cat`]), an invalid prior, an all-administered pool, or when either
+/// [`owen_update`] outcome degenerates for any item.
+pub fn epv_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    administered: &[bool],
+    mu: f64,
+    sig2: f64,
+) -> Result<EpvSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("epv_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || administered.len() != n {
+        return Err(format!(
+            "epv_select: length mismatch (a={}, b={}, c={}, administered={})",
+            n,
+            b.len(),
+            c.len(),
+            administered.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("epv_select: a[{i}] must be finite positive"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("epv_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("epv_select: c[{i}] must be in [0, 1)"));
+        }
+    }
+    if !mu.is_finite() {
+        return Err("epv_select: mu must be finite".to_string());
+    }
+    if !sig2.is_finite() || sig2 <= 0.0 {
+        return Err("epv_select: sig2 must be finite positive".to_string());
+    }
+    if administered.iter().all(|&x| x) {
+        return Err("epv_select: all items administered".to_string());
+    }
+
+    let mut epv = Vec::with_capacity(n);
+    let mut predictive = Vec::with_capacity(n);
+    for i in 0..n {
+        // Predictive p*_i = c + (1 - c) Phi(a (mu - b) / sqrt(1 + a^2 sig2)).
+        // The argument equals owen_update's d = (mu - b) / sqrt(1/a^2 + sig2)
+        // exactly (multiply numerator and denominator by a > 0); the spec
+        // review verified this sign convention against the crate.
+        let d = (mu - b[i]) / (1.0 / (a[i] * a[i]) + sig2).sqrt();
+        let p_star = c[i] + (1.0 - c[i]) * norm_cdf(d);
+        let (_, sig2_plus) = owen_update(a[i], b[i], c[i], true, mu, sig2)?;
+        let (_, sig2_minus) = owen_update(a[i], b[i], c[i], false, mu, sig2)?;
+        epv.push(p_star * sig2_plus + (1.0 - p_star) * sig2_minus);
+        predictive.push(p_star);
+    }
+
+    // Unadministered argmin; strict < keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if !administered[i] && best.map_or(true, |(be, _)| epv[i] < be) {
+            best = Some((epv[i], i));
+        }
+    }
+    let selected = best
+        .expect("checked above that some item is unadministered")
+        .1;
+
+    Ok(EpvSelectResult {
+        selected,
+        epv,
+        predictive,
+    })
+}

@@ -119,6 +119,21 @@
 
 ### Added
 
+- **Owen-approximate posterior-predictive EPV item selection**
+  (`fast_mlsirm.epv_select`; in `mlsirm_core::exposure`). Deliberately
+  reduced scope of van der Linden's (1998, doi:10.1007/BF02294775) minimum
+  expected posterior variance (MEPV) criterion: the posterior is Owen's
+  normal approximation `N(mu, sig2)`, the predictive probability is
+  `p*_i = c_i + (1-c_i) Phi((mu-b_i)/sqrt(1/a_i^2 + sig2))`, and the outcome
+  posterior variances come from `owen_update` rather than exact numerical
+  posteriors; the unadministered item minimizing
+  `EPV_i = p*_i sig2_i^+ + (1-p*_i) sig2_i^-` is selected (lowest-index
+  ties). van der Linden (1998) READ as ERIC ED424235 (Research Report
+  96-01); the exact-MEPV contract additionally verified against R catR
+  `EPV.R` and mirtCAT `selection_criteria.R` (both READ); Owen (1975) NOT
+  read (update formulas follow the crate's `owen_update`). Pinned oracles
+  and a delegation discriminator (argmin EPV vs. max-info vs. b-matching)
+  fixed by the adversarial spec review.
 - **Kingsbury-Zara constrained CAT (CCAT) content balancing**
   (`fast_mlsirm.ccat_select`; in `mlsirm_core::exposure`). Single-step
   content-balanced item selection: eligible groups with zero administered

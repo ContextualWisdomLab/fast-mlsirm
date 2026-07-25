@@ -28,8 +28,8 @@
 //! `sh_controls_max_exposure`.
 
 use crate::exposure::{
-    a_stratified, ccat_select, eap_interim, kl_information, kl_select, owen_cat, owen_update, p3pl,
-    sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
+    a_stratified, ccat_select, eap_interim, epv_select, kl_information, kl_select, owen_cat,
+    owen_update, p3pl, sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
 };
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -1392,4 +1392,244 @@ fn ccat_info_extreme_inputs_stable() {
     assert!((r.info[0] / 2.8223507304721003 - 1.0).abs() < 1e-9);
     assert_eq!(r.selected, 0);
     assert!(r.info[0] > r.info[1]);
+}
+
+// ===================== Owen-approximate posterior-predictive EPV tests =====================
+//
+// Oracle values pinned by the adversarial spec review (epv_spec_review.md)
+// using f64 and the crate's exact Numerical-Recipes erfc approximation
+// (|error| < 1.2e-7); tolerances are 5e-7 absolute, matching the Owen tests.
+// These are crate-parity oracles, not arbitrary-precision values.
+
+/// Pinned five-item oracle: every assert reads epv_select's returned
+/// predictive/epv vectors and selected index (crate values). Killing
+/// mutants: EPV-M2 (dropping the guessing floor in p*: items 1 and 3
+/// predictive change), EPV-M3 (swapping the sig2 plus/minus weights: every
+/// epv with p* != 0.5 changes), EPV-M4 (wrong predictive denominator:
+/// predictive changes for every item).
+#[test]
+fn epv_pinned_oracle() {
+    let a = [1.0, 1.5, 0.8, 2.0, 1.2];
+    let b = [-0.5, 0.2, 0.0, 0.8, -0.2];
+    let c = [0.0, 0.1, 0.0, 0.2, 0.0];
+    let adm = [false; 5];
+    let r = epv_select(&a, &b, &c, &adm, 0.3, 0.8).unwrap();
+    let predictive_oracle = [
+        0.72450752942669350,
+        0.58214281295605108,
+        0.57737397511781730,
+        0.45023407596279880,
+        0.65873253189075243,
+    ];
+    let epv_oracle = [
+        0.60131771422419289,
+        0.52962761721829099,
+        0.62991332336282158,
+        0.60231616694192736,
+        0.54351330867142256,
+    ];
+    for i in 0..5 {
+        assert!(
+            (r.predictive[i] - predictive_oracle[i]).abs() < 5e-7,
+            "predictive[{i}] = {}, oracle {}",
+            r.predictive[i],
+            predictive_oracle[i]
+        );
+        assert!(
+            (r.epv[i] - epv_oracle[i]).abs() < 5e-7,
+            "epv[{i}] = {}, oracle {}",
+            r.epv[i],
+            epv_oracle[i]
+        );
+    }
+    assert_eq!(r.selected, 1, "argmin EPV must be item 1");
+}
+
+/// Delegation discriminator pinned by the spec review: in this pool
+/// argmin EPV = 2, argmax Fisher information at mu = 4, and Owen
+/// b-matching argmin |b_i - mu| = 1. Asserts read the crate's selected
+/// index and epv vector. Killing mutants: EPV-M1 (argmin -> argmax picks
+/// item 3), EPV-M5 (point probability P_i(mu) instead of posterior-
+/// predictive p*_i shifts predictive), EPV-M6 (delegate to b-matching
+/// picks 1), EPV-M7 (delegate to max info picks 4).
+#[test]
+fn epv_discriminates_from_max_info_and_b_matching() {
+    let a = [
+        0.71127789879824621,
+        0.64854445799599558,
+        1.7654112699885889,
+        0.83742872778938249,
+        0.88322558143136509,
+    ];
+    let b = [
+        -1.1985815760644314,
+        0.13372726004391877,
+        -1.4174170834573148,
+        -2.1649158509201518,
+        -0.7232085493428142,
+    ];
+    let c = [
+        0.0,
+        0.0017367688601781506,
+        0.032298449910040355,
+        0.10888354386121427,
+        0.0,
+    ];
+    let adm = [false; 5];
+    let mu = -0.18196673524946427;
+    let sig2 = 0.5152733572547918;
+    let r = epv_select(&a, &b, &c, &adm, mu, sig2).unwrap();
+    assert_eq!(
+        r.selected, 2,
+        "argmin EPV must be item 2, not max-info 4 or b-match 1"
+    );
+    let epv_oracle = [
+        0.45702642789547210,
+        0.45780475583060470,
+        0.41771608214541328,
+        0.47973541020374616,
+        0.42665366191730525,
+    ];
+    let predictive_oracle = [
+        0.74021546287972440,
+        0.42737027135084799,
+        0.91452196697378774,
+        0.93108519551950275,
+        0.65679587977743692,
+    ];
+    for i in 0..5 {
+        assert!(
+            (r.epv[i] - epv_oracle[i]).abs() < 5e-7,
+            "epv[{i}] = {}",
+            r.epv[i]
+        );
+        assert!(
+            (r.predictive[i] - predictive_oracle[i]).abs() < 5e-7,
+            "predictive[{i}] = {}",
+            r.predictive[i]
+        );
+    }
+    // b-matching and max-info would pick different items; pin them from the
+    // same crate output so a delegation mutant cannot satisfy all three.
+    let b_match = (0..5)
+        .min_by(|&i, &j| (b[i] - mu).abs().partial_cmp(&(b[j] - mu).abs()).unwrap())
+        .unwrap();
+    assert_eq!(b_match, 1);
+    assert_ne!(r.selected, b_match);
+    assert_ne!(r.selected, 4);
+}
+
+/// Administered masking: epv/predictive are computed for ALL items (returned
+/// vectors are full-length crate outputs) but the selection skips
+/// administered items. Masking the global argmin (item 1 of the pinned pool)
+/// must promote the runner-up (item 4), not renumber the vectors.
+#[test]
+fn epv_administered_items_scored_but_not_selected() {
+    let a = [1.0, 1.5, 0.8, 2.0, 1.2];
+    let b = [-0.5, 0.2, 0.0, 0.8, -0.2];
+    let c = [0.0, 0.1, 0.0, 0.2, 0.0];
+    let full = epv_select(&a, &b, &c, &[false; 5], 0.3, 0.8).unwrap();
+    let masked = epv_select(&a, &b, &c, &[false, true, false, false, false], 0.3, 0.8).unwrap();
+    assert_eq!(
+        masked.selected, 4,
+        "runner-up EPV item must win once 1 is masked"
+    );
+    assert_eq!(masked.epv.len(), 5);
+    for i in 0..5 {
+        assert!(
+            (masked.epv[i] - full.epv[i]).abs() < 1e-15,
+            "masking must not change scoring of item {i}"
+        );
+        assert!((masked.predictive[i] - full.predictive[i]).abs() < 1e-15);
+    }
+}
+
+#[test]
+fn epv_error_paths() {
+    let a = [1.0, 1.2];
+    let b = [0.0, 0.5];
+    let c = [0.0, 0.1];
+    let adm = [false, false];
+    assert!(epv_select(&[], &[], &[], &[], 0.0, 1.0)
+        .unwrap_err()
+        .contains("empty"));
+    assert!(epv_select(&a, &b[..1], &c, &adm, 0.0, 1.0)
+        .unwrap_err()
+        .contains("length mismatch"));
+    assert!(epv_select(&[1.0, -0.5], &b, &c, &adm, 0.0, 1.0)
+        .unwrap_err()
+        .contains("a[1]"));
+    assert!(epv_select(&a, &[0.0, f64::NAN], &c, &adm, 0.0, 1.0)
+        .unwrap_err()
+        .contains("b[1]"));
+    assert!(epv_select(&a, &b, &[0.0, 1.0], &adm, 0.0, 1.0)
+        .unwrap_err()
+        .contains("c[1]"));
+    assert!(epv_select(&a, &b, &c, &adm, f64::NAN, 1.0)
+        .unwrap_err()
+        .contains("mu"));
+    assert!(epv_select(&a, &b, &c, &adm, 0.0, 0.0)
+        .unwrap_err()
+        .contains("sig2"));
+    assert!(epv_select(&a, &b, &c, &[true, true], 0.0, 1.0)
+        .unwrap_err()
+        .contains("all items administered"));
+    // Degenerate owen_update outcome must propagate: an incorrect response
+    // at extreme distance underflows Phi(-d) (owen_update documented error).
+    assert!(epv_select(&[1.0], &[-1000.0], &[0.0], &[false], 0.0, 1.0).is_err());
+}
+
+/// 500-replication Monte-Carlo invariants (spec-review-approved weakened
+/// forms): selected is the unadministered argmin of the returned epv vector
+/// with lowest-index ties; c_i <= predictive_i <= 1 and finite; epv_i finite
+/// and positive. Strict epv_i < sig2 is NOT asserted: the spec review found
+/// roundoff inflation (8.88e-16 over sig2) and genuinely increasing single-
+/// outcome Owen variances, so openness would be a false invariant.
+#[test]
+#[ignore = "500-replication Monte-Carlo; run explicitly"]
+fn epv_mc500_invariants() {
+    let mut state: u64 = 0xE9F_2026;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    for rep in 0..500 {
+        let n = 5 + (next() * 20.0) as usize;
+        let a: Vec<f64> = (0..n).map(|_| 0.4 + 1.8 * next()).collect();
+        let b: Vec<f64> = (0..n).map(|_| -2.5 + 5.0 * next()).collect();
+        let c: Vec<f64> = (0..n).map(|_| 0.25 * next()).collect();
+        let adm: Vec<bool> = (0..n).map(|_| next() < 0.3).collect();
+        let adm = if adm.iter().all(|&x| x) {
+            let mut v = adm;
+            v[0] = false;
+            v
+        } else {
+            adm
+        };
+        let mu = -2.0 + 4.0 * next();
+        let sig2 = 0.2 + 1.5 * next();
+        let r = epv_select(&a, &b, &c, &adm, mu, sig2).unwrap_or_else(|e| panic!("rep {rep}: {e}"));
+        assert_eq!(r.epv.len(), n);
+        assert_eq!(r.predictive.len(), n);
+        assert!(!adm[r.selected], "rep {rep}: selected administered item");
+        for i in 0..n {
+            assert!(r.epv[i].is_finite() && r.epv[i] > 0.0, "rep {rep} epv[{i}]");
+            assert!(
+                r.predictive[i].is_finite() && r.predictive[i] >= c[i] && r.predictive[i] <= 1.0,
+                "rep {rep} predictive[{i}] = {}",
+                r.predictive[i]
+            );
+            if !adm[i] {
+                // Argmin with lowest-index ties, read from crate outputs.
+                assert!(
+                    r.epv[r.selected] < r.epv[i]
+                        || (r.epv[r.selected] == r.epv[i] && r.selected <= i),
+                    "rep {rep}: item {i} beats selected {}",
+                    r.selected
+                );
+            }
+        }
+    }
 }

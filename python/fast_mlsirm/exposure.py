@@ -542,3 +542,76 @@ def ccat_select(
         "discrepancy": np.asarray(r["discrepancy"]),
         "info": np.asarray(r["info"]),
     }
+
+
+def epv_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    administered: np.ndarray,
+    mu: float,
+    sig2: float,
+) -> dict:
+    """Owen-approximate posterior-predictive EPV item selection.
+
+    This is NOT van der Linden's (1998) exact minimum expected posterior
+    variance (MEPV) criterion. The posterior over theta is Owen's (1975)
+    normal approximation ``N(mu, sig2)``; the predictive success probability
+    is ``p*_i = c_i + (1 - c_i) * Phi((mu - b_i) / sqrt(1/a_i^2 + sig2))``
+    computed exactly as in ``owen_update``; and the two outcome posterior
+    variances ``sig2_i^+``/``sig2_i^-`` come from ``owen_update`` rather
+    than exact numerical posteriors. The unadministered item minimizing
+    ``EPV_i = p*_i sig2_i^+ + (1 - p*_i) sig2_i^-`` is selected; ties go to
+    the lowest index. ``epv`` and ``predictive`` are returned for the whole
+    pool (masking applies to selection only), all computed by the Rust core
+    (``mlsirm_core::exposure::epv_select``).
+
+    Source status: van der Linden (1998) was read as the ERIC ED424235
+    research report (Research Report 96-01); the exact-MEPV contract was
+    additionally verified against R catR ``EPV.R`` and mirtCAT
+    ``selection_criteria.R`` (both READ). Owen (1975) itself was NOT read;
+    the update formulas follow the crate's ``owen_update``.
+
+    References (APA 7th ed.):
+        van der Linden, W. J. (1998). Bayesian item selection criteria for
+            adaptive testing. *Psychometrika, 63*(2), 201-216.
+            https://doi.org/10.1007/BF02294775
+        Owen, R. J. (1975). A Bayesian sequential procedure for quantal
+            response in the context of adaptive mental testing. *Journal of
+            the American Statistical Association, 70*(350), 351-356.
+            https://doi.org/10.1080/01621459.1975.10479871
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    administered = np.asarray(administered)
+    if administered.ndim != 1:
+        raise ValueError("administered must be a 1-D array")
+    if administered.dtype != np.bool_:
+        raise ValueError("administered must be a boolean array")
+    r = _core.py_epv_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(administered),
+        float(mu),
+        float(sig2),
+    )
+    return {
+        "selected": int(r["selected"]),
+        "epv": np.asarray(r["epv"]),
+        "predictive": np.asarray(r["predictive"]),
+    }
