@@ -620,3 +620,96 @@ def epv_select(
         "epv": np.asarray(r["epv"]),
         "predictive": np.asarray(r["predictive"]),
     }
+
+def sprt_classify(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    theta_cut: float,
+    delta: float,
+    alpha: float = 0.05,
+    beta: float = 0.05,
+) -> dict:
+    """Single-cut binary-response Wald SPRT classification for CAT.
+
+    Compares the point hypotheses ``theta0 = theta_cut - delta`` and
+    ``theta1 = theta_cut + delta`` through the cumulative binary
+    log-likelihood ratio under the D = 1 logistic 3PL
+    ``P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i)))``
+    against the log Wald boundaries ``A = ln((1 - beta) / alpha)`` and
+    ``B = ln(beta / (1 - alpha))``. Responses are walked in order and the
+    FIRST inclusive crossing decides: ``LLR_k >= A`` -> ``"above"``,
+    ``LLR_k <= B`` -> ``"below"`` (``n_used = k``, 1-based); no crossing ->
+    ``"continue"`` with ``n_used = len(responses)``. All numerics run in the
+    Rust core (``mlsirm_core::exposure::sprt_classify``).
+
+    ``llr_trace`` is returned for ALL supplied responses as an offline
+    diagnostic; entries past ``n_used`` are counterfactual replay values (a
+    live CAT would stop at ``n_used`` and never administer later items).
+    Parameters calibrated on the D = 1.7 normal-ogive metric must be
+    rescaled by the caller (``a_D1 = 1.7 * a_D17``) before use.
+
+    Source status: the boundary and likelihood-ratio forms were verified
+    against R catIrt ``termSPRT.R``/``logLik.brm.R``/``p.brm.R`` (READ) and
+    Thompson (2007, p. 7; READ). Reckase (1983) and Eggen (1999) were NOT
+    read and are cited as historical origins via Thompson.
+
+    References (APA 7th ed.):
+        Thompson, N. A. (2007). A practitioner's guide for variable-length
+            computerized classification testing. *Practical Assessment,
+            Research & Evaluation, 12*(1).
+            https://doi.org/10.7275/fq3r-zz60
+        Eggen, T. J. H. M. (1999). Item selection in adaptive testing with
+            the sequential probability ratio test. *Applied Psychological
+            Measurement, 23*(3), 249-261.
+            https://doi.org/10.1177/01466219922031365
+        Reckase, M. D. (1983). A procedure for decision making using
+            tailored testing. In D. J. Weiss (Ed.), *New horizons in
+            testing* (pp. 237-255). Academic Press.
+        Wald, A. (1947). *Sequential analysis*. Wiley.
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the dtype casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
+    resp = np.asarray(responses)
+    if resp.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_sprt_classify(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(resp),
+        float(theta_cut),
+        float(delta),
+        float(alpha),
+        float(beta),
+    )
+    return {
+        "decision": str(r["decision"]),
+        "n_used": int(r["n_used"]),
+        "llr": float(r["llr"]),
+        "llr_trace": np.asarray(r["llr_trace"]),
+    }

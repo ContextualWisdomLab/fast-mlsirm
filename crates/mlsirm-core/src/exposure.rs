@@ -1403,3 +1403,172 @@ pub fn epv_select(
         predictive,
     })
 }
+
+// ===================== Wald SPRT classification for CAT =====================
+//
+// `sprt_classify` implements single-cut, binary-response SPRT classification
+// (Wald's sequential probability ratio test applied to IRT classification
+// testing). Two point hypotheses around the cut score,
+//   theta0 = theta_cut - delta,  theta1 = theta_cut + delta,
+// are compared through the cumulative binary log-likelihood ratio under the
+// D = 1 logistic 3PL
+//   P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i))),
+//   LLR_k = sum_{i<=k} [ u_i ln(P_i(theta1)/P_i(theta0))
+//                      + (1 - u_i) ln((1 - P_i(theta1))/(1 - P_i(theta0))) ],
+// against the log Wald boundaries
+//   A = ln((1 - beta) / alpha),  B = ln(beta / (1 - alpha)).
+// Responses are walked in order and the FIRST crossing decides (inclusive
+// comparisons, matching catIrt): LLR_k >= A -> "above" with n_used = k;
+// LLR_k <= B -> "below" with n_used = k; no crossing -> "continue" with
+// n_used = len(responses).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, sprt_spec_review.md):
+// boundaries and the binary log-likelihood-ratio form were verified against
+// READ sources: catIrt R/termSPRT.R + R/logLik.brm.R + R/p.brm.R (GitHub
+// swnydick/catIrt) and Thompson (2007), p. 7. Reckase (1983) and Eggen
+// (1999) are historical citations via Thompson and were NOT directly read.
+// This function implements only a single-cut binary 3PL SPRT with D = 1
+// logistic-scale item parameters; it is not a multi-cut, polytomous, or
+// D = 1.7 compatibility layer (parameters calibrated on the D = 1.7 metric
+// must be rescaled by the caller, a_D1 = 1.7 * a_D17, before use).
+//
+// The returned decision/n_used are first-crossing SPRT results. llr_trace is
+// computed for ALL supplied responses as an offline diagnostic; entries after
+// n_used are counterfactual replay values - live CAT would terminate at
+// n_used and would not administer later items.
+//
+// References (APA 7th):
+// Wald, A. (1947). Sequential analysis. Wiley. (NOT read; boundary forms
+//     verified through the sources below)
+// Thompson, N. A. (2007). A practitioner's guide for variable-length
+//     computerized classification testing. Practical Assessment, Research &
+//     Evaluation, 12(1). https://doi.org/10.7275/fq3r-zz60 (READ: p. 7
+//     likelihood-ratio form and Wald decision points)
+// Nydick, S. W. (2014). catIrt: An R package for simulating IRT-based
+//     computerized adaptive tests. (READ: R/termSPRT.R boundary and
+//     inclusive-comparison conventions; R/logLik.brm.R binary log
+//     likelihood; R/p.brm.R D = 1 3PL)
+// Eggen, T. J. H. M. (1999). Item selection in adaptive testing with the
+//     sequential probability ratio test. Applied Psychological Measurement,
+//     23(3), 249-261. (NOT read; historical citation via Thompson)
+// Reckase, M. D. (1983). A procedure for decision making using tailored
+//     testing. (NOT read; historical citation via Thompson)
+
+/// Result of [`sprt_classify`]. `decision` is `"above"`, `"below"`, or
+/// `"continue"`; `n_used` is the 1-based count of responses consumed by the
+/// first boundary crossing (or all responses when no crossing occurs);
+/// `llr_trace` holds the cumulative log-likelihood ratio after every supplied
+/// response (entries past `n_used` are offline counterfactuals); `llr` is the
+/// final trace entry.
+#[derive(Debug, Clone)]
+pub struct SprtResult {
+    pub decision: &'static str,
+    pub n_used: usize,
+    pub llr_trace: Vec<f64>,
+    pub llr: f64,
+}
+
+/// Single-cut binary-response Wald SPRT classification (see module comment
+/// above for the exact verified contract and source status).
+pub fn sprt_classify(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    theta_cut: f64,
+    delta: f64,
+    alpha: f64,
+    beta: f64,
+) -> Result<SprtResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("sprt_classify: item pool is empty".into());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "sprt_classify: length mismatch (a: {}, b: {}, c: {}, responses: {})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("sprt_classify: a[{i}] must be finite and > 0"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("sprt_classify: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "sprt_classify: c[{i}] must be finite and in [0, 1)"
+            ));
+        }
+        if responses[i] > 1 {
+            return Err(format!("sprt_classify: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !theta_cut.is_finite() {
+        return Err("sprt_classify: theta_cut must be finite".into());
+    }
+    if !delta.is_finite() || delta <= 0.0 {
+        return Err("sprt_classify: delta must be finite and > 0".into());
+    }
+    for (name, v) in [("alpha", alpha), ("beta", beta)] {
+        if !v.is_finite() || v <= 0.0 || v >= 1.0 {
+            return Err(format!(
+                "sprt_classify: {name} must be finite and in (0, 1)"
+            ));
+        }
+    }
+    if alpha + beta >= 1.0 {
+        return Err("sprt_classify: alpha + beta must be < 1".into());
+    }
+
+    let upper = ((1.0 - beta) / alpha).ln();
+    let lower = (beta / (1.0 - alpha)).ln();
+    let theta0 = theta_cut - delta;
+    let theta1 = theta_cut + delta;
+    // D = 1 logistic 3PL (crate CAT convention; catIrt p.brm.R).
+    let p3 = |ai: f64, bi: f64, ci: f64, theta: f64| -> f64 {
+        ci + (1.0 - ci) / (1.0 + (-ai * (theta - bi)).exp())
+    };
+
+    let mut llr_trace = Vec::with_capacity(n);
+    let mut cum = 0.0_f64;
+    let mut decision = "continue";
+    let mut n_used = n;
+    for i in 0..n {
+        let p0 = p3(a[i], b[i], c[i], theta0);
+        let p1 = p3(a[i], b[i], c[i], theta1);
+        let inc = if responses[i] == 1 {
+            (p1 / p0).ln()
+        } else {
+            ((1.0 - p1) / (1.0 - p0)).ln()
+        };
+        if !inc.is_finite() {
+            return Err(format!(
+                "sprt_classify: non-finite log-likelihood-ratio increment at item {i}"
+            ));
+        }
+        cum += inc;
+        llr_trace.push(cum);
+        // First crossing decides; inclusive comparisons (catIrt termSPRT.R).
+        if decision == "continue" {
+            if cum >= upper {
+                decision = "above";
+                n_used = i + 1;
+            } else if cum <= lower {
+                decision = "below";
+                n_used = i + 1;
+            }
+        }
+    }
+    Ok(SprtResult {
+        decision,
+        n_used,
+        llr: *llr_trace.last().unwrap(),
+        llr_trace,
+    })
+}

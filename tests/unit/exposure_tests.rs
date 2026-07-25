@@ -29,7 +29,7 @@
 
 use crate::exposure::{
     a_stratified, ccat_select, eap_interim, epv_select, kl_information, kl_select, owen_cat,
-    owen_update, p3pl, sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
+    owen_update, p3pl, sprt_classify, sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
 };
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -1630,6 +1630,187 @@ fn epv_mc500_invariants() {
                     r.selected
                 );
             }
+        }
+    }
+}
+
+/// Spec-review pinned oracle (sprt_spec_review.md): homogeneous 5-item pool,
+/// responses [1,1,1,1,0], theta_cut = 0, delta = 0.5, alpha = beta = 0.05.
+/// Every assert reads crate outputs (r.decision, r.n_used, r.llr_trace,
+/// r.llr). Killing mutants: SPRT-M1 (swapped boundaries classify at k = 1),
+/// SPRT-M2 (dropping c gives trace [1,2,3,4,3] and crossing at k = 3),
+/// SPRT-M3 (theta_cut in one likelihood: no crossing), SPRT-M4 (off-by-one
+/// n_used), SPRT-M5 (final-LLR-only decision returns "continue" because the
+/// counterfactual final LLR 2.1826... is inside the band).
+#[test]
+fn sprt_pinned_oracle_interior_crossing() {
+    let a = [2.0; 5];
+    let b = [0.0; 5];
+    let c = [0.1; 5];
+    let r = sprt_classify(&a, &b, &c, &[1, 1, 1, 1, 0], 0.0, 0.5, 0.05, 0.05).unwrap();
+    assert_eq!(r.decision, "above");
+    assert_eq!(r.n_used, 4);
+    let trace_oracle = [
+        0.79567203915954553,
+        1.5913440783190911,
+        2.3870161174786366,
+        3.1826881566381821,
+        2.1826881566381821,
+    ];
+    assert_eq!(r.llr_trace.len(), 5);
+    for k in 0..5 {
+        assert!(
+            (r.llr_trace[k] - trace_oracle[k]).abs() < 5e-15,
+            "llr_trace[{k}] = {}, oracle {}",
+            r.llr_trace[k],
+            trace_oracle[k]
+        );
+    }
+    assert!(
+        (r.llr - 2.1826881566381821).abs() < 5e-15,
+        "final llr = {}",
+        r.llr
+    );
+    // The final LLR sits strictly inside (B, A): a final-LLR-only mutant
+    // (SPRT-M5) would say "continue"; first-crossing SPRT says "above".
+    let upper = (0.95_f64 / 0.05).ln();
+    assert!(r.llr < upper && r.llr > -upper);
+    assert!(r.llr_trace[3] >= upper);
+}
+
+/// Below-decision symmetry and heterogeneous-pool behavior, reading only
+/// crate outputs. All-wrong responses on an informative pool must cross the
+/// lower boundary before the pool is exhausted, and n_used must mark the
+/// first crossing (every earlier trace entry strictly inside the band).
+#[test]
+fn sprt_below_decision_first_crossing() {
+    let a = [1.8, 1.2, 2.0, 0.9, 1.5, 1.6, 1.1, 1.9];
+    let b = [-0.3, 0.4, 0.1, -0.8, 0.6, -0.1, 0.9, 0.2];
+    let c = [0.0, 0.05, 0.2, 0.1, 0.0, 0.15, 0.0, 0.25];
+    let r = sprt_classify(&a, &b, &c, &[0; 8], 0.0, 0.5, 0.05, 0.05).unwrap();
+    assert_eq!(r.decision, "below");
+    let lower = (0.05_f64 / 0.95).ln();
+    let upper = (0.95_f64 / 0.05).ln();
+    assert!(r.n_used >= 1 && r.n_used < 8, "n_used = {}", r.n_used);
+    assert!(r.llr_trace[r.n_used - 1] <= lower);
+    for k in 0..r.n_used - 1 {
+        assert!(
+            r.llr_trace[k] > lower && r.llr_trace[k] < upper,
+            "premature crossing at {k}"
+        );
+    }
+}
+
+/// No-crossing path: wide error rates push the boundaries out so a short,
+/// mixed response set stays inside the band -> "continue" with n_used = n.
+#[test]
+fn sprt_continue_when_no_crossing() {
+    let a = [1.0, 1.1];
+    let b = [0.0, 0.2];
+    let c = [0.0, 0.0];
+    let r = sprt_classify(&a, &b, &c, &[1, 0], 0.0, 0.3, 0.05, 0.05).unwrap();
+    assert_eq!(r.decision, "continue");
+    assert_eq!(r.n_used, 2);
+    assert_eq!(r.llr_trace.len(), 2);
+    assert_eq!(r.llr, r.llr_trace[1]);
+}
+
+#[test]
+fn sprt_error_paths() {
+    let a = [1.0, 1.2];
+    let b = [0.0, 0.5];
+    let c = [0.0, 0.1];
+    let u = [1u8, 0u8];
+    assert!(sprt_classify(&[], &[], &[], &[], 0.0, 0.5, 0.05, 0.05)
+        .unwrap_err()
+        .contains("empty"));
+    assert!(sprt_classify(&a, &b[..1], &c, &u, 0.0, 0.5, 0.05, 0.05)
+        .unwrap_err()
+        .contains("length mismatch"));
+    assert!(
+        sprt_classify(&[1.0, -0.5], &b, &c, &u, 0.0, 0.5, 0.05, 0.05)
+            .unwrap_err()
+            .contains("a[1]")
+    );
+    assert!(
+        sprt_classify(&a, &[0.0, f64::NAN], &c, &u, 0.0, 0.5, 0.05, 0.05)
+            .unwrap_err()
+            .contains("b[1]")
+    );
+    assert!(sprt_classify(&a, &b, &[0.0, 1.0], &u, 0.0, 0.5, 0.05, 0.05)
+        .unwrap_err()
+        .contains("c[1]"));
+    assert!(sprt_classify(&a, &b, &c, &[1, 2], 0.0, 0.5, 0.05, 0.05)
+        .unwrap_err()
+        .contains("responses[1]"));
+    assert!(
+        sprt_classify(&a, &b, &c, &u, f64::INFINITY, 0.5, 0.05, 0.05)
+            .unwrap_err()
+            .contains("theta_cut")
+    );
+    assert!(sprt_classify(&a, &b, &c, &u, 0.0, 0.0, 0.05, 0.05)
+        .unwrap_err()
+        .contains("delta"));
+    assert!(sprt_classify(&a, &b, &c, &u, 0.0, 0.5, 0.0, 0.05)
+        .unwrap_err()
+        .contains("alpha"));
+    assert!(sprt_classify(&a, &b, &c, &u, 0.0, 0.5, 0.05, 1.0)
+        .unwrap_err()
+        .contains("beta"));
+    assert!(sprt_classify(&a, &b, &c, &u, 0.0, 0.5, 0.6, 0.5)
+        .unwrap_err()
+        .contains("alpha + beta"));
+}
+
+/// 500-rep Monte-Carlo structural invariants, reading only crate outputs:
+/// trace finite and same length as the pool; decision consistent with the
+/// first crossing of the inclusive Wald boundaries (no earlier crossing
+/// before n_used; crossing entry beyond the matching boundary; "continue"
+/// iff no entry ever leaves the open band, with n_used = n).
+#[test]
+#[ignore = "slow Monte-Carlo suite; run explicitly with --ignored"]
+fn sprt_mc500_invariants() {
+    let mut lcg = Lcg(20260725);
+    for rep in 0..500 {
+        let n = 5 + (lcg.next_f64() * 26.0) as usize;
+        let mut a = Vec::with_capacity(n);
+        let mut b = Vec::with_capacity(n);
+        let mut c = Vec::with_capacity(n);
+        let mut u = Vec::with_capacity(n);
+        for _ in 0..n {
+            a.push(0.5 + 2.0 * lcg.next_f64());
+            b.push(-2.0 + 4.0 * lcg.next_f64());
+            c.push(0.3 * lcg.next_f64());
+            u.push((lcg.next_f64() < 0.5) as u8);
+        }
+        let delta = 0.2 + 0.6 * lcg.next_f64();
+        let alpha = 0.01 + 0.3 * lcg.next_f64();
+        let beta = 0.01 + 0.3 * lcg.next_f64();
+        let cut = -1.0 + 2.0 * lcg.next_f64();
+        let r = sprt_classify(&a, &b, &c, &u, cut, delta, alpha, beta)
+            .unwrap_or_else(|e| panic!("rep {rep}: {e}"));
+        let upper = ((1.0 - beta) / alpha).ln();
+        let lower = (beta / (1.0 - alpha)).ln();
+        assert_eq!(r.llr_trace.len(), n, "rep {rep}");
+        assert!(r.llr_trace.iter().all(|v| v.is_finite()), "rep {rep}");
+        assert!((r.llr - r.llr_trace[n - 1]).abs() == 0.0, "rep {rep}");
+        for k in 0..r.n_used.saturating_sub(1) {
+            assert!(
+                r.llr_trace[k] > lower && r.llr_trace[k] < upper,
+                "rep {rep}: crossing before n_used at {k}"
+            );
+        }
+        match r.decision {
+            "above" => assert!(r.llr_trace[r.n_used - 1] >= upper, "rep {rep}"),
+            "below" => assert!(r.llr_trace[r.n_used - 1] <= lower, "rep {rep}"),
+            "continue" => {
+                assert_eq!(r.n_used, n, "rep {rep}");
+                assert!(
+                    r.llr_trace.iter().all(|v| *v > lower && *v < upper),
+                    "rep {rep}"
+                );
+            }
+            other => panic!("rep {rep}: unexpected decision {other}"),
         }
     }
 }

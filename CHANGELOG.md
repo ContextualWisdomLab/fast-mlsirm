@@ -119,6 +119,20 @@
 
 ### Added
 
+- **Wald SPRT classification for CAT** (`fast_mlsirm.sprt_classify`; in
+  `mlsirm_core::exposure`). Single-cut binary-response sequential probability
+  ratio test: point hypotheses at `theta_cut -/+ delta`, cumulative binary
+  log-likelihood ratio under the D=1 logistic 3PL, and inclusive
+  first-crossing decisions against the log Wald boundaries
+  `A = ln((1-beta)/alpha)`, `B = ln(beta/(1-alpha))` -> `"above"`/`"below"`/
+  `"continue"` with 1-based `n_used`; the full `llr_trace` is returned as an
+  offline diagnostic (entries past `n_used` are counterfactual replay
+  values). Verified against R catIrt `termSPRT.R`/`logLik.brm.R`/`p.brm.R`
+  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983) and Eggen (1999)
+  are cited as historical origins via Thompson (not directly read). Pinned
+  17-digit interior-crossing oracle, error-path and 500-rep Monte-Carlo
+  structural-invariant tests; 4 executed mutation kills (swapped boundaries,
+  dropped guessing floor, collapsed null hypothesis, off-by-one `n_used`).
 - **Owen-approximate posterior-predictive EPV item selection**
   (`fast_mlsirm.epv_select`; in `mlsirm_core::exposure`). Deliberately
   reduced scope of van der Linden's (1998, doi:10.1007/BF02294775) minimum

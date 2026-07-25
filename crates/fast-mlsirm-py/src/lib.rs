@@ -42,7 +42,8 @@ use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
     epv_select as core_epv_select, kl_information as core_kl_information,
     kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
-    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
+    sprt_classify as core_sprt_classify, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
+    SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2427,6 +2428,55 @@ fn py_epv_select(
         "predictive",
         numpy::PyArray1::from_slice(py, &res.predictive),
     )?;
+    Ok(out.into())
+}
+
+/// Single-cut binary-response Wald SPRT classification for CAT
+/// (`mlsirm_core::exposure::sprt_classify`). D = 1 logistic 3PL; point
+/// hypotheses at `theta_cut -/+ delta`; log Wald boundaries
+/// A = ln((1-beta)/alpha), B = ln(beta/(1-alpha)) with inclusive
+/// first-crossing decisions ("above"/"below"/"continue"). `llr_trace`
+/// entries past `n_used` are offline counterfactual replay values.
+///
+/// References (APA 7th; see the core module comment for read/not-read
+/// source status):
+/// Thompson, N. A. (2007). A practitioner's guide for variable-length
+/// computerized classification testing. Practical Assessment, Research &
+/// Evaluation, 12(1). https://doi.org/10.7275/fq3r-zz60 (READ)
+/// Nydick, S. W. (2014). catIrt (R package). (READ: termSPRT.R,
+/// logLik.brm.R, p.brm.R)
+/// Eggen, T. J. H. M. (1999). Applied Psychological Measurement, 23(3),
+/// 249-261. (NOT read; historical citation via Thompson)
+/// Reckase, M. D. (1983). A procedure for decision making using tailored
+/// testing. (NOT read; historical citation via Thompson)
+#[pyfunction]
+fn py_sprt_classify(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    theta_cut: f64,
+    delta: f64,
+    alpha: f64,
+    beta: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_sprt_classify(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        responses.as_slice()?,
+        theta_cut,
+        delta,
+        alpha,
+        beta,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("decision", res.decision)?;
+    out.set_item("n_used", res.n_used)?;
+    out.set_item("llr", res.llr)?;
+    out.set_item("llr_trace", numpy::PyArray1::from_slice(py, &res.llr_trace))?;
     Ok(out.into())
 }
 
@@ -6250,6 +6300,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
     m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sprt_classify, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
