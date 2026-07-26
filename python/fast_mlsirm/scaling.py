@@ -1525,18 +1525,25 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
         if np.iscomplexobj(arr):
             raise ValueError(f"metrics_rating: {name} must be real-valued")
         if arr.dtype == object:
+            if any(isinstance(v, (str, bytes, bool)) for v in arr.flat):
+                raise ValueError(f"metrics_rating: {name} must be numeric")
             try:
                 arr = arr.astype(np.float64)
             except (TypeError, ValueError) as exc:
                 raise ValueError(
                     f"metrics_rating: {name} must be numeric"
                 ) from exc
-        arr = np.ascontiguousarray(arr, dtype=np.float64)
+        if arr.dtype.kind not in "fiu":
+            raise ValueError(
+                f"metrics_rating: {name} must be numeric, got dtype {arr.dtype}"
+            )
+        # ndim is checked BEFORE ascontiguousarray, which would promote
+        # 0-D scalars to 1-D and bypass the documented shape contract.
         if arr.ndim != ndim:
             raise ValueError(
                 f"metrics_rating: {name} must be {ndim}-D, got {arr.ndim}-D"
             )
-        return arr
+        return np.ascontiguousarray(arr, dtype=np.float64)
 
     act_arr = _as_float("act", act, 1)
     pred_in = np.asarray(pred)

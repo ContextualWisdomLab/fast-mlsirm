@@ -9900,3 +9900,16 @@ class TestMetrics:
             metrics_rating([1.0, np.inf], [0.6, 0.4])
         with pytest.raises(ValueError, match="0.5"):
             metrics_rating([0.5, 0.5], [0.6, 0.4], scale=True)
+        # regressions: string/bool inputs and 0-D scalars are rejected
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(["1", "0"], [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(
+                np.array(["1", "0"], dtype=object), [0.6, 0.4]
+            )
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating([1.0, 0.0], [0.6, 0.4], cap=("0.01", "0.99"))
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array([True, False]), [0.6, 0.4])
+        with pytest.raises(ValueError, match="1-D"):
+            metrics_rating(np.array(1.0), np.array(0.6))
