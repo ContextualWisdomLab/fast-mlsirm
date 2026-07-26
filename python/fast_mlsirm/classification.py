@@ -495,3 +495,211 @@ def subkoviak_agreement(
         chance_agreement=float(res["chance_agreement"]),
         kappa=float(res["kappa"]),
     )
+
+@dataclass
+class LivingstonResult:
+    """Livingston (1972) criterion-referenced reliability analysis.
+
+    ``mean``/``var`` are the population (ddof = 0) observed-score moments;
+    ``msd`` is the mean squared deviation from the criterion
+    ``D^2(X) = var + (mean - cut)^2`` (Table 1); ``k2`` holds the
+    criterion-referenced reliability at each requested Spearman-Brown
+    test-length multiplier."""
+
+    mean: float
+    var: float
+    msd: float
+    k2: np.ndarray
+
+
+_LIVINGSTON_REFERENCES = """
+        Livingston, S. A. (1972). *A classical test-theory approach to
+            criterion-referenced tests* (ERIC ED069624) [Paper
+            presentation]. AERA Annual Meeting. (Report version of
+            Livingston, 1972, *Journal of Educational Measurement, 9*(1),
+            13-26, which was not read; abstract only.)
+    """
+
+
+def livingston_k2(
+    scores: np.ndarray,
+    cut: float,
+    reliability: float,
+    n_lengths: Sequence[float] | np.ndarray = (1.0,),
+) -> LivingstonResult:
+    """Livingston's criterion-referenced reliability ``k^2`` (compute in
+    Rust; Livingston, 1972, read in full from ERIC ED069624).
+
+    ``reliability`` is the caller-supplied norm-referenced reliability
+    ``rho^2(X, T)``; the conversion form
+    ``k^2 = (rho^2 var + (mean-cut)^2) / (var + (mean-cut)^2)`` is an
+    algebraic reconstruction from the source's Table 1 expectation
+    definitions. ``k^2`` is NaN only when the scores are all exactly equal
+    to ``cut``. Each ``n_lengths`` entry applies Spearman-Brown to ``k^2``
+    itself; positive fractional lengths are a continuous projection beyond
+    the source's integer wording. In LLM-as-a-Judge quality management this
+    scores how reliably a judge separates outputs relative to a pass/fail
+    cut rather than relative to the group mean.
+    """
+    core = _core_or_raise("livingston_k2")
+    x = np.asarray(scores)
+    n = np.asarray(n_lengths)
+    for name, arr in (("scores", x), ("n_lengths", n)):
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if name == "scores":
+                x = arr
+            else:
+                n = arr
+    x = np.ascontiguousarray(x.astype(np.float64).reshape(-1))
+    n = np.ascontiguousarray(n.astype(np.float64).reshape(-1))
+    res = core.livingston_k2(x, float(cut), float(reliability), n)
+    return LivingstonResult(
+        mean=float(res["mean"]),
+        var=float(res["var"]),
+        msd=float(res["msd"]),
+        k2=np.asarray(res["k2"], dtype=np.float64),
+    )
+
+
+def livingston_correlation(
+    x: np.ndarray,
+    y: np.ndarray,
+    cut_x: float,
+    cut_y: float,
+) -> float:
+    """Livingston's criterion-referenced correlation ``k(X, Y)`` (compute
+    in Rust; Livingston, 1972, read in full from ERIC ED069624).
+
+    ``k(X, Y) = D(X, Y) / sqrt(D^2(X) D^2(Y))`` with moments about the two
+    criterion scores (Table 1); it can differ in sign from the
+    norm-referenced correlation. Returns NaN when either ``D^2`` is exactly
+    zero.
+    """
+    core = _core_or_raise("livingston_correlation")
+    ax = np.asarray(x)
+    ay = np.asarray(y)
+    for name, arr in (("x", ax), ("y", ay)):
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if name == "x":
+                ax = arr
+            else:
+                ay = arr
+    ax = np.ascontiguousarray(ax.astype(np.float64).reshape(-1))
+    ay = np.ascontiguousarray(ay.astype(np.float64).reshape(-1))
+    return float(core.livingston_correlation(ax, ay, float(cut_x), float(cut_y)))
+
+
+# Literal docstrings above keep __doc__ non-None on the exported functions;
+# the shared APA references are appended here (string-concatenation in the
+# docstring position sets __doc__ to None).
+livingston_k2.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
+livingston_correlation.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
+
+@dataclass
+class WoodruffSawyerResult:
+    """Woodruff & Sawyer (1988) full-test pass-fail reliability estimates.
+
+    ``phi_half``/``theta_half`` are NaN for the bivariate-normal method
+    (the source defines no half-test agreement there). ``phi`` equals
+    Cohen's kappa for the symmetric 2x2 pass-fail table.
+    """
+
+    pass_rate: float
+    phi_half: float
+    theta_half: float
+    phi: float
+    theta: float
+    pi00: float
+    pi01: float
+    pi11: float
+
+
+_WOODRUFF_SAWYER_REFERENCES = """
+        Woodruff, D. J., & Sawyer, R. L. (1988). *Estimating measures of
+            pass-fail reliability from parallel half-tests* (ERIC ED292877)
+            [Paper presentation]. AERA Annual Meeting.
+    """
+
+
+def _ws_result(res: dict) -> WoodruffSawyerResult:
+    return WoodruffSawyerResult(
+        pass_rate=float(res["pass_rate"]),
+        phi_half=float(res["phi_half"]),
+        theta_half=float(res["theta_half"]),
+        phi=float(res["phi"]),
+        theta=float(res["theta"]),
+        pi00=float(res["pi00"]),
+        pi01=float(res["pi01"]),
+        pi11=float(res["pi11"]),
+    )
+
+
+def woodruff_sawyer_sb(
+    counts: Sequence[float] | np.ndarray,
+) -> WoodruffSawyerResult:
+    """Split-half / Spearman-Brown pass-fail reliability (compute in Rust;
+    Woodruff & Sawyer, 1988, read in full from ERIC ED292877).
+
+    ``counts = [n00, n01, n10, n11]`` is the 2x2 half-test pass-fail table
+    (0 = fail, 1 = pass). The off-diagonal is symmetrized, the half-test
+    agreement coefficient ``phi`` (eq. 1) is stepped up by Spearman-Brown
+    (eq. 5), and the full-length table / ``theta*`` (eq. 8) is
+    reconstructed. Per the source (pp. 9-10) ``phi*`` is positively biased
+    when the halves are not strictly parallel. In LLM-as-a-Judge quality
+    management this estimates how consistently a full judge run would
+    reproduce its own pass/fail decisions, from a single split run.
+    """
+    core = _core_or_raise("woodruff_sawyer_sb")
+    c = np.asarray(counts)
+    if np.iscomplexobj(c):
+        raise ValueError("counts must be real-valued")
+    if c.dtype == object:
+        try:
+            c = c.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("counts must be numeric") from exc
+    c = np.ascontiguousarray(c.astype(np.float64).reshape(-1))
+    return _ws_result(core.woodruff_sawyer_sb(c))
+
+
+def woodruff_sawyer_normal(
+    mean: float,
+    sd: float,
+    cut: float,
+    r_half: float,
+) -> WoodruffSawyerResult:
+    """Bivariate-normal pass-fail reliability from a half-test correlation
+    (compute in Rust; Woodruff & Sawyer, 1988, read in full from ERIC
+    ED292877).
+
+    ``r_half`` is stepped up by Spearman-Brown to ``r_SB = 2r/(1+r)``;
+    parallel full-length forms are modeled as bivariate normal with
+    correlation ``r_SB`` and standardized cut ``(cut - mean)/sd``. The fail
+    rate is the lower tail. ``phi_half``/``theta_half`` are NaN on this
+    path. ``r_half`` below ``-1/3`` maps outside the valid correlation
+    range and raises.
+    """
+    core = _core_or_raise("woodruff_sawyer_normal")
+    return _ws_result(
+        core.woodruff_sawyer_normal(
+            float(mean), float(sd), float(cut), float(r_half)
+        )
+    )
+
+
+woodruff_sawyer_sb.__doc__ += "\n    References:" + _WOODRUFF_SAWYER_REFERENCES
+woodruff_sawyer_normal.__doc__ += (
+    "\n    References:" + _WOODRUFF_SAWYER_REFERENCES
+)

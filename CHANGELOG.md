@@ -119,6 +119,44 @@
 
 ### Added
 
+- **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
+  1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
+  `fast_mlsirm.woodruff_sawyer_normal`; in Rust
+  `mlsirm_core::classification::{woodruff_sawyer_sb,
+  woodruff_sawyer_normal}`): estimates the full-test agreement `theta*`
+  and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
+  table) from a single administration split into parallel halves. The SB
+  method symmetrizes the half-test 2x2 table's off-diagonal, computes
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
+  `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
+  (eq. 8); the normal method steps up the half-test correlation
+  (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and
+  evaluates the joint fail-fail cell with the crate's BVN quadrature.
+  Pinned by exact rational fixtures, a Sheppard-orthant exact anchor, and
+  the paper's Table 4 values; six mutation kills executed. Per the source
+  (pp. 9-10), `phi*` from the SB method is positively biased when the
+  halves are not strictly parallel.
+- **Livingston's criterion-referenced reliability k^2 and correlation
+  k(X, Y) (Livingston, 1972, AERA paper, ERIC ED069624)**
+  (`fast_mlsirm.livingston_k2`, `fast_mlsirm.livingston_correlation`; in
+  Rust `mlsirm_core::classification::{livingston_k2,
+  livingston_correlation}`): the classical-test-theory analogues of
+  reliability and correlation with moments taken about a criterion
+  (cut) score instead of the mean, `D^2(X) = var + (mean - cut)^2`,
+  `k^2 = (rho^2 var + (mean-cut)^2) / D^2(X)`, and
+  `k(X,Y) = D(X,Y)/sqrt(D^2(X) D^2(Y))`, with Spearman-Brown test-length
+  projections applied to `k^2` itself. The conversion form is an
+  algebraic reconstruction from the source's Table 1 expectation
+  definitions; `k^2` is NaN only in the exact degenerate case (scores all
+  exactly equal to the cut, detected element-wise, or `var == 0 &&
+  mean == cut`), and returns the formula limit 1 when the squared
+  criterion offset overflows f64 with finite variance (the correlation
+  rejects that overflow with an error); fractional Spearman-Brown lengths are a
+  disclosed continuous extrapolation. Exact-fraction anchors (k2 = 5/6,
+  SB(2) = 10/11, sign-flip k = 5/7 with norm rho = -1, asymmetric-offset
+  k = 22/(7 sqrt(10))), equality-iff-mean=cut and zero-variance property
+  pins, error contracts, and a 500-rep Monte Carlo recovery check
+  (`#[ignore]`).
 - **Brennan-Kane index of dependability Phi(lambda) for mastery tests
   (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
   eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust
