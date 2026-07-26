@@ -365,7 +365,7 @@ def owen_update(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
         Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of
             ability in a microcomputer environment. *Applied Psychological
             Measurement, 6*(4), 431-444.
@@ -412,7 +412,7 @@ def owen_cat(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
     """
     from . import _core
 
@@ -541,4 +541,176 @@ def ccat_select(
         "group": int(r["group"]),
         "discrepancy": np.asarray(r["discrepancy"]),
         "info": np.asarray(r["info"]),
+    }
+
+
+def epv_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    administered: np.ndarray,
+    mu: float,
+    sig2: float,
+) -> dict:
+    """Owen-approximate posterior-predictive EPV item selection.
+
+    This is NOT van der Linden's (1998) exact minimum expected posterior
+    variance (MEPV) criterion. The posterior over theta is Owen's (1975)
+    normal approximation ``N(mu, sig2)``; the predictive success probability
+    is ``p*_i = c_i + (1 - c_i) * Phi((mu - b_i) / sqrt(1/a_i^2 + sig2))``
+    computed exactly as in ``owen_update``; and the two outcome posterior
+    variances ``sig2_i^+``/``sig2_i^-`` come from ``owen_update`` rather
+    than exact numerical posteriors. The unadministered item minimizing
+    ``EPV_i = p*_i sig2_i^+ + (1 - p*_i) sig2_i^-`` is selected; ties go to
+    the lowest index. ``epv`` and ``predictive`` are returned for the whole
+    pool (masking applies to selection only), all computed by the Rust core
+    (``mlsirm_core::exposure::epv_select``).
+
+    Source status: van der Linden (1998) was read as the ERIC ED424235
+    research report (Research Report 96-01); the exact-MEPV contract was
+    additionally verified against R catR ``EPV.R`` and mirtCAT
+    ``selection_criteria.R`` (both READ). Owen (1975) itself was NOT read;
+    the update formulas follow the crate's ``owen_update``.
+
+    References (APA 7th ed.):
+        van der Linden, W. J. (1998). Bayesian item selection criteria for
+            adaptive testing. *Psychometrika, 63*(2), 201-216.
+            https://doi.org/10.1007/BF02294775
+        Owen, R. J. (1975). A Bayesian sequential procedure for quantal
+            response in the context of adaptive mental testing. *Journal of
+            the American Statistical Association, 70*(350), 351-356.
+            https://doi.org/10.1080/01621459.1975.10479871
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the float64 casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    administered = np.asarray(administered)
+    if administered.ndim != 1:
+        raise ValueError("administered must be a 1-D array")
+    if administered.dtype != np.bool_:
+        raise ValueError("administered must be a boolean array")
+    r = _core.py_epv_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(administered),
+        float(mu),
+        float(sig2),
+    )
+    return {
+        "selected": int(r["selected"]),
+        "epv": np.asarray(r["epv"]),
+        "predictive": np.asarray(r["predictive"]),
+    }
+
+def sprt_classify(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    theta_cut: float,
+    delta: float,
+    alpha: float = 0.05,
+    beta: float = 0.05,
+) -> dict:
+    """Single-cut binary-response Wald SPRT classification for CAT.
+
+    Compares the point hypotheses ``theta0 = theta_cut - delta`` and
+    ``theta1 = theta_cut + delta`` through the cumulative binary
+    log-likelihood ratio under the D = 1 logistic 3PL
+    ``P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i)))``
+    against the log Wald boundaries ``A = ln((1 - beta) / alpha)`` and
+    ``B = ln(beta / (1 - alpha))``. Responses are walked in order and the
+    FIRST inclusive crossing decides: ``LLR_k >= A`` -> ``"above"``,
+    ``LLR_k <= B`` -> ``"below"`` (``n_used = k``, 1-based); no crossing ->
+    ``"continue"`` with ``n_used = len(responses)``. All numerics run in the
+    Rust core (``mlsirm_core::exposure::sprt_classify``).
+
+    ``llr_trace`` is returned for ALL supplied responses as an offline
+    diagnostic; entries past ``n_used`` are counterfactual replay values (a
+    live CAT would stop at ``n_used`` and never administer later items).
+    Parameters calibrated on the D = 1.7 normal-ogive metric must be
+    rescaled by the caller (``a_D1 = 1.7 * a_D17``) before use.
+
+    Source status: the boundary and likelihood-ratio forms were verified
+    against R catIrt ``termSPRT.R``/``logLik.brm.R``/``p.brm.R`` (READ) and
+    Thompson (2007, p. 7; READ). Reckase (1983), Eggen (1999), and Wald
+    (1947) were NOT read and are cited as historical origins via Thompson.
+
+    References (APA 7th ed.):
+        Thompson, N. A. (2007). A practitioner's guide for variable-length
+            computerized classification testing. *Practical Assessment,
+            Research & Evaluation, 12*(1).
+            https://doi.org/10.7275/fq3r-zz60
+        Eggen, T. J. H. M. (1999). Item selection in adaptive testing with
+            the sequential probability ratio test. *Applied Psychological
+            Measurement, 23*(3), 249-261.
+            https://doi.org/10.1177/01466219922031365
+        Reckase, M. D. (1983). A procedure for decision making using
+            tailored testing. In D. J. Weiss (Ed.), *New horizons in
+            testing* (pp. 237-255). Academic Press.
+        Wald, A. (1947). *Sequential analysis*. Wiley. (NOT read; boundary
+            forms verified through the READ sources above.)
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the dtype casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
+    resp = np.asarray(responses)
+    if resp.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_sprt_classify(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(resp),
+        float(theta_cut),
+        float(delta),
+        float(alpha),
+        float(beta),
+    )
+    return {
+        "decision": str(r["decision"]),
+        "n_used": int(r["n_used"]),
+        "llr": float(r["llr"]),
+        "llr_trace": np.asarray(r["llr_trace"]),
     }

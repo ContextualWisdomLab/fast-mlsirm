@@ -6494,3 +6494,226 @@ class TestCcatSelect:
                 administered=np.array([True] * 6),
                 theta0=0.0,
             )
+
+
+class TestEpvSelect:
+    """Owen-approximate posterior-predictive EPV selection (Rust core parity)."""
+
+    def test_pinned_oracle(self):
+        # Every assert reads the dict returned by the crate binding.
+        import numpy as np
+
+        from fast_mlsirm import epv_select
+
+        r = epv_select(
+            np.array([1.0, 1.5, 0.8, 2.0, 1.2]),
+            np.array([-0.5, 0.2, 0.0, 0.8, -0.2]),
+            np.array([0.0, 0.1, 0.0, 0.2, 0.0]),
+            administered=np.array([False] * 5),
+            mu=0.3,
+            sig2=0.8,
+        )
+        assert r["selected"] == 1
+        predictive_oracle = [
+            0.72450752942669350,
+            0.58214281295605108,
+            0.57737397511781730,
+            0.45023407596279880,
+            0.65873253189075243,
+        ]
+        epv_oracle = [
+            0.60131771422419289,
+            0.52962761721829099,
+            0.62991332336282158,
+            0.60231616694192736,
+            0.54351330867142256,
+        ]
+        for i in range(5):
+            assert abs(r["predictive"][i] - predictive_oracle[i]) < 5e-7
+            assert abs(r["epv"][i] - epv_oracle[i]) < 5e-7
+
+    def test_discriminates_from_max_info_and_b_matching(self):
+        # Spec-review delegation discriminator: argmin EPV = 2 while
+        # max-Fisher-info = 4 and Owen b-matching = 1 in this pool.
+        import numpy as np
+
+        from fast_mlsirm import epv_select
+
+        r = epv_select(
+            np.array([
+                0.71127789879824621,
+                0.64854445799599558,
+                1.7654112699885889,
+                0.83742872778938249,
+                0.88322558143136509,
+            ]),
+            np.array([
+                -1.1985815760644314,
+                0.13372726004391877,
+                -1.4174170834573148,
+                -2.1649158509201518,
+                -0.7232085493428142,
+            ]),
+            np.array([0.0, 0.0017367688601781506, 0.032298449910040355, 0.10888354386121427, 0.0]),
+            administered=np.array([False] * 5),
+            mu=-0.18196673524946427,
+            sig2=0.5152733572547918,
+        )
+        assert r["selected"] == 2
+        assert r["selected"] != 1  # b-matching pick
+        assert r["selected"] != 4  # max-info pick
+        assert abs(r["epv"][2] - 0.41771608214541328) < 5e-7
+
+    def test_administered_masking(self):
+        import numpy as np
+
+        from fast_mlsirm import epv_select
+
+        a = np.array([1.0, 1.5, 0.8, 2.0, 1.2])
+        b = np.array([-0.5, 0.2, 0.0, 0.8, -0.2])
+        c = np.array([0.0, 0.1, 0.0, 0.2, 0.0])
+        full = epv_select(a, b, c, administered=np.array([False] * 5), mu=0.3, sig2=0.8)
+        masked = epv_select(
+            a, b, c, administered=np.array([False, True, False, False, False]), mu=0.3, sig2=0.8
+        )
+        assert masked["selected"] == 4
+        # scoring covers the whole pool; masking affects selection only
+        assert np.allclose(masked["epv"], full["epv"], atol=1e-15, rtol=0.0)
+        assert np.allclose(masked["predictive"], full["predictive"], atol=1e-15, rtol=0.0)
+
+    def test_administered_degenerate_item_is_ignored(self):
+        import numpy as np
+
+        from fast_mlsirm import epv_select
+
+        r = epv_select(
+            np.array([1.0, 1.2]),
+            np.array([-1000.0, 0.5]),
+            np.array([0.0, 0.1]),
+            administered=np.array([True, False]),
+            mu=0.0,
+            sig2=1.0,
+        )
+        assert r["selected"] == 1
+        assert np.isnan(r["epv"][0])
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import epv_select
+
+        a = np.array([1.0, 1.2])
+        b = np.array([0.0, 0.5])
+        c = np.array([0.0, 0.1])
+        adm = np.array([False, False])
+        with pytest.raises(ValueError):
+            epv_select(a, b[:1], c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(np.array([1.0, -0.5]), b, c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, c, administered=adm, mu=0.0, sig2=0.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, c, administered=np.array([True, True]), mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, c, administered=np.array([0, 0]), mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, c, administered=np.array([[False, False]]), mu=0.0, sig2=1.0)
+        # complex laundering guard: rejected BEFORE the float64 cast
+        with pytest.raises(ValueError):
+            epv_select(np.array([1 + 2j, 1.2]), b, c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, np.array([0.0 + 1j, 0.5]), c, administered=adm, mu=0.0, sig2=1.0)
+        with pytest.raises(ValueError):
+            epv_select(a, b, np.array([0.0, 0.1 + 1j]), administered=adm, mu=0.0, sig2=1.0)
+
+class TestSprtClassify:
+    """sprt_classify wrapper: every assert reads crate-returned dict values."""
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import sprt_classify
+
+        r = sprt_classify(
+            np.full(5, 2.0),
+            np.zeros(5),
+            np.full(5, 0.1),
+            responses=np.array([1, 1, 1, 1, 0]),
+            theta_cut=0.0,
+            delta=0.5,
+            alpha=0.05,
+            beta=0.05,
+        )
+        assert r["decision"] == "above"
+        assert r["n_used"] == 4
+        trace = np.array(
+            [
+                0.79567203915954553,
+                1.5913440783190911,
+                2.3870161174786366,
+                3.1826881566381821,
+                2.1826881566381821,
+            ]
+        )
+        np.testing.assert_allclose(r["llr_trace"], trace, rtol=0, atol=5e-15)
+        assert abs(r["llr"] - 2.1826881566381821) < 5e-15
+
+    def test_default_c_and_bool_responses(self):
+        from fast_mlsirm import sprt_classify
+
+        r = sprt_classify(
+            np.array([1.0, 1.1]),
+            np.array([0.0, 0.2]),
+            responses=np.array([True, False]),
+            theta_cut=0.0,
+            delta=0.3,
+        )
+        assert r["decision"] == "continue"
+        assert r["n_used"] == 2
+        assert r["llr_trace"].shape == (2,)
+        assert r["llr"] == r["llr_trace"][-1]
+
+    def test_rejects_bad_responses(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="0 and 1"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 2]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1.0, 0.5]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+
+    def test_rejects_complex_input(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="real-valued"):
+            sprt_classify(
+                np.array([1.0 + 1j, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+
+    def test_core_validation_propagates(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="alpha \\+ beta"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                delta=0.5,
+                alpha=0.6,
+                beta=0.5,
+            )
