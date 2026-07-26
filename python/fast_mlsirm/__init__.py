@@ -62,6 +62,14 @@ from .personfit_np import (
     person_fit_np as person_fit_np,
     PersonFitNpResult as PersonFitNpResult,
 )
+from .deltaplot import (
+    delta_plot as delta_plot,
+    DeltaPlotResult as DeltaPlotResult,
+)
+from .ebdif import (
+    eb_mh_dif as eb_mh_dif,
+    EbDifResult as EbDifResult,
+)
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
@@ -299,6 +307,10 @@ __all__ = [
     "HofsteeResult",
     "person_fit_np",
     "PersonFitNpResult",
+    "delta_plot",
+    "DeltaPlotResult",
+    "eb_mh_dif",
+    "EbDifResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

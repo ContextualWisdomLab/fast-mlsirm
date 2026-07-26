@@ -1754,6 +1754,586 @@ pub fn raju_area(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Angoff Delta plot DIF (deltaPlotR port)
+// ---------------------------------------------------------------------------
+//
+// # Citation governance
+//
+// `delta_plot` is a computational port of Angoff's Delta plot (transformed
+// item difficulties) DIF method as IMPLEMENTED by the deltaPlotR R package
+// (READ: `R/deltaPlot.R` and `R/adjustExtreme.R`, cran/deltaPlotR @ e2aeeb6;
+// `R/diagPlot.R` is plotting-only and out of scope). NOT READ: Angoff, W. H.,
+// & Ford, S. F. (1973), "Item-race interaction on a test of scholastic
+// aptitude", *Journal of Educational Measurement, 10*, 95-106, and Magis, D.,
+// & Facon, B. (2012, 2014) — the method is cited only as implemented by
+// deltaPlotR. Printing, plotting, file output, and the `type="prop"` /
+// `type="delta"` input paths of the R function are out of scope (adversarial
+// spec review, files/deltaplot_spec_review.md: REDUCED-SCOPE); this port
+// implements the `type="response"` path only and does NOT claim full
+// deltaPlotR API parity.
+//
+// Algorithm (deltaPlot.R lines 20-187, transcribed):
+// 1. Per item, proportions correct per group (missing responses dropped per
+//    column, R `na.rm=TRUE`).
+// 2. Extreme-proportion adjustment (adjustExtreme.R): `constraint` clamps
+//    EVERY entry outside `[lo, hi]` (default `[0.001, 0.999]`); `add` replaces
+//    only entries EXACTLY 0 or 1 by `(sum + nr_add) / (n + 2*nr_add)` over the
+//    non-missing responses of that group-column.
+// 3. Delta transform `Delta = 4 * qnorm(1 - p) + 13` (line 49; the inverse
+//    normal CDF here is Acklam's approximation, |rel err| < 1.15e-9 — pinned
+//    tests use 1e-6 tolerances against an exact-quantile oracle).
+// 4. Major axis of the item cloud: `SIG = cov(Deltas)` (sample covariance,
+//    n-1), slope `b = max(b1, b2)` of the two roots
+//    `(s22 - s11 ± sqrt((s22-s11)^2 + 4 s12^2)) / (2 s12)`, intercept
+//    `a = mean_foc - b * mean_ref`. NOTE: `max` is R-compatible, NOT
+//    theoretical major-axis selection — the two roots have product -1 and R
+//    always keeps the positive one, even when `s12 < 0` (regression-tested).
+//    `s12 == 0` makes both roots NaN and R stops; this port returns `Err`.
+// 5. Perpendicular distances `dist_i = (b*D_ref_i - D_foc_i + a)/sqrt(b^2+1)`
+//    (lines 58-60). Any NaN distance is an error (R line 61 `stop`).
+// 6. Threshold: `Norm { alpha }` gives `Q = qnorm(1-alpha/2) * sqrt(C' SIG C)`
+//    with `C = (b, -1)/sqrt(b^2+1)`; `Fixed(thr)` gives `Q = |thr|`. Item `i`
+//    is flagged iff `|dist_i| > Q` (STRICT, line 73).
+// 7. Optional item purification (lines 96-183): drop flagged items, refit the
+//    axis on the reduced delta matrix, recompute distances for ALL items, and
+//    re-threshold per `PurifyType`: `Ipp1` keeps the first-pass threshold,
+//    `Ipp2` uses the new axis direction with the ORIGINAL full-data SIG,
+//    `Ipp3` uses the new direction with the reduced-data covariance. A fixed
+//    threshold forces IPP1 semantics (lines 148-152). Convergence: the flag
+//    membership row equals the previous iteration's row (R lines 163-173; R's
+//    length()-based comparison with its length-1 character sentinel is
+//    outcome-equivalent to this empty-set semantics — case table in
+//    files/deltaplot_spec.md addendum; the char/char in-loop case is
+//    unreachable for fixed data because an empty pass refits on all items and
+//    reproduces the nonempty first-pass flags, which is also why purification
+//    can oscillate and hit `max_iter` unconverged). `max_iter` bounds the
+//    TOTAL number of iteration rows including the initial pass (R `nrIter =
+//    nrow(difPur)`). If every item is flagged, the reduced matrix is empty and
+//    R's `cov` errors — this port returns `Err`.
+//
+// Verified against a NumPy oracle transcription pinned on a seeded fixture
+// (files/deltaplot_oracle.py); NOT verified against an R runtime.
+
+/// Threshold rule for [`delta_plot`].
+#[derive(Clone, Copy, Debug)]
+pub enum DeltaThreshold {
+    /// Normal approximation: `Q = qnorm(1 - alpha/2) * sqrt(C' SIG C)`.
+    Norm {
+        /// Two-sided significance level in (0, 1).
+        alpha: f64,
+    },
+    /// Fixed threshold `Q = |thr|` (deltaPlotR's classical default is 1.5).
+    Fixed(f64),
+}
+
+/// Extreme-proportion adjustment for [`delta_plot`] (adjustExtreme.R).
+#[derive(Clone, Copy, Debug)]
+pub enum ExtremeAdjust {
+    /// Clamp every proportion outside `[lo, hi]` (R default `[0.001, 0.999]`).
+    Constraint {
+        /// Lower clamp bound.
+        lo: f64,
+        /// Upper clamp bound.
+        hi: f64,
+    },
+    /// Replace proportions EXACTLY 0 or 1 by `(sum + nr_add)/(n + 2*nr_add)`.
+    Add {
+        /// Number of artificial successes AND failures added (R `nrAdd`).
+        nr_add: usize,
+    },
+}
+
+/// Purification threshold-update rule (deltaPlot.R lines 130-152).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PurifyType {
+    /// Keep the first-iteration threshold fixed.
+    Ipp1,
+    /// New axis direction, original full-data covariance.
+    Ipp2,
+    /// New axis direction, reduced-data covariance.
+    Ipp3,
+}
+
+/// Result of [`delta_plot`]. Item indices are 0-based.
+#[derive(Clone, Debug)]
+pub struct DeltaPlotResult {
+    /// Per-item raw proportions correct `(reference, focal)`.
+    pub props: Vec<[f64; 2]>,
+    /// Extreme-adjusted proportions.
+    pub adj_props: Vec<[f64; 2]>,
+    /// Delta scores `4*qnorm(1-p) + 13`, `(reference, focal)`.
+    pub deltas: Vec<[f64; 2]>,
+    /// Perpendicular distances, one inner vector per iteration (first =
+    /// unpurified pass, last = final pass).
+    pub dist: Vec<Vec<f64>>,
+    /// Major-axis parameters `(a, b)` per iteration.
+    pub axis_par: Vec<[f64; 2]>,
+    /// Detection threshold per iteration.
+    pub thresholds: Vec<f64>,
+    /// Final flagged items (0-based), from the last iteration.
+    pub dif_items: Vec<usize>,
+    /// Total iteration rows including the initial pass (R `nrIter`).
+    pub n_iter: usize,
+    /// False when purification hit `max_iter` without a stable flag set.
+    pub converged: bool,
+}
+
+/// Sample covariance matrix entries `(s11, s12, s22)` and means of an
+/// `n x 2` delta matrix (R `cov`, denominator `n - 1`).
+fn delta_cov(d: &[[f64; 2]]) -> ([f64; 3], [f64; 2]) {
+    let n = d.len() as f64;
+    let m0 = d.iter().map(|r| r[0]).sum::<f64>() / n;
+    let m1 = d.iter().map(|r| r[1]).sum::<f64>() / n;
+    let (mut s11, mut s12, mut s22) = (0.0, 0.0, 0.0);
+    for r in d {
+        s11 += (r[0] - m0) * (r[0] - m0);
+        s12 += (r[0] - m0) * (r[1] - m1);
+        s22 += (r[1] - m1) * (r[1] - m1);
+    }
+    let den = n - 1.0;
+    ([s11 / den, s12 / den, s22 / den], [m0, m1])
+}
+
+/// Major-axis `(a, b)` from covariance entries and means; R-compatible
+/// `max(b1, b2)` root selection (NaN when `s12 == 0`, like R's `0/0`).
+fn major_axis(s: [f64; 3], m: [f64; 2]) -> (f64, f64) {
+    let [s11, s12, s22] = s;
+    let root = ((s22 - s11) * (s22 - s11) + 4.0 * s12 * s12).sqrt();
+    let b1 = (s22 - s11 - root) / (2.0 * s12);
+    let b2 = (s22 - s11 + root) / (2.0 * s12);
+    // Not `f64::max`: R's `max(c(b1, b2))` propagates NaN, `f64::max` drops it.
+    let b = if b1 > b2 { b1 } else { b2 };
+    (m[1] - b * m[0], b)
+}
+
+/// Threshold `qnorm(1 - alpha/2) * sqrt(C' SIG C)` for axis slope `b`.
+fn norm_threshold(alpha: f64, b: f64, s: [f64; 3]) -> f64 {
+    let den = (b * b + 1.0).sqrt();
+    let (c0, c1) = (b / den, -1.0 / den);
+    let var = c0 * c0 * s[0] + 2.0 * c0 * c1 * s[1] + c1 * c1 * s[2];
+    crate::nodes::inv_normal_cdf(1.0 - alpha / 2.0) * var.sqrt()
+}
+
+/// Perpendicular distances of all items from the axis `(a, b)`.
+fn perp_dist(deltas: &[[f64; 2]], a: f64, b: f64) -> Vec<f64> {
+    let den = (b * b + 1.0).sqrt();
+    deltas.iter().map(|d| (b * d[0] - d[1] + a) / den).collect()
+}
+
+/// Angoff Delta plot DIF detection; see the module-section header above for
+/// the algorithm, source governance, and reduced scope. `responses` is a
+/// row-major `n_persons x n_items` 0/1 matrix (NaN = missing, dropped per
+/// column); `group[p]` is 0 (reference) or 1 (focal). `purify = None`
+/// disables item purification. Returned item indices are 0-based.
+pub fn delta_plot(
+    responses: &[f64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    extreme: ExtremeAdjust,
+    threshold: DeltaThreshold,
+    purify: Option<PurifyType>,
+    max_iter: usize,
+) -> Result<DeltaPlotResult, String> {
+    if n_persons == 0 || n_items < 2 {
+        return Err("delta_plot: need at least 1 person and 2 items".into());
+    }
+    if responses.len() != n_persons * n_items {
+        return Err("delta_plot: responses length != n_persons * n_items".into());
+    }
+    if group.len() != n_persons {
+        return Err("delta_plot: group length != n_persons".into());
+    }
+    if n_persons.saturating_mul(n_items) > MAX_CELLS {
+        return Err("delta_plot: input too large".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("delta_plot: group entries must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("delta_plot: both groups must be non-empty".into());
+    }
+    for &v in responses {
+        if !v.is_nan() && v != 0.0 && v != 1.0 {
+            // Stricter than R, which averages arbitrary numerics (documented
+            // input-contract restriction, spec review item 7).
+            return Err("delta_plot: responses must be 0, 1, or NaN".into());
+        }
+    }
+    match extreme {
+        ExtremeAdjust::Constraint { lo, hi } => {
+            if !(lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0) {
+                return Err("delta_plot: constraint range must satisfy 0 <= lo < hi <= 1".into());
+            }
+        }
+        ExtremeAdjust::Add { nr_add } => {
+            if nr_add < 1 {
+                return Err("delta_plot: nr_add must be >= 1".into());
+            }
+        }
+    }
+    if let DeltaThreshold::Norm { alpha } = threshold {
+        if !(alpha > 0.0 && alpha < 1.0) {
+            return Err("delta_plot: alpha must be in (0, 1)".into());
+        }
+    }
+    if purify.is_some() && max_iter < 1 {
+        return Err("delta_plot: max_iter must be >= 1".into());
+    }
+
+    // 1-2. Group proportions and extreme adjustment.
+    let mut props = vec![[f64::NAN; 2]; n_items];
+    for i in 0..n_items {
+        for g in 0..2usize {
+            let (mut sum, mut cnt) = (0.0, 0usize);
+            for p in 0..n_persons {
+                if group[p] as usize == g {
+                    let v = responses[p * n_items + i];
+                    if !v.is_nan() {
+                        sum += v;
+                        cnt += 1;
+                    }
+                }
+            }
+            if cnt == 0 {
+                // R would carry NaN into the Delta scores and stop at the
+                // distance check; fail fast with a clearer message.
+                return Err(format!(
+                    "delta_plot: item {i} has no non-missing responses in group {g}"
+                ));
+            }
+            props[i][g] = sum / cnt as f64;
+        }
+    }
+    let mut adj = props.clone();
+    match extreme {
+        ExtremeAdjust::Constraint { lo, hi } => {
+            for row in &mut adj {
+                for v in row.iter_mut() {
+                    *v = v.clamp(lo, hi);
+                }
+            }
+        }
+        ExtremeAdjust::Add { nr_add } => {
+            for i in 0..n_items {
+                for g in 0..2usize {
+                    if adj[i][g] == 0.0 || adj[i][g] == 1.0 {
+                        let (mut sum, mut cnt) = (0.0, 0usize);
+                        for p in 0..n_persons {
+                            if group[p] as usize == g {
+                                let v = responses[p * n_items + i];
+                                if !v.is_nan() {
+                                    sum += v;
+                                    cnt += 1;
+                                }
+                            }
+                        }
+                        adj[i][g] = (sum + nr_add as f64) / (cnt as f64 + 2.0 * nr_add as f64);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Delta transform.
+    let deltas: Vec<[f64; 2]> = adj
+        .iter()
+        .map(|r| {
+            [
+                4.0 * crate::nodes::inv_normal_cdf(1.0 - r[0]) + 13.0,
+                4.0 * crate::nodes::inv_normal_cdf(1.0 - r[1]) + 13.0,
+            ]
+        })
+        .collect();
+
+    // 4-6. First (unpurified) pass.
+    let (sig, means) = delta_cov(&deltas);
+    let (a, b) = major_axis(sig, means);
+    let dist0 = perp_dist(&deltas, a, b);
+    if dist0.iter().any(|v| v.is_nan()) {
+        return Err(
+            "delta_plot: perpendicular distances cannot be computed - one set of Delta scores is probably constant"
+                .into(),
+        );
+    }
+    let q0 = match threshold {
+        DeltaThreshold::Norm { alpha } => norm_threshold(alpha, b, sig),
+        DeltaThreshold::Fixed(t) => t.abs(),
+    };
+    let flags0: Vec<usize> = (0..n_items).filter(|&i| dist0[i].abs() > q0).collect();
+
+    let mut result = DeltaPlotResult {
+        props,
+        adj_props: adj,
+        deltas: deltas.clone(),
+        dist: vec![dist0.clone()],
+        axis_par: vec![[a, b]],
+        thresholds: vec![q0],
+        dif_items: flags0.clone(),
+        n_iter: 1,
+        converged: true,
+    };
+    let pur_type = match purify {
+        None => return Ok(result),
+        Some(_) if flags0.is_empty() => return Ok(result), // R: nrIter=1, converged
+        Some(t) => match threshold {
+            DeltaThreshold::Fixed(_) => PurifyType::Ipp1, // R lines 148-152
+            DeltaThreshold::Norm { .. } => t,
+        },
+    };
+
+    // 7. Purification loop (R lines 105-175).
+    let membership = |flags: &[usize]| -> Vec<u8> {
+        let mut row = vec![0u8; n_items];
+        for &i in flags {
+            row[i] = 1;
+        }
+        row
+    };
+    let alpha = match threshold {
+        DeltaThreshold::Norm { alpha } => alpha,
+        DeltaThreshold::Fixed(_) => f64::NAN, // unused on the fixed path
+    };
+    let mut dif = flags0;
+    let mut prev_row = membership(&dif);
+    let mut converged = false;
+    let mut iter = 1usize;
+    loop {
+        iter += 1;
+        if iter > max_iter {
+            break;
+        }
+        let reduced: Vec<[f64; 2]> = (0..n_items)
+            .filter(|i| !dif.contains(i))
+            .map(|i| deltas[i])
+            .collect();
+        if reduced.is_empty() {
+            // R: cov() on a 0-row matrix errors out of deltaPlot entirely.
+            return Err("delta_plot: every item was flagged during purification".into());
+        }
+        let (ssig, smeans) = delta_cov(&reduced);
+        let (aa, bb) = major_axis(ssig, smeans);
+        let dist2 = perp_dist(&deltas, aa, bb);
+        let q2 = match threshold {
+            DeltaThreshold::Fixed(t) => t.abs(),
+            DeltaThreshold::Norm { .. } => match pur_type {
+                PurifyType::Ipp1 => result.thresholds[0],
+                PurifyType::Ipp2 => norm_threshold(alpha, bb, sig),
+                PurifyType::Ipp3 => norm_threshold(alpha, bb, ssig),
+            },
+        };
+        // NaN distances (degenerate reduced axis) flag nothing, like R's
+        // NaN > Q comparisons.
+        let dif2: Vec<usize> = (0..n_items).filter(|&i| dist2[i].abs() > q2).collect();
+        let row = membership(&dif2);
+        result.dist.push(dist2);
+        result.axis_par.push([aa, bb]);
+        result.thresholds.push(q2);
+        result.n_iter += 1;
+        let same = row == prev_row;
+        prev_row = row;
+        dif = dif2;
+        if same {
+            converged = true;
+            break;
+        }
+    }
+    result.dif_items = dif;
+    result.converged = converged;
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)
+//
+// Source governance:
+// - READ: Zwick, R., & Thayer, D. T. (2003). An empirical Bayes enhancement
+//   of Mantel-Haenszel DIF analysis for computer-adaptive tests (LSAC
+//   Research Report Series; ERIC ED481063). All formulas below trace to the
+//   statistical-model section (report pp. 3-5): model MH_i ~ N(theta_i,
+//   sigma_i^2) with sigma_i^2 set to SE^2(MH_i) (Eq. 1); prior theta_i ~
+//   N(mu, tau^2) (Eq. 2); posterior normal with mean W_i*MH_i + (1-W_i)*mu
+//   and variance W_i*sigma_i^2 where W_i = tau^2/(tau^2 + sigma_i^2)
+//   (Eqs. 4-6); prior estimates mu_hat = mean(MH_i), tau2_hat = Var(MH_i) -
+//   mean(SE^2(MH_i)) (Eq. 7); negative tau2 estimates floored at zero
+//   (report footnote 5); five-category posterior probabilities as normal
+//   areas delimited at -1.5, -1, 1, 1.5 on the MH D-DIF (ETS delta) scale
+//   (report p. 4).
+// - NOT READ (history only; no formulas taken from them): Zwick, Thayer &
+//   Lewis (1999), Journal of Educational Measurement 36(1), 1-28; Zwick,
+//   Thayer & Lewis (1997) ETS RR; Longford, Holland & Thayer (1993).
+//
+// Implementation choices NOT stated in the read source (documented, not
+// paper formulas):
+// - Variance divisor: the source does not print the Var(MH_i) divisor. This
+//   implementation uses the unbiased sample variance (divisor n-1), a
+//   method-of-moments choice: conditional on fixed items, E[S^2 | theta] =
+//   S_theta^2 + mean(sigma_i^2), so deflating by mean(SE^2) estimates the
+//   finite-pool sample variance of the true DIF values (and the
+//   superpopulation tau^2 only under iid item effects). NOT verified
+//   against ETS/author software (none available).
+// - Degenerate tau2 == 0 point mass: the posterior collapses to mu_hat, so
+//   category probabilities become the indicator of mu_hat's ETS category
+//   (A: |m| < 1; B: 1 <= |m| < 1.5; C: |m| >= 1.5; the sign of m selects
+//   the -/+ variant). Boundary inclusion is implementation-defined; in the
+//   source's continuous posterior the boundaries have probability zero.
+// - Normal CDF: crate `fitstats::erfc` rational approximation
+//   (|error| < 1.2e-7), an engineering choice.
+// ---------------------------------------------------------------------------
+
+/// Result of [`eb_mh_dif`]. Category probability columns are ordered
+/// `[C-, B-, A, B+, C+]`.
+#[derive(Clone, Debug)]
+pub struct EbDifResult {
+    /// Prior mean estimate `mu_hat = mean(mh)`.
+    pub mu: f64,
+    /// Floored prior variance `max(0, tau2_raw)`; the only value entering
+    /// the posterior.
+    pub tau2: f64,
+    /// Pre-floor diagnostic `Var(mh) - mean(se^2)` (divisor `n-1`).
+    pub tau2_raw: f64,
+    /// Shrinkage weights `W_i = tau2 / (tau2 + se_i^2)`.
+    pub weight: Vec<f64>,
+    /// Posterior means `W_i * mh_i + (1 - W_i) * mu` (EB point estimates).
+    pub post_mean: Vec<f64>,
+    /// Posterior variances `W_i * se_i^2`.
+    pub post_var: Vec<f64>,
+    /// Posterior probabilities of the five ETS DIF categories.
+    pub cat_probs: Vec<[f64; 5]>,
+}
+
+/// Standard normal CDF via the crate's `erfc` approximation
+/// (|error| < 1.2e-7; see `fitstats::erfc`).
+fn eb_phi(z: f64) -> f64 {
+    0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2)
+}
+
+/// Point-mass ETS category indicator for the degenerate `tau2 == 0` case;
+/// boundary conventions are implementation-defined (see section header).
+fn eb_point_mass_cats(m: f64) -> [f64; 5] {
+    let a = m.abs();
+    let mut p = [0.0; 5];
+    let idx = if a < 1.0 {
+        2
+    } else if a < 1.5 {
+        if m < 0.0 {
+            1
+        } else {
+            3
+        }
+    } else if m < 0.0 {
+        0
+    } else {
+        4
+    };
+    p[idx] = 1.0;
+    p
+}
+
+/// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer, 2003; ERIC
+/// ED481063). Takes per-item MH D-DIF statistics and their standard errors
+/// on the ETS delta scale (e.g. [`MhDifRow::mh_d_dif`] /
+/// [`MhDifRow::se_d_dif`]; callers must filter items whose MH statistics
+/// are undefined/NaN) and returns shrinkage estimates plus posterior
+/// probabilities of the five ETS DIF categories. The prior is estimated
+/// from exactly the supplied item set, which the caller chooses (the paper
+/// uses all items in the pool for CATs); `n = 2` is accepted as a
+/// computational minimum but is not a psychometrically stable prior
+/// estimate. See the section header above for source governance and
+/// implementation choices.
+pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
+    if mh.len() != se.len() {
+        return Err(format!("mh length {} != se length {}", mh.len(), se.len()));
+    }
+    let n = mh.len();
+    if n < 2 {
+        return Err(format!(
+            "need at least 2 items for the across-item variance, got {n}"
+        ));
+    }
+    for (i, (&m, &s)) in mh.iter().zip(se).enumerate() {
+        if !m.is_finite() {
+            return Err(format!("mh[{i}] is not finite"));
+        }
+        if !s.is_finite() || s <= 0.0 {
+            return Err(format!("se[{i}] must be finite and positive"));
+        }
+        if !(s * s).is_finite() {
+            return Err(format!("se[{i}]^2 overflows"));
+        }
+    }
+    let nf = n as f64;
+    let mu = mh.iter().sum::<f64>() / nf;
+    // Unbiased sample variance (divisor n-1); implementation choice, see
+    // the section header.
+    let var = mh.iter().map(|&x| (x - mu) * (x - mu)).sum::<f64>() / (nf - 1.0);
+    let mean_se2 = se.iter().map(|&s| s * s).sum::<f64>() / nf;
+    let tau2_raw = var - mean_se2;
+    if !mu.is_finite() || !var.is_finite() || !mean_se2.is_finite() || !tau2_raw.is_finite() {
+        return Err("computed prior moments are not finite (inputs too large)".to_string());
+    }
+    // Footnote 5 of the read source: negative variance estimates set to 0.
+    let tau2 = if tau2_raw > 0.0 { tau2_raw } else { 0.0 };
+    let mut weight = Vec::with_capacity(n);
+    let mut post_mean = Vec::with_capacity(n);
+    let mut post_var = Vec::with_capacity(n);
+    let mut cat_probs = Vec::with_capacity(n);
+    for (&x, &s) in mh.iter().zip(se) {
+        let sig2 = s * s;
+        // Branch on tau2 == 0 before any z-score math: the posterior is a
+        // point mass at mu and dividing by sqrt(0) is never evaluated.
+        if tau2 == 0.0 {
+            weight.push(0.0);
+            post_mean.push(mu);
+            post_var.push(0.0);
+            cat_probs.push(eb_point_mass_cats(mu));
+            continue;
+        }
+        let denom = tau2 + sig2;
+        if !denom.is_finite() {
+            return Err(
+                "posterior weight denominator tau2 + se^2 is not finite (inputs too large)"
+                    .to_string(),
+            );
+        }
+        let w = tau2 / denom;
+        let m = w * x + (1.0 - w) * mu;
+        let v = w * sig2;
+        if !m.is_finite() || !v.is_finite() {
+            return Err("posterior moments are not finite (inputs too large)".to_string());
+        }
+        let sd = v.sqrt();
+        let z = |c: f64| (c - m) / sd;
+        let p_lo15 = eb_phi(z(-1.5));
+        let p_lo10 = eb_phi(z(-1.0));
+        let p_hi10 = eb_phi(z(1.0));
+        let p_hi15 = eb_phi(z(1.5));
+        // Adjacent-CDF differences; the erfc approximation can leave tiny
+        // negative roundoff, clamped to 0.
+        let probs = [
+            p_lo15,
+            (p_lo10 - p_lo15).max(0.0),
+            (p_hi10 - p_lo10).max(0.0),
+            (p_hi15 - p_hi10).max(0.0),
+            // Stable upper tail: 1 - Phi(z) computed as Phi(-z).
+            eb_phi(-z(1.5)),
+        ];
+        weight.push(w);
+        post_mean.push(m);
+        post_var.push(v);
+        cat_probs.push(probs);
+    }
+    Ok(EbDifResult {
+        mu,
+        tau2,
+        tau2_raw,
+        weight,
+        post_mean,
+        post_var,
+        cat_probs,
+    })
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;
