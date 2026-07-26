@@ -1011,8 +1011,14 @@ def stradaptive_administer(
     if strat_f.size and (not np.all(np.isfinite(strat_f))
                          or not np.all(strat_f == np.floor(strat_f))
                          or strat_f.min() < 0
-                         or float(strat_f.max()) > 2.0**53):
-        raise ValueError("stratum must contain non-negative integers")
+                         # Contiguous non-empty strata imply max < n_items;
+                         # this bound is exact under float64 (n <= array
+                         # length << 2^53), unlike a raw 2^53 cutoff that a
+                         # rounded 2^53 + 1 slips under.
+                         or float(strat_f.max()) >= strat_f.size):
+        raise ValueError(
+            "stratum must contain non-negative integers below len(stratum)"
+        )
     if not np.all(np.isin(resp_f, (0.0, 1.0))):
         raise ValueError("responses must contain only 0 and 1")
     r = _core.py_stradaptive_administer(

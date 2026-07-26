@@ -3094,7 +3094,17 @@ fn py_stradaptive_administer(
     min_items: usize,
     max_items: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let stratum_usize: Vec<usize> = stratum.as_slice()?.iter().map(|&s| s as usize).collect();
+    let stratum_usize: Vec<usize> = stratum
+        .as_slice()?
+        .iter()
+        .map(|&s| {
+            usize::try_from(s).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "stradaptive_administer: stratum {s} does not fit in usize"
+                ))
+            })
+        })
+        .collect::<PyResult<_>>()?;
     let res = core_stradaptive_administer(
         &stratum_usize,
         difficulty.as_slice()?,

@@ -7844,6 +7844,13 @@ class TestStradaptive:
             stradaptive_administer(
                 [0, -1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
             )
+        # 2**53 + 1 rounds to 2**53 under float64; the len-based bound must
+        # reject it anyway (regression for the lossy > 2**53 guard).
+        with pytest.raises(ValueError, match="below len"):
+            stradaptive_administer(
+                [0, 2**53 + 1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                **kw,
+            )
         with pytest.raises(ValueError, match="stratum"):
             stradaptive_administer(
                 [0, 0, 2, 2], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
