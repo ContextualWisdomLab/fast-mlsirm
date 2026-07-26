@@ -9547,6 +9547,50 @@ class TestGlicko2:
             g = np.array(ok, dtype=object)
             g[0][3] = object()
             glicko2_rating(g, 2)
+        # --- coverage added in impl-review round 2 (all must be ValueError,
+        # not TypeError/OverflowError leaks) ---
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, float("inf"))  # int(n_players) overflow
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, None)  # int(None) TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=object())  # asarray TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=None)  # float(None) TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=None)
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 2, 1.0]], 2)  # player index out of range
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, -1, 1, 1.0]], 2)  # negative player index
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, 1.5]], 2)  # score > 1
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, -0.5]], 2)  # score < 0
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=[10.0, 20.0])  # gamma length != g
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=float("nan"))  # non-finite gamma
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=1j)  # complex gamma
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=float("nan"))
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=float("inf"))
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=-350.0)
+        with pytest.raises(ValueError):
+            glicko2_rating(
+                ok, 2, init=(np.array([np.nan, 2200.0]), np.array([300.0] * 2),
+                             np.array([0.15] * 2))
+            )
+        with pytest.raises(ValueError):
+            glicko2_rating(
+                ok, 2, init=(np.array([2200.0]), np.array([300.0]),
+                             np.array([0.15]))
+            )  # init length != n_players
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 10001)  # n_players cap
 
     def test_period_fidelity(self):
         import numpy as np

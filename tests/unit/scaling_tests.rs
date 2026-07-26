@@ -3161,6 +3161,116 @@ fn g2_error_contract() {
         350.0
     )
     .is_err());
+    // non-finite init arrays
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &[2200.0, f64::NAN],
+        &d2,
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[300.0, f64::INFINITY],
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15, f64::NAN],
+        1.2,
+        350.0
+    )
+    .is_err());
+    // rdmax non-finite / negative
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        f64::NAN
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        f64::INFINITY
+    )
+    .is_err());
+    assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, 1.2, -350.0).is_err());
+    // negative score
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[-0.5],
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    // finite init_vol exactly AT the ceiling is VALID; just above is not
+    let vmax = std::f64::consts::LN_10 / 400.0 * 350.0;
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15, vmax],
+        1.2,
+        350.0
+    )
+    .is_ok());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15, vmax * (1.0 + 1e-12)],
+        1.2,
+        350.0
+    )
+    .is_err());
     // tau = 0 is VALID (frozen volatility)
     assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, 0.0, 350.0).is_ok());
 }

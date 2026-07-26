@@ -5489,8 +5489,20 @@ fn glicko2_rating(
     tau: f64,
     rdmax: f64,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let white: Vec<usize> = white.as_slice()?.iter().map(|&v| v as usize).collect();
-    let black: Vec<usize> = black.as_slice()?.iter().map(|&v| v as usize).collect();
+    // usize::try_from (not `as`): a u64 id above usize::MAX must fail
+    // loudly on 32-bit targets instead of truncating into a valid index.
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("glicko2_rating: player index exceeds platform usize"))?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("glicko2_rating: player index exceeds platform usize"))?;
     let res = mlsirm_core::scaling::glicko2_rating(
         periods.as_slice()?,
         &white,

@@ -963,7 +963,10 @@ def glicko2_rating(
         periods_u64 = periods.astype(np.uint64)
     if np.any(white < 0) or np.any(black < 0):
         raise ValueError("glicko2_rating: player indices must be nonnegative")
-    n = int(n_players)
+    try:
+        n = int(n_players)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"glicko2_rating: n_players is not an integer: {exc}") from None
     if n != n_players:
         raise ValueError("glicko2_rating: n_players must be an integer")
     g = arr.shape[0]
@@ -972,7 +975,10 @@ def glicko2_rating(
     else:
         if np.iscomplexobj(np.asarray(gamma)):
             raise ValueError("glicko2_rating: gamma must be real, not complex")
-        gamma_arr = np.asarray(gamma, dtype=float)
+        try:
+            gamma_arr = np.asarray(gamma, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"glicko2_rating: gamma is not numeric: {exc}") from None
         if gamma_arr.ndim == 0:
             gamma_arr = np.full(g, float(gamma_arr))
         elif gamma_arr.shape != (g,):
@@ -1007,6 +1013,11 @@ def glicko2_rating(
             f"length-{n} arrays, got shapes {init_r.shape}, {init_d.shape}, "
             f"and {init_v.shape}"
         )
+    try:
+        tau_f = float(tau)
+        rdmax_f = float(rdmax)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"glicko2_rating: tau/rdmax is not numeric: {exc}") from None
     res = _core_module().glicko2_rating(
         np.ascontiguousarray(periods_u64),
         np.ascontiguousarray(white, dtype=np.uint64),
@@ -1016,8 +1027,8 @@ def glicko2_rating(
         np.ascontiguousarray(init_r),
         np.ascontiguousarray(init_d),
         np.ascontiguousarray(init_v),
-        float(tau),
-        float(rdmax),
+        tau_f,
+        rdmax_f,
     )
     return Glicko2Result(
         ratings=np.asarray(res["ratings"]),
