@@ -7924,3 +7924,69 @@ class TestPyramidal:
             pyramidal_administer(b[:9], 4, [1, 0, 1, 1])
         with pytest.raises(ValueError, match="n_stages \\+ 1"):
             pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn[:4])
+
+class TestTwoStage:
+    """Betz & Weiss (1973, 1974) two-stage adaptive testing wrappers.
+
+    Anchors from files/twostage_oracle.py (exact Fractions through the
+    p-computation, executed; Acklam inverse-CDF tolerance 1e-7); every
+    assert reads values returned by the crate through the wrapper.
+    """
+
+    def _ts(self):
+        import numpy as np
+
+        a_meas = np.array([0.53, 0.55, 0.61, 0.68])
+        b_meas = np.array([1.73, 0.35, -0.71, -1.60])
+        return 10, 0.70, -0.23, a_meas, b_meas
+
+    def test_anchor_pipeline(self):
+        from fast_mlsirm import two_stage_route, two_stage_score
+
+        m1, a1, b1, a_meas, b_meas = self._ts()
+        theta1, assigned = two_stage_route(7, m1, a1, b1, b_meas, 0.2)
+        assert abs(theta1 - 0.22519909137767882) < 1e-7
+        assert assigned == 1
+        r = two_stage_score(7, m1, a1, b1, 20, 30, assigned, a_meas, b_meas, 0.2)
+        assert r["theta1"] == theta1
+        assert r["assigned"] == 1
+        assert abs(r["theta2"] - 0.7325970804507724) < 1e-7
+        assert abs(r["composite"] - 0.605747583182499) < 1e-7
+
+    def test_truncation_and_x9(self):
+        from fast_mlsirm import two_stage_route
+
+        m1, a1, b1, _a, b_meas = self._ts()
+        # Perfect score truncates to x' = m - 1/2; chance-or-below to
+        # x' = c*m + 1/2 (Betz & Weiss, 1974).
+        t10, _ = two_stage_route(10, m1, a1, b1, b_meas, 0.2)
+        t9, _ = two_stage_route(9, m1, a1, b1, b_meas, 0.2)
+        assert abs(t9 - 1.4133562576800114) < 1e-7
+        assert t10 > t9
+        t2, _ = two_stage_route(2, m1, a1, b1, b_meas, 0.2)
+        t0, _ = two_stage_route(0, m1, a1, b1, b_meas, 0.2)
+        assert t2 == t0
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import two_stage_route, two_stage_score
+
+        m1, a1, b1, a_meas, b_meas = self._ts()
+        with pytest.raises(ValueError, match="wrong test"):
+            two_stage_score(7, m1, a1, b1, 20, 30, 0, a_meas, b_meas, 0.2)
+        with pytest.raises(ValueError, match="must be an integer"):
+            two_stage_route(7.5, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="out of range"):
+            two_stage_route(-1, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="exceeds"):
+            two_stage_route(11, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="real-valued"):
+            two_stage_route(7, m1, a1, b1, b_meas.astype(np.complex128), 0.2)
+        with pytest.raises(ValueError, match="real-valued"):
+            two_stage_score(
+                7, m1, a1, b1, 20, 30, 1,
+                np.array([1j, 0, 0, 0], dtype=object), b_meas, 0.2,
+            )
+        with pytest.raises(ValueError, match=r"m\*\(1-c\)"):
+            two_stage_route(1, 1, a1, b1, b_meas, 0.2)
