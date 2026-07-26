@@ -936,3 +936,102 @@ def flexilevel_score_distribution(p: np.ndarray) -> dict:
         "mean": float(r["mean"]),
         "variance": float(r["variance"]),
     }
+
+def stradaptive_administer(
+    stratum: np.ndarray,
+    difficulty: np.ndarray,
+    responses: np.ndarray,
+    *,
+    entry_stratum: int,
+    chance: float,
+    min_items: int = 5,
+    max_items: int = 40,
+) -> dict:
+    """Weiss (1973) stratified-adaptive (stradaptive) test administration.
+
+    The item pool is partitioned into difficulty strata (``stratum[i]`` in
+    ``0..S-1``, every stratum non-empty, ``S >= 2``); within a stratum items
+    are taken in the given (peaked, most-discriminating-first in Weiss's
+    pool) order. Routing: start in ``entry_stratum``; after a correct
+    response move to the next harder stratum, after an incorrect response to
+    the next easier stratum, clamped at the edges; if the clamped target
+    stratum is exhausted, the next item comes from the LAST ADMINISTERED
+    stratum (DERIVED fallback -- the source only prints the boundary /
+    lower-stratum-exhausted substitutions). Termination: after each response
+    a ceiling stratum is sought (>= ``min_items`` administered in the
+    stratum AND proportion correct <= ``chance``, the multiple-choice
+    guessing rate, strictly in (0, 1)); the test also stops on pool
+    exhaustion or after ``max_items`` items. All numerics run in the Rust
+    core (``mlsirm_core::exposure::stradaptive_administer``).
+
+    Returns a dict with ``administered`` (item indices in administration
+    order), ``responses_taken``, ``reason`` (``"criterion"`` |
+    ``"pool_exhausted"`` | ``"max_items"``), ``ceiling`` / ``basal`` /
+    ``hnc`` / ``next_item`` (int, -1 when undefined), ``scores`` (Weiss's
+    ten ability scores m1..m10, NaN when indeterminate), and
+    ``consistency`` (population variance of the score-9 stratum set;
+    DERIVED -- the report defines consistency verbally without a printed
+    numeric anchor).
+
+    Source status: the primary source was READ in full (ERIC ED084301
+    scan); score 7's between-stratum interpolation was verified against the
+    five printed report cases plus synthetic below-chance anchors (the
+    printed cases alone do not discriminate the lower-step branch). Edge
+    conditions labeled DERIVED in the Rust module comment go beyond the
+    printed text and are pinned by tests rather than by the source.
+
+    References (APA 7th ed.):
+        Weiss, D. J. (1973). *The stratified adaptive computerized ability
+            test* (Research Report 73-3; ERIC ED084301). University of
+            Minnesota, Psychometric Methods Program. (READ.)
+    """
+    from . import _core
+
+    for name, arr in (("stratum", stratum), ("difficulty", difficulty),
+                      ("responses", responses)):
+        if np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
+    min_items = _as_int("min_items", min_items, minimum=1)
+    max_items = _as_int("max_items", max_items, minimum=1)
+    chance = float(chance)
+    # Validate BEFORE the integer/uint8 casts (casts truncate/wrap).
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        strat_f = np.asarray(stratum, dtype=np.float64)
+        diff = np.asarray(difficulty, dtype=np.float64)
+        resp_f = np.asarray(responses, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "stratum, difficulty, and responses must be real-valued"
+        ) from None
+    if strat_f.ndim != 1 or diff.ndim != 1 or resp_f.ndim != 1:
+        raise ValueError("stratum, difficulty, and responses must be 1-D")
+    if strat_f.size and (not np.all(np.isfinite(strat_f))
+                         or not np.all(strat_f == np.floor(strat_f))
+                         or strat_f.min() < 0
+                         or float(strat_f.max()) > 2.0**53):
+        raise ValueError("stratum must contain non-negative integers")
+    if not np.all(np.isin(resp_f, (0.0, 1.0))):
+        raise ValueError("responses must contain only 0 and 1")
+    r = _core.py_stradaptive_administer(
+        np.ascontiguousarray(strat_f.astype(np.uint64)),
+        np.ascontiguousarray(diff),
+        np.ascontiguousarray(resp_f.astype(np.uint8)),
+        entry_stratum,
+        chance,
+        min_items,
+        max_items,
+    )
+    return {
+        "administered": np.asarray(r["administered"], dtype=np.int64),
+        "responses_taken": np.asarray(r["responses_taken"]),
+        "reason": str(r["reason"]),
+        "ceiling": int(r["ceiling"]),
+        "basal": int(r["basal"]),
+        "hnc": int(r["hnc"]),
+        "next_item": int(r["next_item"]),
+        "scores": np.asarray(r["scores"]),
+        "consistency": float(r["consistency"]),
+    }

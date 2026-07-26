@@ -119,6 +119,27 @@
 
 ### Added
 
+- **Weiss stradaptive (stratified-adaptive) test administration (Weiss, 1973,
+  Research Report 73-3)** (`fast_mlsirm.stradaptive_administer`; in Rust
+  `mlsirm_core::exposure::stradaptive_administer`, PyO3
+  `py_stradaptive_administer`): deterministic single-examinee replay of
+  Weiss's stratified-adaptive design — an item pool partitioned into S ≥ 2
+  difficulty strata, up-one-stratum after a correct response and
+  down-one-stratum after an incorrect response (edge-clamped, with a DERIVED
+  fallback to the last administered stratum when the clamped target is
+  exhausted), terminating on a ceiling stratum (≥ min_items administered and
+  proportion correct ≤ chance), pool exhaustion, or max_items. Reports
+  ceiling / basal / highest-non-chance strata, Weiss's ten ability scores
+  m1–m10 (NaN when indeterminate; score 7 interpolates between adjacent
+  stratum mean difficulties with side-dependent steps), and a consistency
+  index (population variance of the score-9 stratum set; DERIVED — defined
+  verbally in the report without a printed numeric anchor). The primary
+  source was READ (ERIC ED084301); routing and scores are pinned by the
+  report's William W. protocol (Fig. 2 / Appendix A) and its five printed
+  score-7 cases plus synthetic below-chance anchors that discriminate the
+  lower-step branch (the printed cases alone do not). Score 5's
+  extrapolated-next-stratum variant for exhausted pools and free-response
+  (chance = 0) termination are deliberately out of scope.
 - **Lord self-scoring flexilevel testing (Lord, 1970, RB-70-43; Lord, 1971,
   RB-71-6)** (`fast_mlsirm.flexilevel_administer` /
   `fast_mlsirm.flexilevel_score_distribution`; in Rust

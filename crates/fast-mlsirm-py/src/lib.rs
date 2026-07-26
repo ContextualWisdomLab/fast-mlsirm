@@ -35,12 +35,12 @@ use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
     breslow_day_dif as core_breslow_day_dif, delta_plot as core_delta_plot,
-    eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif,
-    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
-    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    mantel_smd_dif as core_mantel_smd_dif, raju_area as core_raju_area, sibtest as core_sibtest,
-    DeltaThreshold, ExtremeAdjust, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
-    PurifyConfig, PurifyType as DeltaPurifyType, SibtestConfig,
+    eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif, logistic_dif as core_logistic_dif,
+    logistic_dif_purified as core_logistic_purified, mantel_haenszel_dif as core_mh_dif,
+    mantel_haenszel_dif_purified as core_mh_purified, mantel_smd_dif as core_mantel_smd_dif,
+    raju_area as core_raju_area, sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust,
+    LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
+    PurifyType as DeltaPurifyType, SibtestConfig,
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
@@ -49,7 +49,8 @@ use mlsirm_core::exposure::{
     flexilevel_score_distribution as core_flexilevel_score_distribution,
     kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
     owen_update as core_owen_update, sprt_classify as core_sprt_classify,
-    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
+    stradaptive_administer as core_stradaptive_administer, sympson_hetter as core_sympson_hetter,
+    AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -3057,13 +3058,71 @@ fn py_flexilevel_score_distribution(
     py: Python<'_>,
     p: PyReadonlyArray1<'_, f64>,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
-    let res =
-        core_flexilevel_score_distribution(p.as_slice()?).map_err(PyValueError::new_err)?;
+    let res = core_flexilevel_score_distribution(p.as_slice()?).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("scores", numpy::PyArray1::from_slice(py, &res.scores))?;
     out.set_item("probs", numpy::PyArray1::from_slice(py, &res.probs))?;
     out.set_item("mean", res.mean)?;
     out.set_item("variance", res.variance)?;
+    Ok(out.into())
+}
+
+/// Weiss (1973) stratified-adaptive (stradaptive) test administration for a
+/// single examinee (`mlsirm_core::exposure::stradaptive_administer`): items
+/// grouped into difficulty strata; correct -> next harder stratum, incorrect
+/// -> next easier stratum (clamped at the edges); termination when a ceiling
+/// stratum (proportion correct <= chance with >= min_items administered) is
+/// identified, the pool is exhausted, or max_items is reached. Returns the
+/// administration record, ceiling/basal/highest-non-chance strata, Weiss's
+/// ten ability scores (NaN when indeterminate), and the consistency index
+/// (population variance of the score-9 stratum set; DERIVED, no printed
+/// anchor). See the core module comment for READ/NOT-READ source status and
+/// DERIVED-rule labels.
+///
+/// References (APA 7th):
+/// Weiss, D. J. (1973). The stratified adaptive computerized ability test
+/// (Research Report 73-3; ERIC ED084301). University of Minnesota,
+/// Psychometric Methods Program. (READ)
+#[pyfunction]
+fn py_stradaptive_administer(
+    py: Python<'_>,
+    stratum: PyReadonlyArray1<'_, u64>,
+    difficulty: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    entry_stratum: usize,
+    chance: f64,
+    min_items: usize,
+    max_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let stratum_usize: Vec<usize> = stratum.as_slice()?.iter().map(|&s| s as usize).collect();
+    let res = core_stradaptive_administer(
+        &stratum_usize,
+        difficulty.as_slice()?,
+        responses.as_slice()?,
+        entry_stratum,
+        chance,
+        min_items,
+        max_items,
+    )
+    .map_err(PyValueError::new_err)?;
+    let administered: Vec<u64> = res.administered.iter().map(|&c| c as u64).collect();
+    let opt = |v: Option<usize>| -> i64 { v.map(|x| x as i64).unwrap_or(-1) };
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item(
+        "administered",
+        numpy::PyArray1::from_slice(py, &administered),
+    )?;
+    out.set_item(
+        "responses_taken",
+        numpy::PyArray1::from_slice(py, &res.responses_taken),
+    )?;
+    out.set_item("reason", res.reason)?;
+    out.set_item("ceiling", opt(res.ceiling))?;
+    out.set_item("basal", opt(res.basal))?;
+    out.set_item("hnc", opt(res.hnc))?;
+    out.set_item("next_item", opt(res.next_item))?;
+    out.set_item("scores", numpy::PyArray1::from_slice(py, &res.scores))?;
+    out.set_item("consistency", res.consistency)?;
     Ok(out.into())
 }
 
@@ -6903,6 +6962,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_ci_classify, m)?)?;
     m.add_function(wrap_pyfunction!(py_flexilevel_administer, m)?)?;
     m.add_function(wrap_pyfunction!(py_flexilevel_score_distribution, m)?)?;
+    m.add_function(wrap_pyfunction!(py_stradaptive_administer, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

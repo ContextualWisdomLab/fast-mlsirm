@@ -2294,3 +2294,324 @@ fn flexilevel_mc_500_recovery() {
         );
     }
 }
+
+// ===================== Weiss stradaptive test tests =========================
+//
+// Mutation-kill plan (executed kills recorded in the PR evidence); every
+// assert below reads `StradaptiveResult` fields or the returned `Err`:
+// - MU1 branch swap (correct -> down): killed by `strad_william_w_anchor`
+//   (Table 2 routing sequence pin).
+// - MU2' termination `<=` -> `<`: killed by `strad_person_e_boundary`
+//   (p == chance exactly must terminate).
+//   LIMIT (documented): the original MU2 (ceiling scan lowest -> highest)
+//   is NOT observably killable -- termination fires at the FIRST response
+//   after which any stratum qualifies, so at most one qualifying stratum
+//   exists in any reachable terminal state and the scan order cannot
+//   change the result. The discriminating anchor for "lowest" is the
+//   contract documentation itself, not a test.
+// - MU3 method-7 step always-upper: killed by `strad_person_d_lower_step`
+//   (p = 1/3 with unequal adjacent gaps: -1/3 vs mutant -1/2).
+// - MU4 basal any-correct instead of all-correct: killed by
+//   `strad_william_w_anchor` (stratum 7 has corrects but is not clean;
+//   basal must stay at stratum 6).
+
+#[test]
+fn strad_william_w_anchor() {
+    // Weiss (1973), Figure 4 + Tables 1-2 (William W.): administered item
+    // difficulties transcribed from Table 1; never-administered balancing
+    // items force each stratum's FULL-pool mean to the printed stratum mean.
+    let mut stratum: Vec<usize> = vec![0, 1, 2, 3];
+    let mut diff: Vec<f64> = vec![-2.65, -1.92, -1.29, -0.63];
+    let s5 = [-0.05, 0.09]; // mean .02
+    let s6 = [0.73, 0.34, 0.65, 0.79, 0.79];
+    let s6_bal = 0.65 * 6.0 - s6.iter().sum::<f64>();
+    let s7 = [1.07, 1.49, 1.33, 1.54, 1.11, 1.40, 1.17, 1.30, 1.38, 1.44];
+    let s7_bal = 1.33 * 11.0 - s7.iter().sum::<f64>();
+    let s8 = [1.89, 2.03, 1.93, 2.31, 1.79];
+    let s8_bal = 2.01 * 6.0 - s8.iter().sum::<f64>();
+    for d in s5 {
+        stratum.push(4);
+        diff.push(d);
+    }
+    for d in s6.iter().copied().chain([s6_bal]) {
+        stratum.push(5);
+        diff.push(d);
+    }
+    for d in s7.iter().copied().chain([s7_bal]) {
+        stratum.push(6);
+        diff.push(d);
+    }
+    for d in s8.iter().copied().chain([s8_bal]) {
+        stratum.push(7);
+        diff.push(d);
+    }
+    stratum.push(8);
+    diff.push(2.62);
+    let n = stratum.len();
+    let mut resp = vec![0u8; n];
+    let idx = |s: usize, j: usize| -> usize { (0..n).filter(|&i| stratum[i] == s).nth(j).unwrap() };
+    resp[idx(4, 0)] = 1;
+    for (j, r) in [1, 1, 1, 1, 1].into_iter().enumerate() {
+        resp[idx(5, j)] = r;
+    }
+    for (j, r) in [1, 1, 1, 0, 1, 0, 0, 0, 1].into_iter().enumerate() {
+        resp[idx(6, j)] = r;
+    }
+    for (j, r) in [0, 0, 0, 0, 0].into_iter().enumerate() {
+        resp[idx(7, j)] = r;
+    }
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 4, 0.2, 5, 1000).unwrap();
+    // Table 2 stage sequence (1-based strata) and responses.
+    let seq: Vec<usize> = res.administered.iter().map(|&i| stratum[i] + 1).collect();
+    assert_eq!(
+        seq,
+        vec![5, 6, 7, 8, 7, 8, 7, 8, 7, 6, 7, 8, 7, 6, 7, 6, 7, 6, 7, 8]
+    );
+    assert_eq!(
+        res.responses_taken,
+        vec![1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0]
+    );
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(7)); // stratum 8 (1-based): 5 items, 0 correct
+    assert_eq!(res.basal, Some(5)); // stratum 6: 5/5 correct (kills MU4)
+    assert_eq!(res.hnc, Some(6)); // stratum 7
+                                  // Figure 4 printed scores (2-dp; exact where the value is a pool literal).
+    assert_eq!(res.scores[0], 1.49); // m1
+    assert_eq!(res.scores[1], 1.44); // m2 = s7 item 10, the n+1-th item
+    assert_eq!(res.scores[2], 1.49); // m3
+    assert!((res.scores[3] - 1.33).abs() < 1e-12); // m4
+    assert!((res.scores[4] - 1.33).abs() < 1e-12); // m5
+    assert!((res.scores[5] - 1.33).abs() < 1e-12); // m6
+                                                   // m7 = 1.33 + (2.01 - 1.33) * (5/9 - 1/2) = 1.3677... (prints 1.37)
+    assert!((res.scores[6] - 1.3677777777777778).abs() < 1e-9);
+    assert!((res.scores[7] - 0.8754545454545455).abs() < 1e-9); // m8 = 9.63/11
+    assert!((res.scores[8] - 1.276).abs() < 1e-9); // m9 = 6.38/5 (prints 1.28)
+    assert!((res.scores[9] - 1.276).abs() < 1e-9); // m10
+                                                   // Consistency: population variance of {1.07, 1.49, 1.33, 1.11, 1.38}
+                                                   // (DERIVED definitional choice -- no printed anchor exists).
+    assert!((res.consistency - 0.025904).abs() < 1e-9);
+    assert_eq!(res.next_item.map(|i| stratum[i]), Some(6));
+}
+
+#[test]
+fn strad_person_a_pool_exhaustion() {
+    // Synthetic exact anchor: same-stratum fallback then pool exhaustion.
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![1, 1, 1, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 1, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![2, 4, 3, 0, 1]);
+    assert_eq!(res.responses_taken, vec![1, 0, 0, 1, 1]);
+    assert_eq!(res.reason, "pool_exhausted");
+    assert_eq!(res.ceiling, None);
+    assert_eq!(res.hnc, Some(1));
+    assert_eq!(res.basal, Some(0));
+    assert_eq!(res.next_item, None);
+    assert_eq!(res.scores[0], 0.0); // m1
+    assert!(res.scores[1].is_nan()); // m2 indeterminate
+    assert_eq!(res.scores[2], 0.0); // m3 (no ceiling -> bound = S)
+    assert_eq!(res.scores[3], 0.25); // m4 = D_1
+    assert!(res.scores[4].is_nan()); // m5 (no n+1-th item; NaN by contract)
+    assert_eq!(res.scores[5], 0.25); // m6
+    assert_eq!(res.scores[6], 0.25); // m7: p = 1/2 exactly -> D_hnc
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert_eq!(res.scores[8], 0.0); // m9
+    assert_eq!(res.scores[9], 0.0); // m10
+    assert_eq!(res.consistency, 0.0);
+}
+
+#[test]
+fn strad_person_b_criterion() {
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![1, 1, 0, 0, 0, 1];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 2, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![4, 2, 0, 3]);
+    assert_eq!(res.responses_taken, vec![0, 0, 1, 0]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(1));
+    assert_eq!(res.hnc, Some(0));
+    assert_eq!(res.basal, Some(0));
+    assert_eq!(res.scores[0], -1.0); // m1
+    assert_eq!(res.scores[1], -2.0); // m2: next item is s0 item 2
+    assert_eq!(res.scores[2], -1.0); // m3
+    assert_eq!(res.scores[3], -1.5); // m4
+    assert_eq!(res.scores[4], -1.5); // m5
+    assert_eq!(res.scores[5], -1.5); // m6
+    assert_eq!(res.scores[6], -0.625); // m7 = -3/2 + 7/4 * 1/2 (p = 1 > 1/2)
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert!(res.scores[8].is_nan()); // m9: no strata strictly inside (0, 1)
+    assert_eq!(res.scores[9], -1.0); // m10
+    assert!(res.consistency.is_nan());
+}
+
+#[test]
+fn strad_person_c_bottom_clamp() {
+    // Bottom clamp + all wrong: ceiling = 0 -> everything indeterminate.
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![0, 0, 0, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![0, 1]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(0));
+    assert_eq!(res.hnc, None);
+    assert_eq!(res.basal, None);
+    assert_eq!(res.next_item, None); // clamped target s0 is exhausted
+    for k in 0..10 {
+        assert!(res.scores[k].is_nan(), "m{} should be NaN", k + 1);
+    }
+    assert!(res.consistency.is_nan());
+}
+
+#[test]
+fn strad_person_d_lower_step() {
+    // Kills MU3: p = 1/3 < 1/2 at hnc with UNEQUAL adjacent gaps
+    // (D = [-2, 0, 3]): derived lower step gives 0 + (0 - (-2))(1/3 - 1/2)
+    // = -1/3; an always-upper mutant gives 0 + 3(1/3 - 1/2) = -1/2.
+    let stratum = vec![0, 0, 1, 1, 1, 2, 2];
+    let diff = vec![-2.0, -2.0, -1.0, 0.0, 1.0, 3.0, 3.0];
+    let resp = vec![1, 1, 1, 0, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 1, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![2, 5, 3, 0, 4, 1]);
+    assert_eq!(res.reason, "pool_exhausted");
+    assert_eq!(res.ceiling, None);
+    assert_eq!(res.hnc, Some(1)); // p = 1/3 > chance = 1/4
+    assert!((res.scores[6] - (-1.0 / 3.0)).abs() < 1e-12); // m7 lower step
+    assert!((res.scores[6] - (-0.5)).abs() > 0.1); // NOT the upper-step value
+}
+
+#[test]
+fn strad_person_e_boundary() {
+    // Kills MU2': p == chance exactly must terminate (<=, not <);
+    // also exercises chance = 1/2 (2-option items).
+    let stratum = vec![0, 0, 0, 1, 1];
+    let diff = vec![-1.0, -1.0, -1.0, 1.0, 1.0];
+    let resp = vec![1, 0, 1, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.5, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![0, 3, 1]);
+    assert_eq!(res.responses_taken, vec![1, 0, 0]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(0)); // s0: 2 administered, 1 correct, p = 1/2
+    assert_eq!(res.hnc, None);
+    assert_eq!(res.scores[0], -1.0); // m1
+    assert_eq!(res.scores[1], -1.0); // m2: s0 item 3
+    assert_eq!(res.scores[3], -1.0); // m4
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert!(res.scores[2].is_nan()); // m3: ceiling bound = 0
+    assert!(res.scores[8].is_nan()); // m9
+}
+
+#[test]
+fn strad_max_items() {
+    let stratum = vec![0, 0, 1, 1];
+    let diff = vec![-1.0, -1.0, 1.0, 1.0];
+    let resp = vec![1, 1, 1, 1];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.25, 5, 2).unwrap();
+    assert_eq!(res.administered.len(), 2);
+    assert_eq!(res.reason, "max_items");
+    assert_eq!(res.next_item, Some(3)); // routing continues hypothetically
+}
+
+#[test]
+fn strad_error_contract() {
+    let ok_s = vec![0usize, 0, 1, 1];
+    let ok_d = vec![-1.0, -1.0, 1.0, 1.0];
+    let ok_r = vec![1u8, 0, 1, 0];
+    let call = |s: &[usize], d: &[f64], r: &[u8], e: usize, ch: f64, mi: usize, ma: usize| {
+        crate::exposure::stradaptive_administer(s, d, r, e, ch, mi, ma)
+    };
+    assert!(call(&[], &[], &[], 0, 0.2, 1, 1).is_err()); // empty pool
+    assert!(call(&ok_s, &ok_d[..3], &ok_r, 0, 0.2, 1, 1).is_err()); // len mism.
+    assert!(call(&ok_s, &ok_d, &ok_r[..3], 0, 0.2, 1, 1).is_err());
+    assert!(call(&[0, 0, 0], &[1.0, 2.0, 3.0], &[1, 0, 1], 0, 0.2, 1, 1).is_err()); // S = 1
+    assert!(call(&[0, 2, 2], &[1.0, 2.0, 3.0], &[1, 0, 1], 0, 0.2, 1, 1).is_err()); // gap
+    assert!(call(&ok_s, &ok_d, &[1, 0, 2, 0], 0, 0.2, 1, 1).is_err()); // resp = 2
+    assert!(call(&ok_s, &ok_d, &ok_r, 2, 0.2, 1, 1).is_err()); // entry >= S
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.0, 1, 1).is_err()); // chance = 0
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 1.0, 1, 1).is_err()); // chance = 1
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, f64::NAN, 1, 1).is_err());
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 0, 1).is_err()); // min_items = 0
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 1, 0).is_err()); // max_items = 0
+    assert!(call(&ok_s, &[-1.0, f64::INFINITY, 1.0, 1.0], &ok_r, 0, 0.2, 1, 1).is_err());
+}
+
+#[test]
+#[ignore = "Monte Carlo (500 reps); run with -- --ignored"]
+fn strad_mc_invariants() {
+    // 500 random pools/response vectors; structural invariants checked
+    // against crate outputs (counts recomputed FROM the returned
+    // administered/responses_taken, not from a mirrored engine).
+    let mut rng = Lcg(20260726);
+    for rep in 0..500 {
+        let n_strata = 2 + (rng.next_f64() * 5.0) as usize; // 2..=6
+        let mut stratum = Vec::new();
+        let mut diff = Vec::new();
+        for k in 0..n_strata {
+            let m = 1 + (rng.next_f64() * 6.0) as usize;
+            for _ in 0..m {
+                stratum.push(k);
+                diff.push(k as f64 - 2.0 + rng.next_f64());
+            }
+        }
+        let n = stratum.len();
+        let resp: Vec<u8> = (0..n).map(|_| u8::from(rng.next_f64() < 0.55)).collect();
+        let entry = (rng.next_f64() * n_strata as f64) as usize;
+        let chance = 0.1 + 0.5 * rng.next_f64();
+        let min_items = 1 + (rng.next_f64() * 3.0) as usize;
+        let res = crate::exposure::stradaptive_administer(
+            &stratum, &diff, &resp, entry, chance, min_items, 200,
+        )
+        .unwrap();
+        // administered indices unique, in range, echoing the pool responses
+        let mut seen = vec![false; n];
+        for (&i, &r) in res.administered.iter().zip(&res.responses_taken) {
+            assert!(i < n && !seen[i], "rep {rep}");
+            seen[i] = true;
+            assert_eq!(r, resp[i], "rep {rep}");
+        }
+        // recompute per-stratum counts from crate outputs
+        let mut adm = vec![0usize; n_strata];
+        let mut cor = vec![0usize; n_strata];
+        for (&i, &r) in res.administered.iter().zip(&res.responses_taken) {
+            adm[stratum[i]] += 1;
+            cor[stratum[i]] += r as usize;
+        }
+        let qualifies = |k: usize| adm[k] >= min_items && (cor[k] as f64 / adm[k] as f64) <= chance;
+        match res.ceiling {
+            Some(c) => {
+                assert!(qualifies(c), "rep {rep}");
+                assert!((0..c).all(|k| !qualifies(k)), "rep {rep}: not lowest");
+            }
+            None => assert!((0..n_strata).all(|k| !qualifies(k)), "rep {rep}"),
+        }
+        if res.reason == "criterion" {
+            assert!(res.ceiling.is_some(), "rep {rep}");
+        }
+        if res.reason == "pool_exhausted" {
+            assert!(res.next_item.is_none(), "rep {rep}");
+        }
+        // score sanity against crate outputs
+        let (dmin, dmax) = diff
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &d| {
+                (lo.min(d), hi.max(d))
+            });
+        if !res.scores[7].is_nan() {
+            assert!(res.scores[7] >= dmin - 1e-12 && res.scores[7] <= dmax + 1e-12);
+        }
+        if !res.scores[0].is_nan() && !res.scores[2].is_nan() {
+            assert!(res.scores[0] >= res.scores[2], "rep {rep}: m1 < m3");
+        }
+        if !res.consistency.is_nan() {
+            assert!(res.consistency >= 0.0, "rep {rep}");
+        }
+    }
+}
