@@ -812,3 +812,117 @@ def ci_classify(
         "lower_trace": np.asarray(r["lower_trace"]),
         "upper_trace": np.asarray(r["upper_trace"]),
     }
+
+def flexilevel_administer(
+    responses: np.ndarray,
+    *,
+    n_persons: int,
+    n_items: int,
+) -> dict:
+    """Lord self-scoring flexilevel routing + scoring over a response matrix.
+
+    ``responses`` is an ``n_persons x n_items`` 0/1 matrix (or its row-major
+    flattening) whose columns are the N (odd) items sorted ASCENDING by
+    difficulty (caller responsibility; both read sources assume a
+    difficulty-ordered pool). Each person answers ``n = (N + 1) / 2`` items:
+    start at the median item; after a right answer move to the easiest
+    not-yet-answered harder item, after a wrong answer to the hardest
+    not-yet-answered easier item. Self-scoring: number-right ``r``; a person
+    whose LAST answer was wrong ("red") scores ``x = r + 1/2``, otherwise
+    ("blue") ``x = r``. All numerics run in the Rust core
+    (``mlsirm_core::exposure::flexilevel_administer``).
+
+    Returns a dict with ``n_administered`` (= n), ``items`` (administered
+    column indices in administration order, flattened ``n_persons * n``),
+    ``number_right``, ``is_red`` (1 iff last answer wrong), and ``score``
+    (half-integer lattice).
+
+    Source status: both primary sources were READ in full (ETS Research
+    Bulletins digitized by ERIC). The routing/scoring contract was verified
+    against Lord (1970) properties 1-9 and Lord (1971) pp. 2-4; the i = 0
+    starting case follows the verbal start-at-median rule (the printed index
+    formula covers i > 0 / i < 0 only). See the Rust module comment for the
+    full citation-governance record.
+
+    References (APA 7th ed.):
+        Lord, F. M. (1970). *The self-scoring flexilevel test* (Research
+            Bulletin RB-70-43; ERIC ED042813). Educational Testing Service.
+            (READ.)
+        Lord, F. M. (1971). *A theoretical study of the measurement
+            effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
+            ERIC ED051286). Educational Testing Service. (READ.)
+    """
+    from . import _core
+
+    if np.iscomplexobj(np.asarray(responses)):
+        raise ValueError("responses must be real-valued")
+    n_persons = _as_int("n_persons", n_persons, minimum=1)
+    n_items = _as_int("n_items", n_items, minimum=3)
+    resp = np.asarray(responses)
+    if resp.ndim == 2:
+        if resp.shape != (n_persons, n_items):
+            raise ValueError(
+                f"responses has shape {resp.shape}, expected "
+                f"({n_persons}, {n_items})"
+            )
+        resp = resp.reshape(-1)
+    elif resp.ndim != 1:
+        raise ValueError("responses must be a 1-D or 2-D array")
+    # Validate BEFORE the uint8 cast (casts truncate/wrap).
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_flexilevel_administer(
+        np.ascontiguousarray(resp), n_persons, n_items
+    )
+    return {
+        "n_administered": int(r["n_administered"]),
+        "items": np.asarray(r["items"], dtype=np.int64),
+        "number_right": np.asarray(r["number_right"]),
+        "is_red": np.asarray(r["is_red"]),
+        "score": np.asarray(r["score"]),
+    }
+
+
+def flexilevel_score_distribution(p: np.ndarray) -> dict:
+    """Exact conditional flexilevel self-score distribution f(x | theta).
+
+    ``p[c]`` is the probability of a correct response on the c-th
+    difficulty-sorted item at the fixed ability of interest (any ICC; the
+    caller computes the probabilities, keeping the recursion model-agnostic).
+    ``len(p)`` = N must be odd and >= 3. Computes Lord's (1971, Eqs. 1-2)
+    forward recursion over p_v(i), the probability that item i is the v-th
+    administered, and maps p_{n+1} onto the half-integer score lattice
+    ``{1/2, 1, ..., n}`` (integer x: last answer right; half-integer x: last
+    answer wrong). The half-integer mapping ``j = x - 1/2 - n`` is DERIVED
+    from Lord's ``j < 0 -> r = v + j`` and ``x = r + 1/2`` (the printed
+    Eq. 2 is OCR-garbled in the available scan) and was cross-checked
+    exactly against exhaustive path enumeration. All numerics run in the
+    Rust core (``mlsirm_core::exposure::flexilevel_score_distribution``).
+
+    Returns a dict with ``scores`` (ascending lattice), ``probs``, ``mean``,
+    and ``variance``.
+
+    References (APA 7th ed.):
+        Lord, F. M. (1971). *A theoretical study of the measurement
+            effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
+            ERIC ED051286). Educational Testing Service. (READ.)
+    """
+    from . import _core
+
+    if np.iscomplexobj(np.asarray(p)):
+        raise ValueError("p must be real-valued")
+    p = np.asarray(p, dtype=np.float64)
+    if p.ndim != 1:
+        raise ValueError("p must be a 1-D array")
+    r = _core.py_flexilevel_score_distribution(np.ascontiguousarray(p))
+    return {
+        "scores": np.asarray(r["scores"]),
+        "probs": np.asarray(r["probs"]),
+        "mean": float(r["mean"]),
+        "variance": float(r["variance"]),
+    }

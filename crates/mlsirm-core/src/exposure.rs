@@ -1782,3 +1782,246 @@ pub fn ci_classify(
         upper_trace,
     })
 }
+
+// ================ Lord self-scoring flexilevel testing ======================
+//
+// `flexilevel_administer` replays Lord's flexilevel design over a FULL 0/1
+// response matrix: N (odd) items sorted ASCENDING by difficulty (caller
+// responsibility; both sources assume a difficulty-ordered pool), Lord index
+// i = column - (n - 1) with n = (N + 1) / 2 so that item 0 is the median.
+// Each person starts at the median item; after a RIGHT answer the next item
+// is the easiest not-yet-answered harder item, after a WRONG answer the
+// hardest not-yet-answered easier item. In Lord's index arithmetic, if item
+// i is the v-th administered:
+//     i > 0: next = i + 1 (right) or i - v (wrong)
+//     i < 0: next = i + v (right) or i - 1 (wrong)
+// The i = 0 (first item) case is NOT covered by the index formula in the
+// read text (it states i > 0 / i < 0 only); right -> +1 / wrong -> -1 at
+// i = 0 follows from the verbal start-at-median rules and coincides with
+// the i > 0 branch at v = 1, which is what this code uses.
+//
+// Self-scoring: after n answers let j be the (n+1)-th item that WOULD be
+// administered. j > 0 ("blue": last answer right) gives number-right r = j
+// and score x = r; j < 0 ("red": last answer wrong) gives r = n + j and
+// x = r + 1/2. The identity r = (number of correct administered answers)
+// was verified exhaustively against the routing in the spec oracle.
+//
+// `flexilevel_score_distribution` computes the exact conditional score
+// distribution f(x | theta) by Lord's forward recursion over p_v(i), the
+// probability that item i is the v-th administered: p_1(0) = 1 and
+// p_{v+1}(next_right) += p_v(i) P_i, p_{v+1}(next_wrong) += p_v(i)(1 - P_i),
+// with f(x) = p_{n+1}(j) under the score mapping above (x = j for integer
+// scores; the half-integer mapping j = x - 1/2 - n is DERIVED from
+// r = n + j and x = r + 1/2 -- the printed Eq. 2 is OCR-garbled in the
+// available scan -- and is cross-checked exactly against exhaustive path
+// enumeration in the spec oracle). The caller supplies P_i(theta) for the N
+// sorted items, keeping the recursion ICC-agnostic (Lord's numerical study
+// used a 3-parameter normal ogive; nothing in Eqs. 1-2 depends on it).
+//
+// Score lattice: x in {1/2, 1, 3/2, ..., n - 1/2, n} (2n points). x = 0 is
+// impossible: an all-wrong path is red with r = 0 and scores x = 1/2.
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review,
+// flexilevel_spec_review.md): every routing/scoring rule above was verified
+// against the two READ primary sources (full OCR text on file). The worked
+// example RWWRWRRRWR and its administered sequence
+// [0, 1, -1, -2, 2, -3, 3, 4, 5, -4] pin the routing; the answer string is
+// readable in the 1971 scan, while the printed sequence line is OCR-blank,
+// so the sequence itself is confirmed by applying the (readable) routing
+// rules, not by transcription. Out of scope (documented): Lord's Eq. 3
+// relative-efficiency ratio (derivable from mean/variance across theta),
+// Eq. 4 normal-ogive ICC, and the 1970 answer-sheet layout material.
+//
+// References (APA 7th):
+// Lord, F. M. (1970). The self-scoring flexilevel test (Research Bulletin
+//     RB-70-43; ERIC ED042813). Educational Testing Service. (READ: design
+//     rules, self-scoring properties 1-9, red +1/2 convention)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests (Research Bulletin RB-71-6; ERIC ED051286).
+//     Educational Testing Service. (READ: item-index transition rule,
+//     score mapping j > 0 -> r = j / j < 0 -> r = v + j, Eqs. 1-2 forward
+//     recursion for f(x | theta); Eq. 2 half-integer branch OCR-garbled,
+//     mapping derived as documented above)
+
+/// Result of [`flexilevel_administer`]: per-person administered column
+/// indices in administration order (`n_administered` per person, flattened
+/// row-major), number-right, red flag (1 iff last answer wrong), and the
+/// self-scoring score on the half-integer lattice.
+#[derive(Debug, Clone)]
+pub struct FlexilevelAdminResult {
+    pub n_administered: usize,
+    pub items: Vec<usize>,
+    pub number_right: Vec<u32>,
+    pub is_red: Vec<u8>,
+    pub score: Vec<f64>,
+}
+
+/// Result of [`flexilevel_score_distribution`]: the ascending score lattice
+/// {1/2, 1, ..., n} with exact probabilities, plus their mean and variance.
+#[derive(Debug, Clone)]
+pub struct FlexilevelDistResult {
+    pub scores: Vec<f64>,
+    pub probs: Vec<f64>,
+    pub mean: f64,
+    pub variance: f64,
+}
+
+/// Lord-index routing step shared by both entry points: item `i` was the
+/// `v`-th administered (v >= 1); returns (next-if-right, next-if-wrong).
+#[inline]
+fn flexilevel_next(i: i64, v: i64) -> (i64, i64) {
+    if i >= 0 {
+        (i + 1, i - v)
+    } else {
+        (i + v, i - 1)
+    }
+}
+
+/// Deterministic flexilevel routing + self-scoring over a full response
+/// matrix (row-major `n_persons x n_items`, entries 0/1; items pre-sorted
+/// ascending by difficulty). See the module comment above for the verified
+/// contract and source status.
+pub fn flexilevel_administer(
+    responses: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<FlexilevelAdminResult, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("flexilevel_administer: n_persons and n_items must be positive".into());
+    }
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_administer: n_items must be odd and >= 3 (got {n_items})"
+        ));
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or("flexilevel_administer: n_persons * n_items overflows")?;
+    if responses.len() != expected {
+        return Err(format!(
+            "flexilevel_administer: responses has {} entries, expected {} ({} x {})",
+            responses.len(),
+            expected,
+            n_persons,
+            n_items
+        ));
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64; // column of Lord index 0
+    let mut items = Vec::with_capacity(n_persons * n);
+    let mut number_right = Vec::with_capacity(n_persons);
+    let mut is_red = Vec::with_capacity(n_persons);
+    let mut score = Vec::with_capacity(n_persons);
+    for p in 0..n_persons {
+        let row = &responses[p * n_items..(p + 1) * n_items];
+        let mut i: i64 = 0; // Lord index of the current item
+        let mut right: u32 = 0;
+        let mut last_correct = false;
+        for v in 1..=(n as i64) {
+            let col = (i + median) as usize;
+            let y = row[col];
+            if y > 1 {
+                return Err(format!(
+                    "flexilevel_administer: responses[{}][{}] must be 0 or 1 (got {y})",
+                    p, col
+                ));
+            }
+            items.push(col);
+            let (nr, nw) = flexilevel_next(i, v);
+            if y == 1 {
+                right += 1;
+                last_correct = true;
+                i = nr;
+            } else {
+                last_correct = false;
+                i = nw;
+            }
+        }
+        // i now holds j, the (n+1)-th item that WOULD be administered.
+        let (r, x) = if i > 0 {
+            (i as u32, i as f64)
+        } else {
+            let r = (n as i64 + i) as u32;
+            (r, r as f64 + 0.5)
+        };
+        debug_assert_eq!(r, right, "Lord number-right identity");
+        debug_assert_eq!(i > 0, last_correct, "blue iff last answer right");
+        number_right.push(r);
+        is_red.push(u8::from(i < 0));
+        score.push(x);
+    }
+    Ok(FlexilevelAdminResult {
+        n_administered: n,
+        items,
+        number_right,
+        is_red,
+        score,
+    })
+}
+
+/// Exact conditional score distribution f(x | theta) of the flexilevel
+/// self-score by Lord's forward recursion (see the module comment above).
+/// `p[c]` is P(correct) on the c-th difficulty-sorted item at the fixed
+/// ability of interest; `p.len()` = N must be odd and >= 3.
+pub fn flexilevel_score_distribution(p: &[f64]) -> Result<FlexilevelDistResult, String> {
+    let n_items = p.len();
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_score_distribution: p must have odd length >= 3 (got {n_items})"
+        ));
+    }
+    for (c, &pc) in p.iter().enumerate() {
+        if !pc.is_finite() || !(0.0..=1.0).contains(&pc) {
+            return Err(format!(
+                "flexilevel_score_distribution: p[{c}] must be finite and in [0, 1]"
+            ));
+        }
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64;
+    // p_v over Lord indices, stored on a dense offset grid [-n, n].
+    let width = 2 * n + 1;
+    let off = n as i64;
+    let mut cur = vec![0.0_f64; width];
+    cur[n] = 1.0; // p_1(0) = 1
+    for v in 1..=(n as i64) {
+        let mut nxt = vec![0.0_f64; width];
+        for idx in 0..width {
+            let pr = cur[idx];
+            if pr == 0.0 {
+                continue;
+            }
+            let i = idx as i64 - off;
+            let pc = p[(i + median) as usize];
+            let (jr, jw) = flexilevel_next(i, v);
+            nxt[(jr + off) as usize] += pr * pc;
+            nxt[(jw + off) as usize] += pr * (1.0 - pc);
+        }
+        cur = nxt;
+    }
+    // cur holds p_{n+1}(j); map to the score lattice {1/2, 1, ..., n}.
+    let mut scores = Vec::with_capacity(2 * n);
+    let mut probs = Vec::with_capacity(2 * n);
+    for k in 1..=(2 * n) {
+        let x = k as f64 * 0.5;
+        let j = if k % 2 == 0 {
+            (k / 2) as i64 // integer x (blue): j = x
+        } else {
+            (k / 2) as i64 - n as i64 // half-integer x (red): j = x - 1/2 - n
+        };
+        scores.push(x);
+        probs.push(cur[(j + off) as usize]);
+    }
+    let mean: f64 = scores.iter().zip(&probs).map(|(x, w)| x * w).sum();
+    let variance: f64 = scores
+        .iter()
+        .zip(&probs)
+        .map(|(x, w)| (x - mean) * (x - mean) * w)
+        .sum();
+    Ok(FlexilevelDistResult {
+        scores,
+        probs,
+        mean,
+        variance,
+    })
+}

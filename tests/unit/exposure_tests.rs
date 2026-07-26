@@ -2075,3 +2075,222 @@ fn ci_classify_mc500_invariants() {
         }
     }
 }
+
+// ================ Lord flexilevel tests =====================================
+//
+// Mutation-kill audit (kills EXECUTED, recorded in PR evidence): every assert
+// reads crate outputs (`FlexilevelAdminResult` / `FlexilevelDistResult`
+// fields or returned `Err` strings).
+//
+// - MU1 routing wrong-branch swap (`i - v` -> `i - 1` for i >= 0): killed by
+//   `flexilevel_worked_example_routing_pin` (sequence diverges at v = 2).
+// - MU2 red +1/2 dropped (score = r always): killed by
+//   `flexilevel_structural_invariants_all_paths` (score identity) and the
+//   N=5 lattice pin.
+// - MU3 score mapping swap (r = j for j < 0 too): killed by
+//   `flexilevel_structural_invariants_all_paths` (r = sum of administered
+//   answers on red paths); the blue worked example CANNOT kill this mutant
+//   (documented limit -- its j = 6 > 0 never enters the red branch).
+// - MU4 recursion P/(1-P) swap on the i < 0 branch: killed by
+//   `flexilevel_n5_distribution_exact_pin` (asymmetric P chosen so the
+//   mirrored distribution differs).
+
+/// Lord (1971) worked example RWWRWRRRWR on N = 19 (n = 10): administered
+/// Lord indices [0, 1, -1, -2, 2, -3, 3, 4, 5, -4] = columns
+/// [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]; blue, r = 6, x = 6. The answer
+/// string is readable in the 1971 scan; the sequence is derived from the
+/// routing rules (OCR line blank) and matches the executed spec oracle.
+#[test]
+fn flexilevel_worked_example_routing_pin() {
+    let cols = [9usize, 10, 8, 7, 11, 6, 12, 13, 14, 5];
+    let answers = [1u8, 0, 0, 1, 0, 1, 1, 1, 0, 1]; // R W W R W R R R W R
+    let mut row = vec![0u8; 19];
+    for (c, y) in cols.iter().zip(answers.iter()) {
+        row[*c] = *y;
+    }
+    let r = crate::exposure::flexilevel_administer(&row, 1, 19).unwrap();
+    assert_eq!(r.n_administered, 10);
+    assert_eq!(r.items, cols.to_vec());
+    assert_eq!(r.number_right, vec![6]);
+    assert_eq!(r.is_red, vec![0]);
+    assert_eq!(r.score, vec![6.0]);
+}
+
+/// N = 5 exact distribution pin from the executed spec oracle
+/// (P = {4/5, 2/3, 1/2, 1/3, 1/5} ascending-difficulty columns):
+/// f = {1/2: 1/30, 1: 2/15, 3/2: 1/3, 2: 1/3, 5/2: 2/15, 3: 1/30},
+/// mean 7/4, variance 71/240. Enumeration == recursion exactly in the
+/// oracle; here the crate recursion must match to 1e-15.
+#[test]
+fn flexilevel_n5_distribution_exact_pin() {
+    let p = [4.0 / 5.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.2];
+    let d = crate::exposure::flexilevel_score_distribution(&p).unwrap();
+    assert_eq!(d.scores, vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0]);
+    let expect = [
+        1.0 / 30.0,
+        2.0 / 15.0,
+        1.0 / 3.0,
+        1.0 / 3.0,
+        2.0 / 15.0,
+        1.0 / 30.0,
+    ];
+    for (k, e) in expect.iter().enumerate() {
+        assert!(
+            (d.probs[k] - e).abs() < 1e-15,
+            "probs[{k}] = {}",
+            d.probs[k]
+        );
+    }
+    assert!((d.mean - 1.75).abs() < 1e-15);
+    assert!((d.variance - 71.0 / 240.0).abs() < 1e-15);
+    let total: f64 = d.probs.iter().sum();
+    assert!((total - 1.0).abs() < 1e-15);
+}
+
+/// Structural invariants (Lord 1970 props 1-3, 9) over ALL 2^9 = 512 full
+/// response rows for N = 9 (n = 5), reading only crate outputs: the
+/// administered set is a consecutive difficulty block containing the median;
+/// number-right equals the sum of the person's answers on the administered
+/// items; red iff the last administered answer is wrong; score = r (blue) or
+/// r + 1/2 (red).
+#[test]
+fn flexilevel_structural_invariants_all_paths() {
+    let n_items = 9usize;
+    let n = 5usize;
+    let n_persons = 1usize << n_items;
+    let mut resp = Vec::with_capacity(n_persons * n_items);
+    for pat in 0..n_persons {
+        for c in 0..n_items {
+            resp.push(((pat >> c) & 1) as u8);
+        }
+    }
+    let r = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+    assert_eq!(r.n_administered, n);
+    for p in 0..n_persons {
+        let row = &resp[p * n_items..(p + 1) * n_items];
+        let items = &r.items[p * n..(p + 1) * n];
+        let mut sorted = items.to_vec();
+        sorted.sort_unstable();
+        let lo = sorted[0];
+        assert_eq!(
+            sorted,
+            (lo..lo + n).collect::<Vec<_>>(),
+            "person {p}: not a consecutive block"
+        );
+        assert!(sorted.contains(&(n - 1)), "person {p}: median missing");
+        let right: u32 = items.iter().map(|&c| row[c] as u32).sum();
+        assert_eq!(r.number_right[p], right, "person {p}: number-right");
+        let last = *items.last().unwrap();
+        assert_eq!(r.is_red[p], u8::from(row[last] == 0), "person {p}: red");
+        let expect = right as f64 + if row[last] == 0 { 0.5 } else { 0.0 };
+        assert_eq!(r.score[p], expect, "person {p}: score");
+    }
+}
+
+/// Administer/distribution consistency: with P_i = 1/2 every answer path has
+/// probability 2^-n, and enumerating ALL 2^N full rows realizes each path
+/// exactly 2^(N-n) times, so empirical score frequencies over the 2^N rows
+/// must equal the crate distribution EXACTLY (both sides are dyadic).
+#[test]
+fn flexilevel_admin_matches_distribution_at_half() {
+    let n_items = 5usize;
+    let n = 3usize;
+    let n_persons = 1usize << n_items;
+    let mut resp = Vec::with_capacity(n_persons * n_items);
+    for pat in 0..n_persons {
+        for c in 0..n_items {
+            resp.push(((pat >> c) & 1) as u8);
+        }
+    }
+    let adm = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+    let dist = crate::exposure::flexilevel_score_distribution(&[0.5; 5]).unwrap();
+    for (k, &x) in dist.scores.iter().enumerate() {
+        let count = adm.score.iter().filter(|&&s| s == x).count();
+        assert_eq!(
+            count as f64 / n_persons as f64,
+            dist.probs[k],
+            "score {x}: empirical vs recursion"
+        );
+    }
+    // Lattice coverage sanity read from crate outputs.
+    assert_eq!(dist.scores, vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0]);
+}
+
+/// Full validation error paths; each assert reads the crate Err string.
+#[test]
+fn flexilevel_error_paths() {
+    use crate::exposure::{flexilevel_administer as adm, flexilevel_score_distribution as dist};
+    assert!(adm(&[], 0, 5).unwrap_err().contains("positive"));
+    assert!(adm(&[0; 4], 1, 4).unwrap_err().contains("odd"));
+    assert!(adm(&[0; 1], 1, 1).unwrap_err().contains("odd"));
+    assert!(adm(&[0; 9], 1, 5).unwrap_err().contains("expected"));
+    let mut bad = vec![0u8; 5];
+    bad[2] = 2; // median item is administered first, so the 2 is reached
+    assert!(adm(&bad, 1, 5).unwrap_err().contains("0 or 1"));
+    assert!(dist(&[]).unwrap_err().contains("odd"));
+    assert!(dist(&[0.5; 4]).unwrap_err().contains("odd"));
+    assert!(dist(&[0.5, f64::NAN, 0.5]).unwrap_err().contains("p[1]"));
+    assert!(dist(&[0.5, 1.5, 0.5]).unwrap_err().contains("p[1]"));
+    assert!(dist(&[-0.1, 0.5, 0.5]).unwrap_err().contains("p[0]"));
+}
+
+/// MC-500 (#[ignore]): 2PL simulees on a 21-item difficulty-ordered pool.
+/// Per rep: (a) the flexilevel score read from the crate correlates with
+/// true theta (r > 0.5 on 200 persons); (b) at fixed theta = 0.7 the
+/// empirical mean score over 400 simulees stays within 5 SE of the exact
+/// recursion mean computed by the crate at that theta.
+#[test]
+#[ignore]
+fn flexilevel_mc_500_recovery() {
+    let n_items = 21usize;
+    let n = 11usize;
+    let b: Vec<f64> = (0..n_items).map(|c| -2.5 + 0.25 * c as f64).collect();
+    let a = 1.2_f64;
+    let picc = |theta: f64, bc: f64| 1.0 / (1.0 + (-a * (theta - bc)).exp());
+    for rep in 0..500u64 {
+        let mut rng = Lcg(0xF1E_2026 ^ (rep * 0x9E37_79B9));
+        // (a) score-vs-theta correlation on 200 simulees.
+        let n_persons = 200usize;
+        let mut thetas = Vec::with_capacity(n_persons);
+        let mut resp = Vec::with_capacity(n_persons * n_items);
+        for _ in 0..n_persons {
+            let th = rng.normal();
+            thetas.push(th);
+            for bc in &b {
+                resp.push(u8::from(rng.next_f64() < picc(th, *bc)));
+            }
+        }
+        let adm = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+        let ms: f64 = adm.score.iter().sum::<f64>() / n_persons as f64;
+        let mt: f64 = thetas.iter().sum::<f64>() / n_persons as f64;
+        let mut sxx = 0.0;
+        let mut syy = 0.0;
+        let mut sxy = 0.0;
+        for (s, t) in adm.score.iter().zip(&thetas) {
+            sxx += (s - ms) * (s - ms);
+            syy += (t - mt) * (t - mt);
+            sxy += (s - ms) * (t - mt);
+        }
+        let corr = sxy / (sxx * syy).sqrt();
+        assert!(corr > 0.5, "rep {rep}: corr = {corr}");
+        // (b) empirical mean at fixed theta vs exact recursion mean.
+        let theta0 = 0.7;
+        let p0: Vec<f64> = b.iter().map(|bc| picc(theta0, *bc)).collect();
+        let d = crate::exposure::flexilevel_score_distribution(&p0).unwrap();
+        let m = 400usize;
+        let mut resp0 = Vec::with_capacity(m * n_items);
+        for _ in 0..m {
+            for bc in &b {
+                resp0.push(u8::from(rng.next_f64() < picc(theta0, *bc)));
+            }
+        }
+        let adm0 = crate::exposure::flexilevel_administer(&resp0, m, n_items).unwrap();
+        let emp: f64 = adm0.score.iter().sum::<f64>() / m as f64;
+        let se = (d.variance / m as f64).sqrt();
+        assert!(
+            (emp - d.mean).abs() < 5.0 * se,
+            "rep {rep}: emp {emp} vs exact {} (se {se})",
+            d.mean
+        );
+    }
+}

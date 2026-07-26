@@ -119,6 +119,23 @@
 
 ### Added
 
+- **Lord self-scoring flexilevel testing (Lord, 1970, RB-70-43; Lord, 1971,
+  RB-71-6)** (`fast_mlsirm.flexilevel_administer` /
+  `fast_mlsirm.flexilevel_score_distribution`; in Rust
+  `mlsirm_core::exposure::flexilevel_administer` /
+  `flexilevel_score_distribution`, PyO3 `py_flexilevel_administer` /
+  `py_flexilevel_score_distribution`): deterministic replay of Lord's
+  branched-adaptive flexilevel design over a full 0/1 response matrix — N
+  (odd) difficulty-sorted items, n = (N+1)/2 administered starting at the
+  median (right → easiest harder, wrong → hardest easier), number-right
+  self-scoring with +1/2 for a wrong last answer — plus the exact conditional
+  score distribution f(x | θ) on the half-integer lattice {1/2, …, n} via
+  Lord's forward recursion over p_v(i), taking caller-supplied per-item
+  correct-response probabilities (ICC-agnostic). Both primary ETS Research
+  Bulletins were READ (ERIC ED042813 / ED051286); the routing is pinned by
+  Lord's RWWRWRRRWR worked example and the recursion is cross-checked exactly
+  against exhaustive path enumeration. Lord's Eq. 3 efficiency ratio and
+  Eq. 4 normal-ogive ICC are deliberately out of scope.
 - **Breslow-Day odds-ratio homogeneity DIF test (Breslow & Day, 1980, Eq. 4.30)**
   (`fast_mlsirm.breslow_day_dif`; in Rust `mlsirm_core::dif::breslow_day_dif`,
   PyO3 `py_breslow_day_dif`): the classical NON-UNIFORM DIF companion to
