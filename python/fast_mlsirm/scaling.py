@@ -357,3 +357,107 @@ def ilsr_rankings(rankings, n, alpha=0.0, max_iter=100, tol=1e-8):
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
     )
+
+def _top1_to_csr(name, data, n):
+    """Validate top-1 choice data and CSR-flatten to u64 arrays.
+
+    ``data`` is an iterable of ``(winner, losers)`` pairs. Rejects,
+    BEFORE any unsigned cast: non-integer entries (bool/np.bool_,
+    complex, non-integral floats, int() overflow), negative indices (a
+    documented divergence -- Python's negative indices would silently
+    wrap in choix), empty loser sets (choix silently no-ops those), and
+    out-of-range indices. Winner-in-losers and duplicate-loser detection
+    is enforced by the Rust core (documented divergences: choix accepts
+    both, silently corrupting the denominator).
+    """
+    if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
+        raise ValueError(f"{name}: n must be an integer >= 2")
+    n = int(n)
+
+    def _index(x, what, r):
+        if isinstance(x, (bool, np.bool_)) or np.iscomplexobj(np.asarray(x)):
+            raise ValueError(f"{name}: observation {r} has a non-integer {what}")
+        try:
+            xi = int(x)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name}: observation {r} has a non-integer {what}")
+        if xi != x:
+            raise ValueError(f"{name}: observation {r} has a non-integer {what}")
+        if xi < 0:
+            raise ValueError(
+                f"{name}: observation {r} has a negative {what} index "
+                "(negative indices do not wrap here)"
+            )
+        if xi >= n:
+            raise ValueError(f"{name}: observation {r} has {what} {xi} >= n = {n}")
+        return xi
+
+    winners = []
+    flat = []
+    starts = [0]
+    for r, obs in enumerate(data):
+        winner, losers = obs
+        winners.append(_index(winner, "winner", r))
+        losers = list(losers)
+        if not losers:
+            raise ValueError(
+                f"{name}: observation {r} has an empty loser set "
+                "(choix silently ignores such observations; this port rejects them)"
+            )
+        for x in losers:
+            flat.append(_index(x, "loser", r))
+        starts.append(len(flat))
+    if len(starts) < 2:
+        raise ValueError(f"{name}: at least one observation is required")
+    return (
+        np.asarray(winners, dtype=np.uint64),
+        np.asarray(flat, dtype=np.uint64),
+        np.asarray(starts, dtype=np.uint64),
+        n,
+    )
+
+
+def lsr_top1(data, n, alpha=0.0):
+    """Luce Spectral Ranking for top-1 choice data (one shot).
+
+    ``data`` is an iterable of ``(winner, losers)`` pairs: the winner
+    was chosen out of the choice set ``{winner} | set(losers)``. Ports
+    choix 0.4.1 ``lsr_top1``: each observation accrues rate
+    ``1 / (sum of choice-set worths)`` on every loser-to-winner edge,
+    plus ``alpha`` everywhere off-diagonal. Returns the centered log
+    stationary distribution as :class:`LsrResult` (``iterations``
+    always 1). Raises ValueError on invalid input, empty loser sets,
+    winner-in-losers, duplicate losers, a disconnected item graph at
+    ``alpha = 0``, or overflow.
+    """
+    from .fitstats import _core_module
+
+    wn, ls, st, n = _top1_to_csr("lsr_top1", data, n)
+    res = _core_module().lsr_top1(wn, ls, st, n, float(alpha))
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
+
+
+def ilsr_top1(data, n, alpha=0.0, max_iter=100, tol=1e-8):
+    """Iterative LSR for top-1 choice data (Luce-choice MLE at alpha=0).
+
+    Repeats the :func:`lsr_top1` pass, feeding each pass the worths from
+    the previous one, until the L1 parameter change is ``<= tol * n``
+    (choix 0.4.1 ``ilsr_top1``; defaults match choix). Raises ValueError
+    on invalid input, a disconnected item graph at ``alpha = 0``,
+    overflow, or non-convergence within ``max_iter``.
+    """
+    from .fitstats import _core_module
+
+    wn, ls, st, n = _top1_to_csr("ilsr_top1", data, n)
+    res = _core_module().ilsr_top1(
+        wn, ls, st, n, float(alpha), int(max_iter), float(tol)
+    )
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )

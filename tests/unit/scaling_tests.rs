@@ -1203,3 +1203,332 @@ fn pl_mc_500_recovery() {
     }
     assert!(worst > 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// Plackett-Luce top-1 LSR / I-LSR (choix 0.4.1 lsr_top1 / ilsr_top1).
+// Pins from the EXECUTED exact-Fraction/mpmath oracle (session files
+// top1_oracle.py), cross-checked against pip choix 0.4.1 (<= 1.2e-16).
+//
+// Mutation kills (all EXECUTED):
+// - MU1 transpose chain update (winner->loser edge): killed by
+//   t1_fixture_ta_exact (item-1 dominance flips).
+// - MU2 winner-EXCLUDED denominator (val = 1/sum(w[losers])): PROVEN
+//   INVISIBLE on TA — full equal-size choice sets make it a constant
+//   off-diagonal rescale, statdist-invariant (oracle separation probe:
+//   TA False, TB True). Killed ONLY by t1_fixture_tb_partial.
+// - MU3 all-items denominator (val = 1/sum(all w)): same TA blindness
+//   (oracle-proven); killed by t1_fixture_tb_partial.
+// - MU4 I-LSR feeds uniform worths each pass: INVISIBLE on TA (the
+//   one-shot IS the fixed point there); killed by t1_ilsr_fixed_points
+//   via the TB params pin and the TB iterations == 12 pin.
+// - MU5 diagonal/alpha regularization mistakes: killed by the
+//   t1_fixture_ta_exact alpha = 1/2 pins [15/19, 27/19, 15/19].
+// ---------------------------------------------------------------------------
+
+/// Fixture TA: n = 3, five FULL choice sets
+/// [(1,[0,2]), (1,[0,2]), (0,[1,2]), (2,[0,1]), (1,[0,2])].
+/// Oracle weights exactly [3/5, 9/5, 3/5]; alpha = 1/2 weights
+/// [15/19, 27/19, 15/19]. Dataset duplication is exactly invariant at
+/// alpha = 0, NOT at alpha = 1/2 (both crate-output pins).
+#[test]
+fn t1_fixture_ta_exact() {
+    let wn: Vec<usize> = vec![1, 1, 0, 2, 1];
+    let ls: Vec<usize> = vec![0, 2, 0, 2, 1, 2, 0, 1, 0, 2];
+    let st: Vec<usize> = vec![0, 2, 4, 6, 8, 10];
+    let r = lsr_top1(&wn, &ls, &st, 3, 0.0).unwrap();
+    assert_eq!(r.iterations, 1);
+    let expw = [0.6, 1.8, 0.6];
+    for (a, b) in r.weights.iter().zip(expw.iter()) {
+        assert!((a - b).abs() < 1e-14, "weights {:?}", r.weights);
+    }
+    let expp = [
+        -0.36620409622270323047,
+        0.73240819244540646093,
+        -0.36620409622270323047,
+    ];
+    for (a, b) in r.params.iter().zip(expp.iter()) {
+        assert!((a - b).abs() < 1e-14, "params {:?}", r.params);
+    }
+    let r5 = lsr_top1(&wn, &ls, &st, 3, 0.5).unwrap();
+    let expw5 = [15.0 / 19.0, 27.0 / 19.0, 15.0 / 19.0];
+    for (a, b) in r5.weights.iter().zip(expw5.iter()) {
+        assert!((a - b).abs() < 1e-14, "alpha=1/2 weights {:?}", r5.weights);
+    }
+    // Duplication: exactly invariant at alpha = 0 ...
+    let mut wn2 = wn.clone();
+    wn2.extend_from_slice(&wn);
+    let mut ls2 = ls.clone();
+    ls2.extend_from_slice(&ls);
+    let st2: Vec<usize> = vec![0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+    let rd = lsr_top1(&wn2, &ls2, &st2, 3, 0.0).unwrap();
+    for (a, b) in rd.weights.iter().zip(r.weights.iter()) {
+        assert!((a - b).abs() < 1e-15, "duplication must be invariant");
+    }
+    // ... but NOT at alpha = 1/2.
+    let rd5 = lsr_top1(&wn2, &ls2, &st2, 3, 0.5).unwrap();
+    let diff: f64 = rd5
+        .weights
+        .iter()
+        .zip(r5.weights.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum();
+    assert!(
+        diff > 1e-3,
+        "alpha > 0 duplication must differ, diff = {diff}"
+    );
+}
+
+/// Fixture TB: n = 4, six PARTIAL choice sets (sizes 3/2/2/3/3/2)
+/// [(0,[1,2]), (3,[2]), (1,[3]), (2,[0,3]), (3,[1,0]), (1,[2])].
+/// Oracle weights exactly [38/41, 54/41, 22/41, 50/41] — the
+/// discriminating anchor for the winner-excluded (MU2) and all-items
+/// (MU3) denominator mutants, both PROVEN invisible on TA.
+#[test]
+fn t1_fixture_tb_partial() {
+    let wn: Vec<usize> = vec![0, 3, 1, 2, 3, 1];
+    let ls: Vec<usize> = vec![1, 2, 2, 3, 0, 3, 1, 0, 2];
+    let st: Vec<usize> = vec![0, 2, 3, 4, 6, 8, 9];
+    let r = lsr_top1(&wn, &ls, &st, 4, 0.0).unwrap();
+    let expw = [38.0 / 41.0, 54.0 / 41.0, 22.0 / 41.0, 50.0 / 41.0];
+    for (a, b) in r.weights.iter().zip(expw.iter()) {
+        assert!((a - b).abs() < 1e-14, "weights {:?}", r.weights);
+    }
+    let expp = [
+        -0.019822756542894746856,
+        0.33157513029499386732,
+        -0.5663664629109646628,
+        0.25461408915886554234,
+    ];
+    for (a, b) in r.params.iter().zip(expp.iter()) {
+        assert!((a - b).abs() < 1e-14, "params {:?}", r.params);
+    }
+}
+
+/// I-LSR fixed points (mpmath dps=50 oracle). TA converges in 2 passes
+/// with params equal to the one-shot — TA IS an exact fixed point
+/// (tolerance 1e-14, NOT bit equality per spec review). TB converges in
+/// 12 passes; atol 1e-7 is the ORACLE-MEASURED margin (converged
+/// tol=1e-8 iterate sits ~1e-9 from the fixed point; the MU4
+/// uniform-feed mutant deviates >= 1e-2 and would report 2 passes).
+/// Also pins the returned-weights invariant
+/// weights == exp_transform(params) (kills stale/uniform-weights
+/// mutants that params-only pins miss).
+#[test]
+fn t1_ilsr_fixed_points() {
+    let wna: Vec<usize> = vec![1, 1, 0, 2, 1];
+    let lsa: Vec<usize> = vec![0, 2, 0, 2, 1, 2, 0, 1, 0, 2];
+    let sta: Vec<usize> = vec![0, 2, 4, 6, 8, 10];
+    let one = lsr_top1(&wna, &lsa, &sta, 3, 0.0).unwrap();
+    let r = ilsr_top1(&wna, &lsa, &sta, 3, 0.0, 100, 1e-8).unwrap();
+    assert_eq!(r.iterations, 2, "TA pass count at tol=1e-8");
+    for (a, b) in r.params.iter().zip(one.params.iter()) {
+        assert!((a - b).abs() < 1e-14, "TA ilsr == one-shot fixed point");
+    }
+    let wnb: Vec<usize> = vec![0, 3, 1, 2, 3, 1];
+    let lsb: Vec<usize> = vec![1, 2, 2, 3, 0, 3, 1, 0, 2];
+    let stb: Vec<usize> = vec![0, 2, 3, 4, 6, 8, 9];
+    let rr = ilsr_top1(&wnb, &lsb, &stb, 4, 0.0, 100, 1e-8).unwrap();
+    let expb = [
+        0.038399971408422690899,
+        0.26272439694352421265,
+        -0.56384876453083402307,
+        0.26272439617888711952,
+    ];
+    for (a, b) in rr.params.iter().zip(expb.iter()) {
+        assert!((a - b).abs() < 1e-7, "TB ilsr params {:?}", rr.params);
+    }
+    assert_eq!(rr.iterations, 12, "TB pass count at tol=1e-8");
+    // Returned-weights invariant: weights == exp_transform(params),
+    // positive, sum n (reads BOTH crate outputs).
+    for res in [&r, &rr] {
+        let n = res.params.len() as f64;
+        let mean = res.params.iter().sum::<f64>() / n;
+        let mut w: Vec<f64> = res.params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= n / s;
+        }
+        for (a, b) in res.weights.iter().zip(w.iter()) {
+            assert!(*a > 0.0);
+            assert!((a - b).abs() < 1e-12, "weights/params invariant");
+        }
+        let sw: f64 = res.weights.iter().sum();
+        assert!((sw - n).abs() < 1e-9);
+    }
+}
+
+/// Single-loser observations are EXACTLY pairwise comparisons (uniform
+/// worths: val = 1/2 on the loser->winner edge, by construction), so
+/// lsr_top1 must bit-match lsr_pairwise on the induced win matrix
+/// (oracle probe maxdiff 0.0).
+#[test]
+fn t1_pairwise_equivalence() {
+    // 0>1, 1>2, 2>0, 0>2 as top-1 observations with one loser each.
+    let wn: Vec<usize> = vec![0, 1, 2, 0];
+    let ls: Vec<usize> = vec![1, 2, 0, 2];
+    let st: Vec<usize> = vec![0, 1, 2, 3, 4];
+    let r = lsr_top1(&wn, &ls, &st, 3, 0.0).unwrap();
+    let mut wins = vec![0.0f64; 9];
+    wins[0 * 3 + 1] = 1.0;
+    wins[1 * 3 + 2] = 1.0;
+    wins[2 * 3 + 0] = 1.0;
+    wins[0 * 3 + 2] = 1.0;
+    let rp = lsr_pairwise(&wins, 3, 0.0).unwrap();
+    assert_eq!(r.params, rp.params, "single-loser top-1 == pairwise");
+    assert_eq!(r.weights, rp.weights);
+}
+
+/// Error contract + disconnected graph + overflow (all Err paths read
+/// crate outputs).
+#[test]
+fn t1_error_contract() {
+    let wn: Vec<usize> = vec![1, 1, 0, 2, 1];
+    let ls: Vec<usize> = vec![0, 2, 0, 2, 1, 2, 0, 1, 0, 2];
+    let st: Vec<usize> = vec![0, 2, 4, 6, 8, 10];
+    assert!(lsr_top1(&wn, &ls, &st, 1, 0.0).is_err(), "n < 2");
+    // Allocation cap: dense O(n^2) chain must reject huge n with an Err,
+    // never abort the process.
+    assert!(
+        lsr_top1(&[0], &[1], &[0, 1], 1_000_000, 0.0).is_err(),
+        "n over dense-chain cap"
+    );
+    assert!(lsr_top1(&wn, &ls, &[], 3, 0.0).is_err(), "empty starts");
+    assert!(lsr_top1(&[], &[], &[0], 3, 0.0).is_err(), "single start");
+    assert!(
+        lsr_top1(&[0], &ls, &st, 3, 0.0).is_err(),
+        "winners/starts length mismatch"
+    );
+    assert!(
+        lsr_top1(&wn, &ls, &[1, 2, 4, 6, 8, 10], 3, 0.0).is_err(),
+        "starts[0] != 0"
+    );
+    assert!(
+        lsr_top1(&wn, &ls, &[0, 2, 4, 6, 8, 9], 3, 0.0).is_err(),
+        "bad tail"
+    );
+    assert!(
+        lsr_top1(&wn, &ls, &[0, 4, 2, 6, 8, 10], 3, 0.0).is_err(),
+        "non-monotone starts"
+    );
+    assert!(
+        lsr_top1(&[0, 1], &[1], &[0, 1, 1], 3, 0.0).is_err(),
+        "empty loser set (documented divergence: choix no-ops it)"
+    );
+    assert!(
+        lsr_top1(&[0], &[1, 5], &[0, 2], 3, 0.0).is_err(),
+        "loser out of range"
+    );
+    assert!(
+        lsr_top1(&[5], &[0, 1], &[0, 2], 3, 0.0).is_err(),
+        "winner out of range"
+    );
+    assert!(
+        lsr_top1(&[0], &[1, 0], &[0, 2], 3, 0.0).is_err(),
+        "winner in its own loser set (documented divergence)"
+    );
+    assert!(
+        lsr_top1(&[0], &[1, 1], &[0, 2], 3, 0.0).is_err(),
+        "duplicate loser (documented divergence)"
+    );
+    // The same loser in DIFFERENT observations is fine.
+    assert!(lsr_top1(&[0, 1, 2], &[1, 2, 0], &[0, 1, 2, 3], 3, 0.0).is_ok());
+    assert!(lsr_top1(&wn, &ls, &st, 3, -1.0).is_err(), "negative alpha");
+    assert!(lsr_top1(&wn, &ls, &st, 3, f64::NAN).is_err(), "NaN alpha");
+    // Overflow: alpha = 1e308 makes off-diagonal row sums (2 * 1e308)
+    // non-finite -> explicit Err, never NaN output.
+    assert!(lsr_top1(&wn, &ls, &st, 3, 1e308).is_err(), "alpha overflow");
+    assert!(
+        ilsr_top1(&wn, &ls, &st, 3, 0.0, 0, 1e-8).is_err(),
+        "max_iter = 0"
+    );
+    assert!(
+        ilsr_top1(&wn, &ls, &st, 3, 0.0, 100, 0.0).is_err(),
+        "tol = 0"
+    );
+    assert!(
+        ilsr_top1(&wn, &ls, &st, 3, 0.0, 1, 1e-8).is_err(),
+        "non-convergence in 1 pass (first check never fires)"
+    );
+    // Disconnected at alpha = 0: {0,1} vs {2,3} (fixture TD).
+    let wd: Vec<usize> = vec![0, 1, 2, 3];
+    let ld: Vec<usize> = vec![1, 0, 3, 2];
+    let sd: Vec<usize> = vec![0, 1, 2, 3, 4];
+    assert!(lsr_top1(&wd, &ld, &sd, 4, 0.0).is_err(), "disconnected");
+    assert!(ilsr_top1(&wd, &ld, &sd, 4, 0.0, 100, 1e-8).is_err());
+    // ... estimable at alpha = 1/2, exactly uniform (oracle pin).
+    let rd5 = lsr_top1(&wd, &ld, &sd, 4, 0.5).unwrap();
+    for w in rd5.weights.iter() {
+        assert!((w - 1.0).abs() < 1e-14, "TD alpha=1/2 uniform");
+    }
+}
+
+/// 500-replication Monte-Carlo top-1 recovery (ignored: slow).
+/// Fully specified per spec review: seed 0x51a3c2b7d4e8f901 (crate Lcg),
+/// n = 6, true params 0.8 * N(0,1) centered, 800 observations per rep,
+/// each with a choice set of size 3..=6 (uniform via next_f64, sampled
+/// without replacement) and the winner drawn Luce-categorically within
+/// the set; estimator ilsr_top1(alpha=0, max_iter=200, tol=1e-8);
+/// metric MAE(params, truth).
+#[test]
+#[ignore]
+fn t1_mc_500_recovery() {
+    let n = 6usize;
+    let mut rng = Lcg(0x51a3c2b7d4e8f901);
+    let mut worst = 0.0f64;
+    for rep in 0..500 {
+        let truth: Vec<f64> = {
+            let raw: Vec<f64> = (0..n).map(|_| 0.8 * rng.normal()).collect();
+            let m = raw.iter().sum::<f64>() / n as f64;
+            raw.iter().map(|x| x - m).collect()
+        };
+        let worths: Vec<f64> = truth.iter().map(|t| t.exp()).collect();
+        let mut winners: Vec<usize> = Vec::with_capacity(800);
+        let mut losers: Vec<usize> = Vec::with_capacity(800 * n);
+        let mut starts: Vec<usize> = Vec::with_capacity(801);
+        starts.push(0);
+        for _ in 0..800 {
+            // Choice-set size uniform on 3..=n, sampled without
+            // replacement from 0..n.
+            let k = 3 + (rng.next_f64() * ((n - 2) as f64)) as usize;
+            let k = k.min(n);
+            let mut pool: Vec<usize> = (0..n).collect();
+            let mut set: Vec<usize> = Vec::with_capacity(k);
+            for _ in 0..k {
+                let idx = (rng.next_f64() * (pool.len() as f64)) as usize;
+                set.push(pool.remove(idx.min(pool.len() - 1)));
+            }
+            // Luce-categorical winner draw within the set.
+            let s: f64 = set.iter().map(|&i| worths[i]).sum();
+            let u = rng.next_f64() * s;
+            let mut acc = 0.0;
+            let mut pick = set.len() - 1;
+            for (j, &i) in set.iter().enumerate() {
+                acc += worths[i];
+                if u < acc {
+                    pick = j;
+                    break;
+                }
+            }
+            winners.push(set[pick]);
+            for (j, &i) in set.iter().enumerate() {
+                if j != pick {
+                    losers.push(i);
+                }
+            }
+            starts.push(losers.len());
+        }
+        let r = ilsr_top1(&winners, &losers, &starts, n, 0.0, 200, 1e-8).unwrap();
+        let mae = truth
+            .iter()
+            .zip(r.params.iter())
+            .map(|(t, p)| (t - p).abs())
+            .sum::<f64>()
+            / n as f64;
+        worst = worst.max(mae);
+        // 0.3 bound: worst-of-500 MAE MEASURED at 0.2580 on this seed
+        // stream (800 obs/rep); mutant deviations (MU4 uniform feed)
+        // exceed 0.4 on partial choice sets.
+        assert!(mae < 0.3, "rep {rep}: mae = {mae}");
+    }
+    assert!(worst > 0.0);
+}

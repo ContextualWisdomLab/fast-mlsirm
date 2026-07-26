@@ -5280,6 +5280,59 @@ fn ilsr_rankings(
     Ok(d.into())
 }
 
+/// Plackett-Luce Luce-Spectral-Ranking for top-1 choice data (one
+/// shot) as implemented by choix 0.4.1 (`lsr_top1`; see
+/// `mlsirm_core::scaling::lsr_top1`). `winners` has one entry per
+/// observation; `losers` is CSR-flattened loser indices with `starts`
+/// offsets. Same dict layout as `lsr_pairwise`.
+#[pyfunction]
+#[pyo3(signature = (winners, losers, starts, n, alpha=0.0))]
+fn lsr_top1(
+    py: Python<'_>,
+    winners: PyReadonlyArray1<'_, u64>,
+    losers: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let wn: Vec<usize> = winners.as_slice()?.iter().map(|&x| x as usize).collect();
+    let ls: Vec<usize> = losers.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res =
+        mlsirm_core::scaling::lsr_top1(&wn, &ls, &st, n, alpha).map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Iterative LSR (I-LSR) for top-1 choice data, as implemented by choix
+/// 0.4.1 (`ilsr_top1`; see `mlsirm_core::scaling::ilsr_top1`).
+#[pyfunction]
+#[pyo3(signature = (winners, losers, starts, n, alpha=0.0, max_iter=100, tol=1e-8))]
+fn ilsr_top1(
+    py: Python<'_>,
+    winners: PyReadonlyArray1<'_, u64>,
+    losers: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let wn: Vec<usize> = winners.as_slice()?.iter().map(|&x| x as usize).collect();
+    let ls: Vec<usize> = losers.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res = mlsirm_core::scaling::ilsr_top1(&wn, &ls, &st, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7623,6 +7676,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rank_centrality, m)?)?;
     m.add_function(wrap_pyfunction!(lsr_rankings, m)?)?;
     m.add_function(wrap_pyfunction!(ilsr_rankings, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_top1, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

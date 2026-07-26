@@ -920,6 +920,238 @@ pub fn ilsr_rankings(
     ))
 }
 
+/// Shared input validation for [`lsr_top1`] / [`ilsr_top1`].
+///
+/// CSR layout: observation `r` has winner `winners[r]` and losers
+/// `losers[starts[r]..starts[r + 1]]` (the choice set is the winner
+/// plus its losers).
+fn top1_validate(
+    winners: &[usize],
+    losers: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+) -> Result<(), String> {
+    if n < 2 {
+        return Err("lsr_top1 needs at least 2 items".into());
+    }
+    // ponytail: dense O(n^2) chain; hard cap keeps a tiny input from
+    // requesting a terabyte allocation and aborting the process. Raise
+    // alongside a sparse chain if ever needed.
+    if n > 10_000 {
+        return Err(format!(
+            "n = {n} exceeds the 10000-item cap for the dense O(n^2) chain"
+        ));
+    }
+    if starts.len() < 2 {
+        return Err("top-1 data is empty (need at least one observation)".into());
+    }
+    if winners.len() != starts.len() - 1 {
+        return Err("winners.len() must equal starts.len() - 1".into());
+    }
+    if starts[0] != 0 {
+        return Err("starts[0] must be 0".into());
+    }
+    if *starts.last().unwrap() != losers.len() {
+        return Err("starts must end at losers.len()".into());
+    }
+    let mut seen = vec![usize::MAX; n];
+    for r in 0..winners.len() {
+        let (a, b) = (starts[r], starts[r + 1]);
+        if b < a {
+            return Err("starts must be nondecreasing".into());
+        }
+        if b == a {
+            return Err("empty loser set (choix silently no-ops the observation; \
+                 rejected here as a documented divergence)"
+                .into());
+        }
+        let winner = winners[r];
+        if winner >= n {
+            return Err(format!("winner index {winner} out of range for n = {n}"));
+        }
+        for &loser in &losers[a..b] {
+            if loser >= n {
+                return Err(format!("loser index {loser} out of range for n = {n}"));
+            }
+            if loser == winner {
+                return Err("winner appears in its own loser set (choix accepts \
+                     this, silently inflating the denominator; rejected \
+                     here as a documented divergence)"
+                    .into());
+            }
+            if seen[loser] == r {
+                return Err("duplicate loser within an observation (choix accepts \
+                     duplicates, inflating the denominator and \
+                     double-counting the edge; rejected here as a \
+                     documented divergence)"
+                    .into());
+            }
+            seen[loser] = r;
+        }
+    }
+    if !alpha.is_finite() || alpha < 0.0 {
+        return Err("alpha must be finite and nonnegative".into());
+    }
+    Ok(())
+}
+
+/// One LSR-top-1 pass: build the Markov-chain generator from top-1
+/// choice data under the current worths `w`, solve for its stationary
+/// distribution, and return `(params, weights)` (choix `lsr_top1` +
+/// `statdist` + `log_transform`).
+fn lsr_top1_pass(
+    winners: &[usize],
+    losers: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+    w: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    // chain = alpha * ones(n, n); the SEEDED DIAGONAL alpha cancels in
+    // the row-sum subtraction, but the off-diagonal alpha remains as
+    // regularization (same algebra as lsr_rankings; VERIFIED).
+    let mut chain = vec![alpha; n * n];
+    for r in 0..winners.len() {
+        let winner = winners[r];
+        let ls = &losers[starts[r]..starts[r + 1]];
+        // Choice-SET worth sum: losers plus the winner (choix lsr.py:404;
+        // a winner-excluded or all-items sum is a distinct, wrong model
+        // on partial choice sets; regression-pinned by fixture TB).
+        let s: f64 = ls.iter().map(|&i| w[i]).sum::<f64>() + w[winner];
+        let val = 1.0 / s;
+        for &loser in ls {
+            chain[loser * n + winner] += val;
+        }
+    }
+    for i in 0..n {
+        let row_sum: f64 = (0..n).filter(|&j| j != i).map(|j| chain[i * n + j]).sum();
+        chain[i * n + i] = -row_sum;
+    }
+    if chain.iter().any(|x| !x.is_finite()) {
+        return Err("top-1 Markov chain has non-finite transition rates (overflow)".into());
+    }
+    statdist_params(chain, n)
+}
+
+/// Luce Spectral Ranking for top-1 choice data (one-shot):
+/// Plackett-Luce / Luce-choice log-worth estimation.
+///
+/// Implements the algorithm exactly as implemented by the `choix`
+/// Python package (v0.4.1, `lsr.py` `lsr_top1`, `utils.py`
+/// `statdist`/`log_transform`).
+///
+/// Source status:
+/// - **READ**: choix 0.4.1 source (`lsr_top1`, `_init_lsr`, `statdist`,
+///   `log_transform`); every formula is traceable to those lines.
+/// - **NOT READ (as-cited)**: Maystre, L., & Grossglauser, M. (2015).
+///   Fast and accurate inference of Plackett-Luce models. *Advances in
+///   Neural Information Processing Systems, 28*, 172-180 — cited as the
+///   algorithm origin per choix's docstrings ([MG15]).
+///
+/// Model (Luce choice): each observation `(winner, losers)` records the
+/// winner chosen out of the choice set `{winner} ∪ losers` with
+/// probability proportional to its worth. Each observation contributes
+/// the rate `1 / (sum of current worths over the choice set)` on every
+/// loser->winner edge (plus `alpha` everywhere off-diagonal as a
+/// regularizer). The stationary distribution of that chain, scaled to
+/// sum `n`, is the worth estimate; `params` are its centered logs.
+/// Errors on disconnected comparison graphs at `alpha = 0` (choix
+/// raises there too) and on overflowing transition rates.
+///
+/// Data layout: CSR — observation `r` has winner `winners[r]` and
+/// losers `losers[starts[r]..starts[r+1]]`, with `starts[0] == 0` and
+/// `starts.last() == losers.len()`.
+///
+/// Duplicating the whole dataset is exactly invariant at `alpha = 0`
+/// (the generator doubles; its stationary distribution is unchanged)
+/// but NOT at `alpha > 0` (regression-pinned).
+///
+/// DOCUMENTED DIVERGENCES from choix: empty loser sets are rejected
+/// (choix silently no-ops the observation); a winner appearing in its
+/// own loser set is rejected (choix accepts it, adding a self-edge that
+/// cancels in the diagonal while still inflating the denominator);
+/// duplicate losers within one observation are rejected (choix accepts
+/// them, inflating the denominator and double-counting the edge);
+/// negative indices never reach this API (rejected in the wrapper).
+pub fn lsr_top1(
+    winners: &[usize],
+    losers: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+) -> Result<LsrResult, String> {
+    top1_validate(winners, losers, starts, n, alpha)?;
+    let w = vec![1.0f64; n];
+    let (params, weights) = lsr_top1_pass(winners, losers, starts, n, alpha, &w)?;
+    Ok(LsrResult {
+        params,
+        weights,
+        iterations: 1,
+    })
+}
+
+/// Iterative Luce Spectral Ranking for top-1 choice data:
+/// maximum-likelihood Luce-choice estimation by repeated spectral
+/// passes (choix `ilsr_top1`).
+///
+/// See [`lsr_top1`] for the model, source status, data layout, and
+/// per-pass algebra. Each pass rebuilds the chain with the current
+/// worths `w = exp_transform(params)` (`exp(params - mean)` scaled to
+/// sum `n`) and re-solves. Convergence (choix `NormOfDifferenceTest`,
+/// order 1): fires when the L1 distance between successive centered
+/// parameter vectors is `<= tol * n`; the first pass never fires, so at
+/// least 2 passes occur. `iterations` is the pass count at convergence.
+/// Non-convergence within `max_iter` passes is an error.
+pub fn ilsr_top1(
+    winners: &[usize],
+    losers: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> Result<LsrResult, String> {
+    top1_validate(winners, losers, starts, n, alpha)?;
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be at least 1".into());
+    }
+    let nf = n as f64;
+    let exp_transform = |params: &[f64]| -> Vec<f64> {
+        let mean = params.iter().sum::<f64>() / nf;
+        let mut w: Vec<f64> = params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= nf / s;
+        }
+        w
+    };
+    let mut params = vec![0.0f64; n];
+    let mut prev: Option<Vec<f64>> = None;
+    for it in 1..=max_iter {
+        let w = exp_transform(&params);
+        let (newp, weights) = lsr_top1_pass(winners, losers, starts, n, alpha, &w)?;
+        if let Some(pr) = &prev {
+            let dist: f64 = newp.iter().zip(pr.iter()).map(|(a, b)| (a - b).abs()).sum();
+            if dist <= tol * nf {
+                return Ok(LsrResult {
+                    params: newp,
+                    weights,
+                    iterations: it,
+                });
+            }
+        }
+        prev = Some(newp.clone());
+        params = newp;
+    }
+    Err(format!(
+        "ilsr_top1 did not converge after {max_iter} iterations"
+    ))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

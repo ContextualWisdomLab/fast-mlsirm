@@ -119,6 +119,23 @@
 
 ### Added
 
+- **Luce-choice top-1 estimation via Luce Spectral Ranking (Maystre &
+  Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_top1` /
+  `ilsr_top1` — choix source READ; the paper itself NOT READ, cited as
+  the algorithm origin per choix's docstrings).** New Rust cores
+  `scaling::lsr_top1` (one-shot) and `scaling::ilsr_top1` (iterative
+  MLE) estimate Luce/Plackett-Luce log-worths from top-1 choice data
+  (`(winner, losers)` observations, CSR layout): each observation
+  accrues rate `1/(sum of choice-set worths)` on every loser-to-winner
+  edge (plus `alpha` regularization), and the centered log stationary
+  distribution of that chain is the estimate. Python wrappers
+  `fast_mlsirm.lsr_top1` / `ilsr_top1` take iterables of
+  `(winner, losers)` pairs and return `LsrResult`. Three documented
+  divergences from choix: empty loser sets are rejected (choix silently
+  no-ops them), a winner in its own loser set is rejected (choix
+  silently inflates the denominator), and duplicate losers are rejected
+  (choix double-counts the edge). Single-loser observations bit-match
+  `lsr_pairwise` on the induced win matrix (regression-pinned).
 - **Plackett-Luce ranking estimation via Luce Spectral Ranking (Maystre &
   Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_rankings` /
   `ilsr_rankings` — choix source READ; the paper itself NOT READ, cited as

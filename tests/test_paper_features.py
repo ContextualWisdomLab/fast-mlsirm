@@ -8950,3 +8950,97 @@ class TestPlackettLuceRankings:
             lsr_rankings([[0, np.float64("inf")]], 2)
         with pytest.raises(ValueError):
             lsr_rankings([[0, 1]], 1_000_000)
+
+class TestPlackettLuceTop1:
+    """Plackett-Luce top-1 LSR/I-LSR (choix 0.4.1 lsr_top1 / ilsr_top1).
+    Pins from the executed exact-Fraction oracle."""
+
+    def test_lsr_top1_fixtures(self):
+        import numpy as np
+        from fast_mlsirm import lsr_top1
+
+        ta = [(1, [0, 2]), (1, [0, 2]), (0, [1, 2]), (2, [0, 1]), (1, [0, 2])]
+        r = lsr_top1(ta, 3)
+        np.testing.assert_allclose(r.weights, [0.6, 1.8, 0.6], rtol=0, atol=1e-14)
+        assert r.iterations == 1
+        r5 = lsr_top1(ta, 3, alpha=0.5)
+        np.testing.assert_allclose(
+            r5.weights, [15 / 19, 27 / 19, 15 / 19], rtol=0, atol=1e-14
+        )
+        # Partial choice sets (kills the winner-excluded / all-items
+        # denominator mutants, both invisible on TA).
+        tb = [(0, [1, 2]), (3, [2]), (1, [3]), (2, [0, 3]), (3, [1, 0]), (1, [2])]
+        rp = lsr_top1(tb, 4)
+        np.testing.assert_allclose(
+            rp.weights,
+            [38 / 41, 54 / 41, 22 / 41, 50 / 41],
+            rtol=0,
+            atol=1e-14,
+        )
+
+    def test_ilsr_top1_fixed_point(self):
+        import numpy as np
+        from fast_mlsirm import ilsr_top1
+
+        tb = [(0, [1, 2]), (3, [2]), (1, [3]), (2, [0, 3]), (3, [1, 0]), (1, [2])]
+        r = ilsr_top1(tb, 4)
+        np.testing.assert_allclose(
+            r.params,
+            [
+                0.038399971408422691,
+                0.26272439694352421,
+                -0.56384876453083402,
+                0.26272439617888712,
+            ],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 12
+        assert (r.weights > 0).all()
+        assert abs(r.weights.sum() - 4.0) < 1e-9
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import ilsr_top1, lsr_top1
+
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [])], 2)  # empty loser set (choix would no-op)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [-1])], 2)  # negative index must NOT wrap
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1.5])], 2)  # non-integral loser
+        with pytest.raises(ValueError):
+            lsr_top1([(0.5, [1])], 2)  # non-integral winner
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [2])], 2)  # loser out of range
+        with pytest.raises(ValueError):
+            lsr_top1([(2, [0])], 2)  # winner out of range
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [0, 1])], 2)  # winner in its own loser set
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1, 1])], 3)  # duplicate loser
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 1)  # n < 2
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1]), (1, [0]), (2, [3]), (3, [2])], 4)  # disconnected
+        with pytest.raises(ValueError):
+            ilsr_top1([(0, [1]), (1, [0])], 2, max_iter=0)
+        # Object-dtype backstop: a non-numeric object must raise
+        # ValueError, not TypeError.
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [object()])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.complex128(1)])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(np.complex128(0), [1])], 2)
+        # bool / np.bool_ are not item indices; inf must raise ValueError
+        # (not OverflowError); huge n must Err (not abort the process).
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.bool_(True)])], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_top1([(True, [1])], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.float64("inf")])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 1_000_000)
