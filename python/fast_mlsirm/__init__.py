@@ -38,6 +38,7 @@ from .scaling import (
     StephensonResult as StephensonResult,
     elom_rating as elom_rating,
     ElomResult as ElomResult,
+    metrics_rating as metrics_rating,
 )
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
@@ -268,6 +269,7 @@ __all__ = [
     "StephensonResult",
     "elom_rating",
     "ElomResult",
+    "metrics_rating",
     "circle_arc_middle_anchor",
     "CircleArcResult",
     "fit_response_times",

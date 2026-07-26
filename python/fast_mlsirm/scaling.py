@@ -1501,3 +1501,65 @@ def elom_rating(
         places=np.asarray(res["places"]).reshape(n, nn),
         lag=np.asarray(res["lag"]),
     )
+
+
+def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
+    """Prediction-quality metrics for binary-outcome forecasts.
+
+    Thin wrapper over the Rust core reimplementation of CRAN PlayerRatings
+    1.1-0 ``metrics()`` (R/ratings.R lines 936-957; no journal paper exists
+    -- the CRAN source is the normative reference, READ). Per predictor
+    column: binomial deviance (on the ``cap``-clamped predictions), RMSE,
+    and MAE (both on the RAW uncapped predictions -- the R source quirk),
+    each times 100 and, when ``scale`` is true, divided by the
+    0.5-constant-predictor baseline. NaN marks missing values and is
+    dropped elementwise; Inf is rejected.
+
+    ``act`` is length ``nr``; ``pred`` is ``(nr,)`` or ``(nr, np)``.
+    Returns an ``(np, 3)`` float array of per-column ``[bdev, mse, mae]``.
+    """
+    from .fitstats import _core_module
+
+    def _as_float(name, x, ndim):
+        arr = np.asarray(x)
+        if np.iscomplexobj(arr):
+            raise ValueError(f"metrics_rating: {name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"metrics_rating: {name} must be numeric"
+                ) from exc
+        arr = np.ascontiguousarray(arr, dtype=np.float64)
+        if arr.ndim != ndim:
+            raise ValueError(
+                f"metrics_rating: {name} must be {ndim}-D, got {arr.ndim}-D"
+            )
+        return arr
+
+    act_arr = _as_float("act", act, 1)
+    pred_in = np.asarray(pred)
+    pred_arr = _as_float("pred", pred, 2 if pred_in.ndim == 2 else 1)
+    if pred_arr.ndim == 1:
+        pred_arr = pred_arr.reshape(-1, 1)
+    nr, n_pred = pred_arr.shape
+    if act_arr.shape[0] != nr:
+        raise ValueError(
+            f"metrics_rating: act has length {act_arr.shape[0]} "
+            f"but pred has {nr} rows"
+        )
+    cap_arr = _as_float("cap", cap, 1)
+    if cap_arr.shape[0] != 2:
+        raise ValueError("metrics_rating: cap must be a (lo, hi) pair")
+    core = _core_module()
+    out = core.metrics_rating(
+        act_arr,
+        np.ascontiguousarray(pred_arr).ravel(),
+        nr,
+        n_pred,
+        float(cap_arr[0]),
+        float(cap_arr[1]),
+        bool(scale),
+    )
+    return np.asarray(out, dtype=np.float64).reshape(n_pred, 3)

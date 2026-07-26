@@ -9849,3 +9849,54 @@ class TestElom:
             up = np.array([[0, 1, 2, np.iinfo(np.uint64).max]], dtype=np.uint64)
             us = np.array([[4.0, 3.0, 2.0, np.nan]])
             elom_rating(periods, up, us, n_players=4)
+
+
+class TestMetrics:
+    def test_anchor_m1_and_cap_quirk(self):
+        import numpy as np
+        from fast_mlsirm import metrics_rating
+
+        out = metrics_rating(
+            [1.0, 0.0, 1.0, 0.0], [0.75, 0.25, 0.5, 0.5], scale=False
+        )
+        assert out.shape == (1, 3)
+        assert abs(out[0, 0] - 49.041462650586311) < 1e-12
+        assert abs(out[0, 1] - 39.528470752104745) < 1e-12
+        assert out[0, 2] == 37.5
+        # cap quirk: bdev capped, mse/mae raw
+        q = metrics_rating([1.0, 0.0], [0.999, 0.001], scale=False)
+        assert abs(q[0, 0] - 1.0050335853501451) < 1e-12
+        assert abs(q[0, 1] - 0.1) < 1e-12
+        assert abs(q[0, 2] - 0.1) < 1e-12
+
+    def test_scaled_two_columns(self):
+        import numpy as np
+        from fast_mlsirm import metrics_rating
+
+        pred = np.array(
+            [[0.75, 0.50], [0.25, 0.50], [0.50, 0.25], [0.50, 0.75]]
+        )
+        out = metrics_rating([1.0, 0.0, 1.0, 0.0], pred, scale=False)
+        assert out.shape == (2, 3)
+        assert abs(out[0, 0] - 49.041462650586311) < 1e-12
+        assert abs(out[1, 0] - 103.97207708399179) < 1e-12
+        assert abs(out[1, 1] - 63.737743919909803) < 1e-12
+        assert out[1, 2] == 62.5
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import metrics_rating
+
+        with pytest.raises(ValueError, match="real-valued"):
+            metrics_rating(np.array([1j, 0.0]), [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array(["a", "b"], dtype=object), [0.6, 0.4])
+        with pytest.raises(ValueError, match="length"):
+            metrics_rating([1.0], [0.6, 0.4])
+        with pytest.raises(ValueError, match="cap"):
+            metrics_rating([1.0, 0.0], [0.6, 0.4], cap=(0.5,))
+        with pytest.raises(ValueError, match="infinite"):
+            metrics_rating([1.0, np.inf], [0.6, 0.4])
+        with pytest.raises(ValueError, match="0.5"):
+            metrics_rating([0.5, 0.5], [0.6, 0.4], scale=True)

@@ -4923,3 +4923,282 @@ fn em_mc_500() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// metrics_rating (PlayerRatings metrics(), R/ratings.R 936-957) -- mr_ tests
+//
+// Every assert reads values returned by the crate fn `metrics_rating`.
+// Anchor pins come from an exact-Fraction oracle executed against the R
+// source semantics (files/metrics_oracle.py, session-external), with the
+// M5 column pins additionally re-derived by hand (bdev = 1.5 ln 2,
+// mse = sqrt(13/32), mae = 5/8).
+//
+// Mutation-kill map (all EXECUTED during development):
+//   MU1 cap applied to mse/mae      -> mr_anchor_m2_cap_quirk (mutant mae 1.0)
+//   MU2 bdev uses uncapped pred     -> mr_anchor_m2_cap_quirk (mutant bdev 0.1000500...)
+//   MU3 stride pred[j*nr+i]         -> mr_anchor_m5_columns (both cols shift)
+//   MU4 missing sqrt / wrong scale constant / missing x100 -> mr_anchor_m3_scaled
+//   MU5 baseline uses pair-removal row set -> mr_anchor_m6_baseline_rows
+// KNOWN-UNOBSERVABLE: algebraic rearrangements such as
+// sqrt(a)/sqrt(b) == sqrt(a/b) cannot be distinguished by any value test
+// (identical reals, sub-ulp float differences at most); the discriminating
+// anchors above pin observable semantics only. The bdev baseline is the
+// constant ln 2 for every finite act, so bdev cannot witness baseline
+// ROW-SET mutations (mse/mae in mr_anchor_m6_baseline_rows do).
+
+fn mr_rel_close(got: f64, want: f64, tol: f64) -> bool {
+    (got - want).abs() <= tol * want.abs().max(1.0)
+}
+
+#[test]
+fn mr_anchor_m1_unscaled() {
+    let act = [1.0, 0.0, 1.0, 0.0];
+    let pred = [0.75, 0.25, 0.5, 0.5];
+    let out = metrics_rating(&act, &pred, 4, 1, (0.01, 0.99), false).unwrap();
+    assert_eq!(out.len(), 3);
+    assert!(
+        mr_rel_close(out[0], 49.041462650586311, 1e-13),
+        "bdev {}",
+        out[0]
+    );
+    assert!(
+        mr_rel_close(out[1], 39.528470752104745, 1e-13),
+        "mse {}",
+        out[1]
+    );
+    // mae is exact in dyadic arithmetic: mean(1/4,1/4,1/2,1/2)*100 = 37.5.
+    assert_eq!(out[2], 37.5, "mae {}", out[2]);
+}
+
+#[test]
+fn mr_anchor_m2_cap_quirk() {
+    // pred outside the cap: bdev must use the CAPPED values (-100*ln 0.99)
+    // while mse/mae use the RAW 0.999/0.001 (R:949, 951 reference pred[,i]).
+    let act = [1.0, 0.0];
+    let pred = [0.999, 0.001];
+    let out = metrics_rating(&act, &pred, 2, 1, (0.01, 0.99), false).unwrap();
+    assert!(
+        mr_rel_close(out[0], 1.0050335853501451, 1e-13),
+        "bdev {}",
+        out[0]
+    );
+    // Mutant values: cap-on-mse/mae gives 1.0000000000000004 / 1.0;
+    // uncapped bdev gives 0.10005003335835344.
+    assert!(
+        mr_rel_close(out[1], 0.10000000000000001, 1e-13),
+        "mse {}",
+        out[1]
+    );
+    assert!(
+        mr_rel_close(out[2], 0.10000000000000001, 1e-13),
+        "mae {}",
+        out[2]
+    );
+}
+
+#[test]
+fn mr_anchor_m3_scaled() {
+    // scale = true divides by the 0.5-baseline and multiplies by 100:
+    // missing sqrt, a wrong bdev constant, or a dropped x100 all shift
+    // these pins (MU4).
+    let act = [1.0, 0.0, 1.0];
+    let pred = [0.8, 0.4, 0.6];
+    let out = metrics_rating(&act, &pred, 3, 1, (0.01, 0.99), true).unwrap();
+    assert!(
+        mr_rel_close(out[0], 59.86197610732583, 1e-13),
+        "bdev {}",
+        out[0]
+    );
+    // mse^2 ratio is exactly 12/25 -> 100*sqrt(12/25).
+    assert!(
+        mr_rel_close(out[1], 69.282032302755098, 1e-13),
+        "mse {}",
+        out[1]
+    );
+    // mae = 100*(1/5)/(3/10)... = 100*2/3 exactly in the rationals.
+    assert!(
+        mr_rel_close(out[2], 66.666666666666671, 1e-13),
+        "mae {}",
+        out[2]
+    );
+}
+
+#[test]
+fn mr_anchor_m4_nan() {
+    // Numerators drop rows where EITHER act or pred is NaN (rows 1, 2);
+    // scaled baselines drop only act-NaN rows (rows 0, 1, 3 remain).
+    let act = [1.0, 0.0, f64::NAN, 1.0];
+    let pred = [0.7, f64::NAN, 0.4, 0.6];
+    let out = metrics_rating(&act, &pred, 4, 1, (0.01, 0.99), true).unwrap();
+    assert!(
+        mr_rel_close(out[0], 62.576938349798226, 1e-13),
+        "bdev {}",
+        out[0]
+    );
+    // mse^2 ratio exactly 1/2 -> 100/sqrt(2).
+    assert!(
+        mr_rel_close(out[1], 70.710678118654755, 1e-13),
+        "mse {}",
+        out[1]
+    );
+    // mae = 100*(7/20)/(1/2) = 70 exactly in the rationals.
+    assert!(mr_rel_close(out[2], 70.0, 1e-13), "mae {}", out[2]);
+}
+
+#[test]
+fn mr_anchor_m6_baseline_rows() {
+    // MU5 killer: act = 0.2 in an act-only baseline row (row 3) plus a
+    // pred-NaN row (row 1) makes pair-removal baselines diverge:
+    // pair-removal mutant gives mse = 85.749292571254429,
+    // mae = 87.5; the true act-row-set values are pinned below
+    // (mae = 100*1050/130... = 1050/13 exactly, mse^2 ratio = 75/118).
+    let act = [1.0, 0.0, f64::NAN, 0.2];
+    let pred = [0.7, f64::NAN, 0.4, 0.6];
+    let out = metrics_rating(&act, &pred, 4, 1, (0.01, 0.99), true).unwrap();
+    assert!(
+        mr_rel_close(out[0], 85.975438378644469, 1e-13),
+        "bdev {}",
+        out[0]
+    );
+    assert!(
+        mr_rel_close(out[1], 79.724100517910088, 1e-13),
+        "mse {}",
+        out[1]
+    );
+    assert!(
+        mr_rel_close(out[2], 80.769230769230774, 1e-13),
+        "mae {}",
+        out[2]
+    );
+}
+
+#[test]
+fn mr_anchor_m5_columns() {
+    // Two-column row-major layout: pred[i * np + j]. A stride mutant
+    // (pred[j * nr + i]) moves BOTH columns to (76.5067..., 53.0330..., 50).
+    let act = [1.0, 0.0, 1.0, 0.0];
+    #[rustfmt::skip]
+    let pred = [
+        0.75, 0.50,
+        0.25, 0.50,
+        0.50, 0.25,
+        0.50, 0.75,
+    ];
+    let out = metrics_rating(&act, &pred, 4, 2, (0.01, 0.99), false).unwrap();
+    assert_eq!(out.len(), 6);
+    // Column 0 == M1.
+    assert!(
+        mr_rel_close(out[0], 49.041462650586311, 1e-13),
+        "c0 bdev {}",
+        out[0]
+    );
+    assert!(
+        mr_rel_close(out[1], 39.528470752104745, 1e-13),
+        "c0 mse {}",
+        out[1]
+    );
+    assert_eq!(out[2], 37.5, "c0 mae {}", out[2]);
+    // Column 1: bdev = 100*1.5*ln 2, mse = 100*sqrt(13/32), mae = 62.5 exact.
+    assert!(
+        mr_rel_close(out[3], 103.97207708399179, 1e-13),
+        "c1 bdev {}",
+        out[3]
+    );
+    assert!(
+        mr_rel_close(out[4], 63.737743919909803, 1e-13),
+        "c1 mse {}",
+        out[4]
+    );
+    assert_eq!(out[5], 62.5, "c1 mae {}", out[5]);
+}
+
+#[test]
+fn mr_error_contract() {
+    let act = [1.0, 0.0];
+    let pred = [0.6, 0.4];
+    // Dimension bounds and length mismatches.
+    assert!(metrics_rating(&act, &pred, 0, 1, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &pred, 2, 0, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &pred, 10_000_001, 1, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &pred, 2, 10_001, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act[..1], &pred, 2, 1, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &pred[..1], 2, 1, (0.01, 0.99), false).is_err());
+    // Inf rejected anywhere (NaN is the missing marker).
+    assert!(metrics_rating(&[1.0, f64::INFINITY], &pred, 2, 1, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &[0.6, f64::NEG_INFINITY], 2, 1, (0.01, 0.99), false).is_err());
+    // Cap domain: 0 < lo <= hi < 1, finite.
+    assert!(metrics_rating(&act, &pred, 2, 1, (0.0, 0.99), false).is_err());
+    assert!(metrics_rating(&act, &pred, 2, 1, (0.01, 1.0), false).is_err());
+    assert!(metrics_rating(&act, &pred, 2, 1, (0.6, 0.4), false).is_err());
+    assert!(metrics_rating(&act, &pred, 2, 1, (f64::NAN, 0.99), false).is_err());
+    // Empty per-column row set after NaN removal.
+    assert!(metrics_rating(&act, &[f64::NAN, f64::NAN], 2, 1, (0.01, 0.99), false).is_err());
+    assert!(metrics_rating(&[f64::NAN, f64::NAN], &pred, 2, 1, (0.01, 0.99), false).is_err());
+    // scale = true with a degenerate all-0.5 act baseline (R yields Inf/NaN).
+    assert!(metrics_rating(&[0.5, 0.5], &pred, 2, 1, (0.01, 0.99), true).is_err());
+    // ... but the same inputs are fine unscaled.
+    assert!(metrics_rating(&[0.5, 0.5], &pred, 2, 1, (0.01, 0.99), false).is_ok());
+}
+
+#[test]
+#[ignore = "Monte-Carlo, 500 replications; run with -- --ignored"]
+fn mr_mc_500() {
+    // Preconditions: act in {0, 1} (baselines are then exactly 0.25 / 0.5,
+    // finite and nonzero), pred in (0.01, 0.99) so capping is inactive and
+    // every row is a valid pair.
+    let mut rng = Lcg(0x5EED_AE7A_1C5F_0001);
+    for rep in 0..500 {
+        let nr = 5 + (rng.next_f64() * 40.0) as usize;
+        let np = 1 + (rng.next_f64() * 4.0) as usize;
+        let act: Vec<f64> = (0..nr)
+            .map(|_| if rng.next_f64() < 0.5 { 0.0 } else { 1.0 })
+            .collect();
+        let pred: Vec<f64> = (0..nr * np).map(|_| 0.02 + 0.96 * rng.next_f64()).collect();
+        let raw = metrics_rating(&act, &pred, nr, np, (0.01, 0.99), false).unwrap();
+        let scaled = metrics_rating(&act, &pred, nr, np, (0.01, 0.99), true).unwrap();
+        // Invariant 1: scaled = unscaled / column-constant baseline.
+        // bdev ratio is exactly ln 2; mse/mae ratios are column-constant.
+        for j in 0..np {
+            let r_bdev = raw[3 * j] / scaled[3 * j];
+            assert!(
+                mr_rel_close(r_bdev, std::f64::consts::LN_2, 1e-12),
+                "rep {rep} col {j}: bdev ratio {r_bdev}"
+            );
+            let r_mse = raw[3 * j + 1] / scaled[3 * j + 1];
+            let r_mae = raw[3 * j + 2] / scaled[3 * j + 2];
+            let r_mse0 = raw[1] / scaled[1];
+            let r_mae0 = raw[2] / scaled[2];
+            assert!(
+                mr_rel_close(r_mse, r_mse0, 1e-12),
+                "rep {rep} col {j}: mse ratio {r_mse} vs {r_mse0}"
+            );
+            assert!(
+                mr_rel_close(r_mae, r_mae0, 1e-12),
+                "rep {rep} col {j}: mae ratio {r_mae} vs {r_mae0}"
+            );
+        }
+        // Invariant 2: permuting COLUMNS permutes the output rows exactly
+        // (per-column row-accumulation order is unchanged by a column
+        // permutation, so this is bitwise, not tolerance-based).
+        if np > 1 {
+            let mut perm_pred = vec![0.0f64; nr * np];
+            for i in 0..nr {
+                for j in 0..np {
+                    // rotate columns left by 1
+                    perm_pred[i * np + j] = pred[i * np + (j + 1) % np];
+                }
+            }
+            let perm = metrics_rating(&act, &perm_pred, nr, np, (0.01, 0.99), false).unwrap();
+            for j in 0..np {
+                let src = (j + 1) % np;
+                for k in 0..3 {
+                    assert_eq!(
+                        perm[3 * j + k],
+                        raw[3 * src + k],
+                        "rep {rep} col {j} metric {k}: column permutation not exact"
+                    );
+                }
+            }
+        }
+    }
+}

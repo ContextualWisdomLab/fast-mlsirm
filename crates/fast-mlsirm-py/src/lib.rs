@@ -5656,6 +5656,35 @@ fn elom_rating(
     Ok(d.into())
 }
 
+
+/// Prediction-quality metrics for binary-outcome forecasts, PlayerRatings
+/// `metrics()` semantics (see `mlsirm_core::scaling::metrics_rating`).
+/// `pred` is flattened row-major nr x np; the return value is the
+/// flattened row-major np x 3 matrix of per-column [bdev, mse, mae].
+#[pyfunction]
+#[pyo3(signature = (act, pred, nr, np, cap_lo, cap_hi, scale))]
+fn metrics_rating(
+    py: Python<'_>,
+    act: PyReadonlyArray1<'_, f64>,
+    pred: PyReadonlyArray1<'_, f64>,
+    nr: usize,
+    np: usize,
+    cap_lo: f64,
+    cap_hi: f64,
+    scale: bool,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let out = mlsirm_core::scaling::metrics_rating(
+        act.as_slice()?,
+        pred.as_slice()?,
+        nr,
+        np,
+        (cap_lo, cap_hi),
+        scale,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8008,6 +8037,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(glicko2_rating, m)?)?;
     m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
     m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(metrics_rating, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
