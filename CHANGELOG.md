@@ -119,6 +119,31 @@
 
 ### Added
 
+- **Glicko rating system (Glickman's *The Glicko system* technical note
+  READ — worked example reproduced exactly; CRAN PlayerRatings 1.1-0's
+  `glicko()` `R/ratings.R` + `glicko_c` C kernel source READ; Glickman's
+  1999 Applied Statistics derivation paper NOT READ, cited as the origin
+  per both READ sources).** New Rust core
+  `mlsirm_core::scaling::glicko_rating` with batch-per-period updates,
+  per-player rating deviations, participant-only pre-period deviation
+  inflation `RD = min(sqrt(RD^2 + (lag+1) c^2), rdmax)` (Step 1b), the
+  Step 2 update with opponent-g weighting and new-variance rating step,
+  per-game white advantage `gamma`, and PlayerRatings W/D/L and lag
+  bookkeeping. Documented non-identity: Glicko does NOT conserve the
+  rating sum (asymmetric opponent-g weighting; pinned by test). Documented
+  divergences: self-play rejected, no `status` carry-in — per-player
+  `init_rating`/`init_dev` arrays with results for ALL `0..n` players.
+  Python wrapper `fast_mlsirm.glicko_rating(games, n_players,
+  init=(2200, 300), gamma=None, cval=15, rdmax=350)` returns a
+  `GlickoResult` dataclass and inherits the Elo period-label fidelity
+  contract (integer-dtype lossless path; dtype-derived float bound).
+  Anchored to an executed float64 oracle (Glickman worked-example anchor
+  with heterogeneous RDs, two-period inflation/lag/idle-player pins,
+  rdmax-clamp, gamma, unsorted-period, and fractional-score fixtures);
+  seven executed mutation kills (opponent-g swap, inflation off-by-one,
+  clamp drop, stale-variance update, missing q^2, gamma sign,
+  all-player inflation).
+
 - **Elo rating system (Elo, 1978, as implemented by CRAN PlayerRatings
   1.1-0's `elo()` — `R/ratings.R` + `elo_c` C kernel source READ; Elo's
   1978 book NOT READ, cited as the origin per PlayerRatings).** New Rust

@@ -9330,3 +9330,103 @@ class TestElo:
         g_ok = np.array([[1, 0, 1, 1.0], [2, 1, 0, 1.0]], dtype=np.float32)
         r = elo_rating(g_ok, 2, init=2000, kfac=400)
         assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
+
+
+class TestGlicko:
+    """Glicko rating wrapper (Glickman's note + PlayerRatings glicko();
+    every assert reads crate-returned values via the Python wrapper)."""
+
+    def test_paper_anchor_ga(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko_rating
+
+        # Glickman's worked example: heterogeneous per-player init arrays.
+        g = [[1, 0, 1, 1.0], [1, 0, 2, 0.0], [1, 0, 3, 0.0]]
+        r = glicko_rating(
+            g,
+            4,
+            init=(
+                np.array([1500.0, 1400.0, 1550.0, 1700.0]),
+                np.array([200.0, 30.0, 100.0, 300.0]),
+            ),
+            cval=0.0,
+        )
+        assert abs(r.ratings[0] - 1464.1064627569112) < 1e-12
+        assert abs(r.deviations[0] - 151.39890244796933) < 1e-12
+        assert r.games.tolist() == [3, 1, 1, 1]
+        assert r.wins.tolist() == [1, 0, 1, 1]
+        assert r.losses.tolist() == [2, 1, 0, 0]
+
+    def test_two_period_gb(self):
+        from fast_mlsirm import glicko_rating
+
+        # Scalar-pair init broadcast; inflation + lag + idle player pins.
+        g = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 2, 0, 1.0]]
+        r = glicko_rating(g, 3, init=(2200.0, 300.0), cval=15.0)
+        er = [2190.0061185685217, 2094.5895980175137, 2345.066036571678]
+        ed = [223.91939158372585, 224.94066563436596, 223.91939158372585]
+        for p in range(3):
+            assert abs(r.ratings[p] - er[p]) < 1e-12
+            assert abs(r.deviations[p] - ed[p]) < 1e-12
+        assert r.lag.tolist() == [0, 1, 0]
+        assert r.draws.tolist() == [0, 1, 1]
+        # Documented non-identity: Glicko does NOT conserve the rating sum.
+        assert abs(float(r.ratings.sum()) - 6600.0) > 1e-3
+
+    def test_gamma_and_clamp(self):
+        from fast_mlsirm import glicko_rating
+
+        # GD gamma pins (kills a wrapper-level gamma mixup).
+        r = glicko_rating(
+            [[1, 0, 1, 1.0]], 2, init=(2000.0, 200.0), gamma=30.0, cval=0.0
+        )
+        assert abs(r.ratings[0] - 2072.980891506514) < 1e-12
+        assert abs(r.ratings[1] - 1927.019108493486) < 1e-12
+        # GC rdmax clamp active.
+        rc = glicko_rating(
+            [[1, 0, 1, 0.5]], 2, init=(2200.0, 300.0), cval=400.0, rdmax=350.0
+        )
+        assert abs(rc.deviations[0] - 290.2305060910912) < 1e-12
+        assert rc.ratings.tolist() == [2200.0, 2200.0]
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import glicko_rating
+
+        ok = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            glicko_rating([], 2)
+        with pytest.raises(ValueError):
+            glicko_rating([[1, 0, 1]], 2)  # wrong width
+        with pytest.raises(ValueError):
+            glicko_rating([[1.5, 0, 1, 1.0]], 2)  # fractional period
+        with pytest.raises(ValueError):
+            glicko_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 1)  # n < 2
+        with pytest.raises(ValueError):
+            glicko_rating(np.array(ok, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(2200.0,))  # not a pair
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(np.array([2200.0]), np.array([300.0])))
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(2200.0, 400.0), rdmax=350.0)  # dev>rdmax
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, cval=-1.0)
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, gamma=[1.0, 2.0])  # wrong gamma length
+        # float-path period-fidelity bound (inherited elo contract)
+        with pytest.raises(ValueError):
+            glicko_rating([[float(2**53), 0, 1, 1.0]], 2)
+        g32 = np.array([[2**24, 0, 1, 1.0]], dtype=np.float32)
+        with pytest.raises(ValueError):
+            glicko_rating(g32, 2)
+        # integer-dtype lossless path (crate output read)
+        gi = np.array([[2**53, 0, 1, 1], [2**53 + 1, 1, 0, 1]], dtype=np.uint64)
+        r = glicko_rating(gi, 2, init=(2200.0, 300.0), cval=0.0)
+        assert r.lag.tolist() == [0, 0]
+        assert r.games.tolist() == [2, 2]
