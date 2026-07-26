@@ -1839,3 +1839,300 @@ fn kd_mc_500_invariants() {
     assert_eq!(r.t, 0.0);
     assert_eq!(r.zeta, 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// elo_rating tests (fixtures EA/EB/EC/ED and invariants from the executed
+// exact-rational oracle; see the citation-governance header in scaling.rs).
+// Every assertion below reads values returned by the crate's elo_rating.
+// ---------------------------------------------------------------------------
+
+/// EA: single period, exact-rational anchor. Kills MU2 (black actual-score
+/// flip: ratings[1] would be 2016, not 1984), MU3 (gamma sign flip in the
+/// white exponent: the gamma=400 draw moves E_w 10/11 -> 1/11, changing
+/// ratings[0] and ratings[2]), and MU5 (divisor 400 -> 800).
+#[test]
+fn el_anchor_ea_exact() {
+    let r = super::elo_rating(
+        &[1, 1],
+        &[0, 0],
+        &[1, 2],
+        &[1.0, 0.5],
+        &[0.0, 400.0],
+        3,
+        2000.0,
+        32.0,
+    )
+    .unwrap();
+    // 22032/11 and 22144/11 are not dyadic; 1984 is exact in f64.
+    assert!((r.ratings[0] - 22032.0 / 11.0).abs() < 1e-12);
+    assert_eq!(r.ratings[1], 1984.0);
+    assert!((r.ratings[2] - 22144.0 / 11.0).abs() < 1e-12);
+    assert_eq!(r.games, vec![2, 1, 1]);
+    assert_eq!(r.wins, vec![1, 0, 0]);
+    assert_eq!(r.draws, vec![1, 0, 1]);
+    assert_eq!(r.losses, vec![0, 1, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0]);
+}
+
+/// EB: two periods, kfac=400 — the batch-semantics proof. A sequential
+/// per-game update (MU1) drifts ratings[0]/ratings[1] off these pins; a
+/// dropped lag reset (MU4) turns lag into [2,2,2].
+#[test]
+fn el_anchor_eb_batch() {
+    let r = super::elo_rating(
+        &[1, 1, 2],
+        &[0, 0, 0],
+        &[1, 2, 1],
+        &[1.0, 0.5, 1.0],
+        &[0.0, 0.0, 0.0],
+        3,
+        2000.0,
+        400.0,
+    )
+    .unwrap();
+    assert!((r.ratings[0] - 24600.0 / 11.0).abs() < 1e-12);
+    assert!((r.ratings[1] - 19400.0 / 11.0).abs() < 1e-12);
+    assert_eq!(r.ratings[2], 2000.0); // player 2's dscore is exactly 0
+    assert_eq!(r.games, vec![3, 2, 1]);
+    assert_eq!(r.wins, vec![2, 0, 0]);
+    assert_eq!(r.draws, vec![1, 0, 1]);
+    assert_eq!(r.losses, vec![0, 2, 0]);
+    assert_eq!(r.lag, vec![0, 0, 1]);
+}
+
+/// EC: float reference, 4 players / 3 periods / PlayerRatings defaults
+/// (init 2200, kfac 27), generic non-multiple-of-400 diffs after period 1.
+#[test]
+fn el_anchor_ec_float() {
+    let r = super::elo_rating(
+        &[1, 1, 1, 2, 2, 3, 3],
+        &[0, 2, 0, 1, 0, 2, 1],
+        &[1, 3, 2, 3, 3, 0, 2],
+        &[1.0, 0.5, 0.0, 1.0, 1.0, 0.5, 0.0],
+        &[0.0; 7],
+        4,
+        2200.0,
+        27.0,
+    )
+    .unwrap();
+    let exp = [
+        2213.5,
+        2187.528245191514,
+        2226.49604864222,
+        2172.475706166266,
+    ];
+    for p in 0..4 {
+        assert!(
+            (r.ratings[p] - exp[p]).abs() < 1e-9,
+            "player {p}: {} vs {}",
+            r.ratings[p],
+            exp[p]
+        );
+    }
+    assert_eq!(r.games, vec![4, 3, 4, 3]);
+    assert_eq!(r.wins, vec![2, 1, 2, 0]);
+    assert_eq!(r.draws, vec![1, 0, 2, 1]);
+    assert_eq!(r.losses, vec![1, 2, 0, 2]);
+    assert_eq!(r.lag, vec![0, 0, 0, 1]);
+}
+
+/// ED: closed-form nonzero-gamma single game. These pins differ from the
+/// gamma=0 values (2016 / 1984), which is what kills a gamma-drop mutant.
+/// NOTE: E_w + E_b = 1 identically (the exponents are exact negations even
+/// with gamma != 0), so a mutant computing E_b = 1 - E_w is a behavioral
+/// no-op and is documented as unkillable by design.
+#[test]
+fn el_anchor_ed_gamma() {
+    let r = super::elo_rating(&[1], &[0], &[1], &[1.0], &[100.0], 2, 2000.0, 32.0).unwrap();
+    assert!((r.ratings[0] - 2011.5179200063076).abs() < 1e-12);
+    assert!((r.ratings[1] - 1988.4820799936924).abs() < 1e-12);
+    // Discriminating check vs gamma=0: the same schedule without gamma
+    // gives exactly 2016 / 1984.
+    let r0 = super::elo_rating(&[1], &[0], &[1], &[1.0], &[0.0], 2, 2000.0, 32.0).unwrap();
+    assert_eq!(r0.ratings[0], 2016.0);
+    assert_eq!(r0.ratings[1], 1984.0);
+    assert!((r.ratings[0] - r0.ratings[0]).abs() > 1.0);
+}
+
+/// kfac = 0: ratings stay exactly at init while all bookkeeping updates.
+#[test]
+fn el_kfac_zero() {
+    let r = super::elo_rating(
+        &[1, 2],
+        &[0, 1],
+        &[1, 0],
+        &[1.0, 0.5],
+        &[0.0, 0.0],
+        3,
+        2200.0,
+        0.0,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![2200.0, 2200.0, 2200.0]);
+    assert_eq!(r.games, vec![2, 2, 0]);
+    assert_eq!(r.wins, vec![1, 0, 0]);
+    assert_eq!(r.draws, vec![1, 1, 0]);
+    assert_eq!(r.losses, vec![0, 1, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0]);
+}
+
+/// Unsorted period labels must yield the same result as sorted input
+/// (R split() groups by ascending factor level, not first appearance).
+#[test]
+fn el_unsorted_periods() {
+    // EB with the period-2 game listed first.
+    let r = super::elo_rating(
+        &[2, 1, 1],
+        &[0, 0, 0],
+        &[1, 1, 2],
+        &[1.0, 1.0, 0.5],
+        &[0.0, 0.0, 0.0],
+        3,
+        2000.0,
+        400.0,
+    )
+    .unwrap();
+    let s = super::elo_rating(
+        &[1, 1, 2],
+        &[0, 0, 0],
+        &[1, 2, 1],
+        &[1.0, 0.5, 1.0],
+        &[0.0, 0.0, 0.0],
+        3,
+        2000.0,
+        400.0,
+    )
+    .unwrap();
+    for p in 0..3 {
+        assert_eq!(r.ratings[p], s.ratings[p], "player {p}");
+    }
+    assert_eq!(r.lag, s.lag);
+    assert_eq!(r.games, s.games);
+}
+
+/// Fractional score (not exactly 0 / 0.5 / 1) counts a game but no W/D/L.
+#[test]
+fn el_fractional_score() {
+    let r = super::elo_rating(&[1], &[0], &[1], &[0.25], &[0.0], 2, 2000.0, 32.0).unwrap();
+    assert_eq!(r.games, vec![1, 1]);
+    assert_eq!(r.wins, vec![0, 0]);
+    assert_eq!(r.draws, vec![0, 0]);
+    assert_eq!(r.losses, vec![0, 0]);
+    // dscore still applies: d_w = 0.25 - 0.5 = -0.25 (dyadic, exact).
+    assert_eq!(r.ratings[0], 1992.0);
+    assert_eq!(r.ratings[1], 2008.0);
+}
+
+/// Extreme gamma saturates the expectation without panicking; here white
+/// is a guaranteed favorite (E_w -> 1) who wins, so nothing moves.
+#[test]
+fn el_saturation_no_panic() {
+    let r = super::elo_rating(&[1], &[0], &[1], &[1.0], &[1e6], 2, 2000.0, 32.0).unwrap();
+    assert!(r.ratings[0].is_finite() && r.ratings[1].is_finite());
+    assert_eq!(r.ratings[0], 2000.0); // s - E_w = 1 - 1 = 0 exactly
+    assert_eq!(r.ratings[1], 2000.0); // (1-s) - E_b = 0 - 0 = 0 exactly
+}
+
+/// Error contract: every rejection path returns Err (never panics).
+#[test]
+fn el_error_contract() {
+    let ok = (
+        vec![1u64],
+        vec![0usize],
+        vec![1usize],
+        vec![1.0f64],
+        vec![0.0f64],
+    );
+    // empty games
+    assert!(super::elo_rating(&[], &[], &[], &[], &[], 2, 2000.0, 32.0).is_err());
+    // length mismatch
+    assert!(super::elo_rating(&[1, 2], &ok.1, &ok.2, &ok.3, &ok.4, 2, 2000.0, 32.0).is_err());
+    // n too small / too large
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, 1, 2000.0, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, 10_001, 2000.0, 32.0).is_err());
+    // index out of range / self-play
+    assert!(super::elo_rating(&ok.0, &[2], &ok.2, &ok.3, &ok.4, 2, 2000.0, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &[1], &[1], &ok.3, &ok.4, 2, 2000.0, 32.0).is_err());
+    // score out of range / non-finite
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &[1.5], &ok.4, 2, 2000.0, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &[-0.1], &ok.4, 2, 2000.0, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &[f64::NAN], &ok.4, 2, 2000.0, 32.0).is_err());
+    // gamma / init / kfac non-finite
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &ok.3, &[f64::NAN], 2, 2000.0, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, 2, f64::INFINITY, 32.0).is_err());
+    assert!(super::elo_rating(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, 2, 2000.0, f64::NAN).is_err());
+}
+
+/// MC-500: structural invariants on random schedules, including nonzero
+/// gamma (the E_w + E_b = 1 identity makes rating-sum conservation hold
+/// for ANY gamma). All assertions read crate outputs.
+#[test]
+#[ignore]
+fn el_mc_500() {
+    let mut rng = Lcg(0x5EED_E10u64);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 6.0) as usize; // 3..=8
+        let g = 4 + (rng.next_f64() * 12.0) as usize; // 4..=15
+        let mut periods = Vec::with_capacity(g);
+        let mut white = Vec::with_capacity(g);
+        let mut black = Vec::with_capacity(g);
+        let mut score = Vec::with_capacity(g);
+        let mut gamma = Vec::with_capacity(g);
+        for _ in 0..g {
+            periods.push(1 + (rng.next_f64() * 3.0) as u64); // 1..=3
+            let w = (rng.next_f64() * n as f64) as usize % n;
+            let mut b = (rng.next_f64() * n as f64) as usize % n;
+            if b == w {
+                b = (b + 1) % n;
+            }
+            white.push(w);
+            black.push(b);
+            score.push([0.0, 0.5, 1.0][(rng.next_f64() * 3.0) as usize % 3]);
+            gamma.push((rng.next_f64() - 0.5) * 200.0); // nonzero gamma
+        }
+        let r =
+            super::elo_rating(&periods, &white, &black, &score, &gamma, n, 2000.0, 32.0).unwrap();
+        // (a) rating-sum conservation for ANY gamma.
+        let sum: f64 = r.ratings.iter().sum();
+        assert!(
+            (sum - 2000.0 * n as f64).abs() < 1e-6,
+            "rep {rep}: sum {sum}"
+        );
+        // (b) games = wins + draws + losses when all scores are in {0,.5,1}.
+        for p in 0..n {
+            assert_eq!(
+                r.games[p],
+                r.wins[p] + r.draws[p] + r.losses[p],
+                "rep {rep} player {p}"
+            );
+        }
+        // (c) every player appearing in the final period has lag 0.
+        let last = *periods.iter().max().unwrap();
+        for k in 0..g {
+            if periods[k] == last {
+                assert_eq!(r.lag[white[k]], 0, "rep {rep}");
+                assert_eq!(r.lag[black[k]], 0, "rep {rep}");
+            }
+        }
+        // (d) permuting game order within the input leaves output identical
+        // (batch semantics + stable grouping by period value).
+        let perm: Vec<usize> = (0..g).rev().collect();
+        let r2 = super::elo_rating(
+            &perm.iter().map(|&k| periods[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| white[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| black[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| score[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| gamma[k]).collect::<Vec<_>>(),
+            n,
+            2000.0,
+            32.0,
+        )
+        .unwrap();
+        for p in 0..n {
+            assert!(
+                (r.ratings[p] - r2.ratings[p]).abs() < 1e-12,
+                "rep {rep} player {p}: order dependence"
+            );
+        }
+    }
+}

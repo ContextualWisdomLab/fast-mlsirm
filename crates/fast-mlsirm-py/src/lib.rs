@@ -5385,6 +5385,46 @@ fn kendall_u(
     Ok(d.into())
 }
 
+/// Elo ratings from a game schedule, PlayerRatings `elo()` semantics (see
+/// `mlsirm_core::scaling::elo_rating`). Batch-per-period update; returns
+/// dict with ratings, games, wins, draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, n, init, kfac))]
+#[allow(clippy::too_many_arguments)]
+fn elo_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    init: f64,
+    kfac: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let white: Vec<usize> = white.as_slice()?.iter().map(|&v| v as usize).collect();
+    let black: Vec<usize> = black.as_slice()?.iter().map(|&v| v as usize).collect();
+    let res = mlsirm_core::scaling::elo_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        n,
+        init,
+        kfac,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7732,6 +7772,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ilsr_top1, m)?)?;
     m.add_function(wrap_pyfunction!(circular_triads, m)?)?;
     m.add_function(wrap_pyfunction!(kendall_u, m)?)?;
+    m.add_function(wrap_pyfunction!(elo_rating, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

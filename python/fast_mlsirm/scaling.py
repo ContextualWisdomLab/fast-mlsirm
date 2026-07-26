@@ -46,6 +46,18 @@ Kendall, M. G., & Babington Smith, B. (1940). On the method of paired
 Wickelmaier, F., & Schmid, C. (2004). A Matlab function to estimate choice
     model parameters from paired-comparison data. Behavior Research Methods,
     Instruments, and Computers, 36(1), 29-40. [eba package source READ]
+
+The Elo rating system follows the CRAN PlayerRatings 1.1-0 package's
+``elo()`` (Stephenson & Sonas, 2020; ``R/ratings.R`` and the ``elo_c`` C
+kernel, source READ): batch-per-period updates where all expected scores
+within a period use the period-start ratings. Elo (1978) was NOT read; it
+is cited as the origin of the method as described by PlayerRatings.
+
+Elo, A. E. (1978). The rating of chessplayers, past and present. Arco.
+    [NOT READ; cited as described in PlayerRatings source]
+Stephenson, A., & Sonas, J. (2020). PlayerRatings: Dynamic updating methods
+    for player ratings estimation (R package, version 1.1-0).
+    https://CRAN.R-project.org/package=PlayerRatings [READ]
 """
 
 from __future__ import annotations
@@ -591,4 +603,97 @@ def kendall_u(mat, correct=True):
         chi2=float(res["chi2"]),
         df=float(res["df"]),
         p_value=float(res["p_value"]),
+    )
+
+@dataclass
+class EloResult:
+    """Elo ratings and bookkeeping (Elo, 1978, as implemented by the CRAN
+    PlayerRatings package's ``elo()``; batch-per-period update). Wins,
+    draws, and losses count only scores exactly 1, 0.5, and 0; other
+    fractional scores count a game without a W/D/L. ``lag`` is the number
+    of rating periods since the player's last appearance (0 for players
+    appearing in the final period or never playing)."""
+
+    ratings: "np.ndarray"
+    games: "np.ndarray"
+    wins: "np.ndarray"
+    draws: "np.ndarray"
+    losses: "np.ndarray"
+    lag: "np.ndarray"
+
+
+def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
+    """Elo ratings from a (g, 4) game schedule.
+
+    Each row of ``games`` is ``[period, white, black, score]``: an integer
+    rating-period label, integer player indices in ``0..n_players``, and
+    white's score in [0, 1]. Rows are grouped by ascending period value
+    (matching R ``split()`` ordering); within a period all expected scores
+    use the period-start ratings (batch update). All players start at
+    ``init``; ``kfac`` is the scalar K factor (any finite value, including
+    0); ``gamma`` is white's per-game advantage — a scalar (broadcast) or a
+    length-g array. Defaults ``init=2200, kfac=27`` are the PlayerRatings
+    defaults. Raises ValueError on invalid input.
+    """
+    import numpy as np
+
+    from .fitstats import _core_module
+
+    if np.iscomplexobj(np.asarray(games)):
+        raise ValueError("elo_rating: games must be real, not complex")
+    try:
+        arr = np.asarray(games, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elo_rating: games is not numeric: {exc}") from None
+    if arr.ndim != 2 or arr.shape[1] != 4:
+        raise ValueError(
+            f"elo_rating: games must be (g, 4) [period, white, black, score], got {arr.shape}"
+        )
+    if arr.shape[0] == 0:
+        raise ValueError("elo_rating: at least one game is required")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("elo_rating: games contains non-finite values")
+    periods, white, black, score = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+    for name, col in (("period", periods), ("white", white), ("black", black)):
+        if np.any(col != np.floor(col)):
+            raise ValueError(f"elo_rating: {name} column must be integral")
+    if np.any(periods < 0):
+        raise ValueError("elo_rating: period labels must be nonnegative")
+    if np.any(white < 0) or np.any(black < 0):
+        raise ValueError("elo_rating: player indices must be nonnegative")
+    n = int(n_players)
+    if n != n_players:
+        raise ValueError("elo_rating: n_players must be an integer")
+    g = arr.shape[0]
+    if gamma is None:
+        gamma_arr = np.zeros(g)
+    else:
+        gamma_arr = np.asarray(gamma, dtype=float)
+        if np.iscomplexobj(np.asarray(gamma)):
+            raise ValueError("elo_rating: gamma must be real, not complex")
+        if gamma_arr.ndim == 0:
+            gamma_arr = np.full(g, float(gamma_arr))
+        elif gamma_arr.shape != (g,):
+            raise ValueError(
+                f"elo_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
+            )
+    init = float(init)
+    kfac = float(kfac)
+    res = _core_module().elo_rating(
+        np.ascontiguousarray(periods, dtype=np.uint64),
+        np.ascontiguousarray(white, dtype=np.uint64),
+        np.ascontiguousarray(black, dtype=np.uint64),
+        np.ascontiguousarray(score),
+        np.ascontiguousarray(gamma_arr),
+        n,
+        init,
+        kfac,
+    )
+    return EloResult(
+        ratings=np.asarray(res["ratings"]),
+        games=np.asarray(res["games"]),
+        wins=np.asarray(res["wins"]),
+        draws=np.asarray(res["draws"]),
+        losses=np.asarray(res["losses"]),
+        lag=np.asarray(res["lag"]),
     )

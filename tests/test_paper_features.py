@@ -9208,3 +9208,84 @@ class TestKendallU:
             kendall_u([[5]])  # n=1 and nonzero diagonal
         with pytest.raises(ValueError):
             kendall_u(np.array([[0, 2], [2, 0]], dtype=complex))
+
+
+class TestElo:
+    """Elo rating (PlayerRatings elo() semantics); pins from the executed
+    exact-rational oracle. Every assert reads wrapper/crate outputs."""
+
+    def test_ea_exact_anchor(self):
+        import numpy as np
+
+        from fast_mlsirm import elo_rating
+
+        r = elo_rating(
+            [[1, 0, 1, 1.0], [1, 0, 2, 0.5]], 3, init=2000, kfac=32, gamma=[0.0, 400.0]
+        )
+        assert abs(r.ratings[0] - 22032 / 11) < 1e-12
+        assert r.ratings[1] == 1984.0  # dyadic, exact
+        assert abs(r.ratings[2] - 22144 / 11) < 1e-12
+        assert list(r.games) == [2, 1, 1]
+        assert list(r.wins) == [1, 0, 0]
+        assert list(r.draws) == [1, 0, 1]
+        assert list(r.losses) == [0, 1, 0]
+        assert list(r.lag) == [0, 0, 0]
+        assert isinstance(r.ratings, np.ndarray)
+
+    def test_eb_batch_and_lag(self):
+        from fast_mlsirm import elo_rating
+
+        r = elo_rating(
+            [[1, 0, 1, 1.0], [1, 0, 2, 0.5], [2, 0, 1, 1.0]], 3, init=2000, kfac=400
+        )
+        assert abs(r.ratings[0] - 24600 / 11) < 1e-12
+        assert abs(r.ratings[1] - 19400 / 11) < 1e-12
+        assert r.ratings[2] == 2000.0
+        assert list(r.lag) == [0, 0, 1]
+
+    def test_gamma_scalar_broadcast(self):
+        from fast_mlsirm import elo_rating
+
+        # ED closed-form nonzero-gamma pin; differs from gamma=0 (2016/1984).
+        r = elo_rating([[1, 0, 1, 1.0]], 2, init=2000, kfac=32, gamma=100.0)
+        assert abs(r.ratings[0] - 2011.5179200063076) < 1e-12
+        assert abs(r.ratings[1] - 1988.4820799936924) < 1e-12
+        r0 = elo_rating([[1, 0, 1, 1.0]], 2, init=2000, kfac=32)
+        assert r0.ratings[0] == 2016.0
+        assert r0.ratings[1] == 1984.0
+
+    def test_defaults_and_conservation(self):
+        from fast_mlsirm import elo_rating
+
+        # PlayerRatings defaults init=2200, kfac=27; rating-sum conservation.
+        r = elo_rating([[1, 0, 1, 1.0], [2, 1, 2, 0.5]], 3)
+        assert abs(float(r.ratings.sum()) - 3 * 2200.0) < 1e-9
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 2, 1.0]], 2)  # index out of range
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, 1.5]], 2)  # score out of range
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0.5, 1, 1.0]], 2)  # non-integral player index
+        with pytest.raises(ValueError):
+            elo_rating([[-1, 0, 1, 1.0]], 2)  # negative period
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1]], 2)  # wrong shape
+        with pytest.raises(ValueError):
+            elo_rating(np.zeros((0, 4)), 2)  # no games
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, np.nan]], 2)  # non-finite
+        with pytest.raises(ValueError):
+            elo_rating(np.array([[1, 0, 1, 1.0]], dtype=complex), 2)  # complex
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, 1.0]], 2, gamma=[1.0, 2.0])  # gamma length
+        with pytest.raises(ValueError):
+            elo_rating([["a", 0, 1, 1.0]], 2)  # object dtype backstop

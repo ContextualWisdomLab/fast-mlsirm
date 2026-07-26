@@ -1590,6 +1590,218 @@ pub fn kendall_u(mat: &[f64], n: usize, correct: bool) -> Result<KendallUResult,
     })
 }
 
+// ---------------------------------------------------------------------------
+// Elo rating system (batch-per-period update).
+//
+// Citation governance:
+// - READ (implementation source of record): Stephenson, A., & Sonas, J.
+//   (2020). PlayerRatings: Dynamic updating methods for player ratings
+//   estimation (Version 1.1-0) [R package]. CRAN. `R/ratings.R` `elo()`
+//   (lines 1-123: validation, per-period splitting, W/D/L and lag
+//   bookkeeping) and `src/ratings.c` `elo_c` (expected-score kernel with
+//   per-game advantage `gamma`). Both files were read in full and this
+//   implementation was verified against an independently executed
+//   exact-rational oracle.
+// - NOT READ (cited as origin of the method as described by the
+//   PlayerRatings documentation): Elo, A. E. (1978). The rating of
+//   chessplayers, past and present. Arco.
+//
+// Model (derived from the read C kernel): within a rating period, every
+// expected score uses the ratings at the START of the period:
+//   E_w = 1 / (1 + 10^((r_b - r_w - gamma)/400))
+//   E_b = 1 / (1 + 10^((r_w - r_b + gamma)/400))
+//   dscore[w] += s - E_w;  dscore[b] += (1 - s) - E_b
+// and after all games of the period, r += kfac * dscore (batch update).
+// PROVED (hand derivation, confirmed by the spec-verify review): the two
+// exponents are exact negations, so E_w + E_b = 1 identically for any
+// finite gamma; consequently sum(dscore) = 0 each period and
+// sum(ratings) = n * init is conserved for ANY gamma. A refactor
+// E_b = 1 - E_w is therefore behaviorally unobservable (documented
+// unkillable mutant).
+//
+// Bookkeeping (R lines 93-108): games/wins/draws/losses count per
+// appearance with W/D/L only for scores exactly 1 / 0.5 / 0 (other
+// fractional scores count a game but no W/D/L). Lag: after each period,
+// every player with cumulative games != 0 (including this period's) gets
+// lag += 1, then every player appearing this period resets to lag = 0.
+//
+// Documented divergences from PlayerRatings `elo()`:
+// - `white == black` (self-play) is rejected (R silently permits it).
+// - Scalar `kfac` only (function kfac out of scope); any finite value
+//   including 0 and negatives is accepted, matching R's lack of a check.
+// - No `status` carry-in / `history`: all players start at `init`, lag 0;
+//   players in 0..n that never appear keep games = 0, lag = 0.
+// - Periods are u64 labels; unsorted input is grouped by ascending period
+//   value with original row order preserved within a period (matching R's
+//   split() factor-level ordering).
+// - Extreme rating differences saturate the expectation to 0/1 without
+//   panicking (10^x overflows to +inf in f64); an extreme `kfac` may
+//   produce non-finite output ratings and is not treated as an error.
+// ---------------------------------------------------------------------------
+
+/// Result of [`elo_rating`]: per-player ratings and bookkeeping counts.
+#[derive(Debug, Clone)]
+pub struct EloResult {
+    /// Post-update rating per player (length `n`).
+    pub ratings: Vec<f64>,
+    /// Number of game appearances per player.
+    pub games: Vec<u64>,
+    /// Wins (score exactly 1 as white, or exactly 0 as black).
+    pub wins: Vec<u64>,
+    /// Draws (score exactly 0.5, both sides).
+    pub draws: Vec<u64>,
+    /// Losses (score exactly 0 as white, or exactly 1 as black).
+    pub losses: Vec<u64>,
+    /// Rating periods since the player's last appearance (0 if the player
+    /// appeared in the final period or never played).
+    pub lag: Vec<u64>,
+}
+
+/// Elo ratings from a game schedule, PlayerRatings `elo()` semantics.
+///
+/// `periods[k]`, `white[k]`, `black[k]`, `score[k]`, `gamma[k]` describe
+/// game `k`: rating-period label, player indices in `0..n`, white's score
+/// in `[0, 1]`, and white's per-game advantage. Games are grouped by
+/// ascending period value; within a period all expectations use the
+/// period-start ratings (batch update). All players start at `init`.
+pub fn elo_rating(
+    periods: &[u64],
+    white: &[usize],
+    black: &[usize],
+    score: &[f64],
+    gamma: &[f64],
+    n: usize,
+    init: f64,
+    kfac: f64,
+) -> Result<EloResult, String> {
+    let g = periods.len();
+    if g == 0 {
+        return Err("elo_rating: at least one game is required".to_string());
+    }
+    if white.len() != g || black.len() != g || score.len() != g || gamma.len() != g {
+        return Err(format!(
+            "elo_rating: length mismatch (periods {}, white {}, black {}, score {}, gamma {})",
+            g,
+            white.len(),
+            black.len(),
+            score.len(),
+            gamma.len()
+        ));
+    }
+    if n < 2 {
+        return Err("elo_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "elo_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    if !init.is_finite() {
+        return Err("elo_rating: init must be finite".to_string());
+    }
+    if !kfac.is_finite() {
+        return Err("elo_rating: kfac must be finite".to_string());
+    }
+    for k in 0..g {
+        if white[k] >= n || black[k] >= n {
+            return Err(format!(
+                "elo_rating: game {} has player index out of range (white {}, black {}, n {})",
+                k, white[k], black[k], n
+            ));
+        }
+        if white[k] == black[k] {
+            return Err(format!(
+                "elo_rating: game {} has white == black == {} (self-play is not supported)",
+                k, white[k]
+            ));
+        }
+        if !score[k].is_finite() || !(0.0..=1.0).contains(&score[k]) {
+            return Err(format!(
+                "elo_rating: game {} has score {} outside [0, 1]",
+                k, score[k]
+            ));
+        }
+        if !gamma[k].is_finite() {
+            return Err(format!("elo_rating: game {} has non-finite gamma", k));
+        }
+    }
+
+    // Group by ascending period, preserving row order within a period
+    // (R split() orders groups by factor level, i.e. ascending label).
+    let mut order: Vec<usize> = (0..g).collect();
+    order.sort_by_key(|&k| periods[k]); // stable sort keeps row order
+
+    let mut ratings = vec![init; n];
+    let mut games = vec![0u64; n];
+    let mut wins = vec![0u64; n];
+    let mut draws = vec![0u64; n];
+    let mut losses = vec![0u64; n];
+    let mut lag = vec![0u64; n];
+    let mut appeared = vec![false; n];
+
+    let mut i = 0usize;
+    while i < g {
+        let period = periods[order[i]];
+        let mut j = i;
+        while j < g && periods[order[j]] == period {
+            j += 1;
+        }
+
+        let mut dscore = vec![0.0f64; n];
+        for player in appeared.iter_mut() {
+            *player = false;
+        }
+        for &k in &order[i..j] {
+            let (w, b, s, gam) = (white[k], black[k], score[k], gamma[k]);
+            // Expectations from period-START ratings (batch semantics).
+            let e_w = 1.0 / (1.0 + 10f64.powf((ratings[b] - ratings[w] - gam) / 400.0));
+            let e_b = 1.0 / (1.0 + 10f64.powf((ratings[w] - ratings[b] + gam) / 400.0));
+            dscore[w] += s - e_w;
+            dscore[b] += (1.0 - s) - e_b;
+            games[w] += 1;
+            games[b] += 1;
+            if s == 1.0 {
+                wins[w] += 1;
+                losses[b] += 1;
+            } else if s == 0.5 {
+                draws[w] += 1;
+                draws[b] += 1;
+            } else if s == 0.0 {
+                losses[w] += 1;
+                wins[b] += 1;
+            }
+            appeared[w] = true;
+            appeared[b] = true;
+        }
+        for p in 0..n {
+            ratings[p] += kfac * dscore[p];
+        }
+        // Lag: games are already updated, so first-time players increment
+        // to 1 and are immediately reset to 0 (R lines 97-103 order).
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                lag[p] = 0;
+            }
+        }
+        i = j;
+    }
+
+    Ok(EloResult {
+        ratings,
+        games,
+        wins,
+        draws,
+        losses,
+        lag,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

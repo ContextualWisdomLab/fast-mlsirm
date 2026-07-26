@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Elo rating system (Elo, 1978, as implemented by CRAN PlayerRatings
+  1.1-0's `elo()` — `R/ratings.R` + `elo_c` C kernel source READ; Elo's
+  1978 book NOT READ, cited as the origin per PlayerRatings).** New Rust
+  core `mlsirm_core::scaling::elo_rating` with batch-per-period updates
+  (all expected scores within a rating period use the period-start
+  ratings), per-game white advantage `gamma`, and PlayerRatings W/D/L and
+  lag bookkeeping (W/D/L only for scores exactly 1/0.5/0; lag counts
+  periods since last appearance). Periods may be unsorted (grouped by
+  ascending label, matching R `split()`); `E_w + E_b = 1` holds
+  identically for any gamma, so rating sums are conserved at `n * init`.
+  Documented divergences: self-play rejected, scalar K factor only, no
+  `status` carry-in. Python wrapper `fast_mlsirm.elo_rating(games,
+  n_players, init=2200, kfac=27, gamma=None)` returns an `EloResult`
+  dataclass. Anchored to an executed exact-rational oracle (single- and
+  two-period exact-fraction fixtures, float regression, closed-form
+  nonzero-gamma pin); five executed mutation kills (sequential-update,
+  black-score flip, gamma sign, lag reset, logistic divisor).
+
 - **Circular-triads consistency test and Kendall's coefficient of
   agreement u (Kendall & Babington Smith, 1940, as implemented by eba
   1.10-0's `circular()` / `kendall.u()` — eba source READ; the 1940
