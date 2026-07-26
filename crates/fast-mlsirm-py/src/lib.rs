@@ -73,6 +73,7 @@ use mlsirm_core::mmle::{fit_mmle_2pl as core_fit_mmle_2pl, MmleConfig};
 use mlsirm_core::mokken::{aisp as core_mokken_aisp, coef_h as core_mokken_coef_h};
 use mlsirm_core::nominal::{fit_nominal as core_fit_nominal_model, NominalConfig};
 use mlsirm_core::parallel::parallel_analysis as core_parallel_analysis;
+use mlsirm_core::personfit_np::person_fit_np as core_person_fit_np;
 use mlsirm_core::poly::{
     fit_nominal as core_fit_nominal, fit_poly_unidim as core_fit_poly_unidim,
     gpcm_logprobs as core_gpcm_logprobs, grm_logprobs as core_grm_logprobs,
@@ -111,6 +112,7 @@ use mlsirm_core::security::gbt as core_gbt;
 use mlsirm_core::security::k_index as core_k_index;
 use mlsirm_core::security::k_variants as core_k_variants;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
+use mlsirm_core::standard_setting::hofstee as core_hofstee;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1896,6 +1898,69 @@ fn py_k_variants(
     out.set_item("k2", res.k2)?;
     out.set_item("s1_index", res.s1_index)?;
     out.set_item("s2_index", res.s2_index)?;
+    Ok(out.into())
+}
+
+/// Hofstee compromise standard-setting cut score
+/// (`mlsirm_core::standard_setting::hofstee`), a port of the
+/// psychometricsGP R package's `fn_plot_hofstee()` computation (plotting
+/// excluded). See the core module header for citation governance and the
+/// reduced scope (collinear-overlap and zero-length diagonals rejected).
+#[pyfunction]
+fn py_hofstee(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    min_cut: f64,
+    max_cut: f64,
+    min_fail: f64,
+    max_fail: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hofstee(scores.as_slice()?, min_cut, max_cut, min_fail, max_fail)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("cut_score", res.cut_score)?;
+    out.set_item("fail_rate", res.fail_rate)?;
+    out.set_item("failed", res.failed)?;
+    out.set_item(
+        "cum_freq_percent",
+        PyArray1::from_slice(py, &res.cum_freq_percent),
+    )?;
+    Ok(out.into())
+}
+
+/// Nonparametric person-fit statistics
+/// (`mlsirm_core::personfit_np::person_fit_np`), a complete-data port of
+/// the CRAN PerFit R package's G, Gnormed, NCI, U3, ZU3, C.Sato, and
+/// Cstar (see the core module header for citation governance and the
+/// perfect-row / NaN contract). `x` is a row-major complete
+/// `n_persons * n_items` 0/1 response matrix.
+#[pyfunction]
+fn py_person_fit_np(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let flat = x.as_slice()?;
+    if flat.len() != n_persons * n_items {
+        return Err(PyValueError::new_err(format!(
+            "x has {} entries, expected n_persons * n_items = {}",
+            flat.len(),
+            n_persons * n_items
+        )));
+    }
+    let rows: Vec<Vec<f64>> = (0..n_persons)
+        .map(|i| flat[i * n_items..(i + 1) * n_items].to_vec())
+        .collect();
+    let res = core_person_fit_np(&rows).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("g", PyArray1::from_slice(py, &res.g))?;
+    out.set_item("gnormed", PyArray1::from_slice(py, &res.gnormed))?;
+    out.set_item("nci", PyArray1::from_slice(py, &res.nci))?;
+    out.set_item("u3", PyArray1::from_slice(py, &res.u3))?;
+    out.set_item("zu3", PyArray1::from_slice(py, &res.zu3))?;
+    out.set_item("c_sato", PyArray1::from_slice(py, &res.c_sato))?;
+    out.set_item("cstar", PyArray1::from_slice(py, &res.cstar))?;
     Ok(out.into())
 }
 
@@ -6524,6 +6589,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
     m.add_function(wrap_pyfunction!(py_gbt, m)?)?;
     m.add_function(wrap_pyfunction!(py_k_variants, m)?)?;
+    m.add_function(wrap_pyfunction!(py_hofstee, m)?)?;
+    m.add_function(wrap_pyfunction!(py_person_fit_np, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

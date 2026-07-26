@@ -54,6 +54,14 @@ from .security import (
     k_variants as k_variants,
     KVariantsResult as KVariantsResult,
 )
+from .standard_setting import (
+    hofstee as hofstee,
+    HofsteeResult as HofsteeResult,
+)
+from .personfit_np import (
+    person_fit_np as person_fit_np,
+    PersonFitNpResult as PersonFitNpResult,
+)
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
@@ -287,6 +295,10 @@ __all__ = [
     "GbtResult",
     "k_variants",
     "KVariantsResult",
+    "hofstee",
+    "HofsteeResult",
+    "person_fit_np",
+    "PersonFitNpResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

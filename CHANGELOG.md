@@ -119,6 +119,41 @@
 
 ### Added
 
+- **Nonparametric person-fit statistics (PerFit-faithful, complete data)**
+  (`fast_mlsirm.person_fit_np`; in Rust
+  `mlsirm_core::personfit_np::person_fit_np`, PyO3 `py_person_fit_np`):
+  seven dichotomous statistics — Guttman error count G, normed Guttman
+  errors, the norm conformity index NCI, van der Flier's U3 and
+  standardized ZU3, Sato's caution index C, and the modified caution
+  index C* — ported from the CRAN PerFit R package's `G.R`, `Gnormed.R`,
+  `NCI.R`, `U3.R`, `ZU3.R`, `C.Sato.R`, and `Cstar.R` (READ at commit
+  c9df433; the originating papers are cited only as implemented).
+  Complete 0/1 data only: PerFit's missing-value imputation and
+  polytomous variants are out of scope, and any non-{0,1} entry is
+  rejected. Perfect (all-0s/all-1s) rows are source-faithful: G, normed
+  G, and NCI are 0 (the R source applies `1 - 2*Gnormed` before its
+  NaN→0 replacement) while U3/ZU3/C/C* are NaN, and degenerate
+  all-equal-difficulty data yields NaN rather than an error. Column
+  ordering reproduces R `order(pi, decreasing = TRUE)` including its
+  ascending-index tie-break, pinned by a dedicated tie fixture.
+
+- **Hofstee compromise standard setting (psychometricsGP-faithful)**
+  (`fast_mlsirm.hofstee`; in Rust
+  `mlsirm_core::standard_setting::hofstee`, PyO3 `py_hofstee`): the
+  Hofstee compromise cut score, a computational port of the
+  psychometricsGP R package's `fn_plot_hofstee()` (`R/fn_plot_hofstee.R`,
+  READ — the only inspectable implementation found; single-source port,
+  stated openly; plotting excluded; Hofstee 1983 itself NOT READ, cited
+  only as implemented). Intersects the piecewise-linear cumulative
+  relative frequency ogive over integer score bins 0..=100 (right-closed
+  bins `(s-1, s]`, divide-first `(count/n)*100` arithmetic preserved)
+  with the descending diagonal `(min_cut, max_fail)` → `(max_cut,
+  min_fail)`; when they do not cross, the R fallback pins the cut to
+  `min_cut`/`max_cut` with a strict `<` fail count and two-decimal
+  DIRECTED rounding (ceil up-branch / floor down-branch), `failed=True`.
+  Reduced scope per adversarial spec review: collinear ogive-diagonal
+  overlap and zero-length diagonals are rejected (`spatstat`
+  `crossing.psp` degenerate semantics unverified against an R runtime).
 - **K1/K2/S1/S2 answer-copying indices (CopyDetect-faithful)**
   (`fast_mlsirm.k_variants`; in Rust `mlsirm_core::security::k_variants`,
   PyO3 `py_k_variants`): the four regression-baseline copying indices,

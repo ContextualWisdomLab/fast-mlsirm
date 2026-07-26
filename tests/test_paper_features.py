@@ -7224,3 +7224,110 @@ class TestKVariants:
             v = getattr(r, field)
             assert isinstance(v, float)
             assert 0.0 <= v or field in ("s1", "s2")
+
+class TestHofstee:
+    def test_pinned_oracle_main(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        rng = np.random.default_rng(2026)
+        scores = np.round(np.clip(rng.normal(68, 9, 40), 0, 100), 1)
+        r = hofstee(scores, 62.5, 75.0, 0.0, 20.0)
+        assert r.failed is False
+        assert abs(r.cut_score - 62.804878048780488) < 1e-12
+        assert abs(r.fail_rate - 19.512195121951219) < 1e-12
+        assert r.cum_freq_percent.shape == (101,)
+        assert r.cum_freq_percent[62] == 17.5
+        assert r.cum_freq_percent[63] == 20.0
+        # divide-first arithmetic order (23/40)*100:
+        assert r.cum_freq_percent[70] == 57.49999999999999
+
+    def test_fallback_and_reduced_scope(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        r = hofstee(np.full(10, 30.0), 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 100.0, True)
+        r = hofstee([30.0, 30.0, 90.0], 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 66.67, True)
+        import pytest
+
+        with pytest.raises(ValueError, match="zero-length"):
+            hofstee([50.0], 70.0, 70.0, 20.0, 20.0)
+        with pytest.raises(ValueError, match="collinear overlap"):
+            hofstee([10.0, 90.0], 40.0, 60.0, 50.0, 50.0)
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import hofstee
+
+        with pytest.raises(ValueError):
+            hofstee([], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([np.nan], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0 + 1j], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([[50.0]], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 62.5, 75.0, 0.0, True)
+        with pytest.raises(ValueError):
+            hofstee([101.0], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 75.0, 62.5, 0.0, 20.0)
+
+class TestPersonFitNp:
+    def test_pinned_main_fixture(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        rows = [
+            "11000000", "01010110", "11010000", "11111011", "11001100",
+            "11111010", "11101101", "11100001", "01000101", "00001111",
+            "00000000", "11111111",
+        ]
+        x = np.array([[int(c) for c in r] for r in rows], dtype=float)
+        res = person_fit_np(x)
+        assert res.g.tolist() == [0, 10, 4, 4, 0, 6, 0, 4, 4, 10, 0, 0]
+        assert abs(res.gnormed[1] - 0.625) < 1e-12
+        assert abs(res.nci[3] - (-0.1428571428571428)) < 1e-12
+        assert abs(res.u3[9] - 0.7968163928347531) < 1e-12
+        assert abs(res.zu3[9] - 2.315959529860312) < 1e-12
+        assert abs(res.c_sato[9] - 1.5555555555555556) < 1e-12
+        assert abs(res.cstar[9] - 0.7777777777777777) < 1e-12
+        # Perfect rows: G/Gnormed/NCI = 0; U3/ZU3/C/C* NaN.
+        for p in (10, 11):
+            assert res.g[p] == 0 and res.gnormed[p] == 0 and res.nci[p] == 0
+            assert np.isnan(res.u3[p]) and np.isnan(res.zu3[p])
+            assert np.isnan(res.c_sato[p]) and np.isnan(res.cstar[p])
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import person_fit_np
+
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([0.0, 1.0]))  # 1-D
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, 0.5]]))  # non-binary
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, np.nan]]))  # missing out of scope
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0 + 0j, 0.0]]))  # complex laundering
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0], [0.0]]))  # single item
+
+    def test_bool_input_accepted(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        x = np.array([[True, True, False], [False, True, True]])
+        res = person_fit_np(x)
+        assert res.g.shape == (2,)
