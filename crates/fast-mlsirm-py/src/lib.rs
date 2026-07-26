@@ -109,6 +109,7 @@ use mlsirm_core::scoring::{
 };
 use mlsirm_core::security::gbt as core_gbt;
 use mlsirm_core::security::k_index as core_k_index;
+use mlsirm_core::security::k_variants as core_k_variants;
 use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
@@ -1855,6 +1856,46 @@ fn py_gbt(
     out.set_item("observed_matches", res.observed_matches)?;
     out.set_item("match_dist", PyArray1::from_slice(py, &res.match_dist))?;
     out.set_item("p_value", res.p_value)?;
+    Ok(out.into())
+}
+
+/// K1/K2/S1/S2 answer-copying indices
+/// (`mlsirm_core::security::k_variants`), a faithful port of the CRAN
+/// CopyDetect package's internal `ks12()` (READ: `R/similarity1.r`),
+/// specialized to complete scored 0/1 data. NOT READ: Sotaridona & Meijer
+/// (2002, *JEM, 39*(2), 115-132) and (2003, *JEM, 40*(1), 53-69); all four
+/// indices are cited only as implemented by CopyDetect. Number-incorrect
+/// subgroups EXCLUDE the source (opposite of `py_k_index`'s base-`k()`
+/// convention). Returns a dict with `wc`, `ws`, `m`, `mm`, `pr`, `pj`
+/// (length n_items + 1, NaN at empty subgroups), the clamped/capped
+/// predictions `p1`, `p2`, `s1`, `s2`, and the indices `k1`, `k2`,
+/// `s1_index`, `s2_index` (small values suggest copying).
+#[pyfunction]
+fn py_k_variants(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    copier: usize,
+    source: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_k_variants(responses.as_slice()?, n_persons, n_items, copier, source)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("wc", res.wc)?;
+    out.set_item("ws", res.ws)?;
+    out.set_item("m", res.m)?;
+    out.set_item("mm", res.mm)?;
+    out.set_item("pr", PyArray1::from_slice(py, &res.pr))?;
+    out.set_item("pj", PyArray1::from_slice(py, &res.pj))?;
+    out.set_item("p1", res.p1)?;
+    out.set_item("p2", res.p2)?;
+    out.set_item("s1", res.s1)?;
+    out.set_item("s2", res.s2)?;
+    out.set_item("k1", res.k1)?;
+    out.set_item("k2", res.k2)?;
+    out.set_item("s1_index", res.s1_index)?;
+    out.set_item("s2_index", res.s2_index)?;
     Ok(out.into())
 }
 
@@ -6482,6 +6523,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
     m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
     m.add_function(wrap_pyfunction!(py_gbt, m)?)?;
+    m.add_function(wrap_pyfunction!(py_k_variants, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

@@ -7134,3 +7134,93 @@ class TestGbt:
             gbt(np.array([1.0 + 0j, 0.0]), np.array([0.5, 0.5]))
         with pytest.raises(ValueError):
             gbt(np.array([True, False]), np.array([0.5, 0.5]))
+
+class TestKVariants:
+    """K1/K2/S1/S2 indices: asserts read fast_mlsirm.k_variants outputs
+    (crate-backed).
+
+    Oracle: independent Python reference confirmed by the adversarial spec
+    review (files/k_variants_spec_review.md); the pinned values kill
+    source-inclusion, weight-exponent-sign, and strict-tail mutants.
+    """
+
+    def _fixture(self):
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        x = (rng.random((15, 12)) < 0.6).astype(float)
+        x[2, :5] = x[7, :5]
+        return x
+
+    def test_pinned_oracle(self):
+        import numpy as np
+
+        from fast_mlsirm import k_variants
+
+        r = k_variants(self._fixture(), copier=2, source=7)
+        assert r.wc == 4
+        assert r.ws == 3
+        assert r.m == 2
+        assert r.mm == 3
+        assert abs(r.p1 - 0.43862433862433853) < 1e-10
+        assert abs(r.p2 - 0.38571428571428595) < 1e-10
+        assert abs(r.s1 - 1.2577145969460732) < 1e-8
+        assert abs(r.s2 - 2.2808598308064885) < 1e-8
+        assert abs(r.k1 - 0.4083989087088663) < 1e-10
+        assert abs(r.k2 - 0.33155685131195367) < 1e-10
+        assert abs(r.s1_index - 0.3191324670108421) < 1e-8
+        assert abs(r.s2_index - 0.39887838757590066) < 1e-8
+        assert r.pr.shape == (13,)
+        assert r.pj.shape == (13,)
+        # source excluded from its own subgroup: pr[3] uses rows other
+        # than the source (independent oracle value 2/9, not 1)
+        assert abs(r.pr[3] - 2.0 / 9.0) < 1e-12
+        assert np.isnan(r.pr[0])
+        assert isinstance(r.pr, np.ndarray)
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import k_variants
+
+        x = self._fixture()
+        with pytest.raises(ValueError):
+            k_variants(x, copier=2, source=2)  # identical indices
+        with pytest.raises(ValueError):
+            k_variants(x, copier=2, source=15)  # out of range
+        with pytest.raises(ValueError):
+            k_variants(x, copier=True, source=7)  # bool index
+        bad = x.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            k_variants(bad, copier=2, source=7)  # non-binary
+        with pytest.raises(ValueError):
+            k_variants(x + 0j, copier=2, source=7)  # complex laundering
+        with pytest.raises(ValueError):
+            k_variants(x.astype(bool), copier=2, source=7)  # bool matrix
+        allc = x.copy()
+        allc[7, :] = 1.0
+        with pytest.raises(ValueError):
+            k_variants(allc, copier=2, source=7)  # ws == 0 degenerate
+
+    def test_result_fields(self):
+        from fast_mlsirm import KVariantsResult, k_variants
+
+        r = k_variants(self._fixture(), copier=2, source=7)
+        assert isinstance(r, KVariantsResult)
+        for field in ("wc", "ws", "m", "mm"):
+            assert isinstance(getattr(r, field), int)
+        for field in (
+            "p1",
+            "p2",
+            "s1",
+            "s2",
+            "k1",
+            "k2",
+            "s1_index",
+            "s2_index",
+        ):
+            v = getattr(r, field)
+            assert isinstance(v, float)
+            assert 0.0 <= v or field in ("s1", "s2")

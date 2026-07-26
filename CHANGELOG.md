@@ -119,6 +119,28 @@
 
 ### Added
 
+- **K1/K2/S1/S2 answer-copying indices (CopyDetect-faithful)**
+  (`fast_mlsirm.k_variants`; in Rust `mlsirm_core::security::k_variants`,
+  PyO3 `py_k_variants`): the four regression-baseline copying indices,
+  ported exactly from the CRAN CopyDetect package's internal `ks12()`
+  (`R/similarity1.r`, READ), specialized to complete scored 0/1 data (no
+  missing responses — the port rejects anything but exact 0/1). Number-
+  incorrect subgroups EXCLUDE the source (the opposite of `k_index`'s base
+  `k()` convention — a deliberate CopyDetect asymmetry, regression-anchored
+  in tests). K1/K2 fit linear/quadratic least squares of subgroup incorrect-
+  match rates and take binomial upper tails `P(Bin(ws, p) >= m)`; S1/S2 fit
+  log-linear Poisson GLMs of (weighted) match counts and take bounded
+  Poisson WINDOW probabilities (`P(m <= X <= ws)` / `P(mm <= X <= n_items)`,
+  not plain upper tails — CopyDetect subtracts the tail beyond the cap),
+  with S2 adding the `(1.5e)^(-6·prob)` weighted correct-match term
+  and a RAW ceiling (`mm = ceil(sum) + m`, no epsilon — float noise at
+  integer boundaries can bump `mm`, documented). Numerics: rank-checked
+  modified Gram-Schmidt QR for the OLS fits (degenerate designs raise, no
+  silent normal-equation blowup) and a guarded Newton Poisson GLM with
+  step-halving, bounded eta, and a stable start (nonconvergence raises);
+  `ks12()` itself SUPPRESSES R's non-integer-Poisson warning for the S2
+  fit. Sotaridona & Meijer (2002, *JEM 39*(2)) and (2003, *JEM 40*(1)) NOT
+  read — all four indices cited only as implemented by CopyDetect.
 - **Generalized binomial test (GBT) tail kernel (aberrance-faithful)**
   (`fast_mlsirm.gbt`; in Rust `mlsirm_core::security::gbt`, PyO3 `py_gbt`):
   exact Poisson-binomial distribution of the copier-source match count via

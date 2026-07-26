@@ -314,3 +314,128 @@ def gbt(matches, match_probs):
         match_dist=np.asarray(res["match_dist"], dtype=np.float64),
         p_value=float(res["p_value"]),
     )
+
+@dataclass
+class KVariantsResult:
+    """K1/K2/S1/S2 answer-copying indices for one (copier, source) pair.
+
+    All four are p-values (small values suggest copying): ``k1``/``k2``
+    are inclusive binomial upper tails ``P(Bin(ws, p) >= m)`` at the
+    linearly/quadratically regressed match rate; ``s1_index``/``s2_index``
+    are bounded Poisson WINDOW probabilities ``P(m <= Pois(s1) <= ws)``
+    and ``P(mm <= Pois(s2) <= n_items)`` at the log-linearly regressed
+    match count (the tail beyond ``ws``/``n_items`` is subtracted,
+    matching CopyDetect's ``ppois`` differences)."""
+
+    wc: int
+    ws: int
+    m: int
+    mm: int
+    pr: np.ndarray
+    pj: np.ndarray
+    p1: float
+    p2: float
+    s1: float
+    s2: float
+    k1: float
+    k2: float
+    s1_index: float
+    s2_index: float
+
+
+def k_variants(
+    responses: np.ndarray,
+    copier: int,
+    source: int,
+) -> KVariantsResult:
+    """K1, K2, S1 and S2 answer-copying indices (computed in Rust), a
+    faithful port of the CRAN CopyDetect package's internal ``ks12()``,
+    specialized to complete scored 0/1 data.
+
+    Number-incorrect subgroups ``j = 0..n_items`` EXCLUDE the source
+    (opposite of :func:`k_index`'s base ``k()`` convention). ``pr[j]`` is
+    the subgroup mean rate of incorrect answers matching the source's
+    (NaN for empty subgroups); ``pj[j]`` the subgroup mean weighted
+    correct-match sum with weights ``(1.5e)**(-6*prob)``. K1 fits a linear
+    and K2 a quadratic least-squares regression of ``pr`` on the subgroup
+    error rate and evaluates the binomial tail ``P(Bin(ws, p) >= m)`` at
+    the copier's error rate; S1/S2 fit log-linear (Poisson GLM)
+    regressions of the (weighted) match counts and evaluate bounded
+    Poisson WINDOW probabilities ``P(m <= Pois(s1) <= ws)`` and
+    ``P(mm <= Pois(s2) <= n_items)`` (not plain upper tails — CopyDetect
+    subtracts the tail beyond ``ws``/``n_items``). Regression is
+    rank-checked QR least squares and a guarded
+    Newton GLM with step-halving; degenerate designs raise. READ:
+    CopyDetect ``R/similarity1.r`` internal ``ks12()`` (ported function;
+    it SUPPRESSES R's non-integer Poisson warning for the S2 fit). NOT
+    READ: Sotaridona & Meijer (2002) and (2003); all four indices are
+    cited only as implemented by CopyDetect.
+
+    In LLM-as-a-Judge quality management these flag judge pairs whose
+    shared responses exceed the error-rate-matched regression baseline
+    (e.g. one judge copying another's outputs).
+
+    ``responses`` is an ``n_persons x n_items`` scored matrix with entries
+    exactly 0 (incorrect) or 1 (correct), no missing data;
+    ``copier``/``source`` are distinct row indices. A source with no
+    incorrect answers (``ws == 0``) is degenerate and raises.
+
+    References
+    ----------
+    Sotaridona, L. S., & Meijer, R. R. (2002). Statistical properties of
+    the K-index for detecting answer copying. *Journal of Educational
+    Measurement, 39*(2), 115-132. (NOT READ.)
+    Sotaridona, L. S., & Meijer, R. R. (2003). Two new statistics to
+    detect answer copying. *Journal of Educational Measurement, 40*(1),
+    53-69. (NOT READ.)
+    Zopluoglu, C. (2018). *CopyDetect* (R package). (READ:
+    ``R/similarity1.r`` internal ``ks12()``; ported implementation.)
+    """
+    for name, idx in (("copier", copier), ("source", source)):
+        if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
+            raise ValueError(f"{name} must be an integer row index")
+        if idx < 0:
+            raise ValueError(f"{name} must be nonnegative")
+    copier = int(copier)
+    source = int(source)
+
+    x = np.asarray(responses)
+    if x.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items matrix")
+    if x.shape[0] < 2 or x.shape[1] < 1:
+        raise ValueError("responses needs at least 2 persons and 1 item")
+    if np.iscomplexobj(x):
+        raise ValueError("responses must be real-valued")
+    if x.dtype.kind not in ("i", "u", "f"):
+        raise ValueError("responses must be an integer or float array")
+    xf = np.ascontiguousarray(x, dtype=np.float64)
+    if not np.all((xf == 0.0) | (xf == 1.0)):
+        raise ValueError("responses entries must be exactly 0 or 1 (no missing)")
+    n_persons, n_items = xf.shape
+    if copier >= n_persons or source >= n_persons:
+        raise ValueError("copier and source must be valid row indices")
+    if copier == source:
+        raise ValueError("copier and source must be distinct")
+
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_k_variants"):
+        raise RuntimeError("k_variants requires the compiled Rust core")
+    res = core.py_k_variants(xf.ravel(), n_persons, n_items, copier, source)
+    return KVariantsResult(
+        wc=int(res["wc"]),
+        ws=int(res["ws"]),
+        m=int(res["m"]),
+        mm=int(res["mm"]),
+        pr=np.asarray(res["pr"], dtype=np.float64),
+        pj=np.asarray(res["pj"], dtype=np.float64),
+        p1=float(res["p1"]),
+        p2=float(res["p2"]),
+        s1=float(res["s1"]),
+        s2=float(res["s2"]),
+        k1=float(res["k1"]),
+        k2=float(res["k2"]),
+        s1_index=float(res["s1_index"]),
+        s2_index=float(res["s2_index"]),
+    )

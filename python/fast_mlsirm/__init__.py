@@ -51,6 +51,8 @@ from .security import (
     KIndexResult as KIndexResult,
     gbt as gbt,
     GbtResult as GbtResult,
+    k_variants as k_variants,
+    KVariantsResult as KVariantsResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
@@ -283,6 +285,8 @@ __all__ = [
     "KIndexResult",
     "gbt",
     "GbtResult",
+    "k_variants",
+    "KVariantsResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

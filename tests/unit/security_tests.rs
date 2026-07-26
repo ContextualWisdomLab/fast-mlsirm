@@ -581,3 +581,242 @@ fn monte_carlo_gbt_size_and_power() {
     assert!(size < 0.08, "empirical size {}", size);
     assert!(power > 0.5, "empirical power {}", power);
 }
+
+// ===================== K1/K2/S1/S2 (CopyDetect ks12) ==========================
+
+/// 15 x 12 scored fixture from the spec (numpy seed 42 dump; copier = 2,
+/// source = 7; copier forced equal to source on items 0-4). Pinned oracle
+/// values were computed by TWO independent Python reference implementations
+/// of CopyDetect's `ks12()` (spec author's and the adversarial reviewer's;
+/// both in the session record), agreeing to all printed digits.
+fn kv_fixture() -> Vec<f64> {
+    [
+        0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, //
+        0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, //
+        1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, // copier (row 2)
+        1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, //
+        0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, //
+        0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, //
+        0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, //
+        1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, // source (row 7)
+        1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, //
+        1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, //
+        1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, //
+        1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, //
+        1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, //
+        1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, //
+        1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, //
+    ]
+    .iter()
+    .map(|&v| v as f64)
+    .collect()
+}
+
+/// Pinned-oracle test. Every assert reads `KVariantsResult` fields returned
+/// by the crate. Mutations killed by these pins (values from the
+/// adversarial review): source INCLUDED in subgroups (K1 -> 0.46907...),
+/// weight exponent +6 (mm -> 32170, S2 -> 0), S1 window upper bound n
+/// (S1 -> 0.35812...), GLM prediction at qc instead of wc
+/// (S1 -> 0.13298...), strict K1 tail (K1 -> 0.08439...).
+#[test]
+fn k_variants_pinned_oracle() {
+    let x = kv_fixture();
+    let r = k_variants(&x, 15, 12, 2, 7).unwrap();
+    assert_eq!(r.wc, 4);
+    assert_eq!(r.ws, 3);
+    assert_eq!(r.m, 2);
+    assert_eq!(r.mm, 3);
+    // OLS-derived quantities: tolerance 1e-10.
+    assert!((r.p1 - 0.43862433862433853).abs() < 1e-10, "p1 = {}", r.p1);
+    assert!((r.p2 - 0.38571428571428595).abs() < 1e-10, "p2 = {}", r.p2);
+    assert!((r.k1 - 0.4083989087088663).abs() < 1e-10, "k1 = {}", r.k1);
+    assert!((r.k2 - 0.33155685131195367).abs() < 1e-10, "k2 = {}", r.k2);
+    // GLM-derived quantities: tolerance 1e-8 (IRLS convergence).
+    assert!((r.s1 - 1.2577145969460732).abs() < 1e-8, "s1 = {}", r.s1);
+    assert!((r.s2 - 2.2808598308064885).abs() < 1e-8, "s2 = {}", r.s2);
+    assert!(
+        (r.s1_index - 0.3191324670108421).abs() < 1e-8,
+        "s1_index = {}",
+        r.s1_index
+    );
+    assert!(
+        (r.s2_index - 0.39887838757590066).abs() < 1e-8,
+        "s2_index = {}",
+        r.s2_index
+    );
+    // pr / pj vectors: NaN pattern (empty subgroups) + pinned finite values.
+    let pr_exp = [
+        f64::NAN,
+        f64::NAN,
+        1.0 / 3.0,
+        2.0 / 9.0,
+        2.0 / 3.0,
+        1.0 / 3.0,
+        0.5,
+        5.0 / 6.0,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+    ];
+    assert_eq!(r.pr.len(), 13);
+    assert_eq!(r.pj.len(), 13);
+    for (j, &e) in pr_exp.iter().enumerate() {
+        if e.is_nan() {
+            assert!(r.pr[j].is_nan(), "pr[{}] = {}", j, r.pr[j]);
+            assert!(r.pj[j].is_nan(), "pj[{}] = {}", j, r.pj[j]);
+        } else {
+            assert!((r.pr[j] - e).abs() < 1e-12, "pr[{}] = {}", j, r.pr[j]);
+        }
+    }
+    // pj finite entries (reviewer-pinned).
+    let pj_exp = [
+        (2usize, 0.0017409068785366),
+        (3, 0.04820560457653007),
+        (4, 0.00152329351871952),
+        (5, 0.08157203299642975),
+        (6, 0.03731453662175564),
+        (7, 0.03731453662175564),
+    ];
+    for &(j, e) in pj_exp.iter() {
+        assert!((r.pj[j] - e).abs() < 1e-12, "pj[{}] = {}", j, r.pj[j]);
+    }
+}
+
+/// ks12() EXCLUDES the source from the number-incorrect subgroups (the
+/// opposite of base `k()`, which `k_index` ports). Anchor: on the fixture,
+/// source-INCLUSION shifts every downstream value; the reviewer computed
+/// K1 = 0.4690651917439521 under inclusion vs 0.4083989087088663 under the
+/// faithful exclusion. Both pins read crate outputs (k_index shares the
+/// inclusion convention on its own subgroup, so this also guards against
+/// accidentally unifying the two conventions).
+#[test]
+fn k_variants_source_excluded_from_subgroups() {
+    let x = kv_fixture();
+    let r = k_variants(&x, 15, 12, 2, 7).unwrap();
+    assert!((r.k1 - 0.4083989087088663).abs() < 1e-10, "k1 = {}", r.k1);
+    let inclusion_k1 = 0.4690651917439521;
+    assert!(
+        (r.k1 - inclusion_k1).abs() > 1e-3,
+        "k1 = {} must differ from the source-inclusion value {}",
+        r.k1,
+        inclusion_k1
+    );
+    // pr[3]: source has ws = 3 incorrect; under exclusion the j = 3 subgroup
+    // is {5, 11, 12} with pr = 2/9; inclusion would add the source row whose
+    // self-agreement is ws = 3, giving (2 + 2 + 2 + 3)/4/3 = 0.75 instead.
+    assert!((r.pr[3] - 2.0 / 9.0).abs() < 1e-12, "pr[3] = {}", r.pr[3]);
+}
+
+#[test]
+fn k_variants_error_paths() {
+    let x = kv_fixture();
+    assert!(k_variants(&x, 15, 12, 2, 2).is_err()); // copier == source
+    assert!(k_variants(&x, 15, 12, 15, 7).is_err()); // copier out of range
+    assert!(k_variants(&x, 15, 11, 2, 7).is_err()); // wrong shape
+    let mut bad = kv_fixture();
+    bad[5] = 0.5;
+    assert!(k_variants(&bad, 15, 12, 2, 7).is_err()); // non-0/1 entry
+                                                      // ws == 0: source all correct.
+    let mut allc = kv_fixture();
+    for i in 0..12 {
+        allc[7 * 12 + i] = 1.0;
+    }
+    assert!(k_variants(&allc, 15, 12, 2, 7).is_err());
+    // Rank deficiency: every non-source row has the SAME number-incorrect
+    // score -> a single design point -> both OLS and GLM are unidentified.
+    let n = 6usize;
+    let mut deg = vec![1.0f64; 4 * n];
+    for r in 0..4 {
+        deg[r * n] = 0.0; // exactly one incorrect per row
+    }
+    let e = k_variants(&deg, 4, n, 0, 1).unwrap_err();
+    assert!(
+        e.contains("rank-deficient") || e.contains("complete design points"),
+        "unexpected error: {}",
+        e
+    );
+}
+
+/// Monte Carlo size/power smoke test (empirical port check, NOT a claim
+/// from the unread S&M 2002/2003 papers). Null: independent 2PL-like
+/// responders; alternative: copier overwrites 90% of items with the
+/// source's responses. Requires each index's null rejection rate at
+/// alpha = .05 to stay at or below 0.10, K2 power above 0.5, and S2 power
+/// above 0.3 (S2 is empirically less powerful than K2 under this design;
+/// observed ~0.38 at the pinned seed).
+#[test]
+#[ignore]
+fn monte_carlo_k_variants_null() {
+    let n_persons = 40usize;
+    let n_items = 30usize;
+    let reps = 500usize;
+    let alpha = 0.05f64;
+    let mut lcg = TestLcg(0x5eed_2026);
+    let mut rej_null = [0usize; 4];
+    let mut rej_alt = [0usize; 4];
+    let mut used_null = 0usize;
+    let mut used_alt = 0usize;
+    for _ in 0..reps {
+        for copy in [false, true] {
+            let mut x = vec![0.0f64; n_persons * n_items];
+            let mut theta = vec![0.0f64; n_persons];
+            for t in theta.iter_mut() {
+                *t = lcg.normal();
+            }
+            let mut b = vec![0.0f64; n_items];
+            for bi in b.iter_mut() {
+                *bi = lcg.normal();
+            }
+            for p in 0..n_persons {
+                for i in 0..n_items {
+                    let pr = 1.0 / (1.0 + (-(theta[p] - b[i])).exp());
+                    x[p * n_items + i] = if lcg.next_f64() < pr { 1.0 } else { 0.0 };
+                }
+            }
+            let (copier, source) = (0usize, 1usize);
+            if copy {
+                for i in 0..n_items {
+                    if lcg.next_f64() < 0.9 {
+                        x[copier * n_items + i] = x[source * n_items + i];
+                    }
+                }
+            }
+            match k_variants(&x, n_persons, n_items, copier, source) {
+                Ok(r) => {
+                    let vals = [r.k1, r.k2, r.s1_index, r.s2_index];
+                    if copy {
+                        used_alt += 1;
+                        for (c, &v) in rej_alt.iter_mut().zip(vals.iter()) {
+                            if v < alpha {
+                                *c += 1;
+                            }
+                        }
+                    } else {
+                        used_null += 1;
+                        for (c, &v) in rej_null.iter_mut().zip(vals.iter()) {
+                            if v < alpha {
+                                *c += 1;
+                            }
+                        }
+                    }
+                }
+                Err(_) => {} // ws == 0 or degenerate design: skip rep
+            }
+        }
+    }
+    assert!(
+        used_null > 400 && used_alt > 400,
+        "too many degenerate reps"
+    );
+    let names = ["K1", "K2", "S1", "S2"];
+    for k in 0..4 {
+        let size = rej_null[k] as f64 / used_null as f64;
+        assert!(size <= 0.10, "{} null size {} > 0.10", names[k], size);
+    }
+    let pow_k2 = rej_alt[1] as f64 / used_alt as f64;
+    let pow_s2 = rej_alt[3] as f64 / used_alt as f64;
+    assert!(pow_k2 > 0.5, "K2 power {} <= 0.5", pow_k2);
+    assert!(pow_s2 > 0.3, "S2 power {} <= 0.3", pow_s2);
+}
