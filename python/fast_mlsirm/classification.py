@@ -404,3 +404,94 @@ def hanson_brennan_from_params(
         int(cut),
     )
     return _hb_to_result(res)
+
+
+@dataclass
+class SubkoviakResult:
+    """Subkoviak (1976) single-administration coefficient of agreement.
+
+    ``p_hat`` holds the per-person regression estimates of the item-domain
+    proportion (Eq. 16); ``per_person`` the individual coefficients P(i)
+    (Eqs. 7/19); ``agreement`` the group coefficient Pc (Eqs. 5/20);
+    ``chance_agreement`` the marginal chance term (Eqs. 9-10/21-22); and
+    ``kappa`` Cohen's kappa form (Eq. 11). ``alpha`` echoes the supplied
+    reliability or the KR-21 value derived with the population (ddof = 0)
+    variance."""
+
+    alpha: float
+    p_hat: np.ndarray
+    per_person: np.ndarray
+    agreement: float
+    chance_agreement: float
+    kappa: float
+
+
+_SUBKOVIAK_REFERENCES = """
+        Cohen, J. (1960). A coefficient of agreement for nominal scales.
+            *Educational and Psychological Measurement, 20*(1), 37-46.
+            (as cited in Subkoviak, 1976)
+        Lord, F. M., & Novick, M. R. (1968). *Statistical theories of
+            mental test scores*. Addison-Wesley. (as cited in Subkoviak,
+            1976)
+        Subkoviak, M. J. (1976). *Estimating reliability from a single
+            administration of a mastery test* (ERIC ED120229) [Paper
+            presentation]. AERA Annual Meeting. (Report version of
+            Subkoviak, 1976, *Journal of Educational Measurement, 13*(4),
+            265-276.)
+        Swaminathan, H., Hambleton, R. K., & Algina, J. (1974). Reliability
+            of criterion-referenced tests: A decision-theoretic
+            formulation. *Journal of Educational Measurement, 11*(4),
+            263-267. (as cited in Subkoviak, 1976)
+    """
+
+
+def subkoviak_agreement(
+    scores: np.ndarray,
+    n_items: int,
+    cuts: Sequence[float] | np.ndarray,
+    alpha: float | None = None,
+) -> SubkoviakResult:
+    """Subkoviak's single-administration coefficient of agreement for
+    mastery classifications under the simple binomial true-score model
+    (compute in Rust; Subkoviak, 1976, read in full from ERIC ED120229).
+
+    ``cuts`` are strictly increasing integer criteria; mastery at criterion
+    ``C`` means observed score ``>= C`` (verified against Table 1 of the
+    read source, whose Eq. 4 OCR prints ``>``). ``alpha=None`` derives
+    KR-21 with the population variance, clamped to [0, 1]; the compound
+    binomial refinement (Eqs. 12-14) is not implemented because it defers
+    to Lord & Novick (1968), which was not read. In LLM-as-a-Judge quality
+    management this estimates how consistently a judge's cut score would
+    reclassify the same outputs on a hypothetical retest, from one
+    administration only.
+
+    """ + _SUBKOVIAK_REFERENCES
+    core = _core_or_raise("subkoviak_agreement")
+    x = np.asarray(scores)
+    c = np.asarray(cuts)
+    for name, arr in (("scores", x), ("cuts", c)):
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} must be real-valued")
+    if x.dtype == object:
+        try:
+            x = x.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("scores must be numeric") from exc
+    if c.dtype == object:
+        try:
+            c = c.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("cuts must be numeric") from exc
+    x = np.ascontiguousarray(x.astype(np.float64).reshape(-1))
+    c = np.ascontiguousarray(c.astype(np.float64).reshape(-1))
+    res = core.subkoviak_agreement(
+        x, int(n_items), c, None if alpha is None else float(alpha)
+    )
+    return SubkoviakResult(
+        alpha=float(res["alpha"]),
+        p_hat=np.asarray(res["p_hat"], dtype=np.float64),
+        per_person=np.asarray(res["per_person"], dtype=np.float64),
+        agreement=float(res["agreement"]),
+        chance_agreement=float(res["chance_agreement"]),
+        kappa=float(res["kappa"]),
+    )

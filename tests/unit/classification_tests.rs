@@ -806,3 +806,188 @@ fn hb_mc_consistency_recovers_empirical_agreement() {
     let bias = diff_sum / used as f64;
     assert!(bias.abs() < 0.01, "consistency bias {bias}");
 }
+
+use super::subkoviak_agreement;
+
+// ---- Subkoviak (1976) single-administration coefficient of agreement ----
+//
+// All exact pins below are from the executed exact-Fraction oracle
+// (subkoviak_oracle.py) against the READ ERIC ED120229 source. Every
+// assert reads crate outputs (fields of SubkoviakResult).
+
+#[test]
+fn subkoviak_table1_alpha_supplied_exact() {
+    // Fixture A: paper Table 1 (n = 5, cut C = 4, alpha = .58 supplied
+    // because the footnote a21 = .58 is irreproducible from the printed
+    // S^2 = 2.61 -- disclosed in the core doc comment).
+    let x = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
+    let r = subkoviak_agreement(&x, 5, &[4.0], Some(0.58)).unwrap();
+    // Kills MU5 (swapped Eq. 16 weights: p_hat[0] would be .2668) and
+    // anchors per-person q ordering via the p_hat pin itself.
+    assert!((r.alpha - 0.58).abs() < 1e-15, "alpha {}", r.alpha);
+    assert!((r.p_hat[0] - 0.1932).abs() < 1e-12, "p_hat0 {}", r.p_hat[0]);
+    // Kills MU1 (mastery > vs >=) and MU2 (missing squaring: P(i) = 1).
+    assert!(
+        (r.per_person[0] - 0.988290295814609).abs() < 1e-12,
+        "P(0) {}",
+        r.per_person[0]
+    );
+    assert!(
+        (r.per_person[1] - 0.506648836339306).abs() < 1e-12,
+        "P(1) {}",
+        r.per_person[1]
+    );
+    assert!(
+        (r.agreement - 0.754404497506925).abs() < 1e-12,
+        "Pc {}",
+        r.agreement
+    );
+    // Kills MU3 (mean-of-squares instead of square-of-means chance term).
+    assert!(
+        (r.chance_agreement - 0.659131077528193).abs() < 1e-12,
+        "Pchance {}",
+        r.chance_agreement
+    );
+    assert!(
+        (r.kappa - 0.279501631559306).abs() < 1e-12,
+        "kappa {}",
+        r.kappa
+    );
+}
+
+#[test]
+fn subkoviak_derived_kr21_alpha() {
+    // Fixture B: same scores, alpha = None -> KR-21 with population
+    // variance 2.61 -> alpha = 19/29. Kills MU4 (ddof = 1 gives .7126).
+    let x = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
+    let r = subkoviak_agreement(&x, 5, &[4.0], None).unwrap();
+    assert!((r.alpha - 19.0 / 29.0).abs() < 1e-12, "alpha {}", r.alpha);
+    assert!(
+        (r.agreement - 0.763498543160431).abs() < 1e-12,
+        "Pc {}",
+        r.agreement
+    );
+    assert!(
+        (r.kappa - 0.343090844315065).abs() < 1e-12,
+        "kappa {}",
+        r.kappa
+    );
+}
+
+#[test]
+fn subkoviak_multi_cut_ml() {
+    // Fixture C: asymmetric 3-category split (h = 3), n = 6,
+    // cuts = [2, 5], alpha = 1 (ML p_hat = X/n, Eq. 15). Kills MU1's
+    // interior-boundary variant (upper bound <= C vs < C).
+    let x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.0, 3.0];
+    let r = subkoviak_agreement(&x, 6, &[2.0, 5.0], Some(1.0)).unwrap();
+    assert!(
+        (r.per_person[0] - 0.611776411438135).abs() < 1e-12,
+        "P(0) {}",
+        r.per_person[0]
+    );
+    assert!(
+        (r.agreement - 0.691963008928055).abs() < 1e-12,
+        "Pc {}",
+        r.agreement
+    );
+    assert!(
+        (r.chance_agreement - 0.344265263966199).abs() < 1e-12,
+        "Pchance {}",
+        r.chance_agreement
+    );
+    assert!(
+        (r.kappa - 0.53024146176074).abs() < 1e-12,
+        "kappa {}",
+        r.kappa
+    );
+}
+
+#[test]
+fn subkoviak_alpha_zero_kappa_zero() {
+    // Fixture D: alpha = 0 collapses every p_hat to M/n, so P(i) is
+    // identical across persons and Pc equals Pchance exactly -> kappa 0.
+    // Over-collapse anchor; reads crate kappa/per_person/p_hat.
+    let x = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
+    let r = subkoviak_agreement(&x, 5, &[4.0], Some(0.0)).unwrap();
+    assert!(r.kappa.abs() < 1e-12, "kappa {}", r.kappa);
+    for (i, p) in r.p_hat.iter().enumerate() {
+        assert!((p - 0.46).abs() < 1e-15, "p_hat[{i}] {p}");
+    }
+    for (i, pi) in r.per_person.iter().enumerate() {
+        assert!((pi - r.per_person[0]).abs() < 1e-15, "P({i}) {pi} != P(0)");
+    }
+}
+
+#[test]
+fn subkoviak_error_contract() {
+    let ok = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
+    // n_items too small.
+    assert!(subkoviak_agreement(&[0.0, 1.0], 1, &[1.0], Some(0.5)).is_err());
+    // Fewer than 2 persons.
+    assert!(subkoviak_agreement(&[3.0], 5, &[4.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&[], 5, &[4.0], Some(0.5)).is_err());
+    // Non-integer, out-of-range, and non-finite scores.
+    assert!(subkoviak_agreement(&[0.5, 1.0], 5, &[4.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&[6.0, 1.0], 5, &[4.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&[-1.0, 1.0], 5, &[4.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&[f64::NAN, 1.0], 5, &[4.0], Some(0.5)).is_err());
+    // Cuts: empty, out of 1..=n, non-integer, not strictly increasing.
+    assert!(subkoviak_agreement(&ok, 5, &[], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[0.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[6.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[2.5], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[3.0, 3.0], Some(0.5)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[4.0, 2.0], Some(0.5)).is_err());
+    // Alpha out of [0, 1] or non-finite.
+    assert!(subkoviak_agreement(&ok, 5, &[4.0], Some(-0.1)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[4.0], Some(1.1)).is_err());
+    assert!(subkoviak_agreement(&ok, 5, &[4.0], Some(f64::NAN)).is_err());
+    // KR-21 derivation with zero variance.
+    assert!(subkoviak_agreement(&[3.0, 3.0, 3.0], 5, &[4.0], None).is_err());
+}
+
+#[test]
+#[ignore = "500-rep Monte Carlo; run with --ignored"]
+fn subkoviak_mc_500_recovers_two_administration_agreement() {
+    // Value recovery of the agreement formula itself (Eqs. 7-8/5),
+    // decoupled from p-hat estimation bias: each person's true domain
+    // proportion is set to exactly X/n so the ML (alpha = 1) p-hat equals
+    // truth, then crate Pc is compared with the empirical agreement rate
+    // of two independent simulated binomial administrations at that truth.
+    // (The estimator variants are genuinely biased under this design --
+    // measured ML alpha=1 bias ~ +.057 and KR-21 regression bias ~ -.045,
+    // consistent with the paper's own report that the ML estimate
+    // overstates agreement -- so an estimator-in-the-loop MC cannot pin
+    // the formula.) One operand per rep is the crate output, the other is
+    // simulation truth.
+    let n_items = 30usize;
+    let reps = 500u64;
+    let cut = 17.0f64;
+    let scores: Vec<f64> = (10..=24).map(|x| x as f64).collect();
+    let est = subkoviak_agreement(&scores, n_items, &[cut], Some(1.0)).unwrap();
+    let mut agree = 0u64;
+    let mut total = 0u64;
+    let mut r = Lcg::new(91_000);
+    for _ in 0..reps {
+        for x in &scores {
+            let p = x / n_items as f64;
+            let mut a = 0u32;
+            let mut b = 0u32;
+            for _ in 0..n_items {
+                if r.unif() < p {
+                    a += 1;
+                }
+                if r.unif() < p {
+                    b += 1;
+                }
+            }
+            if (a as f64 >= cut) == (b as f64 >= cut) {
+                agree += 1;
+            }
+            total += 1;
+        }
+    }
+    let bias = est.agreement - agree as f64 / total as f64;
+    assert!(bias.abs() < 0.02, "agreement bias {bias}");
+}
