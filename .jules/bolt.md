@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-05-19 - Euclidean distance intermediate array optimizations
+**Learning:** `np.sqrt(eps_distance + np.sum(diff * diff, axis=2))` or similar `np.sum(diff * diff)` when `diff` is a 3D array creates a massive intermediate 3D array of size (N, J, D), which leads to significant memory pressure and slower execution when N or J is large.
+**Action:** Replace 3D broadcast diff calculations with 2D BLAS dot-products by calculating squared norms with `np.einsum('ij,ij->i', x, x)` individually, and then combining them: `np.sqrt(eps_distance + np.maximum(sq_z[:, None] - 2 * np.dot(zeta, x_grid.T) + sq_x[None, :], 0.0))`. This drops memory overhead to O(NJ) and uses C-optimized dot products.

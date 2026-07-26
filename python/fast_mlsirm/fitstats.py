@@ -267,8 +267,9 @@ def _icc_grid(
     theta = shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
     if uses_space:
-        diff = x_grid[None, :, :] - params.zeta[:, None, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        sq_x = np.einsum('ij,ij->i', x_grid, x_grid)
+        sq_z = np.einsum('ij,ij->i', params.zeta, params.zeta)
+        dist = np.sqrt(eps_distance + np.maximum(sq_z[:, None] - 2 * np.dot(params.zeta, x_grid.T) + sq_x[None, :], 0.0))  # (I, Nx)
         eta = eta - math.exp(params.tau) * dist[:, None, :]
     probs = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     return probs, t_w, x_w, t_nodes
@@ -684,8 +685,11 @@ def person_fit(
     # eta_pi at EAP estimates
     eta = a[None, :] * theta[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        xi_arr = np.asarray(params.xi)
+        zeta_arr = np.asarray(params.zeta)
+        sq_x = np.einsum('ij,ij->i', xi_arr, xi_arr)
+        sq_z = np.einsum('ij,ij->i', zeta_arr, zeta_arr)
+        dist = np.sqrt(eps_distance + np.maximum(sq_z[None, :] - 2 * np.dot(xi_arr, zeta_arr.T) + sq_x[:, None], 0.0))
         eta = eta - math.exp(params.tau) * dist
     p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     p = np.clip(p, 1e-12, 1.0 - 1e-12)
@@ -763,8 +767,11 @@ def infit_outfit(
     a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        xi_arr = np.asarray(params.xi)
+        zeta_arr = np.asarray(params.zeta)
+        sq_x = np.einsum('ij,ij->i', xi_arr, xi_arr)
+        sq_z = np.einsum('ij,ij->i', zeta_arr, zeta_arr)
+        dist = np.sqrt(eps_distance + np.maximum(sq_z[None, :] - 2 * np.dot(xi_arr, zeta_arr.T) + sq_x[:, None], 0.0))
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
@@ -936,17 +943,14 @@ def select_items(
         pos_count = np.where(obs_r, y_r, 0.0).sum(axis=0)
         neg_count = obs_r.sum(axis=0) - pos_count
         gamma = float(np.exp(result.params.tau))
-        mean_dist = gamma * np.mean(
-            np.sqrt(
-                1e-8
-                + np.sum(
-                    (np.asarray(result.params.xi)[:, None, :]
-                     - np.asarray(result.params.zeta)[None, :, :]) ** 2,
-                    axis=2,
-                )
-            ),
-            axis=0,
+        xi_arr = np.asarray(result.params.xi)
+        zeta_arr = np.asarray(result.params.zeta)
+        sq_x = np.einsum('ij,ij->i', xi_arr, xi_arr)
+        sq_z = np.einsum('ij,ij->i', zeta_arr, zeta_arr)
+        dist = np.sqrt(
+            1e-8 + np.maximum(sq_z[None, :] - 2 * np.dot(xi_arr, zeta_arr.T) + sq_x[:, None], 0.0)
         )
+        mean_dist = gamma * np.mean(dist, axis=0)
         med = float(np.median(mean_dist))
         mad = float(np.median(np.abs(mean_dist - med))) * 1.4826
         iso_z = (mean_dist - med) / mad if mad > 0 else np.zeros_like(mean_dist)
