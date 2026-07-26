@@ -1420,7 +1420,7 @@ pub struct WoodruffSawyerResult {
     /// Estimated full-test pass rate `p` (from smoothed half-test margins
     /// for the SB method; `1 - Phi(K_q)` for the normal method).
     pub pass_rate: f64,
-    /// Half-test agreement coefficient `phi` (eq. 4 of the read source).
+    /// Half-test agreement coefficient `phi` (eq. 1 of the read source).
     /// NaN for the normal method (not defined there).
     pub phi_half: f64,
     /// Half-test raw agreement `theta = pi00 + pi11`. NaN for the normal
@@ -1458,7 +1458,7 @@ pub struct WoodruffSawyerResult {
 /// only the off-diagonal, `pi01_s = (pi01 + pi10) / 2` (source p. 7), so
 /// the margins `p = pi01_s + pi11`, `q = 1 - p` are symmetric.
 ///
-/// Half-test coefficient (eq. 4): `phi = 1 - pi01_s / (p q)`; raw
+/// Half-test coefficient (eq. 1): `phi = 1 - pi01_s / (p q)`; raw
 /// agreement `theta = pi00 + pi11` (raw diagonal — unchanged by the
 /// off-diagonal smoothing). Full-length step-up (eq. 5) is Spearman-Brown
 /// on `phi`: `phi* = 2 phi / (1 + phi)`; the equivalent single-expression
@@ -1538,8 +1538,14 @@ pub fn woodruff_sawyer_sb(counts: &[f64]) -> Result<WoodruffSawyerResult, String
 /// `pi*00 = P[Z1 <= K_q, Z2 <= K_q; r_SB]`, evaluated via this crate's
 /// upper-tail BVN quadrature through the central-symmetry identity
 /// `P[Z1 <= a, Z2 <= a] = P[Z1 > -a, Z2 > -a]` (DERIVED, standard BVN
-/// symmetry; oracle-verified against mpmath). Then `pi*01 = q - pi*00`,
-/// `pi*11 = p - pi*01`, `theta* = pi*00 + pi*11`, and
+/// symmetry; oracle-verified against mpmath). The pass-pass cell
+/// `pi*11 = P[Z1 > K_q, Z2 > K_q; r_SB]` is evaluated directly, and the
+/// off-diagonal is recovered from the simplex,
+/// `pi*01 = (1 - pi*00 - pi*11) / 2` (clamped at 0 against quadrature
+/// undershoot; the source's marginal-subtraction chain `pi*01 = q - pi*00`
+/// is algebraically identical but numerically returned tiny negative
+/// pass-pass cells for near-degenerate valid inputs). Then
+/// `theta* = pi*00 + pi*11` (capped at 1) and
 /// `phi* = 1 - pi*01 / (p q)` (kappa for the symmetric 2x2 table).
 /// `phi_half`/`theta_half` are NaN: the source defines no half-test
 /// agreement quantities on this path.
@@ -1585,11 +1591,19 @@ pub fn woodruff_sawyer_normal(
             "cut is outside the resolvable score range (fail rate rounds to 0 or 1)".into(),
         );
     }
-    // P[Z1 <= Kq, Z2 <= Kq] = P[Z1 > -Kq, Z2 > -Kq] by central symmetry.
+    // P[Z1 <= Kq, Z2 <= Kq] = P[Z1 > -Kq, Z2 > -Kq] by central symmetry;
+    // the pass-pass diagonal cell is evaluated directly as
+    // P[Z1 > Kq, Z2 > Kq]. Deriving the off-diagonal from BOTH diagonal
+    // cells, `pi*01 = (1 - pi*00 - pi*11) / 2`, keeps the reported table on
+    // the probability simplex: the earlier chained form
+    // `pi*11 = p - (q - pi*00)` returned tiny NEGATIVE pass-pass cells
+    // (~-5e-8) for valid inputs when quadrature/CDF error exceeded a
+    // near-zero true cell (impl-review CONFIRMED-MEDIUM). A tiny-undershoot
+    // clamp at 0 absorbs quadrature error in the off-diagonal itself.
     let pi00 = bvn_upper(-kq, -kq, r_sb);
-    let pi01 = q - pi00;
-    let pi11 = p - pi01;
-    let theta = pi00 + pi11;
+    let pi11 = bvn_upper(kq, kq, r_sb);
+    let pi01 = (0.5 * (1.0 - pi00 - pi11)).max(0.0);
+    let theta = (pi00 + pi11).min(1.0);
     let phi_star = 1.0 - pi01 / (p * q);
     Ok(WoodruffSawyerResult {
         pass_rate: p,

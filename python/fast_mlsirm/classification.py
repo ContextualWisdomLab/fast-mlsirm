@@ -654,7 +654,7 @@ def woodruff_sawyer_sb(
 
     ``counts = [n00, n01, n10, n11]`` is the 2x2 half-test pass-fail table
     (0 = fail, 1 = pass). The off-diagonal is symmetrized, the half-test
-    agreement coefficient ``phi`` (eq. 4) is stepped up by Spearman-Brown
+    agreement coefficient ``phi`` (eq. 1) is stepped up by Spearman-Brown
     (eq. 5), and the full-length table / ``theta*`` (eq. 8) is
     reconstructed. Per the source (pp. 9-10) ``phi*`` is positively biased
     when the halves are not strictly parallel. In LLM-as-a-Judge quality

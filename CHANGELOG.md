@@ -127,7 +127,7 @@
   and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
   table) from a single administration split into parallel halves. The SB
   method symmetrizes the half-test 2x2 table's off-diagonal, computes
-  `phi = 1 - pi01/(pq)` (eq. 4), steps up by Spearman-Brown
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
   `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
   (eq. 8); the normal method steps up the half-test correlation
   (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and

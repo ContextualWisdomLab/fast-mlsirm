@@ -1243,6 +1243,25 @@ fn ws_normal_float_pins() {
     assert!((r.phi - 0.48908915212993364).abs() < 1e-6);
 }
 
+/// Regression (impl-review CONFIRMED-MEDIUM): with negative r_half the
+/// chained marginal-subtraction form `pi11 = p - (q - pi00)` returned tiny
+/// NEGATIVE pass-pass cells (~-5e-8) when quadrature/CDF error exceeded a
+/// near-zero true cell. Both diagonal cells are now evaluated directly via
+/// the BVN upper tail and the off-diagonal recovered from the simplex.
+/// Every assert reads the crate's returned cells; the killing mutation is
+/// reverting pi11 to the chained subtraction (pi11 goes negative here).
+#[test]
+fn ws_normal_negative_rho_cells_nonnegative() {
+    for &(mean, sd, cut, r_half) in &[(0.0, 1.0, 0.6, -0.332), (0.0, 1.0, 2.0, -0.3)] {
+        let r = woodruff_sawyer_normal(mean, sd, cut, r_half).unwrap();
+        assert!(r.pi00.is_finite() && r.pi00 >= 0.0, "pi00 = {}", r.pi00);
+        assert!(r.pi01.is_finite() && r.pi01 >= 0.0, "pi01 = {}", r.pi01);
+        assert!(r.pi11.is_finite() && r.pi11 >= 0.0, "pi11 = {}", r.pi11);
+        assert!((r.pi00 + 2.0 * r.pi01 + r.pi11 - 1.0).abs() < 1e-6);
+        assert!(r.theta >= 0.0 && r.theta <= 1.0);
+    }
+}
+
 /// Error contract. Each arm reads the Err/Ok discriminant returned by the
 /// crate. Also pins that a negative half-test phi passes through (not an
 /// error) and that the SB phi = -1 singularity errs.
