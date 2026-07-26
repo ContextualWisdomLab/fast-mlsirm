@@ -1721,9 +1721,18 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
         raise ValueError(
             f"fide_rating: kv must be a (elite, experienced, novice) triple, got shape {kv_arr.shape}"
         )
-    if isinstance(init, (bool, np.bool_)):
+    init_raw = np.asarray(init)
+    if (
+        isinstance(init, (bool, np.bool_))
+        or init_raw.dtype.kind == "b"
+        or (
+            init_raw.dtype == object
+            and init_raw.ndim == 0
+            and isinstance(init_raw.item(), (bool, np.bool_))
+        )
+    ):
         raise ValueError("fide_rating: init must be real numeric, not bool")
-    if np.iscomplexobj(np.asarray(init)):
+    if np.iscomplexobj(init_raw):
         raise ValueError("fide_rating: init must be real, not complex")
     try:
         init = float(init)

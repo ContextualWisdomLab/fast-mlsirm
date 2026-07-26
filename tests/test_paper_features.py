@@ -10052,6 +10052,10 @@ class TestFide:
             fide_rating([[1, 0, 1, 1.0]], 2, kv=np.array([True, True, True]))
         with pytest.raises(ValueError, match="bool"):
             fide_rating([[1, 0, 1, 1.0]], 2, init=True)
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=np.array(True))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=np.array(True, dtype=object))
 
     def test_elo_reduction(self):
         import numpy as np
