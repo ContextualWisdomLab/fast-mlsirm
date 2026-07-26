@@ -2616,3 +2616,254 @@ fn delta_plot_mc_recovery_500() {
     assert!(hit_rate >= 0.80, "planted-DIF hit rate {hit_rate}");
     assert!(mean_false <= 0.6, "mean false flags {mean_false}");
 }
+
+// ===========================================================================
+// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer, 2003; ED481063)
+// ===========================================================================
+// Oracle: independent Python (math.erfc, Fraction cross-check) in the spec
+// artifacts; rational pins are exact fractions (133/135, 23/108, -523/390,
+// 23/39). Category-probability pins use 5e-7 tolerance (crate erfc bound
+// 1.2e-7). Every assert reads values returned by `eb_mh_dif`.
+
+/// Main pinned fixture. Kills MU1 (W numerator swap: every weight pin
+/// fails), MU2 (variance divisor n: tau2_raw pin 23/16 fails), MU4 (wrong
+/// posterior variance: post_var pins fail), MU5 (wrong category cuts:
+/// cat_probs pins fail).
+#[test]
+fn eb_mh_dif_pinned_main_fixture() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let r = eb_mh_dif(&mh, &se).unwrap();
+    assert!((r.mu - (-0.25)).abs() < 1e-12, "mu {}", r.mu);
+    assert!(
+        (r.tau2_raw - 1.4375).abs() < 1e-12,
+        "tau2_raw {}",
+        r.tau2_raw
+    );
+    assert!((r.tau2 - 1.4375).abs() < 1e-12, "tau2 {}", r.tau2);
+    let w_exp = [
+        23.0 / 27.0,
+        0.6919374247894103,
+        0.8998435054773082,
+        23.0 / 39.0,
+    ];
+    let m_exp = [
+        133.0 / 135.0,
+        -0.3537906137184116,
+        0.2449139280125195,
+        -523.0 / 390.0,
+    ];
+    let v_exp = [
+        23.0 / 108.0,
+        0.4428399518652227,
+        0.14397496087636932,
+        23.0 / 39.0,
+    ];
+    for i in 0..4 {
+        assert!(
+            (r.weight[i] - w_exp[i]).abs() < 1e-12,
+            "W[{i}] {}",
+            r.weight[i]
+        );
+        assert!(
+            (r.post_mean[i] - m_exp[i]).abs() < 1e-12,
+            "post_mean[{i}] {}",
+            r.post_mean[i]
+        );
+        assert!(
+            (r.post_var[i] - v_exp[i]).abs() < 1e-12,
+            "post_var[{i}] {}",
+            r.post_var[i]
+        );
+    }
+    let p_exp: [[f64; 5]; 4] = [
+        [
+            3.616990144296935e-08,
+            8.435105866275827e-06,
+            0.512796531024999,
+            0.3548930710352117,
+            0.1323019266640216,
+        ],
+        [
+            0.042496191961947136,
+            0.12326089348540713,
+            0.8132853278520433,
+            0.018287127957632876,
+            0.0026704587429695753,
+        ],
+        [
+            2.1261693308649007e-06,
+            0.0005152164918145778,
+            0.9761871639766915,
+            0.022825215809679777,
+            0.00047027755248330673,
+        ],
+        [
+            0.4180002533326439,
+            0.25350523187957874,
+            0.32734426739079336,
+            0.001042236915508532,
+            0.0001080104814755442,
+        ],
+    ];
+    for i in 0..4 {
+        let mut sum = 0.0;
+        for k in 0..5 {
+            assert!(
+                (r.cat_probs[i][k] - p_exp[i][k]).abs() < 5e-7,
+                "cat_probs[{i}][{k}] {}",
+                r.cat_probs[i][k]
+            );
+            sum += r.cat_probs[i][k];
+        }
+        // Sanity only (a normalizing mutant could pass this row-sum alone).
+        assert!((sum - 1.0).abs() < 1e-9, "row {i} sum {sum}");
+    }
+}
+
+/// Negative tau2_raw floors to 0 and the posterior collapses to a point
+/// mass at mu. Kills MU3 (no flooring: weights/probs become NaN or
+/// negative-variance garbage). All asserts read crate outputs.
+#[test]
+fn eb_mh_dif_degenerate_floor() {
+    let r = eb_mh_dif(&[0.5, 0.5, 0.5], &[1.0, 1.0, 1.0]).unwrap();
+    assert!(
+        (r.tau2_raw - (-1.0)).abs() < 1e-12,
+        "tau2_raw {}",
+        r.tau2_raw
+    );
+    assert_eq!(r.tau2, 0.0);
+    for i in 0..3 {
+        assert_eq!(r.weight[i], 0.0);
+        assert!((r.post_mean[i] - 0.5).abs() < 1e-15);
+        assert_eq!(r.post_var[i], 0.0);
+        assert_eq!(r.cat_probs[i], [0.0, 0.0, 1.0, 0.0, 0.0]);
+    }
+}
+
+/// Point-mass boundary conventions (implementation-defined; degenerate
+/// case only). Reads crate cat_probs; kills sign-flip and cut-shuffle
+/// mutants in `eb_point_mass_cats`.
+#[test]
+fn eb_mh_dif_point_mass_categories() {
+    // mu = 1.2 -> B+ (1 <= |m| < 1.5, positive side).
+    let r = eb_mh_dif(&[1.2, 1.2], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.tau2, 0.0);
+    assert_eq!(r.cat_probs[0], [0.0, 0.0, 0.0, 1.0, 0.0]);
+    // mu = -1.6 -> C-.
+    let r = eb_mh_dif(&[-1.6, -1.6], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.cat_probs[0], [1.0, 0.0, 0.0, 0.0, 0.0]);
+    // Boundary |m| exactly 1.5 -> C (>= inclusion), positive side.
+    let r = eb_mh_dif(&[1.5, 1.5], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.cat_probs[0], [0.0, 0.0, 0.0, 0.0, 1.0]);
+}
+
+/// Structure invariant: the noisier item (bigger se) shrinks farther in
+/// absolute distance even though its raw |MH| is larger. Reads crate
+/// post_mean; kills weight-inversion and se-index-map mutants.
+#[test]
+fn eb_mh_dif_shrinkage_asymmetry() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let r = eb_mh_dif(&mh, &se).unwrap();
+    let d1 = (mh[0] - r.post_mean[0]).abs();
+    let d4 = (mh[3] - r.post_mean[3]).abs();
+    assert!(d4 > d1 + 0.5, "shrink distances d4={d4} d1={d1}");
+    // Strict weight monotonicity in se: se order item3 < item1 < item2 <
+    // item4 must give strictly decreasing crate weights.
+    assert!(r.weight[2] > r.weight[0]);
+    assert!(r.weight[0] > r.weight[1]);
+    assert!(r.weight[1] > r.weight[3]);
+}
+
+/// Permutation equivariance: reversing the items reverses every per-item
+/// output and leaves the scalar priors unchanged. Reads both crate results;
+/// kills index-shift mutants. Tolerance 1e-12 (summation order differs).
+#[test]
+fn eb_mh_dif_permutation_equivariance() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let a = eb_mh_dif(&mh, &se).unwrap();
+    let mh_r = [-2.1, 0.3, -0.4, 1.2];
+    let se_r = [1.0, 0.4, 0.8, 0.5];
+    let b = eb_mh_dif(&mh_r, &se_r).unwrap();
+    assert!((a.mu - b.mu).abs() < 1e-12);
+    assert!((a.tau2 - b.tau2).abs() < 1e-12);
+    for i in 0..4 {
+        let j = 3 - i;
+        assert!((a.weight[i] - b.weight[j]).abs() < 1e-12);
+        assert!((a.post_mean[i] - b.post_mean[j]).abs() < 1e-12);
+        assert!((a.post_var[i] - b.post_var[j]).abs() < 1e-12);
+        for k in 0..5 {
+            assert!((a.cat_probs[i][k] - b.cat_probs[j][k]).abs() < 1e-12);
+        }
+    }
+}
+
+/// Error contract. Every arm reads the crate Err.
+#[test]
+fn eb_mh_dif_errors() {
+    assert!(eb_mh_dif(&[1.0, 2.0], &[1.0]).is_err()); // length mismatch
+    assert!(eb_mh_dif(&[1.0], &[1.0]).is_err()); // n < 2
+    assert!(eb_mh_dif(&[], &[]).is_err()); // n = 0
+    assert!(eb_mh_dif(&[f64::NAN, 1.0], &[1.0, 1.0]).is_err());
+    assert!(eb_mh_dif(&[f64::INFINITY, 1.0], &[1.0, 1.0]).is_err());
+    assert!(eb_mh_dif(&[1.0, 2.0], &[0.0, 1.0]).is_err()); // se = 0
+    assert!(eb_mh_dif(&[1.0, 2.0], &[-0.5, 1.0]).is_err()); // se < 0
+    assert!(eb_mh_dif(&[1.0, 2.0], &[f64::NAN, 1.0]).is_err());
+    assert!(eb_mh_dif(&[1.0, 2.0], &[f64::INFINITY, 1.0]).is_err());
+    // se^2 overflow.
+    assert!(eb_mh_dif(&[1.0, 2.0], &[1e200, 1.0]).is_err());
+    // Variance overflow from huge mh.
+    assert!(eb_mh_dif(&[1e300, -1e300], &[1.0, 1.0]).is_err());
+    // Posterior denominator overflow: tau2 and se^2 individually finite but
+    // tau2 + se^2 = inf. Reads the crate Err (impl-review regression: the
+    // pre-fix code silently returned weight = 0 here).
+    assert!(eb_mh_dif(&[9e153, -9e153], &[1e154, 1.0]).is_err());
+}
+
+/// MC-500 (supplemental, seeded): EB posterior means beat raw MH in RMSE
+/// against the generating DIF (the paper's core validity claim, report
+/// pp. 5-6), and mean tau2_hat tracks the generating tau2. Reads crate
+/// post_mean/tau2 per replication.
+#[test]
+#[ignore]
+fn eb_mh_dif_mc_500_shrinkage_beats_raw() {
+    let n_items = 40;
+    let tau2_true: f64 = 0.6;
+    let mu_true = 0.3;
+    let reps = 500;
+    let mut rng = Lcg(0x00eb_d1f5_eed5_0001);
+    let (mut sse_eb, mut sse_raw) = (0.0, 0.0);
+    let mut tau2_sum = 0.0;
+    for _ in 0..reps {
+        let mut theta = Vec::with_capacity(n_items);
+        let mut mh = Vec::with_capacity(n_items);
+        let mut se = Vec::with_capacity(n_items);
+        for i in 0..n_items {
+            let t = mu_true + tau2_true.sqrt() * rng.normal();
+            let s = 0.3 + 0.7 * (i as f64) / ((n_items - 1) as f64);
+            theta.push(t);
+            se.push(s);
+            mh.push(t + s * rng.normal());
+        }
+        let r = eb_mh_dif(&mh, &se).unwrap();
+        tau2_sum += r.tau2;
+        for i in 0..n_items {
+            sse_eb += (r.post_mean[i] - theta[i]).powi(2);
+            sse_raw += (mh[i] - theta[i]).powi(2);
+        }
+    }
+    let denom = (reps * n_items) as f64;
+    let rmse_eb = (sse_eb / denom).sqrt();
+    let rmse_raw = (sse_raw / denom).sqrt();
+    assert!(
+        rmse_eb < rmse_raw,
+        "EB RMSE {rmse_eb} must beat raw {rmse_raw}"
+    );
+    let tau2_mean = tau2_sum / reps as f64;
+    assert!(
+        (tau2_mean - tau2_true).abs() / tau2_true < 0.15,
+        "mean tau2_hat {tau2_mean} vs true {tau2_true}"
+    );
+}

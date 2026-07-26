@@ -119,6 +119,20 @@
 
 ### Added
 
+- **Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)**
+  (`fast_mlsirm.eb_mh_dif`; in Rust `mlsirm_core::dif::eb_mh_dif`, PyO3
+  `py_eb_mh_dif`): shrinkage enhancement of MH D-DIF statistics — prior
+  `N(μ, τ²)` estimated from the supplied item set (`μ` = mean, `τ²` =
+  across-item variance minus mean squared SE, floored at 0), per-item
+  posterior mean `W·MH + (1−W)·μ` and variance `W·SE²` with
+  `W = τ²/(τ² + SE²)`, plus posterior probabilities of the five ETS DIF
+  categories (`C−, B−, A, B+, C+`, normal areas delimited at ±1.5/±1).
+  Formulas trace to the READ report Zwick & Thayer (2003, LSAC RR / ERIC
+  ED481063, statistical-model section); the variance divisor (`n−1`) and
+  the degenerate `τ² = 0` point-mass boundary conventions are documented
+  implementation choices not printed in the source. Takes MH D-DIF/SE
+  pairs (e.g. from `mantel_haenszel_dif`), so any MH pipeline output can
+  be stabilized for small samples.
 - **Angoff Delta plot DIF detection (deltaPlotR-faithful, response input)**
   (`fast_mlsirm.delta_plot`; in Rust `mlsirm_core::dif::delta_plot`, PyO3
   `py_delta_plot`): transformed item difficulties `4·qnorm(1−p)+13`, the

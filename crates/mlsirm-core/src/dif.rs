@@ -2143,6 +2143,197 @@ pub fn delta_plot(
     result.converged = converged;
     Ok(result)
 }
+
+// ---------------------------------------------------------------------------
+// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)
+//
+// Source governance:
+// - READ: Zwick, R., & Thayer, D. T. (2003). An empirical Bayes enhancement
+//   of Mantel-Haenszel DIF analysis for computer-adaptive tests (LSAC
+//   Research Report Series; ERIC ED481063). All formulas below trace to the
+//   statistical-model section (report pp. 3-5): model MH_i ~ N(theta_i,
+//   sigma_i^2) with sigma_i^2 set to SE^2(MH_i) (Eq. 1); prior theta_i ~
+//   N(mu, tau^2) (Eq. 2); posterior normal with mean W_i*MH_i + (1-W_i)*mu
+//   and variance W_i*sigma_i^2 where W_i = tau^2/(tau^2 + sigma_i^2)
+//   (Eqs. 4-6); prior estimates mu_hat = mean(MH_i), tau2_hat = Var(MH_i) -
+//   mean(SE^2(MH_i)) (Eq. 7); negative tau2 estimates floored at zero
+//   (report footnote 5); five-category posterior probabilities as normal
+//   areas delimited at -1.5, -1, 1, 1.5 on the MH D-DIF (ETS delta) scale
+//   (report p. 4).
+// - NOT READ (history only; no formulas taken from them): Zwick, Thayer &
+//   Lewis (1999), Journal of Educational Measurement 36(1), 1-28; Zwick,
+//   Thayer & Lewis (1997) ETS RR; Longford, Holland & Thayer (1993).
+//
+// Implementation choices NOT stated in the read source (documented, not
+// paper formulas):
+// - Variance divisor: the source does not print the Var(MH_i) divisor. This
+//   implementation uses the unbiased sample variance (divisor n-1), a
+//   method-of-moments choice: conditional on fixed items, E[S^2 | theta] =
+//   S_theta^2 + mean(sigma_i^2), so deflating by mean(SE^2) estimates the
+//   finite-pool sample variance of the true DIF values (and the
+//   superpopulation tau^2 only under iid item effects). NOT verified
+//   against ETS/author software (none available).
+// - Degenerate tau2 == 0 point mass: the posterior collapses to mu_hat, so
+//   category probabilities become the indicator of mu_hat's ETS category
+//   (A: |m| < 1; B: 1 <= |m| < 1.5; C: |m| >= 1.5; the sign of m selects
+//   the -/+ variant). Boundary inclusion is implementation-defined; in the
+//   source's continuous posterior the boundaries have probability zero.
+// - Normal CDF: crate `fitstats::erfc` rational approximation
+//   (|error| < 1.2e-7), an engineering choice.
+// ---------------------------------------------------------------------------
+
+/// Result of [`eb_mh_dif`]. Category probability columns are ordered
+/// `[C-, B-, A, B+, C+]`.
+#[derive(Clone, Debug)]
+pub struct EbDifResult {
+    /// Prior mean estimate `mu_hat = mean(mh)`.
+    pub mu: f64,
+    /// Floored prior variance `max(0, tau2_raw)`; the only value entering
+    /// the posterior.
+    pub tau2: f64,
+    /// Pre-floor diagnostic `Var(mh) - mean(se^2)` (divisor `n-1`).
+    pub tau2_raw: f64,
+    /// Shrinkage weights `W_i = tau2 / (tau2 + se_i^2)`.
+    pub weight: Vec<f64>,
+    /// Posterior means `W_i * mh_i + (1 - W_i) * mu` (EB point estimates).
+    pub post_mean: Vec<f64>,
+    /// Posterior variances `W_i * se_i^2`.
+    pub post_var: Vec<f64>,
+    /// Posterior probabilities of the five ETS DIF categories.
+    pub cat_probs: Vec<[f64; 5]>,
+}
+
+/// Standard normal CDF via the crate's `erfc` approximation
+/// (|error| < 1.2e-7; see `fitstats::erfc`).
+fn eb_phi(z: f64) -> f64 {
+    0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2)
+}
+
+/// Point-mass ETS category indicator for the degenerate `tau2 == 0` case;
+/// boundary conventions are implementation-defined (see section header).
+fn eb_point_mass_cats(m: f64) -> [f64; 5] {
+    let a = m.abs();
+    let mut p = [0.0; 5];
+    let idx = if a < 1.0 {
+        2
+    } else if a < 1.5 {
+        if m < 0.0 {
+            1
+        } else {
+            3
+        }
+    } else if m < 0.0 {
+        0
+    } else {
+        4
+    };
+    p[idx] = 1.0;
+    p
+}
+
+/// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer, 2003; ERIC
+/// ED481063). Takes per-item MH D-DIF statistics and their standard errors
+/// on the ETS delta scale (e.g. [`MhDifRow::mh_d_dif`] /
+/// [`MhDifRow::se_d_dif`]; callers must filter items whose MH statistics
+/// are undefined/NaN) and returns shrinkage estimates plus posterior
+/// probabilities of the five ETS DIF categories. The prior is estimated
+/// from exactly the supplied item set, which the caller chooses (the paper
+/// uses all items in the pool for CATs); `n = 2` is accepted as a
+/// computational minimum but is not a psychometrically stable prior
+/// estimate. See the section header above for source governance and
+/// implementation choices.
+pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
+    if mh.len() != se.len() {
+        return Err(format!("mh length {} != se length {}", mh.len(), se.len()));
+    }
+    let n = mh.len();
+    if n < 2 {
+        return Err(format!(
+            "need at least 2 items for the across-item variance, got {n}"
+        ));
+    }
+    for (i, (&m, &s)) in mh.iter().zip(se).enumerate() {
+        if !m.is_finite() {
+            return Err(format!("mh[{i}] is not finite"));
+        }
+        if !s.is_finite() || s <= 0.0 {
+            return Err(format!("se[{i}] must be finite and positive"));
+        }
+        if !(s * s).is_finite() {
+            return Err(format!("se[{i}]^2 overflows"));
+        }
+    }
+    let nf = n as f64;
+    let mu = mh.iter().sum::<f64>() / nf;
+    // Unbiased sample variance (divisor n-1); implementation choice, see
+    // the section header.
+    let var = mh.iter().map(|&x| (x - mu) * (x - mu)).sum::<f64>() / (nf - 1.0);
+    let mean_se2 = se.iter().map(|&s| s * s).sum::<f64>() / nf;
+    let tau2_raw = var - mean_se2;
+    if !mu.is_finite() || !var.is_finite() || !mean_se2.is_finite() || !tau2_raw.is_finite() {
+        return Err("computed prior moments are not finite (inputs too large)".to_string());
+    }
+    // Footnote 5 of the read source: negative variance estimates set to 0.
+    let tau2 = if tau2_raw > 0.0 { tau2_raw } else { 0.0 };
+    let mut weight = Vec::with_capacity(n);
+    let mut post_mean = Vec::with_capacity(n);
+    let mut post_var = Vec::with_capacity(n);
+    let mut cat_probs = Vec::with_capacity(n);
+    for (&x, &s) in mh.iter().zip(se) {
+        let sig2 = s * s;
+        // Branch on tau2 == 0 before any z-score math: the posterior is a
+        // point mass at mu and dividing by sqrt(0) is never evaluated.
+        if tau2 == 0.0 {
+            weight.push(0.0);
+            post_mean.push(mu);
+            post_var.push(0.0);
+            cat_probs.push(eb_point_mass_cats(mu));
+            continue;
+        }
+        let denom = tau2 + sig2;
+        if !denom.is_finite() {
+            return Err(
+                "posterior weight denominator tau2 + se^2 is not finite (inputs too large)"
+                    .to_string(),
+            );
+        }
+        let w = tau2 / denom;
+        let m = w * x + (1.0 - w) * mu;
+        let v = w * sig2;
+        if !m.is_finite() || !v.is_finite() {
+            return Err("posterior moments are not finite (inputs too large)".to_string());
+        }
+        let sd = v.sqrt();
+        let z = |c: f64| (c - m) / sd;
+        let p_lo15 = eb_phi(z(-1.5));
+        let p_lo10 = eb_phi(z(-1.0));
+        let p_hi10 = eb_phi(z(1.0));
+        let p_hi15 = eb_phi(z(1.5));
+        // Adjacent-CDF differences; the erfc approximation can leave tiny
+        // negative roundoff, clamped to 0.
+        let probs = [
+            p_lo15,
+            (p_lo10 - p_lo15).max(0.0),
+            (p_hi10 - p_lo10).max(0.0),
+            (p_hi15 - p_hi10).max(0.0),
+            // Stable upper tail: 1 - Phi(z) computed as Phi(-z).
+            eb_phi(-z(1.5)),
+        ];
+        weight.push(w);
+        post_mean.push(m);
+        post_var.push(v);
+        cat_probs.push(probs);
+    }
+    Ok(EbDifResult {
+        mu,
+        tau2,
+        tau2_raw,
+        weight,
+        post_mean,
+        post_var,
+        cat_probs,
+    })
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;
