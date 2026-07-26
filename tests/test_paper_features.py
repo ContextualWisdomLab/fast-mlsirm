@@ -6610,3 +6610,94 @@ class TestEpvSelect:
             epv_select(a, np.array([0.0 + 1j, 0.5]), c, administered=adm, mu=0.0, sig2=1.0)
         with pytest.raises(ValueError):
             epv_select(a, b, np.array([0.0, 0.1 + 1j]), administered=adm, mu=0.0, sig2=1.0)
+
+class TestSprtClassify:
+    """sprt_classify wrapper: every assert reads crate-returned dict values."""
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import sprt_classify
+
+        r = sprt_classify(
+            np.full(5, 2.0),
+            np.zeros(5),
+            np.full(5, 0.1),
+            responses=np.array([1, 1, 1, 1, 0]),
+            theta_cut=0.0,
+            delta=0.5,
+            alpha=0.05,
+            beta=0.05,
+        )
+        assert r["decision"] == "above"
+        assert r["n_used"] == 4
+        trace = np.array(
+            [
+                0.79567203915954553,
+                1.5913440783190911,
+                2.3870161174786366,
+                3.1826881566381821,
+                2.1826881566381821,
+            ]
+        )
+        np.testing.assert_allclose(r["llr_trace"], trace, rtol=0, atol=5e-15)
+        assert abs(r["llr"] - 2.1826881566381821) < 5e-15
+
+    def test_default_c_and_bool_responses(self):
+        from fast_mlsirm import sprt_classify
+
+        r = sprt_classify(
+            np.array([1.0, 1.1]),
+            np.array([0.0, 0.2]),
+            responses=np.array([True, False]),
+            theta_cut=0.0,
+            delta=0.3,
+        )
+        assert r["decision"] == "continue"
+        assert r["n_used"] == 2
+        assert r["llr_trace"].shape == (2,)
+        assert r["llr"] == r["llr_trace"][-1]
+
+    def test_rejects_bad_responses(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="0 and 1"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 2]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1.0, 0.5]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+
+    def test_rejects_complex_input(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="real-valued"):
+            sprt_classify(
+                np.array([1.0 + 1j, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                delta=0.5,
+            )
+
+    def test_core_validation_propagates(self):
+        from fast_mlsirm import sprt_classify
+
+        with pytest.raises(ValueError, match="alpha \\+ beta"):
+            sprt_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                delta=0.5,
+                alpha=0.6,
+                beta=0.5,
+            )
