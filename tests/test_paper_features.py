@@ -10026,6 +10026,25 @@ class TestFide:
             fide_rating([[1.5, 0, 1, 1.0]], 2)
         with pytest.raises(ValueError, match="gamma"):
             fide_rating([[1, 0, 1, 1.0]], 2, gamma=[0.0, 0.0])
+        # regressions: bool/datetime games silently coerced to numbers
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating([[1, 0, 1, True]], 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating([[True, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(np.array([[True, False, True, True]]), 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(
+                np.array(
+                    [[np.datetime64("2020-01-01"), 0, 1, 1.0]], dtype=object
+                ),
+                2,
+            )
+        # regressions: complex kv/init raise ValueError, not TypeError
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10 + 1j, 15, 30))
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=2200 + 0j)
 
     def test_elo_reduction(self):
         import numpy as np

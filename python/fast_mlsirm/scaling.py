@@ -1630,8 +1630,23 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
     if np.iscomplexobj(np.asarray(games)):
         raise ValueError("fide_rating: games must be real, not complex")
     raw = np.asarray(games)
-    if raw.dtype == object and any(
-        v is None or isinstance(v, (str, bytes, bool, np.bool_)) for v in raw.flat
+    if raw.dtype != object and raw.dtype.kind not in "fiu":
+        # Rejects bool, datetime64, timedelta64, and other non-numeric
+        # ndarray dtypes that np.asarray(..., dtype=float) would coerce.
+        raise ValueError(
+            f"fide_rating: games must be numeric, got dtype {raw.dtype}"
+        )
+    # Nested Python lists coerce bools/datetimes into legal-looking numbers
+    # before the dtype check can see them; scan the original elements.
+    probe = raw if raw.dtype == object else None
+    if probe is None and not isinstance(games, np.ndarray):
+        probe = np.asarray(games, dtype=object)
+    if probe is not None and any(
+        v is None
+        or isinstance(
+            v, (str, bytes, bool, np.bool_, np.datetime64, np.timedelta64)
+        )
+        for v in probe.flat
     ):
         raise ValueError("fide_rating: games must be numeric")
     try:
@@ -1689,14 +1704,22 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
             raise ValueError(
                 f"fide_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
             )
-    kv_arr = np.asarray(kv, dtype=float)
     if np.iscomplexobj(np.asarray(kv)):
         raise ValueError("fide_rating: kv must be real, not complex")
+    try:
+        kv_arr = np.asarray(kv, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"fide_rating: kv is not numeric: {exc}") from None
     if kv_arr.shape != (3,):
         raise ValueError(
             f"fide_rating: kv must be a (elite, experienced, novice) triple, got shape {kv_arr.shape}"
         )
-    init = float(init)
+    if np.iscomplexobj(np.asarray(init)):
+        raise ValueError("fide_rating: init must be real, not complex")
+    try:
+        init = float(init)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"fide_rating: init is not numeric: {exc}") from None
     res = _core_module().fide_rating(
         np.ascontiguousarray(periods_u64),
         np.ascontiguousarray(white, dtype=np.uint64),
