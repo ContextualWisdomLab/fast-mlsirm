@@ -8941,3 +8941,12 @@ class TestPlackettLuceRankings:
             lsr_rankings([[0, object()]], 2)
         with pytest.raises(ValueError):
             lsr_rankings([[0, np.complex128(1)]], 2)
+        # Impl-review regressions: np.bool_ items must be rejected like
+        # Python bool; infinite items must raise ValueError (not
+        # OverflowError); huge n must Err (not abort the process).
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.bool_(True)]], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.float64("inf")]], 2)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 1_000_000)

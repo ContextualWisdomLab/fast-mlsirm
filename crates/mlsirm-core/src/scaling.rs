@@ -714,6 +714,14 @@ fn rankings_validate(
     if n < 2 {
         return Err("lsr_rankings needs at least 2 items".into());
     }
+    // ponytail: dense O(n^2) chain; hard cap keeps a tiny input from
+    // requesting a terabyte allocation and aborting the process. Raise
+    // alongside a sparse chain if ever needed.
+    if n > 10_000 {
+        return Err(format!(
+            "n = {n} exceeds the 10000-item cap for the dense O(n^2) chain"
+        ));
+    }
     if starts.len() < 2 {
         return Err("rankings data is empty (need at least one ranking)".into());
     }

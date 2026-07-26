@@ -285,11 +285,11 @@ def _rankings_to_csr(name, rankings, n):
                 "(choix silently ignores such rankings; this port rejects them)"
             )
         for x in items:
-            if isinstance(x, bool) or np.iscomplexobj(np.asarray(x)):
+            if isinstance(x, (bool, np.bool_)) or np.iscomplexobj(np.asarray(x)):
                 raise ValueError(f"{name}: ranking {r} has a non-integer item")
             try:
                 xi = int(x)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 raise ValueError(f"{name}: ranking {r} has a non-integer item")
             if xi != x:
                 raise ValueError(f"{name}: ranking {r} has a non-integer item")

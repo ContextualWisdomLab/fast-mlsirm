@@ -1087,6 +1087,12 @@ fn pl_error_contract() {
     let ra: Vec<usize> = vec![1, 0, 2, 2, 1, 0, 0, 1, 2, 1, 2, 0];
     let st: Vec<usize> = vec![0, 3, 6, 9, 12];
     assert!(lsr_rankings(&ra, &st, 1, 0.0).is_err(), "n < 2");
+    // Allocation cap: dense O(n^2) chain must reject huge n with an Err,
+    // never abort the process (impl-review finding 1 regression).
+    assert!(
+        lsr_rankings(&[0, 1], &[0, 2], 1_000_000, 0.0).is_err(),
+        "n over dense-chain cap"
+    );
     assert!(lsr_rankings(&ra, &[], 3, 0.0).is_err(), "empty starts");
     assert!(lsr_rankings(&ra, &[0], 3, 0.0).is_err(), "single start");
     assert!(
