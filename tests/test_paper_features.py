@@ -7868,3 +7868,72 @@ class TestStradaptive:
             stradaptive_administer(
                 [0, 0, 2, 2], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
             )
+
+class TestPyramidal:
+    """Larkin & Weiss (1974) pyramidal adaptive testing wrapper.
+
+    Anchors from files/pyramidal_oracle.py (exact Fractions, executed);
+    every assert reads values returned by the crate through the wrapper.
+    """
+
+    def _pyr4(self):
+        import numpy as np
+
+        b = np.array([0, -1, 1, -2, 0, 2, -3, -1, 1, 3], dtype=np.float64)
+        b_next = np.array([-4, -2, 0, 2, 4], dtype=np.float64)
+        return b, b_next
+
+    def test_anchor_a_exact(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn)
+        assert r["path"].tolist() == [0, 2, 4, 8]
+        assert r["positions"].tolist() == [0, 1, 1, 2]
+        assert r["number_correct"] == 3.0
+        assert r["mean_b_attempted"] == 0.5
+        assert abs(r["mean_b_correct"] - 1.0 / 3.0) < 1e-15
+        assert r["final_b"] == 1.0
+        assert r["final_difficulty"] == 2.0
+        assert r["all_item_score"] == 15.0
+        # M5 unavailable without b_next
+        r2 = pyramidal_administer(b, 4, [1, 0, 1, 1])
+        assert np.isnan(r2["final_difficulty"])
+        assert r2["all_item_score"] == 15.0
+
+    def test_all_wrong_and_paper_range(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, np.zeros(4), b_next=bn)
+        assert r["path"].tolist() == [0, 1, 3, 6]
+        assert np.isnan(r["mean_b_correct"])
+        assert r["final_difficulty"] == -4.0
+        assert r["all_item_score"] == 0.0
+        # Paper-printed 15-stage all-item range 0..240 (p. 16).
+        n = 15
+        big = np.zeros(n * (n + 1) // 2)
+        assert pyramidal_administer(big, n, np.ones(n))["all_item_score"] == 240.0
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        with pytest.raises(ValueError, match="0 and 1"):
+            pyramidal_administer(b, 4, [1, 0, 2, 1], b_next=bn)
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(b.astype(np.complex128), 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(
+                np.array([1j if i == 0 else 0.0 for i in range(10)], dtype=object),
+                4,
+                [1, 0, 1, 1],
+            )
+        with pytest.raises(ValueError, match="n\\(n\\+1\\)/2"):
+            pyramidal_administer(b[:9], 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="n_stages \\+ 1"):
+            pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn[:4])

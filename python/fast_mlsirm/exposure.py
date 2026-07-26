@@ -1041,3 +1041,90 @@ def stradaptive_administer(
         "scores": np.asarray(r["scores"]),
         "consistency": float(r["consistency"]),
     }
+
+def pyramidal_administer(
+    b: np.ndarray,
+    n_stages: int,
+    u: np.ndarray,
+    b_next: np.ndarray | None = None,
+) -> dict:
+    """Larkin & Weiss (1974) pyramidal adaptive test administration.
+
+    Items form a triangular structure ordered by difficulty: stage ``s``
+    (1-based) holds ``s`` items and an ``n_stages``-stage pyramid needs
+    ``n(n+1)/2`` items (Larkin & Weiss, 1974, p. 13). ``b`` is the
+    row-major flattened difficulty vector (stage 1 first; each stage
+    ordered easiest to hardest). Routing is "up-one/down-one" with equal
+    offset: a correct response leads to the harder stage-(s+1) neighbour,
+    an incorrect response to the easier one. ``u[s]`` is the 0/1 response
+    to the routed stage-(s+1) item.
+
+    Returns a dict with the routed ``path`` (flattened node indices),
+    within-stage ``positions``, and Larkin & Weiss's scoring methods 1-6:
+    ``number_correct``, ``mean_b_attempted``, ``mean_b_correct`` (NaN when
+    nothing was answered correctly; the source leaves this case
+    undefined), ``final_b``, ``final_difficulty`` (method 5, computed ONLY
+    when ``b_next`` -- the ``n_stages + 1`` hypothetical next-stage
+    difficulties -- is supplied; NaN means "method 5 unavailable", and the
+    paper's own pool-specific column-mean construction of ``b_next`` is
+    out of scope), and ``all_item_score`` (Hansen's all-item score as
+    described by Larkin & Weiss, 1974, p. 16; verified against the printed
+    15-stage range 0-240). All numerics run in the Rust core
+    (``mlsirm_core::exposure::pyramidal_administer``); see its module
+    comment for the full READ/NOT-READ citation-governance record and
+    DERIVED-formula labels.
+
+    References (APA 7th ed.):
+        Larkin, K. C., & Weiss, D. J. (1974). *An empirical investigation
+            of computer-administered pyramidal ability testing* (Research
+            Report 74-3; ERIC ED096343). University of Minnesota,
+            Psychometric Methods Program. (READ.)
+        Hansen, D. N. (1969). *An investigation of computer-based science
+            testing.* (NOT read; all-item and final-difficulty scores
+            implemented as described by Larkin & Weiss, 1974.)
+    """
+    from . import _core
+
+    n_stages = _as_int("n_stages", n_stages, minimum=1)
+    if np.iscomplexobj(np.asarray(b)) or np.iscomplexobj(np.asarray(u)):
+        raise ValueError("b and u must be real-valued")
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        b_arr = np.asarray(b, dtype=np.float64)
+        u_f = np.asarray(u, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("b and u must be real-valued") from None
+    if b_arr.ndim != 1 or u_f.ndim != 1:
+        raise ValueError("b and u must be 1-D arrays")
+    # Validate BEFORE the uint8 cast (casts truncate/wrap).
+    if not np.all(np.isin(u_f, (0.0, 1.0))):
+        raise ValueError("u must contain only 0 and 1")
+    if b_next is None:
+        bn_arr = None
+    else:
+        if np.iscomplexobj(np.asarray(b_next)):
+            raise ValueError("b_next must be real-valued")
+        try:
+            bn_arr = np.asarray(b_next, dtype=np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("b_next must be real-valued") from None
+        if bn_arr.ndim != 1:
+            raise ValueError("b_next must be a 1-D array")
+        bn_arr = np.ascontiguousarray(bn_arr)
+    r = _core.py_pyramidal_administer(
+        np.ascontiguousarray(b_arr),
+        n_stages,
+        np.ascontiguousarray(u_f.astype(np.uint8)),
+        bn_arr,
+    )
+    return {
+        "path": np.asarray(r["path"], dtype=np.int64),
+        "positions": np.asarray(r["positions"], dtype=np.int64),
+        "number_correct": float(r["number_correct"]),
+        "mean_b_attempted": float(r["mean_b_attempted"]),
+        "mean_b_correct": float(r["mean_b_correct"]),
+        "final_b": float(r["final_b"]),
+        "final_difficulty": float(r["final_difficulty"]),
+        "all_item_score": float(r["all_item_score"]),
+    }

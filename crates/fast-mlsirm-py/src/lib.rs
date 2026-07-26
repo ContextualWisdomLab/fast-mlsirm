@@ -48,9 +48,9 @@ use mlsirm_core::exposure::{
     flexilevel_administer as core_flexilevel_administer,
     flexilevel_score_distribution as core_flexilevel_score_distribution,
     kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
-    owen_update as core_owen_update, sprt_classify as core_sprt_classify,
-    stradaptive_administer as core_stradaptive_administer, sympson_hetter as core_sympson_hetter,
-    AStratifiedConfig, SympsonHetterConfig,
+    owen_update as core_owen_update, pyramidal_administer as core_pyramidal_administer,
+    sprt_classify as core_sprt_classify, stradaptive_administer as core_stradaptive_administer,
+    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -3133,6 +3133,51 @@ fn py_stradaptive_administer(
     out.set_item("next_item", opt(res.next_item))?;
     out.set_item("scores", numpy::PyArray1::from_slice(py, &res.scores))?;
     out.set_item("consistency", res.consistency)?;
+    Ok(out.into())
+}
+
+/// Larkin & Weiss (1974) pyramidal adaptive test administration for a
+/// single examinee (`mlsirm_core::exposure::pyramidal_administer`): items in
+/// a triangular structure (stage s holds s items, n(n+1)/2 total); routing
+/// is up-one/down-one equal offset (correct -> harder neighbour, incorrect
+/// -> easier). Returns the routed path and scoring methods 1-6
+/// (number-correct, mean b attempted, mean b correct [NaN when 0 correct],
+/// final-item b, final difficulty score via the caller-supplied
+/// hypothetical stage n+1 [NaN when `b_next` is absent -- M5 unavailable],
+/// and the Hansen all-item score as described by Larkin & Weiss). See the
+/// core module comment for READ/NOT-READ source status and DERIVED labels.
+///
+/// References (APA 7th):
+/// Larkin, K. C., & Weiss, D. J. (1974). An empirical investigation of
+/// computer-administered pyramidal ability testing (Research Report 74-3;
+/// ERIC ED096343). University of Minnesota, Psychometric Methods Program.
+/// (READ)
+#[pyfunction]
+#[pyo3(signature = (b, n_stages, u, b_next=None))]
+fn py_pyramidal_administer(
+    py: Python<'_>,
+    b: PyReadonlyArray1<'_, f64>,
+    n_stages: usize,
+    u: PyReadonlyArray1<'_, u8>,
+    b_next: Option<PyReadonlyArray1<'_, f64>>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let bn_slice = match &b_next {
+        Some(arr) => Some(arr.as_slice()?),
+        None => None,
+    };
+    let res = core_pyramidal_administer(b.as_slice()?, n_stages, u.as_slice()?, bn_slice)
+        .map_err(PyValueError::new_err)?;
+    let path: Vec<u64> = res.path.iter().map(|&c| c as u64).collect();
+    let positions: Vec<u64> = res.positions.iter().map(|&c| c as u64).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("path", numpy::PyArray1::from_slice(py, &path))?;
+    out.set_item("positions", numpy::PyArray1::from_slice(py, &positions))?;
+    out.set_item("number_correct", res.number_correct)?;
+    out.set_item("mean_b_attempted", res.mean_b_attempted)?;
+    out.set_item("mean_b_correct", res.mean_b_correct)?;
+    out.set_item("final_b", res.final_b)?;
+    out.set_item("final_difficulty", res.final_difficulty)?;
+    out.set_item("all_item_score", res.all_item_score)?;
     Ok(out.into())
 }
 
@@ -6973,6 +7018,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_flexilevel_administer, m)?)?;
     m.add_function(wrap_pyfunction!(py_flexilevel_score_distribution, m)?)?;
     m.add_function(wrap_pyfunction!(py_stradaptive_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_pyramidal_administer, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
