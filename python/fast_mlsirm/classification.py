@@ -495,3 +495,109 @@ def subkoviak_agreement(
         chance_agreement=float(res["chance_agreement"]),
         kappa=float(res["kappa"]),
     )
+
+@dataclass
+class LivingstonResult:
+    """Livingston (1972) criterion-referenced reliability analysis.
+
+    ``mean``/``var`` are the population (ddof = 0) observed-score moments;
+    ``msd`` is the mean squared deviation from the criterion
+    ``D^2(X) = var + (mean - cut)^2`` (Table 1); ``k2`` holds the
+    criterion-referenced reliability at each requested Spearman-Brown
+    test-length multiplier."""
+
+    mean: float
+    var: float
+    msd: float
+    k2: np.ndarray
+
+
+_LIVINGSTON_REFERENCES = """
+        Livingston, S. A. (1972). *A classical test-theory approach to
+            criterion-referenced tests* (ERIC ED069624) [Paper
+            presentation]. AERA Annual Meeting. (Report version of
+            Livingston, 1972, *Journal of Educational Measurement, 9*(1),
+            13-26, which was not read; abstract only.)
+    """
+
+
+def livingston_k2(
+    scores: np.ndarray,
+    cut: float,
+    reliability: float,
+    n_lengths: Sequence[float] | np.ndarray = (1.0,),
+) -> LivingstonResult:
+    """Livingston's criterion-referenced reliability ``k^2`` (compute in
+    Rust; Livingston, 1972, read in full from ERIC ED069624).
+
+    ``reliability`` is the caller-supplied norm-referenced reliability
+    ``rho^2(X, T)``; the conversion form
+    ``k^2 = (rho^2 var + (mean-cut)^2) / (var + (mean-cut)^2)`` is an
+    algebraic reconstruction from the source's Table 1 expectation
+    definitions. ``k^2`` is NaN only when ``var == 0`` and ``mean == cut``
+    exactly. Each ``n_lengths`` entry applies Spearman-Brown to ``k^2``
+    itself; positive fractional lengths are a continuous projection beyond
+    the source's integer wording. In LLM-as-a-Judge quality management this
+    scores how reliably a judge separates outputs relative to a pass/fail
+    cut rather than relative to the group mean.
+
+    """ + _LIVINGSTON_REFERENCES
+    core = _core_or_raise("livingston_k2")
+    x = np.asarray(scores)
+    n = np.asarray(n_lengths)
+    for name, arr in (("scores", x), ("n_lengths", n)):
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if name == "scores":
+                x = arr
+            else:
+                n = arr
+    x = np.ascontiguousarray(x.astype(np.float64).reshape(-1))
+    n = np.ascontiguousarray(n.astype(np.float64).reshape(-1))
+    res = core.livingston_k2(x, float(cut), float(reliability), n)
+    return LivingstonResult(
+        mean=float(res["mean"]),
+        var=float(res["var"]),
+        msd=float(res["msd"]),
+        k2=np.asarray(res["k2"], dtype=np.float64),
+    )
+
+
+def livingston_correlation(
+    x: np.ndarray,
+    y: np.ndarray,
+    cut_x: float,
+    cut_y: float,
+) -> float:
+    """Livingston's criterion-referenced correlation ``k(X, Y)`` (compute
+    in Rust; Livingston, 1972, read in full from ERIC ED069624).
+
+    ``k(X, Y) = D(X, Y) / sqrt(D^2(X) D^2(Y))`` with moments about the two
+    criterion scores (Table 1); it can differ in sign from the
+    norm-referenced correlation. Returns NaN when either ``D^2`` is exactly
+    zero.
+
+    """ + _LIVINGSTON_REFERENCES
+    core = _core_or_raise("livingston_correlation")
+    ax = np.asarray(x)
+    ay = np.asarray(y)
+    for name, arr in (("x", ax), ("y", ay)):
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if name == "x":
+                ax = arr
+            else:
+                ay = arr
+    ax = np.ascontiguousarray(ax.astype(np.float64).reshape(-1))
+    ay = np.ascontiguousarray(ay.astype(np.float64).reshape(-1))
+    return float(core.livingston_correlation(ax, ay, float(cut_x), float(cut_y)))

@@ -79,6 +79,9 @@ from .classification import (
     HansonBrennanResult as HansonBrennanResult,
     subkoviak_agreement as subkoviak_agreement,
     SubkoviakResult as SubkoviakResult,
+    livingston_k2 as livingston_k2,
+    livingston_correlation as livingston_correlation,
+    LivingstonResult as LivingstonResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -275,6 +278,9 @@ __all__ = [
     "HansonBrennanResult",
     "subkoviak_agreement",
     "SubkoviakResult",
+    "livingston_k2",
+    "livingston_correlation",
+    "LivingstonResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
