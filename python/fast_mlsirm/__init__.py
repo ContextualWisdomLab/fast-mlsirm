@@ -47,6 +47,8 @@ from .detect import (
 from .security import (
     wollack_omega as wollack_omega,
     WollackOmegaResult as WollackOmegaResult,
+    k_index as k_index,
+    KIndexResult as KIndexResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
@@ -275,6 +277,8 @@ __all__ = [
     "DetectResult",
     "DimtestResult",
     "WollackOmegaResult",
+    "k_index",
+    "KIndexResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",

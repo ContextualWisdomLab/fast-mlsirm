@@ -119,6 +119,19 @@
 
 ### Added
 
+- **K-index of matching incorrect answers (CopyDetect-faithful)**
+  (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
+  `py_k_index`): binomial upper-tail index of copier-source shared incorrect
+  answers against a number-incorrect subgroup baseline, ported exactly from
+  the CRAN CopyDetect package's internal `k()` (`R/similarity1.r`, READ;
+  corroborated by `R/similarity2.r`), with the binomial tail summed in log
+  space (no factorial overflow or extreme-p underflow). The subgroup
+  includes the copier and,
+  when scores match, the source (CopyDetect convention). Holland (1996,
+  RR-96-07) and Sotaridona & Meijer (2002) NOT read — cited only as
+  implemented; Sotaridona & Meijer (2001, ERIC ED467373) read for
+  background. Validation rejects non-binary/complex/bool inputs and the
+  degenerate all-correct source.
 - **Omega answer-copying statistic (Wollack-style)**
   (`fast_mlsirm.wollack_omega`; in Rust `mlsirm_core::security::wollack_omega`,
   PyO3 `py_wollack_omega`): standardized index of answer similarity between a

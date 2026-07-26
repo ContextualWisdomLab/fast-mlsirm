@@ -7007,3 +7007,79 @@ class TestWollackOmega:
             wollack_omega((copier == 2), source, probs, 5)
         with pytest.raises(ValueError):
             wollack_omega(copier, (source == 1), probs, 5)
+
+class TestKIndex:
+    def _fixture(self):
+        import numpy as np
+
+        return np.array(
+            [
+                [1, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+                [0, 0, 1, 0, 1, 1, 0, 0, 1, 0],
+                [1, 0, 0, 1, 0, 1, 0, 0, 0, 1],
+                [1, 1, 1, 0, 0, 0, 1, 1, 0, 0],
+                [1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 0, 1, 1, 0, 1, 1],
+                [0, 1, 0, 1, 1, 0, 0, 1, 0, 1],
+                [0, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+                [0, 1, 0, 1, 1, 1, 1, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 1, 0, 0, 1],
+            ],
+            dtype=float,
+        )
+
+    def test_pinned_oracle(self):
+        # Asserts read KIndexResult fields returned by the crate through the
+        # wrapper; oracle computed independently with exact math.comb.
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        r = k_index(self._fixture(), copier=2, source=7)
+        assert r.wc == 6
+        assert r.ws == 5
+        assert r.m == 2
+        assert list(r.subgroup) == [1, 2, 5]
+        assert list(r.emp_agg) == [3, 2, 3]
+        assert abs(r.p - 0.53333333333333333) < 1e-12
+        assert abs(r.k_index - 0.85139489711934158) < 1e-12
+        assert isinstance(r.subgroup, np.ndarray)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import k_index
+
+        x = self._fixture()
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=2)  # identical indices
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=10)  # out of range
+        with pytest.raises(ValueError):
+            k_index(x, copier=True, source=7)  # bool index
+        bad = x.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            k_index(bad, copier=2, source=7)  # non-binary
+        with pytest.raises(ValueError):
+            k_index(x + 0j, copier=2, source=7)  # complex laundering
+        with pytest.raises(ValueError):
+            k_index(x.astype(bool), copier=2, source=7)  # bool matrix
+        allc = x.copy()
+        allc[4, :] = 1.0
+        with pytest.raises(ValueError):
+            k_index(allc, copier=2, source=4)  # ws == 0 degenerate
+
+    def test_m_zero_gives_k_one(self):
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        x = np.ones((3, 10))
+        x[0, 9] = 0.0
+        x[1, 0] = 0.0
+        x[1, 1] = 0.0
+        r = k_index(x, copier=0, source=1)
+        assert r.m == 0
+        assert r.k_index == 1.0
