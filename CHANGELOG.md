@@ -119,6 +119,21 @@
 
 ### Added
 
+- **Composite linking (Holland & Strawderman, 2011; as cited by Albano,
+  2016, JSS 74(8), eqs. 31-32)** (`fast_mlsirm.composite_linking`; in Rust
+  `mlsirm_core::equating::composite_linking`): weighted average of H
+  component conversion tables over a shared x grid. With per-component
+  linear slopes supplied, applies the symmetric Holland-Strawderman weight
+  adjustment `W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)` (eq. 32), which for
+  linear components makes the composite of forward links the exact
+  functional inverse of the composite of inverse links (pinned by an exact
+  round-trip test). Without slopes, raw weights are normalized
+  (`W_h = w_h / sum(w)`) — a documented deviation from the R `equate`
+  package's un-normalized non-symmetric path (identical iff weights sum
+  to 1). Exact-fraction oracle pins, 5 executed mutation kills (dropped
+  adjustment, exponent sign flip, skipped normalization, `a^p → a*p` at
+  p=2, weight/table zip reversal), and a 500-rep Monte-Carlo round-trip
+  invariant (`#[ignore]`).
 - **Nominal weights mean equating (Babcock, Albano, & Raymond, 2012; as
   restated by Albano, 2016, JSS 74(8), eq. 42)**
   (`fast_mlsirm.nominal_weights_mean_equate`; in Rust

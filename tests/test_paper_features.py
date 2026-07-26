@@ -8482,3 +8482,60 @@ class TestNominalWeights:
             nominal_weights_mean_equate(
                 np.array(["a"], dtype=object), ["b"], self.YT, self.YA, 20, 20, 8
             )
+
+class TestCompositeLinking:
+    def test_fixture_a_exact(self):
+        # Oracle pins (files/composite_oracle.py): identity + 3x-2 over
+        # [0,1,2,10], wc=(1/2,1/2), slopes (1,3), p=1 -> W=(2/3,1/3),
+        # composite (5/3)x - 2/3 = [-2/3,1,8/3,16]. Asserts read crate dict.
+        import numpy as np
+        from fast_mlsirm import composite_linking
+
+        grid = np.array([0.0, 1.0, 2.0, 10.0])
+        r = composite_linking(
+            [grid, 3.0 * grid - 2.0], [0.5, 0.5], slopes=[1.0, 3.0], p=1.0
+        )
+        assert r["symmetric"] is True
+        np.testing.assert_allclose(
+            r["adjusted_weights"], [2.0 / 3.0, 1.0 / 3.0], rtol=0, atol=1e-15
+        )
+        np.testing.assert_allclose(
+            r["composite"], [-2.0 / 3.0, 1.0, 8.0 / 3.0, 16.0], rtol=0, atol=1e-14
+        )
+
+    def test_raw_weights_nonsymmetric(self):
+        # Non-symmetric path: W=(1/2,1/2), composite [-1,1,3,19]; scale
+        # invariance of the normalization checked via weights (2,2).
+        import numpy as np
+        from fast_mlsirm import composite_linking
+
+        grid = np.array([0.0, 1.0, 2.0, 10.0])
+        tabs = [grid, 3.0 * grid - 2.0]
+        r = composite_linking(tabs, [0.5, 0.5])
+        assert r["symmetric"] is False
+        np.testing.assert_allclose(
+            r["composite"], [-1.0, 1.0, 3.0, 19.0], rtol=0, atol=1e-14
+        )
+        r2 = composite_linking(tabs, [2.0, 2.0])
+        np.testing.assert_allclose(
+            r2["composite"], r["composite"], rtol=0, atol=1e-15
+        )
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import composite_linking
+
+        t = np.array([1.0, 2.0])
+        with pytest.raises(ValueError):
+            composite_linking([], [])
+        with pytest.raises(ValueError):
+            composite_linking([t], [-1.0])
+        with pytest.raises(ValueError):
+            composite_linking([t], [1.0], slopes=[0.0])
+        with pytest.raises(ValueError):
+            composite_linking([t], [1.0], slopes=[1.0], p=0.5)
+        with pytest.raises(ValueError):
+            composite_linking([t + 1j], [1.0])
+        with pytest.raises(ValueError):
+            composite_linking([np.array([1.0, "a"], dtype=object)], [1.0])

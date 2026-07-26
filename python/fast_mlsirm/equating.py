@@ -556,3 +556,67 @@ def nominal_weights_mean_equate(
         ks.append(ki)
     res = core.nominal_weights_mean_equate(*arrs, *ks, w1=float(w1))
     return _build(res, "nominal-weights-mean", "NEAT")
+
+def composite_linking(tables, weights, slopes=None, p=1.0):
+    """Composite linking of component conversion tables.
+
+    Weighted average of H component linking functions over a shared x grid
+    (Holland & Strawderman, 2011, as cited by Albano, 2016, eq. 31). When
+    per-component linear ``slopes`` are supplied, the symmetric
+    Holland-Strawderman weight adjustment is applied (Albano, 2016, eq. 32):
+    ``W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)``. Without slopes, raw weights
+    are normalized (``W_h = w_h / sum(w)``) -- a documented deviation from
+    the R ``equate`` package's un-normalized non-symmetric path (identical
+    results iff the supplied weights sum to 1).
+
+    Returns a dict with ``composite`` (ndarray), ``adjusted_weights``
+    (ndarray) and ``symmetric`` (bool).
+
+    References (APA 7th):
+        Albano, A. D. (2016). equate: An R package for observed-score
+            linking and equating. Journal of Statistical Software, 74(8),
+            1-36. https://doi.org/10.18637/jss.v074.i08  [READ]
+        Holland, P. W., & Strawderman, W. E. (2011). How to average equating
+            functions, if you must. In A. A. von Davier (Ed.), Statistical
+            models for test equating, scaling, and linking (pp. 89-107).
+            Springer.  [NOT READ; cited via Albano (2016)]
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "composite_linking"):
+        raise RuntimeError("composite_linking requires the compiled Rust core")
+    tabs = []
+    for i, t in enumerate(tables):
+        a = np.asarray(t)
+        if np.iscomplexobj(a):
+            raise ValueError(f"tables[{i}] must be real-valued")
+        try:
+            a = a.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"tables[{i}] must be numeric") from None
+        tabs.append(np.ascontiguousarray(a.ravel()))
+    w = np.asarray(weights)
+    if np.iscomplexobj(w):
+        raise ValueError("weights must be real-valued")
+    try:
+        w = w.astype(np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("weights must be numeric") from None
+    w = np.ascontiguousarray(w.ravel())
+    s = None
+    if slopes is not None:
+        s = np.asarray(slopes)
+        if np.iscomplexobj(s):
+            raise ValueError("slopes must be real-valued")
+        try:
+            s = s.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("slopes must be numeric") from None
+        s = np.ascontiguousarray(s.ravel())
+    res = core.composite_linking(tabs, w, slopes=s, p=float(p))
+    return {
+        "composite": np.asarray(res["composite"]),
+        "adjusted_weights": np.asarray(res["adjusted_weights"]),
+        "symmetric": bool(res["symmetric"]),
+    }
