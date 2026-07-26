@@ -7279,3 +7279,55 @@ class TestHofstee:
             hofstee([101.0], 62.5, 75.0, 0.0, 20.0)
         with pytest.raises(ValueError):
             hofstee([50.0], 75.0, 62.5, 0.0, 20.0)
+
+class TestPersonFitNp:
+    def test_pinned_main_fixture(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        rows = [
+            "11000000", "01010110", "11010000", "11111011", "11001100",
+            "11111010", "11101101", "11100001", "01000101", "00001111",
+            "00000000", "11111111",
+        ]
+        x = np.array([[int(c) for c in r] for r in rows], dtype=float)
+        res = person_fit_np(x)
+        assert res.g.tolist() == [0, 10, 4, 4, 0, 6, 0, 4, 4, 10, 0, 0]
+        assert abs(res.gnormed[1] - 0.625) < 1e-12
+        assert abs(res.nci[3] - (-0.1428571428571428)) < 1e-12
+        assert abs(res.u3[9] - 0.7968163928347531) < 1e-12
+        assert abs(res.zu3[9] - 2.315959529860312) < 1e-12
+        assert abs(res.c_sato[9] - 1.5555555555555556) < 1e-12
+        assert abs(res.cstar[9] - 0.7777777777777777) < 1e-12
+        # Perfect rows: G/Gnormed/NCI = 0; U3/ZU3/C/C* NaN.
+        for p in (10, 11):
+            assert res.g[p] == 0 and res.gnormed[p] == 0 and res.nci[p] == 0
+            assert np.isnan(res.u3[p]) and np.isnan(res.zu3[p])
+            assert np.isnan(res.c_sato[p]) and np.isnan(res.cstar[p])
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import person_fit_np
+
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([0.0, 1.0]))  # 1-D
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, 0.5]]))  # non-binary
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, np.nan]]))  # missing out of scope
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0 + 0j, 0.0]]))  # complex laundering
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0], [0.0]]))  # single item
+
+    def test_bool_input_accepted(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        x = np.array([[True, True, False], [False, True, True]])
+        res = person_fit_np(x)
+        assert res.g.shape == (2,)
