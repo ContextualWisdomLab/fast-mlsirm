@@ -2368,3 +2368,214 @@ pub fn stradaptive_administer(
         consistency,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Pyramidal adaptive testing (Larkin & Weiss, 1974)
+// ---------------------------------------------------------------------------
+//
+// Source status: Larkin & Weiss (1974) READ in full (OCR of ERIC ED096343).
+// Secondary works cited inside it (Lord, 1970, 1971a, 1971b; Hansen, 1969;
+// Bayroff, 1960; Paterson, 1962) were NOT read; they are cited below only
+// "as described by Larkin & Weiss (1974)".
+//
+// Structure (Larkin & Weiss, 1974, pp. 5-7, Figure 1): items arranged in a
+// triangular structure by difficulty; stage s (1-based) holds s items; an
+// n-stage pyramid needs n(n+1)/2 items (printed formula, p. 13). The first
+// item is of median difficulty. Routing is "up-one/down-one" with "equal
+// offset": a correct response leads to the harder of the two stage-(s+1)
+// neighbours, an incorrect response to the easier. One item per stage; a
+// fixed n items are administered.
+//
+// DERIVED routing recurrence (from the Figure-1 prose; not printed as an
+// equation in the source): with 0-based within-stage position j ordered
+// easiest -> hardest, j_1 = 0 and j_{s+1} = j_s + u_s where u_s in {0, 1}
+// is the correctness of the stage-s response. The row-major flattened node
+// index of (stage s, position j) is s(s-1)/2 + j (previous stages hold
+// 1 + 2 + ... + (s-1) = s(s-1)/2 items).
+//
+// Scoring methods 1-6 (Larkin & Weiss, 1974, pp. 15-16):
+//   M1 number-correct score: sum of u_s (integer 0..n).
+//   M2 mean difficulty of all items attempted.
+//   M3 mean difficulty of correctly answered items. The source does not
+//      define the 0-correct case; this implementation returns NaN
+//      (documented indeterminate, not an error).
+//   M4 difficulty of the final (stage-n) item attempted.
+//   M5 "final difficulty score" / hypothetical (n+1)th-item score (Hansen,
+//      1969, and Lord, 1971b, as described by Larkin & Weiss, 1974): branch
+//      once more on the final response into a hypothetical stage n+1 whose
+//      difficulties `b_next` (length n+1) the CALLER supplies; the score is
+//      b_next[j_n + u_n]. Larkin & Weiss's own construction of b_next
+//      (column means with extrapolated extremes, p. 15) is pool-specific
+//      and out of scope. When `b_next` is None, M5 is UNAVAILABLE and NaN
+//      is returned (not a computed Method-5 score).
+//   M6 Hansen (1969, as described by Larkin & Weiss, 1974) all-item score.
+//      The per-stage formulas below are DERIVED from the p. 16 prose (they
+//      are not printed as equations): a correct response at position j of
+//      stage s scores 2 + 2j + [j < s-1] (2 for the item, 2 per easier
+//      item, 1 for the next harder item, 0 beyond); an incorrect response
+//      scores [j >= 1] + 2*max(j - 1, 0) (0 for the item and all harder,
+//      1 for the next easier, 2 per remaining easier item). VERIFIED
+//      against the printed 15-stage score range "0 to 240" (p. 16): the
+//      all-correct path scores exactly 240 and the all-incorrect path 0
+//      (pinned in tests).
+//
+// Out of scope (variants described but not used in the source's design):
+// unequal offsets ("up-one/down-two", correction for guessing, p. 7),
+// shrinking step size (Paterson, 1962, as described), multi-item blocks
+// per stage (p. 6), and the study's empirical reliability/validity
+// analyses. Within-stage difficulty monotonicity is NOT enforced: the
+// source's own pyramid 1 contained mis-ordered items (p. 14).
+//
+// References (APA 7th):
+// Larkin, K. C., & Weiss, D. J. (1974). An empirical investigation of
+//     computer-administered pyramidal ability testing (Research Report
+//     74-3; ERIC ED096343). University of Minnesota, Psychometric Methods
+//     Program. (READ: structure, routing, scoring methods 1-6, Table 1)
+// Hansen, D. N. (1969). An investigation of computer-based science testing.
+//     (NOT read; all-item score and final node score implemented as
+//     described by Larkin & Weiss, 1974)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests. Educational and Psychological Measurement,
+//     31(4), 805-813. (NOT read; "final difficulty score" naming as
+//     described by Larkin & Weiss, 1974)
+
+/// Result of [`pyramidal_administer`]. `path` holds the flattened row-major
+/// node indices attempted (one per stage); `positions` the within-stage
+/// 0-based positions (easiest -> hardest). Scores follow Larkin & Weiss
+/// (1974) methods 1-6: `mean_b_correct` is NaN when no item was answered
+/// correctly, and `final_difficulty` is NaN when `b_next` was not supplied
+/// (M5 unavailable).
+#[derive(Debug, Clone)]
+pub struct PyramidalResult {
+    pub path: Vec<usize>,
+    pub positions: Vec<usize>,
+    pub number_correct: f64,
+    pub mean_b_attempted: f64,
+    pub mean_b_correct: f64,
+    pub final_b: f64,
+    pub final_difficulty: f64,
+    pub all_item_score: f64,
+}
+
+/// Administer an n-stage up-one/down-one pyramidal test over a hypothetical
+/// full response vector and compute scoring methods 1-6 (see the module
+/// comment above for the verified contract and source status).
+///
+/// `b` is the row-major flattened difficulty vector (stage 1 first; each
+/// stage ordered easiest -> hardest) of length n_stages*(n_stages+1)/2;
+/// `u[s]` is the 0/1 response to the stage-(s+1) item on the routed path;
+/// `b_next`, when supplied, holds the n_stages+1 hypothetical next-stage
+/// difficulties used by method 5.
+pub fn pyramidal_administer(
+    b: &[f64],
+    n_stages: usize,
+    u: &[u8],
+    b_next: Option<&[f64]>,
+) -> Result<PyramidalResult, String> {
+    if n_stages == 0 {
+        return Err("pyramidal_administer: n_stages must be >= 1".into());
+    }
+    // Checked triangular size: n(n+1)/2 (Larkin & Weiss, 1974, p. 13). A
+    // huge n_stages must yield Err, not a debug panic or release wrap.
+    let expected = n_stages
+        .checked_add(1)
+        .and_then(|np1| n_stages.checked_mul(np1))
+        .map(|t| t / 2)
+        .ok_or_else(|| {
+            format!("pyramidal_administer: n_stages {n_stages} overflows the n(n+1)/2 item count")
+        })?;
+    if b.len() != expected {
+        return Err(format!(
+            "pyramidal_administer: b has {} items but an {}-stage pyramid needs n(n+1)/2 = {}",
+            b.len(),
+            n_stages,
+            expected
+        ));
+    }
+    if u.len() != n_stages {
+        return Err(format!(
+            "pyramidal_administer: u has {} responses but n_stages is {}",
+            u.len(),
+            n_stages
+        ));
+    }
+    for (i, &r) in u.iter().enumerate() {
+        if r > 1 {
+            return Err(format!(
+                "pyramidal_administer: u[{i}] must be 0 or 1 (got {r})"
+            ));
+        }
+    }
+    for (i, &d) in b.iter().enumerate() {
+        if !d.is_finite() {
+            return Err(format!("pyramidal_administer: b[{i}] must be finite"));
+        }
+    }
+    if let Some(bn) = b_next {
+        if bn.len() != n_stages + 1 {
+            return Err(format!(
+                "pyramidal_administer: b_next has {} items but must have n_stages + 1 = {}",
+                bn.len(),
+                n_stages + 1
+            ));
+        }
+        for (i, &d) in bn.iter().enumerate() {
+            if !d.is_finite() {
+                return Err(format!("pyramidal_administer: b_next[{i}] must be finite"));
+            }
+        }
+    }
+
+    // Routing: j_1 = 0; j_{s+1} = j_s + u_s (DERIVED; see module comment).
+    // `offset` is maintained incrementally (offset += s), so it stays
+    // bounded by the validated b.len() and cannot overflow.
+    let mut path = Vec::with_capacity(n_stages);
+    let mut positions = Vec::with_capacity(n_stages);
+    let mut j = 0usize;
+    let mut offset = 0usize; // s(s-1)/2 for the current 1-based stage s
+    let mut all_item = 0i64;
+    let mut n_correct = 0usize;
+    let mut sum_attempted = 0.0f64;
+    let mut sum_correct = 0.0f64;
+    for s in 1..=n_stages {
+        positions.push(j);
+        path.push(offset + j);
+        let bi = b[offset + j];
+        sum_attempted += bi;
+        let us = u[s - 1];
+        if us == 1 {
+            n_correct += 1;
+            sum_correct += bi;
+            // M6 correct: 2 + 2j + [j < s-1] (DERIVED from p. 16 prose).
+            all_item += 2 + 2 * j as i64 + i64::from(j < s - 1);
+        } else {
+            // M6 incorrect: [j >= 1] + 2*max(j-1, 0).
+            all_item += i64::from(j >= 1) + 2 * (j.saturating_sub(1)) as i64;
+        }
+        offset += s;
+        if s < n_stages {
+            j += us as usize;
+        }
+    }
+    let j_final = positions[n_stages - 1] + u[n_stages - 1] as usize;
+    let final_difficulty = match b_next {
+        Some(bn) => bn[j_final],
+        None => f64::NAN,
+    };
+    let mean_b_correct = if n_correct > 0 {
+        sum_correct / n_correct as f64
+    } else {
+        f64::NAN
+    };
+
+    Ok(PyramidalResult {
+        final_b: b[*path.last().unwrap()],
+        number_correct: n_correct as f64,
+        mean_b_attempted: sum_attempted / n_stages as f64,
+        mean_b_correct,
+        final_difficulty,
+        all_item_score: all_item as f64,
+        path,
+        positions,
+    })
+}

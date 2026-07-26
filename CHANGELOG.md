@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
+  74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
+  `mlsirm_core::exposure::pyramidal_administer`, PyO3
+  `py_pyramidal_administer`): deterministic single-examinee replay of the
+  classic up-one/down-one equal-offset pyramidal ("branched") design — items
+  in a triangular structure ordered by difficulty (stage s holds s items,
+  n(n+1)/2 total), a correct response routing to the harder stage-(s+1)
+  neighbour and an incorrect response to the easier — with Larkin & Weiss's
+  six scoring methods: number-correct, mean difficulty attempted, mean
+  difficulty correct (NaN when indeterminate), final-item difficulty, the
+  hypothetical (n+1)th-item "final difficulty score" (computed only when the
+  caller supplies the next-stage difficulties; the paper's pool-specific
+  column-mean construction is out of scope), and Hansen's all-item score as
+  described by Larkin & Weiss (verified against the printed 15-stage 0–240
+  range). Routing recurrence and all-item stage scores are DERIVED from the
+  source prose (labelled in the module comment); exact-fraction oracle
+  anchors, checked-arithmetic overflow guards, and a 500-rep Monte-Carlo
+  structural invariant test (`#[ignore]`).
 - **Weiss stradaptive (stratified-adaptive) test administration (Weiss, 1973,
   Research Report 73-3)** (`fast_mlsirm.stradaptive_administer`; in Rust
   `mlsirm_core::exposure::stradaptive_administer`, PyO3

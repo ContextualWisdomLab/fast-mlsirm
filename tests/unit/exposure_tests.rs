@@ -2597,3 +2597,175 @@ fn strad_mc_invariants() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pyramidal adaptive testing (Larkin & Weiss, 1974) -- exact anchors from
+// files/pyramidal_oracle.py (exact-Fraction, EXECUTED all-pass) plus the
+// paper-printed 15-stage all-item score range 0..240 (p. 16). Every assert
+// reads crate outputs (PyramidalResult fields).
+// ---------------------------------------------------------------------------
+
+fn pyr4() -> (Vec<f64>, Vec<f64>) {
+    // 4-stage pyramid, row-major by stage, easiest -> hardest in each stage.
+    let b = vec![0.0, -1.0, 1.0, -2.0, 0.0, 2.0, -3.0, -1.0, 1.0, 3.0];
+    let b_next = vec![-4.0, -2.0, 0.0, 2.0, 4.0];
+    (b, b_next)
+}
+
+#[test]
+fn pyr_anchor_a_exact() {
+    // Oracle anchor A: u=[1,0,1,1]. Kills MU1 (inverted branch: stage-2
+    // index would be 1 not 2), MU2 (dropped next-harder +1: M6 13 not 15),
+    // MU3 (M5 ignoring final response: b_next[2]=0 not 2), MU4 (wrong
+    // flatten: path shifts).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 4, 8]);
+    assert_eq!(r.positions, vec![0, 1, 1, 2]);
+    assert_eq!(r.number_correct, 3.0);
+    assert_eq!(r.mean_b_attempted, 0.5);
+    assert!((r.mean_b_correct - 1.0 / 3.0).abs() < 1e-15);
+    assert_eq!(r.final_b, 1.0);
+    assert_eq!(r.final_difficulty, 2.0);
+    assert_eq!(r.all_item_score, 15.0);
+}
+
+#[test]
+fn pyr_anchor_b_final_wrong() {
+    // Oracle anchor B: final response wrong -> M5 stays at b_next[2]=0 and
+    // the stage-4 incorrect at j=2 scores 1+2=3 (M6 total 11).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 0], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 4, 8]);
+    assert_eq!(r.number_correct, 2.0);
+    assert_eq!(r.mean_b_correct, 0.0);
+    assert_eq!(r.final_difficulty, 0.0);
+    assert_eq!(r.all_item_score, 11.0);
+}
+
+#[test]
+fn pyr_anchor_c_all_wrong() {
+    // Oracle anchor C: leftmost path, M3 indeterminate (NaN), M6 = 0, M5 at
+    // the lower extreme b_next[0] = -4.
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[0, 0, 0, 0], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 1, 3, 6]);
+    assert_eq!(r.number_correct, 0.0);
+    assert_eq!(r.mean_b_attempted, -1.5);
+    assert!(r.mean_b_correct.is_nan());
+    assert_eq!(r.final_b, -3.0);
+    assert_eq!(r.final_difficulty, -4.0);
+    assert_eq!(r.all_item_score, 0.0);
+}
+
+#[test]
+fn pyr_anchor_d_leftmost_correct_bonus() {
+    // Review-mandated anchor D: a correct response at the leftmost position
+    // of stage 2 (j=0 with a harder neighbour) earns the next-harder +1
+    // bonus (stage score 3). Kills the MU5 guard mutation
+    // [j < s-1] -> [j > 0 && j < s-1] (mutant M6 = 14, crate must say 15).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[0, 1, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 1, 4, 8]);
+    assert_eq!(r.positions, vec![0, 0, 1, 2]);
+    assert_eq!(r.all_item_score, 15.0);
+    assert_eq!(r.final_difficulty, 2.0);
+}
+
+#[test]
+fn pyr_anchor_e_all_correct_upper_extreme() {
+    // Review-mandated anchor E: all-correct requires the M5 upper extreme
+    // b_next[n] = b_next[4] = 4 (kills off-by-one b_next indexing that
+    // never reaches the top hypothetical item). Rightmost path.
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 1, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 5, 9]);
+    assert_eq!(r.final_b, 3.0);
+    assert_eq!(r.final_difficulty, 4.0);
+    assert_eq!(r.all_item_score, 20.0);
+    assert_eq!(r.mean_b_attempted, 1.5);
+}
+
+#[test]
+fn pyr_paper_m6_range() {
+    // Paper-printed anchor (Larkin & Weiss, 1974, p. 16): 15-stage all-item
+    // scores "ranged from 0 to 240". All-correct = 240 on the rightmost
+    // path; all-wrong = 0 on the leftmost.
+    let n = 15;
+    let b = vec![0.0; n * (n + 1) / 2];
+    let all = crate::exposure::pyramidal_administer(&b, n, &[1u8; 15], None).unwrap();
+    assert_eq!(all.all_item_score, 240.0);
+    assert_eq!(all.number_correct, 15.0);
+    assert_eq!(all.positions, (0..15).collect::<Vec<usize>>());
+    assert!(
+        all.final_difficulty.is_nan(),
+        "M5 unavailable without b_next"
+    );
+    let none = crate::exposure::pyramidal_administer(&b, n, &[0u8; 15], None).unwrap();
+    assert_eq!(none.all_item_score, 0.0);
+    assert_eq!(none.positions, vec![0usize; 15]);
+}
+
+#[test]
+fn pyr_error_contract() {
+    let (b, bn) = pyr4();
+    let e = crate::exposure::pyramidal_administer(&b, 0, &[], Some(&bn)).unwrap_err();
+    assert!(e.contains("n_stages must be >= 1"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b[..9], 4, &[1, 0, 1, 1], None).unwrap_err();
+    assert!(e.contains("n(n+1)/2"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1], None).unwrap_err();
+    assert!(e.contains("3 responses"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 2, 1], None).unwrap_err();
+    assert!(e.contains("u[2] must be 0 or 1"), "{e}");
+    let mut bad = b.clone();
+    bad[4] = f64::NAN;
+    let e = crate::exposure::pyramidal_administer(&bad, 4, &[1, 0, 1, 1], None).unwrap_err();
+    assert!(e.contains("b[4] must be finite"), "{e}");
+    let e =
+        crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bn[..4])).unwrap_err();
+    assert!(e.contains("n_stages + 1"), "{e}");
+    let mut bad_bn = bn.clone();
+    bad_bn[2] = f64::INFINITY;
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bad_bn)).unwrap_err();
+    assert!(e.contains("b_next[2] must be finite"), "{e}");
+    // Review-mandated: huge n_stages must return Err (checked arithmetic),
+    // never a debug panic or release wrap.
+    let e = crate::exposure::pyramidal_administer(&[], usize::MAX - 1, &[], None).unwrap_err();
+    assert!(e.contains("overflow"), "{e}");
+}
+
+#[test]
+#[ignore = "Monte Carlo (500 reps); run with -- --ignored"]
+fn pyr_mc_500() {
+    // 500 random pyramids: structural invariants read back from crate
+    // outputs (path validity + row-major consistency, M1 = count of u on
+    // the routed path, M2 = mean of crate-returned path difficulties, M6
+    // within [0, n(n+1)] since each stage score is at most 2s).
+    let mut rng = Lcg(0x9d2c_5680_1357_2468);
+    for rep in 0..500 {
+        let n = 2 + (rng.next_f64() * 14.0) as usize; // 2..=15 stages
+        let len = n * (n + 1) / 2;
+        let b: Vec<f64> = (0..len).map(|_| rng.normal() * 1.5).collect();
+        let bn: Vec<f64> = (0..=n).map(|_| rng.normal() * 2.0).collect();
+        let u: Vec<u8> = (0..n).map(|_| (rng.next_f64() < 0.55) as u8).collect();
+        let r = crate::exposure::pyramidal_administer(&b, n, &u, Some(&bn)).unwrap();
+        assert_eq!(r.path.len(), n, "rep {rep}");
+        let mut expect_j = 0usize;
+        for (s, (&idx, &j)) in r.path.iter().zip(&r.positions).enumerate() {
+            let stage = s + 1;
+            assert_eq!(j, expect_j, "rep {rep} stage {stage}");
+            assert_eq!(idx, stage * (stage - 1) / 2 + j, "rep {rep} stage {stage}");
+            assert!(j < stage, "rep {rep}: position outside stage");
+            if stage < n {
+                expect_j += u[s] as usize;
+            }
+        }
+        let m1: f64 = u.iter().map(|&x| f64::from(x)).sum();
+        assert_eq!(r.number_correct, m1, "rep {rep}");
+        let m2 = r.path.iter().map(|&k| b[k]).sum::<f64>() / n as f64;
+        assert!((r.mean_b_attempted - m2).abs() < 1e-12, "rep {rep}");
+        assert!(r.all_item_score >= 0.0, "rep {rep}");
+        assert!(r.all_item_score <= (n * (n + 1)) as f64, "rep {rep}");
+        assert!(r.final_difficulty.is_finite(), "rep {rep}");
+    }
+}
