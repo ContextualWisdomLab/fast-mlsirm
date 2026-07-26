@@ -3641,6 +3641,42 @@ fn st_unsorted() {
 /// Every rejection path returns Err; boundary accepts are pinned too.
 #[test]
 fn st_error_contract() {
+    // u64 overflow guard: counters must reject rather than wrap/panic.
+    assert!(stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0, 2200.0],
+        &[300.0, 300.0],
+        &[u64::MAX, 0],
+        &[0, 0],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0, 2200.0],
+        &[300.0, 300.0],
+        &[0, 0],
+        &[0, u64::MAX],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+
     #[allow(clippy::too_many_arguments)]
     fn call(
         p: &[u64],

@@ -1124,6 +1124,8 @@ def stephenson_rating(
         if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
             raise ValueError("stephenson_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
+        white_u64 = raw[:, 1].astype(np.uint64)
+        black_u64 = raw[:, 2].astype(np.uint64)
     else:
         # np.finfo(...).nmant excludes the implicit leading bit, so the
         # exact-integer bound is nmant + 1 (float64 2**53, float32 2**24).
@@ -1131,13 +1133,16 @@ def stephenson_rating(
             fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
         else:
             fidelity = 2.0**53
-        if np.any(periods >= fidelity):
-            raise ValueError(
-                f"stephenson_rating: period labels at or above {int(fidelity)} are not "
-                f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
-                "pass games as an integer array"
-            )
+        for name, col in (("period", periods), ("white", white), ("black", black)):
+            if np.any(col >= fidelity):
+                raise ValueError(
+                    f"stephenson_rating: {name} labels at or above {int(fidelity)} are not "
+                    f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
+                    "pass games as an integer array"
+                )
         periods_u64 = periods.astype(np.uint64)
+        white_u64 = white.astype(np.uint64)
+        black_u64 = black.astype(np.uint64)
     if np.any(white < 0) or np.any(black < 0):
         raise ValueError("stephenson_rating: player indices must be nonnegative")
     try:
@@ -1148,6 +1153,13 @@ def stephenson_rating(
         ) from None
     if n != n_players:
         raise ValueError("stephenson_rating: n_players must be an integer")
+    # Enforce the core's cap BEFORE any length-n allocation below.
+    if n < 2:
+        raise ValueError("stephenson_rating: at least two players are required")
+    if n > 10_000:
+        raise ValueError(
+            f"stephenson_rating: n = {n} exceeds the supported cap of 10000"
+        )
     g = arr.shape[0]
     if gamma is None:
         gamma_arr = np.zeros(g)
@@ -1228,8 +1240,8 @@ def stephenson_rating(
         ) from None
     res = _core_module().stephenson_rating(
         np.ascontiguousarray(periods_u64),
-        np.ascontiguousarray(white, dtype=np.uint64),
-        np.ascontiguousarray(black, dtype=np.uint64),
+        np.ascontiguousarray(white_u64),
+        np.ascontiguousarray(black_u64),
         np.ascontiguousarray(score),
         np.ascontiguousarray(gamma_arr),
         np.ascontiguousarray(init_r),

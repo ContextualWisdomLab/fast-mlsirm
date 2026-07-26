@@ -9767,3 +9767,11 @@ class TestStephenson:
             stephenson_rating(good, 2, lambda_=None)
         with pytest.raises(ValueError):
             stephenson_rating(np.array([["a", "b", "c", "d"]], dtype=object), 2)
+        # Float player ids at/above 2**53 lose integer fidelity pre-cast.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 2.0**53, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 2.0**53, 1.0]], 2)
+        # n_players cap rejects BEFORE any length-n allocation.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, 1.0]], 10**18)

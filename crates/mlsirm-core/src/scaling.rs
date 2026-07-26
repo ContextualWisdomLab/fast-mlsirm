@@ -2632,6 +2632,18 @@ pub fn stephenson_rating(
             init_lag.len()
         ));
     }
+    // Counters increment at most once per game (games) / per period (lag),
+    // both bounded by g; reject inputs that could overflow u64 rather than
+    // panic (debug) or wrap (release) mid-update.
+    let g_u64 = g as u64;
+    for p in 0..n {
+        if init_games[p] > u64::MAX - g_u64 || init_lag[p] > u64::MAX - g_u64 {
+            return Err(format!(
+                "stephenson_rating: init_games/init_lag for player {} is too large to update without u64 overflow",
+                p
+            ));
+        }
+    }
     if !rdmax.is_finite() || rdmax <= 0.0 {
         return Err(format!(
             "stephenson_rating: rdmax {} must be finite and > 0",
