@@ -6717,3 +6717,1493 @@ class TestSprtClassify:
                 alpha=0.6,
                 beta=0.5,
             )
+
+class TestCiClassify:
+    """ci_classify wrapper: every assert reads crate-returned dict values."""
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import ci_classify
+
+        r = ci_classify(
+            np.full(6, 1.5),
+            np.array([-1.5, -0.9, -0.3, 0.3, 0.9, 1.5]),
+            np.zeros(6),
+            responses=np.array([1, 1, 1, 1, 1, 0]),
+            theta_cut=0.0,
+            z_crit=1.6448536269514722,
+        )
+        assert r["decision"] == "above"
+        assert r["n_used"] == 5
+        theta = np.array(
+            [
+                0.18783548849905624,
+                0.40433637208107137,
+                0.65453031321107147,
+                0.93795666218057705,
+                1.251068565832161,
+                1.004851105902542,
+            ]
+        )
+        se = np.array(
+            [
+                0.91459937771477151,
+                0.84249780260178286,
+                0.78082991898905685,
+                0.72897935456728113,
+                0.68628322205747161,
+                0.60091214158918393,
+            ]
+        )
+        np.testing.assert_allclose(r["theta_trace"], theta, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(r["se_trace"], se, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(
+            r["lower_trace"], theta - 1.6448536269514722 * se, rtol=0, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            r["upper_trace"], theta + 1.6448536269514722 * se, rtol=0, atol=1e-12
+        )
+        # First-strict-crossing anchor: k=5 is the first lower bound > cut.
+        assert r["lower_trace"][3] <= 0.0 < r["lower_trace"][4]
+
+    def test_default_c_and_bool_responses(self):
+        from fast_mlsirm import ci_classify
+
+        r = ci_classify(
+            np.array([1.0, 1.1]),
+            np.array([0.0, 0.2]),
+            responses=np.array([True, False]),
+            theta_cut=0.0,
+            z_crit=1.96,
+        )
+        assert r["decision"] == "continue"
+        assert r["n_used"] == 2
+        assert r["theta_trace"].shape == (2,)
+        assert np.all(r["se_trace"] > 0.0)
+        assert np.all(r["lower_trace"] <= 0.0)
+        assert np.all(r["upper_trace"] >= 0.0)
+
+    def test_rejects_bad_responses(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="0 and 1"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 2]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1.0, 0.5]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+
+    def test_rejects_complex_input(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="real-valued"):
+            ci_classify(
+                np.array([1.0 + 1j, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                z_crit=1.96,
+            )
+
+    def test_core_validation_propagates(self):
+        from fast_mlsirm import ci_classify
+
+        with pytest.raises(ValueError, match="z_crit"):
+            ci_classify(
+                np.array([1.0, 1.0]),
+                np.zeros(2),
+                responses=np.array([1, 0]),
+                theta_cut=0.0,
+                z_crit=0.0,
+            )
+
+class TestDimtest:
+    """Stout-style DIMTEST (Nandakumar & Stout, 1993 formulas).
+
+    The oracle values were computed by an independent NumPy script (never
+    imports the crate); the dataset is regenerated here from the same seed.
+    Every assert reads values returned by the crate via the wrapper.
+    """
+
+    @staticmethod
+    def _fixture():
+        import math
+
+        rng = np.random.default_rng(20260726)
+        n = 500
+        z1 = rng.standard_normal(n)
+        z2 = 0.30 * z1 + math.sqrt(1 - 0.09) * rng.standard_normal(n)
+        items = [(0, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.20, b) for b in (-1.4, -1.0, -0.6, -0.2, 0.2, 0.6, 1.0, 1.4)]
+        p = np.empty((n, len(items)))
+        for j, (dim, a, b) in enumerate(items):
+            th = z1 if dim == 0 else z2
+            p[:, j] = 1 / (1 + np.exp(-a * (th - b)))
+        return (rng.random(p.shape) < p).astype(np.float64)
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        r = dimtest(y, at1=np.arange(5), at2=np.arange(5, 10))
+        assert abs(r.t_l - 8.5848469411043151) < 1e-12
+        assert abs(r.t_b - 3.6579307315481961) < 1e-12
+        assert abs(r.t - 3.4838558621150524) < 1e-12
+        # crate erfc is a 1.2e-7-accurate approximation; anchor p at 5e-7.
+        assert abs(r.p_value - 0.000247122791999742) < 5e-7
+        assert r.groups_used == 8
+        assert r.n_discarded == 17
+        assert r.retained_pt_scores.tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def test_rejects_overlap_and_short_at(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="duplicates"):
+            dimtest(y, at1=[0, 1, 2, 3], at2=[3, 4, 5, 6])
+        with pytest.raises(ValueError, match=">= 4"):
+            dimtest(y, at1=[0, 1, 2], at2=[3, 4, 5])
+
+    def test_rejects_non_binary_and_complex(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        bad = y.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            dimtest(bad, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="real-valued"):
+            dimtest(y.astype(complex), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+    def test_rejects_fractional_indices(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="integers"):
+            dimtest(y, at1=[0.5, 1, 2, 3], at2=[4, 5, 6, 7])
+
+    def test_rejects_string_responses_and_indices(self):
+        # Regression: dtype-kind check must run BEFORE astype casts, so
+        # string arrays are rejected rather than silently coerced.
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y.astype(str), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y, at1=["0", "1", "2", "3", "4"], at2=[5, 6, 7, 8, 9])
+
+    def test_too_few_groups_errors(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()[:30]
+        with pytest.raises(ValueError, match="need at least 2"):
+            dimtest(y, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+class TestWollackOmega:
+    """Omega answer-copying statistic (Wollack, 1997, as implemented by
+    CopyDetect/aberrance; oracle values pinned from an independent Python
+    computation in the adversarial spec review)."""
+
+    @staticmethod
+    def _fixture():
+        import numpy as np
+
+        probs = np.array(
+            [
+                [0.05, 0.10, 0.70, 0.10, 0.05],
+                [0.20, 0.20, 0.20, 0.20, 0.20],
+                [0.60, 0.15, 0.10, 0.10, 0.05],
+                [0.12, 0.38, 0.25, 0.15, 0.10],
+                [0.30, 0.25, 0.20, 0.15, 0.10],
+                [0.08, 0.12, 0.16, 0.24, 0.40],
+                [0.45, 0.05, 0.25, 0.15, 0.10],
+                [0.11, 0.22, 0.33, 0.22, 0.12],
+                [0.18, 0.32, 0.22, 0.18, 0.10],
+                [0.07, 0.14, 0.21, 0.28, 0.30],
+            ]
+        )
+        source = np.array([2, 3, 0, 1, 4, 4, 2, 1, 0, 3])
+        copier = np.array([2, 1, 0, 1, 3, 4, 0, 1, 2, 3])
+        return copier, source, probs
+
+    def test_pinned_oracle(self):
+        # Asserts read WollackOmegaResult fields returned by the crate.
+        # Killed by: sqrt(V) vs V, copier-prob lookup, two-sided p,
+        # continuity correction (mutation values in the Rust test file).
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier, source, probs, 5)
+        assert r.observed_matches == 6
+        assert abs(r.expected_matches - 3.3100000000000001) < 1e-12
+        assert abs(r.variance - 1.8839000000000001) < 1e-12
+        assert abs(r.omega - 1.9598523632230238) < 1e-12
+        assert abs(r.p_value - 0.02500652442931299) < 5e-7
+
+    def test_flat_probs_equivalent(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r2 = wollack_omega(copier, source, probs, 5)
+        r1 = wollack_omega(copier, source, probs.ravel(), 5)
+        assert r1.omega == r2.omega
+        assert r1.p_value == r2.p_value
+
+    def test_rejects_bad_inputs(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega(np.array(["2", "1"]), source[:2], probs[:2], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier.astype(complex), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier + 0.5, source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs.astype(complex), 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source[:9], probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs[:, :4], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs, 0)
+        bad = copier.copy()
+        bad[0] = 5
+        with pytest.raises(ValueError):
+            wollack_omega(bad, source, probs, 5)
+        badp = probs.copy()
+        badp[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, badp, 5)
+
+    def test_accepts_float_integer_indices(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier.astype(float), source.astype(float), probs, 5)
+        assert r.observed_matches == 6
+    def test_rejects_bool_indices(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega((copier == 2), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, (source == 1), probs, 5)
+
+class TestKIndex:
+    def _fixture(self):
+        import numpy as np
+
+        return np.array(
+            [
+                [1, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+                [0, 0, 1, 0, 1, 1, 0, 0, 1, 0],
+                [1, 0, 0, 1, 0, 1, 0, 0, 0, 1],
+                [1, 1, 1, 0, 0, 0, 1, 1, 0, 0],
+                [1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 0, 1, 1, 0, 1, 1],
+                [0, 1, 0, 1, 1, 0, 0, 1, 0, 1],
+                [0, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+                [0, 1, 0, 1, 1, 1, 1, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 1, 0, 0, 1],
+            ],
+            dtype=float,
+        )
+
+    def test_pinned_oracle(self):
+        # Asserts read KIndexResult fields returned by the crate through the
+        # wrapper; oracle computed independently with exact math.comb.
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        r = k_index(self._fixture(), copier=2, source=7)
+        assert r.wc == 6
+        assert r.ws == 5
+        assert r.m == 2
+        assert list(r.subgroup) == [1, 2, 5]
+        assert list(r.emp_agg) == [3, 2, 3]
+        assert abs(r.p - 0.53333333333333333) < 1e-12
+        assert abs(r.k_index - 0.85139489711934158) < 1e-12
+        assert isinstance(r.subgroup, np.ndarray)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import k_index
+
+        x = self._fixture()
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=2)  # identical indices
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=10)  # out of range
+        with pytest.raises(ValueError):
+            k_index(x, copier=True, source=7)  # bool index
+        bad = x.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            k_index(bad, copier=2, source=7)  # non-binary
+        with pytest.raises(ValueError):
+            k_index(x + 0j, copier=2, source=7)  # complex laundering
+        with pytest.raises(ValueError):
+            k_index(x.astype(bool), copier=2, source=7)  # bool matrix
+        allc = x.copy()
+        allc[4, :] = 1.0
+        with pytest.raises(ValueError):
+            k_index(allc, copier=2, source=4)  # ws == 0 degenerate
+
+    def test_m_zero_gives_k_one(self):
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        x = np.ones((3, 10))
+        x[0, 9] = 0.0
+        x[1, 0] = 0.0
+        x[1, 1] = 0.0
+        r = k_index(x, copier=0, source=1)
+        assert r.m == 0
+        assert r.k_index == 1.0
+
+class TestGbt:
+    """GBT tail kernel: asserts read fast_mlsirm.gbt outputs (crate-backed).
+
+    Oracle: exact Python fractions.Fraction reference from the adversarial
+    spec review (files/gbt_spec_review.md); kills tail-direction,
+    off-by-one, and convolution-mixing mutants.
+    """
+
+    def test_pinned_oracle(self):
+        import numpy as np
+
+        from fast_mlsirm import gbt
+
+        matches = np.array([1, 1, 0, 1, 1, 1, 0, 1, 1, 0], dtype=np.int64)
+        probs = np.array(
+            [0.62, 0.55, 0.48, 0.71, 0.52, 0.66, 0.43, 0.58, 0.73, 0.49]
+        )
+        r = gbt(matches, probs)
+        assert r.observed_matches == 7
+        assert abs(r.p_value - 0.32225898631286054) < 1e-12
+        assert r.match_dist.shape == (11,)
+        assert abs(r.match_dist[0] - 0.00013873169507258882) < 1e-12
+        assert abs(r.match_dist[7] - 0.19449839960529633) < 1e-12
+        assert abs(r.match_dist.sum() - 1.0) < 1e-12
+
+    def test_structural_obs_zero_tail_is_one(self):
+        import numpy as np
+
+        from fast_mlsirm import gbt
+
+        r = gbt(np.zeros(4), np.array([0.3, 0.9, 0.5, 0.1]))
+        assert r.observed_matches == 0
+        assert r.p_value == 1.0
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import gbt
+
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.5]), np.array([0.5, 0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.0]), np.array([0.5, 1.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0, 0.0]), np.array([0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([1.0 + 0j, 0.0]), np.array([0.5, 0.5]))
+        with pytest.raises(ValueError):
+            gbt(np.array([True, False]), np.array([0.5, 0.5]))
+
+class TestKVariants:
+    """K1/K2/S1/S2 indices: asserts read fast_mlsirm.k_variants outputs
+    (crate-backed).
+
+    Oracle: independent Python reference confirmed by the adversarial spec
+    review (files/k_variants_spec_review.md); the pinned values kill
+    source-inclusion, weight-exponent-sign, and strict-tail mutants.
+    """
+
+    def _fixture(self):
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        x = (rng.random((15, 12)) < 0.6).astype(float)
+        x[2, :5] = x[7, :5]
+        return x
+
+    def test_pinned_oracle(self):
+        import numpy as np
+
+        from fast_mlsirm import k_variants
+
+        r = k_variants(self._fixture(), copier=2, source=7)
+        assert r.wc == 4
+        assert r.ws == 3
+        assert r.m == 2
+        assert r.mm == 3
+        assert abs(r.p1 - 0.43862433862433853) < 1e-10
+        assert abs(r.p2 - 0.38571428571428595) < 1e-10
+        assert abs(r.s1 - 1.2577145969460732) < 1e-8
+        assert abs(r.s2 - 2.2808598308064885) < 1e-8
+        assert abs(r.k1 - 0.4083989087088663) < 1e-10
+        assert abs(r.k2 - 0.33155685131195367) < 1e-10
+        assert abs(r.s1_index - 0.3191324670108421) < 1e-8
+        assert abs(r.s2_index - 0.39887838757590066) < 1e-8
+        assert r.pr.shape == (13,)
+        assert r.pj.shape == (13,)
+        # source excluded from its own subgroup: pr[3] uses rows other
+        # than the source (independent oracle value 2/9, not 1)
+        assert abs(r.pr[3] - 2.0 / 9.0) < 1e-12
+        assert np.isnan(r.pr[0])
+        assert isinstance(r.pr, np.ndarray)
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import k_variants
+
+        x = self._fixture()
+        with pytest.raises(ValueError):
+            k_variants(x, copier=2, source=2)  # identical indices
+        with pytest.raises(ValueError):
+            k_variants(x, copier=2, source=15)  # out of range
+        with pytest.raises(ValueError):
+            k_variants(x, copier=True, source=7)  # bool index
+        bad = x.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            k_variants(bad, copier=2, source=7)  # non-binary
+        with pytest.raises(ValueError):
+            k_variants(x + 0j, copier=2, source=7)  # complex laundering
+        with pytest.raises(ValueError):
+            k_variants(x.astype(bool), copier=2, source=7)  # bool matrix
+        allc = x.copy()
+        allc[7, :] = 1.0
+        with pytest.raises(ValueError):
+            k_variants(allc, copier=2, source=7)  # ws == 0 degenerate
+
+    def test_result_fields(self):
+        from fast_mlsirm import KVariantsResult, k_variants
+
+        r = k_variants(self._fixture(), copier=2, source=7)
+        assert isinstance(r, KVariantsResult)
+        for field in ("wc", "ws", "m", "mm"):
+            assert isinstance(getattr(r, field), int)
+        for field in (
+            "p1",
+            "p2",
+            "s1",
+            "s2",
+            "k1",
+            "k2",
+            "s1_index",
+            "s2_index",
+        ):
+            v = getattr(r, field)
+            assert isinstance(v, float)
+            assert 0.0 <= v or field in ("s1", "s2")
+
+class TestHofstee:
+    def test_pinned_oracle_main(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        rng = np.random.default_rng(2026)
+        scores = np.round(np.clip(rng.normal(68, 9, 40), 0, 100), 1)
+        r = hofstee(scores, 62.5, 75.0, 0.0, 20.0)
+        assert r.failed is False
+        assert abs(r.cut_score - 62.804878048780488) < 1e-12
+        assert abs(r.fail_rate - 19.512195121951219) < 1e-12
+        assert r.cum_freq_percent.shape == (101,)
+        assert r.cum_freq_percent[62] == 17.5
+        assert r.cum_freq_percent[63] == 20.0
+        # divide-first arithmetic order (23/40)*100:
+        assert r.cum_freq_percent[70] == 57.49999999999999
+
+    def test_fallback_and_reduced_scope(self):
+        import numpy as np
+
+        from fast_mlsirm import hofstee
+
+        r = hofstee(np.full(10, 30.0), 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 100.0, True)
+        r = hofstee([30.0, 30.0, 90.0], 62.5, 75.0, 0.0, 20.0)
+        assert (r.cut_score, r.fail_rate, r.failed) == (62.5, 66.67, True)
+        import pytest
+
+        with pytest.raises(ValueError, match="zero-length"):
+            hofstee([50.0], 70.0, 70.0, 20.0, 20.0)
+        with pytest.raises(ValueError, match="collinear overlap"):
+            hofstee([10.0, 90.0], 40.0, 60.0, 50.0, 50.0)
+
+    def test_error_paths(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import hofstee
+
+        with pytest.raises(ValueError):
+            hofstee([], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([np.nan], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0 + 1j], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([[50.0]], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 62.5, 75.0, 0.0, True)
+        with pytest.raises(ValueError):
+            hofstee([101.0], 62.5, 75.0, 0.0, 20.0)
+        with pytest.raises(ValueError):
+            hofstee([50.0], 75.0, 62.5, 0.0, 20.0)
+
+class TestPersonFitNp:
+    def test_pinned_main_fixture(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        rows = [
+            "11000000", "01010110", "11010000", "11111011", "11001100",
+            "11111010", "11101101", "11100001", "01000101", "00001111",
+            "00000000", "11111111",
+        ]
+        x = np.array([[int(c) for c in r] for r in rows], dtype=float)
+        res = person_fit_np(x)
+        assert res.g.tolist() == [0, 10, 4, 4, 0, 6, 0, 4, 4, 10, 0, 0]
+        assert abs(res.gnormed[1] - 0.625) < 1e-12
+        assert abs(res.nci[3] - (-0.1428571428571428)) < 1e-12
+        assert abs(res.u3[9] - 0.7968163928347531) < 1e-12
+        assert abs(res.zu3[9] - 2.315959529860312) < 1e-12
+        assert abs(res.c_sato[9] - 1.5555555555555556) < 1e-12
+        assert abs(res.cstar[9] - 0.7777777777777777) < 1e-12
+        # Perfect rows: G/Gnormed/NCI = 0; U3/ZU3/C/C* NaN.
+        for p in (10, 11):
+            assert res.g[p] == 0 and res.gnormed[p] == 0 and res.nci[p] == 0
+            assert np.isnan(res.u3[p]) and np.isnan(res.zu3[p])
+            assert np.isnan(res.c_sato[p]) and np.isnan(res.cstar[p])
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import person_fit_np
+
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([0.0, 1.0]))  # 1-D
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, 0.5]]))  # non-binary
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0, np.nan]]))  # missing out of scope
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0 + 0j, 0.0]]))  # complex laundering
+        with pytest.raises(ValueError):
+            person_fit_np(np.array([[1.0], [0.0]]))  # single item
+
+    def test_bool_input_accepted(self):
+        import numpy as np
+
+        from fast_mlsirm import person_fit_np
+
+        x = np.array([[True, True, False], [False, True, True]])
+        res = person_fit_np(x)
+        assert res.g.shape == (2,)
+
+class TestDeltaPlot:
+    """Angoff Delta plot DIF (deltaPlotR response-type port).
+
+    Every assertion reads values returned by the crate through the
+    Python wrapper; pinned values come from a NumPy oracle
+    transcription of deltaPlot.R with exact normal quantiles (crate
+    uses Acklam's approximation, hence 1e-6 tolerances)."""
+
+    @staticmethod
+    def _main_fixture():
+        import numpy as np
+
+        rng = np.random.default_rng(2037)
+        n, ni = 80, 10
+        theta = rng.normal(0, 1, n)
+        group = np.array([0] * 40 + [1] * 40)
+        bd = np.linspace(-1.5, 1.5, ni)
+        eta = theta[:, None] - bd[None, :]
+        eta[group == 1, 3] -= 2.2
+        resp = (rng.random((n, ni)) < 1 / (1 + np.exp(-eta))).astype(float)
+        return resp, group
+
+    def test_main_fixture_pins(self):
+        import numpy as np
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        r = delta_plot(resp, group)
+        assert abs(r.props[3, 0] - 0.625) < 1e-15
+        assert abs(r.props[3, 1] - 0.225) < 1e-15
+        assert abs(r.deltas[3, 0] - 11.7254425441425) < 1e-6
+        assert abs(r.axis_par[0, 1] - 1.0498623805872538) < 1e-6
+        assert abs(r.dist[0, 3] - -2.968831851786941) < 1e-6
+        assert abs(r.thresholds[0] - 2.4061275783230864) < 1e-6
+        assert list(r.dif_items) == [3]
+        assert r.n_iter == 1 and r.converged
+        assert r.dist.shape == (1, 10)
+        assert np.isfinite(r.dist).all()
+
+    def test_purification_and_fixed_threshold(self):
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        r3 = delta_plot(resp, group, purify="IPP3")
+        assert r3.n_iter == 2 and r3.converged
+        assert list(r3.dif_items) == [3]
+        assert abs(r3.thresholds[1] - 1.2874360054118958) < 1e-6
+        rf = delta_plot(resp, group, threshold="fixed", fixed_threshold=1.0)
+        assert list(rf.dif_items) == [3, 7, 8]
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        with pytest.raises(ValueError):
+            delta_plot(resp[:, :1], group)
+        with pytest.raises(ValueError):
+            delta_plot(resp, group[:-1])
+        with pytest.raises(ValueError):
+            delta_plot(resp + 0j, group)  # complex laundering
+        bad = resp.copy()
+        bad[0, 0] = 2.0
+        with pytest.raises(ValueError):
+            delta_plot(bad, group)
+        with pytest.raises(ValueError):
+            delta_plot(resp, np.full_like(group, 2))
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, threshold="bogus")
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, purify="IPP9")
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, alpha=0.0)
+        with pytest.raises(ValueError):
+            delta_plot(resp, group, extreme="add", nr_add=0)
+
+    def test_missing_and_add_mode(self):
+        import numpy as np
+
+        from fast_mlsirm import delta_plot
+
+        resp, group = self._main_fixture()
+        miss = resp.copy()
+        miss[0, 0] = np.nan
+        r = delta_plot(miss, group)
+        expect = resp[1:40, 0].sum() / 39.0
+        assert abs(r.props[0, 0] - expect) < 1e-15
+        # add-mode: exact-1 ref proportion becomes (sum+1)/(n+2)
+        small = np.array(
+            [[1, 1], [1, 0], [1, 1], [1, 0], [0, 0], [1, 1], [1, 1], [0, 1]],
+            dtype=float,
+        )
+        g = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        ra = delta_plot(
+            small, g, extreme="add", nr_add=1, threshold="fixed", fixed_threshold=9.9
+        )
+        assert abs(ra.adj_props[0, 0] - 5.0 / 6.0) < 1e-15
+
+class TestEbMhDif:
+    """Empirical Bayes MH DIF (Zwick & Thayer, 2003, ED481063). Pins read
+    crate-returned values; oracle in the session spec artifacts."""
+
+    def test_pinned_main_fixture(self):
+        import numpy as np
+
+        from fast_mlsirm import eb_mh_dif
+
+        r = eb_mh_dif([1.2, -0.4, 0.3, -2.1], [0.5, 0.8, 0.4, 1.0])
+        assert abs(r.mu - (-0.25)) < 1e-12
+        assert abs(r.tau2 - 1.4375) < 1e-12
+        assert abs(r.weight[0] - 23.0 / 27.0) < 1e-12
+        assert abs(r.post_mean[3] - (-523.0 / 390.0)) < 1e-12
+        assert abs(r.post_var[0] - 23.0 / 108.0) < 1e-12
+        assert r.cat_probs.shape == (4, 5)
+        # Item 4 C- probability (independent math.erfc oracle).
+        assert abs(r.cat_probs[3, 0] - 0.4180002533326439) < 5e-7
+        assert np.allclose(r.cat_probs.sum(axis=1), 1.0, atol=1e-9)
+
+    def test_degenerate_floor(self):
+        from fast_mlsirm import eb_mh_dif
+
+        r = eb_mh_dif([0.5, 0.5, 0.5], [1.0, 1.0, 1.0])
+        assert r.tau2 == 0.0
+        assert abs(r.tau2_raw - (-1.0)) < 1e-12
+        assert list(r.cat_probs[0]) == [0.0, 0.0, 1.0, 0.0, 0.0]
+
+    def test_validation_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import eb_mh_dif
+
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0, 2.0], [1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0], [1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([np.nan, 1.0], [1.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([1.0, 2.0], [0.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif(np.array([1 + 2j, 1.0]), [1.0, 1.0])
+        with pytest.raises(ValueError):
+            eb_mh_dif([[1.0, 2.0]], [1.0, 1.0])
+
+class TestMantelSmd:
+    """Mantel (1963) polytomous DIF + SMD (Zwick, Donoghue & Grima, 1993)."""
+
+    def _fixture(self):
+        import numpy as np
+
+        y = np.array(
+            [
+                [2, 1, 0], [1, 0, 2], [2, 2, 1], [0, 1, 1], [1, 2, 0], [2, 0, 0],
+                [1, 1, 1], [0, 0, 0], [2, 1, 0], [0, 2, 2], [0, 1, 0], [1, 0, 1],
+            ]
+        )
+        group = np.array([0] * 6 + [1] * 6)
+        return y, group
+
+    def test_pinned_fixture(self):
+        import numpy as np
+        from fast_mlsirm import mantel_smd_dif
+
+        y, group = self._fixture()
+        res = mantel_smd_dif(y, group)
+        # Exact-rational pins from the session oracle (crate values asserted).
+        np.testing.assert_allclose(res["chi2"], [3 / 77, 5 / 37, 2 / 133], atol=1e-12)
+        np.testing.assert_allclose(res["smd"], [1 / 9, -1 / 6, 1 / 18], atol=1e-12)
+        assert list(res["n_strata_used"]) == [2, 2, 2]
+        assert np.all((res["p_value"] > 0) & (res["p_value"] < 1))
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import mantel_smd_dif
+
+        y, group = self._fixture()
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y.astype(complex), group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y + 0.5, group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(-y, group)
+        yn = y.astype(float)
+        yn[0, 0] = np.nan
+        with pytest.raises(ValueError):
+            mantel_smd_dif(yn, group)
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y, np.zeros(12, dtype=int))
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y, group[:5])
+        with pytest.raises(ValueError):
+            mantel_smd_dif(y.ravel(), group)
+        big = y.astype(np.int64).copy()
+        big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
+        with pytest.raises(ValueError):
+            mantel_smd_dif(big, group)
+
+class TestGmhDif:
+    """GMH nominal DIF (Eq. 10; Zwick, Donoghue & Grima, 1993)."""
+
+    def _fixture(self):
+        import numpy as np
+
+        y = np.array(
+            [
+                [2, 1, 0], [1, 0, 2], [2, 2, 1], [0, 1, 1], [1, 2, 0], [2, 0, 0],
+                [1, 1, 1], [0, 0, 0], [2, 1, 0], [0, 2, 2], [0, 1, 0], [1, 0, 1],
+            ]
+        )
+        group = np.array([0] * 6 + [1] * 6)
+        return y, group
+
+    def test_pinned_fixture(self):
+        import numpy as np
+        from fast_mlsirm import gmh_dif
+
+        y, group = self._fixture()
+        res = gmh_dif(y, group)
+        # Exact-rational pins from the session oracle (crate values asserted).
+        np.testing.assert_allclose(
+            res["chi2"], [53 / 79, 352 / 483, 1072 / 483], atol=1e-12
+        )
+        assert list(res["df"]) == [2, 2, 2]
+        assert list(res["n_strata_used"]) == [2, 2, 2]
+        assert np.all((res["p_value"] > 0) & (res["p_value"] < 1))
+
+    def test_dichotomous_matches_mantel(self):
+        import numpy as np
+        from fast_mlsirm import gmh_dif, mantel_smd_dif
+
+        y = np.array(
+            [
+                [1, 0], [1, 1], [1, 0], [0, 1], [1, 1], [1, 0], [0, 0], [1, 1],
+                [0, 1], [0, 0], [1, 0], [0, 1], [1, 1], [0, 0], [0, 1], [1, 0],
+            ]
+        )
+        group = np.array([0] * 8 + [1] * 8)
+        g = gmh_dif(y, group)
+        m = mantel_smd_dif(y, group)
+        np.testing.assert_allclose(g["chi2"], m["chi2"], atol=1e-12)
+        np.testing.assert_allclose(g["chi2"], [0.98, 0.98], atol=1e-12)
+        assert list(g["df"]) == [1, 1]
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import gmh_dif
+
+        y, group = self._fixture()
+        with pytest.raises(ValueError):
+            gmh_dif(y.astype(complex), group)
+        with pytest.raises(ValueError):
+            gmh_dif(y + 0.5, group)
+        with pytest.raises(ValueError):
+            gmh_dif(-y, group)
+        yn = y.astype(float)
+        yn[0, 0] = np.nan
+        with pytest.raises(ValueError):
+            gmh_dif(yn, group)
+        with pytest.raises(ValueError):
+            gmh_dif(y, np.zeros(12, dtype=int))
+        with pytest.raises(ValueError):
+            gmh_dif(y, group[:5])
+        with pytest.raises(ValueError):
+            gmh_dif(y.ravel(), group)
+        big = y.astype(np.int64).copy()
+        big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
+        with pytest.raises(ValueError):
+            gmh_dif(big, group)
+
+class TestBreslowDay:
+    """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test."""
+
+    def _fixture(self):
+        import numpy as np
+
+        # 24x4 fixture from the session oracle; first 12 rows reference,
+        # last 12 focal. Same fixture as the Rust bd_fixture().
+        y = np.array(
+            [
+                [1, 0, 0, 0], [1, 1, 0, 0], [0, 1, 1, 0], [1, 0, 1, 1],
+                [1, 1, 1, 0], [0, 0, 1, 0], [1, 1, 0, 1], [0, 1, 0, 0],
+                [1, 0, 1, 0], [1, 1, 1, 1], [0, 0, 0, 1], [1, 1, 0, 0],
+                [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 0],
+                [1, 1, 0, 0], [0, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1],
+                [0, 0, 1, 1], [1, 1, 1, 0], [0, 1, 0, 0], [0, 0, 0, 0],
+            ]
+        )
+        group = np.array([0] * 12 + [1] * 12)
+        return y, group
+
+    def test_pinned_fixture(self):
+        import numpy as np
+        from fast_mlsirm import breslow_day_dif
+
+        y, group = self._fixture()
+        res = breslow_day_dif(y, group)
+        # Exact pins from the session oracle (crate values asserted). The
+        # chi2 pins discriminate the MH plug-in from an unconditional-MLE
+        # psi-hat (item 0: 0.3760173495 vs 0.3740794014) and kill wrong-root,
+        # dropped-variance-reciprocal, and stratum-OR mutations; the df pins
+        # kill df = K.
+        np.testing.assert_allclose(
+            res["alpha_mh"], [14 / 3, 23 / 26, 39 / 49, 5 / 9], atol=1e-12
+        )
+        np.testing.assert_allclose(
+            res["chi2"],
+            [
+                0.37601734952436118,
+                1.59543251534123905,
+                0.41398523247143159,
+                3.98273278105957981,
+            ],
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(res["df"], [1.0, 2.0, 2.0, 2.0], atol=0)
+        np.testing.assert_allclose(
+            res["p_value"],
+            [
+                0.5397424284850997,
+                0.4503562883177753,
+                0.8130256531551879,
+                0.1365087736593863,
+            ],
+            atol=1e-10,
+        )
+        assert list(res["n_strata_used"]) == [2, 3, 3, 3]
+        assert res["flagged_bh"].dtype == bool
+        assert not res["flagged_bh"].any()
+
+    def test_psi_one_mirrored_groups(self):
+        import numpy as np
+        from fast_mlsirm import breslow_day_dif
+
+        # Focal block identical to the reference block -> alpha_mh = 1
+        # exactly (psi = 1 linear branch) and chi2 = 0, p = 1. Same mirrored
+        # fixture as the Rust breslow_day_psi_one_linear_branch test.
+        y_ref, _ = self._fixture()
+        y_half = y_ref[:12]
+        y = np.vstack([y_half, y_half])
+        group = np.array([0] * 12 + [1] * 12)
+        res = breslow_day_dif(y, group)
+        np.testing.assert_allclose(res["alpha_mh"], [1.0] * 4, atol=0)
+        np.testing.assert_allclose(res["chi2"], [0.0] * 4, atol=1e-12)
+        np.testing.assert_allclose(res["p_value"], [1.0] * 4, atol=1e-12)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import breslow_day_dif
+
+        y, group = self._fixture()
+        with pytest.raises(ValueError):
+            breslow_day_dif(y.astype(complex), group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y + 0.5, group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y * 2, group)  # codes other than 0/1
+        yn = y.astype(float)
+        yn[0, 0] = np.nan
+        with pytest.raises(ValueError):
+            breslow_day_dif(yn, group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, np.zeros(24, dtype=int))
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, group[:5])
+        with pytest.raises(ValueError):
+            breslow_day_dif(y.ravel(), group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, group, fdr_q=0.0)
+        big = y.astype(np.int64).copy()
+        big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
+        with pytest.raises(ValueError):
+            breslow_day_dif(big, group)
+
+class TestFlexilevel:
+    def test_worked_example_routing_pin(self):
+        from fast_mlsirm import flexilevel_administer
+
+        # Lord (1971) worked example RWWRWRRRWR on N = 19: administered
+        # columns [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]; blue, r = 6, x = 6.
+        cols = [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]
+        answers = [1, 0, 0, 1, 0, 1, 1, 1, 0, 1]
+        row = np.zeros((1, 19))
+        for c, y in zip(cols, answers):
+            row[0, c] = y
+        r = flexilevel_administer(row, n_persons=1, n_items=19)
+        assert r["n_administered"] == 10
+        assert r["items"].tolist() == cols
+        assert r["number_right"].tolist() == [6]
+        assert r["is_red"].tolist() == [0]
+        assert r["score"].tolist() == [6.0]
+
+    def test_distribution_exact_pin(self):
+        from fast_mlsirm import flexilevel_score_distribution
+
+        # N = 5 exact oracle pin (enumeration == recursion in the spec
+        # oracle): mean 7/4, variance 71/240.
+        d = flexilevel_score_distribution([4 / 5, 2 / 3, 1 / 2, 1 / 3, 1 / 5])
+        assert d["scores"].tolist() == [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        expect = [1 / 30, 2 / 15, 1 / 3, 1 / 3, 2 / 15, 1 / 30]
+        assert np.allclose(d["probs"], expect, atol=1e-15)
+        assert abs(d["mean"] - 1.75) < 1e-15
+        assert abs(d["variance"] - 71 / 240) < 1e-15
+
+    def test_validation_errors(self):
+        from fast_mlsirm import (
+            flexilevel_administer,
+            flexilevel_score_distribution,
+        )
+
+        with pytest.raises(ValueError, match="odd"):
+            flexilevel_administer(np.zeros((1, 4)), n_persons=1, n_items=4)
+        with pytest.raises(ValueError, match="0 and 1"):
+            flexilevel_administer(
+                np.full((1, 5), 2.0), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.zeros((1, 5), dtype=complex), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="shape"):
+            flexilevel_administer(np.zeros((2, 5)), n_persons=1, n_items=5)
+        with pytest.raises(ValueError, match=r"p\[1\]"):
+            flexilevel_score_distribution([0.5, 1.5, 0.5])
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(np.array([0.5, 0.5j, 0.5]))
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.array([0, 1 + 0j, 0, 1, 0], dtype=object),
+                n_persons=1,
+                n_items=5,
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(
+                np.array([0.5, 0.5 + 0j, 0.5], dtype=object)
+            )
+
+class TestStradaptive:
+    def test_person_d_lower_step_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # Below-chance-side m7 anchor (spec Person D): p = 1/3 < 1/2 at hnc
+        # with UNEQUAL adjacent gaps (D = [-2, 0, 3]); the derived lower
+        # step gives 0 + (0 - (-2))(1/3 - 1/2) = -1/3, while an
+        # always-upper mutant gives -1/2. Every assert reads crate output.
+        r = stradaptive_administer(
+            [0, 0, 1, 1, 1, 2, 2],
+            [-2.0, -2.0, -1.0, 0.0, 1.0, 3.0, 3.0],
+            [1, 1, 1, 0, 0, 0, 0],
+            entry_stratum=1,
+            chance=0.25,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [2, 5, 3, 0, 4, 1]
+        assert r["reason"] == "pool_exhausted"
+        assert r["ceiling"] == -1
+        assert r["hnc"] == 1
+        assert abs(r["scores"][6] - (-1.0 / 3.0)) < 1e-12
+        assert abs(r["scores"][6] - (-0.5)) > 0.1
+
+    def test_person_e_boundary_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # p == chance exactly must terminate (<=, not <); chance = 1/2.
+        r = stradaptive_administer(
+            [0, 0, 0, 1, 1],
+            [-1.0, -1.0, -1.0, 1.0, 1.0],
+            [1, 0, 1, 0, 0],
+            entry_stratum=0,
+            chance=0.5,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [0, 3, 1]
+        assert r["responses_taken"].tolist() == [1, 0, 0]
+        assert r["reason"] == "criterion"
+        assert r["ceiling"] == 0
+        assert r["hnc"] == -1
+        assert r["scores"][0] == -1.0
+        assert r["scores"][1] == -1.0
+        assert np.isnan(r["scores"][2])
+        assert np.isnan(r["scores"][8])
+
+    def test_validation_errors(self):
+        from fast_mlsirm import stradaptive_administer
+
+        kw = dict(entry_stratum=0, chance=0.25, min_items=1, max_items=10)
+        with pytest.raises(ValueError, match="chance"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                entry_stratum=0, chance=1.0, min_items=1, max_items=10,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 2, 1, 0], **kw
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1j, 1.0, 1.0]),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1 + 0j, 1.0, 1.0], dtype=object),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        with pytest.raises(ValueError, match="non-negative integers"):
+            stradaptive_administer(
+                [0, -1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
+        # 2**53 + 1 rounds to 2**53 under float64; the len-based bound must
+        # reject it anyway (regression for the lossy > 2**53 guard).
+        with pytest.raises(ValueError, match="below len"):
+            stradaptive_administer(
+                [0, 2**53 + 1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                **kw,
+            )
+        with pytest.raises(ValueError, match="stratum"):
+            stradaptive_administer(
+                [0, 0, 2, 2], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
+
+class TestPyramidal:
+    """Larkin & Weiss (1974) pyramidal adaptive testing wrapper.
+
+    Anchors from files/pyramidal_oracle.py (exact Fractions, executed);
+    every assert reads values returned by the crate through the wrapper.
+    """
+
+    def _pyr4(self):
+        import numpy as np
+
+        b = np.array([0, -1, 1, -2, 0, 2, -3, -1, 1, 3], dtype=np.float64)
+        b_next = np.array([-4, -2, 0, 2, 4], dtype=np.float64)
+        return b, b_next
+
+    def test_anchor_a_exact(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn)
+        assert r["path"].tolist() == [0, 2, 4, 8]
+        assert r["positions"].tolist() == [0, 1, 1, 2]
+        assert r["number_correct"] == 3.0
+        assert r["mean_b_attempted"] == 0.5
+        assert abs(r["mean_b_correct"] - 1.0 / 3.0) < 1e-15
+        assert r["final_b"] == 1.0
+        assert r["final_difficulty"] == 2.0
+        assert r["all_item_score"] == 15.0
+        # M5 unavailable without b_next
+        r2 = pyramidal_administer(b, 4, [1, 0, 1, 1])
+        assert np.isnan(r2["final_difficulty"])
+        assert r2["all_item_score"] == 15.0
+
+    def test_all_wrong_and_paper_range(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, np.zeros(4), b_next=bn)
+        assert r["path"].tolist() == [0, 1, 3, 6]
+        assert np.isnan(r["mean_b_correct"])
+        assert r["final_difficulty"] == -4.0
+        assert r["all_item_score"] == 0.0
+        # Paper-printed 15-stage all-item range 0..240 (p. 16).
+        n = 15
+        big = np.zeros(n * (n + 1) // 2)
+        assert pyramidal_administer(big, n, np.ones(n))["all_item_score"] == 240.0
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        with pytest.raises(ValueError, match="0 and 1"):
+            pyramidal_administer(b, 4, [1, 0, 2, 1], b_next=bn)
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(b.astype(np.complex128), 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(
+                np.array([1j if i == 0 else 0.0 for i in range(10)], dtype=object),
+                4,
+                [1, 0, 1, 1],
+            )
+        with pytest.raises(ValueError, match="n\\(n\\+1\\)/2"):
+            pyramidal_administer(b[:9], 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="n_stages \\+ 1"):
+            pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn[:4])
+
+class TestTwoStage:
+    """Betz & Weiss (1973, 1974) two-stage adaptive testing wrappers.
+
+    Anchors from files/twostage_oracle.py (exact Fractions through the
+    p-computation, executed; Acklam inverse-CDF tolerance 1e-7); every
+    assert reads values returned by the crate through the wrapper.
+    """
+
+    def _ts(self):
+        import numpy as np
+
+        a_meas = np.array([0.53, 0.55, 0.61, 0.68])
+        b_meas = np.array([1.73, 0.35, -0.71, -1.60])
+        return 10, 0.70, -0.23, a_meas, b_meas
+
+    def test_anchor_pipeline(self):
+        from fast_mlsirm import two_stage_route, two_stage_score
+
+        m1, a1, b1, a_meas, b_meas = self._ts()
+        theta1, assigned = two_stage_route(7, m1, a1, b1, b_meas, 0.2)
+        assert abs(theta1 - 0.22519909137767882) < 1e-7
+        assert assigned == 1
+        r = two_stage_score(7, m1, a1, b1, 20, 30, assigned, a_meas, b_meas, 0.2)
+        assert r["theta1"] == theta1
+        assert r["assigned"] == 1
+        assert abs(r["theta2"] - 0.7325970804507724) < 1e-7
+        assert abs(r["composite"] - 0.605747583182499) < 1e-7
+
+    def test_truncation_and_x9(self):
+        from fast_mlsirm import two_stage_route
+
+        m1, a1, b1, _a, b_meas = self._ts()
+        # Perfect score truncates to x' = m - 1/2; chance-or-below to
+        # x' = c*m + 1/2 (Betz & Weiss, 1974).
+        t10, _ = two_stage_route(10, m1, a1, b1, b_meas, 0.2)
+        t9, _ = two_stage_route(9, m1, a1, b1, b_meas, 0.2)
+        assert abs(t9 - 1.4133562576800114) < 1e-7
+        assert t10 > t9
+        t2, _ = two_stage_route(2, m1, a1, b1, b_meas, 0.2)
+        t0, _ = two_stage_route(0, m1, a1, b1, b_meas, 0.2)
+        assert t2 == t0
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import two_stage_route, two_stage_score
+
+        m1, a1, b1, a_meas, b_meas = self._ts()
+        with pytest.raises(ValueError, match="wrong test"):
+            two_stage_score(7, m1, a1, b1, 20, 30, 0, a_meas, b_meas, 0.2)
+        with pytest.raises(ValueError, match="must be an integer"):
+            two_stage_route(7.5, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="out of range"):
+            two_stage_route(-1, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="exceeds"):
+            two_stage_route(11, m1, a1, b1, b_meas, 0.2)
+        with pytest.raises(ValueError, match="real-valued"):
+            two_stage_route(7, m1, a1, b1, b_meas.astype(np.complex128), 0.2)
+        with pytest.raises(ValueError, match="real-valued"):
+            two_stage_score(
+                7, m1, a1, b1, 20, 30, 1,
+                np.array([1j, 0, 0, 0], dtype=object), b_meas, 0.2,
+            )
+        with pytest.raises(ValueError, match=r"m\*\(1-c\)"):
+            two_stage_route(1, 1, a1, b1, b_meas, 0.2)
+        # Object-dtype arrays are rejected outright, not coerced.
+        with pytest.raises(ValueError, match="numeric"):
+            two_stage_route(7, m1, a1, b1, b_meas.astype(object), 0.2)
+        with pytest.raises(ValueError, match="numeric"):
+            two_stage_score(
+                7, m1, a1, b1, 20, 30, 1, a_meas.astype(object), b_meas, 0.2
+            )
+        # Huge m collapses the f64 truncation endpoints -> ValueError,
+        # never a silent NaN (core-side runtime guard).
+        with pytest.raises(ValueError, match="degenerate"):
+            two_stage_route(2**53, 2**53, a1, b1, b_meas, 0.2)
+
+class TestHansonBrennan:
+    """Hanson-Brennan compound binomial classification (Hanson, 1991, ACT
+    RR 91-5, read in full; cross-checked against CRAN betafunctions 1.9.0
+    HB.CA): every assert reads crate outputs returned through the wrapper
+    against literals from an independent exact-Fraction stdlib oracle
+    (never this crate). Params fixture pins are exact rationals (1e-12);
+    the data fixture takes the genuine 4P path with negative Lord's k and
+    both beta shapes < 1 (tolerance 1e-7 per spec)."""
+
+    def test_params_path_matches_exact_oracle(self):
+        from fast_mlsirm import hanson_brennan_from_params
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan_from_params"):
+            pytest.skip("compiled core built without hanson_brennan")
+        r = hanson_brennan_from_params(8, 0.5, 0.0, 1.0, 2.0, 3.0, 5)
+        tol = 1e-12
+        assert abs(r.consistency - 0.7882233865206) < tol
+        assert abs(r.kappa - 0.459362303476315) < tol
+        assert abs(r.p_tp - 0.1271510992216) < tol
+        assert abs(r.accuracy - 0.835374853002183) < tol
+        assert abs(r.sensitivity - 0.838664899213647) < tol
+        assert abs(r.specificity - 0.834786905175617) < tol
+        assert r.p_ji == r.p_ij
+        assert not r.used_two_parameter
+        import numpy as np
+
+        assert np.isnan(r.true_score_moments).all()
+
+    def test_data_path_four_parameter_matches_oracle(self):
+        from fast_mlsirm import hanson_brennan
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan"):
+            pytest.skip("compiled core built without hanson_brennan")
+        scores = [7, 1, 11, 2, 9, 10, 6, 6, 12, 6, 10, 8, 10, 8, 2, 2, 5,
+                  8, 12, 11, 2, 1]
+        r = hanson_brennan(scores, 12, 0.85, 7)
+        assert abs(r.lords_k - -0.428757070304408) < 1e-12
+        assert abs(r.true_score_moments[0] - 0.564393939393939) < 1e-12
+        assert abs(r.true_score_moments[3] - 0.245696195187782) < 1e-12
+        assert not r.used_two_parameter
+        assert abs(r.lower - 0.132649605850816) < 1e-11
+        assert abs(r.upper - 0.888674369964715) < 1e-11
+        assert abs(r.alpha - 0.45726578470813) < 1e-11
+        assert abs(r.beta - 0.343449430670119) < 1e-11
+        tol = 1e-7
+        assert abs(r.accuracy - 0.910755004973576) < tol
+        assert abs(r.consistency - 0.877865550806179) < tol
+        assert abs(r.kappa - 0.752703324849248) < tol
+        assert abs(r.sensitivity - 0.941718760516029) < tol
+        assert abs(r.specificity - 0.876176500427409) < tol
+
+    def test_rejects_degenerate_inputs(self):
+        import numpy as np
+
+        from fast_mlsirm import hanson_brennan, hanson_brennan_from_params
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan"):
+            pytest.skip("compiled core built without hanson_brennan")
+        good = [7, 1, 11, 2, 9, 10, 6, 6, 12, 6, 10, 8, 10, 8, 2, 2, 5,
+                8, 12, 11, 2, 1]
+        with pytest.raises(ValueError):
+            hanson_brennan(good[:5], 12, 0.85, 7)  # too few scores
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 1.0, 7)  # reliability >= 1
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 0.85, 0)  # cut below 1
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 0.85, 13)  # cut above n_items
+        with pytest.raises(ValueError):
+            hanson_brennan([6.5] + good[1:], 12, 0.85, 7)  # non-integer
+        with pytest.raises(ValueError):
+            hanson_brennan(np.array(good) * 1j, 12, 0.85, 7)  # complex
+        with pytest.raises(ValueError):
+            hanson_brennan(
+                np.array(["x"] * 22, dtype=object), 12, 0.85, 7
+            )  # non-numeric objects
+        with pytest.raises(ValueError):
+            hanson_brennan_from_params(8, 0.0, 0.5, 0.4, 2.0, 2.0, 4)
+        with pytest.raises(ValueError):
+            hanson_brennan_from_params(8, 0.0, 0.0, 1.0, -2.0, 2.0, 4)
+
+
+class TestPhiLambda:
+    def test_fixture_a_exact(self):
+        # Oracle pins (phi_lambda_oracle.py, exact Fraction); asserts read
+        # wrapper outputs that come straight from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.25, n_i_prime=[4, 8])
+        assert abs(r.grand_mean - 0.6) < 1e-12
+        assert abs(r.var_xbar - 11.0 / 600.0) < 1e-12
+        assert abs(r.signal - 5.0 / 48.0) < 1e-12
+        assert abs(r.phi[0] - 0.75) < 1e-12
+        assert abs(r.phi[1] - 6.0 / 7.0) < 1e-12
+
+    def test_negative_signal_at_mean_and_fixture_d(self):
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.6, n_i_prime=[4])
+        assert abs(r.signal - (-11.0 / 600.0)) < 1e-12
+        assert abs(r.phi[0] - 48.0 / 113.0) < 1e-12
+        d = np.array([[5, 3, 1], [4, 3, 2], [6, 4, 2], [3, 1, 0]], dtype=float)
+        rd = phi_lambda(d, 2.0, n_i_prime=[3, 6])
+        assert abs(rd.phi[0] - 12.0 / 29.0) < 1e-12
+        assert abs(rd.phi[1] - 24.0 / 41.0) < 1e-12
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array([[1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError):
+            phi_lambda(x.astype(complex), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([1.0, 0.0]), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, float("nan"), n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, 0.5, n_i_prime=[0])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([[1.0, np.nan], [0.0, 1.0]]), 0.5, n_i_prime=[2])
+
+class TestSubkoviak:
+    def test_table1_alpha_supplied_exact(self):
+        # Oracle pins (subkoviak_oracle.py, exact Fraction); asserts read
+        # wrapper outputs that come straight from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        r = subkoviak_agreement(x, 5, [4], alpha=0.58)
+        assert abs(r.alpha - 0.58) < 1e-15
+        assert abs(r.p_hat[0] - 0.1932) < 1e-12
+        assert abs(r.per_person[0] - 0.988290295814609) < 1e-12
+        assert abs(r.agreement - 0.754404497506925) < 1e-12
+        assert abs(r.chance_agreement - 0.659131077528193) < 1e-12
+        assert abs(r.kappa - 0.279501631559306) < 1e-12
+
+    def test_derived_kr21_and_multi_cut(self):
+        import numpy as np
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        r = subkoviak_agreement(x, 5, [4])
+        assert abs(r.alpha - 19.0 / 29.0) < 1e-12
+        assert abs(r.kappa - 0.343090844315065) < 1e-12
+        c = np.array([1, 2, 3, 4, 5, 6, 0, 3], dtype=float)
+        rc = subkoviak_agreement(c, 6, [2, 5], alpha=1.0)
+        assert abs(rc.per_person[0] - 0.611776411438135) < 1e-12
+        assert abs(rc.kappa - 0.53024146176074) < 1e-12
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x.astype(complex), 5, [4], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(np.array(["a", "b"], dtype=object), 5, [4])
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [6], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [4], alpha=1.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(np.array([3.0, 3.0, 3.0]), 5, [4])

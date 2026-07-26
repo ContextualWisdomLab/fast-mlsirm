@@ -41,11 +41,44 @@ from .subscores import (
 from .detect import (
     detect_analysis as detect_analysis,
     DetectResult as DetectResult,
+    dimtest as dimtest,
+    DimtestResult as DimtestResult,
+)
+from .security import (
+    wollack_omega as wollack_omega,
+    WollackOmegaResult as WollackOmegaResult,
+    k_index as k_index,
+    KIndexResult as KIndexResult,
+    gbt as gbt,
+    GbtResult as GbtResult,
+    k_variants as k_variants,
+    KVariantsResult as KVariantsResult,
+)
+from .standard_setting import (
+    hofstee as hofstee,
+    HofsteeResult as HofsteeResult,
+)
+from .personfit_np import (
+    person_fit_np as person_fit_np,
+    PersonFitNpResult as PersonFitNpResult,
+)
+from .deltaplot import (
+    delta_plot as delta_plot,
+    DeltaPlotResult as DeltaPlotResult,
+)
+from .ebdif import (
+    eb_mh_dif as eb_mh_dif,
+    EbDifResult as EbDifResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
     livingston_lewis as livingston_lewis,
+    hanson_brennan as hanson_brennan,
+    hanson_brennan_from_params as hanson_brennan_from_params,
+    HansonBrennanResult as HansonBrennanResult,
+    subkoviak_agreement as subkoviak_agreement,
+    SubkoviakResult as SubkoviakResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -76,8 +109,10 @@ from .factor import (
 from .gtheory import (
     gtheory_pi as gtheory_pi,
     gtheory_pio as gtheory_pio,
+    phi_lambda as phi_lambda,
     GTheoryResult as GTheoryResult,
     GTheoryDStudyRow as GTheoryDStudyRow,
+    PhiLambdaResult as PhiLambdaResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .utility import (
@@ -98,6 +133,13 @@ from .exposure import (
     ccat_select as ccat_select,
     epv_select as epv_select,
     sprt_classify as sprt_classify,
+    ci_classify as ci_classify,
+    flexilevel_administer as flexilevel_administer,
+    flexilevel_score_distribution as flexilevel_score_distribution,
+    stradaptive_administer as stradaptive_administer,
+    pyramidal_administer as pyramidal_administer,
+    two_stage_route as two_stage_route,
+    two_stage_score as two_stage_score,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -118,6 +160,9 @@ from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as lo
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
                   sibtest as sibtest,
+                  mantel_smd_dif as mantel_smd_dif,
+    gmh_dif as gmh_dif,
+                  breslow_day_dif as breslow_day_dif,
                   raju_area as raju_area)
 from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
@@ -220,9 +265,16 @@ __all__ = [
     "subscore_analysis",
     "SubscoreResult",
     "detect_analysis",
+    "dimtest",
+    "wollack_omega",
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
+    "hanson_brennan",
+    "hanson_brennan_from_params",
+    "HansonBrennanResult",
+    "subkoviak_agreement",
+    "SubkoviakResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
@@ -235,6 +287,7 @@ __all__ = [
     "SeparationReliabilityResult",
     "gtheory_pi",
     "gtheory_pio",
+    "phi_lambda",
     "minres_fa",
     "minres_fa_from_data",
     "glb_fa",
@@ -256,13 +309,37 @@ __all__ = [
     "ccat_select",
     "epv_select",
     "sprt_classify",
+    "ci_classify",
+    "flexilevel_administer",
+    "flexilevel_score_distribution",
+    "stradaptive_administer",
+    "pyramidal_administer",
+    "two_stage_route",
+    "two_stage_score",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
+    "PhiLambdaResult",
     "ClassificationResult",
     "DetectResult",
+    "DimtestResult",
+    "WollackOmegaResult",
+    "k_index",
+    "KIndexResult",
+    "gbt",
+    "GbtResult",
+    "k_variants",
+    "KVariantsResult",
+    "hofstee",
+    "HofsteeResult",
+    "person_fit_np",
+    "PersonFitNpResult",
+    "delta_plot",
+    "DeltaPlotResult",
+    "eb_mh_dif",
+    "EbDifResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",
@@ -287,6 +364,9 @@ __all__ = [
     "cat_simulate_polytomous",
     "dif_polytomous",
     "mantel_haenszel_dif",
+    "mantel_smd_dif",
+    "gmh_dif",
+    "breslow_day_dif",
     "logistic_dif",
     "mantel_haenszel_dif_purified",
     "logistic_dif_purified",

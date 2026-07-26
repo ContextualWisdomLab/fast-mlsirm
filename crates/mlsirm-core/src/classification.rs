@@ -722,6 +722,548 @@ pub fn livingston_lewis(
     })
 }
 
+/// Hanson-Brennan classification accuracy and consistency under the
+/// four-parameter beta compound binomial model, for one cut score.
+///
+/// Result of [`hanson_brennan`] / [`hanson_brennan_from_params`].
+/// Orientation is the crate's pass-positive convention (identical to
+/// [`LivingstonLewisResult`]): pass = observed score `>= cut`. CRAN
+/// betafunctions `HB.CA` labels *fail* as positive, so its sensitivity is
+/// this struct's specificity and vice versa; accuracy, consistency, chance
+/// consistency, and kappa are invariant under the relabeling.
+#[derive(Debug, Clone)]
+pub struct HansonBrennanResult {
+    /// Lord's k (Hanson, 1991, Eq. 6). Echoes the input on the params path.
+    pub lords_k: f64,
+    /// True-score raw moments `m1..m4` (Hanson, 1991, Eqs. 7-8). `NaN` on
+    /// the params path, which bypasses moment estimation.
+    pub true_score_moments: [f64; 4],
+    /// Lower location of the fitted four-parameter beta.
+    pub lower: f64,
+    /// Upper location of the fitted four-parameter beta.
+    pub upper: f64,
+    /// First beta shape parameter.
+    pub alpha: f64,
+    /// Second beta shape parameter.
+    pub beta: f64,
+    /// Whether the two-parameter `[0, 1]` fail-safe fit was used.
+    pub used_two_parameter: bool,
+    /// P(true pass and observed pass).
+    pub p_tp: f64,
+    /// P(true fail and observed pass).
+    pub p_fp: f64,
+    /// P(true fail and observed fail).
+    pub p_tf: f64,
+    /// P(true pass and observed fail).
+    pub p_ff: f64,
+    /// Classification accuracy `p_tp + p_tf`.
+    pub accuracy: f64,
+    /// `p_tp / (p_tp + p_ff)`; `NaN` when the margin vanishes.
+    pub sensitivity: f64,
+    /// `p_tf / (p_tf + p_fp)`; `NaN` when the margin vanishes.
+    pub specificity: f64,
+    /// P(fail on both replications), normalized.
+    pub p_ii: f64,
+    /// P(fail then pass), normalized.
+    pub p_ij: f64,
+    /// P(pass then fail) — equals `p_ij` by construction.
+    pub p_ji: f64,
+    /// P(pass on both replications), normalized.
+    pub p_jj: f64,
+    /// Classification consistency `p_ii + p_jj`.
+    pub consistency: f64,
+    /// Chance consistency `(p_ii + p_ij)^2 + (p_ij + p_jj)^2`.
+    pub chance_consistency: f64,
+    /// Cohen's kappa `(p - p_c) / (1 - p_c)`; `NaN` when `p_c == 1`.
+    pub kappa: f64,
+}
+
+/// Binomial pmf `C(n, j) p^j (1-p)^(n-j)` via ln-gamma; zero outside
+/// `0 <= j <= n` and exact at the `p` endpoints.
+fn hb_binom_pmf(j: i64, n: i64, p: f64) -> f64 {
+    if n < 0 || j < 0 || j > n {
+        return 0.0;
+    }
+    if p <= 0.0 {
+        return if j == 0 { 1.0 } else { 0.0 };
+    }
+    if p >= 1.0 {
+        return if j == n { 1.0 } else { 0.0 };
+    }
+    let (nf, jf) = (n as f64, j as f64);
+    let ln_c = crate::fitstats::ln_gamma(nf + 1.0)
+        - crate::fitstats::ln_gamma(jf + 1.0)
+        - crate::fitstats::ln_gamma(nf - jf + 1.0);
+    (ln_c + jf * p.ln() + (nf - jf) * (1.0 - p).ln()).exp()
+}
+
+/// P(X <= cut-1 | n_items, k, p) under Lord's (1965, Eq. 5, as restated by
+/// Hanson, 1991, Eq. 3 — Lord not read) two-term compound binomial.
+///
+/// DERIVED closed form (spec `hanson_brennan_spec.md`; the telescoping of
+/// the correction partial sum was proven by exact polynomial identity in
+/// the executed oracle for every fixture):
+///
+/// ```text
+/// F(p) = BinCdf(cut-1; K, p)
+///        - k p (1-p) [ b(cut-1; K-2, p) - b(cut-2; K-2, p) ]
+/// ```
+///
+/// Raw two-term values are used exactly as CRAN `dcBinom`/`HB.CA` do: no
+/// clamping of negative conditional masses, no clamping of `F` to `[0, 1]`,
+/// and no renormalization (the full pmf sums to one identically).
+fn hb_fail_cdf(cut: usize, n_items: usize, k: f64, p: f64) -> f64 {
+    let kk = n_items as f64;
+    let m = cut as f64 - 1.0; // BinCdf argument
+    let base = if cut == 0 {
+        0.0
+    } else if m >= kk {
+        1.0
+    } else if p <= 0.0 {
+        1.0
+    } else if p >= 1.0 {
+        0.0
+    } else {
+        // P(X <= m) = I_{1-p}(K - m, m + 1).
+        crate::reliability::inc_beta(kk - m, m + 1.0, 1.0 - p)
+    };
+    let n2 = n_items as i64 - 2;
+    let c = cut as i64;
+    base - k * p * (1.0 - p) * (hb_binom_pmf(c - 1, n2, p) - hb_binom_pmf(c - 2, n2, p))
+}
+
+/// Shared index computation for both Hanson-Brennan entry points.
+fn hb_indexes(
+    n_items: usize,
+    lords_k: f64,
+    lower: f64,
+    upper: f64,
+    a: f64,
+    b: f64,
+    cut: usize,
+    moments: [f64; 4],
+    used_two_parameter: bool,
+) -> Result<HansonBrennanResult, String> {
+    let fail = |t: f64| -> f64 {
+        let p = (lower + (upper - lower) * t).clamp(0.0, 1.0);
+        hb_fail_cdf(cut, n_items, lords_k, p)
+    };
+    // x-domain truecut cut/K mapped to the beta t-domain.
+    let tc = ((cut as f64 / n_items as f64 - lower) / (upper - lower)).clamp(0.0, 1.0);
+    let p_tp = beta_weighted_integral(a, b, tc, 1.0, |t| 1.0 - fail(t));
+    let p_fp = beta_weighted_integral(a, b, 0.0, tc, |t| 1.0 - fail(t));
+    let p_ff = beta_weighted_integral(a, b, tc, 1.0, &fail);
+    let p_tf = beta_weighted_integral(a, b, 0.0, tc, &fail);
+    let p_ii_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail(t).powi(2));
+    let p_ij_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| fail(t) * (1.0 - fail(t)));
+    let p_jj_raw = beta_weighted_integral(a, b, 0.0, 1.0, |t| (1.0 - fail(t)).powi(2));
+    let tot = p_ii_raw + 2.0 * p_ij_raw + p_jj_raw;
+    if !(tot > 0.0) {
+        return Err("consistency integrals degenerated to zero mass".into());
+    }
+    let p_ii = p_ii_raw / tot;
+    let p_ij = p_ij_raw / tot;
+    let p_jj = p_jj_raw / tot;
+    let consistency = p_ii + p_jj;
+    let chance_consistency = (p_ii + p_ij) * (p_ii + p_ij) + (p_ij + p_jj) * (p_ij + p_jj);
+    let ratio = |num: f64, den: f64| if den > 1e-12 { num / den } else { f64::NAN };
+    Ok(HansonBrennanResult {
+        lords_k,
+        true_score_moments: moments,
+        lower,
+        upper,
+        alpha: a,
+        beta: b,
+        used_two_parameter,
+        p_tp,
+        p_fp,
+        p_tf,
+        p_ff,
+        accuracy: p_tp + p_tf,
+        sensitivity: ratio(p_tp, p_tp + p_ff),
+        specificity: ratio(p_tf, p_tf + p_fp),
+        p_ii,
+        p_ij,
+        p_ji: p_ij,
+        p_jj,
+        consistency,
+        chance_consistency,
+        kappa: ratio(consistency - chance_consistency, 1.0 - chance_consistency),
+    })
+}
+
+/// Hanson-Brennan classification indexes from fixed model parameters
+/// (mirrors CRAN betafunctions `HB.CA` called with a parameter list).
+///
+/// `lords_k` is Lord's k, `(lower, upper, alpha, beta)` the four-parameter
+/// beta true-score distribution, `cut` the raw cut score (pass = observed
+/// `>= cut`). `n_items >= 2` suffices here — the data path's `>= 4` bound
+/// is a moment-estimation requirement, not a model restriction.
+///
+/// # References
+///
+/// Haakstad, H. (2023). *betafunctions: Functions for working with two- and
+/// four-parameter beta probability distributions* (Version 1.9.0)
+/// \[R package\]. CRAN. <https://CRAN.R-project.org/package=betafunctions>
+/// (`HB.CA`, `dcBinom` read line by line.)
+///
+/// Hanson, B. A. (1991). *Method of moments estimates for the
+/// four-parameter beta compound binomial model and the calculation of
+/// classification consistency indexes* (ACT Research Report 91-5; ERIC
+/// ED344945). (Read: Eqs. 1-3 model, Eq. 6 Lord's k, Eqs. 7-8 moments,
+/// Eqs. 9-13 beta fit.)
+///
+/// Hanson, B. A., & Brennan, R. L. (1990). An investigation of
+/// classification consistency indexes estimated under alternative strong
+/// true score models. *Journal of Educational Measurement, 27*(4), 345-359.
+/// (As cited in Hanson, 1991; not read.)
+///
+/// Lord, F. M. (1965). A strong true-score theory, with applications.
+/// *Psychometrika, 30*(3), 239-270. (As restated by Hanson, 1991; not
+/// read.)
+pub fn hanson_brennan_from_params(
+    n_items: usize,
+    lords_k: f64,
+    lower: f64,
+    upper: f64,
+    alpha: f64,
+    beta: f64,
+    cut: usize,
+) -> Result<HansonBrennanResult, String> {
+    if n_items < 2 {
+        return Err("n_items must be at least 2".into());
+    }
+    if cut < 1 || cut > n_items {
+        return Err("cut must be in 1..=n_items".into());
+    }
+    if !lords_k.is_finite() {
+        return Err("lords_k must be finite".into());
+    }
+    if !lower.is_finite() || !upper.is_finite() || lower < 0.0 || upper > 1.0 || lower >= upper {
+        return Err("beta bounds must satisfy 0 <= lower < upper <= 1".into());
+    }
+    if !alpha.is_finite() || !beta.is_finite() || alpha <= 0.0 || beta <= 0.0 {
+        return Err("beta shape parameters must be positive and finite".into());
+    }
+    hb_indexes(
+        n_items,
+        lords_k,
+        lower,
+        upper,
+        alpha,
+        beta,
+        cut,
+        [f64::NAN; 4],
+        false,
+    )
+}
+
+/// Hanson-Brennan classification accuracy and consistency for one cut
+/// score, from raw number-correct scores and a reliability estimate
+/// (mirrors CRAN betafunctions `HB.CA` on raw data).
+///
+/// Pipeline (spec `hanson_brennan_spec.md` rev 2, adversarially verified;
+/// every step checked line by line against the CRAN betafunctions 1.9.0
+/// sources and Hanson, 1991):
+///
+/// 1. Lord's k from the observed mean, sample variance (`ddof = n-1`), and
+///    error variance `s2 (1 - reliability)` (Hanson, 1991, Eq. 6;
+///    betafunctions `Lords.k`).
+/// 2. True-score raw moments `m1..m4` by the compound-binomial
+///    factorial-moment recursion (Hanson, 1991, Eqs. 7-8; betafunctions
+///    `HB.tsm`), with `ff(x, i) := 0` when `x < i` (betafunctions `dfac`).
+/// 3. Four-parameter beta moment fit (Hanson, 1991, Eqs. 9-13), with a
+///    fail-safe to the two-parameter `[0, 1]` fit when the 4P solution is
+///    out of bounds or numerically invalid; `two_parameter = true` forces
+///    the 2P fit (betafunctions `true.model = "2P"`).
+/// 4. Accuracy/consistency cells by integrating the DERIVED fail-CDF
+///    closed form (see [`hb_fail_cdf`]) against the fitted beta density.
+///
+/// Orientation: pass = observed `>= cut`; betafunctions `HB.CA` labels fail
+/// as "positive", so its sensitivity is this function's specificity.
+/// Negative Lord two-term conditional masses are used raw, exactly as
+/// `HB.CA` integrates them (no clamping or renormalization).
+///
+/// # References
+///
+/// See [`hanson_brennan_from_params`].
+pub fn hanson_brennan(
+    scores: &[f64],
+    n_items: usize,
+    reliability: f64,
+    cut: usize,
+    two_parameter: bool,
+) -> Result<HansonBrennanResult, String> {
+    let n = scores.len();
+    if n < 10 {
+        return Err("at least 10 observed scores are required".into());
+    }
+    if n_items < 4 {
+        return Err("n_items must be at least 4 for moment estimation".into());
+    }
+    if cut < 1 || cut > n_items {
+        return Err("cut must be in 1..=n_items".into());
+    }
+    if !reliability.is_finite() || reliability <= 0.0 || reliability >= 1.0 {
+        return Err("reliability must be in the open interval (0, 1)".into());
+    }
+    let kk = n_items as f64;
+    if scores
+        .iter()
+        .any(|x| !x.is_finite() || *x < 0.0 || *x > kk || x.fract() != 0.0)
+    {
+        return Err("scores must be integers in [0, n_items]".into());
+    }
+    let nf = n as f64;
+    let mean = scores.iter().sum::<f64>() / nf;
+    let s2 = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (nf - 1.0);
+    if s2 <= 0.0 {
+        return Err("observed-score variance must be positive".into());
+    }
+    let s2e = s2 * (1.0 - reliability);
+    let k_den = mean * (kk - mean) - (s2 - s2e);
+    if !k_den.is_finite() || k_den.abs() < 1e-12 {
+        return Err("Lord's k denominator vanishes; check scores/reliability".into());
+    }
+    let lords_k = kk * ((kk - 1.0) * (s2 - s2e) - kk * s2 + mean * (kk - mean)) / (2.0 * k_den);
+    if !lords_k.is_finite() {
+        return Err("Lord's k is not finite".into());
+    }
+    // True-score raw moments m1..m4 (Hanson, 1991, Eqs. 7-8).
+    let mut m = [f64::NAN; 4];
+    m[0] = mean / kk;
+    for i in 2..=4usize {
+        let r = i as u32;
+        let mean_ff = scores
+            .iter()
+            .map(|x| {
+                if *x < i as f64 {
+                    0.0
+                } else {
+                    falling_factorial(*x, r)
+                }
+            })
+            .sum::<f64>()
+            / nf;
+        let corr = lords_k * (i * (i - 1)) as f64;
+        let den = kk * (kk - 1.0) + corr;
+        if !den.is_finite() || den.abs() < 1e-12 {
+            return Err("true-score moment recursion denominator vanishes".into());
+        }
+        m[i - 1] = (mean_ff / falling_factorial(kk - 2.0, r - 2) + corr * m[i - 2]) / den;
+    }
+    let m1 = m[0];
+    let ts2 = m[1] - m1 * m1;
+    if !(ts2 > 0.0) {
+        return Err("estimated true-score variance is not positive".into());
+    }
+    // Beta fit: 4P with 2P fail-safe (identical structure to
+    // livingston_lewis; Hanson, 1991, Eqs. 9-13).
+    let mut used_two_parameter = true;
+    let (mut a, mut b, mut lower, mut upper) = (f64::NAN, f64::NAN, 0.0, 1.0);
+    if !two_parameter {
+        let g3 = (m[2] - 3.0 * m1 * m[1] + 2.0 * m1.powi(3)) / ts2.powf(1.5);
+        let g4 = (m[3] - 4.0 * m1 * m[2] + 6.0 * m1 * m1 * m[1] - 3.0 * m1.powi(4)) / (ts2 * ts2);
+        let rr = 6.0 * (g4 - g3 * g3 - 1.0) / (6.0 + 3.0 * g3 * g3 - 2.0 * g4);
+        let d = 1.0
+            - 24.0 * (rr + 1.0) / ((rr + 2.0) * (rr + 3.0) * g4 - 3.0 * (rr - 6.0) * (rr + 1.0));
+        if d.is_finite() && d >= 0.0 {
+            let sq = d.sqrt();
+            let (a4, b4) = if g3 < 0.0 {
+                (rr / 2.0 * (1.0 + sq), rr / 2.0 * (1.0 - sq))
+            } else {
+                (rr / 2.0 * (1.0 - sq), rr / 2.0 * (1.0 + sq))
+            };
+            if a4.is_finite() && b4.is_finite() && a4 > 0.0 && b4 > 0.0 {
+                let spread = (ts2 * (a4 + b4 + 1.0)).sqrt() / (a4 * b4).sqrt();
+                let l4 = m1 - a4 * spread;
+                let u4 = m1 + b4 * spread;
+                if l4 >= 0.0 && u4 <= 1.0 {
+                    a = a4;
+                    b = b4;
+                    lower = l4;
+                    upper = u4;
+                    used_two_parameter = false;
+                }
+            }
+        }
+    }
+    if used_two_parameter {
+        if m1 <= 0.0 || m1 >= 1.0 {
+            return Err("mean proportion score must be strictly inside (0, 1)".into());
+        }
+        let scale = m1 * (1.0 - m1) / ts2 - 1.0;
+        a = m1 * scale;
+        b = (1.0 - m1) * scale;
+        lower = 0.0;
+        upper = 1.0;
+    }
+    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
+        return Err("beta true-score fit produced invalid shape parameters".into());
+    }
+    hb_indexes(
+        n_items,
+        lords_k,
+        lower,
+        upper,
+        a,
+        b,
+        cut,
+        m,
+        used_two_parameter,
+    )
+}
+
+/// Subkoviak (1976) single-administration coefficient-of-agreement output.
+///
+/// Citation governance:
+/// - READ: Subkoviak, M. J. (1976). *Estimating reliability from a single
+///   administration of a mastery test* (ERIC ED120229; AERA paper version of
+///   Subkoviak, 1976, *Journal of Educational Measurement, 13*(4), 265-276).
+/// - NOT READ, cited as-cited via Subkoviak (1976): Lord & Novick (1968) for
+///   the binomial true-score model; Swaminathan, Hambleton, & Algina (1974)
+///   for the two-administration p_o; Cohen (1960) for kappa.
+pub struct SubkoviakResult {
+    /// Reliability used in Eq. 16 (supplied, or KR-21 derived from the data).
+    pub alpha: f64,
+    /// Per-person regression estimate of the item-domain proportion
+    /// (Subkoviak, 1976, Eq. 16): `alpha*(X_i/n) + (1-alpha)*(M/n)`.
+    pub p_hat: Vec<f64>,
+    /// Per-person coefficient of agreement P(i) (Eqs. 7 and 19).
+    pub per_person: Vec<f64>,
+    /// Group coefficient of agreement Pc = mean_i P(i) (Eqs. 5 and 20).
+    pub agreement: f64,
+    /// Chance agreement: sum over categories of the squared marginal
+    /// category probability (Eqs. 9-10 and 21-22).
+    pub chance_agreement: f64,
+    /// Coefficient kappa `(Pc - Pchance) / (1 - Pchance)` (Eq. 11).
+    pub kappa: f64,
+}
+
+/// Subkoviak's (1976) single-administration coefficient of agreement for
+/// mastery classifications under the simple binomial true-score model.
+///
+/// `cuts` are the strictly increasing integer criteria `C_1 < .. < C_{h-1}`
+/// (each in `1..=n_items`); category `j` is `{X : C_{j-1} <= X < C_j}` with
+/// `C_0 = 0` and `C_h = n_items + 1`, so mastery at criterion `C` means
+/// `X >= C`. VERIFIED against the READ source: the OCR of Eq. 4 prints
+/// `X > C`, but Table 1 row 1 (`n = 5`, `C = 4`, `p = .19`) prints `.0055`,
+/// which matches `P(X >= 4) = 5(.19)^4(.81) + (.19)^5 = .005526` and not
+/// `P(X > 4) = (.19)^5 = .000248`; the two-administration example's
+/// exception students likewise require `>=`.
+///
+/// `alpha = None` derives Kuder-Richardson Formula 21 with the population
+/// (ddof = 0) variance, clamped to `[0, 1]`:
+/// `a21 = (n/(n-1)) (1 - M(n-M)/(n S^2))`. VERIFIED against the paper's
+/// real-data example `(25/24)(1 - 17.40*7.60/(25*5.14)) ≈ 0` (negative,
+/// treated as zero), which requires `S^2 = 5.14` as printed. DISCLOSED
+/// IRREPRODUCIBILITY: Table 1's footnote value `a21 = .58` does not follow
+/// from its own printed `S^2 = 2.61` (which gives `19/29 ≈ .6552`); the
+/// printed p-hat column is exactly consistent with `alpha = .58`, so
+/// reproducing Table 1 requires supplying `alpha = 0.58` explicitly.
+///
+/// Category probabilities use the simple binomial (Eq. 8). The compound
+/// binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+/// p-hat (Eq. 17) are EXCLUDED: both defer to sources not read (Lord &
+/// Novick, 1968, pp. 524-526; Lord, 1959). Callers may pass a KR-20-style
+/// reliability through `alpha` per the paper's remark that the procedure
+/// is analogous.
+///
+/// All exposed metrics (P(i), Pc, Pchance, kappa) are invariant under a
+/// consistent permutation of category labels, and `p_hat` does not depend
+/// on the categories at all; a label-permutation mutation is therefore
+/// unobservable through this API and behaviorally irrelevant.
+pub fn subkoviak_agreement(
+    scores: &[f64],
+    n_items: usize,
+    cuts: &[f64],
+    alpha: Option<f64>,
+) -> Result<SubkoviakResult, String> {
+    if n_items < 2 {
+        return Err("n_items must be at least 2".into());
+    }
+    let n_persons = scores.len();
+    if n_persons < 2 {
+        return Err("at least 2 observed scores are required".into());
+    }
+    let nf = n_items as f64;
+    if scores
+        .iter()
+        .any(|x| !x.is_finite() || *x < 0.0 || *x > nf || x.fract() != 0.0)
+    {
+        return Err("scores must be integers in [0, n_items]".into());
+    }
+    if cuts.is_empty() {
+        return Err("cuts must be nonempty".into());
+    }
+    if cuts
+        .iter()
+        .any(|c| !c.is_finite() || c.fract() != 0.0 || *c < 1.0 || *c > nf)
+    {
+        return Err("cuts must be integers in 1..=n_items".into());
+    }
+    if cuts.windows(2).any(|w| w[1] <= w[0]) {
+        return Err("cuts must be strictly increasing".into());
+    }
+    let np = n_persons as f64;
+    let mean = scores.iter().sum::<f64>() / np;
+    let alpha = match alpha {
+        Some(a) => {
+            if !a.is_finite() || !(0.0..=1.0).contains(&a) {
+                return Err("alpha must be finite and in [0, 1]".into());
+            }
+            a
+        }
+        None => {
+            // KR-21 with population (ddof = 0) variance; see doc comment.
+            let s2 = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / np;
+            if s2 <= 0.0 {
+                return Err("observed-score variance is zero; supply alpha explicitly".into());
+            }
+            let a21 = nf / (nf - 1.0) * (1.0 - mean * (nf - mean) / (nf * s2));
+            a21.clamp(0.0, 1.0)
+        }
+    };
+    // Category boundaries: C_0 = 0, user cuts, C_h = n_items + 1.
+    let mut bounds = Vec::with_capacity(cuts.len() + 2);
+    bounds.push(0i64);
+    bounds.extend(cuts.iter().map(|c| *c as i64));
+    bounds.push(n_items as i64 + 1);
+    let n_cats = bounds.len() - 1;
+    let p_hat: Vec<f64> = scores
+        .iter()
+        .map(|x| alpha * (x / nf) + (1.0 - alpha) * (mean / nf))
+        .collect();
+    let mut per_person = Vec::with_capacity(n_persons);
+    let mut q_bar = vec![0.0f64; n_cats];
+    for &p in &p_hat {
+        let mut p_i = 0.0;
+        for j in 0..n_cats {
+            let q_ij: f64 = (bounds[j]..bounds[j + 1])
+                .map(|x| hb_binom_pmf(x, n_items as i64, p))
+                .sum();
+            p_i += q_ij * q_ij;
+            q_bar[j] += q_ij / np;
+        }
+        per_person.push(p_i);
+    }
+    let agreement = per_person.iter().sum::<f64>() / np;
+    let chance_agreement = q_bar.iter().map(|q| q * q).sum::<f64>();
+    let denom = 1.0 - chance_agreement;
+    if denom <= 1e-12 {
+        return Err("chance agreement is 1; kappa is undefined (all mass in one category)".into());
+    }
+    let kappa = (agreement - chance_agreement) / denom;
+    Ok(SubkoviakResult {
+        alpha,
+        p_hat,
+        per_person,
+        agreement,
+        chance_agreement,
+        kappa,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/classification_tests.rs"]
 mod tests;

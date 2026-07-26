@@ -28,8 +28,9 @@
 //! `sh_controls_max_exposure`.
 
 use crate::exposure::{
-    a_stratified, ccat_select, eap_interim, epv_select, kl_information, kl_select, owen_cat,
-    owen_update, p3pl, sprt_classify, sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
+    a_stratified, ccat_select, ci_classify, eap_interim, epv_select, kl_information, kl_select,
+    owen_cat, owen_update, p3pl, sprt_classify, sympson_hetter, AStratifiedConfig, Lcg,
+    SympsonHetterConfig,
 };
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -1860,4 +1861,1155 @@ fn sprt_extreme_parameters_stay_finite() {
     let rc = sprt_classify(&[50.0], &[0.0], &[0.2], &[1], 0.0, 20.0, 0.05, 0.05).unwrap();
     assert!((rc.llr - (-0.2_f64.ln())).abs() < 1e-12, "llr = {}", rc.llr);
     assert!(rc.llr.is_finite());
+}
+
+// ---------- ci_classify (confidence-interval / ACI classification) ----------
+
+/// Pinned 17-digit oracle from the adversarial spec review
+/// (ci_classify_spec_review.md): independent Python recomputation of the
+/// approved 41-point [-4,4] EAP posterior-SD rule. Every assert reads crate
+/// outputs (decision, n_used, the four traces). Kills mutants: M1 swapped
+/// decisions (expects "above"), M2 point-estimate-vs-cut (theta_trace[0] > 0
+/// would decide at k=1, oracle n_used = 5), M3 variance-instead-of-SD (that
+/// mutant crosses at k=4; the lower_trace[3] <= 0 < lower_trace[4] anchor
+/// pins the first strict crossing to k=5), M4 n_used off-by-one, M5
+/// final-CI-only (the counterfactual tail is also above the cut, so n_used
+/// and the crossing-index anchors are the discriminating asserts, not the
+/// final decision alone).
+#[test]
+fn ci_classify_pinned_oracle() {
+    let a = [1.5; 6];
+    let b = [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5];
+    let c = [0.0; 6];
+    let responses = [1u8, 1, 1, 1, 1, 0];
+    let r = ci_classify(&a, &b, &c, &responses, 0.0, 1.6448536269514722).unwrap();
+    assert_eq!(r.decision, "above");
+    assert_eq!(r.n_used, 5);
+    let theta_exp = [
+        0.18783548849905624,
+        0.40433637208107137,
+        0.65453031321107147,
+        0.93795666218057705,
+        1.251068565832161,
+        1.004851105902542,
+    ];
+    let se_exp = [
+        0.91459937771477151,
+        0.84249780260178286,
+        0.78082991898905685,
+        0.72897935456728113,
+        0.68628322205747161,
+        0.60091214158918393,
+    ];
+    let lower_exp = [
+        -1.316546615142645,
+        -0.98144919422711663,
+        -0.62982061107030296,
+        -0.26110767315215866,
+        0.12223311891498612,
+        0.016438590330396186,
+    ];
+    let upper_exp = [
+        1.6922175921407576,
+        1.7901219383892593,
+        1.938881237492446,
+        2.1370209975133125,
+        2.3799040127493356,
+        1.9932636214746879,
+    ];
+    assert_eq!(r.theta_trace.len(), 6);
+    assert_eq!(r.se_trace.len(), 6);
+    assert_eq!(r.lower_trace.len(), 6);
+    assert_eq!(r.upper_trace.len(), 6);
+    for k in 0..6 {
+        assert!(
+            (r.theta_trace[k] - theta_exp[k]).abs() < 1e-12,
+            "theta[{k}] = {}",
+            r.theta_trace[k]
+        );
+        assert!(
+            (r.se_trace[k] - se_exp[k]).abs() < 1e-12,
+            "se[{k}] = {}",
+            r.se_trace[k]
+        );
+        assert!(
+            (r.lower_trace[k] - lower_exp[k]).abs() < 1e-12,
+            "lower[{k}] = {}",
+            r.lower_trace[k]
+        );
+        assert!(
+            (r.upper_trace[k] - upper_exp[k]).abs() < 1e-12,
+            "upper[{k}] = {}",
+            r.upper_trace[k]
+        );
+    }
+    // First-strict-crossing anchor (kills M3/M5): no crossing before k=5.
+    assert!(r.lower_trace[3] <= 0.0 && r.lower_trace[4] > 0.0);
+    for k in 0..4 {
+        assert!(r.lower_trace[k] <= 0.0 && r.upper_trace[k] >= 0.0);
+    }
+}
+
+/// "below" decision on all-wrong responses with a positive cut, and a
+/// "continue" outcome when z_crit is too wide to ever cross. Asserts read
+/// crate decision/n_used/bound traces.
+#[test]
+fn ci_classify_below_and_continue() {
+    let a = [1.5; 6];
+    let b = [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5];
+    let c = [0.0; 6];
+    let wrong = [0u8; 6];
+    let r = ci_classify(&a, &b, &c, &wrong, 0.5, 1.6448536269514722).unwrap();
+    assert_eq!(r.decision, "below");
+    assert!(r.n_used <= 6);
+    let k = r.n_used - 1;
+    assert!(r.upper_trace[k] < 0.5, "upper = {}", r.upper_trace[k]);
+    for j in 0..k {
+        assert!(r.upper_trace[j] >= 0.5 || r.lower_trace[j] > 0.5);
+    }
+    // Huge z_crit: interval always straddles any interior cut -> continue.
+    let rc = ci_classify(&a, &b, &c, &wrong, 0.5, 100.0).unwrap();
+    assert_eq!(rc.decision, "continue");
+    assert_eq!(rc.n_used, 6);
+    for j in 0..6 {
+        assert!(rc.lower_trace[j] <= 0.5 && rc.upper_trace[j] >= 0.5);
+    }
+}
+
+/// Full validation error paths; each assert reads the crate Err string.
+#[test]
+fn ci_classify_error_paths() {
+    let ok_a = [1.0];
+    let ok_b = [0.0];
+    let ok_c = [0.0];
+    let ok_r = [1u8];
+    assert!(ci_classify(&[], &[], &[], &[], 0.0, 1.96)
+        .unwrap_err()
+        .contains("empty"));
+    assert!(ci_classify(&ok_a, &[0.0, 1.0], &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("length mismatch"));
+    assert!(ci_classify(&[-1.0], &ok_b, &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("a[0]"));
+    assert!(ci_classify(&[f64::NAN], &ok_b, &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("a[0]"));
+    assert!(
+        ci_classify(&ok_a, &[f64::INFINITY], &ok_c, &ok_r, 0.0, 1.96)
+            .unwrap_err()
+            .contains("b[0]")
+    );
+    assert!(ci_classify(&ok_a, &ok_b, &[1.0], &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("c[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &[-0.1], &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("c[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &[2], 0.0, 1.96)
+        .unwrap_err()
+        .contains("responses[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, f64::NAN, 1.96)
+        .unwrap_err()
+        .contains("theta_cut"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, 0.0, 0.0)
+        .unwrap_err()
+        .contains("z_crit"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, 0.0, f64::NAN)
+        .unwrap_err()
+        .contains("z_crit"));
+}
+
+/// MC-500 structural invariants on random pools/responses. All asserts read
+/// crate outputs: trace lengths, SE positivity/monotonic bounds, decision
+/// consistency with the returned interval at n_used, and no crossing before
+/// n_used.
+#[test]
+#[ignore = "500-rep Monte Carlo; run explicitly"]
+fn ci_classify_mc500_invariants() {
+    let mut rng = Lcg(20260220);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 18.0) as usize;
+        let mut a = Vec::with_capacity(n);
+        let mut b = Vec::with_capacity(n);
+        let mut c = Vec::with_capacity(n);
+        let mut resp = Vec::with_capacity(n);
+        for _ in 0..n {
+            a.push(0.5 + 2.0 * rng.next_f64());
+            b.push(-2.5 + 5.0 * rng.next_f64());
+            c.push(0.25 * rng.next_f64());
+            resp.push(if rng.next_f64() < 0.5 { 1u8 } else { 0u8 });
+        }
+        let cut = -1.5 + 3.0 * rng.next_f64();
+        let z = 0.5 + 2.0 * rng.next_f64();
+        let r = ci_classify(&a, &b, &c, &resp, cut, z).unwrap();
+        assert_eq!(r.theta_trace.len(), n, "rep {rep}");
+        assert_eq!(r.se_trace.len(), n, "rep {rep}");
+        assert!(r.n_used >= 1 && r.n_used <= n, "rep {rep}");
+        for k in 0..n {
+            assert!(
+                r.se_trace[k].is_finite() && r.se_trace[k] > 0.0,
+                "rep {rep}"
+            );
+            assert!(
+                r.theta_trace[k] > -4.0 && r.theta_trace[k] < 4.0,
+                "rep {rep}"
+            );
+            let lo = r.theta_trace[k] - z * r.se_trace[k];
+            let hi = r.theta_trace[k] + z * r.se_trace[k];
+            assert!((r.lower_trace[k] - lo).abs() < 1e-12, "rep {rep}");
+            assert!((r.upper_trace[k] - hi).abs() < 1e-12, "rep {rep}");
+        }
+        let k = r.n_used - 1;
+        match r.decision {
+            "above" => assert!(r.lower_trace[k] > cut, "rep {rep}"),
+            "below" => assert!(r.upper_trace[k] < cut, "rep {rep}"),
+            "continue" => assert_eq!(r.n_used, n, "rep {rep}"),
+            other => panic!("rep {rep}: unexpected decision {other}"),
+        }
+        for j in 0..k {
+            assert!(
+                r.lower_trace[j] <= cut && r.upper_trace[j] >= cut,
+                "rep {rep}: crossing before n_used at {j}"
+            );
+        }
+    }
+}
+
+// ================ Lord flexilevel tests =====================================
+//
+// Mutation-kill audit (kills EXECUTED, recorded in PR evidence): every assert
+// reads crate outputs (`FlexilevelAdminResult` / `FlexilevelDistResult`
+// fields or returned `Err` strings).
+//
+// - MU1 routing wrong-branch swap (`i - v` -> `i - 1` for i >= 0): killed by
+//   `flexilevel_worked_example_routing_pin` (sequence diverges at v = 2).
+// - MU2 red +1/2 dropped (score = r always): killed by
+//   `flexilevel_structural_invariants_all_paths` (score identity) and the
+//   N=5 lattice pin.
+// - MU3 score mapping swap (r = j for j < 0 too): killed by
+//   `flexilevel_structural_invariants_all_paths` (r = sum of administered
+//   answers on red paths); the blue worked example CANNOT kill this mutant
+//   (documented limit -- its j = 6 > 0 never enters the red branch).
+// - MU4 recursion P/(1-P) swap on the i < 0 branch: killed by
+//   `flexilevel_n5_distribution_exact_pin` (asymmetric P chosen so the
+//   mirrored distribution differs).
+
+/// Lord (1971) worked example RWWRWRRRWR on N = 19 (n = 10): administered
+/// Lord indices [0, 1, -1, -2, 2, -3, 3, 4, 5, -4] = columns
+/// [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]; blue, r = 6, x = 6. The answer
+/// string is readable in the 1971 scan; the sequence is derived from the
+/// routing rules (OCR line blank) and matches the executed spec oracle.
+#[test]
+fn flexilevel_worked_example_routing_pin() {
+    let cols = [9usize, 10, 8, 7, 11, 6, 12, 13, 14, 5];
+    let answers = [1u8, 0, 0, 1, 0, 1, 1, 1, 0, 1]; // R W W R W R R R W R
+    let mut row = vec![0u8; 19];
+    for (c, y) in cols.iter().zip(answers.iter()) {
+        row[*c] = *y;
+    }
+    let r = crate::exposure::flexilevel_administer(&row, 1, 19).unwrap();
+    assert_eq!(r.n_administered, 10);
+    assert_eq!(r.items, cols.to_vec());
+    assert_eq!(r.number_right, vec![6]);
+    assert_eq!(r.is_red, vec![0]);
+    assert_eq!(r.score, vec![6.0]);
+}
+
+/// N = 5 exact distribution pin from the executed spec oracle
+/// (P = {4/5, 2/3, 1/2, 1/3, 1/5} ascending-difficulty columns):
+/// f = {1/2: 1/30, 1: 2/15, 3/2: 1/3, 2: 1/3, 5/2: 2/15, 3: 1/30},
+/// mean 7/4, variance 71/240. Enumeration == recursion exactly in the
+/// oracle; here the crate recursion must match to 1e-15.
+#[test]
+fn flexilevel_n5_distribution_exact_pin() {
+    let p = [4.0 / 5.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.2];
+    let d = crate::exposure::flexilevel_score_distribution(&p).unwrap();
+    assert_eq!(d.scores, vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0]);
+    let expect = [
+        1.0 / 30.0,
+        2.0 / 15.0,
+        1.0 / 3.0,
+        1.0 / 3.0,
+        2.0 / 15.0,
+        1.0 / 30.0,
+    ];
+    for (k, e) in expect.iter().enumerate() {
+        assert!(
+            (d.probs[k] - e).abs() < 1e-15,
+            "probs[{k}] = {}",
+            d.probs[k]
+        );
+    }
+    assert!((d.mean - 1.75).abs() < 1e-15);
+    assert!((d.variance - 71.0 / 240.0).abs() < 1e-15);
+    let total: f64 = d.probs.iter().sum();
+    assert!((total - 1.0).abs() < 1e-15);
+}
+
+/// Structural invariants (Lord 1970 props 1-3, 9) over ALL 2^9 = 512 full
+/// response rows for N = 9 (n = 5), reading only crate outputs: the
+/// administered set is a consecutive difficulty block containing the median;
+/// number-right equals the sum of the person's answers on the administered
+/// items; red iff the last administered answer is wrong; score = r (blue) or
+/// r + 1/2 (red).
+#[test]
+fn flexilevel_structural_invariants_all_paths() {
+    let n_items = 9usize;
+    let n = 5usize;
+    let n_persons = 1usize << n_items;
+    let mut resp = Vec::with_capacity(n_persons * n_items);
+    for pat in 0..n_persons {
+        for c in 0..n_items {
+            resp.push(((pat >> c) & 1) as u8);
+        }
+    }
+    let r = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+    assert_eq!(r.n_administered, n);
+    for p in 0..n_persons {
+        let row = &resp[p * n_items..(p + 1) * n_items];
+        let items = &r.items[p * n..(p + 1) * n];
+        let mut sorted = items.to_vec();
+        sorted.sort_unstable();
+        let lo = sorted[0];
+        assert_eq!(
+            sorted,
+            (lo..lo + n).collect::<Vec<_>>(),
+            "person {p}: not a consecutive block"
+        );
+        assert!(sorted.contains(&(n - 1)), "person {p}: median missing");
+        let right: u32 = items.iter().map(|&c| row[c] as u32).sum();
+        assert_eq!(r.number_right[p], right, "person {p}: number-right");
+        let last = *items.last().unwrap();
+        assert_eq!(r.is_red[p], u8::from(row[last] == 0), "person {p}: red");
+        let expect = right as f64 + if row[last] == 0 { 0.5 } else { 0.0 };
+        assert_eq!(r.score[p], expect, "person {p}: score");
+    }
+}
+
+/// Administer/distribution consistency: with P_i = 1/2 every answer path has
+/// probability 2^-n, and enumerating ALL 2^N full rows realizes each path
+/// exactly 2^(N-n) times, so empirical score frequencies over the 2^N rows
+/// must equal the crate distribution EXACTLY (both sides are dyadic).
+#[test]
+fn flexilevel_admin_matches_distribution_at_half() {
+    let n_items = 5usize;
+    let n = 3usize;
+    let n_persons = 1usize << n_items;
+    let mut resp = Vec::with_capacity(n_persons * n_items);
+    for pat in 0..n_persons {
+        for c in 0..n_items {
+            resp.push(((pat >> c) & 1) as u8);
+        }
+    }
+    let adm = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+    let dist = crate::exposure::flexilevel_score_distribution(&[0.5; 5]).unwrap();
+    for (k, &x) in dist.scores.iter().enumerate() {
+        let count = adm.score.iter().filter(|&&s| s == x).count();
+        assert_eq!(
+            count as f64 / n_persons as f64,
+            dist.probs[k],
+            "score {x}: empirical vs recursion"
+        );
+    }
+    // Lattice coverage sanity read from crate outputs.
+    assert_eq!(dist.scores, vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0]);
+}
+
+/// Full validation error paths; each assert reads the crate Err string.
+#[test]
+fn flexilevel_error_paths() {
+    use crate::exposure::{flexilevel_administer as adm, flexilevel_score_distribution as dist};
+    assert!(adm(&[], 0, 5).unwrap_err().contains("positive"));
+    assert!(adm(&[0; 4], 1, 4).unwrap_err().contains("odd"));
+    assert!(adm(&[0; 1], 1, 1).unwrap_err().contains("odd"));
+    assert!(adm(&[0; 9], 1, 5).unwrap_err().contains("expected"));
+    let mut bad = vec![0u8; 5];
+    bad[2] = 2; // median item is administered first, so the 2 is reached
+    assert!(adm(&bad, 1, 5).unwrap_err().contains("0 or 1"));
+    assert!(dist(&[]).unwrap_err().contains("odd"));
+    assert!(dist(&[0.5; 4]).unwrap_err().contains("odd"));
+    assert!(dist(&[0.5, f64::NAN, 0.5]).unwrap_err().contains("p[1]"));
+    assert!(dist(&[0.5, 1.5, 0.5]).unwrap_err().contains("p[1]"));
+    assert!(dist(&[-0.1, 0.5, 0.5]).unwrap_err().contains("p[0]"));
+}
+
+/// MC-500 (#[ignore]): 2PL simulees on a 21-item difficulty-ordered pool.
+/// Per rep: (a) the flexilevel score read from the crate correlates with
+/// true theta (r > 0.5 on 200 persons); (b) at fixed theta = 0.7 the
+/// empirical mean score over 400 simulees stays within 5 SE of the exact
+/// recursion mean computed by the crate at that theta.
+#[test]
+#[ignore]
+fn flexilevel_mc_500_recovery() {
+    let n_items = 21usize;
+    let n = 11usize;
+    let b: Vec<f64> = (0..n_items).map(|c| -2.5 + 0.25 * c as f64).collect();
+    let a = 1.2_f64;
+    let picc = |theta: f64, bc: f64| 1.0 / (1.0 + (-a * (theta - bc)).exp());
+    for rep in 0..500u64 {
+        let mut rng = Lcg(0xF1E_2026 ^ (rep * 0x9E37_79B9));
+        // (a) score-vs-theta correlation on 200 simulees.
+        let n_persons = 200usize;
+        let mut thetas = Vec::with_capacity(n_persons);
+        let mut resp = Vec::with_capacity(n_persons * n_items);
+        for _ in 0..n_persons {
+            let th = rng.normal();
+            thetas.push(th);
+            for bc in &b {
+                resp.push(u8::from(rng.next_f64() < picc(th, *bc)));
+            }
+        }
+        let adm = crate::exposure::flexilevel_administer(&resp, n_persons, n_items).unwrap();
+        let ms: f64 = adm.score.iter().sum::<f64>() / n_persons as f64;
+        let mt: f64 = thetas.iter().sum::<f64>() / n_persons as f64;
+        let mut sxx = 0.0;
+        let mut syy = 0.0;
+        let mut sxy = 0.0;
+        for (s, t) in adm.score.iter().zip(&thetas) {
+            sxx += (s - ms) * (s - ms);
+            syy += (t - mt) * (t - mt);
+            sxy += (s - ms) * (t - mt);
+        }
+        let corr = sxy / (sxx * syy).sqrt();
+        assert!(corr > 0.5, "rep {rep}: corr = {corr}");
+        // (b) empirical mean at fixed theta vs exact recursion mean.
+        let theta0 = 0.7;
+        let p0: Vec<f64> = b.iter().map(|bc| picc(theta0, *bc)).collect();
+        let d = crate::exposure::flexilevel_score_distribution(&p0).unwrap();
+        let m = 400usize;
+        let mut resp0 = Vec::with_capacity(m * n_items);
+        for _ in 0..m {
+            for bc in &b {
+                resp0.push(u8::from(rng.next_f64() < picc(theta0, *bc)));
+            }
+        }
+        let adm0 = crate::exposure::flexilevel_administer(&resp0, m, n_items).unwrap();
+        let emp: f64 = adm0.score.iter().sum::<f64>() / m as f64;
+        let se = (d.variance / m as f64).sqrt();
+        assert!(
+            (emp - d.mean).abs() < 5.0 * se,
+            "rep {rep}: emp {emp} vs exact {} (se {se})",
+            d.mean
+        );
+    }
+}
+
+// ===================== Weiss stradaptive test tests =========================
+//
+// Mutation-kill plan (executed kills recorded in the PR evidence); every
+// assert below reads `StradaptiveResult` fields or the returned `Err`:
+// - MU1 branch swap (correct -> down): killed by `strad_william_w_anchor`
+//   (Table 2 routing sequence pin).
+// - MU2' termination `<=` -> `<`: killed by `strad_person_e_boundary`
+//   (p == chance exactly must terminate).
+//   LIMIT (documented): the original MU2 (ceiling scan lowest -> highest)
+//   is NOT observably killable -- termination fires at the FIRST response
+//   after which any stratum qualifies, so at most one qualifying stratum
+//   exists in any reachable terminal state and the scan order cannot
+//   change the result. The discriminating anchor for "lowest" is the
+//   contract documentation itself, not a test.
+// - MU3 method-7 step always-upper: killed by `strad_person_d_lower_step`
+//   (p = 1/3 with unequal adjacent gaps: -1/3 vs mutant -1/2).
+// - MU4 basal any-correct instead of all-correct: killed by
+//   `strad_william_w_anchor` (stratum 7 has corrects but is not clean;
+//   basal must stay at stratum 6).
+
+#[test]
+fn strad_william_w_anchor() {
+    // Weiss (1973), Figure 4 + Tables 1-2 (William W.): administered item
+    // difficulties transcribed from Table 1; never-administered balancing
+    // items force each stratum's FULL-pool mean to the printed stratum mean.
+    let mut stratum: Vec<usize> = vec![0, 1, 2, 3];
+    let mut diff: Vec<f64> = vec![-2.65, -1.92, -1.29, -0.63];
+    let s5 = [-0.05, 0.09]; // mean .02
+    let s6 = [0.73, 0.34, 0.65, 0.79, 0.79];
+    let s6_bal = 0.65 * 6.0 - s6.iter().sum::<f64>();
+    let s7 = [1.07, 1.49, 1.33, 1.54, 1.11, 1.40, 1.17, 1.30, 1.38, 1.44];
+    let s7_bal = 1.33 * 11.0 - s7.iter().sum::<f64>();
+    let s8 = [1.89, 2.03, 1.93, 2.31, 1.79];
+    let s8_bal = 2.01 * 6.0 - s8.iter().sum::<f64>();
+    for d in s5 {
+        stratum.push(4);
+        diff.push(d);
+    }
+    for d in s6.iter().copied().chain([s6_bal]) {
+        stratum.push(5);
+        diff.push(d);
+    }
+    for d in s7.iter().copied().chain([s7_bal]) {
+        stratum.push(6);
+        diff.push(d);
+    }
+    for d in s8.iter().copied().chain([s8_bal]) {
+        stratum.push(7);
+        diff.push(d);
+    }
+    stratum.push(8);
+    diff.push(2.62);
+    let n = stratum.len();
+    let mut resp = vec![0u8; n];
+    let idx = |s: usize, j: usize| -> usize { (0..n).filter(|&i| stratum[i] == s).nth(j).unwrap() };
+    resp[idx(4, 0)] = 1;
+    for (j, r) in [1, 1, 1, 1, 1].into_iter().enumerate() {
+        resp[idx(5, j)] = r;
+    }
+    for (j, r) in [1, 1, 1, 0, 1, 0, 0, 0, 1].into_iter().enumerate() {
+        resp[idx(6, j)] = r;
+    }
+    for (j, r) in [0, 0, 0, 0, 0].into_iter().enumerate() {
+        resp[idx(7, j)] = r;
+    }
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 4, 0.2, 5, 1000).unwrap();
+    // Table 2 stage sequence (1-based strata) and responses.
+    let seq: Vec<usize> = res.administered.iter().map(|&i| stratum[i] + 1).collect();
+    assert_eq!(
+        seq,
+        vec![5, 6, 7, 8, 7, 8, 7, 8, 7, 6, 7, 8, 7, 6, 7, 6, 7, 6, 7, 8]
+    );
+    assert_eq!(
+        res.responses_taken,
+        vec![1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0]
+    );
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(7)); // stratum 8 (1-based): 5 items, 0 correct
+    assert_eq!(res.basal, Some(5)); // stratum 6: 5/5 correct (kills MU4)
+    assert_eq!(res.hnc, Some(6)); // stratum 7
+                                  // Figure 4 printed scores (2-dp; exact where the value is a pool literal).
+    assert_eq!(res.scores[0], 1.49); // m1
+    assert_eq!(res.scores[1], 1.44); // m2 = s7 item 10, the n+1-th item
+    assert_eq!(res.scores[2], 1.49); // m3
+    assert!((res.scores[3] - 1.33).abs() < 1e-12); // m4
+    assert!((res.scores[4] - 1.33).abs() < 1e-12); // m5
+    assert!((res.scores[5] - 1.33).abs() < 1e-12); // m6
+                                                   // m7 = 1.33 + (2.01 - 1.33) * (5/9 - 1/2) = 1.3677... (prints 1.37)
+    assert!((res.scores[6] - 1.3677777777777778).abs() < 1e-9);
+    assert!((res.scores[7] - 0.8754545454545455).abs() < 1e-9); // m8 = 9.63/11
+    assert!((res.scores[8] - 1.276).abs() < 1e-9); // m9 = 6.38/5 (prints 1.28)
+    assert!((res.scores[9] - 1.276).abs() < 1e-9); // m10
+                                                   // Consistency: population variance of {1.07, 1.49, 1.33, 1.11, 1.38}
+                                                   // (DERIVED definitional choice -- no printed anchor exists).
+    assert!((res.consistency - 0.025904).abs() < 1e-9);
+    assert_eq!(res.next_item.map(|i| stratum[i]), Some(6));
+}
+
+#[test]
+fn strad_person_a_pool_exhaustion() {
+    // Synthetic exact anchor: same-stratum fallback then pool exhaustion.
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![1, 1, 1, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 1, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![2, 4, 3, 0, 1]);
+    assert_eq!(res.responses_taken, vec![1, 0, 0, 1, 1]);
+    assert_eq!(res.reason, "pool_exhausted");
+    assert_eq!(res.ceiling, None);
+    assert_eq!(res.hnc, Some(1));
+    assert_eq!(res.basal, Some(0));
+    assert_eq!(res.next_item, None);
+    assert_eq!(res.scores[0], 0.0); // m1
+    assert!(res.scores[1].is_nan()); // m2 indeterminate
+    assert_eq!(res.scores[2], 0.0); // m3 (no ceiling -> bound = S)
+    assert_eq!(res.scores[3], 0.25); // m4 = D_1
+    assert!(res.scores[4].is_nan()); // m5 (no n+1-th item; NaN by contract)
+    assert_eq!(res.scores[5], 0.25); // m6
+    assert_eq!(res.scores[6], 0.25); // m7: p = 1/2 exactly -> D_hnc
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert_eq!(res.scores[8], 0.0); // m9
+    assert_eq!(res.scores[9], 0.0); // m10
+    assert_eq!(res.consistency, 0.0);
+}
+
+#[test]
+fn strad_person_b_criterion() {
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![1, 1, 0, 0, 0, 1];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 2, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![4, 2, 0, 3]);
+    assert_eq!(res.responses_taken, vec![0, 0, 1, 0]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(1));
+    assert_eq!(res.hnc, Some(0));
+    assert_eq!(res.basal, Some(0));
+    assert_eq!(res.scores[0], -1.0); // m1
+    assert_eq!(res.scores[1], -2.0); // m2: next item is s0 item 2
+    assert_eq!(res.scores[2], -1.0); // m3
+    assert_eq!(res.scores[3], -1.5); // m4
+    assert_eq!(res.scores[4], -1.5); // m5
+    assert_eq!(res.scores[5], -1.5); // m6
+    assert_eq!(res.scores[6], -0.625); // m7 = -3/2 + 7/4 * 1/2 (p = 1 > 1/2)
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert!(res.scores[8].is_nan()); // m9: no strata strictly inside (0, 1)
+    assert_eq!(res.scores[9], -1.0); // m10
+    assert!(res.consistency.is_nan());
+}
+
+#[test]
+fn strad_person_c_bottom_clamp() {
+    // Bottom clamp + all wrong: ceiling = 0 -> everything indeterminate.
+    let stratum = vec![0, 0, 1, 1, 2, 2];
+    let diff = vec![-1.0, -2.0, 0.0, 0.5, 2.0, 3.0];
+    let resp = vec![0, 0, 0, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![0, 1]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(0));
+    assert_eq!(res.hnc, None);
+    assert_eq!(res.basal, None);
+    assert_eq!(res.next_item, None); // clamped target s0 is exhausted
+    for k in 0..10 {
+        assert!(res.scores[k].is_nan(), "m{} should be NaN", k + 1);
+    }
+    assert!(res.consistency.is_nan());
+}
+
+#[test]
+fn strad_person_d_lower_step() {
+    // Kills MU3: p = 1/3 < 1/2 at hnc with UNEQUAL adjacent gaps
+    // (D = [-2, 0, 3]): derived lower step gives 0 + (0 - (-2))(1/3 - 1/2)
+    // = -1/3; an always-upper mutant gives 0 + 3(1/3 - 1/2) = -1/2.
+    let stratum = vec![0, 0, 1, 1, 1, 2, 2];
+    let diff = vec![-2.0, -2.0, -1.0, 0.0, 1.0, 3.0, 3.0];
+    let resp = vec![1, 1, 1, 0, 0, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 1, 0.25, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![2, 5, 3, 0, 4, 1]);
+    assert_eq!(res.reason, "pool_exhausted");
+    assert_eq!(res.ceiling, None);
+    assert_eq!(res.hnc, Some(1)); // p = 1/3 > chance = 1/4
+    assert!((res.scores[6] - (-1.0 / 3.0)).abs() < 1e-12); // m7 lower step
+    assert!((res.scores[6] - (-0.5)).abs() > 0.1); // NOT the upper-step value
+}
+
+#[test]
+fn strad_person_e_boundary() {
+    // Kills MU2': p == chance exactly must terminate (<=, not <);
+    // also exercises chance = 1/2 (2-option items).
+    let stratum = vec![0, 0, 0, 1, 1];
+    let diff = vec![-1.0, -1.0, -1.0, 1.0, 1.0];
+    let resp = vec![1, 0, 1, 0, 0];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.5, 2, 100).unwrap();
+    assert_eq!(res.administered, vec![0, 3, 1]);
+    assert_eq!(res.responses_taken, vec![1, 0, 0]);
+    assert_eq!(res.reason, "criterion");
+    assert_eq!(res.ceiling, Some(0)); // s0: 2 administered, 1 correct, p = 1/2
+    assert_eq!(res.hnc, None);
+    assert_eq!(res.scores[0], -1.0); // m1
+    assert_eq!(res.scores[1], -1.0); // m2: s0 item 3
+    assert_eq!(res.scores[3], -1.0); // m4
+    assert_eq!(res.scores[7], -1.0); // m8
+    assert!(res.scores[2].is_nan()); // m3: ceiling bound = 0
+    assert!(res.scores[8].is_nan()); // m9
+}
+
+#[test]
+fn strad_max_items() {
+    let stratum = vec![0, 0, 1, 1];
+    let diff = vec![-1.0, -1.0, 1.0, 1.0];
+    let resp = vec![1, 1, 1, 1];
+    let res =
+        crate::exposure::stradaptive_administer(&stratum, &diff, &resp, 0, 0.25, 5, 2).unwrap();
+    assert_eq!(res.administered.len(), 2);
+    assert_eq!(res.reason, "max_items");
+    assert_eq!(res.next_item, Some(3)); // routing continues hypothetically
+}
+
+#[test]
+fn strad_error_contract() {
+    let ok_s = vec![0usize, 0, 1, 1];
+    let ok_d = vec![-1.0, -1.0, 1.0, 1.0];
+    let ok_r = vec![1u8, 0, 1, 0];
+    let call = |s: &[usize], d: &[f64], r: &[u8], e: usize, ch: f64, mi: usize, ma: usize| {
+        crate::exposure::stradaptive_administer(s, d, r, e, ch, mi, ma)
+    };
+    assert!(call(&[], &[], &[], 0, 0.2, 1, 1).is_err()); // empty pool
+    assert!(call(&ok_s, &ok_d[..3], &ok_r, 0, 0.2, 1, 1).is_err()); // len mism.
+    assert!(call(&ok_s, &ok_d, &ok_r[..3], 0, 0.2, 1, 1).is_err());
+    assert!(call(&[0, 0, 0], &[1.0, 2.0, 3.0], &[1, 0, 1], 0, 0.2, 1, 1).is_err()); // S = 1
+    assert!(call(&[0, 2, 2], &[1.0, 2.0, 3.0], &[1, 0, 1], 0, 0.2, 1, 1).is_err()); // gap
+    assert!(call(&ok_s, &ok_d, &[1, 0, 2, 0], 0, 0.2, 1, 1).is_err()); // resp = 2
+    assert!(call(&ok_s, &ok_d, &ok_r, 2, 0.2, 1, 1).is_err()); // entry >= S
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.0, 1, 1).is_err()); // chance = 0
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 1.0, 1, 1).is_err()); // chance = 1
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, f64::NAN, 1, 1).is_err());
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 0, 1).is_err()); // min_items = 0
+    assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 1, 0).is_err()); // max_items = 0
+    assert!(call(&ok_s, &[-1.0, f64::INFINITY, 1.0, 1.0], &ok_r, 0, 0.2, 1, 1).is_err());
+    // Huge stratum id must be rejected BEFORE the by_stratum allocation
+    // (guard reads the crate error, not a mirrored bound).
+    let err = call(&[0, usize::MAX - 1, 1, 1], &ok_d, &ok_r, 0, 0.2, 1, 1).unwrap_err();
+    assert!(err.contains("exceeds the item count"));
+}
+
+#[test]
+#[ignore = "Monte Carlo (500 reps); run with -- --ignored"]
+fn strad_mc_invariants() {
+    // 500 random pools/response vectors; structural invariants checked
+    // against crate outputs (counts recomputed FROM the returned
+    // administered/responses_taken, not from a mirrored engine).
+    let mut rng = Lcg(20260726);
+    for rep in 0..500 {
+        let n_strata = 2 + (rng.next_f64() * 5.0) as usize; // 2..=6
+        let mut stratum = Vec::new();
+        let mut diff = Vec::new();
+        for k in 0..n_strata {
+            let m = 1 + (rng.next_f64() * 6.0) as usize;
+            for _ in 0..m {
+                stratum.push(k);
+                diff.push(k as f64 - 2.0 + rng.next_f64());
+            }
+        }
+        let n = stratum.len();
+        let resp: Vec<u8> = (0..n).map(|_| u8::from(rng.next_f64() < 0.55)).collect();
+        let entry = (rng.next_f64() * n_strata as f64) as usize;
+        let chance = 0.1 + 0.5 * rng.next_f64();
+        let min_items = 1 + (rng.next_f64() * 3.0) as usize;
+        let res = crate::exposure::stradaptive_administer(
+            &stratum, &diff, &resp, entry, chance, min_items, 200,
+        )
+        .unwrap();
+        // administered indices unique, in range, echoing the pool responses
+        let mut seen = vec![false; n];
+        for (&i, &r) in res.administered.iter().zip(&res.responses_taken) {
+            assert!(i < n && !seen[i], "rep {rep}");
+            seen[i] = true;
+            assert_eq!(r, resp[i], "rep {rep}");
+        }
+        // recompute per-stratum counts from crate outputs
+        let mut adm = vec![0usize; n_strata];
+        let mut cor = vec![0usize; n_strata];
+        for (&i, &r) in res.administered.iter().zip(&res.responses_taken) {
+            adm[stratum[i]] += 1;
+            cor[stratum[i]] += r as usize;
+        }
+        let qualifies = |k: usize| adm[k] >= min_items && (cor[k] as f64 / adm[k] as f64) <= chance;
+        match res.ceiling {
+            Some(c) => {
+                assert!(qualifies(c), "rep {rep}");
+                assert!((0..c).all(|k| !qualifies(k)), "rep {rep}: not lowest");
+            }
+            None => assert!((0..n_strata).all(|k| !qualifies(k)), "rep {rep}"),
+        }
+        if res.reason == "criterion" {
+            assert!(res.ceiling.is_some(), "rep {rep}");
+        }
+        if res.reason == "pool_exhausted" {
+            assert!(res.next_item.is_none(), "rep {rep}");
+        }
+        // score sanity against crate outputs
+        let (dmin, dmax) = diff
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &d| {
+                (lo.min(d), hi.max(d))
+            });
+        if !res.scores[7].is_nan() {
+            assert!(res.scores[7] >= dmin - 1e-12 && res.scores[7] <= dmax + 1e-12);
+        }
+        if !res.scores[0].is_nan() && !res.scores[2].is_nan() {
+            assert!(res.scores[0] >= res.scores[2], "rep {rep}: m1 < m3");
+        }
+        if !res.consistency.is_nan() {
+            assert!(res.consistency >= 0.0, "rep {rep}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pyramidal adaptive testing (Larkin & Weiss, 1974) -- exact anchors from
+// files/pyramidal_oracle.py (exact-Fraction, EXECUTED all-pass) plus the
+// paper-printed 15-stage all-item score range 0..240 (p. 16). Every assert
+// reads crate outputs (PyramidalResult fields).
+// ---------------------------------------------------------------------------
+
+fn pyr4() -> (Vec<f64>, Vec<f64>) {
+    // 4-stage pyramid, row-major by stage, easiest -> hardest in each stage.
+    let b = vec![0.0, -1.0, 1.0, -2.0, 0.0, 2.0, -3.0, -1.0, 1.0, 3.0];
+    let b_next = vec![-4.0, -2.0, 0.0, 2.0, 4.0];
+    (b, b_next)
+}
+
+#[test]
+fn pyr_anchor_a_exact() {
+    // Oracle anchor A: u=[1,0,1,1]. Kills MU1 (inverted branch: stage-2
+    // index would be 1 not 2), MU2 (dropped next-harder +1: M6 13 not 15),
+    // MU3 (M5 ignoring final response: b_next[2]=0 not 2), MU4 (wrong
+    // flatten: path shifts).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 4, 8]);
+    assert_eq!(r.positions, vec![0, 1, 1, 2]);
+    assert_eq!(r.number_correct, 3.0);
+    assert_eq!(r.mean_b_attempted, 0.5);
+    assert!((r.mean_b_correct - 1.0 / 3.0).abs() < 1e-15);
+    assert_eq!(r.final_b, 1.0);
+    assert_eq!(r.final_difficulty, 2.0);
+    assert_eq!(r.all_item_score, 15.0);
+}
+
+#[test]
+fn pyr_anchor_b_final_wrong() {
+    // Oracle anchor B: final response wrong -> M5 stays at b_next[2]=0 and
+    // the stage-4 incorrect at j=2 scores 1+2=3 (M6 total 11).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 0], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 4, 8]);
+    assert_eq!(r.number_correct, 2.0);
+    assert_eq!(r.mean_b_correct, 0.0);
+    assert_eq!(r.final_difficulty, 0.0);
+    assert_eq!(r.all_item_score, 11.0);
+}
+
+#[test]
+fn pyr_anchor_c_all_wrong() {
+    // Oracle anchor C: leftmost path, M3 indeterminate (NaN), M6 = 0, M5 at
+    // the lower extreme b_next[0] = -4.
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[0, 0, 0, 0], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 1, 3, 6]);
+    assert_eq!(r.number_correct, 0.0);
+    assert_eq!(r.mean_b_attempted, -1.5);
+    assert!(r.mean_b_correct.is_nan());
+    assert_eq!(r.final_b, -3.0);
+    assert_eq!(r.final_difficulty, -4.0);
+    assert_eq!(r.all_item_score, 0.0);
+}
+
+#[test]
+fn pyr_anchor_d_leftmost_correct_bonus() {
+    // Review-mandated anchor D: a correct response at the leftmost position
+    // of stage 2 (j=0 with a harder neighbour) earns the next-harder +1
+    // bonus (stage score 3). Kills the MU5 guard mutation
+    // [j < s-1] -> [j > 0 && j < s-1] (mutant M6 = 14, crate must say 15).
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[0, 1, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 1, 4, 8]);
+    assert_eq!(r.positions, vec![0, 0, 1, 2]);
+    assert_eq!(r.all_item_score, 15.0);
+    assert_eq!(r.final_difficulty, 2.0);
+}
+
+#[test]
+fn pyr_anchor_e_all_correct_upper_extreme() {
+    // Review-mandated anchor E: all-correct requires the M5 upper extreme
+    // b_next[n] = b_next[4] = 4 (kills off-by-one b_next indexing that
+    // never reaches the top hypothetical item). Rightmost path.
+    let (b, bn) = pyr4();
+    let r = crate::exposure::pyramidal_administer(&b, 4, &[1, 1, 1, 1], Some(&bn)).unwrap();
+    assert_eq!(r.path, vec![0, 2, 5, 9]);
+    assert_eq!(r.final_b, 3.0);
+    assert_eq!(r.final_difficulty, 4.0);
+    assert_eq!(r.all_item_score, 20.0);
+    assert_eq!(r.mean_b_attempted, 1.5);
+}
+
+#[test]
+fn pyr_paper_m6_range() {
+    // Paper-printed anchor (Larkin & Weiss, 1974, p. 16): 15-stage all-item
+    // scores "ranged from 0 to 240". All-correct = 240 on the rightmost
+    // path; all-wrong = 0 on the leftmost.
+    let n = 15;
+    let b = vec![0.0; n * (n + 1) / 2];
+    let all = crate::exposure::pyramidal_administer(&b, n, &[1u8; 15], None).unwrap();
+    assert_eq!(all.all_item_score, 240.0);
+    assert_eq!(all.number_correct, 15.0);
+    assert_eq!(all.positions, (0..15).collect::<Vec<usize>>());
+    assert!(
+        all.final_difficulty.is_nan(),
+        "M5 unavailable without b_next"
+    );
+    let none = crate::exposure::pyramidal_administer(&b, n, &[0u8; 15], None).unwrap();
+    assert_eq!(none.all_item_score, 0.0);
+    assert_eq!(none.positions, vec![0usize; 15]);
+}
+
+#[test]
+fn pyr_error_contract() {
+    let (b, bn) = pyr4();
+    let e = crate::exposure::pyramidal_administer(&b, 0, &[], Some(&bn)).unwrap_err();
+    assert!(e.contains("n_stages must be >= 1"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b[..9], 4, &[1, 0, 1, 1], None).unwrap_err();
+    assert!(e.contains("n(n+1)/2"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1], None).unwrap_err();
+    assert!(e.contains("3 responses"), "{e}");
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 2, 1], None).unwrap_err();
+    assert!(e.contains("u[2] must be 0 or 1"), "{e}");
+    let mut bad = b.clone();
+    bad[4] = f64::NAN;
+    let e = crate::exposure::pyramidal_administer(&bad, 4, &[1, 0, 1, 1], None).unwrap_err();
+    assert!(e.contains("b[4] must be finite"), "{e}");
+    let e =
+        crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bn[..4])).unwrap_err();
+    assert!(e.contains("n_stages + 1"), "{e}");
+    let mut bad_bn = bn.clone();
+    bad_bn[2] = f64::INFINITY;
+    let e = crate::exposure::pyramidal_administer(&b, 4, &[1, 0, 1, 1], Some(&bad_bn)).unwrap_err();
+    assert!(e.contains("b_next[2] must be finite"), "{e}");
+    // Review-mandated: huge n_stages must return Err (checked arithmetic),
+    // never a debug panic or release wrap.
+    let e = crate::exposure::pyramidal_administer(&[], usize::MAX - 1, &[], None).unwrap_err();
+    assert!(e.contains("overflow"), "{e}");
+}
+
+#[test]
+#[ignore = "Monte Carlo (500 reps); run with -- --ignored"]
+fn pyr_mc_500() {
+    // 500 random pyramids: structural invariants read back from crate
+    // outputs (path validity + row-major consistency, M1 = count of u on
+    // the routed path, M2 = mean of crate-returned path difficulties, M6
+    // within [0, n(n+1)] since each stage score is at most 2s).
+    let mut rng = Lcg(0x9d2c_5680_1357_2468);
+    for rep in 0..500 {
+        let n = 2 + (rng.next_f64() * 14.0) as usize; // 2..=15 stages
+        let len = n * (n + 1) / 2;
+        let b: Vec<f64> = (0..len).map(|_| rng.normal() * 1.5).collect();
+        let bn: Vec<f64> = (0..=n).map(|_| rng.normal() * 2.0).collect();
+        let u: Vec<u8> = (0..n).map(|_| (rng.next_f64() < 0.55) as u8).collect();
+        let r = crate::exposure::pyramidal_administer(&b, n, &u, Some(&bn)).unwrap();
+        assert_eq!(r.path.len(), n, "rep {rep}");
+        let mut expect_j = 0usize;
+        for (s, (&idx, &j)) in r.path.iter().zip(&r.positions).enumerate() {
+            let stage = s + 1;
+            assert_eq!(j, expect_j, "rep {rep} stage {stage}");
+            assert_eq!(idx, stage * (stage - 1) / 2 + j, "rep {rep} stage {stage}");
+            assert!(j < stage, "rep {rep}: position outside stage");
+            if stage < n {
+                expect_j += u[s] as usize;
+            }
+        }
+        let m1: f64 = u.iter().map(|&x| f64::from(x)).sum();
+        assert_eq!(r.number_correct, m1, "rep {rep}");
+        let m2 = r.path.iter().map(|&k| b[k]).sum::<f64>() / n as f64;
+        assert!((r.mean_b_attempted - m2).abs() < 1e-12, "rep {rep}");
+        assert!(r.all_item_score >= 0.0, "rep {rep}");
+        assert!(r.all_item_score <= (n * (n + 1)) as f64, "rep {rep}");
+        assert!(r.final_difficulty.is_finite(), "rep {rep}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Two-stage adaptive testing (Betz & Weiss, 1973, 1974)
+// ---------------------------------------------------------------------------
+use crate::exposure::{two_stage_route, two_stage_score};
+
+// Oracle: exact-Fraction/stdlib-inv_cdf oracle executed against the printed
+// Appendix B routing table of Betz & Weiss (1974, RR 74-4). f64 pins carry
+// +-1e-7 tolerance (oracle uses the stdlib inverse normal; the crate uses
+// Acklam, |rel err| < 1.15e-9).
+
+/// Two-stage 2 routing-test parameters and measurement-test mean
+/// difficulties (Betz & Weiss, 1974, Table 1 and Appendix B).
+fn ts2() -> (usize, f64, f64, Vec<f64>, Vec<f64>) {
+    (
+        10,
+        0.70,
+        -0.23,
+        vec![0.53, 0.68, 0.61, 0.68],   // a_meas (Table 1, Two-stage 2)
+        vec![1.73, 0.35, -0.71, -1.60], // b_meas (tests 1..4)
+    )
+}
+
+/// Every row of the printed Appendix B routing table (Betz & Weiss, 1974):
+/// theta1 within +-0.05 of the printed 2-dp value (paper-table anchor; the
+/// printed table itself is only internally consistent to ~.03 because its
+/// a-bar = .70 is rounded) and the assigned test EXACTLY as printed.
+/// Asserts read `two_stage_route` outputs. Kills MU1 (dropped /a_bar:
+/// x = 9 gives 1.01 not 1.44) and MU3 (argmax routing: x = 9 would assign
+/// test 4 not test 1).
+#[test]
+fn ts_paper_routing_table() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    // (x, printed theta, printed assigned test 1-based)
+    let rows = [
+        (0usize, -2.45, 4usize),
+        (1, -2.45, 4),
+        (2, -2.45, 4),
+        (3, -1.90, 4),
+        (4, -1.20, 4),
+        (5, -0.69, 3),
+        (6, -0.23, 3),
+        (7, 0.23, 2),
+        (8, 0.75, 2),
+        (9, 1.44, 1),
+        (10, 1.99, 1),
+    ];
+    for &(x, printed, test_1based) in &rows {
+        let (theta1, assigned) = two_stage_route(x, m1, a1, b1, &b_meas, 0.2).unwrap();
+        assert!(
+            (theta1 - printed).abs() < 0.05,
+            "x={x}: theta1={theta1} vs printed {printed}"
+        );
+        assert_eq!(assigned, test_1based - 1, "x={x}: assigned");
+    }
+}
+
+/// Full-pipeline exact pin: x1 = 7 routes to test index 1 (a = .68 is not
+/// used for theta1); scoring x2 = 20 of 30 on that test (a-bar = .68,
+/// b-bar = .35 -- oracle used a = .55? No: oracle anchor 2 used a = .55,
+/// b = .35, so the fixture below passes those to the crate). Pins are the
+/// executed oracle f64 values. Asserts read `two_stage_score` outputs.
+/// Kills MU1 and MU4 (weight swap: composite would be ~0.352).
+#[test]
+fn ts_anchor_pipeline() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let a_meas = vec![0.53, 0.55, 0.61, 0.68];
+    let r = two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas, &b_meas, 0.2).unwrap();
+    assert!(
+        (r.theta1 - 0.22519909137767882).abs() < 1e-7,
+        "{}",
+        r.theta1
+    );
+    assert_eq!(r.assigned, 1);
+    assert!((r.theta2 - 0.7325970804507724).abs() < 1e-7, "{}", r.theta2);
+    assert!(
+        (r.composite - 0.605747583182499).abs() < 1e-7,
+        "{}",
+        r.composite
+    );
+}
+
+/// Truncation pins (executed oracle): perfect score x' = m - 1/2; chance or
+/// below x' = c*m + 1/2, with x = 2 (== c*m exactly) truncating identically
+/// to x = 1 and x = 0. Includes the exact non-truncated upper-tail pin
+/// x = 9. Asserts read `two_stage_route` outputs. Kills MU2 (x' = m + 1/2
+/// gives p > 1 -> NaN/panic) and MU5 (x < c*m would leave x = 2 untruncated
+/// at p = 0 -> -inf).
+#[test]
+fn ts_truncation() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let t10 = two_stage_route(10, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t10 - 1.961600777646494).abs() < 1e-7, "{t10}");
+    let t9 = two_stage_route(9, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t9 - 1.4133562576800114).abs() < 1e-7, "{t9}");
+    let t2 = two_stage_route(2, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t2 - -2.421600777646494).abs() < 1e-7, "{t2}");
+    let t1 = two_stage_route(1, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    let t0 = two_stage_route(0, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert_eq!(t2, t1);
+    assert_eq!(t2, t0);
+    assert!(t10.is_finite() && t2.is_finite());
+}
+
+/// x = 6 gives theta1 == b1 up to one ulp of the p = 1/2 computation
+/// (Phi^-1(1/2) = 0 in the Acklam central branch; f64 rounding of
+/// (0.6 - 0.2)/0.8 lands one ulp below 1/2). An exact distance tie between
+/// two measurement tests, constructed from the CRATE-returned theta1,
+/// resolves to the LOWEST index (DERIVED convention, documented -- not a
+/// source claim). Asserts read `two_stage_route` outputs.
+#[test]
+fn ts_tie_lowest_index() {
+    let (m1, a1, b1, _a, _b) = ts2();
+    let (t6, _) = two_stage_route(6, m1, a1, b1, &[0.0], 0.2).unwrap();
+    assert!((t6 - b1).abs() < 1e-9, "{t6}");
+    let (_, k) = two_stage_route(6, m1, a1, b1, &[t6 - 0.5, t6 + 0.5], 0.2).unwrap();
+    assert_eq!(k, 0);
+}
+
+/// The composite is item-count weighted toward the LONGER measurement test:
+/// swapping the weights changes the anchor-2 composite by > 0.05. Asserts
+/// read `two_stage_score` outputs. Kills MU4.
+#[test]
+fn ts_weight_asymmetry() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let a_meas = vec![0.53, 0.55, 0.61, 0.68];
+    let r = two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas, &b_meas, 0.2).unwrap();
+    let swapped = (30.0 * r.theta1 + 10.0 * r.theta2) / 40.0;
+    assert!((r.composite - swapped).abs() > 0.05);
+    // and the composite is strictly between the two subtest estimates
+    let lo = r.theta1.min(r.theta2);
+    let hi = r.theta1.max(r.theta2);
+    assert!(r.composite > lo && r.composite < hi);
+}
+
+/// Error contract: every rejection path returns Err (never panics), and the
+/// administered-mismatch guard refuses to score x2 against the wrong test.
+#[test]
+fn ts_error_contract() {
+    let (m1, a1, b1, a_meas, b_meas) = ts2();
+    let ok = |r: &Result<(f64, usize), String>| r.is_ok();
+    assert!(ok(&two_stage_route(5, m1, a1, b1, &b_meas, 0.2)));
+    // zero-length routing test
+    assert!(two_stage_route(0, 0, a1, b1, &b_meas, 0.2).is_err());
+    // x1 > m1
+    assert!(two_stage_route(11, m1, a1, b1, &b_meas, 0.2).is_err());
+    // invalid c
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, 1.0).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, -0.1).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, f64::NAN).is_err());
+    // no measurement tests / non-finite difficulties / a1 <= 0
+    assert!(two_stage_route(5, m1, a1, b1, &[], 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &[f64::NAN], 0.2).is_err());
+    assert!(two_stage_route(5, m1, 0.0, b1, &b_meas, 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, f64::INFINITY, &b_meas, 0.2).is_err());
+    // m*(1-c) <= 1: m = 1 always fails; c = .95 with m = 10 fails
+    assert!(two_stage_route(0, 1, a1, b1, &b_meas, 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, 0.95).is_err());
+    // score-side: length mismatch, administered out of range, mismatch
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas[..3], &b_meas, 0.2).is_err());
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 9, &a_meas, &b_meas, 0.2).is_err());
+    let mismatch = two_stage_score(7, m1, a1, b1, 20, 30, 0, &a_meas, &b_meas, 0.2);
+    assert!(mismatch.is_err());
+    assert!(mismatch.unwrap_err().contains("wrong test"));
+    // x2 > m2 and bad measurement-test a
+    assert!(two_stage_score(7, m1, a1, b1, 31, 30, 1, &a_meas, &b_meas, 0.2).is_err());
+    let bad_a = vec![0.53, -0.1, 0.61, 0.68];
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 1, &bad_a, &b_meas, 0.2).is_err());
+    // Huge m: f64 rounding collapses the truncation endpoints (x_adj/mf
+    // rounds to 1 at a perfect score) -> Err "degenerate", never NaN.
+    let huge = 1usize << 53;
+    let r = two_stage_route(huge, huge, a1, b1, &b_meas, 0.2);
+    assert!(r.is_err());
+    assert!(r.unwrap_err().contains("degenerate"));
+}
+
+/// 500-rep Monte Carlo: random valid inputs -> finite outputs, assigned in
+/// range, composite strictly between the subtest estimates, and composite
+/// monotone non-decreasing in x2 for a fixed routing result. Asserts read
+/// crate outputs.
+#[test]
+#[ignore]
+fn ts_mc_500() {
+    let mut rng = Lcg(20260726);
+    for rep in 0..500 {
+        let m1 = 5 + (rng.next_f64() * 20.0) as usize;
+        let m2 = 5 + (rng.next_f64() * 40.0) as usize;
+        let a1 = 0.3 + rng.next_f64();
+        let b1 = rng.normal();
+        let nk = 2 + (rng.next_f64() * 4.0) as usize;
+        let a_meas: Vec<f64> = (0..nk).map(|_| 0.3 + rng.next_f64()).collect();
+        let b_meas: Vec<f64> = (0..nk).map(|_| rng.normal() * 1.5).collect();
+        let c = rng.next_f64() * 0.3;
+        let x1 = (rng.next_f64() * (m1 as f64 + 1.0)) as usize;
+        let x1 = x1.min(m1);
+        let (theta1, assigned) =
+            two_stage_route(x1, m1, a1, b1, &b_meas, c).expect("route must succeed");
+        assert!(theta1.is_finite(), "rep {rep}");
+        assert!(assigned < nk, "rep {rep}");
+        let mut prev = f64::NEG_INFINITY;
+        for x2 in 0..=m2 {
+            let r = two_stage_score(x1, m1, a1, b1, x2, m2, assigned, &a_meas, &b_meas, c)
+                .expect("score must succeed");
+            assert!(r.composite.is_finite(), "rep {rep} x2 {x2}");
+            let lo = r.theta1.min(r.theta2);
+            let hi = r.theta1.max(r.theta2);
+            assert!(r.composite >= lo && r.composite <= hi, "rep {rep} x2 {x2}");
+            // Monotone non-decreasing only over the UNTRUNCATED region:
+            // for fractional c*m2 the truncation value c*m2 + 1/2 can
+            // exceed the first untruncated integer score (the papers only
+            // had integer c*m = 2), so global monotonicity is not implied
+            // by the source formulas.
+            if x2 as f64 > c * m2 as f64 {
+                assert!(
+                    r.composite >= prev - 1e-12,
+                    "rep {rep} x2 {x2} not monotone"
+                );
+                prev = r.composite;
+            }
+        }
+    }
 }
