@@ -7763,3 +7763,88 @@ class TestFlexilevel:
             flexilevel_score_distribution(
                 np.array([0.5, 0.5 + 0j, 0.5], dtype=object)
             )
+
+class TestStradaptive:
+    def test_person_d_lower_step_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # Below-chance-side m7 anchor (spec Person D): p = 1/3 < 1/2 at hnc
+        # with UNEQUAL adjacent gaps (D = [-2, 0, 3]); the derived lower
+        # step gives 0 + (0 - (-2))(1/3 - 1/2) = -1/3, while an
+        # always-upper mutant gives -1/2. Every assert reads crate output.
+        r = stradaptive_administer(
+            [0, 0, 1, 1, 1, 2, 2],
+            [-2.0, -2.0, -1.0, 0.0, 1.0, 3.0, 3.0],
+            [1, 1, 1, 0, 0, 0, 0],
+            entry_stratum=1,
+            chance=0.25,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [2, 5, 3, 0, 4, 1]
+        assert r["reason"] == "pool_exhausted"
+        assert r["ceiling"] == -1
+        assert r["hnc"] == 1
+        assert abs(r["scores"][6] - (-1.0 / 3.0)) < 1e-12
+        assert abs(r["scores"][6] - (-0.5)) > 0.1
+
+    def test_person_e_boundary_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # p == chance exactly must terminate (<=, not <); chance = 1/2.
+        r = stradaptive_administer(
+            [0, 0, 0, 1, 1],
+            [-1.0, -1.0, -1.0, 1.0, 1.0],
+            [1, 0, 1, 0, 0],
+            entry_stratum=0,
+            chance=0.5,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [0, 3, 1]
+        assert r["responses_taken"].tolist() == [1, 0, 0]
+        assert r["reason"] == "criterion"
+        assert r["ceiling"] == 0
+        assert r["hnc"] == -1
+        assert r["scores"][0] == -1.0
+        assert r["scores"][1] == -1.0
+        assert np.isnan(r["scores"][2])
+        assert np.isnan(r["scores"][8])
+
+    def test_validation_errors(self):
+        from fast_mlsirm import stradaptive_administer
+
+        kw = dict(entry_stratum=0, chance=0.25, min_items=1, max_items=10)
+        with pytest.raises(ValueError, match="chance"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                entry_stratum=0, chance=1.0, min_items=1, max_items=10,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 2, 1, 0], **kw
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1j, 1.0, 1.0]),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1 + 0j, 1.0, 1.0], dtype=object),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        with pytest.raises(ValueError, match="non-negative integers"):
+            stradaptive_administer(
+                [0, -1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
+        with pytest.raises(ValueError, match="stratum"):
+            stradaptive_administer(
+                [0, 0, 2, 2], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
