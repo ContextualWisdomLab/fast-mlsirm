@@ -95,6 +95,9 @@ from .exposure import (
     kl_select as kl_select,
     owen_update as owen_update,
     owen_cat as owen_cat,
+    ccat_select as ccat_select,
+    epv_select as epv_select,
+    sprt_classify as sprt_classify,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -250,6 +253,9 @@ __all__ = [
     "kl_select",
     "owen_update",
     "owen_cat",
+    "ccat_select",
+    "epv_select",
+    "sprt_classify",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",

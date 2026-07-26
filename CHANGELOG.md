@@ -123,6 +123,51 @@
 
 ### Added
 
+- **Wald SPRT classification for CAT** (`fast_mlsirm.sprt_classify`; in
+  `mlsirm_core::exposure`). Single-cut binary-response sequential probability
+  ratio test: point hypotheses at `theta_cut -/+ delta`, cumulative binary
+  log-likelihood ratio under the D=1 logistic 3PL, and inclusive
+  first-crossing decisions against the log Wald boundaries
+  `A = ln((1-beta)/alpha)`, `B = ln(beta/(1-alpha))` -> `"above"`/`"below"`/
+  `"continue"` with 1-based `n_used`; the full `llr_trace` is returned as an
+  offline diagnostic (entries past `n_used` are counterfactual replay
+  values). Verified against R catIrt `termSPRT.R`/`logLik.brm.R`/`p.brm.R`
+  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983), Eggen (1999),
+  and Wald (1947) are cited as historical origins via Thompson (not directly
+  read). Log-likelihood ratios are computed in stable log space (softplus /
+  log-sigmoid), so extreme-but-valid parameters that saturate the response
+  probability to numerical 0/1 yield finite LLRs instead of errors. Pinned
+  17-digit interior-crossing oracle, error-path and 500-rep Monte-Carlo
+  structural-invariant tests; 4 executed mutation kills (swapped boundaries,
+  dropped guessing floor, collapsed null hypothesis, off-by-one `n_used`).
+- **Owen-approximate posterior-predictive EPV item selection**
+  (`fast_mlsirm.epv_select`; in `mlsirm_core::exposure`). Deliberately
+  reduced scope of van der Linden's (1998, doi:10.1007/BF02294775) minimum
+  expected posterior variance (MEPV) criterion: the posterior is Owen's
+  normal approximation `N(mu, sig2)`, the predictive probability is
+  `p*_i = c_i + (1-c_i) Phi((mu-b_i)/sqrt(1/a_i^2 + sig2))`, and the outcome
+  posterior variances come from `owen_update` rather than exact numerical
+  posteriors; the unadministered item minimizing
+  `EPV_i = p*_i sig2_i^+ + (1-p*_i) sig2_i^-` is selected (lowest-index
+  ties). van der Linden (1998) READ as ERIC ED424235 (Research Report
+  96-01); the exact-MEPV contract additionally verified against R catR
+  `EPV.R` and mirtCAT `selection_criteria.R` (both READ); Owen (1975) NOT
+  read (update formulas follow the crate's `owen_update`). Pinned oracles
+  and a delegation discriminator (argmin EPV vs. max-info vs. b-matching)
+  fixed by the adversarial spec review.
+- **Kingsbury-Zara constrained CAT (CCAT) content balancing**
+  (`fast_mlsirm.ccat_select`; in `mlsirm_core::exposure`). Single-step
+  content-balanced item selection: eligible groups with zero administered
+  items have priority, otherwise the eligible group with the maximal
+  target-minus-empirical-proportion discrepancy is chosen; within the chosen
+  group the unadministered item with maximal logistic 3PL Fisher information
+  `a^2 (Q/P) ((P-c)/(1-c))^2` is selected. Ties go to the lowest index
+  (documented deterministic deviation from catR's random tie-break).
+  Kingsbury & Zara (1989, doi:10.1207/s15324818ame0204_6) itself NOT read
+  (paywalled); the rule is implemented as reproduced by the R catR package
+  (`nextItem.R` `cbControl` branch; READ), and the information formula was
+  verified against catR `Ii.R`/`Pi.R`. Pinned oracles computed in exact
+  arithmetic by the adversarial spec review.
 - **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
   `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
   normal-approximation posterior moment updates for the 3PNO model
@@ -130,7 +175,7 @@
   b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
   posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
   itself NOT read (paywalled); formulas implemented as reproduced by
-  van der Linden (1998, Research Report 98-01, Appendix A.1-A.6) and
+  van der Linden (1998, Research Report 96-01, Appendix A.1-A.6) and
   cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
   oracles verified against exact-posterior numerical integration (~1e-13)
   by the adversarial spec review.

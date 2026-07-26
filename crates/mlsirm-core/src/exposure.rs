@@ -860,7 +860,7 @@ pub fn kl_select(
 //     Statistical Association, 70*(350), 351-356.
 //     https://doi.org/10.1080/01621459.1975.10479871 (NOT read; historical target)
 // van der Linden, W. J. (1998). *Bayesian item selection criteria for adaptive
-//     testing* (Research Report 98-01). University of Twente. (ERIC ED424235;
+//     testing* (Research Report 96-01). University of Twente. (ERIC ED424235;
 //     Appendix Eqs. A.1-A.6 verified)
 // Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
 //     a microcomputer environment. *Applied Psychological Measurement, 6*(4),
@@ -1052,5 +1052,553 @@ pub fn owen_cat(
         sig2_trace,
         mu,
         sig2,
+    })
+}
+
+// ===================== Kingsbury-Zara (1989) constrained CAT content balancing =====================
+//
+// Kingsbury and Zara (1989) introduced constrained CAT (C-CAT) procedures
+// for selecting items under content-area constraints. CITATION GOVERNANCE:
+// the primary full text was NOT read (not obtainable in this environment);
+// the exact content-balancing rule implemented here follows the catR
+// `nextItem` documentation and source reproduction of the Kingsbury-Zara
+// content-balancing control (READ: catR/R/nextItem.R, cbControl branch, and
+// the nextItem manual page): first cover any content group with zero
+// administered items, then select from the eligible group maximizing
+// `target_prop - empirical_prop`, and finally choose the most informative
+// item within that group. catR breaks group/item ties RANDOMLY; this
+// implementation deterministically takes the LOWEST index (documented
+// deviation for reproducible tests). Skipping groups with no unadministered
+// item is an implementation safety rule, not verified K&Z text.
+//
+// The logistic 3PL Fisher information used within the chosen group,
+//   I_i(theta) = a_i^2 * (Q_i / P_i) * ((P_i - c_i) / (1 - c_i))^2,
+// was verified against catR's `Ii.R` (I = dP^2 / (P Q)) with `Pi.R`'s
+// P/dP at D = 1, d = 1, which reduce algebraically to this form
+// (adversarial spec review against catR formulas).
+//
+// References:
+// Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items
+// for computerized adaptive tests. Applied Measurement in Education, 2(4),
+// 359-375. https://doi.org/10.1207/s15324818ame0204_6 (NOT read; rule per
+// the catR reproduction cited below)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+// under computerized adaptive testing with the R package catR. Journal of
+// Statistical Software, 48(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+
+/// Result of one Kingsbury-Zara constrained-CAT selection step.
+#[derive(Debug, Clone)]
+pub struct CcatSelectResult {
+    /// Selected item index (unadministered, inside `group`).
+    pub selected: usize,
+    /// Content group the selection was constrained to.
+    pub group: usize,
+    /// Per-group `target - empirical` discrepancies (diagnostics; the
+    /// zero-coverage priority rule may override the argmax of this vector).
+    pub discrepancy: Vec<f64>,
+    /// Logistic 3PL Fisher information at `theta0` for ALL items
+    /// (administered items keep their value; masking applies to selection
+    /// only, matching `kl_select`).
+    pub info: Vec<f64>,
+}
+
+/// One Kingsbury-Zara content-balanced CAT selection step. See the section
+/// comment for the exact rule, its source status, and references.
+///
+/// `groups[i]` is the content area of item `i` (must be `< targets.len()`);
+/// `targets` are strictly positive proportions summing to 1 (tol 1e-8).
+/// Errors on empty/mismatched inputs, invalid item parameters, non-finite
+/// `theta0`, invalid targets, or when no group has an unadministered item.
+pub fn ccat_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    groups: &[usize],
+    targets: &[f64],
+    administered: &[bool],
+    theta0: f64,
+) -> Result<CcatSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("ccat_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || groups.len() != n || administered.len() != n {
+        return Err(format!(
+            "ccat_select: length mismatch (a: {n}, b: {}, c: {}, groups: {}, administered: {})",
+            b.len(),
+            c.len(),
+            groups.len(),
+            administered.len()
+        ));
+    }
+    let n_groups = targets.len();
+    if n_groups == 0 {
+        return Err("ccat_select: targets must be non-empty".to_string());
+    }
+    if !theta0.is_finite() {
+        return Err("ccat_select: theta0 must be finite".to_string());
+    }
+    let mut tsum = 0.0;
+    for (g, &t) in targets.iter().enumerate() {
+        if !t.is_finite() || t <= 0.0 {
+            return Err(format!(
+                "ccat_select: targets must be finite positive, got targets[{g}] = {t}"
+            ));
+        }
+        tsum += t;
+    }
+    if (tsum - 1.0).abs() > 1e-8 {
+        return Err(format!("ccat_select: targets must sum to 1, got {tsum}"));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!(
+                "ccat_select: a must be finite positive, got a[{i}] = {}",
+                a[i]
+            ));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("ccat_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "ccat_select: c must be in [0, 1), got c[{i}] = {}",
+                c[i]
+            ));
+        }
+        if groups[i] >= n_groups {
+            return Err(format!(
+                "ccat_select: groups[{i}] = {} out of range for {n_groups} targets",
+                groups[i]
+            ));
+        }
+    }
+
+    // Administered counts and eligibility (a group is eligible if it still
+    // has at least one unadministered item).
+    let mut k_g = vec![0usize; n_groups];
+    let mut eligible = vec![false; n_groups];
+    let mut k = 0usize;
+    for i in 0..n {
+        if administered[i] {
+            k_g[groups[i]] += 1;
+            k += 1;
+        } else {
+            eligible[groups[i]] = true;
+        }
+    }
+    if !eligible.iter().any(|&e| e) {
+        return Err("ccat_select: all items administered".to_string());
+    }
+
+    let discrepancy: Vec<f64> = (0..n_groups)
+        .map(|g| targets[g] - if k > 0 { k_g[g] as f64 / k as f64 } else { 0.0 })
+        .collect();
+
+    // catR rule: any eligible group with zero administered items has
+    // priority (lowest index = documented deterministic substitute for
+    // catR's random tie); otherwise the eligible group with the maximal
+    // target-minus-empirical discrepancy wins (strict > keeps the lowest
+    // index on ties).
+    let group = match (0..n_groups).find(|&g| eligible[g] && k_g[g] == 0) {
+        Some(g) => g,
+        None => {
+            let mut best: Option<(f64, usize)> = None;
+            for g in 0..n_groups {
+                if eligible[g] && best.map_or(true, |(bd, _)| discrepancy[g] > bd) {
+                    best = Some((discrepancy[g], g));
+                }
+            }
+            best.expect("at least one eligible group").1
+        }
+    };
+
+    // Logistic 3PL Fisher information at theta0 for every item, computed in
+    // log space for numerical robustness (impl-review rounds 1-2 findings;
+    // regression-tested): the naive q/p * r^2 form produced NaN via inf * 0
+    // at logistic underflow (P -> c, including subnormal c) and spurious
+    // +inf from multiplication order at extreme a, and a pointwise p == 0
+    // guard masked genuinely informative extreme items. Algebra: with
+    // z = a(theta0 - b) and L = sigmoid(z), P = c + (1 - c) L, so
+    // r = (P - c)/(1 - c) = L exactly and
+    // I = a^2 (1 - c)(1 - L) L^2 / (c + (1 - c) L); when c = 0 this reduces
+    // to I = a^2 L (1 - L). ln L = -softplus(-z) and ln(1-L) = -softplus(z)
+    // are stable for all finite (or overflowed-to-inf) z. A genuinely
+    // astronomical information (a >= ~1e155 near theta0 = b) still
+    // overflows to +inf, which orders correctly in the argmax below.
+    let softplus = |x: f64| {
+        if x > 0.0 {
+            x + (-x).exp().ln_1p()
+        } else {
+            x.exp().ln_1p()
+        }
+    };
+    let info: Vec<f64> = (0..n)
+        .map(|i| {
+            let z = a[i] * (theta0 - b[i]);
+            let ln_l = -softplus(-z);
+            let ln_1ml = -softplus(z);
+            let ln_i = if c[i] == 0.0 {
+                2.0 * a[i].ln() + ln_l + ln_1ml
+            } else {
+                // p >= c > 0, so ln(p) is finite even when L underflows.
+                let p = c[i] + (1.0 - c[i]) * ln_l.exp();
+                2.0 * a[i].ln() + (1.0 - c[i]).ln() + ln_1ml + 2.0 * ln_l - p.ln()
+            };
+            ln_i.exp()
+        })
+        .collect();
+
+    // Most informative unadministered item within the chosen group; strict >
+    // keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if groups[i] == group && !administered[i] && best.map_or(true, |(bi, _)| info[i] > bi) {
+            best = Some((info[i], i));
+        }
+    }
+    let selected = best.expect("chosen group is eligible").1;
+
+    Ok(CcatSelectResult {
+        selected,
+        group,
+        discrepancy,
+        info,
+    })
+}
+
+// ===================== Owen-approximate posterior-predictive EPV item selection =====================
+//
+// `epv_select` implements Owen-approximate posterior-predictive EPV
+// (expected posterior variance) item selection for the three-parameter
+// normal-ogive model maintained by [`owen_update`]. For each item it
+// computes the normal-posterior predictive probability
+//   p*_i = c_i + (1 - c_i) Phi(a_i (mu - b_i) / sqrt(1 + a_i^2 sig2)),
+// obtains the two Owen normal-approximation outcome variances from
+// [`owen_update`], and scores
+//   EPV_i = p*_i sig2_plus_i + (1 - p*_i) sig2_minus_i,
+// selecting the unadministered argmin (ties to the lowest index).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, epv_spec_review.md):
+// this is NOT the exact van der Linden (1998) MEPV criterion, which is
+// defined with response probabilities at the current ability estimate and
+// true/numerical posterior variances (READ: van der Linden's freely
+// available University of Twente/ERIC report, Research Report 96-01, ERIC
+// ED424235, Eq. (14); catR EPV.R/EPV.Rd; mirtCAT selection_criteria.R
+// 'MEPV'). The Psychometrika 63(2) journal body and Owen (1975) were NOT
+// read. The predictive identity E[Phi(alpha + beta Z)] =
+// Phi(alpha / sqrt(1 + beta^2)) for Z ~ N(0,1) applied to
+// P(theta) = c + (1 - c) Phi(a (theta - b)) under theta ~ N(mu, sig2) was
+// hand-derived and verified in the spec review; the outcome variances are
+// the crate's Owen closed-form updates, so the whole criterion is an
+// explicitly labeled Owen approximation of the posterior-predictive EPV.
+//
+// References (APA 7th):
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing (Research Report 96-01). University of Twente.
+//     (ERIC ED424235 report text READ; Psychometrika 63(2) body NOT read)
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing. Psychometrika, 63(2), 201-216.
+//     https://doi.org/10.1007/BF02294775 (metadata only)
+// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+//     in the context of adaptive mental testing. Journal of the American
+//     Statistical Association, 70(350), 351-356. (NOT read; update formulas
+//     per the crate's owen_update, verified against the 1998 report appendix)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+//     under computerized adaptive testing with the R package catR. Journal
+//     of Statistical Software, 48(8), 1-31.
+//     https://doi.org/10.18637/jss.v048.i08 (READ: EPV.R structural form)
+
+/// Result of one [`epv_select`] step.
+#[derive(Debug, Clone)]
+pub struct EpvSelectResult {
+    /// Selected item (unadministered argmin of `epv`, ties to lowest index).
+    pub selected: usize,
+    /// Owen-approximate expected posterior variance for every item.
+    pub epv: Vec<f64>,
+    /// Posterior-predictive success probability `p*_i` for every item.
+    pub predictive: Vec<f64>,
+}
+
+/// One Owen-approximate posterior-predictive EPV selection step: given the
+/// current normal posterior `theta ~ N(mu, sig2)`, score every item in the
+/// pool (administered or not) and select the unadministered item minimizing
+/// the expected posterior variance (ties to the lowest index). See the
+/// section comment for the exact criterion, its scope label, and references.
+///
+/// Errors on empty/mismatched inputs, invalid item parameters (mirroring
+/// [`owen_cat`]), an invalid prior, an all-administered pool, or when either
+/// [`owen_update`] outcome degenerates for an unadministered item.
+pub fn epv_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    administered: &[bool],
+    mu: f64,
+    sig2: f64,
+) -> Result<EpvSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("epv_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || administered.len() != n {
+        return Err(format!(
+            "epv_select: length mismatch (a={}, b={}, c={}, administered={})",
+            n,
+            b.len(),
+            c.len(),
+            administered.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("epv_select: a[{i}] must be finite positive"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("epv_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("epv_select: c[{i}] must be in [0, 1)"));
+        }
+    }
+    if !mu.is_finite() {
+        return Err("epv_select: mu must be finite".to_string());
+    }
+    if !sig2.is_finite() || sig2 <= 0.0 {
+        return Err("epv_select: sig2 must be finite positive".to_string());
+    }
+    if administered.iter().all(|&x| x) {
+        return Err("epv_select: all items administered".to_string());
+    }
+
+    let mut epv = Vec::with_capacity(n);
+    let mut predictive = Vec::with_capacity(n);
+    for i in 0..n {
+        // Predictive p*_i = c + (1 - c) Phi(a (mu - b) / sqrt(1 + a^2 sig2)).
+        // The argument equals owen_update's d = (mu - b) / sqrt(1/a^2 + sig2)
+        // exactly (multiply numerator and denominator by a > 0); the spec
+        // review verified this sign convention against the crate.
+        let d = (mu - b[i]) / (1.0 / (a[i] * a[i]) + sig2).sqrt();
+        let p_star = c[i] + (1.0 - c[i]) * norm_cdf(d);
+        let update_plus = owen_update(a[i], b[i], c[i], true, mu, sig2);
+        let update_minus = owen_update(a[i], b[i], c[i], false, mu, sig2);
+        match (update_plus, update_minus) {
+            (Ok((_, sig2_plus)), Ok((_, sig2_minus))) => {
+                epv.push(p_star * sig2_plus + (1.0 - p_star) * sig2_minus);
+            }
+            (Err(_), _) | (_, Err(_)) if administered[i] => {
+                // Administered items never affect selection, so keep diagnostics
+                // aligned by storing NaN instead of aborting the whole step.
+                epv.push(f64::NAN);
+            }
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        }
+        predictive.push(p_star);
+    }
+
+    // Unadministered argmin; strict < keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if !administered[i] && best.map_or(true, |(be, _)| epv[i] < be) {
+            best = Some((epv[i], i));
+        }
+    }
+    let selected = best
+        .expect("checked above that some item is unadministered")
+        .1;
+
+    Ok(EpvSelectResult {
+        selected,
+        epv,
+        predictive,
+    })
+}
+
+// ===================== Wald SPRT classification for CAT =====================
+//
+// `sprt_classify` implements single-cut, binary-response SPRT classification
+// (Wald's sequential probability ratio test applied to IRT classification
+// testing). Two point hypotheses around the cut score,
+//   theta0 = theta_cut - delta,  theta1 = theta_cut + delta,
+// are compared through the cumulative binary log-likelihood ratio under the
+// D = 1 logistic 3PL
+//   P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i))),
+//   LLR_k = sum_{i<=k} [ u_i ln(P_i(theta1)/P_i(theta0))
+//                      + (1 - u_i) ln((1 - P_i(theta1))/(1 - P_i(theta0))) ],
+// against the log Wald boundaries
+//   A = ln((1 - beta) / alpha),  B = ln(beta / (1 - alpha)).
+// Responses are walked in order and the FIRST crossing decides (inclusive
+// comparisons, matching catIrt): LLR_k >= A -> "above" with n_used = k;
+// LLR_k <= B -> "below" with n_used = k; no crossing -> "continue" with
+// n_used = len(responses).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, sprt_spec_review.md):
+// boundaries and the binary log-likelihood-ratio form were verified against
+// READ sources: catIrt R/termSPRT.R + R/logLik.brm.R + R/p.brm.R (GitHub
+// swnydick/catIrt) and Thompson (2007), p. 7. Reckase (1983) and Eggen
+// (1999) are historical citations via Thompson and were NOT directly read.
+// This function implements only a single-cut binary 3PL SPRT with D = 1
+// logistic-scale item parameters; it is not a multi-cut, polytomous, or
+// D = 1.7 compatibility layer (parameters calibrated on the D = 1.7 metric
+// must be rescaled by the caller, a_D1 = 1.7 * a_D17, before use).
+//
+// The returned decision/n_used are first-crossing SPRT results. llr_trace is
+// computed for ALL supplied responses as an offline diagnostic; entries after
+// n_used are counterfactual replay values - live CAT would terminate at
+// n_used and would not administer later items.
+//
+// References (APA 7th):
+// Wald, A. (1947). Sequential analysis. Wiley. (NOT read; boundary forms
+//     verified through the sources below)
+// Thompson, N. A. (2007). A practitioner's guide for variable-length
+//     computerized classification testing. Practical Assessment, Research &
+//     Evaluation, 12(1). https://doi.org/10.7275/fq3r-zz60 (READ: p. 7
+//     likelihood-ratio form and Wald decision points)
+// Nydick, S. W. (2014). catIrt: An R package for simulating IRT-based
+//     computerized adaptive tests. (READ: R/termSPRT.R boundary and
+//     inclusive-comparison conventions; R/logLik.brm.R binary log
+//     likelihood; R/p.brm.R D = 1 3PL)
+// Eggen, T. J. H. M. (1999). Item selection in adaptive testing with the
+//     sequential probability ratio test. Applied Psychological Measurement,
+//     23(3), 249-261. (NOT read; historical citation via Thompson)
+// Reckase, M. D. (1983). A procedure for decision making using tailored
+//     testing. (NOT read; historical citation via Thompson)
+
+/// Result of [`sprt_classify`]. `decision` is `"above"`, `"below"`, or
+/// `"continue"`; `n_used` is the 1-based count of responses consumed by the
+/// first boundary crossing (or all responses when no crossing occurs);
+/// `llr_trace` holds the cumulative log-likelihood ratio after every supplied
+/// response (entries past `n_used` are offline counterfactuals); `llr` is the
+/// final trace entry.
+#[derive(Debug, Clone)]
+pub struct SprtResult {
+    pub decision: &'static str,
+    pub n_used: usize,
+    pub llr_trace: Vec<f64>,
+    pub llr: f64,
+}
+
+/// Single-cut binary-response Wald SPRT classification (see module comment
+/// above for the exact verified contract and source status).
+pub fn sprt_classify(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    theta_cut: f64,
+    delta: f64,
+    alpha: f64,
+    beta: f64,
+) -> Result<SprtResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("sprt_classify: item pool is empty".into());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "sprt_classify: length mismatch (a: {}, b: {}, c: {}, responses: {})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("sprt_classify: a[{i}] must be finite and > 0"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("sprt_classify: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "sprt_classify: c[{i}] must be finite and in [0, 1)"
+            ));
+        }
+        if responses[i] > 1 {
+            return Err(format!("sprt_classify: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !theta_cut.is_finite() {
+        return Err("sprt_classify: theta_cut must be finite".into());
+    }
+    if !delta.is_finite() || delta <= 0.0 {
+        return Err("sprt_classify: delta must be finite and > 0".into());
+    }
+    for (name, v) in [("alpha", alpha), ("beta", beta)] {
+        if !v.is_finite() || v <= 0.0 || v >= 1.0 {
+            return Err(format!(
+                "sprt_classify: {name} must be finite and in (0, 1)"
+            ));
+        }
+    }
+    if alpha + beta >= 1.0 {
+        return Err("sprt_classify: alpha + beta must be < 1".into());
+    }
+
+    let upper = ((1.0 - beta) / alpha).ln();
+    let lower = (beta / (1.0 - alpha)).ln();
+    let theta0 = theta_cut - delta;
+    let theta1 = theta_cut + delta;
+    // Stable softplus ln(1 + e^z): shift by max(z, 0) so exp never overflows.
+    let softplus = |z: f64| -> f64 {
+        if z > 0.0 {
+            z + (-z).exp().ln_1p()
+        } else {
+            z.exp().ln_1p()
+        }
+    };
+    // Stable log-probabilities under the D = 1 logistic 3PL
+    // P = c + (1 - c) sigmoid(z), z = a (theta - b) (crate CAT convention;
+    // catIrt p.brm.R). ln(1 - P) = ln(1 - c) - softplus(z) always; ln(P)
+    // needs the log-sigmoid branch -softplus(-z) only when c = 0 (for c > 0
+    // the direct form is bounded below by c and stays finite).
+    let ln_p = |z: f64, ci: f64| -> f64 {
+        if ci > 0.0 {
+            (ci + (1.0 - ci) / (1.0 + (-z).exp())).ln()
+        } else {
+            -softplus(-z)
+        }
+    };
+
+    let mut llr_trace = Vec::with_capacity(n);
+    let mut cum = 0.0_f64;
+    let mut decision = "continue";
+    let mut n_used = n;
+    for i in 0..n {
+        let z0 = a[i] * (theta0 - b[i]);
+        let z1 = a[i] * (theta1 - b[i]);
+        let inc = if responses[i] == 1 {
+            // ln(P(theta1)) - ln(P(theta0)), each log computed stably.
+            ln_p(z1, c[i]) - ln_p(z0, c[i])
+        } else {
+            // ln(1-P(theta1)) - ln(1-P(theta0)); the ln(1-c) terms cancel.
+            softplus(z0) - softplus(z1)
+        };
+        // Defensive: unreachable for validated inputs with the stable forms
+        // above (kept as a hard failure rather than silently propagating).
+        if !inc.is_finite() {
+            return Err(format!(
+                "sprt_classify: non-finite log-likelihood-ratio increment at item {i}"
+            ));
+        }
+        cum += inc;
+        llr_trace.push(cum);
+        // First crossing decides; inclusive comparisons (catIrt termSPRT.R).
+        if decision == "continue" {
+            if cum >= upper {
+                decision = "above";
+                n_used = i + 1;
+            } else if cum <= lower {
+                decision = "below";
+                n_used = i + 1;
+            }
+        }
+    }
+    Ok(SprtResult {
+        decision,
+        n_used,
+        llr: *llr_trace.last().unwrap(),
+        llr_trace,
     })
 }

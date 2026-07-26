@@ -39,9 +39,11 @@ use mlsirm_core::dif::{
     MhDifConfig, MhDifRow, PurifyConfig, SibtestConfig,
 };
 use mlsirm_core::exposure::{
-    a_stratified as core_a_stratified, kl_information as core_kl_information,
+    a_stratified as core_a_stratified, ccat_select as core_ccat_select,
+    epv_select as core_epv_select, kl_information as core_kl_information,
     kl_select as core_kl_select, owen_cat as core_owen_cat, owen_update as core_owen_update,
-    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
+    sprt_classify as core_sprt_classify, sympson_hetter as core_sympson_hetter, AStratifiedConfig,
+    SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2273,7 +2275,7 @@ fn py_kl_select(
 /// Statistical Association, 70(350), 351-356.
 /// https://doi.org/10.1080/01621459.1975.10479871
 /// van der Linden, W. J. (1998). Bayesian item selection criteria for
-/// adaptive testing (Research Report 98-01). University of Twente.
+/// adaptive testing (Research Report 96-01). University of Twente.
 #[pyfunction]
 fn py_owen_update(
     a: f64,
@@ -2325,6 +2327,158 @@ fn py_owen_cat(
     )?;
     out.set_item("mu", res.mu)?;
     out.set_item("sig2", res.sig2)?;
+    Ok(out.into())
+}
+
+/// Kingsbury & Zara (1989) constrained CAT (CCAT) content-balanced item
+/// selection (`mlsirm_core::exposure::ccat_select`). The primary source was
+/// NOT read (paywalled; https://doi.org/10.1207/s15324818ame0204_6); the rule
+/// is implemented as reproduced by the R catR package (`nextItem.R`,
+/// `cbControl`): any eligible group with zero administered items has
+/// priority, otherwise the eligible group with the maximal
+/// target-minus-empirical-proportion discrepancy wins; within the chosen
+/// group the most informative unadministered item (logistic 3PL Fisher
+/// information, no D constant) is selected. Ties go to the lowest index
+/// (documented deviation from catR's random tie-break). Returns
+/// {selected, group, discrepancy, info}.
+///
+/// References:
+/// Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items
+/// for computerized adaptive tests. Applied Measurement in Education, 2(4),
+/// 359-375. https://doi.org/10.1207/s15324818ame0204_6
+/// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+/// under computerized adaptive testing with the R package catR. Journal of
+/// Statistical Software, 48(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_ccat_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    groups: PyReadonlyArray1<'_, usize>,
+    targets: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    theta0: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_ccat_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        groups.as_slice()?,
+        targets.as_slice()?,
+        administered.as_slice()?,
+        theta0,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("selected", res.selected)?;
+    out.set_item("group", res.group)?;
+    out.set_item(
+        "discrepancy",
+        numpy::PyArray1::from_slice(py, &res.discrepancy),
+    )?;
+    out.set_item("info", numpy::PyArray1::from_slice(py, &res.info))?;
+    Ok(out.into())
+}
+
+/// Owen-approximate posterior-predictive expected posterior variance (EPV)
+/// item selection (`mlsirm_core::exposure::epv_select`). This is NOT van der
+/// Linden's (1998) exact MEPV criterion: the posterior is Owen's (1975) normal
+/// approximation N(mu, sig2), the predictive probability is
+/// p*_i = c_i + (1 - c_i) * Phi(a_i (mu - b_i) / sqrt(1 + a_i^2 sig2)), and
+/// the outcome variances come from `owen_update` rather than exact numerical
+/// posteriors. Selects the unadministered item minimizing
+/// EPV_i = p*_i sig2_i^+ + (1 - p*_i) sig2_i^-; ties go to the lowest index.
+/// Returns {selected, epv, predictive}.
+///
+/// References:
+/// van der Linden, W. J. (1998). Bayesian item selection criteria for
+/// adaptive testing. Psychometrika, 63(2), 201-216.
+/// https://doi.org/10.1007/BF02294775 (read as ERIC ED424235 research
+/// report; the exact-MEPV contract was verified against catR EPV.R and
+/// mirtCAT, and this routine deliberately substitutes Owen updates).
+/// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+/// in the context of adaptive mental testing. Journal of the American
+/// Statistical Association, 70(350), 351-356. (NOT read; update formulas
+/// follow the crate's `owen_update`.)
+#[pyfunction]
+fn py_epv_select(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    administered: PyReadonlyArray1<'_, bool>,
+    mu: f64,
+    sig2: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_epv_select(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        administered.as_slice()?,
+        mu,
+        sig2,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("selected", res.selected)?;
+    out.set_item("epv", numpy::PyArray1::from_slice(py, &res.epv))?;
+    out.set_item(
+        "predictive",
+        numpy::PyArray1::from_slice(py, &res.predictive),
+    )?;
+    Ok(out.into())
+}
+
+/// Single-cut binary-response Wald SPRT classification for CAT
+/// (`mlsirm_core::exposure::sprt_classify`). D = 1 logistic 3PL; point
+/// hypotheses at `theta_cut -/+ delta`; log Wald boundaries
+/// A = ln((1-beta)/alpha), B = ln(beta/(1-alpha)) with inclusive
+/// first-crossing decisions ("above"/"below"/"continue"). `llr_trace`
+/// entries past `n_used` are offline counterfactual replay values.
+///
+/// References (APA 7th; see the core module comment for read/not-read
+/// source status):
+/// Thompson, N. A. (2007). A practitioner's guide for variable-length
+/// computerized classification testing. Practical Assessment, Research &
+/// Evaluation, 12(1). https://doi.org/10.7275/fq3r-zz60 (READ)
+/// Nydick, S. W. (2014). catIrt (R package). (READ: termSPRT.R,
+/// logLik.brm.R, p.brm.R)
+/// Eggen, T. J. H. M. (1999). Applied Psychological Measurement, 23(3),
+/// 249-261. (NOT read; historical citation via Thompson)
+/// Reckase, M. D. (1983). A procedure for decision making using tailored
+/// testing. (NOT read; historical citation via Thompson)
+/// Wald, A. (1947). Sequential analysis. Wiley. (NOT read; boundary forms
+/// verified through the READ sources above)
+#[pyfunction]
+fn py_sprt_classify(
+    py: Python<'_>,
+    a: PyReadonlyArray1<'_, f64>,
+    b: PyReadonlyArray1<'_, f64>,
+    c: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    theta_cut: f64,
+    delta: f64,
+    alpha: f64,
+    beta: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_sprt_classify(
+        a.as_slice()?,
+        b.as_slice()?,
+        c.as_slice()?,
+        responses.as_slice()?,
+        theta_cut,
+        delta,
+        alpha,
+        beta,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("decision", res.decision)?;
+    out.set_item("n_used", res.n_used)?;
+    out.set_item("llr", res.llr)?;
+    out.set_item("llr_trace", numpy::PyArray1::from_slice(py, &res.llr_trace))?;
     Ok(out.into())
 }
 
@@ -6146,6 +6300,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_kl_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_owen_update, m)?)?;
     m.add_function(wrap_pyfunction!(py_owen_cat, m)?)?;
+    m.add_function(wrap_pyfunction!(py_ccat_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sprt_classify, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
