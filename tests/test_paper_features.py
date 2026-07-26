@@ -9058,3 +9058,153 @@ class TestPlackettLuceTop1:
             lsr_top1([(0, [2**80])], 3)
         with pytest.raises(ValueError):
             lsr_top1([(2**80, [1])], 3)
+
+class TestKendallCircular:
+    """circular_triads wrapper. Every assert reads crate-returned fields.
+
+    Fixture pins are exact-Fraction oracle values (files/kendall_oracle.py,
+    EXECUTED): dog example T=5, T_max=8, zeta=3/8, p_less=1043/2048;
+    exact p-values are dyadic rationals so == comparison is exact.
+    """
+
+    DOG = [
+        [0, 1, 1, 0, 1, 1],
+        [0, 0, 0, 1, 1, 0],
+        [0, 1, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 0],
+    ]
+
+    def test_dog_exact(self):
+        # Mutation kill: dropping the pairing C(d,2) shifts T off 5.
+        from fast_mlsirm import circular_triads
+
+        r = circular_triads(self.DOG, alternative="less")
+        assert r.t == 5.0
+        assert r.t_max == 8.0
+        assert r.t_exp == 5.0
+        assert r.zeta == 3.0 / 8.0
+        assert r.p_value == 1043.0 / 2048.0
+        assert r.exact is True
+        import math
+
+        assert math.isnan(r.chi2) and math.isnan(r.df)
+
+    def test_two_sided_and_greater(self):
+        from fast_mlsirm import circular_triads
+
+        r2 = circular_triads(self.DOG, alternative="two.sided")
+        assert r2.p_value == 1.0
+        rg = circular_triads(self.DOG, alternative="greater")
+        assert rg.p_value == 1233.0 / 2048.0
+
+    def test_chi2_path_n12(self):
+        # n=12 tournament: i beats j (i<j) iff (i+j)%3 != 0; oracle pins
+        # T=60, zeta=1/7, corrected less-tail chi2 uses corr=-0.5.
+        import numpy as np
+
+        from fast_mlsirm import circular_triads
+
+        n = 12
+        m = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                if (i + j) % 3 != 0:
+                    m[i, j] = 1.0
+                else:
+                    m[j, i] = 1.0
+        r = circular_triads(m, alternative="less")
+        assert r.t == 60.0
+        assert abs(r.zeta - 1.0 / 7.0) < 1e-15
+        assert r.exact is False
+        assert abs(r.chi2 - 121.0 / 8.0) < 1e-12
+        assert abs(r.df - 165.0 / 8.0) < 1e-12
+        assert abs(r.p_value - 0.7996995989775597) < 1e-9
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import circular_triads
+
+        ok = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
+        with pytest.raises(ValueError):
+            circular_triads([[0, 1], [0, 0]])  # incomplete pair
+        with pytest.raises(ValueError):
+            circular_triads([[0, 1], [1, 0]])  # n=2 rejected
+        with pytest.raises(ValueError):
+            circular_triads(ok, alternative="sideways")
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok)[:2, :])  # non-square
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok) + 0.5)  # non-binary
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok, dtype=complex))
+        bad_diag = np.array(ok, dtype=float)
+        bad_diag[0, 0] = 1.0
+        with pytest.raises(ValueError):
+            circular_triads(bad_diag)
+        with pytest.raises(ValueError):
+            circular_triads(np.array([["a", "b"], ["c", "d"]], dtype=object))
+
+
+class TestKendallU:
+    """kendall_u wrapper. Oracle pins (files/kendall_oracle.py, EXECUTED):
+    KU-A Sigma=11, u=2/9, chi2=11, df=9; KU-B perfect u=1."""
+
+    def test_fixture_a(self):
+        from fast_mlsirm import kendall_u
+
+        r = kendall_u([[0, 3, 4], [1, 0, 2], [0, 2, 0]])
+        assert r.sigma == 11.0
+        assert abs(r.u - 2.0 / 9.0) < 1e-15
+        assert r.min_u == -1.0 / 3.0
+        assert r.chi2 == 11.0
+        assert r.df == 9.0
+        assert abs(r.p_value - 0.27570893677222197) < 1e-9
+
+    def test_perfect_agreement(self):
+        from fast_mlsirm import kendall_u
+
+        n, m = 4, 5
+        mat = [[0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(i + 1, n):
+                mat[i][j] = m
+        r = kendall_u(mat)
+        assert r.sigma == 60.0
+        assert r.u == 1.0
+        assert r.min_u == -1.0 / 5.0
+        assert abs(r.chi2 - 52.0) < 1e-12
+        assert abs(r.df - 40.0 / 3.0) < 1e-12
+
+    def test_negative_chi2_raw(self):
+        # n=2, m=4, perfect split: raw chi2 = -1 must NOT be clamped in
+        # the returned statistic; only the p-value clamps (p = 1).
+        from fast_mlsirm import kendall_u
+
+        r = kendall_u([[0, 2], [2, 0]])
+        assert r.chi2 == -1.0
+        assert r.min_u == -1.0 / 3.0
+        assert abs(r.u - r.min_u) < 1e-15
+        assert r.p_value == 1.0
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import kendall_u
+
+        with pytest.raises(ValueError):
+            kendall_u([[0, 3, 3], [1, 0, 3], [1, 2, 0]])  # unequal m across pairs
+        with pytest.raises(ValueError):
+            kendall_u([[0, 1], [1, 0]])  # m=2 < 3
+        with pytest.raises(ValueError):
+            kendall_u([[0, 1.5], [1.5, 0]])  # non-integer
+        with pytest.raises(ValueError):
+            kendall_u([[0, -1], [4, 0]])  # negative
+        with pytest.raises(ValueError):
+            kendall_u([[5]])  # n=1 and nonzero diagonal
+        with pytest.raises(ValueError):
+            kendall_u(np.array([[0, 2], [2, 0]], dtype=complex))

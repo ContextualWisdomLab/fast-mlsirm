@@ -28,6 +28,8 @@ from .scaling import lsr_pairwise as lsr_pairwise, ilsr_pairwise as ilsr_pairwis
 from .scaling import rank_centrality as rank_centrality
 from .scaling import lsr_rankings as lsr_rankings, ilsr_rankings as ilsr_rankings
 from .scaling import lsr_top1 as lsr_top1, ilsr_top1 as ilsr_top1
+from .scaling import circular_triads as circular_triads, CircularTriadsResult as CircularTriadsResult
+from .scaling import kendall_u as kendall_u, KendallUResult as KendallUResult
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
@@ -243,6 +245,10 @@ __all__ = [
     "lsr_top1",
     "ilsr_top1",
     "LsrResult",
+    "circular_triads",
+    "CircularTriadsResult",
+    "kendall_u",
+    "KendallUResult",
     "circle_arc_middle_anchor",
     "CircleArcResult",
     "fit_response_times",

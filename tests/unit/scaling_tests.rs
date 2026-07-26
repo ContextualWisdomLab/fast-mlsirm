@@ -1532,3 +1532,310 @@ fn t1_mc_500_recovery() {
     }
     assert!(worst > 0.0);
 }
+// ---------------------------------------------------------------------
+// Kendall & Babington Smith (1940) circular triads / agreement (kd_).
+//
+// Oracle: exact-Fraction recomputation of eba circular()/kendall.u()
+// (session artifact kendall_oracle.py, EXECUTED). Every assert below
+// reads crate outputs (CircularResult / KendallUResult fields).
+//
+// Mutation kills (all EXECUTED against these tests):
+// - MU1 T pairing dropped (sum C(d,2) -> sum d): kd_dog_exact (T pin 5).
+// - MU2 T_max parity swap (odd<->even formulas): kd_dog_exact
+//   (t_max 8 -> 8.75), kd_transitive_two_sided (n=5).
+// - MU3 two-sided opposite-tail accumulation dropped (p = p1 only):
+//   kd_transitive_two_sided (9/64 vs own tail 15/128).
+// - MU4 chi2 continuity-correction sign flip: kd_chi2_n12
+//   (less 121/8 -> 129/8).
+// - MU5 kendall_u correction dropped from Sigma (Sigma - corr ->
+//   Sigma): kd_u_fixture_a (chi2 11 -> 13 with correct=true).
+// ---------------------------------------------------------------------
+
+/// Dog food example, Kendall & Babington Smith (1940, p. 326) via eba
+/// man/circular.Rd. Reads: t, t_max, t_exp, zeta, p_value, chi2, df,
+/// exact. Kills MU1 (T pin), MU2 (t_max pin).
+#[test]
+fn kd_dog_exact() {
+    #[rustfmt::skip]
+    let dog = [
+        0., 1., 1., 0., 1., 1.,
+        0., 0., 0., 1., 1., 0.,
+        0., 1., 0., 1., 1., 1.,
+        1., 0., 0., 0., 0., 0.,
+        0., 0., 0., 1., 0., 1.,
+        0., 1., 0., 1., 0., 0.,
+    ];
+    let r = super::circular_triads(&dog, 6, "less", true).unwrap();
+    assert_eq!(r.t, 5.0);
+    assert_eq!(r.t_max, 8.0);
+    assert_eq!(r.t_exp, 5.0);
+    assert_eq!(r.zeta, 3.0 / 8.0); // 0.375 exact
+    assert!(r.exact);
+    // Exact dyadic tails (oracle Fractions; exactly representable).
+    assert_eq!(r.p_value, 1043.0 / 2048.0);
+    assert!(r.chi2.is_nan() && r.df.is_nan());
+    let rg = super::circular_triads(&dog, 6, "greater", true).unwrap();
+    assert_eq!(rg.p_value, 1233.0 / 2048.0);
+    let rt = super::circular_triads(&dog, 6, "two.sided", true).unwrap();
+    assert_eq!(rt.p_value, 1.0);
+}
+
+/// Fully transitive n=5 tournament: T=0, zeta=1. The two-sided p
+/// (9/64) exceeds the own lower tail (15/128) by the accumulated
+/// far-tail atom 3/128 ? pins the opposite-tail accumulation (MU3)
+/// and the parity branch of T_max (MU2, n odd).
+#[test]
+fn kd_transitive_two_sided() {
+    let n = 5;
+    let mut mat = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            mat[i * n + j] = 1.0;
+        }
+    }
+    let r = super::circular_triads(&mat, n, "less", true).unwrap();
+    assert_eq!(r.t, 0.0);
+    assert_eq!(r.t_max, 5.0);
+    assert_eq!(r.zeta, 1.0);
+    assert_eq!(r.p_value, 15.0 / 128.0);
+    let rt = super::circular_triads(&mat, n, "two.sided", true).unwrap();
+    assert_eq!(rt.p_value, 9.0 / 64.0);
+}
+
+/// n=12 deterministic tournament ((i+j)%3 pattern): chi-square path.
+/// Exact rational pins from the oracle; p-values vs scipy.stats.chi2
+/// references. Kills MU4 (correction sign: less 121/8 vs 129/8).
+#[test]
+fn kd_chi2_n12() {
+    let n = 12;
+    let mut mat = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if (i + j) % 3 != 0 {
+                mat[i * n + j] = 1.0;
+            } else {
+                mat[j * n + i] = 1.0;
+            }
+        }
+    }
+    let r = super::circular_triads(&mat, n, "less", true).unwrap();
+    assert!(!r.exact);
+    assert_eq!(r.t, 60.0);
+    assert_eq!(r.t_max, 70.0);
+    assert_eq!(r.t_exp, 55.0);
+    assert!((r.zeta - 1.0 / 7.0).abs() < 1e-15);
+    assert_eq!(r.chi2, 121.0 / 8.0); // 15.125 exact
+    assert_eq!(r.df, 165.0 / 8.0); // 20.625 exact
+                                   // scipy.stats.chi2.sf(121/8, 165/8) = 0.7996995989775597
+    assert!((r.p_value - 0.7996995989775597).abs() < 1e-9);
+    let rg = super::circular_triads(&mat, n, "greater", true).unwrap();
+    assert_eq!(rg.chi2, 129.0 / 8.0);
+    // scipy chi2.cdf(129/8, 165/8) = 0.2568016649115205
+    assert!((rg.p_value - 0.2568016649115205).abs() < 1e-9);
+    let rt = super::circular_triads(&mat, n, "two.sided", true).unwrap();
+    assert_eq!(rt.chi2, 129.0 / 8.0);
+    // 2*min(sf, cdf) = 0.513603329823041
+    assert!((rt.p_value - 0.513603329823041).abs() < 1e-9);
+    let rnc = super::circular_triads(&mat, n, "less", false).unwrap();
+    assert_eq!(rnc.chi2, 125.0 / 8.0); // no continuity correction
+}
+
+/// Integrity of the exact tables copied from eba circular.R: each row
+/// n sums to 2^C(n,2) (all orientations of the complete graph K_n).
+/// Reads the crate const CIRCULAR_EXACT directly.
+#[test]
+fn kd_table_integrity() {
+    for (idx, row) in super::CIRCULAR_EXACT.iter().enumerate() {
+        let n = idx as u32 + 2;
+        let c_n2 = n * (n - 1) / 2;
+        let total: u64 = row.iter().sum();
+        assert_eq!(total, 1u64 << c_n2, "n = {n}");
+        // Row length spans T = 0..=T_max.
+        let t_max = if n % 2 == 1 {
+            n as u64 * (n as u64 * n as u64 - 1) / 24
+        } else {
+            n as u64 * (n as u64 * n as u64 - 4) / 24
+        };
+        assert_eq!(row.len() as u64, t_max + 1, "n = {n}");
+    }
+}
+
+/// Error contract for circular_triads. Every arm reads the crate Err.
+#[test]
+fn kd_circular_error_contract() {
+    let ok3 = [0., 1., 1., 0., 0., 1., 0., 0., 0.];
+    assert!(super::circular_triads(&ok3, 3, "two.sided", true).is_ok());
+    // n = 2 rejected (documented divergence: eba yields zeta = NaN).
+    assert!(super::circular_triads(&[0., 1., 0., 0.], 2, "less", true).is_err());
+    // bad alternative string
+    assert!(super::circular_triads(&ok3, 3, "both", true).is_err());
+    // wrong length
+    assert!(super::circular_triads(&ok3[..8], 3, "less", true).is_err());
+    // nonzero diagonal rejected (eba silently zeroes)
+    let mut bad = ok3;
+    bad[0] = 1.0;
+    assert!(super::circular_triads(&bad, 3, "less", true).is_err());
+    // non-binary entry
+    let mut bad = ok3;
+    bad[1] = 0.5;
+    assert!(super::circular_triads(&bad, 3, "less", true).is_err());
+    // incomplete pair (both zero)
+    let mut bad = ok3;
+    bad[1] = 0.0;
+    assert!(super::circular_triads(&bad, 3, "less", true).is_err());
+    // both-one pair
+    let mut bad = ok3;
+    bad[3] = 1.0;
+    assert!(super::circular_triads(&bad, 3, "less", true).is_err());
+    // NaN entry
+    let mut bad = ok3;
+    bad[1] = f64::NAN;
+    assert!(super::circular_triads(&bad, 3, "less", true).is_err());
+    // n cap (rejected before allocating/reading n*n)
+    assert!(super::circular_triads(&ok3, 10_001, "less", true).is_err());
+}
+
+/// Kendall u fixture A (m=4 judges, n=3): Sigma=11, u=2/9, min_u=-1/3,
+/// chi2=11, df=9 (all exact); no-correction chi2=13. Kills MU5.
+#[test]
+fn kd_u_fixture_a() {
+    let m = [0., 3., 4., 1., 0., 2., 0., 2., 0.];
+    let r = super::kendall_u(&m, 3, true).unwrap();
+    assert_eq!(r.sigma, 11.0);
+    assert!((r.u - 2.0 / 9.0).abs() < 1e-15);
+    assert!((r.min_u + 1.0 / 3.0).abs() < 1e-15);
+    assert_eq!(r.chi2, 11.0);
+    assert_eq!(r.df, 9.0);
+    // scipy chi2.sf(11, 9) = 0.27570893677222197
+    assert!((r.p_value - 0.27570893677222197).abs() < 1e-9);
+    let rnc = super::kendall_u(&m, 3, false).unwrap();
+    assert_eq!(rnc.chi2, 13.0);
+}
+
+/// Perfect agreement, m=5 (odd), n=4: u=1, min_u=-1/5, chi2=52,
+/// df=40/3.
+#[test]
+fn kd_u_perfect() {
+    let n = 4;
+    let mut mat = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            mat[i * n + j] = 5.0;
+        }
+    }
+    let r = super::kendall_u(&mat, n, true).unwrap();
+    assert_eq!(r.sigma, 60.0);
+    assert_eq!(r.u, 1.0);
+    assert_eq!(r.min_u, -0.2);
+    assert_eq!(r.chi2, 52.0);
+    assert!((r.df - 40.0 / 3.0).abs() < 1e-12);
+    // scipy chi2.sf(52, 40/3) = 1.7298363037807228e-06
+    assert!((r.p_value - 1.7298363037807228e-06).abs() < 1e-12);
+}
+
+/// m=3 boundary ((m-2)^2 = 1 denominators): Sigma=5, u=1/9, chi2=16,
+/// df=18; and the m-3 factor zeroes the centering term.
+#[test]
+fn kd_u_m3_boundary() {
+    let m = [0., 2., 3., 1., 0., 1., 0., 2., 0.];
+    let r = super::kendall_u(&m, 3, true).unwrap();
+    assert_eq!(r.sigma, 5.0);
+    assert!((r.u - 1.0 / 9.0).abs() < 1e-15);
+    assert!((r.min_u + 1.0 / 3.0).abs() < 1e-15);
+    assert_eq!(r.chi2, 16.0);
+    assert_eq!(r.df, 18.0);
+    // scipy chi2.sf(16, 18) = 0.5925473414375915
+    assert!((r.p_value - 0.5925473414375915).abs() < 1e-9);
+}
+
+/// Strong disagreement (n=2, m=4 split 2-2): raw chi2 stays negative
+/// (-1) while the p-value clamps to 1 (R pchisq semantics). Also pins
+/// u == min_u at maximal disagreement for even m.
+#[test]
+fn kd_u_negative_chi2_raw() {
+    let m = [0., 2., 2., 0.];
+    let r = super::kendall_u(&m, 2, true).unwrap();
+    assert_eq!(r.sigma, 2.0);
+    assert!((r.u + 1.0 / 3.0).abs() < 1e-15);
+    assert!((r.min_u + 1.0 / 3.0).abs() < 1e-15);
+    assert_eq!(r.chi2, -1.0); // raw, NOT clamped
+    assert_eq!(r.df, 3.0);
+    assert_eq!(r.p_value, 1.0); // clamped inside chi2_sf
+}
+
+/// Error contract for kendall_u.
+#[test]
+fn kd_u_error_contract() {
+    let ok = [0., 3., 4., 1., 0., 2., 0., 2., 0.];
+    assert!(super::kendall_u(&ok, 3, true).is_ok());
+    // n = 1: no pairs
+    assert!(super::kendall_u(&[0.0], 1, true).is_err());
+    // m = 2 (< 3 judges)
+    assert!(super::kendall_u(&[0., 1., 1., 0.], 2, true).is_err());
+    // unequal observations per pair (eba would silently use pair (0,1))
+    let mut bad = ok;
+    bad[2] = 5.0;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // non-integral entry
+    let mut bad = ok;
+    bad[1] = 2.5;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // negative entry
+    let mut bad = ok;
+    bad[1] = -1.0;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // nonzero diagonal
+    let mut bad = ok;
+    bad[0] = 1.0;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // NaN entry
+    let mut bad = ok;
+    bad[1] = f64::NAN;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // judge cap
+    let mut bad = ok;
+    bad[1] = 2_000_000.0;
+    assert!(super::kendall_u(&bad, 3, true).is_err());
+    // wrong length
+    assert!(super::kendall_u(&ok[..8], 3, true).is_err());
+    // n cap
+    assert!(super::kendall_u(&ok, 10_001, true).is_err());
+}
+
+/// Seeded 500-rep invariant smoke test (fair-coin tournaments, n=6):
+/// T integral in [0, T_max], zeta <= 1, exact p in [0, 1]; one
+/// noiseless transitive rep pins T = 0. Fixed assertions, no
+/// stochastic thresholds.
+#[test]
+#[ignore]
+fn kd_mc_500_invariants() {
+    let n = 6usize;
+    let mut rng = Lcg(0x6b3a91c44f27e015);
+    for rep in 0..500 {
+        let mut mat = vec![0.0f64; n * n];
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if rng.next_f64() < 0.5 {
+                    mat[i * n + j] = 1.0;
+                } else {
+                    mat[j * n + i] = 1.0;
+                }
+            }
+        }
+        let r = super::circular_triads(&mat, n, "two.sided", true).unwrap();
+        assert!(r.exact, "rep {rep}");
+        assert_eq!(r.t.fract(), 0.0, "rep {rep}: T must be integral");
+        assert!(r.t >= 0.0 && r.t <= r.t_max, "rep {rep}");
+        assert!(r.zeta <= 1.0, "rep {rep}");
+        assert!((0.0..=1.0).contains(&r.p_value), "rep {rep}");
+    }
+    let mut mat = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            mat[i * n + j] = 1.0;
+        }
+    }
+    let r = super::circular_triads(&mat, n, "less", true).unwrap();
+    assert_eq!(r.t, 0.0);
+    assert_eq!(r.zeta, 1.0);
+}

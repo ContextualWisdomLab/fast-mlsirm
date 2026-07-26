@@ -1152,6 +1152,444 @@ pub fn ilsr_top1(
     ))
 }
 
+// ---------------------------------------------------------------------
+// Kendall & Babington Smith (1940) paired-comparison consistency and
+// agreement, as implemented by CRAN eba 1.10-0 (Wickelmaier).
+//
+// SOURCE STATUS:
+// - READ: eba `R/circular.R`, `R/kendall.u.R`, `man/circular.Rd`,
+//   `man/kendall.u.Rd` (algorithm source of truth; formulas below cite
+//   those files).
+// - NOT READ (as-cited): Kendall, M. G., & Babington Smith, B. (1940).
+//   On the method of paired comparisons. Biometrika, 31(3-4), 324-345.
+//   https://doi.org/10.1093/biomet/31.3-4.324. Alway, G. G. (1962).
+//   The distribution of the number of circular triads in paired
+//   comparisons. Biometrika, 49, 265-269. Attribution is therefore
+//   "Kendall & Babington Smith (1940), as implemented in eba" (same
+//   governance precedent as psych's thurstone above).
+//
+// The exact circular-triad frequency tables for n = 2..10 are copied
+// verbatim from eba `circular.R` `dcircular()`. Integrity invariant
+// (regression-pinned): each row sums to 2^C(n,2), the number of
+// orientations of the complete graph on n vertices.
+// ---------------------------------------------------------------------
+
+/// Exact frequency of T circular triads over all 2^C(n,2) tournaments,
+/// for n = 2..=10 (index 0 <=> n = 2). Copied from eba `circular.R`.
+const CIRCULAR_EXACT: [&[u64]; 9] = [
+    &[2],
+    &[6, 2],
+    &[24, 16, 24],
+    &[120, 120, 240, 240, 280, 24],
+    &[720, 960, 2240, 2880, 6240, 3648, 8640, 4800, 2640],
+    &[
+        5040, 8400, 21840, 33600, 75600, 90384, 179760, 188160, 277200, 280560, 384048, 244160,
+        233520, 72240, 2640,
+    ],
+    &[
+        40320, 80640, 228480, 403200, 954240, 1304576, 3042816, 3870720, 6926080, 8332800,
+        15821568, 14755328, 24487680, 24514560, 34762240, 29288448, 37188480, 24487680, 24312960,
+        10402560, 3230080,
+    ],
+    &[
+        362880, 846720, 2580480, 5093760, 12579840, 19958400, 44698752, 70785792, 130032000,
+        190834560, 361525248, 443931264, 779950080, 1043763840, 1529101440, 1916619264, 2912257152,
+        3078407808, 4506485760, 4946417280, 6068256768, 6160876416, 7730384256, 6292581120,
+        6900969600, 5479802496, 4327787520, 2399241600, 1197020160, 163094400, 3230080,
+    ],
+    &[
+        3628800,
+        9676800,
+        31449600,
+        68275200,
+        175392000,
+        311592960,
+        711728640,
+        1193794560,
+        2393475840,
+        3784596480,
+        7444104192,
+        10526745600,
+        19533696000,
+        27610168320,
+        47107169280,
+        64016040960,
+        107446832640,
+        134470425600,
+        218941470720,
+        272302894080,
+        417512148480,
+        494080834560,
+        743278970880,
+        829743344640,
+        1202317401600,
+        1334577484800,
+        1773862272000,
+        1878824586240,
+        2496636103680,
+        2406981104640,
+        3032021672960,
+        2841072675840,
+        3166378709760,
+        2743311191040,
+        2877794035200,
+        2109852702720,
+        1840136336640,
+        1109253196800,
+        689719564800,
+        230683084800,
+        48251508480,
+    ],
+];
+
+/// Result of a circular-triads consistency analysis ([`circular_triads`]).
+#[derive(Debug, Clone)]
+pub struct CircularResult {
+    /// Observed number of circular triads T (always integral).
+    pub t: f64,
+    /// Maximum possible number of circular triads for this n.
+    pub t_max: f64,
+    /// Expected number of circular triads under random choice, C(n,3)/4.
+    pub t_exp: f64,
+    /// Kendall's coefficient of consistence, zeta = 1 - T/T_max.
+    pub zeta: f64,
+    /// Chi-square statistic of the large-sample test (NaN on the exact
+    /// path, i.e. for n <= 10).
+    pub chi2: f64,
+    /// Degrees of freedom of the chi-square approximation (NaN on the
+    /// exact path).
+    pub df: f64,
+    /// P-value of the test (exact for n <= 10, chi-square otherwise).
+    pub p_value: f64,
+    /// Whether the exact distribution was used for the p-value.
+    pub exact: bool,
+}
+
+fn parse_alternative(alternative: &str) -> Result<u8, String> {
+    match alternative {
+        "two.sided" => Ok(0),
+        "less" => Ok(1),
+        "greater" => Ok(2),
+        _ => Err(format!(
+            "alternative must be one of 'two.sided', 'less', 'greater'; got '{alternative}'"
+        )),
+    }
+}
+
+/// Circular triads (intransitive cycles) and Kendall's coefficient of
+/// consistence for one complete round-robin of paired comparisons, as
+/// implemented by eba's `circular()`.
+///
+/// `mat` is a flat row-major n*n 0/1 matrix; `mat[i*n + j] = 1` means
+/// row stimulus `i` was chosen over column stimulus `j` (eba
+/// convention, `man/circular.Rd`).
+///
+/// From `circular.R`:
+/// - `T = n(n-1)(2n-1)/12 - (1/2) * sum_j colsum_j^2`, computed here in
+///   the algebraically identical integer form
+///   `T = C(n,3) - sum_j C(d_j, 2)` with `d_j` the column sums, which
+///   proves T is always integral for valid tournaments (DERIVED:
+///   `sum_j d_j = C(n,2)` for a complete tournament; expanding the
+///   square recovers eba's expression exactly).
+/// - `T_max = n(n^2-1)/24` (n odd) or `n(n^2-4)/24` (n even);
+///   `T_exp = C(n,3)/4`; `zeta = 1 - T/T_max`.
+/// - p-value for n <= 10: EXACT, from the `CIRCULAR_EXACT` tables.
+///   `less` is the lower tail `P(T' <= T)`, `greater` the upper tail
+///   `P(T' >= T)`, and `two.sided` adds to the own-tail mass `p1` the
+///   atoms of the opposite tail whose running (far-end) cumulative sum
+///   stays `<= p1`, capped at 1 (eba's `sum(rev(dc)[cumsum(rev(dc)) <=
+///   p1])`; the break-loop below is equivalent because the cumulative
+///   sum of nonnegative atoms is monotone). All tail masses here are
+///   dyadic rationals k/2^C(n,2) with k < 2^53, so the returned p-value
+///   is EXACT in f64.
+/// - p-value for n >= 11: chi-square approximation with continuity
+///   correction (when `correct`): `corr` = -1/2 for `less` (and
+///   `two.sided` with T <= T_exp), +1/2 for `greater` (and `two.sided`
+///   with T > T_exp); `df = n(n-1)(n-2)/(n-4)^2`;
+///   `chi2 = 8/(n-4) * (T_exp - T + corr) + df`. TAIL INVERSION per
+///   `circular.R`: the statistic grows as T falls below T_exp, so
+///   `less` uses the UPPER chi-square tail, `greater` the lower, and
+///   `two.sided` is `2 * min(upper, lower)`.
+///
+/// DOCUMENTED DIVERGENCES from eba: `n = 2` is rejected (eba returns
+/// `zeta = 1 - 0/0 = NaN`); a nonzero diagonal is rejected (eba
+/// silently zeroes it); incomplete or non-binary tournaments
+/// (`mat[i,j] + mat[j,i] != 1` off-diagonal) are rejected (eba accepts
+/// arbitrary matrices); there is no `exact` override or simulated
+/// p-value — the exact path is used iff n <= 10.
+pub fn circular_triads(
+    mat: &[f64],
+    n: usize,
+    alternative: &str,
+    correct: bool,
+) -> Result<CircularResult, String> {
+    let alt = parse_alternative(alternative)?;
+    if n < 3 {
+        return Err("circular_triads needs at least 3 objects (n = 2 has T_max = 0)".into());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "circular_triads: n = {n} exceeds the 10000-object cap"
+        ));
+    }
+    if mat.len() != n * n {
+        return Err(format!(
+            "circular_triads: mat has {} entries, expected n*n = {}",
+            mat.len(),
+            n * n
+        ));
+    }
+    for i in 0..n {
+        if mat[i * n + i] != 0.0 {
+            return Err(format!(
+                "circular_triads: diagonal entry ({i},{i}) must be 0"
+            ));
+        }
+        for j in (i + 1)..n {
+            let a = mat[i * n + j];
+            let b = mat[j * n + i];
+            if !(a == 0.0 || a == 1.0) || !(b == 0.0 || b == 1.0) {
+                return Err(format!(
+                    "circular_triads: off-diagonal entries must be 0 or 1 (pair ({i},{j}))"
+                ));
+            }
+            if a + b != 1.0 {
+                return Err(format!(
+                    "circular_triads: incomplete tournament, mat[{i},{j}] + mat[{j},{i}] != 1"
+                ));
+            }
+        }
+    }
+    // Integer column sums d_j; T = C(n,3) - sum_j C(d_j, 2).
+    let nu = n as u64;
+    let mut sum_pairs: u64 = 0;
+    for j in 0..n {
+        let mut d: u64 = 0;
+        for i in 0..n {
+            if i != j && mat[i * n + j] == 1.0 {
+                d += 1;
+            }
+        }
+        sum_pairs += d * d.saturating_sub(1) / 2;
+    }
+    let c_n3 = nu * (nu - 1) * (nu - 2) / 6;
+    let t_int = c_n3 - sum_pairs.min(c_n3);
+    let t_max_int = if n % 2 == 1 {
+        nu * (nu * nu - 1) / 24
+    } else {
+        nu * (nu * nu - 4) / 24
+    };
+    let t = t_int as f64;
+    let t_max = t_max_int as f64;
+    let t_exp = c_n3 as f64 / 4.0;
+    let zeta = 1.0 - t / t_max;
+
+    if n <= 10 {
+        let freq = CIRCULAR_EXACT[n - 2];
+        debug_assert!(t_int < freq.len() as u64);
+        let ti = t_int as usize;
+        let total: u64 = freq.iter().sum();
+        let lower: u64 = freq[..=ti].iter().sum();
+        let upper: u64 = freq[ti..].iter().sum();
+        let k = match alt {
+            1 => lower,
+            2 => upper,
+            _ => {
+                // two.sided: own tail plus far-opposite-tail atoms whose
+                // running cumulative stays <= p1 (integer arithmetic, so
+                // the comparison against p1 is exact).
+                let (p1, opposite): (u64, Box<dyn Iterator<Item = &u64>>) = if t <= t_exp {
+                    (lower, Box::new(freq.iter().rev()))
+                } else {
+                    (upper, Box::new(freq.iter()))
+                };
+                let mut cum: u64 = 0;
+                let mut extra: u64 = 0;
+                for &a in opposite {
+                    cum += a;
+                    if cum <= p1 {
+                        extra += a;
+                    } else {
+                        break;
+                    }
+                }
+                (p1 + extra).min(total)
+            }
+        };
+        return Ok(CircularResult {
+            t,
+            t_max,
+            t_exp,
+            zeta,
+            chi2: f64::NAN,
+            df: f64::NAN,
+            p_value: k as f64 / total as f64,
+            exact: true,
+        });
+    }
+
+    let corr = if !correct {
+        0.0
+    } else {
+        match alt {
+            1 => -0.5,
+            2 => 0.5,
+            _ => {
+                if t <= t_exp {
+                    -0.5
+                } else {
+                    0.5
+                }
+            }
+        }
+    };
+    let nf = n as f64;
+    let df = nf * (nf - 1.0) * (nf - 2.0) / ((nf - 4.0) * (nf - 4.0));
+    let chi2 = 8.0 / (nf - 4.0) * (t_exp - t + corr) + df;
+    let sf = crate::fitstats::chi2_sf(chi2, df);
+    let cdf = 1.0 - sf;
+    let p_value = match alt {
+        1 => sf,
+        2 => cdf,
+        _ => (2.0 * sf.min(cdf)).min(1.0),
+    };
+    Ok(CircularResult {
+        t,
+        t_max,
+        t_exp,
+        zeta,
+        chi2,
+        df,
+        p_value,
+        exact: false,
+    })
+}
+
+/// Result of Kendall's coefficient of agreement ([`kendall_u`]).
+#[derive(Debug, Clone)]
+pub struct KendallUResult {
+    /// Sum over ordered pairs of C(M_ij, 2), the number of agreeing
+    /// judge pairs.
+    pub sigma: f64,
+    /// Kendall's u; 1 is maximum agreement.
+    pub u: f64,
+    /// Minimum attainable u: -1/m (m odd) or -1/(m-1) (m even).
+    pub min_u: f64,
+    /// Chi-square statistic for the test that agreement is by chance.
+    /// Returned RAW — it can be negative under strong disagreement with
+    /// continuity correction; only the p-value computation clamps at 0
+    /// (matching R's `pchisq(negative, ..., lower.tail=FALSE) = 1`).
+    pub chi2: f64,
+    /// Degrees of freedom, C(n,2) * m(m-1) / (m-2)^2.
+    pub df: f64,
+    /// Upper-tail p-value.
+    pub p_value: f64,
+}
+
+/// Kendall's coefficient of agreement u between m judges over n
+/// objects, as implemented by eba's `kendall.u()`.
+///
+/// `mat` is a flat row-major n*n frequency matrix; `mat[i*n + j]` is
+/// the number of judges preferring object `i` over object `j`
+/// (`man/kendall.u.Rd` convention). From `kendall.u.R`:
+/// - `Sigma = sum_{i != j} C(M_ij, 2)`
+/// - `u = 2*Sigma / (C(m,2) * C(n,2)) - 1` with `m` the number of
+///   judges per pair
+/// - `min_u = -1/m` (m odd) or `-1/(m-1)` (m even)
+/// - `chi2 = 4/(m-2) * (Sigma - corr - C(n,2)/2 * C(m,2) * (m-3)/(m-2))`
+///   with the continuity correction `corr = 1` when `correct`
+/// - `df = C(n,2) * m(m-1) / (m-2)^2`; p-value is the upper chi-square
+///   tail (non-integer df supported by [`crate::fitstats::chi2_sf`]).
+///
+/// DOCUMENTED DIVERGENCES from eba: eba derives `m` from the FIRST
+/// pair only (`M[1,2] + M[2,1]`) and never checks its stated
+/// equal-observations assumption — here every pair must satisfy
+/// `M_ij + M_ji == m` or the input is rejected. `m >= 3` is required
+/// (the eba statistic divides by `m - 2`), entries must be
+/// nonnegative integers, `n >= 2`, and the diagonal must be zero.
+///
+/// # ponytail: judge count capped at 1_000_000 so all binomial
+/// coefficients stay exactly representable in u64/f64; raise the cap
+/// with u128 arithmetic if a use case ever needs more judges.
+pub fn kendall_u(mat: &[f64], n: usize, correct: bool) -> Result<KendallUResult, String> {
+    if n < 2 {
+        return Err("kendall_u needs at least 2 objects".into());
+    }
+    if n > 10_000 {
+        return Err(format!("kendall_u: n = {n} exceeds the 10000-object cap"));
+    }
+    if mat.len() != n * n {
+        return Err(format!(
+            "kendall_u: mat has {} entries, expected n*n = {}",
+            mat.len(),
+            n * n
+        ));
+    }
+    let mut m_int: [Option<u64>; 1] = [None];
+    let mut counts = vec![0u64; n * n];
+    for i in 0..n {
+        if mat[i * n + i] != 0.0 {
+            return Err(format!("kendall_u: diagonal entry ({i},{i}) must be 0"));
+        }
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let x = mat[i * n + j];
+            if !x.is_finite() || x < 0.0 || x.fract() != 0.0 || x > 1_000_000.0 {
+                return Err(format!(
+                    "kendall_u: entries must be nonnegative integers <= 1000000 (entry ({i},{j}))"
+                ));
+            }
+            counts[i * n + j] = x as u64;
+        }
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let pair = counts[i * n + j] + counts[j * n + i];
+            match m_int[0] {
+                None => m_int[0] = Some(pair),
+                Some(m) if m != pair => {
+                    return Err(format!(
+                        "kendall_u: unequal observations per pair (pair ({i},{j}) has {pair}, expected {m})"
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    let m = m_int[0].expect("n >= 2 guarantees at least one pair");
+    if m < 3 {
+        return Err(format!(
+            "kendall_u: needs at least 3 judges per pair, got {m}"
+        ));
+    }
+    let sigma: u64 = counts.iter().map(|&c| c * c.saturating_sub(1) / 2).sum();
+    let nu = n as u64;
+    let c_n2 = nu * (nu - 1) / 2;
+    let c_m2 = m * (m - 1) / 2;
+    let mf = m as f64;
+    let u = 2.0 * sigma as f64 / (c_m2 as f64 * c_n2 as f64) - 1.0;
+    let min_u = if m % 2 == 1 {
+        -1.0 / mf
+    } else {
+        -1.0 / (mf - 1.0)
+    };
+    let corr = if correct { 1.0 } else { 0.0 };
+    let chi2 = 4.0 / (mf - 2.0)
+        * (sigma as f64 - corr - c_n2 as f64 / 2.0 * c_m2 as f64 * (mf - 3.0) / (mf - 2.0));
+    let df = c_n2 as f64 * mf * (mf - 1.0) / ((mf - 2.0) * (mf - 2.0));
+    let p_value = crate::fitstats::chi2_sf(chi2, df);
+    Ok(KendallUResult {
+        sigma: sigma as f64,
+        u,
+        min_u,
+        chi2,
+        df,
+        p_value,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

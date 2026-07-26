@@ -119,6 +119,26 @@
 
 ### Added
 
+- **Circular-triads consistency test and Kendall's coefficient of
+  agreement u (Kendall & Babington Smith, 1940, as implemented by eba
+  1.10-0's `circular()` / `kendall.u()` — eba source READ; the 1940
+  Biometrika paper and Alway's (1962) exact tables NOT READ, cited as
+  origins per eba's manual pages).** New Rust cores
+  `scaling::circular_triads` (number of circular triads
+  `T = C(n,3) - sum_j C(d_j, 2)`, maximum, consistency coefficient
+  `zeta = 1 - T/T_max`, and a null test that is EXACT for `n <= 10`
+  via embedded null distributions — dyadic-rational p-values — and a
+  continuity-corrected chi-square for `n >= 11`) and
+  `scaling::kendall_u` (agreement between `m >= 3` judges: `Sigma`,
+  `u = 2*Sigma/(C(m,2)*C(n,2)) - 1`, minimum attainable `u`, and an
+  upper-tail chi-square test whose RAW statistic may be negative under
+  the continuity correction; only the p-value clamps). Documented
+  divergences from eba: `n = 2` tournaments and malformed/incomplete
+  input are rejected, and every pair must have the same number of
+  judges (eba reads `m` from the first pair only). Python wrappers
+  `fast_mlsirm.circular_triads` / `kendall_u` return
+  `CircularTriadsResult` / `KendallUResult` dataclasses.
+
 - **Luce-choice top-1 estimation via Luce Spectral Ranking (Maystre &
   Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_top1` /
   `ilsr_top1` — choix source READ; the paper itself NOT READ, cited as
