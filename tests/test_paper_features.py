@@ -9923,3 +9923,14 @@ class TestMetrics:
             metrics_rating(np.array([1.0, None], dtype=object), [0.6, 0.4])
         with pytest.raises(ValueError, match="numeric"):
             metrics_rating([1.0, 0.0], np.array([0.6, None], dtype=object))
+        # regression: masked arrays must not silently drop their mask
+        with pytest.raises(ValueError, match="masked"):
+            metrics_rating(
+                np.ma.masked_array([1.0, 0.0], mask=[False, True]),
+                [0.6, 0.4],
+            )
+        with pytest.raises(ValueError, match="masked"):
+            metrics_rating(
+                [1.0, 0.0],
+                np.ma.masked_array([0.6, 0.4], mask=[False, True]),
+            )

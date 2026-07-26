@@ -1521,6 +1521,13 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
     from .fitstats import _core_module
 
     def _as_float(name, x, ndim):
+        if isinstance(x, np.ma.MaskedArray):
+            # np.asarray silently drops the mask, turning masked missing
+            # values into observed data; require explicit np.nan instead.
+            raise ValueError(
+                f"metrics_rating: {name} must not be a masked array; "
+                "encode missing values as np.nan"
+            )
         arr = np.asarray(x)
         if np.iscomplexobj(arr):
             raise ValueError(f"metrics_rating: {name} must be real-valued")
