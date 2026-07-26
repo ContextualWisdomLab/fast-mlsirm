@@ -85,6 +85,7 @@
 
 use crate::fitstats::erfc;
 use crate::scoring::lord_wingersky;
+use crate::utility::bvn_upper;
 
 /// Classification accuracy/consistency summary shared by both methods.
 ///
@@ -1410,6 +1411,196 @@ pub fn livingston_correlation(x: &[f64], y: &[f64], cut_x: f64, cut_y: f64) -> R
         return Err("criterion offset too large: squared deviation overflows f64".into());
     }
     Ok((cov + (mx - cut_x) * (my - cut_y)) / (d2x * d2y).sqrt())
+}
+
+/// Result of Woodruff & Sawyer's (1988) pass-fail reliability estimation
+/// from parallel half-tests (both the split-half/Spearman-Brown method and
+/// the bivariate-normal method).
+pub struct WoodruffSawyerResult {
+    /// Estimated full-test pass rate `p` (from smoothed half-test margins
+    /// for the SB method; `1 - Phi(K_q)` for the normal method).
+    pub pass_rate: f64,
+    /// Half-test agreement coefficient `phi` (eq. 4 of the read source).
+    /// NaN for the normal method (not defined there).
+    pub phi_half: f64,
+    /// Half-test raw agreement `theta = pi00 + pi11`. NaN for the normal
+    /// method.
+    pub theta_half: f64,
+    /// Full-test-length coefficient `phi*` (Spearman-Brown stepped-up for
+    /// the SB method, eq. 5; tetrachoric-style BVN value for the normal
+    /// method). Equals Cohen's kappa for the 2x2 pass-fail table.
+    pub phi: f64,
+    /// Full-test-length agreement `theta* = pi*00 + pi*11` (eq. 8).
+    pub theta: f64,
+    /// Full-test joint fail-fail proportion `pi*00`.
+    pub pi00: f64,
+    /// Full-test off-diagonal proportion `pi*01` (= `pi*10` by the
+    /// parallel-forms symmetry the method imposes).
+    pub pi01: f64,
+    /// Full-test joint pass-pass proportion `pi*11`.
+    pub pi11: f64,
+}
+
+/// Woodruff & Sawyer's (1988) split-half / Spearman-Brown estimator of
+/// pass-fail reliability (`phi*`, Cohen's kappa) and raw agreement
+/// (`theta*`) for a full-length test, from a 2x2 half-test pass-fail table.
+///
+/// Source READ: Woodruff, D. J., & Sawyer, R. L. (1988). *Estimating
+/// measures of pass-fail reliability from parallel half-tests.* AERA paper,
+/// ERIC ED292877 (OCR). NOT READ (cited only as cited therein): Huynh
+/// (1976); Peng & Subkoviak (1980); Huynh & Sanders (1980); Brennan (1981,
+/// ACT TB-38); Cohen (1960); Hambleton & Novick (1973); Swaminathan,
+/// Hambleton, & Algina (1974); Subkoviak (1978, 1984).
+///
+/// `counts = [n00, n01, n10, n11]` where category 0 = fail and 1 = pass on
+/// half-tests (X1, X2); `n01` counts fail-on-X1/pass-on-X2. Proportions are
+/// normalized by the total count. The parallel-forms symmetrization smooths
+/// only the off-diagonal, `pi01_s = (pi01 + pi10) / 2` (source p. 7), so
+/// the margins `p = pi01_s + pi11`, `q = 1 - p` are symmetric.
+///
+/// Half-test coefficient (eq. 4): `phi = 1 - pi01_s / (p q)`; raw
+/// agreement `theta = pi00 + pi11` (raw diagonal — unchanged by the
+/// off-diagonal smoothing). Full-length step-up (eq. 5) is Spearman-Brown
+/// on `phi`: `phi* = 2 phi / (1 + phi)`; the equivalent single-expression
+/// form `phi* = 1 - pi01_s / (2 p q - pi01_s)` is a DERIVED algebraic
+/// identity (verified by exact rational arithmetic in the session oracle,
+/// not printed in the source). The full-length table is reconstructed as
+/// `pi*11 = p q phi* + p^2`, `pi*00 = p q phi* + q^2`,
+/// `pi*01 = p q (1 - phi*)`, giving `theta* = 2 p q phi* + p^2 + q^2`
+/// (eq. 8). That the three cells sum to 1 (with `pi*01` counted twice) is a
+/// DERIVED check, also oracle-verified.
+///
+/// CAVEAT (source pp. 9-10): the source reports `phi*` from this method to
+/// be positively biased relative to `phi` estimated from two full-length
+/// forms when the halves are not strictly parallel; treat `phi*` as an
+/// upper-bound-flavored estimate under half-test parallelism violations.
+///
+/// `phi` may legitimately be negative (worse-than-chance agreement) and is
+/// passed through. Errors: fewer/more than 4 counts (caller contract),
+/// negative or non-finite counts, non-finite or zero total, a margin `p` or
+/// `q` equal to 0 (phi undefined), and `2 p q == pi01_s` (the `phi = -1`
+/// Spearman-Brown singularity).
+pub fn woodruff_sawyer_sb(counts: &[f64]) -> Result<WoodruffSawyerResult, String> {
+    if counts.len() != 4 {
+        return Err("counts must have exactly 4 entries [n00, n01, n10, n11]".into());
+    }
+    if counts.iter().any(|&c| !c.is_finite() || c < 0.0) {
+        return Err("counts must be finite and non-negative".into());
+    }
+    let total: f64 = counts.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return Err("total count must be finite and positive".into());
+    }
+    let pi00 = counts[0] / total;
+    let pi01 = counts[1] / total;
+    let pi10 = counts[2] / total;
+    let pi11 = counts[3] / total;
+    let pi01_s = 0.5 * (pi01 + pi10);
+    let p = pi01_s + pi11;
+    let q = 1.0 - p;
+    if p <= 0.0 || q <= 0.0 {
+        return Err("a smoothed pass/fail margin is zero; phi is undefined".into());
+    }
+    let pq = p * q;
+    let phi_half = 1.0 - pi01_s / pq;
+    let theta_half = pi00 + pi11;
+    let denom = 2.0 * pq - pi01_s;
+    if denom <= 0.0 {
+        return Err("phi = -1 singularity: 2*p*q equals the smoothed off-diagonal".into());
+    }
+    let phi = 1.0 - pi01_s / denom;
+    let pi01_star = pq * (1.0 - phi);
+    let pi00_star = pq * phi + q * q;
+    let pi11_star = pq * phi + p * p;
+    let theta = 2.0 * pq * phi + p * p + q * q;
+    Ok(WoodruffSawyerResult {
+        pass_rate: p,
+        phi_half,
+        theta_half,
+        phi,
+        theta,
+        pi00: pi00_star,
+        pi01: pi01_star,
+        pi11: pi11_star,
+    })
+}
+
+/// Woodruff & Sawyer's (1988) bivariate-normal estimator of pass-fail
+/// reliability for a full-length test from a half-test correlation.
+///
+/// Source READ: ERIC ED292877 (see [`woodruff_sawyer_sb`]); same NOT-READ
+/// list. The half-test product-moment correlation `r_half` is stepped up to
+/// full length by Spearman-Brown, `r_SB = 2 r / (1 + r)`, and scores on two
+/// parallel full-length forms are modeled as bivariate normal with common
+/// mean/sd and correlation `r_SB` (source pp. 7-8). With standardized cut
+/// `K_q = (cut - mean) / sd`, the fail rate is `q = Phi(K_q)` (LOWER tail;
+/// the source's Table 4 uses fail proportions) and
+/// `pi*00 = P[Z1 <= K_q, Z2 <= K_q; r_SB]`, evaluated via this crate's
+/// upper-tail BVN quadrature through the central-symmetry identity
+/// `P[Z1 <= a, Z2 <= a] = P[Z1 > -a, Z2 > -a]` (DERIVED, standard BVN
+/// symmetry; oracle-verified against mpmath). Then `pi*01 = q - pi*00`,
+/// `pi*11 = p - pi*01`, `theta* = pi*00 + pi*11`, and
+/// `phi* = 1 - pi*01 / (p q)` (kappa for the symmetric 2x2 table).
+/// `phi_half`/`theta_half` are NaN: the source defines no half-test
+/// agreement quantities on this path.
+///
+/// Errors: non-finite mean/cut, sd not finite and positive, `r_half`
+/// outside `[-1, 1]` or non-finite, `r_SB` non-finite or not strictly
+/// inside `(-1, 1)` (note `r_half < -1/3` maps below -1 and `r_half = 1`
+/// maps to 1), `sqrt(1 - r_SB^2) < 1e-4` (the [`bvn_upper`] caller
+/// contract), non-finite `K_q` (e.g. tiny sd overflow), and `q` or `p`
+/// rounding to exactly 0 or 1 (cut outside the resolvable score range).
+pub fn woodruff_sawyer_normal(
+    mean: f64,
+    sd: f64,
+    cut: f64,
+    r_half: f64,
+) -> Result<WoodruffSawyerResult, String> {
+    if !mean.is_finite() || !cut.is_finite() {
+        return Err("mean and cut must be finite".into());
+    }
+    if !sd.is_finite() || sd <= 0.0 {
+        return Err("sd must be finite and positive".into());
+    }
+    if !r_half.is_finite() || !(-1.0..=1.0).contains(&r_half) {
+        return Err("r_half must be finite and in [-1, 1]".into());
+    }
+    let r_sb = 2.0 * r_half / (1.0 + r_half);
+    if !r_sb.is_finite() || r_sb <= -1.0 || r_sb >= 1.0 {
+        return Err(format!(
+            "Spearman-Brown stepped-up correlation r_SB = {r_sb} must be strictly inside (-1, 1)"
+        ));
+    }
+    if (1.0 - r_sb * r_sb).sqrt() < 1e-4 {
+        return Err("r_SB too close to +/-1 for the BVN quadrature (sqrt(1-rho^2) < 1e-4)".into());
+    }
+    let kq = (cut - mean) / sd;
+    if !kq.is_finite() {
+        return Err("standardized cut (cut - mean)/sd is not finite".into());
+    }
+    let q = phi(kq);
+    let p = 1.0 - q;
+    if q <= 0.0 || q >= 1.0 || p <= 0.0 || p >= 1.0 {
+        return Err(
+            "cut is outside the resolvable score range (fail rate rounds to 0 or 1)".into(),
+        );
+    }
+    // P[Z1 <= Kq, Z2 <= Kq] = P[Z1 > -Kq, Z2 > -Kq] by central symmetry.
+    let pi00 = bvn_upper(-kq, -kq, r_sb);
+    let pi01 = q - pi00;
+    let pi11 = p - pi01;
+    let theta = pi00 + pi11;
+    let phi_star = 1.0 - pi01 / (p * q);
+    Ok(WoodruffSawyerResult {
+        pass_rate: p,
+        phi_half: f64::NAN,
+        theta_half: f64::NAN,
+        phi: phi_star,
+        theta,
+        pi00,
+        pi01,
+        pi11,
+    })
 }
 
 #[cfg(test)]

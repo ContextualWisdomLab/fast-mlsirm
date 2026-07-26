@@ -1139,3 +1139,181 @@ fn liv_huge_cut_overflow() {
     assert_eq!(r.k2[1], 1.0); // SB(1) = 1 for all n
     assert!(livingston_correlation(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0], 1e308, 0.0).is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Woodruff & Sawyer (1988) pass-fail reliability from parallel half-tests
+// (ERIC ED292877). Every assert reads crate outputs (woodruff_sawyer_sb /
+// woodruff_sawyer_normal fields); expected values from the exact-Fraction /
+// mpmath session oracle. Mutation notes name the crate value each assert
+// reads and the mutation it kills.
+// ---------------------------------------------------------------------------
+use super::{woodruff_sawyer_normal, woodruff_sawyer_sb};
+
+/// Fixture A: counts (n00,n01,n10,n11) = (2,1,3,10). Exact rationals:
+/// pi01_s = 1/8, p = 3/4, q = 1/4, phi_half = 1/3, theta_half = 3/4,
+/// phi* = 1/2, theta* = 13/16, pi*00 = 5/32, pi*01 = 3/32, pi*11 = 21/32.
+/// Kills MU1 (drop smoothing entirely: raw p = 11/16 -> phi* = 39/47),
+/// MU2 (denominator 2pq instead of 2pq - pi01_s: phi* = 2/3),
+/// MU3 (no Spearman-Brown step-up: phi* = phi_half = 1/3),
+/// MU4 (theta* missing p^2 + q^2: 3/16 instead of 13/16).
+/// Reads: r.phi_half, r.theta_half, r.phi, r.theta, r.pi00, r.pi01, r.pi11,
+/// r.pass_rate — all crate outputs.
+#[test]
+fn ws_sb_fixture_a_exact() {
+    let r = woodruff_sawyer_sb(&[2.0, 1.0, 3.0, 10.0]).unwrap();
+    assert!((r.pass_rate - 0.75).abs() < 1e-15);
+    assert!((r.phi_half - 1.0 / 3.0).abs() < 1e-15);
+    assert!((r.theta_half - 0.75).abs() < 1e-15);
+    assert!((r.phi - 0.5).abs() < 1e-15);
+    assert!((r.theta - 13.0 / 16.0).abs() < 1e-15);
+    assert!((r.pi00 - 5.0 / 32.0).abs() < 1e-15);
+    assert!((r.pi01 - 3.0 / 32.0).abs() < 1e-15);
+    assert!((r.pi11 - 21.0 / 32.0).abs() < 1e-15);
+    // Structural invariant (DERIVED, oracle-verified): cells sum to 1 with
+    // the off-diagonal counted twice.
+    assert!((r.pi00 + 2.0 * r.pi01 + r.pi11 - 1.0).abs() < 1e-15);
+}
+
+/// Table 4 regression pins, Total group and English subgroup. The integer
+/// counts are ROUNDED normalized weights from the printed 3-digit table
+/// (sums 10010 / 9990) — regression inputs, not exact representations.
+/// Tolerance 0.0105 is a PAPER-TABLE tolerance (3-digit printing plus
+/// 4-digit computations, source p. 18), not algorithm accuracy.
+/// Reads r.phi / r.theta from both methods; kills gross formula swaps that
+/// survive the synthetic fixtures (e.g. exchanging theta*/phi* outputs).
+#[test]
+fn ws_table4_paper_pins() {
+    // Total group: printed proportions .078/.0265/.0265/.870 (already
+    // symmetrized in the paper's Table 3 discussion), SB phi* = .84,
+    // theta* = .97.
+    let sb = woodruff_sawyer_sb(&[780.0, 265.0, 265.0, 8700.0]).unwrap();
+    assert!((sb.phi - 0.84).abs() < 0.0105, "sb.phi = {}", sb.phi);
+    assert!((sb.theta - 0.97).abs() < 0.0105, "sb.theta = {}", sb.theta);
+    assert!((sb.phi_half - 0.72).abs() < 0.0105);
+    assert!((sb.theta_half - 0.948).abs() < 0.0105);
+    assert!((sb.pi00 - 0.089).abs() < 0.0105);
+    assert!((sb.pi01 - 0.015).abs() < 0.0105);
+    assert!((sb.pi11 - 0.881).abs() < 0.0105);
+    // Accredited first-time row: .030/.019/.019/.931 -> phi* = .74,
+    // theta* = .98.
+    let sb2 = woodruff_sawyer_sb(&[300.0, 190.0, 190.0, 9310.0]).unwrap();
+    assert!((sb2.phi - 0.74).abs() < 0.0105, "sb2.phi = {}", sb2.phi);
+    assert!(
+        (sb2.theta - 0.98).abs() < 0.0105,
+        "sb2.theta = {}",
+        sb2.theta
+    );
+    assert!((sb2.pi00 - 0.037).abs() < 0.0105);
+    assert!((sb2.pi01 - 0.012).abs() < 0.0105);
+    assert!((sb2.pi11 - 0.938).abs() < 0.0105);
+}
+
+/// Normal-method exact orthant anchor (NOT from the paper): mean 0, sd 1,
+/// cut 0, r_half = 1/3 -> r_SB = 1/2, q = 1/2, and Sheppard's orthant
+/// formula gives pi*00 = 1/4 + asin(1/2)/(2 pi) = 1/3 exactly, so
+/// theta* = 2/3 and phi* = 1/3. Tolerance 1e-6 per the bvn_upper and erfc
+/// accuracy contracts (the crate's rational erfc has ~1.5e-8 error even at
+/// z = 0, so pass_rate is pinned at 1e-6, not exactly). Kills MU5 (using r unstepped: pi*00 = 0.30409) and MU6
+/// (upper-tail q = 1 - Phi(Kq): breaks pi01/pi11 asymmetrically for
+/// nonzero cuts — see ws_normal_float_pins). Reads r.pi00, r.theta, r.phi,
+/// r.pass_rate, r.phi_half (NaN contract).
+#[test]
+fn ws_normal_orthant_exact() {
+    let r = woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.0 / 3.0).unwrap();
+    assert!((r.pass_rate - 0.5).abs() < 1e-6);
+    assert!((r.pi00 - 1.0 / 3.0).abs() < 1e-6);
+    assert!((r.theta - 2.0 / 3.0).abs() < 1e-6);
+    assert!((r.phi - 1.0 / 3.0).abs() < 1e-6);
+    assert!(r.phi_half.is_nan());
+    assert!(r.theta_half.is_nan());
+}
+
+/// Normal-method float pins (mpmath oracle, tol 1e-6): mean 100, sd 15,
+/// cut 85, r_half = 0.6 -> r_SB = 0.75, q = Phi(-1) = 0.15865525393145705.
+/// Asymmetric cut (q != 1/2) so MU6 (upper-tail q) shifts q to 0.84134 and
+/// every downstream value. Reads all probability fields plus phi/theta.
+#[test]
+fn ws_normal_float_pins() {
+    let r = woodruff_sawyer_normal(100.0, 15.0, 85.0, 0.6).unwrap();
+    assert!((r.pass_rate - 0.84134474606854295).abs() < 1e-6);
+    assert!((r.pi00 - 0.090456950720012368).abs() < 1e-6);
+    assert!((r.pi01 - 0.068198303211444683).abs() < 1e-6);
+    assert!((r.pi11 - 0.77314644285709827).abs() < 1e-6);
+    assert!((r.theta - 0.86360339357711063).abs() < 1e-6);
+    assert!((r.phi - 0.48908915212993364).abs() < 1e-6);
+}
+
+/// Error contract. Each arm reads the Err/Ok discriminant returned by the
+/// crate. Also pins that a negative half-test phi passes through (not an
+/// error) and that the SB phi = -1 singularity errs.
+#[test]
+fn ws_error_contract() {
+    // SB method
+    assert!(woodruff_sawyer_sb(&[1.0, 2.0, 3.0]).is_err());
+    assert!(woodruff_sawyer_sb(&[1.0, -1.0, 2.0, 3.0]).is_err());
+    assert!(woodruff_sawyer_sb(&[1.0, f64::NAN, 2.0, 3.0]).is_err());
+    assert!(woodruff_sawyer_sb(&[0.0, 0.0, 0.0, 0.0]).is_err());
+    // margin q = 0 (no off-diagonal, all pass)
+    assert!(woodruff_sawyer_sb(&[0.0, 0.0, 0.0, 5.0]).is_err());
+    // phi = -1 singularity: pi01_s = 1/2, p = q = 1/2, 2pq = pi01_s
+    assert!(woodruff_sawyer_sb(&[0.0, 1.0, 1.0, 0.0]).is_err());
+    // overflow-to-inf total is rejected, not silently normalized
+    assert!(woodruff_sawyer_sb(&[f64::MAX, f64::MAX, 1.0, 1.0]).is_err());
+    // negative phi passes through: (5,4,4,5) -> pi01_s = 2/9 > pq = 25/121?
+    // Use (1,4,4,1): pi01_s = 2/5, p = 1/2, phi_half = 1 - (2/5)/(1/4) < 0.
+    let neg = woodruff_sawyer_sb(&[1.0, 4.0, 4.0, 1.0]).unwrap();
+    assert!(neg.phi_half < 0.0 && neg.phi < 0.0);
+    // Normal method
+    assert!(woodruff_sawyer_normal(f64::NAN, 1.0, 0.0, 0.5).is_err());
+    assert!(woodruff_sawyer_normal(0.0, 0.0, 0.0, 0.5).is_err());
+    assert!(woodruff_sawyer_normal(0.0, -1.0, 0.0, 0.5).is_err());
+    assert!(woodruff_sawyer_normal(0.0, 1.0, f64::INFINITY, 0.5).is_err());
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.5).is_err());
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, f64::NAN).is_err());
+    // r_half = 1 -> r_SB = 1 (not strictly inside (-1, 1))
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.0).is_err());
+    // r_half < -1/3 -> r_SB < -1
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, -0.5).is_err());
+    // r_half = -1/3 -> r_SB = -1 exactly
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, -1.0 / 3.0).is_err());
+    // quadrature limit: r_half close enough to 1 that sqrt(1-r_SB^2) < 1e-4
+    assert!(woodruff_sawyer_normal(0.0, 1.0, 0.0, 0.9999999999).is_err());
+    // tiny sd -> Kq overflows or q rounds to 0/1
+    assert!(woodruff_sawyer_normal(0.0, 1e-300, 1e300, 0.5).is_err());
+    // cut far outside range -> q rounds to 0
+    assert!(woodruff_sawyer_normal(0.0, 1.0, -50.0, 0.5).is_err());
+}
+
+/// MC-500: 500 random SB tables; structural invariants read from crate
+/// outputs each rep: cells sum to 1 (off-diagonal twice), theta* <= 1 and
+/// theta* = p^2 + q^2 + 2 p q phi* (identity vs the crate's own pass_rate
+/// and phi outputs; note phi* < -1 and hence theta* < 0 are REACHABLE for
+/// worse-than-chance tables since SB step-up of phi in (-1, 0) diverges
+/// downward — so no lower bound is asserted), phi* =
+/// 2 phi_half/(1 + phi_half) (kills any divergence between the eq. 5
+/// single-expression form and the step-up), pass_rate in (0,1).
+#[test]
+#[ignore]
+fn ws_mc_500() {
+    let mut rng = Lcg::new(0x5EED_2026);
+    let mut done = 0usize;
+    while done < 500 {
+        let n00 = (rng.unif() * 50.0).floor() + 1.0;
+        let n01 = (rng.unif() * 20.0).floor();
+        let n10 = (rng.unif() * 20.0).floor();
+        let n11 = (rng.unif() * 80.0).floor() + 1.0;
+        let r = match woodruff_sawyer_sb(&[n00, n01, n10, n11]) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        assert!((r.pi00 + 2.0 * r.pi01 + r.pi11 - 1.0).abs() < 1e-12);
+        assert!(r.theta <= 1.0 + 1e-12);
+        let p = r.pass_rate;
+        let q = 1.0 - p;
+        assert!((r.theta - (p * p + q * q + 2.0 * p * q * r.phi)).abs() < 1e-12);
+        assert!(r.pass_rate > 0.0 && r.pass_rate < 1.0);
+        let sb_identity = 2.0 * r.phi_half / (1.0 + r.phi_half);
+        assert!((r.phi - sb_identity).abs() < 1e-12);
+        done += 1;
+    }
+}

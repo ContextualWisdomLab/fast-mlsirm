@@ -82,6 +82,9 @@ from .classification import (
     livingston_k2 as livingston_k2,
     livingston_correlation as livingston_correlation,
     LivingstonResult as LivingstonResult,
+    woodruff_sawyer_sb as woodruff_sawyer_sb,
+    woodruff_sawyer_normal as woodruff_sawyer_normal,
+    WoodruffSawyerResult as WoodruffSawyerResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -281,6 +284,9 @@ __all__ = [
     "livingston_k2",
     "livingston_correlation",
     "LivingstonResult",
+    "woodruff_sawyer_sb",
+    "woodruff_sawyer_normal",
+    "WoodruffSawyerResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
