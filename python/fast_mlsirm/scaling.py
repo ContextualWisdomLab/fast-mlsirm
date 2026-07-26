@@ -683,9 +683,10 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
         # Reject labels at/above the source dtype's exact-integer bound
         # (2**mantissa_bits + 1 is the first non-representable integer, so a
         # value equal to the bound is already ambiguous): float64/others
-        # 2**53, float32 2**24, float16 2**11.
+        # 2**53, float32 2**24, float16 2**11. np.finfo(...).nmant excludes
+        # the implicit leading bit, so the exact-integer bound is nmant + 1.
         if raw.dtype.kind == "f":
-            fidelity = 2.0 ** np.finfo(raw.dtype).nmant
+            fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
         else:
             fidelity = 2.0**53
         if np.any(periods >= fidelity):
@@ -803,8 +804,10 @@ def glicko_rating(
             raise ValueError("glicko_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
+        # np.finfo(...).nmant excludes the implicit leading bit, so the
+        # exact-integer bound is nmant + 1 (float64 2**53, float32 2**24).
         if raw.dtype.kind == "f":
-            fidelity = 2.0 ** np.finfo(raw.dtype).nmant
+            fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
         else:
             fidelity = 2.0**53
         if np.any(periods >= fidelity):

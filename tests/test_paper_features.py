@@ -9330,6 +9330,13 @@ class TestElo:
         g_ok = np.array([[1, 0, 1, 1.0], [2, 1, 0, 1.0]], dtype=np.float32)
         r = elo_rating(g_ok, 2, init=2000, kfac=400)
         assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
+        # boundary: 2**24 - 1 is exactly representable and must be accepted
+        # (glicko impl-review: nmant excludes hidden bit; bound is nmant + 1)
+        g_edge = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r_edge = elo_rating(g_edge, 2)
+        assert r_edge.games.tolist() == [1, 1]
+        r53 = elo_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
 
 
 class TestGlicko:
@@ -9425,6 +9432,14 @@ class TestGlicko:
         g32 = np.array([[2**24, 0, 1, 1.0]], dtype=np.float32)
         with pytest.raises(ValueError):
             glicko_rating(g32, 2)
+        # boundary acceptance: labels below the exact-integer bound must pass
+        # (impl-review: nmant excludes the hidden bit, bound is nmant + 1).
+        # Asserts read crate outputs (games tally) — kills a 2**nmant mutant.
+        r53 = glicko_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
+        g32ok = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r24 = glicko_rating(g32ok, 2)
+        assert r24.games.tolist() == [1, 1]
         # integer-dtype lossless path (crate output read)
         gi = np.array([[2**53, 0, 1, 1], [2**53 + 1, 1, 0, 1]], dtype=np.uint64)
         r = glicko_rating(gi, 2, init=(2200.0, 300.0), cval=0.0)
