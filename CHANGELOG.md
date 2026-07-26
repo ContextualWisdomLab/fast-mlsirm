@@ -119,6 +119,44 @@
 
 ### Added
 
+- **Hanson-Brennan compound-binomial classification consistency and accuracy
+  (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
+  `fast_mlsirm.hanson_brennan_from_params`; in Rust
+  `mlsirm_core::classification::hanson_brennan` /
+  `hanson_brennan_from_params`): single-administration decision consistency,
+  accuracy, sensitivity, specificity, and Cohen's kappa for
+  number-correct cut scores under a four-parameter beta true-score
+  distribution with Lord's two-term approximation to the compound binomial
+  conditional error model. The data path estimates Lord's k from the score
+  mean/variance and reliability (Hanson, 1991, Eq. 6), recovers the first
+  four true-score moments by the HB.tsm recursion (Eqs. 7-8), fits the
+  four-parameter beta by the method of moments with a two-parameter
+  failsafe (identical branch structure to `livingston_lewis`); the params
+  path accepts explicit (l, u, alpha, beta, k). The conditional fail CDF
+  uses a derived closed form
+  `BinCdf(cut-1;K,p) - k p(1-p) [b(cut-1;K-2,p) - b(cut-2;K-2,p)]`,
+  verified as an exact polynomial identity against Lord's term-by-term
+  definition in the oracle. Pinned against an exact-Fraction stdlib oracle
+  (params fixtures at 1e-12; a genuine negative-k 4P data fixture with both
+  beta shapes < 1 at 1e-7); five mutation kills executed.
+- **Two-stage adaptive testing (Betz & Weiss, 1973, Research Report 73-4;
+  Betz & Weiss, 1974, Research Report 74-4)** (`fast_mlsirm.two_stage_route`,
+  `fast_mlsirm.two_stage_score`; in Rust
+  `mlsirm_core::exposure::two_stage_route` / `two_stage_score`, PyO3
+  `py_two_stage_route` / `py_two_stage_score`): routing-test scoring via the
+  truncated normal-ogive ability estimate theta-hat =
+  Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Equation 2; perfect scores
+  truncate to m - 1/2, chance-or-below scores to c*m + 1/2), assignment of
+  the measurement test whose mean difficulty is closest to the routing
+  estimate (minimum absolute difference; ties break to the lowest index, a
+  derived convention), and the item-count-weighted composite
+  (m1*theta1 + m2*theta2)/(m1 + m2) (Equation 3). The scoring entry point
+  re-derives the routing assignment and refuses a mismatched
+  `administered` index so second-stage scores are never combined with the
+  wrong measurement test's parameters. Anchored on the reconstructed
+  Appendix B routing table of Research Report 74-4 and an exact-Fraction
+  oracle through the p-computation; both subtests require m*(1-c) > 1 for
+  distinct truncation endpoints.
 - **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
   74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
   `mlsirm_core::exposure::pyramidal_administer`, PyO3

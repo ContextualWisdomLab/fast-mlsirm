@@ -66,6 +66,38 @@ class LivingstonLewisResult:
     kappa: float
 
 
+@dataclass
+class HansonBrennanResult:
+    """Hanson-Brennan classification results (compound binomial model).
+
+    Same cell layout and pass-positive orientation as
+    :class:`LivingstonLewisResult`; ``lords_k`` is Lord's k and
+    ``true_score_moments`` are the raw moments ``m1..m4`` (``NaN`` on the
+    params path)."""
+
+    lords_k: float
+    true_score_moments: np.ndarray
+    lower: float
+    upper: float
+    alpha: float
+    beta: float
+    used_two_parameter: bool
+    p_tp: float
+    p_fp: float
+    p_tf: float
+    p_ff: float
+    accuracy: float
+    sensitivity: float
+    specificity: float
+    p_ii: float
+    p_ij: float
+    p_ji: float
+    p_jj: float
+    consistency: float
+    chance_consistency: float
+    kappa: float
+
+
 _REFERENCES = """References (APA 7th ed.):
         Lathrop, Q. N. (2015). *cacIRT: Classification accuracy and
             consistency under item response theory* (Version 1.4)
@@ -256,3 +288,119 @@ def livingston_lewis(
         chance_consistency=float(res["chance_consistency"]),
         kappa=float(res["kappa"]),
     )
+
+
+def _hb_to_result(res: dict) -> HansonBrennanResult:
+    return HansonBrennanResult(
+        lords_k=float(res["lords_k"]),
+        true_score_moments=np.asarray(
+            res["true_score_moments"], dtype=np.float64
+        ),
+        lower=float(res["lower"]),
+        upper=float(res["upper"]),
+        alpha=float(res["alpha"]),
+        beta=float(res["beta"]),
+        used_two_parameter=bool(res["used_two_parameter"]),
+        p_tp=float(res["p_tp"]),
+        p_fp=float(res["p_fp"]),
+        p_tf=float(res["p_tf"]),
+        p_ff=float(res["p_ff"]),
+        accuracy=float(res["accuracy"]),
+        sensitivity=float(res["sensitivity"]),
+        specificity=float(res["specificity"]),
+        p_ii=float(res["p_ii"]),
+        p_ij=float(res["p_ij"]),
+        p_ji=float(res["p_ji"]),
+        p_jj=float(res["p_jj"]),
+        consistency=float(res["consistency"]),
+        chance_consistency=float(res["chance_consistency"]),
+        kappa=float(res["kappa"]),
+    )
+
+
+_HB_REFERENCES = """
+        Haakstad, H. (2023). *betafunctions: Functions for working with
+            two- and four-parameter beta probability distributions and
+            psychometric analysis of classifications* (Version 1.9.0)
+            [R package]. https://CRAN.R-project.org/package=betafunctions
+        Hanson, B. A. (1991). *Method of moments estimates for the
+            four-parameter beta compound binomial model and the calculation
+            of classification consistency indexes* (ACT Research Report
+            91-5; ERIC ED344945). American College Testing Program.
+        Hanson, B. A., & Brennan, R. L. (1990). An investigation of
+            classification consistency indexes estimated under alternative
+            strong true score models. *Journal of Educational Measurement,
+            27*(4), 345-359. (as cited in Hanson, 1991)
+        Lord, F. M. (1965). A strong true-score theory, with applications.
+            *Psychometrika, 30*(3), 239-270. (as cited in Hanson, 1991)
+    """
+
+
+def hanson_brennan(
+    scores: np.ndarray,
+    n_items: int,
+    reliability: float,
+    cut: int,
+    two_parameter: bool = False,
+) -> HansonBrennanResult:
+    """Hanson-Brennan classification accuracy/consistency from raw
+    number-correct scores under the four-parameter beta compound binomial
+    model (compute in Rust; Hanson, 1991, read in full from ERIC ED344945;
+    cross-checked line by line against CRAN betafunctions 1.9.0 ``HB.CA``).
+
+    Lord's k (Hanson, 1991, Eq. 6) corrects the binomial error model for
+    non-equivalent items; true-score moments follow the factorial-moment
+    recursion (Eqs. 7-8) and the true-score density is a four-parameter
+    beta fitted by moments (Eqs. 9-13) with a two-parameter [0, 1]
+    fail-safe (``two_parameter=True`` forces it). Pass = observed score >=
+    ``cut``; betafunctions labels *fail* as positive, so its sensitivity is
+    this function's specificity. In LLM-as-a-Judge quality management this
+    estimates how accurately and repeatably a judge's cut score classifies
+    outputs when items differ in difficulty (the compound binomial relaxes
+    Livingston-Lewis's equal-difficulty binomial). Sensitivity,
+    specificity, and kappa are ``NaN`` when their margin or chance
+    denominator vanishes (e.g. ``cut == n_items``).
+
+    """ + _REFERENCES + _HB_REFERENCES
+    core = _core_or_raise("hanson_brennan")
+    x = np.asarray(scores)
+    if np.iscomplexobj(x):
+        raise ValueError("scores must be real-valued")
+    if x.dtype == object:
+        try:
+            x = x.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("scores must be numeric") from exc
+    x = np.ascontiguousarray(x.astype(np.float64).reshape(-1))
+    res = core.hanson_brennan(
+        x, int(n_items), float(reliability), int(cut), bool(two_parameter)
+    )
+    return _hb_to_result(res)
+
+
+def hanson_brennan_from_params(
+    n_items: int,
+    lords_k: float,
+    lower: float,
+    upper: float,
+    alpha: float,
+    beta: float,
+    cut: int,
+) -> HansonBrennanResult:
+    """Hanson-Brennan classification indexes from fixed model parameters:
+    Lord's k plus a four-parameter beta true-score distribution (compute in
+    Rust; Hanson, 1991; CRAN betafunctions 1.9.0 ``HB.CA``). Same
+    pass-positive orientation as :func:`hanson_brennan`.
+
+    """ + _REFERENCES + _HB_REFERENCES
+    core = _core_or_raise("hanson_brennan_from_params")
+    res = core.hanson_brennan_from_params(
+        int(n_items),
+        float(lords_k),
+        float(lower),
+        float(upper),
+        float(alpha),
+        float(beta),
+        int(cut),
+    )
+    return _hb_to_result(res)

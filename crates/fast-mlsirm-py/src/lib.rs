@@ -27,8 +27,10 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::classification::{
+    hanson_brennan as core_hanson_brennan,
+    hanson_brennan_from_params as core_hanson_brennan_from_params,
     lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
-    rudner_classification as core_rudner_classification, ClassificationResult,
+    rudner_classification as core_rudner_classification, ClassificationResult, HansonBrennanResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
@@ -50,7 +52,8 @@ use mlsirm_core::exposure::{
     kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
     owen_update as core_owen_update, pyramidal_administer as core_pyramidal_administer,
     sprt_classify as core_sprt_classify, stradaptive_administer as core_stradaptive_administer,
-    sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
+    sympson_hetter as core_sympson_hetter, two_stage_route as core_two_stage_route,
+    two_stage_score as core_two_stage_score, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
 use mlsirm_core::factor::{
@@ -2296,6 +2299,74 @@ fn livingston_lewis(
     Ok(out.into())
 }
 
+fn hanson_brennan_result_to_dict(
+    py: Python<'_>,
+    res: &HansonBrennanResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lords_k", res.lords_k)?;
+    out.set_item("true_score_moments", res.true_score_moments.to_vec())?;
+    out.set_item("lower", res.lower)?;
+    out.set_item("upper", res.upper)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("beta", res.beta)?;
+    out.set_item("used_two_parameter", res.used_two_parameter)?;
+    out.set_item("p_tp", res.p_tp)?;
+    out.set_item("p_fp", res.p_fp)?;
+    out.set_item("p_tf", res.p_tf)?;
+    out.set_item("p_ff", res.p_ff)?;
+    out.set_item("accuracy", res.accuracy)?;
+    out.set_item("sensitivity", res.sensitivity)?;
+    out.set_item("specificity", res.specificity)?;
+    out.set_item("p_ii", res.p_ii)?;
+    out.set_item("p_ij", res.p_ij)?;
+    out.set_item("p_ji", res.p_ji)?;
+    out.set_item("p_jj", res.p_jj)?;
+    out.set_item("consistency", res.consistency)?;
+    out.set_item("chance_consistency", res.chance_consistency)?;
+    out.set_item("kappa", res.kappa)?;
+    Ok(out.into())
+}
+
+/// Hanson-Brennan (Hanson, 1991, ACT RR 91-5; CRAN betafunctions 1.9.0
+/// `HB.CA`) classification accuracy and consistency under the
+/// four-parameter beta compound binomial model, from raw number-correct
+/// scores (`mlsirm_core::classification`). Pass = observed score >= `cut`
+/// (pass-positive; betafunctions labels fail as positive, so its
+/// sensitivity is this function's specificity).
+#[pyfunction]
+fn hanson_brennan(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    reliability: f64,
+    cut: usize,
+    two_parameter: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hanson_brennan(scores.as_slice()?, n_items, reliability, cut, two_parameter)
+        .map_err(PyValueError::new_err)?;
+    hanson_brennan_result_to_dict(py, &res)
+}
+
+/// Hanson-Brennan classification indexes from fixed model parameters:
+/// Lord's k plus a four-parameter beta true-score distribution
+/// (`mlsirm_core::classification`; Hanson, 1991).
+#[pyfunction]
+fn hanson_brennan_from_params(
+    py: Python<'_>,
+    n_items: usize,
+    lords_k: f64,
+    lower: f64,
+    upper: f64,
+    alpha: f64,
+    beta: f64,
+    cut: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hanson_brennan_from_params(n_items, lords_k, lower, upper, alpha, beta, cut)
+        .map_err(PyValueError::new_err)?;
+    hanson_brennan_result_to_dict(py, &res)
+}
+
 /// One-facet crossed `p x i` generalizability analysis
 /// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 3-4). `x` is a
 /// flattened row-major `n_p x n_i` score matrix; `n_i_prime` lists the
@@ -3178,6 +3249,80 @@ fn py_pyramidal_administer(
     out.set_item("final_b", res.final_b)?;
     out.set_item("final_difficulty", res.final_difficulty)?;
     out.set_item("all_item_score", res.all_item_score)?;
+    Ok(out.into())
+}
+
+/// Two-stage adaptive testing, routing step (Betz & Weiss, 1974, Equation 2
+/// and the minimum-|difference| routing rule): returns `(theta1, assigned)`
+/// where `assigned` is the 0-based measurement-test index closest in mean
+/// difficulty to the routing-test ability estimate. See the core module
+/// comment for READ/NOT-READ source status and DERIVED labels.
+///
+/// References (APA 7th):
+/// Betz, N. E., & Weiss, D. J. (1974). Simulation studies of two-stage
+/// ability testing (Research Report 74-4; ERIC ED103466). University of
+/// Minnesota, Psychometric Methods Program. (READ)
+#[pyfunction]
+fn py_two_stage_route(
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    b_meas: PyReadonlyArray1<'_, f64>,
+    c: f64,
+) -> PyResult<(f64, u64)> {
+    let (theta1, assigned) = core_two_stage_route(x1, m1, a1, b1, b_meas.as_slice()?, c)
+        .map_err(PyValueError::new_err)?;
+    Ok((theta1, assigned as u64))
+}
+
+/// Two-stage adaptive testing, full scoring (Betz & Weiss, 1974, Equations
+/// 2-3): truncated-normal-ogive subtest ability estimates and the
+/// item-count-weighted composite. `administered` must equal the index
+/// `py_two_stage_route` assigns for the same routing inputs; a mismatch is a
+/// ValueError so `x2` is never scored against the wrong measurement test.
+///
+/// References (APA 7th):
+/// Betz, N. E., & Weiss, D. J. (1973). An empirical study of
+/// computer-administered two-stage ability testing (Research Report 73-4;
+/// ERIC ED084302). University of Minnesota, Psychometric Methods Program.
+/// (READ)
+/// Betz, N. E., & Weiss, D. J. (1974). Simulation studies of two-stage
+/// ability testing (Research Report 74-4; ERIC ED103466). University of
+/// Minnesota, Psychometric Methods Program. (READ)
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn py_two_stage_score(
+    py: Python<'_>,
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    x2: usize,
+    m2: usize,
+    administered: usize,
+    a_meas: PyReadonlyArray1<'_, f64>,
+    b_meas: PyReadonlyArray1<'_, f64>,
+    c: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_two_stage_score(
+        x1,
+        m1,
+        a1,
+        b1,
+        x2,
+        m2,
+        administered,
+        a_meas.as_slice()?,
+        b_meas.as_slice()?,
+        c,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("theta1", res.theta1)?;
+    out.set_item("assigned", res.assigned as u64)?;
+    out.set_item("theta2", res.theta2)?;
+    out.set_item("composite", res.composite)?;
     Ok(out.into())
 }
 
@@ -6992,6 +7137,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
     m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
@@ -7019,6 +7166,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_flexilevel_score_distribution, m)?)?;
     m.add_function(wrap_pyfunction!(py_stradaptive_administer, m)?)?;
     m.add_function(wrap_pyfunction!(py_pyramidal_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_two_stage_route, m)?)?;
+    m.add_function(wrap_pyfunction!(py_two_stage_score, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;

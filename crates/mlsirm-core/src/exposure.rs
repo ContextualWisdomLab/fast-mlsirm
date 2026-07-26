@@ -2589,3 +2589,237 @@ pub fn pyramidal_administer(
         positions,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Two-stage adaptive testing (Betz & Weiss, 1973, 1974)
+// ---------------------------------------------------------------------------
+//
+// Source status: Betz & Weiss (1974, Research Report 74-4; ERIC ED103466)
+// and Betz & Weiss (1973, Research Report 73-4; ERIC ED084302) READ in full
+// (OCR). Lord (1971), the origin of the scoring method, was NOT read; the
+// formulas below are implemented exactly as restated by Betz & Weiss.
+//
+// Procedure: a routing test of m1 items is administered and scored
+// number-correct; an initial ability estimate routes the examinee to the
+// measurement test whose mean item difficulty is closest to that estimate
+// (Betz & Weiss, 1974, p. 17 and Appendix B); the measurement test of m2
+// items is then administered, a second estimate is computed, and the two
+// estimates are combined.
+//
+// Subtest ability estimate (Betz & Weiss, 1974, Equation 2, modifying
+// Lord's Equation 1 by using the subtest MEAN discrimination a-bar and MEAN
+// difficulty b-bar):
+//
+//   theta-hat = Phi^-1( ((x'/m) - c) / (1 - c) ) / a-bar + b-bar
+//
+// with the printed truncation (p. ~18): x' = m - 1/2 when x = m (perfect
+// score) and x' = c*m + 1/2 when x <= c*m (chance score or below), else
+// x' = x. The reconstruction of the OCR-garbled formula was VERIFIED
+// against the printed Appendix B routing table (m = 10, a-bar = .70,
+// b-bar = -.23: x = 6 -> -.23 exactly since Phi^-1(1/2) = 0; all 11 rows
+// reproduce within +-0.05 of the printed 2-dp values, pinned in tests).
+//
+// DERIVED validity condition: both subtests must satisfy m*(1 - c) > 1.
+// This is a CONSERVATIVE condition guaranteeing the lower truncation
+// c*m + 1/2 stays strictly BELOW the upper truncation m - 1/2 (distinct
+// endpoints); mere containment of x' in (c*m, m) would only need
+// m*(1 - c) > 1/2. The source assumes m = 10/30, c = .2 and states no
+// such condition.
+//
+// Routing: assigned = argmin_k |b_meas[k] - theta1| (Betz & Weiss, 1974,
+// p. 17). Ties are broken toward the LOWEST index -- a DERIVED
+// deterministic convention; neither source states a tie-break.
+//
+// Composite (Betz & Weiss, 1974, Equation 3; rationale in Betz & Weiss,
+// 1973, p. 15: each subtest estimate "weighted according to the number of
+// items on which it was based" -- chosen over Lord's variance weights,
+// which produced non-monotonicity):
+//
+//   theta-hat = (m1*theta1 + m2*theta2) / (m1 + m2)
+//
+// The papers print only the m1 = 10, m2 = 30 case; the item-count
+// generalization above is DERIVED from the quoted weighting rationale and
+// is restricted to exactly two subtests.
+//
+// A single chance level c is shared by both subtests, faithful to the
+// sources (all items five-alternative, c = .2). Mixed formats, item
+// administration/response simulation (the source's SIMTEST), Lord's
+// variance weighting, and the studies' reliability/information analyses
+// are out of scope.
+//
+// References (APA 7th):
+// Betz, N. E., & Weiss, D. J. (1973). An empirical study of
+//     computer-administered two-stage ability testing (Research Report
+//     73-4; ERIC ED084302). University of Minnesota, Psychometric Methods
+//     Program. (READ: scoring formulas, weighting rationale)
+// Betz, N. E., & Weiss, D. J. (1974). Simulation studies of two-stage
+//     ability testing (Research Report 74-4; ERIC ED103466). University of
+//     Minnesota, Psychometric Methods Program. (READ: Equations 2-3,
+//     routing rule, truncation, Appendix B routing table)
+// Lord, F. M. (1971). The self-scoring flexilevel test / theoretical
+//     two-stage studies. (NOT read; scoring method implemented as restated
+//     by Betz & Weiss, 1973, 1974)
+
+/// Result of [`two_stage_score`]: the routing-test estimate `theta1`, the
+/// 0-based `assigned` measurement-test index, the measurement-test estimate
+/// `theta2`, and the item-count-weighted `composite` (Betz & Weiss, 1974,
+/// Equations 2-3).
+#[derive(Debug, Clone)]
+pub struct TwoStageResult {
+    pub theta1: f64,
+    pub assigned: usize,
+    pub theta2: f64,
+    pub composite: f64,
+}
+
+/// Validate one subtest's scalars and return the truncated-score ability
+/// estimate theta-hat (Betz & Weiss, 1974, Equation 2). `label` names the
+/// subtest in error messages.
+fn two_stage_subtest_theta(
+    label: &str,
+    x: usize,
+    m: usize,
+    a_bar: f64,
+    b_bar: f64,
+    c: f64,
+) -> Result<f64, String> {
+    if m == 0 {
+        return Err(format!("two_stage: {label} length m must be >= 1"));
+    }
+    if x > m {
+        return Err(format!(
+            "two_stage: {label} number correct {x} exceeds its length {m}"
+        ));
+    }
+    if !a_bar.is_finite() || a_bar <= 0.0 {
+        return Err(format!(
+            "two_stage: {label} mean discrimination must be finite and > 0 (got {a_bar})"
+        ));
+    }
+    if !b_bar.is_finite() {
+        return Err(format!("two_stage: {label} mean difficulty must be finite"));
+    }
+    let mf = m as f64;
+    if mf * (1.0 - c) <= 1.0 {
+        return Err(format!(
+            "two_stage: {label} needs m*(1-c) > 1 for distinct truncation endpoints \
+             (got m = {m}, c = {c})"
+        ));
+    }
+    // Truncation (Betz & Weiss, 1974): perfect -> m - 1/2; at or below
+    // chance -> c*m + 1/2; otherwise the observed number correct.
+    let x_adj = if x == m {
+        mf - 0.5
+    } else if x as f64 <= c * mf {
+        c * mf + 0.5
+    } else {
+        x as f64
+    };
+    let p = ((x_adj / mf) - c) / (1.0 - c);
+    // Runtime guard, not debug_assert: for huge m the f64 rounding of
+    // x_adj/mf can collapse the truncation endpoints onto 0 or 1 and
+    // Phi^-1 would return a non-finite value.
+    if !(p > 0.0 && p < 1.0) {
+        return Err(format!(
+            "two_stage: {label} truncated proportion correct is numerically \
+             degenerate (p = {p}); m = {m} is too large for f64 truncation"
+        ));
+    }
+    Ok(crate::nodes::inv_normal_cdf(p) / a_bar + b_bar)
+}
+
+/// Route from a routing-test result to a measurement test: returns
+/// `(theta1, assigned)` where `assigned = argmin_k |b_meas[k] - theta1|`
+/// (Betz & Weiss, 1974, p. 17; lowest index on ties, a DERIVED convention).
+/// Callers administer measurement test `assigned` and then call
+/// [`two_stage_score`] with the same inputs plus the observed `x2`.
+pub fn two_stage_route(
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    b_meas: &[f64],
+    c: f64,
+) -> Result<(f64, usize), String> {
+    if !c.is_finite() || !(0.0..1.0).contains(&c) {
+        return Err(format!(
+            "two_stage: c must be finite and in [0, 1) (got {c})"
+        ));
+    }
+    if b_meas.is_empty() {
+        return Err("two_stage: at least one measurement test is required".into());
+    }
+    for (k, &bk) in b_meas.iter().enumerate() {
+        if !bk.is_finite() {
+            return Err(format!("two_stage: b_meas[{k}] must be finite"));
+        }
+    }
+    let theta1 = two_stage_subtest_theta("routing test", x1, m1, a1, b1, c)?;
+    let mut assigned = 0usize;
+    let mut best = (b_meas[0] - theta1).abs();
+    for (k, &bk) in b_meas.iter().enumerate().skip(1) {
+        let d = (bk - theta1).abs();
+        if d < best {
+            assigned = k;
+            best = d;
+        }
+    }
+    Ok((theta1, assigned))
+}
+
+/// Score a completed two-stage test (Betz & Weiss, 1974, Equations 2-3).
+///
+/// `administered` is the 0-based index of the measurement test the caller
+/// actually gave; it is re-derived from `theta1` internally and a mismatch
+/// is an error, so `x2` can never be silently scored against the wrong
+/// measurement test's parameters.
+#[allow(clippy::too_many_arguments)]
+pub fn two_stage_score(
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    x2: usize,
+    m2: usize,
+    administered: usize,
+    a_meas: &[f64],
+    b_meas: &[f64],
+    c: f64,
+) -> Result<TwoStageResult, String> {
+    if a_meas.len() != b_meas.len() {
+        return Err(format!(
+            "two_stage: a_meas has {} entries but b_meas has {}",
+            a_meas.len(),
+            b_meas.len()
+        ));
+    }
+    let (theta1, assigned) = two_stage_route(x1, m1, a1, b1, b_meas, c)?;
+    if administered >= b_meas.len() {
+        return Err(format!(
+            "two_stage: administered index {administered} out of range for {} measurement tests",
+            b_meas.len()
+        ));
+    }
+    if administered != assigned {
+        return Err(format!(
+            "two_stage: routing assigns measurement test {assigned} but test {administered} \
+             was administered; scoring x2 against the wrong test's parameters is refused"
+        ));
+    }
+    let theta2 = two_stage_subtest_theta(
+        "measurement test",
+        x2,
+        m2,
+        a_meas[assigned],
+        b_meas[assigned],
+        c,
+    )?;
+    let (m1f, m2f) = (m1 as f64, m2 as f64);
+    let composite = (m1f * theta1 + m2f * theta2) / (m1f + m2f);
+    Ok(TwoStageResult {
+        theta1,
+        assigned,
+        theta2,
+        composite,
+    })
+}

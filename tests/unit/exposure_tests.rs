@@ -2791,3 +2791,225 @@ fn pyr_mc_500() {
         assert!(r.final_difficulty.is_finite(), "rep {rep}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Two-stage adaptive testing (Betz & Weiss, 1973, 1974)
+// ---------------------------------------------------------------------------
+use crate::exposure::{two_stage_route, two_stage_score};
+
+// Oracle: exact-Fraction/stdlib-inv_cdf oracle executed against the printed
+// Appendix B routing table of Betz & Weiss (1974, RR 74-4). f64 pins carry
+// +-1e-7 tolerance (oracle uses the stdlib inverse normal; the crate uses
+// Acklam, |rel err| < 1.15e-9).
+
+/// Two-stage 2 routing-test parameters and measurement-test mean
+/// difficulties (Betz & Weiss, 1974, Table 1 and Appendix B).
+fn ts2() -> (usize, f64, f64, Vec<f64>, Vec<f64>) {
+    (
+        10,
+        0.70,
+        -0.23,
+        vec![0.53, 0.68, 0.61, 0.68],   // a_meas (Table 1, Two-stage 2)
+        vec![1.73, 0.35, -0.71, -1.60], // b_meas (tests 1..4)
+    )
+}
+
+/// Every row of the printed Appendix B routing table (Betz & Weiss, 1974):
+/// theta1 within +-0.05 of the printed 2-dp value (paper-table anchor; the
+/// printed table itself is only internally consistent to ~.03 because its
+/// a-bar = .70 is rounded) and the assigned test EXACTLY as printed.
+/// Asserts read `two_stage_route` outputs. Kills MU1 (dropped /a_bar:
+/// x = 9 gives 1.01 not 1.44) and MU3 (argmax routing: x = 9 would assign
+/// test 4 not test 1).
+#[test]
+fn ts_paper_routing_table() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    // (x, printed theta, printed assigned test 1-based)
+    let rows = [
+        (0usize, -2.45, 4usize),
+        (1, -2.45, 4),
+        (2, -2.45, 4),
+        (3, -1.90, 4),
+        (4, -1.20, 4),
+        (5, -0.69, 3),
+        (6, -0.23, 3),
+        (7, 0.23, 2),
+        (8, 0.75, 2),
+        (9, 1.44, 1),
+        (10, 1.99, 1),
+    ];
+    for &(x, printed, test_1based) in &rows {
+        let (theta1, assigned) = two_stage_route(x, m1, a1, b1, &b_meas, 0.2).unwrap();
+        assert!(
+            (theta1 - printed).abs() < 0.05,
+            "x={x}: theta1={theta1} vs printed {printed}"
+        );
+        assert_eq!(assigned, test_1based - 1, "x={x}: assigned");
+    }
+}
+
+/// Full-pipeline exact pin: x1 = 7 routes to test index 1 (a = .68 is not
+/// used for theta1); scoring x2 = 20 of 30 on that test (a-bar = .68,
+/// b-bar = .35 -- oracle used a = .55? No: oracle anchor 2 used a = .55,
+/// b = .35, so the fixture below passes those to the crate). Pins are the
+/// executed oracle f64 values. Asserts read `two_stage_score` outputs.
+/// Kills MU1 and MU4 (weight swap: composite would be ~0.352).
+#[test]
+fn ts_anchor_pipeline() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let a_meas = vec![0.53, 0.55, 0.61, 0.68];
+    let r = two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas, &b_meas, 0.2).unwrap();
+    assert!(
+        (r.theta1 - 0.22519909137767882).abs() < 1e-7,
+        "{}",
+        r.theta1
+    );
+    assert_eq!(r.assigned, 1);
+    assert!((r.theta2 - 0.7325970804507724).abs() < 1e-7, "{}", r.theta2);
+    assert!(
+        (r.composite - 0.605747583182499).abs() < 1e-7,
+        "{}",
+        r.composite
+    );
+}
+
+/// Truncation pins (executed oracle): perfect score x' = m - 1/2; chance or
+/// below x' = c*m + 1/2, with x = 2 (== c*m exactly) truncating identically
+/// to x = 1 and x = 0. Includes the exact non-truncated upper-tail pin
+/// x = 9. Asserts read `two_stage_route` outputs. Kills MU2 (x' = m + 1/2
+/// gives p > 1 -> NaN/panic) and MU5 (x < c*m would leave x = 2 untruncated
+/// at p = 0 -> -inf).
+#[test]
+fn ts_truncation() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let t10 = two_stage_route(10, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t10 - 1.961600777646494).abs() < 1e-7, "{t10}");
+    let t9 = two_stage_route(9, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t9 - 1.4133562576800114).abs() < 1e-7, "{t9}");
+    let t2 = two_stage_route(2, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert!((t2 - -2.421600777646494).abs() < 1e-7, "{t2}");
+    let t1 = two_stage_route(1, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    let t0 = two_stage_route(0, m1, a1, b1, &b_meas, 0.2).unwrap().0;
+    assert_eq!(t2, t1);
+    assert_eq!(t2, t0);
+    assert!(t10.is_finite() && t2.is_finite());
+}
+
+/// x = 6 gives theta1 == b1 up to one ulp of the p = 1/2 computation
+/// (Phi^-1(1/2) = 0 in the Acklam central branch; f64 rounding of
+/// (0.6 - 0.2)/0.8 lands one ulp below 1/2). An exact distance tie between
+/// two measurement tests, constructed from the CRATE-returned theta1,
+/// resolves to the LOWEST index (DERIVED convention, documented -- not a
+/// source claim). Asserts read `two_stage_route` outputs.
+#[test]
+fn ts_tie_lowest_index() {
+    let (m1, a1, b1, _a, _b) = ts2();
+    let (t6, _) = two_stage_route(6, m1, a1, b1, &[0.0], 0.2).unwrap();
+    assert!((t6 - b1).abs() < 1e-9, "{t6}");
+    let (_, k) = two_stage_route(6, m1, a1, b1, &[t6 - 0.5, t6 + 0.5], 0.2).unwrap();
+    assert_eq!(k, 0);
+}
+
+/// The composite is item-count weighted toward the LONGER measurement test:
+/// swapping the weights changes the anchor-2 composite by > 0.05. Asserts
+/// read `two_stage_score` outputs. Kills MU4.
+#[test]
+fn ts_weight_asymmetry() {
+    let (m1, a1, b1, _a, b_meas) = ts2();
+    let a_meas = vec![0.53, 0.55, 0.61, 0.68];
+    let r = two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas, &b_meas, 0.2).unwrap();
+    let swapped = (30.0 * r.theta1 + 10.0 * r.theta2) / 40.0;
+    assert!((r.composite - swapped).abs() > 0.05);
+    // and the composite is strictly between the two subtest estimates
+    let lo = r.theta1.min(r.theta2);
+    let hi = r.theta1.max(r.theta2);
+    assert!(r.composite > lo && r.composite < hi);
+}
+
+/// Error contract: every rejection path returns Err (never panics), and the
+/// administered-mismatch guard refuses to score x2 against the wrong test.
+#[test]
+fn ts_error_contract() {
+    let (m1, a1, b1, a_meas, b_meas) = ts2();
+    let ok = |r: &Result<(f64, usize), String>| r.is_ok();
+    assert!(ok(&two_stage_route(5, m1, a1, b1, &b_meas, 0.2)));
+    // zero-length routing test
+    assert!(two_stage_route(0, 0, a1, b1, &b_meas, 0.2).is_err());
+    // x1 > m1
+    assert!(two_stage_route(11, m1, a1, b1, &b_meas, 0.2).is_err());
+    // invalid c
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, 1.0).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, -0.1).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, f64::NAN).is_err());
+    // no measurement tests / non-finite difficulties / a1 <= 0
+    assert!(two_stage_route(5, m1, a1, b1, &[], 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &[f64::NAN], 0.2).is_err());
+    assert!(two_stage_route(5, m1, 0.0, b1, &b_meas, 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, f64::INFINITY, &b_meas, 0.2).is_err());
+    // m*(1-c) <= 1: m = 1 always fails; c = .95 with m = 10 fails
+    assert!(two_stage_route(0, 1, a1, b1, &b_meas, 0.2).is_err());
+    assert!(two_stage_route(5, m1, a1, b1, &b_meas, 0.95).is_err());
+    // score-side: length mismatch, administered out of range, mismatch
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 1, &a_meas[..3], &b_meas, 0.2).is_err());
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 9, &a_meas, &b_meas, 0.2).is_err());
+    let mismatch = two_stage_score(7, m1, a1, b1, 20, 30, 0, &a_meas, &b_meas, 0.2);
+    assert!(mismatch.is_err());
+    assert!(mismatch.unwrap_err().contains("wrong test"));
+    // x2 > m2 and bad measurement-test a
+    assert!(two_stage_score(7, m1, a1, b1, 31, 30, 1, &a_meas, &b_meas, 0.2).is_err());
+    let bad_a = vec![0.53, -0.1, 0.61, 0.68];
+    assert!(two_stage_score(7, m1, a1, b1, 20, 30, 1, &bad_a, &b_meas, 0.2).is_err());
+    // Huge m: f64 rounding collapses the truncation endpoints (x_adj/mf
+    // rounds to 1 at a perfect score) -> Err "degenerate", never NaN.
+    let huge = 1usize << 53;
+    let r = two_stage_route(huge, huge, a1, b1, &b_meas, 0.2);
+    assert!(r.is_err());
+    assert!(r.unwrap_err().contains("degenerate"));
+}
+
+/// 500-rep Monte Carlo: random valid inputs -> finite outputs, assigned in
+/// range, composite strictly between the subtest estimates, and composite
+/// monotone non-decreasing in x2 for a fixed routing result. Asserts read
+/// crate outputs.
+#[test]
+#[ignore]
+fn ts_mc_500() {
+    let mut rng = Lcg(20260726);
+    for rep in 0..500 {
+        let m1 = 5 + (rng.next_f64() * 20.0) as usize;
+        let m2 = 5 + (rng.next_f64() * 40.0) as usize;
+        let a1 = 0.3 + rng.next_f64();
+        let b1 = rng.normal();
+        let nk = 2 + (rng.next_f64() * 4.0) as usize;
+        let a_meas: Vec<f64> = (0..nk).map(|_| 0.3 + rng.next_f64()).collect();
+        let b_meas: Vec<f64> = (0..nk).map(|_| rng.normal() * 1.5).collect();
+        let c = rng.next_f64() * 0.3;
+        let x1 = (rng.next_f64() * (m1 as f64 + 1.0)) as usize;
+        let x1 = x1.min(m1);
+        let (theta1, assigned) =
+            two_stage_route(x1, m1, a1, b1, &b_meas, c).expect("route must succeed");
+        assert!(theta1.is_finite(), "rep {rep}");
+        assert!(assigned < nk, "rep {rep}");
+        let mut prev = f64::NEG_INFINITY;
+        for x2 in 0..=m2 {
+            let r = two_stage_score(x1, m1, a1, b1, x2, m2, assigned, &a_meas, &b_meas, c)
+                .expect("score must succeed");
+            assert!(r.composite.is_finite(), "rep {rep} x2 {x2}");
+            let lo = r.theta1.min(r.theta2);
+            let hi = r.theta1.max(r.theta2);
+            assert!(r.composite >= lo && r.composite <= hi, "rep {rep} x2 {x2}");
+            // Monotone non-decreasing only over the UNTRUNCATED region:
+            // for fractional c*m2 the truncation value c*m2 + 1/2 can
+            // exceed the first untruncated integer score (the papers only
+            // had integer c*m = 2), so global monotonicity is not implied
+            // by the source formulas.
+            if x2 as f64 > c * m2 as f64 {
+                assert!(
+                    r.composite >= prev - 1e-12,
+                    "rep {rep} x2 {x2} not monotone"
+                );
+                prev = r.composite;
+            }
+        }
+    }
+}

@@ -1128,3 +1128,114 @@ def pyramidal_administer(
         "final_difficulty": float(r["final_difficulty"]),
         "all_item_score": float(r["all_item_score"]),
     }
+
+
+def _two_stage_real_1d(name: str, arr) -> np.ndarray:
+    arr0 = np.asarray(arr)
+    if np.iscomplexobj(arr0) or arr0.dtype == object:
+        raise ValueError(f"{name} must be a real-valued numeric array")
+    try:
+        out = np.asarray(arr0, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a real-valued numeric array") from None
+    if out.ndim != 1:
+        raise ValueError(f"{name} must be a 1-D array")
+    return np.ascontiguousarray(out)
+
+
+def two_stage_route(
+    x1: int,
+    m1: int,
+    a1: float,
+    b1: float,
+    b_meas: np.ndarray,
+    c: float,
+) -> tuple[float, int]:
+    """Betz & Weiss (1974) two-stage routing.
+
+    Estimates routing-test ability from the number correct ``x1`` on an
+    ``m1``-item routing test via the truncated normal-ogive formula
+    theta-hat = Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Betz &
+    Weiss, 1974, Equation 2; ``a1``/``b1`` are the routing test's mean
+    discrimination and difficulty, ``c`` the shared chance level), then
+    assigns the measurement test whose mean difficulty ``b_meas[k]`` is
+    closest to that estimate (minimum absolute difference; ties break to
+    the LOWEST index, a derived convention the sources leave unstated).
+    Returns ``(theta1, assigned)``. All numerics run in the Rust core
+    (``mlsirm_core::exposure::two_stage_route``); see its module comment
+    for the full READ/NOT-READ citation-governance record.
+
+    References (APA 7th ed.):
+        Betz, N. E., & Weiss, D. J. (1974). *Simulation studies of
+            two-stage ability testing* (Research Report 74-4; ERIC
+            ED103466). University of Minnesota, Psychometric Methods
+            Program. (READ.)
+    """
+    from . import _core
+
+    x1 = _as_int("x1", x1, minimum=0)
+    m1 = _as_int("m1", m1, minimum=1)
+    b_arr = _two_stage_real_1d("b_meas", b_meas)
+    theta1, assigned = _core.py_two_stage_route(
+        x1, m1, float(a1), float(b1), b_arr, float(c)
+    )
+    return float(theta1), int(assigned)
+
+
+def two_stage_score(
+    x1: int,
+    m1: int,
+    a1: float,
+    b1: float,
+    x2: int,
+    m2: int,
+    administered: int,
+    a_meas: np.ndarray,
+    b_meas: np.ndarray,
+    c: float,
+) -> dict:
+    """Betz & Weiss (1973, 1974) two-stage test scoring.
+
+    Applies the truncated normal-ogive ability estimate (Betz & Weiss,
+    1974, Equation 2) to both the routing test (``x1`` of ``m1``,
+    parameters ``a1``/``b1``) and the administered measurement test
+    (``x2`` of ``m2``, parameters ``a_meas[administered]`` /
+    ``b_meas[administered]``), and combines them with the item-count
+    weighted composite (m1*theta1 + m2*theta2) / (m1 + m2) (Betz & Weiss,
+    1974, Equation 3; weighting rationale in Betz & Weiss, 1973, p. 15).
+    The routing assignment is re-derived internally and ``administered``
+    must match it -- a mismatch raises ``ValueError`` so ``x2`` is never
+    scored against the wrong measurement test's parameters. Returns a dict
+    with ``theta1``, ``assigned``, ``theta2``, and ``composite``. All
+    numerics run in the Rust core
+    (``mlsirm_core::exposure::two_stage_score``); see its module comment
+    for the full READ/NOT-READ citation-governance record.
+
+    References (APA 7th ed.):
+        Betz, N. E., & Weiss, D. J. (1973). *An empirical study of
+            computer-administered two-stage ability testing* (Research
+            Report 73-4; ERIC ED084302). University of Minnesota,
+            Psychometric Methods Program. (READ.)
+        Betz, N. E., & Weiss, D. J. (1974). *Simulation studies of
+            two-stage ability testing* (Research Report 74-4; ERIC
+            ED103466). University of Minnesota, Psychometric Methods
+            Program. (READ.)
+    """
+    from . import _core
+
+    x1 = _as_int("x1", x1, minimum=0)
+    m1 = _as_int("m1", m1, minimum=1)
+    x2 = _as_int("x2", x2, minimum=0)
+    m2 = _as_int("m2", m2, minimum=1)
+    administered = _as_int("administered", administered, minimum=0)
+    a_arr = _two_stage_real_1d("a_meas", a_meas)
+    b_arr = _two_stage_real_1d("b_meas", b_meas)
+    r = _core.py_two_stage_score(
+        x1, m1, float(a1), float(b1), x2, m2, administered, a_arr, b_arr, float(c)
+    )
+    return {
+        "theta1": float(r["theta1"]),
+        "assigned": int(r["assigned"]),
+        "theta2": float(r["theta2"]),
+        "composite": float(r["composite"]),
+    }

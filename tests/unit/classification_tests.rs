@@ -516,3 +516,293 @@ fn ll_conditional_ratios_nan_when_margin_vanishes() {
     assert!((r.consistency - 1.0).abs() < 1e-9);
     assert!((r.accuracy - 1.0).abs() < 1e-9);
 }
+
+// ===================== Hanson-Brennan (1991) =====================
+//
+// Every assert below reads fields of the `HansonBrennanResult` returned by
+// `hanson_brennan` / `hanson_brennan_from_params` (crate outputs). Fixture
+// literals come from an independent exact-Fraction stdlib oracle (session
+// artifact hanson_brennan_oracle.py; never imports this crate): params
+// fixtures A/C/E and the fixture-B moments/k/shapes/consistency are exact
+// rationals (tolerance 1e-12); fixture-B accuracy cells and all fixture-D
+// values are endpoint-aware float quadrature (tolerances 1e-9 / 1e-7 per
+// spec hanson_brennan_spec.md rev 2).
+//
+// Mutation-kill map (each mutation spot-checked by actually applying it):
+// - MU1 drop the k-correction term in the fail CDF -> fixture A (k = 1/2)
+//   pinned cells FAIL.
+// - MU2 drop the `+ k i(i-1) m_{i-1}` correction in the moment recursion ->
+//   fixture B m2..m4 / alpha / beta literals FAIL (B has k = 3.5997).
+// - MU3 drop the factor 2 in Lord's k denominator -> fixture B k literal
+//   FAILs.
+// - MU4 integrate F instead of 1 - F in p_tp -> fixture A p_tp/accuracy
+//   literals FAIL.
+// - MU5 use (1 - F) instead of (1 - F)^2 in p_jj -> fixture A p_jj /
+//   consistency literals FAIL.
+//
+// Disclosed limitations:
+// - p_ij == p_ji BY CONSTRUCTION (single threshold), as for LL.
+// - The pmf normalization (sum of raw two-term cells = 1) holds
+//   analytically for every k, so a "renormalize" mutation is unobservable
+//   through these fields; the discriminating anchors are the raw negative-
+//   cell fixtures (D has k < 0, B has k > 3).
+
+use super::{hanson_brennan, hanson_brennan_from_params};
+
+const HB_B_SCORES: [f64; 12] = [3.0, 4.0, 4.0, 5.0, 5.0, 6.0, 6.0, 6.0, 7.0, 7.0, 8.0, 9.0];
+const HB_D_SCORES: [f64; 22] = [
+    7.0, 1.0, 11.0, 2.0, 9.0, 10.0, 6.0, 6.0, 12.0, 6.0, 10.0, 8.0, 10.0, 8.0, 2.0, 2.0, 5.0, 8.0,
+    12.0, 11.0, 2.0, 1.0,
+];
+
+#[test]
+fn hb_params_matches_exact_oracle_fixture_a() {
+    // Kills MU1/MU4/MU5 (see map above); K=8, k=1/2, beta(2,3) on [0,1],
+    // cut=5. All pins are exact rationals from the oracle.
+    let r = hanson_brennan_from_params(8, 0.5, 0.0, 1.0, 2.0, 3.0, 5).unwrap();
+    let tol = 1e-12;
+    assert!((r.p_ii - 0.626795675944283).abs() < tol);
+    assert!((r.p_ij - 0.1058883067397).abs() < tol);
+    assert!((r.p_jj - 0.161427710576317).abs() < tol);
+    assert!((r.consistency - 0.7882233865206).abs() < tol);
+    assert!((r.chance_consistency - 0.60828367159536).abs() < tol);
+    assert!((r.kappa - 0.459362303476315).abs() < tol);
+    assert!((r.p_tp - 0.1271510992216).abs() < tol);
+    assert!((r.p_fp - 0.140164918094417).abs() < tol);
+    assert!((r.p_ff - 0.0244602289033998).abs() < tol);
+    assert!((r.p_tf - 0.708223753780583).abs() < tol);
+    assert!((r.accuracy - 0.835374853002183).abs() < tol);
+    assert!((r.sensitivity - 0.838664899213647).abs() < tol);
+    assert!((r.specificity - 0.834786905175617).abs() < tol);
+    assert!(!r.used_two_parameter);
+    assert!(r.true_score_moments.iter().all(|m| m.is_nan()));
+}
+
+#[test]
+fn hb_params_matches_exact_oracle_fixture_c_shifted_support() {
+    // Non-[0,1] support (l=0.1, u=0.9) anchors the p = l + (u-l)t mapping
+    // and the truecut clamp; K=6, k=1/4, beta(2,2), cut=4.
+    let r = hanson_brennan_from_params(6, 0.25, 0.1, 0.9, 2.0, 2.0, 4).unwrap();
+    let tol = 1e-12;
+    assert!((r.p_ii - 0.462276103171718).abs() < tol);
+    assert!((r.p_ij - 0.151822587304473).abs() < tol);
+    assert!((r.p_jj - 0.234078722219337).abs() < tol);
+    assert!((r.consistency - 0.696354825391055).abs() < tol);
+    assert!((r.chance_consistency - 0.526037022336763).abs() < tol);
+    assert!((r.kappa - 0.35934832693896).abs() < tol);
+    assert!((r.p_tp - 0.170177671527219).abs() < tol);
+    assert!((r.p_fp - 0.215723637996591).abs() < tol);
+    assert!((r.p_ff - 0.035406819213522).abs() < tol);
+    assert!((r.p_tf - 0.578691871262669).abs() < tol);
+    assert!((r.accuracy - 0.748869542789887).abs() < tol);
+    assert!((r.sensitivity - 0.827774852636268).abs() < tol);
+    assert!((r.specificity - 0.728449865993).abs() < tol);
+}
+
+#[test]
+fn hb_params_boundary_cuts_fixture_e() {
+    // K=4, k=1/3, beta(2,2). cut=1 vs cut=K swap the consistency blocks
+    // (identical consistency/kappa) while the accuracy cells flip; cut=K
+    // yields an empty pass region -> p_tp = p_ff = 0 and NaN sensitivity.
+    let tol = 1e-12;
+    let r1 = hanson_brennan_from_params(4, 1.0 / 3.0, 0.0, 1.0, 2.0, 2.0, 1).unwrap();
+    assert!((r1.p_ii - 0.046969696969697).abs() < tol);
+    assert!((r1.p_ij - 0.0768398268398268).abs() < tol);
+    assert!((r1.p_jj - 0.799350649350649).abs() < tol);
+    assert!((r1.consistency - 0.846320346320346).abs() < tol);
+    assert!((r1.kappa - 0.291673000912131).abs() < tol);
+    assert!((r1.p_tp - 0.794594029017857).abs() < tol);
+    assert!((r1.p_fp - 0.081596447172619).abs() < tol);
+    assert!((r1.p_ff - 0.0491559709821429).abs() < tol);
+    assert!((r1.p_tf - 0.074653552827381).abs() < tol);
+    assert!((r1.accuracy - 0.869247581845238).abs() < tol);
+    assert!((r1.sensitivity - 0.941741071428571).abs() < tol);
+    assert!((r1.specificity - 0.477782738095238).abs() < tol);
+
+    let rk = hanson_brennan_from_params(4, 1.0 / 3.0, 0.0, 1.0, 2.0, 2.0, 4).unwrap();
+    assert!((rk.p_ii - 0.799350649350649).abs() < tol);
+    assert!((rk.p_jj - 0.046969696969697).abs() < tol);
+    assert!((rk.consistency - r1.consistency).abs() < tol);
+    assert!((rk.kappa - r1.kappa).abs() < tol);
+    assert_eq!(rk.p_tp, 0.0);
+    assert_eq!(rk.p_ff, 0.0);
+    assert!((rk.p_fp - 0.123809523809524).abs() < tol);
+    assert!((rk.p_tf - 0.876190476190476).abs() < tol);
+    assert!((rk.accuracy - 0.876190476190476).abs() < tol);
+    assert!(rk.sensitivity.is_nan());
+    assert!((rk.specificity - 0.876190476190476).abs() < tol);
+}
+
+#[test]
+fn hb_data_two_parameter_matches_exact_oracle_fixture_b() {
+    // Kills MU2 (moment-recursion correction; k = 3.5997 here) and MU3
+    // (Lord's k denominator factor 2). k, moments, and shapes are exact
+    // rationals (1e-12); integral cells are cross-quadrature pins (1e-9).
+    let r = hanson_brennan(&HB_B_SCORES, 10, 0.8, 6, true).unwrap();
+    let tol = 1e-12;
+    assert!((r.lords_k - 3.59971809506204).abs() < tol);
+    assert!((r.true_score_moments[0] - 7.0 / 12.0).abs() < tol);
+    assert!((r.true_score_moments[1] - 0.36213863465272).abs() < tol);
+    assert!((r.true_score_moments[2] - 0.237540177051756).abs() < tol);
+    assert!((r.true_score_moments[3] - 0.163642642262692).abs() < tol);
+    assert!(r.used_two_parameter);
+    assert_eq!(r.lower, 0.0);
+    assert_eq!(r.upper, 1.0);
+    assert!((r.alpha - 5.90234141484747).abs() < 1e-11);
+    assert!((r.beta - 4.21595815346248).abs() < 1e-11);
+    let tol9 = 1e-9;
+    assert!((r.p_ii - 0.298000987219999).abs() < tol9);
+    assert!((r.p_ij - 0.118776784992038).abs() < tol9);
+    assert!((r.p_jj - 0.464445442795926).abs() < tol9);
+    assert!((r.consistency - 0.762446430015925).abs() < tol9);
+    assert!((r.chance_consistency - 0.513851878395983).abs() < tol9);
+    assert!((r.kappa - 0.511355573687539).abs() < tol9);
+    assert!((r.p_tp - 0.428148532096005).abs() < tol9);
+    assert!((r.p_fp - 0.155073695691995).abs() < tol9);
+    assert!((r.p_ff - 0.0441750264685139).abs() < tol9);
+    assert!((r.p_tf - 0.372602745743486).abs() < tol9);
+    assert!((r.accuracy - 0.800751277839491).abs() < tol9);
+    assert!((r.sensitivity - 0.906472955524873).abs() < tol9);
+    assert!((r.specificity - 0.706119728843426).abs() < tol9);
+}
+
+#[test]
+fn hb_data_four_parameter_matches_oracle_fixture_d() {
+    // Genuine 4P fit with NEGATIVE Lord's k (raw negative two-term cells
+    // integrated unclamped) and both beta shapes < 1 (integrable endpoint
+    // singularities exercising the substituted quadrature). Oracle used
+    // singularity-substituted Simpson; tolerance 1e-7 per spec.
+    let r = hanson_brennan(&HB_D_SCORES, 12, 0.85, 7, false).unwrap();
+    assert!((r.lords_k + 0.428757070304408).abs() < 1e-12);
+    assert!((r.true_score_moments[0] - 0.564393939393939).abs() < 1e-12);
+    assert!((r.true_score_moments[1] - 0.396290868897843).abs() < 1e-12);
+    assert!((r.true_score_moments[2] - 0.305461229963853).abs() < 1e-12);
+    assert!((r.true_score_moments[3] - 0.245696195187782).abs() < 1e-12);
+    assert!(!r.used_two_parameter);
+    assert!((r.lower - 0.132649605850816).abs() < 1e-11);
+    assert!((r.upper - 0.888674369964715).abs() < 1e-11);
+    assert!((r.alpha - 0.45726578470813).abs() < 1e-11);
+    assert!((r.beta - 0.343449430670119).abs() < 1e-11);
+    let tol = 1e-7;
+    assert!((r.p_tp - 0.496827945781606).abs() < tol);
+    assert!((r.p_fp - 0.0584972285971357).abs() < tol);
+    assert!((r.p_ff - 0.0307477664292897).abs() < tol);
+    assert!((r.p_tf - 0.41392705919197).abs() < tol);
+    assert!((r.accuracy - 0.910755004973576).abs() < tol);
+    assert!((r.sensitivity - 0.941718760516029).abs() < tol);
+    assert!((r.specificity - 0.876176500427409).abs() < tol);
+    assert!((r.p_ii - 0.383607601024351).abs() < tol);
+    assert!((r.p_ij - 0.0610672245969103).abs() < tol);
+    assert!((r.p_jj - 0.494257949781828).abs() < tol);
+    assert!((r.consistency - 0.877865550806179).abs() < tol);
+    assert!((r.chance_consistency - 0.506121749840076).abs() < tol);
+    assert!((r.kappa - 0.752703324849248).abs() < tol);
+}
+
+#[test]
+fn hb_structural_invariants_read_crate_fields() {
+    // Ties derived fields to cell fields through crate outputs only, so a
+    // mutation desynchronizing them fails even if pinned literals survive.
+    let r = hanson_brennan(&HB_D_SCORES, 12, 0.85, 7, false).unwrap();
+    assert!((r.p_tp + r.p_fp + r.p_tf + r.p_ff - 1.0).abs() < 1e-7);
+    assert!((r.p_ii + r.p_ij + r.p_ji + r.p_jj - 1.0).abs() < 1e-12);
+    assert_eq!(r.p_ij, r.p_ji); // by construction (disclosed above)
+    assert!((r.accuracy - (r.p_tp + r.p_tf)).abs() < 1e-15);
+    assert!((r.consistency - (r.p_ii + r.p_jj)).abs() < 1e-15);
+    let pc = (r.p_ii + r.p_ij) * (r.p_ii + r.p_ji) + (r.p_ij + r.p_jj) * (r.p_ji + r.p_jj);
+    assert!((r.chance_consistency - pc).abs() < 1e-15);
+    assert!((r.kappa - (r.consistency - pc) / (1.0 - pc)).abs() < 1e-12);
+}
+
+#[test]
+fn hb_rejects_malformed_input() {
+    let ok: Vec<f64> = HB_D_SCORES.to_vec();
+    // data path
+    assert!(hanson_brennan(&ok[..5], 12, 0.85, 7, false).is_err());
+    assert!(hanson_brennan(&ok, 3, 0.85, 2, false).is_err());
+    assert!(hanson_brennan(&ok, 12, 0.85, 0, false).is_err());
+    assert!(hanson_brennan(&ok, 12, 0.85, 13, false).is_err());
+    assert!(hanson_brennan(&ok, 12, 0.0, 7, false).is_err());
+    assert!(hanson_brennan(&ok, 12, 1.0, 7, false).is_err());
+    assert!(hanson_brennan(&ok, 12, f64::NAN, 7, false).is_err());
+    let mut with_nan = ok.clone();
+    with_nan[0] = f64::NAN;
+    assert!(hanson_brennan(&with_nan, 12, 0.85, 7, false).is_err());
+    let mut frac = ok.clone();
+    frac[0] = 6.5;
+    assert!(hanson_brennan(&frac, 12, 0.85, 7, false).is_err());
+    let mut oob = ok.clone();
+    oob[0] = 13.0;
+    assert!(hanson_brennan(&oob, 12, 0.85, 7, false).is_err());
+    let constant = vec![7.0; 22];
+    assert!(hanson_brennan(&constant, 12, 0.85, 7, false).is_err());
+    // params path
+    assert!(hanson_brennan_from_params(1, 0.0, 0.0, 1.0, 2.0, 2.0, 1).is_err());
+    assert!(hanson_brennan_from_params(8, f64::NAN, 0.0, 1.0, 2.0, 2.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.5, 0.4, 2.0, 2.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, -0.1, 1.0, 2.0, 2.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.0, 1.1, 2.0, 2.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.0, 1.0, 0.0, 2.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.0, 1.0, 2.0, -1.0, 4).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.0, 1.0, 2.0, 2.0, 0).is_err());
+    assert!(hanson_brennan_from_params(8, 0.0, 0.0, 1.0, 2.0, 2.0, 9).is_err());
+}
+
+#[test]
+#[ignore = "500-rep Monte Carlo; run with --ignored"]
+fn hb_mc_consistency_recovers_empirical_agreement() {
+    // Value recovery: crate `consistency` (from ONE administration +
+    // parallel-forms reliability) vs the empirical agreement rate of two
+    // independent simulated binomial administrations (true k = 0). One
+    // operand per rep is the crate output, the other simulation truth.
+    let n_items = 40usize;
+    let n = 400usize;
+    let reps = 500u64;
+    let mut diff_sum = 0.0;
+    let mut used = 0u64;
+    for rep in 0..reps {
+        let mut r = Lcg::new(77_000 + rep);
+        let cut = 22usize;
+        let mut s1 = Vec::with_capacity(n);
+        let mut s2 = Vec::with_capacity(n);
+        let mut agree = 0usize;
+        for _ in 0..n {
+            let mut acc = 0.0;
+            for _ in 0..4 {
+                acc += r.unif();
+            }
+            let p = 0.2 + 0.7 * acc / 4.0;
+            let mut a = 0u32;
+            let mut b = 0u32;
+            for _ in 0..n_items {
+                if r.unif() < p {
+                    a += 1;
+                }
+                if r.unif() < p {
+                    b += 1;
+                }
+            }
+            if (a as f64 >= cut as f64) == (b as f64 >= cut as f64) {
+                agree += 1;
+            }
+            s1.push(a as f64);
+            s2.push(b as f64);
+        }
+        let m1 = s1.iter().sum::<f64>() / n as f64;
+        let m2 = s2.iter().sum::<f64>() / n as f64;
+        let (mut c12, mut v1, mut v2) = (0.0, 0.0, 0.0);
+        for i in 0..n {
+            c12 += (s1[i] - m1) * (s2[i] - m2);
+            v1 += (s1[i] - m1) * (s1[i] - m1);
+            v2 += (s2[i] - m2) * (s2[i] - m2);
+        }
+        let rel = c12 / (v1.sqrt() * v2.sqrt());
+        if let Ok(est) = hanson_brennan(&s1, n_items, rel, cut, false) {
+            diff_sum += est.consistency - agree as f64 / n as f64;
+            used += 1;
+        }
+    }
+    assert!(used > 450, "too many degenerate reps: {used}");
+    let bias = diff_sum / used as f64;
+    assert!(bias.abs() < 0.01, "consistency bias {bias}");
+}
