@@ -1117,3 +1117,25 @@ fn liv_mc_500() {
     let bias = sum / reps as f64 - pop;
     assert!(bias.abs() < 0.01, "bias {bias} pop {pop}");
 }
+
+// Regression pins for impl-review findings (files/livingston_impl_review.md):
+// finding 1 (MEDIUM): constant scores at a non-representable decimal cut
+// (0.1) must still hit the exact-degenerate NaN path even though the summed
+// mean rounds away from 0.1 (element-wise check); finding 2 (LOW): a huge
+// finite cut whose squared offset overflows returns the formula limit 1 for
+// k^2 and an Err (not NaN-by-overflow) for the correlation.
+#[test]
+fn liv_degenerate_nonrepresentable_decimal() {
+    let r = livingston_k2(&[0.1, 0.1, 0.1], 0.1, 0.5, &[1.0]).unwrap();
+    assert!(r.k2[0].is_nan(), "k2 {}", r.k2[0]);
+    let k = livingston_correlation(&[0.1, 0.1, 0.1], &[1.0, 2.0, 3.0], 0.1, 0.0).unwrap();
+    assert!(k.is_nan(), "k {k}");
+}
+
+#[test]
+fn liv_huge_cut_overflow() {
+    let r = livingston_k2(&[1.0, 2.0, 3.0], 1e308, 0.5, &[1.0, 2.0]).unwrap();
+    assert_eq!(r.k2[0], 1.0);
+    assert_eq!(r.k2[1], 1.0); // SB(1) = 1 for all n
+    assert!(livingston_correlation(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0], 1e308, 0.0).is_err());
+}

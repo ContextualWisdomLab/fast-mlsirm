@@ -8222,6 +8222,39 @@ class TestLivingston:
         assert livingston_k2(const, 1.0, 0.0).k2[0] == 1.0
         assert math.isnan(livingston_correlation(const, x[:3], 3.0, 0.0))
 
+    def test_review_regressions(self):
+        """Regression pins for impl-review findings: element-wise degenerate
+        detection at a non-representable decimal cut, overflow limit for
+        k^2, overflow error for the correlation, and non-None __doc__.
+
+        Every assert reads crate values via the wrappers; killed mutants:
+        removing the element-wise all-equal check (first assert), removing
+        the off2-overflow limit branch (second), removing the overflow Err
+        (third)."""
+        import math
+
+        import numpy as np
+        import pytest
+
+        import fast_mlsirm as fm
+        from fast_mlsirm import livingston_correlation, livingston_k2
+
+        const = np.array([0.1, 0.1, 0.1])
+        assert math.isnan(livingston_k2(const, 0.1, 0.5).k2[0])
+        assert math.isnan(
+            livingston_correlation(const, np.array([1.0, 2.0, 3.0]), 0.1, 0.0)
+        )
+        x = np.array([1.0, 2.0, 3.0])
+        res = livingston_k2(x, 1e308, 0.5, [1.0, 2.0])
+        assert res.k2[0] == 1.0
+        assert res.k2[1] == 1.0
+        with pytest.raises((ValueError, RuntimeError)):
+            livingston_correlation(x, x, 1e308, 0.0)
+        assert fm.livingston_k2.__doc__ is not None
+        assert "References" in fm.livingston_k2.__doc__
+        assert fm.livingston_correlation.__doc__ is not None
+        assert "References" in fm.livingston_correlation.__doc__
+
 
 class TestSubkoviak:
     def test_table1_alpha_supplied_exact(self):
