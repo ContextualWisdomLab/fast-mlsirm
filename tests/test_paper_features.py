@@ -9289,3 +9289,25 @@ class TestElo:
             elo_rating([[1, 0, 1, 1.0]], 2, gamma=[1.0, 2.0])  # gamma length
         with pytest.raises(ValueError):
             elo_rating([["a", 0, 1, 1.0]], 2)  # object dtype backstop
+
+    def test_large_period_labels_exact(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        # Integer-array path keeps u64 period fidelity above 2**53: the two
+        # labels are DISTINCT periods, so sequential (not batch) updates
+        # apply and player 0 loses rating (impl-review finding fix).
+        big = 2**53
+        g = np.array(
+            [[big, 0, 1, 1], [big + 1, 1, 0, 1]], dtype=np.uint64
+        )
+        r = elo_rating(g, 2, init=2000, kfac=400)
+        assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
+        assert abs(float(r.ratings.sum()) - 4000.0) < 1e-9
+        # Float path must REJECT unrepresentable labels, not merge them.
+        with pytest.raises(ValueError):
+            elo_rating([[float(big + 1), 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            elo_rating([[1e300, 0, 1, 1.0]], 2)

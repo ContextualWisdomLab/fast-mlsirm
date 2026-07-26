@@ -641,6 +641,7 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
 
     if np.iscomplexobj(np.asarray(games)):
         raise ValueError("elo_rating: games must be real, not complex")
+    raw = np.asarray(games)
     try:
         arr = np.asarray(games, dtype=float)
     except (TypeError, ValueError) as exc:
@@ -659,6 +660,23 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
             raise ValueError(f"elo_rating: {name} column must be integral")
     if np.any(periods < 0):
         raise ValueError("elo_rating: period labels must be nonnegative")
+    # Period labels are u64 in the core; a float column loses integer
+    # fidelity above 2**53 (distinct labels would silently merge into one
+    # rating period). Take periods losslessly from an integer input array,
+    # and otherwise reject labels the float path cannot represent exactly.
+    if raw.ndim == 2 and raw.dtype.kind in "iu":
+        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
+            raise ValueError("elo_rating: period labels must be nonnegative")
+        periods_u64 = raw[:, 0].astype(np.uint64)
+    else:
+        # >= (not >): float(2**53 + 1) rounds down to exactly 2.0**53, so a
+        # float value of 2.0**53 is already ambiguous about the intended label.
+        if np.any(periods >= 2.0**53):
+            raise ValueError(
+                "elo_rating: period labels at or above 2**53 are not reliably "
+                "representable as floats; pass games as an integer array"
+            )
+        periods_u64 = periods.astype(np.uint64)
     if np.any(white < 0) or np.any(black < 0):
         raise ValueError("elo_rating: player indices must be nonnegative")
     n = int(n_players)
@@ -680,7 +698,7 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
     init = float(init)
     kfac = float(kfac)
     res = _core_module().elo_rating(
-        np.ascontiguousarray(periods, dtype=np.uint64),
+        np.ascontiguousarray(periods_u64),
         np.ascontiguousarray(white, dtype=np.uint64),
         np.ascontiguousarray(black, dtype=np.uint64),
         np.ascontiguousarray(score),
