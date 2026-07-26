@@ -860,7 +860,7 @@ pub fn kl_select(
 //     Statistical Association, 70*(350), 351-356.
 //     https://doi.org/10.1080/01621459.1975.10479871 (NOT read; historical target)
 // van der Linden, W. J. (1998). *Bayesian item selection criteria for adaptive
-//     testing* (Research Report 98-01). University of Twente. (ERIC ED424235;
+//     testing* (Research Report 96-01). University of Twente. (ERIC ED424235;
 //     Appendix Eqs. A.1-A.6 verified)
 // Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
 //     a microcomputer environment. *Applied Psychological Measurement, 6*(4),
@@ -1052,5 +1052,1774 @@ pub fn owen_cat(
         sig2_trace,
         mu,
         sig2,
+    })
+}
+
+// ===================== Kingsbury-Zara (1989) constrained CAT content balancing =====================
+//
+// Kingsbury and Zara (1989) introduced constrained CAT (C-CAT) procedures
+// for selecting items under content-area constraints. CITATION GOVERNANCE:
+// the primary full text was NOT read (not obtainable in this environment);
+// the exact content-balancing rule implemented here follows the catR
+// `nextItem` documentation and source reproduction of the Kingsbury-Zara
+// content-balancing control (READ: catR/R/nextItem.R, cbControl branch, and
+// the nextItem manual page): first cover any content group with zero
+// administered items, then select from the eligible group maximizing
+// `target_prop - empirical_prop`, and finally choose the most informative
+// item within that group. catR breaks group/item ties RANDOMLY; this
+// implementation deterministically takes the LOWEST index (documented
+// deviation for reproducible tests). Skipping groups with no unadministered
+// item is an implementation safety rule, not verified K&Z text.
+//
+// The logistic 3PL Fisher information used within the chosen group,
+//   I_i(theta) = a_i^2 * (Q_i / P_i) * ((P_i - c_i) / (1 - c_i))^2,
+// was verified against catR's `Ii.R` (I = dP^2 / (P Q)) with `Pi.R`'s
+// P/dP at D = 1, d = 1, which reduce algebraically to this form
+// (adversarial spec review against catR formulas).
+//
+// References:
+// Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items
+// for computerized adaptive tests. Applied Measurement in Education, 2(4),
+// 359-375. https://doi.org/10.1207/s15324818ame0204_6 (NOT read; rule per
+// the catR reproduction cited below)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+// under computerized adaptive testing with the R package catR. Journal of
+// Statistical Software, 48(8), 1-31. https://doi.org/10.18637/jss.v048.i08
+
+/// Result of one Kingsbury-Zara constrained-CAT selection step.
+#[derive(Debug, Clone)]
+pub struct CcatSelectResult {
+    /// Selected item index (unadministered, inside `group`).
+    pub selected: usize,
+    /// Content group the selection was constrained to.
+    pub group: usize,
+    /// Per-group `target - empirical` discrepancies (diagnostics; the
+    /// zero-coverage priority rule may override the argmax of this vector).
+    pub discrepancy: Vec<f64>,
+    /// Logistic 3PL Fisher information at `theta0` for ALL items
+    /// (administered items keep their value; masking applies to selection
+    /// only, matching `kl_select`).
+    pub info: Vec<f64>,
+}
+
+/// One Kingsbury-Zara content-balanced CAT selection step. See the section
+/// comment for the exact rule, its source status, and references.
+///
+/// `groups[i]` is the content area of item `i` (must be `< targets.len()`);
+/// `targets` are strictly positive proportions summing to 1 (tol 1e-8).
+/// Errors on empty/mismatched inputs, invalid item parameters, non-finite
+/// `theta0`, invalid targets, or when no group has an unadministered item.
+pub fn ccat_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    groups: &[usize],
+    targets: &[f64],
+    administered: &[bool],
+    theta0: f64,
+) -> Result<CcatSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("ccat_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || groups.len() != n || administered.len() != n {
+        return Err(format!(
+            "ccat_select: length mismatch (a: {n}, b: {}, c: {}, groups: {}, administered: {})",
+            b.len(),
+            c.len(),
+            groups.len(),
+            administered.len()
+        ));
+    }
+    let n_groups = targets.len();
+    if n_groups == 0 {
+        return Err("ccat_select: targets must be non-empty".to_string());
+    }
+    if !theta0.is_finite() {
+        return Err("ccat_select: theta0 must be finite".to_string());
+    }
+    let mut tsum = 0.0;
+    for (g, &t) in targets.iter().enumerate() {
+        if !t.is_finite() || t <= 0.0 {
+            return Err(format!(
+                "ccat_select: targets must be finite positive, got targets[{g}] = {t}"
+            ));
+        }
+        tsum += t;
+    }
+    if (tsum - 1.0).abs() > 1e-8 {
+        return Err(format!("ccat_select: targets must sum to 1, got {tsum}"));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!(
+                "ccat_select: a must be finite positive, got a[{i}] = {}",
+                a[i]
+            ));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("ccat_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "ccat_select: c must be in [0, 1), got c[{i}] = {}",
+                c[i]
+            ));
+        }
+        if groups[i] >= n_groups {
+            return Err(format!(
+                "ccat_select: groups[{i}] = {} out of range for {n_groups} targets",
+                groups[i]
+            ));
+        }
+    }
+
+    // Administered counts and eligibility (a group is eligible if it still
+    // has at least one unadministered item).
+    let mut k_g = vec![0usize; n_groups];
+    let mut eligible = vec![false; n_groups];
+    let mut k = 0usize;
+    for i in 0..n {
+        if administered[i] {
+            k_g[groups[i]] += 1;
+            k += 1;
+        } else {
+            eligible[groups[i]] = true;
+        }
+    }
+    if !eligible.iter().any(|&e| e) {
+        return Err("ccat_select: all items administered".to_string());
+    }
+
+    let discrepancy: Vec<f64> = (0..n_groups)
+        .map(|g| targets[g] - if k > 0 { k_g[g] as f64 / k as f64 } else { 0.0 })
+        .collect();
+
+    // catR rule: any eligible group with zero administered items has
+    // priority (lowest index = documented deterministic substitute for
+    // catR's random tie); otherwise the eligible group with the maximal
+    // target-minus-empirical discrepancy wins (strict > keeps the lowest
+    // index on ties).
+    let group = match (0..n_groups).find(|&g| eligible[g] && k_g[g] == 0) {
+        Some(g) => g,
+        None => {
+            let mut best: Option<(f64, usize)> = None;
+            for g in 0..n_groups {
+                if eligible[g] && best.map_or(true, |(bd, _)| discrepancy[g] > bd) {
+                    best = Some((discrepancy[g], g));
+                }
+            }
+            best.expect("at least one eligible group").1
+        }
+    };
+
+    // Logistic 3PL Fisher information at theta0 for every item, computed in
+    // log space for numerical robustness (impl-review rounds 1-2 findings;
+    // regression-tested): the naive q/p * r^2 form produced NaN via inf * 0
+    // at logistic underflow (P -> c, including subnormal c) and spurious
+    // +inf from multiplication order at extreme a, and a pointwise p == 0
+    // guard masked genuinely informative extreme items. Algebra: with
+    // z = a(theta0 - b) and L = sigmoid(z), P = c + (1 - c) L, so
+    // r = (P - c)/(1 - c) = L exactly and
+    // I = a^2 (1 - c)(1 - L) L^2 / (c + (1 - c) L); when c = 0 this reduces
+    // to I = a^2 L (1 - L). ln L = -softplus(-z) and ln(1-L) = -softplus(z)
+    // are stable for all finite (or overflowed-to-inf) z. A genuinely
+    // astronomical information (a >= ~1e155 near theta0 = b) still
+    // overflows to +inf, which orders correctly in the argmax below.
+    let softplus = |x: f64| {
+        if x > 0.0 {
+            x + (-x).exp().ln_1p()
+        } else {
+            x.exp().ln_1p()
+        }
+    };
+    let info: Vec<f64> = (0..n)
+        .map(|i| {
+            let z = a[i] * (theta0 - b[i]);
+            let ln_l = -softplus(-z);
+            let ln_1ml = -softplus(z);
+            let ln_i = if c[i] == 0.0 {
+                2.0 * a[i].ln() + ln_l + ln_1ml
+            } else {
+                // p >= c > 0, so ln(p) is finite even when L underflows.
+                let p = c[i] + (1.0 - c[i]) * ln_l.exp();
+                2.0 * a[i].ln() + (1.0 - c[i]).ln() + ln_1ml + 2.0 * ln_l - p.ln()
+            };
+            ln_i.exp()
+        })
+        .collect();
+
+    // Most informative unadministered item within the chosen group; strict >
+    // keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if groups[i] == group && !administered[i] && best.map_or(true, |(bi, _)| info[i] > bi) {
+            best = Some((info[i], i));
+        }
+    }
+    let selected = best.expect("chosen group is eligible").1;
+
+    Ok(CcatSelectResult {
+        selected,
+        group,
+        discrepancy,
+        info,
+    })
+}
+
+// ===================== Owen-approximate posterior-predictive EPV item selection =====================
+//
+// `epv_select` implements Owen-approximate posterior-predictive EPV
+// (expected posterior variance) item selection for the three-parameter
+// normal-ogive model maintained by [`owen_update`]. For each item it
+// computes the normal-posterior predictive probability
+//   p*_i = c_i + (1 - c_i) Phi(a_i (mu - b_i) / sqrt(1 + a_i^2 sig2)),
+// obtains the two Owen normal-approximation outcome variances from
+// [`owen_update`], and scores
+//   EPV_i = p*_i sig2_plus_i + (1 - p*_i) sig2_minus_i,
+// selecting the unadministered argmin (ties to the lowest index).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, epv_spec_review.md):
+// this is NOT the exact van der Linden (1998) MEPV criterion, which is
+// defined with response probabilities at the current ability estimate and
+// true/numerical posterior variances (READ: van der Linden's freely
+// available University of Twente/ERIC report, Research Report 96-01, ERIC
+// ED424235, Eq. (14); catR EPV.R/EPV.Rd; mirtCAT selection_criteria.R
+// 'MEPV'). The Psychometrika 63(2) journal body and Owen (1975) were NOT
+// read. The predictive identity E[Phi(alpha + beta Z)] =
+// Phi(alpha / sqrt(1 + beta^2)) for Z ~ N(0,1) applied to
+// P(theta) = c + (1 - c) Phi(a (theta - b)) under theta ~ N(mu, sig2) was
+// hand-derived and verified in the spec review; the outcome variances are
+// the crate's Owen closed-form updates, so the whole criterion is an
+// explicitly labeled Owen approximation of the posterior-predictive EPV.
+//
+// References (APA 7th):
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing (Research Report 96-01). University of Twente.
+//     (ERIC ED424235 report text READ; Psychometrika 63(2) body NOT read)
+// van der Linden, W. J. (1998). Bayesian item selection criteria for
+//     adaptive testing. Psychometrika, 63(2), 201-216.
+//     https://doi.org/10.1007/BF02294775 (metadata only)
+// Owen, R. J. (1975). A Bayesian sequential procedure for quantal response
+//     in the context of adaptive mental testing. Journal of the American
+//     Statistical Association, 70(350), 351-356. (NOT read; update formulas
+//     per the crate's owen_update, verified against the 1998 report appendix)
+// Magis, D., & Raiche, G. (2012). Random generation of response patterns
+//     under computerized adaptive testing with the R package catR. Journal
+//     of Statistical Software, 48(8), 1-31.
+//     https://doi.org/10.18637/jss.v048.i08 (READ: EPV.R structural form)
+
+/// Result of one [`epv_select`] step.
+#[derive(Debug, Clone)]
+pub struct EpvSelectResult {
+    /// Selected item (unadministered argmin of `epv`, ties to lowest index).
+    pub selected: usize,
+    /// Owen-approximate expected posterior variance for every item.
+    pub epv: Vec<f64>,
+    /// Posterior-predictive success probability `p*_i` for every item.
+    pub predictive: Vec<f64>,
+}
+
+/// One Owen-approximate posterior-predictive EPV selection step: given the
+/// current normal posterior `theta ~ N(mu, sig2)`, score every item in the
+/// pool (administered or not) and select the unadministered item minimizing
+/// the expected posterior variance (ties to the lowest index). See the
+/// section comment for the exact criterion, its scope label, and references.
+///
+/// Errors on empty/mismatched inputs, invalid item parameters (mirroring
+/// [`owen_cat`]), an invalid prior, an all-administered pool, or when either
+/// [`owen_update`] outcome degenerates for an unadministered item.
+pub fn epv_select(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    administered: &[bool],
+    mu: f64,
+    sig2: f64,
+) -> Result<EpvSelectResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("epv_select: empty item pool".to_string());
+    }
+    if b.len() != n || c.len() != n || administered.len() != n {
+        return Err(format!(
+            "epv_select: length mismatch (a={}, b={}, c={}, administered={})",
+            n,
+            b.len(),
+            c.len(),
+            administered.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("epv_select: a[{i}] must be finite positive"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("epv_select: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("epv_select: c[{i}] must be in [0, 1)"));
+        }
+    }
+    if !mu.is_finite() {
+        return Err("epv_select: mu must be finite".to_string());
+    }
+    if !sig2.is_finite() || sig2 <= 0.0 {
+        return Err("epv_select: sig2 must be finite positive".to_string());
+    }
+    if administered.iter().all(|&x| x) {
+        return Err("epv_select: all items administered".to_string());
+    }
+
+    let mut epv = Vec::with_capacity(n);
+    let mut predictive = Vec::with_capacity(n);
+    for i in 0..n {
+        // Predictive p*_i = c + (1 - c) Phi(a (mu - b) / sqrt(1 + a^2 sig2)).
+        // The argument equals owen_update's d = (mu - b) / sqrt(1/a^2 + sig2)
+        // exactly (multiply numerator and denominator by a > 0); the spec
+        // review verified this sign convention against the crate.
+        let d = (mu - b[i]) / (1.0 / (a[i] * a[i]) + sig2).sqrt();
+        let p_star = c[i] + (1.0 - c[i]) * norm_cdf(d);
+        let update_plus = owen_update(a[i], b[i], c[i], true, mu, sig2);
+        let update_minus = owen_update(a[i], b[i], c[i], false, mu, sig2);
+        match (update_plus, update_minus) {
+            (Ok((_, sig2_plus)), Ok((_, sig2_minus))) => {
+                epv.push(p_star * sig2_plus + (1.0 - p_star) * sig2_minus);
+            }
+            (Err(_), _) | (_, Err(_)) if administered[i] => {
+                // Administered items never affect selection, so keep diagnostics
+                // aligned by storing NaN instead of aborting the whole step.
+                epv.push(f64::NAN);
+            }
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        }
+        predictive.push(p_star);
+    }
+
+    // Unadministered argmin; strict < keeps the lowest index on ties.
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..n {
+        if !administered[i] && best.map_or(true, |(be, _)| epv[i] < be) {
+            best = Some((epv[i], i));
+        }
+    }
+    let selected = best
+        .expect("checked above that some item is unadministered")
+        .1;
+
+    Ok(EpvSelectResult {
+        selected,
+        epv,
+        predictive,
+    })
+}
+
+// ===================== Wald SPRT classification for CAT =====================
+//
+// `sprt_classify` implements single-cut, binary-response SPRT classification
+// (Wald's sequential probability ratio test applied to IRT classification
+// testing). Two point hypotheses around the cut score,
+//   theta0 = theta_cut - delta,  theta1 = theta_cut + delta,
+// are compared through the cumulative binary log-likelihood ratio under the
+// D = 1 logistic 3PL
+//   P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i))),
+//   LLR_k = sum_{i<=k} [ u_i ln(P_i(theta1)/P_i(theta0))
+//                      + (1 - u_i) ln((1 - P_i(theta1))/(1 - P_i(theta0))) ],
+// against the log Wald boundaries
+//   A = ln((1 - beta) / alpha),  B = ln(beta / (1 - alpha)).
+// Responses are walked in order and the FIRST crossing decides (inclusive
+// comparisons, matching catIrt): LLR_k >= A -> "above" with n_used = k;
+// LLR_k <= B -> "below" with n_used = k; no crossing -> "continue" with
+// n_used = len(responses).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review, sprt_spec_review.md):
+// boundaries and the binary log-likelihood-ratio form were verified against
+// READ sources: catIrt R/termSPRT.R + R/logLik.brm.R + R/p.brm.R (GitHub
+// swnydick/catIrt) and Thompson (2007), p. 7. Reckase (1983) and Eggen
+// (1999) are historical citations via Thompson and were NOT directly read.
+// This function implements only a single-cut binary 3PL SPRT with D = 1
+// logistic-scale item parameters; it is not a multi-cut, polytomous, or
+// D = 1.7 compatibility layer (parameters calibrated on the D = 1.7 metric
+// must be rescaled by the caller, a_D1 = 1.7 * a_D17, before use).
+//
+// The returned decision/n_used are first-crossing SPRT results. llr_trace is
+// computed for ALL supplied responses as an offline diagnostic; entries after
+// n_used are counterfactual replay values - live CAT would terminate at
+// n_used and would not administer later items.
+//
+// References (APA 7th):
+// Wald, A. (1947). Sequential analysis. Wiley. (NOT read; boundary forms
+//     verified through the sources below)
+// Thompson, N. A. (2007). A practitioner's guide for variable-length
+//     computerized classification testing. Practical Assessment, Research &
+//     Evaluation, 12(1). https://doi.org/10.7275/fq3r-zz60 (READ: p. 7
+//     likelihood-ratio form and Wald decision points)
+// Nydick, S. W. (2014). catIrt: An R package for simulating IRT-based
+//     computerized adaptive tests. (READ: R/termSPRT.R boundary and
+//     inclusive-comparison conventions; R/logLik.brm.R binary log
+//     likelihood; R/p.brm.R D = 1 3PL)
+// Eggen, T. J. H. M. (1999). Item selection in adaptive testing with the
+//     sequential probability ratio test. Applied Psychological Measurement,
+//     23(3), 249-261. (NOT read; historical citation via Thompson)
+// Reckase, M. D. (1983). A procedure for decision making using tailored
+//     testing. (NOT read; historical citation via Thompson)
+
+/// Result of [`sprt_classify`]. `decision` is `"above"`, `"below"`, or
+/// `"continue"`; `n_used` is the 1-based count of responses consumed by the
+/// first boundary crossing (or all responses when no crossing occurs);
+/// `llr_trace` holds the cumulative log-likelihood ratio after every supplied
+/// response (entries past `n_used` are offline counterfactuals); `llr` is the
+/// final trace entry.
+#[derive(Debug, Clone)]
+pub struct SprtResult {
+    pub decision: &'static str,
+    pub n_used: usize,
+    pub llr_trace: Vec<f64>,
+    pub llr: f64,
+}
+
+/// Single-cut binary-response Wald SPRT classification (see module comment
+/// above for the exact verified contract and source status).
+pub fn sprt_classify(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    theta_cut: f64,
+    delta: f64,
+    alpha: f64,
+    beta: f64,
+) -> Result<SprtResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("sprt_classify: item pool is empty".into());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "sprt_classify: length mismatch (a: {}, b: {}, c: {}, responses: {})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("sprt_classify: a[{i}] must be finite and > 0"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("sprt_classify: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!(
+                "sprt_classify: c[{i}] must be finite and in [0, 1)"
+            ));
+        }
+        if responses[i] > 1 {
+            return Err(format!("sprt_classify: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !theta_cut.is_finite() {
+        return Err("sprt_classify: theta_cut must be finite".into());
+    }
+    if !delta.is_finite() || delta <= 0.0 {
+        return Err("sprt_classify: delta must be finite and > 0".into());
+    }
+    for (name, v) in [("alpha", alpha), ("beta", beta)] {
+        if !v.is_finite() || v <= 0.0 || v >= 1.0 {
+            return Err(format!(
+                "sprt_classify: {name} must be finite and in (0, 1)"
+            ));
+        }
+    }
+    if alpha + beta >= 1.0 {
+        return Err("sprt_classify: alpha + beta must be < 1".into());
+    }
+
+    let upper = ((1.0 - beta) / alpha).ln();
+    let lower = (beta / (1.0 - alpha)).ln();
+    let theta0 = theta_cut - delta;
+    let theta1 = theta_cut + delta;
+    // Stable softplus ln(1 + e^z): shift by max(z, 0) so exp never overflows.
+    let softplus = |z: f64| -> f64 {
+        if z > 0.0 {
+            z + (-z).exp().ln_1p()
+        } else {
+            z.exp().ln_1p()
+        }
+    };
+    // Stable log-probabilities under the D = 1 logistic 3PL
+    // P = c + (1 - c) sigmoid(z), z = a (theta - b) (crate CAT convention;
+    // catIrt p.brm.R). ln(1 - P) = ln(1 - c) - softplus(z) always; ln(P)
+    // needs the log-sigmoid branch -softplus(-z) only when c = 0 (for c > 0
+    // the direct form is bounded below by c and stays finite).
+    let ln_p = |z: f64, ci: f64| -> f64 {
+        if ci > 0.0 {
+            (ci + (1.0 - ci) / (1.0 + (-z).exp())).ln()
+        } else {
+            -softplus(-z)
+        }
+    };
+
+    let mut llr_trace = Vec::with_capacity(n);
+    let mut cum = 0.0_f64;
+    let mut decision = "continue";
+    let mut n_used = n;
+    for i in 0..n {
+        let z0 = a[i] * (theta0 - b[i]);
+        let z1 = a[i] * (theta1 - b[i]);
+        let inc = if responses[i] == 1 {
+            // ln(P(theta1)) - ln(P(theta0)), each log computed stably.
+            ln_p(z1, c[i]) - ln_p(z0, c[i])
+        } else {
+            // ln(1-P(theta1)) - ln(1-P(theta0)); the ln(1-c) terms cancel.
+            softplus(z0) - softplus(z1)
+        };
+        // Defensive: unreachable for validated inputs with the stable forms
+        // above (kept as a hard failure rather than silently propagating).
+        if !inc.is_finite() {
+            return Err(format!(
+                "sprt_classify: non-finite log-likelihood-ratio increment at item {i}"
+            ));
+        }
+        cum += inc;
+        llr_trace.push(cum);
+        // First crossing decides; inclusive comparisons (catIrt termSPRT.R).
+        if decision == "continue" {
+            if cum >= upper {
+                decision = "above";
+                n_used = i + 1;
+            } else if cum <= lower {
+                decision = "below";
+                n_used = i + 1;
+            }
+        }
+    }
+    Ok(SprtResult {
+        decision,
+        n_used,
+        llr: *llr_trace.last().unwrap(),
+        llr_trace,
+    })
+}
+
+// ================ Confidence-interval (ACI) classification for CAT =========
+//
+// `ci_classify` implements the confidence-interval classification stopping
+// rule for a single cut score with binary responses: after each response,
+// compute the interim EAP ability estimate and its posterior SD, form the
+// interval theta_hat +/- z_crit * SE, and classify as soon as the whole
+// interval lies STRICTLY on one side of the cut (first strict crossing
+// decides). EAP uses the crate CAT convention shared with `eap_interim`:
+// a fixed uniform grid of 41 points on [-4, 4], standard-normal log prior
+// -0.5 * theta^2 (no quadrature-weight multiplier), and the D = 1 logistic
+// 3PL P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i))).
+//
+// For each prefix k = 1..n:
+//   theta_hat_k = sum_q w_q theta_q / sum_q w_q
+//   se_k        = sqrt(sum_q w_q (theta_q - theta_hat_k)^2 / sum_q w_q)
+//   lower_k = theta_hat_k - z_crit * se_k, upper_k = theta_hat_k + z_crit * se_k
+//   lower_k > theta_cut -> "above" (n_used = k);
+//   upper_k < theta_cut -> "below" (n_used = k); else continue.
+// No crossing -> "continue" with n_used = len(responses). Traces are filled
+// for ALL supplied responses; entries after n_used are offline counterfactual
+// replay values (live CAT would stop at n_used).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review,
+// ci_classify_spec_review.md): the implemented confidence-interval stopping
+// rule was verified against catIrt R/termCI.R, R/eapEst.R, and man/catIrt.Rd
+// at commit c9e979e4812c27d95d367a7f097edfe8e93ac8eb (READ): form the
+// interval theta_hat +/- z * SEM, where the EAP SEM is the posterior SD
+// (sqrt(E[theta^2] - theta_hat^2)), and classify only when the full interval
+// lies strictly within a category. The fixed 41-point [-4, 4] EAP grid and
+// the caller-supplied z_crit (catIrt computes qnorm((1 + conf.lev) / 2) from
+// a confidence level; passing that value is equivalent) are repository
+// implementation choices. Thompson (2007), Kingsbury & Weiss (1983), and
+// Eggen & Straetmans (2000) were NOT method-section verified in this
+// iteration and are historical/background context only.
+//
+// References (APA 7th):
+// Nydick, S. W. (2014). catIrt: An R package for simulating IRT-based
+//     computerized adaptive tests. (READ: R/termCI.R interval rule and
+//     strict within-bounds comparisons; R/eapEst.R posterior-SD SEM;
+//     man/catIrt.Rd conf.lev parameterization and first-satisfied-criterion
+//     termination)
+// Kingsbury, G. G., & Weiss, D. J. (1983). A comparison of IRT-based
+//     adaptive mastery testing and a sequential mastery testing procedure.
+//     In D. J. Weiss (Ed.), New horizons in testing (pp. 257-283). Academic
+//     Press. (NOT read; historical origin of ability-confidence-interval
+//     classification)
+// Thompson, N. A. (2007). A practitioner's guide for variable-length
+//     computerized classification testing. Practical Assessment, Research &
+//     Evaluation, 12(1). (NOT read for the CI method section in this
+//     iteration; background only)
+// Eggen, T. J. H. M., & Straetmans, G. J. J. M. (2000). Computerized
+//     adaptive testing for classifying examinees into three categories.
+//     Educational and Psychological Measurement, 60(5), 713-734. (NOT read;
+//     historical)
+
+/// Result of [`ci_classify`]. `decision` is `"above"`, `"below"`, or
+/// `"continue"`; `n_used` is the 1-based count of responses consumed by the
+/// first strict interval crossing (or all responses when no crossing
+/// occurs); the four traces hold the interim EAP estimate, posterior SD,
+/// and interval bounds after every supplied response (entries past `n_used`
+/// are offline counterfactuals).
+#[derive(Debug, Clone)]
+pub struct CiResult {
+    pub decision: &'static str,
+    pub n_used: usize,
+    pub theta_trace: Vec<f64>,
+    pub se_trace: Vec<f64>,
+    pub lower_trace: Vec<f64>,
+    pub upper_trace: Vec<f64>,
+}
+
+/// Single-cut binary-response confidence-interval (ACI) classification (see
+/// module comment above for the exact verified contract and source status).
+pub fn ci_classify(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    theta_cut: f64,
+    z_crit: f64,
+) -> Result<CiResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("ci_classify: item pool is empty".into());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "ci_classify: length mismatch (a: {}, b: {}, c: {}, responses: {})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("ci_classify: a[{i}] must be finite and > 0"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("ci_classify: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("ci_classify: c[{i}] must be finite and in [0, 1)"));
+        }
+        if responses[i] > 1 {
+            return Err(format!("ci_classify: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !theta_cut.is_finite() {
+        return Err("ci_classify: theta_cut must be finite".into());
+    }
+    if !z_crit.is_finite() || z_crit <= 0.0 {
+        return Err("ci_classify: z_crit must be finite and > 0".into());
+    }
+
+    const Q: usize = 41;
+    let grid: Vec<f64> = (0..Q)
+        .map(|q| -4.0 + 8.0 * q as f64 / (Q - 1) as f64)
+        .collect();
+    // Cumulative log posterior weights, updated one response at a time.
+    let mut logw: Vec<f64> = grid.iter().map(|&t| -0.5 * t * t).collect();
+
+    let mut theta_trace = Vec::with_capacity(n);
+    let mut se_trace = Vec::with_capacity(n);
+    let mut lower_trace = Vec::with_capacity(n);
+    let mut upper_trace = Vec::with_capacity(n);
+    let mut decision = "continue";
+    let mut n_used = n;
+    for i in 0..n {
+        for (q, &t) in grid.iter().enumerate() {
+            let p = p3pl(t, a[i], b[i], c[i]).clamp(1e-12, 1.0 - 1e-12);
+            logw[q] += if responses[i] == 1 {
+                p.ln()
+            } else {
+                (1.0 - p).ln()
+            };
+        }
+        let m = logw.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut den = 0.0;
+        let mut num = 0.0;
+        for (q, &t) in grid.iter().enumerate() {
+            let w = (logw[q] - m).exp();
+            den += w;
+            num += w * t;
+        }
+        let theta_hat = num / den;
+        let mut ss = 0.0;
+        for (q, &t) in grid.iter().enumerate() {
+            let w = (logw[q] - m).exp();
+            ss += w * (t - theta_hat) * (t - theta_hat);
+        }
+        let se = (ss / den).sqrt();
+        let lower = theta_hat - z_crit * se;
+        let upper = theta_hat + z_crit * se;
+        theta_trace.push(theta_hat);
+        se_trace.push(se);
+        lower_trace.push(lower);
+        upper_trace.push(upper);
+        // First STRICT crossing decides (catIrt termCI.R uses strict
+        // within-bounds comparisons; equality means continue).
+        if decision == "continue" {
+            if lower > theta_cut {
+                decision = "above";
+                n_used = i + 1;
+            } else if upper < theta_cut {
+                decision = "below";
+                n_used = i + 1;
+            }
+        }
+    }
+    Ok(CiResult {
+        decision,
+        n_used,
+        theta_trace,
+        se_trace,
+        lower_trace,
+        upper_trace,
+    })
+}
+
+// ================ Lord self-scoring flexilevel testing ======================
+//
+// `flexilevel_administer` replays Lord's flexilevel design over a FULL 0/1
+// response matrix: N (odd) items sorted ASCENDING by difficulty (caller
+// responsibility; both sources assume a difficulty-ordered pool), Lord index
+// i = column - (n - 1) with n = (N + 1) / 2 so that item 0 is the median.
+// Each person starts at the median item; after a RIGHT answer the next item
+// is the easiest not-yet-answered harder item, after a WRONG answer the
+// hardest not-yet-answered easier item. In Lord's index arithmetic, if item
+// i is the v-th administered:
+//     i > 0: next = i + 1 (right) or i - v (wrong)
+//     i < 0: next = i + v (right) or i - 1 (wrong)
+// The i = 0 (first item) case is NOT covered by the index formula in the
+// read text (it states i > 0 / i < 0 only); right -> +1 / wrong -> -1 at
+// i = 0 follows from the verbal start-at-median rules and coincides with
+// the i > 0 branch at v = 1, which is what this code uses.
+//
+// Self-scoring: after n answers let j be the (n+1)-th item that WOULD be
+// administered. j > 0 ("blue": last answer right) gives number-right r = j
+// and score x = r; j < 0 ("red": last answer wrong) gives r = n + j and
+// x = r + 1/2. The identity r = (number of correct administered answers)
+// was verified exhaustively against the routing in the spec oracle.
+//
+// `flexilevel_score_distribution` computes the exact conditional score
+// distribution f(x | theta) by Lord's forward recursion over p_v(i), the
+// probability that item i is the v-th administered: p_1(0) = 1 and
+// p_{v+1}(next_right) += p_v(i) P_i, p_{v+1}(next_wrong) += p_v(i)(1 - P_i),
+// with f(x) = p_{n+1}(j) under the score mapping above (x = j for integer
+// scores; the half-integer mapping j = x - 1/2 - n is DERIVED from
+// r = n + j and x = r + 1/2 -- the printed Eq. 2 is OCR-garbled in the
+// available scan -- and is cross-checked exactly against exhaustive path
+// enumeration in the spec oracle). The caller supplies P_i(theta) for the N
+// sorted items, keeping the recursion ICC-agnostic (Lord's numerical study
+// used a 3-parameter normal ogive; nothing in Eqs. 1-2 depends on it).
+//
+// Score lattice: x in {1/2, 1, 3/2, ..., n - 1/2, n} (2n points). x = 0 is
+// impossible: an all-wrong path is red with r = 0 and scores x = 1/2.
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review,
+// flexilevel_spec_review.md): every routing/scoring rule above was verified
+// against the two READ primary sources (full OCR text on file). The worked
+// example RWWRWRRRWR and its administered sequence
+// [0, 1, -1, -2, 2, -3, 3, 4, 5, -4] pin the routing; the answer string is
+// readable in the 1971 scan, while the printed sequence line is OCR-blank,
+// so the sequence itself is confirmed by applying the (readable) routing
+// rules, not by transcription. Out of scope (documented): Lord's Eq. 3
+// relative-efficiency ratio (derivable from mean/variance across theta),
+// Eq. 4 normal-ogive ICC, and the 1970 answer-sheet layout material.
+//
+// References (APA 7th):
+// Lord, F. M. (1970). The self-scoring flexilevel test (Research Bulletin
+//     RB-70-43; ERIC ED042813). Educational Testing Service. (READ: design
+//     rules, self-scoring properties 1-9, red +1/2 convention)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests (Research Bulletin RB-71-6; ERIC ED051286).
+//     Educational Testing Service. (READ: item-index transition rule,
+//     score mapping j > 0 -> r = j / j < 0 -> r = v + j, Eqs. 1-2 forward
+//     recursion for f(x | theta); Eq. 2 half-integer branch OCR-garbled,
+//     mapping derived as documented above)
+
+/// Result of [`flexilevel_administer`]: per-person administered column
+/// indices in administration order (`n_administered` per person, flattened
+/// row-major), number-right, red flag (1 iff last answer wrong), and the
+/// self-scoring score on the half-integer lattice.
+#[derive(Debug, Clone)]
+pub struct FlexilevelAdminResult {
+    pub n_administered: usize,
+    pub items: Vec<usize>,
+    pub number_right: Vec<u32>,
+    pub is_red: Vec<u8>,
+    pub score: Vec<f64>,
+}
+
+/// Result of [`flexilevel_score_distribution`]: the ascending score lattice
+/// {1/2, 1, ..., n} with exact probabilities, plus their mean and variance.
+#[derive(Debug, Clone)]
+pub struct FlexilevelDistResult {
+    pub scores: Vec<f64>,
+    pub probs: Vec<f64>,
+    pub mean: f64,
+    pub variance: f64,
+}
+
+/// Lord-index routing step shared by both entry points: item `i` was the
+/// `v`-th administered (v >= 1); returns (next-if-right, next-if-wrong).
+#[inline]
+fn flexilevel_next(i: i64, v: i64) -> (i64, i64) {
+    if i >= 0 {
+        (i + 1, i - v)
+    } else {
+        (i + v, i - 1)
+    }
+}
+
+/// Deterministic flexilevel routing + self-scoring over a full response
+/// matrix (row-major `n_persons x n_items`, entries 0/1; items pre-sorted
+/// ascending by difficulty). See the module comment above for the verified
+/// contract and source status.
+pub fn flexilevel_administer(
+    responses: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<FlexilevelAdminResult, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("flexilevel_administer: n_persons and n_items must be positive".into());
+    }
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_administer: n_items must be odd and >= 3 (got {n_items})"
+        ));
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or("flexilevel_administer: n_persons * n_items overflows")?;
+    if responses.len() != expected {
+        return Err(format!(
+            "flexilevel_administer: responses has {} entries, expected {} ({} x {})",
+            responses.len(),
+            expected,
+            n_persons,
+            n_items
+        ));
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64; // column of Lord index 0
+    let mut items = Vec::with_capacity(n_persons * n);
+    let mut number_right = Vec::with_capacity(n_persons);
+    let mut is_red = Vec::with_capacity(n_persons);
+    let mut score = Vec::with_capacity(n_persons);
+    for p in 0..n_persons {
+        let row = &responses[p * n_items..(p + 1) * n_items];
+        let mut i: i64 = 0; // Lord index of the current item
+        let mut right: u32 = 0;
+        let mut last_correct = false;
+        for v in 1..=(n as i64) {
+            let col = (i + median) as usize;
+            let y = row[col];
+            if y > 1 {
+                return Err(format!(
+                    "flexilevel_administer: responses[{}][{}] must be 0 or 1 (got {y})",
+                    p, col
+                ));
+            }
+            items.push(col);
+            let (nr, nw) = flexilevel_next(i, v);
+            if y == 1 {
+                right += 1;
+                last_correct = true;
+                i = nr;
+            } else {
+                last_correct = false;
+                i = nw;
+            }
+        }
+        // i now holds j, the (n+1)-th item that WOULD be administered.
+        let (r, x) = if i > 0 {
+            (i as u32, i as f64)
+        } else {
+            let r = (n as i64 + i) as u32;
+            (r, r as f64 + 0.5)
+        };
+        debug_assert_eq!(r, right, "Lord number-right identity");
+        debug_assert_eq!(i > 0, last_correct, "blue iff last answer right");
+        number_right.push(r);
+        is_red.push(u8::from(i < 0));
+        score.push(x);
+    }
+    Ok(FlexilevelAdminResult {
+        n_administered: n,
+        items,
+        number_right,
+        is_red,
+        score,
+    })
+}
+
+/// Exact conditional score distribution f(x | theta) of the flexilevel
+/// self-score by Lord's forward recursion (see the module comment above).
+/// `p[c]` is P(correct) on the c-th difficulty-sorted item at the fixed
+/// ability of interest; `p.len()` = N must be odd and >= 3.
+pub fn flexilevel_score_distribution(p: &[f64]) -> Result<FlexilevelDistResult, String> {
+    let n_items = p.len();
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_score_distribution: p must have odd length >= 3 (got {n_items})"
+        ));
+    }
+    for (c, &pc) in p.iter().enumerate() {
+        if !pc.is_finite() || !(0.0..=1.0).contains(&pc) {
+            return Err(format!(
+                "flexilevel_score_distribution: p[{c}] must be finite and in [0, 1]"
+            ));
+        }
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64;
+    // p_v over Lord indices, stored on a dense offset grid [-n, n].
+    let width = 2 * n + 1;
+    let off = n as i64;
+    let mut cur = vec![0.0_f64; width];
+    cur[n] = 1.0; // p_1(0) = 1
+    for v in 1..=(n as i64) {
+        let mut nxt = vec![0.0_f64; width];
+        for idx in 0..width {
+            let pr = cur[idx];
+            if pr == 0.0 {
+                continue;
+            }
+            let i = idx as i64 - off;
+            let pc = p[(i + median) as usize];
+            let (jr, jw) = flexilevel_next(i, v);
+            nxt[(jr + off) as usize] += pr * pc;
+            nxt[(jw + off) as usize] += pr * (1.0 - pc);
+        }
+        cur = nxt;
+    }
+    // cur holds p_{n+1}(j); map to the score lattice {1/2, 1, ..., n}.
+    let mut scores = Vec::with_capacity(2 * n);
+    let mut probs = Vec::with_capacity(2 * n);
+    for k in 1..=(2 * n) {
+        let x = k as f64 * 0.5;
+        let j = if k % 2 == 0 {
+            (k / 2) as i64 // integer x (blue): j = x
+        } else {
+            (k / 2) as i64 - n as i64 // half-integer x (red): j = x - 1/2 - n
+        };
+        scores.push(x);
+        probs.push(cur[(j + off) as usize]);
+    }
+    let mean: f64 = scores.iter().zip(&probs).map(|(x, w)| x * w).sum();
+    let variance: f64 = scores
+        .iter()
+        .zip(&probs)
+        .map(|(x, w)| (x - mean) * (x - mean) * w)
+        .sum();
+    Ok(FlexilevelDistResult {
+        scores,
+        probs,
+        mean,
+        variance,
+    })
+}
+
+// ==================== Weiss stradaptive ability test =========================
+//
+// `stradaptive_administer` replays Weiss's stratified-adaptive (stradaptive)
+// test over a FULL 0/1 response vector for one person: the pool is divided
+// into S >= 2 difficulty strata (0 = easiest); within a stratum, items are
+// administered in pool order (the source orders them by decreasing
+// discrimination -- a caller responsibility that is NOT enforced here).
+//
+// Routing (READ, illustrated rule): start at `entry_stratum`; after a
+// correct answer the target is the next more difficult stratum, after an
+// incorrect answer the next less difficult stratum. The target is clamped
+// to [0, S-1] at the pool boundaries (the source describes same-stratum
+// substitution when no more-difficult stratum exists and continuing upward
+// when the easiest stratum's supply is exhausted). When the clamped target
+// stratum has no unused item, the next item is drawn from the LAST
+// ADMINISTERED stratum; when that is also exhausted the test ends
+// ("pool_exhausted", the Nancy N. record). DERIVED: the source prints
+// same-stratum substitution only for the boundary/lower-exhausted cases;
+// its generalization to any exhausted target is a derived choice anchored
+// by the synthetic fixtures in the test suite, not by a printed record.
+//
+// Termination (READ): after each response, the CEILING stratum is the
+// lowest stratum with n_administered >= min_items and proportion correct
+// <= chance (chance = 1/(number of response options); this implementation
+// is multiple-choice-only and requires 0 < chance < 1 -- the source's
+// free-response chance = 0 discussion is out of scope). The test stops at
+// the first response after which a ceiling exists, on pool exhaustion, or
+// at `max_items`.
+//
+// Scoring methods 1-10 (READ, pp. 22-25) and the consistency score
+// (pp. 26-27); NaN encodes the report's indeterminate "I":
+//   m1  highest difficulty answered correctly.
+//   m2  difficulty of the (n+1)-th item -- the item the routing rule would
+//       administer next (NaN when none exists).
+//   m3  highest difficulty answered correctly below the ceiling stratum
+//       (upper bound = S when no ceiling was identified).
+//   m4  mean difficulty (over the FULL pool) of the highest stratum with at
+//       least one correct answer.
+//   m5  mean difficulty of the (n+1)-th item's stratum. NaN whenever no
+//       (n+1)-th item exists; this knowingly omits the Figure 7 record,
+//       where the report extrapolates a hypothetical off-pool stratum mean
+//       (2.62 + .655 = 3.27) after an off-the-top pool exhaustion.
+//   m6  mean difficulty of the highest non-chance stratum (hnc).
+//   m7  interpolated stratum difficulty at the hnc stratum (below).
+//   m8  mean difficulty of all correctly answered items.
+//   m9  mean difficulty of correct items in strata strictly between the
+//       basal and ceiling strata (missing basal -> no lower bound; missing
+//       ceiling -> upper bound S).
+//   m10 mean difficulty of correct items at the hnc stratum.
+//   consistency: population variance of the m9 difficulty set (DERIVED
+//       definitional choice -- the source proposes "variance or standard
+//       deviation" and prints NO worked consistency value; population
+//       variance over the between-basal-and-ceiling correct set is the
+//       reading implemented and pinned here).
+//
+// Derived definitional anchors (not printed verbatim in the source):
+//   - hnc = ceiling - 1 when a ceiling exists (the Carol C. record prints
+//     method 6 = -1.92 = the stratum-2 mean even though a higher stratum
+//     reached p = .50, forcing hnc = c - 1 rather than a global search);
+//     with no ceiling, hnc = the highest administered stratum with
+//     proportion correct > chance (Nancy N.).
+//   - basal = highest stratum strictly below the ceiling bound whose
+//     administered items were ALL answered correctly (the John J. record
+//     accepts a basal "based on only one item").
+//
+// METHOD 7 FORMULA PROVENANCE: the printed equation is OCR-garbled in the
+// available scan ("A =c-1s(Pc-1.50)"). The reconstruction
+//     m7 = D_hnc + step * (p_hnc - 1/2),
+//     step = D_{hnc+1} - D_hnc   if p_hnc > 1/2,
+//            D_hnc - D_{hnc-1}   if p_hnc < 1/2,
+//     m7 = D_hnc exactly          if p_hnc == 1/2 (no adjacency needed),
+// is DERIVED from the surrounding prose (score equals the stratum mean at
+// p = .50 and moves toward the adjacent stratum otherwise) and CONFIRMED
+// against five independently printed report values (1.37, -1.73, -.44,
+// .80, 2.69). LIMIT (documented): all five printed pins have p > 1/2, so
+// they confirm only the upper-step branch; the lower-step branch rests on
+// prose plus the synthetic p < 1/2 pin in the test suite. When the
+// adjacent stratum needed by the step does not exist (hnc at a pool edge),
+// its mean is extrapolated by the mean between-stratum increment
+// (D_{S-1} - D_0) / (S - 1); this extrapolation is likewise DERIVED (the
+// report applies it once, to the Nancy N. record).
+//
+// References (APA 7th):
+// Weiss, D. J. (1973). The stratified adaptive computerized ability test
+//     (Research Report 73-3; ERIC ED084301). University of Minnesota,
+//     Psychometric Methods Program. (READ: pool structure, entry,
+//     branching, termination, scoring methods 1-10, consistency,
+//     Figures 4-9 worked records, Tables 1-2)
+// Lord, F. M. (1971). The self-scoring flexilevel test. Journal of
+//     Educational Measurement, 8(3), 147-151. (NOT read; cited by Weiss as
+//     a fixed-branching contrast -- the flexilevel implementation above
+//     uses its own READ ERIC sources)
+
+/// Result of [`stradaptive_administer`]. `administered`/`responses_taken`
+/// list the pool indices and 0/1 answers in administration order; `reason`
+/// is `"criterion"`, `"pool_exhausted"`, or `"max_items"`; `ceiling`,
+/// `basal`, `hnc`, and `next_item` are `None` when undefined; `scores[k]`
+/// holds scoring method k+1 (NaN = indeterminate), and `consistency` the
+/// population variance of the method-9 set (NaN when that set is empty).
+#[derive(Debug, Clone)]
+pub struct StradaptiveResult {
+    pub administered: Vec<usize>,
+    pub responses_taken: Vec<u8>,
+    pub reason: &'static str,
+    pub ceiling: Option<usize>,
+    pub basal: Option<usize>,
+    pub hnc: Option<usize>,
+    pub next_item: Option<usize>,
+    pub scores: [f64; 10],
+    pub consistency: f64,
+}
+
+/// Stradaptive routing + scoring over a hypothetical full response vector
+/// (see the module comment above for the verified contract, derived-choice
+/// labels, and source status).
+pub fn stradaptive_administer(
+    stratum: &[usize],
+    difficulty: &[f64],
+    responses: &[u8],
+    entry_stratum: usize,
+    chance: f64,
+    min_items: usize,
+    max_items: usize,
+) -> Result<StradaptiveResult, String> {
+    let n = stratum.len();
+    if n == 0 {
+        return Err("stradaptive_administer: item pool is empty".into());
+    }
+    if difficulty.len() != n || responses.len() != n {
+        return Err(format!(
+            "stradaptive_administer: length mismatch (stratum: {}, difficulty: {}, responses: {})",
+            n,
+            difficulty.len(),
+            responses.len()
+        ));
+    }
+    let s_max = *stratum.iter().max().unwrap();
+    // Contiguous non-empty strata imply s_max + 1 <= n; guard before the
+    // vec![...; n_strata] allocation so a huge stratum id cannot trigger an
+    // enormous allocation (or overflow s_max + 1).
+    if s_max >= n {
+        return Err(format!(
+            "stradaptive_administer: stratum {s_max} exceeds the item count {n} \
+             (strata must cover 0..S-1 with every stratum non-empty)"
+        ));
+    }
+    let n_strata = s_max + 1;
+    if n_strata < 2 {
+        return Err("stradaptive_administer: at least 2 strata are required".into());
+    }
+    let mut by_stratum: Vec<Vec<usize>> = vec![Vec::new(); n_strata];
+    for (i, &s) in stratum.iter().enumerate() {
+        by_stratum[s].push(i);
+    }
+    for (k, items) in by_stratum.iter().enumerate() {
+        if items.is_empty() {
+            return Err(format!(
+                "stradaptive_administer: stratum {k} has no items (strata must cover 0..{s_max})"
+            ));
+        }
+    }
+    for (i, &d) in difficulty.iter().enumerate() {
+        if !d.is_finite() {
+            return Err(format!(
+                "stradaptive_administer: difficulty[{i}] must be finite"
+            ));
+        }
+    }
+    for (i, &r) in responses.iter().enumerate() {
+        if r > 1 {
+            return Err(format!(
+                "stradaptive_administer: responses[{i}] must be 0 or 1 (got {r})"
+            ));
+        }
+    }
+    if entry_stratum >= n_strata {
+        return Err(format!(
+            "stradaptive_administer: entry_stratum {entry_stratum} out of range (pool has {n_strata} strata)"
+        ));
+    }
+    if !chance.is_finite() || chance <= 0.0 || chance >= 1.0 {
+        return Err(
+            "stradaptive_administer: chance must be finite and strictly inside (0, 1) \
+             (multiple-choice only; free-response chance = 0 is out of scope)"
+                .into(),
+        );
+    }
+    if min_items == 0 {
+        return Err("stradaptive_administer: min_items must be >= 1".into());
+    }
+    if max_items == 0 {
+        return Err("stradaptive_administer: max_items must be >= 1".into());
+    }
+
+    let mut used = vec![0usize; n_strata];
+    let mut n_adm = vec![0usize; n_strata];
+    let mut n_cor = vec![0usize; n_strata];
+    let mut administered = Vec::new();
+    let mut responses_taken = Vec::new();
+    let mut cur = entry_stratum as i64;
+    let mut last = entry_stratum;
+    let reason;
+
+    // Clamp the branch target to the pool, then fall back to the last
+    // administered stratum when the target is exhausted (DERIVED rule; see
+    // module comment).
+    let pick = |target: i64, used: &[usize], last: usize| -> Option<usize> {
+        let t = target.clamp(0, s_max as i64) as usize;
+        if used[t] < by_stratum[t].len() {
+            return Some(t);
+        }
+        if used[last] < by_stratum[last].len() {
+            return Some(last);
+        }
+        None
+    };
+    let find_ceiling = |n_adm: &[usize], n_cor: &[usize]| -> Option<usize> {
+        (0..n_strata)
+            .find(|&k| n_adm[k] >= min_items && (n_cor[k] as f64 / n_adm[k] as f64) <= chance)
+    };
+
+    loop {
+        if administered.len() >= max_items {
+            reason = "max_items";
+            break;
+        }
+        let t = match pick(cur, &used, last) {
+            Some(t) => t,
+            None => {
+                reason = "pool_exhausted";
+                break;
+            }
+        };
+        let idx = by_stratum[t][used[t]];
+        used[t] += 1;
+        last = t;
+        let r = responses[idx];
+        administered.push(idx);
+        responses_taken.push(r);
+        n_adm[t] += 1;
+        n_cor[t] += r as usize;
+        cur = if r == 1 { t as i64 + 1 } else { t as i64 - 1 };
+        if find_ceiling(&n_adm, &n_cor).is_some() {
+            reason = "criterion";
+            break;
+        }
+    }
+    let ceiling = find_ceiling(&n_adm, &n_cor);
+    let next_item = pick(cur, &used, last).map(|t| by_stratum[t][used[t]]);
+
+    // Full-pool stratum mean difficulties + mean between-stratum increment.
+    let mut d_mean = vec![0.0f64; n_strata];
+    for k in 0..n_strata {
+        let sum: f64 = by_stratum[k].iter().map(|&i| difficulty[i]).sum();
+        d_mean[k] = sum / by_stratum[k].len() as f64;
+    }
+    let incr = (d_mean[n_strata - 1] - d_mean[0]) / (n_strata - 1) as f64;
+
+    let corrects: Vec<usize> = administered
+        .iter()
+        .zip(&responses_taken)
+        .filter(|&(_, &r)| r == 1)
+        .map(|(&i, _)| i)
+        .collect();
+    let upper = ceiling.unwrap_or(n_strata); // exclusive bound for m3/m9
+    let hnc = match ceiling {
+        Some(c) => c.checked_sub(1),
+        None => (0..n_strata)
+            .rev()
+            .find(|&k| n_adm[k] > 0 && (n_cor[k] as f64 / n_adm[k] as f64) > chance),
+    };
+    let basal = (0..upper)
+        .rev()
+        .find(|&k| n_adm[k] > 0 && n_cor[k] == n_adm[k]);
+
+    let mut scores = [f64::NAN; 10];
+    scores[0] = corrects
+        .iter()
+        .map(|&i| difficulty[i])
+        .fold(f64::NAN, f64::max);
+    if let Some(ni) = next_item {
+        scores[1] = difficulty[ni];
+        scores[4] = d_mean[stratum[ni]];
+    }
+    scores[2] = corrects
+        .iter()
+        .filter(|&&i| stratum[i] < upper)
+        .map(|&i| difficulty[i])
+        .fold(f64::NAN, f64::max);
+    if let Some(hs) = corrects.iter().map(|&i| stratum[i]).max() {
+        scores[3] = d_mean[hs];
+    }
+    if let Some(h) = hnc {
+        scores[5] = d_mean[h];
+        let p = n_cor[h] as f64 / n_adm[h] as f64;
+        scores[6] = if p == 0.5 {
+            d_mean[h] // both step branches agree; no adjacent stratum needed
+        } else {
+            let step = if p > 0.5 {
+                let up = if h + 1 < n_strata {
+                    d_mean[h + 1]
+                } else {
+                    d_mean[n_strata - 1] + incr // DERIVED extrapolation
+                };
+                up - d_mean[h]
+            } else {
+                let lo = if h > 0 {
+                    d_mean[h - 1]
+                } else {
+                    d_mean[0] - incr // DERIVED extrapolation
+                };
+                d_mean[h] - lo
+            };
+            d_mean[h] + step * (p - 0.5)
+        };
+        let at_h: Vec<f64> = corrects
+            .iter()
+            .filter(|&&i| stratum[i] == h)
+            .map(|&i| difficulty[i])
+            .collect();
+        if !at_h.is_empty() {
+            scores[9] = at_h.iter().sum::<f64>() / at_h.len() as f64;
+        }
+    }
+    if !corrects.is_empty() {
+        scores[7] = corrects.iter().map(|&i| difficulty[i]).sum::<f64>() / corrects.len() as f64;
+    }
+    let lo_bound = basal.map_or(-1i64, |b| b as i64);
+    let mid: Vec<f64> = corrects
+        .iter()
+        .filter(|&&i| (stratum[i] as i64) > lo_bound && stratum[i] < upper)
+        .map(|&i| difficulty[i])
+        .collect();
+    let mut consistency = f64::NAN;
+    if !mid.is_empty() {
+        let m = mid.iter().sum::<f64>() / mid.len() as f64;
+        scores[8] = m;
+        consistency = mid.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / mid.len() as f64;
+    }
+
+    Ok(StradaptiveResult {
+        administered,
+        responses_taken,
+        reason,
+        ceiling,
+        basal,
+        hnc,
+        next_item,
+        scores,
+        consistency,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Pyramidal adaptive testing (Larkin & Weiss, 1974)
+// ---------------------------------------------------------------------------
+//
+// Source status: Larkin & Weiss (1974) READ in full (OCR of ERIC ED096343).
+// Secondary works cited inside it (Lord, 1970, 1971a, 1971b; Hansen, 1969;
+// Bayroff, 1960; Paterson, 1962) were NOT read; they are cited below only
+// "as described by Larkin & Weiss (1974)".
+//
+// Structure (Larkin & Weiss, 1974, pp. 5-7, Figure 1): items arranged in a
+// triangular structure by difficulty; stage s (1-based) holds s items; an
+// n-stage pyramid needs n(n+1)/2 items (printed formula, p. 13). The first
+// item is of median difficulty. Routing is "up-one/down-one" with "equal
+// offset": a correct response leads to the harder of the two stage-(s+1)
+// neighbours, an incorrect response to the easier. One item per stage; a
+// fixed n items are administered.
+//
+// DERIVED routing recurrence (from the Figure-1 prose; not printed as an
+// equation in the source): with 0-based within-stage position j ordered
+// easiest -> hardest, j_1 = 0 and j_{s+1} = j_s + u_s where u_s in {0, 1}
+// is the correctness of the stage-s response. The row-major flattened node
+// index of (stage s, position j) is s(s-1)/2 + j (previous stages hold
+// 1 + 2 + ... + (s-1) = s(s-1)/2 items).
+//
+// Scoring methods 1-6 (Larkin & Weiss, 1974, pp. 15-16):
+//   M1 number-correct score: sum of u_s (integer 0..n).
+//   M2 mean difficulty of all items attempted.
+//   M3 mean difficulty of correctly answered items. The source does not
+//      define the 0-correct case; this implementation returns NaN
+//      (documented indeterminate, not an error).
+//   M4 difficulty of the final (stage-n) item attempted.
+//   M5 "final difficulty score" / hypothetical (n+1)th-item score (Hansen,
+//      1969, and Lord, 1971b, as described by Larkin & Weiss, 1974): branch
+//      once more on the final response into a hypothetical stage n+1 whose
+//      difficulties `b_next` (length n+1) the CALLER supplies; the score is
+//      b_next[j_n + u_n]. Larkin & Weiss's own construction of b_next
+//      (column means with extrapolated extremes, p. 15) is pool-specific
+//      and out of scope. When `b_next` is None, M5 is UNAVAILABLE and NaN
+//      is returned (not a computed Method-5 score).
+//   M6 Hansen (1969, as described by Larkin & Weiss, 1974) all-item score.
+//      The per-stage formulas below are DERIVED from the p. 16 prose (they
+//      are not printed as equations): a correct response at position j of
+//      stage s scores 2 + 2j + [j < s-1] (2 for the item, 2 per easier
+//      item, 1 for the next harder item, 0 beyond); an incorrect response
+//      scores [j >= 1] + 2*max(j - 1, 0) (0 for the item and all harder,
+//      1 for the next easier, 2 per remaining easier item). VERIFIED
+//      against the printed 15-stage score range "0 to 240" (p. 16): the
+//      all-correct path scores exactly 240 and the all-incorrect path 0
+//      (pinned in tests).
+//
+// Out of scope (variants described but not used in the source's design):
+// unequal offsets ("up-one/down-two", correction for guessing, p. 7),
+// shrinking step size (Paterson, 1962, as described), multi-item blocks
+// per stage (p. 6), and the study's empirical reliability/validity
+// analyses. Within-stage difficulty monotonicity is NOT enforced: the
+// source's own pyramid 1 contained mis-ordered items (p. 14).
+//
+// References (APA 7th):
+// Larkin, K. C., & Weiss, D. J. (1974). An empirical investigation of
+//     computer-administered pyramidal ability testing (Research Report
+//     74-3; ERIC ED096343). University of Minnesota, Psychometric Methods
+//     Program. (READ: structure, routing, scoring methods 1-6, Table 1)
+// Hansen, D. N. (1969). An investigation of computer-based science testing.
+//     (NOT read; all-item score and final node score implemented as
+//     described by Larkin & Weiss, 1974)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests. Educational and Psychological Measurement,
+//     31(4), 805-813. (NOT read; "final difficulty score" naming as
+//     described by Larkin & Weiss, 1974)
+
+/// Result of [`pyramidal_administer`]. `path` holds the flattened row-major
+/// node indices attempted (one per stage); `positions` the within-stage
+/// 0-based positions (easiest -> hardest). Scores follow Larkin & Weiss
+/// (1974) methods 1-6: `mean_b_correct` is NaN when no item was answered
+/// correctly, and `final_difficulty` is NaN when `b_next` was not supplied
+/// (M5 unavailable).
+#[derive(Debug, Clone)]
+pub struct PyramidalResult {
+    pub path: Vec<usize>,
+    pub positions: Vec<usize>,
+    pub number_correct: f64,
+    pub mean_b_attempted: f64,
+    pub mean_b_correct: f64,
+    pub final_b: f64,
+    pub final_difficulty: f64,
+    pub all_item_score: f64,
+}
+
+/// Administer an n-stage up-one/down-one pyramidal test over a hypothetical
+/// full response vector and compute scoring methods 1-6 (see the module
+/// comment above for the verified contract and source status).
+///
+/// `b` is the row-major flattened difficulty vector (stage 1 first; each
+/// stage ordered easiest -> hardest) of length n_stages*(n_stages+1)/2;
+/// `u[s]` is the 0/1 response to the stage-(s+1) item on the routed path;
+/// `b_next`, when supplied, holds the n_stages+1 hypothetical next-stage
+/// difficulties used by method 5.
+pub fn pyramidal_administer(
+    b: &[f64],
+    n_stages: usize,
+    u: &[u8],
+    b_next: Option<&[f64]>,
+) -> Result<PyramidalResult, String> {
+    if n_stages == 0 {
+        return Err("pyramidal_administer: n_stages must be >= 1".into());
+    }
+    // Checked triangular size: n(n+1)/2 (Larkin & Weiss, 1974, p. 13). A
+    // huge n_stages must yield Err, not a debug panic or release wrap.
+    let expected = n_stages
+        .checked_add(1)
+        .and_then(|np1| n_stages.checked_mul(np1))
+        .map(|t| t / 2)
+        .ok_or_else(|| {
+            format!("pyramidal_administer: n_stages {n_stages} overflows the n(n+1)/2 item count")
+        })?;
+    if b.len() != expected {
+        return Err(format!(
+            "pyramidal_administer: b has {} items but an {}-stage pyramid needs n(n+1)/2 = {}",
+            b.len(),
+            n_stages,
+            expected
+        ));
+    }
+    if u.len() != n_stages {
+        return Err(format!(
+            "pyramidal_administer: u has {} responses but n_stages is {}",
+            u.len(),
+            n_stages
+        ));
+    }
+    for (i, &r) in u.iter().enumerate() {
+        if r > 1 {
+            return Err(format!(
+                "pyramidal_administer: u[{i}] must be 0 or 1 (got {r})"
+            ));
+        }
+    }
+    for (i, &d) in b.iter().enumerate() {
+        if !d.is_finite() {
+            return Err(format!("pyramidal_administer: b[{i}] must be finite"));
+        }
+    }
+    if let Some(bn) = b_next {
+        if bn.len() != n_stages + 1 {
+            return Err(format!(
+                "pyramidal_administer: b_next has {} items but must have n_stages + 1 = {}",
+                bn.len(),
+                n_stages + 1
+            ));
+        }
+        for (i, &d) in bn.iter().enumerate() {
+            if !d.is_finite() {
+                return Err(format!("pyramidal_administer: b_next[{i}] must be finite"));
+            }
+        }
+    }
+
+    // Routing: j_1 = 0; j_{s+1} = j_s + u_s (DERIVED; see module comment).
+    // `offset` is maintained incrementally (offset += s), so it stays
+    // bounded by the validated b.len() and cannot overflow.
+    let mut path = Vec::with_capacity(n_stages);
+    let mut positions = Vec::with_capacity(n_stages);
+    let mut j = 0usize;
+    let mut offset = 0usize; // s(s-1)/2 for the current 1-based stage s
+    let mut all_item = 0i64;
+    let mut n_correct = 0usize;
+    let mut sum_attempted = 0.0f64;
+    let mut sum_correct = 0.0f64;
+    for s in 1..=n_stages {
+        positions.push(j);
+        path.push(offset + j);
+        let bi = b[offset + j];
+        sum_attempted += bi;
+        let us = u[s - 1];
+        if us == 1 {
+            n_correct += 1;
+            sum_correct += bi;
+            // M6 correct: 2 + 2j + [j < s-1] (DERIVED from p. 16 prose).
+            all_item += 2 + 2 * j as i64 + i64::from(j < s - 1);
+        } else {
+            // M6 incorrect: [j >= 1] + 2*max(j-1, 0).
+            all_item += i64::from(j >= 1) + 2 * (j.saturating_sub(1)) as i64;
+        }
+        offset += s;
+        if s < n_stages {
+            j += us as usize;
+        }
+    }
+    let j_final = positions[n_stages - 1] + u[n_stages - 1] as usize;
+    let final_difficulty = match b_next {
+        Some(bn) => bn[j_final],
+        None => f64::NAN,
+    };
+    let mean_b_correct = if n_correct > 0 {
+        sum_correct / n_correct as f64
+    } else {
+        f64::NAN
+    };
+
+    Ok(PyramidalResult {
+        final_b: b[*path.last().unwrap()],
+        number_correct: n_correct as f64,
+        mean_b_attempted: sum_attempted / n_stages as f64,
+        mean_b_correct,
+        final_difficulty,
+        all_item_score: all_item as f64,
+        path,
+        positions,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Two-stage adaptive testing (Betz & Weiss, 1973, 1974)
+// ---------------------------------------------------------------------------
+//
+// Source status: Betz & Weiss (1974, Research Report 74-4; ERIC ED103466)
+// and Betz & Weiss (1973, Research Report 73-4; ERIC ED084302) READ in full
+// (OCR). Lord (1971), the origin of the scoring method, was NOT read; the
+// formulas below are implemented exactly as restated by Betz & Weiss.
+//
+// Procedure: a routing test of m1 items is administered and scored
+// number-correct; an initial ability estimate routes the examinee to the
+// measurement test whose mean item difficulty is closest to that estimate
+// (Betz & Weiss, 1974, p. 17 and Appendix B); the measurement test of m2
+// items is then administered, a second estimate is computed, and the two
+// estimates are combined.
+//
+// Subtest ability estimate (Betz & Weiss, 1974, Equation 2, modifying
+// Lord's Equation 1 by using the subtest MEAN discrimination a-bar and MEAN
+// difficulty b-bar):
+//
+//   theta-hat = Phi^-1( ((x'/m) - c) / (1 - c) ) / a-bar + b-bar
+//
+// with the printed truncation (p. ~18): x' = m - 1/2 when x = m (perfect
+// score) and x' = c*m + 1/2 when x <= c*m (chance score or below), else
+// x' = x. The reconstruction of the OCR-garbled formula was VERIFIED
+// against the printed Appendix B routing table (m = 10, a-bar = .70,
+// b-bar = -.23: x = 6 -> -.23 exactly since Phi^-1(1/2) = 0; all 11 rows
+// reproduce within +-0.05 of the printed 2-dp values, pinned in tests).
+//
+// DERIVED validity condition: both subtests must satisfy m*(1 - c) > 1.
+// This is a CONSERVATIVE condition guaranteeing the lower truncation
+// c*m + 1/2 stays strictly BELOW the upper truncation m - 1/2 (distinct
+// endpoints); mere containment of x' in (c*m, m) would only need
+// m*(1 - c) > 1/2. The source assumes m = 10/30, c = .2 and states no
+// such condition.
+//
+// Routing: assigned = argmin_k |b_meas[k] - theta1| (Betz & Weiss, 1974,
+// p. 17). Ties are broken toward the LOWEST index -- a DERIVED
+// deterministic convention; neither source states a tie-break.
+//
+// Composite (Betz & Weiss, 1974, Equation 3; rationale in Betz & Weiss,
+// 1973, p. 15: each subtest estimate "weighted according to the number of
+// items on which it was based" -- chosen over Lord's variance weights,
+// which produced non-monotonicity):
+//
+//   theta-hat = (m1*theta1 + m2*theta2) / (m1 + m2)
+//
+// The papers print only the m1 = 10, m2 = 30 case; the item-count
+// generalization above is DERIVED from the quoted weighting rationale and
+// is restricted to exactly two subtests.
+//
+// A single chance level c is shared by both subtests, faithful to the
+// sources (all items five-alternative, c = .2). Mixed formats, item
+// administration/response simulation (the source's SIMTEST), Lord's
+// variance weighting, and the studies' reliability/information analyses
+// are out of scope.
+//
+// References (APA 7th):
+// Betz, N. E., & Weiss, D. J. (1973). An empirical study of
+//     computer-administered two-stage ability testing (Research Report
+//     73-4; ERIC ED084302). University of Minnesota, Psychometric Methods
+//     Program. (READ: scoring formulas, weighting rationale)
+// Betz, N. E., & Weiss, D. J. (1974). Simulation studies of two-stage
+//     ability testing (Research Report 74-4; ERIC ED103466). University of
+//     Minnesota, Psychometric Methods Program. (READ: Equations 2-3,
+//     routing rule, truncation, Appendix B routing table)
+// Lord, F. M. (1971). The self-scoring flexilevel test / theoretical
+//     two-stage studies. (NOT read; scoring method implemented as restated
+//     by Betz & Weiss, 1973, 1974)
+
+/// Result of [`two_stage_score`]: the routing-test estimate `theta1`, the
+/// 0-based `assigned` measurement-test index, the measurement-test estimate
+/// `theta2`, and the item-count-weighted `composite` (Betz & Weiss, 1974,
+/// Equations 2-3).
+#[derive(Debug, Clone)]
+pub struct TwoStageResult {
+    pub theta1: f64,
+    pub assigned: usize,
+    pub theta2: f64,
+    pub composite: f64,
+}
+
+/// Validate one subtest's scalars and return the truncated-score ability
+/// estimate theta-hat (Betz & Weiss, 1974, Equation 2). `label` names the
+/// subtest in error messages.
+fn two_stage_subtest_theta(
+    label: &str,
+    x: usize,
+    m: usize,
+    a_bar: f64,
+    b_bar: f64,
+    c: f64,
+) -> Result<f64, String> {
+    if m == 0 {
+        return Err(format!("two_stage: {label} length m must be >= 1"));
+    }
+    if x > m {
+        return Err(format!(
+            "two_stage: {label} number correct {x} exceeds its length {m}"
+        ));
+    }
+    if !a_bar.is_finite() || a_bar <= 0.0 {
+        return Err(format!(
+            "two_stage: {label} mean discrimination must be finite and > 0 (got {a_bar})"
+        ));
+    }
+    if !b_bar.is_finite() {
+        return Err(format!("two_stage: {label} mean difficulty must be finite"));
+    }
+    let mf = m as f64;
+    if mf * (1.0 - c) <= 1.0 {
+        return Err(format!(
+            "two_stage: {label} needs m*(1-c) > 1 for distinct truncation endpoints \
+             (got m = {m}, c = {c})"
+        ));
+    }
+    // Truncation (Betz & Weiss, 1974): perfect -> m - 1/2; at or below
+    // chance -> c*m + 1/2; otherwise the observed number correct.
+    let x_adj = if x == m {
+        mf - 0.5
+    } else if x as f64 <= c * mf {
+        c * mf + 0.5
+    } else {
+        x as f64
+    };
+    let p = ((x_adj / mf) - c) / (1.0 - c);
+    // Runtime guard, not debug_assert: for huge m the f64 rounding of
+    // x_adj/mf can collapse the truncation endpoints onto 0 or 1 and
+    // Phi^-1 would return a non-finite value.
+    if !(p > 0.0 && p < 1.0) {
+        return Err(format!(
+            "two_stage: {label} truncated proportion correct is numerically \
+             degenerate (p = {p}); m = {m} is too large for f64 truncation"
+        ));
+    }
+    Ok(crate::nodes::inv_normal_cdf(p) / a_bar + b_bar)
+}
+
+/// Route from a routing-test result to a measurement test: returns
+/// `(theta1, assigned)` where `assigned = argmin_k |b_meas[k] - theta1|`
+/// (Betz & Weiss, 1974, p. 17; lowest index on ties, a DERIVED convention).
+/// Callers administer measurement test `assigned` and then call
+/// [`two_stage_score`] with the same inputs plus the observed `x2`.
+pub fn two_stage_route(
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    b_meas: &[f64],
+    c: f64,
+) -> Result<(f64, usize), String> {
+    if !c.is_finite() || !(0.0..1.0).contains(&c) {
+        return Err(format!(
+            "two_stage: c must be finite and in [0, 1) (got {c})"
+        ));
+    }
+    if b_meas.is_empty() {
+        return Err("two_stage: at least one measurement test is required".into());
+    }
+    for (k, &bk) in b_meas.iter().enumerate() {
+        if !bk.is_finite() {
+            return Err(format!("two_stage: b_meas[{k}] must be finite"));
+        }
+    }
+    let theta1 = two_stage_subtest_theta("routing test", x1, m1, a1, b1, c)?;
+    let mut assigned = 0usize;
+    let mut best = (b_meas[0] - theta1).abs();
+    for (k, &bk) in b_meas.iter().enumerate().skip(1) {
+        let d = (bk - theta1).abs();
+        if d < best {
+            assigned = k;
+            best = d;
+        }
+    }
+    Ok((theta1, assigned))
+}
+
+/// Score a completed two-stage test (Betz & Weiss, 1974, Equations 2-3).
+///
+/// `administered` is the 0-based index of the measurement test the caller
+/// actually gave; it is re-derived from `theta1` internally and a mismatch
+/// is an error, so `x2` can never be silently scored against the wrong
+/// measurement test's parameters.
+#[allow(clippy::too_many_arguments)]
+pub fn two_stage_score(
+    x1: usize,
+    m1: usize,
+    a1: f64,
+    b1: f64,
+    x2: usize,
+    m2: usize,
+    administered: usize,
+    a_meas: &[f64],
+    b_meas: &[f64],
+    c: f64,
+) -> Result<TwoStageResult, String> {
+    if a_meas.len() != b_meas.len() {
+        return Err(format!(
+            "two_stage: a_meas has {} entries but b_meas has {}",
+            a_meas.len(),
+            b_meas.len()
+        ));
+    }
+    let (theta1, assigned) = two_stage_route(x1, m1, a1, b1, b_meas, c)?;
+    if administered >= b_meas.len() {
+        return Err(format!(
+            "two_stage: administered index {administered} out of range for {} measurement tests",
+            b_meas.len()
+        ));
+    }
+    if administered != assigned {
+        return Err(format!(
+            "two_stage: routing assigns measurement test {assigned} but test {administered} \
+             was administered; scoring x2 against the wrong test's parameters is refused"
+        ));
+    }
+    let theta2 = two_stage_subtest_theta(
+        "measurement test",
+        x2,
+        m2,
+        a_meas[assigned],
+        b_meas[assigned],
+        c,
+    )?;
+    let (m1f, m2f) = (m1 as f64, m2 as f64);
+    let composite = (m1f * theta1 + m2f * theta2) / (m1f + m2f);
+    Ok(TwoStageResult {
+        theta1,
+        assigned,
+        theta2,
+        composite,
     })
 }
