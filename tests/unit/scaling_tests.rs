@@ -5202,3 +5202,416 @@ fn mr_mc_500() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// fide_rating tests (fd_ prefix) — PlayerRatings fide() port.
+//
+// All asserts read crate outputs (FideResult fields returned by
+// fide_rating). Oracle: independently executed transcription of the READ
+// R source (fide() lines 125-272, kfide() 959-972), exact-Fraction anchor
+// F1 plus float pins F2-F5, adversarially spec-reviewed.
+//
+// Mutation-kill map (all mutants EXECUTED before the PR):
+// - MU1 K from post-period games          -> fd_k_switch_f2
+// - MU2 elite recomputed (non-sticky)     -> fd_elite_sticky_f3
+// - MU3 opponent from PRE-update ratings  -> fd_anchor_f1_exact, fd_opponent_avg_f4
+// - MU4 opponent running-average weights swapped -> fd_opponent_weights_f5
+// - MU5 kfide branch swap (kv.1 <-> kv.2) -> fd_anchor_f1_exact, fd_k_switch_f2
+// Documented unkillable mutant: E_b = 1 - E_w refactor (identity
+// E_w + E_b = 1, proved in the elo_rating header; no black-box test can
+// distinguish it).
+// ---------------------------------------------------------------------------
+
+fn fd_rel_close(a: f64, b: f64, tol: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    (a - b).abs() <= tol * a.abs().max(b.abs())
+}
+
+/// F1: n=2, one game, equal init 2200, gamma 0 -> E = 1/2 exactly; fresh
+/// non-elite players must get K = kv.2 = 30 (kills MU5: a kv.1<->kv.2
+/// swap gives 2207.5/2192.5). Opponent must be the POST-update opposite
+/// rating (kills MU3: pre-update would give 2200/2200). All values dyadic
+/// -> exact equality.
+#[test]
+fn fd_anchor_f1_exact() {
+    let r = fide_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        2,
+        2200.0,
+        (10.0, 15.0, 30.0),
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![2215.0, 2185.0]);
+    assert_eq!(r.opponent, vec![2185.0, 2215.0]);
+    assert_eq!(r.games, vec![1, 1]);
+    assert_eq!(r.wins, vec![1, 0]);
+    assert_eq!(r.draws, vec![0, 0]);
+    assert_eq!(r.losses, vec![0, 1]);
+    assert_eq!(r.lag, vec![0, 0]);
+    assert_eq!(r.elite, vec![0, 0]);
+}
+
+/// F2: init 1500 (elite unreachable), p0 plays 29 games in period 1 then
+/// 1 game in period 2. Period-2 K for p0 uses PERIOD-START games = 29
+/// -> K = 30; a mutant reading post-update games sees 30 -> K = 15
+/// (kills MU1). Pins from the executed oracle.
+#[test]
+fn fd_k_switch_f2() {
+    let mut periods = vec![1u64; 29];
+    periods.push(2);
+    let mut white = vec![0usize; 30];
+    let _ = &mut white; // all games have white = 0
+    let mut black: Vec<usize> = (1..30).collect();
+    black.push(1);
+    let score = vec![1.0f64; 30];
+    let gamma = vec![0.0f64; 30];
+    let r = fide_rating(
+        &periods,
+        &white,
+        &black,
+        &score,
+        &gamma,
+        31,
+        1500.0,
+        (10.0, 15.0, 30.0),
+    )
+    .unwrap();
+    assert!(fd_rel_close(r.ratings[0], 1937.0927486207672, 1e-15));
+    assert!(fd_rel_close(r.ratings[1], 1482.9072513792328, 1e-15));
+    assert_eq!(r.ratings[2], 1485.0); // dyadic: 1500 - 30/2
+    assert_eq!(r.ratings[30], 1500.0); // never played
+    assert!(fd_rel_close(r.opponent[0], 1484.9302417126412, 1e-15));
+    assert!(fd_rel_close(r.opponent[1], 1936.0463743103837, 1e-15));
+    assert_eq!(r.opponent[30], 0.0);
+    assert_eq!(r.games[0], 30);
+    assert_eq!(r.games[1], 2);
+    assert_eq!(r.wins[0], 30);
+    assert_eq!(r.losses[1], 2);
+    assert_eq!(r.lag[2], 1); // played period 1 only
+    assert_eq!(r.lag[30], 0); // never played
+    assert_eq!(r.elite, vec![0u8; 31]);
+}
+
+/// F3: init 2395; p0 wins period 1 (rating 2410 >= 2400 -> elite), then
+/// loses periods 2-3 (dropping below 2400), wins period 4. The sticky
+/// elite flag keeps K = 10 for p0 in period 4 even though its rating is
+/// then < 2400; a mutant recomputing elite each period gives K = 30 and
+/// a different final rating (kills MU2). p1 also crosses 2400 by period
+/// 3; both end elite. Pins from the executed oracle.
+#[test]
+fn fd_elite_sticky_f3() {
+    let periods = [1u64, 2, 3, 4];
+    let white = [0usize, 0, 0, 0];
+    let black = [1usize, 1, 1, 1];
+    let score = [1.0f64, 0.0, 0.0, 1.0];
+    let gamma = [0.0f64; 4];
+    let r = fide_rating(
+        &periods,
+        &white,
+        &black,
+        &score,
+        &gamma,
+        2,
+        2395.0,
+        (10.0, 15.0, 30.0),
+    )
+    .unwrap();
+    assert!(fd_rel_close(r.ratings[0], 2404.6257234642635, 1e-15));
+    assert!(fd_rel_close(r.ratings[1], 2406.4738023175405, 1e-15));
+    assert_eq!(r.elite, vec![1, 1]);
+    assert!(fd_rel_close(r.opponent[0], 2398.603771437728, 1e-15));
+    assert!(fd_rel_close(r.opponent[1], 2404.661323913285, 1e-15));
+    assert_eq!(r.games, vec![4, 4]);
+    assert_eq!(r.wins, vec![2, 2]);
+    assert_eq!(r.losses, vec![2, 2]);
+    assert_eq!(r.lag, vec![0, 0]);
+}
+
+/// F4: n=3; period 1: p0 beats p1; period 2: p0 beats p2 and p1 beats
+/// p2. Opponent values are means of POST-update ratings (kills MU3):
+/// p0 = (2185 + 2170)/2 = 2177.5, p1 = (2215 + 2170)/2 = 2192.5,
+/// p2 = (post_p0 + post_p1)/2 = 2215 exactly (E-sum identity makes p2's
+/// dscore exactly -1). Pins from the executed oracle.
+#[test]
+fn fd_opponent_avg_f4() {
+    let periods = [1u64, 2, 2];
+    let white = [0usize, 0, 1];
+    let black = [1usize, 2, 2];
+    let score = [1.0f64, 1.0, 1.0];
+    let gamma = [0.0f64; 3];
+    let r = fide_rating(
+        &periods,
+        &white,
+        &black,
+        &score,
+        &gamma,
+        3,
+        2200.0,
+        (10.0, 15.0, 30.0),
+    )
+    .unwrap();
+    assert!(fd_rel_close(r.ratings[0], 2229.3528000084657, 1e-15));
+    assert!(fd_rel_close(r.ratings[1], 2200.6471999915343, 1e-15));
+    assert_eq!(r.ratings[2], 2170.0); // dyadic via E-sum identity
+    assert_eq!(r.opponent[0], 2177.5);
+    assert_eq!(r.opponent[1], 2192.5);
+    assert_eq!(r.opponent[2], 2215.0);
+    assert_eq!(r.games, vec![2, 2, 2]);
+}
+
+/// F5: p0 plays one game in each of periods 1..3 (vs p1, p2, p3). At
+/// period 3 p0 has prior games = 2, current = 1, prior opponent nonzero
+/// -> correct old-value weight 2/3 vs 1/3 under a weight-swap mutant
+/// (kills MU4). Pins from the executed oracle.
+#[test]
+fn fd_opponent_weights_f5() {
+    let periods = [1u64, 2, 3];
+    let white = [0usize, 0, 0];
+    let black = [1usize, 2, 3];
+    let score = [1.0f64, 1.0, 0.5];
+    let gamma = [0.0f64; 3];
+    let r = fide_rating(
+        &periods,
+        &white,
+        &black,
+        &score,
+        &gamma,
+        4,
+        2200.0,
+        (10.0, 15.0, 30.0),
+    )
+    .unwrap();
+    assert!(fd_rel_close(r.ratings[0], 2228.088544238428, 1e-15));
+    assert!(fd_rel_close(r.opponent[0], 2190.6371519205236, 1e-15));
+    assert!(fd_rel_close(r.opponent[3], 2228.088544238428, 1e-15));
+    assert_eq!(r.opponent[1], 2215.0); // p1's only opponent, post-P1
+    assert_eq!(r.games, vec![3, 1, 1, 1]);
+    assert_eq!(r.draws, vec![1, 0, 0, 1]);
+    assert_eq!(r.lag, vec![0, 2, 1, 0]);
+}
+
+/// Error contract: every documented rejection returns Err.
+#[test]
+fn fd_error_contract() {
+    let ok = (
+        vec![1u64],
+        vec![0usize],
+        vec![1usize],
+        vec![1.0f64],
+        vec![0.0f64],
+    );
+    // empty
+    assert!(fide_rating(&[], &[], &[], &[], &[], 2, 1500.0, (10.0, 15.0, 30.0)).is_err());
+    // length mismatch
+    assert!(fide_rating(
+        &ok.0,
+        &[0, 1],
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    // n too small / too large
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        1,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        10_001,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    // non-finite init / kv
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        f64::NAN,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (f64::INFINITY, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, f64::NAN, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, f64::NEG_INFINITY)
+    )
+    .is_err());
+    // player index out of range / self-play
+    assert!(fide_rating(
+        &ok.0,
+        &[2],
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &[1],
+        &[1],
+        &ok.3,
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    // score out of range / non-finite
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[1.5],
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[-0.1],
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[f64::NAN],
+        &ok.4,
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+    // non-finite gamma
+    assert!(fide_rating(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &[f64::INFINITY],
+        2,
+        1500.0,
+        (10.0, 15.0, 30.0)
+    )
+    .is_err());
+}
+
+/// MC-500: with kv = (k, k, k) the kfide schedule returns k for every
+/// player regardless of elite/games, so ratings/games/wins/draws/losses/
+/// lag must be BITWISE identical to elo_rating(kfac = k). Random
+/// schedules keep ratings finite (scores in {0, 0.5, 1}, small gamma),
+/// so plain equality is well-defined. Kills any divergence between the
+/// shared plumbing of the two implementations.
+#[test]
+#[ignore]
+fn fd_mc_500_elo_reduction() {
+    let mut rng = Lcg(0x5EED_F1DE_0001_0001);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 8.0) as usize; // 3..=10
+        let n_games = 4 + (rng.next_f64() * 28.0) as usize; // 4..=31
+        let mut periods = Vec::with_capacity(n_games);
+        let mut white = Vec::with_capacity(n_games);
+        let mut black = Vec::with_capacity(n_games);
+        let mut score = Vec::with_capacity(n_games);
+        let mut gamma = Vec::with_capacity(n_games);
+        for _ in 0..n_games {
+            periods.push(1 + (rng.next_f64() * 4.0) as u64); // 1..=4
+            let w = (rng.next_f64() * n as f64) as usize % n;
+            let mut b = (rng.next_f64() * n as f64) as usize % n;
+            if b == w {
+                b = (b + 1) % n;
+            }
+            white.push(w);
+            black.push(b);
+            let s = match (rng.next_f64() * 3.0) as u32 {
+                0 => 0.0,
+                1 => 0.5,
+                _ => 1.0,
+            };
+            score.push(s);
+            gamma.push((rng.next_f64() - 0.5) * 20.0);
+        }
+        let k = 5.0 + rng.next_f64() * 40.0;
+        let f = fide_rating(
+            &periods,
+            &white,
+            &black,
+            &score,
+            &gamma,
+            n,
+            1500.0,
+            (k, k, k),
+        )
+        .unwrap();
+        let e = elo_rating(&periods, &white, &black, &score, &gamma, n, 1500.0, k).unwrap();
+        assert_eq!(f.ratings, e.ratings, "rep {rep}: ratings diverge");
+        assert_eq!(f.games, e.games, "rep {rep}");
+        assert_eq!(f.wins, e.wins, "rep {rep}");
+        assert_eq!(f.draws, e.draws, "rep {rep}");
+        assert_eq!(f.losses, e.losses, "rep {rep}");
+        assert_eq!(f.lag, e.lag, "rep {rep}");
+    }
+}

@@ -119,6 +119,7 @@
 
 ### Added
 
+- `fide_rating` FIDE-style Elo ratings (CRAN PlayerRatings 1.1-0 `fide()` `R/ratings.R` lines 125–272 + `kfide()` lines 959–972 — READ and normative; no journal paper exists for this variant, CRAN package provenance only): per-period batch Elo with the kfide K-factor schedule (K = kv[0] elite / kv[1] ≥30 games / kv[2] novice, evaluated from PERIOD-START state), sticky elite flag set from POST-update ratings ≥ 2400, and per-player running mean of POST-update opponent ratings. REDUCED-SCOPE vs R: no status/history frames, kfide-only K schedule, self-play rejected, thresholds 30/2400 hard-coded. kv=(k,k,k) reduces bitwise to `elo_rating(kfac=k)` (MC-500 anchor); exact-oracle fixtures F1–F5 and a 5-mutant EXECUTED kill map.
 - `metrics_rating` prediction-quality metrics for binary-outcome forecasts (binomial deviance on capped predictions, RMSE/MAE on raw predictions, optional 0.5-baseline scaling), a Rust reimplementation of CRAN PlayerRatings 1.1-0 `metrics()` with its cap quirk and elementwise NaN semantics preserved; exact-oracle anchor tests, mutation-kill map, and MC-500 invariants.
 - **Multiplayer Elo rating (CRAN PlayerRatings 1.1-0 `elom()`
   `R/ratings.R` lines 739–932 + `elom_c` C kernel `src/ratings.c`

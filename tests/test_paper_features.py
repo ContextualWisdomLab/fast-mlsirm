@@ -9934,3 +9934,106 @@ class TestMetrics:
                 [1.0, 0.0],
                 np.ma.masked_array([0.6, 0.4], mask=[False, True]),
             )
+
+
+class TestFide:
+    def test_anchor_f1_exact(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating([[1, 0, 1, 1.0]], 2)
+        assert res.ratings.tolist() == [2215.0, 2185.0]
+        # opponent averages read POST-update ratings (R quirk)
+        assert res.opponent.tolist() == [2185.0, 2215.0]
+        assert res.games.tolist() == [1, 1]
+        assert res.wins.tolist() == [1, 0]
+        assert res.losses.tolist() == [0, 1]
+        assert res.elite.tolist() == [0, 0]
+
+    def test_k_switch_f2(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        rows = [[1, 0, i, 1.0] for i in range(1, 30)]
+        rows.append([2, 0, 1, 1.0])
+        res = fide_rating(np.array(rows), 31, init=1500.0)
+        # 29 period-start games in period 2 -> K stays kv[2]=30
+        assert abs(res.ratings[0] - 1937.0927486207672) < 1e-12
+        assert abs(res.ratings[1] - 1482.9072513792328) < 1e-12
+        assert res.ratings[2] == 1485.0
+        assert res.ratings[30] == 1500.0
+        assert abs(res.opponent[0] - 1484.9302417126412) < 1e-12
+        assert res.games.tolist()[:2] == [30, 2]
+        assert res.elite.tolist() == [0] * 31
+
+    def test_elite_sticky_f3(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating(
+            [[1, 0, 1, 1.0], [2, 0, 1, 0.0], [3, 0, 1, 0.0], [4, 0, 1, 1.0]],
+            2,
+            init=2395.0,
+        )
+        assert res.elite.tolist() == [1, 1]
+        assert abs(res.ratings[0] - 2404.6257234642635) < 1e-12
+        assert abs(res.ratings[1] - 2406.4738023175405) < 1e-12
+        assert abs(res.opponent[0] - 2398.603771437728) < 1e-12
+
+    def test_opponent_weights_f5(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating(
+            [[1, 0, 1, 1.0], [2, 0, 2, 1.0], [3, 0, 3, 0.5]], 4
+        )
+        assert abs(res.ratings[0] - 2228.088544238428) < 1e-12
+        assert abs(res.opponent[0] - 2190.6371519205236) < 1e-12
+        assert res.opponent[1] == 2215.0
+        assert abs(res.opponent[3] - 2228.088544238428) < 1e-12
+        assert res.draws.tolist() == [1, 0, 0, 1]
+        assert res.lag.tolist() == [0, 2, 1, 0]
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import fide_rating
+
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating(np.array([[1, 0, 1, 1.0 + 0j]]), 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(np.array([[1, 0, 1, "x"]], dtype=object), 2)
+        with pytest.raises(ValueError, match="masked"):
+            fide_rating(
+                np.ma.masked_array(
+                    [[1, 0, 1, 1.0]], mask=[[False, False, False, True]]
+                ),
+                2,
+            )
+        with pytest.raises(ValueError, match=r"\(g, 4\)"):
+            fide_rating([[1, 0, 1]], 2)
+        with pytest.raises(ValueError, match="self-play"):
+            fide_rating([[1, 0, 0, 1.0]], 2)
+        with pytest.raises(ValueError, match="score"):
+            fide_rating([[1, 0, 1, 1.5]], 2)
+        with pytest.raises(ValueError, match="two players"):
+            fide_rating([[1, 0, 1, 1.0]], 1)
+        with pytest.raises(ValueError, match="triple"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10.0, 15.0))
+        with pytest.raises(ValueError, match="finite"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10.0, 15.0, np.inf))
+        with pytest.raises(ValueError, match="integral"):
+            fide_rating([[1.5, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError, match="gamma"):
+            fide_rating([[1, 0, 1, 1.0]], 2, gamma=[0.0, 0.0])
+
+    def test_elo_reduction(self):
+        import numpy as np
+        from fast_mlsirm import elo_rating, fide_rating
+
+        sched = [[1, 0, 1, 1.0], [1, 2, 3, 0.5], [2, 0, 2, 0.0]]
+        f = fide_rating(sched, 4, init=1500.0, kv=(27.0, 27.0, 27.0))
+        e = elo_rating(sched, 4, init=1500.0, kfac=27.0)
+        assert f.ratings.tolist() == e.ratings.tolist()
+        assert f.games.tolist() == e.games.tolist()
+        assert f.lag.tolist() == e.lag.tolist()

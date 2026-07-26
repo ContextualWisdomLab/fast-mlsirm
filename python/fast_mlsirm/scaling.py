@@ -1582,3 +1582,140 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
         bool(scale),
     )
     return np.asarray(out, dtype=np.float64).reshape(n_pred, 3)
+
+
+@dataclass
+class FideResult:
+    """FIDE-style Elo ratings and bookkeeping (CRAN PlayerRatings 1.1-0
+    ``fide()``; batch-per-period update with the kfide K-factor schedule:
+    K = kv[0] for elite players, kv[1] for players with >= 30 period-start
+    games, else kv[2]). ``elite`` is the sticky 0/1 flag set once a
+    post-update rating reaches 2400 (never cleared); ``opponent`` is the
+    running mean of post-update opponent ratings. Wins, draws, and losses
+    count only scores exactly 1, 0.5, and 0."""
+
+    ratings: "np.ndarray"
+    games: "np.ndarray"
+    wins: "np.ndarray"
+    draws: "np.ndarray"
+    losses: "np.ndarray"
+    lag: "np.ndarray"
+    elite: "np.ndarray"
+    opponent: "np.ndarray"
+
+
+def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None):
+    """FIDE-style Elo ratings from a (g, 4) game schedule.
+
+    Thin wrapper over the Rust core reimplementation of CRAN PlayerRatings
+    1.1-0 ``fide()`` (R/ratings.R lines 125-272 with ``kfide()`` lines
+    959-972; the CRAN source is the normative reference, READ). Each row of
+    ``games`` is ``[period, white, black, score]`` exactly as in
+    :func:`elo_rating`; the difference is the per-player K factor: ``kv``
+    is the (elite, experienced, novice) triple applied from PERIOD-START
+    games/elite state (R evaluates ``kfac`` before the bookkeeping
+    updates). Defaults ``init=2200, kv=(10, 15, 30)`` are the PlayerRatings
+    defaults. The 30-game and 2400-rating thresholds are hard-coded as in
+    the R source. Raises ValueError on invalid input.
+    """
+    import numpy as np
+
+    from .fitstats import _core_module
+
+    if isinstance(games, np.ma.MaskedArray):
+        raise ValueError(
+            "fide_rating: games must not be a masked array; "
+            "masked entries would be silently unmasked"
+        )
+    if np.iscomplexobj(np.asarray(games)):
+        raise ValueError("fide_rating: games must be real, not complex")
+    raw = np.asarray(games)
+    if raw.dtype == object and any(
+        v is None or isinstance(v, (str, bytes, bool, np.bool_)) for v in raw.flat
+    ):
+        raise ValueError("fide_rating: games must be numeric")
+    try:
+        arr = np.asarray(games, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"fide_rating: games is not numeric: {exc}") from None
+    if arr.ndim != 2 or arr.shape[1] != 4:
+        raise ValueError(
+            f"fide_rating: games must be (g, 4) [period, white, black, score], got {arr.shape}"
+        )
+    if arr.shape[0] == 0:
+        raise ValueError("fide_rating: at least one game is required")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("fide_rating: games contains non-finite values")
+    periods, white, black, score = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+    for name, col in (("period", periods), ("white", white), ("black", black)):
+        if np.any(col != np.floor(col)):
+            raise ValueError(f"fide_rating: {name} column must be integral")
+    if np.any(periods < 0):
+        raise ValueError("fide_rating: period labels must be nonnegative")
+    # Same u64 fidelity contract as elo_rating: take period labels
+    # losslessly from integer inputs, otherwise reject labels at/above the
+    # source float dtype's exact-integer bound (nmant + 1 bits).
+    if raw.ndim == 2 and raw.dtype.kind in "iu":
+        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
+            raise ValueError("fide_rating: period labels must be nonnegative")
+        periods_u64 = raw[:, 0].astype(np.uint64)
+    else:
+        if raw.dtype.kind == "f":
+            fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
+        else:
+            fidelity = 2.0**53
+        if np.any(periods >= fidelity):
+            raise ValueError(
+                f"fide_rating: period labels at or above {int(fidelity)} are not "
+                f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
+                "pass games as an integer array"
+            )
+        periods_u64 = periods.astype(np.uint64)
+    if np.any(white < 0) or np.any(black < 0):
+        raise ValueError("fide_rating: player indices must be nonnegative")
+    n = int(n_players)
+    if n != n_players:
+        raise ValueError("fide_rating: n_players must be an integer")
+    g = arr.shape[0]
+    if gamma is None:
+        gamma_arr = np.zeros(g)
+    else:
+        if np.iscomplexobj(np.asarray(gamma)):
+            raise ValueError("fide_rating: gamma must be real, not complex")
+        gamma_arr = np.asarray(gamma, dtype=float)
+        if gamma_arr.ndim == 0:
+            gamma_arr = np.full(g, float(gamma_arr))
+        elif gamma_arr.shape != (g,):
+            raise ValueError(
+                f"fide_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
+            )
+    kv_arr = np.asarray(kv, dtype=float)
+    if np.iscomplexobj(np.asarray(kv)):
+        raise ValueError("fide_rating: kv must be real, not complex")
+    if kv_arr.shape != (3,):
+        raise ValueError(
+            f"fide_rating: kv must be a (elite, experienced, novice) triple, got shape {kv_arr.shape}"
+        )
+    init = float(init)
+    res = _core_module().fide_rating(
+        np.ascontiguousarray(periods_u64),
+        np.ascontiguousarray(white, dtype=np.uint64),
+        np.ascontiguousarray(black, dtype=np.uint64),
+        np.ascontiguousarray(score),
+        np.ascontiguousarray(gamma_arr),
+        n,
+        init,
+        float(kv_arr[0]),
+        float(kv_arr[1]),
+        float(kv_arr[2]),
+    )
+    return FideResult(
+        ratings=np.asarray(res["ratings"]),
+        games=np.asarray(res["games"]),
+        wins=np.asarray(res["wins"]),
+        draws=np.asarray(res["draws"]),
+        losses=np.asarray(res["losses"]),
+        lag=np.asarray(res["lag"]),
+        elite=np.asarray(res["elite"]),
+        opponent=np.asarray(res["opponent"]),
+    )

@@ -5685,6 +5685,62 @@ fn metrics_rating(
     Ok(PyArray1::from_slice(py, &out).into())
 }
 
+/// FIDE-style Elo rating with the kfide K-factor schedule, PlayerRatings
+/// `fide()` semantics (see `mlsirm_core::scaling::fide_rating`). Returns a
+/// dict with ratings, games, wins, draws, losses, lag, elite (0/1), and
+/// opponent (running mean of post-update opponent ratings).
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, n, init, kv0, kv1, kv2))]
+#[allow(clippy::too_many_arguments)]
+fn fide_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    init: f64,
+    kv0: f64,
+    kv1: f64,
+    kv2: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("fide_rating: player index exceeds platform usize"))?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("fide_rating: player index exceeds platform usize"))?;
+    let res = mlsirm_core::scaling::fide_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        n,
+        init,
+        (kv0, kv1, kv2),
+    )
+    .map_err(PyValueError::new_err)?;
+    let elite: Vec<u64> = res.elite.iter().map(|&v| v as u64).collect();
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    d.set_item("elite", PyArray1::from_slice(py, &elite))?;
+    d.set_item("opponent", PyArray1::from_slice(py, &res.opponent))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8038,6 +8094,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
     m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
     m.add_function(wrap_pyfunction!(metrics_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(fide_rating, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

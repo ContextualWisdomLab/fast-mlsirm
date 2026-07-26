@@ -3417,6 +3417,290 @@ pub fn metrics_rating(
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// FIDE-style Elo ratings — PlayerRatings `fide()` port.
+//
+// Citation governance:
+// - READ (normative): CRAN PlayerRatings 1.1-0 `R/ratings.R` `fide()`
+//   (lines 125-272: validation, per-period splitting, kfide K factor,
+//   sticky elite flag, opponent running average) and `kfide()` (lines
+//   959-972: the K = 10/15/30 schedule); the `src/ratings.c` `elo_c`
+//   expected-score kernel was read for the elo iteration (see the
+//   `elo_rating` header above). Verified against an independently
+//   executed oracle transcribed from the R source (exact-Fraction
+//   anchor plus float pins), reviewed by an adversarial spec review.
+// - NOT READ (cited as origin of the method as described by the
+//   PlayerRatings documentation): Elo, A. E. (1978). The rating of
+//   chessplayers, past and present. Arco. The K = 10/15/30 schedule
+//   matches FIDE's historical rating regulations (FIDE Handbook B.02),
+//   cited as context only — the normative contract here is the R code.
+//
+// Model (derived from the read R source): identical per-period batch Elo
+// update as `elo_rating` (same READ elo_c kernel semantics), except the
+// K factor is per-player via the kfide schedule evaluated with the
+// PERIOD-START ratings, PERIOD-START cumulative games, and PERIOD-START
+// elite flags (R line 228 evaluates kfac(crats, ngames, elite) before
+// the updates at lines 236/243):
+//   K_p = kv.0 if elite_p; kv.1 if games_p >= 30; else kv.2
+//   (R kfide defaults kv = (10, 15, 30); R's 1-based kv[1..3] maps to
+//   this 0-based tuple.)
+// After the rating update, in R source order:
+//   1. games/wins/draws/losses per appearance; W/D/L only for scores
+//      exactly 1 / 0.5 / 0 (R 231-239).
+//   2. lag: players with cumulative games != 0 get lag += 1, then
+//      players appearing this period reset to lag = 0 (R 241-242).
+//   3. elite is STICKY: `elite[crats >= 2400] <- 1` with POST-update
+//      ratings; never cleared once set (R 243).
+//   4. opponent is a running mean of opponent POST-update ratings
+//      (R 245-250 read `crats` after the line-228 update): with
+//      cumulative games g_p AFTER this period and this period's
+//      appearances gi_p,
+//        opponent_p <- ((g_p - gi_p)/g_p) * opponent_p + oppsum_p / g_p
+//      (only where g_p != 0), where oppsum_p sums the post-update
+//      ratings of p's opponents this period.
+//
+// PROVED (spec review): E_w + E_b = 1 identically (see elo_rating), so
+// sum(dscore) = 0 per period; but K varies per player, so the total
+// rating sum is NOT conserved in general. REDUCTION: with
+// kv = (k, k, k) the ratings/games/wins/draws/losses/lag are exactly
+// those of `elo_rating(..., kfac = k)` for finite outputs (kfide then
+// ignores rating/games/elite); elite/opponent are extra state.
+//
+// Documented divergences from PlayerRatings `fide()` (REDUCED SCOPE):
+// - No `status` carry-in / `history`: all players start at `init` with
+//   games = lag = elite = 0 and opponent = 0. (R status quirks, out of
+//   scope: new rows seed Elite = as.numeric(init > 2400) — strict `>`,
+//   R 157; a status frame missing the Elite column seeds it from the
+//   Player ID column, `as.numeric(status$Player >= 2400)`, R 165.)
+// - Only the kfide K-factor family, parameterized by `kv` (function
+//   `kfac` arguments in general, and the krating/kgames variants, are
+//   out of scope). Games threshold 30 and elite threshold 2400 are
+//   hard-coded, matching R.
+// - Self-play (white == black) is rejected (R silently permits it).
+// - Extreme rating differences saturate expectations to 0/1 without
+//   panicking; extreme kv values may produce non-finite ratings and are
+//   not treated as an error (matching elo_rating).
+// ---------------------------------------------------------------------------
+
+/// Result of [`fide_rating`]: ratings plus FIDE-specific bookkeeping.
+#[derive(Debug, Clone)]
+pub struct FideResult {
+    /// Post-update rating per player (length `n`).
+    pub ratings: Vec<f64>,
+    /// Number of game appearances per player.
+    pub games: Vec<u64>,
+    /// Wins (score exactly 1 as white, or exactly 0 as black).
+    pub wins: Vec<u64>,
+    /// Draws (score exactly 0.5, both sides).
+    pub draws: Vec<u64>,
+    /// Losses (score exactly 0 as white, or exactly 1 as black).
+    pub losses: Vec<u64>,
+    /// Rating periods since the player's last appearance (0 if the player
+    /// appeared in the final period or never played).
+    pub lag: Vec<u64>,
+    /// Sticky elite flag (0/1): set once the post-update rating reaches
+    /// 2400 after any period, never cleared.
+    pub elite: Vec<u8>,
+    /// Running mean of opponents' post-update ratings across the
+    /// player's career (0 for players who never played).
+    pub opponent: Vec<f64>,
+}
+
+/// FIDE-style Elo ratings, PlayerRatings `fide()` semantics with the
+/// `kfide` K-factor schedule.
+///
+/// `periods[k]`, `white[k]`, `black[k]`, `score[k]`, `gamma[k]` describe
+/// game `k` as in [`elo_rating`]. `kv = (elite_k, experienced_k,
+/// novice_k)` is the kfide schedule (R default `(10, 15, 30)`): per
+/// period each player's K is `kv.0` if elite (sticky, post-update rating
+/// ever `>= 2400`), else `kv.1` if period-start cumulative games
+/// `>= 30`, else `kv.2`.
+pub fn fide_rating(
+    periods: &[u64],
+    white: &[usize],
+    black: &[usize],
+    score: &[f64],
+    gamma: &[f64],
+    n: usize,
+    init: f64,
+    kv: (f64, f64, f64),
+) -> Result<FideResult, String> {
+    let g = periods.len();
+    if g == 0 {
+        return Err("fide_rating: at least one game is required".to_string());
+    }
+    if white.len() != g || black.len() != g || score.len() != g || gamma.len() != g {
+        return Err(format!(
+            "fide_rating: length mismatch (periods {}, white {}, black {}, score {}, gamma {})",
+            g,
+            white.len(),
+            black.len(),
+            score.len(),
+            gamma.len()
+        ));
+    }
+    if n < 2 {
+        return Err("fide_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "fide_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    if !init.is_finite() {
+        return Err("fide_rating: init must be finite".to_string());
+    }
+    if !kv.0.is_finite() || !kv.1.is_finite() || !kv.2.is_finite() {
+        return Err("fide_rating: all kv components must be finite".to_string());
+    }
+    for k in 0..g {
+        if white[k] >= n || black[k] >= n {
+            return Err(format!(
+                "fide_rating: game {} has player index out of range (white {}, black {}, n {})",
+                k, white[k], black[k], n
+            ));
+        }
+        if white[k] == black[k] {
+            return Err(format!(
+                "fide_rating: game {} has white == black == {} (self-play is not supported)",
+                k, white[k]
+            ));
+        }
+        if !score[k].is_finite() || !(0.0..=1.0).contains(&score[k]) {
+            return Err(format!(
+                "fide_rating: game {} has score {} outside [0, 1]",
+                k, score[k]
+            ));
+        }
+        if !gamma[k].is_finite() {
+            return Err(format!("fide_rating: game {} has non-finite gamma", k));
+        }
+    }
+
+    // Group by ascending period, preserving row order within a period
+    // (R split() orders groups by factor level, i.e. ascending label).
+    let mut order: Vec<usize> = (0..g).collect();
+    order.sort_by_key(|&k| periods[k]); // stable sort keeps row order
+
+    let mut ratings = vec![init; n];
+    let mut games = vec![0u64; n];
+    let mut wins = vec![0u64; n];
+    let mut draws = vec![0u64; n];
+    let mut losses = vec![0u64; n];
+    let mut lag = vec![0u64; n];
+    let mut elite = vec![0u8; n];
+    let mut opponent = vec![0.0f64; n];
+    let mut appeared = vec![false; n];
+    let mut games_in_period = vec![0u64; n];
+    let mut oppsum = vec![0.0f64; n];
+
+    let mut i = 0usize;
+    while i < g {
+        let period = periods[order[i]];
+        let mut j = i;
+        while j < g && periods[order[j]] == period {
+            j += 1;
+        }
+
+        // K factors from PERIOD-START games and elite flags (R line 228
+        // evaluates kfac before the bookkeeping updates at 236/243).
+        let kfac: Vec<f64> = (0..n)
+            .map(|p| {
+                if elite[p] != 0 {
+                    kv.0
+                } else if games[p] >= 30 {
+                    kv.1
+                } else {
+                    kv.2
+                }
+            })
+            .collect();
+
+        let mut dscore = vec![0.0f64; n];
+        for player in appeared.iter_mut() {
+            *player = false;
+        }
+        for x in games_in_period.iter_mut() {
+            *x = 0;
+        }
+        for x in oppsum.iter_mut() {
+            *x = 0.0;
+        }
+        for &k in &order[i..j] {
+            let (w, b, s, gam) = (white[k], black[k], score[k], gamma[k]);
+            // Expectations from period-START ratings (batch semantics).
+            let e_w = 1.0 / (1.0 + 10f64.powf((ratings[b] - ratings[w] - gam) / 400.0));
+            let e_b = 1.0 / (1.0 + 10f64.powf((ratings[w] - ratings[b] + gam) / 400.0));
+            dscore[w] += s - e_w;
+            dscore[b] += (1.0 - s) - e_b;
+            games[w] += 1;
+            games[b] += 1;
+            games_in_period[w] += 1;
+            games_in_period[b] += 1;
+            if s == 1.0 {
+                wins[w] += 1;
+                losses[b] += 1;
+            } else if s == 0.5 {
+                draws[w] += 1;
+                draws[b] += 1;
+            } else if s == 0.0 {
+                losses[w] += 1;
+                wins[b] += 1;
+            }
+            appeared[w] = true;
+            appeared[b] = true;
+        }
+        for p in 0..n {
+            ratings[p] += kfac[p] * dscore[p];
+        }
+        // Lag: games are already updated, so first-time players increment
+        // to 1 and are immediately reset to 0 (R lines 241-242 order).
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                lag[p] = 0;
+            }
+        }
+        // Elite: sticky, POST-update ratings, >= 2400 (R line 243).
+        for p in 0..n {
+            if ratings[p] >= 2400.0 {
+                elite[p] = 1;
+            }
+        }
+        // Opponent: running mean of POST-update opponent ratings
+        // (R lines 245-250 read crats after the rating update).
+        for &k in &order[i..j] {
+            let (w, b) = (white[k], black[k]);
+            oppsum[w] += ratings[b];
+            oppsum[b] += ratings[w];
+        }
+        for p in 0..n {
+            if games[p] != 0 {
+                let g_tot = games[p] as f64;
+                let g_cur = games_in_period[p] as f64;
+                opponent[p] = ((g_tot - g_cur) / g_tot) * opponent[p] + oppsum[p] / g_tot;
+            }
+        }
+        i = j;
+    }
+
+    Ok(FideResult {
+        ratings,
+        games,
+        wins,
+        draws,
+        losses,
+        lag,
+        elite,
+        opponent,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;
