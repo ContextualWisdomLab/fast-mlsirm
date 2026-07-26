@@ -714,3 +714,101 @@ def sprt_classify(
         "llr": float(r["llr"]),
         "llr_trace": np.asarray(r["llr_trace"]),
     }
+def ci_classify(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    theta_cut: float,
+    z_crit: float,
+) -> dict:
+    """Single-cut binary-response confidence-interval (ACI) classification.
+
+    After each response, computes the interim EAP ability estimate on a
+    fixed uniform grid of 41 points on ``[-4, 4]`` with a standard-normal
+    log prior (``-0.5 * theta**2``, no quadrature-weight multiplier) under
+    the D = 1 logistic 3PL
+    ``P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i)))``, plus
+    the EAP posterior SD as the standard error, and forms the interval
+    ``theta_hat +/- z_crit * se``. The FIRST STRICT crossing decides:
+    ``lower > theta_cut`` -> ``"above"``, ``upper < theta_cut`` ->
+    ``"below"`` (``n_used = k``, 1-based); no crossing -> ``"continue"``
+    with ``n_used = len(responses)``. Equality with the cut means continue.
+    All numerics run in the Rust core
+    (``mlsirm_core::exposure::ci_classify``).
+
+    Traces are returned for ALL supplied responses as offline diagnostics;
+    entries past ``n_used`` are counterfactual replay values (a live CAT
+    would stop at ``n_used``). ``z_crit`` is the normal critical value; for
+    a confidence level ``L`` pass ``qnorm((1 + L) / 2)`` (catIrt's
+    ``conf.lev`` parameterization), e.g. 1.6448536269514722 for L = 0.90.
+
+    Source status: the interval stopping rule was verified against R catIrt
+    ``termCI.R``/``eapEst.R``/``catIrt.Rd`` at commit
+    c9e979e4812c27d95d367a7f097edfe8e93ac8eb (READ): interval
+    ``theta_hat +/- z * SEM`` with the EAP SEM equal to the posterior SD,
+    classifying only when the whole interval lies strictly within a
+    category. The fixed 41-point grid and caller-supplied ``z_crit`` are
+    repository implementation choices. Kingsbury & Weiss (1983), Thompson
+    (2007), and Eggen & Straetmans (2000) were NOT method-section verified
+    in this iteration and are cited as historical/background context only.
+
+    References (APA 7th ed.):
+        Kingsbury, G. G., & Weiss, D. J. (1983). A comparison of IRT-based
+            adaptive mastery testing and a sequential mastery testing
+            procedure. In D. J. Weiss (Ed.), *New horizons in testing*
+            (pp. 257-283). Academic Press. (NOT read; historical origin.)
+        Thompson, N. A. (2007). A practitioner's guide for variable-length
+            computerized classification testing. *Practical Assessment,
+            Research & Evaluation, 12*(1).
+            https://doi.org/10.7275/fq3r-zz60 (NOT read for the CI method
+            section in this iteration; background only.)
+        Eggen, T. J. H. M., & Straetmans, G. J. J. M. (2000). Computerized
+            adaptive testing for classifying examinees into three
+            categories. *Educational and Psychological Measurement, 60*(5),
+            713-734. (NOT read; historical.)
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the dtype casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
+    resp = np.asarray(responses)
+    if resp.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_ci_classify(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(resp),
+        float(theta_cut),
+        float(z_crit),
+    )
+    return {
+        "decision": str(r["decision"]),
+        "n_used": int(r["n_used"]),
+        "theta_trace": np.asarray(r["theta_trace"]),
+        "se_trace": np.asarray(r["se_trace"]),
+        "lower_trace": np.asarray(r["lower_trace"]),
+        "upper_trace": np.asarray(r["upper_trace"]),
+    }

@@ -28,8 +28,9 @@
 //! `sh_controls_max_exposure`.
 
 use crate::exposure::{
-    a_stratified, ccat_select, eap_interim, epv_select, kl_information, kl_select, owen_cat,
-    owen_update, p3pl, sprt_classify, sympson_hetter, AStratifiedConfig, Lcg, SympsonHetterConfig,
+    a_stratified, ccat_select, ci_classify, eap_interim, epv_select, kl_information, kl_select,
+    owen_cat, owen_update, p3pl, sprt_classify, sympson_hetter, AStratifiedConfig, Lcg,
+    SympsonHetterConfig,
 };
 
 fn pool30() -> (Vec<f64>, Vec<f64>, Vec<f64>) {
@@ -1860,4 +1861,217 @@ fn sprt_extreme_parameters_stay_finite() {
     let rc = sprt_classify(&[50.0], &[0.0], &[0.2], &[1], 0.0, 20.0, 0.05, 0.05).unwrap();
     assert!((rc.llr - (-0.2_f64.ln())).abs() < 1e-12, "llr = {}", rc.llr);
     assert!(rc.llr.is_finite());
+}
+
+// ---------- ci_classify (confidence-interval / ACI classification) ----------
+
+/// Pinned 17-digit oracle from the adversarial spec review
+/// (ci_classify_spec_review.md): independent Python recomputation of the
+/// approved 41-point [-4,4] EAP posterior-SD rule. Every assert reads crate
+/// outputs (decision, n_used, the four traces). Kills mutants: M1 swapped
+/// decisions (expects "above"), M2 point-estimate-vs-cut (theta_trace[0] > 0
+/// would decide at k=1, oracle n_used = 5), M3 variance-instead-of-SD (that
+/// mutant crosses at k=4; the lower_trace[3] <= 0 < lower_trace[4] anchor
+/// pins the first strict crossing to k=5), M4 n_used off-by-one, M5
+/// final-CI-only (the counterfactual tail is also above the cut, so n_used
+/// and the crossing-index anchors are the discriminating asserts, not the
+/// final decision alone).
+#[test]
+fn ci_classify_pinned_oracle() {
+    let a = [1.5; 6];
+    let b = [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5];
+    let c = [0.0; 6];
+    let responses = [1u8, 1, 1, 1, 1, 0];
+    let r = ci_classify(&a, &b, &c, &responses, 0.0, 1.6448536269514722).unwrap();
+    assert_eq!(r.decision, "above");
+    assert_eq!(r.n_used, 5);
+    let theta_exp = [
+        0.18783548849905624,
+        0.40433637208107137,
+        0.65453031321107147,
+        0.93795666218057705,
+        1.251068565832161,
+        1.004851105902542,
+    ];
+    let se_exp = [
+        0.91459937771477151,
+        0.84249780260178286,
+        0.78082991898905685,
+        0.72897935456728113,
+        0.68628322205747161,
+        0.60091214158918393,
+    ];
+    let lower_exp = [
+        -1.316546615142645,
+        -0.98144919422711663,
+        -0.62982061107030296,
+        -0.26110767315215866,
+        0.12223311891498612,
+        0.016438590330396186,
+    ];
+    let upper_exp = [
+        1.6922175921407576,
+        1.7901219383892593,
+        1.938881237492446,
+        2.1370209975133125,
+        2.3799040127493356,
+        1.9932636214746879,
+    ];
+    assert_eq!(r.theta_trace.len(), 6);
+    assert_eq!(r.se_trace.len(), 6);
+    assert_eq!(r.lower_trace.len(), 6);
+    assert_eq!(r.upper_trace.len(), 6);
+    for k in 0..6 {
+        assert!(
+            (r.theta_trace[k] - theta_exp[k]).abs() < 1e-12,
+            "theta[{k}] = {}",
+            r.theta_trace[k]
+        );
+        assert!(
+            (r.se_trace[k] - se_exp[k]).abs() < 1e-12,
+            "se[{k}] = {}",
+            r.se_trace[k]
+        );
+        assert!(
+            (r.lower_trace[k] - lower_exp[k]).abs() < 1e-12,
+            "lower[{k}] = {}",
+            r.lower_trace[k]
+        );
+        assert!(
+            (r.upper_trace[k] - upper_exp[k]).abs() < 1e-12,
+            "upper[{k}] = {}",
+            r.upper_trace[k]
+        );
+    }
+    // First-strict-crossing anchor (kills M3/M5): no crossing before k=5.
+    assert!(r.lower_trace[3] <= 0.0 && r.lower_trace[4] > 0.0);
+    for k in 0..4 {
+        assert!(r.lower_trace[k] <= 0.0 && r.upper_trace[k] >= 0.0);
+    }
+}
+
+/// "below" decision on all-wrong responses with a positive cut, and a
+/// "continue" outcome when z_crit is too wide to ever cross. Asserts read
+/// crate decision/n_used/bound traces.
+#[test]
+fn ci_classify_below_and_continue() {
+    let a = [1.5; 6];
+    let b = [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5];
+    let c = [0.0; 6];
+    let wrong = [0u8; 6];
+    let r = ci_classify(&a, &b, &c, &wrong, 0.5, 1.6448536269514722).unwrap();
+    assert_eq!(r.decision, "below");
+    assert!(r.n_used <= 6);
+    let k = r.n_used - 1;
+    assert!(r.upper_trace[k] < 0.5, "upper = {}", r.upper_trace[k]);
+    for j in 0..k {
+        assert!(r.upper_trace[j] >= 0.5 || r.lower_trace[j] > 0.5);
+    }
+    // Huge z_crit: interval always straddles any interior cut -> continue.
+    let rc = ci_classify(&a, &b, &c, &wrong, 0.5, 100.0).unwrap();
+    assert_eq!(rc.decision, "continue");
+    assert_eq!(rc.n_used, 6);
+    for j in 0..6 {
+        assert!(rc.lower_trace[j] <= 0.5 && rc.upper_trace[j] >= 0.5);
+    }
+}
+
+/// Full validation error paths; each assert reads the crate Err string.
+#[test]
+fn ci_classify_error_paths() {
+    let ok_a = [1.0];
+    let ok_b = [0.0];
+    let ok_c = [0.0];
+    let ok_r = [1u8];
+    assert!(ci_classify(&[], &[], &[], &[], 0.0, 1.96)
+        .unwrap_err()
+        .contains("empty"));
+    assert!(ci_classify(&ok_a, &[0.0, 1.0], &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("length mismatch"));
+    assert!(ci_classify(&[-1.0], &ok_b, &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("a[0]"));
+    assert!(ci_classify(&[f64::NAN], &ok_b, &ok_c, &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("a[0]"));
+    assert!(
+        ci_classify(&ok_a, &[f64::INFINITY], &ok_c, &ok_r, 0.0, 1.96)
+            .unwrap_err()
+            .contains("b[0]")
+    );
+    assert!(ci_classify(&ok_a, &ok_b, &[1.0], &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("c[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &[-0.1], &ok_r, 0.0, 1.96)
+        .unwrap_err()
+        .contains("c[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &[2], 0.0, 1.96)
+        .unwrap_err()
+        .contains("responses[0]"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, f64::NAN, 1.96)
+        .unwrap_err()
+        .contains("theta_cut"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, 0.0, 0.0)
+        .unwrap_err()
+        .contains("z_crit"));
+    assert!(ci_classify(&ok_a, &ok_b, &ok_c, &ok_r, 0.0, f64::NAN)
+        .unwrap_err()
+        .contains("z_crit"));
+}
+
+/// MC-500 structural invariants on random pools/responses. All asserts read
+/// crate outputs: trace lengths, SE positivity/monotonic bounds, decision
+/// consistency with the returned interval at n_used, and no crossing before
+/// n_used.
+#[test]
+#[ignore = "500-rep Monte Carlo; run explicitly"]
+fn ci_classify_mc500_invariants() {
+    let mut rng = Lcg(20260220);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 18.0) as usize;
+        let mut a = Vec::with_capacity(n);
+        let mut b = Vec::with_capacity(n);
+        let mut c = Vec::with_capacity(n);
+        let mut resp = Vec::with_capacity(n);
+        for _ in 0..n {
+            a.push(0.5 + 2.0 * rng.next_f64());
+            b.push(-2.5 + 5.0 * rng.next_f64());
+            c.push(0.25 * rng.next_f64());
+            resp.push(if rng.next_f64() < 0.5 { 1u8 } else { 0u8 });
+        }
+        let cut = -1.5 + 3.0 * rng.next_f64();
+        let z = 0.5 + 2.0 * rng.next_f64();
+        let r = ci_classify(&a, &b, &c, &resp, cut, z).unwrap();
+        assert_eq!(r.theta_trace.len(), n, "rep {rep}");
+        assert_eq!(r.se_trace.len(), n, "rep {rep}");
+        assert!(r.n_used >= 1 && r.n_used <= n, "rep {rep}");
+        for k in 0..n {
+            assert!(
+                r.se_trace[k].is_finite() && r.se_trace[k] > 0.0,
+                "rep {rep}"
+            );
+            assert!(
+                r.theta_trace[k] > -4.0 && r.theta_trace[k] < 4.0,
+                "rep {rep}"
+            );
+            let lo = r.theta_trace[k] - z * r.se_trace[k];
+            let hi = r.theta_trace[k] + z * r.se_trace[k];
+            assert!((r.lower_trace[k] - lo).abs() < 1e-12, "rep {rep}");
+            assert!((r.upper_trace[k] - hi).abs() < 1e-12, "rep {rep}");
+        }
+        let k = r.n_used - 1;
+        match r.decision {
+            "above" => assert!(r.lower_trace[k] > cut, "rep {rep}"),
+            "below" => assert!(r.upper_trace[k] < cut, "rep {rep}"),
+            "continue" => assert_eq!(r.n_used, n, "rep {rep}"),
+            other => panic!("rep {rep}: unexpected decision {other}"),
+        }
+        for j in 0..k {
+            assert!(
+                r.lower_trace[j] <= cut && r.upper_trace[j] >= cut,
+                "rep {rep}: crossing before n_used at {j}"
+            );
+        }
+    }
 }

@@ -1602,3 +1602,183 @@ pub fn sprt_classify(
         llr_trace,
     })
 }
+
+// ================ Confidence-interval (ACI) classification for CAT =========
+//
+// `ci_classify` implements the confidence-interval classification stopping
+// rule for a single cut score with binary responses: after each response,
+// compute the interim EAP ability estimate and its posterior SD, form the
+// interval theta_hat +/- z_crit * SE, and classify as soon as the whole
+// interval lies STRICTLY on one side of the cut (first strict crossing
+// decides). EAP uses the crate CAT convention shared with `eap_interim`:
+// a fixed uniform grid of 41 points on [-4, 4], standard-normal log prior
+// -0.5 * theta^2 (no quadrature-weight multiplier), and the D = 1 logistic
+// 3PL P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i))).
+//
+// For each prefix k = 1..n:
+//   theta_hat_k = sum_q w_q theta_q / sum_q w_q
+//   se_k        = sqrt(sum_q w_q (theta_q - theta_hat_k)^2 / sum_q w_q)
+//   lower_k = theta_hat_k - z_crit * se_k, upper_k = theta_hat_k + z_crit * se_k
+//   lower_k > theta_cut -> "above" (n_used = k);
+//   upper_k < theta_cut -> "below" (n_used = k); else continue.
+// No crossing -> "continue" with n_used = len(responses). Traces are filled
+// for ALL supplied responses; entries after n_used are offline counterfactual
+// replay values (live CAT would stop at n_used).
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review,
+// ci_classify_spec_review.md): the implemented confidence-interval stopping
+// rule was verified against catIrt R/termCI.R, R/eapEst.R, and man/catIrt.Rd
+// at commit c9e979e4812c27d95d367a7f097edfe8e93ac8eb (READ): form the
+// interval theta_hat +/- z * SEM, where the EAP SEM is the posterior SD
+// (sqrt(E[theta^2] - theta_hat^2)), and classify only when the full interval
+// lies strictly within a category. The fixed 41-point [-4, 4] EAP grid and
+// the caller-supplied z_crit (catIrt computes qnorm((1 + conf.lev) / 2) from
+// a confidence level; passing that value is equivalent) are repository
+// implementation choices. Thompson (2007), Kingsbury & Weiss (1983), and
+// Eggen & Straetmans (2000) were NOT method-section verified in this
+// iteration and are historical/background context only.
+//
+// References (APA 7th):
+// Nydick, S. W. (2014). catIrt: An R package for simulating IRT-based
+//     computerized adaptive tests. (READ: R/termCI.R interval rule and
+//     strict within-bounds comparisons; R/eapEst.R posterior-SD SEM;
+//     man/catIrt.Rd conf.lev parameterization and first-satisfied-criterion
+//     termination)
+// Kingsbury, G. G., & Weiss, D. J. (1983). A comparison of IRT-based
+//     adaptive mastery testing and a sequential mastery testing procedure.
+//     In D. J. Weiss (Ed.), New horizons in testing (pp. 257-283). Academic
+//     Press. (NOT read; historical origin of ability-confidence-interval
+//     classification)
+// Thompson, N. A. (2007). A practitioner's guide for variable-length
+//     computerized classification testing. Practical Assessment, Research &
+//     Evaluation, 12(1). (NOT read for the CI method section in this
+//     iteration; background only)
+// Eggen, T. J. H. M., & Straetmans, G. J. J. M. (2000). Computerized
+//     adaptive testing for classifying examinees into three categories.
+//     Educational and Psychological Measurement, 60(5), 713-734. (NOT read;
+//     historical)
+
+/// Result of [`ci_classify`]. `decision` is `"above"`, `"below"`, or
+/// `"continue"`; `n_used` is the 1-based count of responses consumed by the
+/// first strict interval crossing (or all responses when no crossing
+/// occurs); the four traces hold the interim EAP estimate, posterior SD,
+/// and interval bounds after every supplied response (entries past `n_used`
+/// are offline counterfactuals).
+#[derive(Debug, Clone)]
+pub struct CiResult {
+    pub decision: &'static str,
+    pub n_used: usize,
+    pub theta_trace: Vec<f64>,
+    pub se_trace: Vec<f64>,
+    pub lower_trace: Vec<f64>,
+    pub upper_trace: Vec<f64>,
+}
+
+/// Single-cut binary-response confidence-interval (ACI) classification (see
+/// module comment above for the exact verified contract and source status).
+pub fn ci_classify(
+    a: &[f64],
+    b: &[f64],
+    c: &[f64],
+    responses: &[u8],
+    theta_cut: f64,
+    z_crit: f64,
+) -> Result<CiResult, String> {
+    let n = a.len();
+    if n == 0 {
+        return Err("ci_classify: item pool is empty".into());
+    }
+    if b.len() != n || c.len() != n || responses.len() != n {
+        return Err(format!(
+            "ci_classify: length mismatch (a: {}, b: {}, c: {}, responses: {})",
+            n,
+            b.len(),
+            c.len(),
+            responses.len()
+        ));
+    }
+    for i in 0..n {
+        if !a[i].is_finite() || a[i] <= 0.0 {
+            return Err(format!("ci_classify: a[{i}] must be finite and > 0"));
+        }
+        if !b[i].is_finite() {
+            return Err(format!("ci_classify: b[{i}] must be finite"));
+        }
+        if !c[i].is_finite() || !(0.0..1.0).contains(&c[i]) {
+            return Err(format!("ci_classify: c[{i}] must be finite and in [0, 1)"));
+        }
+        if responses[i] > 1 {
+            return Err(format!("ci_classify: responses[{i}] must be 0 or 1"));
+        }
+    }
+    if !theta_cut.is_finite() {
+        return Err("ci_classify: theta_cut must be finite".into());
+    }
+    if !z_crit.is_finite() || z_crit <= 0.0 {
+        return Err("ci_classify: z_crit must be finite and > 0".into());
+    }
+
+    const Q: usize = 41;
+    let grid: Vec<f64> = (0..Q)
+        .map(|q| -4.0 + 8.0 * q as f64 / (Q - 1) as f64)
+        .collect();
+    // Cumulative log posterior weights, updated one response at a time.
+    let mut logw: Vec<f64> = grid.iter().map(|&t| -0.5 * t * t).collect();
+
+    let mut theta_trace = Vec::with_capacity(n);
+    let mut se_trace = Vec::with_capacity(n);
+    let mut lower_trace = Vec::with_capacity(n);
+    let mut upper_trace = Vec::with_capacity(n);
+    let mut decision = "continue";
+    let mut n_used = n;
+    for i in 0..n {
+        for (q, &t) in grid.iter().enumerate() {
+            let p = p3pl(t, a[i], b[i], c[i]).clamp(1e-12, 1.0 - 1e-12);
+            logw[q] += if responses[i] == 1 {
+                p.ln()
+            } else {
+                (1.0 - p).ln()
+            };
+        }
+        let m = logw.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut den = 0.0;
+        let mut num = 0.0;
+        for (q, &t) in grid.iter().enumerate() {
+            let w = (logw[q] - m).exp();
+            den += w;
+            num += w * t;
+        }
+        let theta_hat = num / den;
+        let mut ss = 0.0;
+        for (q, &t) in grid.iter().enumerate() {
+            let w = (logw[q] - m).exp();
+            ss += w * (t - theta_hat) * (t - theta_hat);
+        }
+        let se = (ss / den).sqrt();
+        let lower = theta_hat - z_crit * se;
+        let upper = theta_hat + z_crit * se;
+        theta_trace.push(theta_hat);
+        se_trace.push(se);
+        lower_trace.push(lower);
+        upper_trace.push(upper);
+        // First STRICT crossing decides (catIrt termCI.R uses strict
+        // within-bounds comparisons; equality means continue).
+        if decision == "continue" {
+            if lower > theta_cut {
+                decision = "above";
+                n_used = i + 1;
+            } else if upper < theta_cut {
+                decision = "below";
+                n_used = i + 1;
+            }
+        }
+    }
+    Ok(CiResult {
+        decision,
+        n_used,
+        theta_trace,
+        se_trace,
+        lower_trace,
+        upper_trace,
+    })
+}
