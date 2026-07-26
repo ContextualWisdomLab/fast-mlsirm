@@ -614,6 +614,121 @@ pub fn equate_neat_linear(
     })
 }
 
+// ===================== nominal weights mean equating =====================
+
+/// Nominal weights mean equating for the NEAT design (Babcock, Albano, &
+/// Raymond, 2012 — NOT read (paywalled); method as restated by Albano (2016,
+/// §4.2, eq. 42; §4, eqs. 37–40; §3.2, eq. 10), which was READ, and as
+/// implemented by the method authors in the R package `equate` 2.0.8
+/// (`synthetic.R`, `linear.R`), whose source was READ and executed as a
+/// cross-check oracle). Designed for very small samples: the Tucker
+/// total-on-anchor regression slopes are replaced by the "nominal weights"
+/// effective-length ratios
+///
+/// ```text
+/// gamma1 = k_x / k_v,   gamma2 = k_y / k_v            (Albano 2016, eq. 42)
+/// ```
+///
+/// (item counts; identical to `equate`'s max-score ratio for the 0..=K
+/// integer-scored tests in scope — polytomous scoring where item counts and
+/// score maxima diverge is out of scope). Synthetic-population means and
+/// variances follow eqs. 37–40 with `w2 = 1 - w1` and
+/// `d = mean(x_anchor) - mean(y_anchor)`:
+///
+/// ```text
+/// mu_sX  = mu_X1 - w2*gamma1*d          mu_sY  = mu_Y2 + w1*gamma2*d
+/// var_sX = v_X1 - w2*g1^2*(v_V1 - v_V2) + w1*w2*g1^2*d^2
+/// var_sY = v_Y2 + w1*g2^2*(v_V1 - v_V2) + w1*w2*g2^2*d^2
+/// ```
+///
+/// and the conversion is MEAN equating (eq. 10, slope 1):
+/// `yx(x) = x + (mu_sY - mu_sX)`. Synthetic variances are reported in the
+/// result but do not enter the conversion. All moments use the N-denominator
+/// convention of [`paired_moments`]; note the R reference implementation's
+/// `var.freqtab` divides by N-1, so the reported sigmas are not R-parity
+/// values (the mean conversion is unaffected — only means enter).
+///
+/// DERIVED (verified in tests): when `gamma1 == gamma2 == g`, the intercept
+/// `b = mu_Y2 - mu_X1 + d*(w1*g2 + w2*g1) = mu_Y2 - mu_X1 + g*d` is
+/// independent of `w1`.
+///
+/// # References (APA 7th ed.)
+///
+/// Babcock, B., Albano, A., & Raymond, M. (2012). Nominal weights mean
+///   equating: A method for very small samples. *Educational and
+///   Psychological Measurement, 72*(4), 608–628.
+///   https://doi.org/10.1177/0013164411428609
+///
+/// Albano, A. D. (2016). equate: An R package for observed-score linking and
+///   equating. *Journal of Statistical Software, 74*(8), 1–36.
+///   https://doi.org/10.18637/jss.v074.i08
+#[allow(clippy::too_many_arguments)]
+pub fn nominal_weights_mean_equate(
+    x_total: &[f64],
+    x_anchor: &[f64],
+    y_total: &[f64],
+    y_anchor: &[f64],
+    k_x: usize,
+    k_y: usize,
+    k_v: usize,
+    w1: f64,
+) -> Result<EquateResult, String> {
+    if k_x == 0 || k_y == 0 || k_v == 0 {
+        return Err("k_x, k_y and k_v must be positive".into());
+    }
+    if x_total.len() != x_anchor.len() || y_total.len() != y_anchor.len() {
+        return Err("total and anchor vectors must have equal length within each group".into());
+    }
+    if x_total.is_empty() || y_total.is_empty() {
+        return Err("score vectors must be non-empty".into());
+    }
+    if !(0.0..=1.0).contains(&w1) {
+        return Err("w1 must be in [0, 1]".into());
+    }
+    if x_total
+        .iter()
+        .chain(x_anchor)
+        .chain(y_total)
+        .chain(y_anchor)
+        .any(|v| !v.is_finite())
+    {
+        return Err("scores must be finite".into());
+    }
+    let (m1x, v1x, m1v, v1v, _cov1) = paired_moments(x_total, x_anchor);
+    let (m2y, v2y, m2v, v2v, _cov2) = paired_moments(y_total, y_anchor);
+    let g1 = k_x as f64 / k_v as f64;
+    let g2 = k_y as f64 / k_v as f64;
+    let w2 = 1.0 - w1;
+    let d = m1v - m2v;
+    let dv = v1v - v2v;
+    let mu_sx = m1x - w2 * g1 * d;
+    let mu_sy = m2y + w1 * g2 * d;
+    let var_sx = v1x - w2 * g1 * g1 * dv + w1 * w2 * g1 * g1 * d * d;
+    let var_sy = v2y + w1 * g2 * g2 * dv + w1 * w2 * g2 * g2 * d * d;
+    if var_sx <= 0.0 || var_sy <= 0.0 {
+        return Err("synthetic variance is non-positive (degenerate equating)".into());
+    }
+    let b = mu_sy - mu_sx;
+    Ok(EquateResult {
+        x_scores: (0..=k_x).map(|x| x as f64).collect(),
+        y_equivalents: (0..=k_x).map(|x| x as f64 + b).collect(),
+        mu_x: mu_sx,
+        sigma_x: var_sx.sqrt(),
+        mu_y: mu_sy,
+        sigma_y: var_sy.sqrt(),
+        // slope-1 shift maps the synthetic X mean onto the synthetic Y mean
+        // and leaves the spread unchanged
+        mu_eq: mu_sy,
+        sigma_eq: var_sx.sqrt(),
+        slope: 1.0,
+        intercept: b,
+        n_x: x_total.len(),
+        n_y: y_total.len(),
+        h_x: f64::NAN,
+        h_y: f64::NAN,
+    })
+}
+
 // ===================== standard errors of equating =====================
 
 /// Per-score-point standard errors of equating ([`bootstrap_see`] /

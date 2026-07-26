@@ -7,8 +7,9 @@ use mlsirm_core::equating::{
     circle_arc_middle_anchor as core_circle_arc_middle_anchor, equate_eg as core_equate_eg,
     equate_eg_ext as core_equate_eg_ext, equate_neat as core_equate_neat,
     equate_neat_linear as core_equate_neat_linear, loglinear_smooth as core_loglinear_smooth,
-    AnchorKind, CircleArcMethod, Continuization, EgSmoothOptions, EquateMethod, EquateResult,
-    NeatLinearMethod, NeatMethod, SeeResult,
+    nominal_weights_mean_equate as core_nominal_weights_mean_equate, AnchorKind, CircleArcMethod,
+    Continuization, EgSmoothOptions, EquateMethod, EquateResult, NeatLinearMethod, NeatMethod,
+    SeeResult,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -5054,6 +5055,38 @@ fn circle_arc_middle_anchor(
     core_circle_arc_middle_anchor(m_xa, m_va, m_yb, s_yb, m_vb, s_vb).map_err(PyValueError::new_err)
 }
 
+/// Nominal weights mean equating for the NEAT design (Rust compute path;
+/// Babcock, Albano, & Raymond, 2012, as restated by Albano, 2016, eq. 42).
+/// Slope is exactly 1; the intercept is the synthetic-mean difference with
+/// nominal-weights gammas k_x/k_v and k_y/k_v.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_total, x_anchor, y_total, y_anchor, k_x, k_y, k_v, w1 = 0.5))]
+fn nominal_weights_mean_equate(
+    py: Python<'_>,
+    x_total: PyReadonlyArray1<'_, f64>,
+    x_anchor: PyReadonlyArray1<'_, f64>,
+    y_total: PyReadonlyArray1<'_, f64>,
+    y_anchor: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    k_v: usize,
+    w1: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_nominal_weights_mean_equate(
+        x_total.as_slice()?,
+        x_anchor.as_slice()?,
+        y_total.as_slice()?,
+        y_anchor.as_slice()?,
+        k_x,
+        k_y,
+        k_v,
+        w1,
+    )
+    .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7388,6 +7421,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(analytic_see, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

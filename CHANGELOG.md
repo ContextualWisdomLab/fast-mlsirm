@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Nominal weights mean equating (Babcock, Albano, & Raymond, 2012; as
+  restated by Albano, 2016, JSS 74(8), eq. 42)**
+  (`fast_mlsirm.nominal_weights_mean_equate`; in Rust
+  `mlsirm_core::equating::nominal_weights_mean_equate`): NEAT-design mean
+  equating for very small samples — the Tucker regression slopes are
+  replaced by the nominal-weights effective-length ratios
+  `gamma1 = k_x/k_v`, `gamma2 = k_y/k_v` (item counts), synthetic means
+  follow Albano (2016) eqs. 37-38, and the conversion is the slope-1 mean
+  shift `yx(x) = x + (mu_sY - mu_sX)` (eq. 10). Synthetic variances
+  (eqs. 39-40, N-denominator moment convention, not the R package's N-1
+  sample variances) are reported but do not enter the conversion. Oracle:
+  exact-Fraction hand computation plus an executed cross-check against the
+  method authors' R package `equate` 2.0.8 (KBneat intercept
+  0.5833490108414594). The 2012 EPM article is paywalled and was NOT read;
+  the method is implemented from Albano (2016) and the authors' own R
+  source, both read. Five mutation kills executed (gamma swap, w1/w2 swap,
+  anchor-mean-difference sign, non-unit slope, dropped w1*w2*g^2*d^2
+  variance term).
 - **Circle-arc small-sample equating (Livingston & Kim, 2008, ETS
   RR-08-39)** (`fast_mlsirm.circle_arc_equate`,
   `fast_mlsirm.circle_arc_middle_anchor`; in Rust
