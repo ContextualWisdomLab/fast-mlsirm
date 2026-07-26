@@ -1263,3 +1263,232 @@ def stephenson_rating(
         losses=np.asarray(res["losses"]),
         lag=np.asarray(res["lag"]),
     )
+
+
+@dataclass
+class ElomResult:
+    """Multiplayer Elo ratings and bookkeeping (the CRAN PlayerRatings
+    package's ``elom()``; no journal paper exists for this system, so the
+    R driver and C kernel of PlayerRatings 1.1.0 are the normative
+    sources -- READ, lines cited in the Rust core). Each event seats up
+    to ``nn`` players; per period every player gets a single update
+    ``K * (actual - expected)`` where actual is the summed seat base
+    score and expected sums ``(r_p - mean rating of the event) / 40``
+    over the player's events. ``places[p, j]`` counts finishes at rank
+    ``j + 1`` in the CURRENT run; ``lag`` is periods since last play."""
+
+    ratings: "np.ndarray"
+    games: "np.ndarray"
+    places: "np.ndarray"
+    lag: "np.ndarray"
+
+
+def elom_rating(
+    periods,
+    players,
+    scores,
+    n_players,
+    base=(30.0, 10.0, -10.0, -30.0),
+    init=1500.0,
+    init_games=None,
+    init_lag=None,
+    init_places=None,
+    kfac=("kriichi", 400.0, 0.2),
+    placing=False,
+):
+    """Multiplayer (nn-seat) Elo ratings from an event schedule.
+
+    ``periods`` is a length-``g`` non-decreasing array of period labels;
+    ``players`` a ``(g, nn)`` integer array of player ids in ``0..
+    n_players`` with ``-1`` marking an empty seat; ``scores`` a ``(g,
+    nn)`` float array (NaN exactly where the seat is empty). ``base`` is
+    the length-``nn`` rank base-score vector; when an event has empty
+    seats a ONCE-shrunk base is used (PlayerRatings quirk: the shrink is
+    applied to the original base exactly once regardless of how many
+    seats are empty). ``kfac`` is either a positive float (constant K)
+    or ``("kriichi", gv, kv)`` for the experience-decay K factor ``max(
+    kv, 1 - (1 - kv) * games / gv)``. ``placing=True`` treats scores as
+    placings (rank 1 best = LOWEST score). Defaults ``base=(30, 10, -10,
+    -30), init=1500, kfac=("kriichi", 400, 0.2), placing=False`` are the
+    PlayerRatings defaults. Results cover ALL players in
+    ``0..n_players``. Raises ValueError on invalid input.
+    """
+    import numpy as np
+
+    from .fitstats import _core_module
+
+    try:
+        n = int(n_players)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"elom_rating: n_players is not an integer: {exc}") from None
+    if n != n_players:
+        raise ValueError("elom_rating: n_players must be an integer")
+    # Enforce the core's cap BEFORE any length-n allocation below.
+    if n < 2:
+        raise ValueError("elom_rating: at least two players are required")
+    if n > 10_000:
+        raise ValueError(f"elom_rating: n = {n} exceeds the supported cap of 10000")
+
+    raw_players = np.asarray(players)
+    if np.iscomplexobj(raw_players):
+        raise ValueError("elom_rating: players must be real, not complex")
+    try:
+        players_f = np.asarray(players, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elom_rating: players is not numeric: {exc}") from None
+    if players_f.ndim != 2:
+        raise ValueError(
+            f"elom_rating: players must be a (g, nn) array, got shape {players_f.shape}"
+        )
+    g, nn = players_f.shape
+    if g == 0:
+        raise ValueError("elom_rating: at least one event is required")
+    if np.any(~np.isfinite(players_f)) or np.any(players_f != np.floor(players_f)):
+        raise ValueError("elom_rating: players must be integral (use -1 for empty seats)")
+    if np.any(players_f < -1):
+        raise ValueError("elom_rating: player ids must be >= -1")
+    if raw_players.dtype.kind in "iu":
+        players_i64 = raw_players.astype(np.int64)
+    else:
+        # np.finfo(...).nmant excludes the implicit leading bit, so the
+        # exact-integer bound is nmant + 1 (float64 2**53, float32 2**24).
+        if raw_players.dtype.kind == "f":
+            fidelity = 2.0 ** (np.finfo(raw_players.dtype).nmant + 1)
+        else:
+            fidelity = 2.0**53
+        if np.any(players_f >= fidelity):
+            raise ValueError(
+                f"elom_rating: player ids at or above {int(fidelity)} are not "
+                "reliably representable; pass players as an integer array"
+            )
+        players_i64 = players_f.astype(np.int64)
+
+    if np.iscomplexobj(np.asarray(scores)):
+        raise ValueError("elom_rating: scores must be real, not complex")
+    try:
+        scores_f = np.asarray(scores, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elom_rating: scores is not numeric: {exc}") from None
+    if scores_f.shape != (g, nn):
+        raise ValueError(
+            f"elom_rating: scores must match players shape {(g, nn)}, got {scores_f.shape}"
+        )
+
+    raw_periods = np.asarray(periods)
+    if np.iscomplexobj(raw_periods):
+        raise ValueError("elom_rating: periods must be real, not complex")
+    try:
+        periods_f = np.asarray(periods, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elom_rating: periods is not numeric: {exc}") from None
+    if periods_f.shape != (g,):
+        raise ValueError(
+            f"elom_rating: periods must be a length-{g} array, got shape {periods_f.shape}"
+        )
+    if np.any(~np.isfinite(periods_f)) or np.any(periods_f != np.floor(periods_f)):
+        raise ValueError("elom_rating: period labels must be integral")
+    if np.any(periods_f < 0):
+        raise ValueError("elom_rating: period labels must be nonnegative")
+    if raw_periods.dtype.kind in "iu":
+        periods_u64 = raw_periods.astype(np.uint64)
+    else:
+        if raw_periods.dtype.kind == "f":
+            fidelity = 2.0 ** (np.finfo(raw_periods.dtype).nmant + 1)
+        else:
+            fidelity = 2.0**53
+        if np.any(periods_f >= fidelity):
+            raise ValueError(
+                f"elom_rating: period labels at or above {int(fidelity)} are not "
+                "reliably representable; pass periods as an integer array"
+            )
+        periods_u64 = periods_f.astype(np.uint64)
+
+    if np.iscomplexobj(np.asarray(base)):
+        raise ValueError("elom_rating: base must be real, not complex")
+    try:
+        base_f = np.asarray(base, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elom_rating: base is not numeric: {exc}") from None
+    if base_f.shape != (nn,):
+        raise ValueError(
+            f"elom_rating: base must be a length-{nn} array, got shape {base_f.shape}"
+        )
+
+    if np.iscomplexobj(np.asarray(init)):
+        raise ValueError("elom_rating: init must be real, not complex")
+    try:
+        init_r = np.asarray(init, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"elom_rating: init is not numeric: {exc}") from None
+    if init_r.ndim == 0:
+        init_r = np.full(n, float(init_r))
+    elif init_r.shape != (n,):
+        raise ValueError(
+            f"elom_rating: init must be a scalar or a length-{n} array, got shape {init_r.shape}"
+        )
+
+    def _count_vec(name, val, shape):
+        if val is None:
+            return np.zeros(shape, dtype=np.uint64)
+        if np.iscomplexobj(np.asarray(val)):
+            raise ValueError(f"elom_rating: {name} must be real, not complex")
+        try:
+            v = np.asarray(val, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"elom_rating: {name} is not numeric: {exc}") from None
+        if v.shape != shape:
+            raise ValueError(
+                f"elom_rating: {name} must have shape {shape}, got {v.shape}"
+            )
+        if not np.all(np.isfinite(v)) or np.any(v < 0) or np.any(v != np.floor(v)):
+            raise ValueError(f"elom_rating: {name} must be nonnegative integers")
+        if np.any(v >= 2.0**53):
+            raise ValueError(
+                f"elom_rating: {name} values at or above 2**53 are not "
+                "reliably representable; pass smaller counts"
+            )
+        return v.astype(np.uint64)
+
+    init_g = _count_vec("init_games", init_games, (n,))
+    init_l = _count_vec("init_lag", init_lag, (n,))
+    init_p = _count_vec("init_places", init_places, (n, nn))
+
+    if isinstance(kfac, (tuple, list)):
+        if len(kfac) != 3 or kfac[0] != "kriichi":
+            raise ValueError(
+                'elom_rating: kfac must be a positive float or ("kriichi", gv, kv)'
+            )
+        try:
+            kfac_gv = float(kfac[1])
+            kfac_kv = float(kfac[2])
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"elom_rating: kriichi gv/kv is not numeric: {exc}") from None
+        mode, kfac_k = "kriichi", 0.0
+    else:
+        try:
+            kfac_k = float(kfac)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"elom_rating: kfac is not numeric: {exc}") from None
+        mode, kfac_gv, kfac_kv = "scalar", 0.0, 0.0
+
+    res = _core_module().elom_rating(
+        np.ascontiguousarray(periods_u64),
+        np.ascontiguousarray(players_i64.reshape(-1)),
+        np.ascontiguousarray(scores_f.reshape(-1)),
+        np.ascontiguousarray(base_f),
+        np.ascontiguousarray(init_r),
+        np.ascontiguousarray(init_g),
+        np.ascontiguousarray(init_l),
+        np.ascontiguousarray(init_p.reshape(-1)),
+        mode,
+        kfac_k,
+        kfac_gv,
+        kfac_kv,
+        bool(placing),
+    )
+    return ElomResult(
+        ratings=np.asarray(res["ratings"]),
+        games=np.asarray(res["games"]),
+        places=np.asarray(res["places"]).reshape(n, nn),
+        lag=np.asarray(res["lag"]),
+    )

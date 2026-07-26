@@ -4231,3 +4231,695 @@ fn st_mc_500() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// elom_rating (PlayerRatings elom(); executed-oracle anchors E1-E9 from the
+// Python port of the READ R driver + elom_c kernel + kriichi()).
+// Every assert reads crate outputs (ElomResult fields).
+// ---------------------------------------------------------------------------
+
+/// E1: single 4-player event, all ratings equal (escore = 0), scalar
+/// k = 0.5 -> ratings = 1500 + 0.5 * base. Exact.
+#[test]
+fn em_anchor_e1_scalar() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[40.0, 20.0, -10.0, -50.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Scalar(0.5),
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1515.0, 1505.0, 1495.0, 1485.0]);
+    assert_eq!(r.games, vec![1, 1, 1, 1]);
+    assert_eq!(&r.places[0..4], &[1, 0, 0, 0]);
+    assert_eq!(&r.places[12..16], &[0, 0, 0, 1]);
+    assert_eq!(r.lag, vec![0, 0, 0, 0]);
+}
+
+/// E2: kriichi defaults (games = 0 -> k = 1 exactly), heterogeneous init
+/// ratings -> escore = (r - 1500)/40 nonzero. Kills the /40-drop mutant
+/// (MU1) and the post-period-games kriichi mutant (MU4: games 0 -> 1
+/// after the period would give k = 0.998 != 1). Exact.
+#[test]
+fn em_anchor_e2_kriichi_het() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[40.0, 20.0, -10.0, -50.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1600.0, 1500.0, 1400.0, 1500.0],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 },
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1627.5, 1510.0, 1392.5, 1470.0]);
+}
+
+/// E3: one empty seat among 5 indexed players; base shrinks once to
+/// (30, 0, -30); avetab over the event's 3 participants only. Kills the
+/// avetab-over-all-n mutant (MU2: including idle players 3 and 4 changes
+/// avetab and escore). Exact; idle players untouched, lag stays 0 for
+/// never-played players.
+#[test]
+fn em_anchor_e3_one_missing() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, -1],
+        &[10.0, 5.0, 1.0, f64::NAN],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 5],
+        &[0; 5],
+        &[0; 5],
+        &[0; 20],
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 },
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1530.0, 1500.0, 1470.0, 1500.0, 1500.0]);
+    assert_eq!(r.games, vec![1, 1, 1, 0, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0, 0, 0]);
+    assert_eq!(&r.places[8..12], &[0, 0, 1, 0]);
+    assert_eq!(&r.places[12..16], &[0, 0, 0, 0]);
+}
+
+/// E4: tied top scores use min ranks (1, 1, 3, 4) -> bases
+/// (30, 30, -10, -30); rank 2 base (10) is skipped entirely. Kills the
+/// ties.method = "average" mutant (MU5: average ranks 1.5 are not valid
+/// min ranks and would change both bases and places). Exact.
+#[test]
+fn em_anchor_e4_ties_min() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[10.0, 10.0, 5.0, 1.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Scalar(0.25),
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1507.5, 1507.5, 1497.5, 1492.5]);
+    assert_eq!(&r.places[0..4], &[1, 0, 0, 0]);
+    assert_eq!(&r.places[4..8], &[1, 0, 0, 0]);
+    assert_eq!(&r.places[8..12], &[0, 0, 1, 0]);
+}
+
+/// E5: two periods with kriichi; player 3 idle in period 2 -> lag = 1.
+/// Period 1 (games 0, k = 1): ratings become (1530, 1510, 1490, 1470).
+/// Period 2 (3 seats, shrunk base (30, 0, -30), scores reversed): avetab
+/// = 1510, dscore = (-30.5, 0, +30.5), k = 1 - 0.8/400. Expected values
+/// are computed with the same f64 expression the oracle executed
+/// (oracle hex pins 0x1.76e3e76c8b439p+10 / 0x1.7c1c189374bc7p+10).
+#[test]
+fn em_anchor_e5_lag_two_periods() {
+    let r = elom_rating(
+        &[1, 2],
+        &[0, 1, 2, 3, 0, 1, 2, -1],
+        &[4.0, 3.0, 2.0, 1.0, 1.0, 2.0, 3.0, f64::NAN],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 },
+        false,
+    )
+    .unwrap();
+    let k2 = 1.0 - (1.0 - 0.2) * 1.0 / 400.0;
+    assert_eq!(r.ratings[0], 1530.0 + k2 * (-30.5));
+    assert_eq!(r.ratings[1], 1510.0);
+    assert_eq!(r.ratings[2], 1490.0 + k2 * 30.5);
+    assert_eq!(r.ratings[3], 1470.0);
+    assert_eq!(r.games, vec![2, 2, 2, 1]);
+    assert_eq!(r.lag, vec![0, 0, 0, 1]);
+    assert_eq!(&r.places[0..4], &[1, 0, 1, 0]);
+    assert_eq!(&r.places[4..8], &[0, 2, 0, 0]);
+}
+
+/// E6: placing = true (lower is better): placings 1..4 give ranks 1..4,
+/// same outcome as E1. Kills a dropped-negation mutant (ranks would
+/// reverse and places[0] would move to seat 3). Exact.
+#[test]
+fn em_anchor_e6_placing() {
+    // Contrast: the same scores WITHOUT placing rank p3 best (reversed).
+    let rev = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[1.0, 2.0, 3.0, 4.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Scalar(0.5),
+        false,
+    )
+    .unwrap();
+    assert_eq!(rev.ratings, vec![1485.0, 1495.0, 1505.0, 1515.0]);
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[1.0, 2.0, 3.0, 4.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[0; 4],
+        &[0; 4],
+        &[0; 16],
+        ElomKFactor::Scalar(0.5),
+        true,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1515.0, 1505.0, 1495.0, 1485.0]);
+    assert_eq!(&r.places[0..4], &[1, 0, 0, 0]);
+}
+
+/// E7: continuation with prior games hitting the kriichi taper: p0 has
+/// 400 prior games (k clamps to kv = 0.2 exactly), p1 has 200
+/// (k = 1 - 0.8 * 200/400 = 0.6 exactly). All ratings equal -> dscore =
+/// base. Prior lag values reset for all four participants. Exact.
+#[test]
+fn em_anchor_e7_kriichi_taper() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, 2, 3],
+        &[4.0, 3.0, 2.0, 1.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 4],
+        &[400, 200, 0, 0],
+        &[3, 1, 0, 0],
+        &[0; 16],
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 },
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1506.0, 1506.0, 1490.0, 1470.0]);
+    assert_eq!(r.games, vec![401, 201, 1, 1]);
+    assert_eq!(r.lag, vec![0, 0, 0, 0]);
+}
+
+/// E8: TWO empty seats (nan = 2, nn = 4). R tmpfun quirk (verified
+/// verbatim: `sbase <- basev` is INSIDE the shrink loop): the base is
+/// shrunk from the ORIGINAL exactly ONCE -> (30, 0, -30); ranks 1 and 2
+/// index its front -> bases 30 and 0. Kills the cumulative-shrink mutant
+/// (MU3: shrinking twice gives the odd-drop (30, -30) so p1 would get
+/// -30, rating 1470). Exact.
+#[test]
+fn em_anchor_e8_shrink_quirk() {
+    let r = elom_rating(
+        &[1],
+        &[0, 1, -1, -1],
+        &[7.0, 3.0, f64::NAN, f64::NAN],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1500.0; 3],
+        &[0; 3],
+        &[0; 3],
+        &[0; 12],
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 },
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![1530.0, 1500.0, 1500.0]);
+    assert_eq!(r.games, vec![1, 1, 0]);
+}
+
+/// E9: two events in the SAME period sharing players 0 and 3 with
+/// heterogeneous ratings, scalar k = 0.5. ascore/escore accumulate
+/// across both events and ratings update ONCE per period (elom_c
+/// contract). Kills the update-after-each-event mutant (MU6: updating
+/// after event 1 changes event 2's avetab and escore). Exact
+/// (all-dyadic arithmetic; oracle E9).
+#[test]
+fn em_anchor_e9_aggregate_period() {
+    let r = elom_rating(
+        &[1, 1],
+        &[0, 1, 2, 3, 0, 4, 5, 3],
+        &[4.0, 3.0, 2.0, 1.0, 1.0, 2.0, 3.0, 4.0],
+        &[30.0, 10.0, -10.0, -30.0],
+        &[1600.0, 1500.0, 1400.0, 1500.0, 1550.0, 1450.0],
+        &[0; 6],
+        &[0; 6],
+        &[0; 24],
+        ElomKFactor::Scalar(0.5),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        r.ratings,
+        vec![1597.8125, 1505.0, 1396.25, 1500.3125, 1544.6875, 1455.9375]
+    );
+    assert_eq!(r.games, vec![2, 1, 1, 2, 1, 1]);
+    assert_eq!(&r.places[0..4], &[1, 0, 0, 1]);
+    assert_eq!(&r.places[12..16], &[1, 0, 0, 1]);
+}
+
+/// Error contract: every rejection path returns Err (never panics).
+#[test]
+fn em_error_contract() {
+    let base = [30.0, 10.0, -10.0, -30.0];
+    let ok_players = [0i64, 1, 2, 3];
+    let ok_scores = [4.0, 3.0, 2.0, 1.0];
+    let init = [1500.0; 4];
+    let z4 = [0u64; 4];
+    let z16 = [0u64; 16];
+    let k = ElomKFactor::Scalar(0.5);
+    // n bounds.
+    assert!(elom_rating(
+        &[1],
+        &[0, -1, -1, -1],
+        &[1.0, f64::NAN, f64::NAN, f64::NAN],
+        &base,
+        &[1500.0],
+        &[0],
+        &[0],
+        &[0; 4],
+        k,
+        false
+    )
+    .is_err());
+    // nn bounds.
+    assert!(elom_rating(&[1], &[0], &[1.0], &[30.0], &init, &z4, &z4, &z4, k, false).is_err());
+    // non-finite base.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &[30.0, f64::NAN, -10.0, -30.0],
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // empty schedule.
+    assert!(elom_rating(&[], &[], &[], &base, &init, &z4, &z4, &z16, k, false).is_err());
+    // players/scores length mismatch.
+    assert!(elom_rating(
+        &[1],
+        &ok_players[..3],
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // non-finite init rating.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &[f64::NAN, 1500.0, 1500.0, 1500.0],
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // init_games/init_lag length.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &[0; 3],
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // init_places length.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &[0; 15],
+        k,
+        false
+    )
+    .is_err());
+    // decreasing periods.
+    assert!(elom_rating(
+        &[2, 1],
+        &[0, 1, 2, 3, 0, 1, 2, 3],
+        &[4.0, 3.0, 2.0, 1.0, 4.0, 3.0, 2.0, 1.0],
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // u64 overflow guards.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &[u64::MAX, 0, 0, 0],
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &[0, u64::MAX, 0, 0],
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    let mut bad_places = [0u64; 16];
+    bad_places[5] = u64::MAX;
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &bad_places,
+        k,
+        false
+    )
+    .is_err());
+    // K-factor validation.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        ElomKFactor::Scalar(0.0),
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        ElomKFactor::Scalar(f64::NAN),
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        ElomKFactor::Kriichi { gv: 0.0, kv: 0.2 },
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        ElomKFactor::Kriichi { gv: 400.0, kv: 1.5 },
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        ElomKFactor::Kriichi { gv: 400.0, kv: 0.0 },
+        false
+    )
+    .is_err());
+    // Empty seat with finite score (missing-seat contract).
+    assert!(elom_rating(
+        &[1],
+        &[0, 1, 2, -1],
+        &[4.0, 3.0, 2.0, 1.0],
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // Occupied seat with NaN score.
+    assert!(elom_rating(
+        &[1],
+        &ok_players,
+        &[4.0, 3.0, 2.0, f64::NAN],
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // Player index out of range / below -1.
+    assert!(elom_rating(
+        &[1],
+        &[0, 1, 2, 4],
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    assert!(elom_rating(
+        &[1],
+        &[0, 1, 2, -2],
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // Duplicate player within one event.
+    assert!(elom_rating(
+        &[1],
+        &[0, 1, 2, 0],
+        &ok_scores,
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // Too many empty seats (nan > nn - 2).
+    assert!(elom_rating(
+        &[1],
+        &[0, -1, -1, -1],
+        &[1.0, f64::NAN, f64::NAN, f64::NAN],
+        &base,
+        &init,
+        &z4,
+        &z4,
+        &z16,
+        k,
+        false
+    )
+    .is_err());
+    // nn = 2 complete events are ACCEPTED (rev-2 finding 2).
+    let r2 = elom_rating(
+        &[1],
+        &[0, 1],
+        &[2.0, 1.0],
+        &[16.0, -16.0],
+        &[1500.0, 1500.0],
+        &[0; 2],
+        &[0; 2],
+        &[0; 4],
+        ElomKFactor::Scalar(1.0),
+        false,
+    )
+    .unwrap();
+    assert_eq!(r2.ratings, vec![1516.0, 1484.0]);
+}
+
+/// Monte-Carlo structural invariants over 500 random schedules:
+/// (a) per-player place counts sum to games gained this run,
+/// (b) permuting event order WITHIN a period leaves ratings unchanged
+///     up to floating-point summation order (1e-9 relative),
+/// (c) all outputs finite, lag bounded by the period count.
+#[test]
+#[ignore]
+fn em_mc_500() {
+    let mut rng = Lcg(0xE10E_2024);
+    let nn = 4usize;
+    let base = [30.0, 10.0, -10.0, -30.0];
+    for rep in 0..500 {
+        let n = 4 + (rng.next_f64() * 5.0) as usize; // 4..=8
+        let g = 1 + (rng.next_f64() * 5.0) as usize; // 1..=5
+        let mut periods = Vec::with_capacity(g);
+        let mut cur = 1u64;
+        for _ in 0..g {
+            if rng.next_f64() < 0.5 {
+                cur += 1;
+            }
+            periods.push(cur);
+        }
+        let mut players = Vec::with_capacity(g * nn);
+        let mut scores = Vec::with_capacity(g * nn);
+        for _ in 0..g {
+            // Random distinct participants; 0-2 empty tail seats.
+            let nan = (rng.next_f64() * 3.0) as usize; // 0..=2
+            let mut pool: Vec<i64> = (0..n as i64).collect();
+            for j in 0..nn - nan {
+                let pick = j + (rng.next_f64() * (pool.len() - j) as f64) as usize;
+                pool.swap(j, pick);
+            }
+            for j in 0..nn {
+                if j < nn - nan {
+                    players.push(pool[j]);
+                    scores.push((rng.next_f64() * 100.0).round() + j as f64 / 8.0);
+                } else {
+                    players.push(-1);
+                    scores.push(f64::NAN);
+                }
+            }
+        }
+        let init: Vec<f64> = (0..n).map(|_| 1400.0 + rng.next_f64() * 200.0).collect();
+        let kfac = if rep % 2 == 0 {
+            ElomKFactor::Scalar(0.25 + rng.next_f64())
+        } else {
+            ElomKFactor::Kriichi { gv: 400.0, kv: 0.2 }
+        };
+        let r = elom_rating(
+            &periods,
+            &players,
+            &scores,
+            &base,
+            &init,
+            &vec![0u64; n],
+            &vec![0u64; n],
+            &vec![0u64; n * nn],
+            kfac,
+            false,
+        )
+        .unwrap();
+        let n_periods = {
+            let mut c = 1u64;
+            for w in periods.windows(2) {
+                if w[1] != w[0] {
+                    c += 1;
+                }
+            }
+            c
+        };
+        for p in 0..n {
+            assert!(r.ratings[p].is_finite(), "rep {rep} nonfinite rating");
+            let place_sum: u64 = r.places[p * nn..(p + 1) * nn].iter().sum();
+            assert_eq!(place_sum, r.games[p], "rep {rep} places/games mismatch");
+            assert!(r.lag[p] <= n_periods, "rep {rep} lag exceeds period count");
+        }
+        // (b) reverse event order within each period block.
+        let mut order: Vec<usize> = (0..g).collect();
+        let mut s = 0usize;
+        while s < g {
+            let mut e = s + 1;
+            while e < g && periods[e] == periods[s] {
+                e += 1;
+            }
+            order[s..e].reverse();
+            s = e;
+        }
+        let players2: Vec<i64> = order
+            .iter()
+            .flat_map(|&e| players[e * nn..(e + 1) * nn].iter().copied())
+            .collect();
+        let scores2: Vec<f64> = order
+            .iter()
+            .flat_map(|&e| scores[e * nn..(e + 1) * nn].iter().copied())
+            .collect();
+        let r2 = elom_rating(
+            &periods,
+            &players2,
+            &scores2,
+            &base,
+            &init,
+            &vec![0u64; n],
+            &vec![0u64; n],
+            &vec![0u64; n * nn],
+            kfac,
+            false,
+        )
+        .unwrap();
+        for p in 0..n {
+            let diff = (r.ratings[p] - r2.ratings[p]).abs();
+            assert!(
+                diff <= 1e-9 * r.ratings[p].abs().max(1.0),
+                "rep {rep} player {p}: within-period order changed rating by {diff}"
+            );
+            assert_eq!(r.games[p], r2.games[p], "rep {rep} games order-dependent");
+            assert_eq!(r.lag[p], r2.lag[p], "rep {rep} lag order-dependent");
+        }
+    }
+}

@@ -5597,6 +5597,65 @@ fn stephenson_rating(
     Ok(d.into())
 }
 
+/// Multiplayer Elo rating for nn-player events, PlayerRatings `elom()`
+/// semantics (see `mlsirm_core::scaling::elom_rating`). `players` and
+/// `scores` are flattened g x nn (row-major); empty seats are player -1
+/// with NaN score. `kfac_mode` is "scalar" (uses `kfac_k`) or "kriichi"
+/// (uses `kfac_gv`/`kfac_kv`). Returns dict with ratings, games, places
+/// (flattened n x nn), lag.
+#[pyfunction]
+#[pyo3(signature = (periods, players, scores, base, init_ratings, init_games, init_lag, init_places, kfac_mode, kfac_k, kfac_gv, kfac_kv, placing))]
+#[allow(clippy::too_many_arguments)]
+fn elom_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    players: PyReadonlyArray1<'_, i64>,
+    scores: PyReadonlyArray1<'_, f64>,
+    base: PyReadonlyArray1<'_, f64>,
+    init_ratings: PyReadonlyArray1<'_, f64>,
+    init_games: PyReadonlyArray1<'_, u64>,
+    init_lag: PyReadonlyArray1<'_, u64>,
+    init_places: PyReadonlyArray1<'_, u64>,
+    kfac_mode: &str,
+    kfac_k: f64,
+    kfac_gv: f64,
+    kfac_kv: f64,
+    placing: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let kfac = match kfac_mode {
+        "scalar" => mlsirm_core::scaling::ElomKFactor::Scalar(kfac_k),
+        "kriichi" => mlsirm_core::scaling::ElomKFactor::Kriichi {
+            gv: kfac_gv,
+            kv: kfac_kv,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "elom_rating: kfac_mode {:?} must be \"scalar\" or \"kriichi\"",
+                other
+            )))
+        }
+    };
+    let res = mlsirm_core::scaling::elom_rating(
+        periods.as_slice()?,
+        players.as_slice()?,
+        scores.as_slice()?,
+        base.as_slice()?,
+        init_ratings.as_slice()?,
+        init_games.as_slice()?,
+        init_lag.as_slice()?,
+        init_places.as_slice()?,
+        kfac,
+        placing,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("places", PyArray1::from_slice(py, &res.places))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7948,6 +8007,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(glicko_rating, m)?)?;
     m.add_function(wrap_pyfunction!(glicko2_rating, m)?)?;
     m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

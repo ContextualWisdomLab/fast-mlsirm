@@ -9775,3 +9775,71 @@ class TestStephenson:
         # n_players cap rejects BEFORE any length-n allocation.
         with pytest.raises(ValueError):
             stephenson_rating([[1, 0, 1, 1.0]], 10**18)
+
+
+class TestElom:
+    def test_e1_scalar_single_event(self):
+        import numpy as np
+
+        from fast_mlsirm import elom_rating
+
+        r = elom_rating(
+            periods=np.array([1], dtype=np.uint64),
+            players=np.array([[0, 1, 2]], dtype=np.int64),
+            scores=np.array([[3.0, 2.0, 1.0]]),
+            n_players=3,
+            base=(20.0, 0.0, -20.0),
+            kfac=0.5,
+        )
+        # Reads crate outputs (oracle E1). Killed by K-scaling or base-rank
+        # mutants: ratings would leave [1510, 1500, 1490].
+        assert list(r.ratings) == [1510.0, 1500.0, 1490.0]
+        assert list(r.games) == [1, 1, 1]
+        assert r.places.shape == (3, 3)
+        assert list(r.places[0]) == [1, 0, 0]
+        assert list(r.lag) == [0, 0, 0]
+
+    def test_e8_once_shrunk_base(self):
+        import numpy as np
+
+        from fast_mlsirm import elom_rating
+
+        # nn=4, two empty seats: PlayerRatings shrinks the ORIGINAL base
+        # exactly once (not once per empty seat). Oracle E8.
+        r = elom_rating(
+            periods=np.array([1], dtype=np.uint64),
+            players=np.array([[0, 1, -1, -1]], dtype=np.int64),
+            scores=np.array([[2.0, 1.0, np.nan, np.nan]]),
+            n_players=3,
+            base=(30.0, 10.0, -10.0, -30.0),
+            kfac=1.0,
+        )
+        # Once-shrunk base (30, 0, -30); ranks 1, 2 -> +30, +0 minus the
+        # expected term 0 (equal ratings). Cumulative-shrink mutant gives
+        # a different base and fails this crate-value pin.
+        assert list(r.ratings) == [1530.0, 1500.0, 1500.0]
+        assert list(r.games) == [1, 1, 0]
+
+    def test_kriichi_default_and_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elom_rating
+
+        periods = np.array([1], dtype=np.uint64)
+        players = np.array([[0, 1, 2, 3]], dtype=np.int64)
+        scores = np.array([[4.0, 3.0, 2.0, 1.0]])
+        # Default kriichi(gv=400, kv=0.2) with zero games: K = 1 exactly.
+        r = elom_rating(periods, players, scores, n_players=4)
+        assert list(r.ratings) == [1530.0, 1510.0, 1490.0, 1470.0]
+        with pytest.raises(ValueError):
+            elom_rating(periods, players, scores, n_players=1)
+        with pytest.raises(ValueError):
+            elom_rating(periods, players + 1j, scores, n_players=4)
+        with pytest.raises(ValueError):
+            elom_rating(periods, players, scores, n_players=4, kfac=("bogus", 1, 1))
+        with pytest.raises(ValueError):
+            # NaN score in an occupied seat must be rejected by the core.
+            bad = scores.copy()
+            bad[0, 0] = np.nan
+            elom_rating(periods, players, bad, n_players=4)

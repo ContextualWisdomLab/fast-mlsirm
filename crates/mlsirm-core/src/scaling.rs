@@ -2837,6 +2837,424 @@ pub fn stephenson_rating(
     })
 }
 
+// ---------------------------------------------------------------------------
+// elom: multiplayer Elo-style rating for nn-player events (PlayerRatings
+// `elom()`).
+//
+// Citation governance:
+// - READ: PlayerRatings R package sources: R driver `elom()` (R/elom.R,
+//   lines ~739-932 of the concatenated package R source), C kernel
+//   `elom_c` (src/, accumulates ascore/escore per event and computes
+//   dscore once per period), and the `kriichi()` K-factor function
+//   (lines ~1005-1020). All formulas below were derived from those
+//   sources directly and pinned by an executed Python oracle port.
+// - NOT READ / does not exist: there is no journal paper for `elom`; it
+//   is documented only in the PlayerRatings package (Alec Stephenson),
+//   where it is described for multi-player games such as Riichi Mahjong.
+//   No formula here is attributed to any unread document.
+//
+// Model. Each event row has `nn` seats (players and scores); a seat may
+// be empty. Per-event preprocessing (R driver ~840-871):
+//
+// 1. If `placing`, negate scores before ranking (lower placing wins).
+// 2. Seat ranks: rank(-zz, ties.method = "min", na.last = "keep"), i.e.
+//    rank_j = 1 + #{k : zz_k > zz_j} over occupied seats.
+// 3. Base assignment: with `nan` empty seats and base vector b of length
+//    nn, the event base vector is b itself when nan = 0; otherwise a
+//    ONCE-shrunk copy of b (verified verbatim quirk: `sbase <- basev`
+//    sits INSIDE the R shrink loop, so the shrink is applied to the
+//    ORIGINAL base exactly once for ANY nan in 1..nn-2, NOT nan times):
+//    even length merges the two middle entries into their mean; odd
+//    length drops the middle entry. Seat j receives sbase[rank_j - 1].
+//
+// Per rating period (kernel `elom_c` + R driver update ~887-907), with
+// current ratings r and PRE-period cumulative game counts:
+//
+// 4. For each event in the period with participant set P:
+//      avetab = mean(r_p : p in P)
+//      ascore_p += base_p;  escore_p += (r_p - avetab) / 40
+//    accumulated across ALL events of the period, then
+//      dscore_p = ascore_p - escore_p  (0 for non-participants).
+// 5. Single update per period: r_p += K_p * dscore_p, where K is either
+//    a scalar or kriichi(games): K_p = 1 - (1 - kv) * games_p / gv,
+//    clamped to kv when games_p >= gv (kriichi taper; K uses PRE-period
+//    games; R computes kfac() before incrementing ngames).
+// 6. Tallies: games_p += appearances this period; per-place counts
+//    places[p][rank-1] += 1 per appearance; lag_p += 1 for every player
+//    with cumulative games != 0, then lag_p = 0 for this period's
+//    participants.
+//
+// Documented divergences from the R driver (REDUCED-SCOPE, mirroring
+// `stephenson_rating`): players are pre-indexed 0..n-1 (no name matching,
+// no `status` frame -- lag continuation applies to indexed players only;
+// there is no status-only roster outside 0..n-1). Rating periods must be
+// non-decreasing (R groups by split(); event order within a period
+// follows input order). Empty seats are encoded as player = -1 AND score
+// = NaN, jointly: in R the score NA count (not player NA) drives ranks
+// and base shrink, so a finite score at an empty seat would influence
+// other seats' ranks; this port rejects that input instead of
+// reproducing it. Duplicate players within one event are rejected (R
+// accepts and double-counts them). Kriichi parameters are restricted to
+// gv > 0, 0 < kv <= 1 (R does not validate them; the clamp-to-kv form
+// equals R's two-step assignment exactly on this domain).
+// ---------------------------------------------------------------------------
+
+/// K-factor rule for [`elom_rating`].
+#[derive(Debug, Clone, Copy)]
+pub enum ElomKFactor {
+    /// Constant K for every player and period.
+    Scalar(f64),
+    /// PlayerRatings `kriichi()`: K = 1 - (1 - kv) * games / gv, clamped
+    /// to kv once cumulative (pre-period) games reach gv.
+    Kriichi {
+        /// Games at which the taper reaches its floor (R default 400).
+        gv: f64,
+        /// K-factor floor (R default 0.2).
+        kv: f64,
+    },
+}
+
+/// Result of [`elom_rating`]: ratings and tallies.
+#[derive(Debug, Clone)]
+pub struct ElomResult {
+    /// Post-update rating per player (length `n`).
+    pub ratings: Vec<f64>,
+    /// Cumulative event appearances per player (init_games + current run).
+    pub games: Vec<u64>,
+    /// Per-place finish counts, row-major `n x nn` (init_places + current
+    /// run): `places[p * nn + r]` counts rank `r + 1` finishes.
+    pub places: Vec<u64>,
+    /// Rating periods since the player's last appearance (continued from
+    /// `init_lag`; 0 for final-period participants and never-played
+    /// players).
+    pub lag: Vec<u64>,
+}
+
+/// Multiplayer Elo ratings from an event schedule, PlayerRatings `elom()`
+/// semantics (nn-player events, e.g. Riichi Mahjong with nn = 4).
+///
+/// Events are rows of `nn` seats: `players[e * nn + j]` is seat `j`'s
+/// player index in `0..n` or `-1` for an empty seat, and
+/// `scores[e * nn + j]` its score (`NaN` exactly at empty seats). At most
+/// `nn - 2` seats per event may be empty. `periods` (length `g`,
+/// non-decreasing) give each event's rating period. `base` (length `nn`)
+/// is the per-rank base score, best rank first (R default
+/// `(30, 10, -10, -30)`). If `placing` is true, scores are placings
+/// (lower is better). `init_ratings`/`init_games`/`init_lag`/
+/// `init_places` continue a previous run (pass zeros for a fresh run;
+/// `init_places` is row-major `n x nn`).
+#[allow(clippy::too_many_arguments)]
+pub fn elom_rating(
+    periods: &[u64],
+    players: &[i64],
+    scores: &[f64],
+    base: &[f64],
+    init_ratings: &[f64],
+    init_games: &[u64],
+    init_lag: &[u64],
+    init_places: &[u64],
+    kfac: ElomKFactor,
+    placing: bool,
+) -> Result<ElomResult, String> {
+    let n = init_ratings.len();
+    if n < 2 {
+        return Err("elom_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "elom_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    let nn = base.len();
+    if !(2..=64).contains(&nn) {
+        return Err(format!(
+            "elom_rating: base length {} must be in 2..=64 (seats per event)",
+            nn
+        ));
+    }
+    if base.iter().any(|b| !b.is_finite()) {
+        return Err("elom_rating: base scores must be finite".to_string());
+    }
+    let g = periods.len();
+    if g == 0 {
+        return Err("elom_rating: at least one event is required".to_string());
+    }
+    let cells = g
+        .checked_mul(nn)
+        .ok_or_else(|| "elom_rating: g * nn overflows usize".to_string())?;
+    if players.len() != cells || scores.len() != cells {
+        return Err(format!(
+            "elom_rating: players (len {}) and scores (len {}) must both have g * nn = {} entries",
+            players.len(),
+            scores.len(),
+            cells
+        ));
+    }
+    if init_ratings.iter().any(|r| !r.is_finite()) {
+        return Err("elom_rating: init_ratings must be finite".to_string());
+    }
+    if init_games.len() != n || init_lag.len() != n {
+        return Err(format!(
+            "elom_rating: init_games (len {}) and init_lag (len {}) must have length n = {}",
+            init_games.len(),
+            init_lag.len(),
+            n
+        ));
+    }
+    let place_cells = n
+        .checked_mul(nn)
+        .ok_or_else(|| "elom_rating: n * nn overflows usize".to_string())?;
+    if init_places.len() != place_cells {
+        return Err(format!(
+            "elom_rating: init_places (len {}) must have n * nn = {} entries",
+            init_places.len(),
+            place_cells
+        ));
+    }
+    if periods.windows(2).any(|w| w[0] > w[1]) {
+        return Err("elom_rating: periods must be non-decreasing".to_string());
+    }
+    // Counters increment at most once per event per player (games, places)
+    // or once per period (lag), all bounded by g; reject inputs that could
+    // overflow u64 rather than panic (debug) or wrap (release) mid-update.
+    let g_u64 = g as u64;
+    for p in 0..n {
+        if init_games[p] > u64::MAX - g_u64 || init_lag[p] > u64::MAX - g_u64 {
+            return Err(format!(
+                "elom_rating: init_games/init_lag for player {} is too large to update without u64 overflow",
+                p
+            ));
+        }
+    }
+    if init_places.iter().any(|&c| c > u64::MAX - g_u64) {
+        return Err(
+            "elom_rating: an init_places count is too large to update without u64 overflow"
+                .to_string(),
+        );
+    }
+    match kfac {
+        ElomKFactor::Scalar(k) => {
+            if !k.is_finite() || k <= 0.0 {
+                return Err(format!(
+                    "elom_rating: scalar K-factor {} must be finite and > 0",
+                    k
+                ));
+            }
+        }
+        ElomKFactor::Kriichi { gv, kv } => {
+            if !gv.is_finite() || gv <= 0.0 {
+                return Err(format!(
+                    "elom_rating: kriichi gv {} must be finite and > 0",
+                    gv
+                ));
+            }
+            if !kv.is_finite() || kv <= 0.0 || kv > 1.0 {
+                return Err(format!(
+                    "elom_rating: kriichi kv {} must be finite and in (0, 1]",
+                    kv
+                ));
+            }
+        }
+    }
+
+    // Once-shrunk base for events with empty seats (R tmpfun quirk: the
+    // shrink applies to the ORIGINAL base exactly once for any nan >= 1).
+    let shrunk: Vec<f64> = if nn % 2 == 0 {
+        let mut s = Vec::with_capacity(nn - 1);
+        s.extend_from_slice(&base[..nn / 2 - 1]);
+        s.push((base[nn / 2 - 1] + base[nn / 2]) / 2.0);
+        s.extend_from_slice(&base[nn / 2 + 1..]);
+        s
+    } else {
+        let mut s = Vec::with_capacity(nn - 1);
+        s.extend_from_slice(&base[..(nn - 1) / 2]);
+        s.extend_from_slice(&base[(nn + 1) / 2..]);
+        s
+    };
+
+    // Per-event validation and rank/base precomputation (R driver
+    // ~840-871). rank[e*nn+j] in 1..=(occupied seats); usize::MAX marks
+    // empty seats.
+    let mut ranks = vec![usize::MAX; cells];
+    let mut event_base = vec![0.0f64; cells];
+    let mut seen = vec![false; n];
+    for e in 0..g {
+        let row = e * nn;
+        let mut nan = 0usize;
+        for j in 0..nn {
+            let pl = players[row + j];
+            let sc = scores[row + j];
+            if pl == -1 {
+                if !sc.is_nan() {
+                    return Err(format!(
+                        "elom_rating: event {} seat {} is empty (player -1) but has a non-NaN score {}; empty seats require NaN scores",
+                        e, j, sc
+                    ));
+                }
+                nan += 1;
+            } else {
+                if pl < 0 || pl as u64 >= n as u64 {
+                    return Err(format!(
+                        "elom_rating: event {} seat {} has player {} outside 0..{} (or -1 for an empty seat)",
+                        e, j, pl, n
+                    ));
+                }
+                if !sc.is_finite() {
+                    return Err(format!(
+                        "elom_rating: event {} seat {} (player {}) has non-finite score {}",
+                        e, j, pl, sc
+                    ));
+                }
+            }
+        }
+        if nan > nn - 2 {
+            return Err(format!(
+                "elom_rating: event {} has {} empty seats; at most nn - 2 = {} are supported",
+                e,
+                nan,
+                nn - 2
+            ));
+        }
+        for j in 0..nn {
+            let pl = players[row + j];
+            if pl == -1 {
+                continue;
+            }
+            let p = pl as usize;
+            if seen[p] {
+                return Err(format!(
+                    "elom_rating: event {} lists player {} more than once",
+                    e, p
+                ));
+            }
+            seen[p] = true;
+        }
+        for j in 0..nn {
+            let pl = players[row + j];
+            if pl != -1 {
+                seen[pl as usize] = false;
+            }
+        }
+        let sbase: &[f64] = if nan == 0 { base } else { &shrunk };
+        for j in 0..nn {
+            if players[row + j] == -1 {
+                continue;
+            }
+            let zj = if placing {
+                -scores[row + j]
+            } else {
+                scores[row + j]
+            };
+            // ties.method = "min" on descending scores.
+            let mut r = 1usize;
+            for k in 0..nn {
+                if k == j || players[row + k] == -1 {
+                    continue;
+                }
+                let zk = if placing {
+                    -scores[row + k]
+                } else {
+                    scores[row + k]
+                };
+                if zk > zj {
+                    r += 1;
+                }
+            }
+            ranks[row + j] = r;
+            event_base[row + j] = sbase[r - 1];
+        }
+    }
+
+    let mut ratings = init_ratings.to_vec();
+    let mut games = init_games.to_vec();
+    let mut lag = init_lag.to_vec();
+    let mut places = init_places.to_vec();
+    let mut ascore = vec![0.0f64; n];
+    let mut escore = vec![0.0f64; n];
+    let mut played = vec![0u64; n];
+
+    let mut i = 0usize;
+    while i < g {
+        let mut j = i + 1;
+        while j < g && periods[j] == periods[i] {
+            j += 1;
+        }
+        for v in ascore.iter_mut() {
+            *v = 0.0;
+        }
+        for v in escore.iter_mut() {
+            *v = 0.0;
+        }
+        for v in played.iter_mut() {
+            *v = 0;
+        }
+        // Kernel accumulation across all events of the period (elom_c).
+        for e in i..j {
+            let row = e * nn;
+            let mut sum = 0.0f64;
+            let mut cnt = 0usize;
+            for k in 0..nn {
+                let pl = players[row + k];
+                if pl != -1 {
+                    sum += ratings[pl as usize];
+                    cnt += 1;
+                }
+            }
+            let avetab = sum / cnt as f64;
+            for k in 0..nn {
+                let pl = players[row + k];
+                if pl == -1 {
+                    continue;
+                }
+                let p = pl as usize;
+                ascore[p] += event_base[row + k];
+                escore[p] += (ratings[p] - avetab) / 40.0;
+                played[p] += 1;
+                places[p * nn + (ranks[row + k] - 1)] += 1;
+            }
+        }
+        // Single update per period; K uses PRE-period cumulative games.
+        for p in 0..n {
+            let k = match kfac {
+                ElomKFactor::Scalar(k) => k,
+                ElomKFactor::Kriichi { gv, kv } => {
+                    let gp = games[p] as f64;
+                    if gp >= gv {
+                        kv
+                    } else {
+                        1.0 - (1.0 - kv) * gp / gv
+                    }
+                }
+            };
+            ratings[p] += k * (ascore[p] - escore[p]);
+        }
+        // Tallies and lag (R driver ~898-907): games first, then lag on
+        // cumulative games != 0, then participant reset.
+        for p in 0..n {
+            games[p] += played[p];
+        }
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if played[p] != 0 {
+                lag[p] = 0;
+            }
+        }
+        i = j;
+    }
+
+    Ok(ElomResult {
+        ratings,
+        games,
+        places,
+        lag,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

@@ -119,6 +119,26 @@
 
 ### Added
 
+- **Multiplayer Elo rating (CRAN PlayerRatings 1.1-0 `elom()`
+  `R/ratings.R` lines 739–932 + `elom_c` C kernel `src/ratings.c`
+  lines 45–80, and `kriichi` K-factor lines 1006–1020 — all READ and
+  normative; no journal paper exists for this system, CRAN package
+  provenance only)**: `elom_rating` scores nn-seat events (empty seats
+  as player −1/NaN score) with rank base scores, a per-period single
+  update `K·(actual − expected)` where expected sums
+  `(r_p − event mean rating)/40`, and either a constant K or the
+  kriichi experience-decay `max(kv, 1 − (1−kv)·games/gv)`. Faithfully
+  reproduces the R quirk that partial events shrink the ORIGINAL base
+  exactly once regardless of empty-seat count (R:855-866 `sbase <-
+  basev` resets inside the loop). REDUCED-SCOPE vs R: player −1 ⟺ NaN
+  score jointly enforced, sorted periods required, in-event duplicate
+  players rejected, kriichi bounds `gv > 0`, `0 < kv ≤ 1`. Rust core
+  `mlsirm_core::scaling::elom_rating` with exact-value anchors E1–E9
+  (dyadic rationals; hand-derived oracle executed against the R
+  semantics) and a 500-rep Monte-Carlo invariance test; 6 mutation
+  kills executed (K-scaling, event-mean, cumulative-shrink, kriichi
+  games-timing, tie-rank, per-event-update).
+
 - **Stephenson rating system (CRAN PlayerRatings 1.1-0 `steph()`
   `R/ratings.R` lines 591–737 + `stephenson_c` C kernel
   `src/ratings.c` lines 157–202 — both READ and normative; no journal
