@@ -453,3 +453,92 @@ def owen_cat(
         "mu": float(r["mu"]),
         "sig2": float(r["sig2"]),
     }
+
+
+def ccat_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    groups: np.ndarray,
+    targets: np.ndarray,
+    administered: np.ndarray,
+    theta0: float,
+) -> dict:
+    """Kingsbury & Zara (1989) constrained CAT (CCAT) content balancing.
+
+    Single-step item selection under content-area constraints: any eligible
+    content group (one with at least one unadministered item) that has zero
+    administered items has priority; otherwise the eligible group with the
+    maximal discrepancy ``targets[g] - k_g / k`` (target minus empirical
+    proportion of administered items) is chosen; within the chosen group the
+    unadministered item with maximal logistic 3PL Fisher information
+    ``a^2 (Q/P) ((P - c) / (1 - c))^2`` at ``theta0`` is selected. Ties go
+    to the lowest index (documented deterministic deviation from catR's
+    random tie-break). Returns a dict with ``selected``, ``group``,
+    ``discrepancy`` (per group) and ``info`` (per item; computed for the
+    whole pool, masking applies to selection only), all computed by the
+    Rust core (``mlsirm_core::exposure::ccat_select``).
+
+    Source status: Kingsbury & Zara (1989) itself was NOT read (paywalled).
+    The rule is implemented as reproduced by the R catR package
+    (``nextItem.R``, ``cbControl`` branch; READ), and the Fisher-information
+    formula was verified against catR ``Ii.R``/``Pi.R``.
+
+    ``targets`` must be strictly positive and sum to 1; ``groups`` maps each
+    item to a group index ``0..len(targets)-1``.
+
+    References (APA 7th ed.):
+        Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting
+            items for computerized adaptive tests. *Applied Measurement in
+            Education, 2*(4), 359-375.
+            https://doi.org/10.1207/s15324818ame0204_6
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    groups = np.asarray(groups)
+    if groups.ndim != 1:
+        raise ValueError("groups must be a 1-D array")
+    # Validate BEFORE the uintp cast: casting would silently truncate
+    # non-integers, wrap negatives, and drop imaginary parts.
+    if np.iscomplexobj(groups):
+        raise ValueError("groups must contain non-negative integers")
+    gf = groups.astype(np.float64)
+    if not np.isfinite(gf).all() or (gf < 0).any() or (gf != np.floor(gf)).any():
+        raise ValueError("groups must contain non-negative integers")
+    targets = np.asarray(targets, dtype=np.float64)
+    if targets.ndim != 1:
+        raise ValueError("targets must be a 1-D array")
+    administered = np.asarray(administered)
+    if administered.ndim != 1:
+        raise ValueError("administered must be a 1-D array")
+    if administered.dtype != np.bool_:
+        raise ValueError("administered must be a boolean array")
+    r = _core.py_ccat_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(groups, dtype=np.uintp),
+        np.ascontiguousarray(targets),
+        np.ascontiguousarray(administered),
+        float(theta0),
+    )
+    return {
+        "selected": int(r["selected"]),
+        "group": int(r["group"]),
+        "discrepancy": np.asarray(r["discrepancy"]),
+        "info": np.asarray(r["info"]),
+    }
