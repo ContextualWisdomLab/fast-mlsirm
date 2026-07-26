@@ -6159,6 +6159,20 @@ fn pr_error_contract() {
         false
     ))
     .contains("players length"));
+    // nr*np usize overflow must be a checked error, not a wrap + panic
+    // (kills: replacing checked_mul with wrapping `nr * np`, which lets an
+    // empty players slice pass the length check and then index OOB).
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[],
+        1usize << 61,
+        8,
+        15,
+        None,
+        false
+    ))
+    .contains("overflows"));
     assert!(r(predict_rating_multi(
         &[1500.0, 1500.0],
         &[0, 0],

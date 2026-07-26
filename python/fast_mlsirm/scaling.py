@@ -1837,6 +1837,87 @@ def _predict_scalar(x, name, fname):
     return v
 
 
+def _predict_games_u64(x, fname):
+    """Validate games counts losslessly into u64.
+
+    Integer-dtype ndarrays (and Python-int sequences, which numpy keeps in
+    an integer dtype) pass through without a float round-trip, preserving
+    counts at or above 2**53. Float inputs are bounded by the source
+    dtype's exact-integer limit (np.finfo(...).nmant + 1 bits: float64
+    2**53, float32 2**24) so a rounded count can never silently shift the
+    strict games < tng cutoff."""
+    name = "games"
+    if isinstance(x, np.ma.MaskedArray):
+        raise ValueError(f"{fname}: masked arrays are not supported for {name}")
+    if isinstance(x, np.ndarray):
+        raw = x
+    else:
+        probe = np.asarray(x, dtype=object)
+        if np.iscomplexobj(probe):
+            raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
+        for v in np.ravel(probe):
+            if v is None or isinstance(
+                v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
+            ):
+                raise ValueError(f"{fname}: {name} contains a non-numeric value")
+        try:
+            raw = np.asarray(x)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{fname}: {name} is not numeric: {exc}") from None
+    if np.iscomplexobj(raw) or raw.dtype.kind == "b":
+        raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
+    if raw.ndim != 1:
+        raise ValueError(f"{fname}: {name} must be one-dimensional")
+    if raw.dtype.kind in "iu":
+        if raw.dtype.kind == "i" and np.any(raw < 0):
+            raise ValueError(f"{fname}: {name} must be nonnegative integers")
+        return raw.astype(np.uint64)
+    arr = _predict_float_array(x, name, fname, allow_nan=False)
+    if np.any(arr < 0) or not np.all(arr == np.floor(arr)):
+        raise ValueError(f"{fname}: {name} must be nonnegative integers")
+    if raw.dtype.kind == "f":
+        fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
+    else:
+        fidelity = 2.0**53
+    if np.any(arr >= fidelity):
+        raise ValueError(
+            f"{fname}: {name} values at or above {int(fidelity)} are not "
+            "reliably representable in this float dtype; pass games as an "
+            "integer array"
+        )
+    return arr.astype(np.uint64)
+
+
+def _predict_tng_u64(tng, fname):
+    """Validate tng losslessly into u64 (no float round-trip for ints)."""
+    import math
+
+    if isinstance(tng, (bool, np.bool_)):
+        raise ValueError(f"{fname}: tng must be real numeric, not bool")
+    if isinstance(tng, (int, np.integer)):
+        t = int(tng)
+        if t < 0:
+            raise ValueError(f"{fname}: tng must be a nonnegative integer")
+        if t > 2**64 - 1:
+            raise ValueError(f"{fname}: tng must fit in an unsigned 64-bit integer")
+        return t
+    if (
+        isinstance(tng, np.ndarray)
+        and tng.ndim == 0
+        and tng.dtype.kind in "iu"
+    ):
+        return _predict_tng_u64(int(tng), fname)
+    v = _predict_scalar(tng, "tng", fname)
+    if v < 0 or v != math.floor(v):
+        raise ValueError(f"{fname}: tng must be a nonnegative integer")
+    if v >= 2.0**53:
+        raise ValueError(
+            f"{fname}: tng values at or above 2**53 are not reliably "
+            "representable as float; pass tng as an int"
+        )
+    return int(v)
+
+
 def predict_rating(
     ratings,
     games,
@@ -1862,8 +1943,6 @@ def predict_rating(
     predictions to 1 when ``pred >= thresh`` else 0 (NaN kept). ``gamma``
     is the per-game (or scalar, broadcast) first-player advantage.
     """
-    import math
-
     from .fitstats import _core_module
 
     fname = "predict_rating"
@@ -1871,10 +1950,12 @@ def predict_rating(
     n = rat.shape[0]
     if n < 2 or n > 10000:
         raise ValueError(f"{fname}: number of players must be in 2..=10000, got {n}")
-    g_arr = _predict_float_array(games, "games", fname, allow_nan=False)
-    if np.any(g_arr < 0) or not np.all(g_arr == np.floor(g_arr)):
-        raise ValueError(f"{fname}: games must be nonnegative integers")
-    games_u64 = g_arr.astype(np.uint64)
+    games_u64 = _predict_games_u64(games, fname)
+    if games_u64.shape[0] != n:
+        raise ValueError(
+            f"{fname}: games must have one entry per player ({n}), "
+            f"got {games_u64.shape[0]}"
+        )
     w = _predict_int_index_array(white, "white", fname)
     b = _predict_int_index_array(black, "black", fname)
     dev = None
@@ -1892,9 +1973,7 @@ def predict_rating(
             raise ValueError(
                 f"{fname}: gamma must be a scalar or length-{ng} array, got {gam.shape}"
             )
-    tng_v = _predict_scalar(tng, "tng", fname)
-    if tng_v < 0 or tng_v != math.floor(tng_v):
-        raise ValueError(f"{fname}: tng must be a nonnegative integer")
+    tng_v = _predict_tng_u64(tng, fname)
     trat_rating = None
     trat_deviation = None
     if trat is not None:
@@ -1951,8 +2030,6 @@ def predict_rating_multi(
     by min-tie ranks of the predictions (rank 1 = highest; NaN kept),
     matching R's ``rank(-preds, na.last="keep", ties.method="min")``.
     """
-    import math
-
     from .fitstats import _core_module
 
     fname = "predict_rating_multi"
@@ -1960,10 +2037,12 @@ def predict_rating_multi(
     n = rat.shape[0]
     if n < 2 or n > 10000:
         raise ValueError(f"{fname}: number of players must be in 2..=10000, got {n}")
-    g_arr = _predict_float_array(games, "games", fname, allow_nan=False)
-    if np.any(g_arr < 0) or not np.all(g_arr == np.floor(g_arr)):
-        raise ValueError(f"{fname}: games must be nonnegative integers")
-    games_u64 = g_arr.astype(np.uint64)
+    games_u64 = _predict_games_u64(games, fname)
+    if games_u64.shape[0] != n:
+        raise ValueError(
+            f"{fname}: games must have one entry per player ({n}), "
+            f"got {games_u64.shape[0]}"
+        )
     if isinstance(players, np.ma.MaskedArray):
         raise ValueError(f"{fname}: masked arrays are not supported for players")
     p_raw = players if isinstance(players, np.ndarray) else np.asarray(players, dtype=object)
@@ -1975,9 +2054,7 @@ def predict_rating_multi(
         raise ValueError(
             f"{fname}: seats per event must be in 2..=1000, got {np_seats}"
         )
-    tng_v = _predict_scalar(tng, "tng", fname)
-    if tng_v < 0 or tng_v != math.floor(tng_v):
-        raise ValueError(f"{fname}: tng must be a nonnegative integer")
+    tng_v = _predict_tng_u64(tng, fname)
     trat_v = None if trat is None else _predict_scalar(trat, "trat", fname)
     if not isinstance(placing, (bool, np.bool_)):
         raise ValueError(f"{fname}: placing must be a bool")

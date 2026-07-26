@@ -3921,11 +3921,14 @@ pub fn predict_rating_multi(
             "predict_rating_multi: seats per event must be in 2..=1000, got {np}"
         ));
     }
-    if players.len() != nr * np {
+    let total = nr.checked_mul(np).ok_or_else(|| {
+        format!("predict_rating_multi: nr * np overflows usize (nr = {nr}, np = {np})")
+    })?;
+    if players.len() != total {
         return Err(format!(
             "predict_rating_multi: players length {} != nr*np = {}",
             players.len(),
-            nr * np
+            total
         ));
     }
     if let Some(t) = trat {
@@ -3940,7 +3943,7 @@ pub fn predict_rating_multi(
             ));
         }
     }
-    let mut out = vec![f64::NAN; nr * np];
+    let mut out = vec![f64::NAN; total];
     let mut row_rat = vec![f64::NAN; np];
     for i in 0..nr {
         for s in 0..np {

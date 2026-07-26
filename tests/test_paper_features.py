@@ -10201,3 +10201,50 @@ class TestPredict:
         import math
         out = predict_rating([float("nan"), 2000.0], [20, 20], [0], [1], gamma=0.0)
         assert math.isnan(out[0])
+
+    def test_u64_fidelity_and_overflow(self):
+        import math
+        import numpy as np
+        import pytest
+        from fast_mlsirm import predict_rating, predict_rating_multi
+
+        big = 2**53
+        # int-dtype games keep exact counts above 2**53: games == 2**53 is
+        # strictly below tng == 2**53 + 1, so both players are unrated -> NaN.
+        out = predict_rating(
+            [2200.0, 2000.0], [big, big], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert math.isnan(out[0])
+        outm = predict_rating_multi(
+            [2300.0, 2200.0], [big, big], np.array([[0, 1]]), tng=big + 1
+        )
+        assert math.isnan(outm[0][0]) and math.isnan(outm[0][1])
+        # float games at/above the dtype exact-integer bound are rejected
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), [0], [1]
+            )
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating_multi(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), np.array([[0, 1]])
+            )
+        # float tng at/above 2**53 rejected; huge int tng still exact
+        with pytest.raises(ValueError, match='pass tng as an int'):
+            predict_rating([2200.0, 2000.0], [20, 20], [0], [1], tng=float(big))
+        kept = predict_rating(
+            [2200.0, 2000.0], [big + 2, big + 2], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert abs(kept[0] - 0.7597469266479578) < 1e-14
+        # core-level nr*np overflow is a checked ValueError, not a panic
+        import fast_mlsirm._core as core
+        with pytest.raises(ValueError, match='overflows'):
+            core.predict_rating_multi(
+                np.array([1.0, 2.0]),
+                np.array([1, 1], dtype=np.uint64),
+                np.array([], dtype=np.int64),
+                1 << 61,
+                8,
+                15,
+                None,
+                False,
+            )
