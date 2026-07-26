@@ -1075,7 +1075,7 @@ pub fn owen_cat(
 //   I_i(theta) = a_i^2 * (Q_i / P_i) * ((P_i - c_i) / (1 - c_i))^2,
 // was verified against catR's `Ii.R` (I = dP^2 / (P Q)) with `Pi.R`'s
 // P/dP at D = 1, d = 1, which reduce algebraically to this form
-// (adversarial spec review, ccat_spec_review.md).
+// (adversarial spec review against catR formulas).
 //
 // References:
 // Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting items

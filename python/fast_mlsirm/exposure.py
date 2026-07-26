@@ -486,7 +486,7 @@ def ccat_select(
     formula was verified against catR ``Ii.R``/``Pi.R``.
 
     ``targets`` must be strictly positive and sum to 1; ``groups`` maps each
-    item to a group index ``0..len(targets)``.
+    item to a group index ``0..len(targets)-1``.
 
     References (APA 7th ed.):
         Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting
