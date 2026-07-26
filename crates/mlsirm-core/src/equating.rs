@@ -1306,6 +1306,257 @@ pub fn equate_eg_ext(
     })
 }
 
+// ===================== Circle-arc small-sample equating =====================
+
+/// Which circle-arc estimator to use (Livingston & Kim, 2008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircleArcMethod {
+    /// Method 1: circle arc fitted directly through the three points
+    /// (Livingston & Kim, 2008, pp. 1-4).
+    Arc1,
+    /// Method 2: linear component `L(x)` through the end-points plus a
+    /// circle arc fitted to the transformed points (pp. 4-6); the source's
+    /// resampling study found it the most accurate small-sample method
+    /// overall (p. 10).
+    Arc2,
+}
+
+impl CircleArcMethod {
+    /// Parse a method label (`"1"`, `"arc1"`, `"2"`, `"arc2"`).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "1" | "arc1" | "circlearc1" => Some(CircleArcMethod::Arc1),
+            "2" | "arc2" | "circlearc2" => Some(CircleArcMethod::Arc2),
+            _ => None,
+        }
+    }
+}
+
+/// Circle-arc equating output.
+///
+/// `xc`/`yc`/`r2` describe the fitted circle: for [`CircleArcMethod::Arc1`]
+/// in raw coordinates, for [`CircleArcMethod::Arc2`] in the transformed
+/// (`y* = y - L(x)`) coordinates of the read source (eq. 7). When the three
+/// points are collinear (Method 1) or the transformed middle height is zero
+/// (Method 2, `y2* = 0`), the estimate is the straight line/`L(x)` itself,
+/// `collinear` is `true`, and `xc`/`yc`/`r2` are `NaN`.
+#[derive(Debug, Clone)]
+pub struct CircleArcResult {
+    /// Reference-form equivalent of each requested new-form score.
+    pub equated: Vec<f64>,
+    /// Fitted circle center x (source eq. 3); `NaN` when `collinear`.
+    pub xc: f64,
+    /// Fitted circle center y (source eq. 4); `NaN` when `collinear`.
+    pub yc: f64,
+    /// Fitted squared radius (source eq. 5); `NaN` when `collinear`.
+    pub r2: f64,
+    /// `true` when the estimate degenerates to the straight line through
+    /// the points (Method 1) or to `L(x)` (Method 2).
+    pub collinear: bool,
+    /// The middle point `(x2, y2)` actually used.
+    pub middle: (f64, f64),
+}
+
+/// Circumcenter and squared radius through three points, written exactly as
+/// the read source's eqs. 3-5 (separate numerators/denominators for `xc`
+/// and `yc`; algebraically `d == -dy`, kept separate for traceability).
+/// Returns `None` when the points are collinear (`d == 0`).
+fn circle_through(
+    (x1, y1): (f64, f64),
+    (x2, y2): (f64, f64),
+    (x3, y3): (f64, f64),
+) -> Option<(f64, f64, f64)> {
+    let d = 2.0 * (x1 * (y3 - y2) + x2 * (y1 - y3) + x3 * (y2 - y1));
+    if d == 0.0 {
+        return None;
+    }
+    let dy = 2.0 * (y1 * (x3 - x2) + y2 * (x1 - x3) + y3 * (x2 - x1));
+    let s1 = x1 * x1 + y1 * y1;
+    let s2 = x2 * x2 + y2 * y2;
+    let s3 = x3 * x3 + y3 * y3;
+    let xc = (s1 * (y3 - y2) + s2 * (y1 - y3) + s3 * (y2 - y1)) / d;
+    let yc = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / dy;
+    let r2 = (x1 - xc) * (x1 - xc) + (y1 - yc) * (y1 - yc);
+    Some((xc, yc, r2))
+}
+
+/// Evaluate the fitted arc at `x`. `plus` selects source eq. 1 (`yc +
+/// sqrt(...)`, middle point above the chord) versus eq. 2 (`yc - ...`).
+/// The radicand is non-negative for `x` between two on-circle abscissas in
+/// exact arithmetic (every circle point satisfies `|X - xc| <= r`); tiny
+/// negative values are floating-point noise and are clamped to zero.
+fn arc_eval(x: f64, xc: f64, yc: f64, r2: f64, plus: bool) -> f64 {
+    let rad = (r2 - (x - xc) * (x - xc)).max(0.0);
+    if plus {
+        yc + rad.sqrt()
+    } else {
+        yc - rad.sqrt()
+    }
+}
+
+/// Circle-arc small-sample observed-score equating.
+///
+/// # Citation governance
+///
+/// - READ (full text): Livingston, S. A., & Kim, S. (2008). *Small-sample
+///   equating by the circle-arc method* (Research Report RR-08-39). ETS.
+///   (ERIC EJ1111225.) All formulas below are from this source: the
+///   circumcenter eqs. 3-4, squared radius eq. 5, arc branches eqs. 1-2
+///   with the `y2 > yc` decision rule (p. 4), the Method-2 linear
+///   component eq. 6 and transform eq. 7 (pp. 4-5), and the worked example
+///   (center `(40, -15)`, radius `sqrt(1625)`; Method-2 transformed center
+///   `(12.5, -13)`, radius `sqrt(225.25)`).
+/// - NOT READ (cited as cited in the source): Divgi (1987), the
+///   cubic-through-three-points precursor; Kolen & Brennan (2004) for mean
+///   equating; Livingston & Kim (2009), *Journal of Educational
+///   Measurement, 46*(3), 330-343, the journal version of this report.
+/// - DERIVED (not stated in the source, proved during spec review):
+///   `y2 == yc` is impossible for a proper circle through three points
+///   with `x1 < x2 < x3` (it would force `x2 = xc +/- r`, an extreme
+///   abscissa of the circle, contradicting `x1 < x2 < x3`); the equality
+///   arm below is a defensive floating-point guard only. Likewise the
+///   radicand `r2 - (x - xc)^2` is non-negative on `[x1, x3]` in exact
+///   arithmetic because all circle points satisfy `|X - xc| <= r`.
+///
+/// # Scope (REDUCED relative to the source)
+///
+/// Scores must lie in `[x1, x3]`. The source's Method 1 additionally
+/// extends the transformation below the lower end-point by connecting it
+/// linearly to the minimum-possible-score point (p. 2); that extension is
+/// NOT implemented — scores below `x1` (or above `x3`) are an error.
+///
+/// `low = (x1, y1)` and `high = (x3, y3)` are the prespecified end-points
+/// (maximum possible scores; lowest meaningful, e.g. chance, scores).
+/// `middle = (x2, y2)` is the empirically determined middle point: for
+/// single-group/equivalent-groups designs the pair of mean scores (p. 6);
+/// for the anchor design see [`circle_arc_middle_anchor`].
+///
+/// Errors: empty or non-finite `scores`, scores outside `[x1, x3]`,
+/// non-finite points, `x1 >= x3`, `x2 <= x1`, `x2 >= x3`, or (defensive)
+/// a middle point exactly at the fitted circle's horizontal diameter.
+pub fn circle_arc_equate(
+    scores: &[f64],
+    low: (f64, f64),
+    middle: (f64, f64),
+    high: (f64, f64),
+    method: CircleArcMethod,
+) -> Result<CircleArcResult, String> {
+    let (x1, y1) = low;
+    let (x2, y2) = middle;
+    let (x3, y3) = high;
+    for v in [x1, y1, x2, y2, x3, y3] {
+        if !v.is_finite() {
+            return Err("circle-arc points must be finite".to_string());
+        }
+    }
+    if x1 >= x3 {
+        return Err("circle-arc needs x1 < x3 (increasing end-points)".to_string());
+    }
+    if x2 <= x1 || x2 >= x3 {
+        return Err("circle-arc middle point must satisfy x1 < x2 < x3".to_string());
+    }
+    if scores.is_empty() {
+        return Err("circle-arc needs at least one score to equate".to_string());
+    }
+    for &s in scores {
+        if !s.is_finite() {
+            return Err("circle-arc scores must be finite".to_string());
+        }
+        if s < x1 || s > x3 {
+            return Err(
+                "circle-arc score outside [x1, x3]; the source's below-endpoint \
+                 linear extension is not implemented"
+                    .to_string(),
+            );
+        }
+    }
+    // Method 2 linear component L(x) through the end-points (source eq. 6).
+    let slope = (y3 - y1) / (x3 - x1);
+    let line = |x: f64| y1 + slope * (x - x1);
+    // Points the circle is fitted to: raw for Method 1; transformed
+    // (y* = y - L(x), source eq. 7; end-point heights become 0) for Method 2.
+    let (p1, p2, p3, y_mid) = match method {
+        CircleArcMethod::Arc1 => ((x1, y1), (x2, y2), (x3, y3), y2),
+        CircleArcMethod::Arc2 => {
+            let y2s = y2 - line(x2);
+            ((x1, 0.0), (x2, y2s), (x3, 0.0), y2s)
+        }
+    };
+    let fit = circle_through(p1, p2, p3);
+    let (xc, yc, r2, plus) = match fit {
+        None => {
+            // Collinear (Method 1) or y2* = 0 (Method 2): the estimate is
+            // the straight line through the points / L(x) itself.
+            let equated = scores.iter().map(|&s| line(s)).collect();
+            return Ok(CircleArcResult {
+                equated,
+                xc: f64::NAN,
+                yc: f64::NAN,
+                r2: f64::NAN,
+                collinear: true,
+                middle: (x2, y2),
+            });
+        }
+        Some((xc, yc, r2)) => {
+            if y_mid == yc {
+                return Err("circle-arc middle point sits on the circle's horizontal \
+                     diameter (defensive guard; unreachable for x1 < x2 < x3)"
+                    .to_string());
+            }
+            (xc, yc, r2, y_mid > yc)
+        }
+    };
+    let equated = scores
+        .iter()
+        .map(|&s| {
+            let a = arc_eval(s, xc, yc, r2, plus);
+            match method {
+                CircleArcMethod::Arc1 => a,
+                CircleArcMethod::Arc2 => line(s) + a,
+            }
+        })
+        .collect();
+    Ok(CircleArcResult {
+        equated,
+        xc,
+        yc,
+        r2,
+        collinear: false,
+        middle: (x2, y2),
+    })
+}
+
+/// Middle point for the anchor (NEAT) design (Livingston & Kim, 2008,
+/// eq. 9): choosing `x2 = m_XA` collapses the chained-linear formula to
+///
+/// ```text
+/// y2 = m_YB + (s_YB / s_VB) * (m_VA - m_VB)
+/// ```
+///
+/// where `m`/`s` are means/SDs, `A`/`B` the groups taking the new form X
+/// and reference form Y, and `V` the anchor. The full chained-linear form
+/// for an arbitrary `x2` (source p. 7; its OCR equation label collides
+/// with the earlier "(8)" and is cited here by location, not number) is
+/// NOT implemented. Errors: non-finite inputs, `s_yb <= 0`, `s_vb <= 0`.
+pub fn circle_arc_middle_anchor(
+    m_xa: f64,
+    m_va: f64,
+    m_yb: f64,
+    s_yb: f64,
+    m_vb: f64,
+    s_vb: f64,
+) -> Result<(f64, f64), String> {
+    for v in [m_xa, m_va, m_yb, s_yb, m_vb, s_vb] {
+        if !v.is_finite() {
+            return Err("circle-arc anchor middle inputs must be finite".to_string());
+        }
+    }
+    if s_yb <= 0.0 || s_vb <= 0.0 {
+        return Err("circle-arc anchor middle needs positive s_yb and s_vb".to_string());
+    }
+    Ok((m_xa, m_yb + (s_yb / s_vb) * (m_va - m_vb)))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/equating_tests.rs"]
 mod tests;

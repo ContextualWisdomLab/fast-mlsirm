@@ -8362,3 +8362,48 @@ class TestWoodruffSawyer:
             woodruff_sawyer_normal(0.0, 1.0, 0.0, -0.5)
         with pytest.raises(ValueError):
             woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.0)
+
+class TestCircleArc:
+    def test_paper_method1(self):
+        from fast_mlsirm import circle_arc_equate
+
+        r = circle_arc_equate(
+            [5.0, 12.0, 20.0, 10.0], (5.0, 5.0), (12.0, 14.0), (20.0, 20.0),
+            method="arc1",
+        )
+        # crate-returned circle: paper worked example center (40, -15), r^2=1625
+        assert r.xc == 40.0 and r.yc == -15.0 and r.r2 == 1625.0
+        assert not r.collinear and r.middle == (12.0, 14.0)
+        assert r.equated[0] == 5.0 and r.equated[1] == 14.0 and r.equated[2] == 20.0
+        assert abs(r.equated[3] - 11.925824035672519) < 1e-12
+
+    def test_paper_method2_and_anchor(self):
+        from fast_mlsirm import circle_arc_equate, circle_arc_middle_anchor
+
+        r = circle_arc_equate(
+            [10.0], (5.0, 5.0), (12.0, 14.0), (20.0, 20.0), method="arc2",
+        )
+        assert r.xc == 12.5 and r.yc == -13.0 and r.r2 == 225.25
+        assert abs(r.equated[0] - 11.798648586948742) < 1e-12
+        x2, y2 = circle_arc_middle_anchor(47.62, 30.60, 77.47, 10.83, 30.46, 5.09)
+        assert x2 == 47.62
+        assert abs(y2 - 77.76787819253438) < 1e-12  # paper Table 1 pin
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import circle_arc_equate, circle_arc_middle_anchor
+
+        with pytest.raises(ValueError):
+            circle_arc_equate([1.0], (0.0, 0.0), (4.0, 2.0), (10.0, 10.0), method="nope")
+        with pytest.raises(ValueError):
+            circle_arc_equate([-1.0], (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate(np.array([1 + 2j]), (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate(np.array(["a"], dtype=object), (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate([1.0], (0.0, 0.0), 4.0, (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0)

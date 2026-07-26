@@ -119,6 +119,26 @@
 
 ### Added
 
+- **Circle-arc small-sample equating (Livingston & Kim, 2008, ETS
+  RR-08-39)** (`fast_mlsirm.circle_arc_equate`,
+  `fast_mlsirm.circle_arc_middle_anchor`; in Rust
+  `mlsirm_core::equating::{circle_arc_equate, circle_arc_middle_anchor}`):
+  constrains the equating curve through two prespecified end-points and an
+  empirically estimated middle point. Method 1 fits a circle arc directly
+  through the three points (circumcenter eqs. 3-4, radius eq. 5, arc
+  branch chosen by the middle point's position relative to the center);
+  Method 2 (the source's most accurate small-sample method) decomposes the
+  curve into the linear component `L(x)` through the end-points plus an
+  arc fitted to the transformed points `y* = y - L(x)`. Collinear points
+  degenerate to the line. `circle_arc_middle_anchor` computes the
+  anchor-design middle point `y2 = m_YB + (s_YB/s_VB)(m_VA - m_VB)`
+  (eq. 9). Reduced scope: scores must lie within the end-points (the
+  source's below-lower-endpoint linear extension is not implemented).
+  Pinned by the paper's worked example (center `(40, -15)`, `r^2 = 1625`;
+  Method-2 transformed center `(12.5, -13)`, `r^2 = 901/4`), a Table-1
+  anchor pin, an exact minus-branch fixture, and a 500-rep randomized
+  anchor-recovery check, all validated against an exact-Fraction oracle.
+
 - **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
   1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
   `fast_mlsirm.woodruff_sawyer_normal`; in Rust
