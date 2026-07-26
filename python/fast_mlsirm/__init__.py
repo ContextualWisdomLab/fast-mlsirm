@@ -131,6 +131,8 @@ from .exposure import (
     flexilevel_score_distribution as flexilevel_score_distribution,
     stradaptive_administer as stradaptive_administer,
     pyramidal_administer as pyramidal_administer,
+    two_stage_route as two_stage_route,
+    two_stage_score as two_stage_score,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -299,6 +301,8 @@ __all__ = [
     "flexilevel_score_distribution",
     "stradaptive_administer",
     "pyramidal_administer",
+    "two_stage_route",
+    "two_stage_score",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",

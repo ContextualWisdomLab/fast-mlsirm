@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Two-stage adaptive testing (Betz & Weiss, 1973, Research Report 73-4;
+  Betz & Weiss, 1974, Research Report 74-4)** (`fast_mlsirm.two_stage_route`,
+  `fast_mlsirm.two_stage_score`; in Rust
+  `mlsirm_core::exposure::two_stage_route` / `two_stage_score`, PyO3
+  `py_two_stage_route` / `py_two_stage_score`): routing-test scoring via the
+  truncated normal-ogive ability estimate theta-hat =
+  Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Equation 2; perfect scores
+  truncate to m - 1/2, chance-or-below scores to c*m + 1/2), assignment of
+  the measurement test whose mean difficulty is closest to the routing
+  estimate (minimum absolute difference; ties break to the lowest index, a
+  derived convention), and the item-count-weighted composite
+  (m1*theta1 + m2*theta2)/(m1 + m2) (Equation 3). The scoring entry point
+  re-derives the routing assignment and refuses a mismatched
+  `administered` index so second-stage scores are never combined with the
+  wrong measurement test's parameters. Anchored on the reconstructed
+  Appendix B routing table of Research Report 74-4 and an exact-Fraction
+  oracle through the p-computation; both subtests require m*(1-c) > 1 for
+  distinct truncation endpoints.
 - **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
   74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
   `mlsirm_core::exposure::pyramidal_administer`, PyO3
