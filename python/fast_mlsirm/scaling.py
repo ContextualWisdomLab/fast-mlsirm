@@ -1526,8 +1526,11 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
             raise ValueError(f"metrics_rating: {name} must be real-valued")
         if arr.dtype == object:
             if any(
-                isinstance(v, (str, bytes, bool, np.bool_)) for v in arr.flat
+                v is None or isinstance(v, (str, bytes, bool, np.bool_))
+                for v in arr.flat
             ):
+                # None is rejected rather than silently cast to NaN;
+                # callers must pass an explicit np.nan for missing values.
                 raise ValueError(f"metrics_rating: {name} must be numeric")
             try:
                 arr = arr.astype(np.float64)

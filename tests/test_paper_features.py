@@ -9918,3 +9918,8 @@ class TestMetrics:
             )
         with pytest.raises(ValueError, match="1-D"):
             metrics_rating(np.array(1.0), np.array(0.6))
+        # regression: object-dtype None must not silently become NaN
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array([1.0, None], dtype=object), [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating([1.0, 0.0], np.array([0.6, None], dtype=object))
