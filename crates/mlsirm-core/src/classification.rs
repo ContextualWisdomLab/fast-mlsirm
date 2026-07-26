@@ -1302,9 +1302,12 @@ pub struct LivingstonResult {
 ///
 /// Properties pinned by tests from the read source (pp. 3-5): `k^2 >= rho^2`
 /// with equality iff `mu = C`, and a zero-variance group with `mu != C` has
-/// `k^2 = 1`. `k^2` is NaN only in the exact degenerate case `var == 0` and
-/// `mean == cut` (D^2 exactly zero); no numerical tolerance widens this, so
-/// the zero-variance-away-from-cut property is honored for tiny offsets.
+/// `k^2 = 1`. `k^2` is NaN only in the exact degenerate case of scores all
+/// exactly equal to `cut` (`D^2` exactly zero); the check compares elements
+/// to the cut directly, so it is not defeated by rounding in the summed mean
+/// (e.g. constant `0.1` scores at cut `0.1`), and no numerical tolerance
+/// widens it. A huge finite `cut` whose squared offset overflows to infinity
+/// returns the formula limit `1` instead of `inf/inf` NaN.
 ///
 /// Each entry of `n_lengths` applies the Spearman-Brown step from Table 2 to
 /// `k^2` itself: `k^2(n) = n k^2 / (1 + (n - 1) k^2)` (the source states the
@@ -1342,8 +1345,13 @@ pub fn livingston_k2(
     let var = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / np;
     let off2 = (mean - cut).powi(2);
     let msd = var + off2;
-    let base = if var == 0.0 && mean == cut {
+    let base = if scores.iter().all(|&x| x == cut) || (var == 0.0 && mean == cut) {
+        // Exact degeneracy: D^2 is mathematically zero. The element-wise
+        // check avoids false negatives from rounding in the summed mean.
         f64::NAN
+    } else if off2 == f64::INFINITY && var.is_finite() {
+        // Squared criterion offset overflowed; the formula limit is 1.
+        1.0
     } else {
         (reliability * var + off2) / msd
     };
@@ -1365,7 +1373,10 @@ pub fn livingston_k2(
 /// formula-derived adversarial pins, not reproductions of a printed figure.
 ///
 /// Returns NaN when either `D^2` is exactly zero (constant scores exactly at
-/// their criterion); no numerical tolerance widens this.
+/// their criterion, detected element-wise so summed-mean rounding cannot
+/// defeat it); no numerical tolerance widens this. Errs when a squared
+/// criterion offset overflows f64 (no clean finite limit exists for the
+/// correlation, unlike [`livingston_k2`]).
 pub fn livingston_correlation(x: &[f64], y: &[f64], cut_x: f64, cut_y: f64) -> Result<f64, String> {
     if x.len() < 2 {
         return Err("at least 2 observed scores are required".into());
@@ -1392,8 +1403,11 @@ pub fn livingston_correlation(x: &[f64], y: &[f64], cut_x: f64, cut_y: f64) -> R
     let vy = y.iter().map(|v| (v - my).powi(2)).sum::<f64>() / np;
     let d2x = vx + (mx - cut_x).powi(2);
     let d2y = vy + (my - cut_y).powi(2);
-    if d2x == 0.0 || d2y == 0.0 {
+    if x.iter().all(|&v| v == cut_x) || y.iter().all(|&v| v == cut_y) || d2x == 0.0 || d2y == 0.0 {
         return Ok(f64::NAN);
+    }
+    if !d2x.is_finite() || !d2y.is_finite() {
+        return Err("criterion offset too large: squared deviation overflows f64".into());
     }
     Ok((cov + (mx - cut_x) * (my - cut_y)) / (d2x * d2y).sqrt())
 }

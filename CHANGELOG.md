@@ -130,8 +130,11 @@
   `k(X,Y) = D(X,Y)/sqrt(D^2(X) D^2(Y))`, with Spearman-Brown test-length
   projections applied to `k^2` itself. The conversion form is an
   algebraic reconstruction from the source's Table 1 expectation
-  definitions; `k^2` is NaN only in the exact degenerate case
-  `var == 0 && mean == cut`; fractional Spearman-Brown lengths are a
+  definitions; `k^2` is NaN only in the exact degenerate case (scores all
+  exactly equal to the cut, detected element-wise, or `var == 0 &&
+  mean == cut`), and returns the formula limit 1 when the squared
+  criterion offset overflows f64 with finite variance (the correlation
+  rejects that overflow with an error); fractional Spearman-Brown lengths are a
   disclosed continuous extrapolation. Exact-fraction anchors (k2 = 5/6,
   SB(2) = 10/11, sign-flip k = 5/7 with norm rho = -1, asymmetric-offset
   k = 22/(7 sqrt(10))), equality-iff-mean=cut and zero-variance property

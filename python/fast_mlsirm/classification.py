@@ -534,14 +534,13 @@ def livingston_k2(
     ``rho^2(X, T)``; the conversion form
     ``k^2 = (rho^2 var + (mean-cut)^2) / (var + (mean-cut)^2)`` is an
     algebraic reconstruction from the source's Table 1 expectation
-    definitions. ``k^2`` is NaN only when ``var == 0`` and ``mean == cut``
-    exactly. Each ``n_lengths`` entry applies Spearman-Brown to ``k^2``
+    definitions. ``k^2`` is NaN only when the scores are all exactly equal
+    to ``cut``. Each ``n_lengths`` entry applies Spearman-Brown to ``k^2``
     itself; positive fractional lengths are a continuous projection beyond
     the source's integer wording. In LLM-as-a-Judge quality management this
     scores how reliably a judge separates outputs relative to a pass/fail
     cut rather than relative to the group mean.
-
-    """ + _LIVINGSTON_REFERENCES
+    """
     core = _core_or_raise("livingston_k2")
     x = np.asarray(scores)
     n = np.asarray(n_lengths)
@@ -581,8 +580,7 @@ def livingston_correlation(
     criterion scores (Table 1); it can differ in sign from the
     norm-referenced correlation. Returns NaN when either ``D^2`` is exactly
     zero.
-
-    """ + _LIVINGSTON_REFERENCES
+    """
     core = _core_or_raise("livingston_correlation")
     ax = np.asarray(x)
     ay = np.asarray(y)
@@ -601,3 +599,10 @@ def livingston_correlation(
     ax = np.ascontiguousarray(ax.astype(np.float64).reshape(-1))
     ay = np.ascontiguousarray(ay.astype(np.float64).reshape(-1))
     return float(core.livingston_correlation(ax, ay, float(cut_x), float(cut_y)))
+
+
+# Literal docstrings above keep __doc__ non-None on the exported functions;
+# the shared APA references are appended here (string-concatenation in the
+# docstring position sets __doc__ to None).
+livingston_k2.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
+livingston_correlation.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
