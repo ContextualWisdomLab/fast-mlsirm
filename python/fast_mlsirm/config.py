@@ -88,15 +88,9 @@ class MLS2PLMConfig:
             raise ValueError("latent_dim must be >= 1")
         if self.latent_dim > MAX_LATENT_DIM:
             raise ValueError(f"latent_dim must be <= {MAX_LATENT_DIM}")
-        if not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
+        if not math.isfinite(self.phi) or not (-1.0 / max(self.n_dims - 1, 1) < self.phi < 1.0):
             raise ValueError("phi must produce a positive-definite equicorrelation matrix")
-        try:
-            gamma_is_finite = math.isfinite(self.gamma)
-        except TypeError as exc:
-            raise ValueError("gamma must be finite") from exc
-        if not gamma_is_finite:
-            raise ValueError("gamma must be finite")
-        if self.gamma < 0:
+        if not math.isfinite(self.gamma) or self.gamma < 0:
             raise ValueError("gamma must be >= 0")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("dtype must be float32 or float64")
