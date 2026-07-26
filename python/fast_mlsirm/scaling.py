@@ -275,6 +275,10 @@ def _rankings_to_csr(name, rankings, n):
     if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
         raise ValueError(f"{name}: n must be an integer >= 2")
     n = int(n)
+    if n > 10_000:
+        # Mirrors the Rust dense-chain cap BEFORE any uint64/usize cast,
+        # so a huge n raises ValueError, never a raw OverflowError.
+        raise ValueError(f"{name}: n = {n} exceeds the 10000-item cap")
     flat = []
     starts = [0]
     for r, ranking in enumerate(rankings):
@@ -373,6 +377,10 @@ def _top1_to_csr(name, data, n):
     if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
         raise ValueError(f"{name}: n must be an integer >= 2")
     n = int(n)
+    if n > 10_000:
+        # Mirrors the Rust dense-chain cap BEFORE any uint64/usize cast,
+        # so a huge n raises ValueError, never a raw OverflowError.
+        raise ValueError(f"{name}: n = {n} exceeds the 10000-item cap")
 
     def _index(x, what, r):
         if isinstance(x, (bool, np.bool_)) or np.iscomplexobj(np.asarray(x)):

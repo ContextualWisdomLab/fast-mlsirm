@@ -8950,6 +8950,12 @@ class TestPlackettLuceRankings:
             lsr_rankings([[0, np.float64("inf")]], 2)
         with pytest.raises(ValueError):
             lsr_rankings([[0, 1]], 1_000_000)
+        # Huge n / indices beyond u64 must raise ValueError before any
+        # unsigned cast, never a raw OverflowError (impl-review #295).
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 2**81)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 2**80]], 3)
 
 class TestPlackettLuceTop1:
     """Plackett-Luce top-1 LSR/I-LSR (choix 0.4.1 lsr_top1 / ilsr_top1).
@@ -9044,3 +9050,11 @@ class TestPlackettLuceTop1:
             lsr_top1([(0, [np.float64("inf")])], 2)
         with pytest.raises(ValueError):
             lsr_top1([(0, [1])], 1_000_000)
+        # Huge n / indices beyond u64 must raise ValueError before any
+        # unsigned cast, never a raw OverflowError (impl-review finding).
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 2**81)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [2**80])], 3)
+        with pytest.raises(ValueError):
+            lsr_top1([(2**80, [1])], 3)
