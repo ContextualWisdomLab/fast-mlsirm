@@ -2867,3 +2867,453 @@ fn eb_mh_dif_mc_500_shrinkage_beats_raw() {
         "mean tau2_hat {tau2_mean} vs true {tau2_true}"
     );
 }
+// ===========================================================================
+// Mantel (1963) polytomous DIF + SMD (Zwick, Donoghue & Grima, 1993)
+// Oracle: exact Fraction arithmetic (session artifact mantel_smd_oracle.py),
+// re-derived by the spec reviewer by hand for item 0.
+// ===========================================================================
+
+/// 12 persons x 3 items, scores 0..2; first 6 reference, last 6 focal.
+/// Totals produce strata where only totals {2, 3} contain both groups,
+/// so the stratum-exclusion filter is exercised on every item.
+fn mantel_fixture() -> (Vec<i64>, Vec<u8>) {
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1, 0,  1, 0, 2,  2, 2, 1,  0, 1, 1,  1, 2, 0,  2, 0, 0, // R
+        1, 1, 1,  0, 0, 0,  2, 1, 0,  0, 2, 2,  0, 1, 0,  1, 0, 1, // F
+    ];
+    let group = vec![0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
+    (y, group)
+}
+
+/// Exact-rational pins for all three items (asymmetric, distinct values;
+/// 2-item designs are structurally mirror-symmetric so 3 items are used).
+/// Asserts read the crate rows; killed by any Eq. 8/9/11 algebra mutation.
+#[test]
+fn mantel_smd_pinned_fixture() {
+    let (y, group) = mantel_fixture();
+    let rows = mantel_smd_dif(&y, &group, 12, 3).unwrap();
+    assert_eq!(rows.len(), 3);
+    let pins = [
+        (3.0 / 77.0, 1.0 / 9.0),
+        (5.0 / 37.0, -1.0 / 6.0),
+        (2.0 / 133.0, 1.0 / 18.0),
+    ];
+    for (i, (chi2, smd)) in pins.iter().enumerate() {
+        assert_eq!(rows[i].item, i);
+        assert_eq!(rows[i].n_strata_used, 2, "item {i}");
+        assert!(
+            (rows[i].chi2 - chi2).abs() < 1e-12,
+            "item {i} chi2 {}",
+            rows[i].chi2
+        );
+        assert!(
+            (rows[i].smd - smd).abs() < 1e-12,
+            "item {i} smd {}",
+            rows[i].smd
+        );
+        assert!(rows[i].p_value > 0.0 && rows[i].p_value < 1.0);
+    }
+    // Directional asymmetry: item 1 favors the reference group, items 0 and
+    // 2 the focal group (kills any sign flip in F - E or in SMD).
+    assert!(rows[1].smd < 0.0 && rows[0].smd > 0.0 && rows[2].smd > 0.0);
+}
+
+/// Dichotomous 0/1 reduction (read source, below Eq. 9): the Mantel chi2
+/// equals the MH chi2 WITHOUT the continuity correction. Anchored by an
+/// independent in-test 2x2 hypergeometric tabulation (classical
+/// m_1k m_0k variance route, distinct from the crate's generic
+/// n s2 - s1^2 polytomous route) asserted EQUAL to the crate value, plus
+/// the relational check corrected MH <= uncorrected Mantel.
+#[test]
+fn mantel_smd_dichotomous_matches_mh_without_correction() {
+    // 16 persons x 2 binary items, both groups spread over several totals,
+    // chosen so the summed residual is NONZERO (num = -7/9 for item 0,
+    // chi2 = 49/50 exactly): a zero-residual fixture would make chi2 = 0
+    // regardless of the variance and could not detect variance mutations.
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        1, 0,  1, 1,  1, 0,  0, 1,  1, 1,  1, 0,  0, 0,  1, 1, // R
+        0, 1,  0, 0,  1, 0,  0, 1,  1, 1,  0, 0,  0, 1,  1, 0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
+    let rows = mantel_smd_dif(&y, &group, 16, 2).unwrap();
+    let y8: Vec<u8> = y.iter().map(|&v| v as u8).collect();
+    let mh = mantel_haenszel_dif(&y8, &group, 16, 2, &MhDifConfig::default()).unwrap();
+    // Independent 2x2 hypergeometric tabulation of the UNCORRECTED MH
+    // chi-square, computed here from the raw fixture through the classical
+    // m_1k m_0k variance form (the crate uses the generic polytomous form
+    // n s2 - s1^2; for 0/1 scores s1 = s2 = m_1k so the two routes agree
+    // only if the crate algebra is right). Equality assert reads the crate
+    // chi2; an inflated or deflated implementation fails here.
+    let totals: Vec<i64> = (0..16).map(|p| y[2 * p] + y[2 * p + 1]).collect();
+    let mut levels = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    for i in 0..2 {
+        let (mut num, mut var) = (0.0f64, 0.0f64);
+        for &t in &levels {
+            let (mut nr, mut nf, mut m1, mut b) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for p in 0..16 {
+                if totals[p] != t {
+                    continue;
+                }
+                let v = y[2 * p + i] as f64;
+                m1 += v;
+                if group[p] == 1 {
+                    nf += 1.0;
+                    b += v;
+                } else {
+                    nr += 1.0;
+                }
+            }
+            if nr == 0.0 || nf == 0.0 {
+                continue;
+            }
+            let n = nr + nf;
+            num += b - nf * m1 / n;
+            var += nr * nf * m1 * (n - m1) / (n * n * (n - 1.0));
+        }
+        let chi2_ind = num * num / var;
+        let cm: f64 = rows[i].chi2;
+        let ch: f64 = mh[i].chi2_mh;
+        assert!(cm.is_finite() && ch.is_finite(), "item {i}");
+        // Exact-rational pin (49/50 for both items; 2-item designs are
+        // mirror-symmetric) read from the crate value: kills variance and
+        // expectation mutations that a zero-residual fixture cannot see.
+        assert!((cm - 0.98).abs() < 1e-12, "item {i} chi2 {cm} != 49/50");
+        assert!(
+            (cm - chi2_ind).abs() < 1e-12,
+            "item {i}: crate Mantel {cm} != independent uncorrected MH {chi2_ind}"
+        );
+        // Continuity correction shrinks |d| by 0.5, so corrected <= uncorrected.
+        assert!(
+            ch <= cm + 1e-12,
+            "item {i}: corrected MH {ch} should not exceed Mantel {cm}"
+        );
+    }
+}
+
+/// Degenerate rows: an item with identical scores everywhere has zero
+/// variance in every stratum -> chi2/p NaN, SMD defined (0), strata counted.
+/// An input whose strata never contain both groups yields NaN SMD too.
+#[test]
+fn mantel_smd_degenerate_rows() {
+    // Item 1 constant. 8 persons x 2 items.
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1,  1, 1,  0, 1,  2, 1, // R
+        1, 1,  0, 1,  2, 1,  1, 1, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = mantel_smd_dif(&y, &group, 8, 2).unwrap();
+    assert!(rows[1].chi2.is_nan() && rows[1].p_value.is_nan());
+    assert!(rows[1].n_strata_used > 0);
+    assert!((rows[1].smd - 0.0).abs() < 1e-15); // constant item: means equal.
+                                                // Disjoint totals: R all-zero, F all-two -> no shared stratum.
+    let y2: Vec<i64> = vec![0, 0, 0, 0, 2, 2, 2, 2];
+    let g2: Vec<u8> = vec![0, 0, 1, 1];
+    let r2 = mantel_smd_dif(&y2, &g2, 4, 2).unwrap();
+    assert_eq!(r2[0].n_strata_used, 0);
+    assert!(r2[0].chi2.is_nan() && r2[0].smd.is_nan());
+}
+
+/// Error contract; every assert reads the crate Err.
+#[test]
+fn mantel_smd_errors() {
+    let ok_y: Vec<i64> = vec![1, 0, 2, 1, 0, 1, 2, 0];
+    let ok_g: Vec<u8> = vec![0, 0, 1, 1];
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 4, 2).is_ok());
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 1, 2).is_err()); // n_persons < 2
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 4, 0).is_err()); // n_items == 0
+    assert!(mantel_smd_dif(&ok_y[..7], &ok_g, 4, 2).is_err()); // y len
+    assert!(mantel_smd_dif(&ok_y, &ok_g[..3], 4, 2).is_err()); // group len
+    assert!(mantel_smd_dif(&[-1, 0, 2, 1, 0, 1, 2, 0], &ok_g, 4, 2).is_err()); // negative
+    assert!(mantel_smd_dif(&ok_y, &[0, 0, 2, 1], 4, 2).is_err()); // bad label
+    assert!(mantel_smd_dif(&ok_y, &[0, 0, 0, 0], 4, 2).is_err()); // no focal
+    assert!(mantel_smd_dif(&ok_y, &[1, 1, 1, 1], 4, 2).is_err()); // no reference
+    assert!(mantel_smd_dif(&[i64::MAX, 1, 1, 1, 1, 1, 1, 1], &ok_g, 4, 2).is_err()); // total overflow
+    assert!(mantel_smd_dif(&ok_y, &ok_g, usize::MAX, 2).is_err()); // cells overflow
+}
+
+/// MC-500 (supplemental, seeded): under NO DIF (identical polytomous
+/// response distributions given a shared latent trait) the Mantel test's
+/// rejection rate at alpha = .05 stays near nominal, and under injected
+/// constant DIF the SMD sign matches the disadvantaged group. Reads crate
+/// chi2/p/smd per replication.
+#[test]
+#[ignore]
+fn mantel_smd_mc_500_type1_and_sign() {
+    let n_p = 300;
+    let n_i = 6;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0001);
+    let mut rej = 0usize;
+    let mut sign_ok = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0i64; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                // Adjacent-category style: two thresholds; item 0 gets a
+                // constant focal penalty of 0.7 on both thresholds.
+                let pen = if i == 0 && group[p] == 1 { 0.7 } else { 0.0 };
+                let b1 = -0.5 + 0.2 * i as f64 + pen;
+                let b2 = 0.8 + 0.2 * i as f64 + pen;
+                let p1 = 1.0 / (1.0 + (-(theta - b1)).exp());
+                let p2 = 1.0 / (1.0 + (-(theta - b2)).exp());
+                let u = rng.next_f64();
+                y[p * n_i + i] = if u < p2 {
+                    2
+                } else if u < p1 {
+                    1
+                } else {
+                    0
+                };
+            }
+        }
+        let rows = mantel_smd_dif(&y, &group, n_p, n_i).unwrap();
+        // Item 3 is DIF-free: count its Type-I rejections.
+        if rows[3].p_value < 0.05 {
+            rej += 1;
+        }
+        // Item 0 disadvantages the focal group: SMD should be negative.
+        if rows[0].smd < 0.0 {
+            sign_ok += 1;
+        }
+    }
+    let rate = rej as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        sign_ok as f64 / reps as f64 > 0.95,
+        "SMD sign matched only {sign_ok}/{reps}"
+    );
+}
+// ===========================================================================
+// GMH nominal DIF (Eq. 10, Zwick, Donoghue & Grima, 1993)
+// Oracle: exact Fraction arithmetic (session artifact gmh_oracle.py), pins
+// re-derived by the spec reviewer by hand for item 0 (chi2 = 53/79).
+// ===========================================================================
+
+/// Exact-rational pins on the shared 12x3 fixture (T_eff = 3, df = 2,
+/// used = 2 strata per item). Asserts read the crate rows; the chi2 pins
+/// kill E(A_k) group swaps (MU1), variance-denominator mutations (MU2),
+/// and covariance off-diagonal sign flips (MU3: item 0 would become
+/// 299/237). The used = 2 assert kills dropping the both-groups stratum
+/// filter (MU4), which leaves chi2 unchanged on this fixture because
+/// one-group strata contribute zero to d and S.
+#[test]
+fn gmh_pinned_fixture() {
+    let (y, group) = mantel_fixture();
+    let rows = gmh_dif(&y, &group, 12, 3).unwrap();
+    assert_eq!(rows.len(), 3);
+    let pins = [53.0 / 79.0, 352.0 / 483.0, 1072.0 / 483.0];
+    for (i, chi2) in pins.iter().enumerate() {
+        assert_eq!(rows[i].item, i);
+        assert_eq!(rows[i].df, 2, "item {i}");
+        assert_eq!(rows[i].n_strata_used, 2, "item {i}");
+        assert!(
+            (rows[i].chi2 - chi2).abs() < 1e-12,
+            "item {i} chi2 {}",
+            rows[i].chi2
+        );
+        assert!(rows[i].p_value > 0.0 && rows[i].p_value < 1.0);
+    }
+    // Distinct pins across items (kills over-collapse / item-index bugs).
+    assert!((rows[0].chi2 - rows[1].chi2).abs() > 1e-3);
+    assert!((rows[1].chi2 - rows[2].chi2).abs() > 1e-3);
+}
+
+/// Dichotomous reduction (read source, below Eq. 10): for T = 2 the GMH
+/// statistic equals the Mantel chi2 = MH without continuity correction.
+/// Reuses the nonzero-residual 16x2 fixture whose Mantel chi2 is exactly
+/// 49/50; equality is asserted between the two CRATE values plus the
+/// exact pin, so variance/expectation mutations in either path fail here.
+#[test]
+fn gmh_dichotomous_matches_mantel() {
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        1, 0,  1, 1,  1, 0,  0, 1,  1, 1,  1, 0,  0, 0,  1, 1, // R
+        0, 1,  0, 0,  1, 0,  0, 1,  1, 1,  0, 0,  0, 1,  1, 0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
+    let g = gmh_dif(&y, &group, 16, 2).unwrap();
+    let m = mantel_smd_dif(&y, &group, 16, 2).unwrap();
+    for i in 0..2 {
+        assert_eq!(g[i].df, 1, "item {i}");
+        assert!(
+            (g[i].chi2 - 0.98).abs() < 1e-12,
+            "item {i} chi2 {}",
+            g[i].chi2
+        );
+        assert!(
+            (g[i].chi2 - m[i].chi2).abs() < 1e-12,
+            "item {i}: GMH {} != Mantel {}",
+            g[i].chi2,
+            m[i].chi2
+        );
+        assert!((g[i].p_value - m[i].p_value).abs() < 1e-12);
+    }
+}
+
+/// Effective-category contract (spec-review mandatory change 1/2):
+/// categories observed ONLY in excluded one-group strata must not inflate
+/// T_eff or df. Category 9 below appears only for the lone reference
+/// person with total 11 (a one-group stratum), so item 0 keeps
+/// T_eff = 3 -> df = 2, identical chi2 to the base fixture.
+#[test]
+fn gmh_effective_categories_ignore_excluded_strata() {
+    let (mut y, mut group) = mantel_fixture();
+    // Append one reference person with an item-0 code (9) and a total (11)
+    // seen nowhere else: its stratum has no focal person -> excluded.
+    y.extend_from_slice(&[9, 1, 1]);
+    group.push(0);
+    let rows = gmh_dif(&y, &group, 13, 3).unwrap();
+    assert_eq!(rows[0].df, 2, "category 9 must not add a GMH dimension");
+    assert_eq!(rows[0].n_strata_used, 2);
+    assert!(
+        (rows[0].chi2 - 53.0 / 79.0).abs() < 1e-12,
+        "chi2 {}",
+        rows[0].chi2
+    );
+}
+
+/// Degenerate rows: constant item within used strata -> T_eff = 1, df = 0,
+/// NaN chi2/p; disjoint totals -> used = 0, NaN. Singular pooled S
+/// (categories perfectly tied to strata so all within-stratum counts are
+/// concentrated) also yields NaN rather than a rank-reduced statistic.
+#[test]
+fn gmh_degenerate_rows() {
+    // Item 1 constant across all persons (same 8x2 fixture as Mantel).
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1,  1, 1,  0, 1,  2, 1, // R
+        1, 1,  0, 1,  2, 1,  1, 1, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = gmh_dif(&y, &group, 8, 2).unwrap();
+    assert_eq!(rows[1].df, 0);
+    assert!(rows[1].chi2.is_nan() && rows[1].p_value.is_nan());
+    assert!(rows[1].n_strata_used > 0);
+    // Disjoint totals: no shared stratum -> used = 0, NaN row.
+    let y2: Vec<i64> = vec![0, 0, 0, 0, 2, 2, 2, 2];
+    let g2: Vec<u8> = vec![0, 0, 1, 1];
+    let r2 = gmh_dif(&y2, &g2, 4, 2).unwrap();
+    assert_eq!(r2[0].n_strata_used, 0);
+    assert_eq!(r2[0].df, 0);
+    assert!(r2[0].chi2.is_nan());
+    // Singular S: every used stratum has a constant item value (variance 0
+    // within each stratum although two categories exist across strata).
+    // Persons: totals force strata {1} and {3}; item 0 is 0 in stratum 1
+    // and 2 in stratum 3 for everyone -> S = 0 matrix -> NaN, df stays 1.
+    let y3: Vec<i64> = vec![0, 1, 0, 1, 2, 1, 2, 1];
+    let g3: Vec<u8> = vec![0, 1, 0, 1];
+    let r3 = gmh_dif(&y3, &g3, 4, 2).unwrap();
+    assert_eq!(r3[0].df, 1);
+    assert!(r3[0].chi2.is_nan() && r3[0].p_value.is_nan());
+}
+
+/// Error contract; every assert reads the crate Err. Mirrors
+/// `mantel_smd_errors` plus the T_eff <= 64 category cap.
+#[test]
+fn gmh_errors() {
+    let ok_y: Vec<i64> = vec![1, 0, 2, 1, 0, 1, 2, 0];
+    let ok_g: Vec<u8> = vec![0, 0, 1, 1];
+    assert!(gmh_dif(&ok_y, &ok_g, 4, 2).is_ok());
+    assert!(gmh_dif(&ok_y, &ok_g, 1, 2).is_err()); // n_persons < 2
+    assert!(gmh_dif(&ok_y, &ok_g, 4, 0).is_err()); // n_items == 0
+    assert!(gmh_dif(&ok_y[..7], &ok_g, 4, 2).is_err()); // y len
+    assert!(gmh_dif(&ok_y, &ok_g[..3], 4, 2).is_err()); // group len
+    assert!(gmh_dif(&[-1, 0, 2, 1, 0, 1, 2, 0], &ok_g, 4, 2).is_err()); // negative
+    assert!(gmh_dif(&ok_y, &[0, 0, 2, 1], 4, 2).is_err()); // bad label
+    assert!(gmh_dif(&ok_y, &[0, 0, 0, 0], 4, 2).is_err()); // no focal
+    assert!(gmh_dif(&ok_y, &[1, 1, 1, 1], 4, 2).is_err()); // no reference
+    assert!(gmh_dif(&[i64::MAX, 1, 1, 1, 1, 1, 1, 1], &ok_g, 4, 2).is_err()); // overflow
+    assert!(gmh_dif(&ok_y, &ok_g, usize::MAX, 2).is_err()); // cells overflow
+                                                            // Category cap: 65 effective item-0 codes. Pairing code c with filler
+                                                            // 65 - c gives every person total 65, so a single used stratum holds
+                                                            // one reference and one focal person per code and all 65 codes are
+                                                            // effective -> the T_eff <= 64 cap must reject.
+    let n = 130;
+    let mut yy = Vec::with_capacity(n * 2);
+    let mut gg = Vec::with_capacity(n);
+    for c in 0..65i64 {
+        yy.extend_from_slice(&[c, 65 - c, c, 65 - c]);
+        gg.push(0);
+        gg.push(1);
+    }
+    let err = gmh_dif(&yy, &gg, n, 2).unwrap_err();
+    assert!(err.contains("cap is 64"), "unexpected error: {err}");
+}
+
+/// MC-500 (supplemental, seeded): under NO DIF with T = 4 nominal
+/// categories the GMH rejection rate at alpha = .05 stays near nominal,
+/// and under an injected focal category-preference shift the statistic
+/// rejects most of the time. T = 4 exercises the 3x3 linear solve
+/// (the pinned fixture only covers T = 3). Reads crate p-values.
+#[test]
+#[ignore]
+fn gmh_mc_500_type1_and_power() {
+    let n_p = 300;
+    let n_i = 6;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0002);
+    let mut rej_null = 0usize;
+    let mut rej_dif = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0i64; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                // Graded-style 4-category generator (3 thresholds).
+                let b1 = -1.0 + 0.15 * i as f64;
+                let b2 = 0.0 + 0.15 * i as f64;
+                let b3 = 1.0 + 0.15 * i as f64;
+                let pr = |b: f64| 1.0 / (1.0 + (-(theta - b)).exp());
+                let (p1, p2, p3) = (pr(b1), pr(b2), pr(b3));
+                let u = rng.next_f64();
+                let mut v = if u < p3 {
+                    3
+                } else if u < p2 {
+                    2
+                } else if u < p1 {
+                    1
+                } else {
+                    0
+                };
+                // Item 0 DIF: focal persons in category 1 move to category
+                // 2 with probability 0.7 (a NOMINAL composition shift, the
+                // GMH target alternative; a symmetric 1<->2 swap would
+                // merely equalize two near-equal frequencies).
+                if i == 0 && group[p] == 1 && v == 1 && rng.next_f64() < 0.7 {
+                    v = 2;
+                }
+                y[p * n_i + i] = v;
+            }
+        }
+        let rows = gmh_dif(&y, &group, n_p, n_i).unwrap();
+        // Item 3 is DIF-free.
+        if rows[3].p_value < 0.05 {
+            rej_null += 1;
+        }
+        if rows[0].p_value < 0.05 {
+            rej_dif += 1;
+        }
+    }
+    let rate = rej_null as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        rej_dif as f64 / reps as f64 > 0.5,
+        "power {rej_dif}/{reps} too low for the injected nominal DIF"
+    );
+}

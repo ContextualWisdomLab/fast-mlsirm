@@ -119,6 +119,29 @@
 
 ### Added
 
+- **Generalized Mantel-Haenszel nominal DIF (Zwick, Donoghue & Grima, Eq. 10)**
+  (`fast_mlsirm.gmh_dif`; in Rust `mlsirm_core::dif::gmh_dif`, PyO3
+  `py_gmh_dif`): unordered-category DIF screening — examinees matched on the
+  full total score; within each usable stratum the reference group's
+  category-count vector over `T − 1` categories is compared with its
+  conditional expectation and covariance; the pooled quadratic form
+  `d′S⁻¹d` is referred to χ²(`T_eff − 1`). Effective categories are counted
+  in used strata only (categories seen solely in excluded strata do not
+  inflate `df`); singular pooled covariance yields NaN (no silent rank
+  reduction); category cap `T_eff ≤ 64`. For 0/1 items the statistic equals
+  the `mantel_smd_dif` χ² (MH without continuity correction). Integer
+  non-negative category codes only (reduced scope; no missing-data support).
+- **Mantel polytomous DIF + standardized mean difference (Zwick, Donoghue & Grima)**
+  (`fast_mlsirm.mantel_smd_dif`; in Rust `mlsirm_core::dif::mantel_smd_dif`, PyO3
+  `py_mantel_smd_dif`): ordinal-item DIF screening — examinees matched on the
+  full total score, per-stratum focal score sums compared with their
+  conditional hypergeometric expectation/variance (Mantel χ², df = 1, Eqs. 8–9
+  of ETS RR-93-14), plus the standardized mean difference effect size (Eq. 11,
+  focal-weighted focal-minus-reference item mean difference; weights
+  renormalized over usable strata — documented deviation matching the crate's
+  standardized P-DIF convention). For 0/1 items the χ² reduces to the MH
+  chi-square without continuity correction. Integer non-negative scores only
+  (reduced scope; no missing-data support).
 - **Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)**
   (`fast_mlsirm.eb_mh_dif`; in Rust `mlsirm_core::dif::eb_mh_dif`, PyO3
   `py_eb_mh_dif`): shrinkage enhancement of MH D-DIF statistics — prior
