@@ -496,6 +496,19 @@ fn phil_error_contract() {
     assert!(phi_lambda(&[1., 0., 0., f64::NAN], 2, 2, 0.5, &[2]).is_err());
 }
 
+/// Regression (impl review): a FINITE extreme cut whose squared distance
+/// overflows f64 must return the population limit 1, not inf/inf = NaN.
+/// Asserts read the crate `phi` output.
+#[test]
+fn phil_extreme_finite_lambda_overflow() {
+    let x = [
+        1., 1., 1., 0., 1., 0., 1., 1., 0., 1., 0., 0., 1., 1., 1., 1., 0., 0., 1., 0.,
+    ];
+    let r = phi_lambda(&x, 5, 4, 1e308, &[4]).unwrap();
+    assert_eq!(r.signal, f64::INFINITY, "signal overflows by design");
+    assert_eq!(r.phi[0], 1.0, "phi at overflow-far cut");
+}
+
 /// MC-500: population Phi(lambda) recovery under the eq. 24 random model.
 /// True components (sp, si, spi) = (1.5, 0.8, 0.6), mu = 10, n_i = 12,
 /// lambda = 9: population phi = ((10-9)^2 + 1.5) / (that + (0.8+0.6)/12)

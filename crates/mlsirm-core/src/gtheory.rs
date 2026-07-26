@@ -505,6 +505,11 @@ pub fn phi_lambda(
             let den = num + row.abs_error_var;
             if den <= DENOM_EPS {
                 f64::NAN
+            } else if num == f64::INFINITY && row.abs_error_var.is_finite() {
+                // Finite extreme cut: (Xbar - lambda)^2 overflows, but the
+                // population limit as |mu - lambda| -> inf with finite
+                // error variance is 1 (impl review; avoids inf/inf = NaN).
+                1.0
             } else {
                 num / den
             }
