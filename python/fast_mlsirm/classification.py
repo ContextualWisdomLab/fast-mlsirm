@@ -606,3 +606,100 @@ def livingston_correlation(
 # docstring position sets __doc__ to None).
 livingston_k2.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
 livingston_correlation.__doc__ += "\n    References:" + _LIVINGSTON_REFERENCES
+
+@dataclass
+class WoodruffSawyerResult:
+    """Woodruff & Sawyer (1988) full-test pass-fail reliability estimates.
+
+    ``phi_half``/``theta_half`` are NaN for the bivariate-normal method
+    (the source defines no half-test agreement there). ``phi`` equals
+    Cohen's kappa for the symmetric 2x2 pass-fail table.
+    """
+
+    pass_rate: float
+    phi_half: float
+    theta_half: float
+    phi: float
+    theta: float
+    pi00: float
+    pi01: float
+    pi11: float
+
+
+_WOODRUFF_SAWYER_REFERENCES = """
+        Woodruff, D. J., & Sawyer, R. L. (1988). *Estimating measures of
+            pass-fail reliability from parallel half-tests* (ERIC ED292877)
+            [Paper presentation]. AERA Annual Meeting.
+    """
+
+
+def _ws_result(res: dict) -> WoodruffSawyerResult:
+    return WoodruffSawyerResult(
+        pass_rate=float(res["pass_rate"]),
+        phi_half=float(res["phi_half"]),
+        theta_half=float(res["theta_half"]),
+        phi=float(res["phi"]),
+        theta=float(res["theta"]),
+        pi00=float(res["pi00"]),
+        pi01=float(res["pi01"]),
+        pi11=float(res["pi11"]),
+    )
+
+
+def woodruff_sawyer_sb(
+    counts: Sequence[float] | np.ndarray,
+) -> WoodruffSawyerResult:
+    """Split-half / Spearman-Brown pass-fail reliability (compute in Rust;
+    Woodruff & Sawyer, 1988, read in full from ERIC ED292877).
+
+    ``counts = [n00, n01, n10, n11]`` is the 2x2 half-test pass-fail table
+    (0 = fail, 1 = pass). The off-diagonal is symmetrized, the half-test
+    agreement coefficient ``phi`` (eq. 1) is stepped up by Spearman-Brown
+    (eq. 5), and the full-length table / ``theta*`` (eq. 8) is
+    reconstructed. Per the source (pp. 9-10) ``phi*`` is positively biased
+    when the halves are not strictly parallel. In LLM-as-a-Judge quality
+    management this estimates how consistently a full judge run would
+    reproduce its own pass/fail decisions, from a single split run.
+    """
+    core = _core_or_raise("woodruff_sawyer_sb")
+    c = np.asarray(counts)
+    if np.iscomplexobj(c):
+        raise ValueError("counts must be real-valued")
+    if c.dtype == object:
+        try:
+            c = c.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("counts must be numeric") from exc
+    c = np.ascontiguousarray(c.astype(np.float64).reshape(-1))
+    return _ws_result(core.woodruff_sawyer_sb(c))
+
+
+def woodruff_sawyer_normal(
+    mean: float,
+    sd: float,
+    cut: float,
+    r_half: float,
+) -> WoodruffSawyerResult:
+    """Bivariate-normal pass-fail reliability from a half-test correlation
+    (compute in Rust; Woodruff & Sawyer, 1988, read in full from ERIC
+    ED292877).
+
+    ``r_half`` is stepped up by Spearman-Brown to ``r_SB = 2r/(1+r)``;
+    parallel full-length forms are modeled as bivariate normal with
+    correlation ``r_SB`` and standardized cut ``(cut - mean)/sd``. The fail
+    rate is the lower tail. ``phi_half``/``theta_half`` are NaN on this
+    path. ``r_half`` below ``-1/3`` maps outside the valid correlation
+    range and raises.
+    """
+    core = _core_or_raise("woodruff_sawyer_normal")
+    return _ws_result(
+        core.woodruff_sawyer_normal(
+            float(mean), float(sd), float(cut), float(r_half)
+        )
+    )
+
+
+woodruff_sawyer_sb.__doc__ += "\n    References:" + _WOODRUFF_SAWYER_REFERENCES
+woodruff_sawyer_normal.__doc__ += (
+    "\n    References:" + _WOODRUFF_SAWYER_REFERENCES
+)

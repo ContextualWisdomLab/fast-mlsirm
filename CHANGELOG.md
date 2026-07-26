@@ -119,6 +119,23 @@
 
 ### Added
 
+- **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
+  1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
+  `fast_mlsirm.woodruff_sawyer_normal`; in Rust
+  `mlsirm_core::classification::{woodruff_sawyer_sb,
+  woodruff_sawyer_normal}`): estimates the full-test agreement `theta*`
+  and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
+  table) from a single administration split into parallel halves. The SB
+  method symmetrizes the half-test 2x2 table's off-diagonal, computes
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
+  `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
+  (eq. 8); the normal method steps up the half-test correlation
+  (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and
+  evaluates the joint fail-fail cell with the crate's BVN quadrature.
+  Pinned by exact rational fixtures, a Sheppard-orthant exact anchor, and
+  the paper's Table 4 values; six mutation kills executed. Per the source
+  (pp. 9-10), `phi*` from the SB method is positively biased when the
+  halves are not strictly parallel.
 - **Livingston's criterion-referenced reliability k^2 and correlation
   k(X, Y) (Livingston, 1972, AERA paper, ERIC ED069624)**
   (`fast_mlsirm.livingston_k2`, `fast_mlsirm.livingston_correlation`; in

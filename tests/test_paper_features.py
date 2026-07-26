@@ -8306,3 +8306,59 @@ class TestSubkoviak:
             subkoviak_agreement(x, 5, [4], alpha=1.5)
         with pytest.raises(ValueError):
             subkoviak_agreement(np.array([3.0, 3.0, 3.0]), 5, [4])
+
+class TestWoodruffSawyer:
+    """Woodruff & Sawyer (1988, ERIC ED292877) pass-fail reliability.
+
+    Every assert reads values returned by the crate through the Python
+    wrapper (WoodruffSawyerResult fields); expected values from the
+    exact-Fraction / mpmath session oracle. Rust-side tests carry the
+    mutation-kill provenance (MU1-MU6 all EXECUTED and killed).
+    """
+
+    def test_sb_fixture_a_exact(self):
+        from fast_mlsirm import woodruff_sawyer_sb
+
+        r = woodruff_sawyer_sb([2, 1, 3, 10])
+        assert abs(r.pass_rate - 0.75) < 1e-15
+        assert abs(r.phi_half - 1 / 3) < 1e-15
+        assert abs(r.theta_half - 0.75) < 1e-15
+        assert abs(r.phi - 0.5) < 1e-15
+        assert abs(r.theta - 13 / 16) < 1e-15
+        assert abs(r.pi00 - 5 / 32) < 1e-15
+        assert abs(r.pi01 - 3 / 32) < 1e-15
+        assert abs(r.pi11 - 21 / 32) < 1e-15
+
+    def test_normal_orthant_and_pins(self):
+        import math
+
+        from fast_mlsirm import woodruff_sawyer_normal
+
+        r = woodruff_sawyer_normal(0.0, 1.0, 0.0, 1 / 3)
+        assert abs(r.pi00 - 1 / 3) < 1e-6
+        assert abs(r.phi - 1 / 3) < 1e-6
+        assert math.isnan(r.phi_half) and math.isnan(r.theta_half)
+        n = woodruff_sawyer_normal(100.0, 15.0, 85.0, 0.6)
+        assert abs(n.theta - 0.86360339357711063) < 1e-6
+        assert abs(n.phi - 0.48908915212993364) < 1e-6
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import woodruff_sawyer_normal, woodruff_sawyer_sb
+
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb([1, 2, 3])
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb([1, -1, 2, 3])
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb(np.array([1 + 2j, 0, 0, 1]))
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb(np.array([object(), 1, 1, 1], dtype=object))
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 0.0, 0.0, 0.5)
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 1.0, 0.0, -0.5)
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.0)

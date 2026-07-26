@@ -32,7 +32,10 @@ use mlsirm_core::classification::{
     lee_classification as core_lee_classification,
     livingston_correlation as core_livingston_correlation, livingston_k2 as core_livingston_k2,
     livingston_lewis as core_livingston_lewis, rudner_classification as core_rudner_classification,
-    subkoviak_agreement as core_subkoviak_agreement, ClassificationResult, HansonBrennanResult,
+    subkoviak_agreement as core_subkoviak_agreement,
+    woodruff_sawyer_normal as core_woodruff_sawyer_normal,
+    woodruff_sawyer_sb as core_woodruff_sawyer_sb, ClassificationResult, HansonBrennanResult,
+    WoodruffSawyerResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
@@ -2426,6 +2429,48 @@ fn livingston_correlation(
 ) -> PyResult<f64> {
     core_livingston_correlation(x.as_slice()?, y.as_slice()?, cut_x, cut_y)
         .map_err(PyValueError::new_err)
+}
+
+fn ws_result_to_dict(
+    py: Python<'_>,
+    res: WoodruffSawyerResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("pass_rate", res.pass_rate)?;
+    out.set_item("phi_half", res.phi_half)?;
+    out.set_item("theta_half", res.theta_half)?;
+    out.set_item("phi", res.phi)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("pi00", res.pi00)?;
+    out.set_item("pi01", res.pi01)?;
+    out.set_item("pi11", res.pi11)?;
+    Ok(out.into())
+}
+
+/// Woodruff & Sawyer (1988, ERIC ED292877) split-half / Spearman-Brown
+/// pass-fail reliability from a 2x2 half-test table
+/// (`mlsirm_core::classification`).
+#[pyfunction]
+fn woodruff_sawyer_sb(
+    py: Python<'_>,
+    counts: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_woodruff_sawyer_sb(counts.as_slice()?).map_err(PyValueError::new_err)?;
+    ws_result_to_dict(py, res)
+}
+
+/// Woodruff & Sawyer (1988, ERIC ED292877) bivariate-normal pass-fail
+/// reliability from a half-test correlation (`mlsirm_core::classification`).
+#[pyfunction]
+fn woodruff_sawyer_normal(
+    py: Python<'_>,
+    mean: f64,
+    sd: f64,
+    cut: f64,
+    r_half: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_woodruff_sawyer_normal(mean, sd, cut, r_half).map_err(PyValueError::new_err)?;
+    ws_result_to_dict(py, res)
 }
 
 /// One-facet crossed `p x i` generalizability analysis
@@ -7226,6 +7271,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(subkoviak_agreement, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_k2, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_correlation, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_sb, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_normal, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(phi_lambda, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
