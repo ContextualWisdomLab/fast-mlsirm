@@ -359,3 +359,136 @@ def equating_standard_errors(
         "n_boot": int(res["n_boot"]),
         "ci_level": float(res["ci_level"]),
     }
+
+
+@dataclass
+class CircleArcResult:
+    """Circle-arc equating result. ``equated`` are the reference-form
+    equivalents of the requested scores. ``xc``/``yc``/``r2`` describe the
+    fitted circle -- in raw coordinates for method ``"arc1"``, in the
+    transformed (``y* = y - L(x)``) coordinates for ``"arc2"``; all three are
+    ``NaN`` when ``collinear`` is ``True`` (the estimate degenerates to the
+    straight line through the points). ``middle`` is the ``(x2, y2)`` middle
+    point used."""
+
+    equated: np.ndarray
+    xc: float
+    yc: float
+    r2: float
+    collinear: bool
+    middle: tuple[float, float]
+    method: str
+
+
+def _ca_point(p, name: str) -> tuple[float, float]:
+    try:
+        x, y = p
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair") from None
+    if np.iscomplexobj(np.asarray(x)) or np.iscomplexobj(np.asarray(y)):
+        raise ValueError(f"{name} must be real-valued")
+    try:
+        return (float(x), float(y))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair of numbers") from None
+
+
+def circle_arc_equate(
+    scores: np.ndarray,
+    low: tuple[float, float],
+    middle: tuple[float, float],
+    high: tuple[float, float],
+    method: str = "arc2",
+) -> CircleArcResult:
+    """Circle-arc small-sample observed-score equating (compute in Rust;
+    Livingston & Kim, 2008). The equating curve is constrained through three
+    points: the prespecified end-points ``low = (x1, y1)`` and
+    ``high = (x3, y3)`` and an empirically determined ``middle = (x2, y2)``
+    (for single-group / equivalent-groups designs, the pair of mean scores;
+    for the anchor design see :func:`circle_arc_middle_anchor`). ``method``
+    ``"arc1"`` fits a circle arc directly through the three points;
+    ``"arc2"`` (the default; the most accurate small-sample method in the
+    source's resampling study) decomposes the curve into the line ``L(x)``
+    through the end-points plus an arc fitted to the transformed points.
+    Scores must lie in ``[x1, x3]``: the source's linear extension below the
+    lower end-point is intentionally NOT implemented (reduced scope). When
+    the three points are collinear the estimate is the line itself and
+    ``collinear`` is ``True``. Raises ``ValueError`` if the fitted circle does
+    not carry all three points on a single branch (an end-point on the
+    opposite side of the center from the middle point), since the arc is
+    then not a function of X.
+
+    References (APA 7th ed.):
+        Livingston, S. A., & Kim, S. (2008). *Small-sample equating by the
+            circle-arc method* (Research Report No. RR-08-39). ETS.
+            https://doi.org/10.1002/j.2333-8504.2008.tb02135.x
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_equate"):
+        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
+    s = np.asarray(scores)
+    if np.iscomplexobj(s):
+        raise ValueError("scores must be real-valued")
+    try:
+        s = s.astype(np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("scores must be numeric") from None
+    s = np.ascontiguousarray(s.ravel())
+    res = core.circle_arc_equate(
+        s,
+        _ca_point(low, "low"),
+        _ca_point(middle, "middle"),
+        _ca_point(high, "high"),
+        str(method),
+    )
+    return CircleArcResult(
+        equated=np.asarray(res["equated"], dtype=np.float64),
+        xc=float(res["xc"]),
+        yc=float(res["yc"]),
+        r2=float(res["r2"]),
+        collinear=bool(res["collinear"]),
+        middle=(float(res["middle"][0]), float(res["middle"][1])),
+        method=str(method),
+    )
+
+
+def circle_arc_middle_anchor(
+    m_xa: float,
+    m_va: float,
+    m_yb: float,
+    s_yb: float,
+    m_vb: float,
+    s_vb: float,
+) -> tuple[float, float]:
+    """Middle point for circle-arc equating under the anchor (NEAT) design
+    (compute in Rust; Livingston & Kim, 2008, eq. 9). With ``x2`` chosen as
+    the new-form mean ``m_xa``, the chained-linear middle point simplifies to
+    ``y2 = m_yb + (s_yb / s_vb) * (m_va - m_vb)`` where ``m``/``s`` are means
+    and standard deviations, ``a``/``b`` index the groups taking the new and
+    reference forms, and ``v`` the common anchor. Returns ``(x2, y2)``.
+
+    References (APA 7th ed.):
+        Livingston, S. A., & Kim, S. (2008). *Small-sample equating by the
+            circle-arc method* (Research Report No. RR-08-39). ETS.
+            https://doi.org/10.1002/j.2333-8504.2008.tb02135.x
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_middle_anchor"):
+        raise RuntimeError("circle_arc_middle_anchor requires the compiled Rust core")
+    vals = []
+    for name, v in (
+        ("m_xa", m_xa), ("m_va", m_va), ("m_yb", m_yb),
+        ("s_yb", s_yb), ("m_vb", m_vb), ("s_vb", s_vb),
+    ):
+        if np.iscomplexobj(np.asarray(v)):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a number") from None
+    x2, y2 = core.circle_arc_middle_anchor(*vals)
+    return (float(x2), float(y2))

@@ -1395,3 +1395,209 @@ fn see_bootstrap_monte_carlo_500() {
     run(EquateMethod::Linear, "linear");
     run(EquateMethod::Equipercentile, "equipercentile");
 }
+
+// ===================== Circle-arc equating tests =====================
+// All pins from the exact-Fraction oracle (files/circle_arc_oracle.py,
+// executed all-pass) against Livingston & Kim (2008) RR-08-39.
+
+// Assert reads: CircleArcResult.{xc,yc,r2,collinear,middle,equated} from
+// circle_arc_equate. Kills MU2 (dropped s2*(y1-y3) term in xc numerator:
+// xc != 40) and MU1 (branch swap: equated at 12 becomes -44, not 14).
+#[test]
+fn ca_paper_method1_exact() {
+    let r = circle_arc_equate(
+        &[5.0, 12.0, 20.0, 10.0],
+        (5.0, 5.0),
+        (12.0, 14.0),
+        (20.0, 20.0),
+        CircleArcMethod::Arc1,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, 40.0); // paper worked example center
+    assert_eq!(r.yc, -15.0);
+    assert_eq!(r.r2, 1625.0); // radius sqrt(1625) ~ 40.3
+    assert_eq!(r.middle, (12.0, 14.0));
+    // exact on-circle recoveries: 1625-1225=400, 1625-784=841, 1625-400=1225
+    assert_eq!(r.equated[0], 5.0);
+    assert_eq!(r.equated[1], 14.0);
+    assert_eq!(r.equated[2], 20.0);
+    // float pin: -15 + sqrt(725)
+    assert!((r.equated[3] - 11.925824035672519).abs() < 1e-12);
+}
+
+// Assert reads: transformed-circle fields and equated from the Arc2 path.
+// Kills MU3 (Method 2 skipping the y* transform: center would be (40,-15),
+// not (12.5,-13)).
+#[test]
+fn ca_paper_method2_exact() {
+    let r = circle_arc_equate(
+        &[5.0, 12.0, 20.0, 10.0],
+        (5.0, 5.0),
+        (12.0, 14.0),
+        (20.0, 20.0),
+        CircleArcMethod::Arc2,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, 12.5); // transformed center (oracle exact 25/2)
+    assert_eq!(r.yc, -13.0);
+    assert_eq!(r.r2, 225.25); // 901/4
+    assert_eq!(r.equated[0], 5.0); // L(5)+arc*(5) = 5+0
+    assert_eq!(r.equated[1], 14.0); // L(12)=12, arc*(12) = -13+15 = 2
+    assert_eq!(r.equated[2], 20.0);
+    // float pin: 10 + (-13 + sqrt(219))
+    assert!((r.equated[3] - 11.798648586948742).abs() < 1e-12);
+}
+
+// Assert reads: equated from the minus branch (y2 < yc). Kills MU1 (branch
+// swap): with center (-5,15), r2=250, the plus branch at x=4 gives
+// 15+13=28, not the exact oracle value 2.
+#[test]
+fn ca_minus_branch_exact() {
+    let r = circle_arc_equate(
+        &[0.0, 4.0, 10.0],
+        (0.0, 0.0),
+        (4.0, 2.0),
+        (10.0, 10.0),
+        CircleArcMethod::Arc1,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, -5.0); // oracle circumcenter
+    assert_eq!(r.yc, 15.0);
+    assert_eq!(r.r2, 250.0);
+    assert_eq!(r.equated[0], 0.0); // 15 - sqrt(250-25) = 15-15
+    assert_eq!(r.equated[1], 2.0); // 15 - sqrt(250-81) = 15-13
+    assert_eq!(r.equated[2], 10.0); // 15 - sqrt(250-225) = 15-5
+}
+
+// Assert reads: collinear flag, NaN circle fields, and line-valued equated
+// for both the Method-1 collinear case and the Method-2 y2* == 0 case
+// (mandatory spec change 4). Kills MU5 (collinear path returning constant
+// y1: equated[1] would be 0, not 3).
+#[test]
+fn ca_collinear_line() {
+    for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+        let r = circle_arc_equate(
+            &[0.0, 3.0, 10.0],
+            (0.0, 0.0),
+            (5.0, 5.0),
+            (10.0, 10.0),
+            method,
+        )
+        .unwrap();
+        assert!(r.collinear, "{method:?}");
+        assert!(r.xc.is_nan() && r.yc.is_nan() && r.r2.is_nan());
+        assert_eq!(r.equated, vec![0.0, 3.0, 10.0]); // y = x line
+    }
+}
+
+// Assert reads: the (x2, y2) pair returned by circle_arc_middle_anchor.
+// Paper Table 1 pin (exact Fraction 791677/10180). Kills MU4 (inverted
+// s_YB/s_VB ratio: y2 would be 77.5358..., not 77.7678...).
+#[test]
+fn ca_anchor_middle_eq9() {
+    let (x2, y2) = circle_arc_middle_anchor(73.62, 30.60, 77.47, 10.83, 30.46, 5.09).unwrap();
+    assert_eq!(x2, 73.62); // Table 1 new-form test mean m_XA
+    assert!((y2 - 77.76787819253438).abs() < 1e-12);
+}
+
+// Assert reads: Err values from both public functions.
+#[test]
+fn ca_error_contract() {
+    let ok = ((0.0, 0.0), (4.0, 2.0), (10.0, 10.0));
+    let call = |scores: &[f64], low, mid, high| {
+        circle_arc_equate(scores, low, mid, high, CircleArcMethod::Arc1)
+    };
+    assert!(call(&[], ok.0, ok.1, ok.2).is_err()); // empty scores
+    assert!(call(&[f64::NAN], ok.0, ok.1, ok.2).is_err()); // non-finite score
+    assert!(call(&[-0.5], ok.0, ok.1, ok.2).is_err()); // below x1 (no extension)
+    assert!(call(&[10.5], ok.0, ok.1, ok.2).is_err()); // above x3
+    assert!(call(&[1.0], (10.0, 0.0), ok.1, (0.0, 10.0)).is_err()); // x1 >= x3
+    assert!(call(&[1.0], ok.0, (0.0, 2.0), ok.2).is_err()); // x2 == x1
+    assert!(call(&[1.0], ok.0, (10.0, 2.0), ok.2).is_err()); // x2 == x3
+    assert!(call(&[1.0], ok.0, (f64::INFINITY, 2.0), ok.2).is_err());
+    assert!(call(&[1.0], ok.0, (4.0, f64::NAN), ok.2).is_err());
+    // scores exactly at the end-points are ALLOWED (mandatory change 5)
+    assert!(call(&[0.0, 10.0], ok.0, ok.1, ok.2).is_ok());
+    // mixed-branch triples are rejected: for (0,0),(1,3),(2,1) the fitted
+    // circle's center is (0.5, 1.5), so y1 = 0 sits below the center while
+    // the middle point sits above it -- no single-branch arc passes through
+    // all three points, and silently equating off one branch would miss the
+    // prescribed end-points.
+    for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+        let e = circle_arc_equate(&[1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0), method).unwrap_err();
+        assert!(e.contains("single branch"), "{method:?}: {e}");
+    }
+    // anchor middle: non-finite and non-positive SDs error
+    assert!(circle_arc_middle_anchor(f64::NAN, 1.0, 1.0, 1.0, 1.0, 1.0).is_err());
+    assert!(circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0).is_err()); // s_yb
+    assert!(circle_arc_middle_anchor(1.0, 1.0, 1.0, 1.0, 1.0, -2.0).is_err()); // s_vb
+                                                                               // method label parsing
+    assert_eq!(CircleArcMethod::parse("ARC1"), Some(CircleArcMethod::Arc1));
+    assert_eq!(CircleArcMethod::parse("2"), Some(CircleArcMethod::Arc2));
+    assert_eq!(CircleArcMethod::parse("tucker"), None);
+}
+
+// 500-rep randomized check. Per mandatory spec change 2, this does NOT
+// re-check the circle identity from returned values (identity trap);
+// instead it asserts (a) the returned center/radius reproduce the INPUT
+// anchor points of the fit (raw points for Method 1; (x1,0),(x2,y2*),
+// (x3,0) for Method 2, y2* recomputed from the inputs, not the output),
+// and (b) equated at [x1,x2,x3] recovers [y1,y2,y3].
+#[test]
+#[ignore]
+fn ca_mc_500() {
+    let mut u = lcg(20080839);
+    let mut done = 0usize;
+    while done < 500 {
+        let x1 = u() * 10.0;
+        let x3 = x1 + 5.0 + u() * 40.0;
+        let x2 = x1 + (0.1 + 0.8 * u()) * (x3 - x1);
+        let y1 = u() * 10.0;
+        let y3 = y1 + 5.0 + u() * 40.0;
+        let line_y2 = y1 + (y3 - y1) / (x3 - x1) * (x2 - x1);
+        let y2 = line_y2 + (u() - 0.5) * 6.0;
+        if (y2 - line_y2).abs() < 1e-3 {
+            continue; // avoid near-collinear conditioning noise
+        }
+        // The circle-arc model represents Y(X) as a single branch of the
+        // circle; the CRATE now rejects triples whose fitted circle does
+        // not carry all three points on one branch. Draws hitting that
+        // error path are counted but skipped: the assert reads the crate's
+        // Err, not a test-local recomputation.
+        for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+            let out = circle_arc_equate(&[x1, x2, x3], (x1, y1), (x2, y2), (x3, y3), method);
+            let r = match out {
+                Err(e) => {
+                    assert!(
+                        e.contains("single branch"),
+                        "{method:?} unexpected error: {e}"
+                    );
+                    continue;
+                }
+                Ok(r) => r,
+            };
+            assert!(!r.collinear);
+            // (a) fitted circle passes through the INPUT anchor points
+            let anchors: [(f64, f64); 3] = match method {
+                CircleArcMethod::Arc1 => [(x1, y1), (x2, y2), (x3, y3)],
+                CircleArcMethod::Arc2 => [(x1, 0.0), (x2, y2 - line_y2), (x3, 0.0)],
+            };
+            let scale = r.r2.max(1.0);
+            for (px, py) in anchors {
+                let res = (px - r.xc).powi(2) + (py - r.yc).powi(2) - r.r2;
+                assert!(
+                    res.abs() / scale < 1e-9,
+                    "{method:?} anchor ({px},{py}) residual {res}"
+                );
+            }
+            // (b) equating the three anchors recovers the y-coordinates
+            for (e, want) in r.equated.iter().zip([y1, y2, y3]) {
+                assert!((e - want).abs() < 1e-8, "{method:?} {e} vs {want}");
+            }
+        }
+        done += 1;
+    }
+}

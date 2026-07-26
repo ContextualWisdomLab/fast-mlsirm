@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
-    equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
-    equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
-    loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
-    EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
+    circle_arc_equate as core_circle_arc_equate,
+    circle_arc_middle_anchor as core_circle_arc_middle_anchor, equate_eg as core_equate_eg,
+    equate_eg_ext as core_equate_eg_ext, equate_neat as core_equate_neat,
+    equate_neat_linear as core_equate_neat_linear, loglinear_smooth as core_loglinear_smooth,
+    AnchorKind, CircleArcMethod, Continuization, EgSmoothOptions, EquateMethod, EquateResult,
+    NeatLinearMethod, NeatMethod, SeeResult,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -5007,6 +5009,51 @@ fn analytic_see(
     see_result_dict(py, res)
 }
 
+/// Circle-arc small-sample observed-score equating (Rust compute path;
+/// Livingston & Kim, 2008, ETS RR-08-39). Method "1"/"arc1" fits the arc
+/// through the raw points; "2"/"arc2" decomposes into a linear component
+/// plus an arc on the transformed points. Scores must lie in [x1, x3]
+/// (the source's below-endpoint linear extension is not implemented).
+#[pyfunction]
+#[pyo3(signature = (scores, low, middle, high, method))]
+fn circle_arc_equate(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    low: (f64, f64),
+    middle: (f64, f64),
+    high: (f64, f64),
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = CircleArcMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown circle-arc method: {method}")))?;
+    let res = core_circle_arc_equate(scores.as_slice()?, low, middle, high, m)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("equated", PyArray1::from_slice(py, &res.equated))?;
+    d.set_item("xc", res.xc)?;
+    d.set_item("yc", res.yc)?;
+    d.set_item("r2", res.r2)?;
+    d.set_item("collinear", res.collinear)?;
+    d.set_item("middle", res.middle)?;
+    Ok(d.into())
+}
+
+/// Anchor-design middle point for circle-arc equating (Livingston & Kim,
+/// 2008, eq. 9): returns (x2, y2) with x2 = m_xa and
+/// y2 = m_yb + (s_yb / s_vb) * (m_va - m_vb).
+#[pyfunction]
+#[pyo3(signature = (m_xa, m_va, m_yb, s_yb, m_vb, s_vb))]
+fn circle_arc_middle_anchor(
+    m_xa: f64,
+    m_va: f64,
+    m_yb: f64,
+    s_yb: f64,
+    m_vb: f64,
+    s_vb: f64,
+) -> PyResult<(f64, f64)> {
+    core_circle_arc_middle_anchor(m_xa, m_va, m_yb, s_yb, m_vb, s_vb).map_err(PyValueError::new_err)
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7340,6 +7387,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bootstrap_see, m)?)?;
     m.add_function(wrap_pyfunction!(analytic_see, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
