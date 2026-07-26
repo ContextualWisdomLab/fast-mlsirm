@@ -41,6 +41,8 @@ from .scaling import (
     metrics_rating as metrics_rating,
     fide_rating as fide_rating,
     FideResult as FideResult,
+    predict_rating as predict_rating,
+    predict_rating_multi as predict_rating_multi,
 )
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
@@ -274,6 +276,8 @@ __all__ = [
     "metrics_rating",
     "fide_rating",
     "FideResult",
+    "predict_rating",
+    "predict_rating_multi",
     "circle_arc_middle_anchor",
     "CircleArcResult",
     "fit_response_times",

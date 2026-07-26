@@ -1760,3 +1760,235 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
         elite=np.asarray(res["elite"]),
         opponent=np.asarray(res["opponent"]),
     )
+
+
+def _predict_int_index_array(x, name, fname):
+    """Validate a player-index array: integers >= -1 (-1 = unmatched)."""
+    if isinstance(x, np.ma.MaskedArray):
+        raise ValueError(f"{fname}: masked arrays are not supported for {name}")
+    raw = x if isinstance(x, np.ndarray) else np.asarray(x, dtype=object)
+    if np.iscomplexobj(raw) or raw.dtype.kind == "b":
+        raise ValueError(f"{fname}: {name} must be integer indices, not complex/bool")
+    if raw.dtype == object:
+        for v in np.ravel(raw):
+            if v is None or isinstance(
+                v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
+            ):
+                raise ValueError(f"{fname}: {name} contains a non-numeric value")
+    try:
+        arr = np.asarray(x, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{fname}: {name} is not numeric: {exc}") from None
+    if arr.ndim != 1:
+        raise ValueError(f"{fname}: {name} must be one-dimensional")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError(f"{fname}: {name} must be finite")
+    if not np.all(arr == np.floor(arr)):
+        raise ValueError(f"{fname}: {name} must contain integers")
+    if np.any(arr < -1):
+        raise ValueError(f"{fname}: {name} indices must be >= -1 (-1 = unmatched)")
+    return arr.astype(np.int64)
+
+
+def _predict_float_array(x, name, fname, allow_nan):
+    """Validate a float array; NaN optionally allowed (R NA), Inf rejected."""
+    if isinstance(x, np.ma.MaskedArray):
+        raise ValueError(f"{fname}: masked arrays are not supported for {name}")
+    raw = x if isinstance(x, np.ndarray) else np.asarray(x, dtype=object)
+    if np.iscomplexobj(raw) or raw.dtype.kind == "b":
+        raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
+    if raw.dtype == object:
+        for v in np.ravel(raw):
+            if isinstance(
+                v, (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
+            ) or v is None:
+                raise ValueError(f"{fname}: {name} contains a non-numeric value")
+    try:
+        arr = np.asarray(x, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{fname}: {name} is not numeric: {exc}") from None
+    if arr.ndim != 1:
+        raise ValueError(f"{fname}: {name} must be one-dimensional")
+    if np.any(np.isinf(arr)):
+        raise ValueError(f"{fname}: {name} must not contain infinities")
+    if not allow_nan and np.any(np.isnan(arr)):
+        raise ValueError(f"{fname}: {name} must not contain NaN")
+    return arr
+
+
+def _predict_scalar(x, name, fname):
+    """Validate a finite real scalar parameter."""
+    import math
+    if isinstance(x, (bool, np.bool_)):
+        raise ValueError(f"{fname}: {name} must be real numeric, not bool")
+    raw = np.asarray(x)
+    if np.iscomplexobj(raw) or raw.dtype.kind == "b":
+        raise ValueError(f"{fname}: {name} must be real numeric, not complex/bool")
+    if raw.dtype == object and raw.ndim == 0 and isinstance(
+        raw.item(), (bool, np.bool_)
+    ):
+        raise ValueError(f"{fname}: {name} must be real numeric, not bool")
+    try:
+        v = float(x)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{fname}: {name} is not numeric: {exc}") from None
+    if not math.isfinite(v):
+        raise ValueError(f"{fname}: {name} must be finite")
+    return v
+
+
+def predict_rating(
+    ratings,
+    games,
+    white,
+    black,
+    deviations=None,
+    gamma=30.0,
+    tng=15,
+    trat=None,
+    thresh=None,
+):
+    """Predicted win probabilities for two-player games from fitted ratings.
+
+    Implements the two-player branches of ``predict.rating`` from CRAN
+    PlayerRatings 1.1-0 (R/ratings.R lines 1056-1133; source read). Without
+    ``deviations`` this is the Elo branch (used for ``elo()``/``fide()``
+    fits); with ``deviations`` it is the deviation-shrunk branch shared by
+    Glicko, Glicko-2, and Stephenson fits. Players are addressed by index;
+    ``-1`` marks an unmatched player (R's ``match()`` NA). Players with
+    ``games < tng`` (strict) are treated as unrated; ``trat`` (a scalar, or
+    a ``(rating, deviation)`` pair when ``deviations`` is supplied)
+    replaces ALL missing extracted values, matching R. ``thresh`` maps
+    predictions to 1 when ``pred >= thresh`` else 0 (NaN kept). ``gamma``
+    is the per-game (or scalar, broadcast) first-player advantage.
+    """
+    import math
+
+    from .fitstats import _core_module
+
+    fname = "predict_rating"
+    rat = _predict_float_array(ratings, "ratings", fname, allow_nan=True)
+    n = rat.shape[0]
+    if n < 2 or n > 10000:
+        raise ValueError(f"{fname}: number of players must be in 2..=10000, got {n}")
+    g_arr = _predict_float_array(games, "games", fname, allow_nan=False)
+    if np.any(g_arr < 0) or not np.all(g_arr == np.floor(g_arr)):
+        raise ValueError(f"{fname}: games must be nonnegative integers")
+    games_u64 = g_arr.astype(np.uint64)
+    w = _predict_int_index_array(white, "white", fname)
+    b = _predict_int_index_array(black, "black", fname)
+    dev = None
+    if deviations is not None:
+        dev = _predict_float_array(deviations, "deviations", fname, allow_nan=True)
+    ng = w.shape[0]
+    gam_raw = np.asarray(gamma)
+    if np.iscomplexobj(gam_raw) or gam_raw.dtype.kind == "b":
+        raise ValueError(f"{fname}: gamma must be real numeric, not complex/bool")
+    if gam_raw.ndim == 0:
+        gam = np.full(ng, _predict_scalar(gamma, "gamma", fname))
+    else:
+        gam = _predict_float_array(gamma, "gamma", fname, allow_nan=False)
+        if gam.shape != (ng,):
+            raise ValueError(
+                f"{fname}: gamma must be a scalar or length-{ng} array, got {gam.shape}"
+            )
+    tng_v = _predict_scalar(tng, "tng", fname)
+    if tng_v < 0 or tng_v != math.floor(tng_v):
+        raise ValueError(f"{fname}: tng must be a nonnegative integer")
+    trat_rating = None
+    trat_deviation = None
+    if trat is not None:
+        if dev is not None:
+            if not (isinstance(trat, (tuple, list)) and len(trat) == 2):
+                raise ValueError(
+                    f"{fname}: trat must be a (rating, deviation) pair when "
+                    "deviations are supplied"
+                )
+            trat_rating = _predict_scalar(trat[0], "trat rating", fname)
+            trat_deviation = _predict_scalar(trat[1], "trat deviation", fname)
+        else:
+            if isinstance(trat, (tuple, list)):
+                if len(trat) != 1:
+                    raise ValueError(
+                        f"{fname}: trat must be a scalar (length 1) without deviations"
+                    )
+                trat = trat[0]
+            trat_rating = _predict_scalar(trat, "trat", fname)
+    thresh_v = None if thresh is None else _predict_scalar(thresh, "thresh", fname)
+    out = _core_module().predict_rating_two(
+        np.ascontiguousarray(rat),
+        None if dev is None else np.ascontiguousarray(dev),
+        np.ascontiguousarray(games_u64),
+        np.ascontiguousarray(w),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(gam),
+        int(tng_v),
+        trat_rating,
+        trat_deviation,
+        thresh_v,
+    )
+    return np.asarray(out)
+
+
+def predict_rating_multi(
+    ratings,
+    games,
+    players,
+    tng=15,
+    trat=None,
+    placing=False,
+):
+    """Predicted expected scores (or placings) for multi-player EloM events.
+
+    Implements the EloM branch of ``predict.rating`` from CRAN
+    PlayerRatings 1.1-0 (R/ratings.R lines 1103-1105, 1123-1125,
+    1129-1130; source read): per event row,
+    ``pred = (rating - rowmean) / 40`` with the row mean over non-missing
+    seats (``rowMeans(rats, na.rm=TRUE)``). ``players`` is an ``(nr, np)``
+    index matrix with ``-1`` = empty/unmatched seat. Players with
+    ``games < tng`` are treated as unrated; scalar ``trat`` replaces all
+    missing extracted ratings. With ``placing=True`` each row is replaced
+    by min-tie ranks of the predictions (rank 1 = highest; NaN kept),
+    matching R's ``rank(-preds, na.last="keep", ties.method="min")``.
+    """
+    import math
+
+    from .fitstats import _core_module
+
+    fname = "predict_rating_multi"
+    rat = _predict_float_array(ratings, "ratings", fname, allow_nan=True)
+    n = rat.shape[0]
+    if n < 2 or n > 10000:
+        raise ValueError(f"{fname}: number of players must be in 2..=10000, got {n}")
+    g_arr = _predict_float_array(games, "games", fname, allow_nan=False)
+    if np.any(g_arr < 0) or not np.all(g_arr == np.floor(g_arr)):
+        raise ValueError(f"{fname}: games must be nonnegative integers")
+    games_u64 = g_arr.astype(np.uint64)
+    if isinstance(players, np.ma.MaskedArray):
+        raise ValueError(f"{fname}: masked arrays are not supported for players")
+    p_raw = players if isinstance(players, np.ndarray) else np.asarray(players, dtype=object)
+    if p_raw.ndim != 2:
+        raise ValueError(f"{fname}: players must be a 2-D (events, seats) matrix")
+    nr, np_seats = p_raw.shape
+    flat = _predict_int_index_array(np.ravel(p_raw), "players", fname)
+    if not (2 <= np_seats <= 1000):
+        raise ValueError(
+            f"{fname}: seats per event must be in 2..=1000, got {np_seats}"
+        )
+    tng_v = _predict_scalar(tng, "tng", fname)
+    if tng_v < 0 or tng_v != math.floor(tng_v):
+        raise ValueError(f"{fname}: tng must be a nonnegative integer")
+    trat_v = None if trat is None else _predict_scalar(trat, "trat", fname)
+    if not isinstance(placing, (bool, np.bool_)):
+        raise ValueError(f"{fname}: placing must be a bool")
+    out = _core_module().predict_rating_multi(
+        np.ascontiguousarray(rat),
+        np.ascontiguousarray(games_u64),
+        np.ascontiguousarray(flat),
+        int(nr),
+        int(np_seats),
+        int(tng_v),
+        trat_v,
+        bool(placing),
+    )
+    return np.asarray(out).reshape(nr, np_seats)

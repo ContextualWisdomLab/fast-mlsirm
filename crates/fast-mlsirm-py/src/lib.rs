@@ -5741,6 +5741,77 @@ fn fide_rating(
     Ok(d.into())
 }
 
+/// Predicted game outcomes from fitted ratings, PlayerRatings
+/// `predict.rating` two-player branches (see
+/// `mlsirm_core::scaling::predict_rating_two`). `white`/`black` are player
+/// indices with -1 = unmatched. Pass `deviations` for the
+/// Glicko/Glicko-2/Stephenson deviation-shrunk branch.
+#[pyfunction]
+#[pyo3(signature = (ratings, deviations, games, white, black, gamma, tng, trat_rating, trat_deviation, thresh))]
+#[allow(clippy::too_many_arguments)]
+fn predict_rating_two(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    deviations: Option<PyReadonlyArray1<'_, f64>>,
+    games: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, i64>,
+    black: PyReadonlyArray1<'_, i64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    tng: u64,
+    trat_rating: Option<f64>,
+    trat_deviation: Option<f64>,
+    thresh: Option<f64>,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let dev_slice = deviations.as_ref().map(|d| d.as_slice()).transpose()?;
+    let trat = trat_rating.map(|t1| (t1, trat_deviation.unwrap_or(f64::NAN)));
+    let out = mlsirm_core::scaling::predict_rating_two(
+        ratings.as_slice()?,
+        dev_slice,
+        games.as_slice()?,
+        white.as_slice()?,
+        black.as_slice()?,
+        gamma.as_slice()?,
+        tng,
+        trat,
+        thresh,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
+/// Predicted expected scores for multi-player (EloM) events, PlayerRatings
+/// `predict.rating` EloM branch (see
+/// `mlsirm_core::scaling::predict_rating_multi`). `players` is flattened
+/// row-major nr x np with -1 = empty seat; `placing` returns min-tie ranks.
+#[pyfunction]
+#[pyo3(signature = (ratings, games, players, nr, np, tng, trat, placing))]
+#[allow(clippy::too_many_arguments)]
+fn predict_rating_multi(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    games: PyReadonlyArray1<'_, u64>,
+    players: PyReadonlyArray1<'_, i64>,
+    nr: usize,
+    np: usize,
+    tng: u64,
+    trat: Option<f64>,
+    placing: bool,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let out = mlsirm_core::scaling::predict_rating_multi(
+        ratings.as_slice()?,
+        games.as_slice()?,
+        players.as_slice()?,
+        nr,
+        np,
+        tng,
+        trat,
+        placing,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8095,6 +8166,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
     m.add_function(wrap_pyfunction!(metrics_rating, m)?)?;
     m.add_function(wrap_pyfunction!(fide_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_two, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

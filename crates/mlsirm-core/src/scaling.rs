@@ -3701,6 +3701,297 @@ pub fn fide_rating(
     })
 }
 
+/// Game-outcome prediction from fitted ratings — two-player branches of
+/// `predict.rating` from CRAN PlayerRatings 1.1-0 (`R/ratings.R` lines
+/// 1056-1133; source READ). No journal paper exists for this dispatch
+/// function; the CRAN R source is the normative reference (provenance as
+/// for `stephenson_rating`). Two branches are implemented here:
+///
+/// * Elo branch (fitted `type == "Elo"`, produced by `elo()`/`fide()`):
+///   `pred = 1 / (1 + 10^((brat - wrat - gamma)/400))` (R line 1118).
+/// * Deviation branch (`Glicko`/`Glicko-2`/`Stephenson`), engaged when
+///   `deviations` is supplied: with `qv = ln(10)/400` and
+///   `qip3 = 3 (qv/pi)^2`,
+///   `vec = 1/sqrt(1 + qip3 (wdev^2 + bdev^2))` and
+///   `pred = 1 / (1 + 10^(vec (brat - wrat - gamma)/400))`
+///   (R lines 1071, 1119-1121; note the joint shrink sums BOTH players'
+///   squared deviations).
+///
+/// Pre-processing (verified against R 1069-1114 and the executed oracle):
+/// players with `games < tng` (strict `<`) have their stored rating (and
+/// deviation) set to NA before extraction; when `trat` is supplied it
+/// then replaces ALL extracted-NA values — unmatched players (index
+/// sentinel `-1`), low-games players, and matched players whose stored
+/// rating/deviation is already NaN. Without `trat`, NA propagates to a
+/// NaN prediction. `thresh` (R 1127-1128) maps `pred >= thresh` to 1 else
+/// 0, leaving NaN predictions NaN.
+///
+/// REDUCED SCOPE relative to R: index-based (caller does name matching;
+/// `-1` = unmatched), per-game `gamma` (scalar recycling is a wrapper
+/// concern), no data-frame interface or `object$type` dispatch.
+///
+/// All formulas were verified against an executed exact/float oracle
+/// transcribed from the R source; claims are limited to that source.
+pub fn predict_rating_two(
+    ratings: &[f64],
+    deviations: Option<&[f64]>,
+    games: &[u64],
+    white: &[i64],
+    black: &[i64],
+    gamma: &[f64],
+    tng: u64,
+    trat: Option<(f64, f64)>,
+    thresh: Option<f64>,
+) -> Result<Vec<f64>, String> {
+    let n = ratings.len();
+    if n < 2 || n > 10_000 {
+        return Err(format!(
+            "predict_rating_two: number of players must be in 2..=10000, got {n}"
+        ));
+    }
+    if games.len() != n {
+        return Err(format!(
+            "predict_rating_two: games length {} != number of players {n}",
+            games.len()
+        ));
+    }
+    if let Some(dev) = deviations {
+        if dev.len() != n {
+            return Err(format!(
+                "predict_rating_two: deviations length {} != number of players {n}",
+                dev.len()
+            ));
+        }
+        if dev.iter().any(|d| d.is_infinite()) {
+            return Err(
+                "predict_rating_two: deviations must not be infinite (NaN = missing)".to_string(),
+            );
+        }
+    }
+    if ratings.iter().any(|r| r.is_infinite()) {
+        return Err("predict_rating_two: ratings must not be infinite (NaN = missing)".to_string());
+    }
+    let g = white.len();
+    if g == 0 {
+        return Err("predict_rating_two: at least one game row is required".to_string());
+    }
+    if black.len() != g || gamma.len() != g {
+        return Err(format!(
+            "predict_rating_two: white/black/gamma lengths must match, got {}/{}/{}",
+            g,
+            black.len(),
+            gamma.len()
+        ));
+    }
+    if gamma.iter().any(|x| !x.is_finite()) {
+        return Err("predict_rating_two: gamma must be finite".to_string());
+    }
+    if let Some((t1, t2)) = trat {
+        if !t1.is_finite() {
+            return Err("predict_rating_two: trat rating must be finite".to_string());
+        }
+        if deviations.is_some() && !t2.is_finite() {
+            return Err("predict_rating_two: trat deviation must be finite".to_string());
+        }
+    }
+    if let Some(t) = thresh {
+        if !t.is_finite() {
+            return Err("predict_rating_two: thresh must be finite".to_string());
+        }
+    }
+    for (w, b) in white.iter().zip(black.iter()) {
+        for idx in [*w, *b] {
+            if idx < -1 || idx >= n as i64 {
+                return Err(format!(
+                    "predict_rating_two: player index {idx} out of range (-1 = unmatched, else 0..{n})"
+                ));
+            }
+        }
+        if *w >= 0 && w == b {
+            return Err("predict_rating_two: self-play rows are not allowed".to_string());
+        }
+    }
+    // R 1088-1093: low-games rows lose their stored values before extraction.
+    let effective = |p: i64, table: &[f64]| -> f64 {
+        if p < 0 {
+            f64::NAN
+        } else if games[p as usize] < tng {
+            f64::NAN
+        } else {
+            table[p as usize]
+        }
+    };
+    let qv = std::f64::consts::LN_10 / 400.0;
+    let qip3 = 3.0 * (qv / std::f64::consts::PI) * (qv / std::f64::consts::PI);
+    let mut preds = Vec::with_capacity(g);
+    for k in 0..g {
+        let mut wrat = effective(white[k], ratings);
+        let mut brat = effective(black[k], ratings);
+        if let Some((t1, _)) = trat {
+            // R 1097-1098: trat replaces ALL extracted NA ratings.
+            if wrat.is_nan() {
+                wrat = t1;
+            }
+            if brat.is_nan() {
+                brat = t1;
+            }
+        }
+        let pred = if let Some(dev) = deviations {
+            let mut wdev = effective(white[k], dev);
+            let mut bdev = effective(black[k], dev);
+            if let Some((_, t2)) = trat {
+                if wdev.is_nan() {
+                    wdev = t2;
+                }
+                if bdev.is_nan() {
+                    bdev = t2;
+                }
+            }
+            if wrat.is_nan() || brat.is_nan() || wdev.is_nan() || bdev.is_nan() {
+                f64::NAN
+            } else {
+                let vec = 1.0 / (1.0 + qip3 * (wdev * wdev + bdev * bdev)).sqrt();
+                1.0 / (1.0 + 10f64.powf(vec * (brat - wrat - gamma[k]) / 400.0))
+            }
+        } else if wrat.is_nan() || brat.is_nan() {
+            f64::NAN
+        } else {
+            1.0 / (1.0 + 10f64.powf((brat - wrat - gamma[k]) / 400.0))
+        };
+        preds.push(pred);
+    }
+    if let Some(t) = thresh {
+        // R 1127-1128: as.numeric(preds >= thresh); NA stays NA.
+        for p in preds.iter_mut() {
+            if !p.is_nan() {
+                *p = if *p >= t { 1.0 } else { 0.0 };
+            }
+        }
+    }
+    Ok(preds)
+}
+
+/// Multi-player (EloM) branch of `predict.rating` from CRAN PlayerRatings
+/// 1.1-0 (`R/ratings.R` lines 1103-1105, 1123-1125, 1129-1130; source
+/// READ; provenance as for `predict_rating_two`).
+///
+/// Per event row: `pred = (rat - rowmean)/40` where `rowmean` is the mean
+/// over the row's non-NaN seat ratings (`rowMeans(rats, na.rm=TRUE)`,
+/// all-NaN row -> NaN row). Pre-processing (tng/trat) as in
+/// `predict_rating_two`. With `placing = true` the per-row predictions
+/// are replaced by `rank(-preds, na.last="keep", ties.method="min")`:
+/// rank 1 = highest prediction, ties share the minimum rank, NaN seats
+/// keep NaN.
+///
+/// `players` is row-major `nr x np` with `-1` = empty/unmatched seat.
+/// All formulas were verified against an executed oracle transcribed
+/// from the R source.
+pub fn predict_rating_multi(
+    ratings: &[f64],
+    games: &[u64],
+    players: &[i64],
+    nr: usize,
+    np: usize,
+    tng: u64,
+    trat: Option<f64>,
+    placing: bool,
+) -> Result<Vec<f64>, String> {
+    let n = ratings.len();
+    if n < 2 || n > 10_000 {
+        return Err(format!(
+            "predict_rating_multi: number of players must be in 2..=10000, got {n}"
+        ));
+    }
+    if games.len() != n {
+        return Err(format!(
+            "predict_rating_multi: games length {} != number of players {n}",
+            games.len()
+        ));
+    }
+    if ratings.iter().any(|r| r.is_infinite()) {
+        return Err(
+            "predict_rating_multi: ratings must not be infinite (NaN = missing)".to_string(),
+        );
+    }
+    if nr == 0 {
+        return Err("predict_rating_multi: at least one event row is required".to_string());
+    }
+    if np < 2 || np > 1000 {
+        return Err(format!(
+            "predict_rating_multi: seats per event must be in 2..=1000, got {np}"
+        ));
+    }
+    if players.len() != nr * np {
+        return Err(format!(
+            "predict_rating_multi: players length {} != nr*np = {}",
+            players.len(),
+            nr * np
+        ));
+    }
+    if let Some(t) = trat {
+        if !t.is_finite() {
+            return Err("predict_rating_multi: trat must be finite".to_string());
+        }
+    }
+    for idx in players {
+        if *idx < -1 || *idx >= n as i64 {
+            return Err(format!(
+                "predict_rating_multi: player index {idx} out of range (-1 = empty, else 0..{n})"
+            ));
+        }
+    }
+    let mut out = vec![f64::NAN; nr * np];
+    let mut row_rat = vec![f64::NAN; np];
+    for i in 0..nr {
+        for s in 0..np {
+            let p = players[i * np + s];
+            let mut v = if p < 0 || games[p as usize] < tng {
+                f64::NAN
+            } else {
+                ratings[p as usize]
+            };
+            if let Some(t) = trat {
+                if v.is_nan() {
+                    v = t;
+                }
+            }
+            row_rat[s] = v;
+        }
+        // rowMeans(rats, na.rm = TRUE) — R 1123.
+        let mut sum = 0.0;
+        let mut cnt = 0usize;
+        for v in row_rat.iter() {
+            if !v.is_nan() {
+                sum += v;
+                cnt += 1;
+            }
+        }
+        let mean = if cnt > 0 { sum / cnt as f64 } else { f64::NAN };
+        for s in 0..np {
+            if !row_rat[s].is_nan() {
+                out[i * np + s] = (row_rat[s] - mean) / 40.0;
+            }
+        }
+        if placing {
+            // rank(-preds, na.last="keep", ties.method="min") — R 1129-1130:
+            // rank of v = 1 + count of non-NaN row values strictly greater.
+            for s in 0..np {
+                row_rat[s] = out[i * np + s];
+            }
+            for s in 0..np {
+                if !row_rat[s].is_nan() {
+                    let greater = row_rat
+                        .iter()
+                        .filter(|u| !u.is_nan() && **u > row_rat[s])
+                        .count();
+                    out[i * np + s] = 1.0 + greater as f64;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;
