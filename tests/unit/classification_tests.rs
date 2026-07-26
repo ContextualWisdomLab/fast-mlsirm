@@ -822,8 +822,9 @@ fn subkoviak_table1_alpha_supplied_exact() {
     // S^2 = 2.61 -- disclosed in the core doc comment).
     let x = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
     let r = subkoviak_agreement(&x, 5, &[4.0], Some(0.58)).unwrap();
-    // Kills MU5 (swapped Eq. 16 weights: p_hat[0] would be .2668) and
-    // anchors per-person q ordering via the p_hat pin itself.
+    // Kills MU5 (swapped Eq. 16 weights: p_hat[0] would be .2668). Note:
+    // category-label permutation is unobservable through this API (see the
+    // core doc comment) -- no test can anchor category ordering.
     assert!((r.alpha - 0.58).abs() < 1e-15, "alpha {}", r.alpha);
     assert!((r.p_hat[0] - 0.1932).abs() < 1e-12, "p_hat0 {}", r.p_hat[0]);
     // Kills MU1 (mastery > vs >=) and MU2 (missing squaring: P(i) = 1).
@@ -858,7 +859,8 @@ fn subkoviak_table1_alpha_supplied_exact() {
 #[test]
 fn subkoviak_derived_kr21_alpha() {
     // Fixture B: same scores, alpha = None -> KR-21 with population
-    // variance 2.61 -> alpha = 19/29. Kills MU4 (ddof = 1 gives .7126).
+    // variance 2.61 -> alpha = 19/29. Kills MU4 (ddof = 1 gives alpha
+    // = .714655..., executed kill).
     let x = [0.0, 4.0, 2.0, 0.0, 2.0, 2.0, 1.0, 3.0, 4.0, 5.0];
     let r = subkoviak_agreement(&x, 5, &[4.0], None).unwrap();
     assert!((r.alpha - 19.0 / 29.0).abs() < 1e-12, "alpha {}", r.alpha);
