@@ -6578,8 +6578,24 @@ class TestEpvSelect:
         )
         assert masked["selected"] == 4
         # scoring covers the whole pool; masking affects selection only
-        assert np.allclose(masked["epv"], full["epv"], atol=1e-15)
-        assert np.allclose(masked["predictive"], full["predictive"], atol=1e-15)
+        assert np.allclose(masked["epv"], full["epv"], atol=1e-15, rtol=0.0)
+        assert np.allclose(masked["predictive"], full["predictive"], atol=1e-15, rtol=0.0)
+
+    def test_administered_degenerate_item_is_ignored(self):
+        import numpy as np
+
+        from fast_mlsirm import epv_select
+
+        r = epv_select(
+            np.array([1.0, 1.2]),
+            np.array([-1000.0, 0.5]),
+            np.array([0.0, 0.1]),
+            administered=np.array([True, False]),
+            mu=0.0,
+            sig2=1.0,
+        )
+        assert r["selected"] == 1
+        assert np.isnan(r["epv"][0])
 
     def test_error_paths(self):
         import numpy as np

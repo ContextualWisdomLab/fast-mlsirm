@@ -2275,7 +2275,7 @@ fn py_kl_select(
 /// Statistical Association, 70(350), 351-356.
 /// https://doi.org/10.1080/01621459.1975.10479871
 /// van der Linden, W. J. (1998). Bayesian item selection criteria for
-/// adaptive testing (Research Report 98-01). University of Twente.
+/// adaptive testing (Research Report 96-01). University of Twente.
 #[pyfunction]
 fn py_owen_update(
     a: f64,

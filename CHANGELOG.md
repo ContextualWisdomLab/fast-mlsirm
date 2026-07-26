@@ -171,7 +171,7 @@
   b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
   posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
   itself NOT read (paywalled); formulas implemented as reproduced by
-  van der Linden (1998, Research Report 98-01, Appendix A.1-A.6) and
+  van der Linden (1998, Research Report 96-01, Appendix A.1-A.6) and
   cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
   oracles verified against exact-posterior numerical integration (~1e-13)
   by the adversarial spec review.

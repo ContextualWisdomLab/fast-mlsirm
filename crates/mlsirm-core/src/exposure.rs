@@ -860,7 +860,7 @@ pub fn kl_select(
 //     Statistical Association, 70*(350), 351-356.
 //     https://doi.org/10.1080/01621459.1975.10479871 (NOT read; historical target)
 // van der Linden, W. J. (1998). *Bayesian item selection criteria for adaptive
-//     testing* (Research Report 98-01). University of Twente. (ERIC ED424235;
+//     testing* (Research Report 96-01). University of Twente. (ERIC ED424235;
 //     Appendix Eqs. A.1-A.6 verified)
 // Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability in
 //     a microcomputer environment. *Applied Psychological Measurement, 6*(4),
@@ -1328,7 +1328,7 @@ pub struct EpvSelectResult {
 ///
 /// Errors on empty/mismatched inputs, invalid item parameters (mirroring
 /// [`owen_cat`]), an invalid prior, an all-administered pool, or when either
-/// [`owen_update`] outcome degenerates for any item.
+/// [`owen_update`] outcome degenerates for an unadministered item.
 pub fn epv_select(
     a: &[f64],
     b: &[f64],
@@ -1380,9 +1380,19 @@ pub fn epv_select(
         // review verified this sign convention against the crate.
         let d = (mu - b[i]) / (1.0 / (a[i] * a[i]) + sig2).sqrt();
         let p_star = c[i] + (1.0 - c[i]) * norm_cdf(d);
-        let (_, sig2_plus) = owen_update(a[i], b[i], c[i], true, mu, sig2)?;
-        let (_, sig2_minus) = owen_update(a[i], b[i], c[i], false, mu, sig2)?;
-        epv.push(p_star * sig2_plus + (1.0 - p_star) * sig2_minus);
+        let update_plus = owen_update(a[i], b[i], c[i], true, mu, sig2);
+        let update_minus = owen_update(a[i], b[i], c[i], false, mu, sig2);
+        match (update_plus, update_minus) {
+            (Ok((_, sig2_plus)), Ok((_, sig2_minus))) => {
+                epv.push(p_star * sig2_plus + (1.0 - p_star) * sig2_minus);
+            }
+            (Err(_), _) | (_, Err(_)) if administered[i] => {
+                // Administered items never affect selection, so keep diagnostics
+                // aligned by storing NaN instead of aborting the whole step.
+                epv.push(f64::NAN);
+            }
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        }
         predictive.push(p_star);
     }
 

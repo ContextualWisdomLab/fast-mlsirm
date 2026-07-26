@@ -1509,14 +1509,30 @@ fn epv_discriminates_from_max_info_and_b_matching() {
             r.predictive[i]
         );
     }
-    // b-matching and max-info would pick different items; pin them from the
-    // same crate output so a delegation mutant cannot satisfy all three.
+    // b-matching and max-info would pick different items, so a delegation
+    // mutant cannot satisfy all three checks below.
     let b_match = (0..5)
         .min_by(|&i, &j| (b[i] - mu).abs().partial_cmp(&(b[j] - mu).abs()).unwrap())
         .unwrap();
+    let norm_cdf = |z: f64| 0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2);
+    let norm_pdf = |z: f64| (-0.5 * z * z).exp() / (2.0 * std::f64::consts::PI).sqrt();
+    let max_info = (0..5)
+        .max_by(|&i, &j| {
+            let z_i = a[i] * (mu - b[i]);
+            let p_i = c[i] + (1.0 - c[i]) * norm_cdf(z_i);
+            let dp_i = (1.0 - c[i]) * norm_pdf(z_i) * a[i];
+            let info_i = (dp_i * dp_i) / (p_i * (1.0 - p_i));
+            let z_j = a[j] * (mu - b[j]);
+            let p_j = c[j] + (1.0 - c[j]) * norm_cdf(z_j);
+            let dp_j = (1.0 - c[j]) * norm_pdf(z_j) * a[j];
+            let info_j = (dp_j * dp_j) / (p_j * (1.0 - p_j));
+            info_i.partial_cmp(&info_j).unwrap()
+        })
+        .unwrap();
     assert_eq!(b_match, 1);
+    assert_eq!(max_info, 4);
     assert_ne!(r.selected, b_match);
-    assert_ne!(r.selected, 4);
+    assert_ne!(r.selected, max_info);
 }
 
 /// Administered masking: epv/predictive are computed for ALL items (returned
@@ -1577,6 +1593,12 @@ fn epv_error_paths() {
     // Degenerate owen_update outcome must propagate: an incorrect response
     // at extreme distance underflows Phi(-d) (owen_update documented error).
     assert!(epv_select(&[1.0], &[-1000.0], &[0.0], &[false], 0.0, 1.0).is_err());
+    // The same degeneracy on an administered item must not abort selection:
+    // administered items are scored for diagnostics only and excluded from argmin.
+    let masked = epv_select(&[1.0, 1.2], &[-1000.0, 0.5], &[0.0, 0.1], &[true, false], 0.0, 1.0)
+        .unwrap();
+    assert_eq!(masked.selected, 1);
+    assert!(masked.epv[0].is_nan());
 }
 
 /// 500-replication Monte-Carlo invariants (spec-review-approved weakened

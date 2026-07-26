@@ -365,7 +365,7 @@ def owen_update(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
         Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of
             ability in a microcomputer environment. *Applied Psychological
             Measurement, 6*(4), 431-444.
@@ -412,7 +412,7 @@ def owen_cat(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
     """
     from . import _core
 
