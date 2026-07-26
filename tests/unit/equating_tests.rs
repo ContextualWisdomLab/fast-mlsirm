@@ -1931,3 +1931,26 @@ fn comp_mc_500() {
         }
     }
 }
+
+#[test]
+fn comp_large_p_stable() {
+    // Impl-review regression: a.powf(p) overflowed for valid finite inputs
+    // (p=1000, slopes (2,4)), collapsing weights to (1,0). In the large-p
+    // limit (1 + a^p)^(-1/p) -> 1/max(1,a), so factors -> (1/2,1/4) and
+    // W -> (2/3,1/3); composite of tables (0) and (10) -> 10/3. Asserts
+    // read crate outputs.
+    let r = composite_linking(
+        &[vec![0.0], vec![10.0]],
+        &[1.0, 1.0],
+        Some(&[2.0, 4.0]),
+        1000.0,
+    )
+    .unwrap();
+    assert!(
+        (r.adjusted_weights[0] - 2.0 / 3.0).abs() < 1e-12,
+        "W0 {} != 2/3",
+        r.adjusted_weights[0]
+    );
+    assert!((r.adjusted_weights[1] - 1.0 / 3.0).abs() < 1e-12);
+    assert!((r.composite[0] - 10.0 / 3.0).abs() < 1e-11);
+}

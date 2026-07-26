@@ -1784,7 +1784,20 @@ pub fn composite_linking(
             weights
                 .iter()
                 .zip(a)
-                .map(|(w, s)| w * (1.0 + s.powf(p)).powf(-1.0 / p))
+                .map(|(w, s)| {
+                    // (1 + a^p)^(-1/p) computed in log space: a.powf(p)
+                    // silently overflows to inf for valid finite a/p (e.g.
+                    // a=2, p=1000), collapsing the factor to 0 instead of
+                    // the correct ~1/a. ln(1 + a^p) = log1p(exp(p ln a)),
+                    // evaluated stably on both branches of p ln a.
+                    let x = p * s.ln();
+                    let log1p_exp = if x > 0.0 {
+                        x + (-x).exp().ln_1p()
+                    } else {
+                        x.exp().ln_1p()
+                    };
+                    w * (-log1p_exp / p).exp()
+                })
                 .collect()
         }
     };
