@@ -119,6 +119,28 @@
 
 ### Added
 
+- **Luce Spectral Ranking (LSR) and iterative LSR (I-LSR) paired-comparison
+  estimators (Maystre & Grossglauser, 2015, as implemented by choix 0.4.1's
+  `lsr.py` dense pairwise path — source READ; Maystre & Grossglauser, 2015
+  NOT READ, cited as described by choix)** (`fast_mlsirm.lsr_pairwise`,
+  `fast_mlsirm.ilsr_pairwise`; in Rust `mlsirm_core::scaling::lsr_pairwise`
+  / `ilsr_pairwise`): builds the LSR Markov chain (rate `c/(w_i + w_j)` on
+  each loser→winner edge plus `alpha` everywhere as a regularizer) and
+  returns the centered log of its stationary distribution (scaled to sum n,
+  choix `statdist` convention). The stationary solve uses Gaussian
+  elimination with partial pivoting plus positivity, sum, and residual
+  guards; disconnected comparison graphs at `alpha = 0` and overflow from
+  huge counts or alpha raise errors instead of returning NaN (divergence
+  from choix, which can emit NaN there). I-LSR at `alpha = 0` converges to
+  the Bradley–Terry MLE and agrees with `bradley_terry_mm` (verified to
+  4e-19 on the oracle fixtures); for `alpha > 0` the two regularization
+  paths deliberately differ (chain-rate vs Dirichlet-MAP, each per its
+  source). Pinned against an EXECUTED exact-Fraction/mpmath oracle
+  cross-checked with pip choix 0.4.1 (≤ 2.2e-13); six mutation kills
+  executed (chain transpose, dropped diagonal subtraction, dropped
+  centering, sum-n→sum-1 normalization via weights pins, denominator
+  collapse via I-LSR pins — one-shot-unobservable limitation documented —
+  and tol·n→tol via a fixture whose iteration counts separate).
 - **Bradley–Terry maximum-likelihood paired-comparison worths via the MM
   algorithm (Hunter, 2004, as implemented by choix 0.4.1's `opt.mm` pairwise
   path; Maystre — source READ; Bradley & Terry, 1952 and Hunter, 2004 NOT

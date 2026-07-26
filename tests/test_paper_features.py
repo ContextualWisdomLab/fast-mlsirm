@@ -8701,3 +8701,94 @@ class TestBradleyTerry:
         )
         with pytest.raises(ValueError):
             bradley_terry_mm(winless)
+
+
+class TestLsr:
+    """Luce Spectral Ranking (choix 0.4.1 lsr.py; Maystre & Grossglauser,
+    2015). Pins from the EXECUTED exact-Fraction/mpmath oracle
+    (session files lsr_oracle.py), cross-checked against pip choix 0.4.1.
+    atol 1e-7 on I-LSR pins: converged iterate at tol=1e-8 sits ~5e-9 from
+    the fixed point; mutant deviations are >= 3e-2."""
+
+    def test_lsr_one_shot_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import lsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = lsr_pairwise(a)
+        assert r.iterations == 1
+        np.testing.assert_allclose(
+            r.weights, [12 / 17, 45 / 34, 33 / 34], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            r.params,
+            [-0.31568746351363625, 0.31292119590873789, 0.00276626760489836],
+            atol=1e-13,
+        )
+        # n = 2 closed form: +/- ln(3)/2.
+        b = np.array([[0, 3], [1, 0]], dtype=float)
+        rb = lsr_pairwise(b)
+        np.testing.assert_allclose(
+            rb.params, [np.log(3) / 2, -np.log(3) / 2], atol=1e-14
+        )
+
+    def test_ilsr_matches_bradley_terry(self):
+        import numpy as np
+
+        from fast_mlsirm import bradley_terry_mm, ilsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = ilsr_pairwise(a)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.37886907235349415, 0.27422321238932270, 0.10464585996417145],
+            atol=1e-7,
+        )
+        assert r.iterations == 15
+        bt = bradley_terry_mm(a)
+        np.testing.assert_allclose(r.params, bt.params, atol=1e-6)
+        assert abs(float(np.sum(r.weights)) - 3.0) < 1e-9
+
+    def test_lsr_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import ilsr_pairwise, lsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.ones((2, 3)))
+        with pytest.raises(ValueError):
+            lsr_pairwise(a + 1j * a)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.array([["x"] * 3] * 3, dtype=object))
+        with pytest.raises(ValueError):
+            lsr_pairwise(-a)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.zeros((3, 3)))
+        with pytest.raises(ValueError):
+            lsr_pairwise(a, alpha=-1.0)
+        # Disconnected comparison graph at alpha = 0.
+        d = np.array(
+            [[0, 2, 0, 0], [1, 0, 0, 0], [0, 0, 0, 3], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        with pytest.raises(ValueError):
+            lsr_pairwise(d)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(d)
+        # ... but estimable with alpha > 0.
+        rd = lsr_pairwise(d, alpha=0.5)
+        assert np.all(np.isfinite(rd.params))
+        # Overflow must raise, never return NaN.
+        huge = np.full((3, 3), 1e308)
+        np.fill_diagonal(huge, 0.0)
+        with pytest.raises(ValueError):
+            lsr_pairwise(huge)
+        with pytest.raises(ValueError):
+            lsr_pairwise(a, alpha=1e308)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(a, max_iter=0)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(a, tol=0.0)

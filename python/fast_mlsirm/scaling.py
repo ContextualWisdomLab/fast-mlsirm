@@ -1,4 +1,5 @@
-"""Paired-comparison scaling: Thurstone (1927) Case V and Bradley-Terry.
+"""Paired-comparison scaling: Thurstone (1927) Case V, Bradley-Terry, and
+Luce Spectral Ranking (LSR / I-LSR).
 
 Thin wrappers over the Rust core (``mlsirm_core::scaling``). The Thurstone
 algorithm follows the ``thurstone()`` function of the psych R package
@@ -7,9 +8,12 @@ comparative judgment under Case V (equal discriminal dispersions, zero
 correlations). The Bradley-Terry maximum-likelihood fit uses the
 minorization-maximization (MM) algorithm as implemented by choix 0.4.1
 (Maystre, 2015-2020; ``opt.mm`` pairwise path, source READ), which choix
-attributes to Hunter (2004). Thurstone (1927), Bradley and Terry (1952), and
-Hunter (2004) themselves were NOT read; they are cited as the origins of the
-models/algorithm as described by the read sources.
+attributes to Hunter (2004). The LSR and I-LSR estimators follow choix's
+``lsr.py`` dense pairwise path, which choix attributes to Maystre and
+Grossglauser (2015). Thurstone (1927), Bradley and Terry (1952), Hunter
+(2004), and Maystre and Grossglauser (2015) themselves were NOT read; they
+are cited as the origins of the models/algorithms as described by the read
+sources.
 
 References
 ----------
@@ -22,6 +26,9 @@ Hunter, D. R. (2004). MM algorithms for generalized Bradley-Terry models.
 Maystre, L. (2020). choix: Inference algorithms for models based on Luce's
     choice axiom (Python package, version 0.4.1).
     https://github.com/lucasmaystre/choix [READ]
+Maystre, L., & Grossglauser, M. (2015). Fast and accurate inference of
+    Plackett-Luce models. Advances in Neural Information Processing
+    Systems, 28, 172-180. [NOT READ; cited as described in choix source]
 Revelle, W. (2025). psych: Procedures for psychological, psychometric, and
     personality research (R package). https://CRAN.R-project.org/package=psych
 Thurstone, L. L. (1927). A law of comparative judgment. Psychological
@@ -133,6 +140,89 @@ def bradley_terry_mm(wins, alpha=0.0, max_iter=10000, tol=1e-8):
         arr.ravel(), n, float(alpha), int(max_iter), float(tol)
     )
     return BradleyTerryResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
+
+
+@dataclass
+class LsrResult:
+    """Luce Spectral Ranking fit: ``params[i]`` is the centered log-worth of
+    item i (mean exactly 0), ``weights[i]`` the stationary distribution of
+    the LSR Markov chain scaled to sum exactly n (choix ``statdist``
+    convention), ``iterations`` the number of LSR passes (1 for the one-shot
+    spectral estimator; the pass count when the L1 criterion
+    ``sum |new - prev| <= tol * n`` first fired for I-LSR, which always
+    performs at least two passes)."""
+
+    params: np.ndarray
+    weights: np.ndarray
+    iterations: int
+
+
+def _lsr_validate(name, wins):
+    arr = np.asarray(wins)
+    if np.iscomplexobj(arr):
+        raise ValueError(f"{name}: wins must be real-valued")
+    if arr.dtype == object:
+        try:
+            arr = arr.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name}: wins must be numeric") from exc
+    arr = np.ascontiguousarray(arr, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError(f"{name}: wins must be a square 2-D matrix")
+    return arr
+
+
+def lsr_pairwise(wins, alpha=0.0):
+    """One-shot Luce Spectral Ranking from an n x n win-count matrix.
+
+    ``wins[i, j]`` is the number of times item *i* beat item *j* (row beats
+    column; zero diagonal; non-integer counts accepted -- same DERIVED
+    extension as :func:`bradley_terry_mm`). Builds the LSR Markov chain
+    (rate ``c / (w_i + w_j)`` on each loser-to-winner edge under uniform
+    initial worths, plus ``alpha`` everywhere as a regularizer) and returns
+    the centered log of its stationary distribution (choix
+    ``lsr_pairwise_dense``). Raises ValueError when the stationary
+    distribution does not exist or is not unique -- e.g. a disconnected
+    comparison graph at ``alpha = 0`` (choix raises there too) -- and on
+    overflow from huge counts or alpha. NOTE: ``alpha`` regularizes the
+    chain rates, which is NOT the Dirichlet-MAP ``alpha`` of
+    :func:`bradley_terry_mm`; the two disagree for ``alpha > 0``.
+    """
+    from .fitstats import _core_module
+
+    arr = _lsr_validate("lsr_pairwise", wins)
+    res = _core_module().lsr_pairwise(arr.ravel(), arr.shape[0], float(alpha))
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
+
+
+def ilsr_pairwise(wins, alpha=0.0, max_iter=100, tol=1e-8):
+    """Iterative Luce Spectral Ranking (Bradley-Terry MLE) from an n x n
+    win-count matrix.
+
+    Repeats the LSR pass of :func:`lsr_pairwise`, feeding each pass the
+    worths from the previous one, until the L1 change is ``<= tol * n``
+    (choix ``ilsr_pairwise_dense``; default ``max_iter=100`` as in choix).
+    At ``alpha = 0`` the fixed point is the Bradley-Terry maximum-likelihood
+    estimate and agrees with :func:`bradley_terry_mm`; for ``alpha > 0`` the
+    two regularization paths deliberately differ (each follows its source).
+    Raises ValueError on invalid input, a disconnected comparison graph at
+    ``alpha = 0``, overflow, or non-convergence within ``max_iter`` passes.
+    """
+    from .fitstats import _core_module
+
+    arr = _lsr_validate("ilsr_pairwise", wins)
+    res = _core_module().ilsr_pairwise(
+        arr.ravel(), arr.shape[0], float(alpha), int(max_iter), float(tol)
+    )
+    return LsrResult(
         params=np.asarray(res["params"], dtype=np.float64),
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
