@@ -993,3 +993,127 @@ fn subkoviak_mc_500_recovers_two_administration_agreement() {
     let bias = est.agreement - agree as f64 / total as f64;
     assert!(bias.abs() < 0.02, "agreement bias {bias}");
 }
+
+// ---------------------------------------------------------------------------
+// Livingston (1972) criterion-referenced reliability k^2 and correlation.
+// Oracle: exact-Fraction values in files/livingston_oracle.py (session dir),
+// derived from ERIC ED069624 (READ). Every assert reads crate outputs.
+// ---------------------------------------------------------------------------
+
+use super::{livingston_correlation, livingston_k2};
+
+// Fixture A: X = [2,4,4,6], C = 2, rho^2 = 1/2.
+// Exact: mean 4, var 2 (ddof=0), msd 6, k^2 = 5/6, SB(n=2) = 10/11.
+// Kills MU1 (drop offset^2 in numerator -> 1/6), MU2 (drop in denominator
+// -> 5/2), MU3 (unsquared offset -> 3/4), MU4 (SB applied to rho^2 not k^2
+// -> 2/3), MU5 (ddof=1 variance -> 4/5).
+#[test]
+fn liv_fixture_a_exact() {
+    let r = livingston_k2(&[2.0, 4.0, 4.0, 6.0], 2.0, 0.5, &[1.0, 2.0]).unwrap();
+    assert_eq!(r.mean, 4.0);
+    assert_eq!(r.var, 2.0);
+    assert_eq!(r.msd, 6.0);
+    assert!((r.k2[0] - 5.0 / 6.0).abs() < 1e-15, "k2 {}", r.k2[0]);
+    assert!((r.k2[1] - 10.0 / 11.0).abs() < 1e-15, "SB(2) {}", r.k2[1]);
+}
+
+// Equality anchor (source pp. 3-4): k^2 = rho^2 iff mean = cut, and
+// k^2 >= rho^2 otherwise. Reads crate k2 values at two cuts.
+#[test]
+fn liv_equality_iff_mean_eq_cut() {
+    let at_mean = livingston_k2(&[2.0, 4.0, 4.0, 6.0], 4.0, 0.5, &[1.0]).unwrap();
+    assert!((at_mean.k2[0] - 0.5).abs() < 1e-15, "{}", at_mean.k2[0]);
+    let off = livingston_k2(&[2.0, 4.0, 4.0, 6.0], 2.0, 0.5, &[1.0]).unwrap();
+    assert!(off.k2[0] > 0.5);
+}
+
+// Zero-variance property (source p. 4): constant scores with mean != cut
+// give k^2 = 1 exactly; the exact degenerate case mean == cut gives NaN.
+// A tiny offset (1e-7) must still give 1, not NaN (spec-review change 2:
+// no absolute D^2 tolerance may widen the NaN case).
+#[test]
+fn liv_zero_variance_property() {
+    let r = livingston_k2(&[3.0, 3.0, 3.0, 3.0], 1.0, 0.0, &[1.0]).unwrap();
+    assert_eq!(r.k2[0], 1.0);
+    let tiny = livingston_k2(&[3.0, 3.0, 3.0, 3.0], 3.0 - 1e-7, 0.0, &[1.0]).unwrap();
+    assert_eq!(tiny.k2[0], 1.0);
+    let degen = livingston_k2(&[3.0, 3.0, 3.0, 3.0], 3.0, 0.5, &[1.0, 2.0]).unwrap();
+    assert!(degen.k2[0].is_nan() && degen.k2[1].is_nan());
+}
+
+// Fixture B: sign anchor. X=[1,2,3], Y=[3,2,1], cuts 0: norm rho = -1 but
+// k(X,Y) = +5/7 (formula-derived adversarial pin; the source figures show
+// analogous sign disagreements). Kills MU6 (drop the mean-offset cross
+// product in D(X,Y) -> -1/7, wrong sign).
+#[test]
+fn liv_correlation_sign_flip() {
+    let k = livingston_correlation(&[1.0, 2.0, 3.0], &[3.0, 2.0, 1.0], 0.0, 0.0).unwrap();
+    assert!((k - 5.0 / 7.0).abs() < 1e-15, "k {k}");
+    assert!(k > 0.0);
+}
+
+// Fixture E: asymmetric offsets (mx-cx = 2 != my-cy = 3), spec-review
+// change 5. Exact num = 22/3, den^2 = 490/9, k = 22/(7 sqrt(10)).
+// Kills MU7 (swapped cuts -> num 16/3) and MU8 (single-side offset squared
+// -> num 16/3); both shift k to 16/(7 sqrt(10)).
+#[test]
+fn liv_correlation_asymmetric_offsets() {
+    let k = livingston_correlation(&[1.0, 2.0, 3.0], &[2.0, 4.0, 6.0], 0.0, 1.0).unwrap();
+    let expect = 22.0 / (7.0 * 10.0f64.sqrt());
+    assert!((k - expect).abs() < 1e-15, "k {k} expect {expect}");
+}
+
+// Correlation zero-denominator: constant X exactly at its cut -> D^2(X) = 0
+// -> NaN (spec-review change 5, direct pin).
+#[test]
+fn liv_correlation_degenerate_nan() {
+    let k = livingston_correlation(&[2.0, 2.0, 2.0], &[2.0, 4.0, 6.0], 2.0, 1.0).unwrap();
+    assert!(k.is_nan());
+}
+
+// Error contract.
+#[test]
+fn liv_error_contract() {
+    assert!(livingston_k2(&[1.0], 0.0, 0.5, &[1.0]).is_err());
+    assert!(livingston_k2(&[1.0, f64::NAN], 0.0, 0.5, &[1.0]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], f64::INFINITY, 0.5, &[1.0]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], 0.0, 1.5, &[1.0]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], 0.0, -0.1, &[1.0]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], 0.0, 0.5, &[]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], 0.0, 0.5, &[0.0]).is_err());
+    assert!(livingston_k2(&[1.0, 2.0], 0.0, 0.5, &[-1.0]).is_err());
+    assert!(livingston_correlation(&[1.0], &[1.0], 0.0, 0.0).is_err());
+    assert!(livingston_correlation(&[1.0, 2.0], &[1.0], 0.0, 0.0).is_err());
+    assert!(livingston_correlation(&[1.0, f64::NAN], &[1.0, 2.0], 0.0, 0.0).is_err());
+    assert!(livingston_correlation(&[1.0, 2.0], &[1.0, 2.0], f64::NAN, 0.0).is_err());
+}
+
+// MC-500: X = T + E with T ~ N(0.6, 0.04), E ~ N(0, 0.01) per person,
+// n = 200 persons. Population k^2 = (rho^2 s^2 + (mu-C)^2)/(s^2 + (mu-C)^2)
+// with s^2 = 0.05, rho^2 = 0.8, mu = 0.6, C = 0.5. This recovers the
+// Livingston transform and population-moment path when fed the TRUE rho^2;
+// it does not test reliability estimation (disclosed in spec).
+#[test]
+#[ignore]
+fn liv_mc_500() {
+    let s2 = 0.05f64;
+    let rho2 = 0.04 / s2;
+    let (mu, cut) = (0.6f64, 0.5f64);
+    let pop = (rho2 * s2 + (mu - cut).powi(2)) / (s2 + (mu - cut).powi(2));
+    let mut r = Lcg::new(20260726);
+    let normal = |r: &mut Lcg| {
+        let (u1, u2) = (r.unif().max(1e-12), r.unif());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    };
+    let mut sum = 0.0;
+    let reps = 500;
+    for _ in 0..reps {
+        let scores: Vec<f64> = (0..200)
+            .map(|_| mu + 0.2 * normal(&mut r) + 0.1 * normal(&mut r))
+            .collect();
+        let est = livingston_k2(&scores, cut, rho2, &[1.0]).unwrap();
+        sum += est.k2[0];
+    }
+    let bias = sum / reps as f64 - pop;
+    assert!(bias.abs() < 0.01, "bias {bias} pop {pop}");
+}

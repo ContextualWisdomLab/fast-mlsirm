@@ -1264,6 +1264,140 @@ pub fn subkoviak_agreement(
     })
 }
 
+/// Result of Livingston's (1972) criterion-referenced reliability analysis.
+pub struct LivingstonResult {
+    /// Population (ddof = 0) mean of the observed scores.
+    pub mean: f64,
+    /// Population (ddof = 0) variance of the observed scores.
+    pub var: f64,
+    /// Mean squared deviation from the criterion:
+    /// `D^2(X) = var + (mean - cut)^2` (Livingston, 1972, Table 1).
+    pub msd: f64,
+    /// `k^2` at each requested test-length multiplier in `n_lengths`
+    /// (Spearman-Brown projected; `n = 1` is the unlengthened value).
+    pub k2: Vec<f64>,
+}
+
+/// Livingston's (1972) criterion-referenced reliability coefficient `k^2`.
+///
+/// Source READ: Livingston, S. A. (1972). *A classical test-theory approach
+/// to criterion-referenced tests.* AERA paper, ERIC ED069624 (OCR). The
+/// published journal version (Livingston, 1972, *Journal of Educational
+/// Measurement, 9*(1), 13-26, ERIC EJ053921) was NOT read (abstract only)
+/// and is cited only as the archival venue.
+///
+/// Table 1 of the read source defines the criterion-referenced analogues by
+/// replacing central moments with moments about the criterion score `C`:
+/// `D^2(X) = E[(X - C_x)^2]` and `D(X,Y) = E[(X - C_x)(Y - C_y)]`. The
+/// conversion form implemented here,
+///
+/// `k^2(X, T) = [rho^2 sigma^2(X) + (mu - C)^2] / [sigma^2(X) + (mu - C)^2]`,
+///
+/// is an ALGEBRAIC RECONSTRUCTION from those expectation definitions
+/// (`E[(X-C)^2] = sigma^2 + (mu-C)^2`), supported by the Table 3/prose
+/// discussion; the Table 3 OCR itself is too noisy to serve as a clean
+/// symbol-level transcription. `reliability` is the norm-referenced
+/// reliability `rho^2(X, T)` in `[0, 1]`, supplied by the caller (the paper's
+/// conversion form takes it as input; this function does not estimate it).
+///
+/// Properties pinned by tests from the read source (pp. 3-5): `k^2 >= rho^2`
+/// with equality iff `mu = C`, and a zero-variance group with `mu != C` has
+/// `k^2 = 1`. `k^2` is NaN only in the exact degenerate case `var == 0` and
+/// `mean == cut` (D^2 exactly zero); no numerical tolerance widens this, so
+/// the zero-variance-away-from-cut property is honored for tiny offsets.
+///
+/// Each entry of `n_lengths` applies the Spearman-Brown step from Table 2 to
+/// `k^2` itself: `k^2(n) = n k^2 / (1 + (n - 1) k^2)` (the source states the
+/// formula "works exactly the same way" for a test `n` times as long).
+/// DISCLOSED EXTRAPOLATION: the source's wording covers integer multiples;
+/// accepting positive fractional `n` is a continuous Spearman-Brown
+/// projection beyond the literal source wording. `Spearman-Brown of NaN is
+/// NaN.`
+pub fn livingston_k2(
+    scores: &[f64],
+    cut: f64,
+    reliability: f64,
+    n_lengths: &[f64],
+) -> Result<LivingstonResult, String> {
+    if scores.len() < 2 {
+        return Err("at least 2 observed scores are required".into());
+    }
+    if scores.iter().any(|x| !x.is_finite()) {
+        return Err("scores must be finite".into());
+    }
+    if !cut.is_finite() {
+        return Err("cut must be finite".into());
+    }
+    if !reliability.is_finite() || !(0.0..=1.0).contains(&reliability) {
+        return Err("reliability must be finite and in [0, 1]".into());
+    }
+    if n_lengths.is_empty() {
+        return Err("n_lengths must be nonempty".into());
+    }
+    if n_lengths.iter().any(|n| !n.is_finite() || *n <= 0.0) {
+        return Err("n_lengths must be finite and positive".into());
+    }
+    let np = scores.len() as f64;
+    let mean = scores.iter().sum::<f64>() / np;
+    let var = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / np;
+    let off2 = (mean - cut).powi(2);
+    let msd = var + off2;
+    let base = if var == 0.0 && mean == cut {
+        f64::NAN
+    } else {
+        (reliability * var + off2) / msd
+    };
+    let k2 = n_lengths
+        .iter()
+        .map(|&n| n * base / (1.0 + (n - 1.0) * base))
+        .collect();
+    Ok(LivingstonResult { mean, var, msd, k2 })
+}
+
+/// Livingston's (1972) criterion-referenced correlation `k(X, Y)`.
+///
+/// Source READ: ERIC ED069624 (see [`livingston_k2`]). Table 1 defines
+/// `D(X, Y) = E[(X - C_x)(Y - C_y)] = sigma(X, Y) + (mu_x - C_x)(mu_y - C_y)`
+/// and `k(X, Y) = D(X, Y) / sqrt(D^2(X) D^2(Y))` with population (ddof = 0)
+/// moments. The read source's Figures 3-4 discussion shows the coefficient
+/// can differ in sign and magnitude from the norm-referenced correlation;
+/// the test anchors exercising sign flips and asymmetric offsets are
+/// formula-derived adversarial pins, not reproductions of a printed figure.
+///
+/// Returns NaN when either `D^2` is exactly zero (constant scores exactly at
+/// their criterion); no numerical tolerance widens this.
+pub fn livingston_correlation(x: &[f64], y: &[f64], cut_x: f64, cut_y: f64) -> Result<f64, String> {
+    if x.len() < 2 {
+        return Err("at least 2 observed scores are required".into());
+    }
+    if x.len() != y.len() {
+        return Err("x and y must have the same length".into());
+    }
+    if x.iter().chain(y.iter()).any(|v| !v.is_finite()) {
+        return Err("scores must be finite".into());
+    }
+    if !cut_x.is_finite() || !cut_y.is_finite() {
+        return Err("cuts must be finite".into());
+    }
+    let np = x.len() as f64;
+    let mx = x.iter().sum::<f64>() / np;
+    let my = y.iter().sum::<f64>() / np;
+    let cov = x
+        .iter()
+        .zip(y.iter())
+        .map(|(a, b)| (a - mx) * (b - my))
+        .sum::<f64>()
+        / np;
+    let vx = x.iter().map(|v| (v - mx).powi(2)).sum::<f64>() / np;
+    let vy = y.iter().map(|v| (v - my).powi(2)).sum::<f64>() / np;
+    let d2x = vx + (mx - cut_x).powi(2);
+    let d2y = vy + (my - cut_y).powi(2);
+    if d2x == 0.0 || d2y == 0.0 {
+        return Ok(f64::NAN);
+    }
+    Ok((cov + (mx - cut_x) * (my - cut_y)) / (d2x * d2y).sqrt())
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/classification_tests.rs"]
 mod tests;

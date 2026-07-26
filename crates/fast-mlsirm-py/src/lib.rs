@@ -29,8 +29,9 @@ use mlsirm_core::cdm::{
 use mlsirm_core::classification::{
     hanson_brennan as core_hanson_brennan,
     hanson_brennan_from_params as core_hanson_brennan_from_params,
-    lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
-    rudner_classification as core_rudner_classification,
+    lee_classification as core_lee_classification,
+    livingston_correlation as core_livingston_correlation, livingston_k2 as core_livingston_k2,
+    livingston_lewis as core_livingston_lewis, rudner_classification as core_rudner_classification,
     subkoviak_agreement as core_subkoviak_agreement, ClassificationResult, HansonBrennanResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
@@ -2392,6 +2393,39 @@ fn subkoviak_agreement(
     out.set_item("chance_agreement", res.chance_agreement)?;
     out.set_item("kappa", res.kappa)?;
     Ok(out.into())
+}
+
+/// Livingston (1972, ERIC ED069624) criterion-referenced reliability `k^2`
+/// with Spearman-Brown projections (`mlsirm_core::classification`).
+#[pyfunction]
+fn livingston_k2(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    cut: f64,
+    reliability: f64,
+    n_lengths: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_livingston_k2(scores.as_slice()?, cut, reliability, n_lengths.as_slice()?)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mean", res.mean)?;
+    out.set_item("var", res.var)?;
+    out.set_item("msd", res.msd)?;
+    out.set_item("k2", PyArray1::from_slice(py, &res.k2))?;
+    Ok(out.into())
+}
+
+/// Livingston (1972, ERIC ED069624) criterion-referenced correlation
+/// `k(X, Y)` (`mlsirm_core::classification`).
+#[pyfunction]
+fn livingston_correlation(
+    x: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, f64>,
+    cut_x: f64,
+    cut_y: f64,
+) -> PyResult<f64> {
+    core_livingston_correlation(x.as_slice()?, y.as_slice()?, cut_x, cut_y)
+        .map_err(PyValueError::new_err)
 }
 
 /// One-facet crossed `p x i` generalizability analysis
@@ -7190,6 +7224,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
     m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
     m.add_function(wrap_pyfunction!(subkoviak_agreement, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_k2, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_correlation, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(phi_lambda, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;

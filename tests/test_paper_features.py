@@ -8144,6 +8144,72 @@ class TestPhiLambda:
         with pytest.raises(ValueError):
             phi_lambda(np.array([[1.0, np.nan], [0.0, 1.0]]), 0.5, n_i_prime=[2])
 
+class TestLivingston:
+    def test_fixture_a_exact(self):
+        # Oracle pins (livingston_oracle.py, exact Fraction): k2 = 5/6,
+        # SB(2) = 10/11; asserts read wrapper outputs from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import livingston_k2
+
+        r = livingston_k2(np.array([2.0, 4.0, 4.0, 6.0]), 2.0, 0.5, [1.0, 2.0])
+        assert abs(r.mean - 4.0) < 1e-15
+        assert abs(r.var - 2.0) < 1e-15
+        assert abs(r.msd - 6.0) < 1e-15
+        assert abs(r.k2[0] - 5.0 / 6.0) < 1e-15
+        assert abs(r.k2[1] - 10.0 / 11.0) < 1e-15
+        # Equality anchor: cut at the mean gives k2 == rho2.
+        at_mean = livingston_k2(np.array([2.0, 4.0, 4.0, 6.0]), 4.0, 0.5)
+        assert abs(at_mean.k2[0] - 0.5) < 1e-15
+
+    def test_correlation_sign_flip_and_asymmetric(self):
+        import math
+
+        import numpy as np
+
+        from fast_mlsirm import livingston_correlation
+
+        # Norm rho = -1 but k = +5/7 (oracle fixture B).
+        k = livingston_correlation(
+            np.array([1.0, 2.0, 3.0]), np.array([3.0, 2.0, 1.0]), 0.0, 0.0
+        )
+        assert abs(k - 5.0 / 7.0) < 1e-15
+        # Asymmetric offsets (oracle fixture E): k = 22/(7 sqrt(10)).
+        ke = livingston_correlation(
+            np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.0, 1.0
+        )
+        assert abs(ke - 22.0 / (7.0 * math.sqrt(10.0))) < 1e-15
+
+    def test_error_contract_and_nan(self):
+        import math
+
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import livingston_correlation, livingston_k2
+
+        x = np.array([2.0, 4.0, 4.0, 6.0])
+        with pytest.raises(ValueError):
+            livingston_k2(x.astype(complex), 2.0, 0.5)
+        with pytest.raises(ValueError):
+            livingston_k2(np.array(["a", "b"], dtype=object), 2.0, 0.5)
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 1.5)
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 0.5, [])
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 0.5, [0.0])
+        with pytest.raises(ValueError):
+            livingston_correlation(x.astype(complex), x, 0.0, 0.0)
+        with pytest.raises(ValueError):
+            livingston_correlation(x, x[:2], 0.0, 0.0)
+        # NaN only in the exact degenerate case (var 0 AND mean == cut).
+        const = np.array([3.0, 3.0, 3.0])
+        assert math.isnan(livingston_k2(const, 3.0, 0.5).k2[0])
+        assert livingston_k2(const, 1.0, 0.0).k2[0] == 1.0
+        assert math.isnan(livingston_correlation(const, x[:3], 3.0, 0.0))
+
+
 class TestSubkoviak:
     def test_table1_alpha_supplied_exact(self):
         # Oracle pins (subkoviak_oracle.py, exact Fraction); asserts read
