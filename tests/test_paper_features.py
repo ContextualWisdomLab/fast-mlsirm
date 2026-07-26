@@ -7691,6 +7691,9 @@ class TestBreslowDay:
             breslow_day_dif(y.ravel(), group)
         with pytest.raises(ValueError):
             breslow_day_dif(y, group, fdr_q=0.0)
+        # fdr_q = 1.0 is a valid BH boundary in the crate contract.
+        res = breslow_day_dif(y, group, fdr_q=1.0)
+        assert res["flagged_bh"].shape == (4,)
         big = y.astype(np.int64).copy()
         big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
         with pytest.raises(ValueError):

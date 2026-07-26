@@ -817,8 +817,8 @@ def breslow_day_dif(
     gf = np.asarray(g, dtype=np.float64)
     if not np.all(np.isin(gf, (0.0, 1.0))):
         raise ValueError("group labels must be 0 (reference) or 1 (focal)")
-    if not (np.isfinite(fdr_q) and 0.0 < fdr_q < 1.0):
-        raise ValueError("fdr_q must be in (0, 1)")
+    if not (np.isfinite(fdr_q) and 0.0 < fdr_q <= 1.0):
+        raise ValueError("fdr_q must be in (0, 1]")
 
     res = core.py_breslow_day_dif(
         yf.astype(np.uint8).reshape(-1),
