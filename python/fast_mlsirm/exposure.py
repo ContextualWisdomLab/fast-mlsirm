@@ -365,7 +365,7 @@ def owen_update(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
         Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of
             ability in a microcomputer environment. *Applied Psychological
             Measurement, 6*(4), 431-444.
@@ -412,7 +412,7 @@ def owen_cat(
             the American Statistical Association, 70*(350), 351-356.
             https://doi.org/10.1080/01621459.1975.10479871
         van der Linden, W. J. (1998). *Bayesian item selection criteria for
-            adaptive testing* (Research Report 98-01). University of Twente.
+            adaptive testing* (Research Report 96-01). University of Twente.
     """
     from . import _core
 
@@ -452,4 +452,790 @@ def owen_cat(
         "sig2_trace": np.asarray(r["sig2_trace"]),
         "mu": float(r["mu"]),
         "sig2": float(r["sig2"]),
+    }
+
+
+def ccat_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    groups: np.ndarray,
+    targets: np.ndarray,
+    administered: np.ndarray,
+    theta0: float,
+) -> dict:
+    """Kingsbury & Zara (1989) constrained CAT (CCAT) content balancing.
+
+    Single-step item selection under content-area constraints: any eligible
+    content group (one with at least one unadministered item) that has zero
+    administered items has priority; otherwise the eligible group with the
+    maximal discrepancy ``targets[g] - k_g / k`` (target minus empirical
+    proportion of administered items) is chosen; within the chosen group the
+    unadministered item with maximal logistic 3PL Fisher information
+    ``a^2 (Q/P) ((P - c) / (1 - c))^2`` at ``theta0`` is selected. Ties go
+    to the lowest index (documented deterministic deviation from catR's
+    random tie-break). Returns a dict with ``selected``, ``group``,
+    ``discrepancy`` (per group) and ``info`` (per item; computed for the
+    whole pool, masking applies to selection only), all computed by the
+    Rust core (``mlsirm_core::exposure::ccat_select``).
+
+    Source status: Kingsbury & Zara (1989) itself was NOT read (paywalled).
+    The rule is implemented as reproduced by the R catR package
+    (``nextItem.R``, ``cbControl`` branch; READ), and the Fisher-information
+    formula was verified against catR ``Ii.R``/``Pi.R``.
+
+    ``targets`` must be strictly positive and sum to 1; ``groups`` maps each
+    item to a group index ``0..len(targets)-1``.
+
+    References (APA 7th ed.):
+        Kingsbury, G. G., & Zara, A. R. (1989). Procedures for selecting
+            items for computerized adaptive tests. *Applied Measurement in
+            Education, 2*(4), 359-375.
+            https://doi.org/10.1207/s15324818ame0204_6
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    groups = np.asarray(groups)
+    if groups.ndim != 1:
+        raise ValueError("groups must be a 1-D array")
+    # Validate BEFORE the uintp cast: casting would silently truncate
+    # non-integers, wrap negatives, and drop imaginary parts.
+    if np.iscomplexobj(groups):
+        raise ValueError("groups must contain non-negative integers")
+    gf = groups.astype(np.float64)
+    if not np.isfinite(gf).all() or (gf < 0).any() or (gf != np.floor(gf)).any():
+        raise ValueError("groups must contain non-negative integers")
+    targets = np.asarray(targets, dtype=np.float64)
+    if targets.ndim != 1:
+        raise ValueError("targets must be a 1-D array")
+    administered = np.asarray(administered)
+    if administered.ndim != 1:
+        raise ValueError("administered must be a 1-D array")
+    if administered.dtype != np.bool_:
+        raise ValueError("administered must be a boolean array")
+    r = _core.py_ccat_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(groups, dtype=np.uintp),
+        np.ascontiguousarray(targets),
+        np.ascontiguousarray(administered),
+        float(theta0),
+    )
+    return {
+        "selected": int(r["selected"]),
+        "group": int(r["group"]),
+        "discrepancy": np.asarray(r["discrepancy"]),
+        "info": np.asarray(r["info"]),
+    }
+
+
+def epv_select(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    administered: np.ndarray,
+    mu: float,
+    sig2: float,
+) -> dict:
+    """Owen-approximate posterior-predictive EPV item selection.
+
+    This is NOT van der Linden's (1998) exact minimum expected posterior
+    variance (MEPV) criterion. The posterior over theta is Owen's (1975)
+    normal approximation ``N(mu, sig2)``; the predictive success probability
+    is ``p*_i = c_i + (1 - c_i) * Phi((mu - b_i) / sqrt(1/a_i^2 + sig2))``
+    computed exactly as in ``owen_update``; and the two outcome posterior
+    variances ``sig2_i^+``/``sig2_i^-`` come from ``owen_update`` rather
+    than exact numerical posteriors. The unadministered item minimizing
+    ``EPV_i = p*_i sig2_i^+ + (1 - p*_i) sig2_i^-`` is selected; ties go to
+    the lowest index. ``epv`` and ``predictive`` are returned for the whole
+    pool (masking applies to selection only), all computed by the Rust core
+    (``mlsirm_core::exposure::epv_select``).
+
+    Source status: van der Linden (1998) was read as the ERIC ED424235
+    research report (Research Report 96-01); the exact-MEPV contract was
+    additionally verified against R catR ``EPV.R`` and mirtCAT
+    ``selection_criteria.R`` (both READ). Owen (1975) itself was NOT read;
+    the update formulas follow the crate's ``owen_update``.
+
+    References (APA 7th ed.):
+        van der Linden, W. J. (1998). Bayesian item selection criteria for
+            adaptive testing. *Psychometrika, 63*(2), 201-216.
+            https://doi.org/10.1007/BF02294775
+        Owen, R. J. (1975). A Bayesian sequential procedure for quantal
+            response in the context of adaptive mental testing. *Journal of
+            the American Statistical Association, 70*(350), 351-356.
+            https://doi.org/10.1080/01621459.1975.10479871
+        Magis, D., & Raiche, G. (2012). Random generation of response
+            patterns under computerized adaptive testing with the R package
+            catR. *Journal of Statistical Software, 48*(8), 1-31.
+            https://doi.org/10.18637/jss.v048.i08
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the float64 casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    administered = np.asarray(administered)
+    if administered.ndim != 1:
+        raise ValueError("administered must be a 1-D array")
+    if administered.dtype != np.bool_:
+        raise ValueError("administered must be a boolean array")
+    r = _core.py_epv_select(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(administered),
+        float(mu),
+        float(sig2),
+    )
+    return {
+        "selected": int(r["selected"]),
+        "epv": np.asarray(r["epv"]),
+        "predictive": np.asarray(r["predictive"]),
+    }
+
+def sprt_classify(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    theta_cut: float,
+    delta: float,
+    alpha: float = 0.05,
+    beta: float = 0.05,
+) -> dict:
+    """Single-cut binary-response Wald SPRT classification for CAT.
+
+    Compares the point hypotheses ``theta0 = theta_cut - delta`` and
+    ``theta1 = theta_cut + delta`` through the cumulative binary
+    log-likelihood ratio under the D = 1 logistic 3PL
+    ``P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i)))``
+    against the log Wald boundaries ``A = ln((1 - beta) / alpha)`` and
+    ``B = ln(beta / (1 - alpha))``. Responses are walked in order and the
+    FIRST inclusive crossing decides: ``LLR_k >= A`` -> ``"above"``,
+    ``LLR_k <= B`` -> ``"below"`` (``n_used = k``, 1-based); no crossing ->
+    ``"continue"`` with ``n_used = len(responses)``. All numerics run in the
+    Rust core (``mlsirm_core::exposure::sprt_classify``).
+
+    ``llr_trace`` is returned for ALL supplied responses as an offline
+    diagnostic; entries past ``n_used`` are counterfactual replay values (a
+    live CAT would stop at ``n_used`` and never administer later items).
+    Parameters calibrated on the D = 1.7 normal-ogive metric must be
+    rescaled by the caller (``a_D1 = 1.7 * a_D17``) before use.
+
+    Source status: the boundary and likelihood-ratio forms were verified
+    against R catIrt ``termSPRT.R``/``logLik.brm.R``/``p.brm.R`` (READ) and
+    Thompson (2007, p. 7; READ). Reckase (1983), Eggen (1999), and Wald
+    (1947) were NOT read and are cited as historical origins via Thompson.
+
+    References (APA 7th ed.):
+        Thompson, N. A. (2007). A practitioner's guide for variable-length
+            computerized classification testing. *Practical Assessment,
+            Research & Evaluation, 12*(1).
+            https://doi.org/10.7275/fq3r-zz60
+        Eggen, T. J. H. M. (1999). Item selection in adaptive testing with
+            the sequential probability ratio test. *Applied Psychological
+            Measurement, 23*(3), 249-261.
+            https://doi.org/10.1177/01466219922031365
+        Reckase, M. D. (1983). A procedure for decision making using
+            tailored testing. In D. J. Weiss (Ed.), *New horizons in
+            testing* (pp. 237-255). Academic Press.
+        Wald, A. (1947). *Sequential analysis*. Wiley. (NOT read; boundary
+            forms verified through the READ sources above.)
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the dtype casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
+    resp = np.asarray(responses)
+    if resp.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_sprt_classify(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(resp),
+        float(theta_cut),
+        float(delta),
+        float(alpha),
+        float(beta),
+    )
+    return {
+        "decision": str(r["decision"]),
+        "n_used": int(r["n_used"]),
+        "llr": float(r["llr"]),
+        "llr_trace": np.asarray(r["llr_trace"]),
+    }
+def ci_classify(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray | None = None,
+    *,
+    responses: np.ndarray,
+    theta_cut: float,
+    z_crit: float,
+) -> dict:
+    """Single-cut binary-response confidence-interval (ACI) classification.
+
+    After each response, computes the interim EAP ability estimate on a
+    fixed uniform grid of 41 points on ``[-4, 4]`` with a standard-normal
+    log prior (``-0.5 * theta**2``, no quadrature-weight multiplier) under
+    the D = 1 logistic 3PL
+    ``P_i(theta) = c_i + (1 - c_i) / (1 + exp(-a_i (theta - b_i)))``, plus
+    the EAP posterior SD as the standard error, and forms the interval
+    ``theta_hat +/- z_crit * se``. The FIRST STRICT crossing decides:
+    ``lower > theta_cut`` -> ``"above"``, ``upper < theta_cut`` ->
+    ``"below"`` (``n_used = k``, 1-based); no crossing -> ``"continue"``
+    with ``n_used = len(responses)``. Equality with the cut means continue.
+    All numerics run in the Rust core
+    (``mlsirm_core::exposure::ci_classify``).
+
+    Traces are returned for ALL supplied responses as offline diagnostics;
+    entries past ``n_used`` are counterfactual replay values (a live CAT
+    would stop at ``n_used``). ``z_crit`` is the normal critical value; for
+    a confidence level ``L`` pass ``qnorm((1 + L) / 2)`` (catIrt's
+    ``conf.lev`` parameterization), e.g. 1.6448536269514722 for L = 0.90.
+
+    Source status: the interval stopping rule was verified against R catIrt
+    ``termCI.R``/``eapEst.R``/``catIrt.Rd`` at commit
+    c9e979e4812c27d95d367a7f097edfe8e93ac8eb (READ): interval
+    ``theta_hat +/- z * SEM`` with the EAP SEM equal to the posterior SD,
+    classifying only when the whole interval lies strictly within a
+    category. The fixed 41-point grid and caller-supplied ``z_crit`` are
+    repository implementation choices. Kingsbury & Weiss (1983), Thompson
+    (2007), and Eggen & Straetmans (2000) were NOT method-section verified
+    in this iteration and are cited as historical/background context only.
+
+    References (APA 7th ed.):
+        Kingsbury, G. G., & Weiss, D. J. (1983). A comparison of IRT-based
+            adaptive mastery testing and a sequential mastery testing
+            procedure. In D. J. Weiss (Ed.), *New horizons in testing*
+            (pp. 257-283). Academic Press. (NOT read; historical origin.)
+        Thompson, N. A. (2007). A practitioner's guide for variable-length
+            computerized classification testing. *Practical Assessment,
+            Research & Evaluation, 12*(1).
+            https://doi.org/10.7275/fq3r-zz60 (NOT read for the CI method
+            section in this iteration; background only.)
+        Eggen, T. J. H. M., & Straetmans, G. J. J. M. (2000). Computerized
+            adaptive testing for classifying examinees into three
+            categories. *Educational and Psychological Measurement, 60*(5),
+            713-734. (NOT read; historical.)
+    """
+    from . import _core
+
+    # Reject complex input BEFORE the dtype casts: the casts would silently
+    # discard imaginary parts (complex laundering).
+    for name, arr in (("a", a), ("b", b), ("c", c), ("responses", responses)):
+        if arr is not None and np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.ndim != 1 or b.ndim != 1:
+        raise ValueError("a and b must be 1-D arrays")
+    if c is None:
+        c = np.zeros_like(a)
+    c = np.asarray(c, dtype=np.float64)
+    if c.ndim != 1:
+        raise ValueError("c must be a 1-D array")
+    # Validate responses BEFORE the uint8 cast (casts truncate/wrap).
+    resp = np.asarray(responses)
+    if resp.ndim != 1:
+        raise ValueError("responses must be a 1-D array")
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        resp_f = np.asarray(resp, dtype=np.float64)
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_ci_classify(
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(resp),
+        float(theta_cut),
+        float(z_crit),
+    )
+    return {
+        "decision": str(r["decision"]),
+        "n_used": int(r["n_used"]),
+        "theta_trace": np.asarray(r["theta_trace"]),
+        "se_trace": np.asarray(r["se_trace"]),
+        "lower_trace": np.asarray(r["lower_trace"]),
+        "upper_trace": np.asarray(r["upper_trace"]),
+    }
+
+def flexilevel_administer(
+    responses: np.ndarray,
+    *,
+    n_persons: int,
+    n_items: int,
+) -> dict:
+    """Lord self-scoring flexilevel routing + scoring over a response matrix.
+
+    ``responses`` is an ``n_persons x n_items`` 0/1 matrix (or its row-major
+    flattening) whose columns are the N (odd) items sorted ASCENDING by
+    difficulty (caller responsibility; both read sources assume a
+    difficulty-ordered pool). Each person answers ``n = (N + 1) / 2`` items:
+    start at the median item; after a right answer move to the easiest
+    not-yet-answered harder item, after a wrong answer to the hardest
+    not-yet-answered easier item. Self-scoring: number-right ``r``; a person
+    whose LAST answer was wrong ("red") scores ``x = r + 1/2``, otherwise
+    ("blue") ``x = r``. All numerics run in the Rust core
+    (``mlsirm_core::exposure::flexilevel_administer``).
+
+    Returns a dict with ``n_administered`` (= n), ``items`` (administered
+    column indices in administration order, flattened ``n_persons * n``),
+    ``number_right``, ``is_red`` (1 iff last answer wrong), and ``score``
+    (half-integer lattice).
+
+    Source status: both primary sources were READ in full (ETS Research
+    Bulletins digitized by ERIC). The routing/scoring contract was verified
+    against Lord (1970) properties 1-9 and Lord (1971) pp. 2-4; the i = 0
+    starting case follows the verbal start-at-median rule (the printed index
+    formula covers i > 0 / i < 0 only). See the Rust module comment for the
+    full citation-governance record.
+
+    References (APA 7th ed.):
+        Lord, F. M. (1970). *The self-scoring flexilevel test* (Research
+            Bulletin RB-70-43; ERIC ED042813). Educational Testing Service.
+            (READ.)
+        Lord, F. M. (1971). *A theoretical study of the measurement
+            effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
+            ERIC ED051286). Educational Testing Service. (READ.)
+    """
+    from . import _core
+
+    if np.iscomplexobj(np.asarray(responses)):
+        raise ValueError("responses must be real-valued")
+    n_persons = _as_int("n_persons", n_persons, minimum=1)
+    n_items = _as_int("n_items", n_items, minimum=3)
+    resp = np.asarray(responses)
+    if resp.ndim == 2:
+        if resp.shape != (n_persons, n_items):
+            raise ValueError(
+                f"responses has shape {resp.shape}, expected "
+                f"({n_persons}, {n_items})"
+            )
+        resp = resp.reshape(-1)
+    elif resp.ndim != 1:
+        raise ValueError("responses must be a 1-D or 2-D array")
+    # Validate BEFORE the uint8 cast (casts truncate/wrap).
+    if resp.dtype == np.bool_:
+        resp = resp.astype(np.uint8)
+    else:
+        try:
+            # Object-dtype arrays holding complex values bypass
+            # np.iscomplexobj; the float64 coercion is the backstop.
+            resp_f = np.asarray(resp, dtype=np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("responses must be real-valued") from None
+        if not np.all(np.isin(resp_f, (0.0, 1.0))):
+            raise ValueError("responses must contain only 0 and 1")
+        resp = resp_f.astype(np.uint8)
+    r = _core.py_flexilevel_administer(
+        np.ascontiguousarray(resp), n_persons, n_items
+    )
+    return {
+        "n_administered": int(r["n_administered"]),
+        "items": np.asarray(r["items"], dtype=np.int64),
+        "number_right": np.asarray(r["number_right"]),
+        "is_red": np.asarray(r["is_red"]),
+        "score": np.asarray(r["score"]),
+    }
+
+
+def flexilevel_score_distribution(p: np.ndarray) -> dict:
+    """Exact conditional flexilevel self-score distribution f(x | theta).
+
+    ``p[c]`` is the probability of a correct response on the c-th
+    difficulty-sorted item at the fixed ability of interest (any ICC; the
+    caller computes the probabilities, keeping the recursion model-agnostic).
+    ``len(p)`` = N must be odd and >= 3. Computes Lord's (1971, Eqs. 1-2)
+    forward recursion over p_v(i), the probability that item i is the v-th
+    administered, and maps p_{n+1} onto the half-integer score lattice
+    ``{1/2, 1, ..., n}`` (integer x: last answer right; half-integer x: last
+    answer wrong). The half-integer mapping ``j = x - 1/2 - n`` is DERIVED
+    from Lord's ``j < 0 -> r = v + j`` and ``x = r + 1/2`` (the printed
+    Eq. 2 is OCR-garbled in the available scan) and was cross-checked
+    exactly against exhaustive path enumeration. All numerics run in the
+    Rust core (``mlsirm_core::exposure::flexilevel_score_distribution``).
+
+    Returns a dict with ``scores`` (ascending lattice), ``probs``, ``mean``,
+    and ``variance``.
+
+    References (APA 7th ed.):
+        Lord, F. M. (1971). *A theoretical study of the measurement
+            effectiveness of flexilevel tests* (Research Bulletin RB-71-6;
+            ERIC ED051286). Educational Testing Service. (READ.)
+    """
+    from . import _core
+
+    if np.iscomplexobj(np.asarray(p)):
+        raise ValueError("p must be real-valued")
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        p = np.asarray(p, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("p must be real-valued") from None
+    if p.ndim != 1:
+        raise ValueError("p must be a 1-D array")
+    r = _core.py_flexilevel_score_distribution(np.ascontiguousarray(p))
+    return {
+        "scores": np.asarray(r["scores"]),
+        "probs": np.asarray(r["probs"]),
+        "mean": float(r["mean"]),
+        "variance": float(r["variance"]),
+    }
+
+def stradaptive_administer(
+    stratum: np.ndarray,
+    difficulty: np.ndarray,
+    responses: np.ndarray,
+    *,
+    entry_stratum: int,
+    chance: float,
+    min_items: int = 5,
+    max_items: int = 40,
+) -> dict:
+    """Weiss (1973) stratified-adaptive (stradaptive) test administration.
+
+    The item pool is partitioned into difficulty strata (``stratum[i]`` in
+    ``0..S-1``, every stratum non-empty, ``S >= 2``); within a stratum items
+    are taken in the given (peaked, most-discriminating-first in Weiss's
+    pool) order. Routing: start in ``entry_stratum``; after a correct
+    response move to the next harder stratum, after an incorrect response to
+    the next easier stratum, clamped at the edges; if the clamped target
+    stratum is exhausted, the next item comes from the LAST ADMINISTERED
+    stratum (DERIVED fallback -- the source only prints the boundary /
+    lower-stratum-exhausted substitutions). Termination: after each response
+    a ceiling stratum is sought (>= ``min_items`` administered in the
+    stratum AND proportion correct <= ``chance``, the multiple-choice
+    guessing rate, strictly in (0, 1)); the test also stops on pool
+    exhaustion or after ``max_items`` items. All numerics run in the Rust
+    core (``mlsirm_core::exposure::stradaptive_administer``).
+
+    Returns a dict with ``administered`` (item indices in administration
+    order), ``responses_taken``, ``reason`` (``"criterion"`` |
+    ``"pool_exhausted"`` | ``"max_items"``), ``ceiling`` / ``basal`` /
+    ``hnc`` / ``next_item`` (int, -1 when undefined), ``scores`` (Weiss's
+    ten ability scores m1..m10, NaN when indeterminate), and
+    ``consistency`` (population variance of the score-9 stratum set;
+    DERIVED -- the report defines consistency verbally without a printed
+    numeric anchor).
+
+    Source status: the primary source was READ in full (ERIC ED084301
+    scan); score 7's between-stratum interpolation was verified against the
+    five printed report cases plus synthetic below-chance anchors (the
+    printed cases alone do not discriminate the lower-step branch). Edge
+    conditions labeled DERIVED in the Rust module comment go beyond the
+    printed text and are pinned by tests rather than by the source.
+
+    References (APA 7th ed.):
+        Weiss, D. J. (1973). *The stratified adaptive computerized ability
+            test* (Research Report 73-3; ERIC ED084301). University of
+            Minnesota, Psychometric Methods Program. (READ.)
+    """
+    from . import _core
+
+    for name, arr in (("stratum", stratum), ("difficulty", difficulty),
+                      ("responses", responses)):
+        if np.iscomplexobj(np.asarray(arr)):
+            raise ValueError(f"{name} must be real-valued")
+    entry_stratum = _as_int("entry_stratum", entry_stratum, minimum=0)
+    min_items = _as_int("min_items", min_items, minimum=1)
+    max_items = _as_int("max_items", max_items, minimum=1)
+    chance = float(chance)
+    # Validate BEFORE the integer/uint8 casts (casts truncate/wrap).
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        strat_f = np.asarray(stratum, dtype=np.float64)
+        diff = np.asarray(difficulty, dtype=np.float64)
+        resp_f = np.asarray(responses, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "stratum, difficulty, and responses must be real-valued"
+        ) from None
+    if strat_f.ndim != 1 or diff.ndim != 1 or resp_f.ndim != 1:
+        raise ValueError("stratum, difficulty, and responses must be 1-D")
+    if strat_f.size and (not np.all(np.isfinite(strat_f))
+                         or not np.all(strat_f == np.floor(strat_f))
+                         or strat_f.min() < 0
+                         # Contiguous non-empty strata imply max < n_items;
+                         # this bound is exact under float64 (n <= array
+                         # length << 2^53), unlike a raw 2^53 cutoff that a
+                         # rounded 2^53 + 1 slips under.
+                         or float(strat_f.max()) >= strat_f.size):
+        raise ValueError(
+            "stratum must contain non-negative integers below len(stratum)"
+        )
+    if not np.all(np.isin(resp_f, (0.0, 1.0))):
+        raise ValueError("responses must contain only 0 and 1")
+    r = _core.py_stradaptive_administer(
+        np.ascontiguousarray(strat_f.astype(np.uint64)),
+        np.ascontiguousarray(diff),
+        np.ascontiguousarray(resp_f.astype(np.uint8)),
+        entry_stratum,
+        chance,
+        min_items,
+        max_items,
+    )
+    return {
+        "administered": np.asarray(r["administered"], dtype=np.int64),
+        "responses_taken": np.asarray(r["responses_taken"]),
+        "reason": str(r["reason"]),
+        "ceiling": int(r["ceiling"]),
+        "basal": int(r["basal"]),
+        "hnc": int(r["hnc"]),
+        "next_item": int(r["next_item"]),
+        "scores": np.asarray(r["scores"]),
+        "consistency": float(r["consistency"]),
+    }
+
+def pyramidal_administer(
+    b: np.ndarray,
+    n_stages: int,
+    u: np.ndarray,
+    b_next: np.ndarray | None = None,
+) -> dict:
+    """Larkin & Weiss (1974) pyramidal adaptive test administration.
+
+    Items form a triangular structure ordered by difficulty: stage ``s``
+    (1-based) holds ``s`` items and an ``n_stages``-stage pyramid needs
+    ``n(n+1)/2`` items (Larkin & Weiss, 1974, p. 13). ``b`` is the
+    row-major flattened difficulty vector (stage 1 first; each stage
+    ordered easiest to hardest). Routing is "up-one/down-one" with equal
+    offset: a correct response leads to the harder stage-(s+1) neighbour,
+    an incorrect response to the easier one. ``u[s]`` is the 0/1 response
+    to the routed stage-(s+1) item.
+
+    Returns a dict with the routed ``path`` (flattened node indices),
+    within-stage ``positions``, and Larkin & Weiss's scoring methods 1-6:
+    ``number_correct``, ``mean_b_attempted``, ``mean_b_correct`` (NaN when
+    nothing was answered correctly; the source leaves this case
+    undefined), ``final_b``, ``final_difficulty`` (method 5, computed ONLY
+    when ``b_next`` -- the ``n_stages + 1`` hypothetical next-stage
+    difficulties -- is supplied; NaN means "method 5 unavailable", and the
+    paper's own pool-specific column-mean construction of ``b_next`` is
+    out of scope), and ``all_item_score`` (Hansen's all-item score as
+    described by Larkin & Weiss, 1974, p. 16; verified against the printed
+    15-stage range 0-240). All numerics run in the Rust core
+    (``mlsirm_core::exposure::pyramidal_administer``); see its module
+    comment for the full READ/NOT-READ citation-governance record and
+    DERIVED-formula labels.
+
+    References (APA 7th ed.):
+        Larkin, K. C., & Weiss, D. J. (1974). *An empirical investigation
+            of computer-administered pyramidal ability testing* (Research
+            Report 74-3; ERIC ED096343). University of Minnesota,
+            Psychometric Methods Program. (READ.)
+        Hansen, D. N. (1969). *An investigation of computer-based science
+            testing.* (NOT read; all-item and final-difficulty scores
+            implemented as described by Larkin & Weiss, 1974.)
+    """
+    from . import _core
+
+    n_stages = _as_int("n_stages", n_stages, minimum=1)
+    if np.iscomplexobj(np.asarray(b)) or np.iscomplexobj(np.asarray(u)):
+        raise ValueError("b and u must be real-valued")
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        b_arr = np.asarray(b, dtype=np.float64)
+        u_f = np.asarray(u, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("b and u must be real-valued") from None
+    if b_arr.ndim != 1 or u_f.ndim != 1:
+        raise ValueError("b and u must be 1-D arrays")
+    # Validate BEFORE the uint8 cast (casts truncate/wrap).
+    if not np.all(np.isin(u_f, (0.0, 1.0))):
+        raise ValueError("u must contain only 0 and 1")
+    if b_next is None:
+        bn_arr = None
+    else:
+        if np.iscomplexobj(np.asarray(b_next)):
+            raise ValueError("b_next must be real-valued")
+        try:
+            bn_arr = np.asarray(b_next, dtype=np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("b_next must be real-valued") from None
+        if bn_arr.ndim != 1:
+            raise ValueError("b_next must be a 1-D array")
+        bn_arr = np.ascontiguousarray(bn_arr)
+    r = _core.py_pyramidal_administer(
+        np.ascontiguousarray(b_arr),
+        n_stages,
+        np.ascontiguousarray(u_f.astype(np.uint8)),
+        bn_arr,
+    )
+    return {
+        "path": np.asarray(r["path"], dtype=np.int64),
+        "positions": np.asarray(r["positions"], dtype=np.int64),
+        "number_correct": float(r["number_correct"]),
+        "mean_b_attempted": float(r["mean_b_attempted"]),
+        "mean_b_correct": float(r["mean_b_correct"]),
+        "final_b": float(r["final_b"]),
+        "final_difficulty": float(r["final_difficulty"]),
+        "all_item_score": float(r["all_item_score"]),
+    }
+
+
+def _two_stage_real_1d(name: str, arr) -> np.ndarray:
+    arr0 = np.asarray(arr)
+    if np.iscomplexobj(arr0) or arr0.dtype == object:
+        raise ValueError(f"{name} must be a real-valued numeric array")
+    try:
+        out = np.asarray(arr0, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a real-valued numeric array") from None
+    if out.ndim != 1:
+        raise ValueError(f"{name} must be a 1-D array")
+    return np.ascontiguousarray(out)
+
+
+def two_stage_route(
+    x1: int,
+    m1: int,
+    a1: float,
+    b1: float,
+    b_meas: np.ndarray,
+    c: float,
+) -> tuple[float, int]:
+    """Betz & Weiss (1974) two-stage routing.
+
+    Estimates routing-test ability from the number correct ``x1`` on an
+    ``m1``-item routing test via the truncated normal-ogive formula
+    theta-hat = Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Betz &
+    Weiss, 1974, Equation 2; ``a1``/``b1`` are the routing test's mean
+    discrimination and difficulty, ``c`` the shared chance level), then
+    assigns the measurement test whose mean difficulty ``b_meas[k]`` is
+    closest to that estimate (minimum absolute difference; ties break to
+    the LOWEST index, a derived convention the sources leave unstated).
+    Returns ``(theta1, assigned)``. All numerics run in the Rust core
+    (``mlsirm_core::exposure::two_stage_route``); see its module comment
+    for the full READ/NOT-READ citation-governance record.
+
+    References (APA 7th ed.):
+        Betz, N. E., & Weiss, D. J. (1974). *Simulation studies of
+            two-stage ability testing* (Research Report 74-4; ERIC
+            ED103466). University of Minnesota, Psychometric Methods
+            Program. (READ.)
+    """
+    from . import _core
+
+    x1 = _as_int("x1", x1, minimum=0)
+    m1 = _as_int("m1", m1, minimum=1)
+    b_arr = _two_stage_real_1d("b_meas", b_meas)
+    theta1, assigned = _core.py_two_stage_route(
+        x1, m1, float(a1), float(b1), b_arr, float(c)
+    )
+    return float(theta1), int(assigned)
+
+
+def two_stage_score(
+    x1: int,
+    m1: int,
+    a1: float,
+    b1: float,
+    x2: int,
+    m2: int,
+    administered: int,
+    a_meas: np.ndarray,
+    b_meas: np.ndarray,
+    c: float,
+) -> dict:
+    """Betz & Weiss (1973, 1974) two-stage test scoring.
+
+    Applies the truncated normal-ogive ability estimate (Betz & Weiss,
+    1974, Equation 2) to both the routing test (``x1`` of ``m1``,
+    parameters ``a1``/``b1``) and the administered measurement test
+    (``x2`` of ``m2``, parameters ``a_meas[administered]`` /
+    ``b_meas[administered]``), and combines them with the item-count
+    weighted composite (m1*theta1 + m2*theta2) / (m1 + m2) (Betz & Weiss,
+    1974, Equation 3; weighting rationale in Betz & Weiss, 1973, p. 15).
+    The routing assignment is re-derived internally and ``administered``
+    must match it -- a mismatch raises ``ValueError`` so ``x2`` is never
+    scored against the wrong measurement test's parameters. Returns a dict
+    with ``theta1``, ``assigned``, ``theta2``, and ``composite``. All
+    numerics run in the Rust core
+    (``mlsirm_core::exposure::two_stage_score``); see its module comment
+    for the full READ/NOT-READ citation-governance record.
+
+    References (APA 7th ed.):
+        Betz, N. E., & Weiss, D. J. (1973). *An empirical study of
+            computer-administered two-stage ability testing* (Research
+            Report 73-4; ERIC ED084302). University of Minnesota,
+            Psychometric Methods Program. (READ.)
+        Betz, N. E., & Weiss, D. J. (1974). *Simulation studies of
+            two-stage ability testing* (Research Report 74-4; ERIC
+            ED103466). University of Minnesota, Psychometric Methods
+            Program. (READ.)
+    """
+    from . import _core
+
+    x1 = _as_int("x1", x1, minimum=0)
+    m1 = _as_int("m1", m1, minimum=1)
+    x2 = _as_int("x2", x2, minimum=0)
+    m2 = _as_int("m2", m2, minimum=1)
+    administered = _as_int("administered", administered, minimum=0)
+    a_arr = _two_stage_real_1d("a_meas", a_meas)
+    b_arr = _two_stage_real_1d("b_meas", b_meas)
+    r = _core.py_two_stage_score(
+        x1, m1, float(a1), float(b1), x2, m2, administered, a_arr, b_arr, float(c)
+    )
+    return {
+        "theta1": float(r["theta1"]),
+        "assigned": int(r["assigned"]),
+        "theta2": float(r["theta2"]),
+        "composite": float(r["composite"]),
     }
