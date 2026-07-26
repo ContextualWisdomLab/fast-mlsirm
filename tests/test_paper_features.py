@@ -7698,3 +7698,56 @@ class TestBreslowDay:
         big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
         with pytest.raises(ValueError):
             breslow_day_dif(big, group)
+
+class TestFlexilevel:
+    def test_worked_example_routing_pin(self):
+        from fast_mlsirm import flexilevel_administer
+
+        # Lord (1971) worked example RWWRWRRRWR on N = 19: administered
+        # columns [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]; blue, r = 6, x = 6.
+        cols = [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]
+        answers = [1, 0, 0, 1, 0, 1, 1, 1, 0, 1]
+        row = np.zeros((1, 19))
+        for c, y in zip(cols, answers):
+            row[0, c] = y
+        r = flexilevel_administer(row, n_persons=1, n_items=19)
+        assert r["n_administered"] == 10
+        assert r["items"].tolist() == cols
+        assert r["number_right"].tolist() == [6]
+        assert r["is_red"].tolist() == [0]
+        assert r["score"].tolist() == [6.0]
+
+    def test_distribution_exact_pin(self):
+        from fast_mlsirm import flexilevel_score_distribution
+
+        # N = 5 exact oracle pin (enumeration == recursion in the spec
+        # oracle): mean 7/4, variance 71/240.
+        d = flexilevel_score_distribution([4 / 5, 2 / 3, 1 / 2, 1 / 3, 1 / 5])
+        assert d["scores"].tolist() == [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        expect = [1 / 30, 2 / 15, 1 / 3, 1 / 3, 2 / 15, 1 / 30]
+        assert np.allclose(d["probs"], expect, atol=1e-15)
+        assert abs(d["mean"] - 1.75) < 1e-15
+        assert abs(d["variance"] - 71 / 240) < 1e-15
+
+    def test_validation_errors(self):
+        from fast_mlsirm import (
+            flexilevel_administer,
+            flexilevel_score_distribution,
+        )
+
+        with pytest.raises(ValueError, match="odd"):
+            flexilevel_administer(np.zeros((1, 4)), n_persons=1, n_items=4)
+        with pytest.raises(ValueError, match="0 and 1"):
+            flexilevel_administer(
+                np.full((1, 5), 2.0), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.zeros((1, 5), dtype=complex), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="shape"):
+            flexilevel_administer(np.zeros((2, 5)), n_persons=1, n_items=5)
+        with pytest.raises(ValueError, match=r"p\[1\]"):
+            flexilevel_score_distribution([0.5, 1.5, 0.5])
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(np.array([0.5, 0.5j, 0.5]))
