@@ -1692,6 +1692,123 @@ pub fn circle_arc_middle_anchor(
     Ok((m_xa, m_yb + (s_yb / s_vb) * (m_va - m_vb)))
 }
 
+// --- composite linking (Holland & Strawderman, 2011) ---
+//
+// Citation governance:
+// - READ: Albano, A. D. (2016). equate: An R package for observed-score
+//   linking and equating. Journal of Statistical Software, 74(8), 1-36.
+//   https://doi.org/10.18637/jss.v074.i08 — Section 3.7, eqs. 31-32.
+// - READ: composite.R from the R package equate 2.0.8 (Albano). Reference
+//   implementation: `wcs <- (wc*(1 + slopes^p)^-(1/p)) / sum(...)`,
+//   `composite.default <- function(x, wc) return(x %*% wc)` (raw wc,
+//   un-normalized, in the non-symmetric path).
+// - NOT READ (as-cited): Holland, P. W., & Strawderman, W. E. (2011). How to
+//   average equating functions, if you must. In A. A. von Davier (Ed.),
+//   Statistical models for test equating, scaling, and linking (pp. 89-107).
+//   Springer. Cited via Albano (2016); every formula claim below is grounded
+//   in the two READ sources.
+//
+// Source eq. 31 (non-symmetric): comp_Y(x) = sum_h w_h * link_hY(x), with
+// raw weights as supplied. DEVIATION from the R reference: this API always
+// normalizes, using W_h = w_h / sum(w) in the non-symmetric path, so results
+// are scale-invariant in the weights (identical to R iff sum(w) = 1).
+//
+// Eq. 32 (symmetric, requires per-component linear slopes a_h > 0, p >= 1):
+//   W_h = w_h (1 + a_h^p)^(-1/p) / sum_h w_h (1 + a_h^p)^(-1/p)
+//
+// DERIVED (oracle-verified): for two linear components at p = 1, the eq.-32
+// composite of the forward links is the exact functional inverse of the
+// eq.-32 composite of the inverse links with the same raw weights; the raw
+// (unadjusted) weights do NOT have this property. Pinned by the round-trip
+// test. The R reference falls back to raw weights with a warning when
+// symmetric weighting is requested without slopes; this implementation
+// errors instead (stricter, documented deviation).
+
+/// Result of a composite linking (Holland & Strawderman, 2011, as cited by
+/// Albano, 2016, eqs. 31-32).
+#[derive(Debug, Clone)]
+pub struct CompositeResult {
+    /// Composite conversion table over the shared x grid.
+    pub composite: Vec<f64>,
+    /// Normalized weights W_h actually applied to the component tables.
+    pub adjusted_weights: Vec<f64>,
+    /// Whether the symmetric (eq. 32) slope adjustment was applied.
+    pub symmetric: bool,
+}
+
+/// Composite linking: weighted average of component conversion tables
+/// (Albano, 2016, eq. 31), optionally with the Holland-Strawderman symmetric
+/// weight adjustment (eq. 32) when per-component linear slopes are supplied.
+pub fn composite_linking(
+    tables: &[Vec<f64>],
+    weights: &[f64],
+    slopes: Option<&[f64]>,
+    p: f64,
+) -> Result<CompositeResult, String> {
+    let h = tables.len();
+    if h == 0 {
+        return Err("composite linking needs at least one component table".to_string());
+    }
+    let n = tables[0].len();
+    if n == 0 {
+        return Err("composite linking tables must be non-empty".to_string());
+    }
+    for t in tables {
+        if t.len() != n {
+            return Err("composite linking tables must have equal length".to_string());
+        }
+        if t.iter().any(|v| !v.is_finite()) {
+            return Err("composite linking table values must be finite".to_string());
+        }
+    }
+    if weights.len() != h {
+        return Err("composite linking needs one weight per table".to_string());
+    }
+    if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+        return Err("composite linking weights must be finite and non-negative".to_string());
+    }
+    let symmetric = slopes.is_some();
+    // Raw factors: w_h (non-symmetric) or w_h (1 + a_h^p)^(-1/p) (eq. 32).
+    let factors: Vec<f64> = match slopes {
+        None => weights.to_vec(),
+        Some(a) => {
+            if a.len() != h {
+                return Err("composite linking needs one slope per table".to_string());
+            }
+            if a.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+                return Err("composite linking slopes must be finite and positive".to_string());
+            }
+            if !p.is_finite() || p < 1.0 {
+                return Err("composite linking p must be finite and >= 1".to_string());
+            }
+            weights
+                .iter()
+                .zip(a)
+                .map(|(w, s)| w * (1.0 + s.powf(p)).powf(-1.0 / p))
+                .collect()
+        }
+    };
+    let denom: f64 = factors.iter().sum();
+    if !denom.is_finite() || denom <= 0.0 {
+        return Err("composite linking weight sum must be finite and positive".to_string());
+    }
+    let adjusted_weights: Vec<f64> = factors.iter().map(|f| f / denom).collect();
+    let composite: Vec<f64> = (0..n)
+        .map(|i| {
+            adjusted_weights
+                .iter()
+                .zip(tables)
+                .map(|(w, t)| w * t[i])
+                .sum()
+        })
+        .collect();
+    Ok(CompositeResult {
+        composite,
+        adjusted_weights,
+        symmetric,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/equating_tests.rs"]
 mod tests;

@@ -1751,3 +1751,183 @@ fn nwme_mc_500() {
     }
     assert!(valid >= 250, "only {valid} valid reps");
 }
+
+// --- composite linking tests (Holland & Strawderman 2011 via Albano 2016) ---
+// Oracle: exact-Fraction pins from files/composite_oracle.py (executed).
+
+#[test]
+fn comp_fixture_a_exact() {
+    // Two linear components x and 3x-2 over [0,1,2,10], wc=(1/2,1/2),
+    // slopes (1,3), p=1. Asserts read crate outputs: adjusted_weights,
+    // composite, symmetric. Kills MU1 (drop adjustment -> W=(1/2,1/2)),
+    // MU2 (exponent sign flip -> W=(1/3,2/3)), MU5 (weight/table zip
+    // reversal -> comp(0) = -4/3).
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 1.0).unwrap();
+    assert!(r.symmetric);
+    assert!((r.adjusted_weights[0] - 2.0 / 3.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 1.0 / 3.0).abs() < 1e-15);
+    // comp(x) = (5/3)x - 2/3 exactly: [-2/3, 1, 8/3, 16]
+    let expect = [-2.0 / 3.0, 1.0, 8.0 / 3.0, 16.0];
+    for (c, e) in r.composite.iter().zip(expect) {
+        assert!((c - e).abs() < 1e-14, "composite {c} != {e}");
+    }
+}
+
+#[test]
+fn comp_symmetry_roundtrip() {
+    // DERIVED symmetry property: eq.-32 reverse composite (inverse links,
+    // slopes (1,1/3), same raw weights) is the exact functional inverse of
+    // the forward composite from comp_fixture_a_exact. Raw (unadjusted)
+    // weights fail this round-trip ((4/3)x - 1/3 != x), so the assert is
+    // discriminating. Asserts read crate outputs of BOTH calls.
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let fwd = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 1.0).unwrap();
+    // Reverse links evaluated at y = fwd.composite[i]: y and (y+2)/3.
+    let r1: Vec<f64> = fwd.composite.clone();
+    let r2: Vec<f64> = fwd.composite.iter().map(|y| (y + 2.0) / 3.0).collect();
+    let rev = composite_linking(&[r1, r2], &[0.5, 0.5], Some(&[1.0, 1.0 / 3.0]), 1.0).unwrap();
+    assert!((rev.adjusted_weights[0] - 2.0 / 5.0).abs() < 1e-15);
+    assert!((rev.adjusted_weights[1] - 3.0 / 5.0).abs() < 1e-15);
+    for (back, x) in rev.composite.iter().zip(grid) {
+        assert!((back - x).abs() < 1e-13, "round-trip {back} != {x}");
+    }
+}
+
+#[test]
+fn comp_fixture_c_three() {
+    // Three components, wc=(1/4,1/4,1/2), slopes (1,2,1/2), p=1.
+    // Oracle: W=(3/13,2/13,8/13); at x=6 component values (6,11,6) give 88/13.
+    let t1 = vec![6.0];
+    let t2 = vec![11.0];
+    let t3 = vec![6.0];
+    let r = composite_linking(
+        &[t1, t2, t3],
+        &[0.25, 0.25, 0.5],
+        Some(&[1.0, 2.0, 0.5]),
+        1.0,
+    )
+    .unwrap();
+    assert!((r.adjusted_weights[0] - 3.0 / 13.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 2.0 / 13.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[2] - 8.0 / 13.0).abs() < 1e-15);
+    assert!((r.composite[0] - 88.0 / 13.0).abs() < 1e-13);
+}
+
+#[test]
+fn comp_p2_float() {
+    // p=2 pins (oracle double-precision): W0=0.6909830056250527,
+    // W1=0.30901699437494745, comp(0)=-0.6180339887498949,
+    // comp(10)=15.562305898749056. Kills MU4 (a^p -> a*p gives
+    // W0=0.6043560762610399 at p=2; p=1 fixtures are blind to MU4 by
+    // identity a^1 = a*1 -- this test is the designated MU4 anchor).
+    let grid = [0.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 2.0).unwrap();
+    assert!((r.adjusted_weights[0] - 0.6909830056250527).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 0.30901699437494745).abs() < 1e-15);
+    assert!((r.composite[0] - (-0.6180339887498949)).abs() < 1e-14);
+    assert!((r.composite[1] - 15.562305898749056).abs() < 1e-13);
+}
+
+#[test]
+fn comp_raw_weights() {
+    // Non-symmetric path (slopes None): W = w/sum(w). With wc=(1/2,1/2)
+    // (sum 1, matches R raw path exactly): composite [-1,1,3,19].
+    // Also checks scale invariance (weights (2,2) same result) -- the
+    // documented normalization deviation from R's un-normalized path.
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1.clone(), t2.clone()], &[0.5, 0.5], None, 1.0).unwrap();
+    assert!(!r.symmetric);
+    let expect = [-1.0, 1.0, 3.0, 19.0];
+    for (c, e) in r.composite.iter().zip(expect) {
+        assert!((c - e).abs() < 1e-14);
+    }
+    let r2 = composite_linking(&[t1, t2], &[2.0, 2.0], None, 1.0).unwrap();
+    for (a, b) in r.composite.iter().zip(&r2.composite) {
+        assert!(
+            (a - b).abs() < 1e-15,
+            "normalization must be scale-invariant"
+        );
+    }
+}
+
+#[test]
+fn comp_error_contract() {
+    let t = vec![1.0, 2.0];
+    // empty tables
+    assert!(composite_linking(&[], &[], None, 1.0).is_err());
+    // zero-length table
+    assert!(composite_linking(&[vec![]], &[1.0], None, 1.0).is_err());
+    // unequal lengths
+    assert!(composite_linking(&[t.clone(), vec![1.0]], &[0.5, 0.5], None, 1.0).is_err());
+    // weight count mismatch
+    assert!(composite_linking(&[t.clone()], &[0.5, 0.5], None, 1.0).is_err());
+    // negative weight
+    assert!(composite_linking(&[t.clone()], &[-1.0], None, 1.0).is_err());
+    // non-finite weight
+    assert!(composite_linking(&[t.clone()], &[f64::NAN], None, 1.0).is_err());
+    // zero weight sum
+    assert!(composite_linking(&[t.clone()], &[0.0], None, 1.0).is_err());
+    // non-finite table value
+    assert!(composite_linking(&[vec![1.0, f64::INFINITY]], &[1.0], None, 1.0).is_err());
+    // slope count mismatch
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[1.0, 2.0]), 1.0).is_err());
+    // non-positive slope
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[0.0]), 1.0).is_err());
+    // p < 1 when symmetric
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[1.0]), 0.5).is_err());
+    // non-finite p when symmetric
+    assert!(composite_linking(&[t], &[1.0], Some(&[1.0]), f64::NAN).is_err());
+}
+
+#[test]
+#[ignore]
+fn comp_mc_500() {
+    // 500 random reps: composite of random linear tables with random
+    // positive weights/slopes must (a) have adjusted weights summing to 1,
+    // (b) lie in the pointwise convex hull of the component tables, and
+    // (c) satisfy the p=1 two-component linear round-trip to 1e-10.
+    let mut next = lcg(20260727);
+    for rep in 0..500 {
+        let a1 = 0.2 + 3.0 * next();
+        let b1 = -2.0 + 4.0 * next();
+        let a2 = 0.2 + 3.0 * next();
+        let b2 = -2.0 + 4.0 * next();
+        let w1 = 0.1 + next();
+        let w2 = 0.1 + next();
+        let grid: Vec<f64> = (0..9).map(|i| i as f64).collect();
+        let t1: Vec<f64> = grid.iter().map(|x| a1 * x + b1).collect();
+        let t2: Vec<f64> = grid.iter().map(|x| a2 * x + b2).collect();
+        let fwd =
+            composite_linking(&[t1.clone(), t2.clone()], &[w1, w2], Some(&[a1, a2]), 1.0).unwrap();
+        let wsum: f64 = fwd.adjusted_weights.iter().sum();
+        assert!((wsum - 1.0).abs() < 1e-12, "rep {rep}: weights sum {wsum}");
+        for i in 0..grid.len() {
+            let lo = t1[i].min(t2[i]) - 1e-12;
+            let hi = t1[i].max(t2[i]) + 1e-12;
+            assert!(
+                fwd.composite[i] >= lo && fwd.composite[i] <= hi,
+                "rep {rep}: composite outside convex hull"
+            );
+        }
+        // Round-trip: reverse links evaluated at forward composite.
+        let r1: Vec<f64> = fwd.composite.iter().map(|y| (y - b1) / a1).collect();
+        let r2: Vec<f64> = fwd.composite.iter().map(|y| (y - b2) / a2).collect();
+        let rev =
+            composite_linking(&[r1, r2], &[w1, w2], Some(&[1.0 / a1, 1.0 / a2]), 1.0).unwrap();
+        for (back, x) in rev.composite.iter().zip(&grid) {
+            assert!(
+                (back - x).abs() < 1e-10,
+                "rep {rep}: round-trip {back} != {x}"
+            );
+        }
+    }
+}

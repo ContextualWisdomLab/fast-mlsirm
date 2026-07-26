@@ -4,7 +4,8 @@ use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
     circle_arc_equate as core_circle_arc_equate,
-    circle_arc_middle_anchor as core_circle_arc_middle_anchor, equate_eg as core_equate_eg,
+    circle_arc_middle_anchor as core_circle_arc_middle_anchor,
+    composite_linking as core_composite_linking, equate_eg as core_equate_eg,
     equate_eg_ext as core_equate_eg_ext, equate_neat as core_equate_neat,
     equate_neat_linear as core_equate_neat_linear, loglinear_smooth as core_loglinear_smooth,
     nominal_weights_mean_equate as core_nominal_weights_mean_equate, AnchorKind, CircleArcMethod,
@@ -5087,6 +5088,39 @@ fn nominal_weights_mean_equate(
     equate_result_dict(py, res)
 }
 
+/// Composite linking of component conversion tables (Holland & Strawderman,
+/// 2011, as cited by Albano, 2016, eqs. 31-32). With `slopes` supplied the
+/// symmetric eq.-32 weight adjustment is applied; otherwise weights are
+/// normalized raw weights (documented deviation from R's un-normalized path).
+#[pyfunction]
+#[pyo3(signature = (tables, weights, slopes = None, p = 1.0))]
+fn composite_linking(
+    py: Python<'_>,
+    tables: Vec<PyReadonlyArray1<'_, f64>>,
+    weights: PyReadonlyArray1<'_, f64>,
+    slopes: Option<PyReadonlyArray1<'_, f64>>,
+    p: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let tabs: Vec<Vec<f64>> = tables
+        .iter()
+        .map(|t| t.as_slice().map(|s| s.to_vec()))
+        .collect::<Result<_, _>>()?;
+    let slope_vec = match &slopes {
+        Some(s) => Some(s.as_slice()?.to_vec()),
+        None => None,
+    };
+    let res = core_composite_linking(&tabs, weights.as_slice()?, slope_vec.as_deref(), p)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("composite", PyArray1::from_slice(py, &res.composite))?;
+    d.set_item(
+        "adjusted_weights",
+        PyArray1::from_slice(py, &res.adjusted_weights),
+    )?;
+    d.set_item("symmetric", res.symmetric)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7422,6 +7456,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
     m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
