@@ -413,6 +413,112 @@ pub fn gtheory_pio(
     })
 }
 
+/// Result of [`phi_lambda`].
+#[derive(Debug, Clone)]
+pub struct PhiLambdaResult {
+    /// Grand mean of the `n_p x n_i` score table (per-item metric).
+    pub grand_mean: f64,
+    /// Clamped ANOVA variance components (p, i, pi) from [`gtheory_pi`].
+    pub var: [f64; 3],
+    /// Estimated `Var(Xbar)` using the **raw** (unclamped) components:
+    /// `var_raw(p)/n_p + var_raw(i)/n_i + var_raw(pi)/(n_p n_i)`. Raw
+    /// components keep the signal estimator unbiased (see below).
+    pub var_xbar: f64,
+    /// Unbiased signal estimate `(Xbar - lambda)^2 - var_xbar`. MAY be
+    /// negative when `lambda` is within sampling error of `Xbar`.
+    pub signal: f64,
+    /// `Phi(lambda)` per requested D-study item count `n_i'`; `NaN` when
+    /// the denominator is `<= 1e-12`.
+    pub phi: Vec<f64>,
+}
+
+/// Brennan-Kane index of dependability for mastery (domain-referenced)
+/// tests with cutting score `lambda`, one-facet random `p x i` design.
+///
+/// Population definition (Kane & Brennan, 1977, eqs. 31-33):
+///
+/// ```text
+/// theta(d) = [ (mu - lambda)^2 + sigma^2(p) ]
+///          / [ (mu - lambda)^2 + sigma^2(p) + sigma^2(i)/n' + sigma^2(pi,e)/n' ]
+/// ```
+///
+/// Estimator: variance components come from the [`gtheory_pi`] ANOVA;
+/// the D-study absolute error `sigma^2(Delta') = (var(i) + var(pi))/n_i'`
+/// uses the module's clamped components. The signal `(mu - lambda)^2` is
+/// estimated by the DERIVED unbiased plug-in
+///
+/// ```text
+/// signal = (Xbar - lambda)^2 - varhat(Xbar)
+/// varhat(Xbar) = var_raw(p)/n_p + var_raw(i)/n_i + var_raw(pi)/(n_p n_i)
+/// ```
+///
+/// DERIVATION (ours; adversarially verified in the spec review, not taken
+/// from any unread source): `Xbar - lambda = (mu - lambda) + (Xbar - mu)`
+/// with `E[Xbar - mu] = 0`, so the cross term vanishes and
+/// `E[(Xbar - lambda)^2] = (mu - lambda)^2 + Var(Xbar)`; under the eq. 24
+/// random model `Xbar = mu + mean(pi_v) + mean(beta_i) + mean(residual)`
+/// with independent mean-zero effect means, giving the three-term
+/// `varhat(Xbar)`. Raw (unclamped) components are used here because
+/// clamping would destroy unbiasedness (spec review, mandatory change 1);
+/// the clamped components are kept for `sigma^2(Delta')` to match the
+/// module's existing D-study policy.
+///
+/// The signal estimate (and hence the `Phi(lambda)` numerator) is NOT
+/// clamped: a negative value indicates the observed mean is within
+/// sampling error of the cut. Consequently the estimate can fall below
+/// the lambda-free `dependability` (`theta_c(d)`) or even below zero;
+/// this is finite-sample estimator behavior, not a violation of the
+/// population inequality `theta_c(d) <= theta(d)` (Kane & Brennan, 1977,
+/// p. 28).
+///
+/// Citation governance:
+/// - READ: Kane, M. T., & Brennan, R. L. (1977). *Agreement coefficients
+///   as indices of dependability for domain-referenced tests* (ACT
+///   Technical Bulletin No. 28). ERIC ED185076. Eqs. 24, 31-35 verified
+///   against the OCR text.
+/// - NOT READ (as cited therein): Brennan & Kane (1977a), *Journal of
+///   Educational Measurement, 14*(3), 277-289 — TB-28 defers estimation
+///   formulas to that paper; we deliberately do NOT reproduce or cite its
+///   estimator and use the derivation above instead. Brennan (1977, ACT
+///   TB-27; KR-21 lower limits) and Cronbach et al. (1972) likewise not
+///   read.
+pub fn phi_lambda(
+    x: &[f64],
+    n_p: usize,
+    n_i: usize,
+    lambda: f64,
+    n_i_prime: &[usize],
+) -> Result<PhiLambdaResult, String> {
+    if !lambda.is_finite() {
+        return Err("phi_lambda: lambda must be finite".to_string());
+    }
+    let g = gtheory_pi(x, n_p, n_i, n_i_prime)?;
+    let (fp, fi) = (n_p as f64, n_i as f64);
+    let grand_mean = x.iter().sum::<f64>() / (fp * fi);
+    let var_xbar = g.var_raw[0] / fp + g.var_raw[1] / fi + g.var_raw[2] / (fp * fi);
+    let signal = (grand_mean - lambda).powi(2) - var_xbar;
+    let phi = g
+        .d_study
+        .iter()
+        .map(|row| {
+            let num = g.var[0] + signal;
+            let den = num + row.abs_error_var;
+            if den <= DENOM_EPS {
+                f64::NAN
+            } else {
+                num / den
+            }
+        })
+        .collect();
+    Ok(PhiLambdaResult {
+        grand_mean,
+        var: g.var,
+        var_xbar,
+        signal,
+        phi,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/gtheory_tests.rs"]
 mod tests;

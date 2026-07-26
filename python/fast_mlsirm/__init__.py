@@ -109,8 +109,10 @@ from .factor import (
 from .gtheory import (
     gtheory_pi as gtheory_pi,
     gtheory_pio as gtheory_pio,
+    phi_lambda as phi_lambda,
     GTheoryResult as GTheoryResult,
     GTheoryDStudyRow as GTheoryDStudyRow,
+    PhiLambdaResult as PhiLambdaResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .utility import (
@@ -285,6 +287,7 @@ __all__ = [
     "SeparationReliabilityResult",
     "gtheory_pi",
     "gtheory_pio",
+    "phi_lambda",
     "minres_fa",
     "minres_fa_from_data",
     "glb_fa",
@@ -318,6 +321,7 @@ __all__ = [
     "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
+    "PhiLambdaResult",
     "ClassificationResult",
     "DetectResult",
     "DimtestResult",

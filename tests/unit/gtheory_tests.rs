@@ -36,7 +36,7 @@
 //! columns (divisor identity point), DF values, and sigma^2(p) invariance
 //! across n'.
 
-use super::{gtheory_pi, gtheory_pio};
+use super::{gtheory_pi, gtheory_pio, phi_lambda};
 
 const TOL: f64 = 1e-9;
 
@@ -378,4 +378,166 @@ fn gt_pio_large_offset_no_cancellation() {
             r.var[k]
         );
     }
+}
+
+// ---------------------------------------------------------------------
+// Brennan-Kane Phi(lambda) (Kane & Brennan, 1977, ACT TB-28, eq. 33 with
+// the DERIVED unbiased signal estimator; see `phi_lambda` doc comment).
+// Exact-Fraction oracle: files/phi_lambda_oracle.py (session artifacts),
+// executed all-pass. Every assert reads `PhiLambdaResult` fields.
+//
+// Mutation kills (all EXECUTED, see PR body):
+// - PMU1 drop the varhat(Xbar) correction (signal = (Xbar-l)^2):
+//   `phil_fixture_a_lambda_at_mean` (phi would be 14/27, pinned 48/113).
+// - PMU2 use rel_error_var instead of abs_error_var in the denominator:
+//   `phil_fixture_d_positive_item_variance` (var_i = 31/12 > 0; fixtures
+//   A/B are BLIND to this mutation because their var_i clamps to 0 --
+//   disclosed, D is the discriminating anchor).
+// - PMU3 use (Xbar - lambda) unsquared in the signal:
+//   `phil_fixture_a_exact` (signal 5/48 -> -13/48 at lambda = 1/4).
+// - PMU4 use CLAMPED components in varhat(Xbar) (the exact bug flagged by
+//   the spec review): `phil_fixture_a_exact` (phi(1/4;4) 3/4 -> 38/51).
+// - PMU5 numerator omits the signal (var_p only):
+//   `phil_fixture_a_exact` and `phil_fixture_d_positive_item_variance`.
+
+/// Fixture A: 5 persons x 4 dichotomous items, lambda = 1/4.
+/// Oracle: grand = 3/5, var = (7/120, 0, 13/60) clamped (raw var_i =
+/// -1/60), varhat(Xbar) = 11/600 (RAW components), signal = 5/48,
+/// phi(4) = 3/4, phi(8) = 6/7.
+#[test]
+fn phil_fixture_a_exact() {
+    let x = [
+        1., 1., 1., 0., 1., 0., 1., 1., 0., 1., 0., 0., 1., 1., 1., 1., 0., 0., 1., 0.,
+    ];
+    let r = phi_lambda(&x, 5, 4, 0.25, &[4, 8]).unwrap();
+    assert_close(r.grand_mean, 0.6, 1e-12, "grand");
+    assert_close(r.var[0], 7.0 / 120.0, 1e-12, "var_p");
+    assert_close(r.var[1], 0.0, 1e-12, "var_i clamped");
+    assert_close(r.var[2], 13.0 / 60.0, 1e-12, "var_pi");
+    assert_close(r.var_xbar, 11.0 / 600.0, 1e-12, "var_xbar raw");
+    assert_close(r.signal, 5.0 / 48.0, 1e-12, "signal");
+    assert_close(r.phi[0], 0.75, 1e-12, "phi(1/4;4)");
+    assert_close(r.phi[1], 6.0 / 7.0, 1e-12, "phi(1/4;8)");
+}
+
+/// Fixture A at lambda = Xbar = 3/5: signal = -varhat(Xbar) = -11/600
+/// (negative by design, disclosed finite-sample behavior), phi(4) =
+/// 48/113 BELOW the lambda-free dependability 14/27.
+#[test]
+fn phil_fixture_a_lambda_at_mean() {
+    let x = [
+        1., 1., 1., 0., 1., 0., 1., 1., 0., 1., 0., 0., 1., 1., 1., 1., 0., 0., 1., 0.,
+    ];
+    let r = phi_lambda(&x, 5, 4, 0.6, &[4]).unwrap();
+    assert_close(r.signal, -11.0 / 600.0, 1e-12, "signal = -var_xbar");
+    assert_close(r.phi[0], 48.0 / 113.0, 1e-12, "phi(mu;4)");
+    // Cross-check against the crate's own lambda-free dependability.
+    let g = gtheory_pi(&x, 5, 4, &[4]).unwrap();
+    assert!(
+        r.phi[0] < g.d_study[0].dependability,
+        "phi at mean {} must be below theta_c {}",
+        r.phi[0],
+        g.d_study[0].dependability
+    );
+    // And lambda = 3/4 pin (signal 1/240, phi 15/28).
+    let r34 = phi_lambda(&x, 5, 4, 0.75, &[4]).unwrap();
+    assert_close(r34.signal, 1.0 / 240.0, 1e-12, "signal(3/4)");
+    assert_close(r34.phi[0], 15.0 / 28.0, 1e-12, "phi(3/4;4)");
+}
+
+/// Fixture B: 3 x 2 with raw var_i = -2/3 (clamped in Delta' but RAW in
+/// varhat). Oracle: grand = 5/3, phi(1; n'=2) = 2/5. Also monotonicity:
+/// a cut far from the mean yields higher phi than one near it (fixture C).
+#[test]
+fn phil_fixture_b_clamp_and_monotonic() {
+    let xb = [2., 0., 0., 2., 3., 3.];
+    let rb = phi_lambda(&xb, 3, 2, 1.0, &[2]).unwrap();
+    assert_close(rb.grand_mean, 5.0 / 3.0, 1e-12, "B grand");
+    assert_close(rb.var[1], 0.0, 1e-12, "B var_i clamped");
+    assert_close(rb.phi[0], 0.4, 1e-12, "B phi(1;2)");
+    let xa = [
+        1., 1., 1., 0., 1., 0., 1., 1., 0., 1., 0., 0., 1., 1., 1., 1., 0., 0., 1., 0.,
+    ];
+    let far = phi_lambda(&xa, 5, 4, -3.0, &[4]).unwrap();
+    let near = phi_lambda(&xa, 5, 4, 0.5, &[4]).unwrap();
+    assert!(
+        far.phi[0] > near.phi[0],
+        "monotonicity: phi(-3) {} <= phi(1/2) {}",
+        far.phi[0],
+        near.phi[0]
+    );
+}
+
+/// Fixture D: 4 persons x 3 polytomous items with ALL raw components
+/// positive (var_raw = (41/36, 31/12, 1/4)) -- the discriminating anchor
+/// for item-variance mutations (PMU2). Oracle: grand = 17/6, varhat =
+/// 7/6, signal(lambda=2) = -17/36, phi(3) = 12/29, phi(6) = 24/41.
+#[test]
+fn phil_fixture_d_positive_item_variance() {
+    let x = [5., 3., 1., 4., 3., 2., 6., 4., 2., 3., 1., 0.];
+    let r = phi_lambda(&x, 4, 3, 2.0, &[3, 6]).unwrap();
+    assert_close(r.grand_mean, 17.0 / 6.0, 1e-12, "D grand");
+    assert_close(r.var_xbar, 7.0 / 6.0, 1e-12, "D var_xbar");
+    assert_close(r.signal, -17.0 / 36.0, 1e-12, "D signal");
+    assert_close(r.phi[0], 12.0 / 29.0, 1e-12, "D phi(2;3)");
+    assert_close(r.phi[1], 24.0 / 41.0, 1e-12, "D phi(2;6)");
+}
+
+/// Error contract: non-finite lambda plus every gtheory_pi validation
+/// error propagated through phi_lambda.
+#[test]
+fn phil_error_contract() {
+    let x = [1., 0., 0., 1.];
+    assert!(phi_lambda(&x, 2, 2, f64::NAN, &[2]).is_err());
+    assert!(phi_lambda(&x, 2, 2, f64::INFINITY, &[2]).is_err());
+    assert!(phi_lambda(&x, 1, 4, 0.5, &[2]).is_err()); // n_p < 2
+    assert!(phi_lambda(&x, 2, 2, 0.5, &[0]).is_err()); // n' = 0
+    assert!(phi_lambda(&[1., 0., 0.], 2, 2, 0.5, &[2]).is_err()); // len
+    assert!(phi_lambda(&[1., 0., 0., f64::NAN], 2, 2, 0.5, &[2]).is_err());
+}
+
+/// MC-500: population Phi(lambda) recovery under the eq. 24 random model.
+/// True components (sp, si, spi) = (1.5, 0.8, 0.6), mu = 10, n_i = 12,
+/// lambda = 9: population phi = ((10-9)^2 + 1.5) / (that + (0.8+0.6)/12)
+/// = 2.5 / 2.6166... The mean of 500 crate estimates must recover it
+/// (unbiased signal + component estimators; generous MC tolerance).
+#[test]
+#[ignore]
+fn phil_mc_500_population_recovery() {
+    let mut state: u64 = 0xC0FFEE0DD15EA5E5;
+    let mut next_u = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut next_normal = || {
+        let (u1, u2): (f64, f64) = (next_u().max(1e-12), next_u());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    };
+    let (n_p, n_i) = (60usize, 12usize);
+    let (sp, si, spi) = (1.5f64, 0.8f64, 0.6f64);
+    let (mu, lambda) = (10.0f64, 9.0f64);
+    let pop_phi = ((mu - lambda).powi(2) + sp) / ((mu - lambda).powi(2) + sp + (si + spi) / 12.0);
+    let reps = 500;
+    let mut sum_phi = 0.0f64;
+    for _ in 0..reps {
+        let mut x = vec![0.0; n_p * n_i];
+        let pe: Vec<f64> = (0..n_p).map(|_| next_normal() * sp.sqrt()).collect();
+        let ie: Vec<f64> = (0..n_i).map(|_| next_normal() * si.sqrt()).collect();
+        for p in 0..n_p {
+            for i in 0..n_i {
+                x[p * n_i + i] = mu + pe[p] + ie[i] + next_normal() * spi.sqrt();
+            }
+        }
+        let r = phi_lambda(&x, n_p, n_i, lambda, &[n_i]).unwrap();
+        sum_phi += r.phi[0];
+    }
+    let mean_phi = sum_phi / reps as f64;
+    // Ratio estimators carry small finite-sample bias even with unbiased
+    // numerator/denominator pieces; 0.02 absorbs it at these sizes.
+    assert!(
+        (mean_phi - pop_phi).abs() < 0.02,
+        "phi recovery: mean {mean_phi} vs population {pop_phi}"
+    );
 }

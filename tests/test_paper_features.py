@@ -8090,6 +8090,60 @@ class TestHansonBrennan:
             hanson_brennan_from_params(8, 0.0, 0.0, 1.0, -2.0, 2.0, 4)
 
 
+class TestPhiLambda:
+    def test_fixture_a_exact(self):
+        # Oracle pins (phi_lambda_oracle.py, exact Fraction); asserts read
+        # wrapper outputs that come straight from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.25, n_i_prime=[4, 8])
+        assert abs(r.grand_mean - 0.6) < 1e-12
+        assert abs(r.var_xbar - 11.0 / 600.0) < 1e-12
+        assert abs(r.signal - 5.0 / 48.0) < 1e-12
+        assert abs(r.phi[0] - 0.75) < 1e-12
+        assert abs(r.phi[1] - 6.0 / 7.0) < 1e-12
+
+    def test_negative_signal_at_mean_and_fixture_d(self):
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.6, n_i_prime=[4])
+        assert abs(r.signal - (-11.0 / 600.0)) < 1e-12
+        assert abs(r.phi[0] - 48.0 / 113.0) < 1e-12
+        d = np.array([[5, 3, 1], [4, 3, 2], [6, 4, 2], [3, 1, 0]], dtype=float)
+        rd = phi_lambda(d, 2.0, n_i_prime=[3, 6])
+        assert abs(rd.phi[0] - 12.0 / 29.0) < 1e-12
+        assert abs(rd.phi[1] - 24.0 / 41.0) < 1e-12
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array([[1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError):
+            phi_lambda(x.astype(complex), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([1.0, 0.0]), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, float("nan"), n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, 0.5, n_i_prime=[0])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([[1.0, np.nan], [0.0, 1.0]]), 0.5, n_i_prime=[2])
+
 class TestSubkoviak:
     def test_table1_alpha_supplied_exact(self):
         # Oracle pins (subkoviak_oracle.py, exact Fraction); asserts read

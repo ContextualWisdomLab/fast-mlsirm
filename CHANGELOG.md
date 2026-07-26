@@ -119,6 +119,20 @@
 
 ### Added
 
+- **Brennan-Kane index of dependability Phi(lambda) for mastery tests
+  (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
+  eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust
+  `mlsirm_core::gtheory::phi_lambda`): the criterion-referenced
+  dependability coefficient theta(d) = Phi(lambda) for a one-facet random
+  `p x i` design at a cutting score `lambda`, built on the module's
+  `gtheory_pi` ANOVA. The `(Xbar - lambda)^2` signal is estimated with a
+  derived unbiased plug-in that subtracts `varhat(Xbar)` computed from the
+  RAW (unclamped) variance components, while `sigma^2(Delta')` and the
+  `sigma^2(p)` numerator keep the module's clamped-component policy; the
+  signal is left unclamped, so estimates may fall below the lambda-free
+  `dependability` (finite-sample behavior, documented). TB-28 defers
+  estimation to Brennan & Kane (1977a, JEM), which was not read; the
+  estimator is derived and adversarially verified independently.
 - **Subkoviak single-administration coefficient of agreement (Subkoviak,
   1976, ERIC ED120229 / JEM 13(4))** (`fast_mlsirm.subkoviak_agreement`; in
   Rust `mlsirm_core::classification::subkoviak_agreement`): per-person and
