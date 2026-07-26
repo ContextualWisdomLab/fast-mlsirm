@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Vectorizing Item-Level Iterative Algorithms (Newton-Raphson)
+**Learning:** In optimization loops (like the Newton-Raphson M-step in MMLE), iterating over hundreds or thousands of items individually with a Python `for` loop causes severe performance overhead. While some items converge quickly, the loop overhead for the entire set of items dominates.
+**Action:** Vectorize iterative item-level updates by replacing the Python loop with a simultaneous update over an active boolean mask (`active = np.ones(n_items, dtype=bool)`). Only compute updates for items that haven't converged yet (`active = new_active`), filtering calculations with advanced indexing and native NumPy vector operations.
