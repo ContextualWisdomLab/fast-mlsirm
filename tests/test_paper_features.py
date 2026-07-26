@@ -6825,3 +6825,261 @@ class TestCiClassify:
                 theta_cut=0.0,
                 z_crit=0.0,
             )
+
+class TestDimtest:
+    """Stout-style DIMTEST (Nandakumar & Stout, 1993 formulas).
+
+    The oracle values were computed by an independent NumPy script (never
+    imports the crate); the dataset is regenerated here from the same seed.
+    Every assert reads values returned by the crate via the wrapper.
+    """
+
+    @staticmethod
+    def _fixture():
+        import math
+
+        rng = np.random.default_rng(20260726)
+        n = 500
+        z1 = rng.standard_normal(n)
+        z2 = 0.30 * z1 + math.sqrt(1 - 0.09) * rng.standard_normal(n)
+        items = [(0, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.40, b) for b in (-1.0, -0.5, 0.0, 0.5, 1.0)]
+        items += [(1, 1.20, b) for b in (-1.4, -1.0, -0.6, -0.2, 0.2, 0.6, 1.0, 1.4)]
+        p = np.empty((n, len(items)))
+        for j, (dim, a, b) in enumerate(items):
+            th = z1 if dim == 0 else z2
+            p[:, j] = 1 / (1 + np.exp(-a * (th - b)))
+        return (rng.random(p.shape) < p).astype(np.float64)
+
+    def test_pinned_oracle(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        r = dimtest(y, at1=np.arange(5), at2=np.arange(5, 10))
+        assert abs(r.t_l - 8.5848469411043151) < 1e-12
+        assert abs(r.t_b - 3.6579307315481961) < 1e-12
+        assert abs(r.t - 3.4838558621150524) < 1e-12
+        # crate erfc is a 1.2e-7-accurate approximation; anchor p at 5e-7.
+        assert abs(r.p_value - 0.000247122791999742) < 5e-7
+        assert r.groups_used == 8
+        assert r.n_discarded == 17
+        assert r.retained_pt_scores.tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+
+    def test_rejects_overlap_and_short_at(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="duplicates"):
+            dimtest(y, at1=[0, 1, 2, 3], at2=[3, 4, 5, 6])
+        with pytest.raises(ValueError, match=">= 4"):
+            dimtest(y, at1=[0, 1, 2], at2=[3, 4, 5])
+
+    def test_rejects_non_binary_and_complex(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        bad = y.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError, match="exactly 0 or 1"):
+            dimtest(bad, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="real-valued"):
+            dimtest(y.astype(complex), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+    def test_rejects_fractional_indices(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="integers"):
+            dimtest(y, at1=[0.5, 1, 2, 3], at2=[4, 5, 6, 7])
+
+    def test_rejects_string_responses_and_indices(self):
+        # Regression: dtype-kind check must run BEFORE astype casts, so
+        # string arrays are rejected rather than silently coerced.
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y.astype(str), at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+        with pytest.raises(ValueError, match="numeric"):
+            dimtest(y, at1=["0", "1", "2", "3", "4"], at2=[5, 6, 7, 8, 9])
+
+    def test_too_few_groups_errors(self):
+        from fast_mlsirm import dimtest
+
+        y = self._fixture()[:30]
+        with pytest.raises(ValueError, match="need at least 2"):
+            dimtest(y, at1=[0, 1, 2, 3, 4], at2=[5, 6, 7, 8, 9])
+
+class TestWollackOmega:
+    """Omega answer-copying statistic (Wollack, 1997, as implemented by
+    CopyDetect/aberrance; oracle values pinned from an independent Python
+    computation in the adversarial spec review)."""
+
+    @staticmethod
+    def _fixture():
+        import numpy as np
+
+        probs = np.array(
+            [
+                [0.05, 0.10, 0.70, 0.10, 0.05],
+                [0.20, 0.20, 0.20, 0.20, 0.20],
+                [0.60, 0.15, 0.10, 0.10, 0.05],
+                [0.12, 0.38, 0.25, 0.15, 0.10],
+                [0.30, 0.25, 0.20, 0.15, 0.10],
+                [0.08, 0.12, 0.16, 0.24, 0.40],
+                [0.45, 0.05, 0.25, 0.15, 0.10],
+                [0.11, 0.22, 0.33, 0.22, 0.12],
+                [0.18, 0.32, 0.22, 0.18, 0.10],
+                [0.07, 0.14, 0.21, 0.28, 0.30],
+            ]
+        )
+        source = np.array([2, 3, 0, 1, 4, 4, 2, 1, 0, 3])
+        copier = np.array([2, 1, 0, 1, 3, 4, 0, 1, 2, 3])
+        return copier, source, probs
+
+    def test_pinned_oracle(self):
+        # Asserts read WollackOmegaResult fields returned by the crate.
+        # Killed by: sqrt(V) vs V, copier-prob lookup, two-sided p,
+        # continuity correction (mutation values in the Rust test file).
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier, source, probs, 5)
+        assert r.observed_matches == 6
+        assert abs(r.expected_matches - 3.3100000000000001) < 1e-12
+        assert abs(r.variance - 1.8839000000000001) < 1e-12
+        assert abs(r.omega - 1.9598523632230238) < 1e-12
+        assert abs(r.p_value - 0.02500652442931299) < 5e-7
+
+    def test_flat_probs_equivalent(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r2 = wollack_omega(copier, source, probs, 5)
+        r1 = wollack_omega(copier, source, probs.ravel(), 5)
+        assert r1.omega == r2.omega
+        assert r1.p_value == r2.p_value
+
+    def test_rejects_bad_inputs(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega(np.array(["2", "1"]), source[:2], probs[:2], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier.astype(complex), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier + 0.5, source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs.astype(complex), 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source[:9], probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs[:, :4], 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, probs, 0)
+        bad = copier.copy()
+        bad[0] = 5
+        with pytest.raises(ValueError):
+            wollack_omega(bad, source, probs, 5)
+        badp = probs.copy()
+        badp[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            wollack_omega(copier, source, badp, 5)
+
+    def test_accepts_float_integer_indices(self):
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        r = wollack_omega(copier.astype(float), source.astype(float), probs, 5)
+        assert r.observed_matches == 6
+    def test_rejects_bool_indices(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import wollack_omega
+
+        copier, source, probs = self._fixture()
+        with pytest.raises(ValueError):
+            wollack_omega((copier == 2), source, probs, 5)
+        with pytest.raises(ValueError):
+            wollack_omega(copier, (source == 1), probs, 5)
+
+class TestKIndex:
+    def _fixture(self):
+        import numpy as np
+
+        return np.array(
+            [
+                [1, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+                [0, 0, 1, 0, 1, 1, 0, 0, 1, 0],
+                [1, 0, 0, 1, 0, 1, 0, 0, 0, 1],
+                [1, 1, 1, 0, 0, 0, 1, 1, 0, 0],
+                [1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 0, 1, 1, 0, 1, 1],
+                [0, 1, 0, 1, 1, 0, 0, 1, 0, 1],
+                [0, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+                [0, 1, 0, 1, 1, 1, 1, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 1, 0, 0, 1],
+            ],
+            dtype=float,
+        )
+
+    def test_pinned_oracle(self):
+        # Asserts read KIndexResult fields returned by the crate through the
+        # wrapper; oracle computed independently with exact math.comb.
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        r = k_index(self._fixture(), copier=2, source=7)
+        assert r.wc == 6
+        assert r.ws == 5
+        assert r.m == 2
+        assert list(r.subgroup) == [1, 2, 5]
+        assert list(r.emp_agg) == [3, 2, 3]
+        assert abs(r.p - 0.53333333333333333) < 1e-12
+        assert abs(r.k_index - 0.85139489711934158) < 1e-12
+        assert isinstance(r.subgroup, np.ndarray)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import k_index
+
+        x = self._fixture()
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=2)  # identical indices
+        with pytest.raises(ValueError):
+            k_index(x, copier=2, source=10)  # out of range
+        with pytest.raises(ValueError):
+            k_index(x, copier=True, source=7)  # bool index
+        bad = x.copy()
+        bad[0, 0] = 0.5
+        with pytest.raises(ValueError):
+            k_index(bad, copier=2, source=7)  # non-binary
+        with pytest.raises(ValueError):
+            k_index(x + 0j, copier=2, source=7)  # complex laundering
+        with pytest.raises(ValueError):
+            k_index(x.astype(bool), copier=2, source=7)  # bool matrix
+        allc = x.copy()
+        allc[4, :] = 1.0
+        with pytest.raises(ValueError):
+            k_index(allc, copier=2, source=4)  # ws == 0 degenerate
+
+    def test_m_zero_gives_k_one(self):
+        import numpy as np
+
+        from fast_mlsirm import k_index
+
+        x = np.ones((3, 10))
+        x[0, 9] = 0.0
+        x[1, 0] = 0.0
+        x[1, 1] = 0.0
+        r = k_index(x, copier=0, source=1)
+        assert r.m == 0
+        assert r.k_index == 1.0

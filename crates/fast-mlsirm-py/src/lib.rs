@@ -32,6 +32,7 @@ use mlsirm_core::classification::{
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
+use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
@@ -106,6 +107,8 @@ use mlsirm_core::scoring::{
     score_map as core_score_map, score_wle as core_score_wle,
     score_wle_poly as core_score_wle_poly, EapSumTable, ItemBank, PriorSpec,
 };
+use mlsirm_core::security::k_index as core_k_index;
+use mlsirm_core::security::wollack_omega as core_wollack_omega;
 use mlsirm_core::subscores::subscores as core_subscores;
 use mlsirm_core::testlet::{fit_testlet as core_fit_testlet, TestletConfig, TestletModel};
 use mlsirm_core::twopl::{fit_2pl as core_fit_2pl, TwoPlConfig};
@@ -1711,6 +1714,121 @@ fn detect_analysis(
     out.set_item("pair_i", res.pair_i)?;
     out.set_item("pair_j", res.pair_j)?;
     out.set_item("ccov", res.ccov)?;
+    Ok(out.into())
+}
+
+/// Confirmatory Stout-style DIMTEST statistic of essential unidimensionality
+/// (`mlsirm_core::detect::dimtest`).
+///
+/// Formulas transcribed from Nandakumar & Stout's 1992 ERIC technical-report
+/// version (ED351383) of "Refinements of Stout's Procedure for Assessing
+/// Latent Trait Unidimensionality" (published 1993, *Journal of Educational
+/// Statistics, 18*(1), 41-68), which describes Stout (1987, Sec. 4).
+/// Kieftenbeld & Nandakumar (2015, PMC5978610) was READ for the original
+/// second-AT bias correction vs. later bootstrap DIMTEST distinction.
+/// NOT READ: Stout (1987) original Psychometrika article, Stout et al.
+/// (2001), Froelich & Habing (2008), and DIM-Pack source code; Stout (1987)
+/// is cited only as described by Nandakumar & Stout (1992/1993).
+///
+/// `x` is a flattened row-major `n_persons * n_items` binary (0/1, no
+/// missing) response matrix; `at1`/`at2` are caller-supplied assessment
+/// subtest item indices (equal length >= 4, disjoint); PT is the complement.
+/// Persons are grouped by raw PT score; groups with fewer than 20 examinees
+/// are discarded. Returns a dict with `t`, `t_l`, `t_b`, `p_value`
+/// (one-sided upper tail), `groups_used`, `n_discarded`, and
+/// `retained_pt_scores`.
+#[pyfunction]
+fn py_dimtest(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    at1: Vec<usize>,
+    at2: Vec<usize>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let flat = x.as_slice()?;
+    let res = core_dimtest(flat, n_persons, n_items, &at1, &at2).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("t", res.t)?;
+    out.set_item("t_l", res.t_l)?;
+    out.set_item("t_b", res.t_b)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("groups_used", res.groups_used)?;
+    out.set_item("n_discarded", res.n_discarded)?;
+    out.set_item("retained_pt_scores", res.retained_pt_scores)?;
+    Ok(out.into())
+}
+
+/// Wollack-style omega answer-copying statistic
+/// (`mlsirm_core::security::wollack_omega`).
+///
+/// Formula verified against two READ implementations: the CRAN CopyDetect
+/// package R source (`similarity1.r`/`similarity2.r`, computing
+/// `(obs - E) / sqrt(V)` with an upper-tail normal p) and the independent
+/// `aberrance` package (`compute_OMG` in `detect-ac.R`/`compute.R`).
+/// NOT READ: Wollack (1997, *Applied Psychological Measurement, 21*(4),
+/// 307-320) original article (access blocked); it is cited only as
+/// implemented by those sources. CopyDetect's printed documentation shows
+/// the sign flipped (`(E - obs)/sqrt(V)`) but both source files use
+/// `(obs - E)/sqrt(V)`; the source convention is implemented here.
+///
+/// `probs` is a flattened row-major `n_items * n_options` matrix of the
+/// COPIER's model-implied option-response probabilities (each row summing
+/// to 1); `copier`/`source` are observed option indices. Returns a dict
+/// with `observed_matches`, `expected_matches`, `variance`, `omega`, and
+/// upper-tail `p_value`.
+#[pyfunction]
+fn py_wollack_omega(
+    py: Python<'_>,
+    copier: Vec<usize>,
+    source: Vec<usize>,
+    probs: PyReadonlyArray1<'_, f64>,
+    n_options: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_wollack_omega(&copier, &source, probs.as_slice()?, n_options)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("observed_matches", res.observed_matches)?;
+    out.set_item("expected_matches", res.expected_matches)?;
+    out.set_item("variance", res.variance)?;
+    out.set_item("omega", res.omega)?;
+    out.set_item("p_value", res.p_value)?;
+    Ok(out.into())
+}
+
+/// K-index of matching incorrect answers
+/// (`mlsirm_core::security::k_index`), a faithful port of the CRAN
+/// CopyDetect package's internal `k()` (READ: `R/similarity1.r`,
+/// corroborated by `R/similarity2.r`). NOT READ: Holland (1996, ETS
+/// RR-96-07) and Sotaridona & Meijer (2002, *JEM, 39*(2), 115-132); the
+/// K-index is cited only as implemented by CopyDetect. The subgroup is
+/// every examinee whose number-incorrect equals the copier's — including
+/// the copier itself and, when scores match, the source (CopyDetect
+/// convention; the paper-style source exclusion is NOT applied).
+///
+/// `responses` is a flattened row-major `n_persons * n_items` scored 0/1
+/// matrix (no missing data). Returns a dict with `wc`, `ws`, `m`,
+/// `subgroup`, `emp_agg`, `p`, and the upper-tail `k_index`
+/// `P(Bin(ws, p) >= m)`.
+#[pyfunction]
+fn py_k_index(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, f64>,
+    n_persons: usize,
+    n_items: usize,
+    copier: usize,
+    source: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_k_index(responses.as_slice()?, n_persons, n_items, copier, source)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("wc", res.wc)?;
+    out.set_item("ws", res.ws)?;
+    out.set_item("m", res.m)?;
+    out.set_item("subgroup", res.subgroup)?;
+    out.set_item("emp_agg", res.emp_agg)?;
+    out.set_item("p", res.p)?;
+    out.set_item("k_index", res.k_index)?;
     Ok(out.into())
 }
 
@@ -6334,6 +6452,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ksirt_occ, m)?)?;
     m.add_function(wrap_pyfunction!(subscore_analysis, m)?)?;
     m.add_function(wrap_pyfunction!(detect_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(py_dimtest, m)?)?;
+    m.add_function(wrap_pyfunction!(py_wollack_omega, m)?)?;
+    m.add_function(wrap_pyfunction!(py_k_index, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;

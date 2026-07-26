@@ -119,6 +119,62 @@
 
 ### Added
 
+- **K-index of matching incorrect answers (CopyDetect-faithful)**
+  (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
+  `py_k_index`): binomial upper-tail index of copier-source shared incorrect
+  answers against a number-incorrect subgroup baseline, ported exactly from
+  the CRAN CopyDetect package's internal `k()` (`R/similarity1.r`, READ;
+  corroborated by `R/similarity2.r`), with the binomial tail summed in log
+  space (no factorial overflow or extreme-p underflow). The subgroup
+  includes the copier and,
+  when scores match, the source (CopyDetect convention). Holland (1996,
+  RR-96-07) and Sotaridona & Meijer (2002) NOT read — cited only as
+  implemented; Sotaridona & Meijer (2001, ERIC ED467373) read for
+  background. Validation rejects non-binary/complex/bool inputs and the
+  degenerate all-correct source.
+- **Omega answer-copying statistic (Wollack-style)**
+  (`fast_mlsirm.wollack_omega`; in Rust `mlsirm_core::security::wollack_omega`,
+  PyO3 `py_wollack_omega`): standardized index of answer similarity between a
+  suspected copier and a source. `h` counts identical observed options,
+  `p_i = P_i[source_i]` is the copier's model-implied probability of the
+  source's observed option, `omega = (h - sum p_i)/sqrt(sum p_i (1 - p_i))`
+  with a one-sided upper-tail normal p-value. Formula verified against two
+  independently READ implementations: the CRAN CopyDetect R sources
+  (`similarity1.r`/`similarity2.r`) and the aberrance package
+  (`compute_OMG`); NOT read: Wollack (1997, *Applied Psychological
+  Measurement, 21*(4), 307-320) itself (access blocked) — cited only as
+  implemented by those sources. CopyDetect's printed docs flip the sign
+  (`(E-h)/sqrt(V)`) but both source files use `(h-E)/sqrt(V)`; the source
+  convention is implemented. Scope: omega only — no g2/GBT/K-index, no
+  continuity correction, no missing responses; the caller supplies the
+  copier's fitted option probabilities (e.g. from a nominal response model).
+  Pinned against an independent Python oracle at 1e-12 (p-values 5e-7 via
+  crate erfc); error paths, structural single-item-extension invariant, and
+  a 500-rep Monte Carlo size/power check (`#[ignore]`); 3 executed mutation
+  kills (V-vs-sqrt(V) scaling, copier-probability lookup, two-sided p).
+
+- **DIMTEST test of essential unidimensionality (original Stout-style
+  AT1/AT2 statistic)** (`fast_mlsirm.dimtest`; in Rust
+  `mlsirm_core::detect::dimtest`, PyO3 `py_dimtest`): confirmatory
+  hypothesis test with caller-supplied assessment subtests AT1/AT2 (equal
+  length >= 4, disjoint) and the complementary partitioning subtest PT;
+  examinees are grouped by raw PT total score (groups smaller than 20
+  discarded), within each retained group the observed ML variance of AT
+  totals is compared to the local-independence variance
+  `sum_i p_i (1 - p_i)` normalized by Stout's standard-error estimate
+  `S_k`, giving `T_L = K^{-1/2} sum_k (sigma_k^2 - sigma_U,k^2)/S_k`, the
+  AT2 bias correction `T_B`, and `T = (T_L - T_B)/sqrt(2)` with a one-sided
+  upper-tail normal p-value. Formulas transcribed from Nandakumar & Stout's
+  1992 ERIC technical report ED351383 (published 1993, *Journal of
+  Educational Statistics, 18*(1), 41-68), which describes Stout (1987,
+  Sec. 4); Kieftenbeld & Nandakumar (2015, PMC5978610) READ for the
+  original-vs-bootstrap bias-correction distinction. NOT read: Stout (1987)
+  original article, Stout et al. (2001), Froelich & Habing (2008), DIM-Pack
+  sources — no ATFIND, no DIMTEST 2 / bootstrap correction, no polytomous
+  items, no missing data. Pinned against an independent NumPy oracle
+  (500x18 two-dimensional fixture, agreement 1e-12 on `T_L`/`T_B`/`T`;
+  p-value at 5e-7 due to the crate's Numerical Recipes `erfc`).
+
 - **Confidence-interval (ACI) classification for CAT**
   (`fast_mlsirm.ci_classify`; in Rust `mlsirm_core::exposure::ci_classify`,
   PyO3 `py_ci_classify`): single-cut binary-response classification by

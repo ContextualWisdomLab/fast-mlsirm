@@ -41,6 +41,14 @@ from .subscores import (
 from .detect import (
     detect_analysis as detect_analysis,
     DetectResult as DetectResult,
+    dimtest as dimtest,
+    DimtestResult as DimtestResult,
+)
+from .security import (
+    wollack_omega as wollack_omega,
+    WollackOmegaResult as WollackOmegaResult,
+    k_index as k_index,
+    KIndexResult as KIndexResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
@@ -221,6 +229,8 @@ __all__ = [
     "subscore_analysis",
     "SubscoreResult",
     "detect_analysis",
+    "dimtest",
+    "wollack_omega",
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
@@ -265,6 +275,10 @@ __all__ = [
     "GTheoryDStudyRow",
     "ClassificationResult",
     "DetectResult",
+    "DimtestResult",
+    "WollackOmegaResult",
+    "k_index",
+    "KIndexResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",
