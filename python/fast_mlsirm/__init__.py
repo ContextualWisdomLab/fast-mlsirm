@@ -22,6 +22,7 @@ from .linking import link_fixed_item_parameters as link_fixed_item_parameters
 from .linking import irt_link as irt_link, IrtLinkResult as IrtLinkResult
 from .equating import equate_observed_scores as equate_observed_scores, equate_neat as equate_neat, EquateResult as EquateResult, equate_observed_scores_kernel as equate_observed_scores_kernel, loglinear_smooth as loglinear_smooth, equate_neat_linear as equate_neat_linear, equating_standard_errors as equating_standard_errors, circle_arc_equate as circle_arc_equate, circle_arc_middle_anchor as circle_arc_middle_anchor, CircleArcResult as CircleArcResult, nominal_weights_mean_equate as nominal_weights_mean_equate, composite_linking as composite_linking
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
+from .scaling import thurstone_case_v as thurstone_case_v, ThurstoneResult as ThurstoneResult
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
@@ -225,6 +226,8 @@ __all__ = [
     "circle_arc_equate",
     "nominal_weights_mean_equate",
     "composite_linking",
+    "thurstone_case_v",
+    "ThurstoneResult",
     "circle_arc_middle_anchor",
     "CircleArcResult",
     "fit_response_times",

@@ -8539,3 +8539,69 @@ class TestCompositeLinking:
             composite_linking([t + 1j], [1.0])
         with pytest.raises(ValueError):
             composite_linking([np.array([1.0, "a"], dtype=object)], [1.0])
+
+class TestThurstoneCaseV:
+    """Thurstone (1927) Case V scaling via psych's thurstone() algorithm.
+
+    Pins from files/thurstone_oracle.py (mpmath 50-digit, EXECUTED).
+    All asserts read the ThurstoneResult returned by the crate.
+    """
+
+    def test_fixture_a_scale_gof_model(self):
+        # Kills sign/colmean/min-shift mutants: scale + GF + off-diagonal
+        # model cells pinned against the 50-digit oracle (asymmetric,
+        # nonzero-residual fixture).
+        import numpy as np
+        from fast_mlsirm import thurstone_case_v
+
+        choice = np.array(
+            [[0.5, 0.7, 0.9], [0.3, 0.5, 0.8], [0.1, 0.2, 0.5]]
+        )
+        r = thurstone_case_v(choice)
+        np.testing.assert_allclose(
+            r.scale,
+            [0.0, 0.49624378579592261, 1.3097082924567186],
+            rtol=0,
+            atol=1e-6,
+        )
+        assert abs(r.gof - 0.99986967677023893) < 1e-6
+        assert abs(r.model[0, 2] - 0.9048527313906016) < 1e-6
+        assert abs(r.model[2, 0] - 0.095147268609398397) < 1e-6
+        assert abs(r.residual[0, 1] - (-0.00986121100602988)) < 1e-6
+        assert r.model.shape == (3, 3) and r.residual.shape == (3, 3)
+
+    def test_fixture_b_consistent_roundtrip(self):
+        # Exactly Case-V-consistent 2x2: GF must be 1, model reproduces
+        # the input (round-trip anchor; variance mutations are covered by
+        # fixture A/C pins, not this zero-residual fixture).
+        import numpy as np
+        from fast_mlsirm import thurstone_case_v
+
+        choice = np.array([[0.5, 0.75], [0.25, 0.5]])
+        r = thurstone_case_v(choice)
+        assert abs(r.gof - 1.0) < 1e-9
+        np.testing.assert_allclose(
+            r.scale, [0.0, 0.67448975019608174], rtol=0, atol=1e-6
+        )
+        np.testing.assert_allclose(r.model, choice, rtol=0, atol=1e-6)
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import thurstone_case_v
+
+        good = np.array([[0.5, 0.75], [0.25, 0.5]])
+        with pytest.raises(ValueError):
+            thurstone_case_v(good[:1])  # non-square
+        with pytest.raises(ValueError):
+            thurstone_case_v(np.array([[0.5]]))  # n < 2
+        bad = good.copy()
+        bad[0, 1] = 1.0  # boundary excluded: strictly in (0, 1)
+        with pytest.raises(ValueError):
+            thurstone_case_v(bad)
+        with pytest.raises(ValueError):
+            thurstone_case_v(good + 0j)  # complex rejected
+        with pytest.raises(ValueError):
+            thurstone_case_v(
+                np.array([[0.5, "a"], [0.25, 0.5]], dtype=object)
+            )

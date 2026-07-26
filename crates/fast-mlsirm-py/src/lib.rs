@@ -5121,6 +5121,26 @@ fn composite_linking(
     Ok(d.into())
 }
 
+/// Thurstone (1927) Case V paired-comparison scaling, as implemented by
+/// psych's `thurstone()` (see `mlsirm_core::scaling`). `choice` is a flat
+/// row-major n*n matrix; returns dict with scale, gof, model, residual.
+#[pyfunction]
+#[pyo3(signature = (choice, n))]
+fn thurstone_case_v(
+    py: Python<'_>,
+    choice: PyReadonlyArray1<'_, f64>,
+    n: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::thurstone_case_v(choice.as_slice()?, n)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("scale", PyArray1::from_slice(py, &res.scale))?;
+    d.set_item("gof", res.gof)?;
+    d.set_item("model", PyArray1::from_slice(py, &res.model))?;
+    d.set_item("residual", PyArray1::from_slice(py, &res.residual))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7457,6 +7477,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
     m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
     m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
+    m.add_function(wrap_pyfunction!(thurstone_case_v, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
