@@ -1704,8 +1704,15 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
             raise ValueError(
                 f"fide_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
             )
-    if np.iscomplexobj(np.asarray(kv)):
-        raise ValueError("fide_rating: kv must be real, not complex")
+    kv_raw = kv if isinstance(kv, np.ndarray) else np.asarray(kv, dtype=object)
+    if np.iscomplexobj(kv_raw) or kv_raw.dtype.kind == "b":
+        raise ValueError("fide_rating: kv must be real numeric, not complex/bool")
+    if kv_raw.dtype == object:
+        for v in np.ravel(kv_raw):
+            if isinstance(v, (bool, np.bool_)):
+                raise ValueError("fide_rating: kv must be real numeric, not bool")
+            if isinstance(v, (complex, np.complexfloating)):
+                raise ValueError("fide_rating: kv must be real, not complex")
     try:
         kv_arr = np.asarray(kv, dtype=float)
     except (TypeError, ValueError) as exc:
@@ -1714,6 +1721,8 @@ def fide_rating(games, n_players, init=2200.0, kv=(10.0, 15.0, 30.0), gamma=None
         raise ValueError(
             f"fide_rating: kv must be a (elite, experienced, novice) triple, got shape {kv_arr.shape}"
         )
+    if isinstance(init, (bool, np.bool_)):
+        raise ValueError("fide_rating: init must be real numeric, not bool")
     if np.iscomplexobj(np.asarray(init)):
         raise ValueError("fide_rating: init must be real, not complex")
     try:

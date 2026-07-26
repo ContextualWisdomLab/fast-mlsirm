@@ -10045,6 +10045,13 @@ class TestFide:
             fide_rating([[1, 0, 1, 1.0]], 2, kv=(10 + 1j, 15, 30))
         with pytest.raises(ValueError, match="complex"):
             fide_rating([[1, 0, 1, 1.0]], 2, init=2200 + 0j)
+        # regressions: bool kv/init rejected (round-2 finding)
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(True, 15.0, 30.0))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=np.array([True, True, True]))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=True)
 
     def test_elo_reduction(self):
         import numpy as np
