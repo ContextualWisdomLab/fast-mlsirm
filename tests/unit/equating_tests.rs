@@ -1954,3 +1954,26 @@ fn comp_large_p_stable() {
     assert!((r.adjusted_weights[1] - 1.0 / 3.0).abs() < 1e-12);
     assert!((r.composite[0] - 10.0 / 3.0).abs() < 1e-11);
 }
+
+#[test]
+fn comp_extreme_p_slope_stable() {
+    // Re-review regression: with slopes (1e308, 1e307) and p = 1e308,
+    // x = p ln(a) overflows to inf; the previous form computed inf/p = inf
+    // and collapsed both factors to 0, tripping the denominator guard.
+    // Mathematically (1 + a^p)^(-1/p) -> 1/a here, so factors (1e-308,
+    // 1e-307) normalize to W = (1/11, 10/11). Asserts read crate outputs.
+    let r = composite_linking(
+        &[vec![0.0], vec![11.0]],
+        &[1.0, 1.0],
+        Some(&[1e308, 1e307]),
+        1e308,
+    )
+    .unwrap();
+    assert!(
+        (r.adjusted_weights[0] - 1.0 / 11.0).abs() < 1e-12,
+        "W0 {} != 1/11",
+        r.adjusted_weights[0]
+    );
+    assert!((r.adjusted_weights[1] - 10.0 / 11.0).abs() < 1e-12);
+    assert!((r.composite[0] - 10.0).abs() < 1e-10);
+}

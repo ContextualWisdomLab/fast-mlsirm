@@ -1788,15 +1788,19 @@ pub fn composite_linking(
                     // (1 + a^p)^(-1/p) computed in log space: a.powf(p)
                     // silently overflows to inf for valid finite a/p (e.g.
                     // a=2, p=1000), collapsing the factor to 0 instead of
-                    // the correct ~1/a. ln(1 + a^p) = log1p(exp(p ln a)),
-                    // evaluated stably on both branches of p ln a.
+                    // the correct ~1/a. For x = p ln a > 0 use the exact
+                    // rearrangement -(x + log1p(exp(-x)))/p =
+                    // -ln a - log1p(exp(-x))/p, which stays finite even
+                    // when x itself overflows to inf (exp(-inf) = 0), so
+                    // the factor degrades to the correct large-p limit
+                    // w/a instead of 0.
                     let x = p * s.ln();
-                    let log1p_exp = if x > 0.0 {
-                        x + (-x).exp().ln_1p()
+                    let exponent = if x > 0.0 {
+                        -s.ln() - (-x).exp().ln_1p() / p
                     } else {
-                        x.exp().ln_1p()
+                        -x.exp().ln_1p() / p
                     };
-                    w * (-log1p_exp / p).exp()
+                    w * exponent.exp()
                 })
                 .collect()
         }
