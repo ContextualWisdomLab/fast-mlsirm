@@ -385,6 +385,17 @@ fn bt_error_contract() {
     let winless = vec![0.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0];
     let e2 = bradley_terry_mm(&winless, 3, 0.0, 5000, 1e-8).unwrap_err();
     assert!(e2.contains("non-finite"), "{e2}");
+    // Extreme-magnitude counts (impl-review probe): symmetric finite 1e300
+    // counts are VALID input whose MLE is the zero vector -- accepted with
+    // the correct fit, not rejected. Counts whose row sum overflows f64
+    // (2e308 -> inf) trip the non-finite update guard instead of
+    // returning a bogus result.
+    let big = vec![0.0, 1e300, 1e300, 0.0];
+    let rb = bradley_terry_mm(&big, 2, 0.0, 100, 1e-8).unwrap();
+    assert!(rb.params.iter().all(|p| p.abs() < 1e-12), "{:?}", rb.params);
+    let overflow = vec![0.0, 1e308, 1e308, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0];
+    let e3 = bradley_terry_mm(&overflow, 3, 0.0, 100, 1e-8).unwrap_err();
+    assert!(e3.contains("non-finite"), "{e3}");
 }
 
 #[test]
