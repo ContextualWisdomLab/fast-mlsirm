@@ -7990,3 +7990,14 @@ class TestTwoStage:
             )
         with pytest.raises(ValueError, match=r"m\*\(1-c\)"):
             two_stage_route(1, 1, a1, b1, b_meas, 0.2)
+        # Object-dtype arrays are rejected outright, not coerced.
+        with pytest.raises(ValueError, match="numeric"):
+            two_stage_route(7, m1, a1, b1, b_meas.astype(object), 0.2)
+        with pytest.raises(ValueError, match="numeric"):
+            two_stage_score(
+                7, m1, a1, b1, 20, 30, 1, a_meas.astype(object), b_meas, 0.2
+            )
+        # Huge m collapses the f64 truncation endpoints -> ValueError,
+        # never a silent NaN (core-side runtime guard).
+        with pytest.raises(ValueError, match="degenerate"):
+            two_stage_route(2**53, 2**53, a1, b1, b_meas, 0.2)
