@@ -2089,6 +2089,404 @@ pub fn glicko_rating(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Glicko-2 rating system (Glicko with per-player rating volatility).
+//
+// Citation governance:
+// - READ (formula source): Glickman, M. E. (2022, March 22). Example of
+//   the Glicko-2 system [Technical note]. Harvard University.
+//   http://www.glicko.net/glicko/glicko2.pdf. Defines the Glicko-2 scale
+//   mu = (r - 1500)/173.7178, phi = RD/173.7178 (Step 2), the quantities
+//     g(phi) = 1/sqrt(1 + 3 phi^2/pi^2),
+//     E(mu, mu_j, phi_j) = 1/(1 + exp(-g(phi_j)(mu - mu_j))),
+//     v = (sum_j g(phi_j)^2 E_j (1 - E_j))^-1  (Step 3),
+//     Delta = v sum_j g(phi_j)(s_j - E_j)      (Step 4),
+//   the Illinois volatility iteration on
+//     f(x) = e^x (Delta^2 - phi^2 - v - e^x) / (2 (phi^2 + v + e^x)^2)
+//            - (x - a)/tau^2,  a = ln(sigma^2)  (Step 5, revised
+//   2012-02-22, epsilon = 1e-6), the pre-update inflation
+//   phi*^2 = phi^2 + sigma'^2 (Step 6), the update
+//     phi' = 1/sqrt(1/phi*^2 + 1/v), mu' = mu + phi'^2 sum_j g(phi_j)
+//     (s_j - E_j) (Step 7), the back-conversion (Step 8), and the worked
+//   example (r = 1500, RD = 200, sigma = 0.06, tau = 0.5 vs opponents
+//   (1400, 30), (1550, 100), (1700, 300) scoring 1, 0, 0 ->
+//   sigma' = 0.05999, r' = 1464.06, RD' = 151.52) pinned by test
+//   `g2_paper_anchor_g2a`.
+// - READ (implementation source of record): Stephenson, A., & Sonas, J.
+//   (2020). PlayerRatings: Dynamic updating methods for player ratings
+//   estimation (Version 1.1-0) [R package]. CRAN. `R/ratings.R`
+//   `glicko2()` (lines 412-586: per-period splitting, participant-only
+//   pre-period inflation lag * sigma^2 with rdmax^2 clamp — the source
+//   comments "nlag*(cvols^2) in Glicko-2, (nlag+1)*(cval^2) in Glicko" —
+//   volatility ceiling min(sigma', q * rdmax), post-update rdmax^2 clamp,
+//   tau > 0 gate, W/D/L and lag bookkeeping) and `src/ratings.c`
+//   `glicko2_c` (lines ~121-155: per-game E/dval/dscore accumulation on
+//   the Glicko-2 scale, opponent g, gamma signs). Both read in full.
+// - NOT READ (cited by the read note as the method's derivation paper):
+//   Glickman, M. E. (2001). Dynamic paired comparison models with
+//   stochastic variances. Journal of Applied Statistics, 28(6), 673-689.
+//
+// DERIVED (verified by hand; also confirmed by adversarial spec review):
+// PlayerRatings finds sigma' by minimizing
+//   nllh(z) = (z - a)^2/tau^2 + ln D + Delta^2/D,  D = phi^2 + v + e^z,
+// via a bounded Brent optimize. Glickman's f satisfies
+// f(x) = -(1/2) d nllh/dx (check: d/dx ln D = e^x/D and
+// d/dx [Delta^2/D] = -Delta^2 e^x/D^2), so the Illinois root of f is the
+// same optimum. This implementation follows Glickman's Step 5 Illinois
+// algorithm byte-for-byte (endpoint A, `while |B - A| > eps`, halving
+// fA <- fA/2, bracket search f(a - k tau) < 0), NOT R's loose-tolerance
+// Brent, and was verified against an independently executed float64
+// oracle whose G2A fixture reproduces the note's worked example.
+//
+// Model (per rating period, ascending period label, batch semantics; all
+// internal state on the Glicko-2 scale):
+//   1. participants only: phi^2 <- min(phi^2 + lag * sigma^2, (q rdmax)^2)
+//   2. g_k = 1/sqrt(1 + 3 phi_k^2/pi^2) for ALL players (post-inflation)
+//   3. per game (w, b, s, gamma), period-START ratings (C kernel):
+//        E_w = 1/(1 + exp(g_b (mu_b - mu_w - gamma)))
+//        dval_w += g_b^2 E_w (1 - E_w); dscore_w += g_b (s - E_w)
+//        E_b = 1/(1 + exp(g_w (mu_w - mu_b + gamma)))
+//        dval_b += g_w^2 E_b (1 - E_b); dscore_b += g_w (1 - s - E_b)
+//   4. participants only, iff tau > 0 (R line 532): with v = 1/dval and
+//      Delta = v * dscore, sigma <- min(illinois_root, q * rdmax).
+//      tau == 0 freezes sigma.
+//   5. participants only: phi^2 <- phi^2 + sigma^2  (Step 6, NEW sigma)
+//   6. ALL players: phi^2 <- min(1/(1/phi^2 + dval), (q rdmax)^2), THEN
+//      mu <- mu + phi^2_new * dscore (Step 7; non-participants have
+//      dval = dscore = 0 and only feel the clamp).
+// Bookkeeping identical to `glicko_rating`: W/D/L only for scores exactly
+// 1 / 0.5 / 0; lag += 1 where cumulative games != 0, then reset for this
+// period's participants.
+//
+// Documented deviation from the read note (R fidelity): Glickman's note
+// applies Step 6 alone to idle players every period
+// (phi' = sqrt(phi^2 + sigma^2)). PlayerRatings instead leaves idle
+// players untouched and applies the accumulated lag as lag * sigma^2
+// participant inflation when they next play; between-period idle
+// deviation growth is NOT observable in output until the player returns.
+// This implementation follows PlayerRatings.
+//
+// NOT an invariant (verified by oracle fixture G2B): the rating sum is
+// NOT conserved (sum 6629.879 != 6600 for the G2B fixture); tests must
+// not rely on conservation.
+//
+// Documented divergences from PlayerRatings `glicko2()` (same set as
+// `glicko_rating`): self-play rejected; no `status`/`history`; per-player
+// init arrays; u64 period labels grouped ascending with stable row order.
+// ---------------------------------------------------------------------------
+
+/// Result of [`glicko2_rating`]: ratings, deviations, volatilities, counts.
+#[derive(Debug, Clone)]
+pub struct Glicko2Result {
+    /// Post-update rating per player (Glicko scale, length `n`).
+    pub ratings: Vec<f64>,
+    /// Post-update rating deviation (RD) per player (Glicko scale).
+    pub deviations: Vec<f64>,
+    /// Post-update rating volatility sigma per player (scale-free).
+    pub volatilities: Vec<f64>,
+    /// Number of game appearances per player.
+    pub games: Vec<u64>,
+    /// Wins (score exactly 1 as white, or exactly 0 as black).
+    pub wins: Vec<u64>,
+    /// Draws (score exactly 0.5, both sides).
+    pub draws: Vec<u64>,
+    /// Losses (score exactly 0 as white, or exactly 1 as black).
+    pub losses: Vec<u64>,
+    /// Rating periods since the player's last appearance (0 if the player
+    /// appeared in the final period or never played).
+    pub lag: Vec<u64>,
+}
+
+/// Glickman (2022) Step 5 f(x) for the volatility root search.
+#[inline]
+fn glicko2_fx(x: f64, a: f64, delta2: f64, phi2: f64, v: f64, tau2: f64) -> f64 {
+    let ex = x.exp();
+    let d = phi2 + v + ex;
+    ex * (delta2 - d) / (2.0 * d * d) - (x - a) / tau2
+}
+
+/// Glickman (2022) Step 5: new volatility via the Illinois algorithm
+/// (revised 2012-02-22), epsilon = 1e-6, returning endpoint A.
+fn glicko2_new_volatility(sigma: f64, delta: f64, phi2: f64, v: f64, tau: f64) -> f64 {
+    const EPS: f64 = 1e-6;
+    let a = (sigma * sigma).ln();
+    let tau2 = tau * tau;
+    let delta2 = delta * delta;
+    let mut big_a = a;
+    let mut big_b = if delta2 > phi2 + v {
+        (delta2 - phi2 - v).ln()
+    } else {
+        let mut k = 1.0f64;
+        while glicko2_fx(a - k * tau, a, delta2, phi2, v, tau2) < 0.0 {
+            k += 1.0;
+        }
+        a - k * tau
+    };
+    let mut f_a = glicko2_fx(big_a, a, delta2, phi2, v, tau2);
+    let mut f_b = glicko2_fx(big_b, a, delta2, phi2, v, tau2);
+    while (big_b - big_a).abs() > EPS {
+        let big_c = big_a + (big_a - big_b) * f_a / (f_b - f_a);
+        let f_c = glicko2_fx(big_c, a, delta2, phi2, v, tau2);
+        if f_c * f_b <= 0.0 {
+            big_a = big_b;
+            f_a = f_b;
+        } else {
+            f_a /= 2.0;
+        }
+        big_b = big_c;
+        f_b = f_c;
+    }
+    (big_a / 2.0).exp()
+}
+
+/// Glicko-2 ratings from a game schedule, PlayerRatings `glicko2()`
+/// semantics with Glickman's (2022) Illinois volatility step.
+///
+/// `periods[k]`, `white[k]`, `black[k]`, `score[k]`, `gamma[k]` describe
+/// game `k`: rating-period label, player indices in `0..n`, white's score
+/// in `[0, 1]`, and white's per-game advantage (Glicko rating points).
+/// `init_rating`/`init_dev`/`init_vol` give each player's starting
+/// rating, deviation, and volatility (`n` = their common length); `tau`
+/// constrains volatility change per period (`tau == 0` freezes it) and
+/// `rdmax` is the deviation ceiling (volatility is capped at
+/// `ln(10)/400 * rdmax`, the R package's ceiling).
+pub fn glicko2_rating(
+    periods: &[u64],
+    white: &[usize],
+    black: &[usize],
+    score: &[f64],
+    gamma: &[f64],
+    init_rating: &[f64],
+    init_dev: &[f64],
+    init_vol: &[f64],
+    tau: f64,
+    rdmax: f64,
+) -> Result<Glicko2Result, String> {
+    let g = periods.len();
+    if g == 0 {
+        return Err("glicko2_rating: at least one game is required".to_string());
+    }
+    if white.len() != g || black.len() != g || score.len() != g || gamma.len() != g {
+        return Err(format!(
+            "glicko2_rating: length mismatch (periods {}, white {}, black {}, score {}, gamma {})",
+            g,
+            white.len(),
+            black.len(),
+            score.len(),
+            gamma.len()
+        ));
+    }
+    let n = init_rating.len();
+    if n < 2 {
+        return Err("glicko2_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "glicko2_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    if init_dev.len() != n || init_vol.len() != n {
+        return Err(format!(
+            "glicko2_rating: init_rating (len {}), init_dev (len {}), and init_vol (len {}) must match",
+            n,
+            init_dev.len(),
+            init_vol.len()
+        ));
+    }
+    if !rdmax.is_finite() || rdmax <= 0.0 {
+        return Err(format!(
+            "glicko2_rating: rdmax {} must be finite and > 0",
+            rdmax
+        ));
+    }
+    if !tau.is_finite() || tau < 0.0 {
+        return Err(format!(
+            "glicko2_rating: tau {} must be finite and >= 0",
+            tau
+        ));
+    }
+    // q = ln(10)/400; the R package caps volatility at q * rdmax
+    // (R lines ~420-421: "initial volatility cannot be greater than
+    // log(10)*rdmax/400").
+    let qv = std::f64::consts::LN_10 / 400.0;
+    let vol_max = qv * rdmax;
+    for p in 0..n {
+        if !init_rating[p].is_finite() {
+            return Err(format!("glicko2_rating: init_rating[{}] is not finite", p));
+        }
+        if !init_dev[p].is_finite() || init_dev[p] <= 0.0 {
+            return Err(format!(
+                "glicko2_rating: init_dev[{}] = {} must be finite and > 0",
+                p, init_dev[p]
+            ));
+        }
+        if init_dev[p] > rdmax {
+            return Err(format!(
+                "glicko2_rating: init_dev[{}] = {} exceeds rdmax {}",
+                p, init_dev[p], rdmax
+            ));
+        }
+        if !init_vol[p].is_finite() || init_vol[p] <= 0.0 {
+            return Err(format!(
+                "glicko2_rating: init_vol[{}] = {} must be finite and > 0",
+                p, init_vol[p]
+            ));
+        }
+        if init_vol[p] > vol_max {
+            return Err(format!(
+                "glicko2_rating: init_vol[{}] = {} exceeds ln(10)/400 * rdmax = {}",
+                p, init_vol[p], vol_max
+            ));
+        }
+    }
+    for k in 0..g {
+        if white[k] >= n || black[k] >= n {
+            return Err(format!(
+                "glicko2_rating: game {} has player index out of range (white {}, black {}, n {})",
+                k, white[k], black[k], n
+            ));
+        }
+        if white[k] == black[k] {
+            return Err(format!(
+                "glicko2_rating: game {} has white == black == {} (self-play is not supported)",
+                k, white[k]
+            ));
+        }
+        if !score[k].is_finite() || !(0.0..=1.0).contains(&score[k]) {
+            return Err(format!(
+                "glicko2_rating: game {} has score {} outside [0, 1]",
+                k, score[k]
+            ));
+        }
+        if !gamma[k].is_finite() {
+            return Err(format!("glicko2_rating: game {} has non-finite gamma", k));
+        }
+    }
+
+    // Step 2: convert to the Glicko-2 scale. Internal deviation state is
+    // phi^2 (variance), as in R; gamma is scaled per game.
+    let qip3 = 3.0 / (std::f64::consts::PI * std::f64::consts::PI);
+    let rdmax2 = (qv * rdmax) * (qv * rdmax);
+    let mut ratings: Vec<f64> = init_rating.iter().map(|r| qv * (r - 1500.0)).collect();
+    let mut vars: Vec<f64> = init_dev.iter().map(|d| (qv * d) * (qv * d)).collect();
+    let mut vols: Vec<f64> = init_vol.to_vec();
+    let mut games = vec![0u64; n];
+    let mut wins = vec![0u64; n];
+    let mut draws = vec![0u64; n];
+    let mut losses = vec![0u64; n];
+    let mut lag = vec![0u64; n];
+    let mut appeared = vec![false; n];
+    let mut gdevs = vec![0.0f64; n];
+
+    // Group by ascending period, preserving row order within a period.
+    let mut order: Vec<usize> = (0..g).collect();
+    order.sort_by_key(|&k| periods[k]); // stable sort keeps row order
+
+    let mut i = 0usize;
+    while i < g {
+        let period = periods[order[i]];
+        let mut j = i;
+        while j < g && periods[order[j]] == period {
+            j += 1;
+        }
+
+        for player in appeared.iter_mut() {
+            *player = false;
+        }
+        for &k in &order[i..j] {
+            appeared[white[k]] = true;
+            appeared[black[k]] = true;
+        }
+        // Participants only: lag * sigma^2 inflation (Glicko-2; R lines
+        // 520-522 with the explicit "nlag" vs Glicko-1 "(nlag+1)" comment),
+        // clamped at (q rdmax)^2.
+        for p in 0..n {
+            if appeared[p] {
+                vars[p] = (vars[p] + lag[p] as f64 * vols[p] * vols[p]).min(rdmax2);
+            }
+        }
+        // g(phi) for ALL players from post-inflation variances.
+        for p in 0..n {
+            gdevs[p] = 1.0 / (1.0 + qip3 * vars[p]).sqrt();
+        }
+
+        let mut dscore = vec![0.0f64; n];
+        let mut dval = vec![0.0f64; n];
+        for &k in &order[i..j] {
+            let (w, b, s, gam) = (white[k], black[k], score[k], gamma[k] * qv);
+            // Expectations from period-START ratings, opponent's g in the
+            // exponent, natural exp on the Glicko-2 scale (C kernel).
+            let e_w = 1.0 / (1.0 + (gdevs[b] * (ratings[b] - ratings[w] - gam)).exp());
+            dval[w] += gdevs[b] * gdevs[b] * e_w * (1.0 - e_w);
+            dscore[w] += gdevs[b] * (s - e_w);
+            let e_b = 1.0 / (1.0 + (gdevs[w] * (ratings[w] - ratings[b] + gam)).exp());
+            dval[b] += gdevs[w] * gdevs[w] * e_b * (1.0 - e_b);
+            dscore[b] += gdevs[w] * (1.0 - s - e_b);
+
+            games[w] += 1;
+            games[b] += 1;
+            if s == 1.0 {
+                wins[w] += 1;
+                losses[b] += 1;
+            } else if s == 0.5 {
+                draws[w] += 1;
+                draws[b] += 1;
+            } else if s == 0.0 {
+                losses[w] += 1;
+                wins[b] += 1;
+            }
+        }
+        // Steps 5-6 (participants only): new volatility iff tau > 0
+        // (R line 532 gate; tau == 0 freezes sigma), capped at q * rdmax,
+        // then pre-update inflation phi*^2 = phi^2 + sigma'^2.
+        if tau > 0.0 {
+            for p in 0..n {
+                if appeared[p] {
+                    let v = 1.0 / dval[p];
+                    let delta = v * dscore[p];
+                    let sigma = glicko2_new_volatility(vols[p], delta, vars[p], v, tau);
+                    vols[p] = sigma.min(vol_max);
+                }
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                vars[p] += vols[p] * vols[p];
+            }
+        }
+        // Step 7, ALL players: variance first (clamped), THEN rating with
+        // the NEW variance. Non-participants have dval = dscore = 0.
+        for p in 0..n {
+            vars[p] = (1.0 / (1.0 / vars[p] + dval[p])).min(rdmax2);
+            ratings[p] += vars[p] * dscore[p];
+        }
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                lag[p] = 0;
+            }
+        }
+        i = j;
+    }
+
+    Ok(Glicko2Result {
+        // Step 8: back to the Glicko scale.
+        ratings: ratings.iter().map(|r| r / qv + 1500.0).collect(),
+        deviations: vars.iter().map(|v| v.sqrt() / qv).collect(),
+        volatilities: vols,
+        games,
+        wins,
+        draws,
+        losses,
+        lag,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

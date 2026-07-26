@@ -876,3 +876,156 @@ def glicko_rating(
         losses=np.asarray(res["losses"]),
         lag=np.asarray(res["lag"]),
     )
+
+
+@dataclass
+class Glicko2Result:
+    """Glicko-2 ratings, deviations, volatilities, and bookkeeping
+    (Glickman, 2022, as implemented by the CRAN PlayerRatings package's
+    ``glicko2()``; batch-per-period update with participant-only variance
+    inflation ``phi^2 <- min(phi^2 + lag * sigma^2, (q * rdmax)^2)`` and the
+    Illinois volatility iteration of Glickman's Step 5). Wins, draws, and
+    losses count only scores exactly 1, 0.5, and 0; other fractional scores
+    count a game without a W/D/L. ``lag`` is the number of rating periods
+    since the player's last appearance."""
+
+    ratings: "np.ndarray"
+    deviations: "np.ndarray"
+    volatilities: "np.ndarray"
+    games: "np.ndarray"
+    wins: "np.ndarray"
+    draws: "np.ndarray"
+    losses: "np.ndarray"
+    lag: "np.ndarray"
+
+
+def glicko2_rating(
+    games, n_players, init=(2200.0, 300.0, 0.15), gamma=None, tau=1.2, rdmax=350.0
+):
+    """Glicko-2 ratings from a (g, 4) game schedule.
+
+    Each row of ``games`` is ``[period, white, black, score]`` exactly as in
+    :func:`elo_rating`. ``init`` is either a ``(rating, deviation,
+    volatility)`` scalar triple broadcast to all players or a triple of
+    length-``n_players`` arrays; ``tau`` constrains per-period volatility
+    change (``tau=0`` freezes volatility) and ``rdmax`` is the deviation
+    ceiling (volatility is capped at ``ln(10)/400 * rdmax``). Defaults
+    ``init=(2200, 300, 0.15), tau=1.2, rdmax=350`` are the PlayerRatings
+    defaults. Unlike R's fresh-start path, results cover ALL players in
+    ``0..n_players``: never-playing players keep their init state with zero
+    tallies. Raises ValueError on invalid input.
+    """
+    import numpy as np
+
+    from .fitstats import _core_module
+
+    if np.iscomplexobj(np.asarray(games)):
+        raise ValueError("glicko2_rating: games must be real, not complex")
+    raw = np.asarray(games)
+    try:
+        arr = np.asarray(games, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"glicko2_rating: games is not numeric: {exc}") from None
+    if arr.ndim != 2 or arr.shape[1] != 4:
+        raise ValueError(
+            f"glicko2_rating: games must be (g, 4) [period, white, black, score], got {arr.shape}"
+        )
+    if arr.shape[0] == 0:
+        raise ValueError("glicko2_rating: at least one game is required")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("glicko2_rating: games contains non-finite values")
+    periods, white, black, score = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+    for name, col in (("period", periods), ("white", white), ("black", black)):
+        if np.any(col != np.floor(col)):
+            raise ValueError(f"glicko2_rating: {name} column must be integral")
+    if np.any(periods < 0):
+        raise ValueError("glicko2_rating: period labels must be nonnegative")
+    # Period labels are u64 in the core; a float column loses integer
+    # fidelity above the dtype's exact-integer bound (distinct labels would
+    # silently merge into one rating period). Same contract as elo_rating.
+    if raw.ndim == 2 and raw.dtype.kind in "iu":
+        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
+            raise ValueError("glicko2_rating: period labels must be nonnegative")
+        periods_u64 = raw[:, 0].astype(np.uint64)
+    else:
+        # np.finfo(...).nmant excludes the implicit leading bit, so the
+        # exact-integer bound is nmant + 1 (float64 2**53, float32 2**24).
+        if raw.dtype.kind == "f":
+            fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
+        else:
+            fidelity = 2.0**53
+        if np.any(periods >= fidelity):
+            raise ValueError(
+                f"glicko2_rating: period labels at or above {int(fidelity)} are not "
+                f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
+                "pass games as an integer array"
+            )
+        periods_u64 = periods.astype(np.uint64)
+    if np.any(white < 0) or np.any(black < 0):
+        raise ValueError("glicko2_rating: player indices must be nonnegative")
+    n = int(n_players)
+    if n != n_players:
+        raise ValueError("glicko2_rating: n_players must be an integer")
+    g = arr.shape[0]
+    if gamma is None:
+        gamma_arr = np.zeros(g)
+    else:
+        if np.iscomplexobj(np.asarray(gamma)):
+            raise ValueError("glicko2_rating: gamma must be real, not complex")
+        gamma_arr = np.asarray(gamma, dtype=float)
+        if gamma_arr.ndim == 0:
+            gamma_arr = np.full(g, float(gamma_arr))
+        elif gamma_arr.shape != (g,):
+            raise ValueError(
+                f"glicko2_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
+            )
+    try:
+        init_r_in, init_d_in, init_v_in = init
+    except (TypeError, ValueError):
+        raise ValueError(
+            "glicko2_rating: init must be a (rating, deviation, volatility) triple"
+        ) from None
+    if (
+        np.iscomplexobj(np.asarray(init_r_in))
+        or np.iscomplexobj(np.asarray(init_d_in))
+        or np.iscomplexobj(np.asarray(init_v_in))
+    ):
+        raise ValueError("glicko2_rating: init must be real, not complex")
+    try:
+        init_r = np.asarray(init_r_in, dtype=float)
+        init_d = np.asarray(init_d_in, dtype=float)
+        init_v = np.asarray(init_v_in, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"glicko2_rating: init is not numeric: {exc}") from None
+    if init_r.ndim == 0 and init_d.ndim == 0 and init_v.ndim == 0:
+        init_r = np.full(n, float(init_r))
+        init_d = np.full(n, float(init_d))
+        init_v = np.full(n, float(init_v))
+    elif init_r.shape != (n,) or init_d.shape != (n,) or init_v.shape != (n,):
+        raise ValueError(
+            "glicko2_rating: init must be a scalar triple or a triple of "
+            f"length-{n} arrays, got shapes {init_r.shape}, {init_d.shape}, "
+            f"and {init_v.shape}"
+        )
+    res = _core_module().glicko2_rating(
+        np.ascontiguousarray(periods_u64),
+        np.ascontiguousarray(white, dtype=np.uint64),
+        np.ascontiguousarray(black, dtype=np.uint64),
+        np.ascontiguousarray(score),
+        np.ascontiguousarray(gamma_arr),
+        np.ascontiguousarray(init_r),
+        np.ascontiguousarray(init_d),
+        np.ascontiguousarray(init_v),
+        float(tau),
+        float(rdmax),
+    )
+    return Glicko2Result(
+        ratings=np.asarray(res["ratings"]),
+        deviations=np.asarray(res["deviations"]),
+        volatilities=np.asarray(res["volatilities"]),
+        games=np.asarray(res["games"]),
+        wins=np.asarray(res["wins"]),
+        draws=np.asarray(res["draws"]),
+        losses=np.asarray(res["losses"]),
+        lag=np.asarray(res["lag"]),
+    )

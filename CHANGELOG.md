@@ -119,6 +119,34 @@
 
 ### Added
 
+- **Glicko-2 rating system (Glickman's 2022 *Example of the Glicko-2
+  system* note READ — worked example reproduced; CRAN PlayerRatings
+  1.1-0's `glicko2()` `R/ratings.R` + `glicko2_c` C kernel source READ;
+  Glickman's 2001 J. Appl. Statist. derivation paper NOT READ, cited as
+  the origin per both READ sources).** New Rust core
+  `mlsirm_core::scaling::glicko2_rating` with batch-per-period updates on
+  the Glicko-2 scale, per-player rating volatility via Glickman's Step-5
+  Illinois iteration (epsilon 1e-6, endpoint A; DERIVED and documented:
+  Glickman's `f(x)` equals `-1/2` the derivative of PlayerRatings'
+  penalized negative log-likelihood, so the Illinois root matches R's
+  optimum), participant-only pre-period variance inflation
+  `phi^2 <- min(phi^2 + lag * sigma^2, (q rdmax)^2)` (Glicko-2 uses `lag`,
+  not Glicko-1's `lag+1`; R source comment pinned), `tau == 0` volatility
+  freeze, volatility ceiling `q * rdmax`, per-game white advantage
+  `gamma`, and PlayerRatings W/D/L and lag bookkeeping. Documented
+  R-vs-note deviation: the note applies Step 6 to idle players every
+  period; PlayerRatings (and this port) defer idle growth via
+  `lag * sigma^2` at next participation. Python wrapper
+  `fast_mlsirm.glicko2_rating(games, n_players, init=(2200, 300, 0.15),
+  gamma=None, tau=1.2, rdmax=350)` returns a `Glicko2Result` dataclass and
+  inherits the Elo/Glicko period-label fidelity contract. Anchored to an
+  executed float64 oracle (Glickman worked-example anchor with
+  heterogeneous init, two-period inflation/lag/idle pins, rdmax and
+  volatility-ceiling clamps, gamma, unsorted-period, fractional-score +
+  tau-0, and return-after-idle fixtures); nine executed mutation kills
+  (own-g swap, lag off-by-one, variance-clamp drop, volatility-clamp
+  drop, skipped volatility update, stale-sigma inflation, Illinois
+  endpoint swap, gamma sign, rating-before-deviation order).
 - **Glicko rating system (Glickman's *The Glicko system* technical note
   READ — worked example reproduced exactly; CRAN PlayerRatings 1.1-0's
   `glicko()` `R/ratings.R` + `glicko_c` C kernel source READ; Glickman's

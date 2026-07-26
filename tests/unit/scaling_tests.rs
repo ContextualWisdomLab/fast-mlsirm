@@ -2663,3 +2663,576 @@ fn gk_mc_500() {
         assert!(two.deviations[0] <= one.deviations[0], "rep {rep}");
     }
 }
+
+// -------------------------------------------------------------------------
+// glicko2_rating (Glickman 2022 note + PlayerRatings glicko2 semantics).
+// All pins are crate outputs checked against the independently executed
+// float64 oracle (files/glicko2_oracle.py); numeric tolerance 1e-7 abs
+// per the spec's Illinois endpoint-A mandate (endpoint swap shifts values
+// by ~2.5e-5, so 1e-7 pins the mandated algorithm while tolerating
+// last-ulp reassociation).
+
+fn g2_close(a: &[f64], b: &[f64], tol: f64) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() <= tol)
+}
+
+/// Glickman (2022) worked example, heterogeneous init.
+/// Asserts read: r.ratings / r.deviations / r.volatilities from the crate.
+/// Killed mutants: MU1 (own-g swap), MU4 (stale sigma), MU5 (old sigma in
+/// phi*), MU6 (Illinois sign/bracket), MU8 (rating-before-deviation).
+#[test]
+fn g2_paper_anchor_g2a() {
+    let r = crate::scaling::glicko2_rating(
+        &[1, 1, 1],
+        &[0, 0, 0],
+        &[1, 2, 3],
+        &[1.0, 0.0, 0.0],
+        &[0.0; 3],
+        &[1500.0, 1400.0, 1550.0, 1700.0],
+        &[200.0, 30.0, 100.0, 300.0],
+        &[0.06; 4],
+        0.5,
+        350.0,
+    )
+    .unwrap();
+    // Note's printed digits: r' = 1464.06, RD' = 151.52, sigma' = 0.05999.
+    assert!(g2_close(
+        &r.ratings,
+        &[
+            1464.0506708196929,
+            1398.143558212337,
+            1570.3947406805573,
+            1784.421789699685
+        ],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.deviations,
+        &[
+            151.51652192592556,
+            31.67021513485606,
+            97.70916832182286,
+            251.56556278667546
+        ],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.volatilities,
+        &[
+            0.05999598428664987,
+            0.05999912372888925,
+            0.0599994194719928,
+            0.059999011763705826
+        ],
+        1e-7
+    ));
+    assert_eq!(r.games, vec![3, 1, 1, 1]);
+    assert_eq!(r.wins, vec![1, 0, 1, 1]);
+    assert_eq!(r.losses, vec![2, 1, 0, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0, 0]);
+}
+
+/// Two periods with an idle player; defaults (2200, 300, 0.15), tau 1.2.
+/// Asserts read crate ratings/deviations/volatilities/lag.
+/// Killed mutants: MU2 (off-by-one inflation at lag 0); also pins the
+/// NO-conservation identity (sum != 6600).
+#[test]
+fn g2_two_period_g2b() {
+    let r = crate::scaling::glicko2_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0.15; 3],
+        1.2,
+        350.0,
+    )
+    .unwrap();
+    assert!(g2_close(
+        &r.ratings,
+        &[2189.2376693682463, 2094.286091224066, 2346.354869237831],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.deviations,
+        &[224.81517267835346, 225.1973735871327, 224.81375337135282],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.volatilities,
+        &[0.15002063478252045, 0.1498718983333671, 0.14993884055293957],
+        1e-7
+    ));
+    assert_eq!(r.lag, vec![0, 1, 0]);
+    // Documented NON-identity: rating sum is not conserved.
+    let sum: f64 = r.ratings.iter().sum();
+    assert!((sum - 6600.0).abs() > 1e-3, "sum unexpectedly conserved");
+    assert!((sum - 6629.878629830143).abs() <= 1e-6);
+}
+
+/// Long idle gap drives the deviation into the rdmax clamp.
+/// Asserts read crate deviations/volatilities.
+/// Killed mutants: MU3a (dropped phi^2 rdmax clamps).
+#[test]
+fn g2_rdmax_clamp_g2c() {
+    let r = crate::scaling::glicko2_rating(
+        &[1, 10],
+        &[0, 0],
+        &[1, 1],
+        &[1.0, 0.5],
+        &[0.0; 2],
+        &[2200.0; 2],
+        &[300.0; 2],
+        &[1.0; 2],
+        0.3,
+        350.0,
+    )
+    .unwrap();
+    assert!(g2_close(
+        &r.ratings,
+        &[2256.2545251058973, 2143.7454748941027],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.deviations,
+        &[287.7492897078701, 287.7492897078701],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.volatilities,
+        &[0.9985111330899122, 0.9985111330899122],
+        1e-7
+    ));
+}
+
+/// Single draw with white advantage gamma = 30: favored white DROPS.
+/// Asserts read crate ratings. Killed mutants: MU7 (gamma sign flip).
+#[test]
+fn g2_gamma_g2d() {
+    let r = crate::scaling::glicko2_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[0.5],
+        &[30.0],
+        &[2200.0; 2],
+        &[300.0; 2],
+        &[0.15; 2],
+        1.2,
+        350.0,
+    )
+    .unwrap();
+    assert!(g2_close(
+        &r.ratings,
+        &[2191.52226104287, 2208.47773895713],
+        1e-7
+    ));
+    assert!(r.ratings[0] < r.ratings[1]);
+    assert!(g2_close(
+        &r.deviations,
+        &[255.18592153180703, 255.18592153180703],
+        1e-7
+    ));
+}
+
+/// Unsorted period labels must equal the sorted G2B result exactly.
+/// Asserts read crate outputs from both calls (exact equality).
+#[test]
+fn g2_unsorted_g2e() {
+    let sorted = crate::scaling::glicko2_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0.15; 3],
+        1.2,
+        350.0,
+    )
+    .unwrap();
+    let shuffled = crate::scaling::glicko2_rating(
+        &[2, 1, 1],
+        &[0, 0, 1],
+        &[2, 1, 2],
+        &[0.0, 1.0, 0.5],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0.15; 3],
+        1.2,
+        350.0,
+    )
+    .unwrap();
+    assert_eq!(sorted.ratings, shuffled.ratings);
+    assert_eq!(sorted.deviations, shuffled.deviations);
+    assert_eq!(sorted.volatilities, shuffled.volatilities);
+    assert_eq!(sorted.lag, shuffled.lag);
+}
+
+/// Fractional score 0.25 earns no W/D/L tally; tau = 0 freezes sigma.
+/// Asserts read crate tallies/volatilities/ratings.
+/// Killed mutants: tally-on-fractional; volatility-update-despite-tau-0.
+#[test]
+fn g2_fractional_tau0_g2f() {
+    let r = crate::scaling::glicko2_rating(
+        &[1, 2],
+        &[0, 1],
+        &[1, 2],
+        &[0.25, 1.0],
+        &[0.0; 2],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0.15; 3],
+        0.0,
+        350.0,
+    )
+    .unwrap();
+    assert_eq!(r.wins, vec![0, 1, 0]);
+    assert_eq!(r.draws, vec![0, 0, 0]);
+    assert_eq!(r.losses, vec![0, 0, 1]);
+    assert_eq!(r.games, vec![1, 2, 1]);
+    // tau = 0: volatilities EXACTLY unchanged (crate output).
+    assert_eq!(r.volatilities, vec![0.15, 0.15, 0.15]);
+    assert!(g2_close(
+        &r.ratings,
+        &[2132.2025470843405, 2359.81140705271, 2080.6221639984115],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.deviations,
+        &[255.0462500503705, 226.607229056582, 250.63135994001263],
+        1e-7
+    ));
+    assert_eq!(r.lag, vec![1, 0, 0]);
+}
+
+/// Return after a true idle period: P0 plays period 1, idles period 2,
+/// returns period 3 with lag = 1, so inflation is 1 * sigma^2 (Glicko-2)
+/// vs 2 * sigma^2 under the Glicko-1 (lag+1) regression.
+/// Asserts read crate ratings/deviations/lag.
+/// Killed mutants: MU2 (oracle-verified: mutant shifts devs by ~2.43).
+#[test]
+fn g2_idle_return_g2h() {
+    let r = crate::scaling::glicko2_rating(
+        &[1, 2, 3],
+        &[0, 1, 0],
+        &[1, 2, 1],
+        &[1.0, 0.5, 0.5],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0.15; 3],
+        1.2,
+        350.0,
+    )
+    .unwrap();
+    assert!(g2_close(
+        &r.ratings,
+        &[2273.2760877220917, 2142.521696205541, 2157.7820411274447],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.deviations,
+        &[228.9242656387728, 209.60776091326838, 253.1905234114569],
+        1e-7
+    ));
+    assert!(g2_close(
+        &r.volatilities,
+        &[
+            0.14988381084284416,
+            0.14977477223682767,
+            0.14988972503726555
+        ],
+        1e-7
+    ));
+    assert_eq!(r.lag, vec![0, 0, 1]);
+}
+
+/// Volatility ceiling active: huge favorite loses with large tau and
+/// sigma near the cap, so the unclamped Illinois root exceeds
+/// q * rdmax and must be clamped to EXACTLY that ceiling.
+/// Asserts read crate volatilities/deviations/ratings.
+/// Killed mutants: MU3b (dropped sigma clamp).
+#[test]
+fn g2_vol_clamp_g2i() {
+    let r = crate::scaling::glicko2_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[0.0],
+        &[0.0],
+        &[2400.0, 1200.0],
+        &[50.0, 50.0],
+        &[0.28, 0.28],
+        2.0,
+        50.0,
+    )
+    .unwrap();
+    let vol_max = std::f64::consts::LN_10 / 400.0 * 50.0;
+    assert_eq!(r.volatilities, vec![vol_max, vol_max]);
+    assert_eq!(r.deviations, vec![50.0, 50.0]); // phi clamp also active
+    assert!(g2_close(
+        &r.ratings,
+        &[2385.802146381853, 1214.197853618147],
+        1e-7
+    ));
+}
+
+/// Error contract: every rejection path returns Err (crate Result read).
+#[test]
+fn g2_error_contract() {
+    let ok_p = [1u64];
+    let ok_w = [0usize];
+    let ok_b = [1usize];
+    let ok_s = [1.0f64];
+    let ok_g = [0.0f64];
+    let r2 = [2200.0, 2200.0];
+    let d2 = [300.0, 300.0];
+    let v2 = [0.15, 0.15];
+    let call = |p: &[u64],
+                w: &[usize],
+                b: &[usize],
+                s: &[f64],
+                gm: &[f64],
+                ir: &[f64],
+                id: &[f64],
+                iv: &[f64],
+                tau: f64,
+                rdmax: f64| {
+        crate::scaling::glicko2_rating(p, w, b, s, gm, ir, id, iv, tau, rdmax)
+    };
+    // no games / length mismatch
+    assert!(call(&[], &[], &[], &[], &[], &r2, &d2, &v2, 1.2, 350.0).is_err());
+    assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &[], &r2, &d2, &v2, 1.2, 350.0).is_err());
+    // n < 2, init length mismatch
+    assert!(call(
+        &ok_p,
+        &[0],
+        &[0],
+        &ok_s,
+        &ok_g,
+        &[2200.0],
+        &[300.0],
+        &[0.15],
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[300.0],
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15],
+        1.2,
+        350.0
+    )
+    .is_err());
+    // dev / vol domain
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[300.0, 0.0],
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[300.0, 400.0],
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15, 0.0],
+        1.2,
+        350.0
+    )
+    .is_err());
+    // vol above ln(10)/400 * rdmax (= ~2.0148 at rdmax 350)
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0.15, 2.1],
+        1.2,
+        350.0
+    )
+    .is_err());
+    // tau / rdmax domain
+    assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, -0.1, 350.0).is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        f64::NAN,
+        350.0
+    )
+    .is_err());
+    assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, 1.2, 0.0).is_err());
+    // game rows
+    assert!(call(&ok_p, &[2], &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, 1.2, 350.0).is_err());
+    assert!(call(&ok_p, &[1], &[1], &ok_s, &ok_g, &r2, &d2, &v2, 1.2, 350.0).is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[1.5],
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[f64::NAN],
+        &ok_g,
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &[f64::INFINITY],
+        &r2,
+        &d2,
+        &v2,
+        1.2,
+        350.0
+    )
+    .is_err());
+    // tau = 0 is VALID (frozen volatility)
+    assert!(call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &v2, 0.0, 350.0).is_ok());
+}
+
+/// 500-rep Monte Carlo: random schedules must satisfy structural
+/// invariants read from crate outputs (finiteness, dev in (0, rdmax],
+/// vol in (0, q*rdmax], tally consistency, unsorted == sorted).
+#[test]
+#[ignore = "500-rep Monte Carlo; run explicitly"]
+fn g2_mc_500() {
+    let mut rng = Lcg(0x61c0_2u64);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 6.0) as usize;
+        let m = 4 + (rng.next_f64() * 20.0) as usize;
+        let mut periods = Vec::with_capacity(m);
+        let mut white = Vec::with_capacity(m);
+        let mut black = Vec::with_capacity(m);
+        let mut score = Vec::with_capacity(m);
+        let mut gamma = Vec::with_capacity(m);
+        for _ in 0..m {
+            periods.push(1 + (rng.next_f64() * 5.0) as u64);
+            let w = (rng.next_f64() * n as f64) as usize % n;
+            let mut b = (rng.next_f64() * n as f64) as usize % n;
+            if b == w {
+                b = (b + 1) % n;
+            }
+            white.push(w);
+            black.push(b);
+            let u = rng.next_f64();
+            score.push(if u < 0.4 {
+                1.0
+            } else if u < 0.8 {
+                0.0
+            } else if u < 0.9 {
+                0.5
+            } else {
+                u
+            });
+            gamma.push((rng.next_f64() - 0.5) * 60.0);
+        }
+        let tau = rng.next_f64() * 1.2;
+        let r = crate::scaling::glicko2_rating(
+            &periods,
+            &white,
+            &black,
+            &score,
+            &gamma,
+            &vec![2200.0; n],
+            &vec![300.0; n],
+            &vec![0.15; n],
+            tau,
+            350.0,
+        )
+        .unwrap();
+        let vol_max = std::f64::consts::LN_10 / 400.0 * 350.0;
+        for p in 0..n {
+            assert!(r.ratings[p].is_finite(), "rep {} player {}", rep, p);
+            assert!(
+                r.deviations[p] > 0.0 && r.deviations[p] <= 350.0 + 1e-9,
+                "rep {} dev {}",
+                rep,
+                r.deviations[p]
+            );
+            assert!(
+                r.volatilities[p] > 0.0 && r.volatilities[p] <= vol_max + 1e-12,
+                "rep {} vol {}",
+                rep,
+                r.volatilities[p]
+            );
+            assert!(r.wins[p] + r.draws[p] + r.losses[p] <= r.games[p]);
+        }
+        let total_games: u64 = r.games.iter().sum();
+        assert_eq!(total_games, 2 * m as u64);
+    }
+}

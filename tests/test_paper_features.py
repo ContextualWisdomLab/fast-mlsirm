@@ -9445,3 +9445,131 @@ class TestGlicko:
         r = glicko_rating(gi, 2, init=(2200.0, 300.0), cval=0.0)
         assert r.lag.tolist() == [0, 0]
         assert r.games.tolist() == [2, 2]
+
+
+class TestGlicko2:
+    """Glicko-2 rating wrapper (Glickman 2022 + PlayerRatings glicko2();
+    every assert reads crate-returned values via the Python wrapper)."""
+
+    def test_paper_anchor_g2a(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko2_rating
+
+        # Glickman's (2022) worked example, heterogeneous init triple.
+        g = [[1, 0, 1, 1.0], [1, 0, 2, 0.0], [1, 0, 3, 0.0]]
+        r = glicko2_rating(
+            g,
+            4,
+            init=(
+                np.array([1500.0, 1400.0, 1550.0, 1700.0]),
+                np.array([200.0, 30.0, 100.0, 300.0]),
+                np.array([0.06] * 4),
+            ),
+            tau=0.5,
+        )
+        assert abs(r.ratings[0] - 1464.0506708196929) < 1e-7
+        assert abs(r.deviations[0] - 151.51652192592556) < 1e-7
+        assert abs(r.volatilities[0] - 0.05999598428664987) < 1e-7
+        assert r.games.tolist() == [3, 1, 1, 1]
+        assert r.wins.tolist() == [1, 0, 1, 1]
+        assert r.losses.tolist() == [2, 1, 0, 0]
+
+    def test_two_period_g2b(self):
+        from fast_mlsirm import glicko2_rating
+
+        # Scalar-triple init broadcast; inflation + lag + idle player pins.
+        g = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 0, 2, 0.0]]
+        r = glicko2_rating(g, 3, init=(2200.0, 300.0, 0.15), tau=1.2)
+        er = [2189.2376693682463, 2094.286091224066, 2346.354869237831]
+        ev = [0.15002063478252045, 0.1498718983333671, 0.14993884055293957]
+        for p in range(3):
+            assert abs(r.ratings[p] - er[p]) < 1e-7
+            assert abs(r.volatilities[p] - ev[p]) < 1e-7
+        assert r.lag.tolist() == [0, 1, 0]
+        # Documented non-identity: rating sum is NOT conserved.
+        assert abs(float(r.ratings.sum()) - 6600.0) > 1e-3
+
+    def test_gamma_and_tau0(self):
+        from fast_mlsirm import glicko2_rating
+
+        # G2D: favored white draws with gamma=30 and DROPS (crate ratings).
+        r = glicko2_rating(
+            [[1, 0, 1, 0.5]], 2, init=(2200.0, 300.0, 0.15), gamma=30.0, tau=1.2
+        )
+        assert abs(r.ratings[0] - 2191.52226104287) < 1e-7
+        assert abs(r.ratings[1] - 2208.47773895713) < 1e-7
+        # tau = 0 freezes volatility EXACTLY (crate volatilities read).
+        rf = glicko2_rating(
+            [[1, 0, 1, 0.25], [2, 1, 2, 1.0]], 3, init=(2200.0, 300.0, 0.15), tau=0.0
+        )
+        assert rf.volatilities.tolist() == [0.15, 0.15, 0.15]
+        assert rf.wins.tolist() == [0, 1, 0]
+        assert rf.games.tolist() == [1, 2, 1]
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import glicko2_rating
+
+        ok = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            glicko2_rating([], 2)
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1]], 2)  # wrong width
+        with pytest.raises(ValueError):
+            glicko2_rating([[1.5, 0, 1, 1.0]], 2)  # fractional period
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 1)  # n < 2
+        with pytest.raises(ValueError):
+            glicko2_rating(np.array(ok, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0))  # pair, not triple
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0, 0.0))  # vol <= 0
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0, 3.0))  # vol > q*rdmax
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=-0.5)  # negative tau
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=0.0)
+        with pytest.raises(ValueError):
+            # mixed scalar/array init rejected
+            glicko2_rating(
+                ok, 2, init=(np.array([2200.0, 2200.0]), 300.0, 0.15)
+            )
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, "x"]], 2)  # non-numeric
+        with pytest.raises(ValueError):
+            g = np.array(ok, dtype=object)
+            g[0][3] = object()
+            glicko2_rating(g, 2)
+
+    def test_period_fidelity(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko2_rating
+
+        # float64 2**53 rejected (labels at/above the exact-integer bound)
+        import pytest
+
+        with pytest.raises(ValueError):
+            glicko2_rating([[float(2**53), 0, 1, 1.0]], 2)
+        g32 = np.array([[2**24, 0, 1, 1.0]], dtype=np.float32)
+        with pytest.raises(ValueError):
+            glicko2_rating(g32, 2)
+        # Largest exactly-representable labels ACCEPTED; asserts read crate
+        # outputs (games tally) — kills a 2**nmant mutant.
+        r53 = glicko2_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
+        g32ok = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r24 = glicko2_rating(g32ok, 2)
+        assert r24.games.tolist() == [1, 1]
+        # integer-dtype lossless path (crate output read)
+        gi = np.array([[2**53, 0, 1, 1], [2**53 + 1, 1, 0, 1]], dtype=np.uint64)
+        r = glicko2_rating(gi, 2, init=(2200.0, 300.0, 0.15), tau=0.0)
+        assert r.lag.tolist() == [0, 0]
+        assert r.games.tolist() == [2, 2]
