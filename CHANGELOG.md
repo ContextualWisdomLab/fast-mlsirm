@@ -119,6 +119,23 @@
 
 ### Added
 
+- **Rank Centrality paired-comparison estimator (Negahban, Oh, & Shah, 2017,
+  as ported by choix 0.4.1's `rank_centrality` — choix source READ; the
+  paper's discrete-time max-degree walk is NOT what choix computes and only
+  the choix continuous-time win-ratio chain is implemented).** New Rust core
+  `scaling::rank_centrality` builds the Markov chain whose loser-to-winner
+  rates are the regularized win ratios
+  `(alpha + wins[i,j]) / (2*alpha + wins[i,j] + wins[j,i])` and returns the
+  centered log stationary distribution via the shared Gaussian-elimination
+  stationary solver (`statdist_params`, extracted from the LSR pass), with
+  explicit `Err` on disconnected graphs at `alpha = 0` and on overflowing
+  counts or ratio denominators (choix silently degrades there). Exposed as
+  `fast_mlsirm.rank_centrality` returning `LsrResult`. Exact-Fraction oracle
+  anchors (3x3, 4x4, alpha 0 and 1/2, one-sided, disconnected-with-alpha)
+  cross-checked against pip choix 0.4.1 to 2e-16; exact scale invariance
+  pinned at `alpha = 0`; six mutation kills executed (transposed ratio,
+  missing ratio transform, half-updated denominator, dropped normalization,
+  dropped centering, denominator-c-only).
 - **Luce Spectral Ranking (LSR) and iterative LSR (I-LSR) paired-comparison
   estimators (Maystre & Grossglauser, 2015, as implemented by choix 0.4.1's
   `lsr.py` dense pairwise path — source READ; Maystre & Grossglauser, 2015

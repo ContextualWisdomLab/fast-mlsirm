@@ -715,3 +715,198 @@ fn ilsr_mc_500_recovery() {
     }
     assert!(worst > 0.0);
 }
+
+// ===================== Rank Centrality (choix rank_centrality) ==========
+//
+// All pins from the EXECUTED exact-Fraction oracle
+// (session files/rank_centrality_oracle.py; output cross-checked against
+// pip choix to <= 2e-16). Mutation kills (all EXECUTED):
+// - MU1 transpose (chain[i][j] built from wins[i][j] instead of the
+//   loser->winner orientation): asymmetric fixture A pins FAIL.
+// - MU2 skip ratio transform (use raw counts): reproduces lsr_pairwise,
+//   whose A statdist is [12/17, 45/34, 33/34] != [138/181, 237/181,
+//   168/181] -> rc_fixture_a pins FAIL.
+// - MU3 ratio denominator c only (ratio == 1 wherever c > 0): A pins
+//   FAIL (uniform weights). KNOWN LIMITATION: fixture E is blind to MU3
+//   for its one-sided pair (true ratio there IS 1); A is the MU3 anchor.
+// - MU4 statdist sum -> 1 instead of n: weights pins FAIL (params are
+//   invariant to the scaling, as in LSR MU4 -- weights are the anchor).
+// - MU5 drop log-centering: params pins FAIL.
+// - MU6 half-updated ratio denominator (in-place transform reading
+//   already-transformed symmetric entries): A weights would become
+//   ~[1.1279, 1.0980, 0.7741] (spec-review probe) -> rc_fixture_a FAILS.
+
+/// Fixture A exact pins (statdist [138/181, 237/181, 168/181]) plus
+/// centered-log params. Asserts read `rank_centrality(...)` outputs.
+#[test]
+fn rc_fixture_a_exact() {
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let r = rank_centrality(&a, 3, 0.0).unwrap();
+    assert_eq!(r.iterations, 1);
+    let wexp = [138.0 / 181.0, 237.0 / 181.0, 168.0 / 181.0];
+    let pexp = [
+        -0.2458389167413269090,
+        0.2949675392365995849,
+        -0.0491286224952726759,
+    ];
+    for k in 0..3 {
+        assert!(
+            (r.weights[k] - wexp[k]).abs() < 1e-15,
+            "w[{k}] = {}",
+            r.weights[k]
+        );
+        assert!(
+            (r.params[k] - pexp[k]).abs() < 1e-15,
+            "p[{k}] = {}",
+            r.params[k]
+        );
+    }
+    assert!((r.params.iter().sum::<f64>()).abs() < 1e-15);
+}
+
+/// Fixture C (4x4) exact pins + fixture A at alpha = 1/2
+/// (statdist [207/265, 333/265, 255/265]). Asserts read crate outputs.
+#[test]
+fn rc_fixture_c_and_alpha() {
+    let c = [
+        0.0, 2.0, 1.0, 3.0, 1.0, 0.0, 2.0, 1.0, 2.0, 3.0, 0.0, 1.0, 1.0, 2.0, 4.0, 0.0,
+    ];
+    let r = rank_centrality(&c, 4, 0.0).unwrap();
+    let wexp = [
+        28436.0 / 22269.0,
+        13720.0 / 22269.0,
+        21100.0 / 22269.0,
+        25820.0 / 22269.0,
+    ];
+    let pexp = [
+        0.2809226990008633964,
+        -0.4478786267686341056,
+        -0.0174602085843524600,
+        0.1844161363521231693,
+    ];
+    for k in 0..4 {
+        assert!((r.weights[k] - wexp[k]).abs() < 1e-15);
+        assert!((r.params[k] - pexp[k]).abs() < 1e-15);
+    }
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let ra = rank_centrality(&a, 3, 0.5).unwrap();
+    let wexp5 = [207.0 / 265.0, 333.0 / 265.0, 255.0 / 265.0];
+    let pexp5 = [
+        -0.2279894828693772754,
+        0.2474342138456974782,
+        -0.0194447309763202028,
+    ];
+    for k in 0..3 {
+        assert!((ra.weights[k] - wexp5[k]).abs() < 1e-15);
+        assert!((ra.params[k] - pexp5[k]).abs() < 1e-15);
+    }
+}
+
+/// One-sided pair (item 0 always beats 1; ratio exactly 1 on that edge;
+/// statdist [6/5, 3/5, 6/5]) and alpha = 0 exact scale invariance
+/// (global k * wins leaves every ratio unchanged). Asserts read crate
+/// outputs.
+#[test]
+fn rc_one_sided_and_scale() {
+    let e = [0.0, 4.0, 1.0, 0.0, 0.0, 2.0, 3.0, 1.0, 0.0];
+    let r = rank_centrality(&e, 3, 0.0).unwrap();
+    let wexp = [1.2, 0.6, 1.2];
+    let pexp = [
+        0.2310490601866484365,
+        -0.4620981203732968729,
+        0.2310490601866484365,
+    ];
+    for k in 0..3 {
+        assert!((r.weights[k] - wexp[k]).abs() < 1e-15);
+        assert!((r.params[k] - pexp[k]).abs() < 1e-15);
+    }
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let base = rank_centrality(&a, 3, 0.0).unwrap();
+    let scaled: Vec<f64> = a.iter().map(|x| x * 1e150).collect();
+    let big = rank_centrality(&scaled, 3, 0.0).unwrap();
+    for k in 0..3 {
+        assert!((big.params[k] - base.params[k]).abs() < 1e-15);
+        assert!((big.weights[k] - base.weights[k]).abs() < 1e-15);
+    }
+}
+
+/// Error contract. Every assert reads a crate Result. Includes the
+/// denominator-overflow mandate (alpha = 1e308 -> the ratio denominator
+/// 2 * alpha overflows -> Err, never NaN or silent zeros) and the
+/// disconnected graph D (Err at alpha = 0; exact pins at alpha = 1/2:
+/// statdist [9/8, 7/8, 6/5, 4/5]).
+#[test]
+fn rc_error_contract() {
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    assert!(rank_centrality(&a, 1, 0.0).is_err());
+    assert!(rank_centrality(&a[..8], 3, 0.0).is_err());
+    let mut bad = a;
+    bad[1] = f64::NAN;
+    assert!(rank_centrality(&bad, 3, 0.0).is_err());
+    bad[1] = -1.0;
+    assert!(rank_centrality(&bad, 3, 0.0).is_err());
+    bad[1] = 3.0;
+    bad[0] = 1.0;
+    assert!(rank_centrality(&bad, 3, 0.0).is_err());
+    assert!(rank_centrality(&[0.0; 9], 3, 0.0).is_err());
+    assert!(rank_centrality(&a, 3, -0.5).is_err());
+    assert!(rank_centrality(&a, 3, f64::INFINITY).is_err());
+    assert!(rank_centrality(&a, 3, 1e308).is_err());
+    let mut huge = a;
+    huge[1] = 1e308;
+    huge[3] = 9e307;
+    assert!(rank_centrality(&huge, 3, 0.0).is_err());
+    let d = [
+        0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 1.0, 0.0,
+    ];
+    assert!(rank_centrality(&d, 4, 0.0).is_err());
+    let rd = rank_centrality(&d, 4, 0.5).unwrap();
+    let wexp = [1.125, 0.875, 1.2, 0.8];
+    for k in 0..4 {
+        assert!((rd.weights[k] - wexp[k]).abs() < 1e-15);
+    }
+}
+
+/// 500-rep Monte Carlo recovery (n = 4, bounded BT truth, 400
+/// comparisons per pair). Rank centrality is consistent for BT data but
+/// is not the MLE, so the bound is looser than the I-LSR one. Asserts
+/// read `rank_centrality(...)` crate outputs.
+#[test]
+#[ignore = "500-rep Monte Carlo; run with -- --ignored"]
+fn rc_mc_500_recovery() {
+    let mut worst = 0.0f64;
+    for rep in 0..500 {
+        let mut rng = Lcg(0x2_C4A1 + rep as u64 * 7919);
+        let n = 4usize;
+        let truth: Vec<f64> = {
+            let raw: Vec<f64> = (0..n).map(|_| rng.normal() * 0.8).collect();
+            let m = raw.iter().sum::<f64>() / n as f64;
+            raw.iter().map(|x| x - m).collect()
+        };
+        let mut wins = vec![0.0f64; n * n];
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let p = 1.0 / (1.0 + (truth[j] - truth[i]).exp());
+                for _ in 0..400 {
+                    if rng.next_f64() < p {
+                        wins[i * n + j] += 1.0;
+                    } else {
+                        wins[j * n + i] += 1.0;
+                    }
+                }
+            }
+        }
+        let r = rank_centrality(&wins, n, 0.0).unwrap();
+        let mae = truth
+            .iter()
+            .zip(r.params.iter())
+            .map(|(t, p)| (t - p).abs())
+            .sum::<f64>()
+            / n as f64;
+        worst = worst.max(mae);
+        // 0.15 bound: worst-of-500 MAE measured at 0.0912 on this seed
+        // stream. Mutant deviations (e.g. MU3 uniform weights) are >= 0.3.
+        assert!(mae < 0.15, "rep {rep}: mae = {mae}");
+    }
+    assert!(worst > 0.0);
+}

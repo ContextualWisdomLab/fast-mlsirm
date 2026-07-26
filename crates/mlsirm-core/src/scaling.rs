@@ -392,6 +392,15 @@ fn lsr_pass(wins: &[f64], n: usize, alpha: f64, w: &[f64]) -> Result<(Vec<f64>, 
     if chain.iter().any(|x| !x.is_finite()) {
         return Err("LSR Markov chain has non-finite transition rates (overflow)".into());
     }
+    statdist_params(chain, n)
+}
+
+/// Stationary distribution of the generator `chain` (row-major `n * n`,
+/// zero row sums, finite entries), scaled to sum `n`, plus its centered
+/// logs (choix `statdist` + `log_transform`). Shared by [`lsr_pairwise`]
+/// / [`ilsr_pairwise`] (via `lsr_pass`) and [`rank_centrality`].
+fn statdist_params(mut chain: Vec<f64>, n: usize) -> Result<(Vec<f64>, Vec<f64>), String> {
+    let nf = n as f64;
     // Normalize the generator to unit max magnitude: the stationary
     // distribution is invariant under global rescaling of all transition
     // rates, and without this an O(count) generator dwarfs the O(1)
@@ -603,6 +612,93 @@ pub fn ilsr_pairwise(
     Err(format!(
         "ilsr_pairwise did not converge after {max_iter} iterations"
     ))
+}
+
+/// Rank Centrality: one-shot spectral estimate of log-worths from the
+/// *ratios* of pairwise wins.
+///
+/// Implements the algorithm exactly as implemented by the `choix`
+/// Python package (v0.4.1, `lsr.py` `rank_centrality`, `utils.py`
+/// `statdist`/`log_transform`).
+///
+/// Source status:
+/// - **READ**: choix 0.4.1 source (`rank_centrality`, `statdist`,
+///   `log_transform`); every formula is traceable to those lines.
+/// - **NOT READ (as-cited)**: Negahban, S., Oh, S., & Shah, D. (2017).
+///   Rank Centrality: Ranking from pairwise comparisons. *Operations
+///   Research, 65*(1), 266-287 — cited as the algorithm origin per
+///   choix's docstring ([NOS12]). The paper formulates a
+///   *discrete-time* random walk with a max-degree normalization;
+///   choix (and therefore this port) instead builds a continuous-time
+///   generator and takes its stationary distribution, which shares the
+///   stationary ranking but is NOT the paper's exact matrix. We
+///   implement and verify the choix variant only.
+///
+/// The chain accrues, on the loser->winner edge, the *ratio*
+/// `(alpha + c_win) / (2*alpha + c_win + c_lose)` rather than LSR's
+/// worth-weighted count rate — the ratio denominator is a snapshot of
+/// the pre-transform counts, exactly like choix's vectorized
+/// `chain[idx] / (chain + chain.T)[idx]` (a half-updated in-place
+/// denominator gives wrong results; regression-pinned). choix also
+/// seeds the diagonal with `alpha` and ratio-transforms it to `1/2`
+/// before subtracting the full row sum; the diagonal contribution
+/// cancels algebraically in that subtraction (VERIFIED against the pip
+/// package to 2e-16 at `alpha = 0.5`), so this port computes
+/// off-diagonal ratios only and sets `diag = -offdiag_rowsum`.
+///
+/// At `alpha = 0` the result is exactly invariant under a global
+/// rescaling of all counts (ratios are unchanged); for fixed
+/// `alpha > 0` it is not.
+///
+/// DOCUMENTED DIVERGENCE from choix: an all-zero wins matrix is
+/// rejected (shared [`lsr_pairwise`] validation) even when
+/// `alpha > 0`, where choix would regularize it to a uniform chain —
+/// all-zero data carries no ranking information. Overflowing
+/// intermediates (`alpha + c` or the ratio denominator reaching
+/// infinity, e.g. `alpha = 1e308`) are an explicit error, whereas
+/// choix silently produces near-zero ratios and may fail later in
+/// `statdist`.
+pub fn rank_centrality(wins: &[f64], n: usize, alpha: f64) -> Result<LsrResult, String> {
+    lsr_validate(wins, n, alpha)?;
+    // Pre-transform counts snapshot: counts[j*n + i] = alpha + wins[i beats j].
+    let mut counts = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            if i != j {
+                counts[j * n + i] = alpha + wins[i * n + j];
+            }
+        }
+    }
+    let mut chain = vec![0.0f64; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let c = counts[i * n + j];
+            let denom = c + counts[j * n + i];
+            if !c.is_finite() || !denom.is_finite() {
+                return Err(
+                    "rank_centrality counts overflow (alpha + count or ratio denominator \
+                     is not finite)"
+                        .into(),
+                );
+            }
+            if c > 0.0 {
+                chain[i * n + j] = c / denom;
+            }
+        }
+    }
+    for i in 0..n {
+        let row_sum: f64 = (0..n).filter(|&j| j != i).map(|j| chain[i * n + j]).sum();
+        chain[i * n + i] = -row_sum;
+    }
+    let (params, weights) = statdist_params(chain, n)?;
+    Ok(LsrResult {
+        params,
+        weights,
+        iterations: 1,
+    })
 }
 
 #[cfg(test)]

@@ -8798,3 +8798,76 @@ class TestLsr:
             ilsr_pairwise(a, max_iter=0)
         with pytest.raises(ValueError):
             ilsr_pairwise(a, tol=0.0)
+
+class TestRankCentrality:
+    """Rank Centrality (choix 0.4.1 rank_centrality; Negahban, Oh, & Shah,
+    2017, as ported by choix -- continuous-time win-ratio chain). Pins from
+    the EXECUTED exact-Fraction/mpmath oracle (session files
+    rank_centrality_oracle.py), cross-checked against pip choix 0.4.1."""
+
+    def test_rank_centrality_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import lsr_pairwise, rank_centrality
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = rank_centrality(a)
+        assert r.iterations == 1
+        np.testing.assert_allclose(
+            r.weights, [138 / 181, 237 / 181, 168 / 181], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            r.params,
+            [-0.2458389167413269, 0.2949675392365996, -0.0491286224952727],
+            atol=1e-13,
+        )
+        # RC is the ratio chain, NOT the LSR rate chain (kills a
+        # dispatch-to-lsr mutant): weights differ on the same input.
+        rl = lsr_pairwise(a)
+        assert np.max(np.abs(r.weights - rl.weights)) > 1e-2
+        # alpha regularizes the ratio numerator and denominator.
+        ra = rank_centrality(a, alpha=0.5)
+        np.testing.assert_allclose(
+            ra.weights, [207 / 265, 333 / 265, 255 / 265], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            ra.params,
+            [-0.2279894828693773, 0.2474342138456975, -0.0194447309763202],
+            atol=1e-13,
+        )
+
+    def test_rank_centrality_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import rank_centrality
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        with pytest.raises(ValueError):
+            rank_centrality(np.ones((2, 3)))
+        with pytest.raises(ValueError):
+            rank_centrality(a + 1j * a)
+        with pytest.raises(ValueError):
+            rank_centrality(-a)
+        with pytest.raises(ValueError):
+            rank_centrality(np.zeros((3, 3)))
+        with pytest.raises(ValueError):
+            rank_centrality(a, alpha=-1.0)
+        # Disconnected comparison graph at alpha = 0; estimable at 0.5.
+        d = np.array(
+            [[0, 2, 0, 0], [1, 0, 0, 0], [0, 0, 0, 3], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        with pytest.raises(ValueError):
+            rank_centrality(d)
+        rd = rank_centrality(d, alpha=0.5)
+        np.testing.assert_allclose(
+            rd.weights, [9 / 8, 7 / 8, 6 / 5, 4 / 5], atol=1e-13
+        )
+        # Denominator overflow (2 * alpha -> inf) must raise, not NaN.
+        with pytest.raises(ValueError):
+            rank_centrality(a, alpha=1e308)
+        # Exact scale invariance at alpha = 0 only.
+        base = rank_centrality(a)
+        big = rank_centrality(a * 1e20)
+        assert np.allclose(big.params, base.params, atol=1e-12)

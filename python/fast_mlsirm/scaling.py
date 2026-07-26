@@ -227,3 +227,36 @@ def ilsr_pairwise(wins, alpha=0.0, max_iter=100, tol=1e-8):
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
     )
+
+def rank_centrality(wins, alpha=0.0):
+    """Rank Centrality: spectral ranking from the *ratios* of pairwise wins.
+
+    ``wins[i, j]`` is the number of times item *i* beat item *j* (row beats
+    column; zero diagonal). The Markov chain accrues, on each
+    loser-to-winner edge, the win *ratio*
+    ``(alpha + c_win) / (2 * alpha + c_win + c_lose)`` -- choix
+    ``rank_centrality``, which ports Negahban, Oh, & Shah's (2017)
+    algorithm as a continuous-time chain (the paper's discrete-time
+    max-degree walk is NOT what choix, or therefore this port, computes;
+    only the choix variant is implemented and verified). Returns the
+    centered log of the stationary distribution as :class:`LsrResult`
+    (``iterations`` always 1).
+
+    At ``alpha = 0`` the result is exactly invariant under a global
+    rescaling of all counts; for fixed ``alpha > 0`` it is not. Raises
+    ValueError on invalid input, a disconnected comparison graph at
+    ``alpha = 0``, or overflowing intermediates (e.g. ``alpha = 1e308``,
+    where the ratio denominator overflows -- choix instead silently
+    produces near-zero ratios). An all-zero wins matrix is rejected even
+    when ``alpha > 0`` (documented divergence from choix, which would
+    regularize it to a uniform chain).
+    """
+    from .fitstats import _core_module
+
+    arr = _lsr_validate("rank_centrality", wins)
+    res = _core_module().rank_centrality(arr.ravel(), arr.shape[0], float(alpha))
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
