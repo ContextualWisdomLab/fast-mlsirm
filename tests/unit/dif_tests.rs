@@ -2013,3 +2013,1532 @@ fn raju_mc_500() {
     assert!(u_type_i <= 0.25, "unsigned null Type I = {u_type_i}");
     assert!(u_power >= 0.85, "unsigned DIF power = {u_power}");
 }
+
+// ---------------------------------------------------------------------------
+// delta_plot (Angoff Delta plot DIF, deltaPlotR port)
+// ---------------------------------------------------------------------------
+// Pinned oracle: files/deltaplot_oracle.py (NumPy transcription of
+// deltaPlot.R + adjustExtreme.R with exact normal quantiles). The crate uses
+// Acklam's inverse-normal approximation, so pins use 1e-6 tolerances.
+
+/// Decode a '0'/'1' fixture string into an f64 response matrix.
+fn dp_decode(s: &str) -> Vec<f64> {
+    s.bytes().map(|b| f64::from(b - b'0')).collect()
+}
+
+/// MAIN fixture: seed-2037 numpy 2PL sample, 80 persons x 10 items,
+/// group = 40 reference then 40 focal, DIF planted on item 3 (focal -2.2).
+const DP_MAIN: &str = "11111101001111111010101100101000111010011101111100111101010111110110001111101000111010000000110001001111101101110111011111101001011111010000110100000011001000101110010100001000000000010000001111001100110111100001100000011101110001111000000101001110001111110000011000100001000100001000110000111110010000001001001110100000111100100101111101011110111000101110101011111110011111011111100010100011111010101110001000011011000011100011101110100000110001110001000001001110001001111011010011000010001100001000101011101111111110111110101110001001000010101010001110100100001011100011111101011111111011100100010010000100001100110000111111111011101110001010011100100001100011111000101100101110111000110001010001101110000000111110000001000000001111100110110001000011101111111010111101111010111101000000001110111111";
+
+fn dp_main_group() -> Vec<u8> {
+    let mut g = vec![0u8; 80];
+    for v in g.iter_mut().skip(40) {
+        *v = 1;
+    }
+    g
+}
+
+/// Unpurified norm-threshold pass on the MAIN fixture: every pinned value
+/// below is read back from the crate's `DeltaPlotResult`. Kills mutants that
+/// drop the +13 delta shift (MU2), use population covariance (MU3), pick the
+/// min axis root (MU1), or misorder the group proportions.
+#[test]
+fn delta_plot_main_fixture_matches_oracle() {
+    let resp = dp_decode(DP_MAIN);
+    let r = delta_plot(
+        &resp,
+        &dp_main_group(),
+        80,
+        10,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Norm { alpha: 0.05 },
+        None,
+        10,
+    )
+    .unwrap();
+    // raw proportions of the DIF item (exact: rational counts)
+    assert!(
+        (r.props[3][0] - 0.625).abs() < 1e-15,
+        "props ref {}",
+        r.props[3][0]
+    );
+    assert!(
+        (r.props[3][1] - 0.225).abs() < 1e-15,
+        "props foc {}",
+        r.props[3][1]
+    );
+    // constraint adjustment is a no-op here
+    assert_eq!(r.props, r.adj_props);
+    // Delta scores of item 3 (4*qnorm(1-p)+13; kills the +13-drop mutant)
+    assert!(
+        (r.deltas[3][0] - 11.7254425441425).abs() < 1e-6,
+        "D3 ref {}",
+        r.deltas[3][0]
+    );
+    assert!(
+        (r.deltas[3][1] - 16.021660105441878).abs() < 1e-6,
+        "D3 foc {}",
+        r.deltas[3][1]
+    );
+    // major axis (a, b) and per-item distances
+    assert!(
+        (r.axis_par[0][0] - -0.5929512514690067).abs() < 1e-6,
+        "a {}",
+        r.axis_par[0][0]
+    );
+    assert!(
+        (r.axis_par[0][1] - 1.0498623805872538).abs() < 1e-6,
+        "b {}",
+        r.axis_par[0][1]
+    );
+    assert!(
+        (r.dist[0][3] - -2.968831851786941).abs() < 1e-6,
+        "dist3 {}",
+        r.dist[0][3]
+    );
+    assert!(
+        (r.dist[0][0] - 0.6628946621840615).abs() < 1e-6,
+        "dist0 {}",
+        r.dist[0][0]
+    );
+    // norm threshold (kills ddof and alpha/2 mutants) and final flags
+    assert!(
+        (r.thresholds[0] - 2.4061275783230864).abs() < 1e-6,
+        "Q {}",
+        r.thresholds[0]
+    );
+    assert_eq!(r.dif_items, vec![3]);
+    assert_eq!(r.n_iter, 1);
+    assert!(r.converged);
+}
+
+/// Fixed threshold 1.0 flags {3, 7, 8} on the MAIN fixture (strict `>`).
+#[test]
+fn delta_plot_fixed_threshold_flags() {
+    let resp = dp_decode(DP_MAIN);
+    let r = delta_plot(
+        &resp,
+        &dp_main_group(),
+        80,
+        10,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Fixed(1.0),
+        None,
+        10,
+    )
+    .unwrap();
+    assert_eq!(r.dif_items, vec![3, 7, 8]);
+    // Boundary pin for the strict-> comparison (kills a >= mutant, MU4): a
+    // fixed threshold EXACTLY equal to |dist[0]| must NOT flag item 0.
+    let d0 = r.dist[0][0].abs();
+    let r2 = delta_plot(
+        &resp,
+        &dp_main_group(),
+        80,
+        10,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Fixed(d0),
+        None,
+        10,
+    )
+    .unwrap();
+    assert!(
+        !r2.dif_items.contains(&0),
+        "threshold == |dist| must not flag (strict >)"
+    );
+    assert!(r2.dif_items.contains(&3));
+}
+
+/// IPP1/IPP2/IPP3 purification on the MAIN fixture. The three rules disagree
+/// in their second-pass thresholds (pinned), which kills mutants that swap
+/// the SIG source (MU5: SSIG-vs-SIG) or reuse the full-data axis (MU6).
+#[test]
+fn delta_plot_purification_rules_match_oracle() {
+    let resp = dp_decode(DP_MAIN);
+    let g = dp_main_group();
+    let ext = ExtremeAdjust::Constraint {
+        lo: 0.001,
+        hi: 0.999,
+    };
+    let thr = DeltaThreshold::Norm { alpha: 0.05 };
+    let r3 = delta_plot(&resp, &g, 80, 10, ext, thr, Some(PurifyType::Ipp3), 10).unwrap();
+    assert_eq!(r3.n_iter, 2);
+    assert!(r3.converged);
+    assert_eq!(r3.dif_items, vec![3]);
+    assert!(
+        (r3.thresholds[1] - 1.2874360054118958).abs() < 1e-6,
+        "IPP3 Q2 {}",
+        r3.thresholds[1]
+    );
+    assert!(
+        (r3.axis_par[1][0] - 0.5973740960658116).abs() < 1e-6,
+        "a2 {}",
+        r3.axis_par[1][0]
+    );
+    assert!(
+        (r3.axis_par[1][1] - 0.9213166936996785).abs() < 1e-6,
+        "b2 {}",
+        r3.axis_par[1][1]
+    );
+    assert!(
+        (r3.dist[1][3] - -3.398830336716018).abs() < 1e-6,
+        "dist2[3] {}",
+        r3.dist[1][3]
+    );
+    let r1 = delta_plot(&resp, &g, 80, 10, ext, thr, Some(PurifyType::Ipp1), 10).unwrap();
+    assert_eq!(
+        r1.thresholds[1], r1.thresholds[0],
+        "IPP1 keeps the first threshold"
+    );
+    let r2 = delta_plot(&resp, &g, 80, 10, ext, thr, Some(PurifyType::Ipp2), 10).unwrap();
+    assert!(
+        (r2.thresholds[1] - 2.431254262015196).abs() < 1e-6,
+        "IPP2 Q2 {}",
+        r2.thresholds[1]
+    );
+    // The three second-pass thresholds are pairwise distinct on this fixture.
+    assert!((r1.thresholds[1] - r2.thresholds[1]).abs() > 1e-3);
+    assert!((r2.thresholds[1] - r3.thresholds[1]).abs() > 1e-3);
+    // Fixed threshold forces IPP1 semantics regardless of the requested rule.
+    let rf = delta_plot(
+        &resp,
+        &g,
+        80,
+        10,
+        ext,
+        DeltaThreshold::Fixed(1.0),
+        Some(PurifyType::Ipp3),
+        10,
+    )
+    .unwrap();
+    for q in &rf.thresholds {
+        assert_eq!(*q, 1.0, "fixed threshold must stay 1.0 across iterations");
+    }
+}
+
+/// NEGCOV regression (spec-review mandate 1): deterministic 20x5 block data
+/// with reversed group difficulty orders gives s12 < 0; R's `max(b1, b2)`
+/// still returns the POSITIVE root b = +1 exactly (a theoretical major axis
+/// would pick -1). Kills the min-root mutant (MU1) where the MAIN fixture's
+/// positive-covariance data cannot.
+#[test]
+fn delta_plot_negative_covariance_keeps_positive_root() {
+    const NEGCOV: &str = "1111111110111101110011100110001100010000100000000011111011110111100111001110001100011000010000100000";
+    let resp = dp_decode(NEGCOV);
+    let mut g = vec![0u8; 20];
+    for v in g.iter_mut().skip(10) {
+        *v = 1;
+    }
+    let r = delta_plot(
+        &resp,
+        &g,
+        20,
+        5,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Norm { alpha: 0.05 },
+        None,
+        10,
+    )
+    .unwrap();
+    assert_eq!(r.axis_par[0][1], 1.0, "b must be the positive root exactly");
+    assert!(r.axis_par[0][0].abs() < 1e-9, "a {}", r.axis_par[0][0]);
+    assert!(
+        (r.dist[0][0] - -7.249550419494587).abs() < 1e-6,
+        "dist[0] {}",
+        r.dist[0][0]
+    );
+    assert!(
+        (r.dist[0][4] - 7.249550419494587).abs() < 1e-6,
+        "dist[4] {}",
+        r.dist[0][4]
+    );
+    assert!(
+        (r.thresholds[0] - 10.85578120703861).abs() < 1e-6,
+        "Q {}",
+        r.thresholds[0]
+    );
+    assert!(r.dif_items.is_empty());
+}
+
+/// OSC fixture (spec-review mandate 2, seed-4724 null sample): purification
+/// oscillates between flagging item 0 and flagging nothing; the loop must run
+/// to `max_iter` total rows and report `converged == false`. Pins the
+/// n_iter-counts-initial-row semantics and the empty-set membership row.
+#[test]
+fn delta_plot_purification_oscillation_hits_max_iter() {
+    const OSC: &str = "00110010000010001111111100001001010100111110110101110001011111010000000011101101111111100100000010000000101001100110110111000010111111111111111101000001110011111110000011111010111000101111111110000000111111010001100101010000110110101011001010110110111110101110100110001000101111111111010010000101101010001100000011000010";
+    let resp = dp_decode(OSC);
+    let mut g = vec![0u8; 40];
+    for v in g.iter_mut().skip(20) {
+        *v = 1;
+    }
+    let r = delta_plot(
+        &resp,
+        &g,
+        40,
+        8,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Norm { alpha: 0.05 },
+        Some(PurifyType::Ipp3),
+        10,
+    )
+    .unwrap();
+    assert!(
+        (r.thresholds[0] - 4.479227107151378).abs() < 1e-6,
+        "Q1 {}",
+        r.thresholds[0]
+    );
+    assert!(
+        (r.dist[0][0] - 4.762801306245837).abs() < 1e-6,
+        "init dist0 {}",
+        r.dist[0][0]
+    );
+    assert_eq!(r.n_iter, 10, "must exhaust max_iter total rows");
+    assert!(!r.converged);
+    assert!(
+        r.dif_items.is_empty(),
+        "final (10th) row is an empty-flag pass"
+    );
+    assert!(
+        (r.thresholds[9] - 1.9610569776661306).abs() < 1e-6,
+        "Qfinal {}",
+        r.thresholds[9]
+    );
+    assert_eq!(r.dist.len(), 10);
+    assert_eq!(r.thresholds.len(), 10);
+}
+
+/// Structural invariances read back from crate outputs:
+/// item permutation permutes distances/flags; duplicating every person leaves
+/// constraint-mode results unchanged (proportions are means).
+#[test]
+fn delta_plot_permutation_and_duplication_invariance() {
+    let resp = dp_decode(DP_MAIN);
+    let g = dp_main_group();
+    let ext = ExtremeAdjust::Constraint {
+        lo: 0.001,
+        hi: 0.999,
+    };
+    let thr = DeltaThreshold::Norm { alpha: 0.05 };
+    let base = delta_plot(&resp, &g, 80, 10, ext, thr, None, 10).unwrap();
+    // permute items: reverse column order
+    let mut rev = vec![0.0; resp.len()];
+    for p in 0..80 {
+        for i in 0..10 {
+            rev[p * 10 + i] = resp[p * 10 + (9 - i)];
+        }
+    }
+    let rrev = delta_plot(&rev, &g, 80, 10, ext, thr, None, 10).unwrap();
+    for i in 0..10 {
+        assert!(
+            (base.dist[0][i] - rrev.dist[0][9 - i]).abs() < 1e-9,
+            "distance must follow the item permutation (i={i})"
+        );
+    }
+    let mut mapped: Vec<usize> = rrev.dif_items.iter().map(|&i| 9 - i).collect();
+    mapped.sort_unstable();
+    assert_eq!(mapped, base.dif_items);
+    // duplicate every person (same group): identical result in constraint mode
+    let mut dup = resp.clone();
+    dup.extend_from_slice(&resp);
+    let mut g2 = g.clone();
+    g2.extend_from_slice(&g);
+    let rdup = delta_plot(&dup, &g2, 160, 10, ext, thr, None, 10).unwrap();
+    for i in 0..10 {
+        assert!(
+            (base.dist[0][i] - rdup.dist[0][i]).abs() < 1e-12,
+            "dup dist {i}"
+        );
+    }
+    assert_eq!(base.dif_items, rdup.dif_items);
+    assert!((base.thresholds[0] - rdup.thresholds[0]).abs() < 1e-12);
+}
+
+/// Add-mode extreme adjustment: fires ONLY on proportions exactly 0/1 and
+/// uses `(sum + nr_add)/(n + 2*nr_add)`. Duplication invariance is FALSE in
+/// add mode (counter-assert pinning the documented R divergence: the
+/// correction shrinks with n).
+#[test]
+fn delta_plot_add_mode_extremes_and_non_invariance() {
+    // 4 ref + 4 focal persons, 2 items; item 0 is all-correct in ref.
+    let resp = vec![
+        1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, // ref
+        0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, // foc
+    ];
+    let g = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let r = delta_plot(
+        &resp,
+        &g,
+        8,
+        2,
+        ExtremeAdjust::Add { nr_add: 1 },
+        DeltaThreshold::Fixed(1.5),
+        None,
+        10,
+    )
+    .unwrap();
+    // ref item 0: p = 1 exactly -> (4 + 1) / (4 + 2) = 5/6
+    assert!(
+        (r.adj_props[0][0] - 5.0 / 6.0).abs() < 1e-15,
+        "adj {}",
+        r.adj_props[0][0]
+    );
+    // non-extreme entries untouched
+    assert_eq!(r.adj_props[0][1], 0.5);
+    assert_eq!(r.adj_props[1][0], 0.5);
+    assert_eq!(r.adj_props[1][1], 0.75);
+    // duplication changes the adjusted proportion: (8+1)/(8+2) != 5/6
+    let mut dup = resp.clone();
+    dup.extend_from_slice(&resp);
+    let mut g2 = g.clone();
+    g2.extend_from_slice(&g);
+    let rd = delta_plot(
+        &dup,
+        &g2,
+        16,
+        2,
+        ExtremeAdjust::Add { nr_add: 1 },
+        DeltaThreshold::Fixed(1.5),
+        None,
+        10,
+    )
+    .unwrap();
+    assert!(
+        (rd.adj_props[0][0] - 0.9).abs() < 1e-15,
+        "dup adj {}",
+        rd.adj_props[0][0]
+    );
+    assert!(
+        (rd.adj_props[0][0] - r.adj_props[0][0]).abs() > 1e-3,
+        "add-mode results MUST differ under person duplication"
+    );
+    // constraint mode clamps the same cell to hi instead
+    let rc = delta_plot(
+        &resp,
+        &g,
+        8,
+        2,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Fixed(1.5),
+        None,
+        10,
+    )
+    .unwrap();
+    assert_eq!(rc.adj_props[0][0], 0.999);
+}
+
+/// Missing responses are dropped per column per group (R na.rm=TRUE).
+#[test]
+fn delta_plot_missing_dropped_per_column() {
+    let mut resp = dp_decode(DP_MAIN);
+    // blank out person 0 item 0; ref prop must be recomputed over 39 persons
+    resp[0] = f64::NAN;
+    let r = delta_plot(
+        &resp,
+        &dp_main_group(),
+        80,
+        10,
+        ExtremeAdjust::Constraint {
+            lo: 0.001,
+            hi: 0.999,
+        },
+        DeltaThreshold::Norm { alpha: 0.05 },
+        None,
+        10,
+    )
+    .unwrap();
+    let full = dp_decode(DP_MAIN);
+    let ref_sum: f64 = (1..40).map(|p| full[p * 10]).sum();
+    assert!(
+        (r.props[0][0] - ref_sum / 39.0).abs() < 1e-15,
+        "prop {}",
+        r.props[0][0]
+    );
+    // other columns untouched
+    assert!((r.props[3][0] - 0.625).abs() < 1e-15);
+}
+
+/// Error contract: every rejection path returns Err (never panics).
+#[test]
+fn delta_plot_error_paths() {
+    let ok = dp_decode(DP_MAIN);
+    let g = dp_main_group();
+    let ext = ExtremeAdjust::Constraint {
+        lo: 0.001,
+        hi: 0.999,
+    };
+    let thr = DeltaThreshold::Norm { alpha: 0.05 };
+    // shape errors
+    assert!(delta_plot(&ok, &g, 80, 1, ext, thr, None, 10).is_err());
+    assert!(delta_plot(&ok[..10], &g, 80, 10, ext, thr, None, 10).is_err());
+    assert!(delta_plot(&ok, &g[..5], 80, 10, ext, thr, None, 10).is_err());
+    // group contract
+    let g_bad: Vec<u8> = g.iter().map(|&v| v + 1).collect();
+    assert!(delta_plot(&ok, &g_bad, 80, 10, ext, thr, None, 10).is_err());
+    assert!(delta_plot(&ok, &vec![0u8; 80], 80, 10, ext, thr, None, 10).is_err());
+    // non-binary response
+    let mut bad = ok.clone();
+    bad[7] = 2.0;
+    assert!(delta_plot(&bad, &g, 80, 10, ext, thr, None, 10).is_err());
+    // all-NaN column in one group
+    let mut nan_col = ok.clone();
+    for p in 0..40 {
+        nan_col[p * 10 + 2] = f64::NAN;
+    }
+    assert!(delta_plot(&nan_col, &g, 80, 10, ext, thr, None, 10).is_err());
+    // config errors
+    assert!(delta_plot(
+        &ok,
+        &g,
+        80,
+        10,
+        ExtremeAdjust::Constraint { lo: 0.9, hi: 0.1 },
+        thr,
+        None,
+        10
+    )
+    .is_err());
+    assert!(delta_plot(
+        &ok,
+        &g,
+        80,
+        10,
+        ExtremeAdjust::Add { nr_add: 0 },
+        thr,
+        None,
+        10
+    )
+    .is_err());
+    assert!(delta_plot(
+        &ok,
+        &g,
+        80,
+        10,
+        ext,
+        DeltaThreshold::Norm { alpha: 0.0 },
+        None,
+        10
+    )
+    .is_err());
+    assert!(delta_plot(
+        &ok,
+        &g,
+        80,
+        10,
+        ext,
+        DeltaThreshold::Norm { alpha: 1.0 },
+        None,
+        10
+    )
+    .is_err());
+    assert!(delta_plot(&ok, &g, 80, 10, ext, thr, Some(PurifyType::Ipp3), 0).is_err());
+    // constant delta columns -> s12 == 0 -> Err (R stop)
+    // ref column is constant (all props .5) while focal varies
+    let same = vec![
+        1.0, 1.0, 1.0, // ref p1
+        0.0, 0.0, 0.0, // ref p2
+        1.0, 1.0, 0.0, // foc p1
+        0.0, 1.0, 0.0, // foc p2
+    ];
+    let gs = vec![0, 0, 1, 1];
+    assert!(delta_plot(&same, &gs, 4, 3, ext, thr, None, 10).is_err());
+}
+
+/// Monte-Carlo recovery anchor (500 replications, seeded LCG): 100+100
+/// persons, 12 items, one planted uniform-DIF item (focal -1.6 logits).
+/// Requires >= 80% hit rate on the planted item and <= 0.6 mean false flags,
+/// reading `dif_items` from the crate each replication.
+#[test]
+#[ignore = "500-replication Monte-Carlo; run with --ignored"]
+fn delta_plot_mc_recovery_500() {
+    let (n_per_group, n_items, dif_item) = (100usize, 12usize, 4usize);
+    let n = 2 * n_per_group;
+    let mut rng = Lcg(0x5eed_d1f_2037);
+    let mut hits = 0usize;
+    let mut false_flags = 0usize;
+    let reps = 500;
+    for _ in 0..reps {
+        let mut resp = vec![0.0f64; n * n_items];
+        let mut g = vec![0u8; n];
+        for p in 0..n {
+            let focal = p >= n_per_group;
+            g[p] = u8::from(focal);
+            let theta = rng.normal();
+            for i in 0..n_items {
+                let b = -1.5 + 3.0 * (i as f64) / ((n_items - 1) as f64);
+                let mut eta = theta - b;
+                if focal && i == dif_item {
+                    eta -= 1.6;
+                }
+                let pr = 1.0 / (1.0 + (-eta).exp());
+                resp[p * n_items + i] = f64::from(u8::from(rng.next_f64() < pr));
+            }
+        }
+        let r = delta_plot(
+            &resp,
+            &g,
+            n,
+            n_items,
+            ExtremeAdjust::Constraint {
+                lo: 0.001,
+                hi: 0.999,
+            },
+            DeltaThreshold::Norm { alpha: 0.05 },
+            None,
+            10,
+        )
+        .unwrap();
+        if r.dif_items.contains(&dif_item) {
+            hits += 1;
+        }
+        false_flags += r.dif_items.iter().filter(|&&i| i != dif_item).count();
+    }
+    let hit_rate = hits as f64 / reps as f64;
+    let mean_false = false_flags as f64 / reps as f64;
+    assert!(hit_rate >= 0.80, "planted-DIF hit rate {hit_rate}");
+    assert!(mean_false <= 0.6, "mean false flags {mean_false}");
+}
+
+// ===========================================================================
+// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer, 2003; ED481063)
+// ===========================================================================
+// Oracle: independent Python (math.erfc, Fraction cross-check) in the spec
+// artifacts; rational pins are exact fractions (133/135, 23/108, -523/390,
+// 23/39). Category-probability pins use 5e-7 tolerance (crate erfc bound
+// 1.2e-7). Every assert reads values returned by `eb_mh_dif`.
+
+/// Main pinned fixture. Kills MU1 (W numerator swap: every weight pin
+/// fails), MU2 (variance divisor n: tau2_raw pin 23/16 fails), MU4 (wrong
+/// posterior variance: post_var pins fail), MU5 (wrong category cuts:
+/// cat_probs pins fail).
+#[test]
+fn eb_mh_dif_pinned_main_fixture() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let r = eb_mh_dif(&mh, &se).unwrap();
+    assert!((r.mu - (-0.25)).abs() < 1e-12, "mu {}", r.mu);
+    assert!(
+        (r.tau2_raw - 1.4375).abs() < 1e-12,
+        "tau2_raw {}",
+        r.tau2_raw
+    );
+    assert!((r.tau2 - 1.4375).abs() < 1e-12, "tau2 {}", r.tau2);
+    let w_exp = [
+        23.0 / 27.0,
+        0.6919374247894103,
+        0.8998435054773082,
+        23.0 / 39.0,
+    ];
+    let m_exp = [
+        133.0 / 135.0,
+        -0.3537906137184116,
+        0.2449139280125195,
+        -523.0 / 390.0,
+    ];
+    let v_exp = [
+        23.0 / 108.0,
+        0.4428399518652227,
+        0.14397496087636932,
+        23.0 / 39.0,
+    ];
+    for i in 0..4 {
+        assert!(
+            (r.weight[i] - w_exp[i]).abs() < 1e-12,
+            "W[{i}] {}",
+            r.weight[i]
+        );
+        assert!(
+            (r.post_mean[i] - m_exp[i]).abs() < 1e-12,
+            "post_mean[{i}] {}",
+            r.post_mean[i]
+        );
+        assert!(
+            (r.post_var[i] - v_exp[i]).abs() < 1e-12,
+            "post_var[{i}] {}",
+            r.post_var[i]
+        );
+    }
+    let p_exp: [[f64; 5]; 4] = [
+        [
+            3.616990144296935e-08,
+            8.435105866275827e-06,
+            0.512796531024999,
+            0.3548930710352117,
+            0.1323019266640216,
+        ],
+        [
+            0.042496191961947136,
+            0.12326089348540713,
+            0.8132853278520433,
+            0.018287127957632876,
+            0.0026704587429695753,
+        ],
+        [
+            2.1261693308649007e-06,
+            0.0005152164918145778,
+            0.9761871639766915,
+            0.022825215809679777,
+            0.00047027755248330673,
+        ],
+        [
+            0.4180002533326439,
+            0.25350523187957874,
+            0.32734426739079336,
+            0.001042236915508532,
+            0.0001080104814755442,
+        ],
+    ];
+    for i in 0..4 {
+        let mut sum = 0.0;
+        for k in 0..5 {
+            assert!(
+                (r.cat_probs[i][k] - p_exp[i][k]).abs() < 5e-7,
+                "cat_probs[{i}][{k}] {}",
+                r.cat_probs[i][k]
+            );
+            sum += r.cat_probs[i][k];
+        }
+        // Sanity only (a normalizing mutant could pass this row-sum alone).
+        assert!((sum - 1.0).abs() < 1e-9, "row {i} sum {sum}");
+    }
+}
+
+/// Negative tau2_raw floors to 0 and the posterior collapses to a point
+/// mass at mu. Kills MU3 (no flooring: weights/probs become NaN or
+/// negative-variance garbage). All asserts read crate outputs.
+#[test]
+fn eb_mh_dif_degenerate_floor() {
+    let r = eb_mh_dif(&[0.5, 0.5, 0.5], &[1.0, 1.0, 1.0]).unwrap();
+    assert!(
+        (r.tau2_raw - (-1.0)).abs() < 1e-12,
+        "tau2_raw {}",
+        r.tau2_raw
+    );
+    assert_eq!(r.tau2, 0.0);
+    for i in 0..3 {
+        assert_eq!(r.weight[i], 0.0);
+        assert!((r.post_mean[i] - 0.5).abs() < 1e-15);
+        assert_eq!(r.post_var[i], 0.0);
+        assert_eq!(r.cat_probs[i], [0.0, 0.0, 1.0, 0.0, 0.0]);
+    }
+}
+
+/// Point-mass boundary conventions (implementation-defined; degenerate
+/// case only). Reads crate cat_probs; kills sign-flip and cut-shuffle
+/// mutants in `eb_point_mass_cats`.
+#[test]
+fn eb_mh_dif_point_mass_categories() {
+    // mu = 1.2 -> B+ (1 <= |m| < 1.5, positive side).
+    let r = eb_mh_dif(&[1.2, 1.2], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.tau2, 0.0);
+    assert_eq!(r.cat_probs[0], [0.0, 0.0, 0.0, 1.0, 0.0]);
+    // mu = -1.6 -> C-.
+    let r = eb_mh_dif(&[-1.6, -1.6], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.cat_probs[0], [1.0, 0.0, 0.0, 0.0, 0.0]);
+    // Boundary |m| exactly 1.5 -> C (>= inclusion), positive side.
+    let r = eb_mh_dif(&[1.5, 1.5], &[2.0, 2.0]).unwrap();
+    assert_eq!(r.cat_probs[0], [0.0, 0.0, 0.0, 0.0, 1.0]);
+}
+
+/// Structure invariant: the noisier item (bigger se) shrinks farther in
+/// absolute distance even though its raw |MH| is larger. Reads crate
+/// post_mean; kills weight-inversion and se-index-map mutants.
+#[test]
+fn eb_mh_dif_shrinkage_asymmetry() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let r = eb_mh_dif(&mh, &se).unwrap();
+    let d1 = (mh[0] - r.post_mean[0]).abs();
+    let d4 = (mh[3] - r.post_mean[3]).abs();
+    assert!(d4 > d1 + 0.5, "shrink distances d4={d4} d1={d1}");
+    // Strict weight monotonicity in se: se order item3 < item1 < item2 <
+    // item4 must give strictly decreasing crate weights.
+    assert!(r.weight[2] > r.weight[0]);
+    assert!(r.weight[0] > r.weight[1]);
+    assert!(r.weight[1] > r.weight[3]);
+}
+
+/// Permutation equivariance: reversing the items reverses every per-item
+/// output and leaves the scalar priors unchanged. Reads both crate results;
+/// kills index-shift mutants. Tolerance 1e-12 (summation order differs).
+#[test]
+fn eb_mh_dif_permutation_equivariance() {
+    let mh = [1.2, -0.4, 0.3, -2.1];
+    let se = [0.5, 0.8, 0.4, 1.0];
+    let a = eb_mh_dif(&mh, &se).unwrap();
+    let mh_r = [-2.1, 0.3, -0.4, 1.2];
+    let se_r = [1.0, 0.4, 0.8, 0.5];
+    let b = eb_mh_dif(&mh_r, &se_r).unwrap();
+    assert!((a.mu - b.mu).abs() < 1e-12);
+    assert!((a.tau2 - b.tau2).abs() < 1e-12);
+    for i in 0..4 {
+        let j = 3 - i;
+        assert!((a.weight[i] - b.weight[j]).abs() < 1e-12);
+        assert!((a.post_mean[i] - b.post_mean[j]).abs() < 1e-12);
+        assert!((a.post_var[i] - b.post_var[j]).abs() < 1e-12);
+        for k in 0..5 {
+            assert!((a.cat_probs[i][k] - b.cat_probs[j][k]).abs() < 1e-12);
+        }
+    }
+}
+
+/// Error contract. Every arm reads the crate Err.
+#[test]
+fn eb_mh_dif_errors() {
+    assert!(eb_mh_dif(&[1.0, 2.0], &[1.0]).is_err()); // length mismatch
+    assert!(eb_mh_dif(&[1.0], &[1.0]).is_err()); // n < 2
+    assert!(eb_mh_dif(&[], &[]).is_err()); // n = 0
+    assert!(eb_mh_dif(&[f64::NAN, 1.0], &[1.0, 1.0]).is_err());
+    assert!(eb_mh_dif(&[f64::INFINITY, 1.0], &[1.0, 1.0]).is_err());
+    assert!(eb_mh_dif(&[1.0, 2.0], &[0.0, 1.0]).is_err()); // se = 0
+    assert!(eb_mh_dif(&[1.0, 2.0], &[-0.5, 1.0]).is_err()); // se < 0
+    assert!(eb_mh_dif(&[1.0, 2.0], &[f64::NAN, 1.0]).is_err());
+    assert!(eb_mh_dif(&[1.0, 2.0], &[f64::INFINITY, 1.0]).is_err());
+    // se^2 overflow.
+    assert!(eb_mh_dif(&[1.0, 2.0], &[1e200, 1.0]).is_err());
+    // Variance overflow from huge mh.
+    assert!(eb_mh_dif(&[1e300, -1e300], &[1.0, 1.0]).is_err());
+    // Posterior denominator overflow: tau2 and se^2 individually finite but
+    // tau2 + se^2 = inf. Reads the crate Err (impl-review regression: the
+    // pre-fix code silently returned weight = 0 here).
+    assert!(eb_mh_dif(&[9e153, -9e153], &[1e154, 1.0]).is_err());
+}
+
+/// MC-500 (supplemental, seeded): EB posterior means beat raw MH in RMSE
+/// against the generating DIF (the paper's core validity claim, report
+/// pp. 5-6), and mean tau2_hat tracks the generating tau2. Reads crate
+/// post_mean/tau2 per replication.
+#[test]
+#[ignore]
+fn eb_mh_dif_mc_500_shrinkage_beats_raw() {
+    let n_items = 40;
+    let tau2_true: f64 = 0.6;
+    let mu_true = 0.3;
+    let reps = 500;
+    let mut rng = Lcg(0x00eb_d1f5_eed5_0001);
+    let (mut sse_eb, mut sse_raw) = (0.0, 0.0);
+    let mut tau2_sum = 0.0;
+    for _ in 0..reps {
+        let mut theta = Vec::with_capacity(n_items);
+        let mut mh = Vec::with_capacity(n_items);
+        let mut se = Vec::with_capacity(n_items);
+        for i in 0..n_items {
+            let t = mu_true + tau2_true.sqrt() * rng.normal();
+            let s = 0.3 + 0.7 * (i as f64) / ((n_items - 1) as f64);
+            theta.push(t);
+            se.push(s);
+            mh.push(t + s * rng.normal());
+        }
+        let r = eb_mh_dif(&mh, &se).unwrap();
+        tau2_sum += r.tau2;
+        for i in 0..n_items {
+            sse_eb += (r.post_mean[i] - theta[i]).powi(2);
+            sse_raw += (mh[i] - theta[i]).powi(2);
+        }
+    }
+    let denom = (reps * n_items) as f64;
+    let rmse_eb = (sse_eb / denom).sqrt();
+    let rmse_raw = (sse_raw / denom).sqrt();
+    assert!(
+        rmse_eb < rmse_raw,
+        "EB RMSE {rmse_eb} must beat raw {rmse_raw}"
+    );
+    let tau2_mean = tau2_sum / reps as f64;
+    assert!(
+        (tau2_mean - tau2_true).abs() / tau2_true < 0.15,
+        "mean tau2_hat {tau2_mean} vs true {tau2_true}"
+    );
+}
+// ===========================================================================
+// Mantel (1963) polytomous DIF + SMD (Zwick, Donoghue & Grima, 1993)
+// Oracle: exact Fraction arithmetic (session artifact mantel_smd_oracle.py),
+// re-derived by the spec reviewer by hand for item 0.
+// ===========================================================================
+
+/// 12 persons x 3 items, scores 0..2; first 6 reference, last 6 focal.
+/// Totals produce strata where only totals {2, 3} contain both groups,
+/// so the stratum-exclusion filter is exercised on every item.
+fn mantel_fixture() -> (Vec<i64>, Vec<u8>) {
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1, 0,  1, 0, 2,  2, 2, 1,  0, 1, 1,  1, 2, 0,  2, 0, 0, // R
+        1, 1, 1,  0, 0, 0,  2, 1, 0,  0, 2, 2,  0, 1, 0,  1, 0, 1, // F
+    ];
+    let group = vec![0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
+    (y, group)
+}
+
+/// Exact-rational pins for all three items (asymmetric, distinct values;
+/// 2-item designs are structurally mirror-symmetric so 3 items are used).
+/// Asserts read the crate rows; killed by any Eq. 8/9/11 algebra mutation.
+#[test]
+fn mantel_smd_pinned_fixture() {
+    let (y, group) = mantel_fixture();
+    let rows = mantel_smd_dif(&y, &group, 12, 3).unwrap();
+    assert_eq!(rows.len(), 3);
+    let pins = [
+        (3.0 / 77.0, 1.0 / 9.0),
+        (5.0 / 37.0, -1.0 / 6.0),
+        (2.0 / 133.0, 1.0 / 18.0),
+    ];
+    for (i, (chi2, smd)) in pins.iter().enumerate() {
+        assert_eq!(rows[i].item, i);
+        assert_eq!(rows[i].n_strata_used, 2, "item {i}");
+        assert!(
+            (rows[i].chi2 - chi2).abs() < 1e-12,
+            "item {i} chi2 {}",
+            rows[i].chi2
+        );
+        assert!(
+            (rows[i].smd - smd).abs() < 1e-12,
+            "item {i} smd {}",
+            rows[i].smd
+        );
+        assert!(rows[i].p_value > 0.0 && rows[i].p_value < 1.0);
+    }
+    // Directional asymmetry: item 1 favors the reference group, items 0 and
+    // 2 the focal group (kills any sign flip in F - E or in SMD).
+    assert!(rows[1].smd < 0.0 && rows[0].smd > 0.0 && rows[2].smd > 0.0);
+}
+
+/// Dichotomous 0/1 reduction (read source, below Eq. 9): the Mantel chi2
+/// equals the MH chi2 WITHOUT the continuity correction. Anchored by an
+/// independent in-test 2x2 hypergeometric tabulation (classical
+/// m_1k m_0k variance route, distinct from the crate's generic
+/// n s2 - s1^2 polytomous route) asserted EQUAL to the crate value, plus
+/// the relational check corrected MH <= uncorrected Mantel.
+#[test]
+fn mantel_smd_dichotomous_matches_mh_without_correction() {
+    // 16 persons x 2 binary items, both groups spread over several totals,
+    // chosen so the summed residual is NONZERO (num = -7/9 for item 0,
+    // chi2 = 49/50 exactly): a zero-residual fixture would make chi2 = 0
+    // regardless of the variance and could not detect variance mutations.
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        1, 0,  1, 1,  1, 0,  0, 1,  1, 1,  1, 0,  0, 0,  1, 1, // R
+        0, 1,  0, 0,  1, 0,  0, 1,  1, 1,  0, 0,  0, 1,  1, 0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
+    let rows = mantel_smd_dif(&y, &group, 16, 2).unwrap();
+    let y8: Vec<u8> = y.iter().map(|&v| v as u8).collect();
+    let mh = mantel_haenszel_dif(&y8, &group, 16, 2, &MhDifConfig::default()).unwrap();
+    // Independent 2x2 hypergeometric tabulation of the UNCORRECTED MH
+    // chi-square, computed here from the raw fixture through the classical
+    // m_1k m_0k variance form (the crate uses the generic polytomous form
+    // n s2 - s1^2; for 0/1 scores s1 = s2 = m_1k so the two routes agree
+    // only if the crate algebra is right). Equality assert reads the crate
+    // chi2; an inflated or deflated implementation fails here.
+    let totals: Vec<i64> = (0..16).map(|p| y[2 * p] + y[2 * p + 1]).collect();
+    let mut levels = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    for i in 0..2 {
+        let (mut num, mut var) = (0.0f64, 0.0f64);
+        for &t in &levels {
+            let (mut nr, mut nf, mut m1, mut b) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+            for p in 0..16 {
+                if totals[p] != t {
+                    continue;
+                }
+                let v = y[2 * p + i] as f64;
+                m1 += v;
+                if group[p] == 1 {
+                    nf += 1.0;
+                    b += v;
+                } else {
+                    nr += 1.0;
+                }
+            }
+            if nr == 0.0 || nf == 0.0 {
+                continue;
+            }
+            let n = nr + nf;
+            num += b - nf * m1 / n;
+            var += nr * nf * m1 * (n - m1) / (n * n * (n - 1.0));
+        }
+        let chi2_ind = num * num / var;
+        let cm: f64 = rows[i].chi2;
+        let ch: f64 = mh[i].chi2_mh;
+        assert!(cm.is_finite() && ch.is_finite(), "item {i}");
+        // Exact-rational pin (49/50 for both items; 2-item designs are
+        // mirror-symmetric) read from the crate value: kills variance and
+        // expectation mutations that a zero-residual fixture cannot see.
+        assert!((cm - 0.98).abs() < 1e-12, "item {i} chi2 {cm} != 49/50");
+        assert!(
+            (cm - chi2_ind).abs() < 1e-12,
+            "item {i}: crate Mantel {cm} != independent uncorrected MH {chi2_ind}"
+        );
+        // Continuity correction shrinks |d| by 0.5, so corrected <= uncorrected.
+        assert!(
+            ch <= cm + 1e-12,
+            "item {i}: corrected MH {ch} should not exceed Mantel {cm}"
+        );
+    }
+}
+
+/// Degenerate rows: an item with identical scores everywhere has zero
+/// variance in every stratum -> chi2/p NaN, SMD defined (0), strata counted.
+/// An input whose strata never contain both groups yields NaN SMD too.
+#[test]
+fn mantel_smd_degenerate_rows() {
+    // Item 1 constant. 8 persons x 2 items.
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1,  1, 1,  0, 1,  2, 1, // R
+        1, 1,  0, 1,  2, 1,  1, 1, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = mantel_smd_dif(&y, &group, 8, 2).unwrap();
+    assert!(rows[1].chi2.is_nan() && rows[1].p_value.is_nan());
+    assert!(rows[1].n_strata_used > 0);
+    assert!((rows[1].smd - 0.0).abs() < 1e-15); // constant item: means equal.
+                                                // Disjoint totals: R all-zero, F all-two -> no shared stratum.
+    let y2: Vec<i64> = vec![0, 0, 0, 0, 2, 2, 2, 2];
+    let g2: Vec<u8> = vec![0, 0, 1, 1];
+    let r2 = mantel_smd_dif(&y2, &g2, 4, 2).unwrap();
+    assert_eq!(r2[0].n_strata_used, 0);
+    assert!(r2[0].chi2.is_nan() && r2[0].smd.is_nan());
+}
+
+/// Error contract; every assert reads the crate Err.
+#[test]
+fn mantel_smd_errors() {
+    let ok_y: Vec<i64> = vec![1, 0, 2, 1, 0, 1, 2, 0];
+    let ok_g: Vec<u8> = vec![0, 0, 1, 1];
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 4, 2).is_ok());
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 1, 2).is_err()); // n_persons < 2
+    assert!(mantel_smd_dif(&ok_y, &ok_g, 4, 0).is_err()); // n_items == 0
+    assert!(mantel_smd_dif(&ok_y[..7], &ok_g, 4, 2).is_err()); // y len
+    assert!(mantel_smd_dif(&ok_y, &ok_g[..3], 4, 2).is_err()); // group len
+    assert!(mantel_smd_dif(&[-1, 0, 2, 1, 0, 1, 2, 0], &ok_g, 4, 2).is_err()); // negative
+    assert!(mantel_smd_dif(&ok_y, &[0, 0, 2, 1], 4, 2).is_err()); // bad label
+    assert!(mantel_smd_dif(&ok_y, &[0, 0, 0, 0], 4, 2).is_err()); // no focal
+    assert!(mantel_smd_dif(&ok_y, &[1, 1, 1, 1], 4, 2).is_err()); // no reference
+    assert!(mantel_smd_dif(&[i64::MAX, 1, 1, 1, 1, 1, 1, 1], &ok_g, 4, 2).is_err()); // total overflow
+    assert!(mantel_smd_dif(&ok_y, &ok_g, usize::MAX, 2).is_err()); // cells overflow
+}
+
+/// MC-500 (supplemental, seeded): under NO DIF (identical polytomous
+/// response distributions given a shared latent trait) the Mantel test's
+/// rejection rate at alpha = .05 stays near nominal, and under injected
+/// constant DIF the SMD sign matches the disadvantaged group. Reads crate
+/// chi2/p/smd per replication.
+#[test]
+#[ignore]
+fn mantel_smd_mc_500_type1_and_sign() {
+    let n_p = 300;
+    let n_i = 6;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0001);
+    let mut rej = 0usize;
+    let mut sign_ok = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0i64; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                // Adjacent-category style: two thresholds; item 0 gets a
+                // constant focal penalty of 0.7 on both thresholds.
+                let pen = if i == 0 && group[p] == 1 { 0.7 } else { 0.0 };
+                let b1 = -0.5 + 0.2 * i as f64 + pen;
+                let b2 = 0.8 + 0.2 * i as f64 + pen;
+                let p1 = 1.0 / (1.0 + (-(theta - b1)).exp());
+                let p2 = 1.0 / (1.0 + (-(theta - b2)).exp());
+                let u = rng.next_f64();
+                y[p * n_i + i] = if u < p2 {
+                    2
+                } else if u < p1 {
+                    1
+                } else {
+                    0
+                };
+            }
+        }
+        let rows = mantel_smd_dif(&y, &group, n_p, n_i).unwrap();
+        // Item 3 is DIF-free: count its Type-I rejections.
+        if rows[3].p_value < 0.05 {
+            rej += 1;
+        }
+        // Item 0 disadvantages the focal group: SMD should be negative.
+        if rows[0].smd < 0.0 {
+            sign_ok += 1;
+        }
+    }
+    let rate = rej as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        sign_ok as f64 / reps as f64 > 0.95,
+        "SMD sign matched only {sign_ok}/{reps}"
+    );
+}
+// ===========================================================================
+// GMH nominal DIF (Eq. 10, Zwick, Donoghue & Grima, 1993)
+// Oracle: exact Fraction arithmetic (session artifact gmh_oracle.py), pins
+// re-derived by the spec reviewer by hand for item 0 (chi2 = 53/79).
+// ===========================================================================
+
+/// Exact-rational pins on the shared 12x3 fixture (T_eff = 3, df = 2,
+/// used = 2 strata per item). Asserts read the crate rows; the chi2 pins
+/// kill E(A_k) group swaps (MU1), variance-denominator mutations (MU2),
+/// and covariance off-diagonal sign flips (MU3: item 0 would become
+/// 299/237). The used = 2 assert kills dropping the both-groups stratum
+/// filter (MU4), which leaves chi2 unchanged on this fixture because
+/// one-group strata contribute zero to d and S.
+#[test]
+fn gmh_pinned_fixture() {
+    let (y, group) = mantel_fixture();
+    let rows = gmh_dif(&y, &group, 12, 3).unwrap();
+    assert_eq!(rows.len(), 3);
+    let pins = [53.0 / 79.0, 352.0 / 483.0, 1072.0 / 483.0];
+    for (i, chi2) in pins.iter().enumerate() {
+        assert_eq!(rows[i].item, i);
+        assert_eq!(rows[i].df, 2, "item {i}");
+        assert_eq!(rows[i].n_strata_used, 2, "item {i}");
+        assert!(
+            (rows[i].chi2 - chi2).abs() < 1e-12,
+            "item {i} chi2 {}",
+            rows[i].chi2
+        );
+        assert!(rows[i].p_value > 0.0 && rows[i].p_value < 1.0);
+    }
+    // Distinct pins across items (kills over-collapse / item-index bugs).
+    assert!((rows[0].chi2 - rows[1].chi2).abs() > 1e-3);
+    assert!((rows[1].chi2 - rows[2].chi2).abs() > 1e-3);
+}
+
+/// Dichotomous reduction (read source, below Eq. 10): for T = 2 the GMH
+/// statistic equals the Mantel chi2 = MH without continuity correction.
+/// Reuses the nonzero-residual 16x2 fixture whose Mantel chi2 is exactly
+/// 49/50; equality is asserted between the two CRATE values plus the
+/// exact pin, so variance/expectation mutations in either path fail here.
+#[test]
+fn gmh_dichotomous_matches_mantel() {
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        1, 0,  1, 1,  1, 0,  0, 1,  1, 1,  1, 0,  0, 0,  1, 1, // R
+        0, 1,  0, 0,  1, 0,  0, 1,  1, 1,  0, 0,  0, 1,  1, 0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1];
+    let g = gmh_dif(&y, &group, 16, 2).unwrap();
+    let m = mantel_smd_dif(&y, &group, 16, 2).unwrap();
+    for i in 0..2 {
+        assert_eq!(g[i].df, 1, "item {i}");
+        assert!(
+            (g[i].chi2 - 0.98).abs() < 1e-12,
+            "item {i} chi2 {}",
+            g[i].chi2
+        );
+        assert!(
+            (g[i].chi2 - m[i].chi2).abs() < 1e-12,
+            "item {i}: GMH {} != Mantel {}",
+            g[i].chi2,
+            m[i].chi2
+        );
+        assert!((g[i].p_value - m[i].p_value).abs() < 1e-12);
+    }
+}
+
+/// Effective-category contract (spec-review mandatory change 1/2):
+/// categories observed ONLY in excluded one-group strata must not inflate
+/// T_eff or df. Category 9 below appears only for the lone reference
+/// person with total 11 (a one-group stratum), so item 0 keeps
+/// T_eff = 3 -> df = 2, identical chi2 to the base fixture.
+#[test]
+fn gmh_effective_categories_ignore_excluded_strata() {
+    let (mut y, mut group) = mantel_fixture();
+    // Append one reference person with an item-0 code (9) and a total (11)
+    // seen nowhere else: its stratum has no focal person -> excluded.
+    y.extend_from_slice(&[9, 1, 1]);
+    group.push(0);
+    let rows = gmh_dif(&y, &group, 13, 3).unwrap();
+    assert_eq!(rows[0].df, 2, "category 9 must not add a GMH dimension");
+    assert_eq!(rows[0].n_strata_used, 2);
+    assert!(
+        (rows[0].chi2 - 53.0 / 79.0).abs() < 1e-12,
+        "chi2 {}",
+        rows[0].chi2
+    );
+}
+
+/// Degenerate rows: constant item within used strata -> T_eff = 1, df = 0,
+/// NaN chi2/p; disjoint totals -> used = 0, NaN. Singular pooled S
+/// (categories perfectly tied to strata so all within-stratum counts are
+/// concentrated) also yields NaN rather than a rank-reduced statistic.
+#[test]
+fn gmh_degenerate_rows() {
+    // Item 1 constant across all persons (same 8x2 fixture as Mantel).
+    #[rustfmt::skip]
+    let y: Vec<i64> = vec![
+        2, 1,  1, 1,  0, 1,  2, 1, // R
+        1, 1,  0, 1,  2, 1,  1, 1, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = gmh_dif(&y, &group, 8, 2).unwrap();
+    assert_eq!(rows[1].df, 0);
+    assert!(rows[1].chi2.is_nan() && rows[1].p_value.is_nan());
+    assert!(rows[1].n_strata_used > 0);
+    // Disjoint totals: no shared stratum -> used = 0, NaN row.
+    let y2: Vec<i64> = vec![0, 0, 0, 0, 2, 2, 2, 2];
+    let g2: Vec<u8> = vec![0, 0, 1, 1];
+    let r2 = gmh_dif(&y2, &g2, 4, 2).unwrap();
+    assert_eq!(r2[0].n_strata_used, 0);
+    assert_eq!(r2[0].df, 0);
+    assert!(r2[0].chi2.is_nan());
+    // Singular S: every used stratum has a constant item value (variance 0
+    // within each stratum although two categories exist across strata).
+    // Persons: totals force strata {1} and {3}; item 0 is 0 in stratum 1
+    // and 2 in stratum 3 for everyone -> S = 0 matrix -> NaN, df stays 1.
+    let y3: Vec<i64> = vec![0, 1, 0, 1, 2, 1, 2, 1];
+    let g3: Vec<u8> = vec![0, 1, 0, 1];
+    let r3 = gmh_dif(&y3, &g3, 4, 2).unwrap();
+    assert_eq!(r3[0].df, 1);
+    assert!(r3[0].chi2.is_nan() && r3[0].p_value.is_nan());
+}
+
+/// Error contract; every assert reads the crate Err. Mirrors
+/// `mantel_smd_errors` plus the T_eff <= 64 category cap.
+#[test]
+fn gmh_errors() {
+    let ok_y: Vec<i64> = vec![1, 0, 2, 1, 0, 1, 2, 0];
+    let ok_g: Vec<u8> = vec![0, 0, 1, 1];
+    assert!(gmh_dif(&ok_y, &ok_g, 4, 2).is_ok());
+    assert!(gmh_dif(&ok_y, &ok_g, 1, 2).is_err()); // n_persons < 2
+    assert!(gmh_dif(&ok_y, &ok_g, 4, 0).is_err()); // n_items == 0
+    assert!(gmh_dif(&ok_y[..7], &ok_g, 4, 2).is_err()); // y len
+    assert!(gmh_dif(&ok_y, &ok_g[..3], 4, 2).is_err()); // group len
+    assert!(gmh_dif(&[-1, 0, 2, 1, 0, 1, 2, 0], &ok_g, 4, 2).is_err()); // negative
+    assert!(gmh_dif(&ok_y, &[0, 0, 2, 1], 4, 2).is_err()); // bad label
+    assert!(gmh_dif(&ok_y, &[0, 0, 0, 0], 4, 2).is_err()); // no focal
+    assert!(gmh_dif(&ok_y, &[1, 1, 1, 1], 4, 2).is_err()); // no reference
+    assert!(gmh_dif(&[i64::MAX, 1, 1, 1, 1, 1, 1, 1], &ok_g, 4, 2).is_err()); // overflow
+    assert!(gmh_dif(&ok_y, &ok_g, usize::MAX, 2).is_err()); // cells overflow
+                                                            // Category cap: 65 effective item-0 codes. Pairing code c with filler
+                                                            // 65 - c gives every person total 65, so a single used stratum holds
+                                                            // one reference and one focal person per code and all 65 codes are
+                                                            // effective -> the T_eff <= 64 cap must reject.
+    let n = 130;
+    let mut yy = Vec::with_capacity(n * 2);
+    let mut gg = Vec::with_capacity(n);
+    for c in 0..65i64 {
+        yy.extend_from_slice(&[c, 65 - c, c, 65 - c]);
+        gg.push(0);
+        gg.push(1);
+    }
+    let err = gmh_dif(&yy, &gg, n, 2).unwrap_err();
+    assert!(err.contains("cap is 64"), "unexpected error: {err}");
+}
+
+/// MC-500 (supplemental, seeded): under NO DIF with T = 4 nominal
+/// categories the GMH rejection rate at alpha = .05 stays near nominal,
+/// and under an injected focal category-preference shift the statistic
+/// rejects most of the time. T = 4 exercises the 3x3 linear solve
+/// (the pinned fixture only covers T = 3). Reads crate p-values.
+#[test]
+#[ignore]
+fn gmh_mc_500_type1_and_power() {
+    let n_p = 300;
+    let n_i = 6;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0002);
+    let mut rej_null = 0usize;
+    let mut rej_dif = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0i64; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                // Graded-style 4-category generator (3 thresholds).
+                let b1 = -1.0 + 0.15 * i as f64;
+                let b2 = 0.0 + 0.15 * i as f64;
+                let b3 = 1.0 + 0.15 * i as f64;
+                let pr = |b: f64| 1.0 / (1.0 + (-(theta - b)).exp());
+                let (p1, p2, p3) = (pr(b1), pr(b2), pr(b3));
+                let u = rng.next_f64();
+                let mut v = if u < p3 {
+                    3
+                } else if u < p2 {
+                    2
+                } else if u < p1 {
+                    1
+                } else {
+                    0
+                };
+                // Item 0 DIF: focal persons in category 1 move to category
+                // 2 with probability 0.7 (a NOMINAL composition shift, the
+                // GMH target alternative; a symmetric 1<->2 swap would
+                // merely equalize two near-equal frequencies).
+                if i == 0 && group[p] == 1 && v == 1 && rng.next_f64() < 0.7 {
+                    v = 2;
+                }
+                y[p * n_i + i] = v;
+            }
+        }
+        let rows = gmh_dif(&y, &group, n_p, n_i).unwrap();
+        // Item 3 is DIF-free.
+        if rows[3].p_value < 0.05 {
+            rej_null += 1;
+        }
+        if rows[0].p_value < 0.05 {
+            rej_dif += 1;
+        }
+    }
+    let rate = rej_null as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        rej_dif as f64 / reps as f64 > 0.5,
+        "power {rej_dif}/{reps} too low for the injected nominal DIF"
+    );
+}
+// Breslow-Day (1980) odds-ratio homogeneity DIF test (Eq. 4.30)
+// Oracle: exact Fraction margins/alpha + 50-digit Decimal quadratic roots
+// (session artifact breslow_day_oracle.py); an independent bisection solver
+// reproduced the item-0 and item-3 chi2 pins during spec review.
+// ===========================================================================
+
+/// Shared 24x4 nonzero-residual fixture: per-item informative strata carry
+/// differing stratum odds ratios, and two items have a zero observed cell
+/// INSIDE a used stratum (item 0: c=0 in stratum 1; item 3: a=0 in
+/// stratum 2), so the fitted-cell variance path is exercised where an
+/// observed-cell formula would blow up.
+fn bd_fixture() -> (Vec<u8>, Vec<u8>) {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        1,0,0,0, 1,1,0,0, 0,1,1,0, 1,0,1,1, 1,1,1,0, 0,0,1,0,
+        1,1,0,1, 0,1,0,0, 1,0,1,0, 1,1,1,1, 0,0,0,1, 1,1,0,0, // R
+        0,1,0,0, 0,0,1,0, 1,0,0,1, 0,1,1,0, 1,1,0,0, 0,0,0,1,
+        1,0,1,0, 0,1,0,1, 0,0,1,1, 1,1,1,0, 0,1,0,0, 0,0,0,0, // F
+    ];
+    let mut group = vec![0u8; 24];
+    for g in group.iter_mut().skip(12) {
+        *g = 1;
+    }
+    (y, group)
+}
+
+/// Exact oracle pins on the 24x4 fixture. Every assert reads the crate row.
+/// The chi2 pins kill wrong-root selection (MU1), a dropped variance
+/// reciprocal (MU2), stratum-specific-OR plug-in (MU3, which degenerates on
+/// the zero-cell strata), and the df/p pins kill df = K (MU4). The residual
+/// sums are nonzero under the MH plug-in, so an unconditional-MLE psi-hat
+/// implementation also fails these pins (spec review: item 0 would give
+/// 0.3740794014 instead of 0.3760173495).
+#[test]
+fn breslow_day_pinned_fixture() {
+    let (y, group) = bd_fixture();
+    let rows = breslow_day_dif(&y, &group, 24, 4, &MhDifConfig::default()).unwrap();
+    assert_eq!(rows.len(), 4);
+    let alpha_pins = [14.0 / 3.0, 23.0 / 26.0, 39.0 / 49.0, 5.0 / 9.0];
+    let chi2_pins = [
+        0.37601734952436118079988280034855586750,
+        1.59543251534123904975063654190218764063,
+        0.41398523247143159301225760583356652482,
+        3.98273278105957981282120319759952355284,
+    ];
+    let df_pins = [1.0, 2.0, 2.0, 2.0];
+    let p_pins = [
+        0.5397424284850997,
+        0.4503562883177753,
+        0.8130256531551879,
+        0.1365087736593863,
+    ];
+    let used_pins = [2usize, 3, 3, 3];
+    for i in 0..4 {
+        assert_eq!(rows[i].item, i);
+        assert!(
+            (rows[i].alpha_mh - alpha_pins[i]).abs() < 1e-12,
+            "item {i} alpha {}",
+            rows[i].alpha_mh
+        );
+        assert!(
+            (rows[i].chi2_bd - chi2_pins[i]).abs() < 1e-10,
+            "item {i} chi2 {}",
+            rows[i].chi2_bd
+        );
+        assert_eq!(rows[i].df, df_pins[i], "item {i}");
+        assert!(
+            (rows[i].p_value - p_pins[i]).abs() < 1e-8,
+            "item {i} p {}",
+            rows[i].p_value
+        );
+        assert_eq!(rows[i].n_strata_used, used_pins[i], "item {i}");
+        assert!(!rows[i].flagged_bh, "item {i}: no BD DIF in this fixture");
+    }
+    // Distinct pins across items (kills over-collapse / item-index bugs).
+    assert!((rows[0].chi2_bd - rows[1].chi2_bd).abs() > 1e-3);
+    assert!((rows[2].chi2_bd - rows[3].chi2_bd).abs() > 1e-3);
+}
+
+/// psi = 1 linear-degeneration anchor (read source: at psi = 1 the fitted
+/// value is the null expectation A = n_r m1 / N). Focal group duplicates the
+/// reference response patterns, so every stratum table has a = c, b = d,
+/// alpha_mh = 1 exactly, A = a, and chi2 = 0 with p = 1. A mutated linear
+/// branch (or a quadratic path that divides by qa = 0) fails here.
+#[test]
+fn breslow_day_psi_one_linear_branch() {
+    let (y_half, _) = bd_fixture();
+    let r: Vec<u8> = y_half[..48].to_vec(); // the 12 reference rows
+    let mut y = r.clone();
+    y.extend_from_slice(&r);
+    let mut group = vec![0u8; 24];
+    for g in group.iter_mut().skip(12) {
+        *g = 1;
+    }
+    let rows = breslow_day_dif(&y, &group, 24, 4, &MhDifConfig::default()).unwrap();
+    for row in &rows {
+        assert!(
+            (row.alpha_mh - 1.0).abs() < 1e-15,
+            "item {} alpha {}",
+            row.item,
+            row.alpha_mh
+        );
+        assert!(row.n_strata_used >= 2, "item {}", row.item);
+        assert!(
+            row.chi2_bd.abs() < 1e-18,
+            "item {} chi2 {} (mirrored fixture must fit exactly)",
+            row.item,
+            row.chi2_bd
+        );
+        assert_eq!(row.p_value, 1.0, "item {}", row.item);
+    }
+}
+
+/// K = 1 vacuous-test contract: with two items only the total = 1 stratum is
+/// informative, the MH estimate equals that stratum's OR, and the test has
+/// df = 0 -> chi2/p NaN with n_strata_used = 1 kept auditable.
+#[test]
+fn breslow_day_single_stratum_is_nan() {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        1,0, 0,1, 1,0, 1,1, 0,0, // R
+        1,0, 0,1, 0,1, 1,1, 0,0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
+    let rows = breslow_day_dif(&y, &group, 10, 2, &MhDifConfig::default()).unwrap();
+    for row in &rows {
+        assert_eq!(row.n_strata_used, 1, "item {}", row.item);
+        assert!(row.alpha_mh.is_finite(), "item {}", row.item);
+        assert_eq!(row.df, 0.0, "item {}", row.item);
+        assert!(row.chi2_bd.is_nan(), "item {}", row.item);
+        assert!(row.p_value.is_nan(), "item {}", row.item);
+        assert!(!row.flagged_bh);
+    }
+}
+
+/// Degenerate alpha contract: reference persons never answer item 0
+/// correctly inside the informative stratum, so sum(ad/t) = 0, alpha_mh is
+/// NaN, and the whole statistical row is NaN while n_strata_used reports
+/// the usable stratum count.
+#[test]
+fn breslow_day_degenerate_alpha_is_nan() {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        0,1, 0,1, 1,1, 0,0, // R: item 0 never correct at total = 1
+        1,0, 0,1, 1,1, 0,0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = breslow_day_dif(&y, &group, 8, 2, &MhDifConfig::default()).unwrap();
+    let r0 = &rows[0];
+    assert!(r0.alpha_mh.is_nan(), "alpha {}", r0.alpha_mh);
+    assert!(r0.chi2_bd.is_nan());
+    assert!(r0.df.is_nan());
+    assert!(r0.p_value.is_nan());
+    assert_eq!(r0.n_strata_used, 1);
+    assert!(!r0.flagged_bh);
+}
+
+/// Error contract is shared with the MH sweep (validate_dif_inputs).
+#[test]
+fn breslow_day_error_contract() {
+    let cfg = MhDifConfig::default();
+    let ok_y = vec![1u8, 0, 0, 1];
+    let ok_g = vec![0u8, 1];
+    assert!(breslow_day_dif(&ok_y, &ok_g, 2, 2, &cfg).is_ok());
+    assert!(breslow_day_dif(&ok_y[..3], &ok_g, 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&[2, 0, 0, 1], &ok_g, 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&ok_y, &[0, 2], 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&ok_y, &[0, 0], 2, 2, &cfg).is_err());
+    let bad_cfg = MhDifConfig {
+        fdr_q: 0.0,
+        ..MhDifConfig::default()
+    };
+    assert!(breslow_day_dif(&ok_y, &ok_g, 2, 2, &bad_cfg).is_err());
+}
+
+/// MC-500: under a Rasch-type null (identical item parameters in both
+/// groups) the per-stratum odds ratios are homogeneous and the BD rejection
+/// rate at alpha = .05 stays near nominal; under a crossing
+/// (discrimination) DIF item whose difficulty sits mid-distribution the
+/// stratum ORs vary with the matching score and the test rejects most of
+/// the time. Reads crate p-values.
+#[test]
+#[ignore]
+fn breslow_day_mc_500_type1_and_power() {
+    let n_p = 500;
+    let n_i = 12;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0003);
+    let mut rej_null = 0usize;
+    let mut rej_dif = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0u8; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                let b = -1.5 + 3.0 * i as f64 / (n_i - 1) as f64;
+                // Item 6 (b ~ 0.14) crossing DIF: focal slope 2.5 vs
+                // reference 0.5 (non-uniform: the stratum OR crosses 1
+                // near theta = b, mid-distribution).
+                let a = if i == 6 && group[p] == 1 { 2.5 } else { 0.5 };
+                let pr = 1.0 / (1.0 + (-a * (theta - b)).exp());
+                y[p * n_i + i] = u8::from(rng.next_f64() < pr);
+            }
+        }
+        let rows = breslow_day_dif(&y, &group, n_p, n_i, &MhDifConfig::default()).unwrap();
+        // Item 9 is DIF-free.
+        if rows[9].p_value < 0.05 {
+            rej_null += 1;
+        }
+        if rows[6].p_value < 0.05 {
+            rej_dif += 1;
+        }
+    }
+    let rate = rej_null as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        rej_dif as f64 / reps as f64 > 0.5,
+        "power {rej_dif}/{reps} too low for the injected crossing DIF"
+    );
+}
