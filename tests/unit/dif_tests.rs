@@ -3317,3 +3317,228 @@ fn gmh_mc_500_type1_and_power() {
         "power {rej_dif}/{reps} too low for the injected nominal DIF"
     );
 }
+// Breslow-Day (1980) odds-ratio homogeneity DIF test (Eq. 4.30)
+// Oracle: exact Fraction margins/alpha + 50-digit Decimal quadratic roots
+// (session artifact breslow_day_oracle.py); an independent bisection solver
+// reproduced the item-0 and item-3 chi2 pins during spec review.
+// ===========================================================================
+
+/// Shared 24x4 nonzero-residual fixture: per-item informative strata carry
+/// differing stratum odds ratios, and two items have a zero observed cell
+/// INSIDE a used stratum (item 0: c=0 in stratum 1; item 3: a=0 in
+/// stratum 2), so the fitted-cell variance path is exercised where an
+/// observed-cell formula would blow up.
+fn bd_fixture() -> (Vec<u8>, Vec<u8>) {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        1,0,0,0, 1,1,0,0, 0,1,1,0, 1,0,1,1, 1,1,1,0, 0,0,1,0,
+        1,1,0,1, 0,1,0,0, 1,0,1,0, 1,1,1,1, 0,0,0,1, 1,1,0,0, // R
+        0,1,0,0, 0,0,1,0, 1,0,0,1, 0,1,1,0, 1,1,0,0, 0,0,0,1,
+        1,0,1,0, 0,1,0,1, 0,0,1,1, 1,1,1,0, 0,1,0,0, 0,0,0,0, // F
+    ];
+    let mut group = vec![0u8; 24];
+    for g in group.iter_mut().skip(12) {
+        *g = 1;
+    }
+    (y, group)
+}
+
+/// Exact oracle pins on the 24x4 fixture. Every assert reads the crate row.
+/// The chi2 pins kill wrong-root selection (MU1), a dropped variance
+/// reciprocal (MU2), stratum-specific-OR plug-in (MU3, which degenerates on
+/// the zero-cell strata), and the df/p pins kill df = K (MU4). The residual
+/// sums are nonzero under the MH plug-in, so an unconditional-MLE psi-hat
+/// implementation also fails these pins (spec review: item 0 would give
+/// 0.3740794014 instead of 0.3760173495).
+#[test]
+fn breslow_day_pinned_fixture() {
+    let (y, group) = bd_fixture();
+    let rows = breslow_day_dif(&y, &group, 24, 4, &MhDifConfig::default()).unwrap();
+    assert_eq!(rows.len(), 4);
+    let alpha_pins = [14.0 / 3.0, 23.0 / 26.0, 39.0 / 49.0, 5.0 / 9.0];
+    let chi2_pins = [
+        0.37601734952436118079988280034855586750,
+        1.59543251534123904975063654190218764063,
+        0.41398523247143159301225760583356652482,
+        3.98273278105957981282120319759952355284,
+    ];
+    let df_pins = [1.0, 2.0, 2.0, 2.0];
+    let p_pins = [
+        0.5397424284850997,
+        0.4503562883177753,
+        0.8130256531551879,
+        0.1365087736593863,
+    ];
+    let used_pins = [2usize, 3, 3, 3];
+    for i in 0..4 {
+        assert_eq!(rows[i].item, i);
+        assert!(
+            (rows[i].alpha_mh - alpha_pins[i]).abs() < 1e-12,
+            "item {i} alpha {}",
+            rows[i].alpha_mh
+        );
+        assert!(
+            (rows[i].chi2_bd - chi2_pins[i]).abs() < 1e-10,
+            "item {i} chi2 {}",
+            rows[i].chi2_bd
+        );
+        assert_eq!(rows[i].df, df_pins[i], "item {i}");
+        assert!(
+            (rows[i].p_value - p_pins[i]).abs() < 1e-8,
+            "item {i} p {}",
+            rows[i].p_value
+        );
+        assert_eq!(rows[i].n_strata_used, used_pins[i], "item {i}");
+        assert!(!rows[i].flagged_bh, "item {i}: no BD DIF in this fixture");
+    }
+    // Distinct pins across items (kills over-collapse / item-index bugs).
+    assert!((rows[0].chi2_bd - rows[1].chi2_bd).abs() > 1e-3);
+    assert!((rows[2].chi2_bd - rows[3].chi2_bd).abs() > 1e-3);
+}
+
+/// psi = 1 linear-degeneration anchor (read source: at psi = 1 the fitted
+/// value is the null expectation A = n_r m1 / N). Focal group duplicates the
+/// reference response patterns, so every stratum table has a = c, b = d,
+/// alpha_mh = 1 exactly, A = a, and chi2 = 0 with p = 1. A mutated linear
+/// branch (or a quadratic path that divides by qa = 0) fails here.
+#[test]
+fn breslow_day_psi_one_linear_branch() {
+    let (y_half, _) = bd_fixture();
+    let r: Vec<u8> = y_half[..48].to_vec(); // the 12 reference rows
+    let mut y = r.clone();
+    y.extend_from_slice(&r);
+    let mut group = vec![0u8; 24];
+    for g in group.iter_mut().skip(12) {
+        *g = 1;
+    }
+    let rows = breslow_day_dif(&y, &group, 24, 4, &MhDifConfig::default()).unwrap();
+    for row in &rows {
+        assert!(
+            (row.alpha_mh - 1.0).abs() < 1e-15,
+            "item {} alpha {}",
+            row.item,
+            row.alpha_mh
+        );
+        assert!(row.n_strata_used >= 2, "item {}", row.item);
+        assert!(
+            row.chi2_bd.abs() < 1e-18,
+            "item {} chi2 {} (mirrored fixture must fit exactly)",
+            row.item,
+            row.chi2_bd
+        );
+        assert_eq!(row.p_value, 1.0, "item {}", row.item);
+    }
+}
+
+/// K = 1 vacuous-test contract: with two items only the total = 1 stratum is
+/// informative, the MH estimate equals that stratum's OR, and the test has
+/// df = 0 -> chi2/p NaN with n_strata_used = 1 kept auditable.
+#[test]
+fn breslow_day_single_stratum_is_nan() {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        1,0, 0,1, 1,0, 1,1, 0,0, // R
+        1,0, 0,1, 0,1, 1,1, 0,0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
+    let rows = breslow_day_dif(&y, &group, 10, 2, &MhDifConfig::default()).unwrap();
+    for row in &rows {
+        assert_eq!(row.n_strata_used, 1, "item {}", row.item);
+        assert!(row.alpha_mh.is_finite(), "item {}", row.item);
+        assert_eq!(row.df, 0.0, "item {}", row.item);
+        assert!(row.chi2_bd.is_nan(), "item {}", row.item);
+        assert!(row.p_value.is_nan(), "item {}", row.item);
+        assert!(!row.flagged_bh);
+    }
+}
+
+/// Degenerate alpha contract: reference persons never answer item 0
+/// correctly inside the informative stratum, so sum(ad/t) = 0, alpha_mh is
+/// NaN, and the whole statistical row is NaN while n_strata_used reports
+/// the usable stratum count.
+#[test]
+fn breslow_day_degenerate_alpha_is_nan() {
+    #[rustfmt::skip]
+    let y: Vec<u8> = vec![
+        0,1, 0,1, 1,1, 0,0, // R: item 0 never correct at total = 1
+        1,0, 0,1, 1,1, 0,0, // F
+    ];
+    let group: Vec<u8> = vec![0, 0, 0, 0, 1, 1, 1, 1];
+    let rows = breslow_day_dif(&y, &group, 8, 2, &MhDifConfig::default()).unwrap();
+    let r0 = &rows[0];
+    assert!(r0.alpha_mh.is_nan(), "alpha {}", r0.alpha_mh);
+    assert!(r0.chi2_bd.is_nan());
+    assert!(r0.df.is_nan());
+    assert!(r0.p_value.is_nan());
+    assert_eq!(r0.n_strata_used, 1);
+    assert!(!r0.flagged_bh);
+}
+
+/// Error contract is shared with the MH sweep (validate_dif_inputs).
+#[test]
+fn breslow_day_error_contract() {
+    let cfg = MhDifConfig::default();
+    let ok_y = vec![1u8, 0, 0, 1];
+    let ok_g = vec![0u8, 1];
+    assert!(breslow_day_dif(&ok_y, &ok_g, 2, 2, &cfg).is_ok());
+    assert!(breslow_day_dif(&ok_y[..3], &ok_g, 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&[2, 0, 0, 1], &ok_g, 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&ok_y, &[0, 2], 2, 2, &cfg).is_err());
+    assert!(breslow_day_dif(&ok_y, &[0, 0], 2, 2, &cfg).is_err());
+    let bad_cfg = MhDifConfig {
+        fdr_q: 0.0,
+        ..MhDifConfig::default()
+    };
+    assert!(breslow_day_dif(&ok_y, &ok_g, 2, 2, &bad_cfg).is_err());
+}
+
+/// MC-500: under a Rasch-type null (identical item parameters in both
+/// groups) the per-stratum odds ratios are homogeneous and the BD rejection
+/// rate at alpha = .05 stays near nominal; under a crossing
+/// (discrimination) DIF item whose difficulty sits mid-distribution the
+/// stratum ORs vary with the matching score and the test rejects most of
+/// the time. Reads crate p-values.
+#[test]
+#[ignore]
+fn breslow_day_mc_500_type1_and_power() {
+    let n_p = 500;
+    let n_i = 12;
+    let reps = 500;
+    let mut rng = Lcg(0x00aa_17e1_53d0_0003);
+    let mut rej_null = 0usize;
+    let mut rej_dif = 0usize;
+    for _ in 0..reps {
+        let mut y = vec![0u8; n_p * n_i];
+        let mut group = vec![0u8; n_p];
+        for p in 0..n_p {
+            group[p] = (p % 2) as u8;
+            let theta = rng.normal();
+            for i in 0..n_i {
+                let b = -1.5 + 3.0 * i as f64 / (n_i - 1) as f64;
+                // Item 6 (b ~ 0.14) crossing DIF: focal slope 2.5 vs
+                // reference 0.5 (non-uniform: the stratum OR crosses 1
+                // near theta = b, mid-distribution).
+                let a = if i == 6 && group[p] == 1 { 2.5 } else { 0.5 };
+                let pr = 1.0 / (1.0 + (-a * (theta - b)).exp());
+                y[p * n_i + i] = u8::from(rng.next_f64() < pr);
+            }
+        }
+        let rows = breslow_day_dif(&y, &group, n_p, n_i, &MhDifConfig::default()).unwrap();
+        // Item 9 is DIF-free.
+        if rows[9].p_value < 0.05 {
+            rej_null += 1;
+        }
+        if rows[6].p_value < 0.05 {
+            rej_dif += 1;
+        }
+    }
+    let rate = rej_null as f64 / reps as f64;
+    assert!(
+        rate < 0.10,
+        "Type-I rate {rate} far above nominal 0.05 over {reps} reps"
+    );
+    assert!(
+        rej_dif as f64 / reps as f64 > 0.5,
+        "power {rej_dif}/{reps} too low for the injected crossing DIF"
+    );
+}

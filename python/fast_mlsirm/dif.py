@@ -753,3 +753,86 @@ def gmh_dif(
         "df": np.asarray(res["df"], dtype=np.int64),
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
+
+def breslow_day_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test (compute in Rust).
+
+    The classical NON-UNIFORM DIF companion to :func:`mantel_haenszel_dif`: MH tests whether a
+    common odds ratio differs from 1; this tests whether a COMMON odds ratio is tenable at all
+    across the matching-score strata. Per stratum, the fitted reference-correct count ``A_k`` is
+    the admissible root of the quadratic ``A D / (B C) = psi_hat`` with the observed margins, the
+    asymptotic variance is ``1 / (1/A + 1/B + 1/C + 1/D)`` on the fitted cells, and ``chi2`` is
+    ``sum (a_k - A_k)^2 / Var_k`` referred to ``chi2(K - 1)`` over the ``K`` used strata (all four
+    margins positive). The plugged-in ``psi_hat`` is the crate's Mantel-Haenszel ``alpha_mh``,
+    the estimator the read source itself endorses for this test (its worked example: MH 5.158 ->
+    chi2 9.28 vs MLE 5.312 -> 9.33, same conclusion). The Tarone (1985) correction is NOT applied
+    (that source was not read -- out of scope, documented in the core header).
+
+    ``responses`` is a persons x items array of 0/1 scores (no missing data). ``group`` is a
+    length-persons array with ``0`` = reference and ``1`` = focal (both must be present).
+    Returns per-item arrays ``alpha_mh``, ``chi2``, ``df``, ``p_value``, ``n_strata_used``,
+    ``flagged_bh``. NaN statistics mark items with a degenerate MH odds ratio (``sum a d = 0``
+    or ``sum b c = 0``), fewer than two usable strata, or an inadmissible fitted root.
+
+    References (APA 7th ed.):
+        Breslow, N. E., & Day, N. E. (1980). *Statistical methods in cancer research, Volume I:
+            The analysis of case-control studies* (IARC Scientific Publications No. 32).
+            International Agency for Research on Cancer.
+        Tarone, R. E. (1985). On heterogeneity tests based on efficient scores. *Biometrika,
+            72*(1), 91-95. [NOT READ; correction deliberately not implemented.]
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_breslow_day_dif"):
+        raise RuntimeError("breslow_day_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(np.isin(yf, (0.0, 1.0))):
+        raise ValueError("responses must be 0 or 1")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+    if not (np.isfinite(fdr_q) and 0.0 < fdr_q < 1.0):
+        raise ValueError("fdr_q must be in (0, 1)")
+
+    res = core.py_breslow_day_dif(
+        yf.astype(np.uint8).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+        bool(exclude_studied_item),
+        float(fdr_q),
+    )
+    return {
+        "alpha_mh": np.asarray(res["alpha_mh"], dtype=np.float64),
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+        "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
+    }

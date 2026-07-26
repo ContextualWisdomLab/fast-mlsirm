@@ -149,6 +149,7 @@ from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as lo
                   sibtest as sibtest,
                   mantel_smd_dif as mantel_smd_dif,
     gmh_dif as gmh_dif,
+                  breslow_day_dif as breslow_day_dif,
                   raju_area as raju_area)
 from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
@@ -339,6 +340,7 @@ __all__ = [
     "mantel_haenszel_dif",
     "mantel_smd_dif",
     "gmh_dif",
+    "breslow_day_dif",
     "logistic_dif",
     "mantel_haenszel_dif_purified",
     "logistic_dif_purified",

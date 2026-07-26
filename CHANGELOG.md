@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Breslow-Day odds-ratio homogeneity DIF test (Breslow & Day, 1980, Eq. 4.30)**
+  (`fast_mlsirm.breslow_day_dif`; in Rust `mlsirm_core::dif::breslow_day_dif`,
+  PyO3 `py_breslow_day_dif`): the classical NON-UNIFORM DIF companion to
+  `mantel_haenszel_dif` — MH tests a common odds ratio against 1; this tests
+  whether a common odds ratio is tenable at all across the matching-score
+  strata. Per used stratum (all four margins positive) the fitted
+  reference-correct count is the admissible root of the fitted-value quadratic
+  `A·D/(B·C) = ψ̂` (cancellation-stable q-form roots; defensive
+  both-roots admissibility check), the asymptotic variance is
+  `1/(1/A + 1/B + 1/C + 1/D)` on the fitted cells, and
+  `χ² = Σ (a − A)²/Var` is referred to χ²(K − 1). The plugged-in `ψ̂` is the
+  crate's MH `alpha_mh`, the estimator the read source itself endorses
+  (worked example: MH 5.158 → χ² 9.28 vs MLE 5.312 → 9.33). Degenerate MH
+  odds ratio (`Σad = 0` or `Σbc = 0`), fewer than two usable strata, or an
+  inadmissible fitted root yield NaN statistics; Benjamini-Hochberg flags are
+  computed across items on the finite p-values. The Tarone (1985) correction
+  and the Eq. 4.31 trend test are deliberately out of scope (sources not
+  read/documented in the citation-governance header). 0/1 responses only.
 - **Generalized Mantel-Haenszel nominal DIF (Zwick, Donoghue & Grima, Eq. 10)**
   (`fast_mlsirm.gmh_dif`; in Rust `mlsirm_core::dif::gmh_dif`, PyO3
   `py_gmh_dif`): unordered-category DIF screening — examinees matched on the

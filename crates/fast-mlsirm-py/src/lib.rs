@@ -34,7 +34,8 @@ use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
-    delta_plot as core_delta_plot, eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif,
+    breslow_day_dif as core_breslow_day_dif, delta_plot as core_delta_plot,
+    eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif,
     logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
     mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
     mantel_smd_dif as core_mantel_smd_dif, raju_area as core_raju_area, sibtest as core_sibtest,
@@ -2141,6 +2142,45 @@ fn py_gmh_dif(
     out.set_item("p_value", PyArray1::from_slice(py, &p_value))?;
     out.set_item("df", PyArray1::from_slice(py, &df))?;
     out.set_item("n_strata_used", PyArray1::from_slice(py, &used))?;
+    Ok(out.into())
+}
+
+/// Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity test per item
+/// (`mlsirm_core::dif::breslow_day_dif`) — the classical NON-UNIFORM DIF
+/// companion to `mantel_haenszel_dif`: MH tests a common odds ratio against
+/// 1, this tests whether a common odds ratio is tenable at all. Same input
+/// conventions as `mantel_haenszel_dif` (row-major 0/1 `y`, 0/1 `group`);
+/// the plugged-in common odds ratio is the crate's MH `alpha_mh` (see the
+/// core citation-governance header for what was and was not read).
+#[pyfunction]
+fn py_breslow_day_dif(
+    py: Python<'_>,
+    y: PyReadonlyArray1<'_, u8>,
+    group: PyReadonlyArray1<'_, u8>,
+    n_persons: usize,
+    n_items: usize,
+    exclude_studied_item: bool,
+    fdr_q: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let cfg = MhDifConfig {
+        exclude_studied_item,
+        fdr_q,
+    };
+    let rows = core_breslow_day_dif(y.as_slice()?, group.as_slice()?, n_persons, n_items, &cfg)
+        .map_err(PyValueError::new_err)?;
+    let alpha: Vec<f64> = rows.iter().map(|r| r.alpha_mh).collect();
+    let chi2: Vec<f64> = rows.iter().map(|r| r.chi2_bd).collect();
+    let df: Vec<f64> = rows.iter().map(|r| r.df).collect();
+    let p_value: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let used: Vec<f64> = rows.iter().map(|r| r.n_strata_used as f64).collect();
+    let flagged: Vec<bool> = rows.iter().map(|r| r.flagged_bh).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha_mh", PyArray1::from_slice(py, &alpha))?;
+    out.set_item("chi2", PyArray1::from_slice(py, &chi2))?;
+    out.set_item("df", PyArray1::from_slice(py, &df))?;
+    out.set_item("p_value", PyArray1::from_slice(py, &p_value))?;
+    out.set_item("n_strata_used", PyArray1::from_slice(py, &used))?;
+    out.set_item("flagged_bh", flagged)?;
     Ok(out.into())
 }
 
@@ -6775,6 +6815,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_eb_mh_dif, m)?)?;
     m.add_function(wrap_pyfunction!(py_mantel_smd_dif, m)?)?;
     m.add_function(wrap_pyfunction!(py_gmh_dif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_breslow_day_dif, m)?)?;
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
