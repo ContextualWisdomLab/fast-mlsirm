@@ -1432,8 +1432,11 @@ fn arc_eval(x: f64, xc: f64, yc: f64, r2: f64, plus: bool) -> f64 {
 /// for the anchor design see [`circle_arc_middle_anchor`].
 ///
 /// Errors: empty or non-finite `scores`, scores outside `[x1, x3]`,
-/// non-finite points, `x1 >= x3`, `x2 <= x1`, `x2 >= x3`, or (defensive)
-/// a middle point exactly at the fitted circle's horizontal diameter.
+/// non-finite points, `x1 >= x3`, `x2 <= x1`, `x2 >= x3`, points whose
+/// fitted circle does not carry all three of them on a single branch (an
+/// end-point on the opposite side of the center from the middle point, so
+/// no arc through the points is a function of X), or (defensive) a middle
+/// point exactly at the fitted circle's horizontal diameter.
 pub fn circle_arc_equate(
     scores: &[f64],
     low: (f64, f64),
@@ -1502,6 +1505,23 @@ pub fn circle_arc_equate(
                 return Err("circle-arc middle point sits on the circle's horizontal \
                      diameter (defensive guard; unreachable for x1 < x2 < x3)"
                     .to_string());
+            }
+            // The equating function Y(X) is a SINGLE branch of the circle
+            // (source eqs. 1-2, selected by the middle point's position vs.
+            // the center), so all three fitted points must lie on that
+            // branch or the curve cannot pass through the prescribed
+            // end-points. A point exactly at y == yc sits at a horizontal
+            // extreme of the circle (x = xc +/- r) and is recovered by
+            // either branch, so it is allowed.
+            let sgn = y_mid - yc;
+            for (_, py) in [p1, p3] {
+                if py != yc && (py - yc).is_sign_positive() != sgn.is_sign_positive() {
+                    return Err("circle-arc points do not lie on a single branch of the \
+                         fitted circle (an end-point is on the opposite side of \
+                         the center from the middle point), so an arc through \
+                         all three points is not a function of X"
+                        .to_string());
+                }
             }
             (xc, yc, r2, y_mid > yc)
         }

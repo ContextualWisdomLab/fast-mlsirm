@@ -413,7 +413,10 @@ def circle_arc_equate(
     Scores must lie in ``[x1, x3]``: the source's linear extension below the
     lower end-point is intentionally NOT implemented (reduced scope). When
     the three points are collinear the estimate is the line itself and
-    ``collinear`` is ``True``.
+    ``collinear`` is ``True``. Raises ``ValueError`` if the fitted circle does
+    not carry all three points on a single branch (an end-point on the
+    opposite side of the center from the middle point), since the arc is
+    then not a function of X.
 
     References (APA 7th ed.):
         Livingston, S. A., & Kim, S. (2008). *Small-sample equating by the

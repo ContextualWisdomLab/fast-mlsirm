@@ -8385,8 +8385,8 @@ class TestCircleArc:
         )
         assert r.xc == 12.5 and r.yc == -13.0 and r.r2 == 225.25
         assert abs(r.equated[0] - 11.798648586948742) < 1e-12
-        x2, y2 = circle_arc_middle_anchor(47.62, 30.60, 77.47, 10.83, 30.46, 5.09)
-        assert x2 == 47.62
+        x2, y2 = circle_arc_middle_anchor(73.62, 30.60, 77.47, 10.83, 30.46, 5.09)
+        assert x2 == 73.62  # Table 1 new-form test mean m_XA
         assert abs(y2 - 77.76787819253438) < 1e-12  # paper Table 1 pin
 
     def test_errors(self):
@@ -8405,5 +8405,8 @@ class TestCircleArc:
             circle_arc_equate(np.array(["a"], dtype=object), (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
         with pytest.raises(ValueError):
             circle_arc_equate([1.0], (0.0, 0.0), 4.0, (10.0, 10.0))
+        with pytest.raises(ValueError):
+            # mixed-branch triple: no single-branch arc through all three
+            circle_arc_equate([1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0))
         with pytest.raises(ValueError):
             circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0)

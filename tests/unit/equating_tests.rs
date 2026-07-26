@@ -1498,8 +1498,8 @@ fn ca_collinear_line() {
 // s_YB/s_VB ratio: y2 would be 77.5358..., not 77.7678...).
 #[test]
 fn ca_anchor_middle_eq9() {
-    let (x2, y2) = circle_arc_middle_anchor(47.62, 30.60, 77.47, 10.83, 30.46, 5.09).unwrap();
-    assert_eq!(x2, 47.62);
+    let (x2, y2) = circle_arc_middle_anchor(73.62, 30.60, 77.47, 10.83, 30.46, 5.09).unwrap();
+    assert_eq!(x2, 73.62); // Table 1 new-form test mean m_XA
     assert!((y2 - 77.76787819253438).abs() < 1e-12);
 }
 
@@ -1521,6 +1521,15 @@ fn ca_error_contract() {
     assert!(call(&[1.0], ok.0, (4.0, f64::NAN), ok.2).is_err());
     // scores exactly at the end-points are ALLOWED (mandatory change 5)
     assert!(call(&[0.0, 10.0], ok.0, ok.1, ok.2).is_ok());
+    // mixed-branch triples are rejected: for (0,0),(1,3),(2,1) the fitted
+    // circle's center is (0.5, 1.5), so y1 = 0 sits below the center while
+    // the middle point sits above it -- no single-branch arc passes through
+    // all three points, and silently equating off one branch would miss the
+    // prescribed end-points.
+    for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+        let e = circle_arc_equate(&[1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0), method).unwrap_err();
+        assert!(e.contains("single branch"), "{method:?}: {e}");
+    }
     // anchor middle: non-finite and non-positive SDs error
     assert!(circle_arc_middle_anchor(f64::NAN, 1.0, 1.0, 1.0, 1.0, 1.0).is_err());
     assert!(circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0).is_err()); // s_yb
@@ -1554,29 +1563,22 @@ fn ca_mc_500() {
             continue; // avoid near-collinear conditioning noise
         }
         // The circle-arc model represents Y(X) as a single branch of the
-        // circle, so all three raw points must lie on the same side of yc
-        // (always true for the near-linear equating relationships the
-        // source targets). Filter draws violating that with a test-local
-        // circumcenter recomputation (used only for filtering; all asserts
-        // below read crate outputs).
-        {
-            let same_branch = |p1: (f64, f64), p2: (f64, f64), p3: (f64, f64)| {
-                let ((x1, y1), (x2, y2), (x3, y3)) = (p1, p2, p3);
-                let d = 2.0 * (x1 * (y3 - y2) + x2 * (y1 - y3) + x3 * (y2 - y1));
-                let s = |x: f64, y: f64| x * x + y * y;
-                let yc_loc =
-                    (s(x1, y1) * (x3 - x2) + s(x2, y2) * (x1 - x3) + s(x3, y3) * (x2 - x1)) / -d;
-                let sgn = (y1 - yc_loc).signum();
-                (y2 - yc_loc).signum() == sgn && (y3 - yc_loc).signum() == sgn
-            };
-            if !same_branch((x1, y1), (x2, y2), (x3, y3))
-                || !same_branch((x1, 0.0), (x2, y2 - line_y2), (x3, 0.0))
-            {
-                continue;
-            }
-        }
+        // circle; the CRATE now rejects triples whose fitted circle does
+        // not carry all three points on one branch. Draws hitting that
+        // error path are counted but skipped: the assert reads the crate's
+        // Err, not a test-local recomputation.
         for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
-            let r = circle_arc_equate(&[x1, x2, x3], (x1, y1), (x2, y2), (x3, y3), method).unwrap();
+            let out = circle_arc_equate(&[x1, x2, x3], (x1, y1), (x2, y2), (x3, y3), method);
+            let r = match out {
+                Err(e) => {
+                    assert!(
+                        e.contains("single branch"),
+                        "{method:?} unexpected error: {e}"
+                    );
+                    continue;
+                }
+                Ok(r) => r,
+            };
             assert!(!r.collinear);
             // (a) fitted circle passes through the INPUT anchor points
             let anchors: [(f64, f64); 3] = match method {
