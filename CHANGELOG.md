@@ -119,6 +119,26 @@
 
 ### Added
 
+- **Hanson-Brennan compound-binomial classification consistency and accuracy
+  (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
+  `fast_mlsirm.hanson_brennan_from_params`; in Rust
+  `mlsirm_core::classification::hanson_brennan` /
+  `hanson_brennan_from_params`): single-administration decision consistency,
+  accuracy, sensitivity, specificity, and Cohen's kappa for
+  number-correct cut scores under a four-parameter beta true-score
+  distribution with Lord's two-term approximation to the compound binomial
+  conditional error model. The data path estimates Lord's k from the score
+  mean/variance and reliability (Hanson, 1991, Eq. 6), recovers the first
+  four true-score moments by the HB.tsm recursion (Eqs. 7-8), fits the
+  four-parameter beta by the method of moments with a two-parameter
+  failsafe (identical branch structure to `livingston_lewis`); the params
+  path accepts explicit (l, u, alpha, beta, k). The conditional fail CDF
+  uses a derived closed form
+  `BinCdf(cut-1;K,p) - k p(1-p) [b(cut-1;K-2,p) - b(cut-2;K-2,p)]`,
+  verified as an exact polynomial identity against Lord's term-by-term
+  definition in the oracle. Pinned against an exact-Fraction stdlib oracle
+  (params fixtures at 1e-12; a genuine negative-k 4P data fixture with both
+  beta shapes < 1 at 1e-7); five mutation kills executed.
 - **Two-stage adaptive testing (Betz & Weiss, 1973, Research Report 73-4;
   Betz & Weiss, 1974, Research Report 74-4)** (`fast_mlsirm.two_stage_route`,
   `fast_mlsirm.two_stage_score`; in Rust

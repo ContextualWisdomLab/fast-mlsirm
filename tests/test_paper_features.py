@@ -8001,3 +8001,90 @@ class TestTwoStage:
         # never a silent NaN (core-side runtime guard).
         with pytest.raises(ValueError, match="degenerate"):
             two_stage_route(2**53, 2**53, a1, b1, b_meas, 0.2)
+
+class TestHansonBrennan:
+    """Hanson-Brennan compound binomial classification (Hanson, 1991, ACT
+    RR 91-5, read in full; cross-checked against CRAN betafunctions 1.9.0
+    HB.CA): every assert reads crate outputs returned through the wrapper
+    against literals from an independent exact-Fraction stdlib oracle
+    (never this crate). Params fixture pins are exact rationals (1e-12);
+    the data fixture takes the genuine 4P path with negative Lord's k and
+    both beta shapes < 1 (tolerance 1e-7 per spec)."""
+
+    def test_params_path_matches_exact_oracle(self):
+        from fast_mlsirm import hanson_brennan_from_params
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan_from_params"):
+            pytest.skip("compiled core built without hanson_brennan")
+        r = hanson_brennan_from_params(8, 0.5, 0.0, 1.0, 2.0, 3.0, 5)
+        tol = 1e-12
+        assert abs(r.consistency - 0.7882233865206) < tol
+        assert abs(r.kappa - 0.459362303476315) < tol
+        assert abs(r.p_tp - 0.1271510992216) < tol
+        assert abs(r.accuracy - 0.835374853002183) < tol
+        assert abs(r.sensitivity - 0.838664899213647) < tol
+        assert abs(r.specificity - 0.834786905175617) < tol
+        assert r.p_ji == r.p_ij
+        assert not r.used_two_parameter
+        import numpy as np
+
+        assert np.isnan(r.true_score_moments).all()
+
+    def test_data_path_four_parameter_matches_oracle(self):
+        from fast_mlsirm import hanson_brennan
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan"):
+            pytest.skip("compiled core built without hanson_brennan")
+        scores = [7, 1, 11, 2, 9, 10, 6, 6, 12, 6, 10, 8, 10, 8, 2, 2, 5,
+                  8, 12, 11, 2, 1]
+        r = hanson_brennan(scores, 12, 0.85, 7)
+        assert abs(r.lords_k - -0.428757070304408) < 1e-12
+        assert abs(r.true_score_moments[0] - 0.564393939393939) < 1e-12
+        assert abs(r.true_score_moments[3] - 0.245696195187782) < 1e-12
+        assert not r.used_two_parameter
+        assert abs(r.lower - 0.132649605850816) < 1e-11
+        assert abs(r.upper - 0.888674369964715) < 1e-11
+        assert abs(r.alpha - 0.45726578470813) < 1e-11
+        assert abs(r.beta - 0.343449430670119) < 1e-11
+        tol = 1e-7
+        assert abs(r.accuracy - 0.910755004973576) < tol
+        assert abs(r.consistency - 0.877865550806179) < tol
+        assert abs(r.kappa - 0.752703324849248) < tol
+        assert abs(r.sensitivity - 0.941718760516029) < tol
+        assert abs(r.specificity - 0.876176500427409) < tol
+
+    def test_rejects_degenerate_inputs(self):
+        import numpy as np
+
+        from fast_mlsirm import hanson_brennan, hanson_brennan_from_params
+        from fast_mlsirm.fitstats import _core_module
+
+        core = _core_module()
+        if core is None or not hasattr(core, "hanson_brennan"):
+            pytest.skip("compiled core built without hanson_brennan")
+        good = [7, 1, 11, 2, 9, 10, 6, 6, 12, 6, 10, 8, 10, 8, 2, 2, 5,
+                8, 12, 11, 2, 1]
+        with pytest.raises(ValueError):
+            hanson_brennan(good[:5], 12, 0.85, 7)  # too few scores
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 1.0, 7)  # reliability >= 1
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 0.85, 0)  # cut below 1
+        with pytest.raises(ValueError):
+            hanson_brennan(good, 12, 0.85, 13)  # cut above n_items
+        with pytest.raises(ValueError):
+            hanson_brennan([6.5] + good[1:], 12, 0.85, 7)  # non-integer
+        with pytest.raises(ValueError):
+            hanson_brennan(np.array(good) * 1j, 12, 0.85, 7)  # complex
+        with pytest.raises(ValueError):
+            hanson_brennan(
+                np.array(["x"] * 22, dtype=object), 12, 0.85, 7
+            )  # non-numeric objects
+        with pytest.raises(ValueError):
+            hanson_brennan_from_params(8, 0.0, 0.5, 0.4, 2.0, 2.0, 4)
+        with pytest.raises(ValueError):
+            hanson_brennan_from_params(8, 0.0, 0.0, 1.0, -2.0, 2.0, 4)
