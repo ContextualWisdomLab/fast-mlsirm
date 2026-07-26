@@ -614,6 +614,121 @@ pub fn equate_neat_linear(
     })
 }
 
+// ===================== nominal weights mean equating =====================
+
+/// Nominal weights mean equating for the NEAT design (Babcock, Albano, &
+/// Raymond, 2012 — NOT read (paywalled); method as restated by Albano (2016,
+/// §4.2, eq. 42; §4, eqs. 37–40; §3.2, eq. 10), which was READ, and as
+/// implemented by the method authors in the R package `equate` 2.0.8
+/// (`synthetic.R`, `linear.R`), whose source was READ and executed as a
+/// cross-check oracle). Designed for very small samples: the Tucker
+/// total-on-anchor regression slopes are replaced by the "nominal weights"
+/// effective-length ratios
+///
+/// ```text
+/// gamma1 = k_x / k_v,   gamma2 = k_y / k_v            (Albano 2016, eq. 42)
+/// ```
+///
+/// (item counts; identical to `equate`'s max-score ratio for the 0..=K
+/// integer-scored tests in scope — polytomous scoring where item counts and
+/// score maxima diverge is out of scope). Synthetic-population means and
+/// variances follow eqs. 37–40 with `w2 = 1 - w1` and
+/// `d = mean(x_anchor) - mean(y_anchor)`:
+///
+/// ```text
+/// mu_sX  = mu_X1 - w2*gamma1*d          mu_sY  = mu_Y2 + w1*gamma2*d
+/// var_sX = v_X1 - w2*g1^2*(v_V1 - v_V2) + w1*w2*g1^2*d^2
+/// var_sY = v_Y2 + w1*g2^2*(v_V1 - v_V2) + w1*w2*g2^2*d^2
+/// ```
+///
+/// and the conversion is MEAN equating (eq. 10, slope 1):
+/// `yx(x) = x + (mu_sY - mu_sX)`. Synthetic variances are reported in the
+/// result but do not enter the conversion. All moments use the N-denominator
+/// convention of [`paired_moments`]; note the R reference implementation's
+/// `var.freqtab` divides by N-1, so the reported sigmas are not R-parity
+/// values (the mean conversion is unaffected — only means enter).
+///
+/// DERIVED (verified in tests): when `gamma1 == gamma2 == g`, the intercept
+/// `b = mu_Y2 - mu_X1 + d*(w1*g2 + w2*g1) = mu_Y2 - mu_X1 + g*d` is
+/// independent of `w1`.
+///
+/// # References (APA 7th ed.)
+///
+/// Babcock, B., Albano, A., & Raymond, M. (2012). Nominal weights mean
+///   equating: A method for very small samples. *Educational and
+///   Psychological Measurement, 72*(4), 608–628.
+///   https://doi.org/10.1177/0013164411428609
+///
+/// Albano, A. D. (2016). equate: An R package for observed-score linking and
+///   equating. *Journal of Statistical Software, 74*(8), 1–36.
+///   https://doi.org/10.18637/jss.v074.i08
+#[allow(clippy::too_many_arguments)]
+pub fn nominal_weights_mean_equate(
+    x_total: &[f64],
+    x_anchor: &[f64],
+    y_total: &[f64],
+    y_anchor: &[f64],
+    k_x: usize,
+    k_y: usize,
+    k_v: usize,
+    w1: f64,
+) -> Result<EquateResult, String> {
+    if k_x == 0 || k_y == 0 || k_v == 0 {
+        return Err("k_x, k_y and k_v must be positive".into());
+    }
+    if x_total.len() != x_anchor.len() || y_total.len() != y_anchor.len() {
+        return Err("total and anchor vectors must have equal length within each group".into());
+    }
+    if x_total.is_empty() || y_total.is_empty() {
+        return Err("score vectors must be non-empty".into());
+    }
+    if !(0.0..=1.0).contains(&w1) {
+        return Err("w1 must be in [0, 1]".into());
+    }
+    if x_total
+        .iter()
+        .chain(x_anchor)
+        .chain(y_total)
+        .chain(y_anchor)
+        .any(|v| !v.is_finite())
+    {
+        return Err("scores must be finite".into());
+    }
+    let (m1x, v1x, m1v, v1v, _cov1) = paired_moments(x_total, x_anchor);
+    let (m2y, v2y, m2v, v2v, _cov2) = paired_moments(y_total, y_anchor);
+    let g1 = k_x as f64 / k_v as f64;
+    let g2 = k_y as f64 / k_v as f64;
+    let w2 = 1.0 - w1;
+    let d = m1v - m2v;
+    let dv = v1v - v2v;
+    let mu_sx = m1x - w2 * g1 * d;
+    let mu_sy = m2y + w1 * g2 * d;
+    let var_sx = v1x - w2 * g1 * g1 * dv + w1 * w2 * g1 * g1 * d * d;
+    let var_sy = v2y + w1 * g2 * g2 * dv + w1 * w2 * g2 * g2 * d * d;
+    if var_sx <= 0.0 || var_sy <= 0.0 {
+        return Err("synthetic variance is non-positive (degenerate equating)".into());
+    }
+    let b = mu_sy - mu_sx;
+    Ok(EquateResult {
+        x_scores: (0..=k_x).map(|x| x as f64).collect(),
+        y_equivalents: (0..=k_x).map(|x| x as f64 + b).collect(),
+        mu_x: mu_sx,
+        sigma_x: var_sx.sqrt(),
+        mu_y: mu_sy,
+        sigma_y: var_sy.sqrt(),
+        // slope-1 shift maps the synthetic X mean onto the synthetic Y mean
+        // and leaves the spread unchanged
+        mu_eq: mu_sy,
+        sigma_eq: var_sx.sqrt(),
+        slope: 1.0,
+        intercept: b,
+        n_x: x_total.len(),
+        n_y: y_total.len(),
+        h_x: f64::NAN,
+        h_y: f64::NAN,
+    })
+}
+
 // ===================== standard errors of equating =====================
 
 /// Per-score-point standard errors of equating ([`bootstrap_see`] /
@@ -1303,6 +1418,411 @@ pub fn equate_eg_ext(
         n_y: y_scores.len(),
         h_x,
         h_y,
+    })
+}
+
+// ===================== Circle-arc small-sample equating =====================
+
+/// Which circle-arc estimator to use (Livingston & Kim, 2008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircleArcMethod {
+    /// Method 1: circle arc fitted directly through the three points
+    /// (Livingston & Kim, 2008, pp. 1-4).
+    Arc1,
+    /// Method 2: linear component `L(x)` through the end-points plus a
+    /// circle arc fitted to the transformed points (pp. 4-6); the source's
+    /// resampling study found it the most accurate small-sample method
+    /// overall (p. 10).
+    Arc2,
+}
+
+impl CircleArcMethod {
+    /// Parse a method label (`"1"`, `"arc1"`, `"2"`, `"arc2"`).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "1" | "arc1" | "circlearc1" => Some(CircleArcMethod::Arc1),
+            "2" | "arc2" | "circlearc2" => Some(CircleArcMethod::Arc2),
+            _ => None,
+        }
+    }
+}
+
+/// Circle-arc equating output.
+///
+/// `xc`/`yc`/`r2` describe the fitted circle: for [`CircleArcMethod::Arc1`]
+/// in raw coordinates, for [`CircleArcMethod::Arc2`] in the transformed
+/// (`y* = y - L(x)`) coordinates of the read source (eq. 7). When the three
+/// points are collinear (Method 1) or the transformed middle height is zero
+/// (Method 2, `y2* = 0`), the estimate is the straight line/`L(x)` itself,
+/// `collinear` is `true`, and `xc`/`yc`/`r2` are `NaN`.
+#[derive(Debug, Clone)]
+pub struct CircleArcResult {
+    /// Reference-form equivalent of each requested new-form score.
+    pub equated: Vec<f64>,
+    /// Fitted circle center x (source eq. 3); `NaN` when `collinear`.
+    pub xc: f64,
+    /// Fitted circle center y (source eq. 4); `NaN` when `collinear`.
+    pub yc: f64,
+    /// Fitted squared radius (source eq. 5); `NaN` when `collinear`.
+    pub r2: f64,
+    /// `true` when the estimate degenerates to the straight line through
+    /// the points (Method 1) or to `L(x)` (Method 2).
+    pub collinear: bool,
+    /// The middle point `(x2, y2)` actually used.
+    pub middle: (f64, f64),
+}
+
+/// Circumcenter and squared radius through three points, written exactly as
+/// the read source's eqs. 3-5 (separate numerators/denominators for `xc`
+/// and `yc`; algebraically `d == -dy`, kept separate for traceability).
+/// Returns `None` when the points are collinear (`d == 0`).
+fn circle_through(
+    (x1, y1): (f64, f64),
+    (x2, y2): (f64, f64),
+    (x3, y3): (f64, f64),
+) -> Option<(f64, f64, f64)> {
+    let d = 2.0 * (x1 * (y3 - y2) + x2 * (y1 - y3) + x3 * (y2 - y1));
+    if d == 0.0 {
+        return None;
+    }
+    let dy = 2.0 * (y1 * (x3 - x2) + y2 * (x1 - x3) + y3 * (x2 - x1));
+    let s1 = x1 * x1 + y1 * y1;
+    let s2 = x2 * x2 + y2 * y2;
+    let s3 = x3 * x3 + y3 * y3;
+    let xc = (s1 * (y3 - y2) + s2 * (y1 - y3) + s3 * (y2 - y1)) / d;
+    let yc = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / dy;
+    let r2 = (x1 - xc) * (x1 - xc) + (y1 - yc) * (y1 - yc);
+    Some((xc, yc, r2))
+}
+
+/// Evaluate the fitted arc at `x`. `plus` selects source eq. 1 (`yc +
+/// sqrt(...)`, middle point above the chord) versus eq. 2 (`yc - ...`).
+/// The radicand is non-negative for `x` between two on-circle abscissas in
+/// exact arithmetic (every circle point satisfies `|X - xc| <= r`); tiny
+/// negative values are floating-point noise and are clamped to zero.
+fn arc_eval(x: f64, xc: f64, yc: f64, r2: f64, plus: bool) -> f64 {
+    let rad = (r2 - (x - xc) * (x - xc)).max(0.0);
+    if plus {
+        yc + rad.sqrt()
+    } else {
+        yc - rad.sqrt()
+    }
+}
+
+/// Circle-arc small-sample observed-score equating.
+///
+/// # Citation governance
+///
+/// - READ (full text): Livingston, S. A., & Kim, S. (2008). *Small-sample
+///   equating by the circle-arc method* (Research Report RR-08-39). ETS.
+///   (ERIC EJ1111225.) All formulas below are from this source: the
+///   circumcenter eqs. 3-4, squared radius eq. 5, arc branches eqs. 1-2
+///   with the `y2 > yc` decision rule (p. 4), the Method-2 linear
+///   component eq. 6 and transform eq. 7 (pp. 4-5), and the worked example
+///   (center `(40, -15)`, radius `sqrt(1625)`; Method-2 transformed center
+///   `(12.5, -13)`, radius `sqrt(225.25)`).
+/// - NOT READ (cited as cited in the source): Divgi (1987), the
+///   cubic-through-three-points precursor; Kolen & Brennan (2004) for mean
+///   equating; Livingston & Kim (2009), *Journal of Educational
+///   Measurement, 46*(3), 330-343, the journal version of this report.
+/// - DERIVED (not stated in the source, proved during spec review):
+///   `y2 == yc` is impossible for a proper circle through three points
+///   with `x1 < x2 < x3` (it would force `x2 = xc +/- r`, an extreme
+///   abscissa of the circle, contradicting `x1 < x2 < x3`); the equality
+///   arm below is a defensive floating-point guard only. Likewise the
+///   radicand `r2 - (x - xc)^2` is non-negative on `[x1, x3]` in exact
+///   arithmetic because all circle points satisfy `|X - xc| <= r`.
+///
+/// # Scope (REDUCED relative to the source)
+///
+/// Scores must lie in `[x1, x3]`. The source's Method 1 additionally
+/// extends the transformation below the lower end-point by connecting it
+/// linearly to the minimum-possible-score point (p. 2); that extension is
+/// NOT implemented — scores below `x1` (or above `x3`) are an error.
+///
+/// `low = (x1, y1)` and `high = (x3, y3)` are the prespecified end-points
+/// (maximum possible scores; lowest meaningful, e.g. chance, scores).
+/// `middle = (x2, y2)` is the empirically determined middle point: for
+/// single-group/equivalent-groups designs the pair of mean scores (p. 6);
+/// for the anchor design see [`circle_arc_middle_anchor`].
+///
+/// Errors: empty or non-finite `scores`, scores outside `[x1, x3]`,
+/// non-finite points, `x1 >= x3`, `x2 <= x1`, `x2 >= x3`, points whose
+/// fitted circle does not carry all three of them on a single branch (an
+/// end-point on the opposite side of the center from the middle point, so
+/// no arc through the points is a function of X), or (defensive) a middle
+/// point exactly at the fitted circle's horizontal diameter.
+pub fn circle_arc_equate(
+    scores: &[f64],
+    low: (f64, f64),
+    middle: (f64, f64),
+    high: (f64, f64),
+    method: CircleArcMethod,
+) -> Result<CircleArcResult, String> {
+    let (x1, y1) = low;
+    let (x2, y2) = middle;
+    let (x3, y3) = high;
+    for v in [x1, y1, x2, y2, x3, y3] {
+        if !v.is_finite() {
+            return Err("circle-arc points must be finite".to_string());
+        }
+    }
+    if x1 >= x3 {
+        return Err("circle-arc needs x1 < x3 (increasing end-points)".to_string());
+    }
+    if x2 <= x1 || x2 >= x3 {
+        return Err("circle-arc middle point must satisfy x1 < x2 < x3".to_string());
+    }
+    if scores.is_empty() {
+        return Err("circle-arc needs at least one score to equate".to_string());
+    }
+    for &s in scores {
+        if !s.is_finite() {
+            return Err("circle-arc scores must be finite".to_string());
+        }
+        if s < x1 || s > x3 {
+            return Err(
+                "circle-arc score outside [x1, x3]; the source's below-endpoint \
+                 linear extension is not implemented"
+                    .to_string(),
+            );
+        }
+    }
+    // Method 2 linear component L(x) through the end-points (source eq. 6).
+    let slope = (y3 - y1) / (x3 - x1);
+    let line = |x: f64| y1 + slope * (x - x1);
+    // Points the circle is fitted to: raw for Method 1; transformed
+    // (y* = y - L(x), source eq. 7; end-point heights become 0) for Method 2.
+    let (p1, p2, p3, y_mid) = match method {
+        CircleArcMethod::Arc1 => ((x1, y1), (x2, y2), (x3, y3), y2),
+        CircleArcMethod::Arc2 => {
+            let y2s = y2 - line(x2);
+            ((x1, 0.0), (x2, y2s), (x3, 0.0), y2s)
+        }
+    };
+    let fit = circle_through(p1, p2, p3);
+    let (xc, yc, r2, plus) = match fit {
+        None => {
+            // Collinear (Method 1) or y2* = 0 (Method 2): the estimate is
+            // the straight line through the points / L(x) itself.
+            let equated = scores.iter().map(|&s| line(s)).collect();
+            return Ok(CircleArcResult {
+                equated,
+                xc: f64::NAN,
+                yc: f64::NAN,
+                r2: f64::NAN,
+                collinear: true,
+                middle: (x2, y2),
+            });
+        }
+        Some((xc, yc, r2)) => {
+            if y_mid == yc {
+                return Err("circle-arc middle point sits on the circle's horizontal \
+                     diameter (defensive guard; unreachable for x1 < x2 < x3)"
+                    .to_string());
+            }
+            // The equating function Y(X) is a SINGLE branch of the circle
+            // (source eqs. 1-2, selected by the middle point's position vs.
+            // the center), so all three fitted points must lie on that
+            // branch or the curve cannot pass through the prescribed
+            // end-points. A point exactly at y == yc sits at a horizontal
+            // extreme of the circle (x = xc +/- r) and is recovered by
+            // either branch, so it is allowed.
+            let sgn = y_mid - yc;
+            for (_, py) in [p1, p3] {
+                if py != yc && (py - yc).is_sign_positive() != sgn.is_sign_positive() {
+                    return Err("circle-arc points do not lie on a single branch of the \
+                         fitted circle (an end-point is on the opposite side of \
+                         the center from the middle point), so an arc through \
+                         all three points is not a function of X"
+                        .to_string());
+                }
+            }
+            (xc, yc, r2, y_mid > yc)
+        }
+    };
+    let equated = scores
+        .iter()
+        .map(|&s| {
+            let a = arc_eval(s, xc, yc, r2, plus);
+            match method {
+                CircleArcMethod::Arc1 => a,
+                CircleArcMethod::Arc2 => line(s) + a,
+            }
+        })
+        .collect();
+    Ok(CircleArcResult {
+        equated,
+        xc,
+        yc,
+        r2,
+        collinear: false,
+        middle: (x2, y2),
+    })
+}
+
+/// Middle point for the anchor (NEAT) design (Livingston & Kim, 2008,
+/// eq. 9): choosing `x2 = m_XA` collapses the chained-linear formula to
+///
+/// ```text
+/// y2 = m_YB + (s_YB / s_VB) * (m_VA - m_VB)
+/// ```
+///
+/// where `m`/`s` are means/SDs, `A`/`B` the groups taking the new form X
+/// and reference form Y, and `V` the anchor. The full chained-linear form
+/// for an arbitrary `x2` (source p. 7; its OCR equation label collides
+/// with the earlier "(8)" and is cited here by location, not number) is
+/// NOT implemented. Errors: non-finite inputs, `s_yb <= 0`, `s_vb <= 0`.
+pub fn circle_arc_middle_anchor(
+    m_xa: f64,
+    m_va: f64,
+    m_yb: f64,
+    s_yb: f64,
+    m_vb: f64,
+    s_vb: f64,
+) -> Result<(f64, f64), String> {
+    for v in [m_xa, m_va, m_yb, s_yb, m_vb, s_vb] {
+        if !v.is_finite() {
+            return Err("circle-arc anchor middle inputs must be finite".to_string());
+        }
+    }
+    if s_yb <= 0.0 || s_vb <= 0.0 {
+        return Err("circle-arc anchor middle needs positive s_yb and s_vb".to_string());
+    }
+    Ok((m_xa, m_yb + (s_yb / s_vb) * (m_va - m_vb)))
+}
+
+// --- composite linking (Holland & Strawderman, 2011) ---
+//
+// Citation governance:
+// - READ: Albano, A. D. (2016). equate: An R package for observed-score
+//   linking and equating. Journal of Statistical Software, 74(8), 1-36.
+//   https://doi.org/10.18637/jss.v074.i08 — Section 3.7, eqs. 31-32.
+// - READ: composite.R from the R package equate 2.0.8 (Albano). Reference
+//   implementation: `wcs <- (wc*(1 + slopes^p)^-(1/p)) / sum(...)`,
+//   `composite.default <- function(x, wc) return(x %*% wc)` (raw wc,
+//   un-normalized, in the non-symmetric path).
+// - NOT READ (as-cited): Holland, P. W., & Strawderman, W. E. (2011). How to
+//   average equating functions, if you must. In A. A. von Davier (Ed.),
+//   Statistical models for test equating, scaling, and linking (pp. 89-107).
+//   Springer. Cited via Albano (2016); every formula claim below is grounded
+//   in the two READ sources.
+//
+// Source eq. 31 (non-symmetric): comp_Y(x) = sum_h w_h * link_hY(x), with
+// raw weights as supplied. DEVIATION from the R reference: this API always
+// normalizes, using W_h = w_h / sum(w) in the non-symmetric path, so results
+// are scale-invariant in the weights (identical to R iff sum(w) = 1).
+//
+// Eq. 32 (symmetric, requires per-component linear slopes a_h > 0, p >= 1):
+//   W_h = w_h (1 + a_h^p)^(-1/p) / sum_h w_h (1 + a_h^p)^(-1/p)
+//
+// DERIVED (oracle-verified): for two linear components at p = 1, the eq.-32
+// composite of the forward links is the exact functional inverse of the
+// eq.-32 composite of the inverse links with the same raw weights; the raw
+// (unadjusted) weights do NOT have this property. Pinned by the round-trip
+// test. The R reference falls back to raw weights with a warning when
+// symmetric weighting is requested without slopes; this implementation
+// errors instead (stricter, documented deviation).
+
+/// Result of a composite linking (Holland & Strawderman, 2011, as cited by
+/// Albano, 2016, eqs. 31-32).
+#[derive(Debug, Clone)]
+pub struct CompositeResult {
+    /// Composite conversion table over the shared x grid.
+    pub composite: Vec<f64>,
+    /// Normalized weights W_h actually applied to the component tables.
+    pub adjusted_weights: Vec<f64>,
+    /// Whether the symmetric (eq. 32) slope adjustment was applied.
+    pub symmetric: bool,
+}
+
+/// Composite linking: weighted average of component conversion tables
+/// (Albano, 2016, eq. 31), optionally with the Holland-Strawderman symmetric
+/// weight adjustment (eq. 32) when per-component linear slopes are supplied.
+pub fn composite_linking(
+    tables: &[Vec<f64>],
+    weights: &[f64],
+    slopes: Option<&[f64]>,
+    p: f64,
+) -> Result<CompositeResult, String> {
+    let h = tables.len();
+    if h == 0 {
+        return Err("composite linking needs at least one component table".to_string());
+    }
+    let n = tables[0].len();
+    if n == 0 {
+        return Err("composite linking tables must be non-empty".to_string());
+    }
+    for t in tables {
+        if t.len() != n {
+            return Err("composite linking tables must have equal length".to_string());
+        }
+        if t.iter().any(|v| !v.is_finite()) {
+            return Err("composite linking table values must be finite".to_string());
+        }
+    }
+    if weights.len() != h {
+        return Err("composite linking needs one weight per table".to_string());
+    }
+    if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+        return Err("composite linking weights must be finite and non-negative".to_string());
+    }
+    let symmetric = slopes.is_some();
+    // Raw factors: w_h (non-symmetric) or w_h (1 + a_h^p)^(-1/p) (eq. 32).
+    let factors: Vec<f64> = match slopes {
+        None => weights.to_vec(),
+        Some(a) => {
+            if a.len() != h {
+                return Err("composite linking needs one slope per table".to_string());
+            }
+            if a.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+                return Err("composite linking slopes must be finite and positive".to_string());
+            }
+            if !p.is_finite() || p < 1.0 {
+                return Err("composite linking p must be finite and >= 1".to_string());
+            }
+            weights
+                .iter()
+                .zip(a)
+                .map(|(w, s)| {
+                    // (1 + a^p)^(-1/p) computed in log space: a.powf(p)
+                    // silently overflows to inf for valid finite a/p (e.g.
+                    // a=2, p=1000), collapsing the factor to 0 instead of
+                    // the correct ~1/a. For x = p ln a > 0 use the exact
+                    // rearrangement -(x + log1p(exp(-x)))/p =
+                    // -ln a - log1p(exp(-x))/p, which stays finite even
+                    // when x itself overflows to inf (exp(-inf) = 0), so
+                    // the factor degrades to the correct large-p limit
+                    // w/a instead of 0.
+                    let x = p * s.ln();
+                    let exponent = if x > 0.0 {
+                        -s.ln() - (-x).exp().ln_1p() / p
+                    } else {
+                        -x.exp().ln_1p() / p
+                    };
+                    w * exponent.exp()
+                })
+                .collect()
+        }
+    };
+    let denom: f64 = factors.iter().sum();
+    if !denom.is_finite() || denom <= 0.0 {
+        return Err("composite linking weight sum must be finite and positive".to_string());
+    }
+    let adjusted_weights: Vec<f64> = factors.iter().map(|f| f / denom).collect();
+    let composite: Vec<f64> = (0..n)
+        .map(|i| {
+            adjusted_weights
+                .iter()
+                .zip(tables)
+                .map(|(w, t)| w * t[i])
+                .sum()
+        })
+        .collect();
+    Ok(CompositeResult {
+        composite,
+        adjusted_weights,
+        symmetric,
     })
 }
 

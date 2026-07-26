@@ -133,7 +133,7 @@ fn norm_cdf(x: f64) -> f64 {
 /// (impl-review finding). Callers must reject `sqrt(1 - rho^2) < 1e-4`
 /// (`|rho| > ~0.999999995`) before calling; below that the panel count
 /// needed for accuracy is unbounded.
-fn bvn_upper(h: f64, k: f64, rho: f64) -> f64 {
+pub(crate) fn bvn_upper(h: f64, k: f64, rho: f64) -> f64 {
     // 16-point Gauss-Legendre nodes/weights on [-1, 1] (Abramowitz & Stegun
     // Table 25.4, symmetric halves).
     const GL_X: [f64; 8] = [
