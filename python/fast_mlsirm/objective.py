@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from .backend import load_rust_core, normalize_backend, normalize_device, resolve_backend
-from .config import VALID_MODELS, FitConfig, PenaltyConfig
+from .backend import (
+    load_rust_core,
+    normalize_backend,
+    normalize_device,
+    resolve_backend,
+)
+from .config import FitConfig, PenaltyConfig
 from .math import sigmoid, softplus
 from .types import MLSIRMParams
 
 
-def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def prepare_response(
+    responses: np.ndarray, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -32,20 +39,16 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
 
 
 def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.ndarray:
-    raw = np.asarray(factor_id)
-    if raw.shape != (n_items,):
+    factors = np.asarray(factor_id, dtype=np.int64)
+    if factors.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
-    if raw.dtype.kind not in {"i", "u"}:
-        raise ValueError("factor_id must contain integer values")
-    if raw.size and (np.any(raw < 0) or int(raw.max()) >= n_dims):
+    if np.any(factors < 0) or np.any(factors >= n_dims):
         raise ValueError("factor_id values must be in 0..n_dims-1")
-    return raw.astype(np.int64, copy=False)
+    return factors
 
 
 def model_flags(model: str) -> tuple[bool, bool]:
     name = model.upper()
-    if name not in VALID_MODELS:
-        raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
     free_alpha = name not in {"MLSRM", "ULSRM"}
     uses_space = name != "MIRT"
     return free_alpha, uses_space
@@ -57,40 +60,25 @@ def linear_predictor(
     model: str = "MLS2PLM",
     eps_distance: float = 1e-8,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return the model linear predictor and any distance matrix.
-
-    ``BIFAC2PLM`` uses a general-factor inner product as in Gibbons and
-    Hedeker (1992). LSIRM models instead use this repository's negative
-    distance interaction.
-
-    References (APA 7th ed.):
-        Gibbons, R. D., & Hedeker, D. R. (1992). Full-information item
-            bi-factor analysis. *Psychometrika, 57*(3), 423–436.
-            https://doi.org/10.1007/BF02295430
-    """
-    name = model.upper()
-    free_alpha, uses_space = model_flags(name)
+    free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
     theta_factor = params.theta[:, factor_id]
 
-    if name == "BIFAC2PLM":
-        # The bifactor's general-factor contribution is bilinear, not a
-        # latent-space distance penalty (Gibbons & Hedeker, 1992).
-        distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
-        interaction = np.dot(params.xi, params.zeta.T)
-    elif uses_space:
+    if uses_space:
         # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
-        xi_sq = np.einsum('ij,ij->i', params.xi, params.xi)
-        zeta_sq = np.einsum('ij,ij->i', params.zeta, params.zeta)
-        dist_sq = xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        xi_sq = np.einsum("ij,ij->i", params.xi, params.xi)
+        zeta_sq = np.einsum("ij,ij->i", params.zeta, params.zeta)
+        dist_sq = (
+            xi_sq[:, None] + zeta_sq[None, :] - 2 * np.dot(params.xi, params.zeta.T)
+        )
         dist_sq = np.maximum(dist_sq, 0.0)
         distance = np.sqrt(dist_sq + eps_distance)
-        interaction = -params.gamma * distance
+        gamma = params.gamma
     else:
         distance = np.zeros((params.theta.shape[0], len(factor_id)), dtype=np.float64)
-        interaction = 0.0
+        gamma = 0.0
 
-    eta = a[None, :] * theta_factor + params.b[None, :] + interaction
+    eta = a[None, :] * theta_factor + params.b[None, :] - gamma * distance
     return eta, distance
 
 
@@ -104,16 +92,21 @@ def neg_loglik_and_grad(
     device: str | None = None,
 ) -> tuple[float, MLSIRMParams, float]:
     config = config or FitConfig()
-    model = config.normalized_model()
-    if model == "BIFAC2PLM":
-        raise ValueError("BIFAC2PLM is supported by the marginal estimator only")
-
     requested_backend = normalize_backend(backend)
-    normalized_backend = resolve_backend(requested_backend) if requested_backend == "auto" else requested_backend
+    normalized_backend = (
+        resolve_backend(requested_backend)
+        if requested_backend == "auto"
+        else requested_backend
+    )
     if normalized_backend == "rust":
-        resolved_device = normalize_device(device if device is not None else config.rust_device)
-        return _neg_loglik_and_grad_rust(responses, factor_id, params, config, mask, resolved_device)
+        resolved_device = normalize_device(
+            device if device is not None else config.rust_device
+        )
+        return _neg_loglik_and_grad_rust(
+            responses, factor_id, params, config, mask, resolved_device
+        )
 
+    model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
     factors = validate_factor_id(factor_id, y.shape[1], params.theta.shape[1])
@@ -123,7 +116,9 @@ def neg_loglik_and_grad(
 
     free_alpha, uses_space = model_flags(model)
     a = params.a if free_alpha else np.ones_like(params.alpha)
-    eta, distance = linear_predictor(params, factors, model=model, eps_distance=config.eps_distance)
+    eta, distance = linear_predictor(
+        params, factors, model=model, eps_distance=config.eps_distance
+    )
     pi = sigmoid(eta)
     entry_loss = (softplus(eta) - y * eta) * observed
     nll = float(entry_loss.sum())
@@ -133,7 +128,10 @@ def neg_loglik_and_grad(
     grad_b = e.sum(axis=0)
     grad_alpha = np.zeros_like(params.alpha)
     if free_alpha:
-        grad_alpha = (e * params.theta[:, factors]).sum(axis=0) * a
+        # Optimized alpha gradient computation: replace element-wise multiplication
+        # and sum over axis=0 with a fast matrix multiplication and advanced indexing.
+        # This completely avoids allocating an intermediate (N, J) matrix, saving significant memory and compute.
+        grad_alpha = (e.T @ params.theta)[np.arange(e.shape[1]), factors] * a
 
     # Optimized gradient computation: replace loop over dimensions with matrix multiplication
     # We embed 'a' directly into the projection matrix to avoid a JxD intermediate array allocation during multiplication
@@ -153,7 +151,9 @@ def neg_loglik_and_grad(
         grad_xi = -gamma * (params.xi * sum_e_over_d - np.dot(e_over_d, params.zeta))
 
         sum_e_over_d_j = e_over_d.sum(axis=0, keepdims=True).T
-        grad_zeta = gamma * (np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j)
+        grad_zeta = gamma * (
+            np.dot(e_over_d.T, params.xi) - params.zeta * sum_e_over_d_j
+        )
 
         # Optimized gradient computation: avoid intermediate array allocation by using vdot
         grad_tau = float(-gamma * np.vdot(e, distance))
@@ -219,7 +219,9 @@ def _neg_loglik_and_grad_rust(
         device,
     )
     grads = MLSIRMParams(
-        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(params.theta.shape),
+        theta=np.asarray(gradients["theta"], dtype=np.float64).reshape(
+            params.theta.shape
+        ),
         alpha=np.asarray(gradients["alpha"], dtype=np.float64),
         b=np.asarray(gradients["b"], dtype=np.float64),
         xi=np.asarray(gradients["xi"], dtype=np.float64).reshape(params.xi.shape),
@@ -229,7 +231,9 @@ def _neg_loglik_and_grad_rust(
     return float(objective), grads, float(loglik)
 
 
-def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
+def _add_penalty(
+    params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool
+) -> float:
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
     value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))

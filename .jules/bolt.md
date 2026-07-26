@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2024-05-19 - Vectorized intermediate allocations during gradients (Alpha computation)
+**Learning:** Operations like `(e * params.theta[:, factors]).sum(axis=0)` create a full-sized N x J intermediate array during element-wise multiplication before reduction. For larger matrices, this memory allocation becomes a significant bottleneck.
+**Action:** Replace `(e * params.theta[:, factors]).sum(axis=0)` with transposed matrix multiplication and advanced indexing `(e.T @ params.theta)[np.arange(e.shape[1]), factors]`. This delegates the heavy lifting to BLAS operations and significantly reduces memory allocation overhead.
