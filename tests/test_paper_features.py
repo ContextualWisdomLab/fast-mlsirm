@@ -7764,3 +7764,15 @@ class TestFlexilevel:
             flexilevel_score_distribution([0.5, 1.5, 0.5])
         with pytest.raises(ValueError, match="real-valued"):
             flexilevel_score_distribution(np.array([0.5, 0.5j, 0.5]))
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.array([0, 1 + 0j, 0, 1, 0], dtype=object),
+                n_persons=1,
+                n_items=5,
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(
+                np.array([0.5, 0.5 + 0j, 0.5], dtype=object)
+            )

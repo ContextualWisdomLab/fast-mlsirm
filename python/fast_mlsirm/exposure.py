@@ -872,7 +872,12 @@ def flexilevel_administer(
     if resp.dtype == np.bool_:
         resp = resp.astype(np.uint8)
     else:
-        resp_f = np.asarray(resp, dtype=np.float64)
+        try:
+            # Object-dtype arrays holding complex values bypass
+            # np.iscomplexobj; the float64 coercion is the backstop.
+            resp_f = np.asarray(resp, dtype=np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("responses must be real-valued") from None
         if not np.all(np.isin(resp_f, (0.0, 1.0))):
             raise ValueError("responses must contain only 0 and 1")
         resp = resp_f.astype(np.uint8)
@@ -916,7 +921,12 @@ def flexilevel_score_distribution(p: np.ndarray) -> dict:
 
     if np.iscomplexobj(np.asarray(p)):
         raise ValueError("p must be real-valued")
-    p = np.asarray(p, dtype=np.float64)
+    try:
+        # Object-dtype arrays holding complex values bypass
+        # np.iscomplexobj; the float64 coercion is the backstop.
+        p = np.asarray(p, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("p must be real-valued") from None
     if p.ndim != 1:
         raise ValueError("p must be a 1-D array")
     r = _core.py_flexilevel_score_distribution(np.ascontiguousarray(p))
