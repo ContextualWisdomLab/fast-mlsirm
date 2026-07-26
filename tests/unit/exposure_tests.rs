@@ -2541,6 +2541,10 @@ fn strad_error_contract() {
     assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 0, 1).is_err()); // min_items = 0
     assert!(call(&ok_s, &ok_d, &ok_r, 0, 0.2, 1, 0).is_err()); // max_items = 0
     assert!(call(&ok_s, &[-1.0, f64::INFINITY, 1.0, 1.0], &ok_r, 0, 0.2, 1, 1).is_err());
+    // Huge stratum id must be rejected BEFORE the by_stratum allocation
+    // (guard reads the crate error, not a mirrored bound).
+    let err = call(&[0, usize::MAX - 1, 1, 1], &ok_d, &ok_r, 0, 0.2, 1, 1).unwrap_err();
+    assert!(err.contains("exceeds the item count"));
 }
 
 #[test]

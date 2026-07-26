@@ -2163,6 +2163,15 @@ pub fn stradaptive_administer(
         ));
     }
     let s_max = *stratum.iter().max().unwrap();
+    // Contiguous non-empty strata imply s_max + 1 <= n; guard before the
+    // vec![...; n_strata] allocation so a huge stratum id cannot trigger an
+    // enormous allocation (or overflow s_max + 1).
+    if s_max >= n {
+        return Err(format!(
+            "stradaptive_administer: stratum {s_max} exceeds the item count {n} \
+             (strata must cover 0..S-1 with every stratum non-empty)"
+        ));
+    }
     let n_strata = s_max + 1;
     if n_strata < 2 {
         return Err("stradaptive_administer: at least 2 strata are required".into());
