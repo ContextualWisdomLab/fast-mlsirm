@@ -8781,13 +8781,19 @@ class TestLsr:
         # ... but estimable with alpha > 0.
         rd = lsr_pairwise(d, alpha=0.5)
         assert np.all(np.isfinite(rd.params))
-        # Overflow must raise, never return NaN.
-        huge = np.full((3, 3), 1e308)
+        # Overflow must raise, never return NaN. n = 4 at 1.7e308 makes
+        # each generator row sum overflow to inf (an n = 3 all-1e308
+        # matrix stays finite and is now correctly accepted).
+        huge = np.full((4, 4), 1.7e308)
         np.fill_diagonal(huge, 0.0)
         with pytest.raises(ValueError):
             lsr_pairwise(huge)
         with pytest.raises(ValueError):
             lsr_pairwise(a, alpha=1e308)
+        # Scale invariance: globally rescaled huge counts must match.
+        base = lsr_pairwise(a)
+        big = lsr_pairwise(a * 1e20)
+        assert np.allclose(big.params, base.params, atol=1e-12)
         with pytest.raises(ValueError):
             ilsr_pairwise(a, max_iter=0)
         with pytest.raises(ValueError):
