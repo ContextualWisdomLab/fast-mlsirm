@@ -9843,3 +9843,9 @@ class TestElom:
             bad = scores.copy()
             bad[0, 0] = np.nan
             elom_rating(periods, players, bad, n_players=4)
+        with pytest.raises(ValueError):
+            # uint64::MAX must not wrap to the -1 empty-seat sentinel
+            # through the int64 narrowing cast (impl-review finding 1).
+            up = np.array([[0, 1, 2, np.iinfo(np.uint64).max]], dtype=np.uint64)
+            us = np.array([[4.0, 3.0, 2.0, np.nan]])
+            elom_rating(periods, up, us, n_players=4)

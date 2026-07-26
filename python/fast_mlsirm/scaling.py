@@ -1348,6 +1348,15 @@ def elom_rating(
     if np.any(players_f < -1):
         raise ValueError("elom_rating: player ids must be >= -1")
     if raw_players.dtype.kind in "iu":
+        if raw_players.dtype.kind == "u" and raw_players.size and int(
+            raw_players.max()
+        ) > np.iinfo(np.int64).max:
+            # An unsigned id above i64::MAX would wrap to a negative value
+            # (uint64::MAX -> -1) and silently become the empty-seat
+            # sentinel instead of being rejected.
+            raise ValueError(
+                "elom_rating: player ids above int64 max are not valid player indices"
+            )
         players_i64 = raw_players.astype(np.int64)
     else:
         # np.finfo(...).nmant excludes the implicit leading bit, so the
