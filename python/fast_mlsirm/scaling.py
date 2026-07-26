@@ -1525,7 +1525,9 @@ def metrics_rating(act, pred, cap=(0.01, 0.99), scale=True):
         if np.iscomplexobj(arr):
             raise ValueError(f"metrics_rating: {name} must be real-valued")
         if arr.dtype == object:
-            if any(isinstance(v, (str, bytes, bool)) for v in arr.flat):
+            if any(
+                isinstance(v, (str, bytes, bool, np.bool_)) for v in arr.flat
+            ):
                 raise ValueError(f"metrics_rating: {name} must be numeric")
             try:
                 arr = arr.astype(np.float64)
