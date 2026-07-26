@@ -2959,6 +2959,12 @@ fn ts_error_contract() {
     assert!(two_stage_score(7, m1, a1, b1, 31, 30, 1, &a_meas, &b_meas, 0.2).is_err());
     let bad_a = vec![0.53, -0.1, 0.61, 0.68];
     assert!(two_stage_score(7, m1, a1, b1, 20, 30, 1, &bad_a, &b_meas, 0.2).is_err());
+    // Huge m: f64 rounding collapses the truncation endpoints (x_adj/mf
+    // rounds to 1 at a perfect score) -> Err "degenerate", never NaN.
+    let huge = 1usize << 53;
+    let r = two_stage_route(huge, huge, a1, b1, &b_meas, 0.2);
+    assert!(r.is_err());
+    assert!(r.unwrap_err().contains("degenerate"));
 }
 
 /// 500-rep Monte Carlo: random valid inputs -> finite outputs, assigned in

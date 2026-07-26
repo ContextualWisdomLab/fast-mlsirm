@@ -2716,7 +2716,15 @@ fn two_stage_subtest_theta(
         x as f64
     };
     let p = ((x_adj / mf) - c) / (1.0 - c);
-    debug_assert!(p > 0.0 && p < 1.0);
+    // Runtime guard, not debug_assert: for huge m the f64 rounding of
+    // x_adj/mf can collapse the truncation endpoints onto 0 or 1 and
+    // Phi^-1 would return a non-finite value.
+    if !(p > 0.0 && p < 1.0) {
+        return Err(format!(
+            "two_stage: {label} truncated proportion correct is numerically \
+             degenerate (p = {p}); m = {m} is too large for f64 truncation"
+        ));
+    }
     Ok(crate::nodes::inv_normal_cdf(p) / a_bar + b_bar)
 }
 

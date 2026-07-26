@@ -1131,14 +1131,13 @@ def pyramidal_administer(
 
 
 def _two_stage_real_1d(name: str, arr) -> np.ndarray:
-    if np.iscomplexobj(np.asarray(arr)):
-        raise ValueError(f"{name} must be real-valued")
+    arr0 = np.asarray(arr)
+    if np.iscomplexobj(arr0) or arr0.dtype == object:
+        raise ValueError(f"{name} must be a real-valued numeric array")
     try:
-        # Object-dtype arrays holding complex values bypass
-        # np.iscomplexobj; the float64 coercion is the backstop.
-        out = np.asarray(arr, dtype=np.float64)
+        out = np.asarray(arr0, dtype=np.float64)
     except (TypeError, ValueError):
-        raise ValueError(f"{name} must be real-valued") from None
+        raise ValueError(f"{name} must be a real-valued numeric array") from None
     if out.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
     return np.ascontiguousarray(out)
