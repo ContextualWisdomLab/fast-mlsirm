@@ -119,6 +119,28 @@
 
 ### Added
 
+- **Plackett-Luce ranking estimation via Luce Spectral Ranking (Maystre &
+  Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_rankings` /
+  `ilsr_rankings` — choix source READ; the paper itself NOT READ, cited as
+  the algorithm origin per choix's docstrings).** New Rust cores
+  `scaling::lsr_rankings` (one-shot) and `scaling::ilsr_rankings`
+  (iterative MLE) estimate Plackett-Luce log-worths from full or partial
+  rankings (best first, CSR layout): each ranking is a sequence of Luce
+  choices, accruing rate `1/(sum of remaining ranked worths)` on every
+  loser-to-winner edge (plus `alpha` regularization), and the centered log
+  stationary distribution of that chain is the estimate. Python wrappers
+  `fast_mlsirm.lsr_rankings` / `ilsr_rankings` take lists of rankings and
+  return `LsrResult`. Three documented divergences from choix: rankings
+  shorter than 2 items are rejected (choix silently no-ops them),
+  within-ranking duplicates are rejected (choix accepts them when the
+  chain stays connected), and negative indices are rejected before the
+  unsigned cast (Python's would silently wrap). Exact rational anchors
+  from an executed exact-Fraction/mpmath oracle (full- and
+  partial-rankings fixtures — the partial fixture is the only one that
+  can see a wrong all-items denominator), length-2 equivalence with
+  `lsr_pairwise` pinned bit-exact, I-LSR fixed-point and iteration-count
+  pins, five executed mutation kills, and a 500-replication Monte-Carlo
+  recovery harness (`--ignored`) with a measured bound.
 - **Rank Centrality paired-comparison estimator (Negahban, Oh, & Shah, 2017,
   as ported by choix 0.4.1's `rank_centrality` — choix source READ; the
   paper's discrete-time max-degree walk is NOT what choix computes and only

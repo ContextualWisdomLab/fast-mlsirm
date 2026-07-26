@@ -910,3 +910,290 @@ fn rc_mc_500_recovery() {
     }
     assert!(worst > 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// Plackett-Luce rankings LSR / I-LSR (choix 0.4.1 lsr_rankings /
+// ilsr_rankings). Pins from the EXECUTED exact-Fraction/mpmath oracle
+// (session files pl_rankings_oracle.py), cross-checked against pip
+// choix 0.4.1 (<= 2.3e-13).
+//
+// Mutation kills (all EXECUTED):
+// - MU1 drop `s -= w[winner]` (stale placement denominator): killed by
+//   pl_fixture_ra_exact (oracle-verified separation).
+// - MU2 transpose chain update (winner->loser): killed by
+//   pl_fixture_ra_exact (probe maxdiff 1.67; RA's item-0/2 symmetry
+//   blinds only item-swap mistakes, not transposition) and
+//   pl_fixture_rb_partial.
+// - MU3 loser loop over the whole ranking instead of the suffix: killed
+//   by pl_fixture_ra_exact / pl_fixture_rb_partial (adds reverse edges).
+// - MU4 subset sum replaced by all-items sum: killed by
+//   pl_fixture_rb_partial ONLY — PROVEN invisible on full-ranking
+//   fixtures (oracle MU-separation probe), which is why a
+//   partial-rankings anchor is mandatory.
+// - MU5 I-LSR never propagates params into the pass worths: killed by
+//   pl_ilsr_fixed_points (one-shot RA param -0.4176 vs fixed point
+//   -0.3915) and its iterations pins.
+// ---------------------------------------------------------------------------
+
+/// Fixture RA: n = 3, four full rankings. Oracle weights
+/// [6/11, 21/11, 6/11]; alpha = 1/2 weights [3/4, 3/2, 3/4].
+/// Dataset duplication is exactly invariant at alpha = 0, NOT at
+/// alpha = 1/2 (both crate-output pins).
+#[test]
+fn pl_fixture_ra_exact() {
+    let ra: Vec<usize> = vec![1, 0, 2, 2, 1, 0, 0, 1, 2, 1, 2, 0];
+    let st: Vec<usize> = vec![0, 3, 6, 9, 12];
+    let r = lsr_rankings(&ra, &st, 3, 0.0).unwrap();
+    assert_eq!(r.iterations, 1);
+    let expw = [6.0 / 11.0, 21.0 / 11.0, 6.0 / 11.0];
+    for (a, b) in r.weights.iter().zip(expw.iter()) {
+        assert!((a - b).abs() < 1e-14, "weights {:?}", r.weights);
+    }
+    let expp = [
+        -0.41758765616512266523,
+        0.83517531233024533046,
+        -0.41758765616512266523,
+    ];
+    for (a, b) in r.params.iter().zip(expp.iter()) {
+        assert!((a - b).abs() < 1e-14, "params {:?}", r.params);
+    }
+    let r5 = lsr_rankings(&ra, &st, 3, 0.5).unwrap();
+    let expw5 = [0.75, 1.5, 0.75];
+    for (a, b) in r5.weights.iter().zip(expw5.iter()) {
+        assert!((a - b).abs() < 1e-14, "alpha=1/2 weights {:?}", r5.weights);
+    }
+    // Duplication: exactly invariant at alpha = 0 ...
+    let mut ra2 = ra.clone();
+    ra2.extend_from_slice(&ra);
+    let st2: Vec<usize> = vec![0, 3, 6, 9, 12, 15, 18, 21, 24];
+    let rd = lsr_rankings(&ra2, &st2, 3, 0.0).unwrap();
+    for (a, b) in rd.weights.iter().zip(r.weights.iter()) {
+        assert!((a - b).abs() < 1e-15, "duplication must be invariant");
+    }
+    // ... but NOT at alpha = 1/2.
+    let rd5 = lsr_rankings(&ra2, &st2, 3, 0.5).unwrap();
+    let diff: f64 = rd5
+        .weights
+        .iter()
+        .zip(r5.weights.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum();
+    assert!(
+        diff > 1e-3,
+        "alpha > 0 duplication must differ, diff = {diff}"
+    );
+}
+
+/// Fixture RB: n = 4, PARTIAL rankings (mixed lengths 2 and 3). Oracle
+/// weights [172/175, 12/7, 16/35, 148/175] — the discriminating anchor
+/// for the all-items-sum mutant (MU4), which full rankings cannot see.
+#[test]
+fn pl_fixture_rb_partial() {
+    let rb: Vec<usize> = vec![0, 1, 2, 3, 2, 1, 3, 2, 0, 3, 3, 1, 0];
+    let st: Vec<usize> = vec![0, 3, 5, 7, 10, 13];
+    let r = lsr_rankings(&rb, &st, 4, 0.0).unwrap();
+    let expw = [172.0 / 175.0, 12.0 / 7.0, 16.0 / 35.0, 148.0 / 175.0];
+    for (a, b) in r.weights.iter().zip(expw.iter()) {
+        assert!((a - b).abs() < 1e-14, "weights {:?}", r.weights);
+    }
+    let expp = [
+        0.089865511836540348005,
+        0.64615350967928836513,
+        -0.67560233030303108203,
+        -0.0604166912127976311,
+    ];
+    for (a, b) in r.params.iter().zip(expp.iter()) {
+        assert!((a - b).abs() < 1e-14, "params {:?}", r.params);
+    }
+}
+
+/// I-LSR fixed points (mpmath dps=50 oracle; atol 1e-7 is an
+/// ORACLE-MEASURED margin — converged tol=1e-8 iterates sit 8.6e-11 (RA)
+/// / 1.7e-9 (RB) from the fixed point; mutant deviations >= 1e-2).
+/// Also pins iteration counts at tol=1e-8 (RA 8, RB 11; spec-review
+/// choix-equivalent probes) and the returned-weights invariant
+/// weights == exp_transform(params) (kills stale/uniform-weights
+/// mutants that params-only pins miss).
+#[test]
+fn pl_ilsr_fixed_points() {
+    let ra: Vec<usize> = vec![1, 0, 2, 2, 1, 0, 0, 1, 2, 1, 2, 0];
+    let sta: Vec<usize> = vec![0, 3, 6, 9, 12];
+    let r = ilsr_rankings(&ra, &sta, 3, 0.0, 100, 1e-8).unwrap();
+    let expa = [
+        -0.39145300187318291897,
+        0.78290600374636583794,
+        -0.39145300187318291897,
+    ];
+    for (a, b) in r.params.iter().zip(expa.iter()) {
+        assert!((a - b).abs() < 1e-7, "RA ilsr params {:?}", r.params);
+    }
+    assert_eq!(r.iterations, 8, "RA pass count at tol=1e-8");
+    let rb: Vec<usize> = vec![0, 1, 2, 3, 2, 1, 3, 2, 0, 3, 3, 1, 0];
+    let stb: Vec<usize> = vec![0, 3, 5, 7, 10, 13];
+    let rr = ilsr_rankings(&rb, &stb, 4, 0.0, 100, 1e-8).unwrap();
+    let expb = [
+        0.11603240603370623172,
+        0.56148183703958190534,
+        -0.58273127354584793185,
+        -0.094782969527440205212,
+    ];
+    for (a, b) in rr.params.iter().zip(expb.iter()) {
+        assert!((a - b).abs() < 1e-7, "RB ilsr params {:?}", rr.params);
+    }
+    assert_eq!(rr.iterations, 11, "RB pass count at tol=1e-8");
+    // Returned-weights invariant: weights == exp_transform(params),
+    // positive, sum n (reads BOTH crate outputs).
+    for res in [&r, &rr] {
+        let n = res.params.len() as f64;
+        let mean = res.params.iter().sum::<f64>() / n;
+        let mut w: Vec<f64> = res.params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= n / s;
+        }
+        for (a, b) in res.weights.iter().zip(w.iter()) {
+            assert!(*a > 0.0);
+            assert!((a - b).abs() < 1e-12, "weights/params invariant");
+        }
+        let sw: f64 = res.weights.iter().sum();
+        assert!((sw - n).abs() < 1e-9);
+    }
+}
+
+/// Length-2 rankings are EXACTLY the pairwise chain (uniform worths:
+/// both add 1/2 per comparison on the loser->winner edge), so
+/// lsr_rankings must bit-match lsr_pairwise on the induced win matrix
+/// (spec-review probe maxdiff 0.0).
+#[test]
+fn pl_length2_equivalence() {
+    let rk: Vec<usize> = vec![0, 1, 1, 2, 2, 0, 0, 2];
+    let st: Vec<usize> = vec![0, 2, 4, 6, 8];
+    let r = lsr_rankings(&rk, &st, 3, 0.0).unwrap();
+    // Induced wins: 0>1, 1>2, 2>0, 0>2.
+    let mut wins = vec![0.0f64; 9];
+    wins[0 * 3 + 1] = 1.0;
+    wins[1 * 3 + 2] = 1.0;
+    wins[2 * 3 + 0] = 1.0;
+    wins[0 * 3 + 2] = 1.0;
+    let rp = lsr_pairwise(&wins, 3, 0.0).unwrap();
+    assert_eq!(r.params, rp.params, "length-2 rankings == pairwise");
+    assert_eq!(r.weights, rp.weights);
+}
+
+/// Error contract + disconnected graph + overflow (all Err paths read
+/// crate outputs).
+#[test]
+fn pl_error_contract() {
+    let ra: Vec<usize> = vec![1, 0, 2, 2, 1, 0, 0, 1, 2, 1, 2, 0];
+    let st: Vec<usize> = vec![0, 3, 6, 9, 12];
+    assert!(lsr_rankings(&ra, &st, 1, 0.0).is_err(), "n < 2");
+    assert!(lsr_rankings(&ra, &[], 3, 0.0).is_err(), "empty starts");
+    assert!(lsr_rankings(&ra, &[0], 3, 0.0).is_err(), "single start");
+    assert!(
+        lsr_rankings(&ra, &[1, 12], 3, 0.0).is_err(),
+        "starts[0] != 0"
+    );
+    assert!(
+        lsr_rankings(&ra, &[0, 3, 6, 9], 3, 0.0).is_err(),
+        "bad tail"
+    );
+    assert!(
+        lsr_rankings(&ra, &[0, 6, 3, 12], 3, 0.0).is_err(),
+        "non-monotone starts"
+    );
+    assert!(
+        lsr_rankings(&[0, 1, 2, 2], &[0, 3, 4], 3, 0.0).is_err(),
+        "length-1 ranking (documented divergence: choix no-ops it)"
+    );
+    assert!(
+        lsr_rankings(&[0, 1, 5], &[0, 3], 3, 0.0).is_err(),
+        "item out of range"
+    );
+    assert!(
+        lsr_rankings(&[0, 1, 0], &[0, 3], 3, 0.0).is_err(),
+        "duplicate item (documented divergence: choix accepts if connected)"
+    );
+    // Same item in DIFFERENT rankings is fine.
+    assert!(lsr_rankings(&[0, 1, 1, 2, 2, 0], &[0, 2, 4, 6], 3, 0.0).is_ok());
+    assert!(lsr_rankings(&ra, &st, 3, -1.0).is_err(), "negative alpha");
+    assert!(lsr_rankings(&ra, &st, 3, f64::NAN).is_err(), "NaN alpha");
+    // Overflow: alpha = 1e308 makes off-diagonal row sums (2 * 1e308)
+    // non-finite -> explicit Err, never NaN output.
+    assert!(lsr_rankings(&ra, &st, 3, 1e308).is_err(), "alpha overflow");
+    assert!(
+        ilsr_rankings(&ra, &st, 3, 0.0, 0, 1e-8).is_err(),
+        "max_iter = 0"
+    );
+    assert!(
+        ilsr_rankings(&ra, &st, 3, 0.0, 100, 0.0).is_err(),
+        "tol = 0"
+    );
+    assert!(
+        ilsr_rankings(&ra, &st, 3, 0.0, 1, 1e-8).is_err(),
+        "non-convergence in 1 pass (first check never fires)"
+    );
+    // Disconnected at alpha = 0: {0,1} vs {2,3}.
+    let rd: Vec<usize> = vec![0, 1, 1, 0, 2, 3, 3, 2];
+    let sd: Vec<usize> = vec![0, 2, 4, 6, 8];
+    assert!(lsr_rankings(&rd, &sd, 4, 0.0).is_err(), "disconnected");
+    assert!(ilsr_rankings(&rd, &sd, 4, 0.0, 100, 1e-8).is_err());
+    // ... estimable at alpha = 1/2, exactly uniform (oracle pin).
+    let rd5 = lsr_rankings(&rd, &sd, 4, 0.5).unwrap();
+    for w in rd5.weights.iter() {
+        assert!((w - 1.0).abs() < 1e-14, "RD alpha=1/2 uniform");
+    }
+}
+
+/// 500-replication Monte-Carlo Plackett-Luce recovery (ignored: slow).
+/// True params centered before MAE per spec review.
+#[test]
+#[ignore]
+fn pl_mc_500_recovery() {
+    let n = 6usize;
+    let mut rng = Lcg(0x9e3779b97f4a7c15);
+    let mut worst = 0.0f64;
+    for rep in 0..500 {
+        let truth: Vec<f64> = {
+            let raw: Vec<f64> = (0..n).map(|_| 0.8 * rng.normal()).collect();
+            let m = raw.iter().sum::<f64>() / n as f64;
+            raw.iter().map(|x| x - m).collect()
+        };
+        let worths: Vec<f64> = truth.iter().map(|t| t.exp()).collect();
+        // 300 full rankings via sequential Luce sampling: categorical
+        // draw u = next_f64() * remaining_sum with fallthrough (spec
+        // review change 6).
+        let mut rankings: Vec<usize> = Vec::with_capacity(300 * n);
+        let mut starts: Vec<usize> = Vec::with_capacity(301);
+        starts.push(0);
+        for _ in 0..300 {
+            let mut remaining: Vec<usize> = (0..n).collect();
+            while !remaining.is_empty() {
+                let s: f64 = remaining.iter().map(|&i| worths[i]).sum();
+                let u = rng.next_f64() * s;
+                let mut acc = 0.0;
+                let mut pick = remaining.len() - 1;
+                for (k, &i) in remaining.iter().enumerate() {
+                    acc += worths[i];
+                    if u < acc {
+                        pick = k;
+                        break;
+                    }
+                }
+                rankings.push(remaining.remove(pick));
+            }
+            starts.push(rankings.len());
+        }
+        let r = ilsr_rankings(&rankings, &starts, n, 0.0, 200, 1e-8).unwrap();
+        let mae = truth
+            .iter()
+            .zip(r.params.iter())
+            .map(|(t, p)| (t - p).abs())
+            .sum::<f64>()
+            / n as f64;
+        worst = worst.max(mae);
+        // 0.2 bound: worst-of-500 MAE MEASURED at 0.1440 on this seed
+        // stream; mutant deviations (MU4/MU5) exceed 0.3.
+        assert!(mae < 0.2, "rep {rep}: mae = {mae}");
+    }
+    assert!(worst > 0.0);
+}

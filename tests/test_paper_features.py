@@ -8871,3 +8871,73 @@ class TestRankCentrality:
         base = rank_centrality(a)
         big = rank_centrality(a * 1e20)
         assert np.allclose(big.params, base.params, atol=1e-12)
+
+class TestPlackettLuceRankings:
+    """Plackett-Luce rankings LSR/I-LSR (choix 0.4.1 lsr_rankings /
+    ilsr_rankings). Pins from the executed exact-Fraction oracle."""
+
+    def test_lsr_rankings_fixtures(self):
+        import numpy as np
+        from fast_mlsirm import lsr_rankings
+
+        ra = [[1, 0, 2], [2, 1, 0], [0, 1, 2], [1, 2, 0]]
+        r = lsr_rankings(ra, 3)
+        np.testing.assert_allclose(
+            r.weights, [6 / 11, 21 / 11, 6 / 11], rtol=0, atol=1e-14
+        )
+        assert r.iterations == 1
+        r5 = lsr_rankings(ra, 3, alpha=0.5)
+        np.testing.assert_allclose(r5.weights, [0.75, 1.5, 0.75], rtol=0, atol=1e-14)
+        # Partial rankings (kills the all-items-sum mutant).
+        rb = [[0, 1, 2], [3, 2], [1, 3], [2, 0, 3], [3, 1, 0]]
+        rp = lsr_rankings(rb, 4)
+        np.testing.assert_allclose(
+            rp.weights,
+            [172 / 175, 12 / 7, 16 / 35, 148 / 175],
+            rtol=0,
+            atol=1e-14,
+        )
+
+    def test_ilsr_rankings_fixed_point(self):
+        import numpy as np
+        from fast_mlsirm import ilsr_rankings
+
+        ra = [[1, 0, 2], [2, 1, 0], [0, 1, 2], [1, 2, 0]]
+        r = ilsr_rankings(ra, 3)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.39145300187318292, 0.78290600374636584, -0.39145300187318292],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 8
+        assert (r.weights > 0).all()
+        assert abs(r.weights.sum() - 3.0) < 1e-9
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import ilsr_rankings, lsr_rankings
+
+        with pytest.raises(ValueError):
+            lsr_rankings([[0]], 2)  # length-1 ranking (choix would no-op)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, -1]], 2)  # negative index must NOT wrap
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1.5]], 2)  # non-integer item
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 2]], 2)  # out of range
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1, 0]], 2)  # within-ranking duplicate
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 1)  # n < 2
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1], [1, 0], [2, 3], [3, 2]], 4)  # disconnected
+        with pytest.raises(ValueError):
+            ilsr_rankings([[0, 1], [1, 0]], 2, max_iter=0)
+        # object-dtype backstop: a non-numeric object item must raise
+        # ValueError, not TypeError.
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, object()]], 2)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.complex128(1)]], 2)

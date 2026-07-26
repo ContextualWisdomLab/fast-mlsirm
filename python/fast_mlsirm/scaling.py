@@ -260,3 +260,100 @@ def rank_centrality(wins, alpha=0.0):
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
     )
+
+def _rankings_to_csr(name, rankings, n):
+    """Validate a list of rankings (best first) and CSR-flatten to u64.
+
+    Rejects, BEFORE any unsigned cast: non-integer entries, negative
+    indices (a documented divergence -- Python's negative indices would
+    silently wrap in choix), booleans, complex/object dtypes, rankings
+    shorter than 2 items (choix silently no-ops those), and out-of-range
+    items. Duplicate detection within a ranking is enforced by the Rust
+    core (documented divergence: choix accepts duplicates whenever the
+    chain stays connected).
+    """
+    if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or int(n) < 2:
+        raise ValueError(f"{name}: n must be an integer >= 2")
+    n = int(n)
+    flat = []
+    starts = [0]
+    for r, ranking in enumerate(rankings):
+        items = list(ranking)
+        if len(items) < 2:
+            raise ValueError(
+                f"{name}: ranking {r} has fewer than 2 items "
+                "(choix silently ignores such rankings; this port rejects them)"
+            )
+        for x in items:
+            if isinstance(x, bool) or np.iscomplexobj(np.asarray(x)):
+                raise ValueError(f"{name}: ranking {r} has a non-integer item")
+            try:
+                xi = int(x)
+            except (TypeError, ValueError):
+                raise ValueError(f"{name}: ranking {r} has a non-integer item")
+            if xi != x:
+                raise ValueError(f"{name}: ranking {r} has a non-integer item")
+            if xi < 0:
+                raise ValueError(
+                    f"{name}: ranking {r} has a negative item index "
+                    "(negative indices do not wrap here)"
+                )
+            if xi >= n:
+                raise ValueError(f"{name}: ranking {r} has item {xi} >= n = {n}")
+            flat.append(xi)
+        starts.append(len(flat))
+    if len(starts) < 2:
+        raise ValueError(f"{name}: at least one ranking is required")
+    return (
+        np.asarray(flat, dtype=np.uint64),
+        np.asarray(starts, dtype=np.uint64),
+        n,
+    )
+
+
+def lsr_rankings(rankings, n, alpha=0.0):
+    """Luce Spectral Ranking for full or partial rankings (one shot).
+
+    ``rankings`` is an iterable of rankings, each an iterable of item
+    indices in ``0..n-1`` ordered best first (partial rankings -- any
+    length >= 2 -- are allowed and are what distinguishes the
+    Plackett-Luce subset denominator from a naive all-items one). Ports
+    choix 0.4.1 ``lsr_rankings``: each ranking is a sequence of Luce
+    choices; position *i* accrues rate ``1 / (sum of remaining ranked
+    worths)`` on every loser-to-winner edge, plus ``alpha`` everywhere.
+    Returns the centered log stationary distribution as
+    :class:`LsrResult` (``iterations`` always 1). Raises ValueError on
+    invalid input, within-ranking duplicates, a disconnected item graph
+    at ``alpha = 0``, or overflow.
+    """
+    from .fitstats import _core_module
+
+    rk, st, n = _rankings_to_csr("lsr_rankings", rankings, n)
+    res = _core_module().lsr_rankings(rk, st, n, float(alpha))
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
+
+
+def ilsr_rankings(rankings, n, alpha=0.0, max_iter=100, tol=1e-8):
+    """Iterative LSR for rankings (Plackett-Luce MLE at ``alpha = 0``).
+
+    Repeats the :func:`lsr_rankings` pass, feeding each pass the worths
+    from the previous one, until the L1 parameter change is
+    ``<= tol * n`` (choix 0.4.1 ``ilsr_rankings``; defaults match choix).
+    Raises ValueError on invalid input, a disconnected item graph at
+    ``alpha = 0``, overflow, or non-convergence within ``max_iter``.
+    """
+    from .fitstats import _core_module
+
+    rk, st, n = _rankings_to_csr("ilsr_rankings", rankings, n)
+    res = _core_module().ilsr_rankings(
+        rk, st, n, float(alpha), int(max_iter), float(tol)
+    )
+    return LsrResult(
+        params=np.asarray(res["params"], dtype=np.float64),
+        weights=np.asarray(res["weights"], dtype=np.float64),
+        iterations=int(res["iterations"]),
+    )
