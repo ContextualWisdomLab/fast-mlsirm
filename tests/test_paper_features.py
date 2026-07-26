@@ -8101,3 +8101,109 @@ class TestHansonBrennan:
             hanson_brennan_from_params(8, 0.0, 0.5, 0.4, 2.0, 2.0, 4)
         with pytest.raises(ValueError):
             hanson_brennan_from_params(8, 0.0, 0.0, 1.0, -2.0, 2.0, 4)
+
+
+class TestPhiLambda:
+    def test_fixture_a_exact(self):
+        # Oracle pins (phi_lambda_oracle.py, exact Fraction); asserts read
+        # wrapper outputs that come straight from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.25, n_i_prime=[4, 8])
+        assert abs(r.grand_mean - 0.6) < 1e-12
+        assert abs(r.var_xbar - 11.0 / 600.0) < 1e-12
+        assert abs(r.signal - 5.0 / 48.0) < 1e-12
+        assert abs(r.phi[0] - 0.75) < 1e-12
+        assert abs(r.phi[1] - 6.0 / 7.0) < 1e-12
+
+    def test_negative_signal_at_mean_and_fixture_d(self):
+        import numpy as np
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array(
+            [[1, 1, 1, 0], [1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 1, 1], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        r = phi_lambda(x, 0.6, n_i_prime=[4])
+        assert abs(r.signal - (-11.0 / 600.0)) < 1e-12
+        assert abs(r.phi[0] - 48.0 / 113.0) < 1e-12
+        d = np.array([[5, 3, 1], [4, 3, 2], [6, 4, 2], [3, 1, 0]], dtype=float)
+        rd = phi_lambda(d, 2.0, n_i_prime=[3, 6])
+        assert abs(rd.phi[0] - 12.0 / 29.0) < 1e-12
+        assert abs(rd.phi[1] - 24.0 / 41.0) < 1e-12
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import phi_lambda
+
+        x = np.array([[1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError):
+            phi_lambda(x.astype(complex), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([1.0, 0.0]), 0.5, n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, float("nan"), n_i_prime=[2])
+        with pytest.raises(ValueError):
+            phi_lambda(x, 0.5, n_i_prime=[0])
+        with pytest.raises(ValueError):
+            phi_lambda(np.array([[1.0, np.nan], [0.0, 1.0]]), 0.5, n_i_prime=[2])
+
+class TestSubkoviak:
+    def test_table1_alpha_supplied_exact(self):
+        # Oracle pins (subkoviak_oracle.py, exact Fraction); asserts read
+        # wrapper outputs that come straight from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        r = subkoviak_agreement(x, 5, [4], alpha=0.58)
+        assert abs(r.alpha - 0.58) < 1e-15
+        assert abs(r.p_hat[0] - 0.1932) < 1e-12
+        assert abs(r.per_person[0] - 0.988290295814609) < 1e-12
+        assert abs(r.agreement - 0.754404497506925) < 1e-12
+        assert abs(r.chance_agreement - 0.659131077528193) < 1e-12
+        assert abs(r.kappa - 0.279501631559306) < 1e-12
+
+    def test_derived_kr21_and_multi_cut(self):
+        import numpy as np
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        r = subkoviak_agreement(x, 5, [4])
+        assert abs(r.alpha - 19.0 / 29.0) < 1e-12
+        assert abs(r.kappa - 0.343090844315065) < 1e-12
+        c = np.array([1, 2, 3, 4, 5, 6, 0, 3], dtype=float)
+        rc = subkoviak_agreement(c, 6, [2, 5], alpha=1.0)
+        assert abs(rc.per_person[0] - 0.611776411438135) < 1e-12
+        assert abs(rc.kappa - 0.53024146176074) < 1e-12
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import subkoviak_agreement
+
+        x = np.array([0, 4, 2, 0, 2, 2, 1, 3, 4, 5], dtype=float)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x.astype(complex), 5, [4], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(np.array(["a", "b"], dtype=object), 5, [4])
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [6], alpha=0.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(x, 5, [4], alpha=1.5)
+        with pytest.raises(ValueError):
+            subkoviak_agreement(np.array([3.0, 3.0, 3.0]), 5, [4])

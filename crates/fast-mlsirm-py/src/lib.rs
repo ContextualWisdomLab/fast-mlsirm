@@ -30,7 +30,8 @@ use mlsirm_core::classification::{
     hanson_brennan as core_hanson_brennan,
     hanson_brennan_from_params as core_hanson_brennan_from_params,
     lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
-    rudner_classification as core_rudner_classification, ClassificationResult, HansonBrennanResult,
+    rudner_classification as core_rudner_classification,
+    subkoviak_agreement as core_subkoviak_agreement, ClassificationResult, HansonBrennanResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
@@ -71,7 +72,8 @@ use mlsirm_core::fitstats::{
 use mlsirm_core::gpcm::{fit_gpcm as core_fit_gpcm, GpcmConfig};
 use mlsirm_core::grm::{fit_grm as core_fit_grm, GrmConfig};
 use mlsirm_core::gtheory::{
-    gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, GTheoryDStudyRow,
+    gtheory_pi as core_gtheory_pi, gtheory_pio as core_gtheory_pio, phi_lambda as core_phi_lambda,
+    GTheoryDStudyRow,
 };
 use mlsirm_core::ksirt::{ksirt as core_ksirt, KsirtKernel};
 use mlsirm_core::lltm::{fit_lltm as core_fit_lltm, LltmConfig};
@@ -2367,6 +2369,31 @@ fn hanson_brennan_from_params(
     hanson_brennan_result_to_dict(py, &res)
 }
 
+/// Subkoviak (1976, ERIC ED120229) single-administration coefficient of
+/// agreement for mastery classifications under the simple binomial
+/// true-score model (`mlsirm_core::classification`). `alpha = None`
+/// derives KR-21 with the population (ddof = 0) variance.
+#[pyfunction]
+#[pyo3(signature = (scores, n_items, cuts, alpha=None))]
+fn subkoviak_agreement(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    cuts: PyReadonlyArray1<'_, f64>,
+    alpha: Option<f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_subkoviak_agreement(scores.as_slice()?, n_items, cuts.as_slice()?, alpha)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("p_hat", PyArray1::from_slice(py, &res.p_hat))?;
+    out.set_item("per_person", PyArray1::from_slice(py, &res.per_person))?;
+    out.set_item("agreement", res.agreement)?;
+    out.set_item("chance_agreement", res.chance_agreement)?;
+    out.set_item("kappa", res.kappa)?;
+    Ok(out.into())
+}
+
 /// One-facet crossed `p x i` generalizability analysis
 /// (`mlsirm_core::gtheory`; Huebner & Lucht, 2019, Tables 3-4). `x` is a
 /// flattened row-major `n_p x n_i` score matrix; `n_i_prime` lists the
@@ -2388,6 +2415,29 @@ fn gtheory_pi(
     out.set_item("var_raw", res.var_raw.to_vec())?;
     out.set_item("var", res.var.to_vec())?;
     out.set_item("d_study", d_study_rows_to_py(py, &res.d_study)?)?;
+    Ok(out.into())
+}
+
+/// Brennan-Kane index of dependability `Phi(lambda)` for mastery tests
+/// (`mlsirm_core::gtheory`; Kane & Brennan, 1977, ACT TB-28, eq. 33 with
+/// a derived unbiased signal estimator — see the core doc comment).
+#[pyfunction]
+fn phi_lambda(
+    py: Python<'_>,
+    x: PyReadonlyArray1<'_, f64>,
+    n_p: usize,
+    n_i: usize,
+    lambda: f64,
+    n_i_prime: Vec<usize>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_phi_lambda(x.as_slice()?, n_p, n_i, lambda, &n_i_prime)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("grand_mean", res.grand_mean)?;
+    out.set_item("var", res.var.to_vec())?;
+    out.set_item("var_xbar", res.var_xbar)?;
+    out.set_item("signal", res.signal)?;
+    out.set_item("phi", PyArray1::from_slice(py, &res.phi))?;
     Ok(out.into())
 }
 
@@ -7139,7 +7189,9 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
     m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
     m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
+    m.add_function(wrap_pyfunction!(subkoviak_agreement, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
+    m.add_function(wrap_pyfunction!(phi_lambda, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
     m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
     m.add_function(wrap_pyfunction!(minres_fa_from_data, m)?)?;

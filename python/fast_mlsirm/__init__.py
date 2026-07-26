@@ -77,6 +77,8 @@ from .classification import (
     hanson_brennan as hanson_brennan,
     hanson_brennan_from_params as hanson_brennan_from_params,
     HansonBrennanResult as HansonBrennanResult,
+    subkoviak_agreement as subkoviak_agreement,
+    SubkoviakResult as SubkoviakResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -107,8 +109,10 @@ from .factor import (
 from .gtheory import (
     gtheory_pi as gtheory_pi,
     gtheory_pio as gtheory_pio,
+    phi_lambda as phi_lambda,
     GTheoryResult as GTheoryResult,
     GTheoryDStudyRow as GTheoryDStudyRow,
+    PhiLambdaResult as PhiLambdaResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .utility import (
@@ -269,6 +273,8 @@ __all__ = [
     "hanson_brennan",
     "hanson_brennan_from_params",
     "HansonBrennanResult",
+    "subkoviak_agreement",
+    "SubkoviakResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
@@ -281,6 +287,7 @@ __all__ = [
     "SeparationReliabilityResult",
     "gtheory_pi",
     "gtheory_pio",
+    "phi_lambda",
     "minres_fa",
     "minres_fa_from_data",
     "glb_fa",
@@ -314,6 +321,7 @@ __all__ = [
     "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
+    "PhiLambdaResult",
     "ClassificationResult",
     "DetectResult",
     "DimtestResult",

@@ -119,6 +119,35 @@
 
 ### Added
 
+- **Brennan-Kane index of dependability Phi(lambda) for mastery tests
+  (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
+  eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust
+  `mlsirm_core::gtheory::phi_lambda`): the criterion-referenced
+  dependability coefficient theta(d) = Phi(lambda) for a one-facet random
+  `p x i` design at a cutting score `lambda`, built on the module's
+  `gtheory_pi` ANOVA. The `(Xbar - lambda)^2` signal is estimated with a
+  derived unbiased plug-in that subtracts `varhat(Xbar)` computed from the
+  RAW (unclamped) variance components, while `sigma^2(Delta')` and the
+  `sigma^2(p)` numerator keep the module's clamped-component policy; the
+  signal is left unclamped, so estimates may fall below the lambda-free
+  `dependability` (finite-sample behavior, documented). TB-28 defers
+  estimation to Brennan & Kane (1977a, JEM), which was not read; the
+  estimator is derived and adversarially verified independently.
+- **Subkoviak single-administration coefficient of agreement (Subkoviak,
+  1976, ERIC ED120229 / JEM 13(4))** (`fast_mlsirm.subkoviak_agreement`; in
+  Rust `mlsirm_core::classification::subkoviak_agreement`): per-person and
+  group coefficients of agreement, marginal chance agreement, and Cohen's
+  kappa for mastery classifications under the simple binomial true-score
+  model, with the regression estimate of the item-domain proportion
+  (Eq. 16) and optional KR-21 reliability derived from the data with the
+  population (ddof = 0) variance. Supports multi-category criteria
+  (Eqs. 19-22); mastery convention is score `>= C`, verified against
+  Table 1 of the read source (its Eq. 4 OCR prints `>`). The compound
+  binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+  estimate (Eq. 17) are excluded because they defer to sources not read.
+  Exact-fraction oracle pins from the paper's Table 1 fixture; five
+  executed mutation kills (category boundary, P(i) squaring, chance-term
+  aggregation, KR-21 ddof, regression-weight swap).
 - **Hanson-Brennan compound-binomial classification consistency and accuracy
   (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
   `fast_mlsirm.hanson_brennan_from_params`; in Rust
