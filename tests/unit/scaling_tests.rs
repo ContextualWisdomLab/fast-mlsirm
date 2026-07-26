@@ -643,14 +643,35 @@ fn lsr_error_contract() {
     // alpha > 0 makes the chain irreducible: D becomes estimable.
     let rd = lsr_pairwise(&d, 4, 0.5).unwrap();
     assert!(rd.params.iter().all(|p| p.is_finite()));
-    // Overflow mandates: huge finite counts / huge finite alpha (n >= 3)
-    // overflow the generator row sums -> Err, never NaN output.
-    let mut huge = [1e308f64; 9];
-    huge[0] = 0.0;
-    huge[4] = 0.0;
-    huge[8] = 0.0;
-    assert!(lsr_pairwise(&huge, 3, 0.0).is_err());
+    // Overflow mandates: counts / alpha that overflow the generator row
+    // sums -> Err, never NaN output. n = 4 with all off-diagonals at
+    // 1.7e308 makes each row sum 3 * 8.5e307 = 2.55e308 -> inf. (An
+    // n = 3 all-1e308 matrix does NOT overflow -- row sums are 1e308,
+    // finite -- and is covered by the scale-invariance block below.)
+    let mut huge = [1.7e308f64; 16];
+    for k in 0..4 {
+        huge[k * 4 + k] = 0.0;
+    }
+    assert!(lsr_pairwise(&huge, 4, 0.0).is_err());
     assert!(lsr_pairwise(&a, 3, 1e308).is_err());
+    // Scale invariance (impl-review regression): the stationary
+    // distribution is invariant under global count rescaling, so huge
+    // but non-overflowing counts must give the SAME result, not a false
+    // "disconnected" rejection from the pivot threshold.
+    let base = lsr_pairwise(&a, 3, 0.0).unwrap();
+    let scaled: Vec<f64> = a.iter().map(|c| c * 1e20).collect();
+    let big = lsr_pairwise(&scaled, 3, 0.0).unwrap();
+    for k in 0..3 {
+        assert!(
+            (big.params[k] - base.params[k]).abs() < 1e-12,
+            "scaled params[{k}] = {}",
+            big.params[k]
+        );
+        assert!((big.weights[k] - base.weights[k]).abs() < 1e-12);
+    }
+    let asym = [0.0, 1e150, 2e150, 3e149, 0.0, 4e149, 5e149, 6e149, 0.0];
+    let ra = ilsr_pairwise(&asym, 3, 0.0, 100, 1e-8).unwrap();
+    assert!(ra.params.iter().all(|p| p.is_finite()));
 }
 
 /// 500-rep Monte Carlo recovery (n = 4, bounded truth, 400 comparisons

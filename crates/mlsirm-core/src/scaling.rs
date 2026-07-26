@@ -392,6 +392,18 @@ fn lsr_pass(wins: &[f64], n: usize, alpha: f64, w: &[f64]) -> Result<(Vec<f64>, 
     if chain.iter().any(|x| !x.is_finite()) {
         return Err("LSR Markov chain has non-finite transition rates (overflow)".into());
     }
+    // Normalize the generator to unit max magnitude: the stationary
+    // distribution is invariant under global rescaling of all transition
+    // rates, and without this an O(count) generator dwarfs the O(1)
+    // sum-constraint row, so the relative pivot threshold below would
+    // falsely reject validly connected matrices with huge counts
+    // (impl-review finding; regression-tested for 1e20/1e150 scalings).
+    let cmax = chain.iter().fold(0.0f64, |a, &x| a.max(x.abs()));
+    if cmax > 0.0 {
+        for x in chain.iter_mut() {
+            *x /= cmax;
+        }
+    }
 
     // Stationary distribution: solve pi . chain = 0 with sum(pi) = n.
     // The n stationarity equations (columns of `chain`) sum to zero, so
