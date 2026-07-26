@@ -8605,3 +8605,99 @@ class TestThurstoneCaseV:
             thurstone_case_v(
                 np.array([[0.5, "a"], [0.25, 0.5]], dtype=object)
             )
+
+class TestBradleyTerry:
+    """Bradley-Terry MM fit (choix 0.4.1 opt.mm pairwise path, source READ).
+
+    Pins from files/bt_oracle.py (mpmath 50-digit, EXECUTED; choix
+    cross-checked to <= 1.4e-12). All asserts read the BradleyTerryResult
+    returned by the crate.
+    """
+
+    def test_fixture_a_params_weights_iterations(self):
+        # Asymmetric 3x3; kills winner-accumulation / denominator /
+        # centering mutants; iterations == 18 pins the tol*n convergence
+        # semantics (reviewer-executed MU5 evidence).
+        import numpy as np
+        from fast_mlsirm import bradley_terry_mm
+
+        wins = np.array([[0.0, 3.0, 1.0], [2.0, 0.0, 4.0], [5.0, 1.0, 0.0]])
+        r = bradley_terry_mm(wins)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.378869072353494149, 0.274223212389322699,
+             0.104645859964171450],
+            rtol=0,
+            atol=1e-7,
+        )
+        np.testing.assert_allclose(
+            r.weights,
+            [0.660321972720804678, 1.268791102424604100,
+             1.070886924854591222],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 18
+        assert abs(float(np.mean(r.params))) < 1e-12
+        assert abs(float(np.sum(r.weights)) - 3.0) < 1e-9
+
+    def test_fixture_b_closed_form_and_alpha(self):
+        # 2x2 closed form: params = +/- ln(3)/2 (verified symbolically in
+        # the oracle); fixture D pins the alpha=0.5 MAP path, which kills
+        # the weight-normalization mutant (alpha=0 is scale-invariant).
+        import numpy as np
+        from fast_mlsirm import bradley_terry_mm
+
+        r = bradley_terry_mm(np.array([[0.0, 3.0], [1.0, 0.0]]))
+        half_ln3 = 0.549306144334054846
+        np.testing.assert_allclose(
+            r.params, [half_ln3, -half_ln3], rtol=0, atol=1e-7
+        )
+        np.testing.assert_allclose(r.weights, [1.5, 0.5], rtol=0, atol=1e-7)
+
+        wins = np.array([[0.0, 3.0, 1.0], [2.0, 0.0, 4.0], [5.0, 1.0, 0.0]])
+        d = bradley_terry_mm(wins, alpha=0.5)
+        np.testing.assert_allclose(
+            d.params,
+            [-0.337946615223381393, 0.240502957855231605,
+             0.097443657368149788],
+            rtol=0,
+            atol=1e-7,
+        )
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import bradley_terry_mm
+
+        good = np.array([[0.0, 3.0], [1.0, 0.0]])
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good[:1])  # non-square
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.array([[0.0]]))  # n < 2
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.zeros((2, 2)))  # all-zero rejected
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.zeros((2, 2)), alpha=0.5)  # even with alpha
+        bad = good.copy()
+        bad[0, 0] = 1.0
+        with pytest.raises(ValueError):
+            bradley_terry_mm(bad)  # nonzero diagonal
+        with pytest.raises(ValueError):
+            bradley_terry_mm(-good)  # negative counts
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good + 0j)  # complex rejected
+        with pytest.raises(ValueError):
+            bradley_terry_mm(
+                np.array([[0.0, "a"], [1.0, 0.0]], dtype=object)
+            )
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good, tol=0.0)
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good, max_iter=0)
+        # zero-wins item at alpha=0: no finite log-worth
+        winless = np.array(
+            [[0.0, 2.0, 3.0], [0.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+        )
+        with pytest.raises(ValueError):
+            bradley_terry_mm(winless)

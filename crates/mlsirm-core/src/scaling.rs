@@ -152,6 +152,171 @@ pub fn thurstone_case_v(choice: &[f64], n: usize) -> Result<ThurstoneResult, Str
     })
 }
 
+/// Result of a Bradley-Terry MM fit.
+#[derive(Clone, Debug)]
+pub struct BradleyTerryResult {
+    /// Centered log-worth parameters (mean exactly 0; choix
+    /// `log_transform` convention).
+    pub params: Vec<f64>,
+    /// Exp-scale worths rescaled to sum `n` (mean 1; choix
+    /// `exp_transform` convention).
+    pub weights: Vec<f64>,
+    /// Number of MM updates performed when convergence fired.
+    pub iterations: usize,
+}
+
+/// Bradley-Terry maximum-likelihood (or Dirichlet-MAP) estimation via the
+/// MM algorithm.
+///
+/// Implements the minorization-maximization iteration of Hunter (2004)
+/// exactly as implemented by the `choix` Python package (v0.4.1,
+/// `mm.py`/`utils.py`/`convergence.py`).
+///
+/// Source status:
+/// - **READ**: choix 0.4.1 source (`_mm`, `_mm_pairwise`,
+///   `exp_transform`, `log_transform`, `NormOfDifferenceTest`); every
+///   formula below is traceable to those lines.
+/// - **NOT READ (as-cited)**: Hunter, D. R. (2004). MM algorithms for
+///   generalized Bradley-Terry models. *Annals of Statistics, 32*(1),
+///   384-406. https://doi.org/10.1214/aos/1079120141 — download blocked
+///   at verification time; cited as the algorithm origin per choix's
+///   docstring. Bradley, R. A., & Terry, M. E. (1952). Rank analysis of
+///   incomplete block designs: I. The method of paired comparisons.
+///   *Biometrika, 39*(3/4), 324-345. https://doi.org/10.2307/2334029 —
+///   unacquired; cited as the model origin.
+///
+/// Model: `P(i beats j) = w_i / (w_i + w_j)`. `wins` is row-major
+/// `n * n`; `wins[i*n + j]` = number of comparisons in which object `i`
+/// beat object `j` (diagonal must be 0). Counts need not be integers
+/// (deliberate divergence from choix's `(winner, loser)` pair lists; the
+/// update uses counts only as nonnegative multiplicative weights, and
+/// `c` identical pairs contribute exactly `c/(w_i + w_j)` — DERIVED).
+///
+/// Per iteration (choix `_mm` + `_mm_pairwise`):
+///
+/// ```text
+/// w        = exp_transform(params)          # exp(params - mean), sum = n
+/// wins_i   = sum_j W[i][j]
+/// denoms_i = sum_j (W[i][j] + W[j][i]) / (w_i + w_j)
+/// params'  = log((wins + alpha)/(denoms + alpha)) - mean(...)
+/// ```
+///
+/// Convergence (choix `NormOfDifferenceTest`, order 1): fires when the
+/// L1 distance between successive centered parameter vectors is
+/// `<= tol * n`; the first update never fires (no previous vector), so at
+/// least 2 updates occur. Non-convergence within `max_iter` updates is an
+/// error, as is a non-finite update (e.g. an item with zero wins at
+/// `alpha = 0`, whose MLE worth is 0 and has no finite log-worth).
+///
+/// All-zero `wins` is rejected regardless of `alpha` — INTENTIONAL
+/// divergence from choix, which for `alpha > 0` returns uniform zero
+/// parameters on empty data; no-data inputs are rejected here as a
+/// safety contract. No strong-connectivity (Ford, 1957 — NOT READ)
+/// pre-check is done: an unbeatable item simply fails to converge, which
+/// the tests demonstrate numerically.
+pub fn bradley_terry_mm(
+    wins: &[f64],
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> Result<BradleyTerryResult, String> {
+    if n < 2 {
+        return Err("bradley_terry_mm needs at least 2 objects".into());
+    }
+    if wins.len() != n * n {
+        return Err(format!(
+            "wins must be a row-major {n}x{n} matrix ({} entries), got {}",
+            n * n,
+            wins.len()
+        ));
+    }
+    for (k, &c) in wins.iter().enumerate() {
+        if !c.is_finite() {
+            return Err("win counts must be finite".into());
+        }
+        if c < 0.0 {
+            return Err("win counts must be nonnegative".into());
+        }
+        if k / n == k % n && c != 0.0 {
+            return Err("diagonal of the wins matrix must be zero".into());
+        }
+    }
+    if wins.iter().all(|&c| c == 0.0) {
+        return Err("wins matrix has no comparisons".into());
+    }
+    if !alpha.is_finite() || alpha < 0.0 {
+        return Err("alpha must be finite and nonnegative".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be at least 1".into());
+    }
+
+    let nf = n as f64;
+    let exp_transform = |params: &[f64]| -> Vec<f64> {
+        let mean = params.iter().sum::<f64>() / nf;
+        let mut w: Vec<f64> = params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= nf / s;
+        }
+        w
+    };
+
+    let mut params = vec![0.0f64; n];
+    let mut prev: Option<Vec<f64>> = None;
+    for it in 1..=max_iter {
+        let w = exp_transform(&params);
+        let mut win_totals = vec![0.0f64; n];
+        let mut denoms = vec![0.0f64; n];
+        for i in 0..n {
+            for j in 0..n {
+                let c = wins[i * n + j];
+                if c > 0.0 {
+                    win_totals[i] += c;
+                    let val = c / (w[i] + w[j]);
+                    denoms[i] += val;
+                    denoms[j] += val;
+                }
+            }
+        }
+        let mut newp: Vec<f64> = (0..n)
+            .map(|k| ((win_totals[k] + alpha) / (denoms[k] + alpha)).ln())
+            .collect();
+        if newp.iter().any(|p| !p.is_finite()) {
+            return Err(
+                "MM update produced non-finite parameters (an item with zero wins \
+                 has no finite log-worth when alpha = 0)"
+                    .into(),
+            );
+        }
+        let mean = newp.iter().sum::<f64>() / nf;
+        for p in newp.iter_mut() {
+            *p -= mean;
+        }
+        if let Some(pr) = &prev {
+            let dist: f64 = newp.iter().zip(pr.iter()).map(|(a, b)| (a - b).abs()).sum();
+            if dist <= tol * nf {
+                let weights = exp_transform(&newp);
+                return Ok(BradleyTerryResult {
+                    params: newp,
+                    weights,
+                    iterations: it,
+                });
+            }
+        }
+        prev = Some(newp.clone());
+        params = newp;
+    }
+    Err(format!(
+        "bradley_terry_mm did not converge after {max_iter} iterations \
+         (the comparison graph may violate the strong-connectivity condition)"
+    ))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

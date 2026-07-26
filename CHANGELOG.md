@@ -119,6 +119,24 @@
 
 ### Added
 
+- **Bradley–Terry maximum-likelihood paired-comparison worths via the MM
+  algorithm (Hunter, 2004, as implemented by choix 0.4.1's `opt.mm` pairwise
+  path; Maystre — source READ; Bradley & Terry, 1952 and Hunter, 2004 NOT
+  READ, cited as described by choix)** (`fast_mlsirm.bradley_terry_mm`; in
+  Rust `mlsirm_core::scaling::bradley_terry_mm`): fits centered log-worths
+  from an n×n win-count matrix (`wins[i, j]` = times i beat j; non-integer
+  counts accepted as a DERIVED weighted extension) with choix's
+  regularization `alpha`, exp-scale weights normalized to sum n, and the
+  L1 convergence rule `sum |new − prev| ≤ tol·n` over consecutive updates.
+  All-zero matrices are rejected for every alpha (deliberate divergence from
+  choix's uniform fallback at alpha > 0); zero-wins items at alpha = 0 and
+  Ford-condition violations (an unbeaten item) raise instead of returning a
+  bogus fit. Pinned against a 50-digit mpmath oracle cross-checked with
+  choix itself (max diff ≤ 1.4e-12), including an exact ±ln(3)/2 closed-form
+  2×2 anchor, an alpha = 0.5 MAP anchor, and an iterations == 18 convergence
+  pin; five mutation kills executed (winner accumulation, denominator
+  symmetry, centering, weight normalization, tol·n semantics) plus a 500-rep
+  Monte-Carlo recovery test (`#[ignore]`).
 - **Thurstone Case V paired-comparison scaling (Thurstone, 1927, as
   implemented by psych's `thurstone()`; Revelle, 2025 — source READ)**
   (`fast_mlsirm.thurstone_case_v`; in Rust
