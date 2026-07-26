@@ -74,6 +74,9 @@ from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
     livingston_lewis as livingston_lewis,
+    hanson_brennan as hanson_brennan,
+    hanson_brennan_from_params as hanson_brennan_from_params,
+    HansonBrennanResult as HansonBrennanResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -263,6 +266,9 @@ __all__ = [
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
+    "hanson_brennan",
+    "hanson_brennan_from_params",
+    "HansonBrennanResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",

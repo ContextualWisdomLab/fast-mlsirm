@@ -27,8 +27,10 @@ use mlsirm_core::cdm::{
     validate_q_matrix as core_validate_q_matrix, CdmConfig, CdmModel,
 };
 use mlsirm_core::classification::{
+    hanson_brennan as core_hanson_brennan,
+    hanson_brennan_from_params as core_hanson_brennan_from_params,
     lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
-    rudner_classification as core_rudner_classification, ClassificationResult,
+    rudner_classification as core_rudner_classification, ClassificationResult, HansonBrennanResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
@@ -2295,6 +2297,74 @@ fn livingston_lewis(
     out.set_item("chance_consistency", res.chance_consistency)?;
     out.set_item("kappa", res.kappa)?;
     Ok(out.into())
+}
+
+fn hanson_brennan_result_to_dict(
+    py: Python<'_>,
+    res: &HansonBrennanResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("lords_k", res.lords_k)?;
+    out.set_item("true_score_moments", res.true_score_moments.to_vec())?;
+    out.set_item("lower", res.lower)?;
+    out.set_item("upper", res.upper)?;
+    out.set_item("alpha", res.alpha)?;
+    out.set_item("beta", res.beta)?;
+    out.set_item("used_two_parameter", res.used_two_parameter)?;
+    out.set_item("p_tp", res.p_tp)?;
+    out.set_item("p_fp", res.p_fp)?;
+    out.set_item("p_tf", res.p_tf)?;
+    out.set_item("p_ff", res.p_ff)?;
+    out.set_item("accuracy", res.accuracy)?;
+    out.set_item("sensitivity", res.sensitivity)?;
+    out.set_item("specificity", res.specificity)?;
+    out.set_item("p_ii", res.p_ii)?;
+    out.set_item("p_ij", res.p_ij)?;
+    out.set_item("p_ji", res.p_ji)?;
+    out.set_item("p_jj", res.p_jj)?;
+    out.set_item("consistency", res.consistency)?;
+    out.set_item("chance_consistency", res.chance_consistency)?;
+    out.set_item("kappa", res.kappa)?;
+    Ok(out.into())
+}
+
+/// Hanson-Brennan (Hanson, 1991, ACT RR 91-5; CRAN betafunctions 1.9.0
+/// `HB.CA`) classification accuracy and consistency under the
+/// four-parameter beta compound binomial model, from raw number-correct
+/// scores (`mlsirm_core::classification`). Pass = observed score >= `cut`
+/// (pass-positive; betafunctions labels fail as positive, so its
+/// sensitivity is this function's specificity).
+#[pyfunction]
+fn hanson_brennan(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    n_items: usize,
+    reliability: f64,
+    cut: usize,
+    two_parameter: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hanson_brennan(scores.as_slice()?, n_items, reliability, cut, two_parameter)
+        .map_err(PyValueError::new_err)?;
+    hanson_brennan_result_to_dict(py, &res)
+}
+
+/// Hanson-Brennan classification indexes from fixed model parameters:
+/// Lord's k plus a four-parameter beta true-score distribution
+/// (`mlsirm_core::classification`; Hanson, 1991).
+#[pyfunction]
+fn hanson_brennan_from_params(
+    py: Python<'_>,
+    n_items: usize,
+    lords_k: f64,
+    lower: f64,
+    upper: f64,
+    alpha: f64,
+    beta: f64,
+    cut: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_hanson_brennan_from_params(n_items, lords_k, lower, upper, alpha, beta, cut)
+        .map_err(PyValueError::new_err)?;
+    hanson_brennan_result_to_dict(py, &res)
 }
 
 /// One-facet crossed `p x i` generalizability analysis
@@ -7067,6 +7137,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rudner_classification, m)?)?;
     m.add_function(wrap_pyfunction!(lee_classification, m)?)?;
     m.add_function(wrap_pyfunction!(livingston_lewis, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
+    m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
     m.add_function(wrap_pyfunction!(minres_fa, m)?)?;
