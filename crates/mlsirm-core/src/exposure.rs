@@ -1782,3 +1782,810 @@ pub fn ci_classify(
         upper_trace,
     })
 }
+
+// ================ Lord self-scoring flexilevel testing ======================
+//
+// `flexilevel_administer` replays Lord's flexilevel design over a FULL 0/1
+// response matrix: N (odd) items sorted ASCENDING by difficulty (caller
+// responsibility; both sources assume a difficulty-ordered pool), Lord index
+// i = column - (n - 1) with n = (N + 1) / 2 so that item 0 is the median.
+// Each person starts at the median item; after a RIGHT answer the next item
+// is the easiest not-yet-answered harder item, after a WRONG answer the
+// hardest not-yet-answered easier item. In Lord's index arithmetic, if item
+// i is the v-th administered:
+//     i > 0: next = i + 1 (right) or i - v (wrong)
+//     i < 0: next = i + v (right) or i - 1 (wrong)
+// The i = 0 (first item) case is NOT covered by the index formula in the
+// read text (it states i > 0 / i < 0 only); right -> +1 / wrong -> -1 at
+// i = 0 follows from the verbal start-at-median rules and coincides with
+// the i > 0 branch at v = 1, which is what this code uses.
+//
+// Self-scoring: after n answers let j be the (n+1)-th item that WOULD be
+// administered. j > 0 ("blue": last answer right) gives number-right r = j
+// and score x = r; j < 0 ("red": last answer wrong) gives r = n + j and
+// x = r + 1/2. The identity r = (number of correct administered answers)
+// was verified exhaustively against the routing in the spec oracle.
+//
+// `flexilevel_score_distribution` computes the exact conditional score
+// distribution f(x | theta) by Lord's forward recursion over p_v(i), the
+// probability that item i is the v-th administered: p_1(0) = 1 and
+// p_{v+1}(next_right) += p_v(i) P_i, p_{v+1}(next_wrong) += p_v(i)(1 - P_i),
+// with f(x) = p_{n+1}(j) under the score mapping above (x = j for integer
+// scores; the half-integer mapping j = x - 1/2 - n is DERIVED from
+// r = n + j and x = r + 1/2 -- the printed Eq. 2 is OCR-garbled in the
+// available scan -- and is cross-checked exactly against exhaustive path
+// enumeration in the spec oracle). The caller supplies P_i(theta) for the N
+// sorted items, keeping the recursion ICC-agnostic (Lord's numerical study
+// used a 3-parameter normal ogive; nothing in Eqs. 1-2 depends on it).
+//
+// Score lattice: x in {1/2, 1, 3/2, ..., n - 1/2, n} (2n points). x = 0 is
+// impossible: an all-wrong path is red with r = 0 and scores x = 1/2.
+//
+// CITATION GOVERNANCE / SCOPE (adversarial spec review,
+// flexilevel_spec_review.md): every routing/scoring rule above was verified
+// against the two READ primary sources (full OCR text on file). The worked
+// example RWWRWRRRWR and its administered sequence
+// [0, 1, -1, -2, 2, -3, 3, 4, 5, -4] pin the routing; the answer string is
+// readable in the 1971 scan, while the printed sequence line is OCR-blank,
+// so the sequence itself is confirmed by applying the (readable) routing
+// rules, not by transcription. Out of scope (documented): Lord's Eq. 3
+// relative-efficiency ratio (derivable from mean/variance across theta),
+// Eq. 4 normal-ogive ICC, and the 1970 answer-sheet layout material.
+//
+// References (APA 7th):
+// Lord, F. M. (1970). The self-scoring flexilevel test (Research Bulletin
+//     RB-70-43; ERIC ED042813). Educational Testing Service. (READ: design
+//     rules, self-scoring properties 1-9, red +1/2 convention)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests (Research Bulletin RB-71-6; ERIC ED051286).
+//     Educational Testing Service. (READ: item-index transition rule,
+//     score mapping j > 0 -> r = j / j < 0 -> r = v + j, Eqs. 1-2 forward
+//     recursion for f(x | theta); Eq. 2 half-integer branch OCR-garbled,
+//     mapping derived as documented above)
+
+/// Result of [`flexilevel_administer`]: per-person administered column
+/// indices in administration order (`n_administered` per person, flattened
+/// row-major), number-right, red flag (1 iff last answer wrong), and the
+/// self-scoring score on the half-integer lattice.
+#[derive(Debug, Clone)]
+pub struct FlexilevelAdminResult {
+    pub n_administered: usize,
+    pub items: Vec<usize>,
+    pub number_right: Vec<u32>,
+    pub is_red: Vec<u8>,
+    pub score: Vec<f64>,
+}
+
+/// Result of [`flexilevel_score_distribution`]: the ascending score lattice
+/// {1/2, 1, ..., n} with exact probabilities, plus their mean and variance.
+#[derive(Debug, Clone)]
+pub struct FlexilevelDistResult {
+    pub scores: Vec<f64>,
+    pub probs: Vec<f64>,
+    pub mean: f64,
+    pub variance: f64,
+}
+
+/// Lord-index routing step shared by both entry points: item `i` was the
+/// `v`-th administered (v >= 1); returns (next-if-right, next-if-wrong).
+#[inline]
+fn flexilevel_next(i: i64, v: i64) -> (i64, i64) {
+    if i >= 0 {
+        (i + 1, i - v)
+    } else {
+        (i + v, i - 1)
+    }
+}
+
+/// Deterministic flexilevel routing + self-scoring over a full response
+/// matrix (row-major `n_persons x n_items`, entries 0/1; items pre-sorted
+/// ascending by difficulty). See the module comment above for the verified
+/// contract and source status.
+pub fn flexilevel_administer(
+    responses: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<FlexilevelAdminResult, String> {
+    if n_persons == 0 || n_items == 0 {
+        return Err("flexilevel_administer: n_persons and n_items must be positive".into());
+    }
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_administer: n_items must be odd and >= 3 (got {n_items})"
+        ));
+    }
+    let expected = n_persons
+        .checked_mul(n_items)
+        .ok_or("flexilevel_administer: n_persons * n_items overflows")?;
+    if responses.len() != expected {
+        return Err(format!(
+            "flexilevel_administer: responses has {} entries, expected {} ({} x {})",
+            responses.len(),
+            expected,
+            n_persons,
+            n_items
+        ));
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64; // column of Lord index 0
+    let mut items = Vec::with_capacity(n_persons * n);
+    let mut number_right = Vec::with_capacity(n_persons);
+    let mut is_red = Vec::with_capacity(n_persons);
+    let mut score = Vec::with_capacity(n_persons);
+    for p in 0..n_persons {
+        let row = &responses[p * n_items..(p + 1) * n_items];
+        let mut i: i64 = 0; // Lord index of the current item
+        let mut right: u32 = 0;
+        let mut last_correct = false;
+        for v in 1..=(n as i64) {
+            let col = (i + median) as usize;
+            let y = row[col];
+            if y > 1 {
+                return Err(format!(
+                    "flexilevel_administer: responses[{}][{}] must be 0 or 1 (got {y})",
+                    p, col
+                ));
+            }
+            items.push(col);
+            let (nr, nw) = flexilevel_next(i, v);
+            if y == 1 {
+                right += 1;
+                last_correct = true;
+                i = nr;
+            } else {
+                last_correct = false;
+                i = nw;
+            }
+        }
+        // i now holds j, the (n+1)-th item that WOULD be administered.
+        let (r, x) = if i > 0 {
+            (i as u32, i as f64)
+        } else {
+            let r = (n as i64 + i) as u32;
+            (r, r as f64 + 0.5)
+        };
+        debug_assert_eq!(r, right, "Lord number-right identity");
+        debug_assert_eq!(i > 0, last_correct, "blue iff last answer right");
+        number_right.push(r);
+        is_red.push(u8::from(i < 0));
+        score.push(x);
+    }
+    Ok(FlexilevelAdminResult {
+        n_administered: n,
+        items,
+        number_right,
+        is_red,
+        score,
+    })
+}
+
+/// Exact conditional score distribution f(x | theta) of the flexilevel
+/// self-score by Lord's forward recursion (see the module comment above).
+/// `p[c]` is P(correct) on the c-th difficulty-sorted item at the fixed
+/// ability of interest; `p.len()` = N must be odd and >= 3.
+pub fn flexilevel_score_distribution(p: &[f64]) -> Result<FlexilevelDistResult, String> {
+    let n_items = p.len();
+    if n_items < 3 || n_items % 2 == 0 {
+        return Err(format!(
+            "flexilevel_score_distribution: p must have odd length >= 3 (got {n_items})"
+        ));
+    }
+    for (c, &pc) in p.iter().enumerate() {
+        if !pc.is_finite() || !(0.0..=1.0).contains(&pc) {
+            return Err(format!(
+                "flexilevel_score_distribution: p[{c}] must be finite and in [0, 1]"
+            ));
+        }
+    }
+    let n = (n_items + 1) / 2;
+    let median = (n - 1) as i64;
+    // p_v over Lord indices, stored on a dense offset grid [-n, n].
+    let width = 2 * n + 1;
+    let off = n as i64;
+    let mut cur = vec![0.0_f64; width];
+    cur[n] = 1.0; // p_1(0) = 1
+    for v in 1..=(n as i64) {
+        let mut nxt = vec![0.0_f64; width];
+        for idx in 0..width {
+            let pr = cur[idx];
+            if pr == 0.0 {
+                continue;
+            }
+            let i = idx as i64 - off;
+            let pc = p[(i + median) as usize];
+            let (jr, jw) = flexilevel_next(i, v);
+            nxt[(jr + off) as usize] += pr * pc;
+            nxt[(jw + off) as usize] += pr * (1.0 - pc);
+        }
+        cur = nxt;
+    }
+    // cur holds p_{n+1}(j); map to the score lattice {1/2, 1, ..., n}.
+    let mut scores = Vec::with_capacity(2 * n);
+    let mut probs = Vec::with_capacity(2 * n);
+    for k in 1..=(2 * n) {
+        let x = k as f64 * 0.5;
+        let j = if k % 2 == 0 {
+            (k / 2) as i64 // integer x (blue): j = x
+        } else {
+            (k / 2) as i64 - n as i64 // half-integer x (red): j = x - 1/2 - n
+        };
+        scores.push(x);
+        probs.push(cur[(j + off) as usize]);
+    }
+    let mean: f64 = scores.iter().zip(&probs).map(|(x, w)| x * w).sum();
+    let variance: f64 = scores
+        .iter()
+        .zip(&probs)
+        .map(|(x, w)| (x - mean) * (x - mean) * w)
+        .sum();
+    Ok(FlexilevelDistResult {
+        scores,
+        probs,
+        mean,
+        variance,
+    })
+}
+
+// ==================== Weiss stradaptive ability test =========================
+//
+// `stradaptive_administer` replays Weiss's stratified-adaptive (stradaptive)
+// test over a FULL 0/1 response vector for one person: the pool is divided
+// into S >= 2 difficulty strata (0 = easiest); within a stratum, items are
+// administered in pool order (the source orders them by decreasing
+// discrimination -- a caller responsibility that is NOT enforced here).
+//
+// Routing (READ, illustrated rule): start at `entry_stratum`; after a
+// correct answer the target is the next more difficult stratum, after an
+// incorrect answer the next less difficult stratum. The target is clamped
+// to [0, S-1] at the pool boundaries (the source describes same-stratum
+// substitution when no more-difficult stratum exists and continuing upward
+// when the easiest stratum's supply is exhausted). When the clamped target
+// stratum has no unused item, the next item is drawn from the LAST
+// ADMINISTERED stratum; when that is also exhausted the test ends
+// ("pool_exhausted", the Nancy N. record). DERIVED: the source prints
+// same-stratum substitution only for the boundary/lower-exhausted cases;
+// its generalization to any exhausted target is a derived choice anchored
+// by the synthetic fixtures in the test suite, not by a printed record.
+//
+// Termination (READ): after each response, the CEILING stratum is the
+// lowest stratum with n_administered >= min_items and proportion correct
+// <= chance (chance = 1/(number of response options); this implementation
+// is multiple-choice-only and requires 0 < chance < 1 -- the source's
+// free-response chance = 0 discussion is out of scope). The test stops at
+// the first response after which a ceiling exists, on pool exhaustion, or
+// at `max_items`.
+//
+// Scoring methods 1-10 (READ, pp. 22-25) and the consistency score
+// (pp. 26-27); NaN encodes the report's indeterminate "I":
+//   m1  highest difficulty answered correctly.
+//   m2  difficulty of the (n+1)-th item -- the item the routing rule would
+//       administer next (NaN when none exists).
+//   m3  highest difficulty answered correctly below the ceiling stratum
+//       (upper bound = S when no ceiling was identified).
+//   m4  mean difficulty (over the FULL pool) of the highest stratum with at
+//       least one correct answer.
+//   m5  mean difficulty of the (n+1)-th item's stratum. NaN whenever no
+//       (n+1)-th item exists; this knowingly omits the Figure 7 record,
+//       where the report extrapolates a hypothetical off-pool stratum mean
+//       (2.62 + .655 = 3.27) after an off-the-top pool exhaustion.
+//   m6  mean difficulty of the highest non-chance stratum (hnc).
+//   m7  interpolated stratum difficulty at the hnc stratum (below).
+//   m8  mean difficulty of all correctly answered items.
+//   m9  mean difficulty of correct items in strata strictly between the
+//       basal and ceiling strata (missing basal -> no lower bound; missing
+//       ceiling -> upper bound S).
+//   m10 mean difficulty of correct items at the hnc stratum.
+//   consistency: population variance of the m9 difficulty set (DERIVED
+//       definitional choice -- the source proposes "variance or standard
+//       deviation" and prints NO worked consistency value; population
+//       variance over the between-basal-and-ceiling correct set is the
+//       reading implemented and pinned here).
+//
+// Derived definitional anchors (not printed verbatim in the source):
+//   - hnc = ceiling - 1 when a ceiling exists (the Carol C. record prints
+//     method 6 = -1.92 = the stratum-2 mean even though a higher stratum
+//     reached p = .50, forcing hnc = c - 1 rather than a global search);
+//     with no ceiling, hnc = the highest administered stratum with
+//     proportion correct > chance (Nancy N.).
+//   - basal = highest stratum strictly below the ceiling bound whose
+//     administered items were ALL answered correctly (the John J. record
+//     accepts a basal "based on only one item").
+//
+// METHOD 7 FORMULA PROVENANCE: the printed equation is OCR-garbled in the
+// available scan ("A =c-1s(Pc-1.50)"). The reconstruction
+//     m7 = D_hnc + step * (p_hnc - 1/2),
+//     step = D_{hnc+1} - D_hnc   if p_hnc > 1/2,
+//            D_hnc - D_{hnc-1}   if p_hnc < 1/2,
+//     m7 = D_hnc exactly          if p_hnc == 1/2 (no adjacency needed),
+// is DERIVED from the surrounding prose (score equals the stratum mean at
+// p = .50 and moves toward the adjacent stratum otherwise) and CONFIRMED
+// against five independently printed report values (1.37, -1.73, -.44,
+// .80, 2.69). LIMIT (documented): all five printed pins have p > 1/2, so
+// they confirm only the upper-step branch; the lower-step branch rests on
+// prose plus the synthetic p < 1/2 pin in the test suite. When the
+// adjacent stratum needed by the step does not exist (hnc at a pool edge),
+// its mean is extrapolated by the mean between-stratum increment
+// (D_{S-1} - D_0) / (S - 1); this extrapolation is likewise DERIVED (the
+// report applies it once, to the Nancy N. record).
+//
+// References (APA 7th):
+// Weiss, D. J. (1973). The stratified adaptive computerized ability test
+//     (Research Report 73-3; ERIC ED084301). University of Minnesota,
+//     Psychometric Methods Program. (READ: pool structure, entry,
+//     branching, termination, scoring methods 1-10, consistency,
+//     Figures 4-9 worked records, Tables 1-2)
+// Lord, F. M. (1971). The self-scoring flexilevel test. Journal of
+//     Educational Measurement, 8(3), 147-151. (NOT read; cited by Weiss as
+//     a fixed-branching contrast -- the flexilevel implementation above
+//     uses its own READ ERIC sources)
+
+/// Result of [`stradaptive_administer`]. `administered`/`responses_taken`
+/// list the pool indices and 0/1 answers in administration order; `reason`
+/// is `"criterion"`, `"pool_exhausted"`, or `"max_items"`; `ceiling`,
+/// `basal`, `hnc`, and `next_item` are `None` when undefined; `scores[k]`
+/// holds scoring method k+1 (NaN = indeterminate), and `consistency` the
+/// population variance of the method-9 set (NaN when that set is empty).
+#[derive(Debug, Clone)]
+pub struct StradaptiveResult {
+    pub administered: Vec<usize>,
+    pub responses_taken: Vec<u8>,
+    pub reason: &'static str,
+    pub ceiling: Option<usize>,
+    pub basal: Option<usize>,
+    pub hnc: Option<usize>,
+    pub next_item: Option<usize>,
+    pub scores: [f64; 10],
+    pub consistency: f64,
+}
+
+/// Stradaptive routing + scoring over a hypothetical full response vector
+/// (see the module comment above for the verified contract, derived-choice
+/// labels, and source status).
+pub fn stradaptive_administer(
+    stratum: &[usize],
+    difficulty: &[f64],
+    responses: &[u8],
+    entry_stratum: usize,
+    chance: f64,
+    min_items: usize,
+    max_items: usize,
+) -> Result<StradaptiveResult, String> {
+    let n = stratum.len();
+    if n == 0 {
+        return Err("stradaptive_administer: item pool is empty".into());
+    }
+    if difficulty.len() != n || responses.len() != n {
+        return Err(format!(
+            "stradaptive_administer: length mismatch (stratum: {}, difficulty: {}, responses: {})",
+            n,
+            difficulty.len(),
+            responses.len()
+        ));
+    }
+    let s_max = *stratum.iter().max().unwrap();
+    // Contiguous non-empty strata imply s_max + 1 <= n; guard before the
+    // vec![...; n_strata] allocation so a huge stratum id cannot trigger an
+    // enormous allocation (or overflow s_max + 1).
+    if s_max >= n {
+        return Err(format!(
+            "stradaptive_administer: stratum {s_max} exceeds the item count {n} \
+             (strata must cover 0..S-1 with every stratum non-empty)"
+        ));
+    }
+    let n_strata = s_max + 1;
+    if n_strata < 2 {
+        return Err("stradaptive_administer: at least 2 strata are required".into());
+    }
+    let mut by_stratum: Vec<Vec<usize>> = vec![Vec::new(); n_strata];
+    for (i, &s) in stratum.iter().enumerate() {
+        by_stratum[s].push(i);
+    }
+    for (k, items) in by_stratum.iter().enumerate() {
+        if items.is_empty() {
+            return Err(format!(
+                "stradaptive_administer: stratum {k} has no items (strata must cover 0..{s_max})"
+            ));
+        }
+    }
+    for (i, &d) in difficulty.iter().enumerate() {
+        if !d.is_finite() {
+            return Err(format!(
+                "stradaptive_administer: difficulty[{i}] must be finite"
+            ));
+        }
+    }
+    for (i, &r) in responses.iter().enumerate() {
+        if r > 1 {
+            return Err(format!(
+                "stradaptive_administer: responses[{i}] must be 0 or 1 (got {r})"
+            ));
+        }
+    }
+    if entry_stratum >= n_strata {
+        return Err(format!(
+            "stradaptive_administer: entry_stratum {entry_stratum} out of range (pool has {n_strata} strata)"
+        ));
+    }
+    if !chance.is_finite() || chance <= 0.0 || chance >= 1.0 {
+        return Err(
+            "stradaptive_administer: chance must be finite and strictly inside (0, 1) \
+             (multiple-choice only; free-response chance = 0 is out of scope)"
+                .into(),
+        );
+    }
+    if min_items == 0 {
+        return Err("stradaptive_administer: min_items must be >= 1".into());
+    }
+    if max_items == 0 {
+        return Err("stradaptive_administer: max_items must be >= 1".into());
+    }
+
+    let mut used = vec![0usize; n_strata];
+    let mut n_adm = vec![0usize; n_strata];
+    let mut n_cor = vec![0usize; n_strata];
+    let mut administered = Vec::new();
+    let mut responses_taken = Vec::new();
+    let mut cur = entry_stratum as i64;
+    let mut last = entry_stratum;
+    let reason;
+
+    // Clamp the branch target to the pool, then fall back to the last
+    // administered stratum when the target is exhausted (DERIVED rule; see
+    // module comment).
+    let pick = |target: i64, used: &[usize], last: usize| -> Option<usize> {
+        let t = target.clamp(0, s_max as i64) as usize;
+        if used[t] < by_stratum[t].len() {
+            return Some(t);
+        }
+        if used[last] < by_stratum[last].len() {
+            return Some(last);
+        }
+        None
+    };
+    let find_ceiling = |n_adm: &[usize], n_cor: &[usize]| -> Option<usize> {
+        (0..n_strata)
+            .find(|&k| n_adm[k] >= min_items && (n_cor[k] as f64 / n_adm[k] as f64) <= chance)
+    };
+
+    loop {
+        if administered.len() >= max_items {
+            reason = "max_items";
+            break;
+        }
+        let t = match pick(cur, &used, last) {
+            Some(t) => t,
+            None => {
+                reason = "pool_exhausted";
+                break;
+            }
+        };
+        let idx = by_stratum[t][used[t]];
+        used[t] += 1;
+        last = t;
+        let r = responses[idx];
+        administered.push(idx);
+        responses_taken.push(r);
+        n_adm[t] += 1;
+        n_cor[t] += r as usize;
+        cur = if r == 1 { t as i64 + 1 } else { t as i64 - 1 };
+        if find_ceiling(&n_adm, &n_cor).is_some() {
+            reason = "criterion";
+            break;
+        }
+    }
+    let ceiling = find_ceiling(&n_adm, &n_cor);
+    let next_item = pick(cur, &used, last).map(|t| by_stratum[t][used[t]]);
+
+    // Full-pool stratum mean difficulties + mean between-stratum increment.
+    let mut d_mean = vec![0.0f64; n_strata];
+    for k in 0..n_strata {
+        let sum: f64 = by_stratum[k].iter().map(|&i| difficulty[i]).sum();
+        d_mean[k] = sum / by_stratum[k].len() as f64;
+    }
+    let incr = (d_mean[n_strata - 1] - d_mean[0]) / (n_strata - 1) as f64;
+
+    let corrects: Vec<usize> = administered
+        .iter()
+        .zip(&responses_taken)
+        .filter(|&(_, &r)| r == 1)
+        .map(|(&i, _)| i)
+        .collect();
+    let upper = ceiling.unwrap_or(n_strata); // exclusive bound for m3/m9
+    let hnc = match ceiling {
+        Some(c) => c.checked_sub(1),
+        None => (0..n_strata)
+            .rev()
+            .find(|&k| n_adm[k] > 0 && (n_cor[k] as f64 / n_adm[k] as f64) > chance),
+    };
+    let basal = (0..upper)
+        .rev()
+        .find(|&k| n_adm[k] > 0 && n_cor[k] == n_adm[k]);
+
+    let mut scores = [f64::NAN; 10];
+    scores[0] = corrects
+        .iter()
+        .map(|&i| difficulty[i])
+        .fold(f64::NAN, f64::max);
+    if let Some(ni) = next_item {
+        scores[1] = difficulty[ni];
+        scores[4] = d_mean[stratum[ni]];
+    }
+    scores[2] = corrects
+        .iter()
+        .filter(|&&i| stratum[i] < upper)
+        .map(|&i| difficulty[i])
+        .fold(f64::NAN, f64::max);
+    if let Some(hs) = corrects.iter().map(|&i| stratum[i]).max() {
+        scores[3] = d_mean[hs];
+    }
+    if let Some(h) = hnc {
+        scores[5] = d_mean[h];
+        let p = n_cor[h] as f64 / n_adm[h] as f64;
+        scores[6] = if p == 0.5 {
+            d_mean[h] // both step branches agree; no adjacent stratum needed
+        } else {
+            let step = if p > 0.5 {
+                let up = if h + 1 < n_strata {
+                    d_mean[h + 1]
+                } else {
+                    d_mean[n_strata - 1] + incr // DERIVED extrapolation
+                };
+                up - d_mean[h]
+            } else {
+                let lo = if h > 0 {
+                    d_mean[h - 1]
+                } else {
+                    d_mean[0] - incr // DERIVED extrapolation
+                };
+                d_mean[h] - lo
+            };
+            d_mean[h] + step * (p - 0.5)
+        };
+        let at_h: Vec<f64> = corrects
+            .iter()
+            .filter(|&&i| stratum[i] == h)
+            .map(|&i| difficulty[i])
+            .collect();
+        if !at_h.is_empty() {
+            scores[9] = at_h.iter().sum::<f64>() / at_h.len() as f64;
+        }
+    }
+    if !corrects.is_empty() {
+        scores[7] = corrects.iter().map(|&i| difficulty[i]).sum::<f64>() / corrects.len() as f64;
+    }
+    let lo_bound = basal.map_or(-1i64, |b| b as i64);
+    let mid: Vec<f64> = corrects
+        .iter()
+        .filter(|&&i| (stratum[i] as i64) > lo_bound && stratum[i] < upper)
+        .map(|&i| difficulty[i])
+        .collect();
+    let mut consistency = f64::NAN;
+    if !mid.is_empty() {
+        let m = mid.iter().sum::<f64>() / mid.len() as f64;
+        scores[8] = m;
+        consistency = mid.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / mid.len() as f64;
+    }
+
+    Ok(StradaptiveResult {
+        administered,
+        responses_taken,
+        reason,
+        ceiling,
+        basal,
+        hnc,
+        next_item,
+        scores,
+        consistency,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Pyramidal adaptive testing (Larkin & Weiss, 1974)
+// ---------------------------------------------------------------------------
+//
+// Source status: Larkin & Weiss (1974) READ in full (OCR of ERIC ED096343).
+// Secondary works cited inside it (Lord, 1970, 1971a, 1971b; Hansen, 1969;
+// Bayroff, 1960; Paterson, 1962) were NOT read; they are cited below only
+// "as described by Larkin & Weiss (1974)".
+//
+// Structure (Larkin & Weiss, 1974, pp. 5-7, Figure 1): items arranged in a
+// triangular structure by difficulty; stage s (1-based) holds s items; an
+// n-stage pyramid needs n(n+1)/2 items (printed formula, p. 13). The first
+// item is of median difficulty. Routing is "up-one/down-one" with "equal
+// offset": a correct response leads to the harder of the two stage-(s+1)
+// neighbours, an incorrect response to the easier. One item per stage; a
+// fixed n items are administered.
+//
+// DERIVED routing recurrence (from the Figure-1 prose; not printed as an
+// equation in the source): with 0-based within-stage position j ordered
+// easiest -> hardest, j_1 = 0 and j_{s+1} = j_s + u_s where u_s in {0, 1}
+// is the correctness of the stage-s response. The row-major flattened node
+// index of (stage s, position j) is s(s-1)/2 + j (previous stages hold
+// 1 + 2 + ... + (s-1) = s(s-1)/2 items).
+//
+// Scoring methods 1-6 (Larkin & Weiss, 1974, pp. 15-16):
+//   M1 number-correct score: sum of u_s (integer 0..n).
+//   M2 mean difficulty of all items attempted.
+//   M3 mean difficulty of correctly answered items. The source does not
+//      define the 0-correct case; this implementation returns NaN
+//      (documented indeterminate, not an error).
+//   M4 difficulty of the final (stage-n) item attempted.
+//   M5 "final difficulty score" / hypothetical (n+1)th-item score (Hansen,
+//      1969, and Lord, 1971b, as described by Larkin & Weiss, 1974): branch
+//      once more on the final response into a hypothetical stage n+1 whose
+//      difficulties `b_next` (length n+1) the CALLER supplies; the score is
+//      b_next[j_n + u_n]. Larkin & Weiss's own construction of b_next
+//      (column means with extrapolated extremes, p. 15) is pool-specific
+//      and out of scope. When `b_next` is None, M5 is UNAVAILABLE and NaN
+//      is returned (not a computed Method-5 score).
+//   M6 Hansen (1969, as described by Larkin & Weiss, 1974) all-item score.
+//      The per-stage formulas below are DERIVED from the p. 16 prose (they
+//      are not printed as equations): a correct response at position j of
+//      stage s scores 2 + 2j + [j < s-1] (2 for the item, 2 per easier
+//      item, 1 for the next harder item, 0 beyond); an incorrect response
+//      scores [j >= 1] + 2*max(j - 1, 0) (0 for the item and all harder,
+//      1 for the next easier, 2 per remaining easier item). VERIFIED
+//      against the printed 15-stage score range "0 to 240" (p. 16): the
+//      all-correct path scores exactly 240 and the all-incorrect path 0
+//      (pinned in tests).
+//
+// Out of scope (variants described but not used in the source's design):
+// unequal offsets ("up-one/down-two", correction for guessing, p. 7),
+// shrinking step size (Paterson, 1962, as described), multi-item blocks
+// per stage (p. 6), and the study's empirical reliability/validity
+// analyses. Within-stage difficulty monotonicity is NOT enforced: the
+// source's own pyramid 1 contained mis-ordered items (p. 14).
+//
+// References (APA 7th):
+// Larkin, K. C., & Weiss, D. J. (1974). An empirical investigation of
+//     computer-administered pyramidal ability testing (Research Report
+//     74-3; ERIC ED096343). University of Minnesota, Psychometric Methods
+//     Program. (READ: structure, routing, scoring methods 1-6, Table 1)
+// Hansen, D. N. (1969). An investigation of computer-based science testing.
+//     (NOT read; all-item score and final node score implemented as
+//     described by Larkin & Weiss, 1974)
+// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+//     of flexilevel tests. Educational and Psychological Measurement,
+//     31(4), 805-813. (NOT read; "final difficulty score" naming as
+//     described by Larkin & Weiss, 1974)
+
+/// Result of [`pyramidal_administer`]. `path` holds the flattened row-major
+/// node indices attempted (one per stage); `positions` the within-stage
+/// 0-based positions (easiest -> hardest). Scores follow Larkin & Weiss
+/// (1974) methods 1-6: `mean_b_correct` is NaN when no item was answered
+/// correctly, and `final_difficulty` is NaN when `b_next` was not supplied
+/// (M5 unavailable).
+#[derive(Debug, Clone)]
+pub struct PyramidalResult {
+    pub path: Vec<usize>,
+    pub positions: Vec<usize>,
+    pub number_correct: f64,
+    pub mean_b_attempted: f64,
+    pub mean_b_correct: f64,
+    pub final_b: f64,
+    pub final_difficulty: f64,
+    pub all_item_score: f64,
+}
+
+/// Administer an n-stage up-one/down-one pyramidal test over a hypothetical
+/// full response vector and compute scoring methods 1-6 (see the module
+/// comment above for the verified contract and source status).
+///
+/// `b` is the row-major flattened difficulty vector (stage 1 first; each
+/// stage ordered easiest -> hardest) of length n_stages*(n_stages+1)/2;
+/// `u[s]` is the 0/1 response to the stage-(s+1) item on the routed path;
+/// `b_next`, when supplied, holds the n_stages+1 hypothetical next-stage
+/// difficulties used by method 5.
+pub fn pyramidal_administer(
+    b: &[f64],
+    n_stages: usize,
+    u: &[u8],
+    b_next: Option<&[f64]>,
+) -> Result<PyramidalResult, String> {
+    if n_stages == 0 {
+        return Err("pyramidal_administer: n_stages must be >= 1".into());
+    }
+    // Checked triangular size: n(n+1)/2 (Larkin & Weiss, 1974, p. 13). A
+    // huge n_stages must yield Err, not a debug panic or release wrap.
+    let expected = n_stages
+        .checked_add(1)
+        .and_then(|np1| n_stages.checked_mul(np1))
+        .map(|t| t / 2)
+        .ok_or_else(|| {
+            format!("pyramidal_administer: n_stages {n_stages} overflows the n(n+1)/2 item count")
+        })?;
+    if b.len() != expected {
+        return Err(format!(
+            "pyramidal_administer: b has {} items but an {}-stage pyramid needs n(n+1)/2 = {}",
+            b.len(),
+            n_stages,
+            expected
+        ));
+    }
+    if u.len() != n_stages {
+        return Err(format!(
+            "pyramidal_administer: u has {} responses but n_stages is {}",
+            u.len(),
+            n_stages
+        ));
+    }
+    for (i, &r) in u.iter().enumerate() {
+        if r > 1 {
+            return Err(format!(
+                "pyramidal_administer: u[{i}] must be 0 or 1 (got {r})"
+            ));
+        }
+    }
+    for (i, &d) in b.iter().enumerate() {
+        if !d.is_finite() {
+            return Err(format!("pyramidal_administer: b[{i}] must be finite"));
+        }
+    }
+    if let Some(bn) = b_next {
+        if bn.len() != n_stages + 1 {
+            return Err(format!(
+                "pyramidal_administer: b_next has {} items but must have n_stages + 1 = {}",
+                bn.len(),
+                n_stages + 1
+            ));
+        }
+        for (i, &d) in bn.iter().enumerate() {
+            if !d.is_finite() {
+                return Err(format!("pyramidal_administer: b_next[{i}] must be finite"));
+            }
+        }
+    }
+
+    // Routing: j_1 = 0; j_{s+1} = j_s + u_s (DERIVED; see module comment).
+    // `offset` is maintained incrementally (offset += s), so it stays
+    // bounded by the validated b.len() and cannot overflow.
+    let mut path = Vec::with_capacity(n_stages);
+    let mut positions = Vec::with_capacity(n_stages);
+    let mut j = 0usize;
+    let mut offset = 0usize; // s(s-1)/2 for the current 1-based stage s
+    let mut all_item = 0i64;
+    let mut n_correct = 0usize;
+    let mut sum_attempted = 0.0f64;
+    let mut sum_correct = 0.0f64;
+    for s in 1..=n_stages {
+        positions.push(j);
+        path.push(offset + j);
+        let bi = b[offset + j];
+        sum_attempted += bi;
+        let us = u[s - 1];
+        if us == 1 {
+            n_correct += 1;
+            sum_correct += bi;
+            // M6 correct: 2 + 2j + [j < s-1] (DERIVED from p. 16 prose).
+            all_item += 2 + 2 * j as i64 + i64::from(j < s - 1);
+        } else {
+            // M6 incorrect: [j >= 1] + 2*max(j-1, 0).
+            all_item += i64::from(j >= 1) + 2 * (j.saturating_sub(1)) as i64;
+        }
+        offset += s;
+        if s < n_stages {
+            j += us as usize;
+        }
+    }
+    let j_final = positions[n_stages - 1] + u[n_stages - 1] as usize;
+    let final_difficulty = match b_next {
+        Some(bn) => bn[j_final],
+        None => f64::NAN,
+    };
+    let mean_b_correct = if n_correct > 0 {
+        sum_correct / n_correct as f64
+    } else {
+        f64::NAN
+    };
+
+    Ok(PyramidalResult {
+        final_b: b[*path.last().unwrap()],
+        number_correct: n_correct as f64,
+        mean_b_attempted: sum_attempted / n_stages as f64,
+        mean_b_correct,
+        final_difficulty,
+        all_item_score: all_item as f64,
+        path,
+        positions,
+    })
+}

@@ -127,6 +127,10 @@ from .exposure import (
     epv_select as epv_select,
     sprt_classify as sprt_classify,
     ci_classify as ci_classify,
+    flexilevel_administer as flexilevel_administer,
+    flexilevel_score_distribution as flexilevel_score_distribution,
+    stradaptive_administer as stradaptive_administer,
+    pyramidal_administer as pyramidal_administer,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
@@ -291,6 +295,10 @@ __all__ = [
     "epv_select",
     "sprt_classify",
     "ci_classify",
+    "flexilevel_administer",
+    "flexilevel_score_distribution",
+    "stradaptive_administer",
+    "pyramidal_administer",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",

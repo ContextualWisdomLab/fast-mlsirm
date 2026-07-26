@@ -119,6 +119,62 @@
 
 ### Added
 
+- **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
+  74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
+  `mlsirm_core::exposure::pyramidal_administer`, PyO3
+  `py_pyramidal_administer`): deterministic single-examinee replay of the
+  classic up-one/down-one equal-offset pyramidal ("branched") design — items
+  in a triangular structure ordered by difficulty (stage s holds s items,
+  n(n+1)/2 total), a correct response routing to the harder stage-(s+1)
+  neighbour and an incorrect response to the easier — with Larkin & Weiss's
+  six scoring methods: number-correct, mean difficulty attempted, mean
+  difficulty correct (NaN when indeterminate), final-item difficulty, the
+  hypothetical (n+1)th-item "final difficulty score" (computed only when the
+  caller supplies the next-stage difficulties; the paper's pool-specific
+  column-mean construction is out of scope), and Hansen's all-item score as
+  described by Larkin & Weiss (verified against the printed 15-stage 0–240
+  range). Routing recurrence and all-item stage scores are DERIVED from the
+  source prose (labelled in the module comment); exact-fraction oracle
+  anchors, checked-arithmetic overflow guards, and a 500-rep Monte-Carlo
+  structural invariant test (`#[ignore]`).
+- **Weiss stradaptive (stratified-adaptive) test administration (Weiss, 1973,
+  Research Report 73-3)** (`fast_mlsirm.stradaptive_administer`; in Rust
+  `mlsirm_core::exposure::stradaptive_administer`, PyO3
+  `py_stradaptive_administer`): deterministic single-examinee replay of
+  Weiss's stratified-adaptive design — an item pool partitioned into S ≥ 2
+  difficulty strata, up-one-stratum after a correct response and
+  down-one-stratum after an incorrect response (edge-clamped, with a DERIVED
+  fallback to the last administered stratum when the clamped target is
+  exhausted), terminating on a ceiling stratum (≥ min_items administered and
+  proportion correct ≤ chance), pool exhaustion, or max_items. Reports
+  ceiling / basal / highest-non-chance strata, Weiss's ten ability scores
+  m1–m10 (NaN when indeterminate; score 7 interpolates between adjacent
+  stratum mean difficulties with side-dependent steps), and a consistency
+  index (population variance of the score-9 stratum set; DERIVED — defined
+  verbally in the report without a printed numeric anchor). The primary
+  source was READ (ERIC ED084301); routing and scores are pinned by the
+  report's William W. protocol (Fig. 2 / Appendix A) and its five printed
+  score-7 cases plus synthetic below-chance anchors that discriminate the
+  lower-step branch (the printed cases alone do not). Score 5's
+  extrapolated-next-stratum variant for exhausted pools and free-response
+  (chance = 0) termination are deliberately out of scope.
+- **Lord self-scoring flexilevel testing (Lord, 1970, RB-70-43; Lord, 1971,
+  RB-71-6)** (`fast_mlsirm.flexilevel_administer` /
+  `fast_mlsirm.flexilevel_score_distribution`; in Rust
+  `mlsirm_core::exposure::flexilevel_administer` /
+  `flexilevel_score_distribution`, PyO3 `py_flexilevel_administer` /
+  `py_flexilevel_score_distribution`): deterministic replay of Lord's
+  branched-adaptive flexilevel design over a full 0/1 response matrix — N
+  (odd) difficulty-sorted items, n = (N+1)/2 administered starting at the
+  median (right → easiest harder, wrong → hardest easier), number-right
+  self-scoring with +1/2 for a wrong last answer — plus the exact conditional
+  score distribution f(x | θ) on the half-integer lattice {1/2, …, n} via
+  Lord's forward recursion over p_v(i), taking caller-supplied per-item
+  correct-response probabilities (ICC-agnostic). Both primary ETS Research
+  Bulletins were READ (ERIC ED042813 / ED051286); the routing is pinned by
+  Lord's RWWRWRRRWR worked example and the recursion is cross-checked exactly
+  against exhaustive path enumeration. Lord's Eq. 3 efficiency ratio and
+  Eq. 4 normal-ogive ICC are deliberately out of scope.
 - **Breslow-Day odds-ratio homogeneity DIF test (Breslow & Day, 1980, Eq. 4.30)**
   (`fast_mlsirm.breslow_day_dif`; in Rust `mlsirm_core::dif::breslow_day_dif`,
   PyO3 `py_breslow_day_dif`): the classical NON-UNIFORM DIF companion to

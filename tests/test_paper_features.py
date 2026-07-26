@@ -7711,3 +7711,229 @@ class TestBreslowDay:
         big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
         with pytest.raises(ValueError):
             breslow_day_dif(big, group)
+
+class TestFlexilevel:
+    def test_worked_example_routing_pin(self):
+        from fast_mlsirm import flexilevel_administer
+
+        # Lord (1971) worked example RWWRWRRRWR on N = 19: administered
+        # columns [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]; blue, r = 6, x = 6.
+        cols = [9, 10, 8, 7, 11, 6, 12, 13, 14, 5]
+        answers = [1, 0, 0, 1, 0, 1, 1, 1, 0, 1]
+        row = np.zeros((1, 19))
+        for c, y in zip(cols, answers):
+            row[0, c] = y
+        r = flexilevel_administer(row, n_persons=1, n_items=19)
+        assert r["n_administered"] == 10
+        assert r["items"].tolist() == cols
+        assert r["number_right"].tolist() == [6]
+        assert r["is_red"].tolist() == [0]
+        assert r["score"].tolist() == [6.0]
+
+    def test_distribution_exact_pin(self):
+        from fast_mlsirm import flexilevel_score_distribution
+
+        # N = 5 exact oracle pin (enumeration == recursion in the spec
+        # oracle): mean 7/4, variance 71/240.
+        d = flexilevel_score_distribution([4 / 5, 2 / 3, 1 / 2, 1 / 3, 1 / 5])
+        assert d["scores"].tolist() == [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        expect = [1 / 30, 2 / 15, 1 / 3, 1 / 3, 2 / 15, 1 / 30]
+        assert np.allclose(d["probs"], expect, atol=1e-15)
+        assert abs(d["mean"] - 1.75) < 1e-15
+        assert abs(d["variance"] - 71 / 240) < 1e-15
+
+    def test_validation_errors(self):
+        from fast_mlsirm import (
+            flexilevel_administer,
+            flexilevel_score_distribution,
+        )
+
+        with pytest.raises(ValueError, match="odd"):
+            flexilevel_administer(np.zeros((1, 4)), n_persons=1, n_items=4)
+        with pytest.raises(ValueError, match="0 and 1"):
+            flexilevel_administer(
+                np.full((1, 5), 2.0), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.zeros((1, 5), dtype=complex), n_persons=1, n_items=5
+            )
+        with pytest.raises(ValueError, match="shape"):
+            flexilevel_administer(np.zeros((2, 5)), n_persons=1, n_items=5)
+        with pytest.raises(ValueError, match=r"p\[1\]"):
+            flexilevel_score_distribution([0.5, 1.5, 0.5])
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(np.array([0.5, 0.5j, 0.5]))
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_administer(
+                np.array([0, 1 + 0j, 0, 1, 0], dtype=object),
+                n_persons=1,
+                n_items=5,
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            flexilevel_score_distribution(
+                np.array([0.5, 0.5 + 0j, 0.5], dtype=object)
+            )
+
+class TestStradaptive:
+    def test_person_d_lower_step_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # Below-chance-side m7 anchor (spec Person D): p = 1/3 < 1/2 at hnc
+        # with UNEQUAL adjacent gaps (D = [-2, 0, 3]); the derived lower
+        # step gives 0 + (0 - (-2))(1/3 - 1/2) = -1/3, while an
+        # always-upper mutant gives -1/2. Every assert reads crate output.
+        r = stradaptive_administer(
+            [0, 0, 1, 1, 1, 2, 2],
+            [-2.0, -2.0, -1.0, 0.0, 1.0, 3.0, 3.0],
+            [1, 1, 1, 0, 0, 0, 0],
+            entry_stratum=1,
+            chance=0.25,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [2, 5, 3, 0, 4, 1]
+        assert r["reason"] == "pool_exhausted"
+        assert r["ceiling"] == -1
+        assert r["hnc"] == 1
+        assert abs(r["scores"][6] - (-1.0 / 3.0)) < 1e-12
+        assert abs(r["scores"][6] - (-0.5)) > 0.1
+
+    def test_person_e_boundary_pin(self):
+        from fast_mlsirm import stradaptive_administer
+
+        # p == chance exactly must terminate (<=, not <); chance = 1/2.
+        r = stradaptive_administer(
+            [0, 0, 0, 1, 1],
+            [-1.0, -1.0, -1.0, 1.0, 1.0],
+            [1, 0, 1, 0, 0],
+            entry_stratum=0,
+            chance=0.5,
+            min_items=2,
+            max_items=100,
+        )
+        assert r["administered"].tolist() == [0, 3, 1]
+        assert r["responses_taken"].tolist() == [1, 0, 0]
+        assert r["reason"] == "criterion"
+        assert r["ceiling"] == 0
+        assert r["hnc"] == -1
+        assert r["scores"][0] == -1.0
+        assert r["scores"][1] == -1.0
+        assert np.isnan(r["scores"][2])
+        assert np.isnan(r["scores"][8])
+
+    def test_validation_errors(self):
+        from fast_mlsirm import stradaptive_administer
+
+        kw = dict(entry_stratum=0, chance=0.25, min_items=1, max_items=10)
+        with pytest.raises(ValueError, match="chance"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                entry_stratum=0, chance=1.0, min_items=1, max_items=10,
+            )
+        with pytest.raises(ValueError, match="0 and 1"):
+            stradaptive_administer(
+                [0, 0, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 2, 1, 0], **kw
+            )
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1j, 1.0, 1.0]),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        # Object-dtype complex bypasses np.iscomplexobj; the float64
+        # coercion backstop must still raise the documented ValueError.
+        with pytest.raises(ValueError, match="real-valued"):
+            stradaptive_administer(
+                [0, 0, 1, 1],
+                np.array([0.0, 1 + 0j, 1.0, 1.0], dtype=object),
+                [1, 0, 1, 0],
+                **kw,
+            )
+        with pytest.raises(ValueError, match="non-negative integers"):
+            stradaptive_administer(
+                [0, -1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
+        # 2**53 + 1 rounds to 2**53 under float64; the len-based bound must
+        # reject it anyway (regression for the lossy > 2**53 guard).
+        with pytest.raises(ValueError, match="below len"):
+            stradaptive_administer(
+                [0, 2**53 + 1, 1, 1], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0],
+                **kw,
+            )
+        with pytest.raises(ValueError, match="stratum"):
+            stradaptive_administer(
+                [0, 0, 2, 2], [0.0, 0.0, 1.0, 1.0], [1, 0, 1, 0], **kw
+            )
+
+class TestPyramidal:
+    """Larkin & Weiss (1974) pyramidal adaptive testing wrapper.
+
+    Anchors from files/pyramidal_oracle.py (exact Fractions, executed);
+    every assert reads values returned by the crate through the wrapper.
+    """
+
+    def _pyr4(self):
+        import numpy as np
+
+        b = np.array([0, -1, 1, -2, 0, 2, -3, -1, 1, 3], dtype=np.float64)
+        b_next = np.array([-4, -2, 0, 2, 4], dtype=np.float64)
+        return b, b_next
+
+    def test_anchor_a_exact(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn)
+        assert r["path"].tolist() == [0, 2, 4, 8]
+        assert r["positions"].tolist() == [0, 1, 1, 2]
+        assert r["number_correct"] == 3.0
+        assert r["mean_b_attempted"] == 0.5
+        assert abs(r["mean_b_correct"] - 1.0 / 3.0) < 1e-15
+        assert r["final_b"] == 1.0
+        assert r["final_difficulty"] == 2.0
+        assert r["all_item_score"] == 15.0
+        # M5 unavailable without b_next
+        r2 = pyramidal_administer(b, 4, [1, 0, 1, 1])
+        assert np.isnan(r2["final_difficulty"])
+        assert r2["all_item_score"] == 15.0
+
+    def test_all_wrong_and_paper_range(self):
+        import numpy as np
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        r = pyramidal_administer(b, 4, np.zeros(4), b_next=bn)
+        assert r["path"].tolist() == [0, 1, 3, 6]
+        assert np.isnan(r["mean_b_correct"])
+        assert r["final_difficulty"] == -4.0
+        assert r["all_item_score"] == 0.0
+        # Paper-printed 15-stage all-item range 0..240 (p. 16).
+        n = 15
+        big = np.zeros(n * (n + 1) // 2)
+        assert pyramidal_administer(big, n, np.ones(n))["all_item_score"] == 240.0
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import pyramidal_administer
+
+        b, bn = self._pyr4()
+        with pytest.raises(ValueError, match="0 and 1"):
+            pyramidal_administer(b, 4, [1, 0, 2, 1], b_next=bn)
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(b.astype(np.complex128), 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="real-valued"):
+            pyramidal_administer(
+                np.array([1j if i == 0 else 0.0 for i in range(10)], dtype=object),
+                4,
+                [1, 0, 1, 1],
+            )
+        with pytest.raises(ValueError, match="n\\(n\\+1\\)/2"):
+            pyramidal_administer(b[:9], 4, [1, 0, 1, 1])
+        with pytest.raises(ValueError, match="n_stages \\+ 1"):
+            pyramidal_administer(b, 4, [1, 0, 1, 1], b_next=bn[:4])

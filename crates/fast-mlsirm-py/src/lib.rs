@@ -35,18 +35,21 @@ use mlsirm_core::detect::detect_analysis as core_detect_analysis;
 use mlsirm_core::detect::dimtest as core_dimtest;
 use mlsirm_core::dif::{
     breslow_day_dif as core_breslow_day_dif, delta_plot as core_delta_plot,
-    eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif,
-    logistic_dif as core_logistic_dif, logistic_dif_purified as core_logistic_purified,
-    mantel_haenszel_dif as core_mh_dif, mantel_haenszel_dif_purified as core_mh_purified,
-    mantel_smd_dif as core_mantel_smd_dif, raju_area as core_raju_area, sibtest as core_sibtest,
-    DeltaThreshold, ExtremeAdjust, LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow,
-    PurifyConfig, PurifyType as DeltaPurifyType, SibtestConfig,
+    eb_mh_dif as core_eb_mh_dif, gmh_dif as core_gmh_dif, logistic_dif as core_logistic_dif,
+    logistic_dif_purified as core_logistic_purified, mantel_haenszel_dif as core_mh_dif,
+    mantel_haenszel_dif_purified as core_mh_purified, mantel_smd_dif as core_mantel_smd_dif,
+    raju_area as core_raju_area, sibtest as core_sibtest, DeltaThreshold, ExtremeAdjust,
+    LogisticDifConfig, LogisticDifRow, MhDifConfig, MhDifRow, PurifyConfig,
+    PurifyType as DeltaPurifyType, SibtestConfig,
 };
 use mlsirm_core::exposure::{
     a_stratified as core_a_stratified, ccat_select as core_ccat_select,
     ci_classify as core_ci_classify, epv_select as core_epv_select,
+    flexilevel_administer as core_flexilevel_administer,
+    flexilevel_score_distribution as core_flexilevel_score_distribution,
     kl_information as core_kl_information, kl_select as core_kl_select, owen_cat as core_owen_cat,
-    owen_update as core_owen_update, sprt_classify as core_sprt_classify,
+    owen_update as core_owen_update, pyramidal_administer as core_pyramidal_administer,
+    sprt_classify as core_sprt_classify, stradaptive_administer as core_stradaptive_administer,
     sympson_hetter as core_sympson_hetter, AStratifiedConfig, SympsonHetterConfig,
 };
 use mlsirm_core::facets::fit_facets as core_fit_facets;
@@ -3005,6 +3008,176 @@ fn py_ci_classify(
         "upper_trace",
         numpy::PyArray1::from_slice(py, &res.upper_trace),
     )?;
+    Ok(out.into())
+}
+
+/// Lord self-scoring flexilevel routing + scoring over a full 0/1 response
+/// matrix (`mlsirm_core::exposure::flexilevel_administer`): N (odd) items
+/// sorted ascending by difficulty, n = (N+1)/2 administered per person
+/// starting at the median item (right -> easiest harder, wrong -> hardest
+/// easier), number-right scoring with +1/2 for a wrong last answer ("red").
+///
+/// References (APA 7th; see the core module comment for read/not-read
+/// source status):
+/// Lord, F. M. (1970). The self-scoring flexilevel test (RB-70-43; ERIC
+/// ED042813). Educational Testing Service. (READ)
+/// Lord, F. M. (1971). A theoretical study of the measurement effectiveness
+/// of flexilevel tests (RB-71-6; ERIC ED051286). Educational Testing
+/// Service. (READ)
+#[pyfunction]
+fn py_flexilevel_administer(
+    py: Python<'_>,
+    responses: PyReadonlyArray1<'_, u8>,
+    n_persons: usize,
+    n_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_flexilevel_administer(responses.as_slice()?, n_persons, n_items)
+        .map_err(PyValueError::new_err)?;
+    let items: Vec<u64> = res.items.iter().map(|&c| c as u64).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("n_administered", res.n_administered)?;
+    out.set_item("items", numpy::PyArray1::from_slice(py, &items))?;
+    out.set_item(
+        "number_right",
+        numpy::PyArray1::from_slice(py, &res.number_right),
+    )?;
+    out.set_item("is_red", numpy::PyArray1::from_slice(py, &res.is_red))?;
+    out.set_item("score", numpy::PyArray1::from_slice(py, &res.score))?;
+    Ok(out.into())
+}
+
+/// Exact conditional flexilevel self-score distribution f(x | theta) by
+/// Lord's forward recursion
+/// (`mlsirm_core::exposure::flexilevel_score_distribution`). `p[c]` is
+/// P(correct) on the c-th difficulty-sorted item at the ability of interest;
+/// scores lie on the half-integer lattice {1/2, 1, ..., n}.
+///
+/// References (APA 7th): Lord, F. M. (1971). RB-71-6 (READ; Eqs. 1-2).
+#[pyfunction]
+fn py_flexilevel_score_distribution(
+    py: Python<'_>,
+    p: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_flexilevel_score_distribution(p.as_slice()?).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("scores", numpy::PyArray1::from_slice(py, &res.scores))?;
+    out.set_item("probs", numpy::PyArray1::from_slice(py, &res.probs))?;
+    out.set_item("mean", res.mean)?;
+    out.set_item("variance", res.variance)?;
+    Ok(out.into())
+}
+
+/// Weiss (1973) stratified-adaptive (stradaptive) test administration for a
+/// single examinee (`mlsirm_core::exposure::stradaptive_administer`): items
+/// grouped into difficulty strata; correct -> next harder stratum, incorrect
+/// -> next easier stratum (clamped at the edges); termination when a ceiling
+/// stratum (proportion correct <= chance with >= min_items administered) is
+/// identified, the pool is exhausted, or max_items is reached. Returns the
+/// administration record, ceiling/basal/highest-non-chance strata, Weiss's
+/// ten ability scores (NaN when indeterminate), and the consistency index
+/// (population variance of the score-9 stratum set; DERIVED, no printed
+/// anchor). See the core module comment for READ/NOT-READ source status and
+/// DERIVED-rule labels.
+///
+/// References (APA 7th):
+/// Weiss, D. J. (1973). The stratified adaptive computerized ability test
+/// (Research Report 73-3; ERIC ED084301). University of Minnesota,
+/// Psychometric Methods Program. (READ)
+#[pyfunction]
+fn py_stradaptive_administer(
+    py: Python<'_>,
+    stratum: PyReadonlyArray1<'_, u64>,
+    difficulty: PyReadonlyArray1<'_, f64>,
+    responses: PyReadonlyArray1<'_, u8>,
+    entry_stratum: usize,
+    chance: f64,
+    min_items: usize,
+    max_items: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let stratum_usize: Vec<usize> = stratum
+        .as_slice()?
+        .iter()
+        .map(|&s| {
+            usize::try_from(s).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "stradaptive_administer: stratum {s} does not fit in usize"
+                ))
+            })
+        })
+        .collect::<PyResult<_>>()?;
+    let res = core_stradaptive_administer(
+        &stratum_usize,
+        difficulty.as_slice()?,
+        responses.as_slice()?,
+        entry_stratum,
+        chance,
+        min_items,
+        max_items,
+    )
+    .map_err(PyValueError::new_err)?;
+    let administered: Vec<u64> = res.administered.iter().map(|&c| c as u64).collect();
+    let opt = |v: Option<usize>| -> i64 { v.map(|x| x as i64).unwrap_or(-1) };
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item(
+        "administered",
+        numpy::PyArray1::from_slice(py, &administered),
+    )?;
+    out.set_item(
+        "responses_taken",
+        numpy::PyArray1::from_slice(py, &res.responses_taken),
+    )?;
+    out.set_item("reason", res.reason)?;
+    out.set_item("ceiling", opt(res.ceiling))?;
+    out.set_item("basal", opt(res.basal))?;
+    out.set_item("hnc", opt(res.hnc))?;
+    out.set_item("next_item", opt(res.next_item))?;
+    out.set_item("scores", numpy::PyArray1::from_slice(py, &res.scores))?;
+    out.set_item("consistency", res.consistency)?;
+    Ok(out.into())
+}
+
+/// Larkin & Weiss (1974) pyramidal adaptive test administration for a
+/// single examinee (`mlsirm_core::exposure::pyramidal_administer`): items in
+/// a triangular structure (stage s holds s items, n(n+1)/2 total); routing
+/// is up-one/down-one equal offset (correct -> harder neighbour, incorrect
+/// -> easier). Returns the routed path and scoring methods 1-6
+/// (number-correct, mean b attempted, mean b correct [NaN when 0 correct],
+/// final-item b, final difficulty score via the caller-supplied
+/// hypothetical stage n+1 [NaN when `b_next` is absent -- M5 unavailable],
+/// and the Hansen all-item score as described by Larkin & Weiss). See the
+/// core module comment for READ/NOT-READ source status and DERIVED labels.
+///
+/// References (APA 7th):
+/// Larkin, K. C., & Weiss, D. J. (1974). An empirical investigation of
+/// computer-administered pyramidal ability testing (Research Report 74-3;
+/// ERIC ED096343). University of Minnesota, Psychometric Methods Program.
+/// (READ)
+#[pyfunction]
+#[pyo3(signature = (b, n_stages, u, b_next=None))]
+fn py_pyramidal_administer(
+    py: Python<'_>,
+    b: PyReadonlyArray1<'_, f64>,
+    n_stages: usize,
+    u: PyReadonlyArray1<'_, u8>,
+    b_next: Option<PyReadonlyArray1<'_, f64>>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let bn_slice = match &b_next {
+        Some(arr) => Some(arr.as_slice()?),
+        None => None,
+    };
+    let res = core_pyramidal_administer(b.as_slice()?, n_stages, u.as_slice()?, bn_slice)
+        .map_err(PyValueError::new_err)?;
+    let path: Vec<u64> = res.path.iter().map(|&c| c as u64).collect();
+    let positions: Vec<u64> = res.positions.iter().map(|&c| c as u64).collect();
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("path", numpy::PyArray1::from_slice(py, &path))?;
+    out.set_item("positions", numpy::PyArray1::from_slice(py, &positions))?;
+    out.set_item("number_correct", res.number_correct)?;
+    out.set_item("mean_b_attempted", res.mean_b_attempted)?;
+    out.set_item("mean_b_correct", res.mean_b_correct)?;
+    out.set_item("final_b", res.final_b)?;
+    out.set_item("final_difficulty", res.final_difficulty)?;
+    out.set_item("all_item_score", res.all_item_score)?;
     Ok(out.into())
 }
 
@@ -6842,6 +7015,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_epv_select, m)?)?;
     m.add_function(wrap_pyfunction!(py_sprt_classify, m)?)?;
     m.add_function(wrap_pyfunction!(py_ci_classify, m)?)?;
+    m.add_function(wrap_pyfunction!(py_flexilevel_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_flexilevel_score_distribution, m)?)?;
+    m.add_function(wrap_pyfunction!(py_stradaptive_administer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_pyramidal_administer, m)?)?;
     m.add_function(wrap_pyfunction!(guttman_lambdas, m)?)?;
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
