@@ -142,6 +142,12 @@ impl TestLcg {
             .wrapping_add(1442695040888963407);
         ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
     }
+    /// Standard normal via Box-Muller (test-local; used by the MC harness).
+    fn normal(&mut self) -> f64 {
+        let u1 = self.next_f64().max(1e-300);
+        let u2 = self.next_f64();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
 }
 
 /// Monte Carlo null calibration and power (500 reps). Under the null the
@@ -399,4 +405,418 @@ fn k_index_binomial_tail_extreme_p_regression() {
     // Symmetric moderate case stays exact too.
     let k2 = binom_sf_ge(5, 0.53333333333333333, 2);
     assert!((k2 - 0.85139489711934158).abs() < 1e-12, "tail {}", k2);
+}
+
+// ---------------------------------------------------------------------------
+// GBT (generalized binomial test) tail kernel
+// ---------------------------------------------------------------------------
+
+/// Fixture from files/gbt_spec.md: 10 items; copier [1,0,1,1,0,1,0,0,1,1]
+/// vs source [1,0,0,1,0,1,1,0,1,0] gives matches below with obs = 7.
+fn gbt_fixture() -> (Vec<f64>, Vec<f64>) {
+    let matches = vec![1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0];
+    let probs = vec![0.62, 0.55, 0.48, 0.71, 0.52, 0.66, 0.43, 0.58, 0.73, 0.49];
+    (matches, probs)
+}
+
+/// Pinned oracle: exact reference computed independently with Python
+/// fractions.Fraction on the exact binary float values, implementing the
+/// aberrance compute_GBT recursion verbatim (verified again by the
+/// adversarial spec review's own script). Asserts read: gbt()'s
+/// observed_matches, match_dist and p_value (crate outputs).
+/// Killed by: M1 exclusive tail (0.1277605867075642), M2 lower tail
+/// (0.8722394132924358), M3 duplicate item 0 i.e. probs [p0]+p
+/// (0.47925477021800067), M4 tail from obs-1 (0.5754779926114737),
+/// M5 swapped convolution mixing q*f[j-1]+p*f[j] (tail 0.06957009419363154
+/// and pmf reversed — the pinned pmf entries kill it too).
+#[test]
+fn gbt_pinned_oracle() {
+    let (m, p) = gbt_fixture();
+    let r = gbt(&m, &p).unwrap();
+    assert_eq!(r.observed_matches, 7);
+    assert!(
+        (r.p_value - 0.32225898631286054).abs() < 1e-12,
+        "p {}",
+        r.p_value
+    );
+    assert_eq!(r.match_dist.len(), 11);
+    let pmf = [
+        0.00013873169507258882,
+        0.0020878412745965764,
+        0.013861663456144322,
+        0.05348185776781805,
+        0.1328495797358767,
+        0.2221023334590181,
+        0.25321900629861316,
+        0.19449839960529633,
+        0.09637293070413779,
+        0.027829568425056288,
+        0.0035580875783701245,
+    ];
+    for (k, &want) in pmf.iter().enumerate() {
+        assert!(
+            (r.match_dist[k] - want).abs() < 1e-12,
+            "pmf[{}] = {} want {}",
+            k,
+            r.match_dist[k],
+            want
+        );
+    }
+    let total: f64 = r.match_dist.iter().sum();
+    assert!((total - 1.0).abs() < 1e-12, "pmf total {}", total);
+}
+
+/// Structural invariants with exactly known values (all asserts read crate
+/// outputs). (a) all 10 items match with probs 0.5: p = P(M >= 10) =
+/// 2^-10 = 1/1024 exactly — kills tail off-by-one in either direction
+/// (exclusive tail would be 0, tail from obs-1 would add mass).
+/// (b) obs = 0: inclusive upper tail is 1 — kills exclusive-tail mutants
+/// structurally. (c) deterministic probs [1,1,0]: M is a.s. 2, so
+/// matches [1,1,0] (obs 2) gives p = 1 and matches [1,1,1] (obs 3) gives
+/// p = 0 — kills mishandling of boundary probabilities.
+#[test]
+fn gbt_structural_invariants() {
+    let r = gbt(&[1.0; 10], &[0.5; 10]).unwrap();
+    assert_eq!(r.observed_matches, 10);
+    assert!((r.p_value - 1.0 / 1024.0).abs() < 1e-15, "p {}", r.p_value);
+
+    let r0 = gbt(&[0.0; 4], &[0.3, 0.9, 0.5, 0.1]).unwrap();
+    assert_eq!(r0.observed_matches, 0);
+    assert!((r0.p_value - 1.0).abs() < 1e-15, "p {}", r0.p_value);
+
+    let rd = gbt(&[1.0, 1.0, 0.0], &[1.0, 1.0, 0.0]).unwrap();
+    assert_eq!(rd.observed_matches, 2);
+    assert!((rd.p_value - 1.0).abs() < 1e-15, "p {}", rd.p_value);
+    assert!((rd.match_dist[2] - 1.0).abs() < 1e-15);
+
+    let ri = gbt(&[1.0, 1.0, 1.0], &[1.0, 1.0, 0.0]).unwrap();
+    assert_eq!(ri.observed_matches, 3);
+    assert!(ri.p_value.abs() < 1e-15, "p {}", ri.p_value);
+}
+
+/// Error paths: every rejected input returns Err (asserts read gbt()'s
+/// Result). Killed by removing any validation branch.
+#[test]
+fn gbt_error_paths() {
+    assert!(gbt(&[], &[]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5]).is_err());
+    assert!(gbt(&[1.0, 0.5], &[0.5, 0.5]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, 1.5]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, -0.1]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, f64::NAN]).is_err());
+    assert!(gbt(&[1.0, 0.0], &[0.5, f64::INFINITY]).is_err());
+}
+
+/// Monte Carlo size/power, 500 reps (ignored: heavy). Null: two independent
+/// Rasch-like examinees; per-item match probability computed from the SAME
+/// model that generates responses, so the GBT p-value is exact and the
+/// rejection rate at alpha = .05 must be at most about nominal (discrete
+/// conservative test). Alternative: copier copies the source's response on
+/// a fixed 40% of items while match_probs stay model-implied. Asserts read:
+/// gbt()'s p_value across replications.
+#[test]
+#[ignore]
+fn monte_carlo_gbt_size_and_power() {
+    let n_items = 40usize;
+    let reps = 500usize;
+    let alpha = 0.05f64;
+    let mut rng = TestLcg(20260726);
+    let mut null_rej = 0usize;
+    let mut alt_rej = 0usize;
+    for _ in 0..reps {
+        // Item easiness in [-1.5, 1.5]; two independent abilities N(0,1).
+        let mut b = vec![0.0f64; n_items];
+        for bi in b.iter_mut() {
+            *bi = -1.5 + 3.0 * rng.next_f64();
+        }
+        let t1 = rng.normal();
+        let t2 = rng.normal();
+        let p1: Vec<f64> = b
+            .iter()
+            .map(|&bi| 1.0 / (1.0 + (-(t1 - bi)).exp()))
+            .collect();
+        let p2: Vec<f64> = b
+            .iter()
+            .map(|&bi| 1.0 / (1.0 + (-(t2 - bi)).exp()))
+            .collect();
+        let x1: Vec<f64> = p1
+            .iter()
+            .map(|&p| if rng.next_f64() < p { 1.0 } else { 0.0 })
+            .collect();
+        let x2: Vec<f64> = p2
+            .iter()
+            .map(|&p| if rng.next_f64() < p { 1.0 } else { 0.0 })
+            .collect();
+        // Symmetric CopyDetect-style match probabilities (caller recipe).
+        let mp: Vec<f64> = p1
+            .iter()
+            .zip(&p2)
+            .map(|(&a, &c)| a * c + (1.0 - a) * (1.0 - c))
+            .collect();
+        let matches: Vec<f64> = x1
+            .iter()
+            .zip(&x2)
+            .map(|(&a, &c)| if a == c { 1.0 } else { 0.0 })
+            .collect();
+        if gbt(&matches, &mp).unwrap().p_value < alpha {
+            null_rej += 1;
+        }
+        // Alternative: copy source's responses on the first 40% of items.
+        let n_copy = (n_items as f64 * 0.4) as usize;
+        let mut x1c = x1.clone();
+        for i in 0..n_copy {
+            x1c[i] = x2[i];
+        }
+        let matches_c: Vec<f64> = x1c
+            .iter()
+            .zip(&x2)
+            .map(|(&a, &c)| if a == c { 1.0 } else { 0.0 })
+            .collect();
+        if gbt(&matches_c, &mp).unwrap().p_value < alpha {
+            alt_rej += 1;
+        }
+    }
+    let size = null_rej as f64 / reps as f64;
+    let power = alt_rej as f64 / reps as f64;
+    assert!(size < 0.08, "empirical size {}", size);
+    assert!(power > 0.5, "empirical power {}", power);
+}
+
+// ===================== K1/K2/S1/S2 (CopyDetect ks12) ==========================
+
+/// 15 x 12 scored fixture from the spec (numpy seed 42 dump; copier = 2,
+/// source = 7; copier forced equal to source on items 0-4). Pinned oracle
+/// values were computed by TWO independent Python reference implementations
+/// of CopyDetect's `ks12()` (spec author's and the adversarial reviewer's;
+/// both in the session record), agreeing to all printed digits.
+fn kv_fixture() -> Vec<f64> {
+    [
+        0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, //
+        0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, //
+        1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, // copier (row 2)
+        1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, //
+        0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, //
+        0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, //
+        0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, //
+        1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, // source (row 7)
+        1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, //
+        1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, //
+        1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, //
+        1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, //
+        1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, //
+        1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, //
+        1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, //
+    ]
+    .iter()
+    .map(|&v| v as f64)
+    .collect()
+}
+
+/// Pinned-oracle test. Every assert reads `KVariantsResult` fields returned
+/// by the crate. Mutations killed by these pins (values from the
+/// adversarial review): source INCLUDED in subgroups (K1 -> 0.46907...),
+/// weight exponent +6 (mm -> 32170, S2 -> 0), S1 window upper bound n
+/// (S1 -> 0.35812...), GLM prediction at qc instead of wc
+/// (S1 -> 0.13298...), strict K1 tail (K1 -> 0.08439...).
+#[test]
+fn k_variants_pinned_oracle() {
+    let x = kv_fixture();
+    let r = k_variants(&x, 15, 12, 2, 7).unwrap();
+    assert_eq!(r.wc, 4);
+    assert_eq!(r.ws, 3);
+    assert_eq!(r.m, 2);
+    assert_eq!(r.mm, 3);
+    // OLS-derived quantities: tolerance 1e-10.
+    assert!((r.p1 - 0.43862433862433853).abs() < 1e-10, "p1 = {}", r.p1);
+    assert!((r.p2 - 0.38571428571428595).abs() < 1e-10, "p2 = {}", r.p2);
+    assert!((r.k1 - 0.4083989087088663).abs() < 1e-10, "k1 = {}", r.k1);
+    assert!((r.k2 - 0.33155685131195367).abs() < 1e-10, "k2 = {}", r.k2);
+    // GLM-derived quantities: tolerance 1e-8 (IRLS convergence).
+    assert!((r.s1 - 1.2577145969460732).abs() < 1e-8, "s1 = {}", r.s1);
+    assert!((r.s2 - 2.2808598308064885).abs() < 1e-8, "s2 = {}", r.s2);
+    assert!(
+        (r.s1_index - 0.3191324670108421).abs() < 1e-8,
+        "s1_index = {}",
+        r.s1_index
+    );
+    assert!(
+        (r.s2_index - 0.39887838757590066).abs() < 1e-8,
+        "s2_index = {}",
+        r.s2_index
+    );
+    // pr / pj vectors: NaN pattern (empty subgroups) + pinned finite values.
+    let pr_exp = [
+        f64::NAN,
+        f64::NAN,
+        1.0 / 3.0,
+        2.0 / 9.0,
+        2.0 / 3.0,
+        1.0 / 3.0,
+        0.5,
+        5.0 / 6.0,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+        f64::NAN,
+    ];
+    assert_eq!(r.pr.len(), 13);
+    assert_eq!(r.pj.len(), 13);
+    for (j, &e) in pr_exp.iter().enumerate() {
+        if e.is_nan() {
+            assert!(r.pr[j].is_nan(), "pr[{}] = {}", j, r.pr[j]);
+            assert!(r.pj[j].is_nan(), "pj[{}] = {}", j, r.pj[j]);
+        } else {
+            assert!((r.pr[j] - e).abs() < 1e-12, "pr[{}] = {}", j, r.pr[j]);
+        }
+    }
+    // pj finite entries (reviewer-pinned).
+    let pj_exp = [
+        (2usize, 0.0017409068785366),
+        (3, 0.04820560457653007),
+        (4, 0.00152329351871952),
+        (5, 0.08157203299642975),
+        (6, 0.03731453662175564),
+        (7, 0.03731453662175564),
+    ];
+    for &(j, e) in pj_exp.iter() {
+        assert!((r.pj[j] - e).abs() < 1e-12, "pj[{}] = {}", j, r.pj[j]);
+    }
+}
+
+/// ks12() EXCLUDES the source from the number-incorrect subgroups (the
+/// opposite of base `k()`, which `k_index` ports). Anchor: on the fixture,
+/// source-INCLUSION shifts every downstream value; the reviewer computed
+/// K1 = 0.4690651917439521 under inclusion vs 0.4083989087088663 under the
+/// faithful exclusion. Both pins read crate outputs (k_index shares the
+/// inclusion convention on its own subgroup, so this also guards against
+/// accidentally unifying the two conventions).
+#[test]
+fn k_variants_source_excluded_from_subgroups() {
+    let x = kv_fixture();
+    let r = k_variants(&x, 15, 12, 2, 7).unwrap();
+    assert!((r.k1 - 0.4083989087088663).abs() < 1e-10, "k1 = {}", r.k1);
+    let inclusion_k1 = 0.4690651917439521;
+    assert!(
+        (r.k1 - inclusion_k1).abs() > 1e-3,
+        "k1 = {} must differ from the source-inclusion value {}",
+        r.k1,
+        inclusion_k1
+    );
+    // pr[3]: source has ws = 3 incorrect; under exclusion the j = 3 subgroup
+    // is {5, 11, 12} with pr = 2/9; inclusion would add the source row whose
+    // self-agreement is ws = 3, giving (2 + 2 + 2 + 3)/4/3 = 0.75 instead.
+    assert!((r.pr[3] - 2.0 / 9.0).abs() < 1e-12, "pr[3] = {}", r.pr[3]);
+}
+
+#[test]
+fn k_variants_error_paths() {
+    let x = kv_fixture();
+    assert!(k_variants(&x, 15, 12, 2, 2).is_err()); // copier == source
+    assert!(k_variants(&x, 15, 12, 15, 7).is_err()); // copier out of range
+    assert!(k_variants(&x, 15, 11, 2, 7).is_err()); // wrong shape
+    let mut bad = kv_fixture();
+    bad[5] = 0.5;
+    assert!(k_variants(&bad, 15, 12, 2, 7).is_err()); // non-0/1 entry
+                                                      // ws == 0: source all correct.
+    let mut allc = kv_fixture();
+    for i in 0..12 {
+        allc[7 * 12 + i] = 1.0;
+    }
+    assert!(k_variants(&allc, 15, 12, 2, 7).is_err());
+    // Rank deficiency: every non-source row has the SAME number-incorrect
+    // score -> a single design point -> both OLS and GLM are unidentified.
+    let n = 6usize;
+    let mut deg = vec![1.0f64; 4 * n];
+    for r in 0..4 {
+        deg[r * n] = 0.0; // exactly one incorrect per row
+    }
+    let e = k_variants(&deg, 4, n, 0, 1).unwrap_err();
+    assert!(
+        e.contains("rank-deficient") || e.contains("complete design points"),
+        "unexpected error: {}",
+        e
+    );
+}
+
+/// Monte Carlo size/power smoke test (empirical port check, NOT a claim
+/// from the unread S&M 2002/2003 papers). Null: independent 2PL-like
+/// responders; alternative: copier overwrites 90% of items with the
+/// source's responses. Requires each index's null rejection rate at
+/// alpha = .05 to stay at or below 0.10, K2 power above 0.5, and S2 power
+/// above 0.3 (S2 is empirically less powerful than K2 under this design;
+/// observed ~0.38 at the pinned seed).
+#[test]
+#[ignore]
+fn monte_carlo_k_variants_null() {
+    let n_persons = 40usize;
+    let n_items = 30usize;
+    let reps = 500usize;
+    let alpha = 0.05f64;
+    let mut lcg = TestLcg(0x5eed_2026);
+    let mut rej_null = [0usize; 4];
+    let mut rej_alt = [0usize; 4];
+    let mut used_null = 0usize;
+    let mut used_alt = 0usize;
+    for _ in 0..reps {
+        for copy in [false, true] {
+            let mut x = vec![0.0f64; n_persons * n_items];
+            let mut theta = vec![0.0f64; n_persons];
+            for t in theta.iter_mut() {
+                *t = lcg.normal();
+            }
+            let mut b = vec![0.0f64; n_items];
+            for bi in b.iter_mut() {
+                *bi = lcg.normal();
+            }
+            for p in 0..n_persons {
+                for i in 0..n_items {
+                    let pr = 1.0 / (1.0 + (-(theta[p] - b[i])).exp());
+                    x[p * n_items + i] = if lcg.next_f64() < pr { 1.0 } else { 0.0 };
+                }
+            }
+            let (copier, source) = (0usize, 1usize);
+            if copy {
+                for i in 0..n_items {
+                    if lcg.next_f64() < 0.9 {
+                        x[copier * n_items + i] = x[source * n_items + i];
+                    }
+                }
+            }
+            match k_variants(&x, n_persons, n_items, copier, source) {
+                Ok(r) => {
+                    let vals = [r.k1, r.k2, r.s1_index, r.s2_index];
+                    if copy {
+                        used_alt += 1;
+                        for (c, &v) in rej_alt.iter_mut().zip(vals.iter()) {
+                            if v < alpha {
+                                *c += 1;
+                            }
+                        }
+                    } else {
+                        used_null += 1;
+                        for (c, &v) in rej_null.iter_mut().zip(vals.iter()) {
+                            if v < alpha {
+                                *c += 1;
+                            }
+                        }
+                    }
+                }
+                Err(_) => {} // ws == 0 or degenerate design: skip rep
+            }
+        }
+    }
+    assert!(
+        used_null > 400 && used_alt > 400,
+        "too many degenerate reps"
+    );
+    let names = ["K1", "K2", "S1", "S2"];
+    for k in 0..4 {
+        let size = rej_null[k] as f64 / used_null as f64;
+        assert!(size <= 0.10, "{} null size {} > 0.10", names[k], size);
+    }
+    let pow_k2 = rej_alt[1] as f64 / used_alt as f64;
+    let pow_s2 = rej_alt[3] as f64 / used_alt as f64;
+    assert!(pow_k2 > 0.5, "K2 power {} <= 0.5", pow_k2);
+    assert!(pow_s2 > 0.3, "S2 power {} <= 0.3", pow_s2);
 }
