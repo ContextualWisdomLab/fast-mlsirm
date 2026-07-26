@@ -2808,6 +2808,236 @@ pub fn gmh_dif(
     }
     Ok(rows)
 }
+
+// ===================== Breslow-Day (1980) odds-ratio homogeneity test =====================
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Breslow, N. E., & Day, N. E.
+// (1980). Statistical methods in cancer research, Volume I: The analysis of
+// case-control studies (IARC Scientific Publications No. 32), ch. 4,
+// homogeneity section: chi2_hom (Eq. 4.30) = sum_i (a_i - A_i)^2 /
+// Var(a_i; psi_hat), referred to chi-squared on I - 1 degrees of freedom,
+// where A_i(psi) is the fitted count of exposed cases (here: reference-group
+// correct) reproducing the common odds ratio psi with the observed margins,
+// and Var(a_i; psi) = (1/A + 1/B + 1/C + 1/D)^{-1} with the remaining fitted
+// cells B, C, D completed from the margins by subtraction (asymptotic
+// conditional variance form of eq. 4.13). The source states the chi-squared
+// approximation holds for any consistent common-OR estimate; the unconditional
+// MLE makes sum_i(a_i - A_i) = 0, and the Mantel-Haenszel estimate is called
+// "quite satisfactory" (worked example: MLE 5.312 vs MH 5.158 give 9.33-ish
+// vs 9.28 on 5 df). This implementation plugs in the crate's `alpha_mh`.
+//
+// Source caveats reproduced here: the statistic is unreliable with many thin
+// strata; it has poor power against ordered (trend) alternatives - the
+// eq. 4.31 trend-in-OR test is NOT implemented; the source warns that tests
+// comparing each stratum against the pooled remainder (Zelen-style) are
+// incorrect. NOT READ (must not be attributed): Tarone (1985) correction -
+// deliberately not implemented; DIF applications of Breslow-Day (e.g.
+// Penfield 2003, Aguerri et al. 2009).
+//
+// Implementation choices NOT printed in the read source (verified against
+// the crate's own conventions and an exact-rational oracle):
+// - Table orientation: a=ref-correct, b=ref-incorrect, c=focal-correct,
+//   d=focal-incorrect per matching-score stratum, the crate MH convention;
+//   `A` fits the ref-correct cell.
+// - Stratum inclusion: all four margins positive (identical to
+//   `mh_item_stats`); df = K - 1 over the K used strata.
+// - Root selection: on (lo, hi) = (max(0, m1 - n_f), min(n_r, m1)) all four
+//   fitted cells are positive and g(A) = A*D/(B*C) has
+//   (log g)'(A) = 1/A + 1/B + 1/C + 1/D > 0, so g is strictly increasing
+//   from 0 to +inf and exactly one admissible root exists for every finite
+//   psi > 0. Both quadratic roots are tested defensively; a stratum without
+//   exactly one admissible root yields a NaN chi2 (guards rounding bugs).
+// - Degenerate `alpha_mh` (a running sum is 0) or K < 2: NaN chi2/p, with
+//   `n_strata_used` kept auditable (NaN-row precedent of `mantel_smd_dif`).
+//   With K = 1 the MH estimate equals that stratum's OR, the residual is
+//   exactly 0 and the test is vacuous.
+// ===========================================================================
+
+/// Per-item output of [`breslow_day_dif`].
+#[derive(Debug, Clone)]
+pub struct BreslowDayRow {
+    /// Item index.
+    pub item: usize,
+    /// Mantel-Haenszel common odds ratio plugged in as `psi_hat` (NaN if
+    /// degenerate).
+    pub alpha_mh: f64,
+    /// Breslow-Day homogeneity chi-squared (Eq. 4.30); NaN when `alpha_mh` is
+    /// degenerate, fewer than two strata are usable, or a fitted-value root
+    /// fails the admissibility guard.
+    pub chi2_bd: f64,
+    /// Degrees of freedom `K - 1` over the `K` used strata (NaN when
+    /// `alpha_mh` is degenerate).
+    pub df: f64,
+    /// Upper-tail chi-squared(`df`) p-value; NaN when `chi2_bd` is NaN.
+    pub p_value: f64,
+    /// Number of strata with all four margins positive.
+    pub n_strata_used: usize,
+    /// Benjamini-Hochberg FDR rejection flag on `p_value` across the swept
+    /// items (NaN p-values are skipped).
+    pub flagged_bh: bool,
+}
+
+/// Fitted reference-correct count `A` solving `A*D/(B*C) = psi` with the
+/// observed margins (Breslow & Day, 1980, homogeneity section), i.e. the
+/// admissible root of `(1-psi) A^2 + [n_f - m1 + psi(n_r + m1)] A - psi n_r m1 = 0`.
+/// Returns `None` unless exactly one root lies strictly inside
+/// `(max(0, m1 - n_f), min(n_r, m1))` (all four fitted cells positive).
+fn bd_fitted_a(n_r: f64, n_f: f64, m1: f64, psi: f64) -> Option<f64> {
+    let lo = (m1 - n_f).max(0.0);
+    let hi = n_r.min(m1);
+    let qa = 1.0 - psi;
+    let qb = n_f - m1 + psi * (n_r + m1);
+    let qc = -psi * n_r * m1;
+    if qa == 0.0 {
+        // psi = 1: the quadratic degenerates to (n_r + n_f) A = n_r m1.
+        let a = n_r * m1 / (n_r + n_f);
+        return (lo < a && a < hi).then_some(a);
+    }
+    let disc = qb * qb - 4.0 * qa * qc;
+    if !(disc >= 0.0) {
+        return None;
+    }
+    // Cancellation-stable quadratic roots (q-form).
+    let q = -0.5 * (qb + qb.signum() * disc.sqrt());
+    let roots = [q / qa, if q != 0.0 { qc / q } else { f64::NAN }];
+    let mut found = None;
+    for &r in &roots {
+        if r.is_finite() && lo < r && r < hi {
+            if found.is_some_and(|f: f64| (f - r).abs() > 1e-9 * hi.max(1.0)) {
+                return None; // two distinct admissible roots: numerical trouble
+            }
+            found = Some(r);
+        }
+    }
+    found
+}
+
+/// Breslow-Day (1980, Eq. 4.30) test of odds-ratio homogeneity across the
+/// matching-score strata, per item - the classical NON-UNIFORM DIF companion
+/// to [`mantel_haenszel_dif`]: MH tests a common odds ratio against 1, this
+/// tests whether a common odds ratio is tenable at all.
+///
+/// Inputs are identical to [`mantel_haenszel_dif`]: `y` is a row-major
+/// `n_persons * n_items` `0/1` response array, `group` is `0` (reference) /
+/// `1` (focal), and `cfg` supplies the matching rule and the
+/// Benjamini-Hochberg FDR level. The plugged-in common odds ratio is the
+/// crate's Mantel-Haenszel `alpha_mh` (endorsed by the read source; see the
+/// citation-governance block above).
+///
+/// # References (APA 7th ed.)
+///
+/// Breslow, N. E., & Day, N. E. (1980). *Statistical methods in cancer
+///     research, Volume I: The analysis of case-control studies* (IARC
+///     Scientific Publications No. 32). International Agency for Research on
+///     Cancer.
+/// Mantel, N., & Haenszel, W. (1959). Statistical aspects of the analysis of
+///     data from retrospective studies of disease. *Journal of the National
+///     Cancer Institute, 22*(4), 719-748. (attribution via Breslow & Day's
+///     presentation)
+pub fn breslow_day_dif(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &MhDifConfig,
+) -> Result<Vec<BreslowDayRow>, String> {
+    validate_dif_inputs(y, group, n_persons, n_items, cfg)?;
+
+    let base = base_scores(y, n_persons, n_items, None);
+    let n_levels = n_items + 1;
+    let (mut a, mut b, mut c, mut d) = (
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+    );
+
+    let mut rows: Vec<BreslowDayRow> = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        a.iter_mut().for_each(|v| *v = 0);
+        b.iter_mut().for_each(|v| *v = 0);
+        c.iter_mut().for_each(|v| *v = 0);
+        d.iter_mut().for_each(|v| *v = 0);
+        for p in 0..n_persons {
+            let yi = y[p * n_items + item];
+            let m = matching_for_item(base[p], yi as usize, true, cfg.exclude_studied_item);
+            match (group[p], yi) {
+                (0, 1) => a[m] += 1,
+                (0, _) => b[m] += 1,
+                (_, 1) => c[m] += 1,
+                (_, _) => d[m] += 1,
+            }
+        }
+        // Used strata (all four margins positive) and the MH common odds ratio.
+        let mut used: Vec<usize> = Vec::new();
+        let (mut sum_ad, mut sum_bc) = (0.0f64, 0.0f64);
+        for m in 0..n_levels {
+            let (am, bm, cm, dm) = (a[m] as f64, b[m] as f64, c[m] as f64, d[m] as f64);
+            let t = am + bm + cm + dm;
+            if am + bm > 0.0 && cm + dm > 0.0 && am + cm > 0.0 && bm + dm > 0.0 {
+                used.push(m);
+                sum_ad += am * dm / t;
+                sum_bc += bm * cm / t;
+            }
+        }
+        let k = used.len();
+        let alpha = if sum_ad > 0.0 && sum_bc > 0.0 {
+            sum_ad / sum_bc
+        } else {
+            f64::NAN
+        };
+        let (chi2, df, p_value) = if !alpha.is_finite() {
+            (f64::NAN, f64::NAN, f64::NAN)
+        } else if k < 2 {
+            (f64::NAN, (k as f64) - 1.0, f64::NAN)
+        } else {
+            let mut chi2 = 0.0f64;
+            let mut ok = true;
+            for &m in &used {
+                let (am, bm, cm, dm) = (a[m] as f64, b[m] as f64, c[m] as f64, d[m] as f64);
+                let (n_r, n_f, m1) = (am + bm, cm + dm, am + cm);
+                match bd_fitted_a(n_r, n_f, m1, alpha) {
+                    Some(fit_a) => {
+                        let fit_b = n_r - fit_a;
+                        let fit_c = m1 - fit_a;
+                        let fit_d = n_f - fit_c;
+                        let var = 1.0 / (1.0 / fit_a + 1.0 / fit_b + 1.0 / fit_c + 1.0 / fit_d);
+                        let resid = am - fit_a;
+                        chi2 += resid * resid / var;
+                    }
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            let df = (k as f64) - 1.0;
+            if ok && chi2.is_finite() {
+                (chi2, df, chi2_sf(chi2, df))
+            } else {
+                (f64::NAN, df, f64::NAN)
+            }
+        };
+        rows.push(BreslowDayRow {
+            item,
+            alpha_mh: alpha,
+            chi2_bd: chi2,
+            df,
+            p_value,
+            n_strata_used: k,
+            flagged_bh: false,
+        });
+    }
+
+    let pvals: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let flags = benjamini_hochberg(&pvals, cfg.fdr_q);
+    for (r, &f) in rows.iter_mut().zip(&flags) {
+        r.flagged_bh = f;
+    }
+    Ok(rows)
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;

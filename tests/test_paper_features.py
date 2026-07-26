@@ -7606,3 +7606,108 @@ class TestGmhDif:
         big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
         with pytest.raises(ValueError):
             gmh_dif(big, group)
+
+class TestBreslowDay:
+    """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test."""
+
+    def _fixture(self):
+        import numpy as np
+
+        # 24x4 fixture from the session oracle; first 12 rows reference,
+        # last 12 focal. Same fixture as the Rust bd_fixture().
+        y = np.array(
+            [
+                [1, 0, 0, 0], [1, 1, 0, 0], [0, 1, 1, 0], [1, 0, 1, 1],
+                [1, 1, 1, 0], [0, 0, 1, 0], [1, 1, 0, 1], [0, 1, 0, 0],
+                [1, 0, 1, 0], [1, 1, 1, 1], [0, 0, 0, 1], [1, 1, 0, 0],
+                [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 0],
+                [1, 1, 0, 0], [0, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1],
+                [0, 0, 1, 1], [1, 1, 1, 0], [0, 1, 0, 0], [0, 0, 0, 0],
+            ]
+        )
+        group = np.array([0] * 12 + [1] * 12)
+        return y, group
+
+    def test_pinned_fixture(self):
+        import numpy as np
+        from fast_mlsirm import breslow_day_dif
+
+        y, group = self._fixture()
+        res = breslow_day_dif(y, group)
+        # Exact pins from the session oracle (crate values asserted). The
+        # chi2 pins discriminate the MH plug-in from an unconditional-MLE
+        # psi-hat (item 0: 0.3760173495 vs 0.3740794014) and kill wrong-root,
+        # dropped-variance-reciprocal, and stratum-OR mutations; the df pins
+        # kill df = K.
+        np.testing.assert_allclose(
+            res["alpha_mh"], [14 / 3, 23 / 26, 39 / 49, 5 / 9], atol=1e-12
+        )
+        np.testing.assert_allclose(
+            res["chi2"],
+            [
+                0.37601734952436118,
+                1.59543251534123905,
+                0.41398523247143159,
+                3.98273278105957981,
+            ],
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(res["df"], [1.0, 2.0, 2.0, 2.0], atol=0)
+        np.testing.assert_allclose(
+            res["p_value"],
+            [
+                0.5397424284850997,
+                0.4503562883177753,
+                0.8130256531551879,
+                0.1365087736593863,
+            ],
+            atol=1e-10,
+        )
+        assert list(res["n_strata_used"]) == [2, 3, 3, 3]
+        assert res["flagged_bh"].dtype == bool
+        assert not res["flagged_bh"].any()
+
+    def test_psi_one_mirrored_groups(self):
+        import numpy as np
+        from fast_mlsirm import breslow_day_dif
+
+        # Focal block identical to the reference block -> alpha_mh = 1
+        # exactly (psi = 1 linear branch) and chi2 = 0, p = 1. Same mirrored
+        # fixture as the Rust breslow_day_psi_one_linear_branch test.
+        y_ref, _ = self._fixture()
+        y_half = y_ref[:12]
+        y = np.vstack([y_half, y_half])
+        group = np.array([0] * 12 + [1] * 12)
+        res = breslow_day_dif(y, group)
+        np.testing.assert_allclose(res["alpha_mh"], [1.0] * 4, atol=0)
+        np.testing.assert_allclose(res["chi2"], [0.0] * 4, atol=1e-12)
+        np.testing.assert_allclose(res["p_value"], [1.0] * 4, atol=1e-12)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import breslow_day_dif
+
+        y, group = self._fixture()
+        with pytest.raises(ValueError):
+            breslow_day_dif(y.astype(complex), group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y + 0.5, group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y * 2, group)  # codes other than 0/1
+        yn = y.astype(float)
+        yn[0, 0] = np.nan
+        with pytest.raises(ValueError):
+            breslow_day_dif(yn, group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, np.zeros(24, dtype=int))
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, group[:5])
+        with pytest.raises(ValueError):
+            breslow_day_dif(y.ravel(), group)
+        with pytest.raises(ValueError):
+            breslow_day_dif(y, group, fdr_q=0.0)
+        big = y.astype(np.int64).copy()
+        big[0, 0] = 2**53 + 1  # would round to 2**53 under a float64 cast
+        with pytest.raises(ValueError):
+            breslow_day_dif(big, group)
