@@ -119,6 +119,28 @@
 
 ### Added
 
+- **Stephenson rating system (CRAN PlayerRatings 1.1-0 `steph()`
+  `R/ratings.R` lines 591–737 + `stephenson_c` C kernel
+  `src/ratings.c` lines 157–202 — both READ and normative; no journal
+  paper exists for this system, which the package attributes to Alec
+  Stephenson's winning entry in the 2010 Kaggle chess-rating contest,
+  NOT independently verifiable beyond the package provenance).** New
+  Rust core `mlsirm_core::scaling::stephenson_rating` extending Glicko
+  with a per-game neighborhood variance term (`ngames·hval²`), a
+  per-game bonus `bval/100` added to each played game's score on BOTH
+  sides, a participants-only lambda drift toward opponents' ratings
+  (`(λ/100)·Σ(r_opp−r_self)/ngames`), and `(lag+1)·cval²` per-period
+  deviation-variance inflation clamped at `rdmax²` (all formulas
+  line-cited to the READ R/C source in the code header). Supports
+  prior-run continuation via `init_games`/`init_lag` and per-game
+  white-advantage `gamma`. PyO3 binding + thin NumPy wrapper
+  `fast_mlsirm.stephenson_rating` (defaults `init=(2200, 300)`,
+  `cval=10`, `hval=10`, `bval=0`, `lambda_=2`, `rdmax=350` matching
+  PlayerRatings). Anchored against an EXECUTED faithful oracle port of
+  the R driver + C kernel (heterogeneous-init, two-period draw/lag,
+  full-knobs, rdmax-clamp, bval-symmetry, and λ=0 contrast fixtures
+  pinned to 1e-12; five mutation kills EXECUTED: bval drop, λ sign
+  flip, per-game hval scaling drop, `(lag+1)→lag`, opponent-g→own-g).
 - **Glicko-2 rating system (Glickman's 2022 *Example of the Glicko-2
   system* note READ — worked example reproduced; CRAN PlayerRatings
   1.1-0's `glicko2()` `R/ratings.R` + `glicko2_c` C kernel source READ;
