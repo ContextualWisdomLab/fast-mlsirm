@@ -119,6 +119,21 @@
 
 ### Added
 
+- **Subkoviak single-administration coefficient of agreement (Subkoviak,
+  1976, ERIC ED120229 / JEM 13(4))** (`fast_mlsirm.subkoviak_agreement`; in
+  Rust `mlsirm_core::classification::subkoviak_agreement`): per-person and
+  group coefficients of agreement, marginal chance agreement, and Cohen's
+  kappa for mastery classifications under the simple binomial true-score
+  model, with the regression estimate of the item-domain proportion
+  (Eq. 16) and optional KR-21 reliability derived from the data with the
+  population (ddof = 0) variance. Supports multi-category criteria
+  (Eqs. 19-22); mastery convention is score `>= C`, verified against
+  Table 1 of the read source (its Eq. 4 OCR prints `>`). The compound
+  binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+  estimate (Eq. 17) are excluded because they defer to sources not read.
+  Exact-fraction oracle pins from the paper's Table 1 fixture; five
+  executed mutation kills (category boundary, P(i) squaring, chance-term
+  aggregation, KR-21 ddof, regression-weight swap).
 - **Hanson-Brennan compound-binomial classification consistency and accuracy
   (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
   `fast_mlsirm.hanson_brennan_from_params`; in Rust

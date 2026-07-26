@@ -1114,6 +1114,156 @@ pub fn hanson_brennan(
     )
 }
 
+/// Subkoviak (1976) single-administration coefficient-of-agreement output.
+///
+/// Citation governance:
+/// - READ: Subkoviak, M. J. (1976). *Estimating reliability from a single
+///   administration of a mastery test* (ERIC ED120229; AERA paper version of
+///   Subkoviak, 1976, *Journal of Educational Measurement, 13*(4), 265-276).
+/// - NOT READ, cited as-cited via Subkoviak (1976): Lord & Novick (1968) for
+///   the binomial true-score model; Swaminathan, Hambleton, & Algina (1974)
+///   for the two-administration p_o; Cohen (1960) for kappa.
+pub struct SubkoviakResult {
+    /// Reliability used in Eq. 16 (supplied, or KR-21 derived from the data).
+    pub alpha: f64,
+    /// Per-person regression estimate of the item-domain proportion
+    /// (Subkoviak, 1976, Eq. 16): `alpha*(X_i/n) + (1-alpha)*(M/n)`.
+    pub p_hat: Vec<f64>,
+    /// Per-person coefficient of agreement P(i) (Eqs. 7 and 19).
+    pub per_person: Vec<f64>,
+    /// Group coefficient of agreement Pc = mean_i P(i) (Eqs. 5 and 20).
+    pub agreement: f64,
+    /// Chance agreement: sum over categories of the squared marginal
+    /// category probability (Eqs. 9-10 and 21-22).
+    pub chance_agreement: f64,
+    /// Coefficient kappa `(Pc - Pchance) / (1 - Pchance)` (Eq. 11).
+    pub kappa: f64,
+}
+
+/// Subkoviak's (1976) single-administration coefficient of agreement for
+/// mastery classifications under the simple binomial true-score model.
+///
+/// `cuts` are the strictly increasing integer criteria `C_1 < .. < C_{h-1}`
+/// (each in `1..=n_items`); category `j` is `{X : C_{j-1} <= X < C_j}` with
+/// `C_0 = 0` and `C_h = n_items + 1`, so mastery at criterion `C` means
+/// `X >= C`. VERIFIED against the READ source: the OCR of Eq. 4 prints
+/// `X > C`, but Table 1 row 1 (`n = 5`, `C = 4`, `p = .19`) prints `.0055`,
+/// which matches `P(X >= 4) = 5(.19)^4(.81) + (.19)^5 = .005526` and not
+/// `P(X > 4) = (.19)^5 = .000248`; the two-administration example's
+/// exception students likewise require `>=`.
+///
+/// `alpha = None` derives Kuder-Richardson Formula 21 with the population
+/// (ddof = 0) variance, clamped to `[0, 1]`:
+/// `a21 = (n/(n-1)) (1 - M(n-M)/(n S^2))`. VERIFIED against the paper's
+/// real-data example `(25/24)(1 - 17.40*7.60/(25*5.14)) ≈ 0` (negative,
+/// treated as zero), which requires `S^2 = 5.14` as printed. DISCLOSED
+/// IRREPRODUCIBILITY: Table 1's footnote value `a21 = .58` does not follow
+/// from its own printed `S^2 = 2.61` (which gives `19/29 ≈ .6552`); the
+/// printed p-hat column is exactly consistent with `alpha = .58`, so
+/// reproducing Table 1 requires supplying `alpha = 0.58` explicitly.
+///
+/// Category probabilities use the simple binomial (Eq. 8). The compound
+/// binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+/// p-hat (Eq. 17) are EXCLUDED: both defer to sources not read (Lord &
+/// Novick, 1968, pp. 524-526; Lord, 1959). Callers may pass a KR-20-style
+/// reliability through `alpha` per the paper's remark that the procedure
+/// is analogous.
+///
+/// All exposed metrics (P(i), Pc, Pchance, kappa) are invariant under a
+/// consistent permutation of category labels, and `p_hat` does not depend
+/// on the categories at all; a label-permutation mutation is therefore
+/// unobservable through this API and behaviorally irrelevant.
+pub fn subkoviak_agreement(
+    scores: &[f64],
+    n_items: usize,
+    cuts: &[f64],
+    alpha: Option<f64>,
+) -> Result<SubkoviakResult, String> {
+    if n_items < 2 {
+        return Err("n_items must be at least 2".into());
+    }
+    let n_persons = scores.len();
+    if n_persons < 2 {
+        return Err("at least 2 observed scores are required".into());
+    }
+    let nf = n_items as f64;
+    if scores
+        .iter()
+        .any(|x| !x.is_finite() || *x < 0.0 || *x > nf || x.fract() != 0.0)
+    {
+        return Err("scores must be integers in [0, n_items]".into());
+    }
+    if cuts.is_empty() {
+        return Err("cuts must be nonempty".into());
+    }
+    if cuts
+        .iter()
+        .any(|c| !c.is_finite() || c.fract() != 0.0 || *c < 1.0 || *c > nf)
+    {
+        return Err("cuts must be integers in 1..=n_items".into());
+    }
+    if cuts.windows(2).any(|w| w[1] <= w[0]) {
+        return Err("cuts must be strictly increasing".into());
+    }
+    let np = n_persons as f64;
+    let mean = scores.iter().sum::<f64>() / np;
+    let alpha = match alpha {
+        Some(a) => {
+            if !a.is_finite() || !(0.0..=1.0).contains(&a) {
+                return Err("alpha must be finite and in [0, 1]".into());
+            }
+            a
+        }
+        None => {
+            // KR-21 with population (ddof = 0) variance; see doc comment.
+            let s2 = scores.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / np;
+            if s2 <= 0.0 {
+                return Err("observed-score variance is zero; supply alpha explicitly".into());
+            }
+            let a21 = nf / (nf - 1.0) * (1.0 - mean * (nf - mean) / (nf * s2));
+            a21.clamp(0.0, 1.0)
+        }
+    };
+    // Category boundaries: C_0 = 0, user cuts, C_h = n_items + 1.
+    let mut bounds = Vec::with_capacity(cuts.len() + 2);
+    bounds.push(0i64);
+    bounds.extend(cuts.iter().map(|c| *c as i64));
+    bounds.push(n_items as i64 + 1);
+    let n_cats = bounds.len() - 1;
+    let p_hat: Vec<f64> = scores
+        .iter()
+        .map(|x| alpha * (x / nf) + (1.0 - alpha) * (mean / nf))
+        .collect();
+    let mut per_person = Vec::with_capacity(n_persons);
+    let mut q_bar = vec![0.0f64; n_cats];
+    for &p in &p_hat {
+        let mut p_i = 0.0;
+        for j in 0..n_cats {
+            let q_ij: f64 = (bounds[j]..bounds[j + 1])
+                .map(|x| hb_binom_pmf(x, n_items as i64, p))
+                .sum();
+            p_i += q_ij * q_ij;
+            q_bar[j] += q_ij / np;
+        }
+        per_person.push(p_i);
+    }
+    let agreement = per_person.iter().sum::<f64>() / np;
+    let chance_agreement = q_bar.iter().map(|q| q * q).sum::<f64>();
+    let denom = 1.0 - chance_agreement;
+    if denom <= 1e-12 {
+        return Err("chance agreement is 1; kappa is undefined (all mass in one category)".into());
+    }
+    let kappa = (agreement - chance_agreement) / denom;
+    Ok(SubkoviakResult {
+        alpha,
+        p_hat,
+        per_person,
+        agreement,
+        chance_agreement,
+        kappa,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/classification_tests.rs"]
 mod tests;
