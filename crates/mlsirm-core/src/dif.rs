@@ -2372,9 +2372,10 @@ pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
 // - Category scores y_t are the observed integer item scores used as-is
 //   (the paper allows arbitrary "not necessarily integer" table scores;
 //   REDUCED SCOPE: no separate score-vector API).
-// - Out of scope: the GMH nominal statistic (Eq. 10), the SMD standard
-//   error (derived in Zwick 1992a, NOT read), missing data, purification,
-//   and alternative SMD weights (paper footnote 8).
+// - Out of scope here: the SMD standard error (derived in Zwick 1992a, NOT
+//   read), missing data, purification, and alternative SMD weights (paper
+//   footnote 8). The GMH nominal statistic (Eq. 10) is implemented
+//   separately below as [`gmh_dif`].
 // - Degenerate items (no usable strata, or zero variance sum) yield NaN
 //   statistics with `n_strata_used` reporting the usable-stratum count
 //   (SIBTEST NaN-row precedent).
@@ -2530,6 +2531,279 @@ pub fn mantel_smd_dif(
             p_value,
             smd,
             n_strata_used: used,
+        });
+    }
+    Ok(rows)
+}
+// ===========================================================================
+// Generalized Mantel-Haenszel (GMH) nominal DIF statistic
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Zwick, R., Donoghue, J. R.,
+// & Grima, A. (1993). Assessing differential item functioning in performance
+// tests (ETS research report; ERIC ED386493), "GMH Statistic for Nominal
+// Data" section, Eq. 10 and surrounding text: A_k and E(A_k) are vectors of
+// length T-1 "for any T - 1 of the response categories", V(A_k) is the
+// (T-1)x(T-1) covariance matrix, GMH chi2 = d' S^{-1} d with
+// d = sum_k [A_k - E(A_k)], S = sum_k V(A_k), referred to a chi-squared
+// distribution with T - 1 degrees of freedom; "for dichotomous variables, it
+// reduces to the [Mantel-Haenszel] statistic ... without the continuity
+// correction".
+//
+// NOT READ (cited by the read report as origins; attribution is via Zwick
+// et al.'s presentation): Somes (1986, The American Statistician 40, 106-108)
+// for the generalized MH form; Mantel & Haenszel (1959).
+//
+// Implementation choices NOT printed in the read source (verified against
+// the crate's own conventions and an exact-rational oracle, not against
+// external software):
+// - A_k accumulates REFERENCE-group counts (per the read Table-1 notation
+//   n_R1k..n_R(T-1)k). Accumulating focal counts instead flips the sign of
+//   d and leaves S unchanged, so the quadratic form is identical; the
+//   convention is documented here for reproducibility of d.
+// - Matching variable: full observed total score including the studied item
+//   (crate MH convention, identical to `mantel_smd_dif`).
+// - Stratum inclusion: both groups must be present (identical to
+//   `mantel_smd_dif`); `n_++k >= 2` then holds, so `n_++k - 1 > 0`.
+// - Effective categories: the T_eff distinct scores of the studied item
+//   observed among persons in USED strata (categories seen only in excluded
+//   one-group strata carry no GMH information and must not inflate the
+//   dimension or df). The vector keeps the first T_eff - 1 categories in
+//   ascending score order and drops the last; the read source states any
+//   T - 1 categories may be used, and the statistic is invariant to the
+//   choice when S is nonsingular.
+// - df = T_eff - 1. T_eff < 2 (item constant within used strata) yields a
+//   NaN row with df = 0. T_eff is capped at 64 (nominal items with more
+//   categories are outside any use case documented in the read source).
+// - S is inverted by solving S x = d with partial-pivot Gaussian
+//   elimination in f64; a pivot smaller than 1e-12 times the largest |S|
+//   entry is treated as singular and yields a NaN row (no silent rank
+//   reduction: a reduced-rank df is not confirmed by the read source).
+// - Degenerate items yield NaN chi2/p with `n_strata_used` reporting the
+//   usable-stratum count (SIBTEST / `mantel_smd_dif` NaN-row precedent).
+// ===========================================================================
+
+/// Per-item output of [`gmh_dif`].
+#[derive(Debug, Clone)]
+pub struct GmhDifRow {
+    /// Item index.
+    pub item: usize,
+    /// GMH chi-squared statistic (Eq. 10), `df` degrees of freedom. NaN when
+    /// no stratum is usable, fewer than two categories are observed in used
+    /// strata, or the summed covariance matrix is singular.
+    pub chi2: f64,
+    /// Upper-tail chi-squared(`df`) p-value; NaN when `chi2` is NaN.
+    pub p_value: f64,
+    /// Degrees of freedom `T_eff - 1` (0 when fewer than two categories are
+    /// observed in used strata).
+    pub df: usize,
+    /// Number of strata with both groups present that entered the sums.
+    pub n_strata_used: usize,
+}
+
+/// Generalized Mantel-Haenszel DIF test for NOMINAL response categories
+/// (Zwick, Donoghue, & Grima, 1993, Eq. 10).
+///
+/// `y` is row-major `n_persons x n_items` with non-negative integer category
+/// codes (treated as unordered labels; only distinctness matters); `group`
+/// is `0` (reference) / `1` (focal). Persons are matched on their full total
+/// score. For dichotomous 0/1 data the statistic equals the Mantel-Haenszel
+/// chi-squared WITHOUT the continuity correction (read source, below
+/// Eq. 10), i.e. the [`mantel_smd_dif`] chi-squared.
+pub fn gmh_dif(
+    y: &[i64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<Vec<GmhDifRow>, String> {
+    if n_persons < 2 || n_items < 1 {
+        return Err("need n_persons >= 2 and n_items >= 1".into());
+    }
+    let cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflow")?;
+    if cells > MAX_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {cells} exceeds the cap {MAX_CELLS}"
+        ));
+    }
+    if y.len() != cells {
+        return Err(format!("y has {} entries; expected {cells}", y.len()));
+    }
+    if group.len() != n_persons {
+        return Err(format!(
+            "group has {} entries; expected {n_persons}",
+            group.len()
+        ));
+    }
+    if y.iter().any(|&v| v < 0) {
+        return Err("item scores must be non-negative integers (no missing-data support)".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("group labels must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("both a reference (0) and a focal (1) group must be present".into());
+    }
+    // Full-total matching (identical to `mantel_smd_dif`).
+    let mut totals = vec![0i64; n_persons];
+    for p in 0..n_persons {
+        let mut t: i64 = 0;
+        for i in 0..n_items {
+            t = t
+                .checked_add(y[p * n_items + i])
+                .ok_or("total score overflow")?;
+        }
+        totals[p] = t;
+    }
+    let mut levels: Vec<i64> = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    let stratum: Vec<usize> = totals
+        .iter()
+        .map(|t| levels.binary_search(t).expect("level present"))
+        .collect();
+    let n_strata = levels.len();
+    // Used strata depend only on totals and group, not on the item.
+    let mut has_r = vec![false; n_strata];
+    let mut has_f = vec![false; n_strata];
+    for p in 0..n_persons {
+        if group[p] == 1 {
+            has_f[stratum[p]] = true;
+        } else {
+            has_r[stratum[p]] = true;
+        }
+    }
+    let used_mask: Vec<bool> = (0..n_strata).map(|k| has_r[k] && has_f[k]).collect();
+    let n_used = used_mask.iter().filter(|&&u| u).count();
+
+    let mut rows = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        // Effective categories: distinct codes among persons in used strata.
+        let mut cats: Vec<i64> = (0..n_persons)
+            .filter(|&p| used_mask[stratum[p]])
+            .map(|p| y[p * n_items + item])
+            .collect();
+        cats.sort_unstable();
+        cats.dedup();
+        let t_eff = cats.len();
+        if t_eff > 64 {
+            return Err(format!(
+                "item {item} has {t_eff} categories in used strata; the GMH cap is 64"
+            ));
+        }
+        if n_used == 0 || t_eff < 2 {
+            rows.push(GmhDifRow {
+                item,
+                chi2: f64::NAN,
+                p_value: f64::NAN,
+                df: t_eff.saturating_sub(1),
+                n_strata_used: n_used,
+            });
+            continue;
+        }
+        let m = t_eff - 1; // vector dimension (last category dropped)
+        let mut d = vec![0.0f64; m];
+        let mut s = vec![0.0f64; m * m];
+        // Per-stratum tabulation over used strata only.
+        let mut n_cat = vec![0.0f64; t_eff]; // n_+tk over all categories
+        let mut a_cat = vec![0.0f64; t_eff]; // reference counts n_Rtk
+        for k in 0..n_strata {
+            if !used_mask[k] {
+                continue;
+            }
+            n_cat.iter_mut().for_each(|v| *v = 0.0);
+            a_cat.iter_mut().for_each(|v| *v = 0.0);
+            let (mut n_r, mut n_f) = (0.0f64, 0.0f64);
+            for p in 0..n_persons {
+                if stratum[p] != k {
+                    continue;
+                }
+                let c = cats
+                    .binary_search(&y[p * n_items + item])
+                    .expect("category present");
+                n_cat[c] += 1.0;
+                if group[p] == 1 {
+                    n_f += 1.0;
+                } else {
+                    n_r += 1.0;
+                    a_cat[c] += 1.0;
+                }
+            }
+            let n = n_r + n_f; // n_++k >= 2 by used_mask construction.
+            let coef = n_r * n_f / (n * n * (n - 1.0));
+            for i in 0..m {
+                d[i] += a_cat[i] - n_r / n * n_cat[i];
+                for j in 0..m {
+                    let cov = if i == j {
+                        n * n_cat[i] - n_cat[i] * n_cat[j]
+                    } else {
+                        -n_cat[i] * n_cat[j]
+                    };
+                    s[i * m + j] += coef * cov;
+                }
+            }
+        }
+        // Solve S x = d (partial-pivot Gaussian elimination); chi2 = d' x.
+        let scale = s.iter().fold(0.0f64, |a, &v| a.max(v.abs()));
+        let mut chi2 = f64::NAN;
+        if scale > 0.0 && s.iter().all(|v| v.is_finite()) {
+            let mut a = s.clone();
+            let mut x = d.clone();
+            let mut singular = false;
+            for col in 0..m {
+                let piv = (col..m)
+                    .max_by(|&r1, &r2| {
+                        a[r1 * m + col]
+                            .abs()
+                            .partial_cmp(&a[r2 * m + col].abs())
+                            .unwrap()
+                    })
+                    .unwrap();
+                if a[piv * m + col].abs() < 1e-12 * scale {
+                    singular = true;
+                    break;
+                }
+                if piv != col {
+                    for j in 0..m {
+                        a.swap(col * m + j, piv * m + j);
+                    }
+                    x.swap(col, piv);
+                }
+                for r in (col + 1)..m {
+                    let f = a[r * m + col] / a[col * m + col];
+                    for j in col..m {
+                        a[r * m + j] -= f * a[col * m + j];
+                    }
+                    x[r] -= f * x[col];
+                }
+            }
+            if !singular {
+                for col in (0..m).rev() {
+                    for j in (col + 1)..m {
+                        let xj = x[j];
+                        x[col] -= a[col * m + j] * xj;
+                    }
+                    x[col] /= a[col * m + col];
+                }
+                let c: f64 = d.iter().zip(&x).map(|(&di, &xi)| di * xi).sum();
+                if c.is_finite() {
+                    chi2 = c;
+                }
+            }
+        }
+        let p_value = if chi2.is_nan() {
+            f64::NAN
+        } else {
+            chi2_sf(chi2, m as f64)
+        };
+        rows.push(GmhDifRow {
+            item,
+            chi2,
+            p_value,
+            df: m,
+            n_strata_used: n_used,
         });
     }
     Ok(rows)

@@ -671,3 +671,85 @@ def mantel_smd_dif(
         "smd": np.asarray(res["smd"], dtype=np.float64),
         "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
     }
+
+def gmh_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Generalized Mantel-Haenszel nominal DIF statistic (compute in Rust).
+
+    The unordered-category extension of the Mantel-Haenszel sweep (Zwick, Donoghue & Grima, 1993,
+    Eq. 10): examinees are matched on the total score (crate convention shared with
+    :func:`mantel_smd_dif`), and within each matching stratum the reference group's category-count
+    vector ``A_k`` (over any ``T - 1`` of the ``T`` response categories) is compared with its
+    conditional expectation and covariance matrix. ``chi2`` is the pooled quadratic form
+    ``d' S^-1 d``, referred to ``chi2(df)`` with ``df = T_eff - 1`` for ``p_value``. Unlike
+    :func:`mantel_smd_dif`, category ORDER is ignored: this targets composition differences
+    between nominal response categories. For 0/1 items ``chi2`` equals the MH chi-square
+    *without* the continuity correction (identical to the ``mantel_smd_dif`` value).
+
+    ``T_eff`` counts the item's distinct codes among examinees in *used* strata (both groups
+    present); categories seen only in excluded strata do not inflate ``df``. Items with
+    ``T_eff < 2``, no usable stratum, or a singular pooled covariance yield NaN statistics
+    (no silent rank reduction). ``T_eff`` is capped at 64.
+
+    ``responses`` is a persons x items array of non-negative integer category codes (labels,
+    not scores; no missing data -- reduced scope). ``group`` is a length-persons array with
+    ``0`` = reference and ``1`` = focal (both must be present). Returns per-item arrays
+    ``chi2``, ``p_value``, ``df``, ``n_strata_used``.
+
+    References (APA 7th ed.):
+        Somes, G. W. (1986). The generalized Mantel-Haenszel statistic. *The American
+            Statistician, 40*(2), 106-108. https://doi.org/10.1080/00031305.1986.10475369
+            [NOT READ; formulas taken from Zwick, Donoghue & Grima (1993) as read.]
+        Zwick, R., Donoghue, J. R., & Grima, A. (1993). *Assessment of differential item
+            functioning for performance tasks* (ETS Research Report RR-93-14; ERIC ED386493). ETS.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_gmh_dif"):
+        raise RuntimeError("gmh_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(yf == np.round(yf)):
+        raise ValueError("responses must be integer-valued category codes")
+    if np.any(yf < 0):
+        raise ValueError("responses must be non-negative")
+    if np.any(np.abs(yf) > 2**53):
+        raise ValueError("responses exceed the exactly representable integer range")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+
+    res = core.py_gmh_dif(
+        yf.astype(np.int64).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+    )
+    return {
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.int64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+    }
