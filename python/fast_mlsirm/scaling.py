@@ -669,12 +669,19 @@ def elo_rating(games, n_players, init=2200.0, kfac=27.0, gamma=None):
             raise ValueError("elo_rating: period labels must be nonnegative")
         periods_u64 = raw[:, 0].astype(np.uint64)
     else:
-        # >= (not >): float(2**53 + 1) rounds down to exactly 2.0**53, so a
-        # float value of 2.0**53 is already ambiguous about the intended label.
-        if np.any(periods >= 2.0**53):
+        # Reject labels at/above the source dtype's exact-integer bound
+        # (2**mantissa_bits + 1 is the first non-representable integer, so a
+        # value equal to the bound is already ambiguous): float64/others
+        # 2**53, float32 2**24, float16 2**11.
+        if raw.dtype.kind == "f":
+            fidelity = 2.0 ** np.finfo(raw.dtype).nmant
+        else:
+            fidelity = 2.0**53
+        if np.any(periods >= fidelity):
             raise ValueError(
-                "elo_rating: period labels at or above 2**53 are not reliably "
-                "representable as floats; pass games as an integer array"
+                f"elo_rating: period labels at or above {int(fidelity)} are not "
+                f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
+                "pass games as an integer array"
             )
         periods_u64 = periods.astype(np.uint64)
     if np.any(white < 0) or np.any(black < 0):

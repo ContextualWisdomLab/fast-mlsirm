@@ -9311,3 +9311,22 @@ class TestElo:
             elo_rating([[float(big + 1), 0, 1, 1.0]], 2)
         with pytest.raises(ValueError):
             elo_rating([[1e300, 0, 1, 1.0]], 2)
+
+    def test_float32_period_labels_rejected(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        # float32 loses integer fidelity above 2**24 (round-2 review):
+        # labels 2**24 and 2**24+1 merge in the raw array, so the wrapper
+        # must reject float32 periods at/above 2**24 rather than batch them.
+        g = np.array(
+            [[2**24, 0, 1, 1.0], [2**24 + 1, 1, 0, 1.0]], dtype=np.float32
+        )
+        with pytest.raises(ValueError):
+            elo_rating(g, 2)
+        # below the bound the float32 path still works (crate output read)
+        g_ok = np.array([[1, 0, 1, 1.0], [2, 1, 0, 1.0]], dtype=np.float32)
+        r = elo_rating(g_ok, 2, init=2000, kfac=400)
+        assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
