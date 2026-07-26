@@ -8410,3 +8410,75 @@ class TestCircleArc:
             circle_arc_equate([1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0))
         with pytest.raises(ValueError):
             circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0)
+
+class TestNominalWeights:
+    """Nominal weights mean equating (Babcock et al., 2012; Albano, 2016).
+
+    Oracle: exact-Fraction hand computation of Albano (2016) eqs. 37-40/42/10
+    plus an executed cross-check against the method authors' R package
+    equate 2.0.8. Every assert reads crate outputs through the wrapper.
+    """
+
+    XT = [10.0, 12.0, 14.0, 16.0]
+    XA = [4.0, 5.0, 5.0, 6.0]
+    YT = [8.0, 9.0, 11.0, 12.0]
+    YA = [3.0, 4.0, 4.0, 5.0]
+
+    def test_fixture_a_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        r = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=1.0
+        )
+        assert r.intercept == -0.5
+        assert r.slope == 1.0
+        assert r.x_scores.shape == (21,)
+        assert r.y_equivalents[0] == -0.5
+        assert r.y_equivalents[20] == 19.5
+        # equal gammas: intercept is w1-invariant
+        half = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=0.5
+        )
+        assert half.intercept == -0.5
+        assert np.isfinite(r.moments["sigma_x"]) and r.moments["sigma_x"] > 0
+
+    def test_fixture_b_exact(self):
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        r = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 30, 10, w1=0.25
+        )
+        assert r.intercept == -0.75
+        assert r.moments["mu_x"] == 11.5
+        assert r.moments["mu_y"] == 10.75
+        assert r.moments["sigma_x"] == (23.0 / 4.0) ** 0.5
+        assert r.moments["sigma_y"] == (67.0 / 16.0) ** 0.5
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA, self.YT, self.YA, 0, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=1.5
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA[:3], self.YT, self.YA, 20, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                np.array(self.XT) * 1j, self.XA, self.YT, self.YA, 20, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                np.array(["a"], dtype=object), ["b"], self.YT, self.YA, 20, 20, 8
+            )

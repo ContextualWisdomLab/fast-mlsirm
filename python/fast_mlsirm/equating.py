@@ -492,3 +492,67 @@ def circle_arc_middle_anchor(
             raise ValueError(f"{name} must be a number") from None
     x2, y2 = core.circle_arc_middle_anchor(*vals)
     return (float(x2), float(y2))
+
+
+def nominal_weights_mean_equate(
+    x_total: np.ndarray,
+    x_anchor: np.ndarray,
+    y_total: np.ndarray,
+    y_anchor: np.ndarray,
+    k_x: int,
+    k_y: int,
+    k_v: int,
+    w1: float = 0.5,
+) -> EquateResult:
+    """Nominal weights mean equating for the NEAT design (compute in Rust;
+    Babcock, Albano, & Raymond, 2012 -- method as restated by Albano, 2016,
+    eq. 42, whose derivation and the method authors' R package ``equate``
+    were verified; the 2012 article itself was not read). Designed for very
+    small samples: the Tucker regression slopes are replaced by the nominal
+    weights ``gamma1 = k_x / k_v`` and ``gamma2 = k_y / k_v`` (item counts;
+    for the 0..K integer-scored tests in scope these equal the score maxima),
+    the synthetic means follow Albano (2016, eqs. 37-38), and the conversion
+    is mean equating ``yx(x) = x + (mu_sY - mu_sX)`` (eq. 10, slope exactly
+    1). Synthetic variances (eqs. 39-40, population/N-denominator moment
+    convention -- NOT the N-1 sample variances the R package reports) are
+    returned in ``sigma_x``/``sigma_y`` but do not enter the conversion.
+    ``w1`` is the population-1 synthetic weight; when ``k_x == k_y`` the
+    intercept is w1-invariant.
+
+    References (APA 7th ed.):
+        Babcock, B., Albano, A., & Raymond, M. (2012). Nominal weights mean
+            equating: A method for very small samples. *Educational and
+            Psychological Measurement, 72*(4), 608-628.
+            https://doi.org/10.1177/0013164411428609
+        Albano, A. D. (2016). equate: An R package for observed-score linking
+            and equating. *Journal of Statistical Software, 74*(8), 1-36.
+            https://doi.org/10.18637/jss.v074.i08
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "nominal_weights_mean_equate"):
+        raise RuntimeError(
+            "nominal_weights_mean_equate requires the compiled Rust core"
+        )
+    arrs = []
+    for name, v in (
+        ("x_total", x_total), ("x_anchor", x_anchor),
+        ("y_total", y_total), ("y_anchor", y_anchor),
+    ):
+        a = np.asarray(v)
+        if np.iscomplexobj(a):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            a = a.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be numeric") from None
+        arrs.append(np.ascontiguousarray(a.ravel()))
+    ks = []
+    for name, k in (("k_x", k_x), ("k_y", k_y), ("k_v", k_v)):
+        ki = int(k)
+        if ki <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        ks.append(ki)
+    res = core.nominal_weights_mean_equate(*arrs, *ks, w1=float(w1))
+    return _build(res, "nominal-weights-mean", "NEAT")

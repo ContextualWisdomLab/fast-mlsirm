@@ -1601,3 +1601,153 @@ fn ca_mc_500() {
         done += 1;
     }
 }
+
+// ===================== nominal weights mean equating =====================
+// Oracle: exact-Fraction hand computation (Albano 2016 eqs. 37-40, 42, 10)
+// plus an executed cross-check against the method authors' R implementation
+// (equate 2.0.8, KBneat, intercept 0.5833490108414594). All asserts below
+// read crate outputs. Variance pins use the crate's N-denominator moment
+// convention (eqs. 39-40 directly), NOT R's N-1 sample variances.
+
+const NWME_XT: [f64; 4] = [10.0, 12.0, 14.0, 16.0];
+const NWME_XA: [f64; 4] = [4.0, 5.0, 5.0, 6.0];
+const NWME_YT: [f64; 4] = [8.0, 9.0, 11.0, 12.0];
+const NWME_YA: [f64; 4] = [3.0, 4.0, 4.0, 5.0];
+
+#[test]
+fn nwme_fixture_a_exact() {
+    // k=(20,20,8): gamma1 = gamma2 = 5/2. mu_X1=13, mu_Y2=10, d=1.
+    // w1=1: mu_sX = 13, mu_sY = 10 + (5/2) = 25/2, b = -1/2.
+    let r = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 1.0)
+        .unwrap();
+    assert_eq!(r.intercept, -0.5);
+    assert_eq!(r.slope, 1.0);
+    assert_eq!(r.mu_x, 13.0);
+    assert_eq!(r.mu_y, 12.5);
+    assert_eq!(r.mu_eq, 12.5);
+    assert_eq!(r.x_scores.len(), 21);
+    assert_eq!(r.y_equivalents[0], -0.5);
+    assert_eq!(r.y_equivalents[20], 19.5);
+    assert_eq!(r.n_x, 4);
+    assert_eq!(r.n_y, 4);
+    assert!(r.h_x.is_nan() && r.h_y.is_nan());
+    // DERIVED w1-invariance under equal gammas: b = mu_Y2 - mu_X1 + g*d
+    // regardless of w1.
+    let half = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 0.5)
+        .unwrap();
+    assert_eq!(half.intercept, -0.5);
+}
+
+#[test]
+fn nwme_fixture_b_exact() {
+    // k=(20,30,10): gamma1=2, gamma2=3 (distinct — discriminates gamma-swap
+    // and w1/w2-swap mutants). w1=1/4:
+    // mu_sX = 13 - (3/4)*2*1 = 23/2, mu_sY = 10 + (1/4)*3*1 = 43/4,
+    // b = -3/4; v_V1 = v_V2 = 1/2 so the eq. 39-40 middle terms vanish and
+    // var_sX = 5 + (3/16)*4 = 23/4, var_sY = 5/2 + (3/16)*9 = 67/16.
+    let r = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 30, 10, 0.25)
+        .unwrap();
+    assert_eq!(r.intercept, -0.75);
+    assert_eq!(r.mu_x, 11.5);
+    assert_eq!(r.mu_y, 10.75);
+    assert_eq!(r.sigma_x, (23.0_f64 / 4.0).sqrt());
+    assert_eq!(r.sigma_y, (67.0_f64 / 16.0).sqrt());
+    assert_eq!(r.sigma_eq, (23.0_f64 / 4.0).sqrt());
+    assert_eq!(r.y_equivalents[0], -0.75);
+    assert_eq!(r.y_equivalents[20], 19.25);
+}
+
+#[test]
+fn nwme_error_contract() {
+    let ok = |k_x, k_y, k_v, w1| {
+        nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, k_x, k_y, k_v, w1)
+    };
+    assert!(ok(0, 20, 8, 0.5).is_err());
+    assert!(ok(20, 0, 8, 0.5).is_err());
+    assert!(ok(20, 20, 0, 0.5).is_err());
+    assert!(ok(20, 20, 8, -0.1).is_err());
+    assert!(ok(20, 20, 8, 1.5).is_err());
+    assert!(nominal_weights_mean_equate(
+        &NWME_XT,
+        &NWME_XA[..3],
+        &NWME_YT,
+        &NWME_YA,
+        20,
+        20,
+        8,
+        0.5
+    )
+    .is_err());
+    assert!(nominal_weights_mean_equate(&[], &[], &NWME_YT, &NWME_YA, 20, 20, 8, 0.5).is_err());
+    let bad = [10.0, f64::NAN, 14.0, 16.0];
+    assert!(
+        nominal_weights_mean_equate(&bad, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 0.5).is_err()
+    );
+}
+
+#[test]
+#[ignore = "500-rep Monte Carlo"]
+fn nwme_mc_500() {
+    // Structural invariants across random data: slope always 1, constant
+    // shift equal to the crate-reported intercept, intercept consistent with
+    // the crate-reported synthetic means, w1-invariance for equal gammas and
+    // sensitivity to k_y (structural discrimination). The mean-identity
+    // asserts read crate outputs but cannot discriminate every moment
+    // mutant; fixtures A/B carry the exact discriminating pins.
+    let mut rng = lcg(20260727);
+    let mut valid = 0usize;
+    for rep in 0..500 {
+        let n1 = 3 + (rng() * 20.0) as usize;
+        let n2 = 3 + (rng() * 20.0) as usize;
+        let draw = |rng: &mut dyn FnMut() -> f64, n: usize, k: f64| -> (Vec<f64>, Vec<f64>) {
+            let mut t = Vec::with_capacity(n);
+            let mut a = Vec::with_capacity(n);
+            for _ in 0..n {
+                t.push((rng() * k).round());
+                a.push((rng() * 8.0).round());
+            }
+            (t, a)
+        };
+        let (xt, xa) = draw(&mut rng, n1, 20.0);
+        let (yt, ya) = draw(&mut rng, n2, 20.0);
+        let w1 = rng();
+        // Uncorrelated random anchors can legitimately trip the defensive
+        // non-positive synthetic-variance guard; skip those reps and require
+        // a minimum number of valid ones below.
+        let r = match nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 20, 8, w1) {
+            Ok(r) => r,
+            Err(e) if e.contains("synthetic variance") => continue,
+            Err(e) => panic!("rep {rep}: {e}"),
+        };
+        valid += 1;
+        assert_eq!(r.slope, 1.0);
+        assert!((r.intercept - (r.mu_y - r.mu_x)).abs() < 1e-12);
+        for (i, (x, y)) in r.x_scores.iter().zip(&r.y_equivalents).enumerate() {
+            assert!(
+                (y - x - r.intercept).abs() < 1e-12,
+                "rep {rep} score {i}: {y} vs {x}+{}",
+                r.intercept
+            );
+        }
+        // equal gammas: w1-invariant intercept
+        if let Ok(alt) = nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 20, 8, 1.0 - w1) {
+            assert!((alt.intercept - r.intercept).abs() < 1e-12);
+        }
+        // distinct gammas must move the intercept whenever the anchor means
+        // differ (b changes by w1*(g2'-g2)*d)
+        let mxa = xa.iter().sum::<f64>() / xa.len() as f64;
+        let mya = ya.iter().sum::<f64>() / ya.len() as f64;
+        if w1 > 1e-3 && (mxa - mya).abs() > 1e-9 {
+            // k_y=30 inflates gamma2; skip reps where the defensive
+            // non-positive synthetic-variance guard fires (variance does not
+            // enter the intercept, but the crate rejects degenerate results).
+            if let Ok(wide) = nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 30, 8, w1) {
+                assert!(
+                    (wide.intercept - r.intercept).abs() > 1e-12,
+                    "rep {rep}: k_y change did not move intercept"
+                );
+            }
+        }
+    }
+    assert!(valid >= 250, "only {valid} valid reps");
+}
