@@ -381,16 +381,19 @@ def icc(
         raise ValueError("masked arrays are not supported; use NaN for missing")
     arr = np.asarray(ratings)
     if arr.dtype == object:
-        def _is_bool(v: object) -> bool:
+        def _is_numeric(v: object) -> bool:
             # Unwrap arbitrarily nested 0-D ndarrays (any dtype).
             while isinstance(v, np.ndarray) and v.ndim == 0:
                 v = v.item()
-            return isinstance(v, (bool, np.bool_)) or (
-                isinstance(v, np.ndarray) and v.dtype.kind == "b"
-            )
+            # Whitelist: real int/float scalars only (bool is an int
+            # subclass and np.bool_/np.void etc. are excluded by not
+            # being in the whitelist).
+            if isinstance(v, (bool, np.bool_)):
+                return False
+            return isinstance(v, (int, float, np.integer, np.floating))
 
-        if any(_is_bool(v) for v in arr.flat):
-            raise ValueError("ratings must be numeric, not boolean")
+        if not all(_is_numeric(v) for v in arr.flat):
+            raise ValueError("ratings must contain only real numeric scalars")
         arr = np.asarray(arr, dtype=np.float64)  # raises on non-numeric
     if np.iscomplexobj(arr):
         raise ValueError("ratings must be real-valued")

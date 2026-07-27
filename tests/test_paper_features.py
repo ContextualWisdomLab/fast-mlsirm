@@ -10530,6 +10530,9 @@ class TestIcc:
             )
         with pytest.raises((ValueError, TypeError)):
             icc(np.array([["a", "b"], ["c", "d"]], dtype=object))
+        void_bool = np.zeros((), dtype=[("f", "?")])[()]  # np.void w/ bool field
+        with pytest.raises(ValueError):
+            icc(np.array([[void_bool, 2.0], [3.0, 4.0]], dtype=object))
         with pytest.raises(ValueError):
             icc(x, r0=True)
         with pytest.raises(ValueError):
