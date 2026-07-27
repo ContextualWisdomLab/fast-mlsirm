@@ -2335,6 +2335,130 @@ pub fn bhapkar_mh(table: &[f64], c: usize) -> Result<BhapkarResult, String> {
     })
 }
 
+/// Result of the rater bias test ([`rater_bias`]).
+#[derive(Debug, Clone)]
+pub struct RaterBiasResult {
+    /// Bias ratio `rbb / (rbb + rbc)` (upper-triangle share).
+    pub value: f64,
+    /// Chi-square statistic `(rbb - rbc)^2 / (rbb + rbc)`, df 1.
+    pub statistic: f64,
+    /// Degrees of freedom (always 1).
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(statistic, 1)`.
+    pub p_value: f64,
+    /// Total count of the full table (all cells, incl. diagonal).
+    pub subjects: u64,
+}
+
+/// Rater bias chi-square for a `C x C` two-rater agreement table,
+/// transcribed from the CRAN irr 0.84.1 R source `rater.bias.R`
+/// (read in full). The statistic is McNemar-style, but McNemar (1947)
+/// was NOT read and is not cited as normative.
+///
+/// `table` is row-major `c x c` nonnegative integral counts, exactly
+/// as in [`bhapkar_mh`]. Only R's CxC-table branch is implemented;
+/// R's `nx2` / `2xn` raw-score `table()` front-end is a thin
+/// cross-tab left to callers (the same deliberate reduced scope as
+/// `stuart_maxwell_mh` / `bhapkar_mh`).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// rbb  = sum of the strict upper triangle
+/// rbc  = sum of the strict lower triangle
+/// value = |rbb / (rbb + rbc)|      (abs is a no-op: counts nonneg)
+/// stat  = (rbb - rbc)^2 / (rbb + rbc) ;  df = 1
+/// p     = chi2_sf(stat, 1)
+/// subjects = sum of ALL cells (R: sum(rbx), incl. diagonal)
+/// ```
+///
+/// Arithmetic: the per-cell cap `2^53 / (2 c)` does NOT keep f64
+/// triangle sums exact for large `c` (spec-review finding, adopted),
+/// so `rbb`/`rbc` are accumulated in u64 (exact: each triangle sum is
+/// at most `c^2/2 * 2^53/(2c) = 2^51 c <= 2^61`), the difference and
+/// its square are formed in i128 (`(2^61)^2 = 2^122 < 2^127`), and
+/// f64 rounding happens only in the final divisions. Disclosed
+/// unkillable mutant: removing the R `abs()` (the validated domain is
+/// nonnegative with `rbb + rbc > 0`, so the ratio is already >= 0).
+///
+/// Errors (deliberately stricter than R): non-square input, `c < 2`,
+/// `c > 1000`, NaN, infinite, negative, or non-integral cells, cells
+/// above the cap, and `rbb + rbc == 0` (no off-diagonal
+/// disagreements; R would form 0/0). All-zero and diagonal-only
+/// tables hit that arm, so a separate `n == 0` check is unreachable
+/// and deliberately omitted; `subjects` is a plain u64 sum (bounded
+/// by `c^2 * 2^53/(2c) <= 2^52 c^2 / c = 2^52 c <= 2^62`, no
+/// overflow for `c <= 1000`).
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+pub fn rater_bias(table: &[f64], c: usize) -> Result<RaterBiasResult, String> {
+    if c < 2 {
+        return Err("rater_bias: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("rater_bias: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "rater_bias: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "rater_bias: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("rater_bias: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("rater_bias: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("rater_bias: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("rater_bias: count too large for exact arithmetic".to_string());
+        }
+    }
+    let mut rbb: u64 = 0;
+    let mut rbc: u64 = 0;
+    let mut subjects: u64 = 0;
+    for i in 0..c {
+        for j in 0..c {
+            let v = table[i * c + j] as u64;
+            subjects += v;
+            if i < j {
+                rbb += v;
+            } else if i > j {
+                rbc += v;
+            }
+        }
+    }
+    let denom = rbb + rbc;
+    if denom == 0 {
+        return Err("rater_bias: no off-diagonal disagreements".to_string());
+    }
+    let diff = rbb as i128 - rbc as i128;
+    let value = rbb as f64 / denom as f64;
+    let statistic = (diff * diff) as f64 / denom as f64;
+    let p_value = crate::fitstats::chi2_sf(statistic, 1.0).clamp(0.0, 1.0);
+    Ok(RaterBiasResult {
+        value,
+        statistic,
+        df: 1,
+        p_value,
+        subjects,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

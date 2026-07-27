@@ -1115,3 +1115,89 @@ def bhapkar_mh(table) -> BhapkarResult:
         subjects=int(res["subjects"]),
         categories=int(res["categories"]),
     )
+
+@dataclass(frozen=True)
+class RaterBiasResult:
+    """Rater bias chi-square test (irr ``rater.bias``).
+
+    ``value`` is the bias ratio ``rbb / (rbb + rbc)`` (share of
+    disagreements in the strict upper triangle); ``statistic`` is the
+    McNemar-style chi-square ``(rbb - rbc)^2 / (rbb + rbc)``; ``df`` is
+    always 1; ``p_value`` is the upper-tail chi-square probability;
+    ``subjects`` is the total count over ALL cells."""
+
+    value: float
+    statistic: float
+    df: int
+    p_value: float
+    subjects: int
+
+
+def rater_bias(table) -> RaterBiasResult:
+    """Rater bias chi-square for a C x C two-rater agreement table of
+    counts (computed in Rust; transcribed from the CRAN irr 0.84.1 R
+    source ``rater.bias.R``, read in full). ``table[i, j]`` counts
+    objects that rater 1 assigned to category ``i`` and rater 2 to
+    category ``j``. Only R's CxC-table branch is implemented; R's
+    ``nx2`` / ``2xn`` raw-score ``table()`` front-end is a plain
+    cross-tabulation left to callers (the same deliberate reduced
+    scope as :func:`stuart_maxwell_mh` / :func:`bhapkar_mh`).
+
+    With ``rbb`` the strict-upper-triangle sum and ``rbc`` the
+    strict-lower-triangle sum, ``value = rbb / (rbb + rbc)`` (R applies
+    ``abs``, a no-op on the validated nonnegative domain),
+    ``statistic = (rbb - rbc)^2 / (rbb + rbc)`` with ``df = 1``, and
+    ``subjects`` sums ALL cells including the diagonal (R:
+    ``sum(rbx)``). Hand-derived from the R source and verified against
+    an executed exact-Fraction oracle. The statistic is McNemar-style,
+    but McNemar (1947) was not read and is not cited as normative.
+    Documented deviations from R (deliberate, stricter-than-R):
+    explicit errors for non-square input, fewer than 2 or more than
+    1000 categories, negative/NaN/infinite/non-integral counts, cells
+    above ``2**53 / (2 C)``, and ``rbb + rbc == 0`` (no off-diagonal
+    disagreements, where R would form 0/0). In LLM-as-a-Judge quality
+    management this tests whether one judge systematically rates
+    higher than the other.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "rater_bias"):
+        raise RuntimeError("rater_bias requires the compiled Rust core")
+    if isinstance(table, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported")
+    arr = np.asarray(table)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("table must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("table must be numeric counts, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("table must be a numeric array")
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError("table must be a square C x C counts matrix")
+    # min/max comparisons instead of np.abs: abs overflows on np.int64 min
+    # (-2**63), which would silently pass the fidelity guard.
+    if arr.dtype.kind in "iu" and arr.size and (
+        int(arr.min()) < 0 or int(arr.max()) > 2**53
+    ):
+        raise ValueError("counts must be nonnegative and within exact float64 range")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    c = x.shape[0]
+    res = core.rater_bias(x.reshape(-1), int(c))
+    return RaterBiasResult(
+        value=float(res["value"]),
+        statistic=float(res["statistic"]),
+        df=int(res["df"]),
+        p_value=float(res["p_value"]),
+        subjects=int(res["subjects"]),
+    )
+

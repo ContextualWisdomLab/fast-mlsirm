@@ -2675,3 +2675,135 @@ fn bh_mc_500() {
         tested += 1;
     }
 }
+
+// ---- rater_bias (irr rater.bias.R) ------------------------------------
+// Oracle: exact-Fraction files/raterbias_oracle.py (session), EXECUTED.
+// Every assert below reads crate outputs.
+
+/// Kills MU1 (triangle swap: 3/13 != 10/13), MU2 (denominator rbb-rbc:
+/// stat 21 != 147/13), MU3 (subjects off-diag only: 39 != 129),
+/// MU4 (diagonal in rbb: value 40/43), MU5 (df 2: p 0.003504 != pin).
+#[test]
+fn rbias_anchor_b1() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let r = rater_bias(&b1, 3).unwrap();
+    // rbb = 30, rbc = 9 (asymmetric). Pins: 10/13, 147/13.
+    assert!((r.value - 10.0 / 13.0).abs() <= 1e-15 * (10.0 / 13.0));
+    assert!((r.statistic - 147.0 / 13.0).abs() <= 1e-15 * (147.0 / 13.0));
+    assert_eq!(r.df, 1);
+    assert!((r.p_value - 0.0007718664488286608).abs() < 1e-12);
+    assert_eq!(r.subjects, 129);
+}
+
+/// 4x4, rbb = 12 < rbc = 15: exercises the value < 1/2 side (kills a
+/// one-sided |.| or max(rbb,rbc) mutant that B1 alone would miss).
+#[test]
+fn rbias_anchor_b4_4x4() {
+    let b4 = [
+        7.0, 2.0, 0.0, 1.0, 5.0, 9.0, 3.0, 2.0, 1.0, 0.0, 11.0, 4.0, 2.0, 6.0, 1.0, 13.0,
+    ];
+    let r = rater_bias(&b4, 4).unwrap();
+    assert!((r.value - 4.0 / 9.0).abs() <= 1e-15 * (4.0 / 9.0));
+    assert!((r.statistic - 1.0 / 3.0).abs() <= 1e-15 * (1.0 / 3.0));
+    assert!((r.p_value - 0.5637028616507731).abs() < 1e-12);
+    assert_eq!(r.subjects, 67);
+}
+
+/// Dyadic pins allow exact ==: B2 (3/4, 2) and B3 (rbb == rbc -> 0, p 1).
+#[test]
+fn rbias_dyadic_b2_b3() {
+    let r = rater_bias(&[10.0, 6.0, 2.0, 12.0], 2).unwrap();
+    assert_eq!(r.value, 0.75);
+    assert_eq!(r.statistic, 2.0);
+    assert!((r.p_value - 0.1572992070502851).abs() < 1e-12);
+    assert_eq!(r.subjects, 30);
+    let r = rater_bias(&[5.0, 3.0, 3.0, 7.0], 2).unwrap();
+    assert_eq!(r.value, 0.5);
+    assert_eq!(r.statistic, 0.0);
+    assert_eq!(r.p_value, 1.0);
+    assert_eq!(r.subjects, 18);
+}
+
+/// Transposing the table swaps rbb/rbc: stat, p, subjects invariant;
+/// values sum to 1. Both sides read crate outputs.
+#[test]
+fn rbias_transpose_antisymmetry() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let mut t = [0.0f64; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            t[j * 3 + i] = b1[i * 3 + j];
+        }
+    }
+    let a = rater_bias(&b1, 3).unwrap();
+    let b = rater_bias(&t, 3).unwrap();
+    assert_eq!(a.statistic, b.statistic);
+    assert_eq!(a.p_value, b.p_value);
+    assert_eq!(a.subjects, b.subjects);
+    assert!((a.value + b.value - 1.0).abs() < 1e-15);
+}
+
+#[test]
+fn rbias_error_contract() {
+    // c < 2 / c > 1000.
+    assert!(rater_bias(&[5.0], 1).is_err());
+    assert!(rater_bias(&vec![0.0; 1001 * 1001], 1001).is_err());
+    // Length mismatch.
+    assert!(rater_bias(&[1.0, 2.0, 3.0], 2).is_err());
+    // NaN / Inf / negative / non-integral.
+    assert!(rater_bias(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[f64::INFINITY, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[-1.0, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    assert!(rater_bias(&[4503599627370496.0, 6.0, 2.0, 12.0], 2).is_err());
+    // rbb + rbc == 0: all-zero and diagonal-only tables.
+    assert!(rater_bias(&[0.0, 0.0, 0.0, 0.0], 2).is_err());
+    assert!(rater_bias(&[4.0, 0.0, 0.0, 9.0], 2).is_err());
+}
+
+/// 500 LCG random tables: crate outputs vs an independent index-walk
+/// recomputation of rbb/rbc (i < j vs i > j) inside the test.
+#[test]
+#[ignore]
+fn rbias_mc_500() {
+    let mut state: u64 = 0x1234_5678_9ABC_DEF0;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let mut done = 0;
+    while done < 500 {
+        let c = 2 + (next() * 4.0) as usize % 4; // 2..=5
+        let table: Vec<f64> = (0..c * c).map(|_| (next() * 50.0).floor()).collect();
+        let (mut rbb, mut rbc, mut tot) = (0u64, 0u64, 0u64);
+        for i in 0..c {
+            for j in 0..c {
+                let v = table[i * c + j] as u64;
+                tot += v;
+                if i < j {
+                    rbb += v;
+                } else if i > j {
+                    rbc += v;
+                }
+            }
+        }
+        if rbb + rbc == 0 {
+            continue;
+        }
+        let r = rater_bias(&table, c).unwrap();
+        let denom = (rbb + rbc) as f64;
+        let ev = rbb as f64 / denom;
+        let es = ((rbb as i128 - rbc as i128).pow(2)) as f64 / denom;
+        assert!((r.value - ev).abs() <= 1e-14 * ev.max(1.0));
+        assert!((r.statistic - es).abs() <= 1e-14 * es.max(1.0));
+        assert_eq!(r.subjects, tot);
+        assert!(r.p_value >= 0.0 && r.p_value <= 1.0);
+        if es == 0.0 {
+            assert_eq!(r.p_value, 1.0);
+        }
+        done += 1;
+    }
+}

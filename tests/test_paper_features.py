@@ -11235,3 +11235,57 @@ class TestBhapkar:
         bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
         with pytest.raises(ValueError):
             bhapkar_mh(bad)
+
+class TestRaterBias:
+    """Rater bias chi-square (irr rater.bias.R; exact-oracle pins)."""
+
+    def test_anchor_b1(self):
+        import numpy as np
+
+        from fast_mlsirm import rater_bias
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        r = rater_bias(b1)
+        assert abs(r.value - 10 / 13) <= 1e-15 * (10 / 13)
+        assert abs(r.statistic - 147 / 13) <= 1e-15 * (147 / 13)
+        assert r.df == 1
+        assert abs(r.p_value - 0.0007718664488286608) <= 1e-12
+        assert r.subjects == 129
+
+    def test_dyadic_and_balanced(self):
+        import numpy as np
+
+        from fast_mlsirm import rater_bias
+
+        r = rater_bias(np.array([[10, 6], [2, 12]], dtype=float))
+        assert r.value == 0.75 and r.statistic == 2.0 and r.subjects == 30
+        r = rater_bias(np.array([[5, 3], [3, 7]], dtype=float))
+        assert r.statistic == 0.0 and r.p_value == 1.0 and r.value == 0.5
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import rater_bias
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        with pytest.raises(ValueError):
+            rater_bias(np.ma.masked_array(b1))
+        with pytest.raises(ValueError):
+            rater_bias(b1.astype(object))
+        with pytest.raises(ValueError):
+            rater_bias(b1 + 0j)
+        with pytest.raises(ValueError):
+            rater_bias(b1.astype(bool))
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[10.0, -6.0], [2.0, 12.0]]))
+        # Diagonal-only table: rbb + rbc == 0.
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[5.0, 0.0], [0.0, 7.0]]))
+        # int64 min must be rejected (np.abs-overflow guard regression).
+        bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
+        with pytest.raises(ValueError):
+            rater_bias(bad)
+

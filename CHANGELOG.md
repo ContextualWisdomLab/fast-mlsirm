@@ -119,6 +119,31 @@
 
 ### Added
 
+- Rater bias chi-square `rater_bias` (Rust core
+  `mlsirm_core::reliability::rater_bias` + thin Python wrapper), transcribed
+  from the CRAN irr 0.84.1 R source `rater.bias.R` (read in full; the
+  statistic is McNemar-style but McNemar, 1947, was NOT read and is not
+  cited as normative). With `rbb`/`rbc` the strict upper/lower triangle
+  sums of a CxC two-rater table: `value = rbb/(rbb+rbc)`,
+  `statistic = (rbb-rbc)^2/(rbb+rbc)`, df = 1, upper-tail chi-square p;
+  `subjects` sums ALL cells (R: `sum(rbx)`). REDUCED-SCOPE vs R:
+  CxC-table branch only (the nx2/2xn raw-score `table()` front-end is a
+  plain cross-tab left to callers, as for `stuart_maxwell_mh`). Per the
+  adversarial spec review, the `2^53/(2C)` per-cell cap does NOT make f64
+  triangle sums exact for large C, so `rbb`/`rbc` accumulate in u64
+  (exact, bounded by 2^61) and the squared difference is formed in i128;
+  f64 rounding only in the final divisions. Deliberately stricter than R:
+  explicit errors for non-square input, <2 or >1000 categories,
+  negative/NaN/Inf/non-integral counts, cells above the cap, and
+  `rbb + rbc == 0` (R would form 0/0). Disclosed unkillable mutant:
+  removing R's `abs()` (no-op on the validated nonnegative domain).
+  Exact-Fraction oracle anchors (3x3 value 10/13 stat 147/13; 4x4 on the
+  value<1/2 side 4/9, 1/3; dyadic 2x2 3/4, 2 asserted exactly; balanced
+  rbb==rbc stat 0 p 1; diagonal-only error), a transpose-antisymmetry
+  test (stat/p/n invariant, values sum to 1), 5/5 targeted mutants
+  executed-killed (triangle swap, difference denominator, off-diagonal
+  subjects, diagonal in rbb, df 2), and an in-repo `#[ignore]` MC-500
+  independent-recompute test.
 - Bhapkar marginal homogeneity test `bhapkar_mh` (Rust core
   `mlsirm_core::reliability::bhapkar_mh` + thin Python wrapper), transcribed
   from the CRAN irr 0.84.1 R source `bhapkar.r` (read in full; Bhapkar, 1966,
