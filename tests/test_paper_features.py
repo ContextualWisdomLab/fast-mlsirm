@@ -10632,3 +10632,105 @@ class TestKripp:
         ok = np.array([[big, -big], [-big, big]], dtype=np.int64)
         r = kripp_alpha(ok)
         assert r.levels == 2 and abs(r.value - (-0.5)) < 1e-12
+
+
+class TestLight:
+    """Light's kappa (irr 0.85 kappam.light + unweighted kappa2, both READ).
+
+    Pins from the exact-Fraction oracle; every assert reads outputs of the
+    crate-backed light_kappa wrapper.
+    """
+
+    def _l1(self):
+        import numpy as np
+
+        return np.array(
+            [
+                [1, 1, 2], [2, 2, 2], [3, 3, 3], [1, 2, 1], [2, 2, 2],
+                [1, 1, 1], [3, 3, 3], [2, 2, 3], [1, 1, 1], [2, 3, 2],
+            ],
+            dtype=np.int64,
+        )
+
+    def test_anchor_l1(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        r = light_kappa(self._l1())
+        assert r.subjects_used == 10 and r.raters == 3
+        assert np.allclose(
+            r.kappas, [23 / 33, 23 / 33, 13 / 33], rtol=1e-15, atol=0
+        )
+        assert abs(r.value - 59 / 99) < 1e-15
+        assert abs(r.z - 4.719794049843912) < 1e-12
+        # crate erfc is a rational approximation; rel tolerance per spec.
+        assert abs(r.p_value - 2.3608354551285515e-06) < 1e-12
+
+    def test_nan_listwise_missing(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        # Oracle L5 with the missing code expressed as NaN (float payload).
+        m = np.array(
+            [
+                [1, 1, 2], [2, 2, 2], [np.nan, 1, 1], [1, 2, 1],
+                [2, 2, 2], [1, 1, 1], [2, 1, 2],
+            ]
+        )
+        r = light_kappa(m)
+        assert r.subjects_used == 6
+        assert abs(r.value - 1 / 3) < 1e-15
+        assert abs(r.z - 0.6324555320336758) < 1e-12
+        # Same data with integer -1 as the missing sentinel: identical
+        # crate outputs.
+        mi = np.where(np.isnan(m), -1.0, m).astype(np.int64)
+        ri = light_kappa(mi)
+        assert ri.value == r.value and ri.z == r.z
+        assert ri.kappas.tolist() == r.kappas.tolist()
+
+    def test_input_rejections(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import light_kappa
+
+        ok = self._l1()
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(np.float64) + 0.5)  # 2.5 non-integer
+        neg = ok.astype(np.float64)
+        neg[0, 0] = -1.0
+        with pytest.raises(ValueError):
+            light_kappa(neg)  # negative FLOAT rejected (not missing)
+        with pytest.raises(ValueError):
+            light_kappa(np.ma.masked_array(ok))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(object))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(np.complex128))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(bool))
+        with pytest.raises(ValueError):
+            light_kappa(ok.reshape(-1))  # 1-D
+        inf = ok.astype(np.float64)
+        inf[0, 0] = np.inf
+        with pytest.raises(ValueError):
+            light_kappa(inf)
+        with pytest.raises(ValueError):
+            light_kappa(np.array([[2**32 + 1, 1], [2, 2]], dtype=np.int64))
+        with pytest.raises(ValueError):
+            # chanceP <= 0 on valid data: disjoint rater level sets.
+            light_kappa(np.array([[1, 2, 3], [1, 2, 3]], dtype=np.int64))
+
+    def test_two_raters_l2(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        m = np.array([[1, 1], [1, 2], [2, 2], [2, 2], [1, 1], [2, 1]])
+        r = light_kappa(m)
+        assert r.kappas.shape == (1,)
+        assert abs(r.value - 1 / 3) < 1e-15
+        assert r.value == float(r.kappas[0])
+        assert abs(r.z - 0.816496580927726) < 1e-12

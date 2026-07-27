@@ -180,8 +180,10 @@ from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
 from .report import render_diagnostics_report as render_diagnostics_report
 from .validation import (FleissKappaResult as FleissKappaResult,
+                         LightKappaResult as LightKappaResult,
                          ValidationVerdict as ValidationVerdict,
                          fleiss_kappa as fleiss_kappa,
+                         light_kappa as light_kappa,
                          validate_judge as validate_judge)
 from .serving import (bank_information as bank_information,
                       cat_next_item as cat_next_item,
@@ -228,6 +230,8 @@ __all__ = [
     "ValidationVerdict",
     "FleissKappaResult",
     "fleiss_kappa",
+    "LightKappaResult",
+    "light_kappa",
     "benjamini_hochberg",
     "chi2_sf",
     "dif_analysis",

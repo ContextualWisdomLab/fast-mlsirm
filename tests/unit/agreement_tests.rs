@@ -369,3 +369,180 @@ fn fk_mc_500_permutation_invariance() {
         );
     }
 }
+
+// ---- Light's kappa (kappam.light, irr 0.85) ----
+// Every assert below reads crate outputs (fields of the LightKappaResult
+// returned by light_kappa); pins come from the exact-Fraction oracle
+// executed against the R algorithm transcription.
+
+fn lk_fixture_l1() -> Vec<i64> {
+    // 10 subjects x 3 raters.
+    vec![
+        1, 1, 2, 2, 2, 2, 3, 3, 3, 1, 2, 1, 2, 2, 2, 1, 1, 1, 3, 3, 3, 2, 2, 3, 1, 1, 1, 2, 3, 2,
+    ]
+}
+
+#[test]
+fn lk_anchor_l1() {
+    // Oracle L1: kappas [23/33, 23/33, 13/33], value 59/99,
+    // z 4.719794049843912 (pins chanceP 17189/125000 through varkappa).
+    let r = light_kappa(&lk_fixture_l1(), 10, 3).unwrap();
+    assert_eq!(r.subjects_used, 10);
+    assert_eq!(r.raters, 3);
+    assert_eq!(r.kappas.len(), 3);
+    assert!(rel_eq(r.kappas[0], 23.0 / 33.0, 1e-15));
+    assert!(rel_eq(r.kappas[1], 23.0 / 33.0, 1e-15));
+    assert!(rel_eq(r.kappas[2], 13.0 / 33.0, 1e-15));
+    assert!(rel_eq(r.value, 59.0 / 99.0, 1e-15));
+    assert!(rel_eq(r.z, 4.719794049843912, 1e-13));
+    // p uses crate erfc; oracle p = 2.3608354551285515e-06 via 2(1-Phi).
+    assert!(rel_eq(r.p_value, 2.3608354551285515e-06, 1e-9));
+}
+
+#[test]
+fn lk_two_raters_l2() {
+    // Oracle L2: 6x2, value = the single pairwise kappa = 1/3,
+    // z 0.816496580927726 (pins chanceP 1/2).
+    let m = vec![1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 2, 1];
+    let r = light_kappa(&m, 6, 2).unwrap();
+    assert_eq!(r.kappas.len(), 1);
+    assert!(rel_eq(r.value, 1.0 / 3.0, 1e-15));
+    assert_eq!(r.value, r.kappas[0]);
+    assert!(rel_eq(r.z, 0.816496580927726, 1e-13));
+}
+
+#[test]
+fn lk_four_raters_l3() {
+    // Oracle L3: 7x4, six pair kappas in (i,j) i<j order —
+    // [19/33, 3/10, 9/16, 11/32, 17/31, 3/10] — value 430543/982080,
+    // z 0.964288782393508. Kills pair-indexing/off-by-one mutants.
+    let m = vec![
+        1, 1, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 3, 3, 3, 3, 1, 1, 2, 1, 2, 2, 2, 2, 1, 3, 1, 1,
+    ];
+    let r = light_kappa(&m, 7, 4).unwrap();
+    assert_eq!(r.kappas.len(), 6);
+    let pins = [
+        19.0 / 33.0,
+        3.0 / 10.0,
+        9.0 / 16.0,
+        11.0 / 32.0,
+        17.0 / 31.0,
+        3.0 / 10.0,
+    ];
+    for (got, want) in r.kappas.iter().zip(pins) {
+        assert!(rel_eq(*got, want, 1e-15), "pair kappa {got} != {want}");
+    }
+    assert!(rel_eq(r.value, 430543.0 / 982080.0, 1e-15));
+    assert!(rel_eq(r.z, 0.964288782393508, 1e-13));
+}
+
+#[test]
+fn lk_perfect_agreement_l4() {
+    // Oracle L4: value exactly 1, z 3.308912980041792 (chanceP 137/512).
+    let m = vec![1, 1, 1, 2, 2, 2, 3, 3, 3, 1, 1, 1];
+    let r = light_kappa(&m, 4, 3).unwrap();
+    assert_eq!(r.value, 1.0);
+    for &kp in &r.kappas {
+        assert_eq!(kp, 1.0);
+    }
+    assert!(rel_eq(r.z, 3.308912980041792, 1e-13));
+}
+
+#[test]
+fn lk_missing_listwise_drop_l5() {
+    // Oracle L5: 7x3 with one -1 code -> row dropped, ns 6; kappas
+    // [1/3, 2/3, 0], value 1/3, z 0.6324555320336758 (chanceP 5/8).
+    // MU6 killer: keeping the row gives value 91/300 and chanceP 1201/2401.
+    let m = vec![
+        1, 1, 2, 2, 2, 2, -1, 1, 1, 1, 2, 1, 2, 2, 2, 1, 1, 1, 2, 1, 2,
+    ];
+    let r = light_kappa(&m, 7, 3).unwrap();
+    assert_eq!(r.subjects_used, 6);
+    assert!(rel_eq(r.kappas[0], 1.0 / 3.0, 1e-15));
+    assert!(rel_eq(r.kappas[1], 2.0 / 3.0, 1e-15));
+    assert_eq!(r.kappas[2], 0.0);
+    assert!(rel_eq(r.value, 1.0 / 3.0, 1e-15));
+    assert!(rel_eq(r.z, 0.6324555320336758, 1e-13));
+    // Non-contiguous codes: same data with labels {1,2} -> {10, 700}
+    // must give identical crate outputs (level compaction, not code
+    // arithmetic).
+    let m2: Vec<i64> = m
+        .iter()
+        .map(|&c| {
+            if c < 0 {
+                c
+            } else if c == 1 {
+                10
+            } else {
+                700
+            }
+        })
+        .collect();
+    let r2 = light_kappa(&m2, 7, 3).unwrap();
+    assert_eq!(r2.value, r.value);
+    assert_eq!(r2.z, r.z);
+    assert_eq!(r2.kappas, r.kappas);
+}
+
+#[test]
+fn lk_error_contract() {
+    let ok = lk_fixture_l1();
+    assert!(light_kappa(&ok, 0, 3).is_err());
+    assert!(light_kappa(&ok, 10, 1).is_err());
+    assert!(light_kappa(&ok, 9, 3).is_err()); // length mismatch
+                                              // All rows dropped.
+    assert!(light_kappa(&[-1, 1, 2, -1], 2, 2).is_err());
+    // Single observed level.
+    assert!(light_kappa(&[1, 1, 1, 1], 2, 2).is_err());
+    // A pair with pe == 1 (raters 0 and 1 constant on a shared category).
+    assert!(light_kappa(&[1, 1, 1, 1, 1, 2], 2, 3).is_err());
+    // chanceP <= 0 on VALID data: raters use disjoint level sets, so every
+    // disrater ratio is 1 and chanceP = 1 - 3 = -2 (R returns NaN z
+    // silently; documented deviation).
+    assert!(light_kappa(&[1, 2, 3, 1, 2, 3], 2, 3).is_err());
+    // Code cap.
+    assert!(light_kappa(&[1, 1, (1i64 << 32) + 1, 2], 2, 2).is_err());
+}
+
+#[test]
+#[ignore = "Monte Carlo: run explicitly"]
+fn lk_mc_500_rater_permutation_invariance() {
+    // Light's value and z are invariant to permuting rater columns (the
+    // pair set is unordered); each assert compares two crate outputs.
+    let mut state = 0x1234_5678_9abc_def0_u64;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize
+    };
+    for _ in 0..500 {
+        let ns = 5 + next() % 20;
+        let nr = 3 + next() % 3;
+        let m: Vec<i64> = (0..ns * nr).map(|_| (next() % 3) as i64 + 1).collect();
+        let base = light_kappa(&m, ns, nr);
+        // Rotate rater columns by one.
+        let rot: Vec<i64> = (0..ns * nr)
+            .map(|idx| {
+                let (i, j) = (idx / nr, idx % nr);
+                m[i * nr + (j + 1) % nr]
+            })
+            .collect();
+        let perm = light_kappa(&rot, ns, nr);
+        match (base, perm) {
+            (Ok(a), Ok(b)) => {
+                assert!(rel_eq(a.value, b.value, 1e-12));
+                assert!(rel_eq(a.z, b.z, 1e-12));
+                let mut sa = a.kappas.clone();
+                let mut sb = b.kappas.clone();
+                sa.sort_by(f64::total_cmp);
+                sb.sort_by(f64::total_cmp);
+                for (x, y) in sa.iter().zip(&sb) {
+                    assert!(rel_eq(*x, *y, 1e-12));
+                }
+            }
+            (Err(_), Err(_)) => {}
+            (a, b) => panic!("permutation changed error status: {a:?} vs {b:?}"),
+        }
+    }
+}

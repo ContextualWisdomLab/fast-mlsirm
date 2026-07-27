@@ -193,3 +193,80 @@ def fleiss_kappa(
         category_z=np.asarray(res["category_z"]),
         category_p=np.asarray(res["category_p"]),
     )
+@dataclass
+class LightKappaResult:
+    """Result of :func:`light_kappa`: mean pairwise unweighted Cohen's kappa
+    (``value``), the per-pair kappas in ``(i, j)``, ``i < j`` order, and
+    Light's chance-product z test."""
+
+    value: float
+    subjects_used: int
+    raters: int
+    kappas: np.ndarray
+    z: float
+    p_value: float
+
+
+def light_kappa(ratings: np.ndarray) -> LightKappaResult:
+    """Light's kappa: mean pairwise unweighted Cohen's kappa over all rater
+    pairs, with Light's chance-product z statistic.
+
+    Reimplements ``kappam.light()`` and the unweighted branch of ``kappa2()``
+    from CRAN irr 0.85 (both R sources READ in full; algorithm source of
+    truth). Method origin — cited as origin only, NOT READ: Light, R. J.
+    (1971). Measures of response agreement for qualitative data: Some
+    generalizations and alternatives. *Psychological Bulletin, 76*(5),
+    365-377. Computation runs in the Rust core
+    (``mlsirm_core::agreement::light_kappa``).
+
+    ``ratings`` is a 2-D ``(n_subjects, n_raters)`` array of integer category
+    codes (any integer labels; levels are compacted internally). NaN or any
+    negative integer marks a missing rating and drops the whole subject row
+    (listwise, as in irr's ``na.omit``). Negative *floats* are rejected
+    rather than treated as missing: a float payload is only accepted when
+    every finite value is a non-negative integer, so a stray ``-1.0`` or
+    ``2.5`` fails loudly instead of silently changing the level set.
+    """
+    from . import _core  # computation lives in the Rust core
+
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError("object-dtype ratings are not supported")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D (subjects x raters) array")
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be integer codes, not booleans")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError(f"ratings dtype {arr.dtype} is not numeric")
+    ns, nr = arr.shape
+    if arr.dtype.kind == "f":
+        if np.any(np.isinf(arr)):
+            raise ValueError("ratings must not contain infinities")
+        finite = np.isfinite(arr)
+        vals = arr[finite]
+        if np.any(vals != np.floor(vals)):
+            raise ValueError("ratings must be integer category codes")
+        if np.any(vals < 0):
+            raise ValueError(
+                "negative float ratings are rejected; use NaN for missing"
+            )
+        if vals.size and np.any(vals > 2.0**32):
+            raise ValueError("ratings must be <= 2^32")
+        codes = np.where(finite, arr, -1.0).astype(np.int64)
+    else:
+        if arr.size and int(arr.max()) > 2**32:
+            raise ValueError("ratings must be <= 2^32")
+        codes = arr.astype(np.int64)
+    res = _core.light_kappa(np.ascontiguousarray(codes.reshape(-1)), int(ns), int(nr))
+    return LightKappaResult(
+        value=float(res["value"]),
+        subjects_used=int(res["subjects_used"]),
+        raters=int(res["raters"]),
+        kappas=np.asarray(res["kappas"]),
+        z=float(res["z"]),
+        p_value=float(res["p_value"]),
+    )

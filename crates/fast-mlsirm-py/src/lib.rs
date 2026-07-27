@@ -5947,6 +5947,31 @@ fn fleiss_kappa(
     Ok(d.into())
 }
 
+/// Light's kappa: mean pairwise unweighted Cohen's kappa with Light's
+/// chance-product z test (irr 0.85 `kappam.light` + unweighted `kappa2`;
+/// see `mlsirm_core::agreement::light_kappa`). `ratings` is flat row-major
+/// ns*nr of integer category codes; negative = missing (listwise row drop).
+/// Returns dict with value, subjects_used, raters, kappas, z, p_value.
+#[pyfunction]
+#[pyo3(signature = (ratings, ns, nr))]
+fn light_kappa(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, i64>,
+    ns: usize,
+    nr: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::agreement::light_kappa(ratings.as_slice()?, ns, nr)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("value", res.value)?;
+    d.set_item("subjects_used", res.subjects_used as u64)?;
+    d.set_item("raters", res.raters as u64)?;
+    d.set_item("kappas", PyArray1::from_slice(py, &res.kappas))?;
+    d.set_item("z", res.z)?;
+    d.set_item("p_value", res.p_value)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8307,6 +8332,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
     m.add_function(wrap_pyfunction!(bratt_mm, m)?)?;
     m.add_function(wrap_pyfunction!(fleiss_kappa, m)?)?;
+    m.add_function(wrap_pyfunction!(light_kappa, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

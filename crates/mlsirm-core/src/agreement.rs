@@ -433,6 +433,155 @@ pub fn fleiss_kappa(
     })
 }
 
+/// Result of Light's kappa (`light_kappa`).
+#[derive(Clone, Debug)]
+pub struct LightKappaResult {
+    /// Mean of the pairwise unweighted Cohen's kappas.
+    pub value: f64,
+    /// Subjects remaining after listwise deletion of rows with missing codes.
+    pub subjects_used: usize,
+    pub raters: usize,
+    /// Pairwise kappas in `(i, j)` order with `i < j`, `i` outer.
+    pub kappas: Vec<f64>,
+    pub z: f64,
+    pub p_value: f64,
+}
+
+/// Light's kappa: mean pairwise unweighted Cohen's kappa over `nr` raters,
+/// with Light's chance-product z test.
+///
+/// Reimplements `kappam.light()` from CRAN irr 0.85 (`R/kappam.light.R`,
+/// READ in full) together with the unweighted branch of `kappa2()`
+/// (`R/kappa2.R`, READ in full); both R sources are the algorithm source of
+/// truth. The method originates in Light, R. J. (1971), "Measures of
+/// response agreement for qualitative data: Some generalizations and
+/// alternatives," Psychological Bulletin, 76(5), 365-377 — cited as origin
+/// only (NOT READ); every formula below was verified against the irr R
+/// source and an exact-fraction oracle.
+///
+/// `ratings` is row-major `ns x nr` with integer category codes; a negative
+/// code marks a missing rating and drops the whole subject row (listwise, as
+/// in R's `na.omit`). With `m` used subjects:
+///
+/// - each unordered rater pair `(i, j)` yields an unweighted Cohen's kappa
+///   `(po - pe)/(1 - pe)` (kappa2.R unweighted branch); R builds each pair's
+///   level set from the two selected columns only, but the unweighted value
+///   is invariant to unused levels (zero rows/columns change neither the
+///   diagonal, the marginals, po, nor pe), so this implementation compacts
+///   codes over the full remaining matrix once and reuses [`cohen_kappa`] —
+///   an equivalent shortcut, verified in the oracle for every pair of every
+///   fixture;
+/// - `value` = arithmetic mean of the `C(nr,2)` pairwise kappas;
+/// - z test (kappam.light.R lines 31-54): per pair, with category-count
+///   vectors `c1, c2` over the full level set,
+///   `disrater = sum_{a != b} c1[a] c2[b] = m^2 - sum_a c1[a] c2[a]`;
+///   `chanceP = 1 - npairs * prod(disrater / m^2)` (algebraically identical
+///   to R's `1 - B/m^(2*npairs)` with `B = npairs * prod(disrater)`, but
+///   overflow-safe); `varkappa = chanceP/(m (1 - chanceP))`;
+///   `z = value/sqrt(varkappa)`; `p = erfc(|z|/sqrt(2))`.
+///
+/// API deviations from R (documented contract, not transcription): a pair
+/// with `pe == 1` (both raters constant on one shared category) is an error
+/// (R yields 0/0 = NaN); `chanceP <= 0` — reachable on valid data, e.g. two
+/// identical rows over three raters give `chanceP = -2` — and
+/// `1 - chanceP == 0` are errors (R silently produces NaN or infinite
+/// variance); all rows dropped is an error; size caps below are safety
+/// bounds.
+pub fn light_kappa(ratings: &[i64], ns: usize, nr: usize) -> Result<LightKappaResult, String> {
+    if ns == 0 {
+        return Err("need at least one subject".into());
+    }
+    if nr < 2 {
+        return Err("need at least 2 raters".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 {
+        return Err("size caps: ns <= 1e6, nr <= 1e4".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} != ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    for &c in ratings {
+        if c > 1i64 << 32 {
+            return Err("category codes must be <= 2^32".into());
+        }
+    }
+    // Listwise drop, then compact observed codes to 0..k-1 in sorted order.
+    let rows: Vec<&[i64]> = (0..ns)
+        .map(|i| &ratings[i * nr..(i + 1) * nr])
+        .filter(|row| row.iter().all(|&c| c >= 0))
+        .collect();
+    let m = rows.len();
+    if m == 0 {
+        return Err("all subject rows dropped for missing ratings".into());
+    }
+    let mut levels: Vec<i64> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+    levels.sort_unstable();
+    levels.dedup();
+    let k = levels.len();
+    if k < 2 {
+        return Err("need at least 2 distinct observed categories".into());
+    }
+    let code = |c: i64| levels.binary_search(&c).unwrap() as u32;
+    let cols: Vec<Vec<u32>> = (0..nr)
+        .map(|j| rows.iter().map(|r| code(r[j])).collect())
+        .collect();
+
+    // Pairwise unweighted Cohen's kappas (mean = Light's value). Counts per
+    // level for the z test are accumulated in the same pass.
+    let mf = m as f64;
+    let counts: Vec<Vec<f64>> = cols
+        .iter()
+        .map(|col| {
+            let mut c = vec![0.0_f64; k];
+            for &v in col {
+                c[v as usize] += 1.0;
+            }
+            c
+        })
+        .collect();
+    let mut kappas = Vec::with_capacity(nr * (nr - 1) / 2);
+    let mut prod_ratio = 1.0_f64;
+    for i in 0..nr - 1 {
+        for j in i + 1..nr {
+            let kp = cohen_kappa(&cols[i], &cols[j], k)
+                .map_err(|e| format!("rater pair ({i},{j}): {e}"))?;
+            kappas.push(kp);
+            let same: f64 = (0..k).map(|a| counts[i][a] * counts[j][a]).sum();
+            // disrater/m^2 with disrater = m^2 - sum_a c1[a]*c2[a].
+            prod_ratio *= (mf * mf - same) / (mf * mf);
+        }
+    }
+    let npairs = kappas.len() as f64;
+    let value = kappas.iter().sum::<f64>() / npairs;
+
+    let chance_p = 1.0 - npairs * prod_ratio;
+    if chance_p <= 0.0 || (1.0 - chance_p).abs() < 1e-12 {
+        return Err(
+            "degenerate chance product: Light's z statistic is undefined for these marginals"
+                .into(),
+        );
+    }
+    let varkappa = chance_p / (mf * (1.0 - chance_p));
+    let z = value / varkappa.sqrt();
+    let p_value = crate::fitstats::erfc(z.abs() / std::f64::consts::SQRT_2);
+    if !z.is_finite() || !p_value.is_finite() {
+        return Err("non-finite test statistic".into());
+    }
+
+    Ok(LightKappaResult {
+        value,
+        subjects_used: m,
+        raters: nr,
+        kappas,
+        z,
+        p_value,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/agreement_tests.rs"]
 mod tests;
