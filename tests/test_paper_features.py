@@ -10435,3 +10435,90 @@ class TestFleiss:
                 fleiss_kappa(fk, k=bad_k)
         # np.integer k still accepted.
         assert fleiss_kappa(fk, k=np.int64(3)).subjects_used == 5
+
+
+class TestIcc:
+    """icc (irr icc.R; Shrout-Fleiss taxonomy). Pins from the exact-Fraction
+    oracle executed on Shrout-Fleiss (1979) Table 2. Every assert reads
+    IccResult fields returned by the crate through the wrapper."""
+
+    SF = [[9, 2, 5, 8], [6, 1, 3, 2], [8, 4, 6, 8], [7, 1, 2, 6], [10, 5, 6, 9], [6, 2, 4, 7]]
+
+    def test_anchor_all_six(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        want = {
+            ("oneway", "consistency", "single"): 448 / 2703,
+            ("twoway", "consistency", "single"): 920 / 1287,
+            ("twoway", "agreement", "single"): 184 / 635,
+            ("oneway", "consistency", "average"): 1792 / 4047,
+            ("twoway", "consistency", "average"): 3680 / 4047,
+            ("twoway", "agreement", "average"): 736 / 1187,
+        }
+        for (m, t, u), v in want.items():
+            r = icc(np.array(self.SF, dtype=float), model=m, type=t, unit=u)
+            assert abs(r.value - v) < 1e-12
+            assert r.subjects == 6 and r.raters == 4
+        r = icc(np.array(self.SF, dtype=float), model="twoway", type="agreement", unit="single")
+        assert abs(r.fvalue - 11.02724795640327) < 1e-9
+        assert abs(r.df2 - 15.0) < 1e-9
+        assert abs(r.p_value - 0.00013456651648433688) < 1e-9
+        assert abs(r.lbound - 0.018786513374712013) < 1e-9
+        assert abs(r.ubound - 0.7610843696489528) < 1e-9
+
+    def test_r0_and_conf(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        r = icc(x, model="twoway", type="agreement", unit="single", r0=0.3)
+        assert abs(r.fvalue - 0.9561240676364373) < 1e-12
+        assert abs(r.df2 - 4.7463353743354775) < 1e-9
+        c = icc(x, model="twoway", type="consistency", unit="single", conf_level=0.80)
+        assert abs(c.lbound - 0.4905340604697688) < 1e-9
+        assert abs(c.ubound - 0.8966577783576283) < 1e-9
+
+    def test_nan_listwise(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        x[3, 2] = np.nan
+        r = icc(x, model="twoway", type="consistency", unit="single")
+        assert r.subjects == 5
+        assert abs(r.value - 329 / 459) < 1e-12
+        assert abs(r.fvalue - 11.123076923076923) < 1e-12
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        with pytest.raises(ValueError):
+            icc(x, model="threeway")
+        with pytest.raises(ValueError):
+            icc(x, type="absolute")
+        with pytest.raises(ValueError):
+            icc(x, unit="median")
+        with pytest.raises(ValueError):
+            icc(x, r0=1.0)
+        with pytest.raises(ValueError):
+            icc(x, conf_level=1.0)
+        with pytest.raises(ValueError):
+            icc(np.array([1.0, 2.0, 3.0]))  # 1-D
+        with pytest.raises(ValueError):
+            icc(np.array([[1.0, np.inf], [2.0, 3.0]]))
+        with pytest.raises(ValueError):
+            icc(np.ma.masked_array(x, mask=False))
+        with pytest.raises(ValueError):
+            icc(x.astype(complex))
+        with pytest.raises(ValueError):
+            icc(np.array([[True, False], [False, True]]))
+        with pytest.raises((ValueError, TypeError)):
+            icc(np.array([["a", "b"], ["c", "d"]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(x, r0=True)
+        with pytest.raises(ValueError):
+            icc(np.full((4, 3), 7.0))  # constant matrix -> degenerate

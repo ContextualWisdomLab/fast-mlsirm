@@ -301,3 +301,112 @@ def separation_reliability(
         mse=float(res["mse"]),
         sep_index=float(res["sep_index"]),
     )
+
+
+@dataclass
+class IccResult:
+    """Intraclass correlation coefficient (irr ``icc``).
+
+    ``value`` is the ICC estimate; ``fvalue``/``df1``/``df2``/``p_value``
+    test H0: icc = ``r0`` (upper tail); ``lbound``/``ubound`` are the
+    two-sided ``conf_level`` interval (unclamped; can drop below -1 for
+    the one-way average variant). ``subjects`` counts the complete rows
+    actually used after listwise NaN deletion."""
+
+    value: float
+    subjects: int
+    raters: int
+    fvalue: float
+    df1: float
+    df2: float
+    p_value: float
+    lbound: float
+    ubound: float
+
+
+def icc(
+    ratings,
+    model: str = "oneway",
+    type: str = "consistency",
+    unit: str = "single",
+    r0: float = 0.0,
+    conf_level: float = 0.95,
+) -> IccResult:
+    """Intraclass correlation coefficients for inter-rater reliability
+    (compute in Rust; transcribed line by line from the CRAN irr 0.85 R
+    source ``icc.R``, read in full; Shrout & Fleiss, 1979, McGraw & Wong,
+    1996, and Bartko, 1966, not read — attribution as cited in Gamer et
+    al., 2019). Covers the Shrout-Fleiss taxonomy: ``model`` in
+    {"oneway", "twoway"}, ``type`` in {"consistency", "agreement"},
+    ``unit`` in {"single", "average"}.
+
+    ``ratings`` is a 2-D subjects x raters array of continuous scores.
+    Rows containing NaN are dropped listwise (R ``na.omit``); infinities
+    are rejected. The two-way agreement F test uses the Satterthwaite
+    approximation with the null value ``r0``; its confidence bounds plug
+    the estimate back into the nr-scaled Satterthwaite form for both
+    units, matching the R source (icc.R lines 139-141) exactly. In
+    LLM-as-a-Judge quality management this quantifies how consistently
+    multiple judge models (raters) score the same responses (subjects).
+
+    Verified against an exact-Fraction re-derivation of icc.R executed on
+    the Shrout-Fleiss Table 2 data (all six variants, plus r0 and
+    conf_level sweeps); the Spearman-Brown identity between single and
+    average units was verified for all three families.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            (Version 0.84.1; source read at 0.85) [R package].
+            https://CRAN.R-project.org/package=irr
+        Shrout, P. E., & Fleiss, J. L. (1979). Intraclass correlations:
+            Uses in assessing rater reliability. *Psychological Bulletin,
+            86*(2), 420-428. https://doi.org/10.1037/0033-2909.86.2.420
+            (as cited in Gamer et al., 2019)
+        McGraw, K. O., & Wong, S. P. (1996). Forming inferences about
+            some intraclass correlation coefficients. *Psychological
+            Methods, 1*(1), 30-46. https://doi.org/10.1037/1082-989X.1.1.30
+            (as cited in Gamer et al., 2019)
+        Bartko, J. J. (1966). The intraclass correlation coefficient as a
+            measure of reliability. *Psychological Reports, 19*(1), 3-11.
+            https://doi.org/10.2466/pr0.1966.19.1.3 (as cited in Gamer et
+            al., 2019)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "icc"):
+        raise RuntimeError("icc requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        arr = np.asarray(arr, dtype=np.float64)  # raises on non-numeric
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x raters array")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    for name, val in (("r0", r0), ("conf_level", conf_level)):
+        if isinstance(val, bool) or not isinstance(val, (int, float, np.floating, np.integer)):
+            raise ValueError(f"{name} must be a real number")
+    res = core.icc(
+        x.reshape(-1), int(ns), int(nr), str(model), str(type), str(unit),
+        float(r0), float(conf_level),
+    )
+    return IccResult(
+        value=float(res["value"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+        fvalue=float(res["fvalue"]),
+        df1=float(res["df1"]),
+        df2=float(res["df2"]),
+        p_value=float(res["p_value"]),
+        lbound=float(res["lbound"]),
+        ubound=float(res["ubound"]),
+    )

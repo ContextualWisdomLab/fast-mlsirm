@@ -643,3 +643,341 @@ fn seprel_overflow_guard() {
     assert!(separation_reliability(&[1e308, 1e308], &[0.1, 0.1]).is_err());
     assert!(separation_reliability(&[0.0, 1.0], &[1e200, 1e200]).is_err());
 }
+
+// ===================== icc (Shrout-Fleiss family) =========================
+// Pins from the exact-Fraction oracle (session files/icc_oracle.py,
+// EXECUTED; scipy F dist for qf/pf), transcribed from CRAN irr 0.85
+// R/icc.R. Every assert reads IccResult fields returned by `icc`.
+//
+// Mutation kills verified by editing the implementation (each FAILED, then
+// restored):
+// - MU1 MSw normalized by /nr instead of /ns -> ic_anchor_i1 o_s coeff.
+// - MU2 FU quantile df order swapped -> ic_anchor_i1 o_s ubound.
+// - MU3 agreement-single denominator drops (nr/ns)(MSc-MSe) ->
+//   ic_anchor_i1 a_s coeff (would collapse to the consistency 920/1287).
+// - MU4 r0 ignored in the F statistic -> ic_r0_i3 fvalue pins.
+// - MU5 column-major stride bug -> ic_asym_i2 coeff pins.
+// - MU6 CI Satterthwaite uses r0 instead of the coefficient plug-in ->
+//   ic_anchor_i1 a_s lbound/ubound.
+
+fn icc_rel(a: f64, b: f64, tol: f64) -> bool {
+    (a - b).abs() <= tol * b.abs().max(1.0)
+}
+
+fn sf_table2() -> Vec<f64> {
+    vec![
+        9.0, 2.0, 5.0, 8.0, //
+        6.0, 1.0, 3.0, 2.0, //
+        8.0, 4.0, 6.0, 8.0, //
+        7.0, 1.0, 2.0, 6.0, //
+        10.0, 5.0, 6.0, 9.0, //
+        6.0, 2.0, 4.0, 7.0,
+    ]
+}
+
+fn icc_all6(data: &[f64], ns: usize, nr: usize, r0: f64, conf: f64) -> Vec<IccResult> {
+    [
+        ("oneway", "consistency", "single"),
+        ("twoway", "consistency", "single"),
+        ("twoway", "agreement", "single"),
+        ("oneway", "consistency", "average"),
+        ("twoway", "consistency", "average"),
+        ("twoway", "agreement", "average"),
+    ]
+    .iter()
+    .map(|(m, t, u)| icc(data, ns, nr, m, t, u, r0, conf).unwrap())
+    .collect()
+}
+
+/// I1: Shrout-Fleiss (1979) Table 2, all six variants (r0=0, conf=.95).
+/// Kills MU1 (o_s coeff), MU2 (o_s ubound), MU3 (a_s coeff), MU6 (a_s CI).
+#[test]
+fn ic_anchor_i1_sf_all_six() {
+    let r = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let coeffs = [
+        448.0 / 2703.0,
+        920.0 / 1287.0,
+        184.0 / 635.0,
+        1792.0 / 4047.0,
+        3680.0 / 4047.0,
+        736.0 / 1187.0,
+    ];
+    for (res, want) in r.iter().zip(coeffs) {
+        assert!(icc_rel(res.value, want, 1e-12), "{} vs {want}", res.value);
+        assert_eq!(res.subjects, 6);
+        assert_eq!(res.raters, 4);
+        assert_eq!(res.df1, 5.0);
+    }
+    // F/df2/p: oneway pair shares F, twoway quartet shares F at r0=0
+    // (agreement Satterthwaite v == (ns-1)(nr-1) exactly when r0=0).
+    for i in [0usize, 3] {
+        assert!(icc_rel(r[i].fvalue, 1.7946784922394678, 1e-12));
+        assert_eq!(r[i].df2, 18.0);
+        assert!((r[i].p_value - 0.16476880834463953).abs() < 1e-9);
+    }
+    for i in [1usize, 2, 4, 5] {
+        assert!(icc_rel(r[i].fvalue, 11.02724795640327, 1e-12));
+        assert!(icc_rel(r[i].df2, 15.0, 1e-12));
+        assert!((r[i].p_value - 0.00013456651648433688).abs() < 1e-9);
+    }
+    let cis = [
+        (-0.13293232487475098, 0.722560062328121),
+        (0.3424647650339252, 0.9458582599553595),
+        (0.018786513374712013, 0.7610843696489528),
+        (-0.8844421552381201, 0.9124154203407755),
+        (0.6756747138163046, 0.9858916781690623),
+        (0.03944017992139112, 0.9285731833771681),
+    ];
+    for (res, (lb, ub)) in r.iter().zip(cis) {
+        assert!(icc_rel(res.lbound, lb, 1e-9), "lb {} vs {lb}", res.lbound);
+        assert!(icc_rel(res.ubound, ub, 1e-9), "ub {} vs {ub}", res.ubound);
+    }
+}
+
+/// I2: asymmetric 4x3 fixture; kills MU5 (stride/transposition bugs).
+#[test]
+fn ic_asym_i2() {
+    let data = vec![1.0, 3.0, 6.0, 2.0, 2.0, 7.0, 4.0, 5.0, 9.0, 3.0, 3.0, 8.0];
+    let r = icc_all6(&data, 4, 3, 0.0, 0.95);
+    let coeffs = [
+        -23.0 / 139.0,
+        48.0 / 59.0,
+        8.0 / 53.0,
+        -23.0 / 31.0,
+        144.0 / 155.0,
+        8.0 / 23.0,
+    ];
+    for (res, want) in r.iter().zip(coeffs) {
+        assert!(icc_rel(res.value, want, 1e-12), "{} vs {want}", res.value);
+    }
+    assert!(icc_rel(r[1].fvalue, 14.090909090909092, 1e-12));
+    assert_eq!(r[1].df2, 6.0);
+    assert!((r[1].p_value - 0.00399953361525563).abs() < 1e-9);
+    assert!(icc_rel(r[2].lbound, -0.005333344546176069, 1e-9));
+    assert!(icc_rel(r[2].ubound, 0.7496392441094206, 1e-9));
+}
+
+/// I3: r0=0.3 changes F/df2/p but not coefficients or CIs. Kills MU4.
+#[test]
+fn ic_r0_i3() {
+    let base = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let r = icc_all6(&sf_table2(), 6, 4, 0.3, 0.95);
+    for (a, b) in r.iter().zip(&base) {
+        assert_eq!(a.value, b.value); // coeff bitwise-unaffected by r0
+        assert_eq!(a.lbound, b.lbound);
+        assert_eq!(a.ubound, b.ubound);
+    }
+    assert!(icc_rel(r[0].fvalue, 0.6611973392461197, 1e-12));
+    assert!((r[0].p_value - 0.6573818056947218).abs() < 1e-9);
+    assert!(icc_rel(r[1].fvalue, 4.062670299727521, 1e-12));
+    assert!(icc_rel(r[2].fvalue, 0.9561240676364373, 1e-12));
+    assert!(icc_rel(r[2].df2, 4.7463353743354775, 1e-12));
+    assert!((r[2].p_value - 0.5219672328433673).abs() < 1e-9);
+    assert!(icc_rel(r[3].fvalue, 1.2562749445676273, 1e-12));
+    assert!(icc_rel(r[4].fvalue, 7.719073569482289, 1e-12));
+    assert!(icc_rel(r[5].fvalue, 3.0350332119134347, 1e-12));
+    assert!(icc_rel(r[5].df2, 7.136518826153806, 1e-12));
+}
+
+/// I4: conf=.80 changes CIs but not F/p. Kills conf-ignored mutants.
+#[test]
+fn ic_conf_i4() {
+    let base = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let r = icc_all6(&sf_table2(), 6, 4, 0.0, 0.80);
+    for (a, b) in r.iter().zip(&base) {
+        assert_eq!(a.fvalue, b.fvalue);
+        assert_eq!(a.p_value, b.p_value);
+    }
+    assert!(icc_rel(r[0].lbound, -0.047857465433838266, 1e-9));
+    assert!(icc_rel(r[0].ubound, 0.5441024283192402, 1e-9));
+    assert!(icc_rel(r[1].lbound, 0.4905340604697688, 1e-9));
+    assert!(icc_rel(r[1].ubound, 0.8966577783576283, 1e-9));
+    assert!(icc_rel(r[2].lbound, 0.0788459479007961, 1e-9));
+    assert!(icc_rel(r[2].ubound, 0.6022571128642371, 1e-9));
+    assert!(icc_rel(r[5].lbound, 0.2287806352847549, 1e-9));
+    assert!(icc_rel(r[5].ubound, 0.8597203175540028, 1e-9));
+}
+
+/// I5: a NaN anywhere in a row drops it listwise; results are bitwise
+/// identical to calling with that row removed.
+#[test]
+fn ic_nan_drop_i5() {
+    let mut with_nan = sf_table2();
+    with_nan[3 * 4 + 2] = f64::NAN; // poison row 3
+    let direct: Vec<f64> = sf_table2()
+        .chunks(4)
+        .enumerate()
+        .filter(|(i, _)| *i != 3)
+        .flat_map(|(_, r)| r.to_vec())
+        .collect();
+    for (m, t, u) in [
+        ("oneway", "consistency", "single"),
+        ("twoway", "consistency", "single"),
+        ("twoway", "agreement", "average"),
+    ] {
+        let a = icc(&with_nan, 6, 4, m, t, u, 0.0, 0.95).unwrap();
+        let b = icc(&direct, 5, 4, m, t, u, 0.0, 0.95).unwrap();
+        assert_eq!(a.subjects, 5);
+        assert_eq!(a.value.to_bits(), b.value.to_bits());
+        assert_eq!(a.fvalue.to_bits(), b.fvalue.to_bits());
+        assert_eq!(a.lbound.to_bits(), b.lbound.to_bits());
+        assert_eq!(a.ubound.to_bits(), b.ubound.to_bits());
+    }
+    // Oracle pin for the dropped-row fixture (c_s).
+    let c = icc(&direct, 5, 4, "twoway", "consistency", "single", 0.0, 0.95).unwrap();
+    assert!(icc_rel(c.value, 329.0 / 459.0, 1e-12));
+    assert!(icc_rel(c.fvalue, 11.123076923076923, 1e-12));
+    assert_eq!(c.df2, 12.0);
+}
+
+/// Every documented error branch. Asserts read crate Err values.
+#[test]
+fn ic_error_contract() {
+    let d = sf_table2();
+    let ok = |e: Result<IccResult, String>, frag: &str| {
+        let msg = e.unwrap_err();
+        assert!(msg.contains(frag), "{msg} lacks {frag}");
+    };
+    ok(
+        icc(&d, 6, 4, "3way", "consistency", "single", 0.0, 0.95),
+        "model",
+    );
+    ok(icc(&d, 6, 4, "twoway", "abs", "single", 0.0, 0.95), "type");
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "med", 0.0, 0.95),
+        "unit",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 1.0, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", -0.1, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", f64::NAN, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 0.0, 1.0),
+        "conf_level",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 0.0, f64::NAN),
+        "conf_level",
+    );
+    ok(
+        icc(&d[..4], 4, 1, "oneway", "consistency", "single", 0.0, 0.95),
+        "raters",
+    );
+    ok(
+        icc(&d, 5, 4, "oneway", "consistency", "single", 0.0, 0.95),
+        "length",
+    );
+    ok(
+        icc(
+            &[f64::INFINITY, 0.0, 1.0, 2.0],
+            2,
+            2,
+            "oneway",
+            "consistency",
+            "single",
+            0.0,
+            0.95,
+        ),
+        "infinit",
+    );
+    // All-but-one rows dropped -> too few complete rows.
+    let mut nan_heavy = sf_table2();
+    for i in 0..5 {
+        nan_heavy[i * 4] = f64::NAN;
+    }
+    ok(
+        icc(
+            &nan_heavy,
+            6,
+            4,
+            "oneway",
+            "consistency",
+            "single",
+            0.0,
+            0.95,
+        ),
+        "complete subject rows",
+    );
+    // Constant matrix: every mean square is 0 -> degenerate.
+    let konst = vec![3.0; 12];
+    assert!(icc(&konst, 4, 3, "oneway", "consistency", "single", 0.0, 0.95).is_err());
+    // Perfect agreement (rows differ, columns identical): MSe == MSw == 0,
+    // icc == 1 -> degenerate CI/pivot must Err, not leak inf/NaN.
+    let perfect = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0];
+    assert!(icc(&perfect, 4, 2, "twoway", "agreement", "single", 0.0, 0.95).is_err());
+    assert!(icc(&perfect, 4, 2, "twoway", "consistency", "single", 0.0, 0.95).is_err());
+    // Huge magnitudes overflow the SS accumulation -> explicit error.
+    let huge = vec![1e300, -1e300, 1e300, -1e300, -1e300, 1e300, 1e300, 1e300];
+    assert!(icc(&huge, 4, 2, "oneway", "consistency", "single", 0.0, 0.95).is_err());
+}
+
+/// MC-500: subject- and rater-permutation invariance plus the
+/// Spearman-Brown identity between the crate's own single- and
+/// average-unit outputs, for all three model families (algebraic identity
+/// verified in spec review; both sides read crate outputs, so a mutation
+/// breaking either unit's formula independently fails the bridge).
+#[test]
+#[ignore]
+fn ic_mc_500_invariance() {
+    let mut state = 0x1CC5EEDu64;
+    let mut uni = |s: &mut u64| -> f64 {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*s >> 11) as f64 / (1u64 << 53) as f64
+    };
+    for rep in 0..500 {
+        let ns = 4 + (uni(&mut state) * 6.0) as usize;
+        let nr = 2 + (uni(&mut state) * 4.0) as usize;
+        let data: Vec<f64> = (0..ns * nr)
+            .map(|_| (uni(&mut state) * 10.0).round())
+            .collect();
+        let variants = [
+            ("oneway", "consistency"),
+            ("twoway", "consistency"),
+            ("twoway", "agreement"),
+        ];
+        // Skip degenerate draws (constant matrices, near-1 CI pivots etc.)
+        // in ANY variant/unit combination.
+        if variants.iter().any(|(m, t)| {
+            icc(&data, ns, nr, m, t, "single", 0.0, 0.95).is_err()
+                || icc(&data, ns, nr, m, t, "average", 0.0, 0.95).is_err()
+        }) {
+            continue;
+        }
+        // Subject reversal.
+        let rev_rows: Vec<f64> = (0..ns)
+            .rev()
+            .flat_map(|i| data[i * nr..(i + 1) * nr].to_vec())
+            .collect();
+        // Rater reversal.
+        let rev_cols: Vec<f64> = (0..ns)
+            .flat_map(|i| (0..nr).rev().map(move |j| (i, j)))
+            .map(|(i, j)| data[i * nr + j])
+            .collect();
+        for (m, t) in variants {
+            let s = icc(&data, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            let a = icc(&data, ns, nr, m, t, "average", 0.0, 0.95).unwrap();
+            let sr = icc(&rev_rows, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            let sc = icc(&rev_cols, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            assert!(icc_rel(sr.value, s.value, 1e-10), "rep {rep} row-perm");
+            assert!(icc_rel(sc.value, s.value, 1e-10), "rep {rep} col-perm");
+            // Spearman-Brown bridge between two crate outputs.
+            let k = nr as f64;
+            let sb = k * s.value / (1.0 + (k - 1.0) * s.value);
+            assert!(
+                icc_rel(a.value, sb, 1e-10),
+                "rep {rep} {m}/{t} SB: {} vs {sb}",
+                a.value
+            );
+        }
+    }
+}

@@ -731,6 +731,252 @@ pub fn separation_reliability(
     })
 }
 
+/// Intraclass correlation coefficient output (irr `icc`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IccResult {
+    /// The ICC point estimate for the requested variant.
+    pub value: f64,
+    /// Complete (post listwise-drop) subject rows used.
+    pub subjects: u64,
+    /// Raters (columns).
+    pub raters: u64,
+    /// F statistic for H0: icc = r0.
+    pub fvalue: f64,
+    /// Numerator degrees of freedom.
+    pub df1: f64,
+    /// Denominator degrees of freedom (Satterthwaite, possibly non-integer,
+    /// for the agreement variants).
+    pub df2: f64,
+    /// Upper-tail p-value `P(F_{df1,df2} > fvalue)`.
+    pub p_value: f64,
+    /// Lower confidence bound (NOT clamped; can be negative, and below -1
+    /// for average-score variants, matching R).
+    pub lbound: f64,
+    /// Upper confidence bound (not clamped).
+    pub ubound: f64,
+}
+
+/// Intraclass correlation coefficients (Shrout-Fleiss family), transcribed
+/// from CRAN irr 0.85 `R/icc.R` (READ in full; algorithm source of truth).
+/// Model origins — cited as origins only, NOT READ: Shrout, P. E., &
+/// Fleiss, J. L. (1979). Intraclass correlations: Uses in assessing rater
+/// reliability. *Psychological Bulletin, 86*(2), 420-428; McGraw, K. O., &
+/// Wong, S. P. (1996). Forming inferences about some intraclass correlation
+/// coefficients. *Psychological Methods, 1*(1), 30-46; Bartko, J. J.
+/// (1966). The intraclass correlation coefficient as a measure of
+/// reliability. *Psychological Reports, 19*, 3-11.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters); any row containing
+/// NaN is dropped listwise before computation (R `na.omit`). `model` is
+/// `"oneway"` or `"twoway"`; `typ` is `"consistency"` or `"agreement"`
+/// (ignored for oneway, matching R); `unit` is `"single"` or `"average"`.
+/// `r0` is the null ICC for the F test; `conf_level` the CI level.
+///
+/// ANOVA mean squares (R lines 13-17, `var` = sample variance n-1):
+/// `MSr = var(row means)*nr`, `MSw = mean(row variances)`,
+/// `MSc = var(col means)*ns`, `MSe = (SStotal - MSr(ns-1) - MSc(nr-1)) /
+/// ((ns-1)(nr-1))`. Agreement F tests use the Satterthwaite df with `r0`
+/// (R lines 67-75, 128-136); agreement CIs plug the estimated coefficient
+/// into the same Satterthwaite form (McGraw & Wong, 1996, as coded at R
+/// lines 78-85, 139-146). The average-agreement CI reuses the nr-scaled
+/// `a,b` expressions of the single variant verbatim (R lines 139-141) —
+/// preserved deliberately.
+///
+/// Documented deviations from R: explicit errors (instead of NaN
+/// propagation) for fewer than 2 complete rows, `nr < 2`, non-finite
+/// (non-NaN) input, out-of-range `r0`/`conf_level`, and degenerate
+/// zero/non-finite denominators; dimension caps `ns <= 1e6`, `nr <= 1e4`.
+pub fn icc(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    model: &str,
+    typ: &str,
+    unit: &str,
+    r0: f64,
+    conf_level: f64,
+) -> Result<IccResult, String> {
+    if !matches!(model, "oneway" | "twoway") {
+        return Err("model must be \"oneway\" or \"twoway\"".into());
+    }
+    if !matches!(typ, "consistency" | "agreement") {
+        return Err("type must be \"consistency\" or \"agreement\"".into());
+    }
+    if !matches!(unit, "single" | "average") {
+        return Err("unit must be \"single\" or \"average\"".into());
+    }
+    if !r0.is_finite() || !(0.0..1.0).contains(&r0) {
+        return Err("r0 must be finite and in [0, 1)".into());
+    }
+    if !conf_level.is_finite() || !(conf_level > 0.0 && conf_level < 1.0) {
+        return Err("conf_level must be in (0, 1)".into());
+    }
+    if nr < 2 {
+        return Err("icc needs at least 2 raters".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 {
+        return Err("icc: dimensions exceed caps (ns <= 1e6, nr <= 1e4)".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} does not match ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    // Listwise drop of rows containing NaN (R na.omit).
+    let rows: Vec<&[f64]> = (0..ns)
+        .map(|i| &ratings[i * nr..(i + 1) * nr])
+        .filter(|r| r.iter().all(|v| v.is_finite()))
+        .collect();
+    let m = rows.len();
+    if m < 2 {
+        return Err("icc needs at least 2 complete subject rows after dropping missing".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+
+    fn sample_var(xs: &[f64]) -> f64 {
+        let n = xs.len() as f64;
+        let mean = xs.iter().sum::<f64>() / n;
+        xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    }
+
+    let all: Vec<f64> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let ss_total = sample_var(&all) * (mf * nrf - 1.0);
+    let row_means: Vec<f64> = rows.iter().map(|r| r.iter().sum::<f64>() / nrf).collect();
+    let ms_r = sample_var(&row_means) * nrf;
+    let ms_w = rows.iter().map(|r| sample_var(r)).sum::<f64>() / mf;
+    let col_means: Vec<f64> = (0..nr)
+        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / mf)
+        .collect();
+    let ms_c = sample_var(&col_means) * mf;
+    let ms_e = (ss_total - ms_r * (mf - 1.0) - ms_c * (nrf - 1.0)) / ((mf - 1.0) * (nrf - 1.0));
+    if ![ms_r, ms_w, ms_c, ms_e].iter().all(|v| v.is_finite()) {
+        return Err("icc: ANOVA mean squares are non-finite (inputs too large?)".into());
+    }
+
+    let alpha = 1.0 - conf_level;
+    let q = 1.0 - alpha / 2.0;
+    let oneway = model == "oneway";
+    let consistency = typ == "consistency";
+    let single = unit == "single";
+
+    // Satterthwaite df for the twoway-agreement F test / CI (R lines
+    // 67-69, 78-80, 128-130, 139-141). `scale` is nr for the single-unit
+    // a,b and 1 for the average F test; the average CI deliberately reuses
+    // the nr-scaled form (R quirk, lines 139-141).
+    let satt = |rho: f64, scale: f64| -> (f64, f64, f64) {
+        let a = (scale * rho) / (mf * (1.0 - rho));
+        let b = 1.0 + (scale * rho * (mf - 1.0)) / (mf * (1.0 - rho));
+        let v = (a * ms_c + b * ms_e).powi(2)
+            / ((a * ms_c).powi(2) / (nrf - 1.0) + (b * ms_e).powi(2) / ((mf - 1.0) * (nrf - 1.0)));
+        (a, b, v)
+    };
+
+    let (value, fvalue, df1, df2, lbound, ubound);
+    if oneway {
+        let denom_s = ms_r + (nrf - 1.0) * ms_w;
+        if single {
+            value = (ms_r - ms_w) / denom_s;
+        } else {
+            value = (ms_r - ms_w) / ms_r;
+        }
+        fvalue = if single {
+            ms_r / ms_w * ((1.0 - r0) / (1.0 + (nrf - 1.0) * r0))
+        } else {
+            ms_r / ms_w * (1.0 - r0)
+        };
+        df1 = mf - 1.0;
+        df2 = mf * (nrf - 1.0);
+        let fl = (ms_r / ms_w) / f_quantile(q, df1, df2);
+        let fu = (ms_r / ms_w) * f_quantile(q, df2, df1);
+        if single {
+            lbound = (fl - 1.0) / (fl + nrf - 1.0);
+            ubound = (fu - 1.0) / (fu + nrf - 1.0);
+        } else {
+            lbound = 1.0 - 1.0 / fl;
+            ubound = 1.0 - 1.0 / fu;
+        }
+    } else if consistency {
+        if single {
+            value = (ms_r - ms_e) / (ms_r + (nrf - 1.0) * ms_e);
+        } else {
+            value = (ms_r - ms_e) / ms_r;
+        }
+        fvalue = if single {
+            ms_r / ms_e * ((1.0 - r0) / (1.0 + (nrf - 1.0) * r0))
+        } else {
+            ms_r / ms_e * (1.0 - r0)
+        };
+        df1 = mf - 1.0;
+        df2 = (mf - 1.0) * (nrf - 1.0);
+        let fl = (ms_r / ms_e) / f_quantile(q, df1, df2);
+        let fu = (ms_r / ms_e) * f_quantile(q, df2, df1);
+        if single {
+            lbound = (fl - 1.0) / (fl + nrf - 1.0);
+            ubound = (fu - 1.0) / (fu + nrf - 1.0);
+        } else {
+            lbound = 1.0 - 1.0 / fl;
+            ubound = 1.0 - 1.0 / fu;
+        }
+    } else {
+        // twoway agreement
+        if single {
+            value = (ms_r - ms_e) / (ms_r + (nrf - 1.0) * ms_e + (nrf / mf) * (ms_c - ms_e));
+        } else {
+            value = (ms_r - ms_e) / (ms_r + (ms_c - ms_e) / mf);
+        }
+        let (a, b, v) = satt(r0, if single { nrf } else { 1.0 });
+        fvalue = ms_r / (a * ms_c + b * ms_e);
+        df1 = mf - 1.0;
+        df2 = v;
+        if !(1.0 - value).is_finite() || (1.0 - value).abs() < 1e-12 {
+            return Err("icc: degenerate coefficient (icc = 1) — CI undefined".into());
+        }
+        // McGraw & Wong CI: plug the estimate into the nr-scaled a,b (R
+        // lines 78-80 and, deliberately, 139-141 for the average variant).
+        let (_a2, _b2, v2) = satt(value, nrf);
+        if !v2.is_finite() || v2 <= 0.0 {
+            return Err("icc: degenerate Satterthwaite df in CI".into());
+        }
+        let fl = f_quantile(q, df1, v2);
+        let fu = f_quantile(q, v2, df1);
+        if single {
+            lbound = (mf * (ms_r - fl * ms_e))
+                / (fl * (nrf * ms_c + (nrf * mf - nrf - mf) * ms_e) + mf * ms_r);
+            ubound = (mf * (fu * ms_r - ms_e))
+                / (nrf * ms_c + (nrf * mf - nrf - mf) * ms_e + mf * fu * ms_r);
+        } else {
+            lbound = (mf * (ms_r - fl * ms_e)) / (fl * (ms_c - ms_e) + mf * ms_r);
+            ubound = (mf * (fu * ms_r - ms_e)) / (ms_c - ms_e + mf * fu * ms_r);
+        }
+    }
+    if ![value, fvalue, df2, lbound, ubound]
+        .iter()
+        .all(|v| v.is_finite())
+    {
+        return Err(
+            "icc: degenerate ratings (zero-variance denominator produced non-finite output)".into(),
+        );
+    }
+    let p_value = 1.0 - f_cdf(fvalue, df1, df2);
+    Ok(IccResult {
+        value,
+        subjects: m as u64,
+        raters: nr as u64,
+        fvalue,
+        df1,
+        df2,
+        p_value,
+        lbound,
+        ubound,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

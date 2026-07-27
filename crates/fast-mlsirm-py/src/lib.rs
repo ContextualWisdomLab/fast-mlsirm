@@ -109,7 +109,7 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
-    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
+    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci, icc as core_icc,
     separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
@@ -3578,6 +3578,47 @@ fn feldt_alpha_ci(
     Ok(out.into())
 }
 
+/// Intraclass correlation coefficients (Shrout & Fleiss, 1979 taxonomy),
+/// transcribed from CRAN irr 0.85 `icc.R` (READ; `mlsirm_core::reliability`).
+/// `ratings` is row-major ns x nr; rows with NaN are dropped listwise.
+/// Returns a dict with `value`, `subjects`, `raters`, `fvalue`, `df1`,
+/// `df2`, `p_value`, `lbound`, `ubound`.
+#[pyfunction]
+fn icc(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    model: &str,
+    r#type: &str,
+    unit: &str,
+    r0: f64,
+    conf_level: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_icc(
+        ratings.as_slice()?,
+        ns,
+        nr,
+        model,
+        r#type,
+        unit,
+        r0,
+        conf_level,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    out.set_item("fvalue", res.fvalue)?;
+    out.set_item("df1", res.df1)?;
+    out.set_item("df2", res.df2)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("lbound", res.lbound)?;
+    out.set_item("ubound", res.ubound)?;
+    Ok(out.into())
+}
+
 /// Person separation reliability `(SSD - MSE) / SSD`
 /// (`mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`).
 /// Returns a dict with `sep_rel`, `ssd`, `mse`, `sep_index`.
@@ -5496,13 +5537,17 @@ fn glicko2_rating(
         .iter()
         .map(|&v| usize::try_from(v))
         .collect::<Result<_, _>>()
-        .map_err(|_| PyValueError::new_err("glicko2_rating: player index exceeds platform usize"))?;
+        .map_err(|_| {
+            PyValueError::new_err("glicko2_rating: player index exceeds platform usize")
+        })?;
     let black: Vec<usize> = black
         .as_slice()?
         .iter()
         .map(|&v| usize::try_from(v))
         .collect::<Result<_, _>>()
-        .map_err(|_| PyValueError::new_err("glicko2_rating: player index exceeds platform usize"))?;
+        .map_err(|_| {
+            PyValueError::new_err("glicko2_rating: player index exceeds platform usize")
+        })?;
     let res = mlsirm_core::scaling::glicko2_rating(
         periods.as_slice()?,
         &white,
@@ -5655,7 +5700,6 @@ fn elom_rating(
     d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
     Ok(d.into())
 }
-
 
 /// Prediction-quality metrics for binary-outcome forecasts, PlayerRatings
 /// `metrics()` semantics (see `mlsirm_core::scaling::metrics_rating`).
@@ -5811,7 +5855,6 @@ fn predict_rating_multi(
     Ok(PyArray1::from_slice(py, &out).into())
 }
 
-
 /// Bradley-Terry model with ties (additive alpha0, VGAM `bratt`) fitted
 /// by MM (see `mlsirm_core::scaling::bratt_mm`). `wins` and `ties` are
 /// flat row-major n*n matrices (ties symmetric); returns dict with alpha
@@ -5871,7 +5914,10 @@ fn fleiss_kappa(
     d.set_item("subjects_used", res.subjects_used as u64)?;
     d.set_item("z", res.z)?;
     d.set_item("p_value", res.p_value)?;
-    d.set_item("category_kappa", PyArray1::from_slice(py, &res.category_kappa))?;
+    d.set_item(
+        "category_kappa",
+        PyArray1::from_slice(py, &res.category_kappa),
+    )?;
     d.set_item("category_z", PyArray1::from_slice(py, &res.category_z))?;
     d.set_item("category_p", PyArray1::from_slice(py, &res.category_p))?;
     Ok(d.into())
@@ -8177,6 +8223,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(icc, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

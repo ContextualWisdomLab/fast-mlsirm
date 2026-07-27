@@ -123,6 +123,8 @@ from .reliability import (
     AlphaCiResult as AlphaCiResult,
     separation_reliability as separation_reliability,
     SeparationReliabilityResult as SeparationReliabilityResult,
+    icc as icc,
+    IccResult as IccResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -362,6 +364,8 @@ __all__ = [
     "AlphaCiResult",
     "separation_reliability",
     "SeparationReliabilityResult",
+    "icc",
+    "IccResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",
