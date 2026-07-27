@@ -10348,3 +10348,78 @@ class TestBratt:
             h = 9e307
             yh = np.array([[0, 1, 1], [1, 0, h], [1, h, 0]], dtype=float)
             bratt_mm(yh, t, max_iter=3, tol=2.0)
+
+
+class TestFleiss:
+    """fleiss_kappa binding + wrapper (irr 0.85 kappam.fleiss oracle anchors)."""
+
+    @staticmethod
+    def _fk():
+        import numpy as np
+
+        return np.array(
+            [[0, 0, 0, 1], [0, 1, 1, 1], [2, 2, 2, 2], [0, 0, 2, 2], [1, 1, 1, 0]]
+        )
+
+    def test_classic_anchor(self):
+        import numpy as np
+
+        from fast_mlsirm import fleiss_kappa
+
+        res = fleiss_kappa(self._fk())
+        assert abs(res.kappa - 139.0 / 399.0) < 1e-14
+        assert res.subjects_used == 5
+        assert abs(res.z - 2.694739854085488) < 1e-10
+        assert abs(res.p_value - 0.007044360582468963) < 5e-7
+        np.testing.assert_allclose(
+            res.category_kappa, [1 / 21, 31 / 91, 43 / 63], rtol=1e-14
+        )
+
+    def test_exact_and_missing(self):
+        import numpy as np
+
+        from fast_mlsirm import fleiss_kappa
+
+        res = fleiss_kappa(self._fk(), exact=True)
+        assert abs(res.kappa - 37.0 / 102.0) < 1e-14
+        assert np.isnan(res.z) and np.isnan(res.p_value)
+        assert res.category_kappa.size == 0
+        # NaN row drops listwise and reproduces the classic anchor.
+        withnan = np.vstack([[0.0, np.nan, 1.0, 2.0], self._fk().astype(float)])
+        res2 = fleiss_kappa(withnan)
+        assert res2.subjects_used == 5
+        assert abs(res2.kappa - 139.0 / 399.0) < 1e-14
+        # Explicit k adds an empty category with NaN detail.
+        res3 = fleiss_kappa(self._fk(), k=4)
+        assert np.isnan(res3.category_kappa[3])
+        assert abs(res3.kappa - 139.0 / 399.0) < 1e-14
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import fleiss_kappa
+
+        fk = self._fk()
+        with pytest.raises(ValueError, match="2-D"):
+            fleiss_kappa(fk.reshape(-1))
+        with pytest.raises(ValueError, match="masked"):
+            fleiss_kappa(np.ma.masked_array(fk, mask=False))
+        with pytest.raises(ValueError, match="complex|real"):
+            fleiss_kappa(fk.astype(complex))
+        with pytest.raises(ValueError, match="boolean"):
+            fleiss_kappa(np.array([[True, False], [False, True]], dtype=object))
+        with pytest.raises(ValueError, match="boolean"):
+            fleiss_kappa(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError, match="integer"):
+            fleiss_kappa(fk + 0.5)
+        with pytest.raises(ValueError, match="infinit"):
+            fleiss_kappa(np.array([[np.inf, 0.0], [1.0, 0.0]]))
+        with pytest.raises(ValueError, match="raters"):
+            fleiss_kappa(fk[:, :1])
+        with pytest.raises(ValueError, match="infer"):
+            fleiss_kappa(np.full((2, 2), np.nan))
+        with pytest.raises(ValueError, match="dropped"):
+            fleiss_kappa(np.full((2, 2), np.nan), k=2)
+        with pytest.raises(ValueError, match="degenerate"):
+            fleiss_kappa(np.ones((3, 2), dtype=int), k=2)

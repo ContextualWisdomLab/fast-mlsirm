@@ -5848,6 +5848,35 @@ fn bratt_mm(
     Ok(d.into())
 }
 
+/// Fleiss' kappa for nominal agreement among nr raters over ns subjects,
+/// with the exact (Conger) variant (irr 0.85 `kappam.fleiss`; see
+/// `mlsirm_core::agreement::fleiss_kappa`). `ratings` is flat row-major
+/// ns*nr of codes 0..k-1; negative = missing (listwise row drop). Returns
+/// dict with kappa, subjects_used, z, p_value, category_kappa/z/p
+/// (empty arrays and NaN z/p in exact mode).
+#[pyfunction]
+#[pyo3(signature = (ratings, ns, nr, k, exact=false))]
+fn fleiss_kappa(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, i64>,
+    ns: usize,
+    nr: usize,
+    k: usize,
+    exact: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::agreement::fleiss_kappa(ratings.as_slice()?, ns, nr, k, exact)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("kappa", res.kappa)?;
+    d.set_item("subjects_used", res.subjects_used as u64)?;
+    d.set_item("z", res.z)?;
+    d.set_item("p_value", res.p_value)?;
+    d.set_item("category_kappa", PyArray1::from_slice(py, &res.category_kappa))?;
+    d.set_item("category_z", PyArray1::from_slice(py, &res.category_z))?;
+    d.set_item("category_p", PyArray1::from_slice(py, &res.category_p))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8205,6 +8234,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(predict_rating_two, m)?)?;
     m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
     m.add_function(wrap_pyfunction!(bratt_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(fleiss_kappa, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

@@ -175,7 +175,9 @@ from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFo
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
 from .report import render_diagnostics_report as render_diagnostics_report
-from .validation import (ValidationVerdict as ValidationVerdict,
+from .validation import (FleissKappaResult as FleissKappaResult,
+                         ValidationVerdict as ValidationVerdict,
+                         fleiss_kappa as fleiss_kappa,
                          validate_judge as validate_judge)
 from .serving import (bank_information as bank_information,
                       cat_next_item as cat_next_item,
@@ -220,6 +222,8 @@ __all__ = [
     "assemble_test_form",
     "dimensionality_diagnostics",
     "ValidationVerdict",
+    "FleissKappaResult",
+    "fleiss_kappa",
     "benjamini_hochberg",
     "chi2_sf",
     "dif_analysis",
