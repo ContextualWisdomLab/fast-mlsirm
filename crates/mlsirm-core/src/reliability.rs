@@ -1308,6 +1308,115 @@ pub fn finn_coefficient(
     })
 }
 
+/// Result of Maxwell's RE agreement coefficient for two raters.
+///
+/// Fields mirror the irr `irrlist` return: `value` is the RE coefficient,
+/// `subjects` the number of complete (post listwise-deletion) subject rows,
+/// `raters` the number of raters (always 2 on success).
+#[derive(Debug, Clone)]
+pub struct MaxwellResult {
+    /// Maxwell's RE coefficient, in [-1, 1].
+    pub value: f64,
+    /// Number of subjects after listwise deletion of NaN rows.
+    pub subjects: u64,
+    /// Number of raters (always 2).
+    pub raters: u64,
+}
+
+/// Maxwell's RE agreement coefficient for two raters with binary ratings.
+///
+/// Computes `RE = 2 * A / ns - 1`, where `A` is the number of subjects on
+/// which the two raters agree exactly and `ns` the number of complete
+/// subjects after listwise deletion of rows containing NaN. This replicates
+/// `maxwell()` from the irr R package (v0.84.1, `R/maxwell.R`, source READ):
+/// the R code builds `table(r1, r2)` over the union of both columns' factor
+/// levels and returns `2*sum(diag(ttab))/ns - 1`. Because both columns are
+/// refactored with the same level vector, the diagonal sum equals the exact
+/// match count, independent of level ordering (verified by hand derivation
+/// and an executed exact-Fraction oracle; the R level-ordering quirk of
+/// putting the longer level set first cannot affect a diagonal sum).
+///
+/// Binary check: the distinct-value union across BOTH columns of the kept
+/// rows must have cardinality <= 2 (R stops with "Ratings are not binary"
+/// otherwise). A single distinct value is allowed and yields RE = 1.
+/// Values are compared with exact `==` on f64, mirroring R's factor
+/// coercion of numeric ratings.
+///
+/// Deliberately stricter than R: `nr != 2` is a checked error (R stops only
+/// for nr > 2 and fails accidentally with a subscript error for nr < 2), and
+/// non-finite values other than NaN (which means missing) are rejected.
+///
+/// `ratings` is row-major `ns x nr` with `nr == 2`.
+///
+/// # References
+///
+/// Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). irr:
+/// Various coefficients of interrater reliability and agreement
+/// (Version 0.84.1) [Computer software]. CRAN.
+/// <https://CRAN.R-project.org/package=irr> (R source `R/maxwell.R` READ;
+/// normative reference for this implementation.)
+///
+/// Maxwell, A. E. (1977). Coefficients of agreement between observers and
+/// their interpretation. British Journal of Psychiatry, 130(1), 79-83.
+/// <https://doi.org/10.1192/bjp.130.1.79> (NOT READ; cited as the
+/// historical origin via the irr package documentation only.)
+pub fn maxwell_re(ratings: &[f64], ns: usize, nr: usize) -> Result<MaxwellResult, String> {
+    if nr != 2 {
+        return Err("maxwell: exactly 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("maxwell: at least one subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("maxwell: ns exceeds 1e6 bound".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "maxwell: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "maxwell: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("maxwell: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows where both entries are non-NaN.
+    let kept: Vec<(f64, f64)> = (0..ns)
+        .map(|p| (ratings[p * 2], ratings[p * 2 + 1]))
+        .filter(|(a, b)| !a.is_nan() && !b.is_nan())
+        .collect();
+    let m = kept.len();
+    if m == 0 {
+        return Err("maxwell: no complete subject rows after NaN deletion".into());
+    }
+    // Distinct-value union across both columns (exact == on f64, as R's
+    // factor coercion of numeric labels). Linear scan; stops at 3.
+    let mut levels: Vec<f64> = Vec::with_capacity(3);
+    for &(a, b) in &kept {
+        for v in [a, b] {
+            if !levels.iter().any(|&l| l == v) {
+                levels.push(v);
+                if levels.len() > 2 {
+                    return Err("maxwell: ratings are not binary".into());
+                }
+            }
+        }
+    }
+    let agree = kept.iter().filter(|(a, b)| a == b).count();
+    let value = 2.0 * agree as f64 / m as f64 - 1.0;
+    if !value.is_finite() {
+        return Err("maxwell: non-finite result".into());
+    }
+    Ok(MaxwellResult {
+        value,
+        subjects: m as u64,
+        raters: 2,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

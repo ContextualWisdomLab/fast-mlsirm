@@ -129,6 +129,8 @@ from .reliability import (
     KrippResult as KrippResult,
     finn_coefficient as finn_coefficient,
     FinnResult as FinnResult,
+    maxwell_re as maxwell_re,
+    MaxwellResult as MaxwellResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -378,6 +380,8 @@ __all__ = [
     "KrippResult",
     "finn_coefficient",
     "FinnResult",
+    "maxwell_re",
+    "MaxwellResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",

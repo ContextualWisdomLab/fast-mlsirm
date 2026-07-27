@@ -1339,3 +1339,176 @@ fn fn1_mc_500_permutation_invariance() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Maxwell's RE (maxwell_re) — anchors from the executed exact-Fraction oracle
+// replicating irr 0.84.1 maxwell.R. Every assert reads crate outputs.
+// Known unkillable identity: column swap (the match count #{r1 == r2} is
+// symmetric in the two columns by definition — an estimand property).
+// ---------------------------------------------------------------------------
+
+/// M1 anchor: 10 subjects in {0,1}, 7 exact matches -> RE = 2*7/10 - 1 = 2/5.
+/// 2/5 is not dyadic -> tolerance assert. Kills MU5a (self-compare counts
+/// 10/10 -> 1.0) and MU5b (`<=` counts 9/10 -> 0.8).
+#[test]
+fn mx_anchor_m1() {
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+        0.0, 1.0,
+    ];
+    let out = maxwell_re(&r, 10, 2).unwrap();
+    assert!((out.value - 0.4).abs() < 1e-15, "value {}", out.value);
+    assert_eq!(out.subjects, 10);
+    assert_eq!(out.raters, 2);
+}
+
+/// M2: M1 plus two NaN rows (one NaN in each column) inserted mid-matrix.
+/// Listwise deletion must drop both rows, leaving the M1 result with
+/// subjects == 10 (not 12). Kills MU4 (skip deletion -> NaN rows counted in
+/// the denominator, no NaN agreements -> value (2*7/12 - 1) != 2/5 and
+/// subjects 12).
+#[test]
+fn mx_nan_rows_dropped_m2() {
+    let nan = f64::NAN;
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, nan, 1.0, 0.0, nan, 1.0, 0.0, 1.0, 1.0,
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    ];
+    let out = maxwell_re(&r, 12, 2).unwrap();
+    assert!((out.value - 0.4).abs() < 1e-15, "value {}", out.value);
+    assert_eq!(out.subjects, 10);
+}
+
+/// M2b anchor: 10 rows, 2 dropped by NaN -> ns = 8, agree = 5,
+/// RE = 2*5/8 - 1 = 1/4 exactly (dyadic -> exact ==). Mutant pins (executed):
+/// MU1 (drop factor 2) -> -0.375; MU2 (drop -1) -> 1.25; MU4 (no deletion)
+/// -> 0.0 with subjects 10.
+#[test]
+fn mx_anchor_m2b_exact() {
+    let nan = f64::NAN;
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, nan, 0.0,
+        0.0, nan,
+    ];
+    let out = maxwell_re(&r, 10, 2).unwrap();
+    assert_eq!(out.value, 0.25, "value {}", out.value);
+    assert_eq!(out.subjects, 8);
+}
+
+/// M3: perfect agreement -> exactly 1.0 (also exercises the allowed
+/// single-distinct-value case); total disagreement -> exactly -1.0.
+#[test]
+fn mx_bounds_m3() {
+    let perfect = [1.0; 12];
+    let out = maxwell_re(&perfect, 6, 2).unwrap();
+    assert_eq!(out.value, 1.0);
+    let disagree = [0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    let out = maxwell_re(&disagree, 6, 2).unwrap();
+    assert_eq!(out.value, -1.0);
+}
+
+/// M4: nonstandard binary labels {2.5, 7.0}; 4 of 6 agree -> RE = 1/3.
+/// Kills mutants hard-coding {0,1} labels.
+#[test]
+fn mx_nonstandard_labels_m4() {
+    let r = [2.5, 2.5, 7.0, 7.0, 2.5, 7.0, 7.0, 7.0, 2.5, 2.5, 7.0, 2.5];
+    let out = maxwell_re(&r, 6, 2).unwrap();
+    assert!((out.value - 1.0 / 3.0).abs() < 1e-15, "value {}", out.value);
+}
+
+/// E1 + error contract. E1 (col1 in {0,1}, col2 in {0,2}: each column
+/// individually binary but union has 3 levels) kills MU3 (per-column binary
+/// check instead of union).
+#[test]
+fn mx_error_contract() {
+    // E1: union of 3 levels rejected.
+    let e1 = [0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0, 2.0];
+    assert!(maxwell_re(&e1, 4, 2).is_err());
+    // 3 distinct values within one column.
+    let tri = [0.0, 0.0, 1.0, 1.0, 2.0, 2.0];
+    assert!(maxwell_re(&tri, 3, 2).is_err());
+    // nr != 2.
+    assert!(maxwell_re(&[0.0, 1.0], 2, 1).is_err());
+    assert!(maxwell_re(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0], 2, 3).is_err());
+    // ns == 0 and length mismatch.
+    assert!(maxwell_re(&[], 0, 2).is_err());
+    assert!(maxwell_re(&[0.0, 1.0, 0.0], 2, 2).is_err());
+    // Inf rejected.
+    assert!(maxwell_re(&[0.0, f64::INFINITY, 1.0, 1.0], 2, 2).is_err());
+    // All rows NaN-dropped.
+    let nan = f64::NAN;
+    assert!(maxwell_re(&[nan, 0.0, 1.0, nan], 2, 2).is_err());
+    // One row remaining after drop is allowed (ns = 1 after deletion).
+    let out = maxwell_re(&[nan, 0.0, 1.0, 1.0], 2, 2).unwrap();
+    assert_eq!(out.value, 1.0);
+    assert_eq!(out.subjects, 1);
+}
+
+/// MC-500: random binary 2-column matrices with random NaN holes. The
+/// test-side oracle is an independent loop (listwise drop, union check,
+/// match count, 2*A/m - 1) that never calls the crate. Also checks
+/// row-permutation invariance crate-vs-crate (kills row-position
+/// dependence).
+#[test]
+#[ignore]
+fn mx_mc_500_independent_oracle() {
+    let mut state: u64 = 0x4D61_7857_454C_4C31;
+    let mut lcg = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    for rep in 0..500 {
+        let ns = 4 + (lcg() * 40.0) as usize;
+        let hi = 1.0 + lcg() * 9.0; // nonstandard second label
+        let mut r = Vec::with_capacity(ns * 2);
+        for _ in 0..(ns * 2) {
+            let u = lcg();
+            if u < 0.1 {
+                r.push(f64::NAN);
+            } else if u < 0.55 {
+                r.push(0.0);
+            } else {
+                r.push(hi);
+            }
+        }
+        // Independent test-side oracle: listwise drop + match count.
+        let mut m = 0usize;
+        let mut agree = 0usize;
+        for p in 0..ns {
+            let (a, b) = (r[p * 2], r[p * 2 + 1]);
+            if a.is_nan() || b.is_nan() {
+                continue;
+            }
+            m += 1;
+            if a == b {
+                agree += 1;
+            }
+        }
+        let res = maxwell_re(&r, ns, 2);
+        if m == 0 {
+            assert!(res.is_err(), "rep {rep}: expected Err on empty");
+            continue;
+        }
+        let expected = 2.0 * agree as f64 / m as f64 - 1.0;
+        let out = res.unwrap();
+        assert!(
+            (out.value - expected).abs() < 1e-14,
+            "rep {rep}: crate {} vs oracle {}",
+            out.value,
+            expected
+        );
+        assert_eq!(out.subjects, m as u64, "rep {rep}");
+        // Row-permutation invariance (deterministic rotation), crate-vs-crate.
+        let k = 1 + (lcg() * (ns as f64 - 1.0)) as usize;
+        let mut rot = Vec::with_capacity(ns * 2);
+        for p in 0..ns {
+            let q = (p + k) % ns;
+            rot.push(r[q * 2]);
+            rot.push(r[q * 2 + 1]);
+        }
+        let out2 = maxwell_re(&rot, ns, 2).unwrap();
+        assert_eq!(out.value, out2.value, "rep {rep}: permutation variance");
+    }
+}

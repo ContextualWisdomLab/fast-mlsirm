@@ -586,3 +586,74 @@ def finn_coefficient(ratings, s_levels: int, model: str = "oneway") -> FinnResul
         subjects=int(res["subjects"]),
         raters=int(res["raters"]),
     )
+@dataclass
+class MaxwellResult:
+    """Maxwell's RE agreement coefficient (irr ``maxwell``).
+
+    ``value`` is ``2*A/ns - 1`` where ``A`` counts subjects with exactly
+    equal ratings from the two raters; ``subjects`` counts the complete
+    rows used after listwise NaN deletion; ``raters`` is always 2."""
+
+    value: float
+    subjects: int
+    raters: int
+
+
+def maxwell_re(ratings) -> MaxwellResult:
+    """Maxwell's RE agreement coefficient for a subjects x 2 matrix of
+    binary ratings (computed in Rust; transcribed from the CRAN irr
+    0.84.1 R source ``maxwell.R``, read in full). Rows containing NaN
+    are dropped listwise (R ``na.omit``); the distinct-value union
+    across BOTH columns must have at most 2 levels (any two numeric
+    labels are accepted; a single level yields RE = 1).
+
+    The R source computes ``2*sum(diag(table(r1, r2)))/ns - 1``; because
+    both columns are refactored with the same level vector, the diagonal
+    sum equals the exact match count regardless of level ordering
+    (hand-derived and verified against an executed exact-arithmetic
+    oracle). Documented deviations from R (deliberate, stricter-than-R):
+    explicit errors for ``nr != 2`` (R only stops for ``nr > 2`` and
+    fails accidentally for one column), infinities, and empty input. In
+    LLM-as-a-Judge quality management this measures chance-corrected
+    agreement between two judges on a binary criterion.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Maxwell, A. E. (1977). Coefficients of agreement between
+            observers and their interpretation. *British Journal of
+            Psychiatry, 130*(1), 79-83. https://doi.org/10.1192/bjp.130.1.79
+            (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "maxwell_re"):
+        raise RuntimeError("maxwell_re requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x 2 array")
+    if arr.dtype.kind in "iu" and arr.size and np.abs(arr).max() > 2**53:
+        # Exact-label equality must survive the f64 conversion.
+        raise ValueError("integer ratings exceed exact float64 range (2**53)")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    res = core.maxwell_re(x.reshape(-1), int(ns), int(nr))
+    return MaxwellResult(
+        value=float(res["value"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+    )

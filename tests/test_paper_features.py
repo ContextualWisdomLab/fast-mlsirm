@@ -10812,3 +10812,72 @@ class TestFinn:
             finn_coefficient(good, 3, model="both")
         with pytest.raises(ValueError, match="infinit"):
             finn_coefficient(np.array([[1.0, np.inf], [2.0, 3.0]]), 3)
+class TestMaxwell:
+    """Maxwell's RE (irr maxwell.R): anchors from the executed
+    exact-Fraction oracle. Every assert reads crate outputs through the
+    Python wrapper."""
+
+    def test_anchor_m2b(self):
+        import numpy as np
+        from fast_mlsirm import maxwell_re
+
+        nan = float("nan")
+        r = np.array(
+            [
+                [0, 0], [1, 1], [0, 1], [1, 1], [0, 0],
+                [1, 0], [1, 0], [1, 1], [nan, 0], [0, nan],
+            ],
+            dtype=float,
+        )
+        out = maxwell_re(r)
+        assert out.value == 0.25
+        assert out.subjects == 8
+        assert out.raters == 2
+
+    def test_anchor_m1_and_labels(self):
+        import numpy as np
+        from fast_mlsirm import maxwell_re
+
+        m1 = np.array(
+            [
+                [0, 0], [1, 1], [0, 1], [1, 1], [0, 0],
+                [1, 0], [1, 1], [0, 0], [1, 1], [0, 1],
+            ],
+            dtype=float,
+        )
+        assert abs(maxwell_re(m1).value - 0.4) < 1e-15
+        m4 = np.array(
+            [[2.5, 2.5], [7.0, 7.0], [2.5, 7.0], [7.0, 7.0], [2.5, 2.5], [7.0, 2.5]]
+        )
+        assert abs(maxwell_re(m4).value - 1.0 / 3.0) < 1e-15
+
+    def test_not_binary_union(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import maxwell_re
+
+        # Each column binary, union of 3 levels -> rejected (E1).
+        e1 = np.array([[0, 0], [1, 2], [0, 0], [1, 2]], dtype=float)
+        with pytest.raises(ValueError):
+            maxwell_re(e1)
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import maxwell_re
+
+        ok = np.array([[0, 0], [1, 1]], dtype=float)
+        with pytest.raises(ValueError):
+            maxwell_re(np.ma.masked_array(ok))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(object))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(complex))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(bool))
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([0.0, 1.0]))  # 1-D
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 0, 0], [1, 1, 1]], dtype=float))  # nr=3
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 2**53 + 2], [1, 1]], dtype=np.int64))
