@@ -2226,3 +2226,229 @@ fn mrh_mc_500_independent_oracle() {
         done += 1;
     }
 }
+
+// ---------------- Stuart-Maxwell marginal homogeneity ----------------
+// Fixtures and pins transcribed from the executed exact-Fraction oracle
+// (files/stuartmaxwell_oracle.py, ALL PASS). Every assert reads crate
+// outputs from stuart_maxwell_mh. Disclosed unkillable identities:
+// d -> -d (quadratic form) and solve(S,d) vs solve(S',d) (S symmetric).
+
+/// M1 3x3 anchor. Kills MU1 (S_ii uses -x_ii -> 3.4097793163132843),
+/// MU2 (S_ij sign flip -> 5.265392781316348), MU3 (d = r + c ->
+/// 908.7048832271762), MU6 (S_ij = -x_ij only -> 6.622950819672131):
+/// the exact stat is 1520/157 = 9.681528662420382. Kills MU4 (df = K)
+/// via the df and p_value pins.
+#[test]
+fn smh_anchor_m1_3x3() {
+    let m1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let out = stuart_maxwell_mh(&m1, 3).unwrap();
+    assert!((out.value - 1520.0 / 157.0).abs() <= 1e-14 * (1520.0 / 157.0));
+    assert_eq!(out.df, 2);
+    assert!((out.p_value - 0.007901012752471986).abs() <= 1e-12);
+    assert_eq!(out.dropped, 0);
+    assert_eq!(out.subjects, 129);
+    assert_eq!(out.categories, 3);
+}
+
+/// M2 4x4 with row 3 sum == col 3 sum == 30: the one-shot drop removes
+/// exactly that category. Kills MU5 (skip drop: stat would be
+/// 1.6721149083704805 with dropped == 0). Structural pin: the drop
+/// path must equal the crate run on the direct 3x3 submatrix.
+#[test]
+fn smh_drop_m2_4x4() {
+    let m2 = [
+        25.0, 5.0, 3.0, 3.0, 4.0, 30.0, 6.0, 1.0, 2.0, 3.0, 28.0, 4.0, 1.0, 2.0, 5.0, 22.0,
+    ];
+    let out = stuart_maxwell_mh(&m2, 4).unwrap();
+    assert_eq!(out.dropped, 1);
+    assert_eq!(out.df, 2);
+    assert_eq!(out.subjects, 106);
+    assert_eq!(out.categories, 3);
+    let want = 200.0 / 171.0;
+    assert!((out.value - want).abs() <= 1e-14 * want);
+    assert!((out.p_value - 0.5572199009980283).abs() <= 1e-12);
+    // Direct submatrix (categories 0, 1, 2 of M2; category 3 has
+    // row sum == col sum == 30 and is dropped) computed by the crate.
+    let sub = [25.0, 5.0, 3.0, 4.0, 30.0, 6.0, 2.0, 3.0, 28.0];
+    let direct = stuart_maxwell_mh(&sub, 3).unwrap();
+    assert!((out.value - direct.value).abs() <= 1e-14 * want);
+    assert_eq!(out.df, direct.df);
+    assert_eq!(out.subjects, direct.subjects);
+}
+
+/// M3 2x2 reduces to McNemar (b - c)^2 / (b + c) = (6 - 2)^2 / 8 = 2
+/// exactly (dyadic-safe, so ==). p tolerance 1e-12 per the executed
+/// chi2_sf transcription check (abs err ~5.6e-16 at df = 1).
+#[test]
+fn smh_mcnemar_m3_2x2() {
+    let m3 = [10.0, 6.0, 2.0, 12.0];
+    let out = stuart_maxwell_mh(&m3, 2).unwrap();
+    assert_eq!(out.value, 2.0);
+    assert_eq!(out.df, 1);
+    assert!((out.p_value - 0.1572992070502851).abs() <= 1e-12);
+    assert_eq!(out.subjects, 30);
+}
+
+/// M5: simultaneous row+column permutation of M1 leaves the statistic
+/// invariant (both sides read crate outputs).
+#[test]
+fn smh_permutation_m5() {
+    let m1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let perm = [2usize, 0, 1];
+    let mut pm = [0.0; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            pm[i * 3 + j] = m1[perm[i] * 3 + perm[j]];
+        }
+    }
+    let a = stuart_maxwell_mh(&m1, 3).unwrap();
+    let b = stuart_maxwell_mh(&pm, 3).unwrap();
+    assert!((a.value - b.value).abs() <= 1e-12 * a.value.max(1.0));
+    assert_eq!(a.df, b.df);
+    assert_eq!(a.subjects, b.subjects);
+}
+
+/// Error contract: M6 all-equal marginals, shape, domain, cap.
+#[test]
+fn smh_error_contract() {
+    // M6: every r_i == c_i -> everything dropped -> Err.
+    assert!(stuart_maxwell_mh(&[5.0, 3.0, 3.0, 7.0], 2).is_err());
+    // Non-square length.
+    assert!(stuart_maxwell_mh(&[1.0, 2.0, 3.0], 2).is_err());
+    // c < 2.
+    assert!(stuart_maxwell_mh(&[4.0], 1).is_err());
+    // Negative / NaN / Inf / non-integral cells.
+    assert!(stuart_maxwell_mh(&[10.0, -6.0, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[10.0, f64::INFINITY, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    let big = 4503599627370496.0;
+    assert!(stuart_maxwell_mh(&[big, 6.0, 2.0, 12.0], 2).is_err());
+    // Just below the cap is accepted (marginals unequal).
+    let ok = (9007199254740992.0f64 / 4.0).floor();
+    assert!(stuart_maxwell_mh(&[ok, 6.0, 2.0, 12.0], 2).is_ok());
+}
+
+/// MC-500: random 3x3 and 4x4 integral tables. The crate statistic is
+/// compared to an independent in-test Cramer-rule recompute of
+/// d' S^-1 d (the assert reads the crate value on one side), and the
+/// crate output must be invariant under a random simultaneous
+/// permutation. Run with: cargo test smh_mc_500 -- --include-ignored
+#[test]
+#[ignore]
+fn smh_mc_500() {
+    let mut state: u64 = 0x5EED_5417_ABCD_0101;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut tested = 0usize;
+    while tested < 500 {
+        let c = if next() < 0.5 { 3 } else { 4 };
+        let t: Vec<f64> = (0..c * c).map(|_| (next() * 30.0).floor()).collect();
+        let out = match stuart_maxwell_mh(&t, c) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        // Reconstruct reduced table exactly as the contract states.
+        let rows: Vec<f64> = (0..c).map(|i| (0..c).map(|j| t[i * c + j]).sum()).collect();
+        let cols: Vec<f64> = (0..c).map(|j| (0..c).map(|i| t[i * c + j]).sum()).collect();
+        let keep: Vec<usize> = (0..c).filter(|&i| rows[i] != cols[i]).collect();
+        let k = keep.len();
+        assert_eq!(out.categories as usize, k);
+        let tr = &t;
+        let rt: Vec<f64> = keep
+            .iter()
+            .flat_map(|&i| keep.iter().map(move |&j| tr[i * c + j]))
+            .collect();
+        let rr: Vec<f64> = (0..k)
+            .map(|i| (0..k).map(|j| rt[i * k + j]).sum())
+            .collect();
+        let rc: Vec<f64> = (0..k)
+            .map(|j| (0..k).map(|i| rt[i * k + j]).sum())
+            .collect();
+        let m = k - 1;
+        let d: Vec<f64> = (0..m).map(|i| rr[i] - rc[i]).collect();
+        let s = |i: usize, j: usize| -> f64 {
+            if i == j {
+                rr[i] + rc[i] - 2.0 * rt[i * k + i]
+            } else {
+                -(rt[i * k + j] + rt[j * k + i])
+            }
+        };
+        // Cramer-rule solve of S x = d (m <= 3).
+        let det3 = |a: &[f64; 9]| -> f64 {
+            a[0] * (a[4] * a[8] - a[5] * a[7]) - a[1] * (a[3] * a[8] - a[5] * a[6])
+                + a[2] * (a[3] * a[7] - a[4] * a[6])
+        };
+        let stat_ref = match m {
+            1 => {
+                if s(0, 0) == 0.0 {
+                    continue;
+                }
+                d[0] * d[0] / s(0, 0)
+            }
+            2 => {
+                let det = s(0, 0) * s(1, 1) - s(0, 1) * s(1, 0);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let x0 = (d[0] * s(1, 1) - s(0, 1) * d[1]) / det;
+                let x1 = (s(0, 0) * d[1] - d[0] * s(1, 0)) / det;
+                d[0] * x0 + d[1] * x1
+            }
+            3 => {
+                let a: [f64; 9] = [
+                    s(0, 0),
+                    s(0, 1),
+                    s(0, 2),
+                    s(1, 0),
+                    s(1, 1),
+                    s(1, 2),
+                    s(2, 0),
+                    s(2, 1),
+                    s(2, 2),
+                ];
+                let det = det3(&a);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let mut x = [0.0; 3];
+                for col in 0..3 {
+                    let mut ac = a;
+                    for r in 0..3 {
+                        ac[r * 3 + col] = d[r];
+                    }
+                    x[col] = det3(&ac) / det;
+                }
+                d[0] * x[0] + d[1] * x[1] + d[2] * x[2]
+            }
+            _ => unreachable!(),
+        };
+        assert!(
+            (out.value - stat_ref).abs() <= 1e-8 * stat_ref.abs().max(1.0),
+            "crate {} vs cramer {}",
+            out.value,
+            stat_ref
+        );
+        // Random simultaneous permutation invariance.
+        let mut perm: Vec<usize> = (0..c).collect();
+        for i in (1..c).rev() {
+            let j = (next() * ((i + 1) as f64)).floor() as usize;
+            perm.swap(i, j.min(i));
+        }
+        let mut pt = vec![0.0; c * c];
+        for i in 0..c {
+            for j in 0..c {
+                pt[i * c + j] = t[perm[i] * c + perm[j]];
+            }
+        }
+        let pout = stuart_maxwell_mh(&pt, c).unwrap();
+        assert!((out.value - pout.value).abs() <= 1e-10 * out.value.abs().max(1.0));
+        assert_eq!(out.df, pout.df);
+        tested += 1;
+    }
+}

@@ -1951,6 +1951,196 @@ pub fn mean_pairwise_rho(
     })
 }
 
+/// Result of the Stuart-Maxwell marginal homogeneity test
+/// ([`stuart_maxwell_mh`]).
+#[derive(Debug, Clone)]
+pub struct StuartMaxwellResult {
+    /// Chi-square statistic `d' S^-1 d`.
+    pub value: f64,
+    /// Degrees of freedom `K - 1` (K = categories after the drop).
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(value, df)`.
+    pub p_value: f64,
+    /// Categories removed by the one-shot equal-marginal drop.
+    pub dropped: u64,
+    /// Sum of the REDUCED table (R `sum(smx)` after the drop).
+    pub subjects: u64,
+    /// Categories remaining after the drop (K).
+    pub categories: u64,
+}
+
+/// Stuart-Maxwell marginal homogeneity test for a `C x C` two-rater
+/// contingency table, transcribed from the CRAN irr 0.84.1 R source
+/// `stuart.maxwell.R` (read in full; the function
+/// `stuart.maxwell.mh`). Stuart (1955) and Maxwell (1970) were NOT
+/// read; they are cited as the method's origin only.
+///
+/// `table` is row-major `c x c` nonnegative integral counts
+/// (`table[i*c + j]` = objects rater 1 assigned to category `i` and
+/// rater 2 to category `j`). Only R's CxC-table branch is implemented;
+/// the R `nx2` score-matrix branch is a thin `table()` cross-tab left
+/// to callers (deliberate reduced scope).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// r_i = rowsums, c_i = colsums
+/// drop ALL i with r_i == c_i simultaneously, ONCE (R does not
+///   re-check equality after the drop); error if < 2 remain
+/// K = remaining categories; for i = 0..K-2:
+///   d_i = r_i - c_i
+///   S_ii = r_i + c_i - 2 x_ii ;  S_ij = -(x_ij + x_ji)  (i != j)
+/// value = d' S^-1 d ;  df = K - 1 ;  p = chi2_sf(value, df)
+/// subjects = sum of the reduced table
+/// ```
+///
+/// The solve follows the checked Gaussian-elimination pattern of
+/// `lltm::solve_small_checked` (singular pivot is an error, matching
+/// R `solve()` failure; `poly::solve_small`'s silent fallback is NOT
+/// reused). Disclosed test identities: the statistic is invariant
+/// under `d -> -d` (quadratic form) and under transposing `S` inside
+/// the solver (S is symmetric by construction), so mutants of either
+/// kind are unkillable in principle; the mutation suite targets the
+/// killable structure instead (S entries, d construction, drop, df).
+///
+/// Errors (deliberately stricter than R, which prints or propagates
+/// `solve()` errors): non-square input, `c < 2`, `c > 1000`, NaN,
+/// infinite, negative, or non-integral cells, cells above
+/// `2^53 / (2 c)` (keeps every marginal sum and `r + c - 2 x` exact in
+/// f64; `subjects` is accumulated in checked u64), fewer than 2
+/// categories after the drop, and a singular `S`.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Stuart, A. (1955). A test for homogeneity of the marginal
+///         distributions in a two-way classification. *Biometrika,
+///         42*(3/4), 412-416. (as cited in Gamer et al., 2019; not read)
+///     Maxwell, A. E. (1970). Comparing the classification of subjects
+///         by two independent judges. *The British Journal of
+///         Psychiatry, 116*(535), 651-655. (as cited in Gamer et al.,
+///         2019; not read)
+pub fn stuart_maxwell_mh(table: &[f64], c: usize) -> Result<StuartMaxwellResult, String> {
+    if c < 2 {
+        return Err("stuart_maxwell: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("stuart_maxwell: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "stuart_maxwell: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "stuart_maxwell: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    // Per-cell cap floor(2^53/(2c)): row/col sums <= 2^52 and
+    // r_i + c_i - 2*x_ii <= 2^53 stay exactly representable in f64.
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("stuart_maxwell: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("stuart_maxwell: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("stuart_maxwell: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("stuart_maxwell: count too large for exact arithmetic".to_string());
+        }
+    }
+    let rowsum = |t: &[f64], k: usize, i: usize| -> f64 { (0..k).map(|j| t[i * k + j]).sum() };
+    let colsum = |t: &[f64], k: usize, j: usize| -> f64 { (0..k).map(|i| t[i * k + j]).sum() };
+    let rows: Vec<f64> = (0..c).map(|i| rowsum(table, c, i)).collect();
+    let cols: Vec<f64> = (0..c).map(|j| colsum(table, c, j)).collect();
+    // One-shot simultaneous drop of every equal-marginal category
+    // (R `smx[!equalsums, !equalsums]`; equality is NOT re-checked
+    // after the drop).
+    let keep: Vec<usize> = (0..c).filter(|&i| rows[i] != cols[i]).collect();
+    let dropped = (c - keep.len()) as u64;
+    if keep.len() < 2 {
+        return Err("stuart_maxwell: too many equal marginals, cannot compute".to_string());
+    }
+    let k = keep.len();
+    let t: Vec<f64> = keep
+        .iter()
+        .flat_map(|&i| keep.iter().map(move |&j| table[i * c + j]))
+        .collect();
+    let rows: Vec<f64> = (0..k).map(|i| rowsum(&t, k, i)).collect();
+    let cols: Vec<f64> = (0..k).map(|j| colsum(&t, k, j)).collect();
+    let mut subjects: u64 = 0;
+    for &v in &t {
+        subjects = subjects
+            .checked_add(v as u64)
+            .ok_or_else(|| "stuart_maxwell: subject count overflow".to_string())?;
+    }
+    let km1 = k - 1;
+    let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+    let s: Vec<Vec<f64>> = (0..km1)
+        .map(|i| {
+            (0..km1)
+                .map(|j| {
+                    if i == j {
+                        rows[i] + cols[i] - 2.0 * t[i * k + i]
+                    } else {
+                        -(t[i * k + j] + t[j * k + i])
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    // Checked Gaussian elimination with partial pivoting
+    // (lltm::solve_small_checked pattern: singular pivot -> error).
+    let mut a = s;
+    let mut b = d.clone();
+    for col in 0..km1 {
+        let piv = (col..km1)
+            .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
+            .unwrap();
+        if a[piv][col].abs() < 1e-12 {
+            return Err("stuart_maxwell: singular S matrix".to_string());
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        let pv = a[col][col];
+        for j in col..km1 {
+            a[col][j] /= pv;
+        }
+        b[col] /= pv;
+        for r in 0..km1 {
+            if r != col && a[r][col] != 0.0 {
+                let f = a[r][col];
+                for j in col..km1 {
+                    a[r][j] -= f * a[col][j];
+                }
+                b[r] -= f * b[col];
+            }
+        }
+    }
+    let value: f64 = d.iter().zip(&b).map(|(di, xi)| di * xi).sum();
+    if !value.is_finite() {
+        return Err("stuart_maxwell: non-finite statistic".to_string());
+    }
+    let df = km1 as u64;
+    let p_value = crate::fitstats::chi2_sf(value, df as f64).clamp(0.0, 1.0);
+    Ok(StuartMaxwellResult {
+        value,
+        df,
+        p_value,
+        dropped,
+        subjects,
+        categories: k as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

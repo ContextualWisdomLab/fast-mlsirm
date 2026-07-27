@@ -114,6 +114,7 @@ use mlsirm_core::reliability::{
     maxwell_re as core_maxwell_re, mean_pairwise_cor as core_mean_pairwise_cor,
     mean_pairwise_rho as core_mean_pairwise_rho, robinson_a as core_robinson_a,
     separation_reliability as core_separation_reliability,
+    stuart_maxwell_mh as core_stuart_maxwell_mh,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3771,6 +3772,32 @@ fn mean_pairwise_rho(
     out.set_item("ties", res.ties)?;
     out.set_item("subjects", res.subjects)?;
     out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Stuart-Maxwell marginal homogeneity chi-square test for a CxC
+/// two-rater counts table (`mlsirm_core::reliability`; transcribed
+/// from CRAN irr 0.84.1 `stuart.maxwell.R`, READ). `table` is
+/// row-major c x c nonnegative integral counts. Categories whose row
+/// and column sums are equal are dropped once, simultaneously; the
+/// statistic is d' S^-1 d on the remaining K categories with
+/// df = K - 1. Degenerate or out-of-domain inputs raise ValueError.
+/// Returns a dict with `value`, `df`, `p_value`, `dropped`,
+/// `subjects`, `categories`.
+#[pyfunction]
+fn stuart_maxwell_mh(
+    py: Python<'_>,
+    table: PyReadonlyArray1<'_, f64>,
+    c: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_stuart_maxwell_mh(table.as_slice()?, c).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("dropped", res.dropped)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("categories", res.categories)?;
     Ok(out.into())
 }
 
@@ -8410,6 +8437,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(robinson_a, m)?)?;
     m.add_function(wrap_pyfunction!(mean_pairwise_cor, m)?)?;
     m.add_function(wrap_pyfunction!(mean_pairwise_rho, m)?)?;
+    m.add_function(wrap_pyfunction!(stuart_maxwell_mh, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

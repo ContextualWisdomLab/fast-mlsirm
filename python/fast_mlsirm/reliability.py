@@ -929,3 +929,99 @@ def mean_pairwise_rho(ratings, fisher: bool = True) -> MeanRhoResult:
         subjects=int(res["subjects"]),
         raters=int(res["raters"]),
     )
+@dataclass
+class StuartMaxwellResult:
+    """Stuart-Maxwell marginal homogeneity test (irr ``stuart.maxwell.mh``).
+
+    ``value`` is the chi-square statistic ``d' S^-1 d``; ``df`` is
+    ``K - 1`` for the ``K`` categories remaining after the one-shot
+    equal-marginal drop; ``p_value`` is the upper-tail chi-square
+    probability; ``dropped`` counts removed categories; ``subjects`` is
+    the sum of the reduced table; ``categories`` is ``K``."""
+
+    value: float
+    df: int
+    p_value: float
+    dropped: int
+    subjects: int
+    categories: int
+
+
+def stuart_maxwell_mh(table) -> StuartMaxwellResult:
+    """Stuart-Maxwell marginal homogeneity chi-square test for a C x C
+    two-rater contingency table of counts (computed in Rust; transcribed
+    from the CRAN irr 0.84.1 R source ``stuart.maxwell.R``, read in
+    full). ``table[i, j]`` counts objects that rater 1 assigned to
+    category ``i`` and rater 2 to category ``j``. Only R's counts-table
+    branch is implemented; R's n x 2 raw-score branch is a plain
+    cross-tabulation left to callers (deliberate reduced scope).
+
+    All categories whose row sum equals their column sum are removed
+    simultaneously, once (R does not re-check equality after the drop;
+    hand-derived from the R source and verified against an executed
+    exact-Fraction oracle, including the drop path against the direct
+    submatrix). On the remaining ``K`` categories, ``d_i = r_i - c_i``
+    and ``S_ii = r_i + c_i - 2 x_ii``, ``S_ij = -(x_ij + x_ji)`` over
+    the first ``K - 1`` of them; the statistic is ``d' S^-1 d`` with
+    ``df = K - 1``. For a 2 x 2 table this reduces to McNemar's
+    ``(b - c)^2 / (b + c)`` (verified exactly in the oracle). Documented
+    deviations from R (deliberate, stricter-than-R): explicit errors for
+    non-square input, fewer than 2 categories before or after the drop,
+    negative/NaN/infinite/non-integral counts, cells above
+    ``2**53 / (2 C)`` (exact f64 marginal sums), more than 1000
+    categories, and a singular ``S`` (where R's ``solve`` fails with its
+    own error). In LLM-as-a-Judge quality management this tests whether
+    two judges use the rating categories with the same marginal
+    frequencies.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Stuart, A. (1955). A test for homogeneity of the marginal
+            distributions in a two-way classification. *Biometrika,
+            42*(3/4), 412-416. https://doi.org/10.2307/2333387
+            (as cited in Gamer et al., 2019; not read)
+        Maxwell, A. E. (1970). Comparing the classification of subjects
+            by two independent judges. *The British Journal of
+            Psychiatry, 116*(535), 651-655.
+            https://doi.org/10.1192/bjp.116.535.651
+            (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "stuart_maxwell_mh"):
+        raise RuntimeError("stuart_maxwell_mh requires the compiled Rust core")
+    if isinstance(table, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported")
+    arr = np.asarray(table)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("table must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("table must be numeric counts, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("table must be a numeric array")
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError("table must be a square C x C counts matrix")
+    # min/max comparisons instead of np.abs: abs overflows on np.int64 min
+    # (-2**63), which would silently pass the fidelity guard.
+    if arr.dtype.kind in "iu" and arr.size and (
+        int(arr.min()) < 0 or int(arr.max()) > 2**53
+    ):
+        raise ValueError("counts must be nonnegative and within exact float64 range")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    c = x.shape[0]
+    res = core.stuart_maxwell_mh(x.reshape(-1), int(c))
+    return StuartMaxwellResult(
+        value=float(res["value"]),
+        df=int(res["df"]),
+        p_value=float(res["p_value"]),
+        dropped=int(res["dropped"]),
+        subjects=int(res["subjects"]),
+        categories=int(res["categories"]),
+    )

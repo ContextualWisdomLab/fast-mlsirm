@@ -11107,3 +11107,73 @@ class TestMeanrho:
             mean_pairwise_rho(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
         with pytest.raises(ValueError):
             mean_pairwise_rho(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))
+
+
+class TestStuartMaxwell:
+    """Stuart-Maxwell MH test (irr 0.84.1 stuart.maxwell.R; oracle pins)."""
+
+    # Oracle fixtures (files/stuartmaxwell_oracle.py, EXECUTED ALL PASS).
+    M1 = [[20, 10, 5], [3, 30, 15], [2, 4, 40]]
+    M2 = [[25, 5, 3, 3], [4, 30, 6, 1], [2, 3, 28, 4], [1, 2, 5, 22]]
+
+    def test_anchor_m1(self):
+        import numpy as np
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        r = stuart_maxwell_mh(np.array(self.M1, dtype=float))
+        # Oracle pin: stat = 1520/157 exactly.
+        assert abs(r.value - 1520.0 / 157.0) < 1e-13
+        assert r.df == 2
+        assert abs(r.p_value - 0.007901012752471986) < 1e-12
+        assert r.dropped == 0
+        assert r.subjects == 129
+        assert r.categories == 3
+
+    def test_drop_path_m2(self):
+        import numpy as np
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        r = stuart_maxwell_mh(np.array(self.M2))
+        assert r.dropped == 1
+        assert r.df == 2
+        assert r.subjects == 106
+        # Oracle pin: stat = 200/171 exactly.
+        assert abs(r.value - 200.0 / 171.0) < 1e-13
+        assert abs(r.p_value - 0.5572199009980283) < 1e-12
+        # McNemar reduction (oracle M3): (6-2)^2/8 == 2 exactly.
+        m3 = stuart_maxwell_mh(np.array([[10, 6], [2, 12]], dtype=float))
+        assert m3.value == 2.0
+        assert m3.df == 1
+        assert abs(m3.p_value - 0.1572992070502851) < 1e-12
+
+    def test_rejects(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        x = np.array(self.M1, dtype=float)
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.ma.masked_array(x))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(x.astype(complex))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([1.0, 2.0]))  # not 2-D
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[1, 2, 3], [4, 5, 6]], dtype=float))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[10, -6], [2, 12]], dtype=float))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[10, 6.5], [2, 12]], dtype=float))
+        # All marginals equal -> everything dropped -> error (oracle M6).
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[5, 3], [3, 7]], dtype=float))
+        # Integer fidelity guard fires before the f64 cast.
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[2**60, 6], [2, 12]], dtype=np.int64))
