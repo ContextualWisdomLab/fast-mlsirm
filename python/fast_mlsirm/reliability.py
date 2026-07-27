@@ -416,3 +416,75 @@ def icc(
         lbound=float(res["lbound"]),
         ubound=float(res["ubound"]),
     )
+@dataclass
+class KrippResult:
+    """Krippendorff's alpha (irr ``kripp.alpha``).
+
+    ``value`` is the alpha estimate; ``subjects``/``raters`` echo the
+    matrix dimensions as given; ``levels`` counts the distinct observed
+    rating values; ``nmatchval`` is the total coincidence-matrix mass
+    (R ``nmatchval``). No SE or CI is produced (the R source computes
+    none)."""
+
+    value: float
+    subjects: int
+    raters: int
+    levels: int
+    nmatchval: float
+
+
+def kripp_alpha(ratings, method: str = "nominal") -> KrippResult:
+    """Krippendorff's alpha for a raters x subjects matrix (compute in
+    Rust; transcribed from CRAN irr 0.85 ``R/kripp.alpha.R``, read in
+    full). ``ratings`` rows are raters ("classifiers"), columns are
+    subjects; NaN marks missing. ``method`` selects the distance metric:
+    "nominal", "ordinal", "interval", or "ratio".
+
+    The irr source divides each column's pair counts by
+    ``#nonmissing - 1`` only when the matrix contains at least one
+    missing value, and by 1 otherwise; that quirk is preserved verbatim,
+    so complete-data alpha differs from the ``m - 1`` convention.
+    Documented deviations: an all-missing matrix, infinite ratings, and
+    a ratio-metric level pair summing to zero raise ``ValueError`` (R
+    would return alpha = 1, propagate, or emit Inf/NaN respectively).
+    In LLM-as-a-Judge quality management this estimates chance-corrected
+    agreement among judges over the same units.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Krippendorff, K. (1980). *Content analysis: An introduction to
+            its methodology*. Sage. (as cited in Gamer et al., 2019;
+            not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "kripp_alpha"):
+        raise RuntimeError("kripp_alpha requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D raters x subjects array")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    nr, ns = x.shape
+    res = core.kripp_alpha(x.reshape(-1), int(nr), int(ns), str(method))
+    return KrippResult(
+        value=float(res["value"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+        levels=int(res["levels"]),
+        nmatchval=float(res["nmatchval"]),
+    )

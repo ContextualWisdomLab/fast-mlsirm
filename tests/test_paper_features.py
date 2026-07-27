@@ -10537,3 +10537,76 @@ class TestIcc:
             icc(x, r0=True)
         with pytest.raises(ValueError):
             icc(np.full((4, 3), 7.0))  # constant matrix -> degenerate
+class TestKripp:
+    """kripp_alpha (irr kripp.alpha.R). Pins are exact Fractions from the
+    executed oracle; K1 matches the irr man page's published values. Every
+    assert reads KrippResult fields returned by the crate via the wrapper."""
+
+    @staticmethod
+    def k1():
+        import numpy as np
+
+        nan = float("nan")
+        cols = [
+            [1, 1, nan, 1], [2, 2, 3, 2], [3, 3, 3, 3], [3, 3, 3, 3],
+            [2, 2, 2, 2], [1, 2, 3, 4], [4, 4, 4, 4], [1, 1, 2, 1],
+            [2, 2, 2, 2], [nan, 5, 5, 5], [nan, nan, 1, 1], [nan, nan, 3, nan],
+        ]
+        return np.array(cols, dtype=float).T  # 4 raters x 12 subjects
+
+    def test_anchor_k1(self):
+        from fast_mlsirm import kripp_alpha
+
+        x = self.k1()
+        want = {
+            "nominal": 113 / 152,
+            "ordinal": 108577 / 133160,
+            "interval": 951 / 1120,
+            "ratio": 18222619 / 22852465,
+        }
+        for m, v in want.items():
+            r = kripp_alpha(x, method=m)
+            assert abs(r.value - v) < 1e-12, m
+            assert r.nmatchval == 40.0
+            assert r.subjects == 12 and r.raters == 4 and r.levels == 5
+
+    def test_no_na_quirk(self):
+        import numpy as np
+        from fast_mlsirm import kripp_alpha
+
+        x = np.array([[1, 2, 3, 3, 2], [1, 2, 3, 3, 1], [2, 2, 3, 3, 2]], dtype=float)
+        r = kripp_alpha(x, method="nominal")
+        assert abs(r.value - 43 / 72) < 1e-12
+        assert r.nmatchval == 30.0  # mc = 1 on complete data (irr quirk)
+
+    def test_single_level(self):
+        import numpy as np
+        from fast_mlsirm import kripp_alpha
+
+        r = kripp_alpha(np.full((2, 2), 2.0))
+        assert r.value == 1.0 and r.levels == 1
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import kripp_alpha
+
+        x = self.k1()
+        with pytest.raises(ValueError):
+            kripp_alpha(x, method="euclid")
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([1.0, 2.0]))  # 1-D
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[1.0, np.inf], [2.0, 3.0]]))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.full((2, 2), np.nan))  # all missing
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[-1.0, 1.0], [1.0, -1.0]]), method="ratio")
+        with pytest.raises(ValueError):
+            kripp_alpha(np.ma.masked_array(x, mask=False))
+        with pytest.raises(ValueError):
+            kripp_alpha(x.astype(complex))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=object))

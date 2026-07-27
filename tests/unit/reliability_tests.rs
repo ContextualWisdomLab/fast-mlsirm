@@ -981,3 +981,196 @@ fn ic_mc_500_invariance() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// kripp_alpha (irr 0.85 kripp.alpha.R). Pins are exact Fractions from the
+// executed oracle (files/kripp_oracle.py); K1 matches the irr man page's
+// published values. Every assert reads KrippResult fields returned by the
+// crate.
+// ---------------------------------------------------------------------------
+
+fn ka_close(a: f64, b: f64) -> bool {
+    let d = (a - b).abs();
+    d <= 1e-12 || d <= 1e-12 * b.abs()
+}
+
+/// irr man-page `nmm` matrix, raters x subjects (4 x 12); NaN = missing.
+fn ka_k1() -> Vec<f64> {
+    let nan = f64::NAN;
+    // Column-major R matrix(nrow=4) transposed to rater rows.
+    let cols: [[f64; 4]; 12] = [
+        [1.0, 1.0, nan, 1.0],
+        [2.0, 2.0, 3.0, 2.0],
+        [3.0, 3.0, 3.0, 3.0],
+        [3.0, 3.0, 3.0, 3.0],
+        [2.0, 2.0, 2.0, 2.0],
+        [1.0, 2.0, 3.0, 4.0],
+        [4.0, 4.0, 4.0, 4.0],
+        [1.0, 1.0, 2.0, 1.0],
+        [2.0, 2.0, 2.0, 2.0],
+        [nan, 5.0, 5.0, 5.0],
+        [nan, nan, 1.0, 1.0],
+        [nan, nan, 3.0, nan],
+    ];
+    let mut x = vec![0.0; 4 * 12];
+    for (c, col) in cols.iter().enumerate() {
+        for (r, v) in col.iter().enumerate() {
+            x[r * 12 + c] = *v;
+        }
+    }
+    x
+}
+
+#[test]
+fn ka_anchor_k1_all_methods() {
+    // Kills MU1 (diag 1/mc: nominal -> 501/869 = 0.5765...), MU3 (ordinal
+    // full weights -> 167915/216366), MU4 (interval |d| -> 417/521),
+    // MU5 (nmv excludes diagonal -> 145/152), MU6 (num*nc products).
+    let x = ka_k1();
+    let want = [
+        ("nominal", 113.0 / 152.0),
+        ("ordinal", 108577.0 / 133160.0),
+        ("interval", 951.0 / 1120.0),
+        ("ratio", 18222619.0 / 22852465.0),
+    ];
+    for (m, v) in want {
+        let r = kripp_alpha(&x, 4, 12, m).unwrap();
+        assert!(ka_close(r.value, v), "{m}: {} vs {v}", r.value);
+        assert_eq!(r.nmatchval, 40.0, "{m} nmv");
+        assert_eq!(r.subjects, 12);
+        assert_eq!(r.raters, 4);
+        assert_eq!(r.levels, 5);
+    }
+}
+
+#[test]
+fn ka_no_na_quirk_k2() {
+    // Complete data uses divisor mc = 1, NOT m - 1 (R lines 12-13 quirk).
+    // Kills MU2 (mc always m-1): mutant nominal would be 11/18 != 43/72.
+    let x = [
+        1.0, 2.0, 3.0, 3.0, 2.0, //
+        1.0, 2.0, 3.0, 3.0, 1.0, //
+        2.0, 2.0, 3.0, 3.0, 2.0,
+    ];
+    let n = kripp_alpha(&x, 3, 5, "nominal").unwrap();
+    assert!(ka_close(n.value, 43.0 / 72.0), "nominal {}", n.value);
+    assert_eq!(n.nmatchval, 30.0);
+    let i = kripp_alpha(&x, 3, 5, "interval").unwrap();
+    assert!(ka_close(i.value, 97.0 / 126.0), "interval {}", i.value);
+    // Guard the guard: the MU2 mutant value differs from the true pin.
+    assert!(!ka_close(n.value, 11.0 / 18.0));
+}
+
+#[test]
+fn ka_hand_fixture_k3() {
+    let x = [1.0, 2.0, 3.0, 1.0, 1.0, 3.0, 3.0, 2.0];
+    let n = kripp_alpha(&x, 2, 4, "nominal").unwrap();
+    assert!(ka_close(n.value, 1.0 / 3.0), "nominal {}", n.value);
+    let o = kripp_alpha(&x, 2, 4, "ordinal").unwrap();
+    assert!(ka_close(o.value, 17.0 / 24.0), "ordinal {}", o.value);
+    // Interval coincidentally equals ordinal on this fixture (both crate
+    // outputs; the ordinal/interval swap mutant is killed on K1 where the
+    // two pins differ).
+    let iv = kripp_alpha(&x, 2, 4, "interval").unwrap();
+    assert!(ka_close(iv.value, 17.0 / 24.0), "interval {}", iv.value);
+    assert!(ka_close(iv.value, o.value));
+    let rt = kripp_alpha(&x, 2, 4, "ratio").unwrap();
+    assert!(ka_close(rt.value, 1889.0 / 2841.0), "ratio {}", rt.value);
+    assert_eq!(n.nmatchval, 8.0);
+    assert_eq!(n.levels, 3);
+}
+
+#[test]
+fn ka_single_level_k4() {
+    // R line 45: fewer than 2 levels -> alpha = 1.
+    let x = [2.0, 2.0, 2.0, 2.0];
+    let r = kripp_alpha(&x, 2, 2, "nominal").unwrap();
+    assert_eq!(r.value, 1.0);
+    assert_eq!(r.nmatchval, 4.0);
+    assert_eq!(r.levels, 1);
+}
+
+#[test]
+fn ka_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0];
+    assert!(kripp_alpha(&ok, 2, 2, "euclid")
+        .unwrap_err()
+        .contains("method"));
+    assert!(kripp_alpha(&ok, 1, 4, "nominal")
+        .unwrap_err()
+        .contains("raters"));
+    assert!(kripp_alpha(&[], 2, 0, "nominal")
+        .unwrap_err()
+        .contains("subject"));
+    assert!(kripp_alpha(&ok, 2, 3, "nominal")
+        .unwrap_err()
+        .contains("length"));
+    let inf = [1.0, f64::INFINITY, 2.0, 1.0];
+    assert!(kripp_alpha(&inf, 2, 2, "nominal")
+        .unwrap_err()
+        .contains("infinit"));
+    let nan = f64::NAN;
+    assert!(kripp_alpha(&[nan, nan, nan, nan], 2, 2, "nominal")
+        .unwrap_err()
+        .contains("missing"));
+    // Ratio metric undefined when a level pair sums to zero.
+    let zsum = [-1.0, 1.0, 1.0, -1.0];
+    assert!(kripp_alpha(&zsum, 2, 2, "ratio")
+        .unwrap_err()
+        .contains("ratio"));
+    // Same data is fine for nominal/interval (crate outputs finite).
+    assert!(kripp_alpha(&zsum, 2, 2, "nominal")
+        .unwrap()
+        .value
+        .is_finite());
+    assert!(kripp_alpha(&zsum, 2, 2, "interval")
+        .unwrap()
+        .value
+        .is_finite());
+}
+
+#[test]
+#[ignore = "MC-500: run explicitly with cargo test -- --ignored"]
+fn ka_mc_500_permutation_invariance() {
+    // Alpha is invariant under rater-row and subject-column permutation;
+    // both sides of every comparison are crate outputs.
+    let mut state = 0xCA5EEDu64;
+    let mut next = |s: &mut u64| -> u64 {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *s >> 11
+    };
+    let base = ka_k1();
+    let methods = ["nominal", "ordinal", "interval", "ratio"];
+    for rep in 0..500 {
+        let m = methods[rep % 4];
+        let want = kripp_alpha(&base, 4, 12, m).unwrap();
+        // Fisher-Yates over rater rows.
+        let mut rows: Vec<usize> = (0..4).collect();
+        for i in (1..4).rev() {
+            let j = (next(&mut state) % (i as u64 + 1)) as usize;
+            rows.swap(i, j);
+        }
+        let mut cols: Vec<usize> = (0..12).collect();
+        for i in (1..12).rev() {
+            let j = (next(&mut state) % (i as u64 + 1)) as usize;
+            cols.swap(i, j);
+        }
+        let mut xp = vec![0.0; 48];
+        for (rn, &ro) in rows.iter().enumerate() {
+            for (cn, &co) in cols.iter().enumerate() {
+                xp[rn * 12 + cn] = base[ro * 12 + co];
+            }
+        }
+        let got = kripp_alpha(&xp, 4, 12, m).unwrap();
+        assert!(
+            ka_close(got.value, want.value),
+            "rep {rep} {m}: {} vs {}",
+            got.value,
+            want.value
+        );
+        assert_eq!(got.nmatchval, want.nmatchval, "rep {rep} nmv");
+        assert_eq!(got.levels, want.levels, "rep {rep} levels");
+    }
+}

@@ -977,6 +977,190 @@ pub fn icc(
     })
 }
 
+/// Result of [`kripp_alpha`].
+#[derive(Debug, Clone)]
+pub struct KrippResult {
+    /// Krippendorff's alpha estimate.
+    pub value: f64,
+    /// Number of subject columns as given (R reports `dim(x)[2]`).
+    pub subjects: u64,
+    /// Number of raters (matrix rows).
+    pub raters: u64,
+    /// Number of distinct finite rating levels.
+    pub levels: u64,
+    /// Total coincidence-matrix mass (R `nmatchval`).
+    pub nmatchval: f64,
+}
+
+/// Krippendorff's alpha for a raters x subjects rating matrix.
+///
+/// Transcribed from CRAN irr 0.85 `R/kripp.alpha.R` (READ in full, 66
+/// lines; algorithm source of truth). Method origin ? cited as origin
+/// only, NOT READ: Krippendorff, K. (1980). *Content analysis: An
+/// introduction to its methodology*. Sage.
+///
+/// Verified against the R source:
+/// - Levels are the sorted unique finite values (R `levels(as.factor(x))`,
+///   line 7; base R sorts numeric factor levels in ascending numeric
+///   order, not lexicographically).
+/// - Coincidence matrix (lines 12-25): for every unordered rater pair in
+///   a subject column with both values present, cell `(a, b)` gains
+///   `(1 + (a == b)) / mc[col]` and the mirror cell is set by assignment
+///   (line 21). `mc[col]` is `#nonmissing - 1` only when the matrix
+///   contains at least one missing value anywhere, else `1` for every
+///   column (lines 12-13). The no-missing divisor of 1 is a documented
+///   irr quirk preserved verbatim ? it is NOT the `m - 1` convention and
+///   changes both `nmatchval` and alpha on complete data.
+/// - `nmatchval` sums all cells (line 26). Fewer than 2 observed levels
+///   yields alpha = 1 (line 45).
+/// - Distance metrics (lines 50-59) with `nc` the coincidence row sums:
+///   nominal `1`; ordinal `(nc_c/2 + sum_{g=c+1}^{k-1} nc_g + nc_k/2)^2`;
+///   interval `(v_c - v_k)^2`; ratio `((v_c - v_k)/(v_c + v_k))^2`.
+/// - `alpha = 1 - (nmatchval - 1) * sum(utcm * diff2)
+///   / sum(nc_c * nc_k * diff2)` over the upper triangle (line 63).
+///
+/// Documented deviations from R: an all-missing matrix is an error here
+/// (R's line-45 path would report alpha = 1 with zero levels); infinite
+/// ratings are rejected; the ratio metric errors when any level pair sums
+/// to zero (R silently produces Inf/NaN); dimension caps.
+///
+/// `ratings` is row-major raters x subjects; NaN marks missing. No
+/// standard error or CI is produced (the R source computes none).
+///
+/// # References
+/// Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr: Various
+///     coefficients of interrater reliability and agreement* (Version 0.85)
+///     [Computer software]. CRAN. https://CRAN.R-project.org/package=irr
+/// Krippendorff, K. (1980). *Content analysis: An introduction to its
+///     methodology*. Sage. (as cited in Gamer et al., 2019; NOT READ)
+pub fn kripp_alpha(
+    ratings: &[f64],
+    nraters: usize,
+    nsubjects: usize,
+    method: &str,
+) -> Result<KrippResult, String> {
+    if !matches!(method, "nominal" | "ordinal" | "interval" | "ratio") {
+        return Err(
+            "method must be one of \"nominal\", \"ordinal\", \"interval\", \"ratio\"".into(),
+        );
+    }
+    if nraters < 2 {
+        return Err("kripp_alpha needs at least 2 raters".into());
+    }
+    if nsubjects < 1 {
+        return Err("kripp_alpha needs at least 1 subject".into());
+    }
+    if nraters > 10_000 || nsubjects > 1_000_000 {
+        return Err("kripp_alpha: dimensions exceed caps (raters <= 1e4, subjects <= 1e6)".into());
+    }
+    if ratings.len() != nraters * nsubjects {
+        return Err(format!(
+            "ratings length {} does not match raters*subjects = {}",
+            ratings.len(),
+            nraters * nsubjects
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    let mut levels: Vec<f64> = ratings.iter().copied().filter(|v| v.is_finite()).collect();
+    levels.sort_by(|a, b| a.partial_cmp(b).expect("finite by filter"));
+    levels.dedup();
+    let nval = levels.len();
+    if nval == 0 {
+        return Err("kripp_alpha: all ratings are missing".into());
+    }
+    let any_na = ratings.iter().any(|v| v.is_nan());
+    let lev_index = |v: f64| -> usize {
+        levels
+            .binary_search_by(|p| p.partial_cmp(&v).expect("finite levels"))
+            .expect("observed value is a level by construction")
+    };
+    let mut cm = vec![0.0_f64; nval * nval];
+    for col in 0..nsubjects {
+        // R lines 12-13: per-column divisor only under the global-NA path.
+        let mc = if any_na {
+            let nonmiss = (0..nraters)
+                .filter(|&r| !ratings[r * nsubjects + col].is_nan())
+                .count();
+            nonmiss as f64 - 1.0
+        } else {
+            1.0
+        };
+        for i1 in 0..nraters - 1 {
+            for i2 in (i1 + 1)..nraters {
+                let a = ratings[i1 * nsubjects + col];
+                let b = ratings[i2 * nsubjects + col];
+                if a.is_nan() || b.is_nan() {
+                    continue;
+                }
+                // A column visited here has >= 2 non-missing values, so
+                // mc >= 1 under the NA path (mc = 0 or -1 only occurs for
+                // columns that form no pair).
+                let (ia, ib) = (lev_index(a), lev_index(b));
+                // R line 20: diagonal gains 2/mc, off-diagonal 1/mc with
+                // the mirror cell set by assignment (line 21).
+                let inc = if ia == ib { 2.0 } else { 1.0 } / mc;
+                cm[ia * nval + ib] += inc;
+                if ia != ib {
+                    cm[ib * nval + ia] = cm[ia * nval + ib];
+                }
+            }
+        }
+    }
+    let nmatchval: f64 = cm.iter().sum();
+    let mut value = 1.0;
+    if nval >= 2 {
+        let nc: Vec<f64> = (0..nval)
+            .map(|i| cm[i * nval..(i + 1) * nval].iter().sum())
+            .collect();
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for k in 1..nval {
+            for c in 0..k {
+                let diff2 = match method {
+                    "nominal" => 1.0,
+                    "ordinal" => {
+                        let s: f64 = nc[c] / 2.0 + nc[c + 1..k].iter().sum::<f64>() + nc[k] / 2.0;
+                        s * s
+                    }
+                    "interval" => {
+                        let d = levels[c] - levels[k];
+                        d * d
+                    }
+                    _ => {
+                        let s = levels[c] + levels[k];
+                        if s == 0.0 {
+                            return Err(
+                                "kripp_alpha: ratio metric undefined (level pair sums to zero)"
+                                    .into(),
+                            );
+                        }
+                        let d = (levels[c] - levels[k]) / s;
+                        d * d
+                    }
+                };
+                num += cm[c * nval + k] * diff2;
+                den += nc[c] * nc[k] * diff2;
+            }
+        }
+        if den == 0.0 {
+            return Err("kripp_alpha: degenerate data (zero denominator)".into());
+        }
+        value = 1.0 - (nmatchval - 1.0) * num / den;
+    }
+    if !value.is_finite() || !nmatchval.is_finite() {
+        return Err("kripp_alpha: degenerate data (non-finite result)".into());
+    }
+    Ok(KrippResult {
+        value,
+        subjects: nsubjects as u64,
+        raters: nraters as u64,
+        levels: nval as u64,
+        nmatchval,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;
