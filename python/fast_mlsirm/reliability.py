@@ -661,3 +661,77 @@ def maxwell_re(ratings) -> MaxwellResult:
         subjects=int(res["subjects"]),
         raters=int(res["raters"]),
     )
+@dataclass
+class RobinsonResult:
+    """Robinson's A coefficient of agreement (irr ``robinson``).
+
+    ``value`` is ``SSb / (SSb + SSr)`` in ``[0, 1]``; ``subjects`` counts
+    the complete rows used after listwise NaN deletion; ``raters`` is the
+    number of columns."""
+
+    value: float
+    subjects: int
+    raters: int
+
+
+def robinson_a(ratings) -> RobinsonResult:
+    """Robinson's A coefficient of agreement for a subjects x raters
+    matrix of interval-scale ratings (computed in Rust; transcribed from
+    the CRAN irr 0.84.1 R source ``robinson.R``, read in full). Rows
+    containing NaN are dropped listwise (R ``na.omit``).
+
+    The R source computes sample variances whose ``(n - 1)`` factors
+    cancel, giving ``SSb = nr * sum_i (rowmean_i - grand)**2`` and
+    ``A = SSb / (SSb + SSr)`` where ``SSr`` is the two-way interaction
+    sum of squares ``sum_ij (x_ij - rowmean_i - colmean_j + grand)**2``
+    (hand-derived; the identity with R's subtractive form was verified
+    exactly against an executed exact-arithmetic oracle). ``SSr`` is
+    computed directly as the sum of squared terms, so it is nonnegative
+    in floating point. Documented deviation from R (deliberate,
+    stricter-than-R): degenerate inputs with no subject variance
+    (``SSb + SSr == 0``, e.g. identical rows or a constant matrix), where
+    R silently returns NaN from 0/0, raise ``ValueError``, as do
+    infinities, a single rater, and fewer than 2 complete rows. In
+    LLM-as-a-Judge quality management this measures how much of the
+    rating variance is attributable to the items being judged rather
+    than judge disagreement.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Robinson, W. S. (1957). The statistical measurement of agreement.
+            *American Sociological Review, 22*(1), 17-25.
+            https://doi.org/10.2307/2088760 (as cited in Gamer et al.,
+            2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "robinson_a"):
+        raise RuntimeError("robinson_a requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x raters array")
+    # No 2**53 integer fidelity guard: values enter continuous sums of
+    # squares (icc/finn precedent), not exact-label equality.
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    res = core.robinson_a(x.reshape(-1), int(ns), int(nr))
+    return RobinsonResult(
+        value=float(res["value"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+    )

@@ -1417,6 +1417,133 @@ pub fn maxwell_re(ratings: &[f64], ns: usize, nr: usize) -> Result<MaxwellResult
     })
 }
 
+/// Result of Robinson's A agreement coefficient.
+#[derive(Debug, Clone)]
+pub struct RobinsonResult {
+    /// Robinson's A = SSb / (SSb + SSr), in [0, 1].
+    pub value: f64,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Robinson's A coefficient of agreement for interval-scale ratings.
+///
+/// Normative source: the `robinson()` function in the irr R package
+/// (version 0.84.1, file R/robinson.R), which was READ in full and used
+/// as the behavioural contract. Robinson, W. S. (1957). The statistical
+/// measurement of agreement. American Sociological Review, 22(1), 17-25
+/// was NOT read; it is cited only as the historical origin per the irr
+/// package documentation.
+///
+/// With R's sample variance var(x) = sum((x - mean)^2) / (n - 1), the
+/// (n - 1) factors in robinson.R cancel, giving (verified exactly with
+/// Fraction arithmetic in the development oracle):
+///
+/// ```text
+/// SSb = nr * sum_i (rowmean_i - grand)^2
+/// SSr = sum_ij (x_ij - rowmean_i - colmean_j + grand)^2   (interaction SS)
+/// A   = SSb / (SSb + SSr)
+/// ```
+///
+/// SSr is computed directly as the interaction sum of squares (each term
+/// a square, hence SSr >= 0 in f64), never subtractively. Deviation from
+/// R: where R silently yields NaN (0/0) for degenerate inputs with no
+/// subject variance (SSb + SSr == 0), this function returns Err.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn robinson_a(ratings: &[f64], ns: usize, nr: usize) -> Result<RobinsonResult, String> {
+    if nr < 2 {
+        return Err("robinson: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("robinson: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("robinson: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("robinson: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "robinson: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "robinson: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("robinson: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("robinson: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+    let mut grand = 0.0;
+    let mut row_means = vec![0.0; m];
+    for (r, &i) in kept.iter().enumerate() {
+        let mut s = 0.0;
+        for j in 0..nr {
+            s += ratings[i * nr + j];
+        }
+        row_means[r] = s / nrf;
+        grand += s;
+    }
+    grand /= mf * nrf;
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for &i in &kept {
+            s += ratings[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut ssb = 0.0;
+    for rm in &row_means {
+        let d = rm - grand;
+        ssb += d * d;
+    }
+    ssb *= nrf;
+    // Direct interaction sum of squares (each term squared, so SSr >= 0).
+    let mut ssr = 0.0;
+    for (r, &i) in kept.iter().enumerate() {
+        for j in 0..nr {
+            let d = ratings[i * nr + j] - row_means[r] - col_means[j] + grand;
+            ssr += d * d;
+        }
+    }
+    if !ssb.is_finite() || !ssr.is_finite() {
+        return Err("robinson: non-finite sums of squares".into());
+    }
+    let denom = ssb + ssr;
+    if denom <= 0.0 {
+        return Err(
+            "robinson: degenerate input with no subject variance (R would return NaN)".into(),
+        );
+    }
+    let value = ssb / denom;
+    if !value.is_finite() {
+        return Err("robinson: non-finite result".into());
+    }
+    Ok(RobinsonResult {
+        value,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

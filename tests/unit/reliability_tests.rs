@@ -1512,3 +1512,184 @@ fn mx_mc_500_independent_oracle() {
         assert_eq!(out.value, out2.value, "rep {rep}: permutation variance");
     }
 }
+
+// ---- Robinson's A (robinson_a) ----
+// Oracle pins from exact-Fraction computation against irr 0.84.1 robinson.R.
+
+#[test]
+fn rb_anchor_r1() {
+    // R1: 4x3 asymmetric fixture, A = 107/171 (non-dyadic -> tolerance).
+    let x = [1.0, 2.0, 5.0, 3.0, 3.0, 4.0, 2.0, 5.0, 5.0, 1.0, 1.0, 3.0];
+    let r = robinson_a(&x, 4, 3).unwrap();
+    assert!((r.value - 107.0 / 171.0).abs() < 1e-15);
+    assert_eq!(r.subjects, 4);
+    assert_eq!(r.raters, 3);
+}
+
+#[test]
+fn rb_transpose_differs() {
+    // R1t: transposed roles give 19/27, distinct from 107/171 — kills any
+    // row/column role swap in SSb.
+    let xt = [1.0, 3.0, 2.0, 1.0, 2.0, 3.0, 5.0, 1.0, 5.0, 4.0, 5.0, 3.0];
+    let r = robinson_a(&xt, 3, 4).unwrap();
+    assert!((r.value - 19.0 / 27.0).abs() < 1e-15);
+    let r1 = robinson_a(
+        &[1.0, 2.0, 5.0, 3.0, 3.0, 4.0, 2.0, 5.0, 5.0, 1.0, 1.0, 3.0],
+        4,
+        3,
+    )
+    .unwrap();
+    assert!((r.value - r1.value).abs() > 0.05);
+}
+
+#[test]
+fn rb_nan_row_dropped() {
+    // R2: R1 plus a NaN-holed row -> identical A, subjects still 4.
+    let x = [
+        1.0,
+        2.0,
+        5.0,
+        3.0,
+        3.0,
+        4.0,
+        2.0,
+        f64::NAN,
+        4.0,
+        2.0,
+        5.0,
+        5.0,
+        1.0,
+        1.0,
+        3.0,
+    ];
+    let r = robinson_a(&x, 5, 3).unwrap();
+    assert!((r.value - 107.0 / 171.0).abs() < 1e-15);
+    assert_eq!(r.subjects, 4);
+}
+
+#[test]
+fn rb_perfect_agreement() {
+    // R3: constant rows, distinct subjects -> SSr exactly 0, A == 1.0 exact
+    // (row means exact integers; column/grand means exactly 3).
+    let x = [1.0, 1.0, 1.0, 4.0, 4.0, 4.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0];
+    let r = robinson_a(&x, 4, 3).unwrap();
+    assert_eq!(r.value, 1.0);
+}
+
+#[test]
+fn rb_anchor_r4() {
+    // R4: 5x2 fixture, A = 13/20 = 0.65 (non-dyadic -> tolerance).
+    let x = [1.0, 2.0, 2.0, 4.0, 3.0, 3.0, 4.0, 1.0, 5.0, 5.0];
+    let r = robinson_a(&x, 5, 2).unwrap();
+    assert!((r.value - 0.65).abs() < 1e-15);
+    assert_eq!(r.subjects, 5);
+    assert_eq!(r.raters, 2);
+}
+
+#[test]
+fn rb_degenerate_err() {
+    // E1: identical rows -> SSb = SSr = 0 -> Err (R yields NaN 0/0).
+    let e1 = [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
+    // Message assert kills a mutant that weakens the degenerate branch to
+    // denom < 0.0 (the NaN backstop would otherwise mask it with a
+    // different error).
+    let err = robinson_a(&e1, 3, 3).unwrap_err();
+    assert!(err.contains("degenerate"), "{err}");
+    // E2: constant matrix -> Err.
+    let e2 = [4.0; 8];
+    assert!(robinson_a(&e2, 4, 2).is_err());
+}
+
+#[test]
+fn rb_error_contract() {
+    assert!(robinson_a(&[1.0, 2.0], 2, 1).is_err()); // nr < 2
+    assert!(robinson_a(&[], 0, 2).is_err()); // ns == 0
+    assert!(robinson_a(&[1.0, 2.0, 3.0], 2, 2).is_err()); // len mismatch
+    assert!(robinson_a(&[1.0, f64::INFINITY, 2.0, 3.0], 2, 2).is_err()); // Inf
+    assert!(robinson_a(&[f64::NAN; 6], 3, 2).is_err()); // all rows dropped
+                                                        // one complete row after drop -> m < 2
+    assert!(robinson_a(&[1.0, 2.0, f64::NAN, 3.0], 2, 2).is_err());
+}
+
+#[test]
+#[ignore]
+fn rb_mc_500_independent_oracle() {
+    // Independent test-side SS computation (never calls the crate for the
+    // reference value) over 500 LCG-random matrices, plus row-rotation and
+    // column-reversal invariance checks on crate outputs.
+    let mut state: u64 = 0x1234_5678_9ABC_DEF0;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 3 + (next() * 38.0) as usize;
+        let nr = 2 + (next() * 5.0) as usize;
+        let mut x = vec![0.0f64; ns * nr];
+        for v in x.iter_mut() {
+            *v = if next() < 0.10 {
+                f64::NAN
+            } else {
+                1.0 + (next() * 7.0).floor()
+            };
+        }
+        // Independent oracle: listwise drop, then centered SS sums.
+        let kept: Vec<usize> = (0..ns)
+            .filter(|&i| (0..nr).all(|j| !x[i * nr + j].is_nan()))
+            .collect();
+        let m = kept.len();
+        if m < 2 {
+            continue;
+        }
+        let mut gsum = 0.0;
+        for &i in &kept {
+            for j in 0..nr {
+                gsum += x[i * nr + j];
+            }
+        }
+        let grand = gsum / (m * nr) as f64;
+        let rowm: Vec<f64> = kept
+            .iter()
+            .map(|&i| (0..nr).map(|j| x[i * nr + j]).sum::<f64>() / nr as f64)
+            .collect();
+        let colm: Vec<f64> = (0..nr)
+            .map(|j| kept.iter().map(|&i| x[i * nr + j]).sum::<f64>() / m as f64)
+            .collect();
+        let ssb: f64 = nr as f64 * rowm.iter().map(|r| (r - grand) * (r - grand)).sum::<f64>();
+        let mut ssr = 0.0;
+        for (r, &i) in kept.iter().enumerate() {
+            for j in 0..nr {
+                let d = x[i * nr + j] - rowm[r] - colm[j] + grand;
+                ssr += d * d;
+            }
+        }
+        if ssb + ssr <= 1e-12 {
+            continue;
+        }
+        let expect = ssb / (ssb + ssr);
+        let got = robinson_a(&x, ns, nr).unwrap();
+        assert!((got.value - expect).abs() < 1e-12);
+        assert_eq!(got.subjects, m as u64);
+        // Row rotation invariance.
+        let mut rot = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            let src = (i + 1) % ns;
+            rot[i * nr..(i + 1) * nr].copy_from_slice(&x[src * nr..(src + 1) * nr]);
+        }
+        let grot = robinson_a(&rot, ns, nr).unwrap();
+        assert!((grot.value - got.value).abs() < 1e-12);
+        // Column reversal invariance (spec-verify mandatory).
+        let mut rev = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            for j in 0..nr {
+                rev[i * nr + j] = x[i * nr + (nr - 1 - j)];
+            }
+        }
+        let grev = robinson_a(&rev, ns, nr).unwrap();
+        assert!((grev.value - got.value).abs() < 1e-12);
+        done += 1;
+    }
+}

@@ -131,6 +131,8 @@ from .reliability import (
     FinnResult as FinnResult,
     maxwell_re as maxwell_re,
     MaxwellResult as MaxwellResult,
+    robinson_a as robinson_a,
+    RobinsonResult as RobinsonResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -382,6 +384,8 @@ __all__ = [
     "FinnResult",
     "maxwell_re",
     "MaxwellResult",
+    "robinson_a",
+    "RobinsonResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",

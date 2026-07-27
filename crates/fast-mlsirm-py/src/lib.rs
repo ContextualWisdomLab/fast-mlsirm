@@ -111,7 +111,8 @@ use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
     cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
     finn_coefficient as core_finn_coefficient, icc as core_icc, kripp_alpha as core_kripp_alpha,
-    maxwell_re as core_maxwell_re, separation_reliability as core_separation_reliability,
+    maxwell_re as core_maxwell_re, robinson_a as core_robinson_a,
+    separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3684,6 +3685,27 @@ fn maxwell_re(
     nr: usize,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let res = core_maxwell_re(ratings.as_slice()?, ns, nr).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Robinson's A coefficient of agreement
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `robinson.R`, READ). `ratings` is row-major ns x nr; rows with NaN are
+/// dropped listwise. Degenerate inputs with no subject variance raise
+/// ValueError where R silently returns NaN. Returns a dict with `value`,
+/// `subjects`, `raters`.
+#[pyfunction]
+fn robinson_a(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_robinson_a(ratings.as_slice()?, ns, nr).map_err(PyValueError::new_err)?;
     let out = pyo3::types::PyDict::new(py);
     out.set_item("value", res.value)?;
     out.set_item("subjects", res.subjects)?;
@@ -8324,6 +8346,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(kripp_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(finn_coefficient, m)?)?;
     m.add_function(wrap_pyfunction!(maxwell_re, m)?)?;
+    m.add_function(wrap_pyfunction!(robinson_a, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

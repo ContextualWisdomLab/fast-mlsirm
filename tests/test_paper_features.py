@@ -10887,3 +10887,57 @@ class TestMaxwell:
             maxwell_re(np.array([[-2**63, -2**63], [0, 0]], dtype=np.int64))
         with pytest.raises(ValueError):
             maxwell_re(np.array([[0, 2**63 - 1], [1, 1]], dtype=np.uint64))
+class TestRobinson:
+    """Robinson's A (irr 0.84.1 robinson.R; exact-Fraction oracle pins)."""
+
+    def test_anchor_r1(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        r = robinson_a(np.array([[1, 2, 5], [3, 3, 4], [2, 5, 5], [1, 1, 3]], dtype=float))
+        # Oracle pin: A = 107/171 (exact-Fraction oracle, EXECUTED).
+        assert abs(r.value - 107.0 / 171.0) < 1e-15
+        assert r.subjects == 4
+        assert r.raters == 3
+
+    def test_nan_row_dropped(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        x = np.array(
+            [[1, 2, 5], [3, 3, 4], [2, np.nan, 4], [2, 5, 5], [1, 1, 3]], dtype=float
+        )
+        r = robinson_a(x)
+        assert abs(r.value - 107.0 / 171.0) < 1e-15
+        assert r.subjects == 4
+
+    def test_degenerate_and_input_rejects(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import robinson_a
+
+        with pytest.raises(ValueError, match="degenerate"):
+            robinson_a(np.array([[1, 2, 3], [1, 2, 3], [1, 2, 3]], dtype=float))
+        with pytest.raises(ValueError):
+            robinson_a(np.ma.masked_array([[1.0, 2.0], [3.0, 4.0]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[1, 2], [3, "a"]], dtype=object))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[1 + 1j, 2], [3, 4]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([1.0, 2.0, 3.0]))
+
+    def test_integer_dtype_accepted(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        r = robinson_a(np.array([[1, 2], [2, 4], [3, 3], [4, 1], [5, 5]]))
+        # Oracle pin: R4 A = 13/20.
+        assert abs(r.value - 0.65) < 1e-15
+        assert r.raters == 2
