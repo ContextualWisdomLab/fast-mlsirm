@@ -797,10 +797,10 @@ def mean_pairwise_cor(ratings, fisher: bool = True) -> MeanCorResult:
     core = _core_module()
     if core is None or not hasattr(core, "mean_pairwise_cor"):
         raise RuntimeError("mean_pairwise_cor requires the compiled Rust core")
-    if not isinstance(fisher, (bool, np.bool_)):
-        raise TypeError("fisher must be a bool")
     if isinstance(ratings, np.ma.MaskedArray):
         raise ValueError("masked arrays are not supported; use NaN for missing")
+    if not isinstance(fisher, (bool, np.bool_)):
+        raise TypeError("fisher must be a bool")
     arr = np.asarray(ratings)
     if arr.dtype == object:
         raise ValueError(

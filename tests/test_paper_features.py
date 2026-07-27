@@ -11003,6 +11003,10 @@ class TestMeancor:
         assert mean_pairwise_cor(x, fisher=np.bool_(True)).p_value is not None
         with pytest.raises(ValueError):
             mean_pairwise_cor(np.ma.masked_array(x))
+        # Guard-order regression: masked reject fires BEFORE the fisher
+        # bool check (impl-review round-1 finding).
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.ma.masked_array(x), fisher=1)
         with pytest.raises(ValueError):
             mean_pairwise_cor(np.array([[1, "a"], [2, 3]], dtype=object))
         with pytest.raises(ValueError):
