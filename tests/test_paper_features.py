@@ -10516,6 +10516,8 @@ class TestIcc:
             icc(x.astype(complex))
         with pytest.raises(ValueError):
             icc(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            icc(np.array([[True, False], [False, True]], dtype=object))
         with pytest.raises((ValueError, TypeError)):
             icc(np.array([["a", "b"], ["c", "d"]], dtype=object))
         with pytest.raises(ValueError):
