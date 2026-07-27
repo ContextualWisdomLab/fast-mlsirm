@@ -10337,3 +10337,14 @@ class TestBratt:
             bratt_mm(y0, t)
         with pytest.raises(ValueError, match="did not converge"):
             bratt_mm(y, t, max_iter=1, tol=1e-15)
+        # Impl-review regressions:
+        with pytest.raises(ValueError, match="not boolean"):
+            yb = np.full((3, 3), True, dtype=object)
+            np.fill_diagonal(yb, False)
+            tb = np.full((3, 3), True, dtype=object)
+            np.fill_diagonal(tb, False)
+            bratt_mm(yb, tb)
+        with pytest.raises(ValueError, match="overflow"):
+            h = 9e307
+            yh = np.array([[0, 1, 1], [1, 0, h], [1, h, 0]], dtype=float)
+            bratt_mm(yh, t, max_iter=3, tol=2.0)

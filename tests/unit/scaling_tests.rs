@@ -6563,3 +6563,20 @@ fn bt2_alpha0_delta_convergence() {
     assert!(bt2_rel(r.alpha[1], 0.6276558170061743) < 1e-13);
     assert!(bt2_rel(r.alpha0, 0.6129259568116415) < 1e-13);
 }
+
+#[test]
+fn bt2_huge_counts_overflow_rejected() {
+    // Impl-review regression: entries are individually finite, but the
+    // pair total n_12 = 9e307 + 9e307 + 1 overflows to +inf. Before the
+    // guard this returned Ok with alpha = [1, 0, 0], alpha0 = 0 and a NaN
+    // log-likelihood. Assert reads the crate Err.
+    let h = 9e307;
+    let y = vec![0.0, 1.0, 1.0, 1.0, 0.0, h, 1.0, h, 0.0];
+    let t = vec![0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0];
+    let err = bratt_mm(&y, &t, 3, 0, 1.0, 100, 2.0).unwrap_err();
+    assert!(err.contains("overflow"), "unexpected error: {err}");
+    // Row-total overflow (w_tot) is also rejected, not just pair totals.
+    let y2 = vec![0.0, h, h, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0];
+    let err2 = bratt_mm(&y2, &t, 3, 0, 1.0, 100, 2.0).unwrap_err();
+    assert!(err2.contains("overflow"), "unexpected error: {err2}");
+}

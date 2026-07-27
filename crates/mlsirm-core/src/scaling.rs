@@ -4158,6 +4158,25 @@ pub fn bratt_mm(
              use bradley_terry_mm for tie-free data"
             .into());
     }
+    // Impl-review guard: entries are finite, but derived aggregates
+    // (row win totals, tie total, pair totals n_ij) can still overflow
+    // to +inf, which would let the MM update return exactly-zero
+    // parameters and a NaN log-likelihood as Ok.
+    if w_tot.iter().any(|w| !w.is_finite()) || !t_tot.is_finite() {
+        return Err(
+            "aggregate win/tie counts overflow f64; counts are too large for bratt_mm".into(),
+        );
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if !(wins[i * n + j] + wins[j * n + i] + ties[i * n + j]).is_finite() {
+                return Err(
+                    "aggregate win/tie counts overflow f64; counts are too large for bratt_mm"
+                        .into(),
+                );
+            }
+        }
+    }
 
     let mut alpha = vec![1.0f64; n];
     let mut alpha0 = 1.0f64;
@@ -4182,8 +4201,8 @@ pub fn bratt_mm(
             *a *= c;
         }
         a0new *= c;
-        if anew.iter().any(|a| !a.is_finite()) || !a0new.is_finite() {
-            return Err("MM update produced non-finite parameters".into());
+        if anew.iter().any(|a| !a.is_finite() || *a <= 0.0) || !a0new.is_finite() || a0new <= 0.0 {
+            return Err("MM update produced non-finite or non-positive parameters".into());
         }
         let mut delta = (a0new - alpha0).abs();
         for i in 0..n {
@@ -4211,6 +4230,9 @@ pub fn bratt_mm(
                         ll -= n_ij * (alpha[i] + alpha[j] + alpha0).ln();
                     }
                 }
+            }
+            if !ll.is_finite() {
+                return Err("bratt_mm log-likelihood is not finite".into());
             }
             return Ok(BrattResult {
                 alpha,

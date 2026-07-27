@@ -227,6 +227,8 @@ def bratt_mm(wins, ties, ref_index=0, ref_value=1.0, max_iter=10000, tol=1e-10):
         if np.iscomplexobj(arr):
             raise ValueError(f"bratt_mm: {name} must be real-valued")
         if arr.dtype == object:
+            if any(isinstance(v, (bool, np.bool_)) for v in arr.flat):
+                raise ValueError(f"bratt_mm: {name} must be numeric, not boolean")
             try:
                 arr = arr.astype(np.float64)
             except (TypeError, ValueError) as exc:
