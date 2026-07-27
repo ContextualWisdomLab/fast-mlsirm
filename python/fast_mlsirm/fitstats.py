@@ -267,8 +267,11 @@ def _icc_grid(
     theta = shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
     if uses_space:
-        diff = x_grid[None, :, :] - params.zeta[:, None, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        zeta = np.asarray(params.zeta)
+        x_grid_sq = np.einsum('ij,ij->i', x_grid, x_grid)[None, :]
+        zeta_sq = np.einsum('ij,ij->i', zeta, zeta)[:, None]
+        dist_sq = np.maximum(zeta_sq - 2 * np.dot(zeta, x_grid.T) + x_grid_sq, 0.0)
+        dist = np.sqrt(eps_distance + dist_sq)  # (I, Nx)
         eta = eta - math.exp(params.tau) * dist[:, None, :]
     probs = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     return probs, t_w, x_w, t_nodes
@@ -684,8 +687,12 @@ def person_fit(
     # eta_pi at EAP estimates
     eta = a[None, :] * theta[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        xi = np.asarray(params.xi)
+        zeta = np.asarray(params.zeta)
+        xi_sq = np.einsum('ij,ij->i', xi, xi)[:, None]
+        zeta_sq = np.einsum('ij,ij->i', zeta, zeta)[None, :]
+        dist_sq = np.maximum(xi_sq - 2 * np.dot(xi, zeta.T) + zeta_sq, 0.0)
+        dist = np.sqrt(eps_distance + dist_sq)
         eta = eta - math.exp(params.tau) * dist
     p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     p = np.clip(p, 1e-12, 1.0 - 1e-12)
@@ -763,8 +770,12 @@ def infit_outfit(
     a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        xi = np.asarray(params.xi)
+        zeta = np.asarray(params.zeta)
+        xi_sq = np.einsum('ij,ij->i', xi, xi)[:, None]
+        zeta_sq = np.einsum('ij,ij->i', zeta, zeta)[None, :]
+        dist_sq = np.maximum(xi_sq - 2 * np.dot(xi, zeta.T) + zeta_sq, 0.0)
+        dist = np.sqrt(eps_distance + dist_sq)
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
