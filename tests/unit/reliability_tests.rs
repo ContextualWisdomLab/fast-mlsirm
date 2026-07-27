@@ -2887,6 +2887,10 @@ fn nck_error_contract() {
     assert!(n_cohen_kappa(0.9, 0.1, 0.9, 0.1, 0.05, 0.8, false).is_err());
     // spec-review executed probe: k1 valid, k0 infeasible (Q0 < 0)
     assert!(n_cohen_kappa(0.1, 0.1, -0.1, -1.0, 0.05, 0.8, false).is_err());
+    // impl-review MAJOR: near-equal kappas give pre_ceil ~3.8e30; the
+    // old `as u64` cast silently saturated to u64::MAX (executed in the
+    // review). Crate must reject sizes past exact-integer f64 range.
+    assert!(n_cohen_kappa(0.3, 0.3, 0.700000000000001, 0.7, 0.05, 0.8, false).is_err());
 }
 
 /// 500 feasible-region draws; in-test recompute of the R chain is a

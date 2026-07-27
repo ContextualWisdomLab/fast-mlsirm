@@ -2602,8 +2602,18 @@ pub fn n_cohen_kappa(
     if !pre_ceil.is_finite() || pre_ceil <= 0.0 {
         return Err("n_cohen_kappa: non-finite sample size".to_string());
     }
+    // Reject sizes past exact-integer f64 range (2^53): `as u64` would
+    // silently saturate above u64::MAX, and even below that the ceiling
+    // is no longer an exact integer. Such sizes are useless in practice
+    // (they arise only from near-equal kappas) and are refused instead.
+    let n = pre_ceil.ceil();
+    if n > 9007199254740992.0 {
+        return Err("n_cohen_kappa: required sample size exceeds 2^53; \
+             k1 and k0 are too close to distinguish"
+            .to_string());
+    }
     Ok(NCohenKappaResult {
-        n: pre_ceil.ceil() as u64,
+        n: n as u64,
         q1,
         q0,
         pre_ceil,

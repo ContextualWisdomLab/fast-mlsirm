@@ -1275,6 +1275,10 @@ def n_cohen_kappa(
             raise ValueError(f"{name} must be a real number, not boolean")
         if isinstance(v, complex) or np.iscomplexobj(v):
             raise ValueError(f"{name} must be real-valued")
+        # strict numeric-scalar gate: float() would happily parse strings
+        # and Decimals, which are not numeric scalars for this API
+        if not isinstance(v, (int, float, np.integer, np.floating)):
+            raise ValueError(f"{name} must be a numeric scalar")
         vals[name] = float(v)
     if not isinstance(twosided, (bool, np.bool_)):
         raise ValueError("twosided must be a bool")

@@ -11324,6 +11324,10 @@ class TestNCohenKappa:
         with pytest.raises(ValueError):
             n_cohen_kappa(True, 0.3, 0.7, 0.4)
         with pytest.raises(ValueError):
+            n_cohen_kappa("0.3", 0.3, 0.7, 0.4)  # impl-review: str parsed by float()
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.700000000000001, 0.7)  # n > 2^53
+        with pytest.raises(ValueError):
             n_cohen_kappa(0.3, 0.3, 0.7, 0.4, twosided=1)
 
     def test_result_type(self):
