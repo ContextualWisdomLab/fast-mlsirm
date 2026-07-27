@@ -2328,6 +2328,12 @@ fn smh_error_contract() {
     // Just below the cap is accepted (marginals unequal).
     let ok = (9007199254740992.0f64 / 4.0).floor();
     assert!(stuart_maxwell_mh(&[ok, 6.0, 2.0, 12.0], 2).is_ok());
+    // Scaled singular-pivot contract (impl-review probe): this valid
+    // large-count table has second pivot 2.0 against scale 1e13, i.e.
+    // numerically singular under the spec's `pivot < 1e-12 scaled`;
+    // an absolute cutoff would accept it and return a saturated stat.
+    let probe = [0.0, 9999999999999.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+    assert!(stuart_maxwell_mh(&probe, 3).is_err());
 }
 
 /// MC-500: random 3x3 and 4x4 integral tables. The crate statistic is

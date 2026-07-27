@@ -2097,15 +2097,23 @@ pub fn stuart_maxwell_mh(table: &[f64], c: usize) -> Result<StuartMaxwellResult,
                 .collect()
         })
         .collect();
-    // Checked Gaussian elimination with partial pivoting
-    // (lltm::solve_small_checked pattern: singular pivot -> error).
+    // Checked Gaussian elimination with partial pivoting; the pivot
+    // threshold is scaled by the largest |S| entry (dif.rs pattern,
+    // spec "pivot < 1e-12 scaled") so numerically singular S is
+    // rejected at any count scale. S == 0 (all-diagonal table) has
+    // scale 0 and errors on the first pivot.
+    let scale = s
+        .iter()
+        .flat_map(|row| row.iter())
+        .fold(0.0f64, |m, &v| m.max(v.abs()))
+        .max(1.0);
     let mut a = s;
     let mut b = d.clone();
     for col in 0..km1 {
         let piv = (col..km1)
             .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
             .unwrap();
-        if a[piv][col].abs() < 1e-12 {
+        if a[piv][col].abs() < 1e-12 * scale {
             return Err("stuart_maxwell: singular S matrix".to_string());
         }
         a.swap(col, piv);
