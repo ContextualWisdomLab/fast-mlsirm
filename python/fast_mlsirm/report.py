@@ -7,6 +7,8 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from .io import _load_json_bounded
+
 
 def render_diagnostics_report(
     diagnostics_path: str | Path,
@@ -17,7 +19,7 @@ def render_diagnostics_report(
     """Render saved diagnostics JSON as a standalone HTML report."""
 
     source = Path(diagnostics_path)
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload = _load_json_bounded(source, source="diagnostics report JSON")
     if not isinstance(payload, dict):
         raise ValueError("diagnostics JSON must contain an object")
 
