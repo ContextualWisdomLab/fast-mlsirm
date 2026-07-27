@@ -8,3 +8,6 @@
 ## 2024-10-24 - CSS Bar Chart Animation
 **Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
 **Action:** Use CSS keyframe animations for simple visual improvements in static reports.
+## 2024-11-05 - ARIA Live Region for Empty States
+**Learning:** Using `role="status"` (an ARIA live region role) on empty state container elements (like a `<div>`) instead of standard paragraph tags ensures assistive technologies like screen readers actively announce when no data or rows are recorded, without interrupting the user's flow.
+**Action:** Always use `<div class="empty-state" role="status">` for empty states instead of basic paragraphs.
