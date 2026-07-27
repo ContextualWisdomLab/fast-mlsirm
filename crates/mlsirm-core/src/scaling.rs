@@ -3995,6 +3995,236 @@ pub fn predict_rating_multi(
     Ok(out)
 }
 
+/// Result of a Bradley-Terry-with-ties (VGAM `bratt`) MM fit.
+#[derive(Clone, Debug)]
+pub struct BrattResult {
+    /// Worth parameters `alpha_i > 0` with `alpha[ref_index] == ref_value`.
+    pub alpha: Vec<f64>,
+    /// Tie parameter `alpha0 > 0` (same joint scale as `alpha`).
+    pub alpha0: f64,
+    /// Number of MM updates performed when convergence fired.
+    pub iterations: usize,
+    /// Log-likelihood at the returned parameters.
+    pub log_likelihood: f64,
+}
+
+/// Bradley-Terry model with ties (additive `alpha0` tie parameter, the
+/// VGAM `bratt` family) fitted by maximum likelihood via an MM algorithm.
+///
+/// Model (VGAM `bratt@linkinv`): for contestants `i != j` with worths
+/// `alpha_i > 0` and tie parameter `alpha0 > 0`, writing
+/// `D_ij = alpha_i + alpha_j + alpha0`,
+///
+/// ```text
+/// P(i beats j) = alpha_i / D_ij
+/// P(i ties j)  = alpha0  / D_ij
+/// ```
+///
+/// Log-likelihood (VGAM `bratt@loglikelihood`,
+/// `y*log(mu) + 0.5*ties*log(probtie)` with the symmetric ties matrix
+/// collapsing the 0.5 double count to one term per unordered pair):
+///
+/// ```text
+/// LL = sum_{i != j} y_ij ln alpha_i + T ln alpha0
+///      - sum_{i<j} n_ij ln D_ij
+/// n_ij = y_ij + y_ji + t_ij,  T = sum_{i<j} t_ij
+/// ```
+///
+/// Estimation is NOT VGAM's eta-space IRLS/Fisher scoring; it is a
+/// hand-DERIVED MM ascent using the same supporting-hyperplane pattern as
+/// this crate's [`bradley_terry_mm`] (`-ln D >= -ln D_k - (D - D_k)/D_k`),
+/// whose separable surrogate is maximized by
+///
+/// ```text
+/// alpha_i' = W_i / sum_{j != i} n_ij / D_ij_k     (W_i = sum_{j != i} y_ij)
+/// alpha0'  = T   / sum_{i<j}   n_ij / D_ij_k
+/// ```
+///
+/// followed by a joint rescale of `alpha` AND `alpha0` so that
+/// `alpha[ref_index] == ref_value` (VGAM `refgp`/`refvalue`; `.brat.alpha`
+/// scales alphas jointly). The rescale preserves the likelihood because
+/// `sum_{i != j} y_ij + T == sum_{i<j} n_ij` (VERIFIED analytically and in
+/// the oracle), so each update cannot decrease `LL`. The stationarity
+/// conditions `W_i/alpha_i = sum_j n_ij/D_ij` and
+/// `T/alpha0 = sum_{i<j} n_ij/D_ij` are the MM fixed point (VERIFIED
+/// numerically: gradient < 1e-13 at convergence in the oracle).
+///
+/// Source status:
+/// - **READ**: VGAM 1.1-14 R source (`R/family.categorical.R`: `bratt()`,
+///   `brat()`, `.brat.alpha`, `.brat.indices`, `Brat`); the model
+///   equations above are traceable to its `linkinv`/`loglikelihood`.
+/// - **NOT READ (as-cited)**: Bradley & Terry (1952), cited as the model
+///   origin; Hunter (2004), non-normative here — the MM update is derived
+///   locally, not taken from that paper.
+/// - This is the additive-`alpha0` ties model. It is NOT the Rao-Kupper
+///   (1967) threshold-ties model and NOT the Davidson (1970)
+///   geometric-mean-ties model (neither read; named only to disambiguate,
+///   not as sources).
+///
+/// Contract:
+/// - `wins` is row-major `n x n`; `wins[i*n + j]` = (possibly fractional,
+///   nonnegative finite) count of wins of `i` over `j`; diagonal 0.
+/// - `ties` is row-major `n x n`, symmetric, diagonal 0; `ties[i*n + j]`
+///   = tie count of the unordered pair (stored on both triangles).
+/// - `2 <= n <= 10000`: the upper cap is a bratt-specific `O(n^2)`
+///   resource guard (NOT inherited from [`bradley_terry_mm`]), checked
+///   before any `n * n` arithmetic.
+/// - `T == 0` is rejected ("use bradley_terry_mm"): with no ties the MM
+///   tie update gives `alpha0 = 0`, outside the positive parameter space.
+///   This is a boundary contract of THIS API, not VGAM behavior (VGAM
+///   `bratt()` silently continues with a zero ties matrix).
+/// - `W_i == 0` is rejected: the MLE sends `alpha_i -> 0`, outside the
+///   parameter space (and the reference rescale would divide by zero).
+/// - Start `alpha_i = 1, alpha0 = 1`; convergence fires when the max
+///   absolute change across `alpha` and `alpha0` (after rescale) is
+///   `<= tol`; non-convergence within `max_iter` updates is an error.
+pub fn bratt_mm(
+    wins: &[f64],
+    ties: &[f64],
+    n: usize,
+    ref_index: usize,
+    ref_value: f64,
+    max_iter: usize,
+    tol: f64,
+) -> Result<BrattResult, String> {
+    if n < 2 {
+        return Err("bratt_mm needs at least 2 contestants".into());
+    }
+    if n > 10000 {
+        return Err(format!("n = {n} exceeds the bratt_mm cap of 10000"));
+    }
+    let nn = n * n;
+    if wins.len() != nn {
+        return Err(format!(
+            "wins must be a row-major {n}x{n} matrix ({nn} entries), got {}",
+            wins.len()
+        ));
+    }
+    if ties.len() != nn {
+        return Err(format!(
+            "ties must be a row-major {n}x{n} matrix ({nn} entries), got {}",
+            ties.len()
+        ));
+    }
+    for (name, m) in [("win", wins), ("tie", ties)] {
+        for (k, &c) in m.iter().enumerate() {
+            if !c.is_finite() {
+                return Err(format!("{name} counts must be finite"));
+            }
+            if c < 0.0 {
+                return Err(format!("{name} counts must be nonnegative"));
+            }
+            if k / n == k % n && c != 0.0 {
+                return Err(format!("diagonal of the {name}s matrix must be zero"));
+            }
+        }
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if ties[i * n + j] != ties[j * n + i] {
+                return Err(format!(
+                    "ties matrix must be symmetric (ties[{i}][{j}] != ties[{j}][{i}])"
+                ));
+            }
+        }
+    }
+    if ref_index >= n {
+        return Err(format!("ref_index = {ref_index} out of range for n = {n}"));
+    }
+    if !ref_value.is_finite() || ref_value <= 0.0 {
+        return Err("ref_value must be finite and positive".into());
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be at least 1".into());
+    }
+    let w_tot: Vec<f64> = (0..n)
+        .map(|i| (0..n).filter(|&j| j != i).map(|j| wins[i * n + j]).sum())
+        .collect();
+    if let Some(i) = w_tot.iter().position(|&w| w == 0.0) {
+        return Err(format!(
+            "contestant {i} has no wins: its ML worth is 0, outside the \
+             positive parameter space of bratt_mm"
+        ));
+    }
+    let t_tot: f64 = (0..n)
+        .flat_map(|i| ((i + 1)..n).map(move |j| (i, j)))
+        .map(|(i, j)| ties[i * n + j])
+        .sum();
+    if t_tot == 0.0 {
+        return Err("ties matrix has no ties: alpha0 has no positive MLE; \
+             use bradley_terry_mm for tie-free data"
+            .into());
+    }
+
+    let mut alpha = vec![1.0f64; n];
+    let mut alpha0 = 1.0f64;
+    for it in 1..=max_iter {
+        let mut denom = vec![0.0f64; n];
+        let mut denom0 = 0.0f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let n_ij = wins[i * n + j] + wins[j * n + i] + ties[i * n + j];
+                if n_ij > 0.0 {
+                    let val = n_ij / (alpha[i] + alpha[j] + alpha0);
+                    denom[i] += val;
+                    denom[j] += val;
+                    denom0 += val;
+                }
+            }
+        }
+        let mut anew: Vec<f64> = (0..n).map(|i| w_tot[i] / denom[i]).collect();
+        let mut a0new = t_tot / denom0;
+        let c = ref_value / anew[ref_index];
+        for a in anew.iter_mut() {
+            *a *= c;
+        }
+        a0new *= c;
+        if anew.iter().any(|a| !a.is_finite()) || !a0new.is_finite() {
+            return Err("MM update produced non-finite parameters".into());
+        }
+        let mut delta = (a0new - alpha0).abs();
+        for i in 0..n {
+            delta = delta.max((anew[i] - alpha[i]).abs());
+        }
+        alpha = anew;
+        alpha0 = a0new;
+        if delta <= tol {
+            let mut ll = 0.0f64;
+            for i in 0..n {
+                for j in 0..n {
+                    if i != j && wins[i * n + j] > 0.0 {
+                        ll += wins[i * n + j] * alpha[i].ln();
+                    }
+                }
+            }
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let t_ij = ties[i * n + j];
+                    if t_ij > 0.0 {
+                        ll += t_ij * alpha0.ln();
+                    }
+                    let n_ij = wins[i * n + j] + wins[j * n + i] + t_ij;
+                    if n_ij > 0.0 {
+                        ll -= n_ij * (alpha[i] + alpha[j] + alpha0).ln();
+                    }
+                }
+            }
+            return Ok(BrattResult {
+                alpha,
+                alpha0,
+                iterations: it,
+                log_likelihood: ll,
+            });
+        }
+    }
+    Err(format!(
+        "bratt_mm did not converge within max_iter = {max_iter} updates"
+    ))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

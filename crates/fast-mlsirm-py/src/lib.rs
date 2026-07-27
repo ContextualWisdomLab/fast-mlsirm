@@ -5812,6 +5812,42 @@ fn predict_rating_multi(
 }
 
 
+/// Bradley-Terry model with ties (additive alpha0, VGAM `bratt`) fitted
+/// by MM (see `mlsirm_core::scaling::bratt_mm`). `wins` and `ties` are
+/// flat row-major n*n matrices (ties symmetric); returns dict with alpha
+/// (worths, alpha[ref_index] == ref_value), alpha0 (tie parameter),
+/// iterations, log_likelihood.
+#[pyfunction]
+#[pyo3(signature = (wins, ties, n, ref_index=0, ref_value=1.0, max_iter=10000, tol=1e-10))]
+#[allow(clippy::too_many_arguments)]
+fn bratt_mm(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    ties: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    ref_index: usize,
+    ref_value: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::bratt_mm(
+        wins.as_slice()?,
+        ties.as_slice()?,
+        n,
+        ref_index,
+        ref_value,
+        max_iter,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("alpha", PyArray1::from_slice(py, &res.alpha))?;
+    d.set_item("alpha0", res.alpha0)?;
+    d.set_item("iterations", res.iterations as u64)?;
+    d.set_item("log_likelihood", res.log_likelihood)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -8168,6 +8204,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fide_rating, m)?)?;
     m.add_function(wrap_pyfunction!(predict_rating_two, m)?)?;
     m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
+    m.add_function(wrap_pyfunction!(bratt_mm, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

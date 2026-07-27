@@ -24,6 +24,7 @@ from .equating import equate_observed_scores as equate_observed_scores, equate_n
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
 from .scaling import thurstone_case_v as thurstone_case_v, ThurstoneResult as ThurstoneResult
 from .scaling import bradley_terry_mm as bradley_terry_mm, BradleyTerryResult as BradleyTerryResult
+from .scaling import bratt_mm as bratt_mm, BrattResult as BrattResult
 from .scaling import lsr_pairwise as lsr_pairwise, ilsr_pairwise as ilsr_pairwise, LsrResult as LsrResult
 from .scaling import rank_centrality as rank_centrality
 from .scaling import lsr_rankings as lsr_rankings, ilsr_rankings as ilsr_rankings
@@ -251,6 +252,8 @@ __all__ = [
     "ThurstoneResult",
     "bradley_terry_mm",
     "BradleyTerryResult",
+    "bratt_mm",
+    "BrattResult",
     "lsr_pairwise",
     "ilsr_pairwise",
     "rank_centrality",

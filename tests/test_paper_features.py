@@ -10248,3 +10248,92 @@ class TestPredict:
                 None,
                 False,
             )
+
+
+class TestBratt:
+    """bratt_mm: Bradley-Terry with additive-alpha0 ties (VGAM bratt).
+
+    Oracle: exact-Fraction MM iterates (files/bratt_oracle.py, session
+    evidence). Every assert reads values returned by the crate through the
+    binding.
+    """
+
+    @staticmethod
+    def _fixture():
+        import numpy as np
+
+        y = np.array([[0, 3, 1], [1, 0, 2], [2, 1, 0]], dtype=float)
+        t = np.array([[0, 1, 1], [1, 0, 2], [1, 2, 0]], dtype=float)
+        return y, t
+
+    def test_b1_iter1_exact(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, ref_index=0, ref_value=1.0, max_iter=100, tol=0.5)
+        assert r.iterations == 1
+        np.testing.assert_allclose(r.alpha, [1.0, 27.0 / 40.0, 3.0 / 4.0], rtol=1e-15)
+        np.testing.assert_allclose(r.alpha0, 9.0 / 14.0, rtol=1e-15)
+
+    def test_b2_converged(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, tol=1e-13)
+        np.testing.assert_allclose(
+            r.alpha, [1.0, 0.6150318884241122, 0.686344995662376], rtol=1e-10
+        )
+        np.testing.assert_allclose(r.alpha0, 0.6038293879270596, rtol=1e-10)
+        np.testing.assert_allclose(r.log_likelihood, -15.12765635227613, rtol=1e-12)
+
+    def test_b4_reference_rescale(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, tol=1e-13)
+        r2 = bratt_mm(y, t, ref_index=1, ref_value=2.0, tol=1e-13)
+        c = 2.0 / r.alpha[1]
+        np.testing.assert_allclose(r2.alpha, r.alpha * c, rtol=1e-12)
+        np.testing.assert_allclose(r2.alpha0, r.alpha0 * c, rtol=1e-12)
+        np.testing.assert_allclose(r2.log_likelihood, r.log_likelihood, rtol=1e-12)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        with pytest.raises(ValueError, match="masked"):
+            bratt_mm(np.ma.masked_array(y), t)
+        with pytest.raises(ValueError, match="real-valued"):
+            bratt_mm(y.astype(complex), t)
+        with pytest.raises(ValueError, match="numeric"):
+            bratt_mm(y.astype(bool), t)
+        with pytest.raises(ValueError, match="numeric"):
+            bratt_mm(np.array([["a"] * 3] * 3, dtype=object), t)
+        with pytest.raises(ValueError, match="square"):
+            bratt_mm(y[:2], t)
+        with pytest.raises(ValueError, match="same shape"):
+            bratt_mm(y, np.zeros((4, 4)))
+        with pytest.raises(ValueError, match="ref_index must be an integer"):
+            bratt_mm(y, t, ref_index=0.5)
+        with pytest.raises(ValueError, match="ref_index must be an integer"):
+            bratt_mm(y, t, ref_index=True)
+        with pytest.raises(ValueError, match="nonnegative"):
+            bratt_mm(y, t, ref_index=-1)
+        # Crate error contract surfaces through the binding:
+        with pytest.raises(ValueError, match="use bradley_terry_mm"):
+            bratt_mm(y, np.zeros((3, 3)))
+        with pytest.raises(ValueError, match="symmetric"):
+            tt = t.copy()
+            tt[0, 1] = 5.0
+            bratt_mm(y, tt)
+        with pytest.raises(ValueError, match="no wins"):
+            y0 = y.copy()
+            y0[1] = 0.0
+            bratt_mm(y0, t)
+        with pytest.raises(ValueError, match="did not converge"):
+            bratt_mm(y, t, max_iter=1, tol=1e-15)

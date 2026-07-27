@@ -6292,3 +6292,274 @@ fn pr_mc_500_invariants() {
         assert!(sum.abs() < 1e-9, "rep {rep}: pred row sum {sum}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// bratt_mm (VGAM bratt: Bradley-Terry with additive-alpha0 ties) tests.
+// Oracle: files/bratt_oracle.py (exact Fractions, EXECUTED). Every assert
+// reads crate outputs (BrattResult fields or returned Err strings).
+// ---------------------------------------------------------------------------
+
+fn bt2_fixture() -> (Vec<f64>, Vec<f64>) {
+    // B1: n = 3. wins y_ij and symmetric ties t_ij.
+    let y = vec![0.0, 3.0, 1.0, 1.0, 0.0, 2.0, 2.0, 1.0, 0.0];
+    let t = vec![0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 1.0, 2.0, 0.0];
+    (y, t)
+}
+
+fn bt2_rel(a: f64, b: f64) -> f64 {
+    (a - b).abs() / b.abs().max(1e-300)
+}
+
+#[test]
+fn bt2_anchor_b1_exact_iter1() {
+    // Oracle B1 iteration 1 (exact Fractions): alpha = [1, 27/40, 3/4],
+    // alpha0 = 9/14. tol = 0.5 > delta_1 = 0.357... so convergence fires at
+    // the first update and the crate returns the iteration-1 parameters.
+    // Kills MU1 (W_i includes ties), MU2 (alpha0 denominator double-counts
+    // ordered pairs), MU3 (rescale skips alpha0).
+    let (y, t) = bt2_fixture();
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 100, 0.5).unwrap();
+    assert_eq!(r.iterations, 1);
+    assert!(bt2_rel(r.alpha[0], 1.0) < 1e-15, "alpha0={}", r.alpha[0]);
+    assert!(
+        bt2_rel(r.alpha[1], 27.0 / 40.0) < 1e-15,
+        "alpha1={}",
+        r.alpha[1]
+    );
+    assert!(
+        bt2_rel(r.alpha[2], 3.0 / 4.0) < 1e-15,
+        "alpha2={}",
+        r.alpha[2]
+    );
+    assert!(bt2_rel(r.alpha0, 9.0 / 14.0) < 1e-15, "a0={}", r.alpha0);
+}
+
+#[test]
+fn bt2_anchor_b1_iter2() {
+    // Oracle B1 iteration 2 (exact Fractions -> float): alpha =
+    // [1, 0.6276558170061743, 0.7021719314027881], alpha0 =
+    // 0.6129259568116415. delta_2 = 0.0478 <= tol = 0.1 < delta_1, so
+    // convergence fires at update 2. Kills MU4 (D_ij missing alpha0):
+    // iteration 1 is blind to MU4 (constant D shift cancels in the
+    // rescale from the all-one start) but iteration 2 discriminates it.
+    let (y, t) = bt2_fixture();
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 100, 0.1).unwrap();
+    assert_eq!(r.iterations, 2);
+    assert!(bt2_rel(r.alpha[1], 0.6276558170061743) < 1e-13);
+    assert!(bt2_rel(r.alpha[2], 0.7021719314027881) < 1e-13);
+    assert!(bt2_rel(r.alpha0, 0.6129259568116415) < 1e-13);
+}
+
+#[test]
+fn bt2_converged_b2() {
+    // Oracle B2: tol = 1e-13 converges (oracle: 22 updates) to
+    // alpha = [1, 0.6150318884241122, 0.686344995662376],
+    // alpha0 = 0.6038293879270596, LL = -15.12765635227613 with
+    // stationarity gradient < 1e-13. Kills MU5 (convergence ignores the
+    // alpha0 delta) together with the iteration-count window: alpha0
+    // still moves by more than alpha near the fixed point on this
+    // fixture, so dropping it from the delta stops too early.
+    let (y, t) = bt2_fixture();
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 1000, 1e-13).unwrap();
+    assert!((r.alpha[0] - 1.0).abs() < 1e-15);
+    assert!(bt2_rel(r.alpha[1], 0.6150318884241122) < 1e-10);
+    assert!(bt2_rel(r.alpha[2], 0.686344995662376) < 1e-10);
+    assert!(bt2_rel(r.alpha0, 0.6038293879270596) < 1e-10);
+    assert!(bt2_rel(r.log_likelihood, -15.12765635227613) < 1e-12);
+    assert!(
+        (18..=26).contains(&r.iterations),
+        "iterations = {}",
+        r.iterations
+    );
+    // Spec gradient (independent formula) evaluated at the crate's
+    // returned parameters must vanish: W_i/a_i = sum_j n_ij/D_ij.
+    for i in 0..3 {
+        let w_i: f64 = (0..3).filter(|&j| j != i).map(|j| y[i * 3 + j]).sum();
+        let s: f64 = (0..3)
+            .filter(|&j| j != i)
+            .map(|j| {
+                (y[i * 3 + j] + y[j * 3 + i] + t[i * 3 + j]) / (r.alpha[i] + r.alpha[j] + r.alpha0)
+            })
+            .sum();
+        assert!((w_i / r.alpha[i] - s).abs() < 1e-9, "grad[{i}]");
+    }
+}
+
+#[test]
+fn bt2_permutation_b3() {
+    // Relabeling contestants by the permutation 0<->2 permutes alpha and
+    // preserves alpha0 and the log-likelihood (both fits read from crate).
+    let (y, t) = bt2_fixture();
+    let perm = [2usize, 1, 0];
+    let mut yp = vec![0.0; 9];
+    let mut tp = vec![0.0; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            yp[perm[i] * 3 + perm[j]] = y[i * 3 + j];
+            tp[perm[i] * 3 + perm[j]] = t[i * 3 + j];
+        }
+    }
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 1000, 1e-13).unwrap();
+    let rp = bratt_mm(&yp, &tp, 3, perm[0], 1.0, 1000, 1e-13).unwrap();
+    for i in 0..3 {
+        assert!(bt2_rel(rp.alpha[perm[i]], r.alpha[i]) < 1e-12, "alpha[{i}]");
+    }
+    assert!(bt2_rel(rp.alpha0, r.alpha0) < 1e-12);
+    assert!(bt2_rel(rp.log_likelihood, r.log_likelihood) < 1e-12);
+}
+
+#[test]
+fn bt2_rescale_b4() {
+    // Oracle B4: refitting with ref_index = 1, ref_value = 2 returns the
+    // B2 solution jointly rescaled by c = 2/alpha_B2[1]; the LL is
+    // invariant under the joint rescale (crate-vs-crate cross pin).
+    let (y, t) = bt2_fixture();
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 1000, 1e-13).unwrap();
+    let r2 = bratt_mm(&y, &t, 3, 1, 2.0, 1000, 1e-13).unwrap();
+    assert!(bt2_rel(r2.alpha[0], 3.2518639076171687) < 1e-10);
+    assert!((r2.alpha[1] - 2.0).abs() < 1e-14);
+    assert!(bt2_rel(r2.alpha[2], 2.2319005195681427) < 1e-10);
+    assert!(bt2_rel(r2.alpha0, 1.9635709929585714) < 1e-10);
+    assert!(bt2_rel(r2.log_likelihood, r.log_likelihood) < 1e-12);
+    let c = 2.0 / r.alpha[1];
+    for i in 0..3 {
+        assert!(bt2_rel(r2.alpha[i], r.alpha[i] * c) < 1e-12, "alpha[{i}]");
+    }
+    assert!(bt2_rel(r2.alpha0, r.alpha0 * c) < 1e-12);
+}
+
+#[test]
+fn bt2_error_contract() {
+    let (y, t) = bt2_fixture();
+    let e = bratt_mm(&y, &t, 1, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("at least 2"), "{e}");
+    // n cap is validated before any n*n length arithmetic.
+    let e = bratt_mm(&[], &[], 10001, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("cap of 10000"), "{e}");
+    let e = bratt_mm(&y[..8], &t, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("wins must be"), "{e}");
+    let e = bratt_mm(&y, &t[..8], 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("ties must be"), "{e}");
+    let mut bad = y.clone();
+    bad[1] = f64::NAN;
+    let e = bratt_mm(&bad, &t, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("win counts must be finite"), "{e}");
+    let mut bad = t.clone();
+    bad[1] = -1.0;
+    bad[3] = -1.0;
+    let e = bratt_mm(&y, &bad, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("tie counts must be nonnegative"), "{e}");
+    let mut bad = y.clone();
+    bad[4] = 1.0;
+    let e = bratt_mm(&bad, &t, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("diagonal of the wins"), "{e}");
+    let mut bad = t.clone();
+    bad[1] = 5.0;
+    let e = bratt_mm(&y, &bad, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("symmetric"), "{e}");
+    let e = bratt_mm(&y, &t, 3, 3, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("ref_index"), "{e}");
+    let e = bratt_mm(&y, &t, 3, 0, 0.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("ref_value"), "{e}");
+    let e = bratt_mm(&y, &t, 3, 0, 1.0, 10, 0.0).unwrap_err();
+    assert!(e.contains("tol"), "{e}");
+    let e = bratt_mm(&y, &t, 3, 0, 1.0, 0, 1e-6).unwrap_err();
+    assert!(e.contains("max_iter"), "{e}");
+    // W_i == 0: contestant 1 loses everything.
+    let y0 = vec![0.0, 3.0, 1.0, 0.0, 0.0, 0.0, 2.0, 1.0, 0.0];
+    let e = bratt_mm(&y0, &t, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("contestant 1 has no wins"), "{e}");
+    // T == 0: no ties anywhere.
+    let t0 = vec![0.0; 9];
+    let e = bratt_mm(&y, &t0, 3, 0, 1.0, 10, 1e-6).unwrap_err();
+    assert!(e.contains("use bradley_terry_mm"), "{e}");
+    // Non-convergence.
+    let e = bratt_mm(&y, &t, 3, 0, 1.0, 1, 1e-15).unwrap_err();
+    assert!(e.contains("did not converge"), "{e}");
+}
+
+#[test]
+#[ignore]
+fn bt2_mc_500_dominance() {
+    // 500 random 4-player tournaments. The crate's fitted (alpha, alpha0)
+    // must dominate 20 random non-scale perturbations under the spec LL
+    // formula computed IN THE TEST from crate outputs (a wrong crate
+    // optimum fails the dominance; a wrong log_likelihood field fails the
+    // recomputation cross-check). Fractional weighted counts included.
+    let n = 4usize;
+    let spec_ll = |y: &[f64], t: &[f64], a: &[f64], a0: f64| -> f64 {
+        let mut ll = 0.0;
+        for i in 0..n {
+            for j in 0..n {
+                if i != j && y[i * n + j] > 0.0 {
+                    ll += y[i * n + j] * a[i].ln();
+                }
+            }
+        }
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if t[i * n + j] > 0.0 {
+                    ll += t[i * n + j] * a0.ln();
+                }
+                let n_ij = y[i * n + j] + y[j * n + i] + t[i * n + j];
+                if n_ij > 0.0 {
+                    ll -= n_ij * (a[i] + a[j] + a0).ln();
+                }
+            }
+        }
+        ll
+    };
+    let mut rng = Lcg(0x5eed_b2a7_7001_u64);
+    for rep in 0..500 {
+        let mut y = vec![0.0f64; n * n];
+        let mut t = vec![0.0f64; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    y[i * n + j] = 1.0 + (rng.next_f64() * 9.0).floor() + 0.5 * rng.next_f64();
+                }
+            }
+        }
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let v = 1.0 + (rng.next_f64() * 5.0).floor();
+                t[i * n + j] = v;
+                t[j * n + i] = v;
+            }
+        }
+        let r = bratt_mm(&y, &t, n, 0, 1.0, 20000, 1e-12).unwrap();
+        let base = spec_ll(&y, &t, &r.alpha, r.alpha0);
+        assert!(
+            bt2_rel(base, r.log_likelihood) < 1e-10,
+            "rep {rep}: LL field vs spec recomputation"
+        );
+        for _ in 0..20 {
+            let mut ap = r.alpha.clone();
+            for a in ap.iter_mut().skip(1) {
+                *a *= (0.1 * rng.normal()).exp();
+            }
+            let a0p = r.alpha0 * (0.1 * rng.normal()).exp();
+            assert!(
+                spec_ll(&y, &t, &ap, a0p) <= base + 1e-9,
+                "rep {rep}: dominance"
+            );
+        }
+    }
+}
+
+#[test]
+fn bt2_alpha0_delta_convergence() {
+    // MU5 killer (convergence check dropping the alpha0 delta). On the B1
+    // fixture the update-1 deltas are max|alpha' - alpha| = 0.325 and
+    // |alpha0' - alpha0| = 5/14 = 0.357 (oracle per-iteration trace), so
+    // with tol = 0.34 the correct check (max over alpha AND alpha0) does
+    // NOT fire at update 1 and fires at update 2 (delta_2 = 0.0478),
+    // returning the iteration-2 parameters; a check that ignores alpha0
+    // fires at update 1 and returns alpha[1] = 27/40 = 0.675 instead of
+    // 0.6276558170061743. Both asserts read crate outputs.
+    let (y, t) = bt2_fixture();
+    let r = bratt_mm(&y, &t, 3, 0, 1.0, 100, 0.34).unwrap();
+    assert_eq!(r.iterations, 2);
+    assert!(bt2_rel(r.alpha[1], 0.6276558170061743) < 1e-13);
+    assert!(bt2_rel(r.alpha0, 0.6129259568116415) < 1e-13);
+}

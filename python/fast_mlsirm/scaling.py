@@ -183,6 +183,87 @@ def bradley_terry_mm(wins, alpha=0.0, max_iter=10000, tol=1e-8):
 
 
 @dataclass
+class BrattResult:
+    """Bradley-Terry-with-ties (VGAM ``bratt``) MM fit: ``alpha[i]`` is the
+    worth of contestant i (``alpha[ref_index] == ref_value``), ``alpha0`` the
+    additive tie parameter on the same joint scale, ``iterations`` the number
+    of MM updates performed when the max absolute parameter change (across
+    ``alpha`` AND ``alpha0``, after the reference rescale) first fell to
+    ``tol``, and ``log_likelihood`` the model log-likelihood at the returned
+    parameters."""
+
+    alpha: np.ndarray
+    alpha0: float
+    iterations: int
+    log_likelihood: float
+
+
+def bratt_mm(wins, ties, ref_index=0, ref_value=1.0, max_iter=10000, tol=1e-10):
+    """Fit the Bradley-Terry model with ties (additive ``alpha0``) by MM.
+
+    Model (VGAM 1.1-14 ``bratt()`` family, R source READ; Bradley & Terry
+    1952 NOT READ, cited as the model origin): ``P(i beats j) =
+    alpha_i / (alpha_i + alpha_j + alpha0)`` and ``P(i ties j) =
+    alpha0 / (alpha_i + alpha_j + alpha0)``. This additive-``alpha0`` ties
+    model is NOT the Rao-Kupper or Davidson ties model (neither read; named
+    only to disambiguate). The MM ascent is hand-derived using the same
+    supporting-hyperplane pattern as :func:`bradley_terry_mm`.
+
+    ``wins[i, j]`` is the (possibly fractional, nonnegative) count of wins
+    of *i* over *j*; ``ties[i, j]`` the tie count of the unordered pair,
+    stored symmetrically. Diagonals must be zero. Data with no ties at all
+    are rejected (``alpha0`` has no positive MLE -- use
+    :func:`bradley_terry_mm`; this is a contract of this API, not VGAM
+    behavior), as is any contestant with zero wins (its ML worth is 0,
+    outside the positive parameter space).
+    """
+    from .fitstats import _core_module
+
+    mats = []
+    for name, x in (("wins", wins), ("ties", ties)):
+        if isinstance(x, np.ma.MaskedArray):
+            raise ValueError(f"bratt_mm: {name} must not be a masked array")
+        arr = np.asarray(x)
+        if np.iscomplexobj(arr):
+            raise ValueError(f"bratt_mm: {name} must be real-valued")
+        if arr.dtype == object:
+            try:
+                arr = arr.astype(np.float64)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"bratt_mm: {name} must be numeric") from exc
+        if arr.dtype.kind not in "fiu":
+            raise ValueError(f"bratt_mm: {name} must be numeric (got {arr.dtype})")
+        arr = np.ascontiguousarray(arr, dtype=np.float64)
+        if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+            raise ValueError(f"bratt_mm: {name} must be a square 2-D matrix")
+        mats.append(arr)
+    w, t = mats
+    if w.shape != t.shape:
+        raise ValueError("bratt_mm: wins and ties must have the same shape")
+    if isinstance(ref_index, bool) or not isinstance(ref_index, (int, np.integer)):
+        raise ValueError("bratt_mm: ref_index must be an integer")
+    if ref_index < 0:
+        raise ValueError("bratt_mm: ref_index must be nonnegative")
+    n = w.shape[0]
+    core = _core_module()
+    res = core.bratt_mm(
+        w.ravel(),
+        t.ravel(),
+        n,
+        int(ref_index),
+        float(ref_value),
+        int(max_iter),
+        float(tol),
+    )
+    return BrattResult(
+        alpha=np.asarray(res["alpha"], dtype=np.float64),
+        alpha0=float(res["alpha0"]),
+        iterations=int(res["iterations"]),
+        log_likelihood=float(res["log_likelihood"]),
+    )
+
+
+@dataclass
 class LsrResult:
     """Luce Spectral Ranking fit: ``params[i]`` is the centered log-worth of
     item i (mean exactly 0), ``weights[i]`` the stationary distribution of
