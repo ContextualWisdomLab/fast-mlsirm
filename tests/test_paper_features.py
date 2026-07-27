@@ -10518,6 +10518,8 @@ class TestIcc:
             icc(np.array([[True, False], [False, True]]))
         with pytest.raises(ValueError):
             icc(np.array([[True, False], [False, True]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(np.array([[np.array(True), 2.0], [3.0, 4.0]], dtype=object))
         with pytest.raises((ValueError, TypeError)):
             icc(np.array([["a", "b"], ["c", "d"]], dtype=object))
         with pytest.raises(ValueError):

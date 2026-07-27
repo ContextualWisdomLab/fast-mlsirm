@@ -381,7 +381,11 @@ def icc(
         raise ValueError("masked arrays are not supported; use NaN for missing")
     arr = np.asarray(ratings)
     if arr.dtype == object:
-        if any(isinstance(v, (bool, np.bool_)) for v in arr.flat):
+        if any(
+            isinstance(v, (bool, np.bool_))
+            or (isinstance(v, np.ndarray) and v.dtype.kind == "b")
+            for v in arr.flat
+        ):
             raise ValueError("ratings must be numeric, not boolean")
         arr = np.asarray(arr, dtype=np.float64)  # raises on non-numeric
     if np.iscomplexobj(arr):
