@@ -381,20 +381,13 @@ def icc(
         raise ValueError("masked arrays are not supported; use NaN for missing")
     arr = np.asarray(ratings)
     if arr.dtype == object:
-        def _is_numeric(v: object) -> bool:
-            # Unwrap arbitrarily nested 0-D ndarrays (any dtype).
-            while isinstance(v, np.ndarray) and v.ndim == 0:
-                v = v.item()
-            # Whitelist: real int/float scalars only (bool is an int
-            # subclass and np.bool_/np.void etc. are excluded by not
-            # being in the whitelist).
-            if isinstance(v, (bool, np.bool_)):
-                return False
-            return isinstance(v, (int, float, np.integer, np.floating))
-
-        if not all(_is_numeric(v) for v in arr.flat):
-            raise ValueError("ratings must contain only real numeric scalars")
-        arr = np.asarray(arr, dtype=np.float64)  # raises on non-numeric
+        # Rounds 1-5 of adversarial review showed per-element vetting of
+        # object arrays is an unwinnable arms race (bool, 0-D wrappers,
+        # np.void, timedelta64, self-referential arrays, __float__-lying
+        # subclasses). Numeric input never needs object dtype, so reject it.
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
     if np.iscomplexobj(arr):
         raise ValueError("ratings must be real-valued")
     if arr.dtype.kind == "b":
