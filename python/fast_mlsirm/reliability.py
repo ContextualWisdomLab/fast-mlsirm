@@ -478,6 +478,16 @@ def kripp_alpha(ratings, method: str = "nominal") -> KrippResult:
         raise ValueError("ratings must be a numeric array")
     if arr.ndim != 2:
         raise ValueError("ratings must be a 2-D raters x subjects array")
+    if arr.dtype.kind in "iu" and arr.size:
+        # Levels are defined by exact f64 value identity; integers beyond
+        # 2**53 are not exactly representable and distinct rating labels
+        # would silently collapse during the float64 conversion.
+        lo, hi = int(arr.min()), int(arr.max())
+        if hi > 2**53 or lo < -(2**53):
+            raise ValueError(
+                "integer ratings beyond 2**53 cannot be represented "
+                "exactly as float64; distinct levels would collapse"
+            )
     x = np.ascontiguousarray(arr, dtype=np.float64)
     nr, ns = x.shape
     res = core.kripp_alpha(x.reshape(-1), int(nr), int(ns), str(method))

@@ -10610,3 +10610,25 @@ class TestKripp:
             kripp_alpha(np.array([[True, False], [False, True]]))
         with pytest.raises(ValueError):
             kripp_alpha(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=object))
+
+    def test_large_integer_levels_rejected(self):
+        # Review finding: int64 levels beyond 2**53 collapse in the float64
+        # cast (2**53 and 2**53+1 map to the same f64), silently turning
+        # complete disagreement into alpha=1 with a single level. Reads the
+        # wrapper's rejection; the accepted-boundary asserts read crate output.
+        import numpy as np
+        import pytest
+        from fast_mlsirm import kripp_alpha
+
+        big = 2**53
+        x = np.array([[big, big + 1], [big + 1, big]], dtype=np.int64)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(x)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(np.array([[2**63, 2**63 + 2]], dtype=np.uint64).reshape(2, 1).T)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(-x)  # negative side
+        # Boundary: values at exactly +/-2**53 are exactly representable.
+        ok = np.array([[big, -big], [-big, big]], dtype=np.int64)
+        r = kripp_alpha(ok)
+        assert r.levels == 2 and abs(r.value - (-0.5)) < 1e-12
