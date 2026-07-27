@@ -829,3 +829,103 @@ def mean_pairwise_cor(ratings, fisher: bool = True) -> MeanCorResult:
         subjects=int(res["subjects"]),
         raters=int(res["raters"]),
     )
+
+
+@dataclass
+class MeanRhoResult:
+    """Mean pairwise Spearman rank correlation of raters (irr ``meanrho``).
+
+    ``value`` is the mean pairwise Spearman rho (Fisher back-transformed
+    when ``fisher``); ``statistic``/``p_value`` are the Fisher z test and
+    two-sided p, or ``None`` when ``fisher=False``; ``dropped`` counts
+    perfectly correlated pairs excluded from the Fisher average; ``ties``
+    flags tied ratings within any rater column (midranks were used);
+    ``subjects`` counts complete rows after listwise NaN deletion."""
+
+    value: float
+    statistic: float | None
+    p_value: float | None
+    dropped: int
+    ties: bool
+    subjects: int
+    raters: int
+
+
+def mean_pairwise_rho(ratings, fisher: bool = True) -> MeanRhoResult:
+    """Mean of the pairwise Spearman rank correlations between rater
+    columns of a subjects x raters matrix (computed in Rust; transcribed
+    from the CRAN irr 0.84.1 R source ``meanrho.R``, read in full). Rows
+    containing NaN are dropped listwise (R ``na.omit``), then each
+    column is replaced by its midranks (R ``rank`` default, ties
+    averaged) and the ``meancor`` machinery runs on the ranks — the
+    hand-derived equivalence Spearman = Pearson-on-midranks was verified
+    against an executed exact-arithmetic oracle.
+
+    With ``fisher=True`` (the R default), pairs with rho exactly
+    ``+/-1`` are dropped (their count is reported in ``dropped``; R only
+    appends a warning string), the remaining correlations are averaged
+    on the Fisher z scale and back-transformed
+    (``value = tanh(mean(atanh(rho)))``), and a z test is reported with
+    ``SE = sqrt(1/(m-3))`` and ``p = 2*(1 - Phi(|z|))``. With
+    ``fisher=False`` the plain mean of all pairwise rhos is returned,
+    perfect pairs included, and ``statistic``/``p_value`` are ``None``.
+    ``ties=True`` reports tied values in at least one column (R appends
+    a warning string to the method label; a case analysis documented in
+    the Rust core shows R's ``apply(..., unique)`` quirk never diverges
+    from this flag for 2 or more raters).
+
+    Documented deviations from R (deliberate, stricter-than-R):
+    constant rater columns (R ``cor`` NA), fewer than 4 complete rows
+    with ``fisher``, all pairs perfect under ``fisher``, infinities, a
+    single rater, and fewer than 2 complete rows all raise
+    ``ValueError``. ``fisher`` must be a real ``bool`` (or
+    ``numpy.bool_``). In LLM-as-a-Judge quality management this
+    summarizes how consistently judges order the same responses without
+    assuming interval-scale scores.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Spearman, C. (1904). The proof and measurement of association
+            between two things. *The American Journal of Psychology,
+            15*(1), 72-101. (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mean_pairwise_rho"):
+        raise RuntimeError("mean_pairwise_rho requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    if not isinstance(fisher, (bool, np.bool_)):
+        raise TypeError("fisher must be a bool")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x raters array")
+    # No 2**53 integer fidelity guard: ranking compares magnitudes and
+    # midranks enter continuous centered sums (meancor precedent).
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    res = core.mean_pairwise_rho(x.reshape(-1), int(ns), int(nr), bool(fisher))
+    stat = float(res["statistic"])
+    p = float(res["p_value"])
+    return MeanRhoResult(
+        value=float(res["value"]),
+        statistic=None if stat != stat else stat,  # NaN -> None
+        p_value=None if p != p else p,
+        dropped=int(res["dropped"]),
+        ties=bool(res["ties"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+    )

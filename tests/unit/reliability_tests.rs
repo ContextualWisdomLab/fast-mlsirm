@@ -1936,3 +1936,293 @@ fn mcr_mc_500_independent_oracle() {
         done += 1;
     }
 }
+
+// ---------------------------------------------------------------------
+// mean_pairwise_rho (irr 0.84.1 meanrho.R): oracle anchors S1-S6 from
+// the exact-Fraction midrank oracle (session files/meanrho_oracle.py,
+// EXECUTED). Every assert below reads fields of the MeanRhoResult the
+// crate returned; expected literals come from the oracle pins.
+// Known identity limits (disclosed): S2's equal rhos make the fisher
+// value equal the plain mean there (S5 discriminates the averaging
+// path); at m = 4 the SE is 1 so statistic == value (these fixtures
+// use m = 5..6, and S2 pins statistic = value * sqrt(3)).
+
+// S1: 5x3 permutation columns with X-vs-Z exactly reversed (rho = -1).
+// Kills: keep-perfect-pairs mutants (atanh(-1) infinite / dropped=0).
+#[test]
+fn mrh_s1_reversed_pair_dropped() {
+    let s1 = [
+        1.0, 2.0, 5.0, //
+        2.0, 1.0, 4.0, //
+        3.0, 4.0, 3.0, //
+        4.0, 3.0, 2.0, //
+        5.0, 5.0, 1.0,
+    ];
+    let r = mean_pairwise_rho(&s1, 5, 3, true).unwrap();
+    assert_eq!(r.dropped, 1);
+    assert!(!r.ties);
+    assert_eq!(r.subjects, 5);
+    assert_eq!(r.raters, 3);
+    // rxy = 4/5 and ryz = -4/5: the retained z's cancel. Rust atanh is
+    // not guaranteed odd-exact, so assert dust bounds, not == 0.
+    assert!(r.value.abs() < 1e-12, "value = {}", r.value);
+    assert!(r.statistic.abs() < 1e-12);
+    assert!((r.p_value - 1.0).abs() < 1e-12);
+    // Plain mean keeps the perfect pair: (4/5 - 1 - 4/5)/3 = -1/3.
+    let p = mean_pairwise_rho(&s1, 5, 3, false).unwrap();
+    assert!((p.value - (-1.0 / 3.0)).abs() < 1e-15);
+    assert_eq!(p.dropped, 0);
+    assert!(p.statistic.is_nan() && p.p_value.is_nan());
+}
+
+// S2: 6x3 cyclic-shift permutations; all three rhos are exactly 23/35.
+// Kills: no-tanh mutants (value = mrz would give atanh(23/35) =
+// 0.7877681803792096 != 23/35) and SE mutants (m = 6: SE = sqrt(1/3),
+// so statistic = value * sqrt(3); an m-1 mutant gives sqrt(1/2)).
+#[test]
+fn mrh_s2_equal_rhos_statistic() {
+    let s2 = [
+        1.0, 3.0, 2.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 2.0, 1.0, //
+        4.0, 6.0, 5.0, //
+        5.0, 4.0, 6.0, //
+        6.0, 5.0, 4.0,
+    ];
+    let r = mean_pairwise_rho(&s2, 6, 3, true).unwrap();
+    assert!((r.value - 0.6571428571428571).abs() < 1e-15);
+    assert!((r.statistic - 1.1382048164024052).abs() < 1e-14);
+    assert!((r.p_value - 0.25503496799512926).abs() < 2e-7);
+    assert_eq!(r.dropped, 0);
+    assert!(!r.ties);
+    // statistic = value * sqrt(3) identity read back from crate fields.
+    assert!((r.statistic - r.value * 3.0_f64.sqrt()).abs() < 1e-14);
+}
+
+// S3: 5x2 with ties -> midranks X = [1.5,1.5,3,4.5,4.5],
+// Y = [1,2.5,2.5,4,5]; rho = (33/4)/sqrt(9 * 19/2) (irrational).
+// Kills: raw-value (no rank) mutants and ordinal-rank (non-midrank)
+// mutants -- both change this pin -- and pins ties = true.
+#[test]
+fn mrh_s3_ties_midranks() {
+    let s3 = [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
+    let r = mean_pairwise_rho(&s3, 5, 2, false).unwrap();
+    assert!((r.value - 0.8922178162191939).abs() < 1e-15);
+    assert!(r.ties);
+    assert_eq!(r.subjects, 5);
+}
+
+// S4: S2 plus a NaN row -> listwise drop makes it bitwise-equal to S2.
+// Kills: skip-listwise-drop mutants.
+#[test]
+fn mrh_s4_nan_row_dropped() {
+    let s4 = [
+        1.0,
+        3.0,
+        2.0,
+        2.0,
+        1.0,
+        3.0,
+        3.0,
+        2.0,
+        1.0,
+        4.0,
+        6.0,
+        5.0,
+        5.0,
+        4.0,
+        6.0,
+        6.0,
+        5.0,
+        4.0,
+        7.0,
+        f64::NAN,
+        7.0,
+    ];
+    let s2 = [
+        1.0, 3.0, 2.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 2.0, 1.0, //
+        4.0, 6.0, 5.0, //
+        5.0, 4.0, 6.0, //
+        6.0, 5.0, 4.0,
+    ];
+    let r4 = mean_pairwise_rho(&s4, 7, 3, true).unwrap();
+    let r2 = mean_pairwise_rho(&s2, 6, 3, true).unwrap();
+    assert_eq!(r4.subjects, 6);
+    assert_eq!(r4.value.to_bits(), r2.value.to_bits());
+    assert_eq!(r4.statistic.to_bits(), r2.statistic.to_bits());
+    assert_eq!(r4.p_value.to_bits(), r2.p_value.to_bits());
+}
+
+// S5: 6x3 permutations with DISTINCT rhos 29/35, 27/35, 13/35.
+// Kills: skip-Fisher-averaging mutants (plain mean 23/35 != fisher
+// value 0.6992488340329346) -- S2 cannot, its equal rhos make the full
+// fisher chain collapse to the plain mean.
+#[test]
+fn mrh_s5_distinct_rhos_fisher() {
+    let s5 = [
+        1.0, 2.0, 1.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 4.0, 2.0, //
+        4.0, 3.0, 6.0, //
+        5.0, 6.0, 4.0, //
+        6.0, 5.0, 5.0,
+    ];
+    let r = mean_pairwise_rho(&s5, 6, 3, true).unwrap();
+    assert!((r.value - 0.6992488340329346).abs() < 1e-15);
+    assert!((r.statistic - 1.2111345076783402).abs() < 1e-14);
+    assert!((r.p_value - 0.22584385801024365).abs() < 2e-7);
+    assert_eq!(r.dropped, 0);
+    let p = mean_pairwise_rho(&s5, 6, 3, false).unwrap();
+    assert!((p.value - 23.0 / 35.0).abs() < 1e-15);
+    // The fisher value differs from the plain mean here (distinct rhos).
+    assert!((r.value - p.value).abs() > 1e-6);
+}
+
+// S6: S5 plus a duplicate of column 0 (6x4). The duplicate pair has
+// rho = 1 exactly (dropped) while the retained fisher value is nonzero.
+// Kills: mutants that zero/mangle the value whenever a perfect pair
+// was dropped (S1 cannot -- its retained value is ~0 by design).
+#[test]
+fn mrh_s6_dropped_with_nonzero_value() {
+    let s6 = [
+        1.0, 2.0, 1.0, 1.0, //
+        2.0, 1.0, 3.0, 2.0, //
+        3.0, 4.0, 2.0, 3.0, //
+        4.0, 3.0, 6.0, 4.0, //
+        5.0, 6.0, 4.0, 5.0, //
+        6.0, 5.0, 5.0, 6.0,
+    ];
+    let r = mean_pairwise_rho(&s6, 6, 4, true).unwrap();
+    assert_eq!(r.dropped, 1);
+    assert!(!r.ties);
+    assert!((r.value - 0.7447132997063424).abs() < 1e-15);
+    assert!((r.statistic - 1.2898812721636537).abs() < 1e-14);
+    assert!((r.p_value - 0.1970918840947284).abs() < 2e-7);
+    // Plain mean keeps the perfect pair: exact rational 16/21.
+    let p = mean_pairwise_rho(&s6, 6, 4, false).unwrap();
+    assert!((p.value - 16.0 / 21.0).abs() < 1e-15);
+}
+
+#[test]
+fn mrh_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0];
+    // nr < 2
+    assert!(mean_pairwise_rho(&ok, 8, 1, true).is_err());
+    // ns == 0
+    assert!(mean_pairwise_rho(&[], 0, 2, true).is_err());
+    // length mismatch
+    assert!(mean_pairwise_rho(&ok, 5, 2, true).is_err());
+    // infinite value
+    let mut inf = ok;
+    inf[3] = f64::INFINITY;
+    assert!(mean_pairwise_rho(&inf, 4, 2, true).is_err());
+    // fisher with m < 4 (3 complete rows)
+    let three = [1.0, 2.0, 2.0, 1.0, 3.0, 4.0];
+    assert!(mean_pairwise_rho(&three, 3, 2, true).is_err());
+    // ... but plain mean is fine at m = 3
+    assert!(mean_pairwise_rho(&three, 3, 2, false).is_ok());
+    // constant column (constant midranks)
+    let cst = [1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0, 5.0];
+    assert!(mean_pairwise_rho(&cst, 4, 2, true).is_err());
+    // all pairs perfect under fisher (column vs itself)
+    let dup = [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0];
+    assert!(mean_pairwise_rho(&dup, 4, 2, true).is_err());
+    // m < 2 after listwise drop
+    let nan2 = [1.0, f64::NAN, 2.0, 3.0, f64::NAN, 4.0];
+    assert!(mean_pairwise_rho(&nan2, 3, 2, false).is_err());
+}
+
+// MC-500: random integer matrices (ties injected via small value range)
+// against an independent in-test midrank + Fisher recompute, plus
+// column-permutation invariance. p_value is only sanity-bounded in
+// (0, 1] here: the crate has no second, independent erfc to compare
+// against (limitation disclosed); the anchors above pin p against
+// Python math.erfc at 2e-7.
+#[test]
+#[ignore]
+fn mrh_mc_500_independent_oracle() {
+    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let midranks = |col: &[f64]| -> Vec<f64> {
+        let m = col.len();
+        let mut ord: Vec<usize> = (0..m).collect();
+        ord.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+        let mut out = vec![0.0; m];
+        let mut s = 0;
+        while s < m {
+            let mut e = s;
+            while e + 1 < m && col[ord[e + 1]] == col[ord[s]] {
+                e += 1;
+            }
+            let mid = (s + e + 2) as f64 / 2.0;
+            for k in s..=e {
+                out[ord[k]] = mid;
+            }
+            s = e + 1;
+        }
+        out
+    };
+    let pearson = |x: &[f64], y: &[f64]| -> f64 {
+        let n = x.len() as f64;
+        let mx = x.iter().sum::<f64>() / n;
+        let my = y.iter().sum::<f64>() / n;
+        let mut sxy = 0.0;
+        let mut sxx = 0.0;
+        let mut syy = 0.0;
+        for (a, b) in x.iter().zip(y) {
+            sxy += (a - mx) * (b - my);
+            sxx += (a - mx) * (a - mx);
+            syy += (b - my) * (b - my);
+        }
+        sxy / (sxx * syy).sqrt()
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 6 + (next() * 10.0) as usize;
+        let nr = 3 + (next() * 3.0) as usize;
+        let data: Vec<f64> = (0..ns * nr).map(|_| (next() * 8.0).floor()).collect();
+        let Ok(r) = mean_pairwise_rho(&data, ns, nr, true) else {
+            continue; // constant column / all-perfect draws are skipped
+        };
+        // Independent recompute of the fisher chain on midranks.
+        let cols: Vec<Vec<f64>> = (0..nr)
+            .map(|j| (0..ns).map(|i| data[i * nr + j]).collect())
+            .collect();
+        let rcols: Vec<Vec<f64>> = cols.iter().map(|c| midranks(c)).collect();
+        let mut zs = Vec::new();
+        let mut dropped = 0u64;
+        for a in 0..nr {
+            for b in (a + 1)..nr {
+                let rho = pearson(&rcols[a], &rcols[b]);
+                if -1.0 < rho && rho < 1.0 {
+                    zs.push(rho.atanh());
+                } else {
+                    dropped += 1;
+                }
+            }
+        }
+        let value = (zs.iter().sum::<f64>() / zs.len() as f64).tanh();
+        let statistic = value / (1.0 / (ns as f64 - 3.0)).sqrt();
+        assert!((r.value - value).abs() < 1e-12);
+        assert!((r.statistic - statistic).abs() < 1e-12);
+        assert_eq!(r.dropped, dropped);
+        assert_eq!(r.subjects, ns as u64);
+        assert!(r.p_value > 0.0 && r.p_value <= 1.0);
+        // Column-permutation invariance: swap the first two raters.
+        let mut sw = data.clone();
+        for i in 0..ns {
+            sw.swap(i * nr, i * nr + 1);
+        }
+        let rs = mean_pairwise_rho(&sw, ns, nr, true).unwrap();
+        assert!((rs.value - r.value).abs() < 1e-12);
+        assert_eq!(rs.dropped, r.dropped);
+        done += 1;
+    }
+}

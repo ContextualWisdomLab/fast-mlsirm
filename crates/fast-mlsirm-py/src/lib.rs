@@ -112,7 +112,8 @@ use mlsirm_core::reliability::{
     cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
     finn_coefficient as core_finn_coefficient, icc as core_icc, kripp_alpha as core_kripp_alpha,
     maxwell_re as core_maxwell_re, mean_pairwise_cor as core_mean_pairwise_cor,
-    robinson_a as core_robinson_a, separation_reliability as core_separation_reliability,
+    mean_pairwise_rho as core_mean_pairwise_rho, robinson_a as core_robinson_a,
+    separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3736,6 +3737,38 @@ fn mean_pairwise_cor(
     out.set_item("statistic", res.statistic)?;
     out.set_item("p_value", res.p_value)?;
     out.set_item("dropped", res.dropped)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Mean pairwise Spearman rank correlation of rater columns
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `meanrho.R`, READ). `ratings` is row-major ns x nr; rows with NaN
+/// are dropped listwise and columns are midrank-transformed before the
+/// pairwise Pearson correlations. With `fisher`, perfectly correlated
+/// pairs are dropped before the Fisher-z average and a z test is
+/// reported; without it `statistic`/`p_value` are NaN. `ties` flags
+/// tied values within any column (R appends a warning string).
+/// Degenerate inputs raise ValueError where R yields NA/NaN. Returns a
+/// dict with `value`, `statistic`, `p_value`, `dropped`, `ties`,
+/// `subjects`, `raters`.
+#[pyfunction]
+fn mean_pairwise_rho(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_mean_pairwise_rho(ratings.as_slice()?, ns, nr, fisher)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("dropped", res.dropped)?;
+    out.set_item("ties", res.ties)?;
     out.set_item("subjects", res.subjects)?;
     out.set_item("raters", res.raters)?;
     Ok(out.into())
@@ -8376,6 +8409,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(maxwell_re, m)?)?;
     m.add_function(wrap_pyfunction!(robinson_a, m)?)?;
     m.add_function(wrap_pyfunction!(mean_pairwise_cor, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_pairwise_rho, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

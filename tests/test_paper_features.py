@@ -11020,3 +11020,90 @@ class TestMeancor:
             mean_pairwise_cor(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
         with pytest.raises(ValueError):
             mean_pairwise_cor(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))
+
+
+class TestMeanrho:
+    """Mean pairwise Spearman rho (irr 0.84.1 meanrho.R; oracle pins)."""
+
+    # S5 fixture: columns are permutations of 1..6 with three distinct
+    # pairwise rhos (oracle pins EXECUTED): rho = [29/35, 27/35, 13/35].
+    S5 = [[1, 2, 1], [2, 1, 3], [3, 4, 2], [4, 3, 6], [5, 6, 4], [6, 5, 5]]
+
+    def test_anchor_s5_fisher(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        r = mean_pairwise_rho(np.array(self.S5, dtype=float))
+        assert abs(r.value - 0.6992488340329346) < 1e-12
+        assert abs(r.statistic - 1.2111345076783402) < 1e-12
+        # 2e-7 tolerance: the Rust core's erfc rational approximation
+        # has documented |error| < 1.2e-7 vs the oracle's math.erfc.
+        assert abs(r.p_value - 0.22584385801024365) < 2e-7
+        assert r.dropped == 0
+        assert r.ties is False
+        assert r.subjects == 6
+        assert r.raters == 3
+
+    def test_plain_mean_and_none_shape(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        r = mean_pairwise_rho(np.array(self.S5), fisher=False)
+        # Oracle pin: mean(29/35, 27/35, 13/35) = 23/35 exactly.
+        assert abs(r.value - 23.0 / 35.0) < 1e-15
+        assert r.statistic is None and r.p_value is None
+        assert r.dropped == 0
+
+    def test_perfect_pair_dropped_and_ties(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        # S6 = S5 plus a duplicate of column 0: one rho == 1 pair.
+        x = np.array([[row[0]] + row for row in self.S5], dtype=float)
+        r = mean_pairwise_rho(x)
+        assert r.dropped == 1
+        assert abs(r.value - 0.7447132997063424) < 1e-12
+        rp = mean_pairwise_rho(x, fisher=False)
+        assert abs(rp.value - 16.0 / 21.0) < 1e-15  # perfect pair kept
+        # Ties flag: midranks engage (S3-style column with a duplicate).
+        t = mean_pairwise_rho(
+            np.array([[1, 1], [1, 2], [2, 2], [3, 3], [3, 4]], dtype=float),
+            fisher=False,
+        )
+        assert t.ties is True
+        assert abs(t.value - 0.8922178162191939) < 1e-12
+
+    def test_rejects_and_bool_policy(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        x = np.array(self.S5, dtype=float)
+        with pytest.raises(TypeError):
+            mean_pairwise_rho(x, fisher=1)
+        with pytest.raises(TypeError):
+            mean_pairwise_rho(x, fisher="false")
+        assert mean_pairwise_rho(x, fisher=np.bool_(True)).p_value is not None
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.ma.masked_array(x))
+        # Guard-order regression: masked reject fires BEFORE the fisher
+        # bool check (meancor impl-review round-1 precedent).
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.ma.masked_array(x), fisher=1)
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(x.astype(complex))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([1.0, 2.0]))
+        # Constant column and fisher m < 4 are hard errors.
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))

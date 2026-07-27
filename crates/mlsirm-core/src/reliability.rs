@@ -1724,6 +1724,233 @@ pub fn mean_pairwise_cor(
     })
 }
 
+/// Result of the mean pairwise Spearman rank correlation of rater columns.
+#[derive(Debug, Clone)]
+pub struct MeanRhoResult {
+    /// Mean pairwise Spearman rho (Fisher back-transformed when `fisher`).
+    pub value: f64,
+    /// z statistic `value / sqrt(1/(m-3))`; NaN when `fisher == false`
+    /// (always-present-f64 + NaN, matching `MeanCorResult`).
+    pub statistic: f64,
+    /// Two-sided p `erfc(|z|/sqrt(2))`; NaN when `fisher == false`.
+    pub p_value: f64,
+    /// Number of perfectly correlated rater pairs dropped before the
+    /// Fisher-z average (always 0 when `fisher == false`); named to
+    /// match `MeanCorResult::dropped`.
+    pub dropped: u64,
+    /// Whether any rater column contains tied values among the kept
+    /// rows. R appends "Coefficient may be incorrect due to ties" as a
+    /// warning string; here it is surfaced as a flag.
+    pub ties: bool,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Mean of the pairwise Spearman rank correlations between rater columns.
+///
+/// Normative source: the `meanrho()` function in the irr R package
+/// (version 0.84.1, file R/meanrho.R), which was READ in full and used
+/// as the behavioural contract. Spearman (1904) and Fisher (1925) were
+/// NOT read; only the irr source is cited as the contract.
+///
+/// Per meanrho.R (with `m` = subjects kept after listwise deletion):
+///
+/// ```text
+/// rank each column with midranks (R rank() default, ties averaged)
+/// rho_ij = Pearson correlation of the midrank columns, all pairs i < j
+/// fisher = FALSE:  value = mean(rho_ij)     (perfect pairs included)
+/// fisher = TRUE :  drop pairs with rho >= 1 or rho <= -1 (-> dropped)
+///                  value = tanh(mean(atanh rho_ij))
+///                  z = value / sqrt(1/(m-3));  p = erfc(|z|/sqrt(2))
+/// ```
+///
+/// The ties flag reproduces R lines 9-12: `apply(ratings, 2, unique)`
+/// returns a matrix iff every column has the same number u of unique
+/// values, and R reports no ties only when additionally u == ns. Case
+/// analysis (verified in the spec review): that quirky test is exactly
+/// equivalent to "some column contains a duplicate value", which is
+/// what this implementation checks.
+///
+/// Each pairwise Pearson-on-midranks uses a single square root,
+/// `Sxy / sqrt(Sxx*Syy)`, so that exactly reversed or duplicated
+/// permutation columns (whose midranks are exact halves) give
+/// rho = +/-1 exactly and are dropped by the strict filter, as in R.
+///
+/// Deviations from R (silent NaN/warnings there, hard errors here):
+/// constant rater columns (constant midranks; R cor NA), fewer than 4
+/// kept subjects when `fisher` (R SE is Inf/NaN at m <= 3), and all
+/// pairs perfect under `fisher` (R mean of empty = NaN) all return
+/// Err. R only appends warning strings for dropped pairs and ties;
+/// here `dropped` and `ties` report them.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn mean_pairwise_rho(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> Result<MeanRhoResult, String> {
+    if nr < 2 {
+        return Err("meanrho: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("meanrho: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("meanrho: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("meanrho: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "meanrho: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "meanrho: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("meanrho: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("meanrho: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    if fisher && m < 4 {
+        return Err(
+            "meanrho: fisher z test requires at least 4 complete subjects (R SE is \
+             infinite or undefined at m <= 3)"
+                .into(),
+        );
+    }
+    let mf = m as f64;
+    // Midrank transform per column (R rank() default: ties averaged)
+    // and the ties flag (any duplicate within a column).
+    let mut ranks = vec![0.0_f64; m * nr];
+    let mut ties = false;
+    for j in 0..nr {
+        let mut order: Vec<usize> = (0..m).collect();
+        order.sort_by(|&a, &b| {
+            let va = ratings[kept[a] * nr + j];
+            let vb = ratings[kept[b] * nr + j];
+            // NaN rows were excluded by the listwise drop, so total_cmp
+            // agrees with the numeric order (and cannot panic).
+            va.total_cmp(&vb)
+        });
+        let mut s = 0;
+        while s < m {
+            let mut e = s;
+            let v = ratings[kept[order[s]] * nr + j];
+            while e + 1 < m && ratings[kept[order[e + 1]] * nr + j] == v {
+                e += 1;
+            }
+            if e > s {
+                ties = true;
+            }
+            // ranks s+1 ..= e+1 averaged -> (s + e + 2) / 2
+            let mid = (s + e + 2) as f64 / 2.0;
+            for k in s..=e {
+                ranks[order[k] * nr + j] = mid;
+            }
+            s = e + 1;
+        }
+    }
+    // Column means and centered sums of squares on midranks; constant
+    // columns (all values tied) have zero rank variance and Err.
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for i in 0..m {
+            s += ranks[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut sxx = vec![0.0; nr];
+    for j in 0..nr {
+        for i in 0..m {
+            let d = ranks[i * nr + j] - col_means[j];
+            sxx[j] += d * d;
+        }
+        if !(sxx[j] > 0.0) || !sxx[j].is_finite() {
+            return Err(format!(
+                "meanrho: rater column {j} is constant; Spearman correlation undefined \
+                 (R cor would return NA)"
+            ));
+        }
+    }
+    // Pairwise rho over i < j, in R's nested-loop order.
+    let mut rs = Vec::with_capacity(nr * (nr - 1) / 2);
+    for a in 0..nr {
+        for b in (a + 1)..nr {
+            let mut sxy = 0.0;
+            for i in 0..m {
+                sxy += (ranks[i * nr + a] - col_means[a]) * (ranks[i * nr + b] - col_means[b]);
+            }
+            let r = sxy / (sxx[a] * sxx[b]).sqrt();
+            if !r.is_finite() {
+                return Err("meanrho: non-finite pairwise correlation".into());
+            }
+            rs.push(r);
+        }
+    }
+    if !fisher {
+        let value = rs.iter().sum::<f64>() / rs.len() as f64;
+        if !value.is_finite() {
+            return Err("meanrho: non-finite result".into());
+        }
+        return Ok(MeanRhoResult {
+            value,
+            statistic: f64::NAN,
+            p_value: f64::NAN,
+            dropped: 0,
+            ties,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    // Strict (r < 1) & (r > -1) filter, as in meanrho.R.
+    let total = rs.len();
+    rs.retain(|&r| -1.0 < r && r < 1.0);
+    let dropped = (total - rs.len()) as u64;
+    if rs.is_empty() {
+        return Err(
+            "meanrho: all rater pairs are perfectly correlated; fisher z average \
+             undefined (R would return NaN)"
+                .into(),
+        );
+    }
+    let mrz = rs.iter().map(|&r| r.atanh()).sum::<f64>() / rs.len() as f64;
+    let value = mrz.tanh();
+    let se = (1.0 / (mf - 3.0)).sqrt();
+    let statistic = value / se;
+    // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)); the rational erfc
+    // approximation can exceed 1 by ~1e-7 near z = 0, so clamp.
+    let p_value = crate::fitstats::erfc(statistic.abs() / std::f64::consts::SQRT_2).clamp(0.0, 1.0);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("meanrho: non-finite result".into());
+    }
+    Ok(MeanRhoResult {
+        value,
+        statistic,
+        p_value,
+        dropped,
+        ties,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;
