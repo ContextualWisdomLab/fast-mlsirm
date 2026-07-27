@@ -10941,3 +10941,78 @@ class TestRobinson:
         # Oracle pin: R4 A = 13/20.
         assert abs(r.value - 0.65) < 1e-15
         assert r.raters == 2
+
+
+class TestMeancor:
+    """Mean pairwise correlation (irr 0.84.1 meancor.R; oracle pins)."""
+
+    # C1 fixture: columns are permutations of 1..4 so every pairwise r
+    # is exactly rational (oracle pins EXECUTED): r = [4/5, 3/5, 0].
+    C1 = [[1, 1, 2], [2, 3, 1], [3, 2, 4], [4, 4, 3]]
+
+    def test_anchor_c1_fisher(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        r = mean_pairwise_cor(np.array(self.C1, dtype=float))
+        assert abs(r.value - 0.5350920914541507) < 1e-12
+        # 2e-7 tolerance: the Rust core's erfc rational approximation
+        # has documented |error| < 1.2e-7 vs the oracle's math.erfc.
+        assert abs(r.p_value - 0.592586178359586) < 2e-7
+        assert r.dropped == 0
+        assert r.subjects == 4
+        assert r.raters == 3
+
+    def test_plain_mean_and_none_shape(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        r = mean_pairwise_cor(np.array(self.C1), fisher=False)
+        # Oracle pin: mean(4/5, 3/5, 0) = 7/15 exactly.
+        assert abs(r.value - 7.0 / 15.0) < 1e-15
+        assert r.statistic is None and r.p_value is None
+        assert r.dropped == 0
+
+    def test_perfect_pair_dropped(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        x = np.array([row + [row[0]] for row in self.C1], dtype=float)
+        r = mean_pairwise_cor(x)
+        assert r.dropped == 1  # the duplicated column's r == 1 pair
+        assert abs(r.value - 0.6148634005909716) < 1e-12
+        rp = mean_pairwise_cor(x, fisher=False)
+        assert abs(rp.value - 19.0 / 30.0) < 1e-15  # perfect pair kept
+
+    def test_rejects_and_bool_policy(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        x = np.array(self.C1, dtype=float)
+        # fisher must be a real bool (deliberate stricter-than-legacy
+        # policy; spec-verify mandatory change 4).
+        with pytest.raises(TypeError):
+            mean_pairwise_cor(x, fisher=1)
+        with pytest.raises(TypeError):
+            mean_pairwise_cor(x, fisher="false")
+        assert mean_pairwise_cor(x, fisher=np.bool_(True)).p_value is not None
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.ma.masked_array(x))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(x.astype(complex))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([1.0, 2.0]))
+        # Constant column and fisher m < 4 are hard errors.
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))

@@ -1544,6 +1544,186 @@ pub fn robinson_a(ratings: &[f64], ns: usize, nr: usize) -> Result<RobinsonResul
     })
 }
 
+/// Result of the mean pairwise Pearson correlation of rater columns.
+#[derive(Debug, Clone)]
+pub struct MeanCorResult {
+    /// Mean pairwise correlation (Fisher back-transformed when `fisher`).
+    pub value: f64,
+    /// z statistic `value / sqrt(1/(m-3))`; NaN when `fisher == false`
+    /// (always-present-f64 + NaN, matching the Fleiss exact-mode shape).
+    pub statistic: f64,
+    /// Two-sided p `erfc(|z|/sqrt(2))`; NaN when `fisher == false`.
+    pub p_value: f64,
+    /// Number of perfectly correlated rater pairs dropped before the
+    /// Fisher-z average (always 0 when `fisher == false`).
+    pub dropped: u64,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Mean of the pairwise Pearson correlations between rater columns.
+///
+/// Normative source: the `meancor()` function in the irr R package
+/// (version 0.84.1, file R/meancor.R), which was READ in full and used
+/// as the behavioural contract. The Fisher z transformation it applies
+/// is conventionally attributed to Fisher (1925), which was NOT read;
+/// only the irr source is cited as the contract.
+///
+/// Per meancor.R (with `m` = subjects kept after listwise deletion):
+///
+/// ```text
+/// r_ij  = cor(col_i, col_j)                 for all rater pairs i < j
+/// fisher = FALSE:  value = mean(r_ij)       (perfect pairs included)
+/// fisher = TRUE :  drop pairs with r >= 1 or r <= -1 (count -> dropped)
+///                  value = tanh(mean(atanh r_ij))
+///                  z = value / sqrt(1/(m-3));  p = erfc(|z|/sqrt(2))
+/// ```
+///
+/// Each Pearson r uses a single square root, `Sxy / sqrt(Sxx*Syy)`, so
+/// that exactly (anti)proportional integer columns give r = +/-1 exactly
+/// and are dropped by the strict filter, as in R (a split
+/// `sqrt(Sxx)*sqrt(Syy)` denominator loses that exactness).
+///
+/// Deviations from R (silent NaN/warnings there, hard errors here):
+/// constant rater columns (R cor NA), fewer than 4 kept subjects when
+/// `fisher` (R SE is Inf/NaN at m <= 3), and all pairs perfect under
+/// `fisher` (R mean of empty = NaN) all return Err. R only appends a
+/// warning string when pairs are dropped; here `dropped` reports it.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn mean_pairwise_cor(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> Result<MeanCorResult, String> {
+    if nr < 2 {
+        return Err("meancor: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("meancor: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("meancor: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("meancor: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "meancor: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "meancor: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("meancor: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("meancor: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    if fisher && m < 4 {
+        return Err(
+            "meancor: fisher z test requires at least 4 complete subjects (R SE is \
+             infinite or undefined at m <= 3)"
+                .into(),
+        );
+    }
+    let mf = m as f64;
+    // Column means and centered sums of squares; constant columns Err.
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for &i in &kept {
+            s += ratings[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut sxx = vec![0.0; nr];
+    for j in 0..nr {
+        for &i in &kept {
+            let d = ratings[i * nr + j] - col_means[j];
+            sxx[j] += d * d;
+        }
+        if !(sxx[j] > 0.0) || !sxx[j].is_finite() {
+            return Err(format!(
+                "meancor: rater column {j} is constant; Pearson correlation undefined \
+                 (R cor would return NA)"
+            ));
+        }
+    }
+    // Pairwise r over i < j, in R's nested-loop order.
+    let mut rs = Vec::with_capacity(nr * (nr - 1) / 2);
+    for a in 0..nr {
+        for b in (a + 1)..nr {
+            let mut sxy = 0.0;
+            for &i in &kept {
+                sxy += (ratings[i * nr + a] - col_means[a]) * (ratings[i * nr + b] - col_means[b]);
+            }
+            let r = sxy / (sxx[a] * sxx[b]).sqrt();
+            if !r.is_finite() {
+                return Err("meancor: non-finite pairwise correlation".into());
+            }
+            rs.push(r);
+        }
+    }
+    if !fisher {
+        let value = rs.iter().sum::<f64>() / rs.len() as f64;
+        if !value.is_finite() {
+            return Err("meancor: non-finite result".into());
+        }
+        return Ok(MeanCorResult {
+            value,
+            statistic: f64::NAN,
+            p_value: f64::NAN,
+            dropped: 0,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    // Strict (r < 1) & (r > -1) filter, as in meancor.R.
+    let total = rs.len();
+    rs.retain(|&r| -1.0 < r && r < 1.0);
+    let dropped = (total - rs.len()) as u64;
+    if rs.is_empty() {
+        return Err(
+            "meancor: all rater pairs are perfectly correlated; fisher z average \
+             undefined (R would return NaN)"
+                .into(),
+        );
+    }
+    let mrz = rs.iter().map(|&r| r.atanh()).sum::<f64>() / rs.len() as f64;
+    let value = mrz.tanh();
+    let se = (1.0 / (mf - 3.0)).sqrt();
+    let statistic = value / se;
+    // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)); the rational erfc
+    // approximation can exceed 1 by ~1e-7 near z = 0, so clamp.
+    let p_value = crate::fitstats::erfc(statistic.abs() / std::f64::consts::SQRT_2).clamp(0.0, 1.0);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("meancor: non-finite result".into());
+    }
+    Ok(MeanCorResult {
+        value,
+        statistic,
+        p_value,
+        dropped,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

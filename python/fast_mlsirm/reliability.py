@@ -735,3 +735,97 @@ def robinson_a(ratings) -> RobinsonResult:
         subjects=int(res["subjects"]),
         raters=int(res["raters"]),
     )
+
+
+@dataclass
+class MeanCorResult:
+    """Mean pairwise Pearson correlation of raters (irr ``meancor``).
+
+    ``value`` is the mean pairwise correlation (Fisher back-transformed
+    when ``fisher``); ``statistic``/``p_value`` are the Fisher z test and
+    two-sided p, or ``None`` when ``fisher=False``; ``dropped`` counts
+    perfectly correlated pairs excluded from the Fisher average;
+    ``subjects`` counts complete rows after listwise NaN deletion."""
+
+    value: float
+    statistic: float | None
+    p_value: float | None
+    dropped: int
+    subjects: int
+    raters: int
+
+
+def mean_pairwise_cor(ratings, fisher: bool = True) -> MeanCorResult:
+    """Mean of the pairwise Pearson correlations between rater columns
+    of a subjects x raters matrix (computed in Rust; transcribed from
+    the CRAN irr 0.84.1 R source ``meancor.R``, read in full). Rows
+    containing NaN are dropped listwise (R ``na.omit``).
+
+    With ``fisher=True`` (the R default), pairs with ``r`` exactly
+    ``+/-1`` are dropped (their count is reported in ``dropped``; R only
+    appends a warning string), the remaining correlations are averaged
+    on the Fisher z scale and back-transformed
+    (``value = tanh(mean(atanh(r)))``), and a z test is reported with
+    ``SE = sqrt(1/(m-3))`` and ``p = 2*(1 - Phi(|z|))`` (hand-derived
+    identity ``= erfc(|z|/sqrt(2))``, verified against an executed
+    exact-arithmetic oracle). With ``fisher=False`` the plain mean of
+    all pairwise correlations is returned, perfect pairs included, and
+    ``statistic``/``p_value`` are ``None``. The Fisher z transformation
+    is conventionally attributed to Fisher (1925), not read; only the
+    irr source was used as the contract.
+
+    Documented deviations from R (deliberate, stricter-than-R):
+    constant rater columns (R ``cor`` NA), fewer than 4 complete rows
+    with ``fisher`` (R's SE is infinite or undefined), all pairs perfect
+    under ``fisher`` (R mean of an empty vector), infinities, a single
+    rater, and fewer than 2 complete rows all raise ``ValueError``.
+    ``fisher`` must be a real ``bool`` (or ``numpy.bool_``); truthy
+    stand-ins like ``1`` or ``"false"`` are rejected — a deliberately
+    stricter policy than older wrappers in this package. In
+    LLM-as-a-Judge quality management this summarizes how consistently
+    judges rank the same responses.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Fisher, R. A. (1925). *Statistical methods for research workers*.
+            Oliver & Boyd. (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "mean_pairwise_cor"):
+        raise RuntimeError("mean_pairwise_cor requires the compiled Rust core")
+    if not isinstance(fisher, (bool, np.bool_)):
+        raise TypeError("fisher must be a bool")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x raters array")
+    # No 2**53 integer fidelity guard: values enter continuous centered
+    # sums (icc/finn/robinson precedent), not exact-label equality.
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    res = core.mean_pairwise_cor(x.reshape(-1), int(ns), int(nr), bool(fisher))
+    stat = float(res["statistic"])
+    p = float(res["p_value"])
+    return MeanCorResult(
+        value=float(res["value"]),
+        statistic=None if stat != stat else stat,  # NaN -> None
+        p_value=None if p != p else p,
+        dropped=int(res["dropped"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+    )

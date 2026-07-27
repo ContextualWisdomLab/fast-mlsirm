@@ -1693,3 +1693,246 @@ fn rb_mc_500_independent_oracle() {
         done += 1;
     }
 }
+
+// ---------------------------------------------------------------------------
+// mean_pairwise_cor (irr meancor.R) tests.
+//
+// Fixture pins come from an EXECUTED exact-Fraction oracle (session
+// files/meancor_oracle.py): columns are permutations of 1..ns so every
+// pairwise Pearson r is exactly rational (Sxx*Syy a perfect square).
+// Every assert reads a MeanCorResult field returned by mean_pairwise_cor.
+// p-value pins use tol 2e-7 because the crate's fitstats::erfc rational
+// approximation has |error| < 1.2e-7 vs the oracle's math.erfc.
+//
+// Mutation kills verified by hand-editing the implementation (each FAILED,
+// then was restored):
+// - MU1 omit the tanh back-transform (value = mrz) -> mcr_c1_fisher value
+//   pin (mutant 0.5972531564093516 vs 0.5350920914541507).
+// - MU2 drop the strict perfect-pair filter -> atanh(1) diverges on C2 ->
+//   mcr_c2_dup_column (Ok+pins fail).
+// - MU3 SE uses (m-1) instead of (m-3) -> mcr_c7_ns7 statistic pin.
+// - MU4 one-sided p (erfc/2) -> mcr_c1_fisher p pin (0.296... vs 0.592...).
+// - MU5 pair loop skips pairs (b starts at a+2) -> mcr_c1_plain 7/15 pin.
+// - MU6 listwise deletion removed -> mcr_c4_nan_row poisoned.
+//
+// Known identity limit (disclosed): at m = 4 subjects, SE = sqrt(1/1) = 1,
+// so statistic == value is an IDENTITY on C1/C2/C8 and cannot kill SE
+// mutants there; mcr_c7_ns7 (m = 7, SE = 1/2, statistic = 2*value) is the
+// discriminating anchor.
+
+// C1: 4 subjects x 3 raters; columns X=[1,2,3,4], Y=[1,3,2,4], Z=[2,1,4,3];
+// pairwise r exactly [4/5, 3/5, 0].
+const MCR_C1: [f64; 12] = [1.0, 1.0, 2.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 4.0, 4.0, 3.0];
+
+#[test]
+fn mcr_c1_plain() {
+    let g = mean_pairwise_cor(&MCR_C1, 4, 3, false).unwrap();
+    assert!((g.value - 7.0 / 15.0).abs() < 1e-15); // oracle exact 7/15
+    assert!(g.statistic.is_nan() && g.p_value.is_nan()); // documented shape
+    assert_eq!(g.dropped, 0);
+    assert_eq!(g.subjects, 4);
+    assert_eq!(g.raters, 3);
+}
+
+#[test]
+fn mcr_c1_fisher() {
+    let g = mean_pairwise_cor(&MCR_C1, 4, 3, true).unwrap();
+    assert!((g.value - 0.5350920914541507).abs() < 1e-12);
+    // m = 4 -> SE = 1 -> statistic == value (identity here; see MU3 note).
+    assert!((g.statistic - 0.5350920914541507).abs() < 1e-12);
+    assert!((g.p_value - 0.592586178359586).abs() < 2e-7); // erfc approx
+    assert_eq!(g.dropped, 0);
+    assert_eq!(g.subjects, 4);
+}
+
+#[test]
+fn mcr_c2_dup_column() {
+    // C1 plus a duplicate X column: one r == 1 pair.
+    let x = [
+        1.0, 1.0, 2.0, 1.0, //
+        2.0, 3.0, 1.0, 2.0, //
+        3.0, 2.0, 4.0, 3.0, //
+        4.0, 4.0, 3.0, 4.0,
+    ];
+    let g = mean_pairwise_cor(&x, 4, 4, true).unwrap();
+    assert_eq!(g.dropped, 1); // the perfect pair was dropped, not averaged
+    assert!((g.value - 0.6148634005909716).abs() < 1e-12);
+    assert!((g.p_value - 0.5386449349799869).abs() < 2e-7);
+    let gp = mean_pairwise_cor(&x, 4, 4, false).unwrap();
+    assert!((gp.value - 19.0 / 30.0).abs() < 1e-15); // perfect pair KEPT
+    assert_eq!(gp.dropped, 0);
+}
+
+#[test]
+fn mcr_c7_ns7() {
+    // 7 subjects: pairwise r exactly [13/14, 23/28, 19/28]; SE = 1/2 so
+    // statistic = 2*value -- kills SE mutants that m=4 fixtures cannot.
+    let x = [
+        1.0, 1.0, 2.0, //
+        2.0, 3.0, 1.0, //
+        3.0, 2.0, 4.0, //
+        4.0, 4.0, 3.0, //
+        5.0, 6.0, 6.0, //
+        6.0, 5.0, 7.0, //
+        7.0, 7.0, 5.0,
+    ];
+    let g = mean_pairwise_cor(&x, 7, 3, true).unwrap();
+    assert!((g.value - 0.8372359434555405).abs() < 1e-12);
+    assert!((g.statistic - 1.674471886911081).abs() < 1e-12);
+    assert!((g.p_value - 0.09403789503668993).abs() < 2e-7);
+    assert_eq!(g.subjects, 7);
+    let gp = mean_pairwise_cor(&x, 7, 3, false).unwrap();
+    assert!((gp.value - 17.0 / 21.0).abs() < 1e-15);
+}
+
+#[test]
+fn mcr_c8_negative_one_boundary() {
+    // C1 plus NX = reversed X: r(X,NX) = -1 exactly (single-sqrt
+    // denominator keeps it exact); strict filter drops the -1 side too.
+    let x = [
+        1.0, 1.0, 2.0, 4.0, //
+        2.0, 3.0, 1.0, 3.0, //
+        3.0, 2.0, 4.0, 2.0, //
+        4.0, 4.0, 3.0, 1.0,
+    ];
+    let g = mean_pairwise_cor(&x, 4, 4, true).unwrap();
+    assert_eq!(g.dropped, 1); // exactly the r == -1 pair
+                              // Kept z values cancel in exact arithmetic; f64 atanh may leave dust.
+    assert!(g.value.abs() < 1e-12);
+    assert!(g.statistic.abs() < 1e-12);
+    assert!((g.p_value - 1.0).abs() < 2e-7);
+    let gp = mean_pairwise_cor(&x, 4, 4, false).unwrap();
+    assert!((gp.value - (-1.0 / 6.0)).abs() < 1e-15); // -1 pair KEPT
+}
+
+#[test]
+fn mcr_c4_nan_row() {
+    // C1 plus an all-NaN row and a partial-NaN row: listwise drop leaves
+    // exactly C1. Poisoned values are non-trivial so a skipped drop
+    // changes every pin (kills MU6).
+    let mut x = MCR_C1.to_vec();
+    x.extend_from_slice(&[f64::NAN, f64::NAN, f64::NAN]);
+    x.extend_from_slice(&[9.0, f64::NAN, -7.0]);
+    let g = mean_pairwise_cor(&x, 6, 3, true).unwrap();
+    assert_eq!(g.subjects, 4);
+    assert!((g.value - 0.5350920914541507).abs() < 1e-12);
+}
+
+#[test]
+fn mcr_error_contract() {
+    assert!(mean_pairwise_cor(&[1.0, 2.0], 2, 1, false).is_err()); // nr < 2
+    assert!(mean_pairwise_cor(&[], 0, 2, false).is_err()); // ns == 0
+    assert!(mean_pairwise_cor(&[1.0, 2.0, 3.0], 2, 2, false).is_err()); // len
+    assert!(mean_pairwise_cor(&[1.0, f64::INFINITY, 2.0, 3.0], 2, 2, false).is_err());
+    assert!(mean_pairwise_cor(&[f64::NAN; 6], 3, 2, false).is_err()); // m = 0
+                                                                      // m = 1 after drop -> m < 2.
+    assert!(mean_pairwise_cor(&[1.0, 2.0, f64::NAN, 3.0], 2, 2, false).is_err());
+    // fisher with m = 3 -> Err (R SE infinite); plain m = 3 is fine.
+    let c6 = [1.0, 1.0, 2.0, 3.0, 3.0, 2.0];
+    assert!(mean_pairwise_cor(&c6, 3, 2, true).is_err());
+    assert!(mean_pairwise_cor(&c6, 3, 2, false).is_ok());
+    // Constant column -> Err (R cor NA).
+    assert!(mean_pairwise_cor(&[1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0, 5.0], 4, 2, false).is_err());
+    // All pairs perfect under fisher -> Err; plain returns mean 1.
+    let prop = [1.0, 2.0, 2.0, 4.0, 3.0, 6.0, 4.0, 8.0];
+    assert!(mean_pairwise_cor(&prop, 4, 2, true).is_err());
+    let gp = mean_pairwise_cor(&prop, 4, 2, false).unwrap();
+    assert!((gp.value - 1.0).abs() < 1e-15);
+}
+
+#[test]
+#[ignore]
+fn mcr_mc_500_independent_oracle() {
+    // Independent test-side recomputation (never calls the crate for the
+    // reference values) over 500 LCG matrices, plus column-reversal
+    // invariance of crate outputs (Pearson is symmetric; the unordered
+    // pair set is permutation-invariant). p_value is pinned against the
+    // oracle in the anchor tests; here it is only sanity-bounded because
+    // an independent erfc is not available in std.
+    let mut state: u64 = 0x0FED_CBA9_8765_4321;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 5 + (next() * 36.0) as usize;
+        let nr = 2 + (next() * 5.0) as usize;
+        let mut x = vec![0.0f64; ns * nr];
+        for v in x.iter_mut() {
+            *v = if next() < 0.10 {
+                f64::NAN
+            } else {
+                1.0 + (next() * 7.0).floor()
+            };
+        }
+        // Independent oracle.
+        let kept: Vec<usize> = (0..ns)
+            .filter(|&i| (0..nr).all(|j| !x[i * nr + j].is_nan()))
+            .collect();
+        let m = kept.len();
+        if m < 4 {
+            continue;
+        }
+        let colm: Vec<f64> = (0..nr)
+            .map(|j| kept.iter().map(|&i| x[i * nr + j]).sum::<f64>() / m as f64)
+            .collect();
+        let mut rs: Vec<f64> = Vec::new();
+        let mut degenerate = false;
+        for a in 0..nr {
+            for b in (a + 1)..nr {
+                let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+                for &i in &kept {
+                    let da = x[i * nr + a] - colm[a];
+                    let db = x[i * nr + b] - colm[b];
+                    sab += da * db;
+                    saa += da * da;
+                    sbb += db * db;
+                }
+                if saa <= 0.0 || sbb <= 0.0 {
+                    degenerate = true;
+                } else {
+                    rs.push(sab / (saa * sbb).sqrt());
+                }
+            }
+        }
+        if degenerate {
+            continue;
+        }
+        let plain_expect = rs.iter().sum::<f64>() / rs.len() as f64;
+        let kept_rs: Vec<f64> = rs
+            .iter()
+            .copied()
+            .filter(|&r| -1.0 < r && r < 1.0)
+            .collect();
+        if kept_rs.is_empty() {
+            continue;
+        }
+        let mrz = kept_rs.iter().map(|&r| r.atanh()).sum::<f64>() / kept_rs.len() as f64;
+        let val_expect = mrz.tanh();
+        let z_expect = val_expect / (1.0 / (m as f64 - 3.0)).sqrt();
+
+        let gp = mean_pairwise_cor(&x, ns, nr, false).unwrap();
+        assert!((gp.value - plain_expect).abs() < 1e-12);
+        assert_eq!(gp.subjects, m as u64);
+        let gf = mean_pairwise_cor(&x, ns, nr, true).unwrap();
+        assert!((gf.value - val_expect).abs() < 1e-12);
+        assert!((gf.statistic - z_expect).abs() < 1e-12);
+        assert_eq!(gf.dropped, (rs.len() - kept_rs.len()) as u64);
+        assert!(gf.p_value > 0.0 && gf.p_value <= 1.0);
+        // Column reversal invariance.
+        let mut rev = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            for j in 0..nr {
+                rev[i * nr + j] = x[i * nr + (nr - 1 - j)];
+            }
+        }
+        let gr = mean_pairwise_cor(&rev, ns, nr, true).unwrap();
+        assert!((gr.value - gf.value).abs() < 1e-12);
+        assert!((gr.statistic - gf.statistic).abs() < 1e-12);
+        assert_eq!(gr.dropped, gf.dropped);
+        done += 1;
+    }
+}
