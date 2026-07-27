@@ -119,6 +119,22 @@
 
 ### Added
 
+- Sample size for Cohen's kappa (`n_cohen_kappa`, Rust core
+  `mlsirm_core::reliability::n_cohen_kappa` + thin Python wrapper):
+  closed-form required-subject count for a one- or two-sided test of
+  H0: kappa = k0 vs H1: kappa = k1 on a 2x2 two-rater table, transcribed
+  from the CRAN irr 0.84.1 R source `N.cohen.kappa.R` (read in full; irr
+  attributes the method to Cantor, 1996, NOT read, cited as origin only).
+  Returns `n`, variance factors `q1`/`q0`, and the pre-ceiling size.
+  Stricter than R: degenerate marginals, infeasible implied cell
+  probabilities, and nonpositive variance factors raise errors where R
+  silently returns NaN. Evidence: exact-Fraction oracle executed
+  (4 pinned fixtures + infeasibility probe; Acklam-vs-NormalDist ceil
+  stability asserted); adversarial spec review APPROVED-WITH-CHANGES,
+  all 4 mandatory changes adopted (rate-swap symmetry disclosed as a
+  real unkillable identity); 6/6 mutation kills EXECUTED (pie term,
+  Q-role swap, sidedness, pi22 halving, floor-for-ceil, unsquared
+  denominator); MC-500 secondary-oracle sweep passes.
 - Rater bias chi-square `rater_bias` (Rust core
   `mlsirm_core::reliability::rater_bias` + thin Python wrapper), transcribed
   from the CRAN irr 0.84.1 R source `rater.bias.R` (read in full; the

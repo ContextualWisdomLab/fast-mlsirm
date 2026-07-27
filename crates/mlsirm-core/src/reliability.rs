@@ -2459,6 +2459,157 @@ pub fn rater_bias(table: &[f64], c: usize) -> Result<RaterBiasResult, String> {
     })
 }
 
+/// Result of the Cantor-style sample-size computation for Cohen's kappa.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NCohenKappaResult {
+    /// Required number of subjects (ceiling of `pre_ceil`).
+    pub n: u64,
+    /// Large-sample variance factor Q under the alternative kappa `k1`.
+    pub q1: f64,
+    /// Large-sample variance factor Q under the null kappa `k0`.
+    pub q0: f64,
+    /// Sample size before the ceiling is applied (transparency for tests).
+    pub pre_ceil: f64,
+}
+
+/// 2x2 cell probabilities implied by marginals (rate1, rate2) and kappa.
+///
+/// Follows irr's `N.cohen.kappa` exactly:
+/// `pi0 = k*(1-pie) + pie`, `pi22 = (pi0 - rate1 + (1-rate2))/2`,
+/// `pi11 = pi0 - pi22`, `pi12 = rate1 - pi11`, `pi21 = rate2 - pi11`.
+fn ncohen_cells(rate1: f64, rate2: f64, k: f64, pie: f64) -> (f64, f64, f64, f64, f64) {
+    let pi0 = k * (1.0 - pie) + pie;
+    let pi22 = (pi0 - rate1 + (1.0 - rate2)) / 2.0;
+    let pi11 = pi0 - pi22;
+    let pi12 = rate1 - pi11;
+    let pi21 = rate2 - pi11;
+    (pi0, pi11, pi12, pi21, pi22)
+}
+
+/// Large-sample variance factor Q from irr's `N.cohen.kappa`.
+#[allow(clippy::too_many_arguments)]
+fn ncohen_q(
+    rate1: f64,
+    rate2: f64,
+    pie: f64,
+    pi0: f64,
+    pi11: f64,
+    pi12: f64,
+    pi21: f64,
+    pi22: f64,
+) -> f64 {
+    let pi2d = 1.0 - rate1; // R's pi2.
+    let pid2 = 1.0 - rate2; // R's pi.2
+    let one_m_pie = 1.0 - pie;
+    let one_m_pi0 = 1.0 - pi0;
+    let t1 = pi11 * (one_m_pie - (rate2 + rate1) * one_m_pi0).powi(2);
+    let t2 = pi22 * (one_m_pie - (pid2 + pi2d) * one_m_pi0).powi(2);
+    let t3 =
+        one_m_pi0 * one_m_pi0 * (pi12 * (rate2 + pi2d).powi(2) + pi21 * (pid2 + rate1).powi(2));
+    let t4 = (pi0 * pie - 2.0 * pie + pi0).powi(2);
+    (t1 + t2 + t3 - t4) / one_m_pie.powi(4)
+}
+
+/// Closed-form sample size for testing Cohen's kappa on a 2x2 table.
+///
+/// Port of `N.cohen.kappa` from the irr R package (version 0.84.1),
+/// whose source was read directly and is the sole normative reference
+/// for this implementation. irr's documentation attributes the method
+/// to Cantor (1996); that paper was NOT read and is cited only as the
+/// origin per irr's attribution.
+///
+/// Contract (verified against an executed exact-Fraction oracle):
+///
+/// ```text
+/// d    = 1 (one-sided) or 2 (two-sided)
+/// pie  = rate1*rate2 + (1-rate1)*(1-rate2)
+/// Q(k) = large-sample variance factor at kappa k (see ncohen_q)
+/// n    = ceil(((qnorm(1-alpha/d)*sqrt(Q(k0))
+///             + qnorm(power)*sqrt(Q(k1))) / (k1-k0))^2)
+/// ```
+///
+/// `qnorm` is this crate's `nodes::inv_normal_cdf` (Acklam rational
+/// approximation, relative error < 1.15e-9). The executed oracle
+/// compares Acklam-derived pre-ceil values against high-precision
+/// quantiles and asserts the pinned fixtures sit > 1e-4 away from
+/// integer boundaries, so the approximation cannot flip the ceiling.
+///
+/// Stricter than R (which silently produces NaN or bogus sizes):
+/// boundary/degenerate marginals, infeasible cell probabilities under
+/// either kappa, and nonpositive variance factors are all rejected.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Cantor, A. B. (1996). Sample-size calculations for Cohen's
+///         kappa. *Psychological Methods, 1*(2), 150-153. [NOT READ;
+///         cited as method origin per irr documentation only.]
+pub fn n_cohen_kappa(
+    rate1: f64,
+    rate2: f64,
+    k1: f64,
+    k0: f64,
+    alpha: f64,
+    power: f64,
+    twosided: bool,
+) -> Result<NCohenKappaResult, String> {
+    for (name, v) in [("rate1", rate1), ("rate2", rate2)] {
+        if !v.is_finite() || v <= 0.0 || v >= 1.0 {
+            return Err(format!(
+                "n_cohen_kappa: {name} must be strictly inside (0, 1); \
+                 boundary rates are degenerate rater marginals"
+            ));
+        }
+    }
+    for (name, v) in [("k1", k1), ("k0", k0)] {
+        if !v.is_finite() || !(-1.0..=1.0).contains(&v) {
+            return Err(format!("n_cohen_kappa: {name} must be finite in [-1, 1]"));
+        }
+    }
+    if k1 == k0 {
+        return Err("n_cohen_kappa: k1 must differ from k0".to_string());
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
+        return Err("n_cohen_kappa: alpha must be strictly inside (0, 1)".to_string());
+    }
+    if !power.is_finite() || power <= 0.0 || power >= 1.0 {
+        return Err("n_cohen_kappa: power must be strictly inside (0, 1)".to_string());
+    }
+    let d = if twosided { 2.0 } else { 1.0 };
+    let pie = rate1 * rate2 + (1.0 - rate1) * (1.0 - rate2);
+    let (pi0_1, pi11_1, pi12_1, pi21_1, pi22_1) = ncohen_cells(rate1, rate2, k1, pie);
+    let (pi0_0, pi11_0, pi12_0, pi21_0, pi22_0) = ncohen_cells(rate1, rate2, k0, pie);
+    for &cell in &[
+        pi11_1, pi12_1, pi21_1, pi22_1, pi11_0, pi12_0, pi21_0, pi22_0,
+    ] {
+        if !(0.0..=1.0).contains(&cell) {
+            return Err(
+                "n_cohen_kappa: infeasible (rate1, rate2, kappa) combination; \
+                 an implied cell probability falls outside [0, 1]"
+                    .to_string(),
+            );
+        }
+    }
+    let q1 = ncohen_q(rate1, rate2, pie, pi0_1, pi11_1, pi12_1, pi21_1, pi22_1);
+    let q0 = ncohen_q(rate1, rate2, pie, pi0_0, pi11_0, pi12_0, pi21_0, pi22_0);
+    if !(q1.is_finite() && q1 > 0.0 && q0.is_finite() && q0 > 0.0) {
+        return Err("n_cohen_kappa: nonpositive variance factor Q".to_string());
+    }
+    let za = crate::nodes::inv_normal_cdf(1.0 - alpha / d);
+    let zb = crate::nodes::inv_normal_cdf(power);
+    let pre_ceil = ((za * q0.sqrt() + zb * q1.sqrt()) / (k1 - k0)).powi(2);
+    if !pre_ceil.is_finite() || pre_ceil <= 0.0 {
+        return Err("n_cohen_kappa: non-finite sample size".to_string());
+    }
+    Ok(NCohenKappaResult {
+        n: pre_ceil.ceil() as u64,
+        q1,
+        q0,
+        pre_ceil,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

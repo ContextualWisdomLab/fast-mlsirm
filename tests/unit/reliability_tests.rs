@@ -2807,3 +2807,138 @@ fn rbias_mc_500() {
         done += 1;
     }
 }
+
+// ---- n_cohen_kappa (irr N.cohen.kappa.R) -------------------------------
+// Oracle: exact-Fraction files/ncohen_oracle.py (session), EXECUTED; the
+// oracle also cross-checks the crate's Acklam qnorm against stdlib
+// NormalDist and asserts pre-ceil values sit > 1e-4 from integers.
+// Every assert below reads crate outputs. Disclosed unkillable mutant:
+// rate1 <-> rate2 swap is a real mathematical symmetry of the result
+// (executed check in the spec review), so no swap kill is claimed.
+
+/// Kills MU1 (pie missing (1-r1)(1-r2): Q goes negative -> Err),
+/// MU2 (Q roles swapped: pre 50.16 != 58.42), MU4 (pi22 missing /2),
+/// MU5 (floor: n 58 != 59), MU6 ((k1-k0) not squared: n 18 != 59).
+#[test]
+fn nck_anchor_k1() {
+    let r = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.8, false).unwrap();
+    // Exact-Fraction pins: Q1 = 307/500, Q0 = 863/875.
+    assert!((r.q1 - 307.0 / 500.0).abs() <= 1e-12 * (307.0 / 500.0));
+    assert!((r.q0 - 863.0 / 875.0).abs() <= 1e-12 * (863.0 / 875.0));
+    assert!((r.pre_ceil - 58.421285144581596).abs() <= 1e-9 * 58.421285144581596);
+    assert_eq!(r.n, 59);
+}
+
+/// Kills MU3 (d forced to 1: one-sided K2 gives N=68, executed in the
+/// spec review, vs the two-sided pin 87).
+#[test]
+fn nck_anchor_k2_twosided() {
+    let r = n_cohen_kappa(0.25, 0.3, 0.6, 0.3, 0.05, 0.8, true).unwrap();
+    assert!((r.q1 - 399.0 / 500.0).abs() <= 1e-12 * (399.0 / 500.0));
+    assert!((r.q0 - 34377.0 / 32000.0).abs() <= 1e-12 * (34377.0 / 32000.0));
+    assert!((r.pre_ceil - 86.07397414572826).abs() <= 1e-9 * 86.07397414572826);
+    assert_eq!(r.n, 87);
+}
+
+/// Non-default alpha/power (kills default-hardcode mutants) plus a
+/// second independent fixture.
+#[test]
+fn nck_anchor_k3_k4() {
+    let r3 = n_cohen_kappa(0.5, 0.5, 0.8, 0.5, 0.01, 0.9, false).unwrap();
+    assert!((r3.q1 - 9.0 / 25.0).abs() <= 1e-12 * (9.0 / 25.0));
+    assert!((r3.q0 - 3.0 / 4.0).abs() <= 1e-12 * (3.0 / 4.0));
+    assert!((r3.pre_ceil - 86.09410641021708).abs() <= 1e-9 * 86.09410641021708);
+    assert_eq!(r3.n, 87);
+    let r4 = n_cohen_kappa(0.2, 0.2, 0.5, 0.2, 0.05, 0.8, false).unwrap();
+    assert!((r4.q1 - 75.0 / 64.0).abs() <= 1e-12 * (75.0 / 64.0));
+    assert!((r4.q0 - 321.0 / 250.0).abs() <= 1e-12 * (321.0 / 250.0));
+    assert!((r4.pre_ceil - 85.55797394094165).abs() <= 1e-9 * 85.55797394094165);
+    assert_eq!(r4.n, 86);
+}
+
+/// Structural invariants read from crate outputs (not identities):
+/// narrower kappa gap and higher power both demand more subjects.
+#[test]
+fn nck_monotonicity() {
+    let base = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.8, false).unwrap();
+    let narrow = n_cohen_kappa(0.3, 0.3, 0.7, 0.5, 0.05, 0.8, false).unwrap();
+    assert!(narrow.n > base.n, "narrower gap {} !> {}", narrow.n, base.n);
+    let strong = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.95, false).unwrap();
+    assert!(strong.n >= base.n, "higher power {} < {}", strong.n, base.n);
+    assert!(strong.pre_ceil > base.pre_ceil);
+}
+
+#[test]
+fn nck_error_contract() {
+    // boundary/degenerate marginals
+    assert!(n_cohen_kappa(0.0, 0.3, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(1.0, 0.3, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, f64::NAN, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    // kappas out of range / equal
+    assert!(n_cohen_kappa(0.3, 0.3, 1.5, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, f64::INFINITY, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.4, 0.4, 0.05, 0.8, false).is_err());
+    // alpha/power out of (0,1)
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.0, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 1.0, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.0, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 1.0, false).is_err());
+    // K5 oracle probe: infeasible cell (pi11 > 1)
+    assert!(n_cohen_kappa(0.9, 0.1, 0.9, 0.1, 0.05, 0.8, false).is_err());
+    // spec-review executed probe: k1 valid, k0 infeasible (Q0 < 0)
+    assert!(n_cohen_kappa(0.1, 0.1, -0.1, -1.0, 0.05, 0.8, false).is_err());
+}
+
+/// 500 feasible-region draws; in-test recompute of the R chain is a
+/// SECONDARY oracle compared against crate q1/q0/pre_ceil/n outputs.
+#[test]
+#[ignore]
+fn nck_mc_500() {
+    let mut state: u64 = 0x00C0FFEE;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let rate1 = 0.2 + 0.6 * next();
+        let rate2 = 0.2 + 0.6 * next();
+        let k0 = 0.4 * next();
+        let k1 = k0 + 0.2 + (0.7 - k0 - 0.2) * next();
+        let alpha = 0.01 + 0.09 * next();
+        let power = 0.7 + 0.25 * next();
+        let twosided = next() > 0.5;
+        let Ok(r) = n_cohen_kappa(rate1, rate2, k1, k0, alpha, power, twosided) else {
+            continue; // infeasible draw under the strict contract
+        };
+        // secondary oracle: recompute the R chain independently
+        let d = if twosided { 2.0 } else { 1.0 };
+        let pie = rate1 * rate2 + (1.0 - rate1) * (1.0 - rate2);
+        let q_of = |k: f64| {
+            let pi0 = k * (1.0 - pie) + pie;
+            let pi22 = (pi0 - rate1 + (1.0 - rate2)) / 2.0;
+            let pi11 = pi0 - pi22;
+            let pi12 = rate1 - pi11;
+            let pi21 = rate2 - pi11;
+            (pi11 * (1.0 - pie - (rate2 + rate1) * (1.0 - pi0)).powi(2)
+                + pi22 * (1.0 - pie - ((1.0 - rate2) + (1.0 - rate1)) * (1.0 - pi0)).powi(2)
+                + (1.0 - pi0).powi(2)
+                    * (pi12 * (rate2 + (1.0 - rate1)).powi(2)
+                        + pi21 * ((1.0 - rate2) + rate1).powi(2))
+                - (pi0 * pie - 2.0 * pie + pi0).powi(2))
+                / (1.0 - pie).powi(4)
+        };
+        let (q1, q0) = (q_of(k1), q_of(k0));
+        assert!((r.q1 - q1).abs() <= 1e-12 * q1.abs().max(1.0));
+        assert!((r.q0 - q0).abs() <= 1e-12 * q0.abs().max(1.0));
+        let za = crate::nodes::inv_normal_cdf(1.0 - alpha / d);
+        let zb = crate::nodes::inv_normal_cdf(power);
+        let pre = ((za * q0.sqrt() + zb * q1.sqrt()) / (k1 - k0)).powi(2);
+        assert!((r.pre_ceil - pre).abs() <= 1e-9 * pre.max(1.0));
+        assert_eq!(r.n, r.pre_ceil.ceil() as u64);
+        assert!(r.n >= 1);
+        done += 1;
+    }
+}

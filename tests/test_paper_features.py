@@ -11288,4 +11288,48 @@ class TestRaterBias:
         bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
         with pytest.raises(ValueError):
             rater_bias(bad)
+class TestNCohenKappa:
+    """Sample size for Cohen's kappa vs the executed exact-Fraction
+    oracle (files/ncohen_oracle.py, session). Every assert reads
+    values returned by the crate through the wrapper."""
 
+    def test_anchor_pins(self):
+        from fast_mlsirm import n_cohen_kappa
+
+        r = n_cohen_kappa(0.3, 0.3, 0.7, 0.4)
+        assert r.n == 59
+        assert abs(r.q1 - 307 / 500) <= 1e-12 * (307 / 500)
+        assert abs(r.q0 - 863 / 875) <= 1e-12 * (863 / 875)
+        assert abs(r.pre_ceil - 58.421285144581596) <= 1e-9 * 58.421285144581596
+        r2 = n_cohen_kappa(0.25, 0.3, 0.6, 0.3, twosided=True)
+        assert r2.n == 87
+        assert abs(r2.q0 - 34377 / 32000) <= 1e-12 * (34377 / 32000)
+        r3 = n_cohen_kappa(0.5, 0.5, 0.8, 0.5, alpha=0.01, power=0.9)
+        assert r3.n == 87
+        assert abs(r3.q1 - 9 / 25) <= 1e-12 * (9 / 25)
+
+    def test_error_contract(self):
+        import pytest
+
+        from fast_mlsirm import n_cohen_kappa
+
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.0, 0.3, 0.7, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.4, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.9, 0.1, 0.9, 0.1)  # infeasible cells
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.7, 0.4, alpha=1.0)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(True, 0.3, 0.7, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.7, 0.4, twosided=1)
+
+    def test_result_type(self):
+        from fast_mlsirm import NCohenKappaResult, n_cohen_kappa
+
+        r = n_cohen_kappa(0.2, 0.2, 0.5, 0.2)
+        assert isinstance(r, NCohenKappaResult)
+        assert isinstance(r.n, int) and r.n == 86
+        assert r.pre_ceil < r.n <= r.pre_ceil + 1

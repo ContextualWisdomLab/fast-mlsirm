@@ -113,8 +113,8 @@ use mlsirm_core::reliability::{
     feldt_alpha_ci as core_feldt_alpha_ci, finn_coefficient as core_finn_coefficient,
     icc as core_icc, kripp_alpha as core_kripp_alpha, maxwell_re as core_maxwell_re,
     mean_pairwise_cor as core_mean_pairwise_cor, mean_pairwise_rho as core_mean_pairwise_rho,
-    rater_bias as core_rater_bias, robinson_a as core_robinson_a,
-    separation_reliability as core_separation_reliability,
+    n_cohen_kappa as core_n_cohen_kappa, rater_bias as core_rater_bias,
+    robinson_a as core_robinson_a, separation_reliability as core_separation_reliability,
     stuart_maxwell_mh as core_stuart_maxwell_mh,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
@@ -3846,6 +3846,35 @@ fn rater_bias(
     out.set_item("df", res.df)?;
     out.set_item("p_value", res.p_value)?;
     out.set_item("subjects", res.subjects)?;
+    Ok(out.into())
+}
+
+/// Closed-form sample size for testing Cohen's kappa on a 2x2 table
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `N.cohen.kappa.R`, READ). `rate1`/`rate2` are the raters' marginal
+/// proportions in (0, 1); `k1`/`k0` the alternative and null kappas.
+/// Infeasible or degenerate parameter combinations raise ValueError
+/// (stricter than R, which silently produces NaN). Returns a dict with
+/// `n`, `q1`, `q0`, `pre_ceil`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn n_cohen_kappa(
+    py: Python<'_>,
+    rate1: f64,
+    rate2: f64,
+    k1: f64,
+    k0: f64,
+    alpha: f64,
+    power: f64,
+    twosided: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_n_cohen_kappa(rate1, rate2, k1, k0, alpha, power, twosided)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("n", res.n)?;
+    out.set_item("q1", res.q1)?;
+    out.set_item("q0", res.q0)?;
+    out.set_item("pre_ceil", res.pre_ceil)?;
     Ok(out.into())
 }
 
@@ -8488,6 +8517,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(stuart_maxwell_mh, m)?)?;
     m.add_function(wrap_pyfunction!(bhapkar_mh, m)?)?;
     m.add_function(wrap_pyfunction!(rater_bias, m)?)?;
+    m.add_function(wrap_pyfunction!(n_cohen_kappa, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

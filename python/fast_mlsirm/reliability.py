@@ -1200,4 +1200,96 @@ def rater_bias(table) -> RaterBiasResult:
         p_value=float(res["p_value"]),
         subjects=int(res["subjects"]),
     )
+@dataclass(frozen=True)
+class NCohenKappaResult:
+    """Sample size for testing Cohen's kappa (irr ``N.cohen.kappa``).
 
+    ``n`` is the required number of subjects (ceiling applied); ``q1``
+    and ``q0`` are the large-sample variance factors under the
+    alternative (``k1``) and null (``k0``) kappa; ``pre_ceil`` is the
+    sample size before the ceiling, exposed for transparency."""
+
+    n: int
+    q1: float
+    q0: float
+    pre_ceil: float
+
+
+def n_cohen_kappa(
+    rate1,
+    rate2,
+    k1,
+    k0,
+    alpha=0.05,
+    power=0.8,
+    twosided=False,
+) -> NCohenKappaResult:
+    """Closed-form sample size for testing Cohen's kappa on a 2x2 table
+    (computed in Rust; transcribed from the CRAN irr 0.84.1 R source
+    ``N.cohen.kappa.R``, read in full). ``rate1`` and ``rate2`` are the
+    two raters' marginal proportions in category 1 (strictly inside
+    (0, 1)); ``k1`` is the alternative-hypothesis kappa and ``k0`` the
+    null kappa (finite, in [-1, 1], distinct). ``alpha`` and ``power``
+    must lie strictly inside (0, 1); ``twosided`` selects the
+    two-sided test (R's ``d = 2``).
+
+    Hand-derived from the R source and verified against an executed
+    exact-Fraction oracle. irr's documentation attributes the method to
+    Cantor (1996); that paper was not read and is cited only as the
+    origin per irr's attribution. Documented deviations from R
+    (deliberate, stricter-than-R): boundary or degenerate marginal
+    rates, infeasible implied cell probabilities under either kappa,
+    and nonpositive variance factors all raise ``ValueError`` where R
+    silently returns ``NaN`` or a bogus size. The normal quantile is
+    the crate's Acklam approximation (relative error < 1.15e-9); the
+    executed oracle confirms this cannot flip the ceiling on any
+    pinned fixture. In LLM-as-a-Judge quality management this sizes
+    agreement studies between two judges.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Cantor, A. B. (1996). Sample-size calculations for Cohen's
+            kappa. *Psychological Methods, 1*(2), 150-153. [NOT READ;
+            cited as method origin per irr documentation only.]
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "n_cohen_kappa"):
+        raise RuntimeError("n_cohen_kappa requires the compiled Rust core")
+    scalars = {
+        "rate1": rate1,
+        "rate2": rate2,
+        "k1": k1,
+        "k0": k0,
+        "alpha": alpha,
+        "power": power,
+    }
+    vals = {}
+    for name, v in scalars.items():
+        if isinstance(v, bool) or (
+            isinstance(v, np.generic) and v.dtype.kind == "b"
+        ):
+            raise ValueError(f"{name} must be a real number, not boolean")
+        if isinstance(v, complex) or np.iscomplexobj(v):
+            raise ValueError(f"{name} must be real-valued")
+        vals[name] = float(v)
+    if not isinstance(twosided, (bool, np.bool_)):
+        raise ValueError("twosided must be a bool")
+    res = core.n_cohen_kappa(
+        vals["rate1"],
+        vals["rate2"],
+        vals["k1"],
+        vals["k0"],
+        vals["alpha"],
+        vals["power"],
+        bool(twosided),
+    )
+    return NCohenKappaResult(
+        n=int(res["n"]),
+        q1=float(res["q1"]),
+        q0=float(res["q0"]),
+        pre_ceil=float(res["pre_ceil"]),
+    )
