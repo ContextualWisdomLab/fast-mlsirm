@@ -11177,3 +11177,61 @@ class TestStuartMaxwell:
         # Integer fidelity guard fires before the f64 cast.
         with pytest.raises(ValueError):
             stuart_maxwell_mh(np.array([[2**60, 6], [2, 12]], dtype=np.int64))
+class TestBhapkar:
+    """Bhapkar marginal homogeneity (irr bhapkar.r; exact-oracle pins)."""
+
+    def test_anchor_b1(self):
+        import numpy as np
+
+        from fast_mlsirm import bhapkar_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        r = bhapkar_mh(b1)
+        want = 196080 / 18733
+        assert abs(r.value - want) <= 1e-12 * want
+        assert r.df == 2
+        assert abs(r.p_value - 0.00533458022326506) <= 1e-12
+        assert r.subjects == 129
+        assert r.categories == 3
+
+    def test_sm_identity_b1(self):
+        # Oracle-proven exact identity bhapkar = SM / (1 - SM/n) with the
+        # NO-DROP Stuart-Maxwell statistic; B1 has no equal marginals so
+        # the crate stuart_maxwell_mh performs no drop (dropped == 0).
+        import numpy as np
+
+        from fast_mlsirm import bhapkar_mh, stuart_maxwell_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        bh = bhapkar_mh(b1)
+        sm = stuart_maxwell_mh(b1)
+        assert sm.dropped == 0
+        want = sm.value / (1.0 - sm.value / bh.subjects)
+        assert abs(bh.value - want) <= 1e-12 * want
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import bhapkar_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.ma.masked_array(b1))
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1.astype(object))
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1 + 0j)
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1.astype(bool))
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[10.0, -6.0], [2.0, 12.0]]))
+        # Perfect agreement -> W = 0 -> singular.
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[5.0, 0.0], [0.0, 7.0]]))
+        # int64 min must be rejected (np.abs-overflow guard regression).
+        bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
+        with pytest.raises(ValueError):
+            bhapkar_mh(bad)

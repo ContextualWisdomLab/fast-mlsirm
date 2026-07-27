@@ -2458,3 +2458,220 @@ fn smh_mc_500() {
         tested += 1;
     }
 }
+
+// ---------------- Bhapkar marginal homogeneity ----------------
+// Fixtures and pins transcribed from the executed exact-Fraction oracle
+// (files/bhapkar_oracle.py, ALL PASS). Every assert reads crate outputs
+// from bhapkar_mh. Disclosed unkillable identities: d -> -d (quadratic
+// form; d d' also even in d) and solve(W,d) vs solve(W',d) (W symmetric).
+
+/// B1 3x3 anchor. Exact stat 196080/18733 = 10.46709016174665. Kills
+/// MU1 (W = S + dd'/n -> 9.0056), MU2 (omit /n -> -1.115), MU3 (use S,
+/// skip dd'/n correction -> SM stat 9.6815), MU5 (S_ij = -x_ij only ->
+/// 6.9814); kills MU4 (df = C) via the df and p pins.
+#[test]
+fn bh_anchor_b1() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let out = bhapkar_mh(&b1, 3).unwrap();
+    let want = 196080.0 / 18733.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 2);
+    assert!((out.p_value - 0.00533458022326506).abs() <= 1e-12);
+    assert_eq!(out.subjects, 129);
+    assert_eq!(out.categories, 3);
+}
+
+/// B2 4x4 anchor (n = 130). NOTE: B2 has an equal marginal (category 1,
+/// r == c == 31), which Bhapkar KEEPS (no drop step, unlike
+/// stuart_maxwell_mh) — this fixture therefore also guards against
+/// accidentally reusing the Stuart-Maxwell drop.
+#[test]
+fn bh_anchor_b2_4x4() {
+    let b2 = [
+        22.0, 5.0, 3.0, 6.0, 4.0, 18.0, 7.0, 2.0, 1.0, 6.0, 25.0, 5.0, 3.0, 2.0, 4.0, 17.0,
+    ];
+    let out = bhapkar_mh(&b2, 4).unwrap();
+    let want = 60580.0 / 30799.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 3);
+    assert!((out.p_value - 0.579295246854257).abs() <= 1e-12);
+    assert_eq!(out.subjects, 130);
+    assert_eq!(out.categories, 4);
+}
+
+/// B3 2x2: exact stat 15/7. p tolerance 1e-12 per the executed chi2_sf
+/// transcription check at df = 1.
+#[test]
+fn bh_2x2_b3() {
+    let b3 = [10.0, 6.0, 2.0, 12.0];
+    let out = bhapkar_mh(&b3, 2).unwrap();
+    let want = 15.0 / 7.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 1);
+    assert!((out.p_value - 0.1432349075246697).abs() <= 1e-12);
+    assert_eq!(out.subjects, 30);
+}
+
+/// Cross-implementation anchor, B1 ONLY: the oracle proves exactly that
+/// bhapkar = SM / (1 - SM/n) where SM is the NO-DROP Stuart-Maxwell
+/// statistic. B1 has no equal marginals (rows [35,48,46] vs cols
+/// [25,44,60]), so the crate's stuart_maxwell_mh performs no drop and
+/// its output is the no-drop SM. Both sides read crate outputs. (B2 is
+/// NOT eligible: its equal marginal makes the crate SM a reduced-table
+/// statistic — spec-review finding 1.)
+#[test]
+fn bh_sm_identity() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let bh = bhapkar_mh(&b1, 3).unwrap();
+    let sm = stuart_maxwell_mh(&b1, 3).unwrap();
+    assert_eq!(sm.dropped, 0); // precondition: no-drop SM
+    let n = bh.subjects as f64;
+    let want = sm.value / (1.0 - sm.value / n);
+    assert!((bh.value - want).abs() <= 1e-12 * want);
+}
+
+/// B5: symmetric-marginals (but non-diagonal) table has d = 0, so the
+/// statistic is exactly 0 and p = 1.
+#[test]
+fn bh_zero_d_b5() {
+    let b5 = [10.0, 4.0, 2.0, 2.0, 20.0, 4.0, 4.0, 2.0, 30.0];
+    let out = bhapkar_mh(&b5, 3).unwrap();
+    assert_eq!(out.value, 0.0);
+    assert_eq!(out.p_value, 1.0);
+    assert_eq!(out.subjects, 78);
+}
+
+/// Error contract: shape, domain, cap, empty, singular W (small and
+/// large scale).
+#[test]
+fn bh_error_contract() {
+    // c < 2, non-square length.
+    assert!(bhapkar_mh(&[4.0], 1).is_err());
+    assert!(bhapkar_mh(&[1.0, 2.0, 3.0], 2).is_err());
+    // Negative / NaN / Inf / non-integral cells.
+    assert!(bhapkar_mh(&[10.0, -6.0, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[10.0, f64::INFINITY, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    assert!(bhapkar_mh(&[4503599627370496.0, 6.0, 2.0, 12.0], 2).is_err());
+    // Empty table.
+    assert!(bhapkar_mh(&[0.0, 0.0, 0.0, 0.0], 2).is_err());
+    // B4: perfect agreement -> d = 0 and S = 0 -> W = 0 -> singular.
+    assert!(bhapkar_mh(&[5.0, 0.0, 0.0, 7.0], 2).is_err());
+    // Large-scale singular: kept category 0 is entirely unused, so the
+    // W row for it is zero while max|W| ~ 2e10 — only a SCALED pivot
+    // threshold rejects this (spec-review finding 2 replacement probe).
+    let probe = [0.0, 0.0, 0.0, 0.0, 9999999999.0, 6.0, 0.0, 2.0, 12.0];
+    assert!(bhapkar_mh(&probe, 3).is_err());
+}
+
+/// MC-500: random 3x3 and 4x4 integral tables. The crate statistic is
+/// compared to an independent in-test Cramer/Gaussian recompute of
+/// d' W^-1 d with W built locally (never calling bhapkar_mh or any
+/// crate solver), and the crate output must be invariant under a
+/// random simultaneous row+column permutation (drop-invariance was
+/// proven exactly in the oracle). Run with:
+/// cargo test bh_mc_500 -- --include-ignored
+#[test]
+#[ignore]
+fn bh_mc_500() {
+    let mut state: u64 = 0xB4A9_0217_5EED_7331;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    // Local Gaussian solve with partial pivoting (independent of crate).
+    let solve = |a0: &[Vec<f64>], b0: &[f64]| -> Option<Vec<f64>> {
+        let m = b0.len();
+        let mut a: Vec<Vec<f64>> = a0.to_vec();
+        let mut b = b0.to_vec();
+        for col in 0..m {
+            let piv = (col..m).max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))?;
+            if a[piv][col].abs() < 1e-9 {
+                return None;
+            }
+            a.swap(col, piv);
+            b.swap(col, piv);
+            let pv = a[col][col];
+            for j in col..m {
+                a[col][j] /= pv;
+            }
+            b[col] /= pv;
+            for r in 0..m {
+                if r != col {
+                    let f = a[r][col];
+                    if f != 0.0 {
+                        for j in col..m {
+                            a[r][j] -= f * a[col][j];
+                        }
+                        b[r] -= f * b[col];
+                    }
+                }
+            }
+        }
+        Some(b)
+    };
+    let mut tested = 0usize;
+    while tested < 500 {
+        let c = if next() < 0.5 { 3usize } else { 4 };
+        let t: Vec<f64> = (0..c * c).map(|_| (next() * 30.0).floor()).collect();
+        let Ok(out) = bhapkar_mh(&t, c) else {
+            continue; // singular / empty draws are skipped
+        };
+        // Independent recompute.
+        let n: f64 = t.iter().sum();
+        let rows: Vec<f64> = (0..c).map(|i| (0..c).map(|j| t[i * c + j]).sum()).collect();
+        let cols: Vec<f64> = (0..c).map(|j| (0..c).map(|i| t[i * c + j]).sum()).collect();
+        let km1 = c - 1;
+        let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+        let w: Vec<Vec<f64>> = (0..km1)
+            .map(|i| {
+                (0..km1)
+                    .map(|j| {
+                        let s = if i == j {
+                            rows[i] + cols[i] - 2.0 * t[i * c + i]
+                        } else {
+                            -(t[i * c + j] + t[j * c + i])
+                        };
+                        s - d[i] * d[j] / n
+                    })
+                    .collect()
+            })
+            .collect();
+        let Some(x) = solve(&w, &d) else {
+            continue; // near-singular under the looser local cutoff
+        };
+        let want: f64 = d.iter().zip(&x).map(|(di, xi)| di * xi).sum();
+        assert!(
+            (out.value - want).abs() <= 1e-8 * want.abs().max(1.0),
+            "crate {} vs recompute {}",
+            out.value,
+            want
+        );
+        assert_eq!(out.df, km1 as u64);
+        assert!(out.p_value >= 0.0 && out.p_value <= 1.0);
+        // Simultaneous permutation invariance (crate outputs both sides).
+        let off = 1 + (next() * (c as f64 - 1.0)) as usize;
+        let perm: Vec<usize> = (0..c).map(|i| (i + off) % c).collect();
+        let mut pt = vec![0.0; c * c];
+        for i in 0..c {
+            for j in 0..c {
+                pt[i * c + j] = t[perm[i] * c + perm[j]];
+            }
+        }
+        if let Ok(po) = bhapkar_mh(&pt, c) {
+            assert!(
+                (po.value - out.value).abs() <= 1e-8 * out.value.abs().max(1.0),
+                "perm {} vs {}",
+                po.value,
+                out.value
+            );
+            assert_eq!(po.df, out.df);
+            assert_eq!(po.subjects, out.subjects);
+        }
+        tested += 1;
+    }
+}

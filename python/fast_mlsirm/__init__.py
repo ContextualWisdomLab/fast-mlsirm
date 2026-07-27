@@ -136,8 +136,10 @@ from .reliability import (
     mean_pairwise_cor as mean_pairwise_cor,
     MeanCorResult as MeanCorResult,
     mean_pairwise_rho as mean_pairwise_rho,
+    bhapkar_mh as bhapkar_mh,
     stuart_maxwell_mh as stuart_maxwell_mh,
     MeanRhoResult as MeanRhoResult,
+    BhapkarResult as BhapkarResult,
     StuartMaxwellResult as StuartMaxwellResult,
 )
 from .factor import (
@@ -395,8 +397,10 @@ __all__ = [
     "mean_pairwise_cor",
     "MeanCorResult",
     "mean_pairwise_rho",
+    "bhapkar_mh",
     "stuart_maxwell_mh",
     "MeanRhoResult",
+    "BhapkarResult",
     "StuartMaxwellResult",
     "gtheory_pi",
     "gtheory_pio",

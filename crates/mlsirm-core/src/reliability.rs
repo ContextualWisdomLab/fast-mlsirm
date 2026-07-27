@@ -2149,6 +2149,192 @@ pub fn stuart_maxwell_mh(table: &[f64], c: usize) -> Result<StuartMaxwellResult,
     })
 }
 
+/// Result of the Bhapkar marginal homogeneity test ([`bhapkar_mh`]).
+#[derive(Debug, Clone)]
+pub struct BhapkarResult {
+    /// Chi-square statistic `d' W^-1 d`.
+    pub value: f64,
+    /// Degrees of freedom `C - 1`.
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(value, df)`.
+    pub p_value: f64,
+    /// Total count of the full table.
+    pub subjects: u64,
+    /// Categories `C` of the input table.
+    pub categories: u64,
+}
+
+/// Bhapkar marginal homogeneity test for a `C x C` two-rater
+/// contingency table, transcribed from the CRAN irr 0.84.1 R source
+/// `bhapkar.r` (read in full). Bhapkar (1966) was NOT read; it is
+/// cited as the method's origin only.
+///
+/// `table` is row-major `c x c` nonnegative integral counts, exactly
+/// as in [`stuart_maxwell_mh`]. Only R's CxC-table branch is
+/// implemented; R's raw two-column ratings front-end (factor-level
+/// union handling) is a thin `table()` cross-tab left to callers
+/// (the same deliberate reduced scope as `stuart_maxwell_mh`).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// over the first C-1 categories (R deletes the LAST category; unlike
+/// stuart.maxwell.R there is NO equal-marginal drop step):
+///   d_i = r_i - c_i
+///   S_ii = r_i + c_i - 2 x_ii ;  S_ij = -(x_ij + x_ji)   (i != j)
+///   W = S - d d' / n            (n = total count)
+/// value = d' W^-1 d ;  df = C - 1 ;  p = chi2_sf(value, df)
+/// ```
+///
+/// R computes `sum(dmat * t(dmat) * solve(W))` with `dmat` built
+/// `byrow=TRUE` from `d`, so `dmat_ij = d_j` and the elementwise
+/// product is the outer product `d_i d_j`; the sum equals
+/// `d' W^-1 d` (verified in the executed oracle). The oracle also
+/// proves, exactly on the pinned fixtures, the identity
+/// `value = SM / (1 - SM / n)` against the NO-DROP Stuart-Maxwell
+/// statistic, and that the statistic is invariant to WHICH single
+/// category is deleted (the implementation always deletes the last,
+/// matching R). Disclosed unkillable mutants, as for
+/// [`stuart_maxwell_mh`]: `d -> -d` (quadratic form; `d d'` is also
+/// even in `d`) and transposing `W` in the solver (W symmetric by
+/// construction).
+///
+/// The per-cell cap `2^53 / (2 c)` keeps every cell, marginal sum and
+/// integral `S` entry exactly representable in f64 and `subjects`
+/// within checked u64; `W` itself is rational (the `d d'/n` term) and
+/// is computed in ordinary f64 -- no exactness is claimed for it.
+///
+/// Errors (deliberately stricter than R, which propagates `solve()`
+/// failures): non-square input, `c < 2`, `c > 1000`, NaN, infinite,
+/// negative, or non-integral cells, cells above the cap, `n == 0`,
+/// a numerically singular `W` (pivot below `1e-12 * max|W|`, scaled
+/// as in `stuart_maxwell_mh`; e.g. perfect agreement gives `W = 0`,
+/// and an unused kept category gives a zero `W` row -- R's `solve()`
+/// fails there too), and a non-finite statistic.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Bhapkar, V. P. (1966). A note on the equivalence of two test
+///         criteria for hypotheses in categorical data. *Journal of
+///         the American Statistical Association, 61*(313), 228-235.
+///         (as cited in Gamer et al., 2019; not read)
+pub fn bhapkar_mh(table: &[f64], c: usize) -> Result<BhapkarResult, String> {
+    if c < 2 {
+        return Err("bhapkar: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("bhapkar: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "bhapkar: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "bhapkar: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("bhapkar: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("bhapkar: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("bhapkar: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("bhapkar: count too large for exact arithmetic".to_string());
+        }
+    }
+    let mut subjects: u64 = 0;
+    for &v in table {
+        subjects = subjects
+            .checked_add(v as u64)
+            .ok_or_else(|| "bhapkar: subject count overflow".to_string())?;
+    }
+    if subjects == 0 {
+        return Err("bhapkar: empty table".to_string());
+    }
+    let rows: Vec<f64> = (0..c)
+        .map(|i| (0..c).map(|j| table[i * c + j]).sum())
+        .collect();
+    let cols: Vec<f64> = (0..c)
+        .map(|j| (0..c).map(|i| table[i * c + j]).sum())
+        .collect();
+    let km1 = c - 1;
+    let n = subjects as f64;
+    let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+    // W = S - d d' / n over the first C-1 categories.
+    let w: Vec<Vec<f64>> = (0..km1)
+        .map(|i| {
+            (0..km1)
+                .map(|j| {
+                    let s = if i == j {
+                        rows[i] + cols[i] - 2.0 * table[i * c + i]
+                    } else {
+                        -(table[i * c + j] + table[j * c + i])
+                    };
+                    s - d[i] * d[j] / n
+                })
+                .collect()
+        })
+        .collect();
+    // Checked Gaussian elimination with partial pivoting; pivot
+    // threshold scaled by max|W| (stuart_maxwell_mh / dif.rs pattern).
+    let scale = w
+        .iter()
+        .flat_map(|row| row.iter())
+        .fold(0.0f64, |m, &v| m.max(v.abs()))
+        .max(1.0);
+    let mut a = w;
+    let mut b = d.clone();
+    for col in 0..km1 {
+        let piv = (col..km1)
+            .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
+            .unwrap();
+        if a[piv][col].abs() < 1e-12 * scale {
+            return Err("bhapkar: singular W matrix".to_string());
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        let pv = a[col][col];
+        for j in col..km1 {
+            a[col][j] /= pv;
+        }
+        b[col] /= pv;
+        for r in 0..km1 {
+            if r != col && a[r][col] != 0.0 {
+                let f = a[r][col];
+                for j in col..km1 {
+                    a[r][j] -= f * a[col][j];
+                }
+                b[r] -= f * b[col];
+            }
+        }
+    }
+    let value: f64 = d.iter().zip(&b).map(|(di, xi)| di * xi).sum();
+    if !value.is_finite() {
+        return Err("bhapkar: non-finite statistic".to_string());
+    }
+    let df = km1 as u64;
+    let p_value = crate::fitstats::chi2_sf(value, df as f64).clamp(0.0, 1.0);
+    Ok(BhapkarResult {
+        value,
+        df,
+        p_value,
+        subjects,
+        categories: c as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

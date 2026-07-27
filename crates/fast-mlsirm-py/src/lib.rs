@@ -109,11 +109,11 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
-    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
-    finn_coefficient as core_finn_coefficient, icc as core_icc, kripp_alpha as core_kripp_alpha,
-    maxwell_re as core_maxwell_re, mean_pairwise_cor as core_mean_pairwise_cor,
-    mean_pairwise_rho as core_mean_pairwise_rho, robinson_a as core_robinson_a,
-    separation_reliability as core_separation_reliability,
+    bhapkar_mh as core_bhapkar_mh, cronbach_alpha as core_cronbach_alpha,
+    feldt_alpha_ci as core_feldt_alpha_ci, finn_coefficient as core_finn_coefficient,
+    icc as core_icc, kripp_alpha as core_kripp_alpha, maxwell_re as core_maxwell_re,
+    mean_pairwise_cor as core_mean_pairwise_cor, mean_pairwise_rho as core_mean_pairwise_rho,
+    robinson_a as core_robinson_a, separation_reliability as core_separation_reliability,
     stuart_maxwell_mh as core_stuart_maxwell_mh,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
@@ -3796,6 +3796,30 @@ fn stuart_maxwell_mh(
     out.set_item("df", res.df)?;
     out.set_item("p_value", res.p_value)?;
     out.set_item("dropped", res.dropped)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("categories", res.categories)?;
+    Ok(out.into())
+}
+
+/// Bhapkar marginal homogeneity chi-square test for a CxC two-rater
+/// counts table (`mlsirm_core::reliability`; transcribed from CRAN
+/// irr 0.84.1 `bhapkar.r`, READ). `table` is row-major c x c
+/// nonnegative integral counts. Unlike `stuart_maxwell_mh` no
+/// category is dropped; the statistic is d' W^-1 d with
+/// W = S - d d'/n over the first C-1 categories and df = C - 1.
+/// Degenerate or out-of-domain inputs raise ValueError. Returns a
+/// dict with `value`, `df`, `p_value`, `subjects`, `categories`.
+#[pyfunction]
+fn bhapkar_mh(
+    py: Python<'_>,
+    table: PyReadonlyArray1<'_, f64>,
+    c: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_bhapkar_mh(table.as_slice()?, c).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
     out.set_item("subjects", res.subjects)?;
     out.set_item("categories", res.categories)?;
     Ok(out.into())
@@ -8438,6 +8462,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mean_pairwise_cor, m)?)?;
     m.add_function(wrap_pyfunction!(mean_pairwise_rho, m)?)?;
     m.add_function(wrap_pyfunction!(stuart_maxwell_mh, m)?)?;
+    m.add_function(wrap_pyfunction!(bhapkar_mh, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

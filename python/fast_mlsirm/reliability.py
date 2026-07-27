@@ -1025,3 +1025,93 @@ def stuart_maxwell_mh(table) -> StuartMaxwellResult:
         subjects=int(res["subjects"]),
         categories=int(res["categories"]),
     )
+@dataclass
+class BhapkarResult:
+    """Bhapkar marginal homogeneity test (irr ``bhapkar``).
+
+    ``value`` is the chi-square statistic ``d' W^-1 d`` with
+    ``W = S - d d'/n``; ``df`` is ``C - 1``; ``p_value`` is the
+    upper-tail chi-square probability; ``subjects`` is the total count
+    ``n``; ``categories`` is ``C``."""
+
+    value: float
+    df: int
+    p_value: float
+    subjects: int
+    categories: int
+
+
+def bhapkar_mh(table) -> BhapkarResult:
+    """Bhapkar marginal homogeneity chi-square test for a C x C
+    two-rater contingency table of counts (computed in Rust; transcribed
+    from the CRAN irr 0.84.1 R source ``bhapkar.r``, read in full).
+    ``table[i, j]`` counts objects that rater 1 assigned to category
+    ``i`` and rater 2 to category ``j``. Only R's counts-table geometry
+    is implemented; R's raw two-column ratings front-end (factor-level
+    union handling) is a plain cross-tabulation left to callers (the
+    same deliberate reduced scope as :func:`stuart_maxwell_mh`).
+
+    Unlike Stuart-Maxwell, NO equal-marginal category is dropped (the R
+    source has no drop step). Over the first ``C - 1`` categories,
+    ``d_i = r_i - c_i``, ``S_ii = r_i + c_i - 2 x_ii``,
+    ``S_ij = -(x_ij + x_ji)``, and ``W = S - d d'/n``; the statistic is
+    ``d' W^-1 d`` with ``df = C - 1`` (hand-derived from the R source
+    and verified against an executed exact-Fraction oracle, which also
+    proves exactly on the pinned fixtures the identity
+    ``bhapkar = SM / (1 - SM/n)`` against the no-drop Stuart-Maxwell
+    statistic and invariance to which single category is deleted).
+    Documented deviations from R (deliberate, stricter-than-R):
+    explicit errors for non-square input, fewer than 2 categories,
+    negative/NaN/infinite/non-integral counts, cells above
+    ``2**53 / (2 C)``, more than 1000 categories, an empty table, and a
+    singular ``W`` (where R's ``solve`` fails with its own error; e.g.
+    perfect agreement or an unused category). In LLM-as-a-Judge quality
+    management this tests whether two judges use the rating categories
+    with the same marginal frequencies.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Bhapkar, V. P. (1966). A note on the equivalence of two test
+            criteria for hypotheses in categorical data. *Journal of the
+            American Statistical Association, 61*(313), 228-235.
+            https://doi.org/10.1080/01621459.1966.10502021
+            (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "bhapkar_mh"):
+        raise RuntimeError("bhapkar_mh requires the compiled Rust core")
+    if isinstance(table, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported")
+    arr = np.asarray(table)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("table must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("table must be numeric counts, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("table must be a numeric array")
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError("table must be a square C x C counts matrix")
+    # min/max comparisons instead of np.abs: abs overflows on np.int64 min
+    # (-2**63), which would silently pass the fidelity guard.
+    if arr.dtype.kind in "iu" and arr.size and (
+        int(arr.min()) < 0 or int(arr.max()) > 2**53
+    ):
+        raise ValueError("counts must be nonnegative and within exact float64 range")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    c = x.shape[0]
+    res = core.bhapkar_mh(x.reshape(-1), int(c))
+    return BhapkarResult(
+        value=float(res["value"]),
+        df=int(res["df"]),
+        p_value=float(res["p_value"]),
+        subjects=int(res["subjects"]),
+        categories=int(res["categories"]),
+    )
