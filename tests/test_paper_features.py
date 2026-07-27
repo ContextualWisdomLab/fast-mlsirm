@@ -10881,3 +10881,9 @@ class TestMaxwell:
             maxwell_re(np.array([[0, 0, 0], [1, 1, 1]], dtype=float))  # nr=3
         with pytest.raises(ValueError):
             maxwell_re(np.array([[0, 2**53 + 2], [1, 1]], dtype=np.int64))
+        # Regression: np.abs overflows on int64 min, which previously let
+        # -2**63 slip past the 2**53 fidelity guard (impl-review round 1).
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[-2**63, -2**63], [0, 0]], dtype=np.int64))
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 2**63 - 1], [1, 1]], dtype=np.uint64))

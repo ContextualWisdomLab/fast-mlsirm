@@ -646,7 +646,11 @@ def maxwell_re(ratings) -> MaxwellResult:
         raise ValueError("ratings must be a numeric array")
     if arr.ndim != 2:
         raise ValueError("ratings must be a 2-D subjects x 2 array")
-    if arr.dtype.kind in "iu" and arr.size and np.abs(arr).max() > 2**53:
+    # min/max comparisons instead of np.abs: abs overflows on np.int64 min
+    # (-2**63), which would silently pass the fidelity guard.
+    if arr.dtype.kind in "iu" and arr.size and (
+        int(arr.min()) < -(2**53) or int(arr.max()) > 2**53
+    ):
         # Exact-label equality must survive the f64 conversion.
         raise ValueError("integer ratings exceed exact float64 range (2**53)")
     x = np.ascontiguousarray(arr, dtype=np.float64)
