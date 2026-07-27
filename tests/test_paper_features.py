@@ -10423,3 +10423,15 @@ class TestFleiss:
             fleiss_kappa(np.full((2, 2), np.nan), k=2)
         with pytest.raises(ValueError, match="degenerate"):
             fleiss_kappa(np.ones((3, 2), dtype=int), k=2)
+        # uint64 above i64::MAX must be rejected, not wrapped negative
+        # (silent listwise drop). Reads the wrapper's guard, killed by
+        # removing the unsigned-range check before astype(int64).
+        big = np.array([[2**63, 0], [0, 1], [1, 1]], dtype=np.uint64)
+        with pytest.raises(ValueError, match="int64"):
+            fleiss_kappa(big, k=2)
+        # Explicit k must be a true integer, not lossy-coerced.
+        for bad_k in (3.9, "3", np.float64(3.0), True):
+            with pytest.raises(ValueError, match="k must be an integer"):
+                fleiss_kappa(fk, k=bad_k)
+        # np.integer k still accepted.
+        assert fleiss_kappa(fk, k=np.int64(3)).subjects_used == 5

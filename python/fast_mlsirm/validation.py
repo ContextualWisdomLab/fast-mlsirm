@@ -170,7 +170,13 @@ def fleiss_kappa(
             raise ValueError("ratings exceed exact float64 integer range")
         codes = np.where(finite, arr, -1.0).astype(np.int64)
     else:
+        if arr.dtype.kind == "u" and arr.size and int(arr.max()) > np.iinfo(np.int64).max:
+            raise ValueError("ratings values must fit in int64")
         codes = arr.astype(np.int64)
+    if k is not None:
+        if isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)):
+            raise ValueError("k must be an integer")
+        k = int(k)
     if k is None:
         if codes.size == 0 or int(codes.max()) < 0:
             raise ValueError("cannot infer k: no observed category codes")
