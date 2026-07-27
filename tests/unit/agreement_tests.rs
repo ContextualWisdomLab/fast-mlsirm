@@ -505,6 +505,23 @@ fn lk_error_contract() {
 }
 
 #[test]
+fn lk_near_unit_chance_p_is_valid() {
+    // Impl-review round 1 (MAJOR): an epsilon guard `|1-chanceP| < 1e-12`
+    // rejected valid high-agreement data. 100_000 subjects x 3 raters, all
+    // raters agree, one dissenting subject: chanceP = 1 - 3*(dis/m^2)^3 is
+    // within ~2.4e-14 of 1 yet z is finite in R. Asserts read crate outputs.
+    let ns = 100_000usize;
+    let mut m = vec![1i64; ns * 3];
+    m[(ns - 1) * 3..].copy_from_slice(&[2, 2, 2]);
+    let r = light_kappa(&m, ns, 3).unwrap();
+    assert_eq!(r.value, 1.0);
+    assert!(r.z.is_finite() && r.z > 0.0);
+    assert!(r.p_value.is_finite());
+    // Exact degeneracy (chanceP >= 1 impossible here; chanceP <= 0 covered
+    // in lk_error_contract) remains an error.
+}
+
+#[test]
 #[ignore = "Monte Carlo: run explicitly"]
 fn lk_mc_500_rater_permutation_invariance() {
     // Light's value and z are invariant to permuting rater columns (the

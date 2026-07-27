@@ -559,7 +559,11 @@ pub fn light_kappa(ratings: &[i64], ns: usize, nr: usize) -> Result<LightKappaRe
     let value = kappas.iter().sum::<f64>() / npairs;
 
     let chance_p = 1.0 - npairs * prod_ratio;
-    if chance_p <= 0.0 || (1.0 - chance_p).abs() < 1e-12 {
+    // Only chanceP <= 0 and EXACT 1 - chanceP == 0 are degenerate (spec/R);
+    // chanceP merely near 1 still yields a finite z (impl-review round 1:
+    // an epsilon guard here rejected valid high-agreement data). The
+    // trailing is_finite check backstops any residual overflow.
+    if chance_p <= 0.0 || chance_p >= 1.0 {
         return Err(
             "degenerate chance product: Light's z statistic is undefined for these marginals"
                 .into(),
