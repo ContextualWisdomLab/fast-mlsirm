@@ -10734,3 +10734,81 @@ class TestLight:
         assert abs(r.value - 1 / 3) < 1e-15
         assert r.value == float(r.kappas[0])
         assert abs(r.z - 0.816496580927726) < 1e-12
+class TestFinn:
+    """Finn (1970) coefficient: anchors from the exact-Fraction oracle
+    (session files/finn_oracle.py, EXECUTED; transcribed from CRAN irr
+    0.85 finn.R, read in full). Every assert reads FinnResult fields
+    returned by the crate."""
+
+    FN1 = [
+        [2, 3, 2, 3],
+        [4, 4, 5, 4],
+        [1, 2, 1, 1],
+        [3, 3, 3, 4],
+        [5, 4, 5, 5],
+        [2, 2, 3, 2],
+    ]
+
+    def test_oneway_anchor(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        r = finn_coefficient(np.array(self.FN1, dtype=float), s_levels=5)
+        assert abs(r.value - 125.0 / 144.0) < 1e-15
+        assert abs(r.statistic - 144.0 / 19.0) < 1e-13
+        assert r.df2 == 18.0
+        # crate chi2_sf is a rational approximation; abs tol 1e-12.
+        assert abs(r.p_value - 4.47127350746514e-06) < 1e-12
+        assert r.subjects == 6 and r.raters == 4
+
+    def test_twoway_anchor_and_listwise_drop(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        t = finn_coefficient(np.array(self.FN1, dtype=float), 5, model="twoway")
+        assert abs(t.value - 617.0 / 720.0) < 1e-15
+        assert abs(t.statistic - 720.0 / 103.0) < 1e-13
+        assert t.df2 == 18.0  # R quirk: twoway also uses ns*(nr-1)
+        assert abs(t.p_value - 8.469265956566033e-06) < 1e-12
+        # NaN row -> oracle FN3 5-row pins.
+        m = np.array(self.FN1, dtype=float)
+        m[2, 1] = np.nan
+        d = finn_coefficient(m, 5)
+        assert d.subjects == 5
+        assert abs(d.value - 13.0 / 15.0) < 1e-15
+        assert abs(d.p_value - 2.9654977282546142e-05) < 1e-12
+
+    def test_perfect_agreement(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        r = finn_coefficient(np.array([[1, 1], [3, 3], [5, 5], [2, 2]], dtype=float), 5)
+        assert r.value == 1.0
+        assert r.statistic == float("inf")
+        assert r.p_value == 0.0
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import finn_coefficient
+
+        good = np.array([[1, 2], [2, 2], [3, 1]], dtype=float)
+        with pytest.raises(ValueError, match="masked"):
+            finn_coefficient(np.ma.masked_array(good), 3)
+        with pytest.raises(ValueError, match="object"):
+            finn_coefficient(np.array([[1, "a"], [2, 3]], dtype=object), 3)
+        with pytest.raises(ValueError, match="real"):
+            finn_coefficient(good.astype(complex), 3)
+        with pytest.raises(ValueError, match="boolean"):
+            finn_coefficient(good.astype(bool), 3)
+        with pytest.raises(ValueError, match="2-D"):
+            finn_coefficient(good.ravel(), 3)
+        # bool s_levels: True is an int subclass and would become 1.
+        with pytest.raises(ValueError, match="s_levels must be an integer"):
+            finn_coefficient(good, True)
+        with pytest.raises(ValueError, match="at least 2"):
+            finn_coefficient(good, 1)
+        with pytest.raises(ValueError, match="model"):
+            finn_coefficient(good, 3, model="both")
+        with pytest.raises(ValueError, match="infinit"):
+            finn_coefficient(np.array([[1.0, np.inf], [2.0, 3.0]]), 3)

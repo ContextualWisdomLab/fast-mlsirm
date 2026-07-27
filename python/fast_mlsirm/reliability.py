@@ -498,3 +498,91 @@ def kripp_alpha(ratings, method: str = "nominal") -> KrippResult:
         levels=int(res["levels"]),
         nmatchval=float(res["nmatchval"]),
     )
+@dataclass
+class FinnResult:
+    """Finn (1970) reliability coefficient (irr ``finn``).
+
+    ``value`` is the coefficient ``1 - MS/MSexp``; ``statistic`` is the F
+    value ``MSexp/MS`` (``+inf`` for the documented perfect-agreement
+    ``MS == 0`` case, in which ``p_value`` is 0); ``df2`` is the
+    denominator degrees of freedom ``ns*(nr-1)`` (a convenience field --
+    the R return encodes it only inside ``stat.name``); ``p_value`` is
+    the upper tail ``pf(F, Inf, df2, lower.tail=FALSE)``. ``subjects``
+    counts the complete rows used after listwise NaN deletion."""
+
+    value: float
+    statistic: float
+    df2: float
+    p_value: float
+    subjects: int
+    raters: int
+
+
+def finn_coefficient(ratings, s_levels: int, model: str = "oneway") -> FinnResult:
+    """Finn (1970) coefficient of reliability for a subjects x raters
+    matrix of ratings on a discrete scale with ``s_levels`` levels
+    (compute in Rust; transcribed from the CRAN irr 0.85 R source
+    ``finn.R``, read in full). ``model`` is "oneway" or "twoway"; rows
+    containing NaN are dropped listwise (R ``na.omit``).
+
+    The coefficient compares the observed within-subject (oneway ``MSw``)
+    or residual (twoway ``MSe``) mean square against the variance of a
+    discrete uniform on 1..s, ``MSexp = (s^2 - 1)/12``. Both models use
+    ``df2 = ns*(nr-1)`` -- the R source applies ``ns*(nr-1)`` to twoway
+    as well; that quirk is preserved verbatim. The p-value uses the
+    limiting identity ``pf(F, Inf, df2, lower.tail=FALSE) =
+    pchisq(df2/F, df2)`` (hand-derived from the F-ratio construction and
+    convergence-verified against scipy; valid for F > 0).
+
+    Documented deviations from R (deliberate, stricter-than-R): explicit
+    errors for fewer than 2 complete rows, fewer than 2 raters,
+    ``s_levels < 2`` (or bool), infinities, and negative mean squares
+    from floating cancellation. In LLM-as-a-Judge quality management
+    this measures how far judge scores depart from a random-uniform
+    rating process on the same discrete scale.
+
+    References (APA 7th ed.):
+        Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+            Various coefficients of interrater reliability and agreement*
+            [R package]. https://CRAN.R-project.org/package=irr
+        Finn, R. H. (1970). A note on estimating the reliability of
+            categorical data. *Educational and Psychological Measurement,
+            30*(1), 71-76. https://doi.org/10.1177/001316447003000106
+            (as cited in Gamer et al., 2019; not read)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "finn_coefficient"):
+        raise RuntimeError("finn_coefficient requires the compiled Rust core")
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError(
+            "object-dtype arrays are not supported; pass a numeric array"
+        )
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be numeric, not boolean")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError("ratings must be a numeric array")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D subjects x raters array")
+    # bool is an int subclass; True would silently become s_levels=1.
+    if isinstance(s_levels, bool) or not isinstance(s_levels, (int, np.integer)):
+        raise ValueError("s_levels must be an integer")
+    if int(s_levels) < 2:
+        raise ValueError("s_levels must be at least 2")
+    x = np.ascontiguousarray(arr, dtype=np.float64)
+    ns, nr = x.shape
+    res = core.finn_coefficient(x.reshape(-1), int(ns), int(nr), int(s_levels), str(model))
+    return FinnResult(
+        value=float(res["value"]),
+        statistic=float(res["statistic"]),
+        df2=float(res["df2"]),
+        p_value=float(res["p_value"]),
+        subjects=int(res["subjects"]),
+        raters=int(res["raters"]),
+    )

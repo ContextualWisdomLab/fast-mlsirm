@@ -109,8 +109,9 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
-    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci, icc as core_icc,
-    kripp_alpha as core_kripp_alpha, separation_reliability as core_separation_reliability,
+    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
+    finn_coefficient as core_finn_coefficient, icc as core_icc, kripp_alpha as core_kripp_alpha,
+    separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3640,6 +3641,33 @@ fn kripp_alpha(
     out.set_item("raters", res.raters)?;
     out.set_item("levels", res.levels)?;
     out.set_item("nmatchval", res.nmatchval)?;
+    Ok(out.into())
+}
+
+/// Finn (1970) coefficient of reliability (`mlsirm_core::reliability`;
+/// transcribed from CRAN irr 0.85 `finn.R`, READ). `ratings` is row-major
+/// ns x nr; rows with NaN are dropped listwise. `s_levels` is the number of
+/// discrete scale levels (>= 2); `model` is "oneway" or "twoway". Returns a
+/// dict with `value`, `statistic` (+inf for perfect agreement), `df2`,
+/// `p_value`, `subjects`, `raters`.
+#[pyfunction]
+fn finn_coefficient(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    s_levels: u32,
+    model: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_finn_coefficient(ratings.as_slice()?, ns, nr, s_levels, model)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("df2", res.df2)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
     Ok(out.into())
 }
 
@@ -8274,6 +8302,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
     m.add_function(wrap_pyfunction!(icc, m)?)?;
     m.add_function(wrap_pyfunction!(kripp_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(finn_coefficient, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;

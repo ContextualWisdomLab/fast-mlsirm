@@ -1174,3 +1174,168 @@ fn ka_mc_500_permutation_invariance() {
         assert_eq!(got.levels, want.levels, "rep {rep} levels");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Finn (1970) coefficient (`finn_coefficient`). Pins from the EXECUTED
+// exact-Fraction oracle (session files/finn_oracle.py, output
+// finn_oracle_output.txt); every assert reads FinnResult fields returned by
+// the crate. Mutation kills (each EXECUTED: mutant compiled, test FAILED,
+// restored): MU1 MSexp = s^2/12 -> fn1_anchor_oneway value pin; MU2
+// population row variance -> fn1_anchor_oneway; MU3 twoway MSe drops MSc ->
+// fn1_anchor_twoway; MU4 df2 = (ns-1)(nr-1) -> fn1_anchor_oneway p pin; MU5
+// flipped p tail -> fn1_anchor_oneway p pin; MU6 listwise drop skipped ->
+// fn1_listwise_drop (NaN row must reproduce the 5-row pins exactly).
+
+// FN1 fixture: 6x4 integer ratings, s = 5 (oracle FN1).
+const FN1: [f64; 24] = [
+    2.0, 3.0, 2.0, 3.0, 4.0, 4.0, 5.0, 4.0, 1.0, 2.0, 1.0, 1.0, 3.0, 3.0, 3.0, 4.0, 5.0, 4.0, 5.0,
+    5.0, 2.0, 2.0, 3.0, 2.0,
+];
+
+#[test]
+fn fn1_anchor_oneway() {
+    // Oracle FN1: coeff = 125/144, F = 144/19, df2 = 18,
+    // p = 4.47127350746514e-06. Kills MU1 (131/150), MU2 (173/192),
+    // MU4 (p 2.7664901762462074e-05), MU5 (p 0.9999955287264926).
+    let r = finn_coefficient(&FN1, 6, 4, 5, "oneway").unwrap();
+    assert!((r.value - 125.0 / 144.0).abs() < 1e-15);
+    assert!((r.statistic - 144.0 / 19.0).abs() < 1e-13);
+    assert_eq!(r.df2, 18.0);
+    assert!((r.p_value - 4.47127350746514e-06).abs() < 1e-12);
+    assert_eq!(r.subjects, 6);
+    assert_eq!(r.raters, 4);
+}
+
+#[test]
+fn fn1_anchor_twoway() {
+    // Oracle FN2: coeff = 617/720, F = 720/103, df2 = 18 (R quirk: twoway
+    // also uses ns*(nr-1)), p = 8.469265956566033e-06. Kills MU3 (101/120).
+    let r = finn_coefficient(&FN1, 6, 4, 5, "twoway").unwrap();
+    assert!((r.value - 617.0 / 720.0).abs() < 1e-15);
+    assert!((r.statistic - 720.0 / 103.0).abs() < 1e-13);
+    assert_eq!(r.df2, 18.0);
+    assert!((r.p_value - 8.469265956566033e-06).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_listwise_drop() {
+    // FN1 rows minus row 2 plus a NaN row: must equal the oracle FN3 5-row
+    // pins exactly (coeff 13/15, F 15/2, df2 15, p 2.9654977282546142e-05).
+    // A mutant that keeps, imputes, or NaN-propagates the row cannot
+    // reproduce these finite pins (kills MU6).
+    let mut with_nan: Vec<f64> = Vec::new();
+    for (i, chunk) in FN1.chunks(4).enumerate() {
+        if i == 2 {
+            with_nan.extend_from_slice(&[1.0, f64::NAN, 1.0, 1.0]);
+        } else {
+            with_nan.extend_from_slice(chunk);
+        }
+    }
+    let r = finn_coefficient(&with_nan, 6, 4, 5, "oneway").unwrap();
+    assert_eq!(r.subjects, 5);
+    assert!((r.value - 13.0 / 15.0).abs() < 1e-15);
+    assert!((r.statistic - 7.5).abs() < 1e-13);
+    assert_eq!(r.df2, 15.0);
+    assert!((r.p_value - 2.9654977282546142e-05).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_anchor_two_raters() {
+    // Oracle FN4 5x2 s=3: oneway coeff 1/10, F 10/9, df2 5,
+    // p 0.5201165618867003; twoway coeff -1/8 (negative valid), F 8/9,
+    // p 0.655566243225814.
+    let fn4 = [1.0, 2.0, 2.0, 2.0, 3.0, 1.0, 1.0, 1.0, 2.0, 3.0];
+    let r = finn_coefficient(&fn4, 5, 2, 3, "oneway").unwrap();
+    assert!((r.value - 0.1).abs() < 1e-15);
+    assert!((r.statistic - 10.0 / 9.0).abs() < 1e-14);
+    assert_eq!(r.df2, 5.0);
+    assert!((r.p_value - 0.5201165618867003).abs() < 1e-12);
+    let t = finn_coefficient(&fn4, 5, 2, 3, "twoway").unwrap();
+    assert!((t.value - (-0.125)).abs() < 1e-15);
+    assert!((t.statistic - 8.0 / 9.0).abs() < 1e-14);
+    assert!((t.p_value - 0.655566243225814).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_perfect_agreement() {
+    // MSw == 0 (oneway): all raters agree per row -> value 1, F +Inf, p 0.
+    let perfect = [1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 2.0, 2.0];
+    let r = finn_coefficient(&perfect, 4, 2, 5, "oneway").unwrap();
+    assert_eq!(r.value, 1.0);
+    assert!(r.statistic.is_infinite() && r.statistic > 0.0);
+    assert_eq!(r.p_value, 0.0);
+    // MSe == 0 (twoway): additive row + column structure has zero residual;
+    // x_ij = row_i + col_j with rows [0,1,2], cols [0,1].
+    let additive = [1.0, 2.0, 2.0, 3.0, 3.0, 4.0];
+    let t = finn_coefficient(&additive, 3, 2, 5, "twoway").unwrap();
+    assert_eq!(t.value, 1.0);
+    assert!(t.statistic.is_infinite() && t.statistic > 0.0);
+    assert_eq!(t.p_value, 0.0);
+}
+
+#[test]
+fn fn1_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0];
+    assert!(finn_coefficient(&ok, 2, 2, 3, "both")
+        .unwrap_err()
+        .contains("model"));
+    assert!(finn_coefficient(&ok, 2, 2, 1, "oneway")
+        .unwrap_err()
+        .contains("s_levels"));
+    assert!(finn_coefficient(&ok, 4, 1, 3, "oneway")
+        .unwrap_err()
+        .contains("raters"));
+    assert!(finn_coefficient(&ok, 2, 3, 3, "oneway")
+        .unwrap_err()
+        .contains("length"));
+    let inf = [1.0, f64::INFINITY, 2.0, 1.0];
+    assert!(finn_coefficient(&inf, 2, 2, 3, "oneway")
+        .unwrap_err()
+        .contains("infinit"));
+    // NaN deletion leaving exactly one complete row.
+    let nan = f64::NAN;
+    let one_left = [1.0, 2.0, nan, 2.0, 3.0, nan];
+    assert!(finn_coefficient(&one_left, 3, 2, 3, "oneway")
+        .unwrap_err()
+        .contains("complete"));
+}
+
+#[test]
+#[ignore = "MC-500: run with --ignored"]
+fn fn1_mc_500_permutation_invariance() {
+    // Property: oneway/twoway Finn coefficients are invariant under subject
+    // permutation, and oneway is invariant under rater permutation (MSw is
+    // a row-wise statistic; twoway MSe is also rater-permutation invariant
+    // since MSc uses the unordered set of column means). Asserts compare
+    // crate outputs against crate outputs on permuted input.
+    let mut state: u64 = 0x00C0FFEE;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) % 7) as f64 + 1.0
+    };
+    for rep in 0..500 {
+        let ns = 4 + (rep % 5);
+        let nr = 2 + (rep % 3);
+        let data: Vec<f64> = (0..ns * nr).map(|_| next()).collect();
+        for model in ["oneway", "twoway"] {
+            let base = finn_coefficient(&data, ns, nr, 7, model).unwrap();
+            // Subject permutation: reverse rows.
+            let rev: Vec<f64> = (0..ns)
+                .rev()
+                .flat_map(|i| data[i * nr..(i + 1) * nr].to_vec())
+                .collect();
+            let p = finn_coefficient(&rev, ns, nr, 7, model).unwrap();
+            assert!((base.value - p.value).abs() < 1e-12, "{model} rep {rep}");
+            assert!((base.p_value - p.p_value).abs() < 1e-12);
+            // Rater permutation: reverse columns.
+            let cperm: Vec<f64> = (0..ns)
+                .flat_map(|i| (0..nr).rev().map(move |j| (i, j)))
+                .map(|(i, j)| data[i * nr + j])
+                .collect();
+            let c = finn_coefficient(&cperm, ns, nr, 7, model).unwrap();
+            assert!((base.value - c.value).abs() < 1e-12, "{model} rep {rep}");
+        }
+    }
+}

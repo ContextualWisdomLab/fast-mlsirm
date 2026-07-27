@@ -1161,6 +1161,153 @@ pub fn kripp_alpha(
     })
 }
 
+/// Finn (1970) reliability coefficient output (irr `finn`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinnResult {
+    /// The Finn coefficient `1 - MS/MSexp`.
+    pub value: f64,
+    /// F statistic `MSexp/MS` (df1 = Inf conceptually; `+Inf` for the
+    /// documented perfect-agreement `MS == 0` case).
+    pub statistic: f64,
+    /// Denominator degrees of freedom `ns*(nr-1)` (convenience field; the
+    /// R return encodes it only inside `stat.name = "F(Inf,<df2>)"`).
+    pub df2: f64,
+    /// Upper-tail p-value `pf(F, Inf, df2, lower.tail = FALSE)`.
+    pub p_value: f64,
+    /// Complete (post listwise-drop) subject rows used.
+    pub subjects: u64,
+    /// Raters (columns).
+    pub raters: u64,
+}
+
+/// Finn (1970) coefficient of reliability for categorical-scale ratings,
+/// transcribed from CRAN irr 0.85 `R/finn.R` (READ in full; algorithm
+/// source of truth). Origin cited per irr docs, NOT READ: Finn, R. H.
+/// (1970). A note on estimating the reliability of categorical data.
+/// *Educational and Psychological Measurement, 30*, 71-76.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters); rows containing
+/// NaN are dropped listwise (R `na.omit`). `s_levels` is the number of
+/// discrete scale levels `s >= 2`; the expected mean square under a
+/// uniform-random rating model is the discrete-uniform variance
+/// `MSexp = (s^2 - 1)/12`. With sample variances (n-1 denominator):
+/// `MSw = mean(row variances)` and the two-way residual
+/// `MSe = (SStotal - MSr(ns-1) - MSc(nr-1)) / ((ns-1)(nr-1))`,
+/// `coeff = 1 - MS/MSexp`, `F = MSexp/MS` where `MS` is `MSw` (oneway) or
+/// `MSe` (twoway). Both models use `df2 = ns*(nr-1)` — the R source uses
+/// `ns*(nr-1)` for twoway as well (quirk preserved verbatim).
+///
+/// p-value: R computes `pf(F, Inf, df2, lower.tail = FALSE)`. Limiting
+/// identity (hand-derived; convergence-verified against scipy in the
+/// session oracle): `F(d1, d2) -> d2 / Chi2_d2` as `d1 -> Inf`, so
+/// `P(F > f) = P(Chi2_d2 < d2/f)`, implemented as
+/// `1 - chi2_sf(df2/F, df2)`. Valid only for `F > 0`; a negative mean
+/// square (possible via floating cancellation only — both `MSw` and `MSe`
+/// are nonnegative in exact arithmetic) is rejected as an error rather
+/// than emulating R's `pf` on a negative statistic. `MS == 0` (perfect
+/// agreement) returns `value = 1`, `statistic = +Inf`, `p_value = 0`
+/// (matching the R limit; documented deliberate non-finite statistic).
+///
+/// Documented deviations from R (deliberate, stricter-than-R — R lets
+/// nonsensical inputs propagate to NA/Inf arithmetic): explicit errors for
+/// fewer than 2 complete rows, `nr < 2`, `s_levels < 2`, non-finite
+/// (non-NaN) input, negative mean squares; dimension caps `ns <= 1e6`,
+/// `nr <= 1e4`.
+pub fn finn_coefficient(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    s_levels: u32,
+    model: &str,
+) -> Result<FinnResult, String> {
+    if !matches!(model, "oneway" | "twoway") {
+        return Err("model must be \"oneway\" or \"twoway\"".into());
+    }
+    if s_levels < 2 {
+        return Err("finn: s_levels must be at least 2".into());
+    }
+    if nr < 2 {
+        return Err("finn needs at least 2 raters".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 {
+        return Err("finn: dimensions exceed caps (ns <= 1e6, nr <= 1e4)".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} does not match ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    // Listwise drop of rows containing NaN (R na.omit).
+    let rows: Vec<&[f64]> = (0..ns)
+        .map(|i| &ratings[i * nr..(i + 1) * nr])
+        .filter(|r| r.iter().all(|v| v.is_finite()))
+        .collect();
+    let m = rows.len();
+    if m < 2 {
+        return Err("finn needs at least 2 complete subject rows after dropping missing".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+
+    fn sample_var(xs: &[f64]) -> f64 {
+        let n = xs.len() as f64;
+        let mean = xs.iter().sum::<f64>() / n;
+        xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    }
+
+    let all: Vec<f64> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let ss_total = sample_var(&all) * (mf * nrf - 1.0);
+    let row_means: Vec<f64> = rows.iter().map(|r| r.iter().sum::<f64>() / nrf).collect();
+    let ms_r = sample_var(&row_means) * nrf;
+    let ms_w = rows.iter().map(|r| sample_var(r)).sum::<f64>() / mf;
+    let col_means: Vec<f64> = (0..nr)
+        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / mf)
+        .collect();
+    let ms_c = sample_var(&col_means) * mf;
+    let ms_e = (ss_total - ms_r * (mf - 1.0) - ms_c * (nrf - 1.0)) / ((mf - 1.0) * (nrf - 1.0));
+    if ![ms_r, ms_w, ms_c, ms_e].iter().all(|v| v.is_finite()) {
+        return Err("finn: ANOVA mean squares are non-finite (inputs too large?)".into());
+    }
+
+    let ms = if model == "oneway" { ms_w } else { ms_e };
+    if ms < 0.0 {
+        // Only reachable via floating cancellation in MSe; the chi-square
+        // limiting identity requires F > 0 (see doc comment).
+        return Err("finn: negative mean square (numerically degenerate input)".into());
+    }
+    let ms_exp = ((s_levels as f64) * (s_levels as f64) - 1.0) / 12.0;
+    let df2 = mf * (nrf - 1.0);
+    if ms == 0.0 {
+        return Ok(FinnResult {
+            value: 1.0,
+            statistic: f64::INFINITY,
+            df2,
+            p_value: 0.0,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    let value = 1.0 - ms / ms_exp;
+    let statistic = ms_exp / ms;
+    let p_value = 1.0 - crate::fitstats::chi2_sf(df2 / statistic, df2);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("finn: non-finite result".into());
+    }
+    Ok(FinnResult {
+        value,
+        statistic,
+        df2,
+        p_value,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

@@ -127,6 +127,8 @@ from .reliability import (
     IccResult as IccResult,
     kripp_alpha as kripp_alpha,
     KrippResult as KrippResult,
+    finn_coefficient as finn_coefficient,
+    FinnResult as FinnResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -374,6 +376,8 @@ __all__ = [
     "IccResult",
     "kripp_alpha",
     "KrippResult",
+    "finn_coefficient",
+    "FinnResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",
