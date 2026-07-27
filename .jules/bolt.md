@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2026-07-26 - Distance algebraic expansion versus reusing differences for gradients
+**Learning:** While replacing the 3D difference array broadcasting `sum((x - y)**2)` with the algebraic expansion `x^2 + y^2 - 2xy` is incredibly fast, it creates a fatal regression (e.g. `NameError: name 'diff' is not defined`) or redundant overhead if the subsequent gradient computation requires the explicit difference vector `(x - y)`. You cannot skip allocating an array if the algorithm explicitly needs it.
+**Action:** When optimizing NumPy distance calculations, if the intermediate difference array (e.g., `diff = x - y`) is required for subsequent operations like gradient computations, avoid replacing it with algebraic expansion. Instead, compute `diff` and optimize the distance formula via `np.einsum('ij,ij->i', diff, diff)`.
