@@ -22,3 +22,8 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** MD5 hashing in `fast_mlsirm/report.py` triggered a high severity warning by Bandit, because by default it is assumed to be used for security purposes which is unsafe due to weak hashing.
 **Learning:** For non-security purposes like generating unique dom ids, `hashlib.md5()` triggers a vulnerability warning unless `usedforsecurity=False` is passed. This allows bypassing FIPS compliance limitations as well as suppressing false positive warnings.
 **Prevention:** Always add `usedforsecurity=False` parameter to `hashlib.md5` and other weak hashing functions unless they are genuinely used for secure cryptography (which they shouldn't be).
+
+## 2024-05-18 - Unbounded JSON Loading in Report Generator
+**Vulnerability:** Unbounded file reading and `json.loads` in `python/fast_mlsirm/report.py` exposed a potential Denial-of-Service (DoS) vector via memory exhaustion when reading diagnostics JSON files.
+**Learning:** `json.loads(source.read_text())` reads the entire file into memory at once without any size constraints, which can crash the application if maliciously large files are supplied.
+**Prevention:** Always use the project's internal `_load_json_bounded` utility (e.g., from `.io`) for parsing JSON files, which enforces strict maximum byte limits.
