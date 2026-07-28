@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Intermediate allocations in 3D distance calculations
+**Learning:** Computing 3D distance matrices using `np.sum(diff * diff, axis=2)` allocates a massive temporary array the size of `diff` (e.g. `(I, Nx, K)`) which dominates memory overhead and causes severe cache misses when called repeatedly during Marginal EM steps.
+**Action:** Replace `np.sum(diff * diff, axis=...)` with `np.einsum('ijk,ijk->ij', diff, diff)` for 3D arrays or `np.einsum('ij,ij->i', diff, diff)` for 2D arrays to skip the intermediate array allocation.

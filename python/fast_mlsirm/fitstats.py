@@ -258,17 +258,25 @@ def _icc_grid(
         x_w = np.ones(1)
     a = np.exp(params.alpha) if free_alpha else np.ones_like(params.alpha)
     d_of_i, _fid_ndims = _validate_factor_id(factor_id)
-    shift = np.zeros(int(d_of_i.max()) + 1) if prior_mean is None else np.asarray(prior_mean)
+    shift = (
+        np.zeros(int(d_of_i.max()) + 1)
+        if prior_mean is None
+        else np.asarray(prior_mean)
+    )
     scale = np.ones(int(d_of_i.max()) + 1) if prior_sd is None else np.asarray(prior_sd)
     if shift.shape != scale.shape or np.any(~np.isfinite(shift)):
-        raise ValueError("prior_mean/prior_sd must be finite vectors with matching dimensions")
+        raise ValueError(
+            "prior_mean/prior_sd must be finite vectors with matching dimensions"
+        )
     if np.any(~np.isfinite(scale)) or np.any(scale <= 0.0):
         raise ValueError("prior_sd must contain finite positive values")
-    theta = shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]  # (I, Qt)
+    theta = (
+        shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]
+    )  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
     if uses_space:
         diff = x_grid[None, :, :] - params.zeta[:, None, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        dist = np.sqrt(eps_distance + np.einsum("ijk,ijk->ij", diff, diff))  # (I, Nx)
         eta = eta - math.exp(params.tau) * dist[:, None, :]
     probs = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     return probs, t_w, x_w, t_nodes
@@ -573,9 +581,13 @@ def s_x2(
                     continue
                 o_prop = gr / gn
                 x2 += gn * (o_prop - e_prop) ** 2 / (e_prop * (1.0 - e_prop))
-                g2 += 2.0 * gn * (
-                    _xlogx_over_y(o_prop, e_prop)
-                    + _xlogx_over_y(1.0 - o_prop, 1.0 - e_prop)
+                g2 += (
+                    2.0
+                    * gn
+                    * (
+                        _xlogx_over_y(o_prop, e_prop)
+                        + _xlogx_over_y(1.0 - o_prop, 1.0 - e_prop)
+                    )
                 )
                 rss += gn * (o_prop - e_prop) ** 2
                 n_tot += gn
@@ -659,15 +671,24 @@ def person_fit(
             y.ravel(),
             observed.ravel(),
             int(n_persons),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
             np.asarray(params.theta, dtype=np.float64).ravel(),
             np.asarray(params.xi, dtype=np.float64).ravel(),
             prior_mean=None
             if prior_mean is None
             else np.broadcast_to(
                 np.asarray(prior_mean, dtype=np.float64), (n_persons, n_dims)
-            ).ravel().copy(),
+            )
+            .ravel()
+            .copy(),
             flag_threshold=float(flag_threshold),
         )
         return PersonFitResult(
@@ -685,7 +706,7 @@ def person_fit(
     eta = a[None, :] * theta[:, d_of_i] + params.b[None, :]
     if uses_space:
         diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        dist = np.sqrt(eps_distance + np.einsum("ijk,ijk->ij", diff, diff))
         eta = eta - math.exp(params.tau) * dist
     p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     p = np.clip(p, 1e-12, 1.0 - 1e-12)
@@ -721,7 +742,9 @@ def person_fit(
                 (w_stat + c * r0) / (np.sqrt(np.maximum(n_obs, 1)) * np.sqrt(tau2)),
                 np.nan,
             )
-    flagged = np.nanmin(np.where(np.isnan(lz_star), np.inf, lz_star), axis=1) < flag_threshold
+    flagged = (
+        np.nanmin(np.where(np.isnan(lz_star), np.inf, lz_star), axis=1) < flag_threshold
+    )
     return PersonFitResult(lz=lz, lz_star=lz_star, flagged=flagged)
 
 
@@ -754,8 +777,15 @@ def infit_outfit(
             y.ravel(),
             observed.ravel(),
             int(n_persons),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
             np.asarray(params.theta, dtype=np.float64).ravel(),
             np.asarray(params.xi, dtype=np.float64).ravel(),
         )
@@ -764,7 +794,7 @@ def infit_outfit(
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
         diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        dist = np.sqrt(eps_distance + np.einsum("ijk,ijk->ij", diff, diff))
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)
@@ -894,9 +924,7 @@ def select_items(
             cluster_id=cluster_id,
         )
         fitted_active = active.copy()
-        _require_converged_fit(
-            result, config, "select_items", "inferential screening"
-        )
+        _require_converged_fit(result, config, "select_items", "inferential screening")
         # person screen — prior means matter for the Snijders MAP correction:
         # multilevel EAPs absorb the cluster intercepts, multigroup the group
         # means, so r_0 must be centered accordingly.
@@ -915,8 +943,12 @@ def select_items(
                     np.asarray(group_id, dtype=np.int64)
                 ]
         pf = person_fit(
-            np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model,
-            prior_mean=prior_mean, flag_threshold=person_flag_threshold,
+            np.where(obs_r, y_r, np.nan),
+            fid_r,
+            result.params,
+            result.model,
+            prior_mean=prior_mean,
+            flag_threshold=person_flag_threshold,
         )
         weight = (~pf.flagged).astype(float)
         # flags
@@ -931,20 +963,19 @@ def select_items(
             person_weight=weight,
             min_effect=sx2_min_effect,
         )
-        msq = infit_outfit(np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model)
+        msq = infit_outfit(
+            np.where(obs_r, y_r, np.nan), fid_r, result.params, result.model
+        )
         a_est = np.exp(result.params.alpha)
         pos_count = np.where(obs_r, y_r, 0.0).sum(axis=0)
         neg_count = obs_r.sum(axis=0) - pos_count
         gamma = float(np.exp(result.params.tau))
+        diff = (
+            np.asarray(result.params.xi)[:, None, :]
+            - np.asarray(result.params.zeta)[None, :, :]
+        )
         mean_dist = gamma * np.mean(
-            np.sqrt(
-                1e-8
-                + np.sum(
-                    (np.asarray(result.params.xi)[:, None, :]
-                     - np.asarray(result.params.zeta)[None, :, :]) ** 2,
-                    axis=2,
-                )
-            ),
+            np.sqrt(1e-8 + np.einsum("ijk,ijk->ij", diff, diff)),
             axis=0,
         )
         med = float(np.median(mean_dist))
@@ -960,7 +991,8 @@ def select_items(
             code = codes[gi]
             f = {
                 "sparse": bool(
-                    pos_count[local_i] < min_positive or neg_count[local_i] < min_positive
+                    pos_count[local_i] < min_positive
+                    or neg_count[local_i] < min_positive
                 ),
                 "sx2": bool(sx2_res.flagged_bh[local_i]),
                 "msq": bool(
@@ -1073,12 +1105,16 @@ def vuong_nonnested(
     except (TypeError, ValueError) as exc:
         raise ValueError("casewise log-likelihoods must be numeric") from exc
     if ll_a.size != ll_b.size or ll_a.size < 2:
-        raise ValueError("casewise log-likelihood vectors must be equal-length with n >= 2")
+        raise ValueError(
+            "casewise log-likelihood vectors must be equal-length with n >= 2"
+        )
     if not np.all(np.isfinite(ll_a)) or not np.all(np.isfinite(ll_b)):
         raise ValueError("casewise log-likelihoods must be finite")
 
     def parameter_count(value, name: str) -> int:
-        if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
             raise ValueError(f"{name} must be a non-negative integer")
         result = int(value)
         if result < 0:
@@ -1279,9 +1315,7 @@ def dif_analysis(
     params_per_item = 2
 
     constrained = fit(y, d_of_i, config, group_id=gid)
-    _require_converged_fit(
-        constrained, config, "dif_analysis", "the constrained fit"
-    )
+    _require_converged_fit(constrained, config, "dif_analysis", "the constrained fit")
     ll_con = constrained.loglik_trace[-1]
 
     lr = np.full(n_items, np.nan)
@@ -1409,10 +1443,21 @@ def residual_item_fit(
         raise ValueError("params.theta and params.xi must be finite")
     res = dict(
         core.residual_item_fit(
-            y.ravel(), observed.ravel(), int(n_persons),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            theta.ravel(), xi.ravel(), n_bins=n_bins_value,
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            theta.ravel(),
+            xi.ravel(),
+            n_bins=n_bins_value,
         )
     )
     res["max_abs_z"] = np.asarray(res["max_abs_z"])
@@ -1471,11 +1516,23 @@ def adjusted_chi2_pairs(
     bank = _bank_args(params, d_of_i, model, n_dims, eps_distance)
     res = dict(
         core.adjusted_chi2_pairs(
-            y.ravel(), observed.ravel(), int(n_persons),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            np.zeros(n_dims), np.ones(n_dims),
-            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+            y.ravel(),
+            observed.ravel(),
+            int(n_persons),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
         )
     )
     res["ratio"] = np.asarray(res["ratio"])
@@ -1562,11 +1619,23 @@ def person_fit_resampling(
             raise ValueError("prior_mean must be finite")
         pm = prior.ravel().copy()
     pv = core.person_fit_resampling(
-        y.ravel(), observed.ravel(), int(n_persons),
-        bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-        bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-        theta.ravel(), xi.ravel(), prior_mean=pm,
-        n_replicates=int(n_replicates), seed=int(seed),
+        y.ravel(),
+        observed.ravel(),
+        int(n_persons),
+        bank["alpha"],
+        bank["b"],
+        bank["zeta"],
+        bank["tau"],
+        bank["factor_id"],
+        bank["model"],
+        bank["n_dims"],
+        bank["latent_dim"],
+        bank["eps_distance"],
+        theta.ravel(),
+        xi.ravel(),
+        prior_mean=pm,
+        n_replicates=int(n_replicates),
+        seed=int(seed),
     )
     return np.asarray(pv)
 
@@ -1626,11 +1695,24 @@ def tcc_drift(
     new = _bank_args(params_new, d_of_i, model, n_dims, eps_distance)
     res = dict(
         core.tcc_drift(
-            old["alpha"], old["b"], old["zeta"], old["tau"],
-            new["alpha"], new["b"], new["zeta"], new["tau"],
-            old["factor_id"], old["model"], old["n_dims"], old["latent_dim"],
-            old["eps_distance"], np.zeros(n_dims), np.ones(n_dims),
-            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+            old["alpha"],
+            old["b"],
+            old["zeta"],
+            old["tau"],
+            new["alpha"],
+            new["b"],
+            new["zeta"],
+            new["tau"],
+            old["factor_id"],
+            old["model"],
+            old["n_dims"],
+            old["latent_dim"],
+            old["eps_distance"],
+            np.zeros(n_dims),
+            np.ones(n_dims),
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
             threshold=threshold_value,
         )
     )
@@ -1798,9 +1880,7 @@ def m2(
     if (
         estimate_population or fixed_items is not None or tau_fixed
     ) and estimator != "mmle":
-        raise ValueError(
-            "structured calibration metadata requires estimator='mmle'"
-        )
+        raise ValueError("structured calibration metadata requires estimator='mmle'")
     y0 = np.asarray(responses, dtype=float)
     if y0.ndim != 2:
         raise ValueError("responses must be a persons-by-items matrix")
@@ -1869,26 +1949,49 @@ def m2(
             np.where(observed0, y0, 0.0).ravel(),
             observed0.ravel(),
             int(y0.shape[0]),
-            bank["alpha"], bank["b"], bank["zeta"], bank["tau"], bank["factor_id"],
-            bank["model"], bank["n_dims"], bank["latent_dim"], bank["eps_distance"],
-            prior_mean, prior_sd,
-            q_theta=int(q_theta), xi_rule="gh", q_xi=int(q_xi),
+            bank["alpha"],
+            bank["b"],
+            bank["zeta"],
+            bank["tau"],
+            bank["factor_id"],
+            bank["model"],
+            bank["n_dims"],
+            bank["latent_dim"],
+            bank["eps_distance"],
+            prior_mean,
+            prior_sd,
+            q_theta=int(q_theta),
+            xi_rule="gh",
+            q_xi=int(q_xi),
         )
         result = M2Result(
-            m2=float(res["m2"]), df=float(res["df"]), p_value=float(res["p_value"]),
+            m2=float(res["m2"]),
+            df=float(res["df"]),
+            p_value=float(res["p_value"]),
             rmsea2=float(res["rmsea2"]),
             rmsea2_ci_lower=float(res["rmsea2_ci_lower"]),
             rmsea2_ci_upper=float(res["rmsea2_ci_upper"]),
             srmsr=float(res["srmsr"]),
-            null_m2=float(res["null_m2"]), null_df=float(res["null_df"]),
-            cfi=float(res["cfi"]), tli=float(res["tli"]),
-            n_moments=int(res["n_moments"]), n_parameters=int(res["n_parameters"]),
+            null_m2=float(res["null_m2"]),
+            null_df=float(res["null_df"]),
+            cfi=float(res["cfi"]),
+            tli=float(res["tli"]),
+            n_moments=int(res["n_moments"]),
+            n_parameters=int(res["n_parameters"]),
             n_complete=int(res["n_complete"]),
         )
     else:
         result = _m2_numpy(
-            y0, observed0, d_of_i, params, model, q_theta, q_xi,
-            eps_distance, prior_mean, prior_sd,
+            y0,
+            observed0,
+            d_of_i,
+            params,
+            model,
+            q_theta,
+            q_xi,
+            eps_distance,
+            prior_mean,
+            prior_sd,
         )
     if estimator == "mmle":
         return result
@@ -1937,7 +2040,9 @@ def _rasch_conditional_set_probabilities(
             remaining_score = score - order
             if remaining_score < numerator.size and np.isfinite(denominator[score]):
                 out[score, col] = math.exp(
-                    selected_log_weight + numerator[remaining_score] - denominator[score]
+                    selected_log_weight
+                    + numerator[remaining_score]
+                    - denominator[score]
                 )
     return out
 
@@ -1984,7 +2089,9 @@ def m2_cmle_rasch(
     if b.shape != (n_items,) or np.any(~np.isfinite(b)):
         raise ValueError(f"item_easiness must be a finite vector of length {n_items}")
     if n_items < 5:
-        raise ValueError("CMLE M2 needs at least 5 items for positive degrees of freedom")
+        raise ValueError(
+            "CMLE M2 needs at least 5 items for positive degrees of freedom"
+        )
 
     scores = y.sum(axis=1).astype(np.int64)
     score_counts = np.bincount(scores, minlength=n_items + 1)
@@ -2042,13 +2149,13 @@ def m2_cmle_rasch(
             xi[a_i, b_i] = xi[b_i, a_i] = cov
     p = delta.shape[1]
     if s <= p or n < p + 2:
-        raise ValueError(f"CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})")
+        raise ValueError(
+            f"CMLE M2 needs more moments/cases than parameters ({s}, {n}, {p})"
+        )
     m2_value = _projected_m2_numpy(p_obs - model_moments, delta, xi, float(n))
 
     null_mom, null_delta, null_xi = _m2_null_components(p_obs, moment_items)
-    null_m2 = _projected_m2_numpy(
-        p_obs - null_mom, null_delta, null_xi, float(n)
-    )
+    null_m2 = _projected_m2_numpy(p_obs - null_mom, null_delta, null_xi, float(n))
     df = float(s - p)
     null_df = float(s - n_items)
     p_value, rmsea, ci_lower, ci_upper, cfi, tli = _m2_indices(
@@ -2063,16 +2170,24 @@ def m2_cmle_rasch(
         dmod = mi * (1.0 - mi) * mj * (1.0 - mj)
         if dobs > 1e-12 and dmod > 1e-12:
             ss += (
-                (pij - pi * pj) / math.sqrt(dobs)
-                - (mij - mi * mj) / math.sqrt(dmod)
+                (pij - pi * pj) / math.sqrt(dobs) - (mij - mi * mj) / math.sqrt(dmod)
             ) ** 2
             count += 1
     return M2Result(
-        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
-        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper,
+        m2=m2_value,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower,
+        rmsea2_ci_upper=ci_upper,
         srmsr=math.sqrt(ss / count) if count else float("nan"),
-        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
-        n_moments=s, n_parameters=p, n_complete=n,
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=s,
+        n_parameters=p,
+        n_complete=n,
         estimator="cmle",
         inference_note="conditional Rasch M2 with empirical raw-score nuisance distribution",
     )
@@ -2148,8 +2263,16 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
 
 
 def _m2_numpy(
-    y0, observed0, d_of_i, params, model, q_theta, q_xi, eps_distance,
-    prior_mean=None, prior_sd=None,
+    y0,
+    observed0,
+    d_of_i,
+    params,
+    model,
+    q_theta,
+    q_xi,
+    eps_distance,
+    prior_mean=None,
+    prior_sd=None,
 ):
     """NumPy parity reference for :func:`m2` (Rust core is the compute path)."""
     model_u = model.upper()
@@ -2200,8 +2323,14 @@ def _m2_numpy(
 
     def node_probs(pp):
         probs, t_w, x_w, _ = _icc_grid(
-            pp, d_of_i, model, q_theta, q_xi, eps_distance,
-            prior_mean, prior_sd,
+            pp,
+            d_of_i,
+            model,
+            q_theta,
+            q_xi,
+            eps_distance,
+            prior_mean,
+            prior_sd,
         )
         return probs, t_w, x_w
 
@@ -2316,17 +2445,25 @@ def _m2_numpy(
     null_df = float(s - n_items)
     if null_m2 > m2v and null_m2 > null_df:
         cfi = float(np.clip(1.0 - (m2v - df) / (null_m2 - null_df), 0.0, 1.0))
-        tli = float(
-            (null_m2 / null_df - m2v / df) / (null_m2 / null_df - 1.0)
-        )
+        tli = float((null_m2 / null_df - m2v / df) / (null_m2 / null_df - 1.0))
     else:
         cfi = tli = float("nan")
 
     return M2Result(
-        m2=m2v, df=df, p_value=p_value, rmsea2=rmsea2,
-        rmsea2_ci_lower=ci_lo, rmsea2_ci_upper=ci_hi, srmsr=srmsr,
-        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
-        n_moments=s, n_parameters=p, n_complete=n_c,
+        m2=m2v,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea2,
+        rmsea2_ci_lower=ci_lo,
+        rmsea2_ci_upper=ci_hi,
+        srmsr=srmsr,
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=s,
+        n_parameters=p,
+        n_complete=n_c,
     )
 
 
@@ -2556,7 +2693,10 @@ def _m2_null_components(p_obs, moment_items):
     n_items = len([items for items in moment_items if len(items) == 1])
     s = len(moment_items)
     moments = np.array(
-        [np.prod([p_obs[i] for i in item_set], dtype=float) for item_set in moment_items]
+        [
+            np.prod([p_obs[i] for i in item_set], dtype=float)
+            for item_set in moment_items
+        ]
     )
     delta = np.zeros((s, n_items), dtype=float)
     for row, item_set in enumerate(moment_items):
@@ -2595,9 +2735,7 @@ def _m2_indices(m2_value, df, null_m2, null_df, n):
     ci_upper = math.sqrt(_nc_lambda_for(m2_value, df, 0.05) / denom)
     if null_m2 > m2_value and null_m2 > null_df:
         cfi = float(np.clip(1.0 - (m2_value - df) / (null_m2 - null_df), 0.0, 1.0))
-        tli = float(
-            (null_m2 / null_df - m2_value / df) / (null_m2 / null_df - 1.0)
-        )
+        tli = float((null_m2 / null_df - m2_value / df) / (null_m2 / null_df - 1.0))
     else:
         cfi = tli = float("nan")
     return p_value, rmsea, ci_lower, ci_upper, cfi, tli
@@ -2743,8 +2881,16 @@ def m2_multigroup(
         take = compact == group
         components.append(
             _m2_group_components(
-                y0[take], observed0[take], d_of_i, params, model,
-                q_theta, q_xi, eps_distance, means[group], sds[group],
+                y0[take],
+                observed0[take],
+                d_of_i,
+                params,
+                model,
+                q_theta,
+                q_xi,
+                eps_distance,
+                means[group],
+                sds[group],
             )
         )
     s = components[0]["residual"].size
@@ -2794,10 +2940,20 @@ def m2_multigroup(
         / n_complete
     )
     return M2Result(
-        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
-        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper, srmsr=srmsr,
-        null_m2=null_m2, null_df=null_df, cfi=cfi, tli=tli,
-        n_moments=n_groups * s, n_parameters=p, n_complete=n_complete,
+        m2=m2_value,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower,
+        rmsea2_ci_upper=ci_upper,
+        srmsr=srmsr,
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=n_groups * s,
+        n_parameters=p,
+        n_complete=n_complete,
         n_groups=n_groups,
     )
 
@@ -2877,9 +3033,18 @@ def m2_multilevel(
         raise ValueError("factor_id length must match the number of items")
     n_dims = n_dims_of(d_of_i)
     component = _m2_group_components(
-        y0, observed0, d_of_i, params, model, q_theta, q_xi,
-        eps_distance, np.zeros(n_dims), np.ones(n_dims),
-        shared_sigma_u=sigma_u, q_u=q_u,
+        y0,
+        observed0,
+        d_of_i,
+        params,
+        model,
+        q_theta,
+        q_xi,
+        eps_distance,
+        np.zeros(n_dims),
+        np.ones(n_dims),
+        shared_sigma_u=sigma_u,
+        q_u=q_u,
     )
     complete_clusters = clusters[component["idx"]]
     target_xi, n_clusters = _cluster_moment_covariance(
@@ -2912,11 +3077,21 @@ def m2_multilevel(
         m2_value, df, null_m2, null_df, component["n"]
     )
     return M2Result(
-        m2=m2_value, df=df, p_value=p_value, rmsea2=rmsea,
-        rmsea2_ci_lower=ci_lower, rmsea2_ci_upper=ci_upper,
-        srmsr=component["srmsr"], null_m2=null_m2, null_df=null_df,
-        cfi=cfi, tli=tli, n_moments=s, n_parameters=p,
-        n_complete=component["n"], n_clusters=n_clusters,
+        m2=m2_value,
+        df=df,
+        p_value=p_value,
+        rmsea2=rmsea,
+        rmsea2_ci_lower=ci_lower,
+        rmsea2_ci_upper=ci_upper,
+        srmsr=component["srmsr"],
+        null_m2=null_m2,
+        null_df=null_df,
+        cfi=cfi,
+        tli=tli,
+        n_moments=s,
+        n_parameters=p,
+        n_complete=component["n"],
+        n_clusters=n_clusters,
         inference_note=(
             "cluster-robust limited-information M2; interpret incremental indices "
             "against the cluster-robust independence baseline"
