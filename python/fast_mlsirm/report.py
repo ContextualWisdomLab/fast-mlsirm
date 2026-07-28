@@ -312,7 +312,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
 
 def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     if not rows:
-        return '<p class="empty-state">No rows were recorded in this section.</p>'
+        return '<div class="empty-state" role="status">No rows were recorded in this section.</div>'
 
     columns = _columns(rows)
     body_rows = []
@@ -467,6 +467,7 @@ body {
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .skip-link {

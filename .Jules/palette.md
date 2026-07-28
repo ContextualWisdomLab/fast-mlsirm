@@ -1,3 +1,6 @@
+## 2024-11-20 - Empty State Accessibility and Numeric Formatting
+**Learning:** Using `role="status"` on empty states ensures screen readers announce the lack of data, while `font-variant-numeric: tabular-nums` ensures tables and metrics align properly.
+**Action:** Use `role="status"` on empty states and `font-variant-numeric: tabular-nums` for data-heavy views.
 ## 2024-05-15 - Focus Visible For Scrollable Tables\n**Learning:** Using :focus-visible instead of :focus for scrollable containers improves accessibility for keyboard users without causing jarring outlines for mouse users.\n**Action:** Use :focus-visible on focusable generic containers like `.table-wrap[tabindex="0"]` in Python HTML report templates.
 ## 2024-05-15 - Smooth Table Row Hover Transitions
 **Learning:** Table row hover states without transitions feel abrupt and unpolished in data-heavy static reports, and adding hover states helps users track their reading position across wide tables.
