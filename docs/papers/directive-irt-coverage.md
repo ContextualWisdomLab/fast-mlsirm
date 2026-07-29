@@ -32,6 +32,26 @@ not add new behavior — it grounds existing behavior.
 | ATA — optimal test assembly | van der Linden (2005) | target-information assembly | assembly/paper-feature tests |
 | Zero / perfect-score robustness | Warm (1989); Bock & Mislevy (1982) | Warm WLE + EAP boundary handling | `test_irt_stability.py::test_fit_handles_missing_by_design_axes_and_extreme_scores`, `tests/unit/scoring_wle_tests.rs` |
 
+## Dedicated end-to-end regressions added alongside this document
+
+The tables above map directive targets to pre-existing coverage. This branch also
+adds two focused pytest modules that exercise the property end to end through the
+public API (`simulate` → `fit` → `recovery_report`) and pin the missing-value
+numeric contract on both backends. They add coverage, not behavior — no model
+formula, objective, gradient, or Rust/NumPy numeric path is changed.
+
+| Directive target | Primary source(s) | Dedicated regression |
+|---|---|---|
+| True-parameter recovery (marginal ML) | Bock & Aitkin (1981); Harwell et al. (1996); Reckase (2009) | `tests/test_parameter_recovery.py::test_marginal_estimator_recovers_generating_2pl_item_parameters` |
+| Full-information item-factor stability | Bock, Gibbons & Muraki (1988); Bock & Aitkin (1981) | `tests/test_parameter_recovery.py::test_marginal_item_factor_solution_is_stable_across_run_configurations` |
+| Zero / perfect / constant-item robustness | Warm (1989); Baker & Kim (2004) | `tests/test_missing_and_extreme_robustness.py::test_zero_and_perfect_score_persons_yield_finite_fit`, `::test_constant_items_yield_finite_objective` |
+| Missing NaN/`-1`/mask equivalence + backend parity | Rubin (1976); Bock & Aitkin (1981) | `tests/test_missing_and_extreme_robustness.py::test_missing_sentinels_are_equivalent_and_masked_entries_do_not_contribute`, `::test_rust_and_numpy_agree_on_masked_inputs` |
+
+These are complementary to the parallel test PRs on sibling branches (recovery and
+0/full-score robustness): the modules here use the marginal (full-information)
+estimator path and additionally pin the three-way missing-sentinel equivalence and
+Rust↔NumPy masked-input parity, which the sibling PRs do not assert.
+
 ## Formula / invariant each test asserts
 
 1. **Full-information item-factor stability (Bock & Aitkin, 1981; Bock, Gibbons &
