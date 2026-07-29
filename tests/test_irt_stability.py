@@ -135,6 +135,63 @@ def test_estimator_recovers_true_item_parameters_monte_carlo():
     assert a_corr.mean() >= 0.40
 
 
+def test_concurrent_calibration_is_robust_to_missing_responses():
+    """Concurrent calibration must degrade gracefully under missing responses.
+
+    Sparse, missing-by-design response matrices are the norm in concurrent
+    calibration and test equating (common-item non-equivalent-groups designs),
+    where each person answers only a subset of items. Under data missing at
+    random (Rubin, 1976), marginal/ML item calibration stays consistent because
+    the observed-data likelihood ignores the missing cells (Mislevy & Wu, 1996,
+    *Missing Responses and IRT Ability Estimation*). This test verifies that
+    property empirically: with 40% of responses deleted at random, recovery of
+    the item difficulties must stay strong and must not collapse relative to the
+    complete-data calibration of the same truth. Thresholds sit well inside
+    observed recovery (b_corr ~0.91 at 40% missing vs ~0.88 complete) so the
+    test is stable but fails if missing-cell handling regresses.
+    """
+    seeds = range(4)
+    b_complete: list[float] = []
+    b_missing: list[float] = []
+    a_missing: list[float] = []
+    observed_fraction: list[float] = []
+    for seed in seeds:
+        data = simulate(
+            MLS2PLMConfig(n_persons=400, n_dims=2, items_per_dim=5, latent_dim=2, seed=seed)
+        )
+        config = FitConfig(
+            model="MLS2PLM", optimizer="adam", max_iter=200, n_restarts=3, seed=seed
+        )
+        complete = fit(data.Y.astype(float), data.factor_id, config=config)
+        b_complete.append(recovery_report(data.truth, complete.params).metrics["b_corr"])
+
+        responses = data.Y.astype(float).copy()
+        rng = np.random.default_rng(1000 + seed)
+        missing = rng.random(responses.shape) < 0.40  # 40% missing at random
+        responses[missing] = np.nan  # NaN marks a missing cell (prepare_response contract)
+        observed_fraction.append(1.0 - float(missing.mean()))
+
+        sparse = fit(responses, data.factor_id, config=config)
+        metrics = recovery_report(data.truth, sparse.params).metrics
+        b_missing.append(metrics["b_corr"])
+        a_missing.append(metrics["a_corr"])
+
+    b_complete_arr = np.array(b_complete)
+    b_missing_arr = np.array(b_missing)
+    a_missing_arr = np.array(a_missing)
+    observed = np.array(observed_fraction)
+
+    # The design actually dropped ~40% of the responses.
+    assert 0.55 <= observed.mean() <= 0.65
+    # Difficulty recovery stays strong under heavy MAR missingness ...
+    assert b_missing_arr.min() >= 0.65
+    assert b_missing_arr.mean() >= 0.75
+    # ... and does not collapse relative to complete-data calibration.
+    assert b_missing_arr.mean() >= b_complete_arr.mean() - 0.15
+    # Discriminations still recover well above chance.
+    assert a_missing_arr.mean() >= 0.40
+
+
 def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
     params = MLSIRMParams(
         theta=np.array([[-0.6], [0.2], [0.8]]),
