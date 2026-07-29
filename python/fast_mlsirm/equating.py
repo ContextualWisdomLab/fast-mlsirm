@@ -359,3 +359,264 @@ def equating_standard_errors(
         "n_boot": int(res["n_boot"]),
         "ci_level": float(res["ci_level"]),
     }
+
+
+@dataclass
+class CircleArcResult:
+    """Circle-arc equating result. ``equated`` are the reference-form
+    equivalents of the requested scores. ``xc``/``yc``/``r2`` describe the
+    fitted circle -- in raw coordinates for method ``"arc1"``, in the
+    transformed (``y* = y - L(x)``) coordinates for ``"arc2"``; all three are
+    ``NaN`` when ``collinear`` is ``True`` (the estimate degenerates to the
+    straight line through the points). ``middle`` is the ``(x2, y2)`` middle
+    point used."""
+
+    equated: np.ndarray
+    xc: float
+    yc: float
+    r2: float
+    collinear: bool
+    middle: tuple[float, float]
+    method: str
+
+
+def _ca_point(p, name: str) -> tuple[float, float]:
+    try:
+        x, y = p
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair") from None
+    if np.iscomplexobj(np.asarray(x)) or np.iscomplexobj(np.asarray(y)):
+        raise ValueError(f"{name} must be real-valued")
+    try:
+        return (float(x), float(y))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an (x, y) pair of numbers") from None
+
+
+def circle_arc_equate(
+    scores: np.ndarray,
+    low: tuple[float, float],
+    middle: tuple[float, float],
+    high: tuple[float, float],
+    method: str = "arc2",
+) -> CircleArcResult:
+    """Circle-arc small-sample observed-score equating (compute in Rust;
+    Livingston & Kim, 2008). The equating curve is constrained through three
+    points: the prespecified end-points ``low = (x1, y1)`` and
+    ``high = (x3, y3)`` and an empirically determined ``middle = (x2, y2)``
+    (for single-group / equivalent-groups designs, the pair of mean scores;
+    for the anchor design see :func:`circle_arc_middle_anchor`). ``method``
+    ``"arc1"`` fits a circle arc directly through the three points;
+    ``"arc2"`` (the default; the most accurate small-sample method in the
+    source's resampling study) decomposes the curve into the line ``L(x)``
+    through the end-points plus an arc fitted to the transformed points.
+    Scores must lie in ``[x1, x3]``: the source's linear extension below the
+    lower end-point is intentionally NOT implemented (reduced scope). When
+    the three points are collinear the estimate is the line itself and
+    ``collinear`` is ``True``. Raises ``ValueError`` if the fitted circle does
+    not carry all three points on a single branch (an end-point on the
+    opposite side of the center from the middle point), since the arc is
+    then not a function of X.
+
+    References (APA 7th ed.):
+        Livingston, S. A., & Kim, S. (2008). *Small-sample equating by the
+            circle-arc method* (Research Report No. RR-08-39). ETS.
+            https://doi.org/10.1002/j.2333-8504.2008.tb02135.x
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_equate"):
+        raise RuntimeError("circle_arc_equate requires the compiled Rust core")
+    s = np.asarray(scores)
+    if np.iscomplexobj(s):
+        raise ValueError("scores must be real-valued")
+    try:
+        s = s.astype(np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("scores must be numeric") from None
+    s = np.ascontiguousarray(s.ravel())
+    res = core.circle_arc_equate(
+        s,
+        _ca_point(low, "low"),
+        _ca_point(middle, "middle"),
+        _ca_point(high, "high"),
+        str(method),
+    )
+    return CircleArcResult(
+        equated=np.asarray(res["equated"], dtype=np.float64),
+        xc=float(res["xc"]),
+        yc=float(res["yc"]),
+        r2=float(res["r2"]),
+        collinear=bool(res["collinear"]),
+        middle=(float(res["middle"][0]), float(res["middle"][1])),
+        method=str(method),
+    )
+
+
+def circle_arc_middle_anchor(
+    m_xa: float,
+    m_va: float,
+    m_yb: float,
+    s_yb: float,
+    m_vb: float,
+    s_vb: float,
+) -> tuple[float, float]:
+    """Middle point for circle-arc equating under the anchor (NEAT) design
+    (compute in Rust; Livingston & Kim, 2008, eq. 9). With ``x2`` chosen as
+    the new-form mean ``m_xa``, the chained-linear middle point simplifies to
+    ``y2 = m_yb + (s_yb / s_vb) * (m_va - m_vb)`` where ``m``/``s`` are means
+    and standard deviations, ``a``/``b`` index the groups taking the new and
+    reference forms, and ``v`` the common anchor. Returns ``(x2, y2)``.
+
+    References (APA 7th ed.):
+        Livingston, S. A., & Kim, S. (2008). *Small-sample equating by the
+            circle-arc method* (Research Report No. RR-08-39). ETS.
+            https://doi.org/10.1002/j.2333-8504.2008.tb02135.x
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "circle_arc_middle_anchor"):
+        raise RuntimeError("circle_arc_middle_anchor requires the compiled Rust core")
+    vals = []
+    for name, v in (
+        ("m_xa", m_xa), ("m_va", m_va), ("m_yb", m_yb),
+        ("s_yb", s_yb), ("m_vb", m_vb), ("s_vb", s_vb),
+    ):
+        if np.iscomplexobj(np.asarray(v)):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a number") from None
+    x2, y2 = core.circle_arc_middle_anchor(*vals)
+    return (float(x2), float(y2))
+
+
+def nominal_weights_mean_equate(
+    x_total: np.ndarray,
+    x_anchor: np.ndarray,
+    y_total: np.ndarray,
+    y_anchor: np.ndarray,
+    k_x: int,
+    k_y: int,
+    k_v: int,
+    w1: float = 0.5,
+) -> EquateResult:
+    """Nominal weights mean equating for the NEAT design (compute in Rust;
+    Babcock, Albano, & Raymond, 2012 -- method as restated by Albano, 2016,
+    eq. 42, whose derivation and the method authors' R package ``equate``
+    were verified; the 2012 article itself was not read). Designed for very
+    small samples: the Tucker regression slopes are replaced by the nominal
+    weights ``gamma1 = k_x / k_v`` and ``gamma2 = k_y / k_v`` (item counts;
+    for the 0..K integer-scored tests in scope these equal the score maxima),
+    the synthetic means follow Albano (2016, eqs. 37-38), and the conversion
+    is mean equating ``yx(x) = x + (mu_sY - mu_sX)`` (eq. 10, slope exactly
+    1). Synthetic variances (eqs. 39-40, population/N-denominator moment
+    convention -- NOT the N-1 sample variances the R package reports) are
+    returned in ``sigma_x``/``sigma_y`` but do not enter the conversion.
+    ``w1`` is the population-1 synthetic weight; when ``k_x == k_y`` the
+    intercept is w1-invariant.
+
+    References (APA 7th ed.):
+        Babcock, B., Albano, A., & Raymond, M. (2012). Nominal weights mean
+            equating: A method for very small samples. *Educational and
+            Psychological Measurement, 72*(4), 608-628.
+            https://doi.org/10.1177/0013164411428609
+        Albano, A. D. (2016). equate: An R package for observed-score linking
+            and equating. *Journal of Statistical Software, 74*(8), 1-36.
+            https://doi.org/10.18637/jss.v074.i08
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "nominal_weights_mean_equate"):
+        raise RuntimeError(
+            "nominal_weights_mean_equate requires the compiled Rust core"
+        )
+    arrs = []
+    for name, v in (
+        ("x_total", x_total), ("x_anchor", x_anchor),
+        ("y_total", y_total), ("y_anchor", y_anchor),
+    ):
+        a = np.asarray(v)
+        if np.iscomplexobj(a):
+            raise ValueError(f"{name} must be real-valued")
+        try:
+            a = a.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be numeric") from None
+        arrs.append(np.ascontiguousarray(a.ravel()))
+    ks = []
+    for name, k in (("k_x", k_x), ("k_y", k_y), ("k_v", k_v)):
+        ki = int(k)
+        if ki <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        ks.append(ki)
+    res = core.nominal_weights_mean_equate(*arrs, *ks, w1=float(w1))
+    return _build(res, "nominal-weights-mean", "NEAT")
+
+def composite_linking(tables, weights, slopes=None, p=1.0):
+    """Composite linking of component conversion tables.
+
+    Weighted average of H component linking functions over a shared x grid
+    (Holland & Strawderman, 2011, as cited by Albano, 2016, eq. 31). When
+    per-component linear ``slopes`` are supplied, the symmetric
+    Holland-Strawderman weight adjustment is applied (Albano, 2016, eq. 32):
+    ``W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)``. Without slopes, raw weights
+    are normalized (``W_h = w_h / sum(w)``) -- a documented deviation from
+    the R ``equate`` package's un-normalized non-symmetric path (identical
+    results iff the supplied weights sum to 1).
+
+    Returns a dict with ``composite`` (ndarray), ``adjusted_weights``
+    (ndarray) and ``symmetric`` (bool).
+
+    References (APA 7th):
+        Albano, A. D. (2016). equate: An R package for observed-score
+            linking and equating. Journal of Statistical Software, 74(8),
+            1-36. https://doi.org/10.18637/jss.v074.i08  [READ]
+        Holland, P. W., & Strawderman, W. E. (2011). How to average equating
+            functions, if you must. In A. A. von Davier (Ed.), Statistical
+            models for test equating, scaling, and linking (pp. 89-107).
+            Springer.  [NOT READ; cited via Albano (2016)]
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "composite_linking"):
+        raise RuntimeError("composite_linking requires the compiled Rust core")
+    tabs = []
+    for i, t in enumerate(tables):
+        a = np.asarray(t)
+        if np.iscomplexobj(a):
+            raise ValueError(f"tables[{i}] must be real-valued")
+        try:
+            a = a.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError(f"tables[{i}] must be numeric") from None
+        tabs.append(np.ascontiguousarray(a.ravel()))
+    w = np.asarray(weights)
+    if np.iscomplexobj(w):
+        raise ValueError("weights must be real-valued")
+    try:
+        w = w.astype(np.float64)
+    except (TypeError, ValueError):
+        raise ValueError("weights must be numeric") from None
+    w = np.ascontiguousarray(w.ravel())
+    s = None
+    if slopes is not None:
+        s = np.asarray(slopes)
+        if np.iscomplexobj(s):
+            raise ValueError("slopes must be real-valued")
+        try:
+            s = s.astype(np.float64)
+        except (TypeError, ValueError):
+            raise ValueError("slopes must be numeric") from None
+        s = np.ascontiguousarray(s.ravel())
+    res = core.composite_linking(tabs, w, slopes=s, p=float(p))
+    return {
+        "composite": np.asarray(res["composite"]),
+        "adjusted_weights": np.asarray(res["adjusted_weights"]),
+        "symmetric": bool(res["symmetric"]),
+    }

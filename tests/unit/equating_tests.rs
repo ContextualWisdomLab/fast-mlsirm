@@ -1395,3 +1395,585 @@ fn see_bootstrap_monte_carlo_500() {
     run(EquateMethod::Linear, "linear");
     run(EquateMethod::Equipercentile, "equipercentile");
 }
+
+// ===================== Circle-arc equating tests =====================
+// All pins from the exact-Fraction oracle (files/circle_arc_oracle.py,
+// executed all-pass) against Livingston & Kim (2008) RR-08-39.
+
+// Assert reads: CircleArcResult.{xc,yc,r2,collinear,middle,equated} from
+// circle_arc_equate. Kills MU2 (dropped s2*(y1-y3) term in xc numerator:
+// xc != 40) and MU1 (branch swap: equated at 12 becomes -44, not 14).
+#[test]
+fn ca_paper_method1_exact() {
+    let r = circle_arc_equate(
+        &[5.0, 12.0, 20.0, 10.0],
+        (5.0, 5.0),
+        (12.0, 14.0),
+        (20.0, 20.0),
+        CircleArcMethod::Arc1,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, 40.0); // paper worked example center
+    assert_eq!(r.yc, -15.0);
+    assert_eq!(r.r2, 1625.0); // radius sqrt(1625) ~ 40.3
+    assert_eq!(r.middle, (12.0, 14.0));
+    // exact on-circle recoveries: 1625-1225=400, 1625-784=841, 1625-400=1225
+    assert_eq!(r.equated[0], 5.0);
+    assert_eq!(r.equated[1], 14.0);
+    assert_eq!(r.equated[2], 20.0);
+    // float pin: -15 + sqrt(725)
+    assert!((r.equated[3] - 11.925824035672519).abs() < 1e-12);
+}
+
+// Assert reads: transformed-circle fields and equated from the Arc2 path.
+// Kills MU3 (Method 2 skipping the y* transform: center would be (40,-15),
+// not (12.5,-13)).
+#[test]
+fn ca_paper_method2_exact() {
+    let r = circle_arc_equate(
+        &[5.0, 12.0, 20.0, 10.0],
+        (5.0, 5.0),
+        (12.0, 14.0),
+        (20.0, 20.0),
+        CircleArcMethod::Arc2,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, 12.5); // transformed center (oracle exact 25/2)
+    assert_eq!(r.yc, -13.0);
+    assert_eq!(r.r2, 225.25); // 901/4
+    assert_eq!(r.equated[0], 5.0); // L(5)+arc*(5) = 5+0
+    assert_eq!(r.equated[1], 14.0); // L(12)=12, arc*(12) = -13+15 = 2
+    assert_eq!(r.equated[2], 20.0);
+    // float pin: 10 + (-13 + sqrt(219))
+    assert!((r.equated[3] - 11.798648586948742).abs() < 1e-12);
+}
+
+// Assert reads: equated from the minus branch (y2 < yc). Kills MU1 (branch
+// swap): with center (-5,15), r2=250, the plus branch at x=4 gives
+// 15+13=28, not the exact oracle value 2.
+#[test]
+fn ca_minus_branch_exact() {
+    let r = circle_arc_equate(
+        &[0.0, 4.0, 10.0],
+        (0.0, 0.0),
+        (4.0, 2.0),
+        (10.0, 10.0),
+        CircleArcMethod::Arc1,
+    )
+    .unwrap();
+    assert!(!r.collinear);
+    assert_eq!(r.xc, -5.0); // oracle circumcenter
+    assert_eq!(r.yc, 15.0);
+    assert_eq!(r.r2, 250.0);
+    assert_eq!(r.equated[0], 0.0); // 15 - sqrt(250-25) = 15-15
+    assert_eq!(r.equated[1], 2.0); // 15 - sqrt(250-81) = 15-13
+    assert_eq!(r.equated[2], 10.0); // 15 - sqrt(250-225) = 15-5
+}
+
+// Assert reads: collinear flag, NaN circle fields, and line-valued equated
+// for both the Method-1 collinear case and the Method-2 y2* == 0 case
+// (mandatory spec change 4). Kills MU5 (collinear path returning constant
+// y1: equated[1] would be 0, not 3).
+#[test]
+fn ca_collinear_line() {
+    for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+        let r = circle_arc_equate(
+            &[0.0, 3.0, 10.0],
+            (0.0, 0.0),
+            (5.0, 5.0),
+            (10.0, 10.0),
+            method,
+        )
+        .unwrap();
+        assert!(r.collinear, "{method:?}");
+        assert!(r.xc.is_nan() && r.yc.is_nan() && r.r2.is_nan());
+        assert_eq!(r.equated, vec![0.0, 3.0, 10.0]); // y = x line
+    }
+}
+
+// Assert reads: the (x2, y2) pair returned by circle_arc_middle_anchor.
+// Paper Table 1 pin (exact Fraction 791677/10180). Kills MU4 (inverted
+// s_YB/s_VB ratio: y2 would be 77.5358..., not 77.7678...).
+#[test]
+fn ca_anchor_middle_eq9() {
+    let (x2, y2) = circle_arc_middle_anchor(73.62, 30.60, 77.47, 10.83, 30.46, 5.09).unwrap();
+    assert_eq!(x2, 73.62); // Table 1 new-form test mean m_XA
+    assert!((y2 - 77.76787819253438).abs() < 1e-12);
+}
+
+// Assert reads: Err values from both public functions.
+#[test]
+fn ca_error_contract() {
+    let ok = ((0.0, 0.0), (4.0, 2.0), (10.0, 10.0));
+    let call = |scores: &[f64], low, mid, high| {
+        circle_arc_equate(scores, low, mid, high, CircleArcMethod::Arc1)
+    };
+    assert!(call(&[], ok.0, ok.1, ok.2).is_err()); // empty scores
+    assert!(call(&[f64::NAN], ok.0, ok.1, ok.2).is_err()); // non-finite score
+    assert!(call(&[-0.5], ok.0, ok.1, ok.2).is_err()); // below x1 (no extension)
+    assert!(call(&[10.5], ok.0, ok.1, ok.2).is_err()); // above x3
+    assert!(call(&[1.0], (10.0, 0.0), ok.1, (0.0, 10.0)).is_err()); // x1 >= x3
+    assert!(call(&[1.0], ok.0, (0.0, 2.0), ok.2).is_err()); // x2 == x1
+    assert!(call(&[1.0], ok.0, (10.0, 2.0), ok.2).is_err()); // x2 == x3
+    assert!(call(&[1.0], ok.0, (f64::INFINITY, 2.0), ok.2).is_err());
+    assert!(call(&[1.0], ok.0, (4.0, f64::NAN), ok.2).is_err());
+    // scores exactly at the end-points are ALLOWED (mandatory change 5)
+    assert!(call(&[0.0, 10.0], ok.0, ok.1, ok.2).is_ok());
+    // mixed-branch triples are rejected: for (0,0),(1,3),(2,1) the fitted
+    // circle's center is (0.5, 1.5), so y1 = 0 sits below the center while
+    // the middle point sits above it -- no single-branch arc passes through
+    // all three points, and silently equating off one branch would miss the
+    // prescribed end-points.
+    for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+        let e = circle_arc_equate(&[1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0), method).unwrap_err();
+        assert!(e.contains("single branch"), "{method:?}: {e}");
+    }
+    // anchor middle: non-finite and non-positive SDs error
+    assert!(circle_arc_middle_anchor(f64::NAN, 1.0, 1.0, 1.0, 1.0, 1.0).is_err());
+    assert!(circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0).is_err()); // s_yb
+    assert!(circle_arc_middle_anchor(1.0, 1.0, 1.0, 1.0, 1.0, -2.0).is_err()); // s_vb
+                                                                               // method label parsing
+    assert_eq!(CircleArcMethod::parse("ARC1"), Some(CircleArcMethod::Arc1));
+    assert_eq!(CircleArcMethod::parse("2"), Some(CircleArcMethod::Arc2));
+    assert_eq!(CircleArcMethod::parse("tucker"), None);
+}
+
+// 500-rep randomized check. Per mandatory spec change 2, this does NOT
+// re-check the circle identity from returned values (identity trap);
+// instead it asserts (a) the returned center/radius reproduce the INPUT
+// anchor points of the fit (raw points for Method 1; (x1,0),(x2,y2*),
+// (x3,0) for Method 2, y2* recomputed from the inputs, not the output),
+// and (b) equated at [x1,x2,x3] recovers [y1,y2,y3].
+#[test]
+#[ignore]
+fn ca_mc_500() {
+    let mut u = lcg(20080839);
+    let mut done = 0usize;
+    while done < 500 {
+        let x1 = u() * 10.0;
+        let x3 = x1 + 5.0 + u() * 40.0;
+        let x2 = x1 + (0.1 + 0.8 * u()) * (x3 - x1);
+        let y1 = u() * 10.0;
+        let y3 = y1 + 5.0 + u() * 40.0;
+        let line_y2 = y1 + (y3 - y1) / (x3 - x1) * (x2 - x1);
+        let y2 = line_y2 + (u() - 0.5) * 6.0;
+        if (y2 - line_y2).abs() < 1e-3 {
+            continue; // avoid near-collinear conditioning noise
+        }
+        // The circle-arc model represents Y(X) as a single branch of the
+        // circle; the CRATE now rejects triples whose fitted circle does
+        // not carry all three points on one branch. Draws hitting that
+        // error path are counted but skipped: the assert reads the crate's
+        // Err, not a test-local recomputation.
+        for method in [CircleArcMethod::Arc1, CircleArcMethod::Arc2] {
+            let out = circle_arc_equate(&[x1, x2, x3], (x1, y1), (x2, y2), (x3, y3), method);
+            let r = match out {
+                Err(e) => {
+                    assert!(
+                        e.contains("single branch"),
+                        "{method:?} unexpected error: {e}"
+                    );
+                    continue;
+                }
+                Ok(r) => r,
+            };
+            assert!(!r.collinear);
+            // (a) fitted circle passes through the INPUT anchor points
+            let anchors: [(f64, f64); 3] = match method {
+                CircleArcMethod::Arc1 => [(x1, y1), (x2, y2), (x3, y3)],
+                CircleArcMethod::Arc2 => [(x1, 0.0), (x2, y2 - line_y2), (x3, 0.0)],
+            };
+            let scale = r.r2.max(1.0);
+            for (px, py) in anchors {
+                let res = (px - r.xc).powi(2) + (py - r.yc).powi(2) - r.r2;
+                assert!(
+                    res.abs() / scale < 1e-9,
+                    "{method:?} anchor ({px},{py}) residual {res}"
+                );
+            }
+            // (b) equating the three anchors recovers the y-coordinates
+            for (e, want) in r.equated.iter().zip([y1, y2, y3]) {
+                assert!((e - want).abs() < 1e-8, "{method:?} {e} vs {want}");
+            }
+        }
+        done += 1;
+    }
+}
+
+// ===================== nominal weights mean equating =====================
+// Oracle: exact-Fraction hand computation (Albano 2016 eqs. 37-40, 42, 10)
+// plus an executed cross-check against the method authors' R implementation
+// (equate 2.0.8, KBneat, intercept 0.5833490108414594). All asserts below
+// read crate outputs. Variance pins use the crate's N-denominator moment
+// convention (eqs. 39-40 directly), NOT R's N-1 sample variances.
+
+const NWME_XT: [f64; 4] = [10.0, 12.0, 14.0, 16.0];
+const NWME_XA: [f64; 4] = [4.0, 5.0, 5.0, 6.0];
+const NWME_YT: [f64; 4] = [8.0, 9.0, 11.0, 12.0];
+const NWME_YA: [f64; 4] = [3.0, 4.0, 4.0, 5.0];
+
+#[test]
+fn nwme_fixture_a_exact() {
+    // k=(20,20,8): gamma1 = gamma2 = 5/2. mu_X1=13, mu_Y2=10, d=1.
+    // w1=1: mu_sX = 13, mu_sY = 10 + (5/2) = 25/2, b = -1/2.
+    let r = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 1.0)
+        .unwrap();
+    assert_eq!(r.intercept, -0.5);
+    assert_eq!(r.slope, 1.0);
+    assert_eq!(r.mu_x, 13.0);
+    assert_eq!(r.mu_y, 12.5);
+    assert_eq!(r.mu_eq, 12.5);
+    assert_eq!(r.x_scores.len(), 21);
+    assert_eq!(r.y_equivalents[0], -0.5);
+    assert_eq!(r.y_equivalents[20], 19.5);
+    assert_eq!(r.n_x, 4);
+    assert_eq!(r.n_y, 4);
+    assert!(r.h_x.is_nan() && r.h_y.is_nan());
+    // DERIVED w1-invariance under equal gammas: b = mu_Y2 - mu_X1 + g*d
+    // regardless of w1.
+    let half = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 0.5)
+        .unwrap();
+    assert_eq!(half.intercept, -0.5);
+}
+
+#[test]
+fn nwme_fixture_b_exact() {
+    // k=(20,30,10): gamma1=2, gamma2=3 (distinct — discriminates gamma-swap
+    // and w1/w2-swap mutants). w1=1/4:
+    // mu_sX = 13 - (3/4)*2*1 = 23/2, mu_sY = 10 + (1/4)*3*1 = 43/4,
+    // b = -3/4; v_V1 = v_V2 = 1/2 so the eq. 39-40 middle terms vanish and
+    // var_sX = 5 + (3/16)*4 = 23/4, var_sY = 5/2 + (3/16)*9 = 67/16.
+    let r = nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, 20, 30, 10, 0.25)
+        .unwrap();
+    assert_eq!(r.intercept, -0.75);
+    assert_eq!(r.mu_x, 11.5);
+    assert_eq!(r.mu_y, 10.75);
+    assert_eq!(r.sigma_x, (23.0_f64 / 4.0).sqrt());
+    assert_eq!(r.sigma_y, (67.0_f64 / 16.0).sqrt());
+    assert_eq!(r.sigma_eq, (23.0_f64 / 4.0).sqrt());
+    assert_eq!(r.y_equivalents[0], -0.75);
+    assert_eq!(r.y_equivalents[20], 19.25);
+}
+
+#[test]
+fn nwme_error_contract() {
+    let ok = |k_x, k_y, k_v, w1| {
+        nominal_weights_mean_equate(&NWME_XT, &NWME_XA, &NWME_YT, &NWME_YA, k_x, k_y, k_v, w1)
+    };
+    assert!(ok(0, 20, 8, 0.5).is_err());
+    assert!(ok(20, 0, 8, 0.5).is_err());
+    assert!(ok(20, 20, 0, 0.5).is_err());
+    assert!(ok(20, 20, 8, -0.1).is_err());
+    assert!(ok(20, 20, 8, 1.5).is_err());
+    assert!(nominal_weights_mean_equate(
+        &NWME_XT,
+        &NWME_XA[..3],
+        &NWME_YT,
+        &NWME_YA,
+        20,
+        20,
+        8,
+        0.5
+    )
+    .is_err());
+    assert!(nominal_weights_mean_equate(&[], &[], &NWME_YT, &NWME_YA, 20, 20, 8, 0.5).is_err());
+    let bad = [10.0, f64::NAN, 14.0, 16.0];
+    assert!(
+        nominal_weights_mean_equate(&bad, &NWME_XA, &NWME_YT, &NWME_YA, 20, 20, 8, 0.5).is_err()
+    );
+}
+
+#[test]
+#[ignore = "500-rep Monte Carlo"]
+fn nwme_mc_500() {
+    // Structural invariants across random data: slope always 1, constant
+    // shift equal to the crate-reported intercept, intercept consistent with
+    // the crate-reported synthetic means, w1-invariance for equal gammas and
+    // sensitivity to k_y (structural discrimination). The mean-identity
+    // asserts read crate outputs but cannot discriminate every moment
+    // mutant; fixtures A/B carry the exact discriminating pins.
+    let mut rng = lcg(20260727);
+    let mut valid = 0usize;
+    for rep in 0..500 {
+        let n1 = 3 + (rng() * 20.0) as usize;
+        let n2 = 3 + (rng() * 20.0) as usize;
+        let draw = |rng: &mut dyn FnMut() -> f64, n: usize, k: f64| -> (Vec<f64>, Vec<f64>) {
+            let mut t = Vec::with_capacity(n);
+            let mut a = Vec::with_capacity(n);
+            for _ in 0..n {
+                t.push((rng() * k).round());
+                a.push((rng() * 8.0).round());
+            }
+            (t, a)
+        };
+        let (xt, xa) = draw(&mut rng, n1, 20.0);
+        let (yt, ya) = draw(&mut rng, n2, 20.0);
+        let w1 = rng();
+        // Uncorrelated random anchors can legitimately trip the defensive
+        // non-positive synthetic-variance guard; skip those reps and require
+        // a minimum number of valid ones below.
+        let r = match nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 20, 8, w1) {
+            Ok(r) => r,
+            Err(e) if e.contains("synthetic variance") => continue,
+            Err(e) => panic!("rep {rep}: {e}"),
+        };
+        valid += 1;
+        assert_eq!(r.slope, 1.0);
+        assert!((r.intercept - (r.mu_y - r.mu_x)).abs() < 1e-12);
+        for (i, (x, y)) in r.x_scores.iter().zip(&r.y_equivalents).enumerate() {
+            assert!(
+                (y - x - r.intercept).abs() < 1e-12,
+                "rep {rep} score {i}: {y} vs {x}+{}",
+                r.intercept
+            );
+        }
+        // equal gammas: w1-invariant intercept
+        if let Ok(alt) = nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 20, 8, 1.0 - w1) {
+            assert!((alt.intercept - r.intercept).abs() < 1e-12);
+        }
+        // distinct gammas must move the intercept whenever the anchor means
+        // differ (b changes by w1*(g2'-g2)*d)
+        let mxa = xa.iter().sum::<f64>() / xa.len() as f64;
+        let mya = ya.iter().sum::<f64>() / ya.len() as f64;
+        if w1 > 1e-3 && (mxa - mya).abs() > 1e-9 {
+            // k_y=30 inflates gamma2; skip reps where the defensive
+            // non-positive synthetic-variance guard fires (variance does not
+            // enter the intercept, but the crate rejects degenerate results).
+            if let Ok(wide) = nominal_weights_mean_equate(&xt, &xa, &yt, &ya, 20, 30, 8, w1) {
+                assert!(
+                    (wide.intercept - r.intercept).abs() > 1e-12,
+                    "rep {rep}: k_y change did not move intercept"
+                );
+            }
+        }
+    }
+    assert!(valid >= 250, "only {valid} valid reps");
+}
+
+// --- composite linking tests (Holland & Strawderman 2011 via Albano 2016) ---
+// Oracle: exact-Fraction pins from files/composite_oracle.py (executed).
+
+#[test]
+fn comp_fixture_a_exact() {
+    // Two linear components x and 3x-2 over [0,1,2,10], wc=(1/2,1/2),
+    // slopes (1,3), p=1. Asserts read crate outputs: adjusted_weights,
+    // composite, symmetric. Kills MU1 (drop adjustment -> W=(1/2,1/2)),
+    // MU2 (exponent sign flip -> W=(1/3,2/3)), MU5 (weight/table zip
+    // reversal -> comp(0) = -4/3).
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 1.0).unwrap();
+    assert!(r.symmetric);
+    assert!((r.adjusted_weights[0] - 2.0 / 3.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 1.0 / 3.0).abs() < 1e-15);
+    // comp(x) = (5/3)x - 2/3 exactly: [-2/3, 1, 8/3, 16]
+    let expect = [-2.0 / 3.0, 1.0, 8.0 / 3.0, 16.0];
+    for (c, e) in r.composite.iter().zip(expect) {
+        assert!((c - e).abs() < 1e-14, "composite {c} != {e}");
+    }
+}
+
+#[test]
+fn comp_symmetry_roundtrip() {
+    // DERIVED symmetry property: eq.-32 reverse composite (inverse links,
+    // slopes (1,1/3), same raw weights) is the exact functional inverse of
+    // the forward composite from comp_fixture_a_exact. Raw (unadjusted)
+    // weights fail this round-trip ((4/3)x - 1/3 != x), so the assert is
+    // discriminating. Asserts read crate outputs of BOTH calls.
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let fwd = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 1.0).unwrap();
+    // Reverse links evaluated at y = fwd.composite[i]: y and (y+2)/3.
+    let r1: Vec<f64> = fwd.composite.clone();
+    let r2: Vec<f64> = fwd.composite.iter().map(|y| (y + 2.0) / 3.0).collect();
+    let rev = composite_linking(&[r1, r2], &[0.5, 0.5], Some(&[1.0, 1.0 / 3.0]), 1.0).unwrap();
+    assert!((rev.adjusted_weights[0] - 2.0 / 5.0).abs() < 1e-15);
+    assert!((rev.adjusted_weights[1] - 3.0 / 5.0).abs() < 1e-15);
+    for (back, x) in rev.composite.iter().zip(grid) {
+        assert!((back - x).abs() < 1e-13, "round-trip {back} != {x}");
+    }
+}
+
+#[test]
+fn comp_fixture_c_three() {
+    // Three components, wc=(1/4,1/4,1/2), slopes (1,2,1/2), p=1.
+    // Oracle: W=(3/13,2/13,8/13); at x=6 component values (6,11,6) give 88/13.
+    let t1 = vec![6.0];
+    let t2 = vec![11.0];
+    let t3 = vec![6.0];
+    let r = composite_linking(
+        &[t1, t2, t3],
+        &[0.25, 0.25, 0.5],
+        Some(&[1.0, 2.0, 0.5]),
+        1.0,
+    )
+    .unwrap();
+    assert!((r.adjusted_weights[0] - 3.0 / 13.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 2.0 / 13.0).abs() < 1e-15);
+    assert!((r.adjusted_weights[2] - 8.0 / 13.0).abs() < 1e-15);
+    assert!((r.composite[0] - 88.0 / 13.0).abs() < 1e-13);
+}
+
+#[test]
+fn comp_p2_float() {
+    // p=2 pins (oracle double-precision): W0=0.6909830056250527,
+    // W1=0.30901699437494745, comp(0)=-0.6180339887498949,
+    // comp(10)=15.562305898749056. Kills MU4 (a^p -> a*p gives
+    // W0=0.6043560762610399 at p=2; p=1 fixtures are blind to MU4 by
+    // identity a^1 = a*1 -- this test is the designated MU4 anchor).
+    let grid = [0.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1, t2], &[0.5, 0.5], Some(&[1.0, 3.0]), 2.0).unwrap();
+    assert!((r.adjusted_weights[0] - 0.6909830056250527).abs() < 1e-15);
+    assert!((r.adjusted_weights[1] - 0.30901699437494745).abs() < 1e-15);
+    assert!((r.composite[0] - (-0.6180339887498949)).abs() < 1e-14);
+    assert!((r.composite[1] - 15.562305898749056).abs() < 1e-13);
+}
+
+#[test]
+fn comp_raw_weights() {
+    // Non-symmetric path (slopes None): W = w/sum(w). With wc=(1/2,1/2)
+    // (sum 1, matches R raw path exactly): composite [-1,1,3,19].
+    // Also checks scale invariance (weights (2,2) same result) -- the
+    // documented normalization deviation from R's un-normalized path.
+    let grid = [0.0, 1.0, 2.0, 10.0];
+    let t1: Vec<f64> = grid.to_vec();
+    let t2: Vec<f64> = grid.iter().map(|x| 3.0 * x - 2.0).collect();
+    let r = composite_linking(&[t1.clone(), t2.clone()], &[0.5, 0.5], None, 1.0).unwrap();
+    assert!(!r.symmetric);
+    let expect = [-1.0, 1.0, 3.0, 19.0];
+    for (c, e) in r.composite.iter().zip(expect) {
+        assert!((c - e).abs() < 1e-14);
+    }
+    let r2 = composite_linking(&[t1, t2], &[2.0, 2.0], None, 1.0).unwrap();
+    for (a, b) in r.composite.iter().zip(&r2.composite) {
+        assert!(
+            (a - b).abs() < 1e-15,
+            "normalization must be scale-invariant"
+        );
+    }
+}
+
+#[test]
+fn comp_error_contract() {
+    let t = vec![1.0, 2.0];
+    // empty tables
+    assert!(composite_linking(&[], &[], None, 1.0).is_err());
+    // zero-length table
+    assert!(composite_linking(&[vec![]], &[1.0], None, 1.0).is_err());
+    // unequal lengths
+    assert!(composite_linking(&[t.clone(), vec![1.0]], &[0.5, 0.5], None, 1.0).is_err());
+    // weight count mismatch
+    assert!(composite_linking(&[t.clone()], &[0.5, 0.5], None, 1.0).is_err());
+    // negative weight
+    assert!(composite_linking(&[t.clone()], &[-1.0], None, 1.0).is_err());
+    // non-finite weight
+    assert!(composite_linking(&[t.clone()], &[f64::NAN], None, 1.0).is_err());
+    // zero weight sum
+    assert!(composite_linking(&[t.clone()], &[0.0], None, 1.0).is_err());
+    // non-finite table value
+    assert!(composite_linking(&[vec![1.0, f64::INFINITY]], &[1.0], None, 1.0).is_err());
+    // slope count mismatch
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[1.0, 2.0]), 1.0).is_err());
+    // non-positive slope
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[0.0]), 1.0).is_err());
+    // p < 1 when symmetric
+    assert!(composite_linking(&[t.clone()], &[1.0], Some(&[1.0]), 0.5).is_err());
+    // non-finite p when symmetric
+    assert!(composite_linking(&[t], &[1.0], Some(&[1.0]), f64::NAN).is_err());
+}
+
+#[test]
+#[ignore]
+fn comp_mc_500() {
+    // 500 random reps: composite of random linear tables with random
+    // positive weights/slopes must (a) have adjusted weights summing to 1,
+    // (b) lie in the pointwise convex hull of the component tables, and
+    // (c) satisfy the p=1 two-component linear round-trip to 1e-10.
+    let mut next = lcg(20260727);
+    for rep in 0..500 {
+        let a1 = 0.2 + 3.0 * next();
+        let b1 = -2.0 + 4.0 * next();
+        let a2 = 0.2 + 3.0 * next();
+        let b2 = -2.0 + 4.0 * next();
+        let w1 = 0.1 + next();
+        let w2 = 0.1 + next();
+        let grid: Vec<f64> = (0..9).map(|i| i as f64).collect();
+        let t1: Vec<f64> = grid.iter().map(|x| a1 * x + b1).collect();
+        let t2: Vec<f64> = grid.iter().map(|x| a2 * x + b2).collect();
+        let fwd =
+            composite_linking(&[t1.clone(), t2.clone()], &[w1, w2], Some(&[a1, a2]), 1.0).unwrap();
+        let wsum: f64 = fwd.adjusted_weights.iter().sum();
+        assert!((wsum - 1.0).abs() < 1e-12, "rep {rep}: weights sum {wsum}");
+        for i in 0..grid.len() {
+            let lo = t1[i].min(t2[i]) - 1e-12;
+            let hi = t1[i].max(t2[i]) + 1e-12;
+            assert!(
+                fwd.composite[i] >= lo && fwd.composite[i] <= hi,
+                "rep {rep}: composite outside convex hull"
+            );
+        }
+        // Round-trip: reverse links evaluated at forward composite.
+        let r1: Vec<f64> = fwd.composite.iter().map(|y| (y - b1) / a1).collect();
+        let r2: Vec<f64> = fwd.composite.iter().map(|y| (y - b2) / a2).collect();
+        let rev =
+            composite_linking(&[r1, r2], &[w1, w2], Some(&[1.0 / a1, 1.0 / a2]), 1.0).unwrap();
+        for (back, x) in rev.composite.iter().zip(&grid) {
+            assert!(
+                (back - x).abs() < 1e-10,
+                "rep {rep}: round-trip {back} != {x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn comp_large_p_stable() {
+    // Impl-review regression: a.powf(p) overflowed for valid finite inputs
+    // (p=1000, slopes (2,4)), collapsing weights to (1,0). In the large-p
+    // limit (1 + a^p)^(-1/p) -> 1/max(1,a), so factors -> (1/2,1/4) and
+    // W -> (2/3,1/3); composite of tables (0) and (10) -> 10/3. Asserts
+    // read crate outputs.
+    let r = composite_linking(
+        &[vec![0.0], vec![10.0]],
+        &[1.0, 1.0],
+        Some(&[2.0, 4.0]),
+        1000.0,
+    )
+    .unwrap();
+    assert!(
+        (r.adjusted_weights[0] - 2.0 / 3.0).abs() < 1e-12,
+        "W0 {} != 2/3",
+        r.adjusted_weights[0]
+    );
+    assert!((r.adjusted_weights[1] - 1.0 / 3.0).abs() < 1e-12);
+    assert!((r.composite[0] - 10.0 / 3.0).abs() < 1e-11);
+}
+
+#[test]
+fn comp_extreme_p_slope_stable() {
+    // Re-review regression: with slopes (1e308, 1e307) and p = 1e308,
+    // x = p ln(a) overflows to inf; the previous form computed inf/p = inf
+    // and collapsed both factors to 0, tripping the denominator guard.
+    // Mathematically (1 + a^p)^(-1/p) -> 1/a here, so factors (1e-308,
+    // 1e-307) normalize to W = (1/11, 10/11). Asserts read crate outputs.
+    let r = composite_linking(
+        &[vec![0.0], vec![11.0]],
+        &[1.0, 1.0],
+        Some(&[1e308, 1e307]),
+        1e308,
+    )
+    .unwrap();
+    assert!(
+        (r.adjusted_weights[0] - 1.0 / 11.0).abs() < 1e-12,
+        "W0 {} != 1/11",
+        r.adjusted_weights[0]
+    );
+    assert!((r.adjusted_weights[1] - 10.0 / 11.0).abs() < 1e-12);
+    assert!((r.composite[0] - 10.0).abs() < 1e-10);
+}
