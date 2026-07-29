@@ -8157,6 +8157,105 @@ class TestPhiLambda:
         with pytest.raises(ValueError):
             phi_lambda(np.array([[1.0, np.nan], [0.0, 1.0]]), 0.5, n_i_prime=[2])
 
+class TestLivingston:
+    def test_fixture_a_exact(self):
+        # Oracle pins (livingston_oracle.py, exact Fraction): k2 = 5/6,
+        # SB(2) = 10/11; asserts read wrapper outputs from the Rust core.
+        import numpy as np
+
+        from fast_mlsirm import livingston_k2
+
+        r = livingston_k2(np.array([2.0, 4.0, 4.0, 6.0]), 2.0, 0.5, [1.0, 2.0])
+        assert abs(r.mean - 4.0) < 1e-15
+        assert abs(r.var - 2.0) < 1e-15
+        assert abs(r.msd - 6.0) < 1e-15
+        assert abs(r.k2[0] - 5.0 / 6.0) < 1e-15
+        assert abs(r.k2[1] - 10.0 / 11.0) < 1e-15
+        # Equality anchor: cut at the mean gives k2 == rho2.
+        at_mean = livingston_k2(np.array([2.0, 4.0, 4.0, 6.0]), 4.0, 0.5)
+        assert abs(at_mean.k2[0] - 0.5) < 1e-15
+
+    def test_correlation_sign_flip_and_asymmetric(self):
+        import math
+
+        import numpy as np
+
+        from fast_mlsirm import livingston_correlation
+
+        # Norm rho = -1 but k = +5/7 (oracle fixture B).
+        k = livingston_correlation(
+            np.array([1.0, 2.0, 3.0]), np.array([3.0, 2.0, 1.0]), 0.0, 0.0
+        )
+        assert abs(k - 5.0 / 7.0) < 1e-15
+        # Asymmetric offsets (oracle fixture E): k = 22/(7 sqrt(10)).
+        ke = livingston_correlation(
+            np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.0, 1.0
+        )
+        assert abs(ke - 22.0 / (7.0 * math.sqrt(10.0))) < 1e-15
+
+    def test_error_contract_and_nan(self):
+        import math
+
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import livingston_correlation, livingston_k2
+
+        x = np.array([2.0, 4.0, 4.0, 6.0])
+        with pytest.raises(ValueError):
+            livingston_k2(x.astype(complex), 2.0, 0.5)
+        with pytest.raises(ValueError):
+            livingston_k2(np.array(["a", "b"], dtype=object), 2.0, 0.5)
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 1.5)
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 0.5, [])
+        with pytest.raises(ValueError):
+            livingston_k2(x, 2.0, 0.5, [0.0])
+        with pytest.raises(ValueError):
+            livingston_correlation(x.astype(complex), x, 0.0, 0.0)
+        with pytest.raises(ValueError):
+            livingston_correlation(x, x[:2], 0.0, 0.0)
+        # NaN only in the exact degenerate case (var 0 AND mean == cut).
+        const = np.array([3.0, 3.0, 3.0])
+        assert math.isnan(livingston_k2(const, 3.0, 0.5).k2[0])
+        assert livingston_k2(const, 1.0, 0.0).k2[0] == 1.0
+        assert math.isnan(livingston_correlation(const, x[:3], 3.0, 0.0))
+
+    def test_review_regressions(self):
+        """Regression pins for impl-review findings: element-wise degenerate
+        detection at a non-representable decimal cut, overflow limit for
+        k^2, overflow error for the correlation, and non-None __doc__.
+
+        Every assert reads crate values via the wrappers; killed mutants:
+        removing the element-wise all-equal check (first assert), removing
+        the off2-overflow limit branch (second), removing the overflow Err
+        (third)."""
+        import math
+
+        import numpy as np
+        import pytest
+
+        import fast_mlsirm as fm
+        from fast_mlsirm import livingston_correlation, livingston_k2
+
+        const = np.array([0.1, 0.1, 0.1])
+        assert math.isnan(livingston_k2(const, 0.1, 0.5).k2[0])
+        assert math.isnan(
+            livingston_correlation(const, np.array([1.0, 2.0, 3.0]), 0.1, 0.0)
+        )
+        x = np.array([1.0, 2.0, 3.0])
+        res = livingston_k2(x, 1e308, 0.5, [1.0, 2.0])
+        assert res.k2[0] == 1.0
+        assert res.k2[1] == 1.0
+        with pytest.raises((ValueError, RuntimeError)):
+            livingston_correlation(x, x, 1e308, 0.0)
+        assert fm.livingston_k2.__doc__ is not None
+        assert "References" in fm.livingston_k2.__doc__
+        assert fm.livingston_correlation.__doc__ is not None
+        assert "References" in fm.livingston_correlation.__doc__
+
+
 class TestSubkoviak:
     def test_table1_alpha_supplied_exact(self):
         # Oracle pins (subkoviak_oracle.py, exact Fraction); asserts read
@@ -8207,3 +8306,236 @@ class TestSubkoviak:
             subkoviak_agreement(x, 5, [4], alpha=1.5)
         with pytest.raises(ValueError):
             subkoviak_agreement(np.array([3.0, 3.0, 3.0]), 5, [4])
+
+class TestWoodruffSawyer:
+    """Woodruff & Sawyer (1988, ERIC ED292877) pass-fail reliability.
+
+    Every assert reads values returned by the crate through the Python
+    wrapper (WoodruffSawyerResult fields); expected values from the
+    exact-Fraction / mpmath session oracle. Rust-side tests carry the
+    mutation-kill provenance (MU1-MU6 all EXECUTED and killed).
+    """
+
+    def test_sb_fixture_a_exact(self):
+        from fast_mlsirm import woodruff_sawyer_sb
+
+        r = woodruff_sawyer_sb([2, 1, 3, 10])
+        assert abs(r.pass_rate - 0.75) < 1e-15
+        assert abs(r.phi_half - 1 / 3) < 1e-15
+        assert abs(r.theta_half - 0.75) < 1e-15
+        assert abs(r.phi - 0.5) < 1e-15
+        assert abs(r.theta - 13 / 16) < 1e-15
+        assert abs(r.pi00 - 5 / 32) < 1e-15
+        assert abs(r.pi01 - 3 / 32) < 1e-15
+        assert abs(r.pi11 - 21 / 32) < 1e-15
+
+    def test_normal_orthant_and_pins(self):
+        import math
+
+        from fast_mlsirm import woodruff_sawyer_normal
+
+        r = woodruff_sawyer_normal(0.0, 1.0, 0.0, 1 / 3)
+        assert abs(r.pi00 - 1 / 3) < 1e-6
+        assert abs(r.phi - 1 / 3) < 1e-6
+        assert math.isnan(r.phi_half) and math.isnan(r.theta_half)
+        n = woodruff_sawyer_normal(100.0, 15.0, 85.0, 0.6)
+        assert abs(n.theta - 0.86360339357711063) < 1e-6
+        assert abs(n.phi - 0.48908915212993364) < 1e-6
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import woodruff_sawyer_normal, woodruff_sawyer_sb
+
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb([1, 2, 3])
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb([1, -1, 2, 3])
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb(np.array([1 + 2j, 0, 0, 1]))
+        with pytest.raises(ValueError):
+            woodruff_sawyer_sb(np.array([object(), 1, 1, 1], dtype=object))
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 0.0, 0.0, 0.5)
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 1.0, 0.0, -0.5)
+        with pytest.raises(ValueError):
+            woodruff_sawyer_normal(0.0, 1.0, 0.0, 1.0)
+
+class TestCircleArc:
+    def test_paper_method1(self):
+        from fast_mlsirm import circle_arc_equate
+
+        r = circle_arc_equate(
+            [5.0, 12.0, 20.0, 10.0], (5.0, 5.0), (12.0, 14.0), (20.0, 20.0),
+            method="arc1",
+        )
+        # crate-returned circle: paper worked example center (40, -15), r^2=1625
+        assert r.xc == 40.0 and r.yc == -15.0 and r.r2 == 1625.0
+        assert not r.collinear and r.middle == (12.0, 14.0)
+        assert r.equated[0] == 5.0 and r.equated[1] == 14.0 and r.equated[2] == 20.0
+        assert abs(r.equated[3] - 11.925824035672519) < 1e-12
+
+    def test_paper_method2_and_anchor(self):
+        from fast_mlsirm import circle_arc_equate, circle_arc_middle_anchor
+
+        r = circle_arc_equate(
+            [10.0], (5.0, 5.0), (12.0, 14.0), (20.0, 20.0), method="arc2",
+        )
+        assert r.xc == 12.5 and r.yc == -13.0 and r.r2 == 225.25
+        assert abs(r.equated[0] - 11.798648586948742) < 1e-12
+        x2, y2 = circle_arc_middle_anchor(73.62, 30.60, 77.47, 10.83, 30.46, 5.09)
+        assert x2 == 73.62  # Table 1 new-form test mean m_XA
+        assert abs(y2 - 77.76787819253438) < 1e-12  # paper Table 1 pin
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import circle_arc_equate, circle_arc_middle_anchor
+
+        with pytest.raises(ValueError):
+            circle_arc_equate([1.0], (0.0, 0.0), (4.0, 2.0), (10.0, 10.0), method="nope")
+        with pytest.raises(ValueError):
+            circle_arc_equate([-1.0], (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate(np.array([1 + 2j]), (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate(np.array(["a"], dtype=object), (0.0, 0.0), (4.0, 2.0), (10.0, 10.0))
+        with pytest.raises(ValueError):
+            circle_arc_equate([1.0], (0.0, 0.0), 4.0, (10.0, 10.0))
+        with pytest.raises(ValueError):
+            # mixed-branch triple: no single-branch arc through all three
+            circle_arc_equate([1.0], (0.0, 0.0), (1.0, 3.0), (2.0, 1.0))
+        with pytest.raises(ValueError):
+            circle_arc_middle_anchor(1.0, 1.0, 1.0, 0.0, 1.0, 1.0)
+
+class TestNominalWeights:
+    """Nominal weights mean equating (Babcock et al., 2012; Albano, 2016).
+
+    Oracle: exact-Fraction hand computation of Albano (2016) eqs. 37-40/42/10
+    plus an executed cross-check against the method authors' R package
+    equate 2.0.8. Every assert reads crate outputs through the wrapper.
+    """
+
+    XT = [10.0, 12.0, 14.0, 16.0]
+    XA = [4.0, 5.0, 5.0, 6.0]
+    YT = [8.0, 9.0, 11.0, 12.0]
+    YA = [3.0, 4.0, 4.0, 5.0]
+
+    def test_fixture_a_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        r = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=1.0
+        )
+        assert r.intercept == -0.5
+        assert r.slope == 1.0
+        assert r.x_scores.shape == (21,)
+        assert r.y_equivalents[0] == -0.5
+        assert r.y_equivalents[20] == 19.5
+        # equal gammas: intercept is w1-invariant
+        half = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=0.5
+        )
+        assert half.intercept == -0.5
+        assert np.isfinite(r.moments["sigma_x"]) and r.moments["sigma_x"] > 0
+
+    def test_fixture_b_exact(self):
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        r = nominal_weights_mean_equate(
+            self.XT, self.XA, self.YT, self.YA, 20, 30, 10, w1=0.25
+        )
+        assert r.intercept == -0.75
+        assert r.moments["mu_x"] == 11.5
+        assert r.moments["mu_y"] == 10.75
+        assert r.moments["sigma_x"] == (23.0 / 4.0) ** 0.5
+        assert r.moments["sigma_y"] == (67.0 / 16.0) ** 0.5
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import nominal_weights_mean_equate
+
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA, self.YT, self.YA, 0, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA, self.YT, self.YA, 20, 20, 8, w1=1.5
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                self.XT, self.XA[:3], self.YT, self.YA, 20, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                np.array(self.XT) * 1j, self.XA, self.YT, self.YA, 20, 20, 8
+            )
+        with pytest.raises(ValueError):
+            nominal_weights_mean_equate(
+                np.array(["a"], dtype=object), ["b"], self.YT, self.YA, 20, 20, 8
+            )
+
+class TestCompositeLinking:
+    def test_fixture_a_exact(self):
+        # Oracle pins (files/composite_oracle.py): identity + 3x-2 over
+        # [0,1,2,10], wc=(1/2,1/2), slopes (1,3), p=1 -> W=(2/3,1/3),
+        # composite (5/3)x - 2/3 = [-2/3,1,8/3,16]. Asserts read crate dict.
+        import numpy as np
+        from fast_mlsirm import composite_linking
+
+        grid = np.array([0.0, 1.0, 2.0, 10.0])
+        r = composite_linking(
+            [grid, 3.0 * grid - 2.0], [0.5, 0.5], slopes=[1.0, 3.0], p=1.0
+        )
+        assert r["symmetric"] is True
+        np.testing.assert_allclose(
+            r["adjusted_weights"], [2.0 / 3.0, 1.0 / 3.0], rtol=0, atol=1e-15
+        )
+        np.testing.assert_allclose(
+            r["composite"], [-2.0 / 3.0, 1.0, 8.0 / 3.0, 16.0], rtol=0, atol=1e-14
+        )
+
+    def test_raw_weights_nonsymmetric(self):
+        # Non-symmetric path: W=(1/2,1/2), composite [-1,1,3,19]; scale
+        # invariance of the normalization checked via weights (2,2).
+        import numpy as np
+        from fast_mlsirm import composite_linking
+
+        grid = np.array([0.0, 1.0, 2.0, 10.0])
+        tabs = [grid, 3.0 * grid - 2.0]
+        r = composite_linking(tabs, [0.5, 0.5])
+        assert r["symmetric"] is False
+        np.testing.assert_allclose(
+            r["composite"], [-1.0, 1.0, 3.0, 19.0], rtol=0, atol=1e-14
+        )
+        r2 = composite_linking(tabs, [2.0, 2.0])
+        np.testing.assert_allclose(
+            r2["composite"], r["composite"], rtol=0, atol=1e-15
+        )
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import composite_linking
+
+        t = np.array([1.0, 2.0])
+        with pytest.raises(ValueError):
+            composite_linking([], [])
+        with pytest.raises(ValueError):
+            composite_linking([t], [-1.0])
+        with pytest.raises(ValueError):
+            composite_linking([t], [1.0], slopes=[0.0])
+        with pytest.raises(ValueError):
+            composite_linking([t], [1.0], slopes=[1.0], p=0.5)
+        with pytest.raises(ValueError):
+            composite_linking([t + 1j], [1.0])
+        with pytest.raises(ValueError):
+            composite_linking([np.array([1.0, "a"], dtype=object)], [1.0])

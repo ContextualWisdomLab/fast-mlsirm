@@ -123,6 +123,97 @@
 
 ### Added
 
+- **Composite linking (Holland & Strawderman, 2011; as cited by Albano,
+  2016, JSS 74(8), eqs. 31-32)** (`fast_mlsirm.composite_linking`; in Rust
+  `mlsirm_core::equating::composite_linking`): weighted average of H
+  component conversion tables over a shared x grid. With per-component
+  linear slopes supplied, applies the symmetric Holland-Strawderman weight
+  adjustment `W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)` (eq. 32), which for
+  linear components makes the composite of forward links the exact
+  functional inverse of the composite of inverse links (pinned by an exact
+  round-trip test). Without slopes, raw weights are normalized
+  (`W_h = w_h / sum(w)`) — a documented deviation from the R `equate`
+  package's un-normalized non-symmetric path (identical iff weights sum
+  to 1). Exact-fraction oracle pins, 5 executed mutation kills (dropped
+  adjustment, exponent sign flip, skipped normalization, `a^p → a*p` at
+  p=2, weight/table zip reversal), and a 500-rep Monte-Carlo round-trip
+  invariant (`#[ignore]`).
+- **Nominal weights mean equating (Babcock, Albano, & Raymond, 2012; as
+  restated by Albano, 2016, JSS 74(8), eq. 42)**
+  (`fast_mlsirm.nominal_weights_mean_equate`; in Rust
+  `mlsirm_core::equating::nominal_weights_mean_equate`): NEAT-design mean
+  equating for very small samples — the Tucker regression slopes are
+  replaced by the nominal-weights effective-length ratios
+  `gamma1 = k_x/k_v`, `gamma2 = k_y/k_v` (item counts), synthetic means
+  follow Albano (2016) eqs. 37-38, and the conversion is the slope-1 mean
+  shift `yx(x) = x + (mu_sY - mu_sX)` (eq. 10). Synthetic variances
+  (eqs. 39-40, N-denominator moment convention, not the R package's N-1
+  sample variances) are reported but do not enter the conversion. Oracle:
+  exact-Fraction hand computation plus an executed cross-check against the
+  method authors' R package `equate` 2.0.8 (KBneat intercept
+  0.5833490108414594). The 2012 EPM article is paywalled and was NOT read;
+  the method is implemented from Albano (2016) and the authors' own R
+  source, both read. Five mutation kills executed (gamma swap, w1/w2 swap,
+  anchor-mean-difference sign, non-unit slope, dropped w1*w2*g^2*d^2
+  variance term).
+- **Circle-arc small-sample equating (Livingston & Kim, 2008, ETS
+  RR-08-39)** (`fast_mlsirm.circle_arc_equate`,
+  `fast_mlsirm.circle_arc_middle_anchor`; in Rust
+  `mlsirm_core::equating::{circle_arc_equate, circle_arc_middle_anchor}`):
+  constrains the equating curve through two prespecified end-points and an
+  empirically estimated middle point. Method 1 fits a circle arc directly
+  through the three points (circumcenter eqs. 3-4, radius eq. 5, arc
+  branch chosen by the middle point's position relative to the center);
+  Method 2 (the source's most accurate small-sample method) decomposes the
+  curve into the linear component `L(x)` through the end-points plus an
+  arc fitted to the transformed points `y* = y - L(x)`. Collinear points
+  degenerate to the line. `circle_arc_middle_anchor` computes the
+  anchor-design middle point `y2 = m_YB + (s_YB/s_VB)(m_VA - m_VB)`
+  (eq. 9). Reduced scope: scores must lie within the end-points (the
+  source's below-lower-endpoint linear extension is not implemented).
+  Pinned by the paper's worked example (center `(40, -15)`, `r^2 = 1625`;
+  Method-2 transformed center `(12.5, -13)`, `r^2 = 901/4`), a Table-1
+  anchor pin, an exact minus-branch fixture, and a 500-rep randomized
+  anchor-recovery check, all validated against an exact-Fraction oracle.
+
+- **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
+  1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
+  `fast_mlsirm.woodruff_sawyer_normal`; in Rust
+  `mlsirm_core::classification::{woodruff_sawyer_sb,
+  woodruff_sawyer_normal}`): estimates the full-test agreement `theta*`
+  and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
+  table) from a single administration split into parallel halves. The SB
+  method symmetrizes the half-test 2x2 table's off-diagonal, computes
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
+  `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
+  (eq. 8); the normal method steps up the half-test correlation
+  (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and
+  evaluates the joint fail-fail cell with the crate's BVN quadrature.
+  Pinned by exact rational fixtures, a Sheppard-orthant exact anchor, and
+  the paper's Table 4 values; six mutation kills executed. Per the source
+  (pp. 9-10), `phi*` from the SB method is positively biased when the
+  halves are not strictly parallel.
+- **Livingston's criterion-referenced reliability k^2 and correlation
+  k(X, Y) (Livingston, 1972, AERA paper, ERIC ED069624)**
+  (`fast_mlsirm.livingston_k2`, `fast_mlsirm.livingston_correlation`; in
+  Rust `mlsirm_core::classification::{livingston_k2,
+  livingston_correlation}`): the classical-test-theory analogues of
+  reliability and correlation with moments taken about a criterion
+  (cut) score instead of the mean, `D^2(X) = var + (mean - cut)^2`,
+  `k^2 = (rho^2 var + (mean-cut)^2) / D^2(X)`, and
+  `k(X,Y) = D(X,Y)/sqrt(D^2(X) D^2(Y))`, with Spearman-Brown test-length
+  projections applied to `k^2` itself. The conversion form is an
+  algebraic reconstruction from the source's Table 1 expectation
+  definitions; `k^2` is NaN only in the exact degenerate case (scores all
+  exactly equal to the cut, detected element-wise, or `var == 0 &&
+  mean == cut`), and returns the formula limit 1 when the squared
+  criterion offset overflows f64 with finite variance (the correlation
+  rejects that overflow with an error); fractional Spearman-Brown lengths are a
+  disclosed continuous extrapolation. Exact-fraction anchors (k2 = 5/6,
+  SB(2) = 10/11, sign-flip k = 5/7 with norm rho = -1, asymmetric-offset
+  k = 22/(7 sqrt(10))), equality-iff-mean=cut and zero-variance property
+  pins, error contracts, and a 500-rep Monte Carlo recovery check
+  (`#[ignore]`).
 - **Brennan-Kane index of dependability Phi(lambda) for mastery tests
   (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
   eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust

@@ -3,10 +3,14 @@ use std::collections::HashMap;
 use mlsirm_core::agreement::validate_scoring as core_validate_scoring;
 use mlsirm_core::equating::{
     analytic_see as core_analytic_see, bootstrap_see as core_bootstrap_see,
-    equate_eg as core_equate_eg, equate_eg_ext as core_equate_eg_ext,
-    equate_neat as core_equate_neat, equate_neat_linear as core_equate_neat_linear,
-    loglinear_smooth as core_loglinear_smooth, AnchorKind, Continuization, EgSmoothOptions,
-    EquateMethod, EquateResult, NeatLinearMethod, NeatMethod, SeeResult,
+    circle_arc_equate as core_circle_arc_equate,
+    circle_arc_middle_anchor as core_circle_arc_middle_anchor,
+    composite_linking as core_composite_linking, equate_eg as core_equate_eg,
+    equate_eg_ext as core_equate_eg_ext, equate_neat as core_equate_neat,
+    equate_neat_linear as core_equate_neat_linear, loglinear_smooth as core_loglinear_smooth,
+    nominal_weights_mean_equate as core_nominal_weights_mean_equate, AnchorKind, CircleArcMethod,
+    Continuization, EgSmoothOptions, EquateMethod, EquateResult, NeatLinearMethod, NeatMethod,
+    SeeResult,
 };
 use mlsirm_core::fitstats::{
     infit_outfit as core_infit_outfit, leniency_residuals as core_leniency_residuals,
@@ -29,9 +33,13 @@ use mlsirm_core::cdm::{
 use mlsirm_core::classification::{
     hanson_brennan as core_hanson_brennan,
     hanson_brennan_from_params as core_hanson_brennan_from_params,
-    lee_classification as core_lee_classification, livingston_lewis as core_livingston_lewis,
-    rudner_classification as core_rudner_classification,
-    subkoviak_agreement as core_subkoviak_agreement, ClassificationResult, HansonBrennanResult,
+    lee_classification as core_lee_classification,
+    livingston_correlation as core_livingston_correlation, livingston_k2 as core_livingston_k2,
+    livingston_lewis as core_livingston_lewis, rudner_classification as core_rudner_classification,
+    subkoviak_agreement as core_subkoviak_agreement,
+    woodruff_sawyer_normal as core_woodruff_sawyer_normal,
+    woodruff_sawyer_sb as core_woodruff_sawyer_sb, ClassificationResult, HansonBrennanResult,
+    WoodruffSawyerResult,
 };
 use mlsirm_core::crm::fit_crm as core_fit_crm;
 use mlsirm_core::detect::detect_analysis as core_detect_analysis;
@@ -2392,6 +2400,81 @@ fn subkoviak_agreement(
     out.set_item("chance_agreement", res.chance_agreement)?;
     out.set_item("kappa", res.kappa)?;
     Ok(out.into())
+}
+
+/// Livingston (1972, ERIC ED069624) criterion-referenced reliability `k^2`
+/// with Spearman-Brown projections (`mlsirm_core::classification`).
+#[pyfunction]
+fn livingston_k2(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    cut: f64,
+    reliability: f64,
+    n_lengths: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_livingston_k2(scores.as_slice()?, cut, reliability, n_lengths.as_slice()?)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("mean", res.mean)?;
+    out.set_item("var", res.var)?;
+    out.set_item("msd", res.msd)?;
+    out.set_item("k2", PyArray1::from_slice(py, &res.k2))?;
+    Ok(out.into())
+}
+
+/// Livingston (1972, ERIC ED069624) criterion-referenced correlation
+/// `k(X, Y)` (`mlsirm_core::classification`).
+#[pyfunction]
+fn livingston_correlation(
+    x: PyReadonlyArray1<'_, f64>,
+    y: PyReadonlyArray1<'_, f64>,
+    cut_x: f64,
+    cut_y: f64,
+) -> PyResult<f64> {
+    core_livingston_correlation(x.as_slice()?, y.as_slice()?, cut_x, cut_y)
+        .map_err(PyValueError::new_err)
+}
+
+fn ws_result_to_dict(
+    py: Python<'_>,
+    res: WoodruffSawyerResult,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("pass_rate", res.pass_rate)?;
+    out.set_item("phi_half", res.phi_half)?;
+    out.set_item("theta_half", res.theta_half)?;
+    out.set_item("phi", res.phi)?;
+    out.set_item("theta", res.theta)?;
+    out.set_item("pi00", res.pi00)?;
+    out.set_item("pi01", res.pi01)?;
+    out.set_item("pi11", res.pi11)?;
+    Ok(out.into())
+}
+
+/// Woodruff & Sawyer (1988, ERIC ED292877) split-half / Spearman-Brown
+/// pass-fail reliability from a 2x2 half-test table
+/// (`mlsirm_core::classification`).
+#[pyfunction]
+fn woodruff_sawyer_sb(
+    py: Python<'_>,
+    counts: PyReadonlyArray1<'_, f64>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_woodruff_sawyer_sb(counts.as_slice()?).map_err(PyValueError::new_err)?;
+    ws_result_to_dict(py, res)
+}
+
+/// Woodruff & Sawyer (1988, ERIC ED292877) bivariate-normal pass-fail
+/// reliability from a half-test correlation (`mlsirm_core::classification`).
+#[pyfunction]
+fn woodruff_sawyer_normal(
+    py: Python<'_>,
+    mean: f64,
+    sd: f64,
+    cut: f64,
+    r_half: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_woodruff_sawyer_normal(mean, sd, cut, r_half).map_err(PyValueError::new_err)?;
+    ws_result_to_dict(py, res)
 }
 
 /// One-facet crossed `p x i` generalizability analysis
@@ -4928,6 +5011,116 @@ fn analytic_see(
     see_result_dict(py, res)
 }
 
+/// Circle-arc small-sample observed-score equating (Rust compute path;
+/// Livingston & Kim, 2008, ETS RR-08-39). Method "1"/"arc1" fits the arc
+/// through the raw points; "2"/"arc2" decomposes into a linear component
+/// plus an arc on the transformed points. Scores must lie in [x1, x3]
+/// (the source's below-endpoint linear extension is not implemented).
+#[pyfunction]
+#[pyo3(signature = (scores, low, middle, high, method))]
+fn circle_arc_equate(
+    py: Python<'_>,
+    scores: PyReadonlyArray1<'_, f64>,
+    low: (f64, f64),
+    middle: (f64, f64),
+    high: (f64, f64),
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let m = CircleArcMethod::parse(method)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown circle-arc method: {method}")))?;
+    let res = core_circle_arc_equate(scores.as_slice()?, low, middle, high, m)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("equated", PyArray1::from_slice(py, &res.equated))?;
+    d.set_item("xc", res.xc)?;
+    d.set_item("yc", res.yc)?;
+    d.set_item("r2", res.r2)?;
+    d.set_item("collinear", res.collinear)?;
+    d.set_item("middle", res.middle)?;
+    Ok(d.into())
+}
+
+/// Anchor-design middle point for circle-arc equating (Livingston & Kim,
+/// 2008, eq. 9): returns (x2, y2) with x2 = m_xa and
+/// y2 = m_yb + (s_yb / s_vb) * (m_va - m_vb).
+#[pyfunction]
+#[pyo3(signature = (m_xa, m_va, m_yb, s_yb, m_vb, s_vb))]
+fn circle_arc_middle_anchor(
+    m_xa: f64,
+    m_va: f64,
+    m_yb: f64,
+    s_yb: f64,
+    m_vb: f64,
+    s_vb: f64,
+) -> PyResult<(f64, f64)> {
+    core_circle_arc_middle_anchor(m_xa, m_va, m_yb, s_yb, m_vb, s_vb).map_err(PyValueError::new_err)
+}
+
+/// Nominal weights mean equating for the NEAT design (Rust compute path;
+/// Babcock, Albano, & Raymond, 2012, as restated by Albano, 2016, eq. 42).
+/// Slope is exactly 1; the intercept is the synthetic-mean difference with
+/// nominal-weights gammas k_x/k_v and k_y/k_v.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (x_total, x_anchor, y_total, y_anchor, k_x, k_y, k_v, w1 = 0.5))]
+fn nominal_weights_mean_equate(
+    py: Python<'_>,
+    x_total: PyReadonlyArray1<'_, f64>,
+    x_anchor: PyReadonlyArray1<'_, f64>,
+    y_total: PyReadonlyArray1<'_, f64>,
+    y_anchor: PyReadonlyArray1<'_, f64>,
+    k_x: usize,
+    k_y: usize,
+    k_v: usize,
+    w1: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_nominal_weights_mean_equate(
+        x_total.as_slice()?,
+        x_anchor.as_slice()?,
+        y_total.as_slice()?,
+        y_anchor.as_slice()?,
+        k_x,
+        k_y,
+        k_v,
+        w1,
+    )
+    .map_err(PyValueError::new_err)?;
+    equate_result_dict(py, res)
+}
+
+/// Composite linking of component conversion tables (Holland & Strawderman,
+/// 2011, as cited by Albano, 2016, eqs. 31-32). With `slopes` supplied the
+/// symmetric eq.-32 weight adjustment is applied; otherwise weights are
+/// normalized raw weights (documented deviation from R's un-normalized path).
+#[pyfunction]
+#[pyo3(signature = (tables, weights, slopes = None, p = 1.0))]
+fn composite_linking(
+    py: Python<'_>,
+    tables: Vec<PyReadonlyArray1<'_, f64>>,
+    weights: PyReadonlyArray1<'_, f64>,
+    slopes: Option<PyReadonlyArray1<'_, f64>>,
+    p: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let tabs: Vec<Vec<f64>> = tables
+        .iter()
+        .map(|t| t.as_slice().map(|s| s.to_vec()))
+        .collect::<Result<_, _>>()?;
+    let slope_vec = match &slopes {
+        Some(s) => Some(s.as_slice()?.to_vec()),
+        None => None,
+    };
+    let res = core_composite_linking(&tabs, weights.as_slice()?, slope_vec.as_deref(), p)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("composite", PyArray1::from_slice(py, &res.composite))?;
+    d.set_item(
+        "adjusted_weights",
+        PyArray1::from_slice(py, &res.adjusted_weights),
+    )?;
+    d.set_item("symmetric", res.symmetric)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7190,6 +7383,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hanson_brennan, m)?)?;
     m.add_function(wrap_pyfunction!(hanson_brennan_from_params, m)?)?;
     m.add_function(wrap_pyfunction!(subkoviak_agreement, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_k2, m)?)?;
+    m.add_function(wrap_pyfunction!(livingston_correlation, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_sb, m)?)?;
+    m.add_function(wrap_pyfunction!(woodruff_sawyer_normal, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pi, m)?)?;
     m.add_function(wrap_pyfunction!(phi_lambda, m)?)?;
     m.add_function(wrap_pyfunction!(gtheory_pio, m)?)?;
@@ -7257,6 +7454,10 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bootstrap_see, m)?)?;
     m.add_function(wrap_pyfunction!(analytic_see, m)?)?;
     m.add_function(wrap_pyfunction!(equate_observed_scores_ext, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
+    m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
+    m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
     m.add_function(wrap_pyfunction!(infit_outfit_stat, m)?)?;
