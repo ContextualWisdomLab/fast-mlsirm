@@ -68,6 +68,53 @@ def test_fit_handles_missing_by_design_axes_and_extreme_scores():
     assert np.all(np.isfinite(result.params.theta))
 
 
+def test_extreme_score_patterns_stay_finite_across_backends():
+    """Zero-score/perfect-score persons and all-fail/all-pass items stay finite.
+
+    Unpenalised maximum-likelihood ability and item estimates diverge to
+    +/-infinity for a zero (all-wrong) or perfect (all-right) response pattern,
+    and item difficulties are not identified when every examinee fails or passes
+    an item (Warm, 1989, Weighted likelihood estimation of ability in item
+    response theory, Psychometrika, 54(3), 427-450; Bock & Aitkin, 1981,
+    Marginal maximum likelihood estimation of item parameters, Psychometrika,
+    46(4), 443-459). This package's regularised MAP/penalised objective must
+    keep every estimate finite under all four degenerate patterns at once, and
+    the Rust and NumPy backends must agree, so a simple-structure fit never
+    returns NaN/inf on real 0-of-N or N-of-N score sheets.
+    """
+    data = simulate(
+        MLS2PLMConfig(n_persons=60, n_dims=1, items_per_dim=8, latent_dim=1, seed=1)
+    )
+    responses = np.asarray(data.Y, dtype=float).copy()
+    responses[0, :] = 0.0  # zero-score examinee (all wrong)
+    responses[1, :] = 1.0  # perfect-score examinee (all right)
+    responses[:, 0] = 0.0  # item nobody answers correctly
+    responses[:, 1] = 1.0  # item everybody answers correctly
+
+    fitted = {}
+    for backend in ("rust", "numpy"):
+        result = fit(
+            responses,
+            data.factor_id,
+            config=FitConfig(model="MLS2PLM", max_iter=40, latent_dim=1, seed=1, backend=backend),
+        )
+        assert np.isfinite(result.objective), backend
+        assert np.all(np.isfinite(result.params.theta)), backend
+        assert np.all(np.isfinite(result.params.alpha)), backend
+        assert np.all(np.isfinite(result.params.b)), backend
+        fitted[backend] = result
+
+    assert np.allclose(
+        fitted["rust"].params.theta, fitted["numpy"].params.theta, atol=1e-5, rtol=1e-5
+    )
+    assert np.allclose(
+        fitted["rust"].params.b, fitted["numpy"].params.b, atol=1e-5, rtol=1e-5
+    )
+    assert np.allclose(
+        fitted["rust"].params.alpha, fitted["numpy"].params.alpha, atol=1e-5, rtol=1e-5
+    )
+
+
 def test_true_parameters_reproduce_simulation_probabilities():
     data = simulate(MLS2PLMConfig(n_persons=8, n_dims=2, items_per_dim=2, latent_dim=2, seed=9))
 
