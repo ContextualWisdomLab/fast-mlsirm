@@ -1,8 +1,2538 @@
 # Changelog
 
+- Fixed-bank item/test information and CAT information selection now default
+  to a Rust wgpu kernel, retain an explicit Rust f64 CPU path, and accept the
+  same `device="auto"|"gpu"|"cpu"` contract as EAP serving. Non-finite f32
+  results are discarded in favor of the finite CPU reference.
+- Plausible-value posterior reduction and seeded sampling now use the same
+  GPU-preferred device contract. Unsupported GPU sizes or results fall back to
+  a deterministic Rust f64 implementation with fixed contiguous CPU shards.
+- EAPsum table recursion, posterior moments, and respondent lookup now remain
+  in Rust and prefer wgpu. Explicit CPU execution retains the f64 reference;
+  unavailable or unsupported GPU work falls back to fixed contiguous Rust CPU
+  workers instead of performing respondent score aggregation in Python.
+
 ## Unreleased
 
 ### Changed
+
+- Rust EAP scoring now defaults to GPU-preferred `auto` execution in the core,
+  PyO3 binding, and serving API. The f64 CPU reduction remains available via
+  `device="cpu"`; an explicit unavailable `device="gpu"` request now warns
+  before falling back instead of silently running on the CPU. Serving EAP now
+  requires the compiled Rust core instead of silently bypassing device policy
+  through the NumPy reference implementation.
+
+### Security
+
+- **Input-validation hardening at the untrusted boundaries** (Strix scan
+  findings on PR #160). All are denial-of-service / data-poisoning guards for
+  a library that may be exposed as a scoring/fitting service:
+  - Population labels (`group_id`/`cluster_id`) are now validated and
+    **compacted to contiguous ids** in `fit.py` and `inference.py`, so the
+    group/cluster count is the number of *distinct* labels (≤ `n_persons`)
+    rather than `max(label)+1` — sparse ids like `[0, 1e9]` no longer force
+    billion-row population allocations. Negative, non-integer, non-finite, and
+    wrong-length labels are rejected.
+  - `FitConfig.validate()` bounds `latent_dim` (≤ `MAX_LATENT_DIM = 8`),
+    `xi_points` (≤ `1_000_000`), `max_iter` (≤ `100_000`), `n_restarts`
+    (≤ `1_000`), and `m_steps` (≤ `1_000`), and rejects **non-finite**
+    `learning_rate`/`init_gamma`/`eps_distance`/`tolerance`/`gradient_clip`
+    (a bare `x <= 0` comparison lets `NaN`/`Inf` through) — blocking both
+    memory/CPU exhaustion from extreme sizes and NaN-poisoned fits.
+  - `plausible_values` bounds `n_draws` (1..`MAX_DRAWS = 100_000`), and
+    `serving_prior` bounds `n_dims` (1..64) for direct callers.
+  - `load_serving_bundle` parses JSON in **strict mode** (rejects `NaN`/
+    `Infinity` literals) and runs a full `_validate_bundle` structural +
+    finiteness check (consistent `n_items`/`n_dims`/`latent_dim`, bounded
+    sizes, in-range `factor_id`, finite `alpha`/`b`/`zeta`/`tau`/`eps_distance`,
+    supported quadrature); `score_respondents` and `plausible_values` validate
+    the bundle at entry, so oversized dimensions (e.g. `n_items = 1e12`) and
+    non-finite parameters can no longer trigger multi-terabyte allocations or
+    NaN scores.
+  - `plausible_values` now enforces the binary response domain (0/1, finite)
+    that `score_respondents` already required.
+  - `validate_judge` validates judge/human/baseline/subgroup labels (1-D,
+    equal length, finite, integer, `0 ≤ label < k`) **before** the `uint32`
+    conversion, instead of silently truncating floats or wrapping negatives.
+  - Regression tests in `tests/test_security_hardening.py` cover each finding.
+- **Second-pass hardening** (Strix re-scan of PR #160, 11 findings) extends the
+  same DoS/data-poisoning guards to the paper-feature surface added in this PR:
+  - `preprocessing.irtree_expand` bounds the dense expansion
+    (`persons * items * nodes ≤ 50_000_000`) before allocating, and validates
+    `node_dims` (finite, non-negative, integer-valued) before the `int64` cast.
+  - `validation._validate_labels` rejects labels above `uint32` max before the
+    narrowing cast, and `validate_judge` requires the `human_human` baseline to
+    match the paired sample size.
+  - `inference.observed_information` caps the finite-difference Hessian at
+    `5_000` parameters (it is `O(n²)` memory **and** `O(n²)` objective calls),
+    and `oakes_standard_errors` validates `factor_id` (1-D, one-per-item,
+    finite, non-negative, integer) before deriving `n_dims`.
+  - `serving._validate_bundle` rejects tensor Gauss-Hermite grids that would
+    allocate `q_xi ** latent_dim > 1_000_000` points; `estimators.marginal`'s
+    `_xi_grid` carries the same bound for direct callers.
+  - `linking.link_fixed_item_parameters` rejects duplicate/fractional/negative/
+    non-finite anchor indices, non-2-D `theta`, non-finite item parameters, and
+    non-finite computed linking coefficients.
+- **Third-pass hardening** (Strix re-scan of `b5d9d90`, 11 real findings; the
+  12th — "incomplete package release" — was a scanner artifact of its
+  PR-scope-only checkout, verified: every named module exists and
+  `import fast_mlsirm` succeeds) **plus a proactive boundary audit** that found
+  6 more Python issues Strix had not surfaced:
+  - `serving.score_respondents`/`plausible_values` bound the dense respondent
+    matrix (`rows x n_items`); `serving._validate_bundle` now bounds the
+    scoring-table product (`max(n_items, n_dims) x q_theta x q_xi**latent_dim` —
+    a 55+ GB allocation otherwise) and validates the bundle `population` block
+    (`serving_prior` computed `sqrt(1 + sigma_u**2)` on an unvalidated, fully
+    attacker-controlled `sigma_u` → `TypeError`/`OverflowError` crash or silent
+    `Inf`/`NaN` score poisoning).
+  - `linking.link_fixed_item_parameters` range-checks anchor indices on the
+    float **before** the `int64` cast (`uint64` max silently wrapped to `-1`,
+    selecting the last item) and requires a positive linking scale;
+    `linking.irt_link` validates slope/intercept finiteness and slope
+    positivity before the Nelder-Mead core (a `NaN` would panic it).
+  - `validation.validate_judge` bounds the category count `k` (drives a dense
+    `k x k` confusion matrix) and **compacts** sparse `subgroup` labels (the
+    core loops `0..max(label)+1`, an O(4e9) CPU-DoS from one sparse id).
+  - `preprocessing.irtree_expand` switched from a 50M-element ceiling (400 MB,
+    boundary-inclusive) to a 64 MiB byte budget; `config.MLS2PLMConfig.validate`
+    bounds simulation dimensions and the `n_persons x n_items` cell product;
+    `config.FitConfig.validate` bounds aggregate optimizer work
+    (`max_iter x n_restarts`); `estimators.marginal.fit_marginal_numpy` bounds
+    declared population counts (`n_groups`/`n_clusters <= n_persons`) and the
+    EM working set; `inference.observed_information` rejects non-finite `step`;
+    `inference.oakes_standard_errors` and every `fitstats` public entry bound
+    `n_dims` derived from an untrusted `factor_id` (a shared `_validate_factor_id`
+    guard); `fit.py` validates anchor/covariate array shapes and finiteness
+    before the Rust marginal core.
+  - Rust-core backstops for the same audit (defense in depth, active once the
+    extension is rebuilt): `fitstats::s_x2` rejects non-dichotomous observed
+    responses (a non-0/1 value indexed the summed-score table out of bounds →
+    panic); `fitstats::infit_outfit` validates `theta`/`xi` lengths before
+    indexing; `scoring::validate_prior` rejects non-finite prior `mean`/`sd`
+    (a `NaN` `sd` passed the bare `sd <= 0` check).
+- `factor::validate_corr` now rejects off-diagonal correlations outside
+  `[-1, 1]` (impl-review finding): an impossible value like `1e308` passed
+  the old finiteness/symmetry checks and panicked inside the eigen sort
+  instead of returning an error (affected `minres_fa`, `omega_total_1f`,
+  and the new `glb_fa`); regression-tested.
+
+### Added
+
+- **Composite linking (Holland & Strawderman, 2011; as cited by Albano,
+  2016, JSS 74(8), eqs. 31-32)** (`fast_mlsirm.composite_linking`; in Rust
+  `mlsirm_core::equating::composite_linking`): weighted average of H
+  component conversion tables over a shared x grid. With per-component
+  linear slopes supplied, applies the symmetric Holland-Strawderman weight
+  adjustment `W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)` (eq. 32), which for
+  linear components makes the composite of forward links the exact
+  functional inverse of the composite of inverse links (pinned by an exact
+  round-trip test). Without slopes, raw weights are normalized
+  (`W_h = w_h / sum(w)`) — a documented deviation from the R `equate`
+  package's un-normalized non-symmetric path (identical iff weights sum
+  to 1). Exact-fraction oracle pins, 5 executed mutation kills (dropped
+  adjustment, exponent sign flip, skipped normalization, `a^p → a*p` at
+  p=2, weight/table zip reversal), and a 500-rep Monte-Carlo round-trip
+  invariant (`#[ignore]`).
+- **Nominal weights mean equating (Babcock, Albano, & Raymond, 2012; as
+  restated by Albano, 2016, JSS 74(8), eq. 42)**
+  (`fast_mlsirm.nominal_weights_mean_equate`; in Rust
+  `mlsirm_core::equating::nominal_weights_mean_equate`): NEAT-design mean
+  equating for very small samples — the Tucker regression slopes are
+  replaced by the nominal-weights effective-length ratios
+  `gamma1 = k_x/k_v`, `gamma2 = k_y/k_v` (item counts), synthetic means
+  follow Albano (2016) eqs. 37-38, and the conversion is the slope-1 mean
+  shift `yx(x) = x + (mu_sY - mu_sX)` (eq. 10). Synthetic variances
+  (eqs. 39-40, N-denominator moment convention, not the R package's N-1
+  sample variances) are reported but do not enter the conversion. Oracle:
+  exact-Fraction hand computation plus an executed cross-check against the
+  method authors' R package `equate` 2.0.8 (KBneat intercept
+  0.5833490108414594). The 2012 EPM article is paywalled and was NOT read;
+  the method is implemented from Albano (2016) and the authors' own R
+  source, both read. Five mutation kills executed (gamma swap, w1/w2 swap,
+  anchor-mean-difference sign, non-unit slope, dropped w1*w2*g^2*d^2
+  variance term).
+- **Circle-arc small-sample equating (Livingston & Kim, 2008, ETS
+  RR-08-39)** (`fast_mlsirm.circle_arc_equate`,
+  `fast_mlsirm.circle_arc_middle_anchor`; in Rust
+  `mlsirm_core::equating::{circle_arc_equate, circle_arc_middle_anchor}`):
+  constrains the equating curve through two prespecified end-points and an
+  empirically estimated middle point. Method 1 fits a circle arc directly
+  through the three points (circumcenter eqs. 3-4, radius eq. 5, arc
+  branch chosen by the middle point's position relative to the center);
+  Method 2 (the source's most accurate small-sample method) decomposes the
+  curve into the linear component `L(x)` through the end-points plus an
+  arc fitted to the transformed points `y* = y - L(x)`. Collinear points
+  degenerate to the line. `circle_arc_middle_anchor` computes the
+  anchor-design middle point `y2 = m_YB + (s_YB/s_VB)(m_VA - m_VB)`
+  (eq. 9). Reduced scope: scores must lie within the end-points (the
+  source's below-lower-endpoint linear extension is not implemented).
+  Pinned by the paper's worked example (center `(40, -15)`, `r^2 = 1625`;
+  Method-2 transformed center `(12.5, -13)`, `r^2 = 901/4`), a Table-1
+  anchor pin, an exact minus-branch fixture, and a 500-rep randomized
+  anchor-recovery check, all validated against an exact-Fraction oracle.
+
+- **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
+  1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
+  `fast_mlsirm.woodruff_sawyer_normal`; in Rust
+  `mlsirm_core::classification::{woodruff_sawyer_sb,
+  woodruff_sawyer_normal}`): estimates the full-test agreement `theta*`
+  and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
+  table) from a single administration split into parallel halves. The SB
+  method symmetrizes the half-test 2x2 table's off-diagonal, computes
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
+  `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
+  (eq. 8); the normal method steps up the half-test correlation
+  (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and
+  evaluates the joint fail-fail cell with the crate's BVN quadrature.
+  Pinned by exact rational fixtures, a Sheppard-orthant exact anchor, and
+  the paper's Table 4 values; six mutation kills executed. Per the source
+  (pp. 9-10), `phi*` from the SB method is positively biased when the
+  halves are not strictly parallel.
+- **Livingston's criterion-referenced reliability k^2 and correlation
+  k(X, Y) (Livingston, 1972, AERA paper, ERIC ED069624)**
+  (`fast_mlsirm.livingston_k2`, `fast_mlsirm.livingston_correlation`; in
+  Rust `mlsirm_core::classification::{livingston_k2,
+  livingston_correlation}`): the classical-test-theory analogues of
+  reliability and correlation with moments taken about a criterion
+  (cut) score instead of the mean, `D^2(X) = var + (mean - cut)^2`,
+  `k^2 = (rho^2 var + (mean-cut)^2) / D^2(X)`, and
+  `k(X,Y) = D(X,Y)/sqrt(D^2(X) D^2(Y))`, with Spearman-Brown test-length
+  projections applied to `k^2` itself. The conversion form is an
+  algebraic reconstruction from the source's Table 1 expectation
+  definitions; `k^2` is NaN only in the exact degenerate case (scores all
+  exactly equal to the cut, detected element-wise, or `var == 0 &&
+  mean == cut`), and returns the formula limit 1 when the squared
+  criterion offset overflows f64 with finite variance (the correlation
+  rejects that overflow with an error); fractional Spearman-Brown lengths are a
+  disclosed continuous extrapolation. Exact-fraction anchors (k2 = 5/6,
+  SB(2) = 10/11, sign-flip k = 5/7 with norm rho = -1, asymmetric-offset
+  k = 22/(7 sqrt(10))), equality-iff-mean=cut and zero-variance property
+  pins, error contracts, and a 500-rep Monte Carlo recovery check
+  (`#[ignore]`).
+- **Brennan-Kane index of dependability Phi(lambda) for mastery tests
+  (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
+  eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust
+  `mlsirm_core::gtheory::phi_lambda`): the criterion-referenced
+  dependability coefficient theta(d) = Phi(lambda) for a one-facet random
+  `p x i` design at a cutting score `lambda`, built on the module's
+  `gtheory_pi` ANOVA. The `(Xbar - lambda)^2` signal is estimated with a
+  derived unbiased plug-in that subtracts `varhat(Xbar)` computed from the
+  RAW (unclamped) variance components, while `sigma^2(Delta')` and the
+  `sigma^2(p)` numerator keep the module's clamped-component policy; the
+  signal is left unclamped, so estimates may fall below the lambda-free
+  `dependability` (finite-sample behavior, documented). TB-28 defers
+  estimation to Brennan & Kane (1977a, JEM), which was not read; the
+  estimator is derived and adversarially verified independently.
+- **Subkoviak single-administration coefficient of agreement (Subkoviak,
+  1976, ERIC ED120229 / JEM 13(4))** (`fast_mlsirm.subkoviak_agreement`; in
+  Rust `mlsirm_core::classification::subkoviak_agreement`): per-person and
+  group coefficients of agreement, marginal chance agreement, and Cohen's
+  kappa for mastery classifications under the simple binomial true-score
+  model, with the regression estimate of the item-domain proportion
+  (Eq. 16) and optional KR-21 reliability derived from the data with the
+  population (ddof = 0) variance. Supports multi-category criteria
+  (Eqs. 19-22); mastery convention is score `>= C`, verified against
+  Table 1 of the read source (its Eq. 4 OCR prints `>`). The compound
+  binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+  estimate (Eq. 17) are excluded because they defer to sources not read.
+  Exact-fraction oracle pins from the paper's Table 1 fixture; five
+  executed mutation kills (category boundary, P(i) squaring, chance-term
+  aggregation, KR-21 ddof, regression-weight swap).
+- **Hanson-Brennan compound-binomial classification consistency and accuracy
+  (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
+  `fast_mlsirm.hanson_brennan_from_params`; in Rust
+  `mlsirm_core::classification::hanson_brennan` /
+  `hanson_brennan_from_params`): single-administration decision consistency,
+  accuracy, sensitivity, specificity, and Cohen's kappa for
+  number-correct cut scores under a four-parameter beta true-score
+  distribution with Lord's two-term approximation to the compound binomial
+  conditional error model. The data path estimates Lord's k from the score
+  mean/variance and reliability (Hanson, 1991, Eq. 6), recovers the first
+  four true-score moments by the HB.tsm recursion (Eqs. 7-8), fits the
+  four-parameter beta by the method of moments with a two-parameter
+  failsafe (identical branch structure to `livingston_lewis`); the params
+  path accepts explicit (l, u, alpha, beta, k). The conditional fail CDF
+  uses a derived closed form
+  `BinCdf(cut-1;K,p) - k p(1-p) [b(cut-1;K-2,p) - b(cut-2;K-2,p)]`,
+  verified as an exact polynomial identity against Lord's term-by-term
+  definition in the oracle. Pinned against an exact-Fraction stdlib oracle
+  (params fixtures at 1e-12; a genuine negative-k 4P data fixture with both
+  beta shapes < 1 at 1e-7); five mutation kills executed.
+- **Two-stage adaptive testing (Betz & Weiss, 1973, Research Report 73-4;
+  Betz & Weiss, 1974, Research Report 74-4)** (`fast_mlsirm.two_stage_route`,
+  `fast_mlsirm.two_stage_score`; in Rust
+  `mlsirm_core::exposure::two_stage_route` / `two_stage_score`, PyO3
+  `py_two_stage_route` / `py_two_stage_score`): routing-test scoring via the
+  truncated normal-ogive ability estimate theta-hat =
+  Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Equation 2; perfect scores
+  truncate to m - 1/2, chance-or-below scores to c*m + 1/2), assignment of
+  the measurement test whose mean difficulty is closest to the routing
+  estimate (minimum absolute difference; ties break to the lowest index, a
+  derived convention), and the item-count-weighted composite
+  (m1*theta1 + m2*theta2)/(m1 + m2) (Equation 3). The scoring entry point
+  re-derives the routing assignment and refuses a mismatched
+  `administered` index so second-stage scores are never combined with the
+  wrong measurement test's parameters. Anchored on the reconstructed
+  Appendix B routing table of Research Report 74-4 and an exact-Fraction
+  oracle through the p-computation; both subtests require m*(1-c) > 1 for
+  distinct truncation endpoints.
+- **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
+  74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
+  `mlsirm_core::exposure::pyramidal_administer`, PyO3
+  `py_pyramidal_administer`): deterministic single-examinee replay of the
+  classic up-one/down-one equal-offset pyramidal ("branched") design — items
+  in a triangular structure ordered by difficulty (stage s holds s items,
+  n(n+1)/2 total), a correct response routing to the harder stage-(s+1)
+  neighbour and an incorrect response to the easier — with Larkin & Weiss's
+  six scoring methods: number-correct, mean difficulty attempted, mean
+  difficulty correct (NaN when indeterminate), final-item difficulty, the
+  hypothetical (n+1)th-item "final difficulty score" (computed only when the
+  caller supplies the next-stage difficulties; the paper's pool-specific
+  column-mean construction is out of scope), and Hansen's all-item score as
+  described by Larkin & Weiss (verified against the printed 15-stage 0–240
+  range). Routing recurrence and all-item stage scores are DERIVED from the
+  source prose (labelled in the module comment); exact-fraction oracle
+  anchors, checked-arithmetic overflow guards, and a 500-rep Monte-Carlo
+  structural invariant test (`#[ignore]`).
+- **Weiss stradaptive (stratified-adaptive) test administration (Weiss, 1973,
+  Research Report 73-3)** (`fast_mlsirm.stradaptive_administer`; in Rust
+  `mlsirm_core::exposure::stradaptive_administer`, PyO3
+  `py_stradaptive_administer`): deterministic single-examinee replay of
+  Weiss's stratified-adaptive design — an item pool partitioned into S ≥ 2
+  difficulty strata, up-one-stratum after a correct response and
+  down-one-stratum after an incorrect response (edge-clamped, with a DERIVED
+  fallback to the last administered stratum when the clamped target is
+  exhausted), terminating on a ceiling stratum (≥ min_items administered and
+  proportion correct ≤ chance), pool exhaustion, or max_items. Reports
+  ceiling / basal / highest-non-chance strata, Weiss's ten ability scores
+  m1–m10 (NaN when indeterminate; score 7 interpolates between adjacent
+  stratum mean difficulties with side-dependent steps), and a consistency
+  index (population variance of the score-9 stratum set; DERIVED — defined
+  verbally in the report without a printed numeric anchor). The primary
+  source was READ (ERIC ED084301); routing and scores are pinned by the
+  report's William W. protocol (Fig. 2 / Appendix A) and its five printed
+  score-7 cases plus synthetic below-chance anchors that discriminate the
+  lower-step branch (the printed cases alone do not). Score 5's
+  extrapolated-next-stratum variant for exhausted pools and free-response
+  (chance = 0) termination are deliberately out of scope.
+- **Lord self-scoring flexilevel testing (Lord, 1970, RB-70-43; Lord, 1971,
+  RB-71-6)** (`fast_mlsirm.flexilevel_administer` /
+  `fast_mlsirm.flexilevel_score_distribution`; in Rust
+  `mlsirm_core::exposure::flexilevel_administer` /
+  `flexilevel_score_distribution`, PyO3 `py_flexilevel_administer` /
+  `py_flexilevel_score_distribution`): deterministic replay of Lord's
+  branched-adaptive flexilevel design over a full 0/1 response matrix — N
+  (odd) difficulty-sorted items, n = (N+1)/2 administered starting at the
+  median (right → easiest harder, wrong → hardest easier), number-right
+  self-scoring with +1/2 for a wrong last answer — plus the exact conditional
+  score distribution f(x | θ) on the half-integer lattice {1/2, …, n} via
+  Lord's forward recursion over p_v(i), taking caller-supplied per-item
+  correct-response probabilities (ICC-agnostic). Both primary ETS Research
+  Bulletins were READ (ERIC ED042813 / ED051286); the routing is pinned by
+  Lord's RWWRWRRRWR worked example and the recursion is cross-checked exactly
+  against exhaustive path enumeration. Lord's Eq. 3 efficiency ratio and
+  Eq. 4 normal-ogive ICC are deliberately out of scope.
+- **Breslow-Day odds-ratio homogeneity DIF test (Breslow & Day, 1980, Eq. 4.30)**
+  (`fast_mlsirm.breslow_day_dif`; in Rust `mlsirm_core::dif::breslow_day_dif`,
+  PyO3 `py_breslow_day_dif`): the classical NON-UNIFORM DIF companion to
+  `mantel_haenszel_dif` — MH tests a common odds ratio against 1; this tests
+  whether a common odds ratio is tenable at all across the matching-score
+  strata. Per used stratum (all four margins positive) the fitted
+  reference-correct count is the admissible root of the fitted-value quadratic
+  `A·D/(B·C) = ψ̂` (cancellation-stable q-form roots; defensive
+  both-roots admissibility check), the asymptotic variance is
+  `1/(1/A + 1/B + 1/C + 1/D)` on the fitted cells, and
+  `χ² = Σ (a − A)²/Var` is referred to χ²(K − 1). The plugged-in `ψ̂` is the
+  crate's MH `alpha_mh`, the estimator the read source itself endorses
+  (worked example: MH 5.158 → χ² 9.28 vs MLE 5.312 → 9.33). Degenerate MH
+  odds ratio (`Σad = 0` or `Σbc = 0`), fewer than two usable strata, or an
+  inadmissible fitted root yield NaN statistics; Benjamini-Hochberg flags are
+  computed across items on the finite p-values. The Tarone (1985) correction
+  and the Eq. 4.31 trend test are deliberately out of scope (sources not
+  read/documented in the citation-governance header). 0/1 responses only.
+- **Generalized Mantel-Haenszel nominal DIF (Zwick, Donoghue & Grima, Eq. 10)**
+  (`fast_mlsirm.gmh_dif`; in Rust `mlsirm_core::dif::gmh_dif`, PyO3
+  `py_gmh_dif`): unordered-category DIF screening — examinees matched on the
+  full total score; within each usable stratum the reference group's
+  category-count vector over `T − 1` categories is compared with its
+  conditional expectation and covariance; the pooled quadratic form
+  `d′S⁻¹d` is referred to χ²(`T_eff − 1`). Effective categories are counted
+  in used strata only (categories seen solely in excluded strata do not
+  inflate `df`); singular pooled covariance yields NaN (no silent rank
+  reduction); category cap `T_eff ≤ 64`. For 0/1 items the statistic equals
+  the `mantel_smd_dif` χ² (MH without continuity correction). Integer
+  non-negative category codes only (reduced scope; no missing-data support).
+- **Mantel polytomous DIF + standardized mean difference (Zwick, Donoghue & Grima)**
+  (`fast_mlsirm.mantel_smd_dif`; in Rust `mlsirm_core::dif::mantel_smd_dif`, PyO3
+  `py_mantel_smd_dif`): ordinal-item DIF screening — examinees matched on the
+  full total score, per-stratum focal score sums compared with their
+  conditional hypergeometric expectation/variance (Mantel χ², df = 1, Eqs. 8–9
+  of ETS RR-93-14), plus the standardized mean difference effect size (Eq. 11,
+  focal-weighted focal-minus-reference item mean difference; weights
+  renormalized over usable strata — documented deviation matching the crate's
+  standardized P-DIF convention). For 0/1 items the χ² reduces to the MH
+  chi-square without continuity correction. Integer non-negative scores only
+  (reduced scope; no missing-data support).
+- **Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)**
+  (`fast_mlsirm.eb_mh_dif`; in Rust `mlsirm_core::dif::eb_mh_dif`, PyO3
+  `py_eb_mh_dif`): shrinkage enhancement of MH D-DIF statistics — prior
+  `N(μ, τ²)` estimated from the supplied item set (`μ` = mean, `τ²` =
+  across-item variance minus mean squared SE, floored at 0), per-item
+  posterior mean `W·MH + (1−W)·μ` and variance `W·SE²` with
+  `W = τ²/(τ² + SE²)`, plus posterior probabilities of the five ETS DIF
+  categories (`C−, B−, A, B+, C+`, normal areas delimited at ±1.5/±1).
+  Formulas trace to the READ report Zwick & Thayer (2003, LSAC RR / ERIC
+  ED481063, statistical-model section); the variance divisor (`n−1`) and
+  the degenerate `τ² = 0` point-mass boundary conventions are documented
+  implementation choices not printed in the source. Takes MH D-DIF/SE
+  pairs (e.g. from `mantel_haenszel_dif`), so any MH pipeline output can
+  be stabilized for small samples.
+- **Angoff Delta plot DIF detection (deltaPlotR-faithful, response input)**
+  (`fast_mlsirm.delta_plot`; in Rust `mlsirm_core::dif::delta_plot`, PyO3
+  `py_delta_plot`): transformed item difficulties `4·qnorm(1−p)+13`, the
+  R-compatible major axis with `max(b1, b2)` root selection (kept even
+  under negative delta covariance, regression-tested), perpendicular
+  distances, normal-approximation or fixed detection thresholds, extreme
+  proportion handling (`constraint` clamp or `add` correction), and IPP1/
+  IPP2/IPP3 iterative item purification with R's membership-row
+  convergence semantics — ported from the CRAN deltaPlotR R package's
+  `deltaPlot.R` and `adjustExtreme.R` (READ at commit e2aeeb6; Angoff &
+  Ford 1973 and Magis & Facon 2012/2014 are cited only as implemented).
+  Response-type input only (the R proportion/delta paths, printing, and
+  plotting are out of scope); non-{0,1,NaN} responses are rejected rather
+  than silently averaged, and returned item indices are 0-based.
+
+- **Nonparametric person-fit statistics (PerFit-faithful, complete data)**
+  (`fast_mlsirm.person_fit_np`; in Rust
+  `mlsirm_core::personfit_np::person_fit_np`, PyO3 `py_person_fit_np`):
+  seven dichotomous statistics — Guttman error count G, normed Guttman
+  errors, the norm conformity index NCI, van der Flier's U3 and
+  standardized ZU3, Sato's caution index C, and the modified caution
+  index C* — ported from the CRAN PerFit R package's `G.R`, `Gnormed.R`,
+  `NCI.R`, `U3.R`, `ZU3.R`, `C.Sato.R`, and `Cstar.R` (READ at commit
+  c9df433; the originating papers are cited only as implemented).
+  Complete 0/1 data only: PerFit's missing-value imputation and
+  polytomous variants are out of scope, and any non-{0,1} entry is
+  rejected. Perfect (all-0s/all-1s) rows are source-faithful: G, normed
+  G, and NCI are 0 (the R source applies `1 - 2*Gnormed` before its
+  NaN→0 replacement) while U3/ZU3/C/C* are NaN, and degenerate
+  all-equal-difficulty data yields NaN rather than an error. Column
+  ordering reproduces R `order(pi, decreasing = TRUE)` including its
+  ascending-index tie-break, pinned by a dedicated tie fixture.
+
+- **Hofstee compromise standard setting (psychometricsGP-faithful)**
+  (`fast_mlsirm.hofstee`; in Rust
+  `mlsirm_core::standard_setting::hofstee`, PyO3 `py_hofstee`): the
+  Hofstee compromise cut score, a computational port of the
+  psychometricsGP R package's `fn_plot_hofstee()` (`R/fn_plot_hofstee.R`,
+  READ — the only inspectable implementation found; single-source port,
+  stated openly; plotting excluded; Hofstee 1983 itself NOT READ, cited
+  only as implemented). Intersects the piecewise-linear cumulative
+  relative frequency ogive over integer score bins 0..=100 (right-closed
+  bins `(s-1, s]`, divide-first `(count/n)*100` arithmetic preserved)
+  with the descending diagonal `(min_cut, max_fail)` → `(max_cut,
+  min_fail)`; when they do not cross, the R fallback pins the cut to
+  `min_cut`/`max_cut` with a strict `<` fail count and two-decimal
+  DIRECTED rounding (ceil up-branch / floor down-branch), `failed=True`.
+  Reduced scope per adversarial spec review: collinear ogive-diagonal
+  overlap and zero-length diagonals are rejected (`spatstat`
+  `crossing.psp` degenerate semantics unverified against an R runtime).
+- **K1/K2/S1/S2 answer-copying indices (CopyDetect-faithful)**
+  (`fast_mlsirm.k_variants`; in Rust `mlsirm_core::security::k_variants`,
+  PyO3 `py_k_variants`): the four regression-baseline copying indices,
+  ported exactly from the CRAN CopyDetect package's internal `ks12()`
+  (`R/similarity1.r`, READ), specialized to complete scored 0/1 data (no
+  missing responses — the port rejects anything but exact 0/1). Number-
+  incorrect subgroups EXCLUDE the source (the opposite of `k_index`'s base
+  `k()` convention — a deliberate CopyDetect asymmetry, regression-anchored
+  in tests). K1/K2 fit linear/quadratic least squares of subgroup incorrect-
+  match rates and take binomial upper tails `P(Bin(ws, p) >= m)`; S1/S2 fit
+  log-linear Poisson GLMs of (weighted) match counts and take bounded
+  Poisson WINDOW probabilities (`P(m <= X <= ws)` / `P(mm <= X <= n_items)`,
+  not plain upper tails — CopyDetect subtracts the tail beyond the cap),
+  with S2 adding the `(1.5e)^(-6·prob)` weighted correct-match term
+  and a RAW ceiling (`mm = ceil(sum) + m`, no epsilon — float noise at
+  integer boundaries can bump `mm`, documented). Numerics: rank-checked
+  modified Gram-Schmidt QR for the OLS fits (degenerate designs raise, no
+  silent normal-equation blowup) and a guarded Newton Poisson GLM with
+  step-halving, bounded eta, and a stable start (nonconvergence raises);
+  `ks12()` itself SUPPRESSES R's non-integer-Poisson warning for the S2
+  fit. Sotaridona & Meijer (2002, *JEM 39*(2)) and (2003, *JEM 40*(1)) NOT
+  read — all four indices cited only as implemented by CopyDetect.
+- **Generalized binomial test (GBT) tail kernel (aberrance-faithful)**
+  (`fast_mlsirm.gbt`; in Rust `mlsirm_core::security::gbt`, PyO3 `py_gbt`):
+  exact Poisson-binomial distribution of the copier-source match count via
+  Bernoulli-convolution DP and the INCLUSIVE upper-tail p-value
+  `P(M >= observed)`, ported exactly from the CRAN aberrance package's
+  `compute_GBT` (`src/compute.cpp`, READ) and corroborated by CopyDetect's
+  internal `GBT()` (`R/similarity1.r`, READ — same distribution, same
+  inclusive tail). Per-item match-probability construction is the caller's
+  job (aberrance directional and CopyDetect symmetric recipes both fit);
+  missing data out of scope (the packages conflict). van der Linden &
+  Sotaridona (2006) NOT read — cited only as implemented. Returns the full
+  pmf plus the p-value; O(n^2) time / O(n) memory nonnegative f64 DP — no
+  cancellation, but tiny extreme large-n masses may underflow.
+- **K-index of matching incorrect answers (CopyDetect-faithful)**
+  (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
+  `py_k_index`): binomial upper-tail index of copier-source shared incorrect
+  answers against a number-incorrect subgroup baseline, ported exactly from
+  the CRAN CopyDetect package's internal `k()` (`R/similarity1.r`, READ;
+  corroborated by `R/similarity2.r`), with the binomial tail summed in log
+  space (no factorial overflow or extreme-p underflow). The subgroup
+  includes the copier and,
+  when scores match, the source (CopyDetect convention). Holland (1996,
+  RR-96-07) and Sotaridona & Meijer (2002) NOT read — cited only as
+  implemented; Sotaridona & Meijer (2001, ERIC ED467373) read for
+  background. Validation rejects non-binary/complex/bool inputs and the
+  degenerate all-correct source.
+- **Omega answer-copying statistic (Wollack-style)**
+  (`fast_mlsirm.wollack_omega`; in Rust `mlsirm_core::security::wollack_omega`,
+  PyO3 `py_wollack_omega`): standardized index of answer similarity between a
+  suspected copier and a source. `h` counts identical observed options,
+  `p_i = P_i[source_i]` is the copier's model-implied probability of the
+  source's observed option, `omega = (h - sum p_i)/sqrt(sum p_i (1 - p_i))`
+  with a one-sided upper-tail normal p-value. Formula verified against two
+  independently READ implementations: the CRAN CopyDetect R sources
+  (`similarity1.r`/`similarity2.r`) and the aberrance package
+  (`compute_OMG`); NOT read: Wollack (1997, *Applied Psychological
+  Measurement, 21*(4), 307-320) itself (access blocked) — cited only as
+  implemented by those sources. CopyDetect's printed docs flip the sign
+  (`(E-h)/sqrt(V)`) but both source files use `(h-E)/sqrt(V)`; the source
+  convention is implemented. Scope: omega only — no g2/GBT/K-index, no
+  continuity correction, no missing responses; the caller supplies the
+  copier's fitted option probabilities (e.g. from a nominal response model).
+  Pinned against an independent Python oracle at 1e-12 (p-values 5e-7 via
+  crate erfc); error paths, structural single-item-extension invariant, and
+  a 500-rep Monte Carlo size/power check (`#[ignore]`); 3 executed mutation
+  kills (V-vs-sqrt(V) scaling, copier-probability lookup, two-sided p).
+
+- **DIMTEST test of essential unidimensionality (original Stout-style
+  AT1/AT2 statistic)** (`fast_mlsirm.dimtest`; in Rust
+  `mlsirm_core::detect::dimtest`, PyO3 `py_dimtest`): confirmatory
+  hypothesis test with caller-supplied assessment subtests AT1/AT2 (equal
+  length >= 4, disjoint) and the complementary partitioning subtest PT;
+  examinees are grouped by raw PT total score (groups smaller than 20
+  discarded), within each retained group the observed ML variance of AT
+  totals is compared to the local-independence variance
+  `sum_i p_i (1 - p_i)` normalized by Stout's standard-error estimate
+  `S_k`, giving `T_L = K^{-1/2} sum_k (sigma_k^2 - sigma_U,k^2)/S_k`, the
+  AT2 bias correction `T_B`, and `T = (T_L - T_B)/sqrt(2)` with a one-sided
+  upper-tail normal p-value. Formulas transcribed from Nandakumar & Stout's
+  1992 ERIC technical report ED351383 (published 1993, *Journal of
+  Educational Statistics, 18*(1), 41-68), which describes Stout (1987,
+  Sec. 4); Kieftenbeld & Nandakumar (2015, PMC5978610) READ for the
+  original-vs-bootstrap bias-correction distinction. NOT read: Stout (1987)
+  original article, Stout et al. (2001), Froelich & Habing (2008), DIM-Pack
+  sources — no ATFIND, no DIMTEST 2 / bootstrap correction, no polytomous
+  items, no missing data. Pinned against an independent NumPy oracle
+  (500x18 two-dimensional fixture, agreement 1e-12 on `T_L`/`T_B`/`T`;
+  p-value at 5e-7 due to the crate's Numerical Recipes `erfc`).
+
+- **Confidence-interval (ACI) classification for CAT**
+  (`fast_mlsirm.ci_classify`; in Rust `mlsirm_core::exposure::ci_classify`,
+  PyO3 `py_ci_classify`): single-cut binary-response classification by
+  interim EAP ability estimate on a fixed 41-point `[-4, 4]` grid with
+  standard-normal prior, SE = EAP posterior SD, interval
+  `theta_hat +/- z_crit * se` vs `theta_cut` with STRICT first-crossing
+  decisions -> `"above"`/`"below"`/`"continue"` with 1-based `n_used`; full
+  theta/se/lower/upper traces are returned as offline diagnostics (entries
+  past `n_used` are counterfactual replay values). Verified against R catIrt
+  `termCI.R`/`eapEst.R`/`catIrt.Rd` at commit
+  `c9e979e4812c27d95d367a7f097edfe8e93ac8eb` (READ); Kingsbury & Weiss
+  (1983), Thompson (2007), and Eggen & Straetmans (2000) were NOT
+  method-section verified and are historical/background context only.
+- **Wald SPRT classification for CAT** (`fast_mlsirm.sprt_classify`; in
+  `mlsirm_core::exposure`). Single-cut binary-response sequential probability
+  ratio test: point hypotheses at `theta_cut -/+ delta`, cumulative binary
+  log-likelihood ratio under the D=1 logistic 3PL, and inclusive
+  first-crossing decisions against the log Wald boundaries
+  `A = ln((1-beta)/alpha)`, `B = ln(beta/(1-alpha))` -> `"above"`/`"below"`/
+  `"continue"` with 1-based `n_used`; the full `llr_trace` is returned as an
+  offline diagnostic (entries past `n_used` are counterfactual replay
+  values). Verified against R catIrt `termSPRT.R`/`logLik.brm.R`/`p.brm.R`
+  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983), Eggen (1999),
+  and Wald (1947) are cited as historical origins via Thompson (not directly
+  read). Log-likelihood ratios are computed in stable log space (softplus /
+  log-sigmoid), so extreme-but-valid parameters that saturate the response
+  probability to numerical 0/1 yield finite LLRs instead of errors. Pinned
+  17-digit interior-crossing oracle, error-path and 500-rep Monte-Carlo
+  structural-invariant tests; 4 executed mutation kills (swapped boundaries,
+  dropped guessing floor, collapsed null hypothesis, off-by-one `n_used`).
+- **Owen-approximate posterior-predictive EPV item selection**
+  (`fast_mlsirm.epv_select`; in `mlsirm_core::exposure`). Deliberately
+  reduced scope of van der Linden's (1998, doi:10.1007/BF02294775) minimum
+  expected posterior variance (MEPV) criterion: the posterior is Owen's
+  normal approximation `N(mu, sig2)`, the predictive probability is
+  `p*_i = c_i + (1-c_i) Phi((mu-b_i)/sqrt(1/a_i^2 + sig2))`, and the outcome
+  posterior variances come from `owen_update` rather than exact numerical
+  posteriors; the unadministered item minimizing
+  `EPV_i = p*_i sig2_i^+ + (1-p*_i) sig2_i^-` is selected (lowest-index
+  ties). van der Linden (1998) READ as ERIC ED424235 (Research Report
+  96-01); the exact-MEPV contract additionally verified against R catR
+  `EPV.R` and mirtCAT `selection_criteria.R` (both READ); Owen (1975) NOT
+  read (update formulas follow the crate's `owen_update`). Pinned oracles
+  and a delegation discriminator (argmin EPV vs. max-info vs. b-matching)
+  fixed by the adversarial spec review.
+- **Kingsbury-Zara constrained CAT (CCAT) content balancing**
+  (`fast_mlsirm.ccat_select`; in `mlsirm_core::exposure`). Single-step
+  content-balanced item selection: eligible groups with zero administered
+  items have priority, otherwise the eligible group with the maximal
+  target-minus-empirical-proportion discrepancy is chosen; within the chosen
+  group the unadministered item with maximal logistic 3PL Fisher information
+  `a^2 (Q/P) ((P-c)/(1-c))^2` is selected. Ties go to the lowest index
+  (documented deterministic deviation from catR's random tie-break).
+  Kingsbury & Zara (1989, doi:10.1207/s15324818ame0204_6) itself NOT read
+  (paywalled); the rule is implemented as reproduced by the R catR package
+  (`nextItem.R` `cbControl` branch; READ), and the information formula was
+  verified against catR `Ii.R`/`Pi.R`. Pinned oracles computed in exact
+  arithmetic by the adversarial spec review.
+- **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
+  `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
+  normal-approximation posterior moment updates for the 3PNO model
+  (`P = c + (1-c)Phi(a(theta-b))`) and a sequential driver with Owen's
+  b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
+  posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
+  itself NOT read (paywalled); formulas implemented as reproduced by
+  van der Linden (1998, Research Report 96-01, Appendix A.1-A.6) and
+  cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
+  oracles verified against exact-posterior numerical integration (~1e-13)
+  by the adversarial spec review.
+
+- **Chang-Ying KL global-information CAT selection**
+  (`fast_mlsirm.kl_information`, `fast_mlsirm.kl_select`; in
+  `mlsirm_core::exposure`). Kullback-Leibler item index as the UNNORMALIZED
+  area of the pointwise Bernoulli divergence (expectation under the
+  provisional `theta0`) over `[theta0 - delta, theta0 + delta]` via composite
+  Simpson (2048 panels), and next-item selection with the paper's shrinking
+  half-width `delta = r / sqrt(n_administered)` (requires `n >= 1`; `r = 3`
+  default per Study 1). Administered items keep their computed index; masking
+  applies to selection only. Small-delta Fisher limit
+  `I(theta0) * delta^3 / 3` anchored by test. Paper READ (Chang & Ying, 1996,
+  doi:10.1177/014662169602000303); cross-checked against catR `KL.R`.
+
+- **Raju ICC-area DIF** (`fast_mlsirm.raju_area`; in `mlsirm_core::dif`).
+  Parametric signed/unsigned area between two logistic ICCs on a common
+  scale, with Raju's delta-method Z tests. Signed area `h = b_F - b_R`
+  (positive = harder for focal); unsigned `h = |H|` from Raju's closed form
+  via a numerically stable softplus, with a continuous equal-slope fallback
+  `|b_F - b_R|`; common-guessing 3PL reports `h`/`se` scaled by `(1 - c)`
+  with the Z from unscaled quantities. Primary papers NOT read (Raju 1988,
+  Psychometrika 53(4), 495-502, doi:10.1007/BF02294403; Raju 1990, APM
+  14(2), 197-207, doi:10.1177/014662169001400208 — both paywalled); formula
+  oracle is the difR source (`RajuZ.R`, `difRaju.R`; Magis et al. 2010,
+  Behavior Research Methods 42, 847-862, doi:10.3758/BRM.42.3.847 — code
+  read in full, package paper not read). Both areas and all four
+  delta-method partials re-derived by hand and verified against numeric
+  quadrature/finite differences in adversarial spec review; documented difR
+  divergences: its gradient is the uniform negation of dH (variance-
+  equivalent) and its `exp(Y)==Inf` overflow branch carries the sign
+  opposite to the closed-form positive-side limit (unreachable here via
+  softplus + `|H|`). Monte-Carlo (500 reps, parametric asymptotic):
+  signed test holds nominal level and power; the unsigned Z is measurably
+  anti-conservative under an exact equal-slope null (~.14 at nominal .05),
+  documented in the API rather than hidden.
+
+- **Velicer minimum average partial (MAP) test** (`fast_mlsirm.velicer_map`,
+  `velicer_map_from_data`; in `mlsirm_core::factor`). Component-retention
+  test of Velicer (1976, Psychometrika 41(3), 321-327,
+  doi:10.1007/BF02293557 — NOT read; formula
+  support is the read implementations below): PCA loadings from the
+  eigendecomposition of R, partial covariance `C* = R - A_m A_m'` rescaled
+  to a partial correlation matrix, and `f2[m]` = mean squared off-diagonal
+  partial correlation for `m = 0..max_m` (with the `m = 0` baseline being
+  R itself); retained components = the `m` at the minimum. Also computes
+  the revised elementwise fourth-power criterion `f4` (Velicer, Eaton, &
+  Fava, 2000, in Goffin & Helmes, Problems and Solutions in Human
+  Assessment, 41-71 — not read; attributed per O'Connor's code comments).
+  Algorithm and retention rule verified against Brian O'Connor's canonical
+  MAP programs (map.m and map.sps, oconnor-psych.ok.ubc.ca/nfactors — read
+  in full; O'Connor, 2000, Behavior Research Methods, Instruments, &
+  Computers 32(3), 396-402, paper itself not read) and psych VSS.R `map()`
+  (Revelle, 2025 — read). Documented divergences found by adversarial
+  review: `fungible::faMAP` prints a 1-based row position (off by one vs
+  O'Connor's count — not reproduced); `EFA.dimensions::MAP` now uses matrix
+  powers for the fourth-power criterion, conflicting with O'Connor's
+  elementwise form (unresolved from primary literature; we follow
+  O'Connor). Rows with singular partial-covariance normalization (e.g.
+  identity R for `m >= 1`) are NaN and excluded from the argmin. Rust core
+  with PyO3 binding and thin NumPy wrapper; Harman-8 full-vector oracle
+  parity (independent NumPy transcription), identity guard, and a
+  500-replication Monte-Carlo recovery test (`#[ignore]`).
+- **a-stratified multistage CAT item selection** (`fast_mlsirm.a_stratified`;
+  in `mlsirm_core::exposure`). Simulation of Chang & Ying's (1999)
+  a-stratified design: the pool is split into `n_strata` contiguous strata by
+  ascending discrimination `a` (stable sort, near-equal sizes with the first
+  `n mod K` strata one item larger — repository choice; catR places the
+  remainder last), the test is partitioned into matching stages, and within
+  the active stratum the next item is `argmin |b_i - theta_hat|`
+  (b-matching, ties to the lowest original index). The b-matching selection
+  rule and ascending-a strata are confirmed from Barrada, Mazuela, & Olea
+  (2006, Psicothema 18(1), 156-159 — read in full); Chang & Ying (1999,
+  Applied Psychological Measurement 23(3), 211-222) is cited as the design's
+  origin from its abstract. Interim EAP on a uniform grid and the initial
+  `theta_hat = 0` are repository choices (the paper used ML-based interim
+  estimation). Returns per-item exposure rates, stratum assignment, stage
+  lengths, and theta RMSE/bias; the per-stratum counting identity
+  `sum_{i in stratum k} P(A_i) = stage_lengths[k]` holds exactly and is
+  regression-tested against returned values. Stratum-level b-blocking
+  (Chang, Qian, & Ying, 2001, "a-stratified multistage computerized adaptive
+  testing with b blocking", Applied Psychological Measurement 25(4),
+  333-341 — not read; excluded per adversarial spec review) is out of
+  scope. Rust core with PyO3 binding
+  and thin NumPy wrapper; mutation-audited tests plus a 500-replication
+  Monte-Carlo comparison (`#[ignore]`) showing lower exposure imbalance
+  (summed squared deviation from the uniform rate `L/n`) than
+  max-information selection.
+- **Sympson-Hetter item-exposure control** (`fast_mlsirm.sympson_hetter`;
+  in `mlsirm_core::exposure`). Iterative Monte-Carlo calibration of the
+  exposure-control parameters `k_i = P(A_i | S_i)` for dichotomous 3PL
+  max-information CAT with interim EAP: per-encounter uniform gate
+  (administer iff `u <= k_i`, rejected items blocked for the remainder of
+  that simulee's test), update `k_i <- min(1, r_max / P(S_i))` (Barrada,
+  Olea, & Ponsoda, 2007, Eq. 1-3; algorithm confirmed from Georgiadou,
+  Triantafillou, & Economides, 2007 — both read in full; Sympson & Hetter,
+  1985, cited as origin, not read). The stopping rule
+  `max P(A) <= r_max + tol` is a practical criterion, not a convergence
+  theorem (van der Linden, 2003, abstract); the returned `k` is always the
+  vector that produced the reported final-cycle rates. Feasibility bound
+  `r_max >= test_length/n_items` (exact counting identity
+  `sum_i P(A_i) = test_length`, derived here) is enforced; the bound is
+  necessary, not sufficient — a tight `r_max` near the bound may still
+  exhaust the pool mid-test and fail with the documented error. `r_max = 1`
+  reduces exactly to unconstrained max-info CAT (no exposure RNG
+  consumed); an exhausted pool raises an error (repository policy, not a
+  classical prescription). Adversarially spec-verified before
+  implementation (REDUCED SCOPE: no theta-stratified variants, no
+  forced-administration fallback, no "classical iteration count" claim);
+  a 500-rep Monte Carlo calibration run (`#[ignore]`); four executed
+  mutation kills (gate flip, `P(A)` update denominator, no-blocking —
+  killed by divergence/non-termination — and swapped selection/exposure
+  bookkeeping).
+- **Selection utility analysis** (`fast_mlsirm.selection_utility` /
+  `taylor_russell`; in `mlsirm_core::utility`; transcribed from CRAN
+  iopsych 0.90.1 `utilityBcg`/`trModel`/`ux`, read in full — Goebl,
+  Jones, & Beatty, 2016; the original Taylor & Russell, 1939, Naylor & Shine, 1965,
+  and Cronbach & Gleser, 1965 sources were not read and are cited as
+  attributed). Formulas under the standard bivariate-normal selection
+  model: selection intensity `ux = phi(xc)/sr`, Naylor-Shine selected-group
+  criterion mean `pux = rxy*ux`, BCG utility gain
+  `n*period*sdy*pux - cost_total` (the iopsych `cost` argument is
+  documented here as a TOTAL cost — iopsych labels it per-applicant but
+  never multiplies by `n`), and Taylor-Russell success ratio
+  `P(Y>yc | X>xc) = Q(xc,yc,rxy)/sr` with the bivariate-normal upper tail
+  `Q` evaluated by a conditional-normal Gauss-Legendre integral (~1e-15
+  vs scipy's BVN CDF at moderate `|rxy|` during adversarial spec review,
+  better than 1e-6 across the whole accepted `|rxy|` range —
+  regression-tested; the committed oracle generator is
+  `tests/oracles/oracle_utility.py`; the iopsych `qa/(qa+qb)` form was
+  proven equal to `Q/sr` algebraically and numerically). Adversarially spec-verified before implementation; five
+  scipy-pinned oracle fixtures including negative validity; rho=0
+  analytic anchor (success == base rate); strict rxy monotonicity; a
+  500-rep x 20,000-person Monte Carlo recovery run (`#[ignore]`; success
+  ratio within 4.3e-5, pux within 3.8e-4); four executed mutation kills
+  (dropped `rxy` in pux, sign flip in the Q integrand, `1-sr` denominator
+  in ux, sr/br role swap). Documented identity limitation: the mutant
+  `Q(h,k) -> Q(k,h)` alone is output-identical everywhere by BVN exchange
+  symmetry — no test claims to kill it; cutoff-role bugs are anchored by
+  the role-swap kill instead. Post-implementation adversarial review
+  hardening: sub-ulp ratios (where `1.0 - v` rounds to 1.0) are rejected
+  instead of returning NaN/silent zeros; the BVN panel width scales with
+  `sqrt(1 - rho^2)` so `|rxy|` near 1 stays accurate (Err beyond
+  `sqrt(1-rxy^2) < 1e-4`); `q_joint` is bounded by `min(sr, br)`; all
+  three regression-tested against scipy `quad` oracles.
+- **Factor-analytic greatest lower bound** (`fast_mlsirm.glb_fa` /
+  `glb_fa_from_data`; in `mlsirm_core::factor::glb_fa_corr`; transcribed
+  from CRAN psych `glbs.R` `glb.fa`, read in full — Revelle, 2025; NOT the
+  algebraic glb of `glb.algebraic`, which requires an SDP solver; Sijtsma,
+  2009, not read). Algorithm: 1-factor minres fit, eigenvalues of `R` with
+  the diagonal replaced by the model communalities, `nf` = count of
+  positive eigenvalues with psych's single df-based decrement, then
+  `glb = sum(rr)/sum(R)` with `diag(rr)` from an `nf`-factor refit.
+  Verified against a pinned independent scipy oracle on a 9-variable
+  2-factor population matrix (glb to 1e-5), a sampled 6-variable matrix
+  and a df-adjustment fixture (both df = 0 saturated fits, wider bands
+  documented), plus a 500-rep Monte Carlo run (`#[ignore]`; observed mean
+  glb 0.863 vs population omega 0.830 — the expected upward bias of glb
+  under multi-factor detection is documented, not hidden). Three executed
+  mutation kills (skipped diagonal substitution, 1-factor communalities in
+  the ratio, dropped df decrement).
+- **Person separation reliability** (`fast_mlsirm.separation_reliability`;
+  in `mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`, read
+  in full — Mair et al., 2025; the statistic is attributed there to Wright
+  & Stone, 1999, not read). `R = (SSD - MSE)/SSD` with `SSD = var(measures)`
+  (n-1 denominator) and `MSE = mean(se^2)`, unclamped; plus the hand-derived
+  separation index `G = sqrt((SSD - MSE)/MSE)` (adjusted true SD over RMSE,
+  `G^2 = R/(1-R)`; not in the read source). eRm's extreme-score/NA
+  filtering is documented as caller responsibility. Verified against a
+  pinned numpy fixture (SSD, MSE, R, G at 12 decimals), a negative-R path,
+  and a 500-rep Monte Carlo recovery (`#[ignore]`; population R = 0.8
+  recovered to 0.01); three executed mutation kills (swapped numerator,
+  population variance, unsquared se).
+- **Minres (ULS) exploratory factor analysis and McDonald's omega_total
+  (1-factor)** (`fast_mlsirm.minres_fa`, `minres_fa_from_data`,
+  `omega_total_1f`, `omega_total_1f_from_data`; in `mlsirm_core::factor`;
+  line-by-line transcription of CRAN psych `fa.R`'s minres path — Revelle,
+  2025, read; McDonald, 1999, cited-not-read, the omega formula is
+  hand-derived from the standardized 1-factor model). Uniquenesses are
+  box-constrained to `[0.005, 1]` and optimized by projected
+  Barzilai-Borwein descent with an Armijo safeguard and finite-difference
+  fallback (psych's `FAgr.minres` direction is not the exact gradient of
+  the lower-triangle objective — a verified limitation); convergence is
+  certified by a finite-difference box-KKT check whose maximum violation
+  is returned (`kkt_violation`). Loadings are unrotated, columns in
+  descending-eigenvalue order with column sums >= 0. REDUCED SCOPE: no
+  rotation, no Schmid-Leiman / omega_hierarchical, no ML/WLS/GLS, no
+  factor scores. Tests pin parity at 5e-5 against an independent scipy
+  L-BFGS-B transcription oracle, anchor the absolute objective value of a
+  deliberately misfitting 1-factor fit (the only assert that can kill the
+  lower-triangle-vs-all-off-diagonal x2 mutation — disclosed), verify
+  rank-1 exact recovery and structure invariants, execute four mutation
+  kills, and include a 500-rep `#[ignore]` Monte Carlo recovery study.
+- **Generalizability theory G/D studies for crossed designs**
+  (`fast_mlsirm.gtheory_pi`, `fast_mlsirm.gtheory_pio`; in
+  `mlsirm_core::gtheory`; Huebner & Lucht, 2019, read in full — the EMS
+  inversions the paper defers to Brennan, 2001, and Shavelson & Webb,
+  1991, both cited-not-read, are hand-derived and numerically verified
+  against the paper's published Tables 3-6). One-facet `p x i` and
+  two-facet `p x i x o` random-effects ANOVA variance components, plus
+  D-study relative/absolute error variances, generalizability coefficient
+  E-rho^2, and dependability Phi over proposed facet sizes. Negative raw
+  components are reported as-is in `var_raw` and clamped to zero in `var`
+  for the D study (documented clamped-ANOVA implementation policy);
+  coefficients are NaN when their denominator is <= 1e-12. Rust tests
+  reproduce the paper's worked examples at full precision, add
+  independent RNG-pinned fixtures (including a natural negative-component
+  anchor), executed mutation kills (M1/M3/M5/M6), and a 500-rep
+  `#[ignore]` Monte-Carlo recovery test.
+- **Livingston-Lewis classification accuracy and consistency**
+  (`fast_mlsirm.livingston_lewis`; in `mlsirm_core::classification`;
+  Livingston & Lewis, 1995, as implemented in Haakstad's CRAN
+  `betafunctions` 1.9.0 source `LL.CA` in `R/classification.R`, read line
+  by line — the original article was not consulted directly; Hanson, 1991,
+  four-parameter beta moment fit, as cited in Haakstad, 2022). From a
+  single administration: effective test length
+  `((m-min)(max-m) - r s^2)/(s^2 (1-r))`, true-score raw moments via the
+  factorial-moment identity on the unrounded-ETL scale, four-parameter
+  beta method-of-moments fit with a two-parameter [0, 1] fail-safe, then
+  accuracy cells (tp/fp/tf/ff), sensitivity/specificity, consistency
+  cells, and Cohen's kappa under a binomial observed-score model with
+  `N = round(ETL)`. Integrals use singularity-safe composite
+  Gauss-Legendre quadrature (power substitution when a shape parameter is
+  below one; endpoint-graded panels otherwise), verified against
+  `scipy.integrate.quad` replication literals at 1e-7. Divergences
+  (documented in the module): a single round-ties-even threshold
+  `k = round(N c)` in both the accuracy and consistency blocks (the oracle
+  mixes `round` in accuracy with `floor` in consistency, making its
+  consistency cells asymmetric; here `p_ij == p_ji` by construction);
+  pass = observed score >= cut is the positive class (the oracle labels
+  fail as positive); the fail-safe also engages on numerically invalid
+  four-parameter fits (the oracle only checks out-of-bounds support); hard
+  errors instead of NA/NaN propagation for invalid inputs, while the
+  conditional ratios (sensitivity, specificity, kappa) are an explicit
+  `NaN` when their margin or chance denominator vanishes (e.g. a cut
+  outside the fitted beta support).
+- **Cronbach alpha + Feldt exact-F confidence interval**
+  (`fast_mlsirm.cronbach_alpha`, `fast_mlsirm.feldt_alpha_ci`; in
+  `mlsirm_core::reliability`; Feldt, 1965, as cited in and implemented by
+  Revelle's CRAN `psych` 2.6.5 source `alpha.ci` in `R/alpha.R`, read line
+  by line; Cronbach, 1951, covariance form verified against the same
+  source). `cronbach_alpha` computes the raw-covariance form
+  `p/(p-1) * (1 - tr(C)/sum(C))`; `feldt_alpha_ci` inverts the pivot
+  `(1-alpha)/(1-alpha_hat) ~ F(n-1, (n-1)(p-1))` into a two-sided interval
+  (`lower = 1-(1-alpha_hat)*qF(1-delta/2)`, upper mirrored) plus the
+  implied average inter-item correlation `r_bar`. The F quantile is
+  computed in-crate via a Lentz continued-fraction regularized incomplete
+  beta and bisection (verified against `scipy.stats.f.ppf` fixture
+  literals at 1e-9). Bounds are not clamped; negative alpha is accepted
+  into the CI, matching psych. Divergences (documented in the module):
+  raw-data input only, zero-variance items rejected, confidence `level`
+  argument instead of `p.val`, hard errors instead of NA.
+- **ten Berge & Zegers mu reliability series** (`fast_mlsirm.tenberge_mu`;
+  in `mlsirm_core::reliability`; ten Berge & Zegers, 1978, as cited in and
+  implemented by Revelle's CRAN `psych` 2.6.5 source `tenberge.R`, read
+  line by line). On the Pearson correlation matrix with `Vt = sum(R)`,
+  off-diagonal power sums `S_k`, and `c = p/(p-1)` on the innermost radical
+  only: `mu0 = c*S_1/Vt` (= coefficient alpha = Guttman lambda3),
+  `mu1 = (S_1 + sqrt(c*S_2))/Vt` (= Guttman lambda2), `mu2` and `mu3` nest
+  one and two further radicals over `S_4` and `S_8`. The series ordering
+  `mu0 <= mu1 <= mu2 <= mu3` follows from Cauchy-Schwarz over the `p*(p-1)`
+  off-diagonal cells and is asserted on crate outputs. Divergences from
+  psych (documented in the module): raw-data input only (no
+  correlation-matrix passthrough, no `use = "pairwise"`), hard errors on
+  degenerate input, `S_1` summed directly to avoid cancellation. Verified
+  against an independent NumPy replication on two fixtures pinned at
+  `1e-9`, exact-identity cross-checks against `guttman_lambdas`, and a
+  500-replication tau-equivalent Monte Carlo (`#[ignore]`).
+- **Guttman lambda reliability coefficients** (`fast_mlsirm.guttman_lambdas`;
+  new `mlsirm_core::reliability`; Guttman, 1945, as cited in and implemented
+  by Revelle's CRAN `psych` 2.6.5 sources `guttman.R`/`splitHalf.R`/`smc.R`,
+  read line by line). On the Pearson correlation matrix: lambda1-lambda3
+  (lambda3 = coefficient alpha), lambda5 (best covariance column), lambda6
+  (squared multiple correlations via a plain symmetric inverse), plus
+  split-half summaries — lambda4 (best split), beta (worst split, floored at
+  0), and the mean split over all `C(p, floor(p/2))` subsets when that count
+  fits the `n_sample_splits` budget (psych's brute-force cutoff 15000),
+  otherwise over LCG-sampled splits. Declared divergences (documented in the
+  module): no `check.keys` auto-reversal, absolute split-half correlations
+  in both branches (psych's sampled branch is signed), hard error on
+  singular correlation matrices instead of psych's pseudoinverse, crate-LCG
+  sampling (psych-inspired, not bit-identical to any R run), and duplicate
+  sampled subsets allowed. Verified against an independent NumPy replication
+  (`np.corrcoef` + `np.linalg.inv` + `itertools.combinations`) on three
+  fixtures (even-p exhaustive, odd-p exhaustive, sampled) pinned at `1e-9`,
+  plus a 500-replication tau-equivalent Monte Carlo (`#[ignore]`) recovering
+  the analytic sum-score reliability within 0.01.
+- **Horn's parallel analysis** (`fast_mlsirm.parallel_analysis`; new
+  `mlsirm_core::parallel`; Horn, 1965, and Glorfeld, 1995, as cited in and
+  implemented by Dinno's CRAN `paran` 1.5.6 sources, read line by line).
+  PCA path: eigenvalues of the observed Pearson correlation matrix (cyclic
+  Jacobi, eigenvalues only, hard error on non-convergence) are adjusted by
+  the sampling bias `random_eigenvalue - 1` estimated from `n_iterations`
+  standard-normal data sets of the same shape; components are retained
+  while the adjusted eigenvalue stays above 1, scanning left to right and
+  stopping at the first failure (later resurgences do not count, matching
+  paran's loop-and-break). `centile = 0` uses the per-position mean
+  benchmark; `1..=99` uses that upper centile via the R type-7 quantile
+  (Glorfeld's conservative variant). Deliberate divergences (documented in
+  the module): PCA only (paran's `cfa` generalized-inverse path is out of
+  scope), a single deterministic crate-LCG random stream (paran-inspired,
+  not bit-identical to any R run), and narrowed guards (`n_persons >= 3`,
+  `n_items >= 2`, finite complete data, positive column variance, explicit
+  `n_iterations`; the Python wrapper supplies paran's `30 * n_items`
+  default). Fixture literals verified against an independent NumPy
+  replication that mirrors the LCG stream exactly.
+
+- **IRT classification accuracy and consistency**
+  (`fast_mlsirm.rudner_classification`, `fast_mlsirm.lee_classification`; new
+  `mlsirm_core::classification`; Rudner, 2001, 2005; Lee, 2010, as cited in
+  Lathrop's CRAN `cacIRT` sources). Rudner's normal-approximation method
+  treats the observed score at ability theta as N(theta, sem^2) and reports
+  per-cut and simultaneous accuracy/consistency, conditional and marginal
+  (weights normalized internally; uniform weights reproduce cacIRT's
+  person-level `Rud.P`, quadrature weights the distribution-level `Rud.D`).
+  Lee's summed-score method replaces the normal approximation with the exact
+  Lord-Wingersky (1984) score distribution reused from
+  `mlsirm_core::scoring`; raw cuts split scores at `ceil(cut)` and the true
+  category is the raw-score interval containing the expected true score.
+  Category intervals are left-closed everywhere (cacIRT's `Lee.D` alone is
+  right-closed — documented divergence); item probabilities must lie
+  strictly inside (0, 1) (rejecting P == 0 is stricter than the oracle,
+  which only breaks at P == 1); simultaneous outputs are always populated
+  (cacIRT emits them only for two or more cuts). Polytomous Lee, `np.cac`,
+  and the MLE/SEM ability helpers are out of scope. Rudner outputs inherit
+  the crate `erfc` accuracy (|err| < 1.2e-7); Lee outputs are exact to f64
+  rounding. For LLM-as-a-Judge quality management this quantifies how
+  reliably a judge's cut score separates pass from fail. Rust-only numerics;
+  the Python wrapper validates and marshals. Tests pin marginals and
+  conditionals against literals from an independent NumPy transcription
+  (exact `math.erf`, own recursion), anchor left-closed cuts with a theta
+  exactly on a cut and a dyadic true score exactly on a raw cut, use
+  unnormalized weights and a non-integer raw cut as mutation anchors (four
+  mutation spot-checks killed), and include a 500-replication ignored Monte
+  Carlo ordering long informative tests above short noisy ones.
+- **Confirmatory DETECT dimensionality analysis** (`fast_mlsirm.detect_analysis`;
+  new `mlsirm_core::detect`; Zhang & Stout, 1999, as cited in Robitzsch, 2024).
+  Estimates pairwise conditional covariances of binary items with sum-score
+  conditioning — the bias-corrected average of the total-score and pair
+  rest-score conditionings, per-group ML covariance aggregated with
+  group-frequency weights — and computes the DETECT, ASSI, RATIO, MADCOV100,
+  and MCOV100 indices against a known item clustering (labels opaque,
+  equality-only). Transcribed line-by-line from the CRAN `sirt` R sources
+  (`detect.index.R`, `ccov.np.R`, `ccov_np_compute_ccov_sum_score.R`,
+  `conf.detect.R`); matches the explicit `ccov.np(use_sum_score=TRUE,
+  scale_score=FALSE)` path — the kernel-smoothed default, missing data
+  (sirt pairwise-deletes), sqrt(N)-weighted variants (coincide with
+  unweighted under complete data), exploratory cluster search, and polytomous
+  DETECT are documented as out of scope. All-zero conditional covariances
+  (RATIO `0/0`, NaN in R) are rejected with an error. For LLM-as-a-Judge
+  item-quality management this diagnoses whether a rubric partition of judge
+  items behaves as distinct dimensions. Rust-only numerics; the Python
+  wrapper validates and marshals. Tests pin all five indices and every
+  per-pair conditional covariance against literals from an independent NumPy
+  transcription (which cannot discriminate the z-standardized default path,
+  since unique-value grouping is invariant to monotone transforms — the scope
+  statement pins that contract), plus hostile `i64::MIN`/`i64::MAX` labels
+  and a 500-replication Monte Carlo (`#[ignore]`) separating 2D simple
+  structure from unidimensional data.
+- **Haberman subscore added-value analysis** (`fast_mlsirm.subscore_analysis`;
+  new `mlsirm_core::subscores`; Haberman, 2008, as cited in Sinharay, 2010).
+  For each subscale of a disjoint, exhaustive item partition computes the
+  PRMSEs of the three classical-test-theory true-subscore estimators — from
+  the observed subscore (`= Cronbach alpha`), from the observed total
+  (`rho^2(s_t, x_t) * alpha_x` with the true-score covariance row sum over
+  subscore columns only), and from both jointly (Wainer-style augmentation via
+  `tau`/`beta`/`gamma`) — plus per-person estimator matrices, the
+  `(K+1)^2` score correlation matrix, disattenuated subscore correlations, and
+  added-value decisions (Haberman's `PRMSE_s > PRMSE_x`; Sinharay's 2010
+  `+ 0.01` margin for augmentation, labeled — CRAN `CTTsub`'s relative rule is
+  documented but not implemented). Formulas verified against the Appendix of
+  Sinharay (2010, ETS RR-10-16) and the CRAN `subscore` R source read
+  line-by-line; degenerate samples (alpha outside `(0, 1]`, zero variance,
+  subscore collinear with the total) are rejected instead of propagating NaN.
+  For LLM-as-a-Judge item-quality management this decides whether per-domain
+  judge subscores add diagnostic value over the overall score. Rust-only
+  numerics; the Python wrapper validates and marshals. Tests pin every
+  reported statistic against literals from an independent NumPy transcription
+  of the R semantics on an asymmetric fixture with mixed added-value
+  outcomes, include rejection tests for the structural and degeneracy guards
+  (the defensive computed-PRMSE-range guard is not separately exercised), a
+  conditional dominance
+  sweep on guard-passing random data, and a 500-rep `#[ignore]` Monte Carlo
+  MSE comparison; three mutation spot-checks (dropped `m/(m-1)`, rowsum
+  including the total column, `tau` numerator sign flip) were run and killed.
+- **Kernel-smoothing nonparametric IRT** (`fast_mlsirm.ksirt_analysis`; new
+  `mlsirm_core::ksirt`; Ramsay, 1991, as cited in Mazza et al., 2014).
+  Estimates option characteristic curves by Nadaraya-Watson kernel regression
+  (gaussian/quadratic/uniform kernels) of option indicators on rank-based
+  ordinal ability estimates `qnorm(rank/(n+1))`, on an equally spaced
+  evaluation grid, with Silverman-rule default bandwidths, plus expected item
+  score and expected total score curves. Formulas verified against the
+  KernSmoothIRT JSS paper (Mazza et al., 2014, Sections 2-2.3) and the
+  KernSmoothIRT R/C++ package source read line-by-line; standard errors and
+  cross-validation bandwidth selection are deliberately out of scope (the R
+  implementation's SE accumulator is order-dependent and unverifiable from
+  read sources). For LLM-as-a-Judge item-quality management this reveals
+  non-monotone or poorly discriminating evaluation items without a parametric
+  model. Rust-only numerics; the Python wrapper validates and marshals. Tests
+  pin a hand-computed 4-person fixture (rank->theta qnorm literals, grid
+  endpoints, Silverman constant), enforce structural invariants
+  (row-sums-to-one with positive denominators, compact-support zeros,
+  zero-denominator fallback), and include a 500-replication Monte Carlo
+  recovery study (`#[ignore]`) under normal and skewed ability generation
+  using the rank-invariance composition oracle.
+- **Mokken scale analysis** (`fast_mlsirm.mokken_analysis`; new
+  `mlsirm_core::mokken`; Mokken, 1971, as cited in van der Ark, 2007).
+  Computes the Loevinger scalability coefficients `Hij`, `Hi`, `H` and their
+  Mokken Z statistics, and partitions items into Mokken scales with the
+  automated item selection procedure (AISP, "search normal"), with sample
+  statistics and selection mechanics verified line-by-line against the mokken
+  R package source (van der Ark, 2007; Straat et al., 2013): `Hij =
+  S_ij/Smax_ij` with `Smax` from the comonotone (sorted-column) coupling,
+  `Hi`/`H` as ratios of pairwise sums, and per-scale Bonferroni-adjusted Z
+  gates. For LLM-as-a-Judge item-quality management this flags evaluation
+  items that fail to scale (label 0) and detects multidimensional item pools
+  before parametric calibration. Complete integer data required (dichotomous
+  or polytomous). Rust-only numerics; the Python wrapper validates and
+  marshals. Tests include a brute-force covariance oracle, an exact Guttman
+  `H = 1` anchor, a hand-computed Z fixture, a Z-gate anchor whose deletion
+  seeds a spurious scale (this test caught a real sign error in the normal
+  quantile during development), a hand-constructed Criterion-1 design whose
+  negative-`Hij` exclusion is the only active gate (mutation-verified), a
+  two-cluster AISP recovery, and an `#[ignore]` 500-replicate Monte Carlo
+  (normal + skewed traits).
+- **Many-Facet Rasch Model (MFRM) rater-severity calibration** (`fast_mlsirm.fit_facets`;
+  new `mlsirm_core::facets`; Linacre, 1989; Eckes, 2015). Fits
+  `ln[P(k)/P(k-1)] = theta_p - d_i - c_j - f_k` — the rating scale model
+  (Andrich, 1978) with a rater facet — to a `persons x items x raters` array with
+  NaN-missing sparse judging plans. For LLM-as-a-Judge calibration this puts each
+  judge's severity `c_j` on a common logit scale adjusted for item difficulty and
+  respondent ability. Estimation is marginal-ML EM on a Gauss-Hermite grid
+  (Bock & Aitkin, 1981), NOT Linacre's JMLE, and the docs say so: estimates match
+  the Facets program only up to the JMLE-vs-MMLE difference. Identification:
+  `theta ~ N(0,1)`, severities and thresholds centered to sum 0
+  (`n_parameters = I + (J-1) + (K-2)`). Reports Linacre's connectedness
+  diagnostic via union-find over the person-mediated item∪rater co-observation
+  graph; `connected=False` means cross-component severity comparisons rest
+  solely on the shared trait prior, not the rating design. Rust-only numerics;
+  the Python wrapper validates and marshals. Tests include FD gradient anchors,
+  the J=1 RSM-reduction identity, asymmetric-severity recovery, sparse and
+  disconnected designs, and an `#[ignore]` 500-replicate Monte Carlo
+  (normal + skew-normal traits) bounding severity bias and RMSE; a gradient
+  sign-flip mutant was verified to fail 4 tests.
+- **Warm's weighted-likelihood ability estimation for POLYTOMOUS items** (`fast_mlsirm.score_wle_poly`;
+  new `score_wle_poly` in `mlsirm_core::scoring`; Warm, 1989). The library already had the full
+  polytomous model family and polytomous EAP scoring, but its only bias-reduced ML ability estimator was
+  dichotomous-only. EAP shrinks toward the population mean, which is exactly what individual score
+  reporting must not do, so this closes a real gap rather than adding a third way to do the same thing.
+  Solves `dlnL/dtheta + J/(2I) = 0` with `I = sum_k P'_k^2 / P_k` and `J = sum_k P'_k P''_k / P_k`
+  accumulated over the person's observed items — the exact generalization of the shipped dichotomous
+  `sum_i P' P''/(P Q)`, which is its two-category case. `J` is computed DIRECTLY, never as a derivative
+  of `I`. GRM and GPCM; PCM is the GPCM path at `slope = 1`. RSM is deliberately NOT supported and the
+  code says why: its fitted `(delta, shared tau)` parameterization is not convertible through any
+  exposed API, since `rsm_logprobs` builds the equivalent intercepts internally and does not return
+  them.
+  **Verification status is stated in the code, because it bounds what may be claimed.** That the
+  polytomous Warm correction is `J/(2I)` with `J = sum_k P'P''/P` is confirmed from the `catR` package's
+  SOURCE, not from a primary paper — and `catR` keeps its Jeffreys-prior branch as a separate
+  expression, so the two estimators are kept distinct here too (Magis & Raîche, 2012). Penfield and
+  Bergeron (2005) treat the GPCM but their equations were not obtainable, so nothing here rests on them
+  and they are not cited as a source. Separately, and PROVED in-repository rather than taken from a
+  source: `J = I'` holds exactly for both shipped families. From `I' = 2J - T` one gets
+  `J - I' = -E[l' l'']`, which vanishes because the GPCM's `l''` is category-free and the GRM's sum
+  telescopes through `v_0 = v_K = 0`; checked numerically at 80-digit precision against fully numeric
+  derivatives (relative `|J - I'| <= 1.1e-30`). The WLE therefore coincides with the Jeffreys modal
+  estimate for these two families — but the identity is used ONLY as a test oracle and never as an
+  implementation shortcut, because it fails for a graded model with per-boundary slopes and for the 3PL,
+  both of which are pinned as negative controls.
+  **Numerics.** Per-category quantities are formed division-free from the sigmoids — GPCM
+  `P'_k/P_k = a(k - E)`, `P''_k/P_k = (P'_k/P_k)^2 - a^2 Var(k)`; GRM `P'_k/P_k = a(1 - s_k - s_{k+1})`,
+  `P''_k/P_k = (P'_k/P_k)^2 - a^2(v_k + v_{k+1})` — so no category probability ever appears in a
+  denominator and no probability floor is needed anywhere. The resulting GRM information is algebraically
+  identical to the shipped `poly_item_information`, via `v_k - v_{k+1} = P_k(1 - s_k - s_{k+1})`.
+  **Both polytomous log-likelihoods are log-concave, yet the weighted objective is genuinely
+  multimodal**, because the Warm weight is not: a 3-item GPCM bank in the test suite has stationary
+  points at `+0.0988`, `+0.3774` and `+1.3314` while `max lnL'' = -5.6e-5 < 0`, so a solver that brackets
+  the first sign change from the left errs by 1.23 logits (2.36 on the GRM fixture). The global grid
+  scan of `score_wle` is therefore reused unchanged, including its refusal to return an unresolved mode
+  beyond 65,536 intervals; the grid demand additionally scales with `n_cat - 1`, documented as a derived
+  worst-case margin for which no wrong-mode counterexample was reproduced.
+  **Guards.** Eleven anchors, the important ones mutation-verified with the measured result recorded.
+  `J == I'` is pinned with BOTH sides coming from different crate code paths (the accumulator versus a
+  central difference of the shipped `poly_item_information`), and the reference magnitudes are pinned to
+  1e-5 rather than merely asserted non-zero, so a zeroed or sign-flipped `jterm` fails. `K = 2`
+  reproduces the dichotomous `score_wle` for both families — non-discriminating as a design argument,
+  but the only anchor that catches a layout transpose, a `cat_params` stride bug or a missing
+  chain-rule `a`. The two global-mode fixtures assert the returned value is the dominant mode and not
+  the leftmost stationary point; a mutation that stops the scan at the first rise of `Phi` fails eight
+  of the ten polytomous tests, and the narrower "take the leftmost stationary point" substitution fails
+  the two global-mode fixtures specifically. The estimating equation is re-derived from finite
+  differences of the log-probability routines alone, and the all-lowest/all-highest patterns are
+  asserted finite alongside a check that the UNWEIGHTED score really does keep a constant sign there,
+  so the "the MLE diverges" premise is verified rather than assumed.
+  **One coverage limit is stated rather than papered over.** Because `J = I'` is EXACT for both shipped
+  families, an implementation that replaced `J` with a numerical derivative of `I` would be
+  behaviour-preserving and NO polytomous test can detect it — a mutation confirmed to leave the whole
+  polytomous suite green. The discriminating anchors for that substitution live in the dichotomous
+  suite, where a lower asymptote breaks the identity. The accompanying test therefore documents that the
+  identity is family-specific (exhibiting a per-boundary-slope graded model and a 3PL where it fails,
+  with measured relative gaps of 0.92/1.17 and 0.47) and is labelled a lemma about the ORACLE, not a
+  test of the code.
+  **Also corrects an error in the dichotomous WLE documentation shipped earlier in this release**: it
+  claimed `J` coincides with `I'/2` for the 2PL/Rasch. The correct statement is `J = I'` exactly there,
+  from `I' = 2J - T` with `T = sum_i P_i'^3 (1 - 2 P_i)/(P_i Q_i)^2`, and `T = J` only when
+  `c = 0, d = 1` — which is why the weight is `sqrt(I)`. Fixed in the Rust, PyO3 and Python docstrings;
+  the historical entry below is left as written. The identity is now PINNED by
+  `wle_information_derivative_identity`, because the first attempt at this correction was itself wrong
+  (it dropped the `(1 - 2 P)` factor from `T`, giving a value ~5x off at the 2PL) and nothing caught it.
+  A formula asserted in prose and checked by no test is how that happens twice.
+
+- **Uniform SIBTEST, the regression-corrected observed-score DIF procedure** (`fast_mlsirm.sibtest`;
+  extends `mlsirm_core::dif`; Shealy & Stout, 1993). The third observed-score DIF procedure in the
+  module and the only one that corrects the MATCHING CRITERION itself. Mantel-Haenszel and the logistic
+  sweep both match on an observed number-correct score, which is unreliable: under IMPACT — a genuine
+  group difference in ability — two examinees from different groups with the same OBSERVED score do not
+  have the same expected TRUE score, because each regresses toward their own group's mean. Matching on
+  the raw score therefore compares non-equivalent examinees. Item purification, added earlier in this
+  release, cannot substitute for this: it changes WHICH items form the criterion, not the regression of
+  true score on observed score, so a perfectly purified criterion is still biased. SIBTEST transports
+  each group's conditional mean from that group's own Kelley-regressed true score
+  `V*_Gk = [Xbar_G + alpha_G (k - Xbar_G)] / n_valid` to the unweighted midpoint of the two, using a
+  per-level central difference taken over each group's OWN true-score scale at adjacent OBSERVED level
+  positions, and compares the transported means under combined-sample weights renormalized over the
+  retained strata. The valid and studied subtests are DISJOINT by construction — the opposite of the
+  item-included Mantel-Haenszel default (Donoghue, Holland & Thayer, 1993), and a property of the
+  estimator rather than an option. Per-group coefficient alpha is reported on every row because the
+  correction divides by it.
+  **The headline finding is unflattering and is documented as such.** Measured against
+  `mantel_haenszel_dif` on identical simulated data, 500 replications per cell, no DIF planted so every
+  rejection is a false positive: at zero impact MH holds .044 and SIBTEST .056; at impact 1.0 MH holds
+  .046 while SIBTEST reaches **.086**. SIBTEST over-rejects in both cells and by roughly double under
+  impact — the opposite of the ordering its motivation suggests. This is a property of the 1993
+  estimator rather than a transcription slip (the closed-form anchors reproduce the TRANSCRIBED FORMULAS
+  in exact rational arithmetic; `mirt` itself was never executed, so no cross-implementation agreement
+  is claimed), whose standard error treats the ESTIMATED regression correction as fixed and so never
+  charges the correction's own noise to the variance. It is precisely what Jiang and Stout's (1998)
+  paper — "Improved Type I error control and reduced estimation bias for DIF detection using SIBTEST" —
+  was written to fix, and that two-segment estimator is NOT implemented here. The docs accordingly
+  recommend Mantel-Haenszel or the logistic sweep for routine screening and position SIBTEST as the way
+  to obtain the regression-corrected *estimand*, reading `beta_uni` as an effect size rather than
+  trusting `p_value` as a calibrated test. A 500-replication Monte-Carlo test pins that finding so the
+  claim cannot rot.
+  **Sign.** `beta_uni > 0` means harder for the FOCAL group — the OPPOSITE orientation to `mh_d_dif`
+  and `std_p_dif` in the same module, kept rather than harmonised because published `|beta_uni|`
+  cut-offs assume it, and asserted in both directions by a cross-module anchor whose product assertion
+  would catch a future refactor that "harmonises" both conventions at once.
+  **Provenance, stated because it bounds what the code may claim.** Every formula is transcribed from
+  the reference implementation (Chalmers, 2012; the `SIBTEST` routine of `mirt`), which attributes them
+  to Shealy and Stout (1993); the primary text was not consulted, so no comment cites the 1993 equations
+  directly. One deliberate DIVERGENCE from that reference is marked in the code: where a neighbouring
+  group-by-level cell is empty it imputes the mean to zero and feeds that fabricated value into the
+  central difference, producing a finite but meaningless slope; this implementation drops the level.
+  **Scope deliberately reduced after a spec-verification pass.** Crossing-SIBTEST is NOT built:
+  Chalmers (2018) shows Li and Stout's (1996) hypothesis test is insufficient, no normal-theory referral
+  for a crossing statistic is valid, and `logistic_dif`'s `S x G` interaction already covers crossing
+  DIF against a standard 1-df null. No A/B/C letter class, because published cut-offs disagree and none
+  was verified against its primary source — the same decision already taken for `delta_r2_uniform`. No
+  purified variant, because purification needs a practical-significance predicate that no verified
+  cut-off supports, and it would shorten the valid subtest and so lower the very reliability the
+  correction divides by.
+  **Guards.** Two CLOSED-FORM acceptance anchors, both derived in exact rational arithmetic and
+  re-derived independently before the tests were written, assert to 1e-12: a single-stratum fixture
+  (`beta = -1/10`, `sigma^2 = 23/1950`, `X^2 = 39/46`) and a five-level fixture pinning the weighting
+  (`beta = -16993/88000`). The second is mandatory because the first is structurally blind to every
+  weighting question — one retained stratum always carries weight 1 — and because the UNCORRECTED beta
+  is `+0.11` under both weighting schemes, so the same assertion on an uncorrected statistic would prove
+  nothing. Both were mutation-verified: substituting the observed mean for the true-score subtrahend
+  yields `+0.26` (a sign flip), caught by both anchors; focal-group weights yield `-0.039932`, caught
+  ONLY by the multi-level anchor. A third anchor pins a NON-CONTIGUOUS level vector to `1/128`, where
+  both the hardcoded `2*alpha/n_valid` denominator and arithmetic `k +/- 1` indexing return `1/64` —
+  every other fixture has contiguous levels, so without it both mutants survive the whole suite.
+  Further anchors pin the strict `j_min` inequality on BOTH sides of its conjunction, all four corners
+  of the empty-neighbour guard, the alpha gate on all four degenerate forms, per-group alpha against
+  the direct KR-20 definition on a fixture whose groups differ in reliability (a pooled alpha survives
+  any fixture where they do not), Benjamini-Hochberg in both directions plus `fdr_q` plumbing, and the
+  disjointness of the criterion. That last one asserts the exact invariant rather than a proxy:
+  complementing the studied item's column sends every conditional mean to `1 - Ybar` and every slope to
+  `-M`, so `beta_uni` is exactly NEGATED and `se_beta` exactly invariant, while at least one other item
+  must move — a criterion that ignored the data would be flip-invariant too.
+
+- **Iterative item purification for the observed-score DIF procedures**
+  (`fast_mlsirm.mantel_haenszel_dif_purified`, `logistic_dif_purified`; extends `mlsirm_core::dif`;
+  Candell & Drasgow, 1988; Clauser et al., 1993; Holland & Thayer, 1988; Lord, 1980). Both DIF
+  procedures added earlier in this release match examinees on the observed total score, which is
+  itself built from the items under test — so when DIF items push a group's total in a CONSISTENT
+  direction, the matching criterion is biased and clean items inherit spurious DIF (a false-positive
+  inflation documented at both entry points). Purification breaks that circularity by re-running the
+  sweep with the criterion rebuilt from the currently-unflagged ANCHOR set only: round 0 is the
+  ordinary all-items sweep, each later round drops the flagged items from the criterion, and the loop
+  stops when the flagged set comes back UNCHANGED from one round to the next (`converged = true`) or the
+  round cap is hit. That is a stability test, not general cycle detection: a flagged set that oscillates
+  between two states runs to the cap and is reported as `converged = false`, which is the honest answer
+  rather than a spurious fixed point. The studied item is always added back into its own matching score
+  even when it is not in the anchor, so every item is matched on `anchor UNION {studied}` — item-included
+  matching is what makes the null-DIF condition hold (Holland & Thayer, 1988; Zwick, 1990), and it also
+  makes round 0 identical to the unpurified sweep by construction: round 0 passes no anchor at all and so
+  dispatches to the very same code path rather than to an all-true mask that merely evaluates the same.
+  `PurifyConfig { max_rounds, min_anchor_items }` bounds the loop and refuses to purify below a usable
+  anchor length (default 4), returning the last valid round with `converged = false` rather than a
+  criterion built from a handful of items. Nothing is sized from the caller-supplied item count before
+  that first sweep, since dimension validation lives inside the sweep and the count is untrusted at the
+  FFI boundary.
+  **Interpretation limits, documented at the API.** Purification REDUCES contamination, it does not
+  remove it: the anchor is itself estimated, so the residual bias depends on how well round 0 separated
+  the bank. More importantly the returned p-values carry **no Benjamini-Hochberg or Type-I guarantee** —
+  the item set was selected using the same data, so the procedure is a screening device for flagging,
+  not a calibrated test; the reported statistics must not be quoted as if they came from a single
+  pre-registered sweep. Mantel-Haenszel purification also inherits MH's crossing-DIF blind spot and
+  cannot repair it — an item MH never flags stays in the anchor every round and keeps contaminating the
+  "purified" criterion. That blind spot is a property of the SIGNED AREA between the two curves over the
+  matched ability distribution (Wang & Su, 2004) rather than of non-uniform DIF as such: a crossing at
+  the centre of that distribution cancels and is invisible, while the same item with its crossing off
+  centre leaves a net difference MH detects, so MH purification is unreliable rather than uniformly blind
+  under non-uniform DIF. `logistic_dif_purified`, whose interaction term tests the crossing directly, is
+  the variant to use there. **Guards.** A contamination fixture plants unidirectional DIF and asserts, in order, the
+  PRECONDITION that the unpurified sweep really does false-flag clean items (so the test cannot pass on
+  a fixture with nothing to fix), that purification strictly reduces those false flags, that the true
+  positives are retained and are the items that left the anchor, and that the sweep statistics numerically
+  changed; a clean bank asserts round 0 reproduces the shipped sweep EXACTLY (`n_anchor == n_items`,
+  `rounds == 0`); and the cap and short-anchor exits are each pinned to report `converged = false`
+  instead of silently returning a degenerate criterion. An adversarial implementation review then found
+  those flag-counting fixtures could not see the arithmetic underneath them, and two structural anchors
+  were added, each mutation-verified to fail on the defect it targets. (i) The returned `rows` must equal
+  a fresh sweep against the returned `anchor`, swept over round caps, anchor floors and both matching
+  conventions (which also covers `exclude_studied_item = true`, previously untested under purification):
+  returning an earlier round's rows while reporting the final anchor is the highest-severity failure mode
+  of a purification loop and is invisible to a "did it flag the right items" test, because intermediate
+  rounds usually flag the same items. (ii) The purified row for an item must equal the ORDINARY sweep run
+  on a reduced test consisting of exactly `anchor UNION {studied}` — an independent reference rather than
+  the implementation's own arithmetic — checked for both a non-anchor item (the add-back branch) and an
+  anchor item, with a deliberately NON-CONTIGUOUS anchor so an index-map error cannot hide behind a
+  prefix. The anchor predicate is also pinned directly on all four ETS classes, since no simulated bank
+  distinguishes "B or C" from "not A" (a clean 2PL never produces `Undefined`). The same review caught a
+  key collision in the Python bindings: `logistic_dif_purified` wrote the loop's scalar convergence flag
+  over `logistic_dif`'s PER-ITEM `converged` array, destroying it at the boundary — the loop flag is now
+  `purify_converged` on both entry points — and found that both Python docstrings were written as
+  `"""..."""` + a module constant, which is a `BinOp` rather than a constant expression, so the compiler
+  never filled `__doc__` and the entire "not a calibrated test" caveat was invisible to `help()`.
+
+- **Zumbo logistic-regression DIF, with non-uniform detection** (`fast_mlsirm.logistic_dif`; extends
+  `mlsirm_core::dif`; Zumbo, 1999; Swaminathan & Rogers, 1990). Regresses each item response on the
+  observed matching score `S`, the group `G`, and their interaction in three NESTED logistic models
+  (`M0: b0 + b1 S`; `M1: + b2 G`; `M2: + b3 (S x G)`), fitted by IRLS/Newton. This closes the known blind
+  spot of the Mantel-Haenszel procedure added earlier in this release: a stratified odds-ratio test can
+  only see a *consistent* group advantage, so **crossing (non-uniform) DIF is invisible to it**, while
+  the interaction term detects it directly. The 2-df `chi2_total = 2[ll(M2) - ll(M0)]` is the primary
+  omnibus DIF decision (the value Benjamini-Hochberg adjusts); the 1-df components are descriptive
+  follow-ups, and the module documents that `chi2_uniform = 2[ll(M1) - ll(M0)]` tests `b2` *assuming*
+  `b3 = 0` — it is not the group term of the full model and is uninterpretable when non-uniform DIF is
+  present, so the hierarchical entry order `S -> G -> S x G` is load-bearing. The effect size is the
+  Nagelkerke (1991) pseudo-`R^2` change `delta_r2 = R2_N(M2) - R2_N(M0)` (with `ll_null` the
+  intercept-only fit, and all four models fitted on one identical subsample so the normalizer is
+  comparable), classified by Jodoin & Gierl (2001) — A `< 0.035`, B, C `>= 0.070` — and forced to A
+  whenever the omnibus test is not BH-significant. The uniform-only `delta_r2_uniform` is reported
+  without a letter class because those cut-offs were calibrated on the 2-df quantity; the more
+  conservative Zumbo & Thomas (1997) cut-offs are documented as an alternative. **Robustness.** The
+  matching score is mean-centered (the chi-squares are invariant, but the raw total leaves the `S x G`
+  Gram near-singular); the design is rank-checked; the Newton step uses the *checked* solver and
+  step-halving with a coefficient bound, so (quasi-)separation, a rank-deficient design, or
+  non-convergence yield `NaN` statistics with `converged = false` and are never BH-flagged (a constant
+  item is rejected outright). **Guards.** A SATURATED-DESIGN anchor (two-level score x binary group)
+  pins the IRLS, log-likelihood, omnibus chi-square and Nagelkerke effect size against closed-form
+  binomial arithmetic, plus the exact decomposition `chi2_uniform + chi2_nonuniform == chi2_total`; and
+  the discriminating anchor plants a crossing item whose ICCs intersect at the common group ability
+  mean, asserting the logistic test flags the interaction (with the uniform component non-significant)
+  on the very item Mantel-Haenszel classifies as negligible, while a plain b-shift item shows the
+  reverse pattern; the Jodoin-Gierl classifier is additionally pinned at its boundaries. Spec-verified
+  (GO-WITH-MUST-FIXES applied), and an adversarial implementation review then fixed four further root
+  causes: a NaN chi-square silently becoming `p = 1.0` in `chi2_sf` (which both misreported "no DIF" and
+  let unfittable items dilute the Benjamini-Hochberg denominator), a convergence backstop that certified
+  a bound-truncated separated fit as converged, a minimum-sample floor far too weak for the
+  four-parameter model, and the unpinned classifier. Convergence uses the standard GLM relative-deviance
+  test paired with a coefficient-bound separation check, since near the optimum the attainable score
+  floor exceeds any usable absolute gradient tolerance. Same matching-criterion contamination as
+  Mantel-Haenszel (see `logistic_dif_purified`), plus the logit-linearity-in-`S` assumption, both documented.
+
+- **Rasch conditional maximum likelihood + Andersen's LR test** (`fast_mlsirm.fit_rasch_cml`,
+  `andersen_lr_test`; new `mlsirm_core::rasch_cml`; Andersen, 1970, 1972, 1973). CML estimation of the
+  dichotomous Rasch item difficulties: conditioning each response pattern on its raw score (the
+  sufficient statistic for ability) ELIMINATES the person parameters, so the difficulties are estimated
+  without any assumption on the ability distribution (Rasch's specific objectivity) and consistently at
+  fixed test length — unlike the marginal-ML path (which must posit a `theta` distribution) or joint ML
+  (inconsistent). The conditional log-likelihood
+  `ln L_c = -sum_i s_i beta_i - sum_r n_r ln gamma_r(eps)` uses the elementary symmetric functions
+  `gamma_r`; the ESF and its per-item/per-pair derivatives are computed by the numerically stable
+  SUMMATION algorithm (a fresh forward pass `gamma_r += eps_j gamma_{r-1}` over the relevant item
+  subset), avoiding the cancellation-prone subtractive difference recursion (Verhelst, Glas & van der
+  Sluis, 1984). Newton on `beta` with sum-zero identification and a reduced-system solve; standard
+  errors from the pseudoinverse of the conditional information; persons scoring `0` or `k` are dropped.
+  Andersen's (1973) conditional likelihood-ratio test partitions the persons, fits CML within each group
+  and pooled, and refers `2[sum_g llc_g - llc_pooled]` to `chi^2((G-1)(k-1))`. **Guards.** The
+  summation-algorithm ESF (and its leave-one-out / leave-two-out passes) match brute-force subset sums;
+  a deterministic finite-difference anchor pins the CML gradient AND Hessian (catching the
+  `d eps/d beta = -eps` sign); the DEFINING person-distribution-free property is the primary anchor — the
+  same `beta_hat` is recovered whether `theta` is `N(0,1)` or strongly right-skewed (a value-recovery
+  test alone cannot separate CML from JML); and the Andersen LR does not over-reject Rasch data but
+  rejects a planted group-specific difficulty shift, with the `df` and upper tail pinned. Spec-verified
+  (GO-WITH-MUST-FIXES applied: the summation ESF over the difference recursion, dropping `r=0/k` persons,
+  sum-zero centering, the reduced-Hessian SE, and reuse of `solve_small`/`chi2_sf`). An adversarial
+  implementation review (faithfulness clean) then hardened two edge cases: `andersen_lr_test` surfaces a
+  `converged` flag so a stalled fit's clamped `lr = 0` is not misread as a clean non-rejection, and the
+  Python binding caps `n_groups` at 256 (u8 label range). Complete-data only; polytomous and missing-data
+  CML are deferred. Exposed to Python as `fit_rasch_cml` and `andersen_lr_test`.
+
+- **Warm's weighted likelihood estimation of ability** (`fast_mlsirm.score_wle`;
+  `mlsirm_core::scoring::score_wle`; Warm, 1989). The bias-reduced maximum-likelihood ability estimator
+  for unidimensional dichotomous items (2PL/3PL/4PL): it solves the weighted-likelihood estimating
+  equation `dlnL/dtheta + J(theta)/(2 I(theta)) = 0` with the Warm correction
+  `J = sum_i P_i' P_i''/(P_i Q_i)` computed DIRECTLY. Crucially `J` is *not* `I'(theta)/2` — the two
+  coincide only for the 2PL/Rasch (`c=0, d=1`), where the weight is `sqrt(I)` (the Jeffreys prior); for
+  the 3PL/4PL the second derivative carries `1-2s` while the information derivative carries `1-2P`, so a
+  `sqrt(I)`-weighted estimator applies the wrong correction. Warm's estimator removes the leading
+  `O(1/n)` MLE bias and — unlike the MLE, which is `+/-infinity` for the all-correct / all-incorrect
+  pattern — yields a FINITE estimate for every response pattern. The estimate is the GLOBAL maximizer of
+  the weighted log-likelihood (whose derivative is the estimating function), located by a grid scan plus
+  a local root refinement — robust to the 3PL/4PL case where the weighted likelihood is multimodal
+  (Samejima, 1973; Yen, Burket & Sykes, 1991) and a single bracketed root can select the wrong mode;
+  it is clamped and flagged when the finite root falls beyond `theta_bound`, and a person with no
+  observed items returns `NaN`. It reuses `item_information_4pl` for `I(theta)`; the SE is `1/sqrt(I)`.
+  **Guards.** An estimating-equation root anchor is verified by INDEPENDENT finite-difference
+  derivatives of `P` (so a `J` sign error in the analytic `P' P''` is not shared) across the 2PL, 3PL,
+  and Rasch; a 2PL finiteness anchor confirms the perfect/zero patterns give finite, interior estimates
+  with correct > incorrect; a monotonicity anchor confirms the estimate is nondecreasing in the
+  number-correct score; a global-mode anchor confirms the multimodal-3PL worst case returns the dominant
+  mode (`theta ~ -4.13`, ~10x more probable) rather than a minor root; an all-missing person returns
+  `NaN`; and a `#[ignore]` >=500-rep Monte-Carlo confirms Warm's headline result — the WLE aggregate
+  `|bias|` (~0.04) is an order of magnitude smaller than the boundary-clamped MLE's (~0.50), the gap
+  widening at extreme abilities. Spec-verified (GO-WITH-MUST-FIXES: `J`-not-`I'`, the `I~0` division
+  guard, plain natural-scale `a/b/c/d` rather than the log-alpha `ItemBank`); an adversarial
+  implementation review then caught and fixed two defects the initial tests missed — the 3PL/4PL
+  multimodality (a single bracketed bisection could return a non-dominant root; replaced by the
+  global-mode grid search) and an all-missing person silently returning `theta = 0` (now `NaN`).
+  Polytomous WLE (Penfield & Bergeron, 2005) is deferred. Exposed to Python as `score_wle` returning
+  `theta`/`se`/`boundary`.
+
+- **Mantel-Haenszel differential item functioning** (`fast_mlsirm.mantel_haenszel_dif`; new
+  `mlsirm_core::dif`; Holland & Thayer, 1988). The observed-score, calibration-free DIF procedure — the
+  complement to the parametric IRT-LR DIF (`dif_polytomous`): no item response model is fitted.
+  Examinees are matched on the number-correct total (thin matching, studied item **included** by
+  default per Donoghue, Holland & Thayer, 1993; `exclude_studied_item=True` uses the rest score), and
+  per item the common odds ratio `alpha_MH = (sum_m A_m D_m / T_m)/(sum_m B_m C_m / T_m)` and the
+  continuity-corrected MH chi-square `max(0, |sum A_m - sum E(A_m)| - 0.5)^2 / sum Var(A_m)` (with the
+  hypergeometric `Var(A_m) = n_Rm n_Fm m1_m m0_m / (T_m^2(T_m-1))`, referred to `chi^2(1)`) are computed
+  over the DIF-informative strata (all four `2 x 2` marginal totals positive). Reported on the **ETS
+  delta metric** `MH_D-DIF = -2.35 ln(alpha_MH)` (negative = harder for the focal group) with the
+  Robins-Breslow-Greenland (1986) standard error, the **ETS A/B/C** severity classification (Zieky,
+  1993; A if not significant at .05 or `|D-DIF| < 1.0`, C if `|D-DIF| >= 1.5` and `|D-DIF| - 1.645 SE >
+  1.0`, B otherwise — or `Undefined`/`"U"` when there are no informative strata or a degenerate odds
+  ratio, *not* the affirmative "A"), and the **standardized P-DIF** companion (Dorans & Kulick, 1986)
+  `sum_m n_Fm (P_Fm - P_Rm) / sum_m n_Fm` (focal minus reference, so its sign agrees with `MH_D-DIF`).
+  Benjamini-Hochberg controls the across-item FDR; the p-value reuses `fitstats::chi2_sf`. **Guards.** A
+  two-stratum hand-computed anchor pins `alpha_MH`, the continuity-corrected chi-square, `MH_D-DIF`, the
+  RBG SE, `STD-P-DIF`, and the C label; a no-DIF symmetry anchor returns `alpha_MH = 1`, zero delta, and
+  class A; a degenerate/perfect-separation case returns NaN statistics and `Undefined` (never A); and a
+  planted uniform-DIF simulation flags the DIF item (class B/C, correct delta sign) while classifying
+  the clean items A and agreeing with the parametric IRT-LR DIF on the flagged item. Because the MH
+  chi-square is over-powered at large N and the studied item mildly contaminates the matching total, the
+  A/B/C classification (not the raw significance) is the practical-significance guard — documented, with
+  item purification (since shipped as `mantel_haenszel_dif_purified`) and SIBTEST (Shealy & Stout, 1993)
+  noted as future work. Spec-verified
+  (GO-WITH-MUST-FIXES: STD-P-DIF sign, `Var_m > 0` stratum gate, degenerate-odds guards, zero-clamped
+  continuity numerator).
+
+- **Dimension-agnostic IRT model API.** Item families are named by their
+  response function rather than by UIRT/MIRT dimensionality:
+  `fit_2pl`/`TwoPlFit`, `fit_grm`/`GrmFit`, and
+  `fit_nominal`/`NominalResponseFit`. A single `model=` argument follows the
+  R `mirt` convention (Chalmers, 2012): `model=1` denotes the unrestricted
+  one-factor model, while `model=models.confirmatory(loading_pattern)` carries
+  a confirmatory loading structure and derives its dimension count. The fitted
+  result retains `n_dims` only as a derived read-only property of its model
+  specification. Numeric exploratory requests above one factor fail explicitly;
+  the Rust estimators do not yet implement unrestricted multidimensional loading
+  rotation/identification, so a confirmatory anchor pattern is never relabeled
+  as exploratory. The previous brand-new `*_mirt` entry points and module names
+  were removed rather than retained as misleading aliases. See
+  `python/fast_mlsirm/models.py` for the verified Chalmers (2012) APA reference
+  and DOI.
+
+- **Correlated latent factors for MH-RM** (`fit_mhrm(..., estimate_corr=True)`; Cai, 2010b confirmatory
+  item factor analysis). Completes the MH-RM to a free latent CORRELATION matrix `Phi` (unit diagonal,
+  `theta ~ MVN(0, Phi)`) rather than orthogonal factors. The Metropolis acceptance prior becomes
+  `-0.5 (theta*^T Phi^{-1} theta* - theta^T Phi^{-1} theta)` (the symmetric proposal cancels; `Phi^{-1}`
+  is recomputed by Cholesky each cycle), and the `D(D-1)/2` free off-diagonal correlations ascend the
+  Gaussian-prior objective `Q(Phi) = -0.5[log|Phi| + tr(Phi^{-1} C)]` (`C` the imputed second moment,
+  RAW/uncentered — `E[theta]=0` is fixed by identification) by a per-cycle Robbins-Monro GRADIENT step
+  `offdiag += gain_k * sigma_grad(Phi, C)`, kept positive-definite by BACKTRACKING (halve the step
+  until the rebuilt `Phi` is PD). This REUSES the `twopl.rs` correlation machinery verbatim
+  (`build_corr`, `sigma_grad`, `chol_lower`, `sym_inv_logdet`, `flip_corr_dim`, now `pub(crate)`), the
+  same helpers `fit_2pl`'s deterministic ECM correlation step uses — so the `Phi` estimation is shared,
+  not duplicated. The per-dimension reflection flips the correlation off-diagonals for the flipped
+  dimension (`corr(theta_d, theta_k) -> -corr`) together with the loading column and trait chain, so
+  the reported `Phi` is consistent with the canonicalized signs. `estimate_corr=False` (default) keeps
+  `Phi = I` and is BIT-IDENTICAL to the previous orthogonal fit (the acceptance prior branches to the
+  original per-dimension `||theta*||^2 - ||theta||^2` on the same RNG stream). It is a gradient-RM (not
+  Cai's Newton-preconditioned) covariance update — documented as such; it still converges almost surely
+  to the same `Phi` root, only the (un-curvature-adapted) rate differs. **Guards.** A recovery test
+  recovers an exchangeable `Phi` off-diagonal at a POSITIVE (`rho=0.4`), a near-PD-boundary
+  (`D=3, rho=0.5`), and a NEGATIVE (`rho=-0.5`) correlation within Monte-Carlo tolerance, confirming the
+  recovered matrix stays a valid PD correlation matrix; `estimate_corr=False` yields exactly the
+  identity; and a `#[ignore]` 500-rep Monte-Carlo at the near-boundary `D=3, rho=0.5` reports the
+  correlation RMSE/bias and would surface a persistent PD-backtracking stall. Exposed to Python as the
+  `estimate_corr` argument and the `corr` field of `MhrmFit`.
+
+- **Polytomous (GPCM) response family for MH-RM** (`fit_mhrm(..., family="gpcm", n_cat=K)`; Muraki,
+  1992, generalized partial credit model estimated by the Cai, 2010 MH-RM). Extends the
+  stochastic-approximation confirmatory item factor analysis from binary items to ordered polytomous
+  items, scaling high-dimensional POLYTOMOUS IFA to a latent dimensionality where the deterministic
+  `fit_gpcm` (Gauss-Hermite / QMC EM) is infeasible. Each item keeps a SINGLE multidimensional
+  discrimination `a_i` (free on the confirmatory loading pattern) and gains `K-1` free UNORDERED step
+  intercepts: `base_i = sum_{d in S_i} a_id theta_d` (NO intercept), `P(Y=k) = softmax_k(k*base_i +
+  step_ik)` (`step_i0 = 0` pinned). The MH imputation likelihood is the inline log-softmax of the
+  observed category (no per-node allocation), and the per-item RM step uses the **closed-form
+  multinomial complete-data Hessian** `H = sum_p J_p^T (diag(P) - P P^T) J_p` (data-independent given
+  `theta`, where the design row `J_p[k]` is `d psi_k / d param`: `k*theta_pd` for slope `a_id`, `[k==j]`
+  for `step_j`) as BOTH the Robbins-Monro preconditioner AND the Louis positive term — NOT the BHHH
+  score cross-product (which is the term Louis subtracts, so `H_BHHH - sum s s^T = 0` would give a
+  degenerate SE). The complete-data score `sum_p J_p^T ([k==y_p] - P)` equals the deterministic
+  `gpcm.rs`'s `[g_base*theta_d; g_intercepts]` with the integer scores fixed (`g_scores` dropped — what
+  makes it GPCM, not nominal). The per-dimension reflection flips only the slope column and the trait
+  chain — the UNORDERED steps are left INVARIANT (`base = k*sum a_d theta_d` is invariant under the
+  joint `(a, theta)` sign flip), exactly as the deterministic `gpcm.rs`. `family="2pl"` (default) keeps
+  the binary path **BIT-IDENTICAL** (the closed-form `log_sigmoid` score and `sum w X X^T` information
+  are unchanged on the same RNG stream). GRM (Samejima cumulative-logit, ordered thresholds) is
+  DEFERRED: its thresholds must stay strictly decreasing, which the deterministic `grm.rs` maintains by
+  a backtracking line search a single stochastic RM Newton step cannot replicate (the standard path is a
+  softplus threshold-gap reparametrization — future work). An adversarial implementation review found
+  and fixed two defects the initial tests missed: the output/SE routing keyed on `n_free_cat == 1` as a
+  "is 2PL" proxy, which mis-collapsed a legal `Gpcm { n_cat = 2 }` fit's single step into the 2PL
+  `intercept`/`se_intercept` fields (now keyed on the model family); and the declared `MHRM_MAX_CAT`
+  category cap was never enforced (an unbounded `n_cat` allocation vector — now validated). **Guards.** A
+  deterministic finite-difference
+  anchor pins the GPCM score AND the exact-multinomial information against the complete-data GPCM
+  log-likelihood on an asymmetric cross-loader with a NEGATIVE loading and NON-MONOTONE steps (a sign
+  flip, a transposed/dropped design slot, an over-collapsed step block, or BHHH-as-information all fail
+  it), with an independent per-person score outer-product re-sum pinning the sign of the Louis
+  missing-information subtraction; a `D=1` reduction test agrees with `poly::fit_poly_unidim(Gpcm)`
+  (Bock-Aitkin quadrature) within Monte-Carlo tolerance; a `D=5` recovery (GH/QMC infeasible) recovers
+  loadings, steps, and the negative cross-loader with correct sign; a reflection-FIRES test witnesses
+  the canonicalization flipping a negative anchor while leaving the steps un-swept; the validation
+  rejects out-of-range responses and any never-observed category (an unidentified step); and a
+  `#[ignore]` 500-rep Monte-Carlo (normal + right-skew traits, `D=2` and `D=5`, `K=3`) reports the
+  loading/step RMSE and bias. Exposed to Python as the `family`/`n_cat` arguments and the
+  `step`/`se_step`/`n_cat` fields of `MhrmFit`.
+
+- **High-dimensional confirmatory 2PL by Metropolis-Hastings Robbins-Monro** (Cai, 2010).
+  `fit_mhrm(responses, model=...)` fits the general compensatory multidimensional 2PL
+  (`P(X_ij = 1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta ~ MVN(0, I_D)`) — the
+  same model as `fit_2pl` — by a STOCHASTIC-approximation EM that scales to a latent dimensionality
+  where the deterministic `q^D` Gauss-Hermite grid and the QMC E-step of `fit_2pl` are infeasible
+  (`n_dims` up to 64). Each cycle (1) IMPUTES each person's `theta` by a short PERSISTENT
+  (warm-started) symmetric random-walk Metropolis chain from its current posterior
+  `pi_j(theta) prop phi(theta; 0, I) prod_i P_i(y_ij | theta)` — the acceptance ratio is the pure
+  Metropolis posterior ratio (the symmetric proposal cancels), the proposal SD is auto-tuned toward a
+  target acceptance during burn-in, and the chain carries across cycles so no per-cycle burn-in is
+  needed; and (2) takes one Robbins-Monro stochastic-Newton step
+  `xi <- xi + gain_k Gamma_k^{-1} s_k` on the complete-data score `s_k` (Fisher's identity gives an
+  unbiased-in-the-limit Monte-Carlo estimate of the marginal score) and the RM-smoothed information
+  `Gamma_k = Gamma_{k-1} + gain_k (H_k - Gamma_{k-1})`. Because the item blocks are conditionally
+  independent given `theta`, the score, information, and RM step are BLOCK-DIAGONAL by item, and the
+  per-item work is the CLOSED-FORM logistic gradient `X'(y - P)` and information `X'WX` — no
+  quadrature, `D`-independent per-node cost (reusing `mmle::{log_sigmoid, sigmoid_stable}` and
+  `poly::solve_small`). The gain follows a constant-gain burn-in (a Metropolis-Hastings stochastic EM
+  that random-walks into the MLE neighbourhood) then a decreasing `gain_k = 1/(k - k0)^alpha`
+  (`sum gain = inf`, `sum gain^2 < inf`, Robbins & Monro 1951) that converges almost surely to a
+  marginal-score root. Convergence is WINDOWED (the running mean of `||xi^(k) - xi^(k-1)||` over the
+  last `w` cycles falls below `tol`) — MH-RM iterates are non-monotone by design, so no
+  likelihood-decrease guard is used. **Identification.** Unit trait variances fix the loading scale,
+  `E[theta] = 0` the intercepts, and a PURE single-dimension anchor item per dimension pins the
+  rotation; the per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` is likelihood-
+  invariant, and because the stochastic iterates could otherwise drift between the two mirror modes
+  and corrupt the RM RUNNING AVERAGE of the loadings, the canonical sign (largest pure anchor
+  positive) is enforced IN-LOOP every cycle — flipping the loading column, the persistent `theta`
+  chain, and the averaged trait together — and once more at the end (mutation-verified: disabling the
+  flip makes the reflection-fires test fail on all three sign checks). Loadings are UNCONSTRAINED so
+  reverse-keyed / negative cross-loadings are representable. **Standard errors.** The Louis (1982)
+  identity `I_obs = E[-d^2 l_c] - Var[d l_c]` gives per-item observed-information SEs, accumulated by
+  a parallel RM filter (`sum_p (w_p - r_p^2) X_p X_p'`) over the convergence stage; where a
+  finite-sample Louis block is not positive-definite the block falls back to the complete-data
+  (Fisher) information (a conservative SE). **Guards.** A deterministic finite-difference anchor pins
+  the per-item score and information against numerical derivatives of the complete-data logistic
+  log-likelihood on an ASYMMETRIC D=2 cross-loader with a negative loading (catching sign, layout, and
+  dims-map bugs a centered value-recovery test would not); the D=1 fit agrees with the established
+  deterministic unidimensional MMLE (`mmle::fit_mmle_2pl`) within Monte-Carlo tolerance; a **D=6**
+  recovery (3 pure anchors per dimension + a negative cross-loader, GH/QMC infeasible) recovers the
+  loadings and per-dimension traits; the reflection-fires test drives a weak reverse-keyed pure anchor
+  against a strong positive cross-loader so raw MH-RM lands the anchor negative and canonicalization
+  must fire; and `validate` rejects rotationally-degenerate patterns, non-binary responses, and
+  `burn_in >= max_cycles`. This first release fits the ORTHOGONAL 2PL (`Sigma = I`); a free latent
+  correlation matrix and the polytomous item families are natural extensions of the same loop. Compute
+  lives in `mlsirm_core::mhrm::fit_mhrm`; exposed to Python as `fit_mhrm` / `MhrmFit` via the
+  `model=` specification API.
+
+- **Confirmatory MULTIDIMENSIONAL generalized partial credit model** (Muraki, 1992).
+  `fit_gpcm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
+  multidimensional discrimination vector per item and INTEGER category scores, completing the
+  polytomous-MIRT trio (`fit_nominal` / `fit_grm` / `fit_gpcm`). Item `i` has a free slope `a_i` (free
+  on the confirmatory 0/1 loading pattern from `model=models.confirmatory(...)`, items x D) and
+  `n_cat-1` category step intercepts `gamma_i`, with `psi_k = k * (sum_{d in S_i} a_id theta_d) +
+  gamma_i,k`, `gamma_i,0 = 0` pinned, and `P(Y_i = k | theta) = softmax_k(psi_k)`, `theta ~ MVN(0,
+  I_D)`. This is the `a_ikd = k a_id` INTEGER-scoring restriction of the multidimensional nominal
+  model in a distinct single-slope parametrization — NOT a mode of `fit_nominal` (which optimizes free
+  per-category slopes), so it warrants its own estimator; and it is the ADJACENT-category-logit
+  counterpart of the cumulative `fit_grm`. Unlike the GRM's thresholds, the GPCM steps are UNORDERED
+  (the softmax is finite for any real `gamma`, so no ordering constraint exists or is imposed). It
+  reduces to the unidimensional GPCM (`poly::fit_poly_unidim(PolyModel::Gpcm)`) at `D = 1` (within
+  optimizer tolerance and up to reflection — NOT bit-exact, because `fit_poly_unidim` forces `a > 0`
+  via a `log a` parametrization while the confirmatory model uses an UNCONSTRAINED slope so
+  reverse-keyed / negative cross-loadings are representable). Estimated by Bock-Aitkin marginal MLE
+  over the D-dim latent grid, REUSING the compensatory-MIRT node machinery (`nodes::build_xi_nodes`):
+  `node_rule = "gh"` uses the `q^D` Gauss-Hermite grid (`D <= 3`), `"qmc"`/`"mc"` use `xi_points`
+  Halton / Monte-Carlo draws (`D <= 6`, Jank 2005 QMC-EM), and the GPCM softmax cell of
+  `poly::gpcm_logprobs` / `gpcm_node_gradient`. The per-item M-step is a finite-difference-Hessian
+  Newton over `[a_{d0}..a_{d,L-1}, gamma_1..gamma_{M-1}]`, byte-for-byte the ascent of
+  `poly::m_step_item` (ridge = Hessian conditioning only, not a prior), with the GPCM node gradient
+  chained to the multidimensional slope (`d/da_id = sum_node g_base theta_d`, `d/dgamma_j = sum_node
+  g_intercepts[j]`). Category scores are FIXED integers `0..n_cat-1` (that fixity is what makes the
+  model GPCM rather than nominal), so the free per-category slope gradient returned by the shared cell
+  (`g_scores`) is DROPPED — only the single `base` slope and the step intercepts are estimated. Init is
+  `gamma_k = ln(freq_k / freq_0)` (a plain marginal log-odds, NOT a cumulative GRM-style boundary). EM
+  uses the SIGNED monotonic-decrease stopping guard (a likelihood decrease errors, not the
+  compensatory MIRT's `.abs()` check). **Identification.** Unit trait variances + a PURE
+  single-dimension anchor item per dimension pin the rotation to the coordinate axes; the per-dimension
+  reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` leaves `base` — hence every step and category
+  probability — INVARIANT, so it is CANONICALIZED (as for the GRM / compensatory MIRT, and unlike the
+  nominal, whose per-category slopes make the anchor sign ambiguous): dimension `d` is flipped so its
+  largest-magnitude pure anchor loads positively, negating that dimension's slope column AND the trait
+  `theta_d` but NOT the steps. `validate` rejects a rotationally-degenerate pattern (no pure anchor),
+  an out-of-range category, and ANY unobserved category for an item, with a `nodes x items x n_cat`
+  count-table cap and the rule-dependent D / q / xi_points bounds. **Guards.** The D=1 anchor recovers
+  `fit_poly_unidim(Gpcm)`'s slope and steps within tolerance; a deterministic finite-difference anchor
+  pins every per-(dimension, step) gradient slot on a fixed node set at D=2 (GH) AND D=4 (Halton) with
+  a NON-IDENTITY dims map, M>=4 categories, deliberately NON-MONOTONE step values (unordered steps have
+  no ordering canary, so the anchor exercises the free-step estimator directly) and distinct random
+  per-category counts; because that FD anchor is map-invariant, a SEPARATE deterministic
+  objective-value assertion at D=4 (dims `[0,2,3]`) pins the node-column dims map by computing
+  `base = sum_t a_t node[dim_t]` and the GPCM log-probabilities BY HAND with LITERAL integer scores and
+  matching the estimator's internal value to `< 1e-9` (the QMC path is never exercised by the D<=3
+  recovery / MC); a reflection-FIRES test is constructed so the RAW EM mode lands the pure anchor
+  NEGATIVE (a WEAK reverse-keyed pure anchor plus a STRONG positively-keyed cross-loader that dominates
+  the dim0 orientation), so canonicalization MUST fire — asserting the anchor ends positive, the
+  co-loader ends negative, the trait axis is sign-flipped (theta correlates negatively with the truth
+  on the reflected dimension), and the steps are unchanged; mutation-verified (disabling the flip fails
+  all three sign checks). A D=2 recovery carries a genuinely NEGATIVE cross-loader on a
+  positively-anchored dimension (asserted `< -margin`) and recovers the unordered steps by RMSE. A
+  Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied cross-loaders, `n_cat = 4`, GH `q = 15/11`,
+  `N = 2500/2000`) recovers the loadings near-unbiased under a normal trait (loading RMSE ~0.08-0.09,
+  bias ~0.00-0.01; step RMSE ~0.06-0.07) with the expected mild attenuation under a
+  per-dimension-standardized right-skew trait (loading RMSE ~0.10-0.11, bias ~-0.04; step RMSE ~0.14),
+  per-dimension trait EAP correlation ~0.74-0.77 and 100% convergence, EM monotone every replication
+  (40-replication pilot; the committed `#[ignore]` test runs 500). Compute lives in
+  `mlsirm_core::gpcm::fit_gpcm`; exposed to Python as `fit_gpcm` / `GpcmFit`.
+
+- **Confirmatory MULTIDIMENSIONAL graded response model** (Samejima, 1969; Muraki & Carlson, 1995).
+  `fit_grm(responses, n_cat, model=...)` fits ORDERED polytomous categories with a SINGLE
+  multidimensional discrimination vector per item and ordered category boundaries: item `i` has a
+  free slope `a_i` (free on the confirmatory 0/1 `loading_pattern`, items x D) and `n_cat-1` ORDERED
+  boundary intercepts `beta_i`, with `P(Y_i >= k | theta) = sigmoid(sum_{d in S_i} a_id theta_d +
+  beta_i,{k-1})`, `theta ~ MVN(0, I_D)`. This is the ORDERED counterpart of the multidimensional
+  nominal model and the polytomous generalization of the compensatory MIRT; it reduces to the
+  unidimensional GRM (`poly::fit_poly_unidim(PolyModel::Grm)`) at `D = 1` (within optimizer tolerance
+  and up to reflection — NOT bit-exact, because `fit_poly_unidim` forces `a > 0` via a `log a`
+  parametrization while the confirmatory model uses an UNCONSTRAINED slope so reverse-keyed / negative
+  cross-loadings are representable). Estimated by Bock-Aitkin marginal MLE over the D-dim latent grid,
+  REUSING the compensatory-MIRT node machinery (`nodes::build_xi_nodes`): `node_rule = "gh"` uses the
+  `q^D` Gauss-Hermite grid (`D <= 3`), `"qmc"`/`"mc"` use `xi_points` Halton / Monte-Carlo draws
+  (`D <= 6`, Jank 2005 QMC-EM), and the GRM cumulative-logit cell of `poly::grm_logprobs` /
+  `grm_node_gradient`. The per-item M-step is a finite-difference-Hessian Newton over
+  `[a_{d0}..a_{d,L-1}, beta_1..beta_{M-1}]`, byte-for-byte the ascent of `poly::m_step_item` (ridge =
+  Hessian conditioning only, not a prior), with the GRM node gradient chained to the multidimensional
+  slope (`d/da_id = sum_node g_base theta_d`, `d/dbeta_j = sum_node g_thr[j]`). The ORDERED-threshold
+  constraint is maintained WITHOUT an explicit reparametrization: every adjacent boundary pair is a
+  middle category whose log-probability goes non-finite the instant the pair inverts (`0*NaN=NaN` so a
+  zero expected count cannot mask it), so the backtracking line search — which rejects any non-finite
+  step — keeps `beta` fully ordered by adjacency + transitivity. EM uses the SIGNED
+  monotonic-decrease stopping guard (a likelihood decrease errors, not the compensatory MIRT's
+  `.abs()` check). **Identification.** Unit trait variances + ordered thresholds + a PURE
+  single-dimension anchor item per dimension pin the rotation to the coordinate axes; the
+  per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)` leaves `base` — hence every
+  threshold and category probability — INVARIANT, so it is CANONICALIZED (unlike the nominal, whose
+  per-category slopes make the anchor sign ambiguous): dimension `d` is flipped so its
+  largest-magnitude pure anchor loads positively, negating that dimension's slopes AND the trait
+  `theta_d` but NOT the thresholds. `validate` rejects a rotationally-degenerate pattern (no pure
+  anchor), an out-of-range category, and ANY unobserved category for an item (a GRM boundary would
+  diverge), with a `nodes x items x n_cat` count-table cap and the rule-dependent D / q / xi_points
+  bounds. **Guards.** The D=1 anchor recovers `fit_poly_unidim(Grm)`'s slope and thresholds within
+  tolerance (all-positive DGP, the domain where its `log a` is correctly specified); a deterministic
+  finite-difference anchor pins every per-(dimension, threshold) gradient slot on a fixed node set at
+  D=2 (GH) AND D=4 (Halton) with a NON-IDENTITY dims map, M>=4 categories, STRICTLY-DECREASING
+  thresholds (gaps >> the FD step, since the GRM cell NaNs on an inverted boundary) and distinct
+  random per-category counts; because that FD anchor is map-invariant, a SEPARATE deterministic
+  objective-value assertion at D=4 (dims `[0,2,3]`) pins the node-column dims map by computing
+  `base = sum_t a_t node[dim_t]` and the GRM log-probabilities BY HAND and matching the estimator's
+  internal value to `< 1e-9` (the QMC path is never exercised by the D<=3 recovery / MC); a
+  reflection-FIRES test drives a reverse-keyed largest pure anchor and asserts it ends positive, a
+  co-loader ends negative, and the thresholds are unchanged and still ordered; a D=2 recovery carries
+  a genuinely NEGATIVE cross-loader on a positively-anchored dimension (asserted `< -margin`) with
+  strictly-ordered recovered thresholds. A Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied
+  cross-loaders, `n_cat = 3`, GH `q = 15/11`, `N = 2500/2000`) recovers the loadings near-unbiased
+  under a normal trait (loading RMSE ~0.10, bias ~0.00-0.01; threshold RMSE ~0.05-0.06) with the
+  expected mild attenuation under a per-dimension-standardized right-skew trait (RMSE ~0.17/0.18,
+  bias ~-0.12/-0.13), per-dimension trait EAP correlation ~0.63-0.70 and 100% convergence, EM
+  monotone and thresholds ordered every replication (40-replication pilot; the committed `#[ignore]`
+  test runs 500). Compute lives in `mlsirm_core::grm::fit_grm`; exposed to Python as
+  `fit_grm` / `GrmFit`.
+- **Confirmatory MULTIDIMENSIONAL nominal response model** (Bock, 1972; Thissen, Cai, & Bock,
+  2010). `fit_nominal(responses, n_cat, model=...)` fits unordered polytomous categories
+  with CATEGORY-SPECIFIC multidimensional discrimination: category `k` of item `i` has a free slope
+  vector `a_ik` (free on the confirmatory 0/1 `loading_pattern`, items x D) and intercept `c_ik`,
+  and `P(Y_i = k | theta) = softmax_k(sum_{d in S_i} a_ikd theta_d + c_ik)` with the baseline
+  category `0` pinned `a_i0 = 0, c_i0 = 0`, `theta ~ MVN(0, I_D)`. This generalizes the
+  unidimensional `poly::fit_nominal` to D latent dimensions, and reduces to it EXACTLY at `D = 1`
+  (the same general free-`a_k` parametrization). Estimated by Bock-Aitkin marginal MLE (EM) over the
+  D-dimensional latent grid, REUSING the compensatory-MIRT integration machinery: `node_rule = "gh"`
+  uses the `q^D` Gauss-Hermite product grid (`D <= 3`); `"qmc"`/`"mc"` use `xi_points` Halton /
+  Monte-Carlo draws (`D <= 6`), the quasi-Monte-Carlo EM of Jank (2005). The per-item M-step is a
+  Newton on the concave multinomial-logit complete-data objective, byte-for-byte the
+  finite-difference-Hessian ascent of `poly::nominal_m_step` (the ridge is Hessian conditioning only,
+  NOT a parameter prior, so the fit is genuine MML and the D=1 reduction is bit-exact), generalized
+  so the softmax residual `resid_k = r_k - n P_k` drives `d/dc_ik = sum_node resid_k` and
+  `d/da_ikd = sum_node resid_k theta_d`. EM uses `fit_nominal`'s relative-tolerance stopping with a
+  SIGNED monotonic-decrease guard (a likelihood decrease errors, rather than the compensatory MIRT's
+  `.abs()` check which would accept one as convergence). **Identification.** Baseline category +
+  unit trait variances + a PURE single-dimension anchor item per dimension pin the rotation to the
+  coordinate axes: a pure anchor forces every one of its category slopes onto the axis, so an
+  orthogonal trait rotation must send that axis to `+-e_d`, and the confirmatory labels forbid axis
+  permutation — leaving only a per-dimension reflection `(a_i.d, theta_d) -> (-a_i.d, -theta_d)`,
+  which (as in `fit_nominal`) is NOT canonicalized; recovery is assessed up to it. `validate` rejects
+  a rotationally-degenerate pattern (no pure anchor), an out-of-range category, and — a guard
+  `fit_nominal` lacks — ANY unobserved category for an item (its intercept would diverge and its D
+  slopes be unidentified), plus a `nodes x items x n_cat` count-table cap and the rule-dependent
+  D / q / xi_points bounds. **Guards.** The D=1 anchor reproduces `fit_nominal`'s scores/intercepts
+  and whole loglik trace bit-exactly (< 1e-9); a deterministic finite-difference anchor pins EVERY
+  per-(category, dimension) gradient component on a fixed node set at D=2 (GH) AND D=4 (Halton) with
+  a NON-IDENTITY dims map and distinct random per-category counts (catching a category<->dimension
+  transposition the D=1 reduction cannot see); a D=2 recovery carries a genuinely NEGATIVE
+  cross-loader slope AND two OPPOSITE-sign sibling categories on the same dimension (catching a
+  collapse of the free per-category slopes to a shared scalar discrimination); and baseline /
+  off-pattern entries are asserted EXACTLY `0.0` with a free-parameter-count invariant. A
+  Monte-Carlo (`D in {2, 3}`, pure anchors + sign-varied cross-loaders, `n_cat = 3`, GH
+  `q = 15/11`, `N = 2500/2000`, assessed up to per-dimension reflection) recovers the category
+  slopes near-unbiased under a normal trait (slope RMSE ~0.12 at `D = 2` / ~0.13 at `D = 3`, bias
+  ~0.00-0.01) with the expected mild attenuation under a per-dimension-standardized right-skew trait
+  (RMSE ~0.21/0.22, bias ~-0.09), per-dimension trait EAP correlation ~0.61-0.67 and 100%
+  convergence, EM monotone every replication (the figures are a 40-replication pilot; the committed
+  `#[ignore]` test runs 500). Compute lives in
+  `mlsirm_core::nominal::fit_nominal`; exposed to Python as `fit_nominal` /
+  `NominalResponseFit`.
+
+- **Confirmatory compensatory multidimensional 2PL (MIRT), orthogonal or correlated**
+  (Reckase, 2009; Bock, Gibbons, & Muraki, 1988).
+  `fit_2pl(responses, model=...)` fits
+  a general COMPENSATORY multidimensional 2PL in which an item may load FREELY on several
+  latent dimensions, which trade off ADDITIVELY inside a single logit:
+  `P(X_ij=1 | theta_j) = sigmoid(sum_{d in S_i} a_id theta_jd + b_i)`, `theta_j ~ MVN(0, I_D)`,
+  where `S_i` is item `i`'s loading set from a 0/1 confirmatory pattern (items x dimensions).
+  This is Reckase's compensatory M2PL / the full-information item factor model, distinct from
+  the existing simple-structure `Mirt` (one dimension per item) and the orthogonal bifactor
+  (one primary + one general per item): arbitrary within-item cross-loadings break the
+  simple-structure quadrature factorization, so it is a dedicated estimator (standalone
+  `mlsirm_core::twopl`) with the full `q^D` product Gauss-Hermite grid (`D <= 3`). Estimated by
+  marginal-ML EM: the E-step is streamed per person (no `N x q^D` posterior materialized), and
+  each item M-step is an `(n_i + 1)`-dimensional Newton generalizing `fit_mmle_2pl`'s 2x2 — the
+  ridged, positive-definite `-Hessian` block solved by Gaussian elimination with a backtracking
+  line search that keeps the marginal loglik monotone. Loadings are **not** constrained
+  non-negative (reverse-keyed and suppressor cross-loadings are representable); the
+  per-dimension sign is fixed by a reflection anchor. **Latent traits:** `theta ~ MVN(0,
+  Sigma)` — orthogonal (`Sigma = I`) by default, or with `estimate_corr = true` the
+  inter-factor **correlation matrix is estimated**: the standard grid is mapped through
+  `chol(Sigma)` (`theta_g = L z_g`, a measure-preserving change of variables that reuses the
+  product-GH weights and the item M-step verbatim), and the `D(D-1)/2` free correlations ascend
+  the Gaussian-prior objective `-0.5[log|Sigma| + tr(Sigma^{-1} C)]` (`C` the posterior second
+  moment, accumulated via the per-node marginal mass so it adds nothing to the E-step order)
+  with backtracking + a full-matrix positive-definite guard, keeping EM monotone; the reflection
+  anchor also negates the flipped dimension's correlation off-diagonals. A deterministic
+  finite-difference anchor pins the correlation gradient (`D=2` and `D=3`); a known-`Sigma`
+  (`rho=0.5`) recovery with a reflection-triggering negative anchor confirms the sign flip; and
+  a 500-rep MC recovers the correlations essentially UNBIASED against the realized sample
+  correlation (correlation RMSE ~0.035-0.05, bias ~0.0005 under the normal model / ~0.017 under
+  the NORTA right-skew arm), 100% convergence with every fitted `Sigma` strictly interior.
+  `D > 3` (coarser GH or QMC) remains deferred. Identification is enforced by
+  `validate`: every dimension must have a PURE single-loading anchor item, so
+  rotationally-degenerate patterns (e.g. all-ones) are rejected rather than returning a point
+  on a non-identified ridge. Verified with the N(0,I) grid-moment identities, a DETERMINISTIC
+  finite-difference anchor pinning the full item gradient AND the off-diagonal cross-Hessian
+  (the local->pattern-dimension map) to `< 1e-4`, an exact reduction to `fit_mmle_2pl` at `D=1`
+  (`gh_rule(41)` is the same grid; loadings/intercepts agree to `< 1e-2`), and a non-trivial
+  `D=2` recovery with asymmetric loadings INCLUDING genuinely negative ones (recovered with
+  correct sign). A 500-replication Monte-Carlo (`D in {2,3}`, `N = 3000/2000`, confirmatory
+  pattern with pure anchors + cross-loaders) recovers the loadings essentially UNBIASED under
+  the correctly-specified normal trait (loading RMSE ~0.10 at `D=2` / ~0.12 at `D=3`, bias
+  ~0.006) and shows the expected mild loading attenuation under a per-dimension-standardized
+  right-skew trait (shape misspecification; RMSE ~0.12/0.16, bias ~-0.06/-0.10), with
+  per-dimension trait EAP correlation ~0.67-0.72 and 100% convergence, EM monotone every
+  replication. Exposed to Python as `fit_2pl` / `TwoPlFit`.
+- **`D > 3` confirmatory compensatory MIRT via quasi-Monte-Carlo EM** (Jank, 2005). The
+  compensatory MIRT above was capped at `D <= 3` by its `q^D` Gauss-Hermite product grid;
+  `fit_2pl` now takes a `node_rule` (`"gh"` default, or `"qmc"`/`"mc"`) that swaps
+  the E-step integration nodes for a **Halton quasi-Monte-Carlo** (or seeded Monte-Carlo) rule,
+  reaching `D = 4, 5, 6` (the Halton prime axes). This is Jank's (2005) QMC-EM: the E-step integral
+  `int p(x|theta) phi(theta) dtheta` is evaluated at `xi_points` points drawn from the prior
+  (Halton radical inverse mapped through the inverse-normal CDF, equal weights `1/xi_points`)
+  instead of the product grid, and the node set is built ONCE before the EM loop, so the per-item
+  `(n_i+1)`-dim Newton M-step and the correlated-`Sigma` ECM step are byte-for-byte the same code on
+  the swapped nodes. The reused node generator (`mlsirm_core::nodes::build_xi_nodes`, shared with the
+  marginal QMC-EM family) is parity-tested; its Gauss-Hermite arm is bit-identical to the existing
+  product grid, so the `"gh"` path is unchanged bit-for-bit and every prior MIRT test passes verbatim.
+  Both the orthogonal and the correlated-`Sigma` (Cholesky node-map `theta_g = L z_g`) paths carry
+  over to `D > 3`. **Monotonicity.** With `Sigma = I` the nodes never move, so the orthogonal fit is
+  monotone in the QMC-approximated marginal likelihood; the correlated `Sigma` M-step reparametrizes
+  the node cloud, so that fit is monotone only up to the QMC quadrature error (overall ascent with
+  per-step wobble ~1e-5 relative that shrinks as `xi_points` grows) — use the orthogonal path or a
+  larger `xi_points` when strict monotonicity matters. Validation is rule-dependent: `"gh"` keeps
+  `D <= 3` and the `q^D <= 200_000` node cap; `"qmc"`/`"mc"` cap `D <= 6` (the Monte-Carlo node
+  builder has no internal cap, so this bound is its sole guard) and bound `xi_points`
+  (`1..=200_000`, with checked `xi_points * n_items` and `xi_points * n_dims` allocations); `q`
+  applies only to `"gh"`, `xi_points`/`xi_seed` only to `"qmc"`/`"mc"`. **Guards.** Beyond the
+  reused-grid regression, a deterministic layout pin asserts `build_xi_nodes(Halton).grid[j*D+k] ==
+  inv_normal_cdf(radical_inverse(j+1, prime_k))` at `D = 4` (independently fixing the prime-to-axis
+  assignment, the index skip, and the row-major layout that a value-recovery test cannot see); the
+  QMC weights are pinned to `-ln(n)` (invisible to every fit-level test since they cancel in the
+  self-normalized posterior); a deterministic finite-difference anchor pins the analytic gradient and
+  full cross-Hessian on a FIXED Halton grid at `D = 4` with a non-identity `dims` map; the reduction
+  anchor is TWO-SIDED (a `D = 2` QMC fit agrees with the GH fit within QMC error AND differs
+  bit-wise, so a silent GH fallback is caught); and the reflection anchor is exercised with a
+  reverse-keyed largest anchor. **Accuracy.** A Monte-Carlo (`D in {4, 5}`, confirmatory pattern with
+  pure anchors + alternating-sign cross-loaders, Halton `xi_points = 4000/6000`, `N = 2000/1500`)
+  under a correctly-specified normal trait recovers the loadings near-unbiased (loading RMSE ~0.13 at
+  `D = 4` / ~0.17 at `D = 5`, bias ~0.01) and shows the expected mild attenuation under a
+  per-dimension-standardized right-skew trait (shape misspecification; RMSE ~0.16/0.21, bias
+  ~-0.07/-0.09), with per-dimension trait EAP correlation ~0.58-0.64 and 100% convergence, EM
+  monotone every replication (the reported figures are a 50-replication pilot; the committed
+  `#[ignore]` test runs 500). QMC carries an `O(N^{-1} (log N)^D)` finite-node bias that grows with
+  `D` (the higher-prime Halton axes degrade), so `D = 5, 6` and the correlated `Sigma` off-diagonals
+  need materially larger `xi_points`; `xi_seed` (nonzero by default) applies a Cranley-Patterson
+  shift that partly de-correlates the higher axes. Exposed to Python as `fit_2pl(...,
+  node_rule=, xi_points=, xi_seed=)`.
+- **Shared-Q sequential G-DINA for polytomous responses** (Ma & de la Torre, 2016;
+  Tutz, 1990). `fit_seq_gdina(responses, q_matrix)` fits ordered polytomous cognitive
+  diagnosis by the sequential (continuation-ratio) model: each ordered *step*
+  `k in 1..=M_i` of item `i` has a continuation probability `s_ik(l) = P(X_i >= k | X_i
+  >= k-1, reduced class l)` that is a saturated G-DINA over the item's `2^{K_i}` reduced
+  attribute classes, and the category probabilities are the sequential decomposition
+  `P(X_i = k | l) = (prod_{v<=k} s_iv(l))(1 - s_{i,k+1}(l))` with the stop sentinel
+  `s_{i,M_i+1} = 0` (top category has no trailing factor — never eps-clamped, so its
+  probability carries no spurious bias). Because the sequential likelihood factorizes
+  into independent per-step Bernoullis on the at-risk set, the M-step is the closed-form
+  saturated ratio `s_ik(l) = R_ik(l)/I_ik(l)` with `R` = expected count reaching category
+  `>= k` and `I` = expected count reaching `>= k-1` — exactly `fit_gdina`'s saturated step
+  on continuation counts. The population is a free profile distribution `pi_c`; `M_i` is
+  derived as each item's maximum observed category (an item stuck at category 0 is
+  rejected; a zero-frequency *interior* category is fine — it just means `s_{i,k+1} ~ 1`).
+  With one step per item (binary data) it reduces to `fit_gdina` **bit-for-bit** (shared
+  monotone init, identical E-step logprobs and closed-form ratio; a regression test
+  asserts the whole loglik trace and step probs agree to `< 1e-12`). Deterministic anchors
+  pin the sequential core with no Monte-Carlo noise: the category-probability identity
+  (`P(0)=1-a, P(1)=a(1-b), P(2)=a*b`, non-centered) and the at-risk-count identity
+  (responses `{0,1,1,2}` -> `s_1 = 3/4, s_2 = 1/3`, exercising the `{>=k}/{>=k-1}`
+  denominator). A 500-replication Monte-Carlo (K=3, mix of M=2/M=3 items, N=2500, under
+  BOTH a normal and a right-skew higher-order attribute distribution) recovers the model
+  with category-probability RMSE ~0.020, at-risk-mass-weighted step RMSE ~0.020, and
+  attribute-classification agreement ~0.97 — essentially identical across the normal and
+  skew conditions, because the free `pi_c` nests the higher-order-implied distribution
+  (no prior misspecification). **Scope:** this is the *shared item-level Q-vector*
+  sequential G-DINA — every step of an item is a saturated G-DINA over the SAME required
+  attributes; it is a restriction of Ma & de la Torre's general per-step (`q_ik`) model,
+  whose step-distinct attribute requirements are a deferred non-goal (supply each item's
+  Q-vector as the union of its steps' attributes). Compute lives in
+  `mlsirm_core::cdm::fit_seq_gdina` (reuses `reduce_class`, the profile-grid posterior,
+  and the saturated closed-form ratio); exposed to Python as `fit_seq_gdina` with the
+  `SeqGdinaFit` wrapper (`item_step_prob` / `item_cat_prob` ragged accessors).
+- **Per-step-Q sequential G-DINA — the full restricted-Q model** (Ma & de la Torre,
+  2016). `fit_seq_gdina_qr(responses, step_q, n_steps)` lifts the restriction above: each
+  ordered *step* `k` of item `i` carries its OWN attribute requirement `q_ik` (the paper's
+  headline generality — step 1 may need attribute A, step 2 need A AND B), supplied as a
+  row-major `(sum_i M_i) x K` restricted Q-matrix `Q_r`. The sequential factorization is
+  unchanged, so each step is still an independent saturated Bernoulli on its at-risk set
+  and the closed-form ratio `s = R/I` is still the exact complete-data MLE — but now each
+  step's success is a saturated G-DINA over ITS OWN `2^{|q_ik|}` reduced classes. **Storage
+  is union-class-indexed and lossless:** response probabilities depend only on the item's
+  UNION `u_i = OR_k q_ik`, so the E-step posterior and the category probabilities are
+  indexed by the `2^{|u_i|}` union reduced class (no `N x 2^K` materialization), while each
+  step's own reduced class is computed DIRECTLY from the full profile `c` via
+  `reduce_class(c, q_ik)` — never a union-mask AND, which would silently mis-gather the
+  renumbered set bits. Step probabilities are stored step-row-major (`spo` over `sum_i M_i`
+  rows, width `2^{|q_ik|}` each; `step_off[i]` per item, `step_kq[g] = |q_ik|`), category
+  probabilities item-major over the union class. **Reduction guard:** giving every step of
+  an item the item's Q reproduces `fit_seq_gdina` BIT-EXACTLY (layout-aware cell compare of
+  the transposed step tables plus direct compare of the class-major category probs and the
+  whole loglik trace — difference exactly `0`). A structural anchor (step 1 `q={A}`, step 2
+  `q={A,B}`) asserts the per-step block widths are `2` and `4` (not one collapsed union
+  block) and `n_parameters` reflects the per-step widths — a discrimination value recovery
+  alone cannot make, since an over-collapse to the union would still fit — while recovering
+  a large step-2 B-contrast (`s_2(A1,B0)=0.20` vs `s_2(A1,B1)=0.80`, gap >= 0.4) that the
+  shared-Q model cannot represent. `validate` rejects an all-zero step row (a step measuring
+  nothing), an attribute required by no step (all-zero union column), and `n_steps[i]` not
+  equal to both the declared step count and the maximum observed category, with checked
+  `(sum_i M_i) * K` and `2^{|u_i|}` allocations and the same `K` cap. A 500-replication
+  Monte-Carlo (K=3, step-distinct M=2/M=3 items plus single-attribute M=1 identification
+  items pinning each dimension, N, under BOTH a normal and a right-skew higher-order
+  attribute distribution) recovers the model with at-risk-mass-weighted step-probability
+  RMSE ~0.017, category-probability RMSE ~0.018, and attribute-classification agreement
+  ~0.972 — essentially identical across the normal and skew conditions (the free `pi_c`
+  nests the higher-order-implied distribution), 100% convergence with every replication
+  finite and on the simplex. Compute lives in `mlsirm_core::cdm::fit_seq_gdina_qr`; exposed
+  to Python as `fit_seq_gdina_qr` with the `SeqGdinaQrFit` wrapper (`item_step_prob` ragged
+  accessor over the per-step layout). The shared-Q `fit_seq_gdina` is retained as the
+  convenience special case.
+- **Higher-order G-DINA** (de la Torre & Douglas, 2004; de la Torre, 2011).
+  `fit_ho_gdina(responses, q_matrix)` fits the saturated G-DINA item model (each
+  item's reduced attribute-mastery classes get a free success probability) under a
+  *higher-order structural attribute prior*: a continuous trait `theta ~ N(0,1)`
+  drives mastery, `P(alpha_k=1 | theta) = sigmoid(a_k theta + d_k)`, with attributes
+  conditionally independent given the trait. It generalizes `fit_ho_cdm` (which
+  restricts the item model to DINA slip/guess) and constrains `fit_gdina`'s free
+  class distribution to the `2K`-parameter structured family. Estimated by
+  marginal-ML EM over the joint `(alpha, theta)` grid: because the item response is
+  conditionally independent of the trait given the attributes, the saturated item
+  M-step `p_il = R_il/I_il` marginalizes the trait out exactly (reusing `fit_gdina`'s
+  closed form), and the structural step is `K` independent 2PL calibrations of
+  attribute mastery on the trait (reusing `fit_ho_cdm`'s Newton). The higher-order
+  parameters are identified for `K >= 3`. Validated by a non-trivial anchor (a free
+  saturated fit of DINA-patterned data recovers the DINA identity-link `delta`
+  *and* the higher-order parameters), an independent-attribute pi-recovery check, and
+  a 500-replication Monte-Carlo study (K=3, N=1500) — the saturated item
+  probabilities recover with mass-weighted RMSE ~0.02 and attribute agreement > 0.9
+  under both a normal and a skewed trait distribution. Extends `mlsirm_core::cdm`
+  (reuses `reduce_class`, `mobius_inverse_inplace`, `newton_attr_2pl`,
+  `ho_pi_from_params`). Exposed to Python through PyO3 as `fit_ho_gdina` with the
+  `HoGdinaFit` wrapper.
+
+- **Rating Scale Model** (Andrich, 1978). `fit_rsm(responses)` fits the Rasch-family
+  polytomous model for items on a common rating scale (e.g. Likert): every item has
+  its own location `delta_i`, but the `K-1` category thresholds `tau_k` are *shared
+  across all items* — `ln[P(X=k)/P(X=k-1)] = theta - delta_i - tau_k`, `theta ~
+  N(0,1)`. This is a constrained partial-credit model (the PCM/GPCM in `poly.rs` /
+  `mixed.rs` have item-specific thresholds); at `K=2` it reduces exactly to the Rasch
+  model. Implemented as the GPCM cell with slope 1 and the structured intercept
+  `-k*delta_i - sum_{m<=k} tau_m` (reusing `poly::gpcm_logprobs`), fit by marginal-ML
+  EM with a monotone ECM M-step: a per-item Newton for the locations, then a joint
+  Newton for the shared thresholds aggregated over items — both with a backtracking
+  line search that guarantees the marginal likelihood ascends — followed by
+  re-centering the thresholds to sum to zero (the model is invariant under
+  `tau -> tau - c`, `delta -> delta - c`). A 500-replication Monte-Carlo study (J=12,
+  K=5, N=1000) recovers the item locations and the shared thresholds tightly and the
+  trait with correlation > 0.85 under both a normal and a skewed trait distribution.
+  New `mlsirm_core::rsm` module; exposed to Python through PyO3 as `fit_rsm` with the
+  `RsmFit` wrapper.
+
+- **Continuous Response Model** (Samejima, 1973) — the library's first estimator
+  for a *continuous* bounded response (all other models are binary, polytomous,
+  response-time, or cognitive-diagnosis). `fit_crm(responses)` fits Samejima's CRM,
+  the limit of the graded response model as the number of ordered categories grows
+  without bound. Operationally (Wang & Zeng, 1998), the logit of a response
+  `Z in (0,1)` is conditionally normal and linear in the trait:
+  `logit(Z_ij) | theta_j ~ N(a_i theta_j + d_i, sigma_i^2)`, `theta ~ N(0,1)`. The
+  working `(slope a_i, intercept d_i, residual sd sigma_i)` map to the classic
+  `(discrimination alpha_i = a_i/sigma_i, difficulty b_i = -d_i/a_i, scale
+  gamma_i = a_i)`, all reported. Estimated by marginal-ML EM over a Gauss-Hermite
+  trait grid with a **closed-form** weighted-least-squares item M-step (regress the
+  transformed response on the trait under the posterior, then the residual
+  variance) — the exact profile MLE, no Newton iteration. Continuous responses are
+  information-rich, so a 500-replication Monte-Carlo study (J=15, N=500) recovers
+  the item parameters tightly and the trait with correlation > 0.9 under both a
+  normal and a skewed trait distribution. New `mlsirm_core::crm` module (reuses the
+  `quadrature::gh_rule` grid); exposed to Python through PyO3 as `fit_crm` with the
+  `CrmFit` wrapper. The `Z -> logit` Jacobian is a data-only constant, so the
+  reported log-likelihood is in the transformed metric.
+
+- **Higher-order structured attribute prior for cognitive diagnosis** (de la Torre
+  & Douglas, 2004). `fit_ho_cdm(responses, q_matrix, model="dina"|"dino")` fits a
+  DINA/DINO model whose `2^K` attribute-class distribution, instead of being free
+  (as in `fit_cdm`), is *structured* by a continuous higher-order trait
+  `theta ~ N(0,1)`: `P(alpha_k=1 | theta) = sigmoid(a_k theta + d_k)` with attributes
+  conditionally independent given the trait. This replaces the `2^K - 1` free class
+  probabilities with `2K` interpretable attribute parameters (slope `a_k`,
+  intercept `d_k`). Estimated by marginal-ML EM over the joint `(alpha, theta)` grid:
+  the item slip/guess M-step is unchanged, and the population update becomes `K`
+  independent 2PL calibrations of attribute mastery on the trait (reusing the
+  `fit_mmle_2pl` Newton with expected node counts). The implied class distribution,
+  per-person trait EAP, MAP profile, and marginal attribute mastery are returned.
+  The observed-data likelihood depends on `(a_k, d_k)` only through the implied class
+  distribution, so the higher-order parameters are a genuine, identified restriction
+  only for `K >= 3` (at `K <= 2` only the class distribution and the attribute
+  classification are identified); `attr_slope` is anchored non-negative. A
+  500-replication Monte-Carlo study (higher-order DINA, K=3, N=1000) recovers the
+  attribute parameters and classification under both a correctly-specified normal
+  trait and a mis-specified skewed trait. Extends `mlsirm_core::cdm` — reuses the
+  DINA gate, `update_item`, and `mmle::GH_NODES`/`GH_WEIGHTS`. Exposed to Python
+  through PyO3 as `fit_ho_cdm` with the `HoCdmFit` wrapper.
+
+- **Item-level cognitive-diagnosis model selection by the Wald test** (de la
+  Torre, 2011). `gdina_wald_selection(responses, q_matrix, alpha=0.05)` tests, for
+  each item, whether the saturated G-DINA can be replaced by a more parsimonious
+  reduced model. The candidates are exact *linear restrictions* of the
+  identity-link parameters `delta = M^{-1} P` (`P` the reduced-class success
+  probabilities): **DINA** (conjunctive — only the intercept and the top-order
+  interaction free), **DINO** (disjunctive — the non-intercept coordinates tied
+  onto one line `delta_S = (-1)^{|S|+1} Delta`, a general non-coordinate
+  restriction), **A-CDM** (additive on the identity link — all interaction
+  coordinates zero), **LLM** (linear logistic model — additive on the *logit* link),
+  and **R-RUM** (reduced reparameterized unified model — additive on the *log* link).
+  The Wald statistic `W = (R delta)' (R Sigma_delta R')^{-1} (R delta) ~ chi^2(df)`
+  restricts the identity-link `delta = M^{-1} P` for DINA/DINO/A-CDM and the
+  transformed `delta^h = M^{-1} h(P)` for LLM (`h = logit`) and R-RUM (`h = log`).
+  For the identity link `Sigma_delta = M^{-1} Var(P) M^{-T}` with
+  `Var(P_l) = P_l(1-P_l)/I_l`; for a transformed link the first-order delta method
+  gives `Var(h(P_l)) = h'(P_l)^2 Var(P_l)` (LLM `1/(I_l P_l(1-P_l))`, R-RUM
+  `(1-P_l)/(I_l P_l)`), sharing the same Möbius sandwich. All three covariances (and
+  the two transformed deltas) accumulate in one pass over the shared Möbius columns
+  `c_l = M^{-1} e_l` (reusing `mobius_inverse_inplace`); the expected reduced-class
+  counts `I_l` come from one posterior pass. Per item the fewest-parameter model not
+  rejected at `alpha` is selected (DINA and DINO cost two parameters; A-CDM, LLM and
+  R-RUM each cost `1 + K`, so ties are broken by the larger p-value), else the
+  saturated G-DINA. The covariance uses complete-data (expected) rather than
+  observed information, so the test is mildly liberal — a 500-replication
+  Monte-Carlo study (K=2, N=3000, strong attribute identification) confirms Type I
+  error near nominal under both uniform and correlated/skew attribute distributions
+  (Type I at `alpha=0.05`: DINA/DINO/A-CDM/LLM/R-RUM all within ~0.059–0.083) with
+  power 0.98–1.000 against false over-restrictive or wrong-link models — including the
+  cross-link cases (A-CDM and R-RUM rejected under LLM truth ~1.000/0.98, LLM rejected
+  under R-RUM truth 1.000), verifying the link transform is faithful rather than
+  cosmetic. A
+  non-centered anchor test drives this home: truths additive on *only* one of the
+  three links (identity/logit/log) are each recovered as their own model while the
+  other two additive models are rejected. Extends `mlsirm_core::cdm` (reuses
+  `fit_gdina`, `reduce_class`, `posterior_row_gdina`, `mobius_inverse_inplace`, and
+  `fitstats::chi2_sf`). Exposed to Python through `gdina_wald_selection` /
+  `WaldModelSelection` (both generic in the model count, so the two new candidates
+  flow through unchanged). Deferred: the incomplete-data (observed-information)
+  covariance.
+
+- **Empirical Q-matrix validation by the PVAF method** (de la Torre & Chiu,
+  2016). `validate_q_matrix(responses, provisional_q, epsilon=0.95)` checks and
+  corrects the attribute-by-item Q-matrix of a cognitive-diagnosis model. Each
+  candidate q-vector groups the `2^K` latent attribute classes into masters vs.
+  non-masters of its required attributes; the *proportion of variance accounted
+  for* is `PVAF(q) = zeta^2(q) / zeta^2_full`, the share of the item's
+  across-class success-probability variance that grouping captures. Per item the
+  method returns the q-vector with the **fewest** required attributes whose
+  `PVAF >= epsilon` — an under-specified provisional q falls short and is
+  enlarged, an over-specified one is trimmed because a smaller vector already
+  clears the cutoff. The class weights and identified attribute labels come from
+  a G-DINA fit under the provisional Q; each item's *saturated* success
+  probability over all `2^K` classes is then recovered nonparametrically from
+  the fitted posteriors, so a mis-specified item's true dependence is exposed by
+  the attributes the *other* items identify (the method assumes the provisional
+  Q is mostly correct). Extends `mlsirm_core::cdm` — reuses the G-DINA
+  `reduce_class` collapse and posterior pass; the exhaustive q-vector search is
+  `O(J * 4^K)`, so `K` is capped at 10. Validated by an anchor (the true Q
+  validates to itself), over-/under-specification correction, and a
+  500-replication Monte-Carlo Q-recovery study (K=3, J=15, N=1000): under a
+  uniform attribute distribution the exact q-vector is recovered for 98.1% of
+  items (attribute TPR 0.996, FPR 0.012), and under a correlated/skew
+  higher-order distribution for 93.5% (TPR 0.982, FPR 0.035). Exposed to Python
+  through PyO3 as `validate_q_matrix` with the `QMatrixValidation` wrapper.
+  Deferred: the stepwise Wald item-level model-selection test (de la Torre,
+  2011) and sequential/iterative Q-matrix re-estimation.
+
+- **Testlet response model** (Bradlow, Wainer, & Wang, 1999; Wang, Bradlow, &
+  Wainer, 2002). `fit_testlet(responses, testlet_id, model="rasch"|"2pl")` models the
+  local dependence induced when items share a common stimulus (a reading passage): each
+  item in testlet `d` carries a person-specific random effect `gamma_{j,d} ~ N(0,
+  sigma^2_d)`, so `P(X=1) = sigmoid(a_i(theta_j - b_i - gamma_{j,d(i)}))`. The per-testlet
+  variance `sigma^2_d` is the estimand of interest — a large value flags strong
+  within-bundle dependence; all `sigma^2_d = 0` is the ordinary conditional-independence
+  2PL/Rasch model. A dedicated estimator (not the general bifactor): because each item
+  depends on `theta` and exactly one testlet effect, the marginal likelihood **factors**
+  into a `theta`-outer / per-testlet-`gamma`-inner nested Gauss-Hermite quadrature whose
+  per-person cost is independent of the number of testlets `D` (vs the bifactor's
+  exponential `D`-dimensional grid), and it reports `sigma^2_d` directly rather than only
+  per-item loadings. The item M-step reuses `fit_mmle_2pl`'s Newton on the effective node
+  `t_g - sigma_d*u_h`; the closed-form variance update `sigma^2_d <- sigma^2_d * mean_j
+  E[u_d^2 | y_j]` is accelerated with SQUAREM (Varadhan & Roland, 2008; monotone, with a
+  plain-EM fallback) to tame the slow variance-component convergence. Singleton testlets
+  (whose variance is non-identified) are pinned to 0. Compute lives in
+  `mlsirm_core::testlet::fit_testlet`; the shared Newton and Gauss-Hermite table make the
+  `sigma^2 -> 0` case reduce **bit-exactly** to `fit_mmle_2pl` (the reduction anchor,
+  asserted `< 1e-12`). Also anchored: a no-spurious-LD check (pure-2PL data recovers
+  `sigma^2 ~ 0`), a strong-LD recovery with a log-likelihood gain over the naive 2PL fit,
+  singleton pinning, and a monotone-ascent guard. A Bradlow-Wainer-Wang-style
+  500-replication Monte-Carlo (Rasch testlet, N=1000, D=4) under normal and skewed
+  ability recovers the testlet variances near-unbiasedly (RMSE ~0.093, `|bias| <= 0.007`)
+  and the item difficulties (RMSE ~0.09), with every replication converging. Exposed via
+  PyO3 as `fit_testlet` with the
+  `TestletFit` Python wrapper. (In the 2PL testlet the discrimination `a_i` and the
+  testlet SD `sigma_d` both scale the dependence via `a_i*sigma_d` and separate only
+  weakly, so the Rasch testlet is the well-identified default.) Deferred: polytomous and
+  3PL testlets, covariate/second-order structure, and the original paper's fully-Bayesian
+  MCMC estimator.
+
+- **Linear Logistic Test Model (LLTM)** (Fischer, 1973). An *explanatory* Rasch
+  model: `fit_lltm(responses, q_design)` decomposes each item's easiness (the package's
+  additive sign convention; Fischer difficulty is its negative) into a
+  linear combination of `K` basic cognitive-operation parameters through a fixed
+  weight matrix `Q` (`b_i = c + Σ_k q_ik·η_k`), rather than estimating `J` free item
+  easinesses. With `K << J` parameters it tests whether a small set of cognitive
+  operations *explains* the item parameters. Estimated by marginal-ML EM: the
+  E-step is the Rasch node posterior over the shared Gauss-Hermite rule; the M-step is
+  a `K`-dimensional chain-rule Newton — the per-item Rasch easiness gradient/Hessian
+  aggregated through the design (`g_η = Qᵀg_b`, `H_η = Qᵀ diag(h_b) Q + ridge`, solved
+  with the shared dense `solve_small`). A free grand-mean easiness intercept is fit by
+  default. The classic likelihood-ratio test of LLTM vs the saturated Rasch model
+  (`2·(ll_Rasch − ll_LLTM) ~ χ²(J − K − 1)`) is computed inline (the Rasch reference is
+  the same engine run with `Q = I`). **Identification is validated, not assumed**: the
+  effective design (including the intercept column) must have full column rank for `η`
+  to be identified, so a rank-deficient `Q` (e.g. one whose rows sum to a constant,
+  colliding with the intercept) is rejected rather than papered over by the Newton
+  ridge. Compute lives in `mlsirm_core::lltm::fit_lltm`; because the M-step reuses
+  `mmle`'s Rasch Newton and Gauss-Hermite table, the `Q = I` case reduces
+  **bit-exactly** to a Rasch fit — anchored two ways: a single M-step is bit-identical
+  (`==`) to `J` independent per-item Rasch Newton steps, and a full `Q = I` fit matches
+  a single-class Rasch mixture fit to `< 1e-10`. A 500-replication Monte-Carlo
+  (J=30, K=5, N=1500) under normal and skewed ability recovers the basic parameters
+  (RMSE/bias) and induced easinesses, and validates the LR test (Type I when the
+  restriction holds, power when it is violated off-model). Exposed via PyO3 as
+  `fit_lltm` with the `LltmFit` Python wrapper. This is the marginal-ML / `N(0,1)`
+  operationalization of Fischer's conditional-ML LLTM. It is a repository-specific
+  estimator choice, and finite-sample equality with Fischer's conditional-ML item
+  estimates is not asserted. Deferred: conditional-ML estimation, LLTM for 2PL/polytomous
+  models, and random-weights / LLRA extensions.
+
+- **Mixed Rasch / mixture IRT** (Rost, 1990; Rost & von Davier, 1995). A new
+  paradigm for unobserved population heterogeneity: `fit_mixture(responses,
+  n_classes, model="rasch"|"2pl")` models the population as a mixture of `C` latent
+  classes, each with its OWN item parameters and a mixing weight `pi_c`, detecting
+  qualitatively different response strategies a single-class model cannot represent.
+  Within a class, responses follow a Rasch (discrimination fixed at 1) or 2PL model
+  with `theta ~ N(0,1)`, estimated by marginal-ML EM: the E-step forms the joint
+  posterior over (class, ability node) via one max-shift log-sum-exp over the `C·Q`
+  Gauss-Hermite grid; the per-class item M-step reuses the exact penalized Newton
+  step of `fit_mmle_2pl` (weighted by the class responsibility); the mixing weights
+  update to the mean posterior class membership. Because the mixture likelihood is
+  multimodal, `n_starts > 1` runs random restarts (start 0 is a deterministic warm
+  start) and keeps the highest-likelihood fit; classes are returned in a canonical
+  order (mixing weight descending, ties by mean difficulty ascending) to tame label
+  switching. Compute lives in `mlsirm_core::mixture::fit_mixture`; the shared Newton /
+  Gauss-Hermite table with `fit_mmle_2pl` makes the `C = 1` case reduce **bit-exactly**
+  to the verified single-class 2PL estimator — the reduction anchor, asserted to
+  `< 1e-12`. Also anchored: a two-class difficulty-reversal recovery (the canonical
+  Rost two-strategy structure), permutation-matched, plus a monotone-ascent guard. A
+  500-replication Monte-Carlo (C=2, J=15, N=1500, reversal truth) under normal and
+  skewed ability recovers the class difficulties (permutation-matched RMSE), mixing
+  proportions, and class membership (MAP accuracy + label-invariant Adjusted Rand
+  Index; Hubert & Arabie, 1985). Exposed via PyO3 as `fit_mixture` with the
+  `MixtureFit` Python wrapper. This repository combines Rost's latent-class structure
+  with a fixed-standard-normal, Bock-Aitkin marginal-ML EM estimator. It differs from
+  the conditional-ML estimators in Rost (1990) and psychomix (Frick et al., 2012), so
+  no exact finite-sample item-contrast equivalence is claimed. Deferred: free per-class
+  ability variance, automatic model selection
+  over `C` (AIC/BIC/ICL from the returned `n_parameters`/`loglik_trace`), and
+  concomitant-variable mixing.
+
+- **Generalized DINA (G-DINA), the saturated cognitive-diagnosis framework**
+  (de la Torre, 2011). `fit_gdina(responses, q_matrix)` fits the general model of
+  which DINA, DINO, A-CDM, LLM, and R-RUM are constrained special cases. For an
+  item requiring `K_i` attributes, each of its `2^{K_i}` *reduced* attribute-mastery
+  classes gets a **free** success probability `p_il = P(X_i = 1 | reduced class l)`,
+  estimated by marginal-ML EM over the `2^K` profiles. The E-step reuses the DINA
+  profile-grid posterior; the closed-form saturated M-step is
+  `p_il = R_il / I_il` (expected correct / expected total in reduced class `l`) —
+  exactly DINA's two-cell slip/guess step generalized to `2^{K_i}` cells (de la
+  Torre, 2011, Eq. 10). The identity-link parameters `item_delta` (intercept, main
+  effects, all interactions) are recovered from the fitted probabilities by an
+  in-place signed subset Möbius transform `delta = M^{-1} p` (no matrix inverse), so
+  the constrained submodels are readable off the `delta` pattern — DINA leaves only
+  the intercept and the highest-order interaction nonzero; A-CDM zeroes the
+  interactions. Item parameters are stored ragged (CSR: `item_off` + flat
+  `item_prob`/`item_delta`) since `2^{K_i}` varies per item; the box constraint
+  `0 <= p_il <= 1` holds for free (`0 <= R_il <= I_il`). The saturated estimator is
+  otherwise order-unconstrained: Q-matrix identifiability does not make the
+  all-mastered class largest, and the separate Hong, Chang, and Tsai (2016)
+  subset-lattice order restriction is not implemented.
+  Compute lives in `mlsirm_core::cdm::fit_gdina`, extending the DINA module without
+  touching the shipped DINA core; exposed via PyO3 as `fit_gdina` with the `GdinaFit`
+  Python wrapper. Correctness is anchored by a brute-force likelihood identity
+  (log-space path == naive enumeration to `1e-12`), a **DINA-reduction crux anchor**
+  (DINA-generated data recovers `p_il = g_i` for every non-top class and `1 - s_i`
+  at the top, with the exact DINA `delta` pattern), a DINO-reduction anchor, an
+  A-CDM additivity anchor (fitted interactions negligible relative to main effects),
+  a Möbius round-trip identity, an exhaustive `reduce_class` bit-packing check, and a
+  deterministic limit. A de la Torre (2011)-style 500-replication Monte-Carlo (K=5,
+  J=30, N=1000) with a stochastic higher-order attribute distribution (de la Torre &
+  Douglas, 2004) under normal and skewed abilities recovers `p_il` (mass-weighted
+  RMSE) and attribute classification accuracy. Deferred: LLM/R-RUM logit/log-link
+  submodels, item-level model-selection Wald tests, Q-matrix validation, and full
+  subset-lattice isotonic monotonicity (Hong et al., 2016).
+
+- **Cognitive diagnosis models: DINA and DINO** (Junker & Sijtsma, 2001; de la
+  Torre, 2009; Templin & Henson, 2006). A new discrete-attribute paradigm
+  alongside the continuous-trait family: `fit_cdm(responses, q_matrix,
+  model="dina"|"dino")` classifies each respondent's binary attribute-mastery
+  profile `alpha in {0,1}^K` against a Q-matrix of item-attribute requirements.
+  The ideal response is the conjunctive AND gate `eta = prod_k alpha_k^{q_k}`
+  (DINA — mastery of all required attributes) or the disjunctive OR gate
+  `eta = 1 - prod_k (1-alpha_k)^{q_k}` (DINO — any required attribute), and the
+  observed response adds a per-item slip `s_i = P(X=0|mastered)` and guess
+  `g_i = P(X=1|not mastered)`, `P(X=1|alpha) = (1-s_i)^{eta}(g_i)^{1-eta}`.
+  Estimation is marginal-ML EM over the `2^K` profiles with a free profile
+  distribution: the E-step posterior is accumulated over the discrete profile
+  grid (a bitwise gate test replaces the continuous quadrature), the item M-step
+  is **closed form** (`s_i = 1 - R1_i/I1_i` = expected fraction of masters
+  answering wrong; `g_i = R0_i/I0_i` = non-masters answering right; de la Torre,
+  2009, Eqs. 9-10), and the population step is a mean of the posteriors. The
+  monotonicity/identification constraint `1 - s_i > g_i` is enforced by the exact
+  constrained boundary maximiser; missing cells are dropped under MAR. Persons
+  are classified by the posterior-mode profile (`map_profile`) and marginal
+  attribute-mastery probabilities (`attr_prob`, attribute EAP). All compute runs
+  in the Rust core (`mlsirm_core::cdm::fit_cdm`) with the `2^K` profile grid
+  bit-encoded (no `N*L` storage; streaming E-step); DINA and DINO share one
+  estimator differing only in the one-line gate mask. Correctness is anchored by
+  a brute-force likelihood identity (log-space path == naive enumeration to
+  `1e-12`), a deterministic `s=g=0` limit (exact pattern recovery), a
+  DINA==DINO gate-equivalence identity on single-attribute items, and a K=1
+  reduction to a 2-class latent-class model. A de la Torre (2009)-style
+  500-replication Monte-Carlo (K=5, J=30, N=1000) recovers slip/guess with mean
+  RMSE 0.013-0.024 and negligible bias (`|bias| < 3e-4`) and attains attribute
+  classification agreement 0.99 (s=g=0.1) / 0.95 (s=g=0.2), pattern-wise 0.96 /
+  0.76. Deferred: the general G-DINA/saturated CDM, Q-matrix estimation, and
+  structured (higher-order) attribute priors.
+
+- **Polytomous response models (GRM / GPCM), unidimensional.** A complete
+  fit -> score -> information subsystem: `fit_polytomous(responses, n_cat,
+  model="grm"|"gpcm")` fits the graded response model (Samejima; the default)
+  or the generalized partial credit model (Muraki) by Bock-Aitkin marginal-EM;
+  `score_polytomous(responses, fit)` returns EAP trait scores and posterior
+  SDs; `information_polytomous(fit, theta)` returns item and test Fisher
+  information curves. `NaN` responses are treated as missing and marginalized
+  out of each person's likelihood and posterior. All numerical work — the category cells, the residual
+  M-step gradient, the Newton item update, the EAP reduction, and the
+  information — runs in the Rust core (`mlsirm_core::poly`:
+  `grm_logprobs`/`gpcm_logprobs` + `*_node_gradient` + `fit_poly_unidim` +
+  `score_poly_eap` + `poly_item_information`), exposed via PyO3; the NumPy
+  `category_logprobs`/`grm_category_logprobs`/`gpcm_node_gradient`/
+  `fit_gpcm_numpy` are parity references held to `<= 1e-12` (both cells) /
+  recovery agreement (fitter). GRM is
+  chosen as the identification-clean default for the latent-space family — the
+  single interaction term enters every cumulative logit as a shared shift, with
+  no forced category scaling (design rationale and literature basis in
+  `docs/papers/gpcm-nominal-design-spec.md`). The latent-space polytomous
+  extension (the same cell inside the marginal `(theta, xi)` quadrature) is the
+  next milestone.
+
+- **Polytomous computerized adaptive testing** (Dodd, De Ayala & Koch, 1995).
+  `cat_simulate_polytomous(true_theta, fit)` simulates an adaptive test over a
+  fitted GRM/GPCM bank: items are selected by maximum Fisher information at the
+  running EAP trait, responses are generated at the true trait, and the trait +
+  posterior SD are re-estimated after each item, stopping at an SE threshold (or
+  a fixed length). Returns per-simulee `theta_eap`, `theta_sd`, and `n_used`.
+  Compute in Rust (`mlsirm_core::poly::poly_cat_simulate`, plus
+  `poly_cat_next_item`), composing the existing item information and EAP scoring.
+  Validated by a 500-simulee Monte-Carlo: a variable-length CAT recovers the
+  trait to RMSE 0.29 (normal) / 0.33 (skew) using ~9.7 of 40 bank items, and at
+  a fixed length of 12 maximum-information selection beats random (RMSE 0.27 vs
+  0.33 normal; 0.30 vs 0.40 skew).
+
+- **Polytomous person fit** (Drasgow, Levine & Williams, 1985; Snijders, 2001).
+  `person_fit_polytomous(responses, fit)` returns the standardized
+  log-likelihood `l_z` and its estimated-trait correction `l_z*` (per person,
+  at the EAP trait) plus `theta_eap` and a boolean `flagged`, for a fitted
+  GRM/GPCM — the ordered-category generalization of the binary l_z. Compute in
+  Rust (`mlsirm_core::poly::poly_person_fit`), reusing the poly cells with a
+  central-difference trait score. Validated by an exact reduction to the binary
+  `person_fit` l_z at `n_cat = 2` (`<1e-6`) and a 500-replication Monte-Carlo:
+  under model respondents `l_z*` is ~N(0,1) (mean −0.15, sd 1.04, Type I 0.08
+  at a 20-item test), and inconsistent responders are flagged with power 0.86.
+
+- **Nominal categories model** (Bock, 1972; Thissen, Cai & Bock, 2010).
+  `fit_nominal_polytomous(responses, n_cat)` fits the unidimensional nominal
+  model `P(Y=k|θ) = softmax_k(a_k·θ + c_k)` with a free scoring function `a_k`
+  and intercept `c_k` per category, identified by `a_0 = c_0 = 0` and
+  `θ ~ N(0,1)`, returning a `NominalFit` (`scores`, `intercepts`, `loglik`).
+  The generalized partial credit model is the special case `a_k = a·k`, so the
+  nominal model nests it. Compute in Rust (`mlsirm_core::poly::fit_nominal`),
+  reusing the softmax cell and its residual gradient. The parameterization and
+  identification were adversarially verified against the source chapter.
+  Validated by the GPCM nesting (loglik ≥ the GPCM fit, recovered scores linear
+  in `k`) and a 500-replication recovery Monte-Carlo (per-item sign alignment):
+  under a matched `N(0,1)` ability the score RMSE is 0.15 with |bias| 0.01
+  (near-unbiased), degrading to RMSE 0.44 / |bias| 0.39 under a skewed
+  population.
+
+- **Polytomous item-pair local dependence** (Chen & Thissen, 1997; Liu &
+  Maydeu-Olivares, 2013). `local_dependence_polytomous(responses, fit)` returns,
+  for every item pair of a fitted GRM/GPCM, the Pearson `X²` and likelihood-ratio
+  `G²` comparing the observed `K×K` contingency table to the model-implied joint
+  under local independence, with `df = (K-1)²`, the χ² p-value, Cramér's V, and
+  the largest standardized cell residual — the ordered-category generalization
+  of the binary pairwise χ² and the pair-level complement to item-level S-X² and
+  test-level M2. Compute in Rust (`mlsirm_core::fitstats::poly_local_dependence`).
+  Validated by a deterministic K=2 reduction to a from-scratch 2×2 χ² and a
+  500-replication Monte-Carlo at fitted parameters: locally-independent pairs are
+  calibrated (X²/df = 0.84, Type I 0.03 — conservative, as the papers note),
+  while an injected 2-item testlet is localized to that pair (X²/df = 10.9, power
+  1.00).
+
+- **Polytomous IRT likelihood-ratio DIF** (Thissen, Steinberg & Wainer, 1993;
+  Woehr & Meriac, 2010). `dif_polytomous(responses, group_id, n_cat)` runs a
+  two-group DIF sweep for GRM/GPCM items: it fits a *compact* model (all items
+  group-invariant) once, then per studied item an *augmented* model (that item's
+  parameters freed per group) with every other item as the anchor, and refers
+  `LR = 2·Δloglik` to `χ²((n_groups−1)·n_cat)`. Each non-reference group's latent
+  distribution `N(μ_g, σ_g²)` is estimated in **both** models (group 0 pinned to
+  `N(0,1)`), so genuine ability differences between groups (impact) are absorbed
+  rather than mistaken for DIF. Returns per-item `lr`, `df`, `p_value`,
+  `flagged_bh` (Benjamini-Hochberg FDR), and `effect_size` (the across-group
+  range of the item's mean category location). Compute in Rust
+  (`mlsirm_core::poly::fit_poly_multigroup` — a Bock-Zimowski multi-group
+  marginal EM whose per-item M-step reuses the single-group Newton step on each
+  group's nodes/expected-counts stacked, the concatenation being exactly the
+  Bock-Zimowski pooling — driving `poly_dif_sweep`). Validated by a 500-rep
+  Monte-Carlo with impact (focal `θ~N(0.5, 1.2²)`), two-group GPCM, `K=3`:
+  under no DIF the test is calibrated (Type I 0.042, `mean(LR)=2.92≈df=3`), an
+  injected uniform difficulty shift is detected with power 0.996 and a
+  non-uniform slope difference with power 0.920, while a skewed focal population
+  inflates Type I only mildly (0.057); a structural check confirms the augmented
+  fit never falls below the compact one and recovers the focal `μ, σ`.
+
+- **Response-time person fit** (van der Linden & Guo, 2008; Sinharay, 2018).
+  `rt_person_fit` flags aberrant response-time patterns — rapid guessing, item
+  preknowledge — under a fitted lognormal RT model. It profiles each person's speed
+  by ML, so the sum of squared standardized log-time residuals
+  `W_j = sum_i [alpha_i (ln T_ij - (beta_i - tau_hat_j))]^2` is *exactly*
+  `chi2(n_j - 1)` (an orthogonal-projection identity — the estimated-speed
+  correction is a clean loss of one degree of freedom, the RT analogue of `l_z*`,
+  with no asymptotic drift). It returns the aggregate `W`/p-value, a Wilson-Hilferty
+  standardized `l_t`, and per-item studentized residuals plus one-sided too-fast
+  flags. It detects speed *inconsistency across items*, not a uniform speed level
+  (the profile absorbs it). Compute in Rust (`rt::rt_person_fit`, reusing
+  `fitstats::chi2_sf`); exposed via PyO3 and Python. Validated by an exact identity
+  anchor (at true parameters the residuals are `N(0,1)` and `W` is `chi2(n)` with
+  known speed, `chi2(n-1)` once profiled, to within Monte-Carlo error) and a
+  500-replication Monte-Carlo: Type I sits on nominal (0.05, exact — no
+  finite-length conservatism), rapid-guessing and preknowledge responders are
+  detected with power ~1.0 under both normal and skew speed, the flag is robust to
+  the speed-distribution shape (it conditions on within-item residuals), and the
+  tampered items are recalled at ~99%. Deferred: an EAP-plug-in mode (statistically
+  inferior — it mis-calibrates the chi-square) and multivariate RT aberrance.
+
+- **Joint speed-accuracy hierarchical model** (van der Linden, 2007, Level 2). A
+  new `mlsirm_core::rt_joint` module and the public `fit_speed_accuracy` — the
+  person-level layer that ties ability `theta` (from an accuracy 2PL model) to
+  speed `tau` (from the lognormal RT model) through a bivariate-normal person
+  distribution `(theta, tau) ~ N2(0, [[1, rho*sigma_tau], [rho*sigma_tau,
+  sigma_tau^2]])`, with the accuracy responses and log-times conditionally
+  independent given `(theta, tau)`. The headline output is `rho`, the ability-speed
+  correlation. This is the two-stage estimator: item parameters are held fixed and
+  the person covariance `(rho, sigma_tau)` is estimated by marginal ML over a 2-D
+  Gauss-Hermite grid built by Cholesky-mapping the standard nodes through
+  `Sigma_P`, with an exact constrained EM M-step (`c = S12/S11`,
+  `v = S22 - S12^2(S11-1)/S11^2`). The reported `rho` is the consistent marginal-ML
+  correlation, not the shrinkage-attenuated correlation of the two separate EAPs.
+  Compute in Rust (`rt_joint::fit_speed_accuracy_covariance`); exposed via PyO3 and
+  Python. Validated by an exact identity anchor (at `rho = 0` the 2-D grid
+  log-likelihood factorizes into the sum of the two 1-D grids to `< 1e-10`), a
+  reduction anchor (true independence returns `rho ~ 0`), monotone EM, and a
+  500-replication Monte-Carlo recovering `rho in {0, 0.5, -0.5}` with essentially
+  zero bias (bias `< 0.001`, RMSE ~0.03-0.04) and `sigma_tau` to RMSE ~0.008.
+  Deferred: the one-step full-information MMLE, 3PL guessing, and item-parameter-
+  uncertainty propagation into SE(rho).
+
+- **Lognormal response-time model** (van der Linden, 2007). A new
+  `mlsirm_core::rt` module and the public `fit_response_times` — the speed-side
+  analogue of the 2PL for item response *times*, opening a response-time modality
+  alongside the accuracy models. For person `j` (latent speed `tau_j`) and item
+  `i` (time intensity `beta_i`, time discrimination `alpha_i`),
+  `ln(T_ij) ~ Normal(beta_i - tau_j, 1/alpha_i^2)`; item parameters and the speed
+  SD are estimated by marginal-ML EM with `tau ~ Normal(0, sigma_tau^2)`, and speed
+  is scored by EAP. Because the model is conditionally Gaussian with a unit loading
+  on `tau`, the speed posterior, marginal likelihood, and EAP are all *exact closed
+  forms* (matrix-determinant / Sherman-Morrison), so the estimator needs neither
+  quadrature nor a line search — the EM is exact `O(nnz)` coordinate ascent. The
+  log-time metric identifies the speed scale (so `sigma_tau` is estimated, not
+  fixed) and only the location is pinned (`mu_tau = 0`). Compute in Rust; exposed
+  via PyO3 and Python; missing/non-positive times are marginalized per person.
+  Validated by an exact identity anchor (the closed-form marginal log-likelihood
+  equals a dense multivariate-normal log-pdf to `< 1e-9`), a reduction anchor
+  (`sigma_tau -> 0` collapses to the per-item lognormal MLE), and a 500-replication
+  Monte-Carlo: under both normal and a *misspecified* skew speed population the item
+  parameters stay essentially unbiased (RMSE `alpha` 0.067 / `beta` 0.027, bias
+  `beta` -0.0001 under skew) with speed recovered at corr 0.92, demonstrating that
+  the level-1 RT item parameters are estimable independently of the speed
+  distribution's shape. Deferred: the joint speed-accuracy hierarchical layer,
+  Louis-standard-error information, and RT bank linking.
+
+- **Standard errors of equating** (Kolen & Brennan, 2014, ch. 7; Efron &
+  Tibshirani, 1993). `equating_standard_errors` reports the per-score-point
+  sampling error of the equated score for the equivalent-groups design, by two
+  routes. The nonparametric **bootstrap** (`route="bootstrap"`) resamples
+  examinees per group independently with replacement at the observed sample sizes,
+  re-equates each of `n_boot` replicates through the existing equating code, and
+  returns the per-score bootstrap SD and a percentile confidence interval — it
+  works for every method including equipercentile, which has no simple analytic
+  SEE. The **delta-method** (`route="analytic"`) returns the closed-form
+  normal-theory SE for mean equating (`sigma_x^2/n_x + sigma_y^2/n_y`, constant in
+  `x`) and linear equating (`sigma_y^2 (1 + z^2/2)(1/n_x + 1/n_y)`,
+  `z = (x-mu_x)/sigma_x`). Compute in Rust (`equating::bootstrap_see` /
+  `analytic_see`); exposed via PyO3 and Python. Validated by the analytic-Linear
+  agreeing with the bootstrap-Linear SEE within Monte-Carlo tolerance, the Mean
+  SEE being constant, a `1/sqrt(N)` shrink and seed-determinism check, and a
+  500-replication Monte-Carlo confirming the bootstrap SE recovers the *true*
+  sampling SD of `e_Y(x)` (from an outer fresh-sample Monte-Carlo) — interior
+  ratio in [0.95, 1.08] for equipercentile. Deferred: NEAT bootstrap SEE, analytic
+  equipercentile/kernel SEE.
+
+- **Tucker & Levine linear NEAT equating** (Kolen & Brennan, 2014, §4.3–4.4;
+  Brennan, 2006). `equate_neat_linear` adds the linear observed-score methods for
+  the common-item non-equivalent-groups design, alongside the existing chained /
+  frequency-estimation equipercentile NEAT. Each forms synthetic-population
+  moments of the two forms (weighted by `w1`) from a group total-on-anchor slope
+  `gamma` — Tucker uses the regression slope `Cov(total, V)/Var(V)`; Levine uses
+  the congeneric effective-length ratio, which differs for an internal anchor
+  (`Var(total)/Cov`) versus an external one (`(Var(total)+Cov)/(Var(V)+Cov)`) —
+  then equates linearly. Compute in Rust (`equating::equate_neat_linear`); exposed
+  via PyO3 and Python. Validated by the exact reduction to equivalent-groups
+  linear equating under equal anchor moments (all four Tucker/Levine ×
+  internal/external variants, any `w1`, to `< 1e-9`), a hand-computed check that
+  pins the internal-vs-external Levine gamma against an independent oracle, and a
+  500-replication Monte-Carlo under a common-regression generative model
+  (equated-score interior RMSE 0.39 → 0.19 from `N = 1000` to `4000`, ratio 2.02 ≈
+  √4; max bias 0.051 → 0.034). Deferred: Levine true-score equating, Braun-Holland.
+
+- **Kernel equating + log-linear presmoothing** (von Davier, Holland & Thayer,
+  2004; Holland & Thayer, 2000). Two enhancements to the equating module.
+  `loglinear_smooth(counts, degree)` presmooths a score-frequency distribution by
+  Poisson-ML log-linear fitting (on an orthonormal polynomial design over a
+  centered/scaled score, Newton with step-halving), preserving the first `degree`
+  sample moments exactly while damping sampling noise; it returns AIC/BIC so a
+  caller can select the degree, and saturated at `degree = k` it reproduces the
+  raw relative frequencies. `equate_observed_scores_kernel` adds a Gaussian-kernel
+  continuization (von Davier's `F_h(x) = Σ_j r_j Φ((x − a x_j − (1−a)μ)/(a h))`,
+  bandwidth by the penalty method) and optional per-form presmoothing to the
+  equipercentile family, behind a single extended entry point whose uniform-kernel
+  path reproduces the existing equipercentile bit-for-bit. Compute in Rust
+  (`equating::loglinear_smooth` / `equate_eg_ext`); exposed via PyO3 and Python.
+  Validated by exact-identity anchors — uniform-kernel equating equals the
+  equipercentile to `< 1e-12`; presmoothing preserves the first `T` moments to
+  `< 1e-8` and reproduces `rel_freq` when saturated; the Gaussian-kernel
+  self-equate is the identity, a large bandwidth drives kernel equating to linear
+  to `< 1e-4`, and the continuized density preserves the discrete mean and
+  variance — plus a 500-replication Monte-Carlo against the population
+  Gaussian-kernel transform (interior RMSE 0.53 → 0.26 from `N = 1000` to `4000`,
+  ratio 2.03 ≈ √4; max bias 0.049 → 0.020). Deferred: bivariate presmoothing,
+  kernel-NEAT, and analytic standard errors.
+
+- **Observed-score equating** (Kolen & Brennan, 2014). A new
+  `mlsirm_core::equating` module and the public `equate_observed_scores` /
+  `equate_neat` — the raw-score complement to the IRT scale linking (`irt_link`).
+  Equivalent-groups mean, linear, and equipercentile equating (percentile-rank
+  matching with the Kolen-Brennan uniform-kernel continuization, equated scores
+  kept real-valued), and the common-item non-equivalent-groups (NEAT) design via
+  chained equipercentile and frequency-estimation (post-stratification)
+  equipercentile. The attainable min/max are computed on relative-frequency
+  vectors; the frequency-estimation synthetic densities are renormalized so a
+  poorly overlapping anchor degrades toward each group's own marginal rather than
+  corrupting the cdf. Compute in Rust; exposed via PyO3 and a Python
+  `equating.py` (`EquateResult`). Validated by three exact identities — the
+  equipercentile self-equate is the identity to `< 1e-9` (including the low
+  boundary at `x = 0`), mean/linear recover a known integer-affine transform to
+  `< 1e-9`, and both NEAT methods collapse to EG equipercentile under equal
+  anchor distributions to `< 1e-9` — plus a 500-replication Monte-Carlo against a
+  deterministic Lord-Wingersky population equating: the empirical equipercentile
+  converges at the expected rate (interior RMSE 0.53 at `N = 1000` → 0.26 at
+  `N = 4000`, ratio 1.99 ≈ √4; max bias 0.068 → 0.031). Deferred (each a drop-in
+  behind the density/table interface): Tucker/Levine linear NEAT, log-linear
+  presmoothing, and Gaussian-kernel equating (von Davier et al., 2004).
+
+- **Nonparametric polytomous person fit U3poly** (Emons, 2008; van der Flier,
+  1982). `u3_person_fit_polytomous(responses, n_cat)` computes van der Flier's
+  `U3` person-fit statistic generalized to ordered polytomous items — a
+  *model-free* index: each item-step response function `P(Y_i >= m)` is estimated
+  by its sample proportion, turned into a logit weight, and a person's observed
+  weighted score is compared to the largest and smallest weighted scores
+  attainable at that person's total score (the conditioning group), giving
+  `U3 in [0, 1]` (1 = maximally popularity-inconsistent). The attainable min/max
+  bounds are computed by exact min-plus / max-plus DP (not the flat "sum of the
+  top-k weights" shortcut, which over-counts once an unused category breaks
+  within-item monotonicity). `u3_cutoff_polytomous(fit, n_persons)` returns a
+  simulated `1 - alpha` critical value by parametric bootstrap (U3poly has no
+  usable analytic null; Emons used simulated critical values). Compute in Rust
+  (`mlsirm_core::poly::u3_poly_person_fit` + `u3_poly_bootstrap_cutoff`).
+  Validated by an exact `n_cat = 2` reduction to a from-scratch van der Flier `U3`
+  (max abs diff `< 1e-10`) and a 500-replication Monte-Carlo (GPCM, `K = 5`,
+  `n = 600`): the simulated cutoff calibrates the marginal flag rate under a
+  matched population (Type I 0.052 normal / 0.054 skew) and detects careless
+  responders with power ~1.00; the per-total-score-group flag-rate deviation
+  (0.066 normal / 0.083 skew) is reported to make transparent that a single
+  pooled cutoff cannot fully condition on the total score. Complements the
+  parametric `l_z`/`l_z*` (`person_fit_polytomous`) with a distribution-free
+  screen.
+
+- **Polytomous M2 limited-information goodness-of-fit** (Maydeu-Olivares & Joe,
+  2014). `m2_polytomous(responses, fit)` returns the test-level M2 statistic,
+  `df`, `p_value`, RMSEA2 (with a 90% interval), and SRMSR for a fitted GRM/GPCM
+  — the ordered-category generalization of the binary M2 (`m2_stat`). It uses
+  the cumulative marginals `P(Y_i>=c)` and `P(Y_i>=c, Y_j>=d)` (the same M2 as
+  the paper's category-equality form) and reduces **exactly** to the binary
+  `m2_rmsea2` at `n_cat = 2`. Compute in Rust (`mlsirm_core::fitstats::poly_m2`),
+  reusing the one-Cholesky residual-projection solve. `df = n(K-1) +
+  C(n,2)(K-1)² - nK`. Validated by the exact `K=2` reduction (GRM and GPCM) and
+  a 500-replication Monte-Carlo: under a matched `N(0,1)` ability `mean(M2)/df =
+  0.99` with Type I error 0.05 (nominal), and under a skewed population `M2`
+  inflates 4× with power 1.00.
+
+- **Generalized S-X² item fit for polytomous models** (Kang & Chen, 2008, 2011).
+  `item_fit_polytomous(responses, fit)` returns the per-item summed-score
+  chi-square, `df`, `p_value`, and retained cell count for a fitted GRM/GPCM,
+  extending the binary Orlando-Thissen S-X²: persons are grouped by summed
+  score, and the model-expected category proportions come from the generalized
+  Lord-Wingersky recursion (Thissen, Pommerich, Billeaud & Williams, 1995) with
+  the leave-one-out summed-score distribution. Boundary score groups are merged
+  and adjacent categories collapsed to a minimum expected frequency. Compute in
+  Rust (`mlsirm_core::poly::poly_s_x2`), exposed via PyO3. Validated to reduce
+  **exactly** to the trusted binary `fitstats::s_x2` at `n_cat = 2` (GRM and
+  GPCM, statistic and df), and — at the true generating parameters — to track
+  its reference chi-square (`E[S-X²] ≈ Σ cells`) for both the GPCM (2008) and
+  GRM (2011) families.
+
+- **Marginal (MMLE-EM) estimation for the full latent-space family.**
+  `fit(estimator="mmle")` now fits `MIRT`/`MLS2PLM`/`MLSRM` (and `ULS2PLM`/
+  `ULSRM` under a population structure) by Bock-Aitkin-style marginal EM:
+  person latents `(theta, xi)` are integrated over Gauss-Hermite grids —
+  tractable via the simple-structure conditional factorization — with a
+  Fisher-preconditioned GEM M-step and the Jeon et al. (2021) LSIRM priors as
+  MAP penalties (`PenaltyConfig::lsirm_prior`). Rust core
+  (`mlsirm_core::marginal`) with a NumPy mirror
+  (`fast_mlsirm.estimators.marginal`) held to 1e-9 end-of-run parity
+  (`tests/test_marginal_parity.py`); design and paper basis in
+  `docs/mmle_marginal_lsirm_design.md`.
+- **Estimation-level multigroup and multilevel population structures** for the
+  marginal estimator: `fit(..., group_id=...)` (Bock-Zimowski group trait
+  means/SDs, common items, pinned reference group) and
+  `fit(..., cluster_id=...)` (Fox-Glas random intercept, `sigma_u`/ICC
+  estimated). Results surface on `FitResult.population` and persist through
+  `save_fit_result`; the CLI `fit` command gains `--estimator`, `--group-id`,
+  `--cluster-id`, `--q-theta`, `--q-xi`, `--q-u`, and `--tolerance`.
+- **wgpu E-step kernels for the marginal estimator**
+  (`mlsirm_core::gpu_marginal`): the E-step hot path runs in f32 on the GPU
+  with the same race-free slot-ownership reduction as the JML kernels, cutting
+  a 31k-person multilevel E-step iteration from ~110 s (CPU f64) to ~5 s on a
+  laptop RTX 3050 Ti; the M-step and final EAP pass stay on the CPU in f64,
+  and hosts without an adapter fall back to the CPU path unchanged.
+- **Likelihood-based fit statistics** (`fast_mlsirm.fitstats`): Orlando-Thissen
+  S-X² via the Lord-Wingersky recursion generalized to the joint `(theta, xi)`
+  grid (chi-square tail without SciPy), Benjamini-Hochberg FDR control,
+  Drasgow `l_z` and Snijders `l_z*` person fit with the MAP `r_0` correction,
+  and infit/outfit at the marginal EAPs.
+- **M2 limited-information goodness-of-fit** (`fast_mlsirm.fitstats.m2`;
+  Maydeu-Olivares & Joe 2005/2006, Cai & Hansen 2013): the M2 statistic on the
+  univariate + bivariate residual margins, its df and χ² tail p-value, the
+  RMSEA2 approximate-fit index with a 90% noncentral-χ² confidence interval,
+  and the bivariate SRMSR (Maydeu-Olivares 2013). Every model-implied margin
+  (and the up-to-4th-order entries of the multinomial residual covariance
+  `Xi_2`) is computed exactly by the local-independence factorization over the
+  `(theta, xi)` node set — `pi_S = Σ_c w_c ∏_{i∈S} P_i(c)` — the same
+  factorization the E-step already uses (Cai-Hansen); the derivative matrix
+  `Delta_2` is central-differenced from the node moments and the quadratic form
+  is evaluated through one Cholesky of `Xi_2` (never an explicit inverse). Rust
+  core (`mlsirm_core::fitstats::m2_rmsea2`, kind-aware) with a NumPy reference
+  held to 1e-6 parity; well-specified-vs-local-dependence calibration tests in
+  both suites.
+- **GPU EAP scoring kernel** (`mlsirm_core::gpu_marginal::score_eap_gpu`, WGSL
+  `score_pass`): Bock-Mislevy (1982) EAP scoring on the wgpu path, one thread
+  per person (race-free — each person owns its output slots, unlike the E-step
+  reduction), reusing the same `cell_l` binary-sparsity table decomposition.
+  Exposed as an **opt-in** device on `score_eap_device(..., Device::Gpu)` and
+  through PyO3 `score_bank_eap(..., device=...)` and
+  `serving.score_respondents(..., device="gpu")`; the default stays the exact
+  f64 CPU reduction, so precision-sensitive paths and serving parity are
+  unchanged. f32 kernel, GPU-vs-CPU parity ≤ 2e-3 verified on-device
+  (`gpu_eap_matches_cpu_reduction`); falls back to CPU with no adapter or when
+  `n_dims`/`latent_dim > 8`. Extends GPU offload from the E-step to the 31k-
+  person serving hot path (project compute policy: all math in Rust, GPU where
+  it pays).
+- **IRT scale linking for common-item designs** (`fast_mlsirm.irt_link`;
+  `mlsirm_core::linking`): the moment methods (mean/mean, mean/sigma) and the
+  characteristic-curve methods of Haebara (1980) and Stocking & Lord (1983) for
+  putting a separately-calibrated new form onto the reference scale
+  (`theta_old = A·theta_new + B`), motivated by the mixed-format / multi-study
+  linking papers in the corpus (Kim & Lee 2006; Yao & Boughton 2009; Brossman &
+  Lee 2013). The characteristic-curve loss is minimized by a self-contained
+  Nelder-Mead over `(A, B)` from the mean/sigma start, integrated over a
+  standard-normal Gauss-Hermite grid. Rust compute path; recovery tests for all
+  four methods in both suites. (Complements the existing anchor-based
+  `link_fixed_item_parameters` and the FIPC serving path.)
+- **Item screening pipeline** (`fast_mlsirm.select_items`): iterative
+  fit → flag → remove → refit with sparse / S-X²-BH / mean-square band /
+  low-discrimination / map-isolation flags, an `l_z*` person screen, a
+  per-dimension item floor, and a full audit trail.
+- **Serving bundle + frozen-parameter scoring** (`fast_mlsirm.serving`):
+  schema-versioned JSON bundle of the calibrated item parameters and
+  population block, and `score_respondents()` EAP scoring of new response
+  payloads with items frozen — the fixed-parameter serving pattern used by
+  the downstream importance-assessment API. `fast-mlsirm score` scores a JSON
+  payload (or `.npy` matrix) against a bundle from the command line.
+
+- **QMC-EM and MC-EM integration rules** for the marginal estimator
+  (`FitConfig(xi_rule="qmc"|"mc", xi_points=..., xi_seed=...)`): the
+  latent-space integral runs on Halton low-discrepancy points (randomized-QMC
+  shift optional; Jank 2005) or seeded Monte Carlo draws (Wei & Tanner 1990;
+  Meng & Schilling 1996) instead of the tensor Gauss-Hermite grid — enabling
+  `latent_dim > 3` and better error scaling per node. Both constructions are
+  deterministic and bit-mirrored across the Rust/NumPy backends.
+- **Rust scoring module** (`mlsirm_core::scoring`, exposed via
+  `_core.score_bank_eap` / `score_bank_map` / `eapsum_tables`): EAP
+  (Bock & Mislevy 1982), MAP (posterior Newton with observed-information
+  SEs), and summed-score EAP conversion tables via the Lord-Wingersky
+  recursion (Thissen et al. 1995; Cai 2015), all under per-dimension
+  `N(mean_d, sd_d^2)` priors that cover single, multigroup
+  (`mu_g, sigma_g`) and multilevel populations (conditional
+  `N(u_hat_c, 1)` or marginal `N(0, sqrt(1 + sigma_u^2))`).
+  `score_respondents(..., method="eap"|"map"|"eapsum", prior=...)` and the
+  bundle's embedded `eapsum_tables` expose these to serving.
+- **Fit statistics moved to the Rust core** (`mlsirm_core::fitstats`): S-X²,
+  Benjamini-Hochberg, `l_z`/`l_z*`, infit/outfit now compute in Rust
+  (`fast_mlsirm.fitstats` delegates; the NumPy bodies remain the parity
+  reference/fallback). S-X² gains the `rms_residual` practical-significance
+  effect size (Sinharay & Haberman 2014) and `select_items` gates its flag on
+  `sx2_min_effect`; the mean-square gate now uses infit only (outfit is
+  reported, not gating — it explodes under very low pass rates); the person
+  screen threshold is configurable and the Snijders `r_0` correction is
+  centered on the population prior mean (cluster intercepts / group means).
+- **Fixed Item Parameter Calibration** (`fit(..., anchors=...)`): anchored
+  items stay frozen (optionally `tau` too) while new items and a freed
+  population mean/SD are estimated — the multiple-cycle prior-update (MWU-MEM
+  style) variant Kim (2006) found robust; latent-space orientation inherits
+  from the anchors (no PCA re-alignment). **Concurrent calibration** is the
+  existing multigroup path with structural missingness (Hanson & Béguin
+  2002), covered by a dedicated recovery test.
+
+### Changed
+
+- `estimator="mmle"` with a spatial/multidimensional model now fits (routed to
+  the marginal estimator) instead of raising `NotImplementedError`; plain
+  `ULS2PLM`/`ULSRM` without a population structure keep the legacy
+  unidimensional fast path and its exact previous behavior.
 
 - Exposed the Rust MMLE-EM estimator (`mlsirm_core::mmle::fit_mmle_2pl`) through
   the PyO3 binding as `fast_mlsirm._core.fit_mmle_2pl`, so

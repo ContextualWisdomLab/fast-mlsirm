@@ -421,6 +421,15 @@ def test_objective_model_requires_one_trait():
 
     with pytest.raises(ValueError, match="ULS2PLM requires one trait dimension"):
         neg_loglik_and_grad(np.zeros((2, 2)), np.zeros(2, dtype=int), params, config=FitConfig(model="ULS2PLM"))
+    for backend in ("numpy", "rust"):
+        with pytest.raises(ValueError, match="marginal estimator only"):
+            neg_loglik_and_grad(
+                np.zeros((2, 2)),
+                np.zeros(2, dtype=int),
+                params,
+                config=FitConfig(model="BIFAC2PLM"),
+                backend=backend,
+            )
 
 
 def test_objective_add_penalty_uses_space():

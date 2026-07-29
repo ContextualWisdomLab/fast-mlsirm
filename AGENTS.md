@@ -133,11 +133,12 @@ Guidance for ANY agent (Claude, Codex, Cursor, opencode, ...) working in this re
 
 ### Code exploration
 
-- No `.codegraph/` index exists in this repo today, so use normal search
-  (grep/find, ripgrep) to locate and understand code. If a `.codegraph/` index
-  is later added at the repo root, prefer CodeGraph
-  (`codegraph explore "<query>"`, or the code-review-graph MCP tools) BEFORE
-  grep/find — it surfaces callers/callees/impact that text search misses.
+- Use CodeGraph before grep/find, ripgrep, or broad file reads whenever code
+  needs to be located or understood. If the repository root does not yet have
+  a `.codegraph/` index, initialize it with `codegraph init .` first, then use
+  `codegraph explore "<query>"` (or the code-review-graph MCP tools). Keep the
+  index refreshed for the current checkout so callers, callees, and impact are
+  derived from the active PR head rather than stale source.
 
 ### This repo's role in the ecosystem
 

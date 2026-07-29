@@ -16,7 +16,7 @@
 //! proptest is MIT / Apache-2.0 licensed, so it is safe for this MIT crate. It
 //! runs under the standard `cargo test`, so CI needs no extra toolchain.
 
-use mlsirm_core::{ModelConfig, ModelType, Params, PenaltyConfig};
+use crate::{ModelConfig, ModelType, Params, PenaltyConfig};
 use proptest::prelude::*;
 
 const MODEL_TYPES: [ModelType; 5] = [
@@ -107,7 +107,7 @@ proptest! {
         let mask_ref = mask.as_deref();
 
         let (objective, grad, loglik) =
-            mlsirm_core::neg_loglik_and_grad(&y, mask_ref, &factor_id, &params, &config, &penalty);
+            crate::neg_loglik_and_grad(&y, mask_ref, &factor_id, &params, &config, &penalty);
 
         // Gradient shapes must exactly match the configured dimensions.
         prop_assert_eq!(grad.theta.len(), config.n_persons * config.n_dims);
