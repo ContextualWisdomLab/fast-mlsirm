@@ -68,6 +68,43 @@ def test_fit_handles_missing_by_design_axes_and_extreme_scores():
     assert np.all(np.isfinite(result.params.theta))
 
 
+def test_fit_stays_finite_with_all_correct_and_all_incorrect_items():
+    """All-correct / all-incorrect items drive the unregularized MLE difficulty
+    toward +/-inf; the regularized estimator must keep every parameter finite.
+
+    This is the item-side counterpart of the extreme-person (0점/만점) case
+    above: item 0 is answered correctly by every person and item 1 incorrectly
+    by every person, the two degenerate columns for item-parameter estimation.
+    """
+    responses = np.array(
+        [
+            [1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ]
+    )
+
+    result = fit(
+        responses,
+        np.zeros(3, dtype=int),
+        config=FitConfig(
+            model="MIRT",
+            optimizer="adam",
+            max_iter=40,
+            n_restarts=1,
+            latent_dim=1,
+            seed=7,
+            penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
+        ),
+    )
+
+    assert np.isfinite(result.objective)
+    assert np.all(np.isfinite(result.params.b))
+    assert np.all(np.isfinite(result.params.alpha))
+    assert np.all(np.isfinite(result.params.theta))
+
+
 def test_true_parameters_reproduce_simulation_probabilities():
     data = simulate(MLS2PLMConfig(n_persons=8, n_dims=2, items_per_dim=2, latent_dim=2, seed=9))
 
