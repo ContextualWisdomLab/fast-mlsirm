@@ -7,8 +7,6 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from .io import _load_json_bounded
-
 
 def render_diagnostics_report(
     diagnostics_path: str | Path,

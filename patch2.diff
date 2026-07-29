@@ -1,0 +1,11 @@
+--- python/fast_mlsirm/report.py
++++ python/fast_mlsirm/report.py
+@@ -6,6 +6,8 @@
+ from pathlib import Path
+ from typing import Any
+
++from .io import _load_json_bounded
++
+
+ def render_diagnostics_report(
+     diagnostics_path: str | Path,
