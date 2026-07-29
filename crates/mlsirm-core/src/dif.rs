@@ -1511,6 +1511,1533 @@ pub fn sibtest(
     Ok(rows)
 }
 
+// ===================== Raju (1988/1990) ICC area DIF ==========================
+//
+// Closed-form signed and unsigned areas between two logistic ICCs, with Raju's
+// delta-method Z tests. The item parameters must already be on a COMMON scale;
+// use [`crate::linking::irt_link`] (e.g. `LinkMethod::MeanSigma`) beforehand —
+// linking is deliberately not re-implemented here.
+//
+// SOURCE STATUS. The primary papers were NOT read (paywalled):
+// Raju, N. S. (1988). The area between two item characteristic curves.
+//     *Psychometrika, 53*(4), 495-502. https://doi.org/10.1007/BF02294403
+// Raju, N. S. (1990). Determining the significance of estimated signed and
+//     unsigned areas between two item response functions. *Applied
+//     Psychological Measurement, 14*(2), 197-207.
+//     https://doi.org/10.1177/014662169001400208
+// The formula oracle is difR's `RajuZ.R` / `difRaju.R` (READ in full):
+// Magis, D., Beland, S., Tuerlinckx, F., & De Boeck, P. (2010). A general
+//     framework and an R package for the detection of dichotomous differential
+//     item functioning. *Behavior Research Methods, 42*, 847-862.
+//     https://doi.org/10.3758/BRM.42.3.847 (package paper NOT read; code READ).
+// Both areas and all four partial derivatives were additionally re-derived by
+// hand and verified against numeric quadrature / finite differences during
+// adversarial spec review; difR's gradient is the uniform NEGATION of grad H
+// (variance-equivalent), and difR's `exp(Y)==Inf` overflow branch carries the
+// sign opposite to the closed-form positive-side limit (moot here: this
+// implementation uses a stable softplus and exposes only |H| for the unsigned
+// statistic).
+
+/// Raju ICC-area DIF output. One entry per item.
+#[derive(Debug, Clone)]
+pub struct RajuAreaResult {
+    /// Area statistic. Signed: `h = b_F - b_R = integral (P_R - P_F) dtheta`
+    /// under `P_G(theta) = logistic(a_G (theta - b_G))` — positive means the
+    /// item is HARDER for the focal group. Unsigned: `h = |H| >= 0`, the total
+    /// area `integral |P_F - P_R| dtheta`. For 3PL, scaled by `(1 - c)`.
+    pub h: Vec<f64>,
+    /// Delta-method standard error of `h` (scaled by `(1 - c)` for 3PL).
+    pub se: Vec<f64>,
+    /// `Z = H / se(H)` from the UNSCALED quantities (difR convention; the
+    /// `(1 - c)` factor cancels). Signed for `signed = true`, else `>= 0`.
+    pub z: Vec<f64>,
+    /// Two-sided `p = 2 (1 - Phi(|z|))`.
+    pub p_value: Vec<f64>,
+    /// Items with `|z| > z_{1 - alpha/2}` (0-based).
+    pub dif_items: Vec<usize>,
+    /// Which statistic was computed.
+    pub signed: bool,
+}
+
+/// Numerically stable `ln(1 + e^y)`.
+fn softplus(y: f64) -> f64 {
+    if y > 0.0 {
+        y + (-y).exp().ln_1p()
+    } else {
+        y.exp().ln_1p()
+    }
+}
+
+/// Raju's (1988) signed/unsigned area DIF test with Raju's (1990) delta-method
+/// Z statistics (difR `RajuZ` oracle; see the section comment for source
+/// status — primary papers NOT read, difR code READ, formulas re-derived and
+/// quadrature/FD-verified in adversarial spec review).
+///
+/// ICC convention: `P_G(theta) = 1 / (1 + exp(-a_G (theta - b_G)))`. Verified
+/// identity (hand-derived; pinned by a quadrature test):
+/// `integral (P_R - P_F) dtheta = b_F - b_R`, so the signed statistic
+/// `h = b_F - b_R` is positive when the item is harder for the focal group.
+///
+/// Unsigned area (Raju 1988 closed form, hand-re-derived via the single
+/// crossing point): with `Y = a_F a_R (b_F - b_R) / (a_F - a_R)`,
+/// `H = 2 (a_F - a_R) / (a_F a_R) * ln(1 + e^Y) - (b_F - b_R)` and
+/// `h = |H| = integral |P_F - P_R| dtheta`. The two-sided equal-slope limit of
+/// the signed auxiliary `H` is not unique (`Y -> +inf` gives `+(b_F - b_R)`,
+/// `Y -> -inf` gives `-(b_F - b_R)`); only `|H| -> |b_F - b_R|` is continuous,
+/// which is why only `|H|` is exposed. Exact `a_F == a_R` uses that limit with
+/// the b-only variance (slope partials vanish).
+///
+/// Variance (delta method, independent group calibrations; partials FD-verified):
+/// `grad H = (2(L - Y s)/a_F^2, 2s - 1, 2(Y s - L)/a_R^2, 1 - 2s)` in the order
+/// `(a_F, b_F, a_R, b_R)` with `s = logistic(Y)`, `L = softplus(Y)`;
+/// `Var(H) = sum_G [A_G^2 se(a_G)^2 + B_G^2 se(b_G)^2 + 2 A_G B_G cov_G]`.
+/// The signed path uses only the difficulty SEs: `Var = se(b_F)^2 + se(b_R)^2`.
+///
+/// `guess`: optional per-item pseudo-guessing `c` COMMON to both groups
+/// (3PL with unequal group `c` has no closed form here and is rejected by
+/// contract); `h` and `se` are reported scaled by `(1 - c)`, `z` is the
+/// unscaled ratio (difR convention).
+///
+/// Flags `dif_items` at `|z| > z_{1 - alpha/2}`. Caveat (Monte-Carlo verified
+/// in this crate's test suite): under an exact null with equal true slopes the
+/// unsigned `|H|` statistic is anti-conservative (its leading term is
+/// quadratic, so the normal-theory Z over-rejects); the signed test is exact
+/// there. Prefer the signed test when uniform DIF is the alternative.
+#[allow(clippy::too_many_arguments)]
+pub fn raju_area(
+    a_ref: &[f64],
+    b_ref: &[f64],
+    se_a_ref: &[f64],
+    se_b_ref: &[f64],
+    cov_ab_ref: &[f64],
+    a_foc: &[f64],
+    b_foc: &[f64],
+    se_a_foc: &[f64],
+    se_b_foc: &[f64],
+    cov_ab_foc: &[f64],
+    guess: Option<&[f64]>,
+    signed: bool,
+    alpha: f64,
+) -> Result<RajuAreaResult, String> {
+    let n = a_ref.len();
+    if n == 0 {
+        return Err("raju_area: no items".into());
+    }
+    let same_len = [
+        b_ref.len(),
+        se_a_ref.len(),
+        se_b_ref.len(),
+        cov_ab_ref.len(),
+        a_foc.len(),
+        b_foc.len(),
+        se_a_foc.len(),
+        se_b_foc.len(),
+        cov_ab_foc.len(),
+    ]
+    .iter()
+    .all(|&l| l == n);
+    if !same_len {
+        return Err("raju_area: parameter slices must all have the same length".into());
+    }
+    if let Some(c) = guess {
+        if c.len() != n {
+            return Err("raju_area: guess length mismatch".into());
+        }
+        if c.iter()
+            .any(|&v| !v.is_finite() || !(0.0..1.0).contains(&v))
+        {
+            return Err("raju_area: pseudo-guessing c must be finite in [0, 1)".into());
+        }
+    }
+    if !(alpha > 0.0 && alpha < 1.0) {
+        return Err("raju_area: alpha must be in (0, 1)".into());
+    }
+    for i in 0..n {
+        let finite = [
+            a_ref[i],
+            b_ref[i],
+            se_a_ref[i],
+            se_b_ref[i],
+            cov_ab_ref[i],
+            a_foc[i],
+            b_foc[i],
+            se_a_foc[i],
+            se_b_foc[i],
+            cov_ab_foc[i],
+        ]
+        .iter()
+        .all(|v| v.is_finite());
+        if !finite {
+            return Err(format!("raju_area: non-finite parameter at item {i}"));
+        }
+        if a_ref[i] <= 0.0 || a_foc[i] <= 0.0 {
+            return Err(format!("raju_area: discriminations must be > 0 (item {i})"));
+        }
+        if se_a_ref[i] < 0.0 || se_b_ref[i] < 0.0 || se_a_foc[i] < 0.0 || se_b_foc[i] < 0.0 {
+            return Err(format!(
+                "raju_area: standard errors must be >= 0 (item {i})"
+            ));
+        }
+        // Cauchy-Schwarz / PSD bound per group: |cov(a, b)| <= se_a * se_b.
+        // Without this, an invalid covariance can still leave the assembled
+        // variance positive and silently corrupt the SE and Z.
+        if cov_ab_ref[i].abs() > se_a_ref[i] * se_b_ref[i]
+            || cov_ab_foc[i].abs() > se_a_foc[i] * se_b_foc[i]
+        {
+            return Err(format!(
+                "raju_area: |cov_ab| exceeds se_a * se_b (item {i}); the group \
+                 sampling covariance matrix is not positive semi-definite"
+            ));
+        }
+    }
+
+    let mut h = vec![0.0; n];
+    let mut se = vec![0.0; n];
+    let mut z = vec![0.0; n];
+    let mut p_value = vec![0.0; n];
+    for i in 0..n {
+        let delta = b_foc[i] - b_ref[i];
+        // Unscaled (H, Var(H)); the (1 - c) report scaling happens at the end.
+        let (h_raw, var) = if signed {
+            (delta, se_b_foc[i] * se_b_foc[i] + se_b_ref[i] * se_b_ref[i])
+        } else if a_foc[i] == a_ref[i] {
+            // Equal-slope limit: |H| -> |delta|; slope partials vanish, so the
+            // variance is the b-only delta method (|dH/db_F| = |dH/db_R| = 1).
+            (
+                delta.abs(),
+                se_b_foc[i] * se_b_foc[i] + se_b_ref[i] * se_b_ref[i],
+            )
+        } else {
+            let (af, ar) = (a_foc[i], a_ref[i]);
+            let d = af - ar;
+            let y = af * ar * delta / d;
+            let l = softplus(y);
+            let s = 1.0 / (1.0 + (-y).exp());
+            let h_aux = 2.0 * d / (af * ar) * l - delta;
+            // grad H in (a_F, b_F, a_R, b_R); FD-verified in spec review.
+            let g_af = 2.0 * (l - y * s) / (af * af);
+            let g_bf = 2.0 * s - 1.0;
+            let g_ar = 2.0 * (y * s - l) / (ar * ar);
+            let g_br = 1.0 - 2.0 * s;
+            let v = g_af * g_af * se_a_foc[i] * se_a_foc[i]
+                + g_bf * g_bf * se_b_foc[i] * se_b_foc[i]
+                + 2.0 * g_af * g_bf * cov_ab_foc[i]
+                + g_ar * g_ar * se_a_ref[i] * se_a_ref[i]
+                + g_br * g_br * se_b_ref[i] * se_b_ref[i]
+                + 2.0 * g_ar * g_br * cov_ab_ref[i];
+            (h_aux.abs(), v)
+        };
+        if !var.is_finite() || var <= 0.0 {
+            return Err(format!(
+                "raju_area: assembled variance is not positive at item {i} \
+                 (check covariances against the standard errors)"
+            ));
+        }
+        let sd = var.sqrt();
+        let zi = h_raw / sd;
+        let scale = guess.map_or(1.0, |c| 1.0 - c[i]);
+        h[i] = scale * h_raw;
+        se[i] = scale * sd;
+        z[i] = zi;
+        // p = 2 (1 - Phi(|z|)) = erfc(|z| / sqrt(2)).
+        p_value[i] = crate::fitstats::erfc(zi.abs() / std::f64::consts::SQRT_2);
+    }
+    let z_crit = crate::mokken::normal_upper_quantile(alpha / 2.0);
+    let dif_items = (0..n).filter(|&i| z[i].abs() > z_crit).collect();
+    Ok(RajuAreaResult {
+        h,
+        se,
+        z,
+        p_value,
+        dif_items,
+        signed,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Angoff Delta plot DIF (deltaPlotR port)
+// ---------------------------------------------------------------------------
+//
+// # Citation governance
+//
+// `delta_plot` is a computational port of Angoff's Delta plot (transformed
+// item difficulties) DIF method as IMPLEMENTED by the deltaPlotR R package
+// (READ: `R/deltaPlot.R` and `R/adjustExtreme.R`, cran/deltaPlotR @ e2aeeb6;
+// `R/diagPlot.R` is plotting-only and out of scope). NOT READ: Angoff, W. H.,
+// & Ford, S. F. (1973), "Item-race interaction on a test of scholastic
+// aptitude", *Journal of Educational Measurement, 10*, 95-106, and Magis, D.,
+// & Facon, B. (2012, 2014) — the method is cited only as implemented by
+// deltaPlotR. Printing, plotting, file output, and the `type="prop"` /
+// `type="delta"` input paths of the R function are out of scope (adversarial
+// spec review, files/deltaplot_spec_review.md: REDUCED-SCOPE); this port
+// implements the `type="response"` path only and does NOT claim full
+// deltaPlotR API parity.
+//
+// Algorithm (deltaPlot.R lines 20-187, transcribed):
+// 1. Per item, proportions correct per group (missing responses dropped per
+//    column, R `na.rm=TRUE`).
+// 2. Extreme-proportion adjustment (adjustExtreme.R): `constraint` clamps
+//    EVERY entry outside `[lo, hi]` (default `[0.001, 0.999]`); `add` replaces
+//    only entries EXACTLY 0 or 1 by `(sum + nr_add) / (n + 2*nr_add)` over the
+//    non-missing responses of that group-column.
+// 3. Delta transform `Delta = 4 * qnorm(1 - p) + 13` (line 49; the inverse
+//    normal CDF here is Acklam's approximation, |rel err| < 1.15e-9 — pinned
+//    tests use 1e-6 tolerances against an exact-quantile oracle).
+// 4. Major axis of the item cloud: `SIG = cov(Deltas)` (sample covariance,
+//    n-1), slope `b = max(b1, b2)` of the two roots
+//    `(s22 - s11 ± sqrt((s22-s11)^2 + 4 s12^2)) / (2 s12)`, intercept
+//    `a = mean_foc - b * mean_ref`. NOTE: `max` is R-compatible, NOT
+//    theoretical major-axis selection — the two roots have product -1 and R
+//    always keeps the positive one, even when `s12 < 0` (regression-tested).
+//    `s12 == 0` makes both roots NaN and R stops; this port returns `Err`.
+// 5. Perpendicular distances `dist_i = (b*D_ref_i - D_foc_i + a)/sqrt(b^2+1)`
+//    (lines 58-60). Any NaN distance is an error (R line 61 `stop`).
+// 6. Threshold: `Norm { alpha }` gives `Q = qnorm(1-alpha/2) * sqrt(C' SIG C)`
+//    with `C = (b, -1)/sqrt(b^2+1)`; `Fixed(thr)` gives `Q = |thr|`. Item `i`
+//    is flagged iff `|dist_i| > Q` (STRICT, line 73).
+// 7. Optional item purification (lines 96-183): drop flagged items, refit the
+//    axis on the reduced delta matrix, recompute distances for ALL items, and
+//    re-threshold per `PurifyType`: `Ipp1` keeps the first-pass threshold,
+//    `Ipp2` uses the new axis direction with the ORIGINAL full-data SIG,
+//    `Ipp3` uses the new direction with the reduced-data covariance. A fixed
+//    threshold forces IPP1 semantics (lines 148-152). Convergence: the flag
+//    membership row equals the previous iteration's row (R lines 163-173; R's
+//    length()-based comparison with its length-1 character sentinel is
+//    outcome-equivalent to this empty-set semantics — case table in
+//    files/deltaplot_spec.md addendum; the char/char in-loop case is
+//    unreachable for fixed data because an empty pass refits on all items and
+//    reproduces the nonempty first-pass flags, which is also why purification
+//    can oscillate and hit `max_iter` unconverged). `max_iter` bounds the
+//    TOTAL number of iteration rows including the initial pass (R `nrIter =
+//    nrow(difPur)`). If every item is flagged, the reduced matrix is empty and
+//    R's `cov` errors — this port returns `Err`.
+//
+// Verified against a NumPy oracle transcription pinned on a seeded fixture
+// (files/deltaplot_oracle.py); NOT verified against an R runtime.
+
+/// Threshold rule for [`delta_plot`].
+#[derive(Clone, Copy, Debug)]
+pub enum DeltaThreshold {
+    /// Normal approximation: `Q = qnorm(1 - alpha/2) * sqrt(C' SIG C)`.
+    Norm {
+        /// Two-sided significance level in (0, 1).
+        alpha: f64,
+    },
+    /// Fixed threshold `Q = |thr|` (deltaPlotR's classical default is 1.5).
+    Fixed(f64),
+}
+
+/// Extreme-proportion adjustment for [`delta_plot`] (adjustExtreme.R).
+#[derive(Clone, Copy, Debug)]
+pub enum ExtremeAdjust {
+    /// Clamp every proportion outside `[lo, hi]` (R default `[0.001, 0.999]`).
+    Constraint {
+        /// Lower clamp bound.
+        lo: f64,
+        /// Upper clamp bound.
+        hi: f64,
+    },
+    /// Replace proportions EXACTLY 0 or 1 by `(sum + nr_add)/(n + 2*nr_add)`.
+    Add {
+        /// Number of artificial successes AND failures added (R `nrAdd`).
+        nr_add: usize,
+    },
+}
+
+/// Purification threshold-update rule (deltaPlot.R lines 130-152).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PurifyType {
+    /// Keep the first-iteration threshold fixed.
+    Ipp1,
+    /// New axis direction, original full-data covariance.
+    Ipp2,
+    /// New axis direction, reduced-data covariance.
+    Ipp3,
+}
+
+/// Result of [`delta_plot`]. Item indices are 0-based.
+#[derive(Clone, Debug)]
+pub struct DeltaPlotResult {
+    /// Per-item raw proportions correct `(reference, focal)`.
+    pub props: Vec<[f64; 2]>,
+    /// Extreme-adjusted proportions.
+    pub adj_props: Vec<[f64; 2]>,
+    /// Delta scores `4*qnorm(1-p) + 13`, `(reference, focal)`.
+    pub deltas: Vec<[f64; 2]>,
+    /// Perpendicular distances, one inner vector per iteration (first =
+    /// unpurified pass, last = final pass).
+    pub dist: Vec<Vec<f64>>,
+    /// Major-axis parameters `(a, b)` per iteration.
+    pub axis_par: Vec<[f64; 2]>,
+    /// Detection threshold per iteration.
+    pub thresholds: Vec<f64>,
+    /// Final flagged items (0-based), from the last iteration.
+    pub dif_items: Vec<usize>,
+    /// Total iteration rows including the initial pass (R `nrIter`).
+    pub n_iter: usize,
+    /// False when purification hit `max_iter` without a stable flag set.
+    pub converged: bool,
+}
+
+/// Sample covariance matrix entries `(s11, s12, s22)` and means of an
+/// `n x 2` delta matrix (R `cov`, denominator `n - 1`).
+fn delta_cov(d: &[[f64; 2]]) -> ([f64; 3], [f64; 2]) {
+    let n = d.len() as f64;
+    let m0 = d.iter().map(|r| r[0]).sum::<f64>() / n;
+    let m1 = d.iter().map(|r| r[1]).sum::<f64>() / n;
+    let (mut s11, mut s12, mut s22) = (0.0, 0.0, 0.0);
+    for r in d {
+        s11 += (r[0] - m0) * (r[0] - m0);
+        s12 += (r[0] - m0) * (r[1] - m1);
+        s22 += (r[1] - m1) * (r[1] - m1);
+    }
+    let den = n - 1.0;
+    ([s11 / den, s12 / den, s22 / den], [m0, m1])
+}
+
+/// Major-axis `(a, b)` from covariance entries and means; R-compatible
+/// `max(b1, b2)` root selection (NaN when `s12 == 0`, like R's `0/0`).
+fn major_axis(s: [f64; 3], m: [f64; 2]) -> (f64, f64) {
+    let [s11, s12, s22] = s;
+    let root = ((s22 - s11) * (s22 - s11) + 4.0 * s12 * s12).sqrt();
+    let b1 = (s22 - s11 - root) / (2.0 * s12);
+    let b2 = (s22 - s11 + root) / (2.0 * s12);
+    // Not `f64::max`: R's `max(c(b1, b2))` propagates NaN, `f64::max` drops it.
+    let b = if b1 > b2 { b1 } else { b2 };
+    (m[1] - b * m[0], b)
+}
+
+/// Threshold `qnorm(1 - alpha/2) * sqrt(C' SIG C)` for axis slope `b`.
+fn norm_threshold(alpha: f64, b: f64, s: [f64; 3]) -> f64 {
+    let den = (b * b + 1.0).sqrt();
+    let (c0, c1) = (b / den, -1.0 / den);
+    let var = c0 * c0 * s[0] + 2.0 * c0 * c1 * s[1] + c1 * c1 * s[2];
+    crate::nodes::inv_normal_cdf(1.0 - alpha / 2.0) * var.sqrt()
+}
+
+/// Perpendicular distances of all items from the axis `(a, b)`.
+fn perp_dist(deltas: &[[f64; 2]], a: f64, b: f64) -> Vec<f64> {
+    let den = (b * b + 1.0).sqrt();
+    deltas.iter().map(|d| (b * d[0] - d[1] + a) / den).collect()
+}
+
+/// Angoff Delta plot DIF detection; see the module-section header above for
+/// the algorithm, source governance, and reduced scope. `responses` is a
+/// row-major `n_persons x n_items` 0/1 matrix (NaN = missing, dropped per
+/// column); `group[p]` is 0 (reference) or 1 (focal). `purify = None`
+/// disables item purification. Returned item indices are 0-based.
+pub fn delta_plot(
+    responses: &[f64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    extreme: ExtremeAdjust,
+    threshold: DeltaThreshold,
+    purify: Option<PurifyType>,
+    max_iter: usize,
+) -> Result<DeltaPlotResult, String> {
+    if n_persons == 0 || n_items < 2 {
+        return Err("delta_plot: need at least 1 person and 2 items".into());
+    }
+    if responses.len() != n_persons * n_items {
+        return Err("delta_plot: responses length != n_persons * n_items".into());
+    }
+    if group.len() != n_persons {
+        return Err("delta_plot: group length != n_persons".into());
+    }
+    if n_persons.saturating_mul(n_items) > MAX_CELLS {
+        return Err("delta_plot: input too large".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("delta_plot: group entries must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("delta_plot: both groups must be non-empty".into());
+    }
+    for &v in responses {
+        if !v.is_nan() && v != 0.0 && v != 1.0 {
+            // Stricter than R, which averages arbitrary numerics (documented
+            // input-contract restriction, spec review item 7).
+            return Err("delta_plot: responses must be 0, 1, or NaN".into());
+        }
+    }
+    match extreme {
+        ExtremeAdjust::Constraint { lo, hi } => {
+            if !(lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0) {
+                return Err("delta_plot: constraint range must satisfy 0 <= lo < hi <= 1".into());
+            }
+        }
+        ExtremeAdjust::Add { nr_add } => {
+            if nr_add < 1 {
+                return Err("delta_plot: nr_add must be >= 1".into());
+            }
+        }
+    }
+    if let DeltaThreshold::Norm { alpha } = threshold {
+        if !(alpha > 0.0 && alpha < 1.0) {
+            return Err("delta_plot: alpha must be in (0, 1)".into());
+        }
+    }
+    if purify.is_some() && max_iter < 1 {
+        return Err("delta_plot: max_iter must be >= 1".into());
+    }
+
+    // 1-2. Group proportions and extreme adjustment.
+    let mut props = vec![[f64::NAN; 2]; n_items];
+    for i in 0..n_items {
+        for g in 0..2usize {
+            let (mut sum, mut cnt) = (0.0, 0usize);
+            for p in 0..n_persons {
+                if group[p] as usize == g {
+                    let v = responses[p * n_items + i];
+                    if !v.is_nan() {
+                        sum += v;
+                        cnt += 1;
+                    }
+                }
+            }
+            if cnt == 0 {
+                // R would carry NaN into the Delta scores and stop at the
+                // distance check; fail fast with a clearer message.
+                return Err(format!(
+                    "delta_plot: item {i} has no non-missing responses in group {g}"
+                ));
+            }
+            props[i][g] = sum / cnt as f64;
+        }
+    }
+    let mut adj = props.clone();
+    match extreme {
+        ExtremeAdjust::Constraint { lo, hi } => {
+            for row in &mut adj {
+                for v in row.iter_mut() {
+                    *v = v.clamp(lo, hi);
+                }
+            }
+        }
+        ExtremeAdjust::Add { nr_add } => {
+            for i in 0..n_items {
+                for g in 0..2usize {
+                    if adj[i][g] == 0.0 || adj[i][g] == 1.0 {
+                        let (mut sum, mut cnt) = (0.0, 0usize);
+                        for p in 0..n_persons {
+                            if group[p] as usize == g {
+                                let v = responses[p * n_items + i];
+                                if !v.is_nan() {
+                                    sum += v;
+                                    cnt += 1;
+                                }
+                            }
+                        }
+                        adj[i][g] = (sum + nr_add as f64) / (cnt as f64 + 2.0 * nr_add as f64);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Delta transform.
+    let deltas: Vec<[f64; 2]> = adj
+        .iter()
+        .map(|r| {
+            [
+                4.0 * crate::nodes::inv_normal_cdf(1.0 - r[0]) + 13.0,
+                4.0 * crate::nodes::inv_normal_cdf(1.0 - r[1]) + 13.0,
+            ]
+        })
+        .collect();
+
+    // 4-6. First (unpurified) pass.
+    let (sig, means) = delta_cov(&deltas);
+    let (a, b) = major_axis(sig, means);
+    let dist0 = perp_dist(&deltas, a, b);
+    if dist0.iter().any(|v| v.is_nan()) {
+        return Err(
+            "delta_plot: perpendicular distances cannot be computed - one set of Delta scores is probably constant"
+                .into(),
+        );
+    }
+    let q0 = match threshold {
+        DeltaThreshold::Norm { alpha } => norm_threshold(alpha, b, sig),
+        DeltaThreshold::Fixed(t) => t.abs(),
+    };
+    let flags0: Vec<usize> = (0..n_items).filter(|&i| dist0[i].abs() > q0).collect();
+
+    let mut result = DeltaPlotResult {
+        props,
+        adj_props: adj,
+        deltas: deltas.clone(),
+        dist: vec![dist0.clone()],
+        axis_par: vec![[a, b]],
+        thresholds: vec![q0],
+        dif_items: flags0.clone(),
+        n_iter: 1,
+        converged: true,
+    };
+    let pur_type = match purify {
+        None => return Ok(result),
+        Some(_) if flags0.is_empty() => return Ok(result), // R: nrIter=1, converged
+        Some(t) => match threshold {
+            DeltaThreshold::Fixed(_) => PurifyType::Ipp1, // R lines 148-152
+            DeltaThreshold::Norm { .. } => t,
+        },
+    };
+
+    // 7. Purification loop (R lines 105-175).
+    let membership = |flags: &[usize]| -> Vec<u8> {
+        let mut row = vec![0u8; n_items];
+        for &i in flags {
+            row[i] = 1;
+        }
+        row
+    };
+    let alpha = match threshold {
+        DeltaThreshold::Norm { alpha } => alpha,
+        DeltaThreshold::Fixed(_) => f64::NAN, // unused on the fixed path
+    };
+    let mut dif = flags0;
+    let mut prev_row = membership(&dif);
+    let mut converged = false;
+    let mut iter = 1usize;
+    loop {
+        iter += 1;
+        if iter > max_iter {
+            break;
+        }
+        let reduced: Vec<[f64; 2]> = (0..n_items)
+            .filter(|i| !dif.contains(i))
+            .map(|i| deltas[i])
+            .collect();
+        if reduced.is_empty() {
+            // R: cov() on a 0-row matrix errors out of deltaPlot entirely.
+            return Err("delta_plot: every item was flagged during purification".into());
+        }
+        let (ssig, smeans) = delta_cov(&reduced);
+        let (aa, bb) = major_axis(ssig, smeans);
+        let dist2 = perp_dist(&deltas, aa, bb);
+        let q2 = match threshold {
+            DeltaThreshold::Fixed(t) => t.abs(),
+            DeltaThreshold::Norm { .. } => match pur_type {
+                PurifyType::Ipp1 => result.thresholds[0],
+                PurifyType::Ipp2 => norm_threshold(alpha, bb, sig),
+                PurifyType::Ipp3 => norm_threshold(alpha, bb, ssig),
+            },
+        };
+        // NaN distances (degenerate reduced axis) flag nothing, like R's
+        // NaN > Q comparisons.
+        let dif2: Vec<usize> = (0..n_items).filter(|&i| dist2[i].abs() > q2).collect();
+        let row = membership(&dif2);
+        result.dist.push(dist2);
+        result.axis_par.push([aa, bb]);
+        result.thresholds.push(q2);
+        result.n_iter += 1;
+        let same = row == prev_row;
+        prev_row = row;
+        dif = dif2;
+        if same {
+            converged = true;
+            break;
+        }
+    }
+    result.dif_items = dif;
+    result.converged = converged;
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)
+//
+// Source governance:
+// - READ: Zwick, R., & Thayer, D. T. (2003). An empirical Bayes enhancement
+//   of Mantel-Haenszel DIF analysis for computer-adaptive tests (LSAC
+//   Research Report Series; ERIC ED481063). All formulas below trace to the
+//   statistical-model section (report pp. 3-5): model MH_i ~ N(theta_i,
+//   sigma_i^2) with sigma_i^2 set to SE^2(MH_i) (Eq. 1); prior theta_i ~
+//   N(mu, tau^2) (Eq. 2); posterior normal with mean W_i*MH_i + (1-W_i)*mu
+//   and variance W_i*sigma_i^2 where W_i = tau^2/(tau^2 + sigma_i^2)
+//   (Eqs. 4-6); prior estimates mu_hat = mean(MH_i), tau2_hat = Var(MH_i) -
+//   mean(SE^2(MH_i)) (Eq. 7); negative tau2 estimates floored at zero
+//   (report footnote 5); five-category posterior probabilities as normal
+//   areas delimited at -1.5, -1, 1, 1.5 on the MH D-DIF (ETS delta) scale
+//   (report p. 4).
+// - NOT READ (history only; no formulas taken from them): Zwick, Thayer &
+//   Lewis (1999), Journal of Educational Measurement 36(1), 1-28; Zwick,
+//   Thayer & Lewis (1997) ETS RR; Longford, Holland & Thayer (1993).
+//
+// Implementation choices NOT stated in the read source (documented, not
+// paper formulas):
+// - Variance divisor: the source does not print the Var(MH_i) divisor. This
+//   implementation uses the unbiased sample variance (divisor n-1), a
+//   method-of-moments choice: conditional on fixed items, E[S^2 | theta] =
+//   S_theta^2 + mean(sigma_i^2), so deflating by mean(SE^2) estimates the
+//   finite-pool sample variance of the true DIF values (and the
+//   superpopulation tau^2 only under iid item effects). NOT verified
+//   against ETS/author software (none available).
+// - Degenerate tau2 == 0 point mass: the posterior collapses to mu_hat, so
+//   category probabilities become the indicator of mu_hat's ETS category
+//   (A: |m| < 1; B: 1 <= |m| < 1.5; C: |m| >= 1.5; the sign of m selects
+//   the -/+ variant). Boundary inclusion is implementation-defined; in the
+//   source's continuous posterior the boundaries have probability zero.
+// - Normal CDF: crate `fitstats::erfc` rational approximation
+//   (|error| < 1.2e-7), an engineering choice.
+// ---------------------------------------------------------------------------
+
+/// Result of [`eb_mh_dif`]. Category probability columns are ordered
+/// `[C-, B-, A, B+, C+]`.
+#[derive(Clone, Debug)]
+pub struct EbDifResult {
+    /// Prior mean estimate `mu_hat = mean(mh)`.
+    pub mu: f64,
+    /// Floored prior variance `max(0, tau2_raw)`; the only value entering
+    /// the posterior.
+    pub tau2: f64,
+    /// Pre-floor diagnostic `Var(mh) - mean(se^2)` (divisor `n-1`).
+    pub tau2_raw: f64,
+    /// Shrinkage weights `W_i = tau2 / (tau2 + se_i^2)`.
+    pub weight: Vec<f64>,
+    /// Posterior means `W_i * mh_i + (1 - W_i) * mu` (EB point estimates).
+    pub post_mean: Vec<f64>,
+    /// Posterior variances `W_i * se_i^2`.
+    pub post_var: Vec<f64>,
+    /// Posterior probabilities of the five ETS DIF categories.
+    pub cat_probs: Vec<[f64; 5]>,
+}
+
+/// Standard normal CDF via the crate's `erfc` approximation
+/// (|error| < 1.2e-7; see `fitstats::erfc`).
+fn eb_phi(z: f64) -> f64 {
+    0.5 * crate::fitstats::erfc(-z / std::f64::consts::SQRT_2)
+}
+
+/// Point-mass ETS category indicator for the degenerate `tau2 == 0` case;
+/// boundary conventions are implementation-defined (see section header).
+fn eb_point_mass_cats(m: f64) -> [f64; 5] {
+    let a = m.abs();
+    let mut p = [0.0; 5];
+    let idx = if a < 1.0 {
+        2
+    } else if a < 1.5 {
+        if m < 0.0 {
+            1
+        } else {
+            3
+        }
+    } else if m < 0.0 {
+        0
+    } else {
+        4
+    };
+    p[idx] = 1.0;
+    p
+}
+
+/// Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer, 2003; ERIC
+/// ED481063). Takes per-item MH D-DIF statistics and their standard errors
+/// on the ETS delta scale (e.g. [`MhDifRow::mh_d_dif`] /
+/// [`MhDifRow::se_d_dif`]; callers must filter items whose MH statistics
+/// are undefined/NaN) and returns shrinkage estimates plus posterior
+/// probabilities of the five ETS DIF categories. The prior is estimated
+/// from exactly the supplied item set, which the caller chooses (the paper
+/// uses all items in the pool for CATs); `n = 2` is accepted as a
+/// computational minimum but is not a psychometrically stable prior
+/// estimate. See the section header above for source governance and
+/// implementation choices.
+pub fn eb_mh_dif(mh: &[f64], se: &[f64]) -> Result<EbDifResult, String> {
+    if mh.len() != se.len() {
+        return Err(format!("mh length {} != se length {}", mh.len(), se.len()));
+    }
+    let n = mh.len();
+    if n < 2 {
+        return Err(format!(
+            "need at least 2 items for the across-item variance, got {n}"
+        ));
+    }
+    for (i, (&m, &s)) in mh.iter().zip(se).enumerate() {
+        if !m.is_finite() {
+            return Err(format!("mh[{i}] is not finite"));
+        }
+        if !s.is_finite() || s <= 0.0 {
+            return Err(format!("se[{i}] must be finite and positive"));
+        }
+        if !(s * s).is_finite() {
+            return Err(format!("se[{i}]^2 overflows"));
+        }
+    }
+    let nf = n as f64;
+    let mu = mh.iter().sum::<f64>() / nf;
+    // Unbiased sample variance (divisor n-1); implementation choice, see
+    // the section header.
+    let var = mh.iter().map(|&x| (x - mu) * (x - mu)).sum::<f64>() / (nf - 1.0);
+    let mean_se2 = se.iter().map(|&s| s * s).sum::<f64>() / nf;
+    let tau2_raw = var - mean_se2;
+    if !mu.is_finite() || !var.is_finite() || !mean_se2.is_finite() || !tau2_raw.is_finite() {
+        return Err("computed prior moments are not finite (inputs too large)".to_string());
+    }
+    // Footnote 5 of the read source: negative variance estimates set to 0.
+    let tau2 = if tau2_raw > 0.0 { tau2_raw } else { 0.0 };
+    let mut weight = Vec::with_capacity(n);
+    let mut post_mean = Vec::with_capacity(n);
+    let mut post_var = Vec::with_capacity(n);
+    let mut cat_probs = Vec::with_capacity(n);
+    for (&x, &s) in mh.iter().zip(se) {
+        let sig2 = s * s;
+        // Branch on tau2 == 0 before any z-score math: the posterior is a
+        // point mass at mu and dividing by sqrt(0) is never evaluated.
+        if tau2 == 0.0 {
+            weight.push(0.0);
+            post_mean.push(mu);
+            post_var.push(0.0);
+            cat_probs.push(eb_point_mass_cats(mu));
+            continue;
+        }
+        let denom = tau2 + sig2;
+        if !denom.is_finite() {
+            return Err(
+                "posterior weight denominator tau2 + se^2 is not finite (inputs too large)"
+                    .to_string(),
+            );
+        }
+        let w = tau2 / denom;
+        let m = w * x + (1.0 - w) * mu;
+        let v = w * sig2;
+        if !m.is_finite() || !v.is_finite() {
+            return Err("posterior moments are not finite (inputs too large)".to_string());
+        }
+        let sd = v.sqrt();
+        let z = |c: f64| (c - m) / sd;
+        let p_lo15 = eb_phi(z(-1.5));
+        let p_lo10 = eb_phi(z(-1.0));
+        let p_hi10 = eb_phi(z(1.0));
+        let p_hi15 = eb_phi(z(1.5));
+        // Adjacent-CDF differences; the erfc approximation can leave tiny
+        // negative roundoff, clamped to 0.
+        let probs = [
+            p_lo15,
+            (p_lo10 - p_lo15).max(0.0),
+            (p_hi10 - p_lo10).max(0.0),
+            (p_hi15 - p_hi10).max(0.0),
+            // Stable upper tail: 1 - Phi(z) computed as Phi(-z).
+            eb_phi(-z(1.5)),
+        ];
+        weight.push(w);
+        post_mean.push(m);
+        post_var.push(v);
+        cat_probs.push(probs);
+    }
+    Ok(EbDifResult {
+        mu,
+        tau2,
+        tau2_raw,
+        weight,
+        post_mean,
+        post_var,
+        cat_probs,
+    })
+}
+
+// ===========================================================================
+// Mantel (1963) polytomous DIF test + standardized mean difference (SMD)
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Zwick, R., Donoghue, J. R.,
+// & Grima, A. (1993). Assessing differential item functioning in performance
+// tests (ETS research report; ERIC ED386493), formula section pp. 14-18:
+// Eq. 8 (Mantel chi-squared), Eq. 9 (F_k, E(F_k), Var(F_k)), Eq. 11 (SMD),
+// including the stated dichotomous reduction "identical to the
+// Mantel-Haenszel (1959) statistic without the continuity correction" and
+// the SMD sign convention "a negative SMD value implies that, conditional on
+// the matching variable, the F group has a lower mean item score". The
+// journal version is Zwick, Donoghue, & Grima (1993), Journal of Educational
+// Measurement, 30(3), 233-251 (NOT read; the RR text above was used).
+//
+// NOT READ (cited by the read report as origins; attribution is via Zwick
+// et al.'s presentation): Mantel (1963, JASA 58, 690-700) for the ordered-
+// category test; Dorans & Schmitt (1991) for SMD; Mantel & Haenszel (1959).
+//
+// Implementation choices NOT printed in the read source (all verified
+// against the crate's own conventions, not against external software):
+// - Matching variable: full observed total score including the studied item
+//   (mirrors `base_scores` with `anchor = None`, the crate's dichotomous MH
+//   convention).
+// - Stratum inclusion: a stratum contributes only when BOTH groups are
+//   present there (E(F_k)/Var(F_k) and the reference conditional mean are
+//   undefined otherwise); `n_++k >= 2` then holds automatically, so the
+//   Var denominator `n_++k - 1` never vanishes from a singleton.
+// - SMD focal weights are renormalized over the USED strata,
+//   `p_Fk = n_F+k / sum_used n_F+k`. This DEVIATES from the literal Eq. 11
+//   denominator `n_F++` (all focal members) whenever strata are excluded;
+//   it matches the crate's STD P-DIF accumulation convention. With no
+//   excluded focal members the two coincide.
+// - Category scores y_t are the observed integer item scores used as-is
+//   (the paper allows arbitrary "not necessarily integer" table scores;
+//   REDUCED SCOPE: no separate score-vector API).
+// - Out of scope here: the SMD standard error (derived in Zwick 1992a, NOT
+//   read), missing data, purification, and alternative SMD weights (paper
+//   footnote 8). The GMH nominal statistic (Eq. 10) is implemented
+//   separately below as [`gmh_dif`].
+// - Degenerate items (no usable strata, or zero variance sum) yield NaN
+//   statistics with `n_strata_used` reporting the usable-stratum count
+//   (SIBTEST NaN-row precedent).
+// ===========================================================================
+
+/// Per-item output of [`mantel_smd_dif`].
+#[derive(Debug, Clone)]
+pub struct MantelSmdRow {
+    /// Item index.
+    pub item: usize,
+    /// Mantel (1963) chi-squared statistic, 1 df (Eq. 8). NaN when no stratum
+    /// is usable or the summed variance is zero.
+    pub chi2: f64,
+    /// Upper-tail chi-squared(1) p-value for `chi2`; NaN when `chi2` is NaN.
+    pub p_value: f64,
+    /// Standardized mean difference (Eq. 11), focal minus focal-weighted
+    /// reference conditional mean; negative = focal lower. NaN when no
+    /// stratum is usable.
+    pub smd: f64,
+    /// Number of strata with both groups present that entered the sums.
+    pub n_strata_used: usize,
+}
+
+/// Mantel (1963) ordered-category DIF test with the SMD effect size
+/// (Zwick, Donoghue, & Grima, 1993, Eqs. 8, 9, 11).
+///
+/// `y` is row-major `n_persons x n_items` with ordinal integer scores
+/// `0..=max`; `group` is `0` (reference) / `1` (focal). Persons are matched
+/// on their full total score. For dichotomous 0/1 data the chi-squared
+/// equals the Mantel-Haenszel statistic WITHOUT the continuity correction
+/// (read source, below Eq. 9).
+pub fn mantel_smd_dif(
+    y: &[i64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<Vec<MantelSmdRow>, String> {
+    if n_persons < 2 || n_items < 1 {
+        return Err("need n_persons >= 2 and n_items >= 1".into());
+    }
+    let cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflow")?;
+    if cells > MAX_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {cells} exceeds the cap {MAX_CELLS}"
+        ));
+    }
+    if y.len() != cells {
+        return Err(format!("y has {} entries; expected {cells}", y.len()));
+    }
+    if group.len() != n_persons {
+        return Err(format!(
+            "group has {} entries; expected {n_persons}",
+            group.len()
+        ));
+    }
+    if y.iter().any(|&v| v < 0) {
+        return Err("item scores must be non-negative integers (no missing-data support)".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("group labels must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("both a reference (0) and a focal (1) group must be present".into());
+    }
+    // Full-total matching (crate MH convention). Totals are bounded by
+    // i64 sums of validated non-negative entries; checked to reject overflow.
+    let mut totals = vec![0i64; n_persons];
+    for p in 0..n_persons {
+        let mut t: i64 = 0;
+        for i in 0..n_items {
+            t = t
+                .checked_add(y[p * n_items + i])
+                .ok_or("total score overflow")?;
+        }
+        totals[p] = t;
+    }
+    // Map totals to dense stratum ids.
+    let mut levels: Vec<i64> = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    let stratum: Vec<usize> = totals
+        .iter()
+        .map(|t| levels.binary_search(t).expect("level present"))
+        .collect();
+    let n_strata = levels.len();
+
+    let mut rows = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        // Per-stratum accumulators over persons (scores as f64 after the
+        // integer domain checks; exact for |y| < 2^53).
+        let mut n_r = vec![0.0f64; n_strata]; // n_R+k
+        let mut n_f = vec![0.0f64; n_strata]; // n_F+k
+        let mut s1 = vec![0.0f64; n_strata]; // sum_t y_t n_+tk
+        let mut s2 = vec![0.0f64; n_strata]; // sum_t y_t^2 n_+tk
+        let mut f_sum = vec![0.0f64; n_strata]; // F_k = sum_t y_t n_Ftk
+        let mut r_sum = vec![0.0f64; n_strata]; // sum_t y_t n_Rtk
+        for p in 0..n_persons {
+            let k = stratum[p];
+            let v = y[p * n_items + item] as f64;
+            s1[k] += v;
+            s2[k] += v * v;
+            if group[p] == 1 {
+                n_f[k] += 1.0;
+                f_sum[k] += v;
+            } else {
+                n_r[k] += 1.0;
+                r_sum[k] += v;
+            }
+        }
+        let (mut num, mut var, mut nf_used) = (0.0f64, 0.0f64, 0.0f64);
+        let mut used = 0usize;
+        // First pass: chi-squared sums and the used focal count.
+        for k in 0..n_strata {
+            if n_r[k] == 0.0 || n_f[k] == 0.0 {
+                continue; // E/Var and m_Rk undefined without both groups.
+            }
+            used += 1;
+            let n = n_r[k] + n_f[k]; // n_++k >= 2 here by construction.
+                                     // Eq. 9.
+            let e_fk = n_f[k] / n * s1[k];
+            let var_fk = n_r[k] * n_f[k] / (n * n * (n - 1.0)) * (n * s2[k] - s1[k] * s1[k]);
+            num += f_sum[k] - e_fk;
+            var += var_fk;
+            nf_used += n_f[k];
+        }
+        // Second pass: SMD with used-strata-renormalized focal weights
+        // (documented deviation from the literal Eq. 11 denominator).
+        let mut smd = f64::NAN;
+        if used > 0 && nf_used > 0.0 {
+            let mut acc = 0.0f64;
+            for k in 0..n_strata {
+                if n_r[k] == 0.0 || n_f[k] == 0.0 {
+                    continue;
+                }
+                let p_fk = n_f[k] / nf_used;
+                let m_fk = f_sum[k] / n_f[k];
+                let m_rk = r_sum[k] / n_r[k];
+                acc += p_fk * (m_fk - m_rk);
+            }
+            smd = acc;
+        }
+        let (chi2, p_value) = if used > 0 && var > 0.0 && num.is_finite() {
+            let c = num * num / var; // Eq. 8, df = 1.
+            (c, chi2_sf(c, 1.0))
+        } else {
+            (f64::NAN, f64::NAN)
+        };
+        rows.push(MantelSmdRow {
+            item,
+            chi2,
+            p_value,
+            smd,
+            n_strata_used: used,
+        });
+    }
+    Ok(rows)
+}
+// ===========================================================================
+// Generalized Mantel-Haenszel (GMH) nominal DIF statistic
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Zwick, R., Donoghue, J. R.,
+// & Grima, A. (1993). Assessing differential item functioning in performance
+// tests (ETS research report; ERIC ED386493), "GMH Statistic for Nominal
+// Data" section, Eq. 10 and surrounding text: A_k and E(A_k) are vectors of
+// length T-1 "for any T - 1 of the response categories", V(A_k) is the
+// (T-1)x(T-1) covariance matrix, GMH chi2 = d' S^{-1} d with
+// d = sum_k [A_k - E(A_k)], S = sum_k V(A_k), referred to a chi-squared
+// distribution with T - 1 degrees of freedom; "for dichotomous variables, it
+// reduces to the [Mantel-Haenszel] statistic ... without the continuity
+// correction".
+//
+// NOT READ (cited by the read report as origins; attribution is via Zwick
+// et al.'s presentation): Somes (1986, The American Statistician 40, 106-108)
+// for the generalized MH form; Mantel & Haenszel (1959).
+//
+// Implementation choices NOT printed in the read source (verified against
+// the crate's own conventions and an exact-rational oracle, not against
+// external software):
+// - A_k accumulates REFERENCE-group counts (per the read Table-1 notation
+//   n_R1k..n_R(T-1)k). Accumulating focal counts instead flips the sign of
+//   d and leaves S unchanged, so the quadratic form is identical; the
+//   convention is documented here for reproducibility of d.
+// - Matching variable: full observed total score including the studied item
+//   (crate MH convention, identical to `mantel_smd_dif`).
+// - Stratum inclusion: both groups must be present (identical to
+//   `mantel_smd_dif`); `n_++k >= 2` then holds, so `n_++k - 1 > 0`.
+// - Effective categories: the T_eff distinct scores of the studied item
+//   observed among persons in USED strata (categories seen only in excluded
+//   one-group strata carry no GMH information and must not inflate the
+//   dimension or df). The vector keeps the first T_eff - 1 categories in
+//   ascending score order and drops the last; the read source states any
+//   T - 1 categories may be used, and the statistic is invariant to the
+//   choice when S is nonsingular.
+// - df = T_eff - 1. T_eff < 2 (item constant within used strata) yields a
+//   NaN row with df = 0. T_eff is capped at 64 (nominal items with more
+//   categories are outside any use case documented in the read source).
+// - S is inverted by solving S x = d with partial-pivot Gaussian
+//   elimination in f64; a pivot smaller than 1e-12 times the largest |S|
+//   entry is treated as singular and yields a NaN row (no silent rank
+//   reduction: a reduced-rank df is not confirmed by the read source).
+// - Degenerate items yield NaN chi2/p with `n_strata_used` reporting the
+//   usable-stratum count (SIBTEST / `mantel_smd_dif` NaN-row precedent).
+// ===========================================================================
+
+/// Per-item output of [`gmh_dif`].
+#[derive(Debug, Clone)]
+pub struct GmhDifRow {
+    /// Item index.
+    pub item: usize,
+    /// GMH chi-squared statistic (Eq. 10), `df` degrees of freedom. NaN when
+    /// no stratum is usable, fewer than two categories are observed in used
+    /// strata, or the summed covariance matrix is singular.
+    pub chi2: f64,
+    /// Upper-tail chi-squared(`df`) p-value; NaN when `chi2` is NaN.
+    pub p_value: f64,
+    /// Degrees of freedom `T_eff - 1` (0 when fewer than two categories are
+    /// observed in used strata).
+    pub df: usize,
+    /// Number of strata with both groups present that entered the sums.
+    pub n_strata_used: usize,
+}
+
+/// Generalized Mantel-Haenszel DIF test for NOMINAL response categories
+/// (Zwick, Donoghue, & Grima, 1993, Eq. 10).
+///
+/// `y` is row-major `n_persons x n_items` with non-negative integer category
+/// codes (treated as unordered labels; only distinctness matters); `group`
+/// is `0` (reference) / `1` (focal). Persons are matched on their full total
+/// score. For dichotomous 0/1 data the statistic equals the Mantel-Haenszel
+/// chi-squared WITHOUT the continuity correction (read source, below
+/// Eq. 10), i.e. the [`mantel_smd_dif`] chi-squared.
+pub fn gmh_dif(
+    y: &[i64],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+) -> Result<Vec<GmhDifRow>, String> {
+    if n_persons < 2 || n_items < 1 {
+        return Err("need n_persons >= 2 and n_items >= 1".into());
+    }
+    let cells = n_persons
+        .checked_mul(n_items)
+        .ok_or("n_persons * n_items overflow")?;
+    if cells > MAX_CELLS {
+        return Err(format!(
+            "n_persons * n_items = {cells} exceeds the cap {MAX_CELLS}"
+        ));
+    }
+    if y.len() != cells {
+        return Err(format!("y has {} entries; expected {cells}", y.len()));
+    }
+    if group.len() != n_persons {
+        return Err(format!(
+            "group has {} entries; expected {n_persons}",
+            group.len()
+        ));
+    }
+    if y.iter().any(|&v| v < 0) {
+        return Err("item scores must be non-negative integers (no missing-data support)".into());
+    }
+    if group.iter().any(|&g| g > 1) {
+        return Err("group labels must be 0 (reference) or 1 (focal)".into());
+    }
+    if !group.iter().any(|&g| g == 0) || !group.iter().any(|&g| g == 1) {
+        return Err("both a reference (0) and a focal (1) group must be present".into());
+    }
+    // Full-total matching (identical to `mantel_smd_dif`).
+    let mut totals = vec![0i64; n_persons];
+    for p in 0..n_persons {
+        let mut t: i64 = 0;
+        for i in 0..n_items {
+            t = t
+                .checked_add(y[p * n_items + i])
+                .ok_or("total score overflow")?;
+        }
+        totals[p] = t;
+    }
+    let mut levels: Vec<i64> = totals.clone();
+    levels.sort_unstable();
+    levels.dedup();
+    let stratum: Vec<usize> = totals
+        .iter()
+        .map(|t| levels.binary_search(t).expect("level present"))
+        .collect();
+    let n_strata = levels.len();
+    // Used strata depend only on totals and group, not on the item.
+    let mut has_r = vec![false; n_strata];
+    let mut has_f = vec![false; n_strata];
+    for p in 0..n_persons {
+        if group[p] == 1 {
+            has_f[stratum[p]] = true;
+        } else {
+            has_r[stratum[p]] = true;
+        }
+    }
+    let used_mask: Vec<bool> = (0..n_strata).map(|k| has_r[k] && has_f[k]).collect();
+    let n_used = used_mask.iter().filter(|&&u| u).count();
+
+    let mut rows = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        // Effective categories: distinct codes among persons in used strata.
+        let mut cats: Vec<i64> = (0..n_persons)
+            .filter(|&p| used_mask[stratum[p]])
+            .map(|p| y[p * n_items + item])
+            .collect();
+        cats.sort_unstable();
+        cats.dedup();
+        let t_eff = cats.len();
+        if t_eff > 64 {
+            return Err(format!(
+                "item {item} has {t_eff} categories in used strata; the GMH cap is 64"
+            ));
+        }
+        if n_used == 0 || t_eff < 2 {
+            rows.push(GmhDifRow {
+                item,
+                chi2: f64::NAN,
+                p_value: f64::NAN,
+                df: t_eff.saturating_sub(1),
+                n_strata_used: n_used,
+            });
+            continue;
+        }
+        let m = t_eff - 1; // vector dimension (last category dropped)
+        let mut d = vec![0.0f64; m];
+        let mut s = vec![0.0f64; m * m];
+        // Per-stratum tabulation over used strata only.
+        let mut n_cat = vec![0.0f64; t_eff]; // n_+tk over all categories
+        let mut a_cat = vec![0.0f64; t_eff]; // reference counts n_Rtk
+        for k in 0..n_strata {
+            if !used_mask[k] {
+                continue;
+            }
+            n_cat.iter_mut().for_each(|v| *v = 0.0);
+            a_cat.iter_mut().for_each(|v| *v = 0.0);
+            let (mut n_r, mut n_f) = (0.0f64, 0.0f64);
+            for p in 0..n_persons {
+                if stratum[p] != k {
+                    continue;
+                }
+                let c = cats
+                    .binary_search(&y[p * n_items + item])
+                    .expect("category present");
+                n_cat[c] += 1.0;
+                if group[p] == 1 {
+                    n_f += 1.0;
+                } else {
+                    n_r += 1.0;
+                    a_cat[c] += 1.0;
+                }
+            }
+            let n = n_r + n_f; // n_++k >= 2 by used_mask construction.
+            let coef = n_r * n_f / (n * n * (n - 1.0));
+            for i in 0..m {
+                d[i] += a_cat[i] - n_r / n * n_cat[i];
+                for j in 0..m {
+                    let cov = if i == j {
+                        n * n_cat[i] - n_cat[i] * n_cat[j]
+                    } else {
+                        -n_cat[i] * n_cat[j]
+                    };
+                    s[i * m + j] += coef * cov;
+                }
+            }
+        }
+        // Solve S x = d (partial-pivot Gaussian elimination); chi2 = d' x.
+        let scale = s.iter().fold(0.0f64, |a, &v| a.max(v.abs()));
+        let mut chi2 = f64::NAN;
+        if scale > 0.0 && s.iter().all(|v| v.is_finite()) {
+            let mut a = s.clone();
+            let mut x = d.clone();
+            let mut singular = false;
+            for col in 0..m {
+                let piv = (col..m)
+                    .max_by(|&r1, &r2| {
+                        a[r1 * m + col]
+                            .abs()
+                            .partial_cmp(&a[r2 * m + col].abs())
+                            .unwrap()
+                    })
+                    .unwrap();
+                if a[piv * m + col].abs() < 1e-12 * scale {
+                    singular = true;
+                    break;
+                }
+                if piv != col {
+                    for j in 0..m {
+                        a.swap(col * m + j, piv * m + j);
+                    }
+                    x.swap(col, piv);
+                }
+                for r in (col + 1)..m {
+                    let f = a[r * m + col] / a[col * m + col];
+                    for j in col..m {
+                        a[r * m + j] -= f * a[col * m + j];
+                    }
+                    x[r] -= f * x[col];
+                }
+            }
+            if !singular {
+                for col in (0..m).rev() {
+                    for j in (col + 1)..m {
+                        let xj = x[j];
+                        x[col] -= a[col * m + j] * xj;
+                    }
+                    x[col] /= a[col * m + col];
+                }
+                let c: f64 = d.iter().zip(&x).map(|(&di, &xi)| di * xi).sum();
+                if c.is_finite() {
+                    chi2 = c;
+                }
+            }
+        }
+        let p_value = if chi2.is_nan() {
+            f64::NAN
+        } else {
+            chi2_sf(chi2, m as f64)
+        };
+        rows.push(GmhDifRow {
+            item,
+            chi2,
+            p_value,
+            df: m,
+            n_strata_used: n_used,
+        });
+    }
+    Ok(rows)
+}
+
+// ===================== Breslow-Day (1980) odds-ratio homogeneity test =====================
+//
+// Citation governance
+// -------------------
+// READ (primary source for every formula below): Breslow, N. E., & Day, N. E.
+// (1980). Statistical methods in cancer research, Volume I: The analysis of
+// case-control studies (IARC Scientific Publications No. 32), ch. 4,
+// homogeneity section: chi2_hom (Eq. 4.30) = sum_i (a_i - A_i)^2 /
+// Var(a_i; psi_hat), referred to chi-squared on I - 1 degrees of freedom,
+// where A_i(psi) is the fitted count of exposed cases (here: reference-group
+// correct) reproducing the common odds ratio psi with the observed margins,
+// and Var(a_i; psi) = (1/A + 1/B + 1/C + 1/D)^{-1} with the remaining fitted
+// cells B, C, D completed from the margins by subtraction (asymptotic
+// conditional variance form of eq. 4.13). The source states the chi-squared
+// approximation holds for any consistent common-OR estimate; the unconditional
+// MLE makes sum_i(a_i - A_i) = 0, and the Mantel-Haenszel estimate is called
+// "quite satisfactory" (worked example: MLE 5.312 vs MH 5.158 give 9.33-ish
+// vs 9.28 on 5 df). This implementation plugs in the crate's `alpha_mh`.
+//
+// Source caveats reproduced here: the statistic is unreliable with many thin
+// strata; it has poor power against ordered (trend) alternatives - the
+// eq. 4.31 trend-in-OR test is NOT implemented; the source warns that tests
+// comparing each stratum against the pooled remainder (Zelen-style) are
+// incorrect. NOT READ (must not be attributed): Tarone (1985) correction -
+// deliberately not implemented; DIF applications of Breslow-Day (e.g.
+// Penfield 2003, Aguerri et al. 2009).
+//
+// Implementation choices NOT printed in the read source (verified against
+// the crate's own conventions and an exact-rational oracle):
+// - Table orientation: a=ref-correct, b=ref-incorrect, c=focal-correct,
+//   d=focal-incorrect per matching-score stratum, the crate MH convention;
+//   `A` fits the ref-correct cell.
+// - Stratum inclusion: all four margins positive (identical to
+//   `mh_item_stats`); df = K - 1 over the K used strata.
+// - Root selection: on (lo, hi) = (max(0, m1 - n_f), min(n_r, m1)) all four
+//   fitted cells are positive and g(A) = A*D/(B*C) has
+//   (log g)'(A) = 1/A + 1/B + 1/C + 1/D > 0, so g is strictly increasing
+//   from 0 to +inf and exactly one admissible root exists for every finite
+//   psi > 0. Both quadratic roots are tested defensively; a stratum without
+//   exactly one admissible root yields a NaN chi2 (guards rounding bugs).
+// - Degenerate `alpha_mh` (a running sum is 0) or K < 2: NaN chi2/p, with
+//   `n_strata_used` kept auditable (NaN-row precedent of `mantel_smd_dif`).
+//   With K = 1 the MH estimate equals that stratum's OR, the residual is
+//   exactly 0 and the test is vacuous.
+// ===========================================================================
+
+/// Per-item output of [`breslow_day_dif`].
+#[derive(Debug, Clone)]
+pub struct BreslowDayRow {
+    /// Item index.
+    pub item: usize,
+    /// Mantel-Haenszel common odds ratio plugged in as `psi_hat` (NaN if
+    /// degenerate).
+    pub alpha_mh: f64,
+    /// Breslow-Day homogeneity chi-squared (Eq. 4.30); NaN when `alpha_mh` is
+    /// degenerate, fewer than two strata are usable, or a fitted-value root
+    /// fails the admissibility guard.
+    pub chi2_bd: f64,
+    /// Degrees of freedom `K - 1` over the `K` used strata (NaN when
+    /// `alpha_mh` is degenerate).
+    pub df: f64,
+    /// Upper-tail chi-squared(`df`) p-value; NaN when `chi2_bd` is NaN.
+    pub p_value: f64,
+    /// Number of strata with all four margins positive.
+    pub n_strata_used: usize,
+    /// Benjamini-Hochberg FDR rejection flag on `p_value` across the swept
+    /// items (NaN p-values are skipped).
+    pub flagged_bh: bool,
+}
+
+/// Fitted reference-correct count `A` solving `A*D/(B*C) = psi` with the
+/// observed margins (Breslow & Day, 1980, homogeneity section), i.e. the
+/// admissible root of `(1-psi) A^2 + [n_f - m1 + psi(n_r + m1)] A - psi n_r m1 = 0`.
+/// Returns `None` unless exactly one root lies strictly inside
+/// `(max(0, m1 - n_f), min(n_r, m1))` (all four fitted cells positive).
+fn bd_fitted_a(n_r: f64, n_f: f64, m1: f64, psi: f64) -> Option<f64> {
+    let lo = (m1 - n_f).max(0.0);
+    let hi = n_r.min(m1);
+    let qa = 1.0 - psi;
+    let qb = n_f - m1 + psi * (n_r + m1);
+    let qc = -psi * n_r * m1;
+    if qa == 0.0 {
+        // psi = 1: the quadratic degenerates to (n_r + n_f) A = n_r m1.
+        let a = n_r * m1 / (n_r + n_f);
+        return (lo < a && a < hi).then_some(a);
+    }
+    let disc = qb * qb - 4.0 * qa * qc;
+    if !(disc >= 0.0) {
+        return None;
+    }
+    // Cancellation-stable quadratic roots (q-form).
+    let q = -0.5 * (qb + qb.signum() * disc.sqrt());
+    let roots = [q / qa, if q != 0.0 { qc / q } else { f64::NAN }];
+    let mut found = None;
+    for &r in &roots {
+        if r.is_finite() && lo < r && r < hi {
+            if found.is_some_and(|f: f64| (f - r).abs() > 1e-9 * hi.max(1.0)) {
+                return None; // two distinct admissible roots: numerical trouble
+            }
+            found = Some(r);
+        }
+    }
+    found
+}
+
+/// Breslow-Day (1980, Eq. 4.30) test of odds-ratio homogeneity across the
+/// matching-score strata, per item - the classical NON-UNIFORM DIF companion
+/// to [`mantel_haenszel_dif`]: MH tests a common odds ratio against 1, this
+/// tests whether a common odds ratio is tenable at all.
+///
+/// Inputs are identical to [`mantel_haenszel_dif`]: `y` is a row-major
+/// `n_persons * n_items` `0/1` response array, `group` is `0` (reference) /
+/// `1` (focal), and `cfg` supplies the matching rule and the
+/// Benjamini-Hochberg FDR level. The plugged-in common odds ratio is the
+/// crate's Mantel-Haenszel `alpha_mh` (endorsed by the read source; see the
+/// citation-governance block above).
+///
+/// # References (APA 7th ed.)
+///
+/// Breslow, N. E., & Day, N. E. (1980). *Statistical methods in cancer
+///     research, Volume I: The analysis of case-control studies* (IARC
+///     Scientific Publications No. 32). International Agency for Research on
+///     Cancer.
+/// Mantel, N., & Haenszel, W. (1959). Statistical aspects of the analysis of
+///     data from retrospective studies of disease. *Journal of the National
+///     Cancer Institute, 22*(4), 719-748. (attribution via Breslow & Day's
+///     presentation)
+pub fn breslow_day_dif(
+    y: &[u8],
+    group: &[u8],
+    n_persons: usize,
+    n_items: usize,
+    cfg: &MhDifConfig,
+) -> Result<Vec<BreslowDayRow>, String> {
+    validate_dif_inputs(y, group, n_persons, n_items, cfg)?;
+
+    let base = base_scores(y, n_persons, n_items, None);
+    let n_levels = n_items + 1;
+    let (mut a, mut b, mut c, mut d) = (
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+        vec![0u64; n_levels],
+    );
+
+    let mut rows: Vec<BreslowDayRow> = Vec::with_capacity(n_items);
+    for item in 0..n_items {
+        a.iter_mut().for_each(|v| *v = 0);
+        b.iter_mut().for_each(|v| *v = 0);
+        c.iter_mut().for_each(|v| *v = 0);
+        d.iter_mut().for_each(|v| *v = 0);
+        for p in 0..n_persons {
+            let yi = y[p * n_items + item];
+            let m = matching_for_item(base[p], yi as usize, true, cfg.exclude_studied_item);
+            match (group[p], yi) {
+                (0, 1) => a[m] += 1,
+                (0, _) => b[m] += 1,
+                (_, 1) => c[m] += 1,
+                (_, _) => d[m] += 1,
+            }
+        }
+        // Used strata (all four margins positive) and the MH common odds ratio.
+        let mut used: Vec<usize> = Vec::new();
+        let (mut sum_ad, mut sum_bc) = (0.0f64, 0.0f64);
+        for m in 0..n_levels {
+            let (am, bm, cm, dm) = (a[m] as f64, b[m] as f64, c[m] as f64, d[m] as f64);
+            let t = am + bm + cm + dm;
+            if am + bm > 0.0 && cm + dm > 0.0 && am + cm > 0.0 && bm + dm > 0.0 {
+                used.push(m);
+                sum_ad += am * dm / t;
+                sum_bc += bm * cm / t;
+            }
+        }
+        let k = used.len();
+        let alpha = if sum_ad > 0.0 && sum_bc > 0.0 {
+            sum_ad / sum_bc
+        } else {
+            f64::NAN
+        };
+        let (chi2, df, p_value) = if !alpha.is_finite() {
+            (f64::NAN, f64::NAN, f64::NAN)
+        } else if k < 2 {
+            (f64::NAN, (k as f64) - 1.0, f64::NAN)
+        } else {
+            let mut chi2 = 0.0f64;
+            let mut ok = true;
+            for &m in &used {
+                let (am, bm, cm, dm) = (a[m] as f64, b[m] as f64, c[m] as f64, d[m] as f64);
+                let (n_r, n_f, m1) = (am + bm, cm + dm, am + cm);
+                match bd_fitted_a(n_r, n_f, m1, alpha) {
+                    Some(fit_a) => {
+                        let fit_b = n_r - fit_a;
+                        let fit_c = m1 - fit_a;
+                        let fit_d = n_f - fit_c;
+                        let var = 1.0 / (1.0 / fit_a + 1.0 / fit_b + 1.0 / fit_c + 1.0 / fit_d);
+                        let resid = am - fit_a;
+                        chi2 += resid * resid / var;
+                    }
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            let df = (k as f64) - 1.0;
+            if ok && chi2.is_finite() {
+                (chi2, df, chi2_sf(chi2, df))
+            } else {
+                (f64::NAN, df, f64::NAN)
+            }
+        };
+        rows.push(BreslowDayRow {
+            item,
+            alpha_mh: alpha,
+            chi2_bd: chi2,
+            df,
+            p_value,
+            n_strata_used: k,
+            flagged_bh: false,
+        });
+    }
+
+    let pvals: Vec<f64> = rows.iter().map(|r| r.p_value).collect();
+    let flags = benjamini_hochberg(&pvals, cfg.fdr_q);
+    for (r, &f) in rows.iter_mut().zip(&flags) {
+        r.flagged_bh = f;
+    }
+    Ok(rows)
+}
 #[cfg(test)]
 #[path = "../../../tests/unit/dif_tests.rs"]
 mod tests;

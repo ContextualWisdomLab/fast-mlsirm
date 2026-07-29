@@ -1,12 +1,18 @@
 pub mod agreement;
 pub mod cdm;
+pub mod classification;
 pub mod crm;
+pub mod detect;
 pub mod dif;
 pub mod equating;
+pub mod exposure;
 pub mod facets;
+pub mod factor;
 pub mod fitstats;
 pub mod gpcm;
 pub mod grm;
+pub mod gtheory;
+pub mod ksirt;
 pub mod linking;
 pub mod lltm;
 pub mod marginal;
@@ -14,19 +20,27 @@ pub mod mhrm;
 pub mod mixed;
 pub mod mixture;
 pub mod mmle;
+pub mod mokken;
 pub mod nodes;
 pub mod nominal;
 pub mod oakes;
+pub mod parallel;
+pub mod personfit_np;
 pub mod poly;
 pub mod poly_marginal;
 pub(crate) mod quadrature;
 pub mod rasch_cml;
+pub mod reliability;
 pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
 pub mod scoring;
+pub mod security;
+pub mod standard_setting;
+pub mod subscores;
 pub mod testlet;
 pub mod twopl;
+pub mod utility;
 
 /// Checked size arithmetic shared by public-input validators.
 ///
