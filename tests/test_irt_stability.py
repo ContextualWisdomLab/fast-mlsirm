@@ -109,6 +109,59 @@ def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
     assert second_order_test(np.diag([1.0, -1.0]))["passed"] is False
 
 
+def test_observed_information_se_chain_is_preserved_at_a_converged_mle():
+    """The SE=TRUE observed-information chain is self-consistent at a fitted MLE.
+
+    Efron & Hinkley (1978) justify using the observed information ``I(x) = -H``
+    (the negative Hessian of the log-likelihood at the estimate) for the
+    asymptotic covariance of the maximum-likelihood estimator. This exercises
+    that contract end to end on a *converged* model rather than an arbitrary
+    point: the observed information is positive definite (the estimate is a
+    genuine local maximum, so the curvature-based SEs are defined),
+    ``vcov_from_hessian`` truly inverts it (``vcov @ H == I`` to numerical
+    precision — the preservation property), and the reported standard errors
+    are finite, positive, and equal to ``sqrt(diag(vcov))``.
+
+    References
+    ----------
+    Efron, B., & Hinkley, D. V. (1978). Assessing the accuracy of the maximum
+    likelihood estimator: Observed versus expected Fisher information.
+    *Biometrika, 65*(3), 457-487. https://doi.org/10.1093/biomet/65.3.457
+    """
+    data = simulate(
+        MLS2PLMConfig(n_persons=6, n_dims=1, items_per_dim=2, latent_dim=1, seed=3)
+    )
+    responses = np.asarray(data.Y, dtype=float)
+    config = FitConfig(
+        model="MIRT",
+        optimizer="adam",
+        max_iter=400,
+        n_restarts=1,
+        latent_dim=1,
+        seed=3,
+        penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
+    )
+    result = fit(responses, data.factor_id, config=config)
+    assert result.convergence_status == "converged"
+
+    hessian = observed_information(
+        responses, data.factor_id, result.params, config=config, step=1e-4
+    )
+    check = second_order_test(hessian)
+    vcov = vcov_from_hessian(hessian)
+    standard_errors = standard_errors_from_vcov(vcov)
+
+    # Positive-definite observed information at the estimate => genuine local max.
+    assert check["passed"] is True
+    assert check["min_eigenvalue"] > 0.0
+    # vcov is the true inverse of the observed information (SE preservation).
+    assert np.allclose(vcov @ hessian, np.eye(hessian.shape[0]), atol=1e-8)
+    # Reported SEs are finite, positive, and consistent with the vcov diagonal.
+    assert np.all(np.isfinite(standard_errors))
+    assert np.all(standard_errors > 0.0)
+    assert np.allclose(np.diag(vcov), standard_errors**2)
+
+
 def test_observed_information_defaults_rust_hessian_to_cpu_device(monkeypatch):
     calls = []
     params = MLSIRMParams(
