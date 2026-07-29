@@ -23,6 +23,7 @@
 ## 2025-05-19 - Intermediate allocations in distance calculations
 **Learning:** `(true_xi * true_xi).sum(axis=1)` in Euclidean distance formulas creates an unnecessary intermediate 2D array before performing the sum over the axis. This can cause performance bottlenecks across many function calls.
 **Action:** Replace `(x * x).sum(axis=1)` with `np.einsum('ij,ij->i', x, x)` when computing pairwise Euclidean distances to avoid allocating the intermediate 2D array and achieve measurable performance gains.
+
 ## 2025-05-19 - Vectorized intermediate allocations during gradients
 **Learning:** Operations like `(e * a[None, :] * theta).sum(axis=0)` and `grad_theta = (e * a[None, :]) @ idx` create full-sized N x J intermediate arrays. For larger matrices, this increases memory allocation time significantly.
 **Action:** Always factor out values from sums over axes or embed operations in pre-existing broadcast arrays. For example, replace `(e * a[None, :] * theta).sum(axis=0)` with `(e * theta).sum(axis=0) * a` and replace `(e * a[None, :]) @ idx` with embedding `a` into the indicator variable `idx[np.arange(e.shape[1]), factors] = a` directly so that `e @ idx` avoids building an intermediate N x J array.
@@ -30,6 +31,11 @@
 ## 2025-05-19 - Fast reduction of boolean masks over 3D arrays
 **Learning:** Broadcasting a 2D boolean mask `observed[:, :, None]` and performing element-wise multiplication with a 3D array (`onehot` or `prob`) followed by `.sum(axis=0)` creates a massive intermediate array of shape `(N, J, C)`. For large data sizes (e.g. `N=5000, J=100, C=5`), this memory allocation and copying dominates execution time. Furthermore, using `np.einsum` with boolean arrays directly is slow due to numpy's internal handling of boolean inputs in `einsum`.
 **Action:** When aggregating 3D data masked by a 2D boolean array across an axis, explicitly cast the boolean mask to the target numeric type (`observed.astype(prob.dtype, copy=False)`) and use `np.einsum('ij,ijk->jk', casted_mask, array)` to entirely skip the intermediate 3D array allocation, significantly improving runtime.
+
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-19 - Avoid 3D allocations for Euclidean distances
+**Learning:** `diff = x_grid[None, :, :] - zeta[:, None, :]` followed by `np.sqrt(np.sum(diff * diff, axis=2))` creates a large 3D array of size (I, Nx, K), which consumes large memory and limits performance due to high allocation overhead.
+**Action:** Always prefer 2D inner product mapping utilizing `np.einsum` for norms and `np.dot` for inner product: `x_sq = np.einsum('ij,ij->i', x, x)[None, :]`, `z_sq = np.einsum('ij,ij->i', z, z)[:, None]`, and `np.sqrt(np.maximum(x_sq - 2 * np.dot(z, x.T) + z_sq, 0.0) + eps)`.

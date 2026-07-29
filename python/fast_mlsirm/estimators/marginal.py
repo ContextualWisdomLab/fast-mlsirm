@@ -218,8 +218,9 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        diff = x_grid[None, :, :] - zeta[:, None, :]  # (I, Nx, K)
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        x_sq = np.einsum("ij,ij->i", x_grid, x_grid)[None, :]
+        zeta_sq = np.einsum("ij,ij->i", zeta, zeta)[:, None]
+        dist = np.sqrt(np.maximum(x_sq - 2 * np.dot(zeta, x_grid.T) + zeta_sq, 0.0) + eps_distance)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -762,8 +763,9 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            diff = x_grid[None, :, :] - zeta[:, None, :]
-            dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)[None, :]
+            zeta_sq = np.einsum("ij,ij->i", zeta, zeta)[:, None]
+            dist = np.sqrt(np.maximum(x_sq - 2 * np.dot(zeta, x_grid.T) + zeta_sq, 0.0) + eps_distance)
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
@@ -817,8 +819,9 @@ def fit_marginal_numpy(
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                x_sq = np.einsum("ij,ij->i", x_grid, x_grid)[None, :]
+                zeta_sq = np.einsum("ij,ij->i", zeta, zeta)[:, None]
+                distz = np.sqrt(np.maximum(x_sq - 2 * np.dot(zeta, x_grid.T) + zeta_sq, 0.0) + eps_distance)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
