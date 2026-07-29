@@ -28,8 +28,8 @@ not add new behavior — it grounds existing behavior.
 | SE = TRUE — Hessian / vcov / second-order | Oakes (1999); Cai (2008); Chalmers (2012) | `observed_information`, `vcov_from_hessian`, `standard_errors_from_vcov`, `oakes_standard_errors`, `second_order_test` | `test_irt_stability.py::test_hessian_vcov_standard_errors_and_second_order_check_are_stable` |
 | Concurrent-calibration missing-value robustness | Rubin (1976); Bock & Aitkin (1981) | NaN / `-1` / mask handling in `fit`/objective | `test_irt_stability.py::test_*_missing_by_design_axes`, `test_estimator_marginal.py` (MAR NaNs) |
 | Fixed-item-parameter linking (FIPC) | Kim (2006); Stocking & Lord (1983); Haebara (1980) | `link_fixed_item_parameters`, `irt_link`, `fixed_item_calibration_diagnostics` | `test_diagnostics.py`, FIPC diagnostics |
-| CAT — selection / ability / stopping | van der Linden & Pashley (2010); Bock & Mislevy (1982) | Fisher-information selection + EAP/MLE scoring | scoring tests (`tests/unit/scoring_wle_tests.rs`), CAT paths |
-| ATA — optimal test assembly | van der Linden (2005) | target-information assembly | assembly/paper-feature tests |
+| CAT — selection / ability / stopping | Lord (1980); Weiss & Kingsbury (1984); van der Linden & Pashley (2010); Bock & Mislevy (1982) | Fisher-information selection + EAP/MLE scoring; `fast_mlsirm.cat` administration loop | scoring tests (`tests/unit/scoring_wle_tests.rs`), `tests/test_cat.py` |
+| ATA — optimal test assembly | van der Linden (2005) | target-information assembly; `fast_mlsirm.ata.assemble_to_target` | `tests/test_ata.py`, assembly/paper-feature tests |
 | Zero / perfect-score robustness | Warm (1989); Bock & Mislevy (1982) | Warm WLE + EAP boundary handling | `test_irt_stability.py::test_fit_handles_missing_by_design_axes_and_extreme_scores`, `tests/unit/scoring_wle_tests.rs` |
 
 ## Dedicated end-to-end regressions added alongside this document
@@ -51,6 +51,33 @@ These are complementary to the parallel test PRs on sibling branches (recovery a
 0/full-score robustness): the modules here use the marginal (full-information)
 estimator path and additionally pin the three-way missing-sentinel equivalence and
 Rust↔NumPy masked-input parity, which the sibling PRs do not assert.
+
+## CAT and ATA administration/assembly modules added on this branch
+
+The directive's CAT and ATA targets were already covered by piecewise primitives
+(`test_design.item_information` / `select_cat_item` / `assemble_test_form`, the
+Rust-backed one-step `serving.cat_next_item` / `serving.bank_information`, and the
+selection/exposure/stopping suite in `exposure.py`). This branch adds two
+**cohesive, pure-Python, downstream application modules** that compose those
+primitives into full workflows — no calibration objective, likelihood, gradient,
+or MLS2PLM formula is touched, and the existing information/probability functions
+are reused rather than reinvented.
+
+| Module | What it adds | Literature | Dedicated regression |
+|---|---|---|---|
+| `fast_mlsirm.cat` | Full maximum-Fisher-information CAT **administration loop**: MFI item selection, EAP (grid) and MLE (Newton) ability updates *after each response*, asymptotic SE `1/sqrt(Σ_j I_j(θ̂))`, and fixed-length / fixed-precision (SE-threshold) stopping; plus a seeded model-based simulator | Lord (1980); Bock & Mislevy (1982); Weiss & Kingsbury (1984); van der Linden & Pashley (2010); Warm (1989) for extreme-pattern EAP finiteness | `tests/test_cat.py` |
+| `fast_mlsirm.ata` | Fixed-length assembly toward a **target test information function** `T(θ_k)` at several trait points via a dependency-free greedy capped-shortfall surrogate, with content (min/max), exclusion, and exposure-cap constraints; deterministic under `seed` | van der Linden (2005) | `tests/test_ata.py` |
+
+Dimensionality choice (documented in `fast_mlsirm/cat.py`): under the repository's
+simple-structure parameterization each item loads on a single trait dimension and
+the latent-space distance term does not depend on the trait, so the ability score
+and Fisher information are block-separable across dimensions. The CAT layer
+therefore estimates the trait one dimension at a time from the items loading on it,
+holding the latent-space position at the bank's population-mean `xi` — the same
+scalar/dominant-dimension information used by `test_design.item_information`. A full
+multidimensional (directional-information) administration and a Rust port of the hot
+selection/scoring path are possible follow-ups (the numeric kernels already exist in
+the Rust core and `serving.py`).
 
 ## Formula / invariant each test asserts
 
@@ -152,6 +179,8 @@ Harwell, M., Stone, C. A., Hsu, T.-C., & Kirisci, L. (1996). Monte Carlo studies
 
 Kim, S. (2006). A comparative study of IRT fixed parameter calibration methods. *Journal of Educational Measurement, 43*(4), 355–381. https://doi.org/10.1111/j.1745-3984.2006.00021.x
 
+Lord, F. M. (1980). *Applications of item response theory to practical testing problems*. Lawrence Erlbaum Associates.
+
 Oakes, D. (1999). Direct calculation of the information matrix via the EM algorithm. *Journal of the Royal Statistical Society: Series B (Statistical Methodology), 61*(2), 479–482. https://doi.org/10.1111/1467-9868.00188
 
 Reckase, M. D. (2009). *Multidimensional item response theory*. Springer. https://doi.org/10.1007/978-0-387-89976-3
@@ -165,3 +194,5 @@ van der Linden, W. J. (2005). *Linear models for optimal test design*. Springer.
 van der Linden, W. J., & Pashley, P. J. (2010). Item selection and ability estimation in adaptive testing. In W. J. van der Linden & C. A. W. Glas (Eds.), *Elements of adaptive testing* (pp. 3–30). Springer. https://doi.org/10.1007/978-0-387-85461-8_1
 
 Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory. *Psychometrika, 54*(3), 427–450. https://doi.org/10.1007/BF02294627
+
+Weiss, D. J., & Kingsbury, G. G. (1984). Application of computerized adaptive testing to educational problems. *Journal of Educational Measurement, 21*(4), 361–375. https://doi.org/10.1111/j.1745-3984.1984.tb01040.x
