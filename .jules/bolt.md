@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2025-05-20 - Massive 3D Euclidean Distance Intermediate Arrays
+**Learning:** In `fast_mlsirm/estimators/marginal.py`, computing Euclidean distance via `np.sum((x_grid[None, :, :] - zeta[:, None, :]) ** 2, axis=2)` creates a huge intermediate `O(I * Nx * K)` array which completely dominates memory overhead and run time for large grid computations. Furthermore, doing `np.sum(diff * diff, axis=1)` for `diff` arrays also redundantly constructs `O(Nx * K)` arrays.
+**Action:** Use algebraic expansion (`x^2 + z^2 - 2xz`) via `np.einsum('ij,ij->i', x, x)` and `np.dot(zeta, x.T)` to turn the `O(I * Nx * K)` problem into an `O(I * Nx)` one. Also, use `np.einsum('ij,ij->i', diff, diff)` for smaller distances instead of `np.sum(diff * diff)` to avoid creating a new identical array. This keeps the performance clean and readable while sidestepping memory limits.
