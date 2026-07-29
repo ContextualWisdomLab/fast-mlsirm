@@ -79,6 +79,62 @@ def test_true_parameters_reproduce_simulation_probabilities():
     assert report.summary["gamma_abs_error"] == 0.0
 
 
+def test_estimator_recovers_true_item_parameters_monte_carlo():
+    """Monte-Carlo parameter-recovery study for the MLS2PLM estimator.
+
+    A calibration is only trustworthy if, on data simulated from known truth,
+    the estimator returns item parameters that track that truth -- the classic
+    item-parameter recovery check (Baker & Kim, 2004, *Item Response Theory:
+    Parameter Estimation Techniques*). Latent-space item-response models are
+    identified only up to a similarity transform of the latent metric, so
+    scale/location-sensitive error (RMSE) is not a stable recovery signal; the
+    rank-order agreement (correlation) of recovered difficulties and
+    discriminations with the truth is. We therefore assert on correlation,
+    aggregated over independent replications, and require the recovered
+    difficulties to track truth far better than a permutation (chance) null so
+    the recovery is demonstrably real rather than an artefact of the metric.
+
+    Thresholds are deliberately loose relative to observed recovery
+    (b_corr mean ~0.89, min ~0.85; a_corr mean ~0.68; permutation null ~0.0)
+    so the test is stable but still fails if the estimator regresses toward
+    chance. Fits are deterministic given the seed and run on the default
+    (Rust) backend in CI.
+    """
+    seeds = range(6)
+    a_corrs: list[float] = []
+    b_corrs: list[float] = []
+    b_null: list[float] = []
+    for seed in seeds:
+        data = simulate(
+            MLS2PLMConfig(n_persons=400, n_dims=2, items_per_dim=5, latent_dim=2, seed=seed)
+        )
+        result = fit(
+            data.Y,
+            data.factor_id,
+            config=FitConfig(
+                model="MLS2PLM", optimizer="adam", max_iter=200, n_restarts=3, seed=seed
+            ),
+        )
+        metrics = recovery_report(data.truth, result.params).metrics
+        a_corrs.append(metrics["a_corr"])
+        b_corrs.append(metrics["b_corr"])
+        rng = np.random.default_rng(seed)
+        permuted = result.params.b[rng.permutation(result.params.b.size)]
+        b_null.append(float(np.corrcoef(data.truth.b, permuted)[0, 1]))
+
+    a_corr = np.array(a_corrs)
+    b_corr = np.array(b_corrs)
+    b_null_corr = np.array(b_null)
+
+    # Difficulties recover strongly and consistently across replications ...
+    assert b_corr.min() >= 0.75
+    assert b_corr.mean() >= 0.80
+    # ... and far better than a shuffled (chance) alignment of the same estimates.
+    assert b_corr.mean() - b_null_corr.mean() >= 0.5
+    # Discriminations are harder to recover but still track truth well above chance.
+    assert a_corr.mean() >= 0.40
+
+
 def test_hessian_vcov_standard_errors_and_second_order_check_are_stable():
     params = MLSIRMParams(
         theta=np.array([[-0.6], [0.2], [0.8]]),
