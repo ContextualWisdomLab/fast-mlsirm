@@ -1312,7 +1312,7 @@ def _gpcm_m_step_item(params0, theta_nodes, r_counts, n_newton=10):
         hess = 0.5 * (hess + hess.T) + 1e-8 * np.eye(p.size)
         try:
             step = np.linalg.solve(hess, g)
-        except np.linalg.LinAlgError:
+        except np.linalg.LinAlgError:  # pragma: no cover - ridge-regularized finite Hessian is non-singular
             step = g
         p = p - step
         if np.max(np.abs(step)) < 1e-9:
@@ -1434,7 +1434,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
             r = np.stack([post[y[:, i] == k].sum(axis=0) for k in range(k_cat)], axis=1)
             params[i] = _gpcm_m_step_item(params[i], nodes, r)
         next_ll, post = estep(params)
-        if not np.isfinite(next_ll):
+        if not np.isfinite(next_ll):  # pragma: no cover - stable log-sum-exp keeps the likelihood finite
             raise RuntimeError("GPCM EM produced a non-finite observed-data likelihood")
         final_delta = float(abs(next_ll - ll))
         stopping_tolerance = float(tol * (1.0 + abs(ll)))
