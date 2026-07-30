@@ -27,12 +27,16 @@ degenerate cases end to end.
 """
 
 import numpy as np
+import pytest
 
+from fast_mlsirm.config import FitConfig
 from fast_mlsirm.inference import (
+    observed_information,
     second_order_test,
     standard_errors_from_vcov,
     vcov_from_hessian,
 )
+from fast_mlsirm.types import MLSIRMParams
 
 
 def test_singular_information_falls_back_to_pseudo_inverse():
@@ -103,3 +107,54 @@ def test_indefinite_information_clamps_negative_variance_to_finite_se():
     assert np.all(standard_errors >= 0.0)
     assert standard_errors[0] > 0.0  # well-curved coordinate keeps a real SE
     assert standard_errors[1] == 0.0  # negative variance clamped, not NaN
+
+
+def _mirt_params(n_persons: int, n_items: int = 2) -> MLSIRMParams:
+    """Return zero-filled MIRT params of a given size for guard-path tests.
+
+    Only the packed parameter count matters for the guard branches under test,
+    so every field is zero-initialised at the requested person/item dimensions.
+    """
+    return MLSIRMParams(
+        theta=np.zeros((n_persons, 1)),
+        alpha=np.zeros(n_items),
+        b=np.zeros(n_items),
+        xi=np.zeros((n_persons, 1)),
+        zeta=np.zeros((n_items, 1)),
+        tau=-2.0,
+    )
+
+
+@pytest.mark.parametrize("step", [0.0, -1e-4, np.nan, np.inf])
+def test_observed_information_rejects_nonpositive_or_nonfinite_step(step):
+    """The finite-difference Hessian must reject a non-positive or non-finite step.
+
+    A central finite difference divides by ``step**2``; a zero, negative, or
+    non-finite step has no valid numerical meaning, so the routine must fail
+    closed with a clear error rather than emit ``inf``/``nan`` curvature that
+    would silently poison the standard errors.
+    """
+    params = _mirt_params(n_persons=3)
+    responses = np.zeros((3, 2))
+    factors = np.zeros(2, dtype=int)
+    with pytest.raises(ValueError, match="step must be"):
+        observed_information(
+            responses, factors, params, config=FitConfig(model="MIRT"), step=step
+        )
+
+
+def test_observed_information_bounds_dense_hessian_dimension():
+    """The dense finite-difference Hessian is capped to a safe parameter count.
+
+    The observed information is an O(n^2)-memory, O(n^2)-objective-call dense
+    matrix, so an unbounded parameter vector would exhaust memory/time. The
+    routine must reject an over-large model before doing any work rather than
+    attempt the allocation.
+    """
+    params = _mirt_params(n_persons=5200)  # packs to > 5000 free parameters
+    responses = np.zeros((5200, 2))
+    factors = np.zeros(2, dtype=int)
+    with pytest.raises(ValueError, match="at most 5000 parameters"):
+        observed_information(
+            responses, factors, params, config=FitConfig(model="MIRT"), step=1e-4
+        )
