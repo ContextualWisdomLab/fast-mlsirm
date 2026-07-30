@@ -295,3 +295,48 @@ def test_weighted_likelihood_ability_is_finite_for_zero_and_perfect_scores():
     # Standard errors stay finite and positive at the extremes too.
     assert np.all(np.isfinite(estimate["se"]))
     assert np.all(estimate["se"] > 0.0)
+
+
+def test_full_information_item_factor_solution_is_stable_and_heywood_free():
+    # Bock, R. D., Gibbons, R. D., & Muraki, E. (1988). Full-information item
+    # factor analysis. Applied Psychological Measurement, 12(3), 261-280. The
+    # multidimensional item-factor model is fit by marginal maximum likelihood,
+    # and Bayes constraints on the loadings are needed to keep the solution
+    # proper -- i.e. to suppress Heywood cases (divergent/improper estimates).
+    # This pins that stability for the MLS2PLM full-information fit: with the
+    # penalty (the Bayes constraints) on, two independent same-seed fits return
+    # the identical, finite, bounded 2-factor solution rather than drifting or
+    # blowing up.
+    data = simulate(
+        MLS2PLMConfig(n_persons=120, n_dims=2, items_per_dim=4, latent_dim=2, seed=17)
+    )
+    responses = np.asarray(data.Y, dtype=float)
+    config = FitConfig(
+        model="MLS2PLM",
+        optimizer="adam",
+        max_iter=200,
+        n_restarts=1,
+        latent_dim=2,
+        seed=5,
+        penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
+    )
+
+    first = fit(responses, data.factor_id, config=config)
+    second = fit(responses, data.factor_id, config=config)
+
+    # Genuinely the multidimensional full-information model: a 2-factor latent space.
+    assert first.params.theta.shape == (120, 2)
+    # Stability (1) reproducible: the same seed returns the identical solution.
+    assert np.isfinite(first.objective)
+    assert np.isclose(first.objective, second.objective)
+    assert np.allclose(first.params.b, second.params.b)
+    assert np.allclose(first.params.alpha, second.params.alpha)
+    assert np.allclose(first.params.theta, second.params.theta)
+    # Stability (2) proper / Heywood-free: the Bayes penalty keeps every loading,
+    # difficulty, and latent coordinate finite and bounded rather than diverging.
+    assert np.all(np.isfinite(first.params.alpha))
+    assert np.all(np.isfinite(first.params.b))
+    assert np.all(np.isfinite(first.params.theta))
+    assert np.max(np.abs(first.params.alpha)) < 20.0
+    assert np.max(np.abs(first.params.b)) < 20.0
+    assert np.max(np.abs(first.params.theta)) < 20.0
