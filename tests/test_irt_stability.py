@@ -263,6 +263,32 @@ def test_cat_item_selection_and_greedy_ata_constraints():
     assert np.sum(np.array(["algebra", "algebra", "geometry", "geometry"])[form] == "geometry") >= 1
 
 
+def test_assemble_test_form_maximizes_information_unconstrained():
+    # van der Linden (2005), "Linear Models for Optimal Test Design" (Springer,
+    # doi:10.1007/0-387-29054-0): optimal test assembly maximizes the test
+    # information function subject to constraints. With no content constraints
+    # the optimal fixed-length form is exactly the `length` most informative
+    # items, so its total information is the global maximum over every feasible
+    # subset. This pins that maximum-information objective so a regression cannot
+    # silently degrade assemble_test_form into a feasible-but-suboptimal pick
+    # (the existing constrained test only checks feasibility, not optimality).
+    from itertools import combinations
+
+    information = np.array([0.10, 0.55, 0.20, 0.80, 0.35, 0.65, 0.05, 0.45])
+    length = 3
+    form = assemble_test_form(information, length=length)
+
+    top = np.argsort(-information)[:length]
+    assert set(form.tolist()) == {int(i) for i in top}
+    optimal_total = float(np.sort(information)[-length:].sum())
+    assert np.isclose(float(information[form].sum()), optimal_total)
+    best_feasible = max(
+        float(information[list(subset)].sum())
+        for subset in combinations(range(information.size), length)
+    )
+    assert np.isclose(float(information[form].sum()), best_feasible)
+
+
 def test_weighted_likelihood_ability_is_finite_for_zero_and_perfect_scores():
     # Warm (1989), "Weighted likelihood estimation of ability in item response
     # theory", Psychometrika 54(3), 427-450 (doi:10.1007/BF02294627): the WLE
