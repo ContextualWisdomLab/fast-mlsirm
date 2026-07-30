@@ -55,5 +55,10 @@ ignore-magic = true
 ignore-module = true
 fail-under = 100
 
+[tool.coverage.run]
+source = ["fast_mlsirm"]
+branch = true
+
 [tool.coverage.report]
-fail_under = 0
+show_missing = true
+fail_under = 100

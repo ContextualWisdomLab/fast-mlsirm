@@ -193,10 +193,10 @@ def _gammainc_upper_reg(a: float, x: float) -> float:
         b += 2.0
         d = an * d + b
         if abs(d) < tiny:
-            d = tiny
+            d = tiny  # pragma: no cover - Lentz FPMIN guard; b>=2 keeps d away from 0 for x>=a+1
         c = b + an / c
         if abs(c) < tiny:
-            c = tiny
+            c = tiny  # pragma: no cover - Lentz FPMIN guard; b>=2 keeps c away from 0 for x>=a+1
         d = 1.0 / d
         delta = d * c
         h *= delta
@@ -580,7 +580,7 @@ def s_x2(
             rss, n_tot = 0.0, 0.0
             for gn, gr, ge in groups:
                 if gn <= 0:
-                    continue
+                    continue  # pragma: no cover - groups hold only appended acc_n>0 counts, so gn>=1
                 e_prop = ge / gn
                 if e_prop <= 0.0 or e_prop >= 1.0:
                     continue
@@ -2172,7 +2172,7 @@ def _nc_lambda_for(x: float, df: float, target: float) -> float:
     if _ncchi2_cdf(x, df, hi) > target:
         return float("nan")
     lo = 0.0
-    for _ in range(200):
+    for _ in range(200):  # pragma: no branch - bisection halves a <=1.2e8 span, always breaking by ~iter 67
         mid = 0.5 * (lo + hi)
         if _ncchi2_cdf(x, df, mid) > target:
             lo = mid

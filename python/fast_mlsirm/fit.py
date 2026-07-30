@@ -333,10 +333,13 @@ def _fit_mmle_marginal(
             anchor_tau=anchor_tau,
         )
     if ids is not None:
+        # ids only ever comes from _compact_population_labels, whose np.unique
+        # return_inverse output is always 1-D of length n_persons with values
+        # in [0, k); these shape/sign guards are unreachable via fit().
         if ids.shape != (n_persons,):
-            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")
+            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")  # pragma: no cover
         if ids.size and ids.min() < 0:
-            raise ValueError(f"{pop_kind} ids must be >= 0")
+            raise ValueError(f"{pop_kind} ids must be >= 0")  # pragma: no cover
 
     # MAP penalties: the paper priors, unless the caller customized the
     # penalty config away from its (JML-oriented) defaults.
