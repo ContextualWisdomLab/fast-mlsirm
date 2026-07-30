@@ -35,7 +35,7 @@ def test_link_fixed_multidim_skips_dim_without_anchor():
     target = _params(n_dims=2, seed=2)
     factor_id = np.array([0, 0, 0, 1, 1, 1])
     # anchors only on dimension 0 -> dimension 1 has no anchors (continue branch)
-    linked, coeffs = link_fixed_item_parameters(
+    _linked, coeffs = link_fixed_item_parameters(
         source, target, np.array([0, 1]), factor_id=factor_id
     )
     assert coeffs["scale"][1] == 1.0
@@ -105,6 +105,31 @@ def test_link_fixed_rejects_bad_factor_id():
         link_fixed_item_parameters(
             source, target, np.array([0, 1]), factor_id=np.zeros(3)
         )
+
+
+def test_link_fixed_rejects_underflowed_target_slope():
+    # A finite but very negative target alpha passes the finiteness check yet
+    # underflows to a zero slope, reaching the "positive slopes" guard.
+    source = _params(seed=1)
+    target = _params(seed=2)
+    target.alpha[0] = -800.0
+    assert np.exp(target.alpha[0]) == 0.0
+    with pytest.raises(ValueError, match="target anchor slopes must be positive"):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
+
+
+def test_link_fixed_rejects_underflowed_source_slope():
+    # Every target slope is strictly positive, but a source anchor slope that
+    # underflows to 0 sends log(source.a / target_a) to -inf, so the scale
+    # underflows to 0.0 and the non-positive-coefficient guard fires.
+    source = _params(seed=1)
+    target = _params(seed=2)
+    source.alpha[0] = -800.0
+    assert np.exp(source.alpha[0]) == 0.0
+    with np.errstate(divide="ignore"), pytest.raises(
+        ValueError, match="non-finite or non-positive linking coefficients"
+    ):
+        link_fixed_item_parameters(source, target, np.array([0, 1, 2]))
 
 
 def test_irt_link_happy_path():
