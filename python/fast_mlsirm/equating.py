@@ -35,6 +35,11 @@ class EquateResult:
 
 
 def _infer_k(scores: np.ndarray, k, name: str) -> int:
+    """Return the maximum score ``k``, inferring it from the data when unset.
+
+    An explicit ``k`` is preferred: inferring the ceiling from observed scores
+    under-counts it when the top score was never earned.
+    """
     if k is not None:
         return int(k)
     arr = np.asarray(scores, dtype=np.float64)
@@ -49,6 +54,7 @@ def _infer_k(scores: np.ndarray, k, name: str) -> int:
 
 
 def _build(res, method: str, design: str) -> EquateResult:
+    """Build an :class:`EquateResult` from a Rust equating result dict."""
     return EquateResult(
         x_scores=np.asarray(res["x_scores"], dtype=np.float64),
         y_equivalents=np.asarray(res["y_equivalents"], dtype=np.float64),
@@ -381,6 +387,7 @@ class CircleArcResult:
 
 
 def _ca_point(p, name: str) -> tuple[float, float]:
+    """Validate and unpack an ``(x, y)`` anchor point into a float pair."""
     try:
         x, y = p
     except (TypeError, ValueError):

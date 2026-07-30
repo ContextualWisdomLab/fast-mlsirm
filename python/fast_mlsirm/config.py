@@ -41,6 +41,15 @@ MAX_SIM_CELLS = 200_000_000
 
 @dataclass(frozen=True)
 class MLS2PLMConfig:
+    """Simulation settings for generating a synthetic MLS2PLM dataset.
+
+    Controls sample size (``n_persons``), the item/trait structure
+    (``n_dims`` traits with ``items_per_dim`` simple-structure items each),
+    the latent-space dimension (``latent_dim``), the trait equicorrelation
+    (``phi``), the latent-space distance weight (``gamma``), the RNG ``seed``,
+    and the output ``dtype``.
+    """
+
     n_persons: int = 500
     n_dims: int = 2
     items_per_dim: int = 8
@@ -52,9 +61,16 @@ class MLS2PLMConfig:
 
     @property
     def n_items(self) -> int:
+        """Total item count (``n_dims * items_per_dim``)."""
         return self.n_dims * self.items_per_dim
 
     def validate(self) -> None:
+        """Validate the configuration, raising ``ValueError`` on any violation.
+
+        Enforces integer/positivity constraints, the memory-safety size caps,
+        a positive-definite trait equicorrelation from ``phi``, a finite
+        non-negative ``gamma``, and a supported ``dtype``.
+        """
         for name, value in (
             ("n_persons", self.n_persons),
             ("n_dims", self.n_dims),
@@ -104,6 +120,13 @@ class MLS2PLMConfig:
 
 @dataclass(frozen=True)
 class PenaltyConfig:
+    """Ridge (L2) penalty weights and shrinkage targets for the JMLE objective.
+
+    ``lambda_*`` are the per-parameter-block penalty strengths; ``mu_alpha``
+    and ``mu_tau`` are the shrinkage targets for the log-discriminations and
+    the log latent-space weight.
+    """
+
     lambda_theta: float = 0.01
     lambda_xi: float = 0.01
     lambda_zeta: float = 0.01
@@ -116,6 +139,16 @@ class PenaltyConfig:
 
 @dataclass(frozen=True)
 class FitConfig:
+    """Estimation settings for a fit.
+
+    Selects the model variant (``model``), latent-space dimension, optimizer
+    and ``estimator`` (``jmle`` penalized joint MLE or ``mmle`` marginal MLE),
+    the compute ``backend``/``rust_device`` axis, optimizer controls
+    (iterations, restarts, learning rate, tolerance, gradient clipping, L-BFGS
+    history), the L2 ``penalty`` block, and the marginal-estimator quadrature
+    and zero-inflation options.
+    """
+
     model: str = "MLS2PLM"
     latent_dim: int = 2
     optimizer: str = "adam_lbfgs"
@@ -162,9 +195,18 @@ class FitConfig:
     zero_inflation: bool = False
 
     def normalized_model(self) -> str:
+        """Return the model name upper-cased for case-insensitive matching."""
         return self.model.upper()
 
     def validate(self) -> None:
+        """Validate all fit settings, raising ``ValueError`` on any violation.
+
+        Checks the model/optimizer/estimator vocabularies, the latent-space and
+        L-BFGS-history bounds, the per-field and aggregate optimizer-work caps,
+        finiteness/positivity of the float controls, the supported
+        Gauss-Hermite node counts, and the latent-space integration rule and
+        its point/seed ranges.
+        """
         model = self.normalized_model()
         if model not in VALID_MODELS:
             raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")

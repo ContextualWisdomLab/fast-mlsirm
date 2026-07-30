@@ -62,6 +62,7 @@ class GTheoryResult:
 
 
 def _to_result(res: dict) -> GTheoryResult:
+    """Build a :class:`GTheoryResult` (ANOVA table + D-study) from the core dict."""
     return GTheoryResult(
         df=[float(v) for v in res["df"]],
         ss=[float(v) for v in res["ss"]],
@@ -83,6 +84,7 @@ def _to_result(res: dict) -> GTheoryResult:
 
 
 def _core_or_raise(name: str):
+    """Return the Rust core, raising if it or the required function ``name`` is absent."""
     from .fitstats import _core_module
 
     core = _core_module()
@@ -95,6 +97,7 @@ def gtheory_pi(
     data: np.ndarray,
     n_i_prime: Sequence[int] = (5, 10, 15, 20),
 ) -> GTheoryResult:
+    """One-facet crossed ``p x i`` generalizability (G) and decision (D) study (Rust core)."""
     """One-facet crossed ``p x i`` generalizability analysis (compute in
     Rust; Huebner & Lucht, 2019, "One-facet crossed design" section and
     Tables 3-4).
@@ -122,6 +125,7 @@ def gtheory_pio(
     data: np.ndarray,
     n_prime: Sequence[tuple[int, int]] = ((5, 2), (10, 2), (15, 2), (20, 2)),
 ) -> GTheoryResult:
+    """Two-facet crossed ``p x i x o`` generalizability (G) and decision (D) study (Rust core)."""
     """Two-facet crossed ``p x i x o`` generalizability analysis (compute
     in Rust; Huebner & Lucht, 2019, "Two-facet crossed design" section and
     Tables 5-6).
@@ -179,6 +183,7 @@ def phi_lambda(
     cut: float,
     n_i_prime: Sequence[int] = (5, 10, 15, 20),
 ) -> PhiLambdaResult:
+    """Brennan-Kane dependability index ``Phi(lambda)`` for mastery tests (Rust core)."""
     """Brennan-Kane index of dependability ``Phi(lambda)`` for mastery
     (domain-referenced) tests, one-facet crossed ``p x i`` design (compute
     in Rust; Kane & Brennan, 1977, eq. 33, with a derived unbiased signal

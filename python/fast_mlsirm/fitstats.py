@@ -41,6 +41,11 @@ _SUPPORTED_QUADRATURE = (7, 11, 15, 21, 31, 41)
 def _validate_sx2_controls(
     q_theta, q_xi, min_expected, fdr_q, min_effect
 ) -> tuple[int, int, float, float, float]:
+    """Validate and coerce the S-X2 control arguments to their numeric types.
+
+    Checks that the quadrature sizes are supported and that the minimum-expected
+    cell count, BH false-discovery rate, and minimum effect size are valid.
+    """
     quadrature = []
     for name, value in (("q_theta", q_theta), ("q_xi", q_xi)):
         if (
@@ -138,6 +143,7 @@ def _prepare_dichotomous_diagnostic_inputs(responses, factor_id, mask):
 
 
 def _bank_args(params, factor_id, model, n_dims, eps_distance):
+    """Assemble the item-bank keyword arguments the Rust ICC kernels expect."""
     zeta = np.asarray(params.zeta, dtype=np.float64)
     return dict(
         alpha=np.asarray(params.alpha, dtype=np.float64),
@@ -378,6 +384,13 @@ def _lord_wingersky(probs: np.ndarray) -> np.ndarray:
 
 @dataclass
 class SX2Result:
+    """Per-item Orlando-Thissen S-X2 (and G2) fit statistics.
+
+    Holds the chi-square and likelihood-ratio statistics, degrees of freedom,
+    p-values, Benjamini-Hochberg significance flags, the number of pooled score
+    groups, and the N_s-weighted RMS residual effect size per item.
+    """
+
     statistic: np.ndarray
     g2_statistic: np.ndarray
     df: np.ndarray
@@ -610,6 +623,9 @@ def s_x2(
 
 @dataclass
 class PersonFitResult:
+    """Person-fit statistics: the ``lz`` and bias-corrected ``lz_star`` indices
+    per person and a boolean array flagging aberrant response patterns."""
+
     lz: np.ndarray
     lz_star: np.ndarray
     flagged: np.ndarray
@@ -782,6 +798,9 @@ def infit_outfit(
 
 @dataclass
 class ItemScreeningRound:
+    """One round of iterative item screening: which items were kept vs. removed,
+    the per-item removal reasons, and the per-item diagnostic flags."""
+
     round_index: int
     kept_items: list[str]
     removed_items: list[str]
@@ -791,6 +810,9 @@ class ItemScreeningRound:
 
 @dataclass
 class ItemScreeningResult:
+    """Outcome of iterative item screening: the final surviving item set, the
+    items removed (with reasons), the per-round history, and the final refit."""
+
     kept_items: list[str]
     removed_items: dict[str, list[str]]
     rounds: list[ItemScreeningRound]
@@ -798,6 +820,11 @@ class ItemScreeningResult:
 
 
 def _require_converged_fit(result, config, operation: str, stage: str) -> None:
+    """Raise unless ``result`` converged, so fit statistics use trustworthy estimates.
+
+    Guards downstream diagnostics against being computed on a non-converged fit;
+    the error reports the status, iteration count, and last log-likelihood delta.
+    """
     status = str(result.convergence_status).strip().lower()
     if status == "converged":
         return
@@ -1078,6 +1105,7 @@ def vuong_nonnested(
         raise ValueError("casewise log-likelihoods must be finite")
 
     def parameter_count(value, name: str) -> int:
+        """Validate and return a model's non-negative integer parameter count."""
         if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
             raise ValueError(f"{name} must be a non-negative integer")
         result = int(value)
@@ -1177,6 +1205,13 @@ def dimensionality_residuals(
 
 @dataclass
 class DIFResult:
+    """Per-item differential item functioning (DIF) results.
+
+    Holds the likelihood-ratio statistic, degrees of freedom, and p-values per
+    item, Benjamini-Hochberg significance flags, the group-specific easiness and
+    discrimination estimates, and a per-item effect size.
+    """
+
     item_codes: list[str]
     lr_statistic: np.ndarray
     df: np.ndarray
@@ -2028,6 +2063,7 @@ def m2_cmle_rasch(
     cache: dict[tuple[int, ...], float] = {}
 
     def set_probability(item_set):
+        """Return the (cached) score-marginal joint pass probability for an item set."""
         key = tuple(sorted(item_set))
         if key not in cache:
             values = _rasch_conditional_set_probabilities(b, [list(key)])[:, 0]
@@ -2199,6 +2235,7 @@ def _m2_numpy(
         prior_sd = np.ones(n_dims_of(d_of_i))
 
     def node_probs(pp):
+        """Return the ICC grid probabilities and trait/latent-space quadrature weights."""
         probs, t_w, x_w, _ = _icc_grid(
             pp, d_of_i, model, q_theta, q_xi, eps_distance,
             prior_mean, prior_sd,
@@ -2208,6 +2245,7 @@ def _m2_numpy(
     probs0, trait_weights, space_weights = node_probs(params)
 
     def pi_set(probs, sset):
+        """Return the model-implied joint pass probability for one item set."""
         return float(
             _factorized_trait_moments(
                 probs,
@@ -2219,6 +2257,7 @@ def _m2_numpy(
         )
 
     def model_moments(probs):
+        """Return the model-implied first/second moments over all M2 item sets."""
         return _factorized_trait_moments(
             probs,
             trait_weights,
@@ -2414,6 +2453,7 @@ def _m2_group_components(
     if shared_sigma_u is None:
 
         def node_probs(pp, mean=prior_mean, sd=prior_sd, sigma_u=None):
+            """Single-level ICC grid probabilities and trait/latent-space weights."""
             probs, t_w, x_w, _ = _icc_grid(
                 pp, d_of_i, model, q_theta, q_xi, eps_distance, mean, sd
             )
@@ -2422,6 +2462,7 @@ def _m2_group_components(
     else:
 
         def node_probs(pp, mean=None, sd=None, sigma_u=shared_sigma_u):
+            """Multilevel ICC grid probabilities and cluster/trait/latent-space weights."""
             return _icc_multilevel_grid(
                 pp,
                 d_of_i,
@@ -2436,6 +2477,7 @@ def _m2_group_components(
     probs0, cluster_weights, trait_weights, space_weights = node_probs(params)
 
     def moments(probs, item_sets=moment_items):
+        """Return model-implied moments over ``item_sets``, single- or multilevel."""
         if cluster_weights is None:
             return _factorized_trait_moments(
                 probs, trait_weights, space_weights, d_of_i, item_sets
@@ -2512,6 +2554,7 @@ def _m2_group_components(
         ) / (upper - lower)
 
     def pi_set(item_set):
+        """Return the model-implied joint pass probability for one item set."""
         return float(moments(probs0, [item_set])[0])
 
     xi = np.empty((s, s), dtype=float)

@@ -43,6 +43,7 @@ def parallel_analysis(
     centile: int = 0,
     seed: int = 1,
 ) -> ParallelAnalysisResult:
+    """Horn's parallel analysis (PCA path) for retained-dimension count (Rust core)."""
     """Horn's parallel analysis, PCA path (compute in Rust; algorithm
     transcribed from the paran 1.5.6 R source, read line by line; Horn,
     1965, and Glorfeld, 1995, not read — attribution as cited in Dinno,

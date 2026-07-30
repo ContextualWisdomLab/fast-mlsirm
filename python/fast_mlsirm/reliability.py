@@ -46,6 +46,7 @@ def guttman_lambdas(
     n_sample_splits: int = 15000,
     seed: int = 1,
 ) -> GuttmanResult:
+    """Guttman's lambda1-lambda6 and split-half reliability coefficients (Rust core)."""
     """Guttman's lambda reliability coefficients (compute in Rust; algorithm
     transcribed from the psych 2.6.5 R sources ``guttman.R``, ``splitHalf.R``
     and ``smc.R``, read line by line; Guttman, 1945, not read — attribution
@@ -123,6 +124,7 @@ _TENBERGE_REFERENCES = """References (APA 7th ed.):
 
 
 def tenberge_mu(data: np.ndarray) -> TenBergeResult:
+    """ten Berge & Zegers mu0-mu3 series of reliability lower bounds (Rust core)."""
     """ten Berge & Zegers mu0-mu3 reliability lower bounds (compute in
     Rust; algorithm transcribed from the psych 2.6.5 R source
     ``tenberge.R``, read line by line; ten Berge & Zegers, 1978, not read —

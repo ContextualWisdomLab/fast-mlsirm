@@ -61,6 +61,7 @@ class OmegaResult:
 
 
 def _fa_from_dict(d: dict, p: int, n_factors: int) -> MinresFaResult:
+    """Build a :class:`MinresFaResult` from the Rust core's result dict."""
     return MinresFaResult(
         loadings=np.asarray(d["loadings"], dtype=np.float64).reshape(p, n_factors),
         uniquenesses=np.asarray(d["uniquenesses"], dtype=np.float64),
@@ -167,6 +168,7 @@ class GlbFaResult:
 
 
 def _glbfa_from_dict(d: dict) -> GlbFaResult:
+    """Build a :class:`GlbFaResult` from the Rust core's result dict."""
     return GlbFaResult(
         glb=float(d["glb"]),
         communalities=np.asarray(d["communalities"], dtype=np.float64),
@@ -175,6 +177,7 @@ def _glbfa_from_dict(d: dict) -> GlbFaResult:
 
 
 def glb_fa(corr: np.ndarray) -> GlbFaResult:
+    """Factor-analytic greatest lower bound (glb) reliability from a correlation matrix."""
     """Factor-analytic glb from a ``(p, p)`` correlation matrix (psych
     ``glb.fa`` transcription; Revelle, 2025). See :class:`GlbFaResult`
     for the scope reduction (not the algebraic glb).
@@ -189,6 +192,7 @@ def glb_fa(corr: np.ndarray) -> GlbFaResult:
 
 
 def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
+    """Factor-analytic glb reliability computed from a complete ``(n, p)`` data matrix."""
     """:func:`glb_fa` from a complete ``(n, p)`` data matrix.
 
     %s""" % _REFERENCES
@@ -250,6 +254,7 @@ _MAP_REFERENCES = """References (APA 7th ed.):
 
 
 def _map_from_dict(d: dict) -> VelicerMapResult:
+    """Build a :class:`VelicerMapResult` from the Rust core's result dict."""
     return VelicerMapResult(
         f2=np.asarray(d["f2"], dtype=np.float64),
         f4=np.asarray(d["f4"], dtype=np.float64),
@@ -259,6 +264,7 @@ def _map_from_dict(d: dict) -> VelicerMapResult:
 
 
 def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
+    """Velicer's minimum average partial (MAP) dimensionality test from a correlation matrix."""
     """Velicer's MAP test from a ``(p, p)`` correlation matrix.
 
     ``max_m`` defaults to ``p - 1`` (the canonical upper bound).
@@ -275,6 +281,7 @@ def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
 
 
 def velicer_map_from_data(data: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
+    """Velicer's MAP dimensionality test computed from a complete ``(n, p)`` data matrix."""
     """:func:`velicer_map` from a complete ``(n, p)`` data matrix.
 
     %s""" % _MAP_REFERENCES

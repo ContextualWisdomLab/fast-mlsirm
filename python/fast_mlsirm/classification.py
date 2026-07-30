@@ -116,7 +116,14 @@ _REFERENCES = """References (APA 7th ed.):
 
 
 def _to_result(res: dict, m: int, n: int) -> ClassificationResult:
+    """Convert a Rust-core result dict into a :class:`ClassificationResult`.
+
+    ``m`` is the number of cut scores and ``n`` the number of points, used to
+    reshape the flattened conditional accuracy/consistency arrays.
+    """
+
     def arr(key: str) -> np.ndarray:
+        """Return result entry ``key`` as a float64 array."""
         return np.asarray(res[key], dtype=np.float64)
 
     return ClassificationResult(
@@ -136,6 +143,7 @@ def _to_result(res: dict, m: int, n: int) -> ClassificationResult:
 
 
 def _core_or_raise(name: str):
+    """Return the Rust core, raising if it or the required function ``name`` is absent."""
     from .fitstats import _core_module
 
     core = _core_module()
@@ -150,6 +158,7 @@ def rudner_classification(
     cutscores: Sequence[float],
     weights: np.ndarray | None = None,
 ) -> ClassificationResult:
+    """Rudner normal-approximation classification accuracy and consistency (Rust core)."""
     """Rudner normal-approximation classification accuracy/consistency
     (compute in Rust; Rudner, 2001, 2005, both read in full).
 
@@ -187,6 +196,7 @@ def lee_classification(
     cutscores: Sequence[float],
     weights: np.ndarray | None = None,
 ) -> ClassificationResult:
+    """Lee summed-score classification accuracy and consistency for dichotomous items (Rust core)."""
     """Lee summed-score classification accuracy/consistency for dichotomous
     items (compute in Rust; Lee, 2010, as cited in Lathrop, 2015; mechanics
     transcribed from the cacIRT R sources, read line by line).
@@ -227,6 +237,7 @@ def livingston_lewis(
     max_score: float,
     cut: float,
 ) -> LivingstonLewisResult:
+    """Livingston-Lewis classification accuracy and consistency from one administration (Rust core)."""
     """Livingston-Lewis classification accuracy/consistency from a single
     test administration (compute in Rust; Livingston & Lewis, 1995, as
     implemented in CRAN betafunctions 1.9.0 ``LL.CA``, read line by line —
@@ -291,6 +302,7 @@ def livingston_lewis(
 
 
 def _hb_to_result(res: dict) -> HansonBrennanResult:
+    """Convert a Rust-core Hanson-Brennan result dict into a result dataclass."""
     return HansonBrennanResult(
         lords_k=float(res["lords_k"]),
         true_score_moments=np.asarray(
@@ -343,6 +355,7 @@ def hanson_brennan(
     cut: int,
     two_parameter: bool = False,
 ) -> HansonBrennanResult:
+    """Hanson-Brennan classification accuracy and consistency from raw scores (Rust core)."""
     """Hanson-Brennan classification accuracy/consistency from raw
     number-correct scores under the four-parameter beta compound binomial
     model (compute in Rust; Hanson, 1991, read in full from ERIC ED344945;
@@ -387,6 +400,7 @@ def hanson_brennan_from_params(
     beta: float,
     cut: int,
 ) -> HansonBrennanResult:
+    """Hanson-Brennan classification indexes from fixed model parameters (Rust core)."""
     """Hanson-Brennan classification indexes from fixed model parameters:
     Lord's k plus a four-parameter beta true-score distribution (compute in
     Rust; Hanson, 1991; CRAN betafunctions 1.9.0 ``HB.CA``). Same
@@ -451,6 +465,7 @@ def subkoviak_agreement(
     cuts: Sequence[float] | np.ndarray,
     alpha: float | None = None,
 ) -> SubkoviakResult:
+    """Subkoviak single-administration coefficient of agreement for mastery classifications (Rust core)."""
     """Subkoviak's single-administration coefficient of agreement for
     mastery classifications under the simple binomial true-score model
     (compute in Rust; Subkoviak, 1976, read in full from ERIC ED120229).
@@ -634,6 +649,7 @@ _WOODRUFF_SAWYER_REFERENCES = """
 
 
 def _ws_result(res: dict) -> WoodruffSawyerResult:
+    """Convert a Rust-core Woodruff-Sawyer result dict into a result dataclass."""
     return WoodruffSawyerResult(
         pass_rate=float(res["pass_rate"]),
         phi_half=float(res["phi_half"]),

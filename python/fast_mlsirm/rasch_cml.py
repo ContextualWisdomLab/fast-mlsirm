@@ -11,6 +11,10 @@ import numpy as np
 
 
 def _binary_matrix(responses: np.ndarray) -> tuple[np.ndarray, int, int]:
+    """Validate a complete 0/1 response matrix and return it with its shape.
+
+    Rasch CML has no missing-data path, so any non-0/1 entry is rejected.
+    """
     y = np.asarray(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2-D persons x items array")

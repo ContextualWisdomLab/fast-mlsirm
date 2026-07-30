@@ -30,6 +30,11 @@ def select_cat_item(
     administered: np.ndarray | None = None,
     model: str = "MLS2PLM",
 ) -> int:
+    """Select the next CAT item by maximum Fisher information.
+
+    Returns the index of the not-yet-``administered`` item with the highest
+    item information at the given ``theta`` (or person), for adaptive testing.
+    """
     information = item_information(params, factor_id, theta=theta, person_index=person_index, model=model)
     candidates = information.copy()
     if administered is not None:
@@ -50,6 +55,12 @@ def assemble_test_form(
     max_per_content: dict[str, int] | None = None,
     exclude: np.ndarray | None = None,
 ) -> np.ndarray:
+    """Assemble a fixed-length test form by greedy maximum-information selection.
+
+    Picks the ``length`` highest-information items (skipping ``exclude``d ones)
+    subject to per-content min/max count constraints, raising if no feasible
+    form satisfies them. Returns the selected item indices.
+    """
     scores = np.asarray(information, dtype=np.float64)
     if scores.ndim != 1:
         raise ValueError("information must be a 1D array")
@@ -93,6 +104,11 @@ def assemble_test_form(
 
 
 def _person_params(params: MLSIRMParams, theta: np.ndarray | None, person_index: int | None) -> MLSIRMParams:
+    """Return a single-person parameter view for item-information evaluation.
+
+    Uses an explicit ``theta`` (and person latent position) when given,
+    otherwise the specified person's row, defaulting to the first person.
+    """
     if theta is None:
         if person_index is None:
             person_index = 0
@@ -123,6 +139,11 @@ def _constraints_feasible(
     min_counts: dict[str, int],
     max_counts: dict[str, int],
 ) -> bool:
+    """Return whether the remaining slots can still satisfy the min-content constraints.
+
+    A look-ahead feasibility check used during greedy form assembly: verifies
+    enough eligible items remain per content area to meet each minimum.
+    """
     slots_left = length - len(selected)
     required_left = sum(max(0, minimum - counts.get(label, 0)) for label, minimum in min_counts.items())
     if required_left > slots_left:

@@ -30,6 +30,7 @@ LSIRM_PRIOR = {
 
 
 def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``q``-point probabilists' Gauss-Hermite nodes and unit-sum weights."""
     if q not in SUPPORTED_Q:
         raise ValueError(f"unsupported quadrature size {q}; supported: {SUPPORTED_Q}")
     nodes, weights = np.polynomial.hermite_e.hermegauss(q)
@@ -37,6 +38,7 @@ def _gh(q: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _model_flags(model: str) -> tuple[bool, bool]:
+    """Return ``(free_alpha, uses_space)`` flags for a model variant."""
     model = model.upper()
     free_alpha = model not in {"MLSRM", "ULSRM"}
     uses_space = model != "MIRT"
@@ -67,6 +69,11 @@ _ACK_D = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
 
 
 def _inv_normal_cdf(p: float) -> float:
+    """Standard-normal quantile via Acklam's rational approximation.
+
+    Maps a probability in ``(0, 1)`` to a z-score; used to turn low-discrepancy
+    QMC points on the unit hypercube into standard-normal latent-space draws.
+    """
     a, b, c, d = _ACK_A, _ACK_B, _ACK_C, _ACK_D
     p_low = 0.02425
     if p < p_low:
@@ -87,6 +94,7 @@ def _inv_normal_cdf(p: float) -> float:
 
 
 def _radical_inverse(i: int, base: int) -> float:
+    """Van der Corput radical inverse of ``i`` in ``base`` (Halton coordinate)."""
     inv, f = 0.0, 1.0 / base
     while i > 0:
         inv += (i % base) * f
@@ -96,15 +104,18 @@ def _radical_inverse(i: int, base: int) -> float:
 
 
 def _lcg_next(state: int) -> int:
+    """Advance the 64-bit linear congruential generator one step."""
     return (state * 6364136223846793005 + 1442695040888963407) % (1 << 64)
 
 
 def _lcg_uniform(state: int) -> tuple[float, int]:
+    """Draw a uniform ``[0, 1)`` sample and the next LCG state."""
     state = _lcg_next(state)
     return (state >> 11) / float(1 << 53), state
 
 
 def _normal_draw(state: int) -> tuple[float, int]:
+    """Draw a standard-normal sample (Box-Muller) and the next LCG state."""
     u1, state = _lcg_uniform(state)
     u2, state = _lcg_uniform(state)
     return float(np.sqrt(-2.0 * np.log(max(u1, 1e-12))) * np.cos(2.0 * np.pi * u2)), state
@@ -152,6 +163,11 @@ def _xi_nodes(
 
 
 def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
+    """Build the tensor Gauss-Hermite latent-space grid and its log-weights.
+
+    Forms the ``q_xi**latent_dim`` product grid over latent-space axes, matching
+    the Rust core's ordering (axis ``k`` advances every ``q_xi**k`` nodes).
+    """
     nodes, weights = _gh(q_xi)
     # Match the Rust ordering: axis k advances every q_xi^k nodes.
     n_points = q_xi**latent_dim
@@ -170,12 +186,19 @@ def _xi_grid(q_xi: int, latent_dim: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _log_sigmoid(x: np.ndarray) -> np.ndarray:
+    """Numerically stable elementwise ``log(sigmoid(x))``."""
     return np.where(x >= 0.0, -np.log1p(np.exp(-np.abs(x))), x - np.log1p(np.exp(x)))
 
 
 def _build_contexts(
     pop: dict, mu: np.ndarray, sigma: np.ndarray, sigma_u: float, n_dims: int, q_u: int
 ) -> dict:
+    """Build the per-context trait shift/scale table for the E-step.
+
+    Encodes the population structure: a single homogeneous context, one context
+    per group (multigroup / FIPC single-free), or Gauss-Hermite quadrature over
+    a multilevel random intercept with SD ``sigma_u``.
+    """
     kind = pop["kind"]
     if kind == "single":
         return {"n_ctx": 1, "shift": np.zeros((1, n_dims)), "scale": np.ones((1, n_dims))}
@@ -356,6 +379,12 @@ def _accumulate(
     rbar: np.ndarray,
     mbar: np.ndarray,
 ) -> None:
+    """Accumulate EM expected counts per context into ``nbar``/``rbar``/``mbar``.
+
+    Weights each person's posterior over the trait/latent-space grid by the
+    outer (context) weight and adds the expected node counts, expected correct
+    responses, and expected missing counts for the person's context in place.
+    """
     wpost = post * w_outer[:, None, None, None]  # (P, D, Qt, Nx)
     for s in range(n_ctx):
         sel = s_of_person == s
@@ -381,6 +410,12 @@ def _item_q(
     uses_space: bool,
     pen: dict,
 ) -> float:
+    """Return the penalized expected-complete-data objective for one item.
+
+    Sums the expected-count Bernoulli log-likelihood over the quadrature grid
+    for item ``i`` and subtracts the MAP ridge penalties on its active
+    parameters. This is the per-item M-step objective the ascent maximizes.
+    """
     q = float(np.sum(r_i * _log_sigmoid(eta) + (n_i - r_i) * _log_sigmoid(-eta)))
     q -= 0.5 * pen["lambda_b"] * b_i * b_i
     if free_alpha:
@@ -577,6 +612,11 @@ def fit_marginal_numpy(
     n_iter = 0
 
     def _zi_mix(lp_irt: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Combine the IRT and structural-zero classes for the ZI mixture.
+
+        Returns the per-person mixture log-marginal and the posterior weight on
+        the IRT class, given each person's IRT log-marginal ``lp_irt``.
+        """
         # mixture log-marginal and IRT-class weight, elementwise over persons
         log_pi = np.log(pi_zero) if pi_zero > 0 else -np.inf
         log_1m = np.log1p(-pi_zero)
@@ -686,6 +726,7 @@ def fit_marginal_numpy(
             kind_i = _interaction_kind(model)
 
             def eta_of(alpha_c: float, b_c: float, zeta_c: np.ndarray) -> np.ndarray:
+                """Linear predictor over the grid for candidate item parameters."""
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
@@ -783,6 +824,7 @@ def fit_marginal_numpy(
                 direction = grad / info
 
                 def total_q(tau_c: float) -> float:
+                    """Expected-count objective as a function of log latent weight ``tau_c``."""
                     e = (
                         a_all[None, :, None, None] * theta_it[:, :, :, None]
                         + b[None, :, None, None]
@@ -826,6 +868,7 @@ def fit_marginal_numpy(
                 interaction_term = 0.0
 
             def eta_delta(delta_c: float) -> np.ndarray:
+                """Linear predictor over the grid for a candidate covariate slope ``delta_c``."""
                 return (
                     a_all[None, :, None, None] * theta_it[:, :, :, None]
                     + b[None, :, None, None]
@@ -843,6 +886,7 @@ def fit_marginal_numpy(
                 direction = grad_d / info_d
 
                 def q_of_delta(delta_c: float) -> float:
+                    """Expected-count objective as a function of covariate slope ``delta_c``."""
                     e = eta_delta(delta_c)
                     return float(
                         np.sum(rbar * _log_sigmoid(e) + (n_all - rbar) * _log_sigmoid(-e))
@@ -952,6 +996,7 @@ def fit_marginal_numpy(
     u_eap = np.zeros(n_clusters)
 
     def eap_accumulate(s_all: np.ndarray, w_outer: np.ndarray) -> None:
+        """Accumulate posterior-weighted EAP trait/latent-space estimates in place."""
         l, log_zdx, log_lp = _person_logliks(
             y, observed, factor_id, logp1, logp0, c0, t_logw, x_logw, s_all, n_dims
         )
@@ -1359,6 +1404,7 @@ def fit_gpcm_numpy(y, n_cat, q_theta=21, max_iter=80, tol=1e-6):
         params[i, 1:] = np.log(freq[1:] / freq[0])
 
     def estep(current_params):
+        """Return the posterior over ability nodes for the GPCM EM E-step."""
         item_lp = [
             category_logprobs(
                 np.exp(current_params[i, 0]) * nodes,

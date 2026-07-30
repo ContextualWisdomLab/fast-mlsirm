@@ -210,6 +210,7 @@ def dimtest(
         raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
     def _index_set(a: np.ndarray, name: str) -> list[int]:
+        """Validate and return an item-index selection as a list of ints."""
         arr = np.asarray(a).reshape(-1)
         if np.iscomplexobj(arr):
             raise ValueError(f"{name} indices must be real integers")

@@ -32,6 +32,7 @@ def observed_information(
         raise ValueError("step must be > 0 and finite")
 
     def objective(x: np.ndarray) -> float:
+        """Return the negative log-likelihood at packed parameter vector ``x``."""
         value, _, _ = neg_loglik_and_grad(
             responses,
             factor_id,
@@ -100,6 +101,10 @@ def vcov_from_hessian(hessian: np.ndarray, rcond: float = 1e-10) -> np.ndarray:
 
 
 def standard_errors_from_vcov(vcov: np.ndarray) -> np.ndarray:
+    """Return standard errors as the square-root of a covariance matrix's diagonal.
+
+    Negative diagonal entries are clamped to zero before the square root.
+    """
     matrix = np.asarray(vcov, dtype=np.float64)
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("vcov must be a square matrix")
