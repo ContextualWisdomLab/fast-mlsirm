@@ -7,6 +7,7 @@ from fast_mlsirm.inference import observed_information, second_order_test, stand
 from fast_mlsirm.linking import link_fixed_item_parameters
 from fast_mlsirm.objective import neg_loglik_and_grad, prepare_response
 from fast_mlsirm.test_design import assemble_test_form, item_information, select_cat_item
+from fast_mlsirm.wle import score_wle
 
 
 def _all_finite(table: dict[str, np.ndarray]) -> bool:
@@ -180,6 +181,45 @@ def test_fixed_item_parameter_linking_recovers_anchor_metric():
     assert np.allclose(linked.theta, target.theta)
     assert np.allclose(linked.alpha, target.alpha)
     assert np.allclose(linked.b, target.b)
+
+
+def test_wle_stays_finite_and_monotone_for_perfect_and_zero_scores():
+    """WLE gives a finite, ordered ability estimate for the all-correct and
+    all-incorrect patterns, where the MLE diverges to +/-infinity.
+
+    This pins the 0-score / full-score robustness contract that ``score_wle``
+    documents but no test exercised: the weighted-likelihood estimator has a
+    genuine finite interior root (not a clamped boundary value) for extreme
+    response vectors, preserves the score ordering, and reports a positive SE.
+
+    Reference (APA 7th ed.):
+        Warm, T. A. (1989). Weighted likelihood estimation of ability in item
+            response theory. *Psychometrika, 54*(3), 427-450.
+            https://doi.org/10.1007/BF02294627
+    """
+    a = np.array([1.0, 1.2, 0.8, 1.5, 1.0])
+    b = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])
+
+    perfect = score_wle(a, b, np.ones((1, 5)))
+    zero = score_wle(a, b, np.zeros((1, 5)))
+    mixed = score_wle(a, b, np.array([[1.0, 1.0, 0.0, 0.0, 1.0]]))
+
+    # Finite (not +/-inf) with a positive SE for every pattern, extremes included.
+    for out in (perfect, zero, mixed):
+        assert np.all(np.isfinite(out["theta"]))
+        assert np.all(out["se"] > 0.0)
+
+    # The extremes are genuine finite roots, not values clamped to theta_bound.
+    assert not bool(perfect["boundary"][0])
+    assert not bool(zero["boundary"][0])
+
+    # Perfect > mixed > zero: the estimator preserves the raw-score ordering.
+    assert perfect["theta"][0] > mixed["theta"][0] > zero["theta"][0]
+
+    # Missing responses (NaN) are dropped per person; a full-correct pattern on
+    # the observed subset is still finite.
+    partial = score_wle(a, b, np.array([[1.0, 1.0, np.nan, np.nan, 1.0]]))
+    assert np.isfinite(partial["theta"][0])
 
 
 def test_cat_item_selection_and_greedy_ata_constraints():
