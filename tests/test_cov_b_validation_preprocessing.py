@@ -30,7 +30,7 @@ def test_validate_judge_accepts_human_human_baseline():
     )
     assert isinstance(verdict, validation.ValidationVerdict)
     assert isinstance(verdict.passed, bool)
-    assert any(g["name"] == "degradation" for g in verdict.gates) or verdict.gates
+    assert any(g["name"] == "degradation" for g in verdict.gates)
 
 
 # -- preprocessing -----------------------------------------------------------
