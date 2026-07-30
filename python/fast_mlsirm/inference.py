@@ -32,7 +32,7 @@ def observed_information(
         raise ValueError("step must be > 0 and finite")
 
     def objective(x: np.ndarray) -> float:
-        """Return the negative log-likelihood at packed parameter vector ``x``."""
+        """Return the penalized negative log-likelihood at packed parameter vector ``x``."""
         value, _, _ = neg_loglik_and_grad(
             responses,
             factor_id,

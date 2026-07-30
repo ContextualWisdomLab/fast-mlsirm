@@ -106,7 +106,7 @@ class FitDiagnostics:
 @dataclass
 class DimensionalityDiagnostics:
     """Dimensionality-search result: the per-``candidates`` model-selection
-    scores and the ``best`` candidate chosen by information criteria."""
+    scores and the ``best`` candidate selected by maximum log-likelihood."""
 
     candidates: list[dict[str, float | str]]
     best: dict[str, float | str]

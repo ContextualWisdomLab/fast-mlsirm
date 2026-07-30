@@ -97,7 +97,6 @@ def gtheory_pi(
     data: np.ndarray,
     n_i_prime: Sequence[int] = (5, 10, 15, 20),
 ) -> GTheoryResult:
-    """One-facet crossed ``p x i`` generalizability (G) and decision (D) study (Rust core)."""
     """One-facet crossed ``p x i`` generalizability analysis (compute in
     Rust; Huebner & Lucht, 2019, "One-facet crossed design" section and
     Tables 3-4).
@@ -111,7 +110,7 @@ def gtheory_pi(
     their denominator is <= 1e-12. In LLM-as-a-Judge quality management
     this asks how many judge items are needed for a dependable rating.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pi")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
@@ -121,11 +120,13 @@ def gtheory_pi(
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
 
 
+gtheory_pi.__doc__ += _REFERENCES
+
+
 def gtheory_pio(
     data: np.ndarray,
     n_prime: Sequence[tuple[int, int]] = ((5, 2), (10, 2), (15, 2), (20, 2)),
 ) -> GTheoryResult:
-    """Two-facet crossed ``p x i x o`` generalizability (G) and decision (D) study (Rust core)."""
     """Two-facet crossed ``p x i x o`` generalizability analysis (compute
     in Rust; Huebner & Lucht, 2019, "Two-facet crossed design" section and
     Tables 5-6).
@@ -136,7 +137,7 @@ def gtheory_pio(
     ``(n_i', n_o')`` D-study pairs; the clamped-ANOVA and NaN-denominator
     policies match :func:`gtheory_pi`.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pio")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 3:
@@ -146,6 +147,9 @@ def gtheory_pio(
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
+
+
+gtheory_pio.__doc__ += _REFERENCES
 
 
 @dataclass
@@ -183,7 +187,6 @@ def phi_lambda(
     cut: float,
     n_i_prime: Sequence[int] = (5, 10, 15, 20),
 ) -> PhiLambdaResult:
-    """Brennan-Kane dependability index ``Phi(lambda)`` for mastery tests (Rust core)."""
     """Brennan-Kane index of dependability ``Phi(lambda)`` for mastery
     (domain-referenced) tests, one-facet crossed ``p x i`` design (compute
     in Rust; Kane & Brennan, 1977, eq. 33, with a derived unbiased signal
@@ -195,7 +198,7 @@ def phi_lambda(
     LLM-as-a-Judge quality management this asks how dependably a judge
     panel classifies systems against a fixed quality threshold.
 
-    """ + _PHI_LAMBDA_REFERENCES
+    """
     core = _core_or_raise("phi_lambda")
     x = np.asarray(data)
     if np.iscomplexobj(x):
@@ -218,3 +221,6 @@ def phi_lambda(
         signal=float(res["signal"]),
         phi=[float(v) for v in res["phi"]],
     )
+
+
+phi_lambda.__doc__ += _PHI_LAMBDA_REFERENCES

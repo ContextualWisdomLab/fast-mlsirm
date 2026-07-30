@@ -43,7 +43,6 @@ def parallel_analysis(
     centile: int = 0,
     seed: int = 1,
 ) -> ParallelAnalysisResult:
-    """Horn's parallel analysis (PCA path) for retained-dimension count (Rust core)."""
     """Horn's parallel analysis, PCA path (compute in Rust; algorithm
     transcribed from the paran 1.5.6 R source, read line by line; Horn,
     1965, and Glorfeld, 1995, not read — attribution as cited in Dinno,
@@ -64,7 +63,7 @@ def parallel_analysis(
     quality management this estimates how many latent dimensions the judge
     rubric actually measures.
 
-    """ + _REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -93,3 +92,6 @@ def parallel_analysis(
             res["adjusted_eigenvalues"], dtype=np.float64
         ),
     )
+
+
+parallel_analysis.__doc__ += _REFERENCES

@@ -46,7 +46,6 @@ def guttman_lambdas(
     n_sample_splits: int = 15000,
     seed: int = 1,
 ) -> GuttmanResult:
-    """Guttman's lambda1-lambda6 and split-half reliability coefficients (Rust core)."""
     """Guttman's lambda reliability coefficients (compute in Rust; algorithm
     transcribed from the psych 2.6.5 R sources ``guttman.R``, ``splitHalf.R``
     and ``smc.R``, read line by line; Guttman, 1945, not read — attribution
@@ -67,7 +66,7 @@ def guttman_lambdas(
     matrices instead of a pseudoinverse. In LLM-as-a-Judge quality
     management these bound the internal consistency of a judge rubric.
 
-    """ + _REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -98,6 +97,9 @@ def guttman_lambdas(
     )
 
 
+guttman_lambdas.__doc__ += _REFERENCES
+
+
 @dataclass
 class TenBergeResult:
     """ten Berge & Zegers mu reliability lower bounds.
@@ -124,7 +126,6 @@ _TENBERGE_REFERENCES = """References (APA 7th ed.):
 
 
 def tenberge_mu(data: np.ndarray) -> TenBergeResult:
-    """ten Berge & Zegers mu0-mu3 series of reliability lower bounds (Rust core)."""
     """ten Berge & Zegers mu0-mu3 reliability lower bounds (compute in
     Rust; algorithm transcribed from the psych 2.6.5 R source
     ``tenberge.R``, read line by line; ten Berge & Zegers, 1978, not read —
@@ -140,7 +141,7 @@ def tenberge_mu(data: np.ndarray) -> TenBergeResult:
     management the series tightens the lower bound on rubric internal
     consistency beyond alpha.
 
-    """ + _TENBERGE_REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -157,6 +158,9 @@ def tenberge_mu(data: np.ndarray) -> TenBergeResult:
         mu2=float(res["mu2"]),
         mu3=float(res["mu3"]),
     )
+
+
+tenberge_mu.__doc__ += _TENBERGE_REFERENCES
 
 
 @dataclass

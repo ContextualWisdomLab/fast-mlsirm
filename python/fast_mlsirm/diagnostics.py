@@ -463,10 +463,10 @@ def response_process_dimensionality_diagnostics(
     response_process: str = "cumulative",
     eps: float = 1e-12,
 ) -> DimensionalityDiagnostics:
-    """Rank candidate categorical models by held-out fit on fixed responses.
+    """Rank candidate categorical models by fit against the supplied responses.
 
-    Scores each labelled candidate probability array against the same observed
-    responses (held-out log-likelihood, deviance, Pearson chi-square, mean
+    Compares each labelled candidate probability array against the supplied
+    observed responses (log-likelihood, deviance, Pearson chi-square, mean
     absolute category residual) and returns the highest-log-likelihood candidate
     as ``best``.
     """

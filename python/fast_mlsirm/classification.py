@@ -158,7 +158,6 @@ def rudner_classification(
     cutscores: Sequence[float],
     weights: np.ndarray | None = None,
 ) -> ClassificationResult:
-    """Rudner normal-approximation classification accuracy and consistency (Rust core)."""
     """Rudner normal-approximation classification accuracy/consistency
     (compute in Rust; Rudner, 2001, 2005, both read in full).
 
@@ -175,7 +174,7 @@ def rudner_classification(
     this quantifies how reliably a judge's cut score separates pass from
     fail given the calibration's standard errors.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("rudner_classification")
     t = np.ascontiguousarray(np.asarray(theta, dtype=np.float64).reshape(-1))
     s = np.ascontiguousarray(np.asarray(sem, dtype=np.float64).reshape(-1))
@@ -191,12 +190,14 @@ def rudner_classification(
     return _to_result(res, len(cuts), t.shape[0])
 
 
+rudner_classification.__doc__ += _REFERENCES
+
+
 def lee_classification(
     probs: np.ndarray,
     cutscores: Sequence[float],
     weights: np.ndarray | None = None,
 ) -> ClassificationResult:
-    """Lee summed-score classification accuracy and consistency for dichotomous items (Rust core)."""
     """Lee summed-score classification accuracy/consistency for dichotomous
     items (compute in Rust; Lee, 2010, as cited in Lathrop, 2015; mechanics
     transcribed from the cacIRT R sources, read line by line).
@@ -210,7 +211,7 @@ def lee_classification(
     (left-closed; cacIRT's ``Lee.D`` alone is right-closed — divergence
     documented in the Rust core). ``weights`` defaults to uniform.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("lee_classification")
     p = np.ascontiguousarray(np.asarray(probs, dtype=np.float64))
     if p.ndim != 2:
@@ -230,6 +231,9 @@ def lee_classification(
     return _to_result(res, len(cuts), n_points)
 
 
+lee_classification.__doc__ += _REFERENCES
+
+
 def livingston_lewis(
     scores: np.ndarray,
     reliability: float,
@@ -237,7 +241,6 @@ def livingston_lewis(
     max_score: float,
     cut: float,
 ) -> LivingstonLewisResult:
-    """Livingston-Lewis classification accuracy and consistency from one administration (Rust core)."""
     """Livingston-Lewis classification accuracy/consistency from a single
     test administration (compute in Rust; Livingston & Lewis, 1995, as
     implemented in CRAN betafunctions 1.9.0 ``LL.CA``, read line by line —
@@ -257,19 +260,6 @@ def livingston_lewis(
     kappa are ``NaN`` when their margin or chance denominator vanishes
     (e.g. a cut outside the fitted beta support).
 
-    """ + _REFERENCES + """
-        Haakstad, H. (2022). *betafunctions: Functions for working with
-            two- and four-parameter beta probability distributions and
-            psychometric analysis of classifications* (Version 1.9.0)
-            [R package]. https://CRAN.R-project.org/package=betafunctions
-        Hanson, B. A. (1991). *Method of moments estimates for the
-            four-parameter beta compound binomial model and the calculation
-            of classification consistency indexes* (ACT Research Report
-            91-5). (as cited in Haakstad, 2022)
-        Livingston, S. A., & Lewis, C. (1995). Estimating the consistency
-            and accuracy of classifications based on test scores. *Journal
-            of Educational Measurement, 32*(2), 179-197. (as cited in
-            Haakstad, 2022)
     """
     core = _core_or_raise("livingston_lewis")
     x = np.ascontiguousarray(np.asarray(scores, dtype=np.float64).reshape(-1))
@@ -299,6 +289,22 @@ def livingston_lewis(
         chance_consistency=float(res["chance_consistency"]),
         kappa=float(res["kappa"]),
     )
+
+
+livingston_lewis.__doc__ += _REFERENCES + """
+        Haakstad, H. (2022). *betafunctions: Functions for working with
+            two- and four-parameter beta probability distributions and
+            psychometric analysis of classifications* (Version 1.9.0)
+            [R package]. https://CRAN.R-project.org/package=betafunctions
+        Hanson, B. A. (1991). *Method of moments estimates for the
+            four-parameter beta compound binomial model and the calculation
+            of classification consistency indexes* (ACT Research Report
+            91-5). (as cited in Haakstad, 2022)
+        Livingston, S. A., & Lewis, C. (1995). Estimating the consistency
+            and accuracy of classifications based on test scores. *Journal
+            of Educational Measurement, 32*(2), 179-197. (as cited in
+            Haakstad, 2022)
+    """
 
 
 def _hb_to_result(res: dict) -> HansonBrennanResult:
@@ -355,7 +361,6 @@ def hanson_brennan(
     cut: int,
     two_parameter: bool = False,
 ) -> HansonBrennanResult:
-    """Hanson-Brennan classification accuracy and consistency from raw scores (Rust core)."""
     """Hanson-Brennan classification accuracy/consistency from raw
     number-correct scores under the four-parameter beta compound binomial
     model (compute in Rust; Hanson, 1991, read in full from ERIC ED344945;
@@ -374,7 +379,7 @@ def hanson_brennan(
     specificity, and kappa are ``NaN`` when their margin or chance
     denominator vanishes (e.g. ``cut == n_items``).
 
-    """ + _REFERENCES + _HB_REFERENCES
+    """
     core = _core_or_raise("hanson_brennan")
     x = np.asarray(scores)
     if np.iscomplexobj(x):
@@ -391,6 +396,9 @@ def hanson_brennan(
     return _hb_to_result(res)
 
 
+hanson_brennan.__doc__ += _REFERENCES + _HB_REFERENCES
+
+
 def hanson_brennan_from_params(
     n_items: int,
     lords_k: float,
@@ -400,13 +408,12 @@ def hanson_brennan_from_params(
     beta: float,
     cut: int,
 ) -> HansonBrennanResult:
-    """Hanson-Brennan classification indexes from fixed model parameters (Rust core)."""
     """Hanson-Brennan classification indexes from fixed model parameters:
     Lord's k plus a four-parameter beta true-score distribution (compute in
     Rust; Hanson, 1991; CRAN betafunctions 1.9.0 ``HB.CA``). Same
     pass-positive orientation as :func:`hanson_brennan`.
 
-    """ + _REFERENCES + _HB_REFERENCES
+    """
     core = _core_or_raise("hanson_brennan_from_params")
     res = core.hanson_brennan_from_params(
         int(n_items),
@@ -418,6 +425,9 @@ def hanson_brennan_from_params(
         int(cut),
     )
     return _hb_to_result(res)
+
+
+hanson_brennan_from_params.__doc__ += _REFERENCES + _HB_REFERENCES
 
 
 @dataclass
@@ -465,7 +475,6 @@ def subkoviak_agreement(
     cuts: Sequence[float] | np.ndarray,
     alpha: float | None = None,
 ) -> SubkoviakResult:
-    """Subkoviak single-administration coefficient of agreement for mastery classifications (Rust core)."""
     """Subkoviak's single-administration coefficient of agreement for
     mastery classifications under the simple binomial true-score model
     (compute in Rust; Subkoviak, 1976, read in full from ERIC ED120229).
@@ -480,7 +489,7 @@ def subkoviak_agreement(
     reclassify the same outputs on a hypothetical retest, from one
     administration only.
 
-    """ + _SUBKOVIAK_REFERENCES
+    """
     core = _core_or_raise("subkoviak_agreement")
     x = np.asarray(scores)
     c = np.asarray(cuts)
@@ -510,6 +519,10 @@ def subkoviak_agreement(
         chance_agreement=float(res["chance_agreement"]),
         kappa=float(res["kappa"]),
     )
+
+
+subkoviak_agreement.__doc__ += _SUBKOVIAK_REFERENCES
+
 
 @dataclass
 class LivingstonResult:

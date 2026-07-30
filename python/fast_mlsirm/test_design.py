@@ -109,8 +109,10 @@ def assemble_test_form(
 def _person_params(params: MLSIRMParams, theta: np.ndarray | None, person_index: int | None) -> MLSIRMParams:
     """Return a single-person parameter view for item-information evaluation.
 
-    Uses an explicit ``theta`` (and person latent position) when given,
-    otherwise the specified person's row, defaulting to the first person.
+    When ``theta`` is given it is used directly, and the latent-space position
+    ``xi`` is that person's row when ``person_index`` is supplied, otherwise the
+    mean ``xi`` across all persons. When ``theta`` is ``None`` both ``theta`` and
+    ``xi`` are taken from ``person_index``, defaulting to the first person.
     """
     if theta is None:
         if person_index is None:

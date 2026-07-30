@@ -264,9 +264,9 @@ def _neg_loglik_and_grad_rust(
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
     """Return the ridge-penalty contribution to the objective for ``params``.
 
-    Sums the half-weighted squared norms of each active parameter block
-    (discriminations and latent-space terms are included only when the model
-    variant uses them).
+    Sums the half-weighted squared deviations of each active parameter block
+    from their respective centers (discriminations and latent-space terms are
+    included only when the model variant uses them).
     """
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))

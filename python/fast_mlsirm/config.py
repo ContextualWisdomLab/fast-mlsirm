@@ -142,7 +142,8 @@ class FitConfig:
     """Estimation settings for a fit.
 
     Selects the model variant (``model``), latent-space dimension, optimizer
-    and ``estimator`` (``jmle`` penalized joint MLE or ``mmle`` marginal MLE),
+    and ``estimator`` (``jmle`` penalized joint MLE or ``mmle`` marginal MLE;
+    ``em`` and ``bayes`` are accepted but reserved for future milestones),
     the compute ``backend``/``rust_device`` axis, optimizer controls
     (iterations, restarts, learning rate, tolerance, gradient clipping, L-BFGS
     history), the L2 ``penalty`` block, and the marginal-estimator quadrature

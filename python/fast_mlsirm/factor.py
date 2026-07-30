@@ -177,12 +177,11 @@ def _glbfa_from_dict(d: dict) -> GlbFaResult:
 
 
 def glb_fa(corr: np.ndarray) -> GlbFaResult:
-    """Factor-analytic greatest lower bound (glb) reliability from a correlation matrix."""
     """Factor-analytic glb from a ``(p, p)`` correlation matrix (psych
     ``glb.fa`` transcription; Revelle, 2025). See :class:`GlbFaResult`
     for the scope reduction (not the algebraic glb).
 
-    %s""" % _REFERENCES
+    """
     from . import _core
 
     r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
@@ -191,11 +190,13 @@ def glb_fa(corr: np.ndarray) -> GlbFaResult:
     return _glbfa_from_dict(_core.glb_fa(r.reshape(-1), int(r.shape[0])))
 
 
+glb_fa.__doc__ += _REFERENCES
+
+
 def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
-    """Factor-analytic glb reliability computed from a complete ``(n, p)`` data matrix."""
     """:func:`glb_fa` from a complete ``(n, p)`` data matrix.
 
-    %s""" % _REFERENCES
+    """
     from . import _core
 
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
@@ -203,6 +204,9 @@ def glb_fa_from_data(data: np.ndarray) -> GlbFaResult:
         raise ValueError("data must be a 2-D (n, p) matrix")
     n, p = map(int, x.shape)
     return _glbfa_from_dict(_core.glb_fa_from_data(x.reshape(-1), n, p))
+
+
+glb_fa_from_data.__doc__ += _REFERENCES
 
 
 @dataclass
@@ -264,12 +268,11 @@ def _map_from_dict(d: dict) -> VelicerMapResult:
 
 
 def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
-    """Velicer's minimum average partial (MAP) dimensionality test from a correlation matrix."""
     """Velicer's MAP test from a ``(p, p)`` correlation matrix.
 
     ``max_m`` defaults to ``p - 1`` (the canonical upper bound).
 
-    %s""" % _MAP_REFERENCES
+    """
     from . import _core
 
     r = np.ascontiguousarray(np.asarray(corr, dtype=np.float64))
@@ -280,11 +283,13 @@ def velicer_map(corr: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
     return _map_from_dict(_core.velicer_map(r.reshape(-1), p, m))
 
 
+velicer_map.__doc__ += _MAP_REFERENCES
+
+
 def velicer_map_from_data(data: np.ndarray, max_m: int | None = None) -> VelicerMapResult:
-    """Velicer's MAP dimensionality test computed from a complete ``(n, p)`` data matrix."""
     """:func:`velicer_map` from a complete ``(n, p)`` data matrix.
 
-    %s""" % _MAP_REFERENCES
+    """
     from . import _core
 
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
@@ -293,3 +298,6 @@ def velicer_map_from_data(data: np.ndarray, max_m: int | None = None) -> Velicer
     n, p = map(int, x.shape)
     m = p - 1 if max_m is None else int(max_m)
     return _map_from_dict(_core.velicer_map_from_data(x.reshape(-1), n, p, m))
+
+
+velicer_map_from_data.__doc__ += _MAP_REFERENCES
