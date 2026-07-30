@@ -149,6 +149,7 @@ tbody tr:hover { background: #fbfcfa; }
 code { overflow-wrap: anywhere; }
 .note { color: #5e6f76; margin-bottom: 0; }
 
+/* Non-zero durations keep transitionend/animationend events firing. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
