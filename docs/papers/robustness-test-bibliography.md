@@ -59,6 +59,7 @@ estimation in adaptive testing. In W. J. van der Linden & C. A. W. Glas (Eds.),
 |---|---|---|
 | Rothenberg (1971); Penrose (1955) | Singular/rank-deficient information → Moore-Penrose pseudo-inverse vcov | `tests/test_information_matrix_robustness.py` |
 | Lord (1980); Baker & Kim (2004) | Zero-/full-score (extreme raw score) fit-to-convergence stays finite | `tests/test_irt_extreme_score_stability.py` |
+| Baker & Kim (2004); Lord (1980) | True-parameter recovery on a controlled well-conditioned design (difficulty/ability tight, discrimination in rank) | `tests/test_true_parameter_recovery.py` |
 | Bock & Aitkin (1981); Kolen & Brennan (2014) | Concurrent multigroup MMLE robust to missing responses | `tests/test_concurrent_calibration_missing.py` |
 | Bock, Gibbons & Muraki (1988) | Full-information item factor model stability (Heywood suppression) | `tests/test_full_information_factor_stability.py` |
 | Oakes (1999); Pritikin (2017) | EM (Oakes-identity) standard errors; observed-information guards | `tests/test_information_matrix_robustness.py` |
