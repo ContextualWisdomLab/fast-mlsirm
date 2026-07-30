@@ -99,7 +99,10 @@ def assemble_test_form(
 
     for label, minimum in min_counts.items():
         if counts.get(label, 0) < minimum:
-            raise ValueError(f"minimum content constraint not met: {label}")
+            # Unreachable: the per-slot feasibility look-ahead only admits a pick
+            # when every minimum can still be met, so no completed length-form can
+            # leave a minimum unsatisfied here. Kept as a defensive guard.
+            raise ValueError(f"minimum content constraint not met: {label}")  # pragma: no cover
     return np.asarray(selected, dtype=np.int64)
 
 

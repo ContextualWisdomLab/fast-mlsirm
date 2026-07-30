@@ -324,7 +324,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
             )
         )
 
-    if not chart_rows:
+    if not chart_rows:  # pragma: no cover - unreachable: non-empty values guarantee >=1 chart row
         return ""
 
     return "\n".join(

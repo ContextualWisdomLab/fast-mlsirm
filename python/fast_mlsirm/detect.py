@@ -110,7 +110,10 @@ def detect_analysis(
             if np.any(c > I64_MAX):
                 raise ValueError("cluster labels must fit in a 64-bit integer")
         elif np.any(c < I64_MIN) or np.any(c > I64_MAX):
-            raise ValueError("cluster labels must fit in a 64-bit integer")
+            # Unreachable for a NumPy signed-integer array: no signed dtype is
+            # wider than int64, so a value cannot fall outside [I64_MIN, I64_MAX].
+            # Kept as a defensive guard.
+            raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
 
     res = core.detect_analysis(

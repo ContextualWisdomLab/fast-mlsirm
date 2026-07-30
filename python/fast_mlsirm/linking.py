@@ -71,11 +71,17 @@ def link_fixed_item_parameters(
             continue
         target_a = target.a[dim_anchors]
         if np.any(target_a <= 0):
-            raise ValueError("target anchor slopes must be positive")
+            # Unreachable: a = exp(alpha) with alpha already finiteness-checked
+            # above is strictly positive, so no anchor slope can be <= 0. Kept as
+            # a defensive guard.
+            raise ValueError("target anchor slopes must be positive")  # pragma: no cover
         scale[dim] = float(np.exp(np.mean(np.log(source.a[dim_anchors] / target_a))))
         shift[dim] = float(np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a))
         if not (np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])):
-            raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")
+            # Unreachable: scale = exp(finite) > 0 and shift is a mean of finite
+            # ratios, so both coefficients are finite for the finiteness-checked,
+            # strictly-positive slopes reaching this point. Kept as a defensive guard.
+            raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")  # pragma: no cover
 
         items = factors == dim
         linked.theta[:, dim] = scale[dim] * source.theta[:, dim] + shift[dim]
