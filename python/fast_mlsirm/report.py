@@ -317,11 +317,14 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     columns = _columns(rows)
     body_rows = []
     for row in rows[:limit]:
-        cells = "".join(
-            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
-            for column in columns
-        )
-        body_rows.append(f"<tr>{cells}</tr>")
+        cells = []
+        for index, column in enumerate(columns):
+            value = escape(_format_value(row.get(column, "")))
+            if index == 0:
+                cells.append(f'<th scope="row">{value}</th>')
+            else:
+                cells.append(f"<td>{value}</td>")
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
     note = ""
     described_by = ""
@@ -679,21 +682,28 @@ caption {
   border: 0;
 }
 
-th,
+thead th,
+tbody th,
 td {
   padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-th {
+thead th {
   background: #f1f4ef;
   color: #2f3437;
   font-size: 0.8rem;
 }
 
-tr:last-child td {
+tbody th {
+  font-weight: normal;
+}
+
+tr:last-child td,
+tr:last-child th {
   border-bottom: 0;
 }
 
