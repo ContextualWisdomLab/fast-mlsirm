@@ -1,6 +1,6 @@
 import numpy as np
 
-from fast_mlsirm import FitConfig, MLS2PLMConfig, MLSIRMParams, PenaltyConfig, recovery_report, simulate
+from fast_mlsirm import FitConfig, MLS2PLMConfig, MLSIRMParams, PenaltyConfig, recovery_report, score_wle, simulate
 from fast_mlsirm.diagnostics import fit_diagnostics, predict_proba
 from fast_mlsirm.fit import fit
 from fast_mlsirm.inference import observed_information, second_order_test, standard_errors_from_vcov, vcov_from_hessian
@@ -261,3 +261,37 @@ def test_cat_item_selection_and_greedy_ata_constraints():
     assert len(form) == 3
     assert np.sum(np.array(["algebra", "algebra", "geometry", "geometry"])[form] == "algebra") <= 1
     assert np.sum(np.array(["algebra", "algebra", "geometry", "geometry"])[form] == "geometry") >= 1
+
+
+def test_weighted_likelihood_ability_is_finite_for_zero_and_perfect_scores():
+    # Warm (1989), "Weighted likelihood estimation of ability in item response
+    # theory", Psychometrika 54(3), 427-450 (doi:10.1007/BF02294627): the WLE
+    # adds a J(theta)/(2 I(theta)) correction to the score equation so ability
+    # stays FINITE for perfect and zero response patterns, where the plain MLE
+    # diverges to +/-inf. This pins that zero/perfect-score robustness so a
+    # regression cannot silently reduce score_wle to an unbounded MLE.
+    a = np.array([1.0, 1.2, 0.9, 1.1, 1.0, 0.8])
+    b = np.array([-1.5, -0.8, -0.2, 0.4, 1.0, 1.7])
+    responses = np.array(
+        [
+            [0, 0, 0, 0, 0, 0],  # zero score    -> MLE theta -> -inf
+            [1, 1, 1, 0, 0, 0],  # interior pattern
+            [1, 1, 1, 1, 1, 1],  # perfect score -> MLE theta -> +inf
+        ],
+        dtype=float,
+    )
+
+    estimate = score_wle(a, b, responses)
+    theta = estimate["theta"]
+
+    # Finite, and — the whole point of the Warm correction — strictly interior
+    # to the +/-theta_bound clamp rather than saturating it (a raw MLE would peg
+    # the bound). The boundary flag is the estimator's own saturation signal.
+    assert np.all(np.isfinite(theta))
+    assert not np.any(estimate["boundary"])
+    assert np.all(np.abs(theta) < 0.9 * 20.0)
+    # Monotone in raw score: zero < interior < perfect.
+    assert theta[0] < theta[1] < theta[2]
+    # Standard errors stay finite and positive at the extremes too.
+    assert np.all(np.isfinite(estimate["se"]))
+    assert np.all(estimate["se"] > 0.0)
