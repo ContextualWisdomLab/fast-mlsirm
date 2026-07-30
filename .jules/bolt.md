@@ -33,3 +33,6 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+## 2025-05-19 - Fast pairwise Euclidean distance computations
+**Learning:** Computing pairwise Euclidean distances by subtracting broadcasted arrays (`x_grid[None, :, :] - zeta[:, None, :]`) and squaring (`np.sum(diff * diff, axis=2)`) creates massive intermediate 3D arrays, dominating runtime memory and allocation.
+**Action:** Use `np.einsum` to compute squared norms independently (`sq_xi`, `sq_zeta`) and `np.dot` (or matrix multiplication) to compute the cross term (`zeta @ xi.T`), yielding `np.sqrt(sq_zeta[:, None] - 2 * np.dot(...) + sq_xi[None, :])`. Ensure numerical fallback for exceptionally large coordinates to prevent catastrophic cancellation.

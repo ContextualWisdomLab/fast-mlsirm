@@ -30,7 +30,7 @@ import numpy as np
 
 from .estimators.marginal import _gh, _xi_grid
 from .backend import normalize_device
-from .math import sigmoid
+from .math import sigmoid, pairwise_distance
 from .objective import linear_predictor, prepare_response, validate_factor_id
 
 MAX_PERSON_FIT_REPLICATES = 10_000
@@ -267,8 +267,7 @@ def _icc_grid(
     theta = shift[d_of_i][:, None] + scale[d_of_i][:, None] * t_nodes[None, :]  # (I, Qt)
     eta = a[:, None, None] * theta[:, :, None] + params.b[:, None, None]
     if uses_space:
-        diff = x_grid[None, :, :] - params.zeta[:, None, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        dist = pairwise_distance(x_grid, params.zeta, eps_distance)  # (I, Nx)
         eta = eta - math.exp(params.tau) * dist[:, None, :]
     probs = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     return probs, t_w, x_w, t_nodes
@@ -684,8 +683,7 @@ def person_fit(
     # eta_pi at EAP estimates
     eta = a[None, :] * theta[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        dist = pairwise_distance(np.asarray(params.xi), np.asarray(params.zeta), eps_distance).T
         eta = eta - math.exp(params.tau) * dist
     p = 1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700)))
     p = np.clip(p, 1e-12, 1.0 - 1e-12)
@@ -763,8 +761,7 @@ def infit_outfit(
     a = np.exp(params.alpha) if free_alpha else np.ones(len(params.b))
     eta = a[None, :] * np.asarray(params.theta)[:, d_of_i] + params.b[None, :]
     if uses_space:
-        diff = np.asarray(params.xi)[:, None, :] - np.asarray(params.zeta)[None, :, :]
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))
+        dist = pairwise_distance(np.asarray(params.xi), np.asarray(params.zeta), eps_distance).T
         eta = eta - math.exp(params.tau) * dist
     p = np.clip(1.0 / (1.0 + np.exp(-np.clip(eta, -700, 700))), 1e-12, 1 - 1e-12)
     v = p * (1.0 - p)

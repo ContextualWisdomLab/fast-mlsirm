@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..math import pairwise_distance, pairwise_distance_1d
+
 SUPPORTED_Q = (7, 11, 15, 21, 31, 41)
 MAX_FACTOR_DIMENSIONS = 64
 MAX_GPCM_CATEGORIES = 256
@@ -218,8 +220,7 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        diff = x_grid[None, :, :] - zeta[:, None, :]  # (I, Nx, K)
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        dist = pairwise_distance(x_grid, zeta, eps_distance)  # (I, Nx)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -689,8 +690,7 @@ def fit_marginal_numpy(
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
-                    diff = x_grid - zeta_c[None, :]
-                    dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                    dist = pairwise_distance_1d(x_grid, zeta_c, eps_distance)
                     e = e - gamma * dist[None, None, :]
                 elif kind_i == "inner":
                     e = e + (x_grid @ zeta_c)[None, None, :]
@@ -721,7 +721,7 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        dist = pairwise_distance_1d(x_grid, zeta_i, eps_distance)
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -762,8 +762,7 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            diff = x_grid[None, :, :] - zeta[:, None, :]
-            dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+            dist = pairwise_distance(x_grid, zeta, eps_distance)  # (I, Nx)
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
