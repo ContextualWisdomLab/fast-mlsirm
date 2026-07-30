@@ -33,3 +33,7 @@
 ## 2025-05-19 - Dot product scalar gradients allocation
 **Learning:** During gradient calculation, `float((e * (-gamma * distance)).sum())` creates two full-size `(N, J)` arrays: one for the scaled distance and one for the element-wise multiplication before reduction.
 **Action:** Replace `(A * B).sum()` with `np.vdot(A, B)` when scalar reduction is needed over matrix multiplication (where `B` can incorporate scalars naturally like `-gamma * np.vdot(A, B)`). This entirely avoids the 2D array allocation overhead and yields order-of-magnitude improvements in scalar gradient components.
+
+## 2026-07-30 - NumPy 2.0 boolean array astype copy error
+**Learning:** Changing a `bool` dtype to `float64` using `astype(..., copy=False)` works in NumPy 1.x by silently falling back to a copy. However, NumPy 2.0+ strictly enforces the `copy=False` argument and throws a `ValueError` because changing boolean bits to a 64-bit float physically requires a new memory allocation.
+**Action:** When casting boolean arrays to float arrays for matrix multiplication, simply use `.astype(dtype)` without specifying `copy=False`, or use `copy=None` to allow copying when necessary and prevent hard crashes in NumPy 2.0+.
