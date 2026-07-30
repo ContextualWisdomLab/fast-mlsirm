@@ -218,8 +218,11 @@ def _build_tables(
         eta = eta + offsets[:, :, None, None]
     kind = _interaction_kind(model)
     if kind == "distance":
-        diff = x_grid[None, :, :] - zeta[:, None, :]  # (I, Nx, K)
-        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+        # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+        x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+        z_sq = np.einsum("ij,ij->i", zeta, zeta)
+        dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
+        dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
         eta = eta - np.exp(tau) * dist[None, :, None, :]
     elif kind == "inner":
         eta = eta + (zeta @ x_grid.T)[None, :, None, :]
@@ -689,8 +692,11 @@ def fit_marginal_numpy(
                 a_c = np.exp(alpha_c) if free_alpha else 1.0
                 e = a_c * theta_i[:, :, None] + b_c + off_i
                 if kind_i == "distance":
-                    diff = x_grid - zeta_c[None, :]
-                    dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                    # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+                    x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+                    z_sq = np.vdot(zeta_c, zeta_c)
+                    dist_sq = x_sq + z_sq - 2 * np.dot(x_grid, zeta_c)
+                    dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))
                     e = e - gamma * dist[None, None, :]
                 elif kind_i == "inner":
                     e = e + (x_grid @ zeta_c)[None, None, :]
@@ -762,8 +768,11 @@ def fit_marginal_numpy(
         # --- M-step: tau (distance kind only) ---
         if uses_space and anchor_tau is None and _interaction_kind(model) == "distance":
             gamma = float(np.exp(tau))
-            diff = x_grid[None, :, :] - zeta[:, None, :]
-            dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=2))  # (I, Nx)
+            # Optimized distance computation: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+            x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+            z_sq = np.einsum("ij,ij->i", zeta, zeta)
+            dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
+            dist = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
             a_all = np.exp(alpha) if free_alpha else np.ones(n_items)
             theta_it = theta_sx[:, factor_id]  # (S, I, Qt)
             n_all = nbar[:, factor_id] - mbar  # (S, I, Qt, Nx)
