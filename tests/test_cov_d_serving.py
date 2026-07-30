@@ -332,7 +332,7 @@ def test_plausible_values_requires_core(monkeypatch):
 
 def test_plausible_values_rejects_oversized_dict_matrix(monkeypatch):
     monkeypatch.setattr(serving, "MAX_SCORE_CELLS", 1)
-    with pytest.raises(ValueError, match="exceeds the .* scoring limit"):
+    with pytest.raises(ValueError, match=r"exceeds the .* scoring limit"):
         plausible_values(_base_bundle(), {"i0": 1, "i1": 0})
 
 
@@ -343,5 +343,5 @@ def test_plausible_values_rejects_unknown_item_code():
 
 def test_plausible_values_rejects_oversized_dense_matrix(monkeypatch):
     monkeypatch.setattr(serving, "MAX_SCORE_CELLS", 1)
-    with pytest.raises(ValueError, match="exceeds the .* scoring limit"):
+    with pytest.raises(ValueError, match=r"exceeds the .* scoring limit"):
         plausible_values(_base_bundle(), np.zeros((1, 2)))

@@ -99,21 +99,21 @@ def test_fit_polytomous_requires_core(monkeypatch):
 def test_score_polytomous_rejects_bad_slope():
     fit = _grm_fit()
     fit.slope = np.zeros((2, 2))
-    with pytest.raises(ValueError, match="fit.slope must be a non-empty 1-D array"):
+    with pytest.raises(ValueError, match=r"fit\.slope must be a non-empty 1-D array"):
         score_polytomous(_responses(), fit)
 
 
 def test_score_polytomous_rejects_bad_cat_params():
     fit = _grm_fit()
     fit.cat_params = np.array([1.0, 2.0])
-    with pytest.raises(ValueError, match="fit.cat_params must be"):
+    with pytest.raises(ValueError, match=r"fit\.cat_params must be"):
         score_polytomous(_responses(), fit)
 
 
 def test_score_polytomous_rejects_bad_model():
     fit = _grm_fit()
     fit.model = "nope"
-    with pytest.raises(ValueError, match="fit.model must be one of"):
+    with pytest.raises(ValueError, match=r"fit\.model must be one of"):
         score_polytomous(_responses(), fit)
 
 
@@ -136,7 +136,7 @@ def test_score_polytomous_requires_core(monkeypatch):
 def test_information_polytomous_rejects_bad_model():
     fit = _grm_fit()
     fit.model = "nope"
-    with pytest.raises(ValueError, match="fit.model must be one of"):
+    with pytest.raises(ValueError, match=r"fit\.model must be one of"):
         information_polytomous(fit, np.linspace(-2, 2, 5))
 
 
@@ -156,7 +156,7 @@ def test_fit_lsirm_rejects_bad_model():
 
 
 def test_fit_lsirm_rejects_bad_latent_dim():
-    with pytest.raises(ValueError, match="latent_dim must be an integer in 1..3"):
+    with pytest.raises(ValueError, match=r"latent_dim must be an integer in 1\.\.3"):
         fit_lsirm_polytomous(_responses(4, 2, 3), n_cat=3, latent_dim=4)
 
 

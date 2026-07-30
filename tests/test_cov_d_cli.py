@@ -210,6 +210,7 @@ def test_load_fit_context_population_without_arrays(tmp_path):
     estimator, population, convergence = cli._load_fit_context(params)
     assert estimator == "jmle"
     assert population == {"kind": "multigroup"}
+    assert convergence == "converged"
 
 
 def test_load_fit_context_reads_population_arrays(tmp_path):
@@ -253,7 +254,7 @@ def test_load_candidates_rejects_empty_label():
 def test_load_candidates_rejects_npz_archive(tmp_path):
     archive = tmp_path / "multi.npz"
     np.savez(archive, a=np.zeros(2), b=np.ones(2))
-    with pytest.raises(ValueError, match="must be single .npy arrays"):
+    with pytest.raises(ValueError, match=r"must be single \.npy arrays"):
         cli._load_candidate_probabilities([f"lab={archive}"])
 
 
