@@ -109,8 +109,13 @@ use mlsirm_core::rasch_cml::{
 use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
-    cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci,
-    separation_reliability as core_separation_reliability,
+    bhapkar_mh as core_bhapkar_mh, cronbach_alpha as core_cronbach_alpha,
+    feldt_alpha_ci as core_feldt_alpha_ci, finn_coefficient as core_finn_coefficient,
+    icc as core_icc, kripp_alpha as core_kripp_alpha, maxwell_re as core_maxwell_re,
+    mean_pairwise_cor as core_mean_pairwise_cor, mean_pairwise_rho as core_mean_pairwise_rho,
+    n_cohen_kappa as core_n_cohen_kappa, rater_bias as core_rater_bias,
+    robinson_a as core_robinson_a, separation_reliability as core_separation_reliability,
+    stuart_maxwell_mh as core_stuart_maxwell_mh,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3578,6 +3583,301 @@ fn feldt_alpha_ci(
     Ok(out.into())
 }
 
+/// Intraclass correlation coefficients (Shrout & Fleiss, 1979 taxonomy),
+/// transcribed from CRAN irr 0.85 `icc.R` (READ; `mlsirm_core::reliability`).
+/// `ratings` is row-major ns x nr; rows with NaN are dropped listwise.
+/// Returns a dict with `value`, `subjects`, `raters`, `fvalue`, `df1`,
+/// `df2`, `p_value`, `lbound`, `ubound`.
+#[pyfunction]
+fn icc(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    model: &str,
+    r#type: &str,
+    unit: &str,
+    r0: f64,
+    conf_level: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_icc(
+        ratings.as_slice()?,
+        ns,
+        nr,
+        model,
+        r#type,
+        unit,
+        r0,
+        conf_level,
+    )
+    .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    out.set_item("fvalue", res.fvalue)?;
+    out.set_item("df1", res.df1)?;
+    out.set_item("df2", res.df2)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("lbound", res.lbound)?;
+    out.set_item("ubound", res.ubound)?;
+    Ok(out.into())
+}
+
+/// Krippendorff's alpha (`mlsirm_core::reliability`; transcribed from
+/// CRAN irr 0.85 `kripp.alpha.R`, READ). `ratings` is row-major
+/// nraters x nsubjects; NaN marks missing. `method` is one of "nominal",
+/// "ordinal", "interval", "ratio". Returns a dict with `value`,
+/// `subjects`, `raters`, `levels`, `nmatchval`.
+#[pyfunction]
+fn kripp_alpha(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    nraters: usize,
+    nsubjects: usize,
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_kripp_alpha(ratings.as_slice()?, nraters, nsubjects, method)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    out.set_item("levels", res.levels)?;
+    out.set_item("nmatchval", res.nmatchval)?;
+    Ok(out.into())
+}
+
+/// Finn (1970) coefficient of reliability (`mlsirm_core::reliability`;
+/// transcribed from CRAN irr 0.85 `finn.R`, READ). `ratings` is row-major
+/// ns x nr; rows with NaN are dropped listwise. `s_levels` is the number of
+/// discrete scale levels (>= 2); `model` is "oneway" or "twoway". Returns a
+/// dict with `value`, `statistic` (+inf for perfect agreement), `df2`,
+/// `p_value`, `subjects`, `raters`.
+#[pyfunction]
+fn finn_coefficient(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    s_levels: u32,
+    model: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_finn_coefficient(ratings.as_slice()?, ns, nr, s_levels, model)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("df2", res.df2)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Maxwell's RE agreement coefficient for two raters with binary ratings
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `maxwell.R`, READ). `ratings` is row-major ns x 2; rows with NaN are
+/// dropped listwise; the distinct-value union across both columns must have
+/// at most 2 levels. Returns a dict with `value`, `subjects`, `raters`.
+#[pyfunction]
+fn maxwell_re(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_maxwell_re(ratings.as_slice()?, ns, nr).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Robinson's A coefficient of agreement
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `robinson.R`, READ). `ratings` is row-major ns x nr; rows with NaN are
+/// dropped listwise. Degenerate inputs with no subject variance raise
+/// ValueError where R silently returns NaN. Returns a dict with `value`,
+/// `subjects`, `raters`.
+#[pyfunction]
+fn robinson_a(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_robinson_a(ratings.as_slice()?, ns, nr).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Mean pairwise Pearson correlation of rater columns
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `meancor.R`, READ). `ratings` is row-major ns x nr; rows with NaN are
+/// dropped listwise. With `fisher`, perfectly correlated pairs are
+/// dropped before the Fisher-z average and a z test is reported;
+/// without it `statistic`/`p_value` are NaN. Degenerate inputs raise
+/// ValueError where R yields NA/NaN. Returns a dict with `value`,
+/// `statistic`, `p_value`, `dropped`, `subjects`, `raters`.
+#[pyfunction]
+fn mean_pairwise_cor(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_mean_pairwise_cor(ratings.as_slice()?, ns, nr, fisher)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("dropped", res.dropped)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Mean pairwise Spearman rank correlation of rater columns
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `meanrho.R`, READ). `ratings` is row-major ns x nr; rows with NaN
+/// are dropped listwise and columns are midrank-transformed before the
+/// pairwise Pearson correlations. With `fisher`, perfectly correlated
+/// pairs are dropped before the Fisher-z average and a z test is
+/// reported; without it `statistic`/`p_value` are NaN. `ties` flags
+/// tied values within any column (R appends a warning string).
+/// Degenerate inputs raise ValueError where R yields NA/NaN. Returns a
+/// dict with `value`, `statistic`, `p_value`, `dropped`, `ties`,
+/// `subjects`, `raters`.
+#[pyfunction]
+fn mean_pairwise_rho(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_mean_pairwise_rho(ratings.as_slice()?, ns, nr, fisher)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("dropped", res.dropped)?;
+    out.set_item("ties", res.ties)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    Ok(out.into())
+}
+
+/// Stuart-Maxwell marginal homogeneity chi-square test for a CxC
+/// two-rater counts table (`mlsirm_core::reliability`; transcribed
+/// from CRAN irr 0.84.1 `stuart.maxwell.R`, READ). `table` is
+/// row-major c x c nonnegative integral counts. Categories whose row
+/// and column sums are equal are dropped once, simultaneously; the
+/// statistic is d' S^-1 d on the remaining K categories with
+/// df = K - 1. Degenerate or out-of-domain inputs raise ValueError.
+/// Returns a dict with `value`, `df`, `p_value`, `dropped`,
+/// `subjects`, `categories`.
+#[pyfunction]
+fn stuart_maxwell_mh(
+    py: Python<'_>,
+    table: PyReadonlyArray1<'_, f64>,
+    c: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_stuart_maxwell_mh(table.as_slice()?, c).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("dropped", res.dropped)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("categories", res.categories)?;
+    Ok(out.into())
+}
+
+/// Bhapkar marginal homogeneity chi-square test for a CxC two-rater
+/// counts table (`mlsirm_core::reliability`; transcribed from CRAN
+/// irr 0.84.1 `bhapkar.r`, READ). `table` is row-major c x c
+/// nonnegative integral counts. Unlike `stuart_maxwell_mh` no
+/// category is dropped; the statistic is d' W^-1 d with
+/// W = S - d d'/n over the first C-1 categories and df = C - 1.
+/// Degenerate or out-of-domain inputs raise ValueError. Returns a
+/// dict with `value`, `df`, `p_value`, `subjects`, `categories`.
+#[pyfunction]
+fn bhapkar_mh(
+    py: Python<'_>,
+    table: PyReadonlyArray1<'_, f64>,
+    c: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_bhapkar_mh(table.as_slice()?, c).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("categories", res.categories)?;
+    Ok(out.into())
+}
+
+/// Rater bias chi-square for a CxC two-rater counts table
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `rater.bias.R`, READ). `table` is row-major c x c nonnegative
+/// integral counts. value = rbb/(rbb+rbc) (upper-triangle share),
+/// statistic = (rbb-rbc)^2/(rbb+rbc), df = 1. Degenerate or
+/// out-of-domain inputs raise ValueError. Returns a dict with
+/// `value`, `statistic`, `df`, `p_value`, `subjects`.
+#[pyfunction]
+fn rater_bias(
+    py: Python<'_>,
+    table: PyReadonlyArray1<'_, f64>,
+    c: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_rater_bias(table.as_slice()?, c).map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("statistic", res.statistic)?;
+    out.set_item("df", res.df)?;
+    out.set_item("p_value", res.p_value)?;
+    out.set_item("subjects", res.subjects)?;
+    Ok(out.into())
+}
+
+/// Closed-form sample size for testing Cohen's kappa on a 2x2 table
+/// (`mlsirm_core::reliability`; transcribed from CRAN irr 0.84.1
+/// `N.cohen.kappa.R`, READ). `rate1`/`rate2` are the raters' marginal
+/// proportions in (0, 1); `k1`/`k0` the alternative and null kappas.
+/// Infeasible or degenerate parameter combinations raise ValueError
+/// (stricter than R, which silently produces NaN). Returns a dict with
+/// `n`, `q1`, `q0`, `pre_ceil`.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn n_cohen_kappa(
+    py: Python<'_>,
+    rate1: f64,
+    rate2: f64,
+    k1: f64,
+    k0: f64,
+    alpha: f64,
+    power: f64,
+    twosided: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_n_cohen_kappa(rate1, rate2, k1, k0, alpha, power, twosided)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("n", res.n)?;
+    out.set_item("q1", res.q1)?;
+    out.set_item("q0", res.q0)?;
+    out.set_item("pre_ceil", res.pre_ceil)?;
+    Ok(out.into())
+}
+
 /// Person separation reliability `(SSD - MSE) / SSD`
 /// (`mlsirm_core::reliability`; transcribed from CRAN eRm `SepRel.R`).
 /// Returns a dict with `sep_rel`, `ssd`, `mse`, `sep_index`.
@@ -5138,6 +5438,772 @@ fn thurstone_case_v(
     d.set_item("gof", res.gof)?;
     d.set_item("model", PyArray1::from_slice(py, &res.model))?;
     d.set_item("residual", PyArray1::from_slice(py, &res.residual))?;
+    Ok(d.into())
+}
+
+/// Bradley-Terry maximum-likelihood worths via Hunter's MM algorithm as
+/// implemented by choix 0.4.1 (`opt.mm` pairwise path; see
+/// `mlsirm_core::scaling::bradley_terry_mm`). `wins` is a flat row-major
+/// n*n count matrix (wins[i*n+j] = times i beat j); returns dict with
+/// params (centered log-worths), weights (exp scale, sum n), iterations.
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0, max_iter=10000, tol=1e-8))]
+fn bradley_terry_mm(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::bradley_terry_mm(wins.as_slice()?, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Luce Spectral Ranking (one-shot) log-worths from a dense pairwise
+/// win-count matrix, as implemented by choix 0.4.1 (`lsr_pairwise_dense`;
+/// see `mlsirm_core::scaling::lsr_pairwise`). Returns dict with params
+/// (centered log-worths), weights (stationary distribution, sum n),
+/// iterations (always 1).
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0))]
+fn lsr_pairwise(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::lsr_pairwise(wins.as_slice()?, n, alpha)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Iterative Luce Spectral Ranking (Bradley-Terry MLE) as implemented by
+/// choix 0.4.1 (`ilsr_pairwise_dense`; see
+/// `mlsirm_core::scaling::ilsr_pairwise`). Same dict layout as
+/// `lsr_pairwise`; iterations is the LSR pass count at convergence.
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0, max_iter=100, tol=1e-8))]
+fn ilsr_pairwise(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::ilsr_pairwise(wins.as_slice()?, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Rank Centrality (win-ratio spectral ranking) as implemented by choix
+/// 0.4.1 (`rank_centrality`; see
+/// `mlsirm_core::scaling::rank_centrality`). Same dict layout as
+/// `lsr_pairwise`; iterations is always 1.
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0))]
+fn rank_centrality(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::rank_centrality(wins.as_slice()?, n, alpha)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Plackett-Luce Luce-Spectral-Ranking for full/partial rankings (one
+/// shot) as implemented by choix 0.4.1 (`lsr_rankings`; see
+/// `mlsirm_core::scaling::lsr_rankings`). `rankings` is CSR-flattened
+/// item indices (best first per ranking); `starts` are the CSR offsets.
+/// Same dict layout as `lsr_pairwise`.
+#[pyfunction]
+#[pyo3(signature = (rankings, starts, n, alpha=0.0))]
+fn lsr_rankings(
+    py: Python<'_>,
+    rankings: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let rk: Vec<usize> = rankings.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res =
+        mlsirm_core::scaling::lsr_rankings(&rk, &st, n, alpha).map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Iterative LSR (I-LSR) for rankings, as implemented by choix 0.4.1
+/// (`ilsr_rankings`; see `mlsirm_core::scaling::ilsr_rankings`).
+#[pyfunction]
+#[pyo3(signature = (rankings, starts, n, alpha=0.0, max_iter=100, tol=1e-8))]
+fn ilsr_rankings(
+    py: Python<'_>,
+    rankings: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let rk: Vec<usize> = rankings.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res = mlsirm_core::scaling::ilsr_rankings(&rk, &st, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Plackett-Luce Luce-Spectral-Ranking for top-1 choice data (one
+/// shot) as implemented by choix 0.4.1 (`lsr_top1`; see
+/// `mlsirm_core::scaling::lsr_top1`). `winners` has one entry per
+/// observation; `losers` is CSR-flattened loser indices with `starts`
+/// offsets. Same dict layout as `lsr_pairwise`.
+#[pyfunction]
+#[pyo3(signature = (winners, losers, starts, n, alpha=0.0))]
+fn lsr_top1(
+    py: Python<'_>,
+    winners: PyReadonlyArray1<'_, u64>,
+    losers: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let wn: Vec<usize> = winners.as_slice()?.iter().map(|&x| x as usize).collect();
+    let ls: Vec<usize> = losers.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res =
+        mlsirm_core::scaling::lsr_top1(&wn, &ls, &st, n, alpha).map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Iterative LSR (I-LSR) for top-1 choice data, as implemented by choix
+/// 0.4.1 (`ilsr_top1`; see `mlsirm_core::scaling::ilsr_top1`).
+#[pyfunction]
+#[pyo3(signature = (winners, losers, starts, n, alpha=0.0, max_iter=100, tol=1e-8))]
+fn ilsr_top1(
+    py: Python<'_>,
+    winners: PyReadonlyArray1<'_, u64>,
+    losers: PyReadonlyArray1<'_, u64>,
+    starts: PyReadonlyArray1<'_, u64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let wn: Vec<usize> = winners.as_slice()?.iter().map(|&x| x as usize).collect();
+    let ls: Vec<usize> = losers.as_slice()?.iter().map(|&x| x as usize).collect();
+    let st: Vec<usize> = starts.as_slice()?.iter().map(|&x| x as usize).collect();
+    let res = mlsirm_core::scaling::ilsr_top1(&wn, &ls, &st, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Kendall & Babington Smith (1940) circular-triad consistency test for a
+/// single judge's paired comparisons, as implemented by eba's `circular()`
+/// (see `mlsirm_core::scaling::circular_triads`). `mat` is a flat row-major
+/// n*n 0/1 preference matrix; returns dict with T, T_max, T_exp, zeta, chi2,
+/// df, p_value, exact.
+#[pyfunction]
+#[pyo3(signature = (mat, n, alternative="two.sided", correct=true))]
+fn circular_triads(
+    py: Python<'_>,
+    mat: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alternative: &str,
+    correct: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::circular_triads(mat.as_slice()?, n, alternative, correct)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("t", res.t)?;
+    d.set_item("t_max", res.t_max)?;
+    d.set_item("t_exp", res.t_exp)?;
+    d.set_item("zeta", res.zeta)?;
+    d.set_item("chi2", res.chi2)?;
+    d.set_item("df", res.df)?;
+    d.set_item("p_value", res.p_value)?;
+    d.set_item("exact", res.exact)?;
+    Ok(d.into())
+}
+
+/// Kendall's coefficient of agreement u between m judges, as implemented by
+/// eba's `kendall.u()` (see `mlsirm_core::scaling::kendall_u`). `mat` is a
+/// flat row-major n*n frequency matrix; returns dict with sigma, u, min_u,
+/// chi2 (raw, may be negative), df, p_value.
+#[pyfunction]
+#[pyo3(signature = (mat, n, correct=true))]
+fn kendall_u(
+    py: Python<'_>,
+    mat: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    correct: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::kendall_u(mat.as_slice()?, n, correct)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("sigma", res.sigma)?;
+    d.set_item("u", res.u)?;
+    d.set_item("min_u", res.min_u)?;
+    d.set_item("chi2", res.chi2)?;
+    d.set_item("df", res.df)?;
+    d.set_item("p_value", res.p_value)?;
+    Ok(d.into())
+}
+
+/// Elo ratings from a game schedule, PlayerRatings `elo()` semantics (see
+/// `mlsirm_core::scaling::elo_rating`). Batch-per-period update; returns
+/// dict with ratings, games, wins, draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, n, init, kfac))]
+#[allow(clippy::too_many_arguments)]
+fn elo_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    init: f64,
+    kfac: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let white: Vec<usize> = white.as_slice()?.iter().map(|&v| v as usize).collect();
+    let black: Vec<usize> = black.as_slice()?.iter().map(|&v| v as usize).collect();
+    let res = mlsirm_core::scaling::elo_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        n,
+        init,
+        kfac,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
+/// Glicko ratings from a game schedule, PlayerRatings `glicko()` semantics
+/// (see `mlsirm_core::scaling::glicko_rating`). Batch-per-period update with
+/// deviation inflation; returns dict with ratings, deviations, games, wins,
+/// draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, init_rating, init_dev, cval, rdmax))]
+#[allow(clippy::too_many_arguments)]
+fn glicko_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    init_rating: PyReadonlyArray1<'_, f64>,
+    init_dev: PyReadonlyArray1<'_, f64>,
+    cval: f64,
+    rdmax: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let white: Vec<usize> = white.as_slice()?.iter().map(|&v| v as usize).collect();
+    let black: Vec<usize> = black.as_slice()?.iter().map(|&v| v as usize).collect();
+    let res = mlsirm_core::scaling::glicko_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        init_rating.as_slice()?,
+        init_dev.as_slice()?,
+        cval,
+        rdmax,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("deviations", PyArray1::from_slice(py, &res.deviations))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
+/// Glicko-2 ratings from a game schedule, PlayerRatings `glicko2()` semantics
+/// with Glickman's (2022) Illinois volatility step (see
+/// `mlsirm_core::scaling::glicko2_rating`). Returns dict with ratings,
+/// deviations, volatilities, games, wins, draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, init_rating, init_dev, init_vol, tau, rdmax))]
+#[allow(clippy::too_many_arguments)]
+fn glicko2_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    init_rating: PyReadonlyArray1<'_, f64>,
+    init_dev: PyReadonlyArray1<'_, f64>,
+    init_vol: PyReadonlyArray1<'_, f64>,
+    tau: f64,
+    rdmax: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    // usize::try_from (not `as`): a u64 id above usize::MAX must fail
+    // loudly on 32-bit targets instead of truncating into a valid index.
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("glicko2_rating: player index exceeds platform usize")
+        })?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("glicko2_rating: player index exceeds platform usize")
+        })?;
+    let res = mlsirm_core::scaling::glicko2_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        init_rating.as_slice()?,
+        init_dev.as_slice()?,
+        init_vol.as_slice()?,
+        tau,
+        rdmax,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("deviations", PyArray1::from_slice(py, &res.deviations))?;
+    d.set_item("volatilities", PyArray1::from_slice(py, &res.volatilities))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
+/// Stephenson rating for a game schedule, PlayerRatings `steph()` semantics
+/// (see `mlsirm_core::scaling::stephenson_rating`). Returns dict with
+/// ratings, deviations, games, wins, draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, init_rating, init_dev, init_games, init_lag, cval, hval, bval, lambda_, rdmax))]
+#[allow(clippy::too_many_arguments)]
+fn stephenson_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    init_rating: PyReadonlyArray1<'_, f64>,
+    init_dev: PyReadonlyArray1<'_, f64>,
+    init_games: PyReadonlyArray1<'_, u64>,
+    init_lag: PyReadonlyArray1<'_, u64>,
+    cval: f64,
+    hval: f64,
+    bval: f64,
+    lambda_: f64,
+    rdmax: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    // usize::try_from (not `as`): a u64 id above usize::MAX must fail
+    // loudly on 32-bit targets instead of truncating into a valid index.
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("stephenson_rating: player index exceeds platform usize")
+        })?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("stephenson_rating: player index exceeds platform usize")
+        })?;
+    let res = mlsirm_core::scaling::stephenson_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        init_rating.as_slice()?,
+        init_dev.as_slice()?,
+        init_games.as_slice()?,
+        init_lag.as_slice()?,
+        cval,
+        hval,
+        bval,
+        lambda_,
+        rdmax,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("deviations", PyArray1::from_slice(py, &res.deviations))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
+/// Multiplayer Elo rating for nn-player events, PlayerRatings `elom()`
+/// semantics (see `mlsirm_core::scaling::elom_rating`). `players` and
+/// `scores` are flattened g x nn (row-major); empty seats are player -1
+/// with NaN score. `kfac_mode` is "scalar" (uses `kfac_k`) or "kriichi"
+/// (uses `kfac_gv`/`kfac_kv`). Returns dict with ratings, games, places
+/// (flattened n x nn), lag.
+#[pyfunction]
+#[pyo3(signature = (periods, players, scores, base, init_ratings, init_games, init_lag, init_places, kfac_mode, kfac_k, kfac_gv, kfac_kv, placing))]
+#[allow(clippy::too_many_arguments)]
+fn elom_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    players: PyReadonlyArray1<'_, i64>,
+    scores: PyReadonlyArray1<'_, f64>,
+    base: PyReadonlyArray1<'_, f64>,
+    init_ratings: PyReadonlyArray1<'_, f64>,
+    init_games: PyReadonlyArray1<'_, u64>,
+    init_lag: PyReadonlyArray1<'_, u64>,
+    init_places: PyReadonlyArray1<'_, u64>,
+    kfac_mode: &str,
+    kfac_k: f64,
+    kfac_gv: f64,
+    kfac_kv: f64,
+    placing: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let kfac = match kfac_mode {
+        "scalar" => mlsirm_core::scaling::ElomKFactor::Scalar(kfac_k),
+        "kriichi" => mlsirm_core::scaling::ElomKFactor::Kriichi {
+            gv: kfac_gv,
+            kv: kfac_kv,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "elom_rating: kfac_mode {:?} must be \"scalar\" or \"kriichi\"",
+                other
+            )))
+        }
+    };
+    let res = mlsirm_core::scaling::elom_rating(
+        periods.as_slice()?,
+        players.as_slice()?,
+        scores.as_slice()?,
+        base.as_slice()?,
+        init_ratings.as_slice()?,
+        init_games.as_slice()?,
+        init_lag.as_slice()?,
+        init_places.as_slice()?,
+        kfac,
+        placing,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("places", PyArray1::from_slice(py, &res.places))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
+/// Prediction-quality metrics for binary-outcome forecasts, PlayerRatings
+/// `metrics()` semantics (see `mlsirm_core::scaling::metrics_rating`).
+/// `pred` is flattened row-major nr x np; the return value is the
+/// flattened row-major np x 3 matrix of per-column [bdev, mse, mae].
+#[pyfunction]
+#[pyo3(signature = (act, pred, nr, np, cap_lo, cap_hi, scale))]
+fn metrics_rating(
+    py: Python<'_>,
+    act: PyReadonlyArray1<'_, f64>,
+    pred: PyReadonlyArray1<'_, f64>,
+    nr: usize,
+    np: usize,
+    cap_lo: f64,
+    cap_hi: f64,
+    scale: bool,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let out = mlsirm_core::scaling::metrics_rating(
+        act.as_slice()?,
+        pred.as_slice()?,
+        nr,
+        np,
+        (cap_lo, cap_hi),
+        scale,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
+/// FIDE-style Elo rating with the kfide K-factor schedule, PlayerRatings
+/// `fide()` semantics (see `mlsirm_core::scaling::fide_rating`). Returns a
+/// dict with ratings, games, wins, draws, losses, lag, elite (0/1), and
+/// opponent (running mean of post-update opponent ratings).
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, n, init, kv0, kv1, kv2))]
+#[allow(clippy::too_many_arguments)]
+fn fide_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    init: f64,
+    kv0: f64,
+    kv1: f64,
+    kv2: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("fide_rating: player index exceeds platform usize"))?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| PyValueError::new_err("fide_rating: player index exceeds platform usize"))?;
+    let res = mlsirm_core::scaling::fide_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        n,
+        init,
+        (kv0, kv1, kv2),
+    )
+    .map_err(PyValueError::new_err)?;
+    let elite: Vec<u64> = res.elite.iter().map(|&v| v as u64).collect();
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    d.set_item("elite", PyArray1::from_slice(py, &elite))?;
+    d.set_item("opponent", PyArray1::from_slice(py, &res.opponent))?;
+    Ok(d.into())
+}
+
+/// Predicted game outcomes from fitted ratings, PlayerRatings
+/// `predict.rating` two-player branches (see
+/// `mlsirm_core::scaling::predict_rating_two`). `white`/`black` are player
+/// indices with -1 = unmatched. Pass `deviations` for the
+/// Glicko/Glicko-2/Stephenson deviation-shrunk branch.
+#[pyfunction]
+#[pyo3(signature = (ratings, deviations, games, white, black, gamma, tng, trat_rating, trat_deviation, thresh))]
+#[allow(clippy::too_many_arguments)]
+fn predict_rating_two(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    deviations: Option<PyReadonlyArray1<'_, f64>>,
+    games: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, i64>,
+    black: PyReadonlyArray1<'_, i64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    tng: u64,
+    trat_rating: Option<f64>,
+    trat_deviation: Option<f64>,
+    thresh: Option<f64>,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let dev_slice = deviations.as_ref().map(|d| d.as_slice()).transpose()?;
+    let trat = trat_rating.map(|t1| (t1, trat_deviation.unwrap_or(f64::NAN)));
+    let out = mlsirm_core::scaling::predict_rating_two(
+        ratings.as_slice()?,
+        dev_slice,
+        games.as_slice()?,
+        white.as_slice()?,
+        black.as_slice()?,
+        gamma.as_slice()?,
+        tng,
+        trat,
+        thresh,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
+/// Predicted expected scores for multi-player (EloM) events, PlayerRatings
+/// `predict.rating` EloM branch (see
+/// `mlsirm_core::scaling::predict_rating_multi`). `players` is flattened
+/// row-major nr x np with -1 = empty seat; `placing` returns min-tie ranks.
+#[pyfunction]
+#[pyo3(signature = (ratings, games, players, nr, np, tng, trat, placing))]
+#[allow(clippy::too_many_arguments)]
+fn predict_rating_multi(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    games: PyReadonlyArray1<'_, u64>,
+    players: PyReadonlyArray1<'_, i64>,
+    nr: usize,
+    np: usize,
+    tng: u64,
+    trat: Option<f64>,
+    placing: bool,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let out = mlsirm_core::scaling::predict_rating_multi(
+        ratings.as_slice()?,
+        games.as_slice()?,
+        players.as_slice()?,
+        nr,
+        np,
+        tng,
+        trat,
+        placing,
+    )
+    .map_err(PyValueError::new_err)?;
+    Ok(PyArray1::from_slice(py, &out).into())
+}
+
+/// Bradley-Terry model with ties (additive alpha0, VGAM `bratt`) fitted
+/// by MM (see `mlsirm_core::scaling::bratt_mm`). `wins` and `ties` are
+/// flat row-major n*n matrices (ties symmetric); returns dict with alpha
+/// (worths, alpha[ref_index] == ref_value), alpha0 (tie parameter),
+/// iterations, log_likelihood.
+#[pyfunction]
+#[pyo3(signature = (wins, ties, n, ref_index=0, ref_value=1.0, max_iter=10000, tol=1e-10))]
+#[allow(clippy::too_many_arguments)]
+fn bratt_mm(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    ties: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    ref_index: usize,
+    ref_value: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::bratt_mm(
+        wins.as_slice()?,
+        ties.as_slice()?,
+        n,
+        ref_index,
+        ref_value,
+        max_iter,
+        tol,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("alpha", PyArray1::from_slice(py, &res.alpha))?;
+    d.set_item("alpha0", res.alpha0)?;
+    d.set_item("iterations", res.iterations as u64)?;
+    d.set_item("log_likelihood", res.log_likelihood)?;
+    Ok(d.into())
+}
+
+/// Fleiss' kappa for nominal agreement among nr raters over ns subjects,
+/// with the exact (Conger) variant (irr 0.85 `kappam.fleiss`; see
+/// `mlsirm_core::agreement::fleiss_kappa`). `ratings` is flat row-major
+/// ns*nr of codes 0..k-1; negative = missing (listwise row drop). Returns
+/// dict with kappa, subjects_used, z, p_value, category_kappa/z/p
+/// (empty arrays and NaN z/p in exact mode).
+#[pyfunction]
+#[pyo3(signature = (ratings, ns, nr, k, exact=false))]
+fn fleiss_kappa(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, i64>,
+    ns: usize,
+    nr: usize,
+    k: usize,
+    exact: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::agreement::fleiss_kappa(ratings.as_slice()?, ns, nr, k, exact)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("kappa", res.kappa)?;
+    d.set_item("subjects_used", res.subjects_used as u64)?;
+    d.set_item("z", res.z)?;
+    d.set_item("p_value", res.p_value)?;
+    d.set_item(
+        "category_kappa",
+        PyArray1::from_slice(py, &res.category_kappa),
+    )?;
+    d.set_item("category_z", PyArray1::from_slice(py, &res.category_z))?;
+    d.set_item("category_p", PyArray1::from_slice(py, &res.category_p))?;
+    Ok(d.into())
+}
+
+/// Light's kappa: mean pairwise unweighted Cohen's kappa with Light's
+/// chance-product z test (irr 0.85 `kappam.light` + unweighted `kappa2`;
+/// see `mlsirm_core::agreement::light_kappa`). `ratings` is flat row-major
+/// ns*nr of integer category codes; negative = missing (listwise row drop).
+/// Returns dict with value, subjects_used, raters, kappas, z, p_value.
+#[pyfunction]
+#[pyo3(signature = (ratings, ns, nr))]
+fn light_kappa(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, i64>,
+    ns: usize,
+    nr: usize,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::agreement::light_kappa(ratings.as_slice()?, ns, nr)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("value", res.value)?;
+    d.set_item("subjects_used", res.subjects_used as u64)?;
+    d.set_item("raters", res.raters as u64)?;
+    d.set_item("kappas", PyArray1::from_slice(py, &res.kappas))?;
+    d.set_item("z", res.z)?;
+    d.set_item("p_value", res.p_value)?;
     Ok(d.into())
 }
 
@@ -7441,6 +8507,17 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tenberge_mu, m)?)?;
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(icc, m)?)?;
+    m.add_function(wrap_pyfunction!(kripp_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(finn_coefficient, m)?)?;
+    m.add_function(wrap_pyfunction!(maxwell_re, m)?)?;
+    m.add_function(wrap_pyfunction!(robinson_a, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_pairwise_cor, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_pairwise_rho, m)?)?;
+    m.add_function(wrap_pyfunction!(stuart_maxwell_mh, m)?)?;
+    m.add_function(wrap_pyfunction!(bhapkar_mh, m)?)?;
+    m.add_function(wrap_pyfunction!(rater_bias, m)?)?;
+    m.add_function(wrap_pyfunction!(n_cohen_kappa, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
@@ -7478,6 +8555,28 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(nominal_weights_mean_equate, m)?)?;
     m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
     m.add_function(wrap_pyfunction!(thurstone_case_v, m)?)?;
+    m.add_function(wrap_pyfunction!(bradley_terry_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_pairwise, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_pairwise, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_centrality, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_rankings, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_rankings, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(circular_triads, m)?)?;
+    m.add_function(wrap_pyfunction!(kendall_u, m)?)?;
+    m.add_function(wrap_pyfunction!(elo_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(glicko_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(glicko2_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(elom_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(metrics_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(fide_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_two, m)?)?;
+    m.add_function(wrap_pyfunction!(predict_rating_multi, m)?)?;
+    m.add_function(wrap_pyfunction!(bratt_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(fleiss_kappa, m)?)?;
+    m.add_function(wrap_pyfunction!(light_kappa, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
