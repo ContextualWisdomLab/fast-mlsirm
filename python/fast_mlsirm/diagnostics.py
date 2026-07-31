@@ -24,6 +24,7 @@ MAX_DIM_DIAGNOSTIC_MASK_CELLS = 20_000_000
 
 
 def _core_module():
+    """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
         from . import _core  # type: ignore
 
@@ -39,6 +40,11 @@ def predict_proba(
     items: np.ndarray | None = None,
     model: str = "MLS2PLM",
 ) -> np.ndarray:
+    """Return model success probabilities for each person-item cell.
+
+    Evaluates ``sigmoid`` of the model linear predictor, optionally restricting
+    to a subset of ``persons`` and/or ``items``.
+    """
     factors = validate_factor_id(
         factor_id, len(params.b), params.theta.shape[1]
     )
@@ -327,6 +333,14 @@ def dimensionality_diagnostics(
     seed: int = 1,
     eps: float = 1e-12,
 ) -> DimensionalityDiagnostics:
+    """Choose a latent-space dimension by k-fold cross-validated held-out fit.
+
+    For each candidate ``latent_dim`` the responses are split into ``k_folds``
+    entry-wise validation masks; the model is fit on the training entries and
+    scored on the held-out entries (held-out log-likelihood, RMSE, mean
+    absolute residual). The candidate with the best held-out log-likelihood is
+    reported as ``best``.
+    """
     from .fit import fit
 
     y, observed = prepare_response(responses, mask)
@@ -385,6 +399,14 @@ def response_process_fit_diagnostics(
     group_id: np.ndarray | None = None,
     cluster_id: np.ndarray | None = None,
 ) -> FitDiagnostics:
+    """Compute item/person/category fit for supplied categorical probabilities.
+
+    Given observed responses and per-category model probabilities, forms Pearson
+    residuals and per-entry log-likelihoods and aggregates them into item,
+    person, category, and optional group/cluster fit tables plus an overall
+    model-fit summary. ``item_type`` selects the dichotomous/polytomous category
+    contract; ``response_process`` selects the cumulative/ideal-point framing.
+    """
     _validate_response_process(item_type, response_process)
     y, observed, prob = _prepare_categorical_response(
         responses, probabilities, mask, eps
@@ -441,6 +463,13 @@ def response_process_dimensionality_diagnostics(
     response_process: str = "cumulative",
     eps: float = 1e-12,
 ) -> DimensionalityDiagnostics:
+    """Rank candidate categorical models by fit against the supplied responses.
+
+    Compares each labelled candidate probability array against the supplied
+    observed responses (log-likelihood, deviance, Pearson chi-square, mean
+    absolute category residual) and returns the highest-log-likelihood candidate
+    as ``best``.
+    """
     if not candidate_probabilities:
         raise ValueError("candidate_probabilities must not be empty")
 
@@ -559,6 +588,13 @@ def align_latent_space(
     est_zeta: np.ndarray,
     method: str = "procrustes",
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Align estimated latent-space positions to the truth via Procrustes.
+
+    Removes the latent space's rotation/reflection/scale/translation
+    indeterminacy by fitting an orthogonal-plus-scale map (SVD-based) from the
+    stacked estimated positions to the true ones, then splitting the aligned
+    coordinates back into person (``xi``) and item (``zeta``) blocks.
+    """
     if method != "procrustes":
         raise ValueError("only procrustes alignment is supported")
 
@@ -580,6 +616,13 @@ def align_latent_space(
 def recovery_report(
     truth: MLSIRMParams, estimate: MLSIRMParams, align: bool = True
 ) -> RecoveryReport:
+    """Compare estimated parameters to ground truth.
+
+    Computes bias/RMSE/correlation for discriminations and easiness, gamma
+    error, standardized theta RMSE, and latent-coordinate and person-item
+    distance RMSE (optionally Procrustes-aligning the latent space first),
+    returning both the detailed metrics and a compact summary.
+    """
     est_xi = estimate.xi
     est_zeta = estimate.zeta
     if align:
@@ -628,6 +671,7 @@ def recovery_report(
 def _subset_params(
     params: MLSIRMParams, persons: np.ndarray | None, items: np.ndarray | None
 ) -> MLSIRMParams:
+    """Return a view of ``params`` restricted to given person/item index sets."""
     p_idx = slice(None) if persons is None else np.asarray(persons, dtype=np.int64)
     i_idx = slice(None) if items is None else np.asarray(items, dtype=np.int64)
     return MLSIRMParams(
@@ -649,6 +693,12 @@ def _axis_fit(
     pearson_sq: np.ndarray,
     axis: int,
 ) -> dict[str, np.ndarray]:
+    """Aggregate binary residuals along ``axis`` into an item- or person-fit table.
+
+    Returns observed counts, scores, raw/standardized residuals, and infit and
+    outfit mean-square statistics summed over the chosen axis (``axis=0`` for
+    item fit, ``axis=1`` for person fit).
+    """
     count = observed.sum(axis=axis).astype(np.float64)
     score = (y * observed).sum(axis=axis)
     expected = (prob * observed).sum(axis=axis)
@@ -676,6 +726,11 @@ def _factor_fit(
     residual: np.ndarray,
     pearson_sq: np.ndarray,
 ) -> dict[str, np.ndarray]:
+    """Aggregate binary residuals per trait (factor) into a factor-fit table.
+
+    Groups items by ``factor_id`` and returns per-factor observed counts,
+    scores, raw/standardized residuals, and infit/outfit mean-squares.
+    """
     factors = np.asarray(factor_id, dtype=np.int64)
     if factors.shape != (y.shape[1],):
         raise ValueError("factor_id length must match number of items")
@@ -719,6 +774,11 @@ def _categorical_axis_fit(
     entry_chisq: np.ndarray,
     axis: int,
 ) -> dict[str, np.ndarray]:
+    """Aggregate categorical log-likelihood/chi-square along ``axis``.
+
+    Returns observed counts, log-likelihood, deviance, Pearson chi-square, and
+    an outfit mean-square for an item- or person-scoped categorical fit table.
+    """
     count = observed.sum(axis=axis).astype(np.float64)
     loglik = entry_loglik.sum(axis=axis)
     chisq = entry_chisq.sum(axis=axis)
@@ -738,6 +798,7 @@ def _category_fit(
     prob: np.ndarray,
     residual: np.ndarray,
 ) -> dict[str, np.ndarray]:
+    """Build a per-item-per-category fit table of scores and residuals."""
     observed_count = observed.sum(axis=0).astype(np.float64)
     obs_cast = observed.astype(prob.dtype, copy=False)
     score = np.einsum("ij,ijk->jk", obs_cast, onehot)
@@ -762,6 +823,7 @@ def _attach_person_strata(
     cluster_id: np.ndarray | None,
     n_persons: int,
 ) -> None:
+    """Attach validated per-person group/cluster id columns to a person-fit table."""
     if group_id is not None:
         personfit["group_id"] = _person_strata(group_id, n_persons, "group_id").astype(
             np.float64
@@ -773,6 +835,7 @@ def _attach_person_strata(
 
 
 def _person_strata(values: np.ndarray, n_persons: int, name: str) -> np.ndarray:
+    """Validate that a per-person stratum vector has one entry per person."""
     strata = np.asarray(values)
     if strata.shape != (n_persons,):
         raise ValueError(f"{name} length must match number of persons")
@@ -789,6 +852,11 @@ def _binary_stratum_fit(
     residual: np.ndarray,
     pearson_sq: np.ndarray,
 ) -> dict[str, np.ndarray] | None:
+    """Aggregate binary fit statistics per person stratum (group or cluster).
+
+    Returns ``None`` when no stratum vector is supplied; otherwise one row per
+    unique stratum id with its residual and fit summaries.
+    """
     if strata is None:
         return None
 
@@ -822,6 +890,11 @@ def _binary_stratum_item_fit(
     residual: np.ndarray,
     pearson_sq: np.ndarray,
 ) -> dict[str, np.ndarray] | None:
+    """Aggregate binary fit statistics per stratum-by-item cell.
+
+    Returns ``None`` without a stratum vector; otherwise one row per
+    (stratum id, item) combination that has observed responses.
+    """
     if strata is None:
         return None
 
@@ -865,6 +938,7 @@ def _binary_scope_row(
     pearson_sq: np.ndarray,
     loglik: np.ndarray,
 ) -> tuple[float, ...]:
+    """Reduce binary fit arrays within one scope mask to a summary-row tuple."""
     where = observed & scope
     count = float(where.sum())
     variance_sum = float((variance * where).sum())
@@ -889,6 +963,7 @@ def _binary_scope_row(
 def _binary_scope_table(
     id_name: str, rows: list[tuple[float, ...]]
 ) -> dict[str, np.ndarray]:
+    """Turn per-stratum binary summary rows into a columnar fit table."""
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -908,6 +983,7 @@ def _binary_scope_table(
 def _binary_scope_item_table(
     id_name: str, rows: list[tuple[float, ...]]
 ) -> dict[str, np.ndarray]:
+    """Turn per-stratum-by-item binary summary rows into a columnar fit table."""
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -930,6 +1006,7 @@ def _categorical_entry_stats(
     observed: np.ndarray,
     prob: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return per-entry categorical log-likelihood, Pearson chi-square, residual."""
     onehot = np.eye(prob.shape[2], dtype=np.float64)[y]
     residual = (onehot - prob) * observed[:, :, None]
     pearson = np.where(observed[:, :, None], residual * residual / prob, 0.0)
@@ -945,6 +1022,7 @@ def _categorical_stratum_fit(
     entry_loglik: np.ndarray,
     entry_chisq: np.ndarray,
 ) -> dict[str, np.ndarray] | None:
+    """Aggregate categorical fit statistics per person stratum, or ``None``."""
     if strata is None:
         return None
 
@@ -965,6 +1043,7 @@ def _categorical_stratum_item_fit(
     entry_loglik: np.ndarray,
     entry_chisq: np.ndarray,
 ) -> dict[str, np.ndarray] | None:
+    """Aggregate categorical fit statistics per stratum-by-item cell, or ``None``."""
     if strata is None:
         return None
 
@@ -994,6 +1073,7 @@ def _categorical_scope_row(
     entry_loglik: np.ndarray,
     entry_chisq: np.ndarray,
 ) -> tuple[float, ...]:
+    """Reduce categorical fit arrays within one scope mask to a summary-row tuple."""
     count = float(where.sum())
     loglik = float(entry_loglik[where].sum())
     chisq = float(entry_chisq[where].sum())
@@ -1003,6 +1083,7 @@ def _categorical_scope_row(
 def _categorical_scope_table(
     id_name: str, rows: list[tuple[float, ...]]
 ) -> dict[str, np.ndarray]:
+    """Turn per-stratum categorical summary rows into a columnar fit table."""
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -1017,6 +1098,7 @@ def _categorical_scope_table(
 def _categorical_scope_item_table(
     id_name: str, rows: list[tuple[float, ...]]
 ) -> dict[str, np.ndarray]:
+    """Turn per-stratum-by-item categorical summary rows into a columnar table."""
     table = np.asarray(rows, dtype=np.float64)
     return {
         id_name: table[:, 0],
@@ -1030,6 +1112,11 @@ def _categorical_scope_item_table(
 
 
 def _fixed_item_indices(fixed_items: np.ndarray | None, n_items: int) -> np.ndarray:
+    """Resolve the fixed-item selection to validated item indices.
+
+    Accepts either a boolean mask or an integer index vector (or ``None`` for
+    all items), rejecting out-of-range, duplicate, or empty selections.
+    """
     if fixed_items is None:
         return np.arange(n_items, dtype=np.int64)
 
@@ -1059,6 +1146,11 @@ def _fixed_item_indices(fixed_items: np.ndarray | None, n_items: int) -> np.ndar
 def _fixed_candidate_probabilities(
     probabilities: np.ndarray, fixed_idx: np.ndarray, response_shape: tuple[int, int]
 ) -> np.ndarray:
+    """Slice a candidate probability array down to the fixed-item columns.
+
+    Handles both 2D (binary) and 3D (per-category) probability arrays after
+    checking they match the response matrix's person/item shape.
+    """
     prob = np.asarray(probabilities)
     if prob.ndim not in {2, 3}:
         raise ValueError(
@@ -1072,6 +1164,7 @@ def _fixed_candidate_probabilities(
 
 
 def _parameter_count(params: MLSIRMParams, model: str) -> int:
+    """Count the free parameters a model variant estimates for ``params``."""
     free_alpha, uses_space = model_flags(model)
     count = params.theta.size + params.b.size
     if free_alpha:
@@ -1082,6 +1175,7 @@ def _parameter_count(params: MLSIRMParams, model: str) -> int:
 
 
 def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
+    """Deduplicate and bounds-check the candidate latent dimensions."""
     dims = list(dict.fromkeys(int(value) for value in latent_dims))
     if not dims:
         raise ValueError("latent_dims must not be empty")
@@ -1097,6 +1191,12 @@ def _validated_latent_dims(latent_dims: Iterable[int]) -> list[int]:
 def _validation_folds(
     observed: np.ndarray, k_folds: int, seed: int
 ) -> list[np.ndarray]:
+    """Build ``k_folds`` disjoint entry-wise held-out masks for cross-validation.
+
+    Randomly partitions the eligible observed cells (those whose row and column
+    keep more than one observation) into fold masks, dropping any fold entry
+    that would empty a training row or column.
+    """
     if (
         not isinstance(k_folds, (int, np.integer))
         or isinstance(k_folds, (bool, np.bool_))
@@ -1137,6 +1237,7 @@ def _validation_folds(
 def _accumulate_heldout(
     totals: dict[str, float], y: np.ndarray, mask: np.ndarray, prob: np.ndarray
 ) -> None:
+    """Add one fold's held-out log-likelihood/residual sums into ``totals``."""
     yy = y[mask]
     pp = prob[mask]
     residual = yy - pp
@@ -1147,6 +1248,7 @@ def _accumulate_heldout(
 
 
 def _validate_response_process(item_type: str, response_process: str) -> None:
+    """Validate the ``item_type`` and ``response_process`` argument vocabularies."""
     if item_type not in {"dichotomous", "polytomous"}:
         raise ValueError("item_type must be dichotomous or polytomous")
     if response_process not in {"ideal_point", "cumulative"}:
@@ -1154,6 +1256,7 @@ def _validate_response_process(item_type: str, response_process: str) -> None:
 
 
 def _validate_category_count(item_type: str, n_categories: int) -> None:
+    """Check the category count matches the declared item type (2 vs. >=3)."""
     if item_type == "dichotomous" and n_categories != 2:
         raise ValueError("dichotomous diagnostics require exactly 2 categories")
     if item_type == "polytomous" and n_categories < 3:
@@ -1166,6 +1269,12 @@ def _prepare_categorical_response(
     mask: np.ndarray | None,
     eps: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Validate and normalize categorical responses and probabilities.
+
+    Derives the observed mask (missing via ``-1``/NaN or an explicit ``mask``),
+    promotes 2D binary probabilities to a two-category array, checks category
+    ids, and returns clipped, row-renormalized probabilities.
+    """
     y = np.asarray(responses)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -1197,15 +1306,18 @@ def _prepare_categorical_response(
 
 
 def _bias(true: np.ndarray, estimate: np.ndarray) -> float:
+    """Mean signed error (estimate minus truth)."""
     return float(np.mean(np.asarray(estimate) - np.asarray(true)))
 
 
 def _rmse(true: np.ndarray, estimate: np.ndarray) -> float:
+    """Root-mean-square error between estimate and truth."""
     delta = np.asarray(estimate) - np.asarray(true)
     return float(np.sqrt(np.mean(delta * delta)))
 
 
 def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
+    """Pearson correlation between flattened truth and estimate (NaN if degenerate)."""
     x = np.asarray(true).ravel()
     y = np.asarray(estimate).ravel()
     if np.std(x) < 1e-12 or np.std(y) < 1e-12:
@@ -1216,6 +1328,7 @@ def _corr(true: np.ndarray, estimate: np.ndarray) -> float:
 def _distance_rmse(
     true_xi: np.ndarray, true_zeta: np.ndarray, est_xi: np.ndarray, est_zeta: np.ndarray
 ) -> float:
+    """RMSE between true and estimated person-item latent-space distance matrices."""
     # Optimized distance calculation: replace memory allocation in (x * x).sum(axis=1) with np.einsum
     true_sq_xi = np.einsum("ij,ij->i", true_xi, true_xi)[:, None]
     true_sq_zeta = np.einsum("ij,ij->i", true_zeta, true_zeta)[None, :]

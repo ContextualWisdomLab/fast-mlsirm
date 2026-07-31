@@ -42,6 +42,12 @@ def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None
 
 @dataclass
 class ValidationVerdict:
+    """Outcome of validating a judge against reference labels.
+
+    Holds the per-gate results, the exact and adjacent agreement rates, the
+    overall pass/fail verdict, and the names of any gates that failed.
+    """
+
     gates: list[dict[str, Any]]
     exact_agreement: float
     adjacent_agreement: float
@@ -100,4 +106,173 @@ def validate_judge(
         adjacent_agreement=float(res["adjacent_agreement"]),
         passed=bool(res["pass"]),
         failed_gates=[g["name"] for g in gates if not g["pass"]],
+    )
+
+
+@dataclass
+class FleissKappaResult:
+    """Result of :func:`fleiss_kappa`. In exact (Conger) mode ``z`` and
+    ``p_value`` are NaN and the category arrays are empty, mirroring irr's
+    ``kappam.fleiss(exact=TRUE)`` which returns neither."""
+
+    kappa: float
+    subjects_used: int
+    z: float
+    p_value: float
+    category_kappa: np.ndarray
+    category_z: np.ndarray
+    category_p: np.ndarray
+
+
+def fleiss_kappa(
+    ratings: np.ndarray,
+    k: int | None = None,
+    exact: bool = False,
+) -> FleissKappaResult:
+    """Fleiss' kappa for nominal agreement among multiple raters, with the
+    exact (Conger) chance-agreement variant.
+
+    Reimplements ``kappam.fleiss()`` from CRAN irr 0.85 (R source READ in
+    full; algorithm source of truth). Model origins — cited as origins only,
+    NOT READ: Fleiss, J. L. (1971). Measuring nominal scale agreement among
+    many raters. *Psychological Bulletin, 76*(5), 378-382; Conger, A. J.
+    (1980). Integration and generalization of kappas for multiple raters.
+    *Psychological Bulletin, 88*(2), 322-328. Computation runs in the Rust
+    core (``mlsirm_core::agreement::fleiss_kappa``).
+
+    ``ratings`` is a 2-D ``(n_subjects, n_raters)`` array of integer category
+    codes ``0..k-1``. NaN or any negative value marks a missing rating and
+    drops the whole subject row (listwise, as in irr). ``k=None`` infers
+    ``max(code)+1``; pass ``k`` explicitly to include trailing empty
+    categories in the category-wise detail (their kappas are NaN, matching
+    R's 0/0).
+    """
+    from . import _core  # computation lives in the Rust core
+
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D (subjects x raters) array")
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype == object:
+        for v in arr.flat:
+            if v is None or isinstance(v, (bool, np.bool_, str, bytes)):
+                raise ValueError("ratings must be numeric, not boolean/str/None")
+        arr = arr.astype(np.float64)
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be integer codes, not booleans")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError(f"ratings dtype {arr.dtype} is not numeric")
+    ns, nr = arr.shape
+    if arr.dtype.kind == "f":
+        finite = np.isfinite(arr)
+        if np.any(np.isinf(arr)):
+            raise ValueError("ratings must not contain infinities")
+        if np.any(arr[finite] != np.floor(arr[finite])):
+            raise ValueError("ratings must be integer category codes")
+        if np.any(np.abs(arr[finite]) > 2.0**53):
+            raise ValueError("ratings exceed exact float64 integer range")
+        codes = np.where(finite, arr, -1.0).astype(np.int64)
+    else:
+        if arr.dtype.kind == "u" and arr.size and int(arr.max()) > np.iinfo(np.int64).max:
+            raise ValueError("ratings values must fit in int64")
+        codes = arr.astype(np.int64)
+    if k is not None:
+        if isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)):
+            raise ValueError("k must be an integer")
+        k = int(k)
+    if k is None:
+        if codes.size == 0 or int(codes.max()) < 0:
+            raise ValueError("cannot infer k: no observed category codes")
+        k = int(codes.max()) + 1
+    res = _core.fleiss_kappa(
+        np.ascontiguousarray(codes.reshape(-1)), int(ns), int(nr), int(k), bool(exact)
+    )
+    return FleissKappaResult(
+        kappa=float(res["kappa"]),
+        subjects_used=int(res["subjects_used"]),
+        z=float(res["z"]),
+        p_value=float(res["p_value"]),
+        category_kappa=np.asarray(res["category_kappa"]),
+        category_z=np.asarray(res["category_z"]),
+        category_p=np.asarray(res["category_p"]),
+    )
+@dataclass
+class LightKappaResult:
+    """Result of :func:`light_kappa`: mean pairwise unweighted Cohen's kappa
+    (``value``), the per-pair kappas in ``(i, j)``, ``i < j`` order, and
+    Light's chance-product z test."""
+
+    value: float
+    subjects_used: int
+    raters: int
+    kappas: np.ndarray
+    z: float
+    p_value: float
+
+
+def light_kappa(ratings: np.ndarray) -> LightKappaResult:
+    """Light's kappa: mean pairwise unweighted Cohen's kappa over all rater
+    pairs, with Light's chance-product z statistic.
+
+    Reimplements ``kappam.light()`` and the unweighted branch of ``kappa2()``
+    from CRAN irr 0.85 (both R sources READ in full; algorithm source of
+    truth). Method origin — cited as origin only, NOT READ: Light, R. J.
+    (1971). Measures of response agreement for qualitative data: Some
+    generalizations and alternatives. *Psychological Bulletin, 76*(5),
+    365-377. Computation runs in the Rust core
+    (``mlsirm_core::agreement::light_kappa``).
+
+    ``ratings`` is a 2-D ``(n_subjects, n_raters)`` array of integer category
+    codes (any integer labels; levels are compacted internally). NaN or any
+    negative integer marks a missing rating and drops the whole subject row
+    (listwise, as in irr's ``na.omit``). Negative *floats* are rejected
+    rather than treated as missing: a float payload is only accepted when
+    every finite value is a non-negative integer, so a stray ``-1.0`` or
+    ``2.5`` fails loudly instead of silently changing the level set.
+    """
+    from . import _core  # computation lives in the Rust core
+
+    if isinstance(ratings, np.ma.MaskedArray):
+        raise ValueError("masked arrays are not supported; use NaN for missing")
+    arr = np.asarray(ratings)
+    if arr.dtype == object:
+        raise ValueError("object-dtype ratings are not supported")
+    if arr.ndim != 2:
+        raise ValueError("ratings must be a 2-D (subjects x raters) array")
+    if np.iscomplexobj(arr):
+        raise ValueError("ratings must be real-valued")
+    if arr.dtype.kind == "b":
+        raise ValueError("ratings must be integer codes, not booleans")
+    if arr.dtype.kind not in "fiu":
+        raise ValueError(f"ratings dtype {arr.dtype} is not numeric")
+    ns, nr = arr.shape
+    if arr.dtype.kind == "f":
+        if np.any(np.isinf(arr)):
+            raise ValueError("ratings must not contain infinities")
+        finite = np.isfinite(arr)
+        vals = arr[finite]
+        if np.any(vals != np.floor(vals)):
+            raise ValueError("ratings must be integer category codes")
+        if np.any(vals < 0):
+            raise ValueError(
+                "negative float ratings are rejected; use NaN for missing"
+            )
+        if vals.size and np.any(vals > 2.0**32):
+            raise ValueError("ratings must be <= 2^32")
+        codes = np.where(finite, arr, -1.0).astype(np.int64)
+    else:
+        if arr.size and int(arr.max()) > 2**32:
+            raise ValueError("ratings must be <= 2^32")
+        codes = arr.astype(np.int64)
+    res = _core.light_kappa(np.ascontiguousarray(codes.reshape(-1)), int(ns), int(nr))
+    return LightKappaResult(
+        value=float(res["value"]),
+        subjects_used=int(res["subjects_used"]),
+        raters=int(res["raters"]),
+        kappas=np.asarray(res["kappas"]),
+        z=float(res["z"]),
+        p_value=float(res["p_value"]),
     )

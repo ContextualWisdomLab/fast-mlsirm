@@ -52,6 +52,7 @@ import numpy as np
 
 
 def _as_int(name: str, value, minimum: int = 0, maximum: int | None = None) -> int:
+    """Validate and coerce ``value`` to an integer within ``[minimum, maximum]``."""
     if isinstance(value, bool) or not isinstance(
         value, (int, np.integer, float, np.floating)
     ):
@@ -1131,6 +1132,7 @@ def pyramidal_administer(
 
 
 def _two_stage_real_1d(name: str, arr) -> np.ndarray:
+    """Validate and coerce ``arr`` to a real 1-D float64 array (raises otherwise)."""
     arr0 = np.asarray(arr)
     if np.iscomplexobj(arr0) or arr0.dtype == object:
         raise ValueError(f"{name} must be a real-valued numeric array")

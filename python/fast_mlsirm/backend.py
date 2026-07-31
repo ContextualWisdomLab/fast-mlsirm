@@ -15,6 +15,7 @@ CORE_MODULE = "fast_mlsirm._core"
 
 
 def normalize_backend(name: str) -> str:
+    """Lower-case and validate a backend name against ``{numpy, rust, auto}``."""
     backend = str(name).strip().lower()
     if backend not in VALID_BACKENDS:
         raise ValueError(f"backend must be one of {sorted(VALID_BACKENDS)}")
@@ -22,6 +23,7 @@ def normalize_backend(name: str) -> str:
 
 
 def normalize_device(name: str) -> str:
+    """Lower-case and validate a Rust-backend device against ``{cpu, gpu, auto}``."""
     device = str(name).strip().lower()
     if device not in VALID_DEVICES:
         raise ValueError(f"rust_device must be one of {sorted(VALID_DEVICES)}")
@@ -29,6 +31,12 @@ def normalize_device(name: str) -> str:
 
 
 def resolve_backend(name: str) -> str:
+    """Resolve a requested backend to the concrete one that will run.
+
+    ``numpy`` always resolves to ``numpy``; ``rust`` requires the compiled
+    ``fast_mlsirm._core`` extension (raising if absent); ``auto`` resolves to
+    ``rust`` when the core is importable and to ``numpy`` otherwise.
+    """
     backend = normalize_backend(name)
     if backend == "numpy":
         return "numpy"
@@ -41,6 +49,7 @@ def resolve_backend(name: str) -> str:
 
 
 def load_rust_core() -> ModuleType:
+    """Import and return the compiled Rust core, raising if it is unavailable."""
     core = _load_core()
     if core is None:
         raise RuntimeError("Rust backend requested but fast_mlsirm._core is unavailable")
@@ -48,6 +57,7 @@ def load_rust_core() -> ModuleType:
 
 
 def _load_core() -> ModuleType | None:
+    """Import ``fast_mlsirm._core`` if it is installed, else return ``None``."""
     if importlib.util.find_spec(CORE_MODULE) is None:
         return None
     return importlib.import_module(CORE_MODULE)
