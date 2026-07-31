@@ -731,6 +731,1895 @@ pub fn separation_reliability(
     })
 }
 
+/// Intraclass correlation coefficient output (irr `icc`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IccResult {
+    /// The ICC point estimate for the requested variant.
+    pub value: f64,
+    /// Complete (post listwise-drop) subject rows used.
+    pub subjects: u64,
+    /// Raters (columns).
+    pub raters: u64,
+    /// F statistic for H0: icc = r0.
+    pub fvalue: f64,
+    /// Numerator degrees of freedom.
+    pub df1: f64,
+    /// Denominator degrees of freedom (Satterthwaite, possibly non-integer,
+    /// for the agreement variants).
+    pub df2: f64,
+    /// Upper-tail p-value `P(F_{df1,df2} > fvalue)`.
+    pub p_value: f64,
+    /// Lower confidence bound (NOT clamped; can be negative, and below -1
+    /// for average-score variants, matching R).
+    pub lbound: f64,
+    /// Upper confidence bound (not clamped).
+    pub ubound: f64,
+}
+
+/// Intraclass correlation coefficients (Shrout-Fleiss family), transcribed
+/// from CRAN irr 0.85 `R/icc.R` (READ in full; algorithm source of truth).
+/// Model origins — cited as origins only, NOT READ: Shrout, P. E., &
+/// Fleiss, J. L. (1979). Intraclass correlations: Uses in assessing rater
+/// reliability. *Psychological Bulletin, 86*(2), 420-428; McGraw, K. O., &
+/// Wong, S. P. (1996). Forming inferences about some intraclass correlation
+/// coefficients. *Psychological Methods, 1*(1), 30-46; Bartko, J. J.
+/// (1966). The intraclass correlation coefficient as a measure of
+/// reliability. *Psychological Reports, 19*, 3-11.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters); any row containing
+/// NaN is dropped listwise before computation (R `na.omit`). `model` is
+/// `"oneway"` or `"twoway"`; `typ` is `"consistency"` or `"agreement"`
+/// (ignored for oneway, matching R); `unit` is `"single"` or `"average"`.
+/// `r0` is the null ICC for the F test; `conf_level` the CI level.
+///
+/// ANOVA mean squares (R lines 13-17, `var` = sample variance n-1):
+/// `MSr = var(row means)*nr`, `MSw = mean(row variances)`,
+/// `MSc = var(col means)*ns`, `MSe = (SStotal - MSr(ns-1) - MSc(nr-1)) /
+/// ((ns-1)(nr-1))`. Agreement F tests use the Satterthwaite df with `r0`
+/// (R lines 67-75, 128-136); agreement CIs plug the estimated coefficient
+/// into the same Satterthwaite form (McGraw & Wong, 1996, as coded at R
+/// lines 78-85, 139-146). The average-agreement CI reuses the nr-scaled
+/// `a,b` expressions of the single variant verbatim (R lines 139-141) —
+/// preserved deliberately.
+///
+/// Documented deviations from R: explicit errors (instead of NaN
+/// propagation) for fewer than 2 complete rows, `nr < 2`, non-finite
+/// (non-NaN) input, out-of-range `r0`/`conf_level`, and degenerate
+/// zero/non-finite denominators; dimension caps `ns <= 1e6`, `nr <= 1e4`.
+pub fn icc(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    model: &str,
+    typ: &str,
+    unit: &str,
+    r0: f64,
+    conf_level: f64,
+) -> Result<IccResult, String> {
+    if !matches!(model, "oneway" | "twoway") {
+        return Err("model must be \"oneway\" or \"twoway\"".into());
+    }
+    if !matches!(typ, "consistency" | "agreement") {
+        return Err("type must be \"consistency\" or \"agreement\"".into());
+    }
+    if !matches!(unit, "single" | "average") {
+        return Err("unit must be \"single\" or \"average\"".into());
+    }
+    if !r0.is_finite() || !(0.0..1.0).contains(&r0) {
+        return Err("r0 must be finite and in [0, 1)".into());
+    }
+    if !conf_level.is_finite() || !(conf_level > 0.0 && conf_level < 1.0) {
+        return Err("conf_level must be in (0, 1)".into());
+    }
+    if nr < 2 {
+        return Err("icc needs at least 2 raters".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 {
+        return Err("icc: dimensions exceed caps (ns <= 1e6, nr <= 1e4)".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} does not match ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    // Listwise drop of rows containing NaN (R na.omit).
+    let rows: Vec<&[f64]> = (0..ns)
+        .map(|i| &ratings[i * nr..(i + 1) * nr])
+        .filter(|r| r.iter().all(|v| v.is_finite()))
+        .collect();
+    let m = rows.len();
+    if m < 2 {
+        return Err("icc needs at least 2 complete subject rows after dropping missing".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+
+    fn sample_var(xs: &[f64]) -> f64 {
+        let n = xs.len() as f64;
+        let mean = xs.iter().sum::<f64>() / n;
+        xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    }
+
+    let all: Vec<f64> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let ss_total = sample_var(&all) * (mf * nrf - 1.0);
+    let row_means: Vec<f64> = rows.iter().map(|r| r.iter().sum::<f64>() / nrf).collect();
+    let ms_r = sample_var(&row_means) * nrf;
+    let ms_w = rows.iter().map(|r| sample_var(r)).sum::<f64>() / mf;
+    let col_means: Vec<f64> = (0..nr)
+        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / mf)
+        .collect();
+    let ms_c = sample_var(&col_means) * mf;
+    let ms_e = (ss_total - ms_r * (mf - 1.0) - ms_c * (nrf - 1.0)) / ((mf - 1.0) * (nrf - 1.0));
+    if ![ms_r, ms_w, ms_c, ms_e].iter().all(|v| v.is_finite()) {
+        return Err("icc: ANOVA mean squares are non-finite (inputs too large?)".into());
+    }
+
+    let alpha = 1.0 - conf_level;
+    let q = 1.0 - alpha / 2.0;
+    let oneway = model == "oneway";
+    let consistency = typ == "consistency";
+    let single = unit == "single";
+
+    // Satterthwaite df for the twoway-agreement F test / CI (R lines
+    // 67-69, 78-80, 128-130, 139-141). `scale` is nr for the single-unit
+    // a,b and 1 for the average F test; the average CI deliberately reuses
+    // the nr-scaled form (R quirk, lines 139-141).
+    let satt = |rho: f64, scale: f64| -> (f64, f64, f64) {
+        let a = (scale * rho) / (mf * (1.0 - rho));
+        let b = 1.0 + (scale * rho * (mf - 1.0)) / (mf * (1.0 - rho));
+        let v = (a * ms_c + b * ms_e).powi(2)
+            / ((a * ms_c).powi(2) / (nrf - 1.0) + (b * ms_e).powi(2) / ((mf - 1.0) * (nrf - 1.0)));
+        (a, b, v)
+    };
+
+    let (value, fvalue, df1, df2, lbound, ubound);
+    if oneway {
+        let denom_s = ms_r + (nrf - 1.0) * ms_w;
+        if single {
+            value = (ms_r - ms_w) / denom_s;
+        } else {
+            value = (ms_r - ms_w) / ms_r;
+        }
+        fvalue = if single {
+            ms_r / ms_w * ((1.0 - r0) / (1.0 + (nrf - 1.0) * r0))
+        } else {
+            ms_r / ms_w * (1.0 - r0)
+        };
+        df1 = mf - 1.0;
+        df2 = mf * (nrf - 1.0);
+        let fl = (ms_r / ms_w) / f_quantile(q, df1, df2);
+        let fu = (ms_r / ms_w) * f_quantile(q, df2, df1);
+        if single {
+            lbound = (fl - 1.0) / (fl + nrf - 1.0);
+            ubound = (fu - 1.0) / (fu + nrf - 1.0);
+        } else {
+            lbound = 1.0 - 1.0 / fl;
+            ubound = 1.0 - 1.0 / fu;
+        }
+    } else if consistency {
+        if single {
+            value = (ms_r - ms_e) / (ms_r + (nrf - 1.0) * ms_e);
+        } else {
+            value = (ms_r - ms_e) / ms_r;
+        }
+        fvalue = if single {
+            ms_r / ms_e * ((1.0 - r0) / (1.0 + (nrf - 1.0) * r0))
+        } else {
+            ms_r / ms_e * (1.0 - r0)
+        };
+        df1 = mf - 1.0;
+        df2 = (mf - 1.0) * (nrf - 1.0);
+        let fl = (ms_r / ms_e) / f_quantile(q, df1, df2);
+        let fu = (ms_r / ms_e) * f_quantile(q, df2, df1);
+        if single {
+            lbound = (fl - 1.0) / (fl + nrf - 1.0);
+            ubound = (fu - 1.0) / (fu + nrf - 1.0);
+        } else {
+            lbound = 1.0 - 1.0 / fl;
+            ubound = 1.0 - 1.0 / fu;
+        }
+    } else {
+        // twoway agreement
+        if single {
+            value = (ms_r - ms_e) / (ms_r + (nrf - 1.0) * ms_e + (nrf / mf) * (ms_c - ms_e));
+        } else {
+            value = (ms_r - ms_e) / (ms_r + (ms_c - ms_e) / mf);
+        }
+        let (a, b, v) = satt(r0, if single { nrf } else { 1.0 });
+        fvalue = ms_r / (a * ms_c + b * ms_e);
+        df1 = mf - 1.0;
+        df2 = v;
+        if !(1.0 - value).is_finite() || (1.0 - value).abs() < 1e-12 {
+            return Err("icc: degenerate coefficient (icc = 1) — CI undefined".into());
+        }
+        // McGraw & Wong CI: plug the estimate into the nr-scaled a,b (R
+        // lines 78-80 and, deliberately, 139-141 for the average variant).
+        let (_a2, _b2, v2) = satt(value, nrf);
+        if !v2.is_finite() || v2 <= 0.0 {
+            return Err("icc: degenerate Satterthwaite df in CI".into());
+        }
+        let fl = f_quantile(q, df1, v2);
+        let fu = f_quantile(q, v2, df1);
+        if single {
+            lbound = (mf * (ms_r - fl * ms_e))
+                / (fl * (nrf * ms_c + (nrf * mf - nrf - mf) * ms_e) + mf * ms_r);
+            ubound = (mf * (fu * ms_r - ms_e))
+                / (nrf * ms_c + (nrf * mf - nrf - mf) * ms_e + mf * fu * ms_r);
+        } else {
+            lbound = (mf * (ms_r - fl * ms_e)) / (fl * (ms_c - ms_e) + mf * ms_r);
+            ubound = (mf * (fu * ms_r - ms_e)) / (ms_c - ms_e + mf * fu * ms_r);
+        }
+    }
+    if ![value, fvalue, df2, lbound, ubound]
+        .iter()
+        .all(|v| v.is_finite())
+    {
+        return Err(
+            "icc: degenerate ratings (zero-variance denominator produced non-finite output)".into(),
+        );
+    }
+    let p_value = 1.0 - f_cdf(fvalue, df1, df2);
+    Ok(IccResult {
+        value,
+        subjects: m as u64,
+        raters: nr as u64,
+        fvalue,
+        df1,
+        df2,
+        p_value,
+        lbound,
+        ubound,
+    })
+}
+
+/// Result of [`kripp_alpha`].
+#[derive(Debug, Clone)]
+pub struct KrippResult {
+    /// Krippendorff's alpha estimate.
+    pub value: f64,
+    /// Number of subject columns as given (R reports `dim(x)[2]`).
+    pub subjects: u64,
+    /// Number of raters (matrix rows).
+    pub raters: u64,
+    /// Number of distinct finite rating levels.
+    pub levels: u64,
+    /// Total coincidence-matrix mass (R `nmatchval`).
+    pub nmatchval: f64,
+}
+
+/// Krippendorff's alpha for a raters x subjects rating matrix.
+///
+/// Transcribed from CRAN irr 0.85 `R/kripp.alpha.R` (READ in full, 66
+/// lines; algorithm source of truth). Method origin ? cited as origin
+/// only, NOT READ: Krippendorff, K. (1980). *Content analysis: An
+/// introduction to its methodology*. Sage.
+///
+/// Verified against the R source:
+/// - Levels are the sorted unique finite values (R `levels(as.factor(x))`,
+///   line 7; base R sorts numeric factor levels in ascending numeric
+///   order, not lexicographically).
+/// - Coincidence matrix (lines 12-25): for every unordered rater pair in
+///   a subject column with both values present, cell `(a, b)` gains
+///   `(1 + (a == b)) / mc[col]` and the mirror cell is set by assignment
+///   (line 21). `mc[col]` is `#nonmissing - 1` only when the matrix
+///   contains at least one missing value anywhere, else `1` for every
+///   column (lines 12-13). The no-missing divisor of 1 is a documented
+///   irr quirk preserved verbatim ? it is NOT the `m - 1` convention and
+///   changes both `nmatchval` and alpha on complete data.
+/// - `nmatchval` sums all cells (line 26). Fewer than 2 observed levels
+///   yields alpha = 1 (line 45).
+/// - Distance metrics (lines 50-59) with `nc` the coincidence row sums:
+///   nominal `1`; ordinal `(nc_c/2 + sum_{g=c+1}^{k-1} nc_g + nc_k/2)^2`;
+///   interval `(v_c - v_k)^2`; ratio `((v_c - v_k)/(v_c + v_k))^2`.
+/// - `alpha = 1 - (nmatchval - 1) * sum(utcm * diff2)
+///   / sum(nc_c * nc_k * diff2)` over the upper triangle (line 63).
+///
+/// Documented deviations from R: an all-missing matrix is an error here
+/// (R's line-45 path would report alpha = 1 with zero levels); infinite
+/// ratings are rejected; the ratio metric errors when any level pair sums
+/// to zero (R silently produces Inf/NaN); dimension caps.
+///
+/// `ratings` is row-major raters x subjects; NaN marks missing. No
+/// standard error or CI is produced (the R source computes none).
+///
+/// # References
+/// Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr: Various
+///     coefficients of interrater reliability and agreement* (Version 0.85)
+///     [Computer software]. CRAN. https://CRAN.R-project.org/package=irr
+/// Krippendorff, K. (1980). *Content analysis: An introduction to its
+///     methodology*. Sage. (as cited in Gamer et al., 2019; NOT READ)
+pub fn kripp_alpha(
+    ratings: &[f64],
+    nraters: usize,
+    nsubjects: usize,
+    method: &str,
+) -> Result<KrippResult, String> {
+    if !matches!(method, "nominal" | "ordinal" | "interval" | "ratio") {
+        return Err(
+            "method must be one of \"nominal\", \"ordinal\", \"interval\", \"ratio\"".into(),
+        );
+    }
+    if nraters < 2 {
+        return Err("kripp_alpha needs at least 2 raters".into());
+    }
+    if nsubjects < 1 {
+        return Err("kripp_alpha needs at least 1 subject".into());
+    }
+    if nraters > 10_000 || nsubjects > 1_000_000 {
+        return Err("kripp_alpha: dimensions exceed caps (raters <= 1e4, subjects <= 1e6)".into());
+    }
+    if ratings.len() != nraters * nsubjects {
+        return Err(format!(
+            "ratings length {} does not match raters*subjects = {}",
+            ratings.len(),
+            nraters * nsubjects
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    let mut levels: Vec<f64> = ratings.iter().copied().filter(|v| v.is_finite()).collect();
+    levels.sort_by(|a, b| a.partial_cmp(b).expect("finite by filter"));
+    levels.dedup();
+    let nval = levels.len();
+    if nval == 0 {
+        return Err("kripp_alpha: all ratings are missing".into());
+    }
+    let any_na = ratings.iter().any(|v| v.is_nan());
+    let lev_index = |v: f64| -> usize {
+        levels
+            .binary_search_by(|p| p.partial_cmp(&v).expect("finite levels"))
+            .expect("observed value is a level by construction")
+    };
+    let mut cm = vec![0.0_f64; nval * nval];
+    for col in 0..nsubjects {
+        // R lines 12-13: per-column divisor only under the global-NA path.
+        let mc = if any_na {
+            let nonmiss = (0..nraters)
+                .filter(|&r| !ratings[r * nsubjects + col].is_nan())
+                .count();
+            nonmiss as f64 - 1.0
+        } else {
+            1.0
+        };
+        for i1 in 0..nraters - 1 {
+            for i2 in (i1 + 1)..nraters {
+                let a = ratings[i1 * nsubjects + col];
+                let b = ratings[i2 * nsubjects + col];
+                if a.is_nan() || b.is_nan() {
+                    continue;
+                }
+                // A column visited here has >= 2 non-missing values, so
+                // mc >= 1 under the NA path (mc = 0 or -1 only occurs for
+                // columns that form no pair).
+                let (ia, ib) = (lev_index(a), lev_index(b));
+                // R line 20: diagonal gains 2/mc, off-diagonal 1/mc with
+                // the mirror cell set by assignment (line 21).
+                let inc = if ia == ib { 2.0 } else { 1.0 } / mc;
+                cm[ia * nval + ib] += inc;
+                if ia != ib {
+                    cm[ib * nval + ia] = cm[ia * nval + ib];
+                }
+            }
+        }
+    }
+    let nmatchval: f64 = cm.iter().sum();
+    let mut value = 1.0;
+    if nval >= 2 {
+        let nc: Vec<f64> = (0..nval)
+            .map(|i| cm[i * nval..(i + 1) * nval].iter().sum())
+            .collect();
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for k in 1..nval {
+            for c in 0..k {
+                let diff2 = match method {
+                    "nominal" => 1.0,
+                    "ordinal" => {
+                        let s: f64 = nc[c] / 2.0 + nc[c + 1..k].iter().sum::<f64>() + nc[k] / 2.0;
+                        s * s
+                    }
+                    "interval" => {
+                        let d = levels[c] - levels[k];
+                        d * d
+                    }
+                    _ => {
+                        let s = levels[c] + levels[k];
+                        if s == 0.0 {
+                            return Err(
+                                "kripp_alpha: ratio metric undefined (level pair sums to zero)"
+                                    .into(),
+                            );
+                        }
+                        let d = (levels[c] - levels[k]) / s;
+                        d * d
+                    }
+                };
+                num += cm[c * nval + k] * diff2;
+                den += nc[c] * nc[k] * diff2;
+            }
+        }
+        if den == 0.0 {
+            return Err("kripp_alpha: degenerate data (zero denominator)".into());
+        }
+        value = 1.0 - (nmatchval - 1.0) * num / den;
+    }
+    if !value.is_finite() || !nmatchval.is_finite() {
+        return Err("kripp_alpha: degenerate data (non-finite result)".into());
+    }
+    Ok(KrippResult {
+        value,
+        subjects: nsubjects as u64,
+        raters: nraters as u64,
+        levels: nval as u64,
+        nmatchval,
+    })
+}
+
+/// Finn (1970) reliability coefficient output (irr `finn`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinnResult {
+    /// The Finn coefficient `1 - MS/MSexp`.
+    pub value: f64,
+    /// F statistic `MSexp/MS` (df1 = Inf conceptually; `+Inf` for the
+    /// documented perfect-agreement `MS == 0` case).
+    pub statistic: f64,
+    /// Denominator degrees of freedom `ns*(nr-1)` (convenience field; the
+    /// R return encodes it only inside `stat.name = "F(Inf,<df2>)"`).
+    pub df2: f64,
+    /// Upper-tail p-value `pf(F, Inf, df2, lower.tail = FALSE)`.
+    pub p_value: f64,
+    /// Complete (post listwise-drop) subject rows used.
+    pub subjects: u64,
+    /// Raters (columns).
+    pub raters: u64,
+}
+
+/// Finn (1970) coefficient of reliability for categorical-scale ratings,
+/// transcribed from CRAN irr 0.85 `R/finn.R` (READ in full; algorithm
+/// source of truth). Origin cited per irr docs, NOT READ: Finn, R. H.
+/// (1970). A note on estimating the reliability of categorical data.
+/// *Educational and Psychological Measurement, 30*, 71-76.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters); rows containing
+/// NaN are dropped listwise (R `na.omit`). `s_levels` is the number of
+/// discrete scale levels `s >= 2`; the expected mean square under a
+/// uniform-random rating model is the discrete-uniform variance
+/// `MSexp = (s^2 - 1)/12`. With sample variances (n-1 denominator):
+/// `MSw = mean(row variances)` and the two-way residual
+/// `MSe = (SStotal - MSr(ns-1) - MSc(nr-1)) / ((ns-1)(nr-1))`,
+/// `coeff = 1 - MS/MSexp`, `F = MSexp/MS` where `MS` is `MSw` (oneway) or
+/// `MSe` (twoway). Both models use `df2 = ns*(nr-1)` — the R source uses
+/// `ns*(nr-1)` for twoway as well (quirk preserved verbatim).
+///
+/// p-value: R computes `pf(F, Inf, df2, lower.tail = FALSE)`. Limiting
+/// identity (hand-derived; convergence-verified against scipy in the
+/// session oracle): `F(d1, d2) -> d2 / Chi2_d2` as `d1 -> Inf`, so
+/// `P(F > f) = P(Chi2_d2 < d2/f)`, implemented as
+/// `1 - chi2_sf(df2/F, df2)`. Valid only for `F > 0`; a negative mean
+/// square (possible via floating cancellation only — both `MSw` and `MSe`
+/// are nonnegative in exact arithmetic) is rejected as an error rather
+/// than emulating R's `pf` on a negative statistic. `MS == 0` (perfect
+/// agreement) returns `value = 1`, `statistic = +Inf`, `p_value = 0`
+/// (matching the R limit; documented deliberate non-finite statistic).
+///
+/// Documented deviations from R (deliberate, stricter-than-R — R lets
+/// nonsensical inputs propagate to NA/Inf arithmetic): explicit errors for
+/// fewer than 2 complete rows, `nr < 2`, `s_levels < 2`, non-finite
+/// (non-NaN) input, negative mean squares; dimension caps `ns <= 1e6`,
+/// `nr <= 1e4`.
+pub fn finn_coefficient(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    s_levels: u32,
+    model: &str,
+) -> Result<FinnResult, String> {
+    if !matches!(model, "oneway" | "twoway") {
+        return Err("model must be \"oneway\" or \"twoway\"".into());
+    }
+    if s_levels < 2 {
+        return Err("finn: s_levels must be at least 2".into());
+    }
+    if nr < 2 {
+        return Err("finn needs at least 2 raters".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 {
+        return Err("finn: dimensions exceed caps (ns <= 1e6, nr <= 1e4)".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} does not match ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("ratings must not contain infinities (use NaN for missing)".into());
+    }
+    // Listwise drop of rows containing NaN (R na.omit).
+    let rows: Vec<&[f64]> = (0..ns)
+        .map(|i| &ratings[i * nr..(i + 1) * nr])
+        .filter(|r| r.iter().all(|v| v.is_finite()))
+        .collect();
+    let m = rows.len();
+    if m < 2 {
+        return Err("finn needs at least 2 complete subject rows after dropping missing".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+
+    fn sample_var(xs: &[f64]) -> f64 {
+        let n = xs.len() as f64;
+        let mean = xs.iter().sum::<f64>() / n;
+        xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    }
+
+    let all: Vec<f64> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let ss_total = sample_var(&all) * (mf * nrf - 1.0);
+    let row_means: Vec<f64> = rows.iter().map(|r| r.iter().sum::<f64>() / nrf).collect();
+    let ms_r = sample_var(&row_means) * nrf;
+    let ms_w = rows.iter().map(|r| sample_var(r)).sum::<f64>() / mf;
+    let col_means: Vec<f64> = (0..nr)
+        .map(|j| rows.iter().map(|r| r[j]).sum::<f64>() / mf)
+        .collect();
+    let ms_c = sample_var(&col_means) * mf;
+    let ms_e = (ss_total - ms_r * (mf - 1.0) - ms_c * (nrf - 1.0)) / ((mf - 1.0) * (nrf - 1.0));
+    if ![ms_r, ms_w, ms_c, ms_e].iter().all(|v| v.is_finite()) {
+        return Err("finn: ANOVA mean squares are non-finite (inputs too large?)".into());
+    }
+
+    let ms = if model == "oneway" { ms_w } else { ms_e };
+    if ms < 0.0 {
+        // Only reachable via floating cancellation in MSe; the chi-square
+        // limiting identity requires F > 0 (see doc comment).
+        return Err("finn: negative mean square (numerically degenerate input)".into());
+    }
+    let ms_exp = ((s_levels as f64) * (s_levels as f64) - 1.0) / 12.0;
+    let df2 = mf * (nrf - 1.0);
+    if ms == 0.0 {
+        return Ok(FinnResult {
+            value: 1.0,
+            statistic: f64::INFINITY,
+            df2,
+            p_value: 0.0,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    let value = 1.0 - ms / ms_exp;
+    let statistic = ms_exp / ms;
+    let p_value = 1.0 - crate::fitstats::chi2_sf(df2 / statistic, df2);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("finn: non-finite result".into());
+    }
+    Ok(FinnResult {
+        value,
+        statistic,
+        df2,
+        p_value,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
+/// Result of Maxwell's RE agreement coefficient for two raters.
+///
+/// Fields mirror the irr `irrlist` return: `value` is the RE coefficient,
+/// `subjects` the number of complete (post listwise-deletion) subject rows,
+/// `raters` the number of raters (always 2 on success).
+#[derive(Debug, Clone)]
+pub struct MaxwellResult {
+    /// Maxwell's RE coefficient, in [-1, 1].
+    pub value: f64,
+    /// Number of subjects after listwise deletion of NaN rows.
+    pub subjects: u64,
+    /// Number of raters (always 2).
+    pub raters: u64,
+}
+
+/// Maxwell's RE agreement coefficient for two raters with binary ratings.
+///
+/// Computes `RE = 2 * A / ns - 1`, where `A` is the number of subjects on
+/// which the two raters agree exactly and `ns` the number of complete
+/// subjects after listwise deletion of rows containing NaN. This replicates
+/// `maxwell()` from the irr R package (v0.84.1, `R/maxwell.R`, source READ):
+/// the R code builds `table(r1, r2)` over the union of both columns' factor
+/// levels and returns `2*sum(diag(ttab))/ns - 1`. Because both columns are
+/// refactored with the same level vector, the diagonal sum equals the exact
+/// match count, independent of level ordering (verified by hand derivation
+/// and an executed exact-Fraction oracle; the R level-ordering quirk of
+/// putting the longer level set first cannot affect a diagonal sum).
+///
+/// Binary check: the distinct-value union across BOTH columns of the kept
+/// rows must have cardinality <= 2 (R stops with "Ratings are not binary"
+/// otherwise). A single distinct value is allowed and yields RE = 1.
+/// Values are compared with exact `==` on f64, mirroring R's factor
+/// coercion of numeric ratings.
+///
+/// Deliberately stricter than R: `nr != 2` is a checked error (R stops only
+/// for nr > 2 and fails accidentally with a subscript error for nr < 2), and
+/// non-finite values other than NaN (which means missing) are rejected.
+///
+/// `ratings` is row-major `ns x nr` with `nr == 2`.
+///
+/// # References
+///
+/// Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). irr:
+/// Various coefficients of interrater reliability and agreement
+/// (Version 0.84.1) [Computer software]. CRAN.
+/// <https://CRAN.R-project.org/package=irr> (R source `R/maxwell.R` READ;
+/// normative reference for this implementation.)
+///
+/// Maxwell, A. E. (1977). Coefficients of agreement between observers and
+/// their interpretation. British Journal of Psychiatry, 130(1), 79-83.
+/// <https://doi.org/10.1192/bjp.130.1.79> (NOT READ; cited as the
+/// historical origin via the irr package documentation only.)
+pub fn maxwell_re(ratings: &[f64], ns: usize, nr: usize) -> Result<MaxwellResult, String> {
+    if nr != 2 {
+        return Err("maxwell: exactly 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("maxwell: at least one subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("maxwell: ns exceeds 1e6 bound".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "maxwell: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "maxwell: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("maxwell: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows where both entries are non-NaN.
+    let kept: Vec<(f64, f64)> = (0..ns)
+        .map(|p| (ratings[p * 2], ratings[p * 2 + 1]))
+        .filter(|(a, b)| !a.is_nan() && !b.is_nan())
+        .collect();
+    let m = kept.len();
+    if m == 0 {
+        return Err("maxwell: no complete subject rows after NaN deletion".into());
+    }
+    // Distinct-value union across both columns (exact == on f64, as R's
+    // factor coercion of numeric labels). Linear scan; stops at 3.
+    let mut levels: Vec<f64> = Vec::with_capacity(3);
+    for &(a, b) in &kept {
+        for v in [a, b] {
+            if !levels.iter().any(|&l| l == v) {
+                levels.push(v);
+                if levels.len() > 2 {
+                    return Err("maxwell: ratings are not binary".into());
+                }
+            }
+        }
+    }
+    let agree = kept.iter().filter(|(a, b)| a == b).count();
+    let value = 2.0 * agree as f64 / m as f64 - 1.0;
+    if !value.is_finite() {
+        return Err("maxwell: non-finite result".into());
+    }
+    Ok(MaxwellResult {
+        value,
+        subjects: m as u64,
+        raters: 2,
+    })
+}
+
+/// Result of Robinson's A agreement coefficient.
+#[derive(Debug, Clone)]
+pub struct RobinsonResult {
+    /// Robinson's A = SSb / (SSb + SSr), in [0, 1].
+    pub value: f64,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Robinson's A coefficient of agreement for interval-scale ratings.
+///
+/// Normative source: the `robinson()` function in the irr R package
+/// (version 0.84.1, file R/robinson.R), which was READ in full and used
+/// as the behavioural contract. Robinson, W. S. (1957). The statistical
+/// measurement of agreement. American Sociological Review, 22(1), 17-25
+/// was NOT read; it is cited only as the historical origin per the irr
+/// package documentation.
+///
+/// With R's sample variance var(x) = sum((x - mean)^2) / (n - 1), the
+/// (n - 1) factors in robinson.R cancel, giving (verified exactly with
+/// Fraction arithmetic in the development oracle):
+///
+/// ```text
+/// SSb = nr * sum_i (rowmean_i - grand)^2
+/// SSr = sum_ij (x_ij - rowmean_i - colmean_j + grand)^2   (interaction SS)
+/// A   = SSb / (SSb + SSr)
+/// ```
+///
+/// SSr is computed directly as the interaction sum of squares (each term
+/// a square, hence SSr >= 0 in f64), never subtractively. Deviation from
+/// R: where R silently yields NaN (0/0) for degenerate inputs with no
+/// subject variance (SSb + SSr == 0), this function returns Err.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn robinson_a(ratings: &[f64], ns: usize, nr: usize) -> Result<RobinsonResult, String> {
+    if nr < 2 {
+        return Err("robinson: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("robinson: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("robinson: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("robinson: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "robinson: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "robinson: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("robinson: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("robinson: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+    let mut grand = 0.0;
+    let mut row_means = vec![0.0; m];
+    for (r, &i) in kept.iter().enumerate() {
+        let mut s = 0.0;
+        for j in 0..nr {
+            s += ratings[i * nr + j];
+        }
+        row_means[r] = s / nrf;
+        grand += s;
+    }
+    grand /= mf * nrf;
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for &i in &kept {
+            s += ratings[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut ssb = 0.0;
+    for rm in &row_means {
+        let d = rm - grand;
+        ssb += d * d;
+    }
+    ssb *= nrf;
+    // Direct interaction sum of squares (each term squared, so SSr >= 0).
+    let mut ssr = 0.0;
+    for (r, &i) in kept.iter().enumerate() {
+        for j in 0..nr {
+            let d = ratings[i * nr + j] - row_means[r] - col_means[j] + grand;
+            ssr += d * d;
+        }
+    }
+    if !ssb.is_finite() || !ssr.is_finite() {
+        return Err("robinson: non-finite sums of squares".into());
+    }
+    let denom = ssb + ssr;
+    if denom <= 0.0 {
+        return Err(
+            "robinson: degenerate input with no subject variance (R would return NaN)".into(),
+        );
+    }
+    let value = ssb / denom;
+    if !value.is_finite() {
+        return Err("robinson: non-finite result".into());
+    }
+    Ok(RobinsonResult {
+        value,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
+/// Result of the mean pairwise Pearson correlation of rater columns.
+#[derive(Debug, Clone)]
+pub struct MeanCorResult {
+    /// Mean pairwise correlation (Fisher back-transformed when `fisher`).
+    pub value: f64,
+    /// z statistic `value / sqrt(1/(m-3))`; NaN when `fisher == false`
+    /// (always-present-f64 + NaN, matching the Fleiss exact-mode shape).
+    pub statistic: f64,
+    /// Two-sided p `erfc(|z|/sqrt(2))`; NaN when `fisher == false`.
+    pub p_value: f64,
+    /// Number of perfectly correlated rater pairs dropped before the
+    /// Fisher-z average (always 0 when `fisher == false`).
+    pub dropped: u64,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Mean of the pairwise Pearson correlations between rater columns.
+///
+/// Normative source: the `meancor()` function in the irr R package
+/// (version 0.84.1, file R/meancor.R), which was READ in full and used
+/// as the behavioural contract. The Fisher z transformation it applies
+/// is conventionally attributed to Fisher (1925), which was NOT read;
+/// only the irr source is cited as the contract.
+///
+/// Per meancor.R (with `m` = subjects kept after listwise deletion):
+///
+/// ```text
+/// r_ij  = cor(col_i, col_j)                 for all rater pairs i < j
+/// fisher = FALSE:  value = mean(r_ij)       (perfect pairs included)
+/// fisher = TRUE :  drop pairs with r >= 1 or r <= -1 (count -> dropped)
+///                  value = tanh(mean(atanh r_ij))
+///                  z = value / sqrt(1/(m-3));  p = erfc(|z|/sqrt(2))
+/// ```
+///
+/// Each Pearson r uses a single square root, `Sxy / sqrt(Sxx*Syy)`, so
+/// that exactly (anti)proportional integer columns give r = +/-1 exactly
+/// and are dropped by the strict filter, as in R (a split
+/// `sqrt(Sxx)*sqrt(Syy)` denominator loses that exactness).
+///
+/// Deviations from R (silent NaN/warnings there, hard errors here):
+/// constant rater columns (R cor NA), fewer than 4 kept subjects when
+/// `fisher` (R SE is Inf/NaN at m <= 3), and all pairs perfect under
+/// `fisher` (R mean of empty = NaN) all return Err. R only appends a
+/// warning string when pairs are dropped; here `dropped` reports it.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn mean_pairwise_cor(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> Result<MeanCorResult, String> {
+    if nr < 2 {
+        return Err("meancor: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("meancor: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("meancor: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("meancor: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "meancor: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "meancor: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("meancor: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("meancor: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    if fisher && m < 4 {
+        return Err(
+            "meancor: fisher z test requires at least 4 complete subjects (R SE is \
+             infinite or undefined at m <= 3)"
+                .into(),
+        );
+    }
+    let mf = m as f64;
+    // Column means and centered sums of squares; constant columns Err.
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for &i in &kept {
+            s += ratings[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut sxx = vec![0.0; nr];
+    for j in 0..nr {
+        for &i in &kept {
+            let d = ratings[i * nr + j] - col_means[j];
+            sxx[j] += d * d;
+        }
+        if !(sxx[j] > 0.0) || !sxx[j].is_finite() {
+            return Err(format!(
+                "meancor: rater column {j} is constant; Pearson correlation undefined \
+                 (R cor would return NA)"
+            ));
+        }
+    }
+    // Pairwise r over i < j, in R's nested-loop order.
+    let mut rs = Vec::with_capacity(nr * (nr - 1) / 2);
+    for a in 0..nr {
+        for b in (a + 1)..nr {
+            let mut sxy = 0.0;
+            for &i in &kept {
+                sxy += (ratings[i * nr + a] - col_means[a]) * (ratings[i * nr + b] - col_means[b]);
+            }
+            let r = sxy / (sxx[a] * sxx[b]).sqrt();
+            if !r.is_finite() {
+                return Err("meancor: non-finite pairwise correlation".into());
+            }
+            rs.push(r);
+        }
+    }
+    if !fisher {
+        let value = rs.iter().sum::<f64>() / rs.len() as f64;
+        if !value.is_finite() {
+            return Err("meancor: non-finite result".into());
+        }
+        return Ok(MeanCorResult {
+            value,
+            statistic: f64::NAN,
+            p_value: f64::NAN,
+            dropped: 0,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    // Strict (r < 1) & (r > -1) filter, as in meancor.R.
+    let total = rs.len();
+    rs.retain(|&r| -1.0 < r && r < 1.0);
+    let dropped = (total - rs.len()) as u64;
+    if rs.is_empty() {
+        return Err(
+            "meancor: all rater pairs are perfectly correlated; fisher z average \
+             undefined (R would return NaN)"
+                .into(),
+        );
+    }
+    let mrz = rs.iter().map(|&r| r.atanh()).sum::<f64>() / rs.len() as f64;
+    let value = mrz.tanh();
+    let se = (1.0 / (mf - 3.0)).sqrt();
+    let statistic = value / se;
+    // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)); the rational erfc
+    // approximation can exceed 1 by ~1e-7 near z = 0, so clamp.
+    let p_value = crate::fitstats::erfc(statistic.abs() / std::f64::consts::SQRT_2).clamp(0.0, 1.0);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("meancor: non-finite result".into());
+    }
+    Ok(MeanCorResult {
+        value,
+        statistic,
+        p_value,
+        dropped,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
+/// Result of the mean pairwise Spearman rank correlation of rater columns.
+#[derive(Debug, Clone)]
+pub struct MeanRhoResult {
+    /// Mean pairwise Spearman rho (Fisher back-transformed when `fisher`).
+    pub value: f64,
+    /// z statistic `value / sqrt(1/(m-3))`; NaN when `fisher == false`
+    /// (always-present-f64 + NaN, matching `MeanCorResult`).
+    pub statistic: f64,
+    /// Two-sided p `erfc(|z|/sqrt(2))`; NaN when `fisher == false`.
+    pub p_value: f64,
+    /// Number of perfectly correlated rater pairs dropped before the
+    /// Fisher-z average (always 0 when `fisher == false`); named to
+    /// match `MeanCorResult::dropped`.
+    pub dropped: u64,
+    /// Whether any rater column contains tied values among the kept
+    /// rows. R appends "Coefficient may be incorrect due to ties" as a
+    /// warning string; here it is surfaced as a flag.
+    pub ties: bool,
+    /// Number of subjects retained after listwise deletion.
+    pub subjects: u64,
+    /// Number of raters.
+    pub raters: u64,
+}
+
+/// Mean of the pairwise Spearman rank correlations between rater columns.
+///
+/// Normative source: the `meanrho()` function in the irr R package
+/// (version 0.84.1, file R/meanrho.R), which was READ in full and used
+/// as the behavioural contract. Spearman (1904) and Fisher (1925) were
+/// NOT read; only the irr source is cited as the contract.
+///
+/// Per meanrho.R (with `m` = subjects kept after listwise deletion):
+///
+/// ```text
+/// rank each column with midranks (R rank() default, ties averaged)
+/// rho_ij = Pearson correlation of the midrank columns, all pairs i < j
+/// fisher = FALSE:  value = mean(rho_ij)     (perfect pairs included)
+/// fisher = TRUE :  drop pairs with rho >= 1 or rho <= -1 (-> dropped)
+///                  value = tanh(mean(atanh rho_ij))
+///                  z = value / sqrt(1/(m-3));  p = erfc(|z|/sqrt(2))
+/// ```
+///
+/// The ties flag reproduces R lines 9-12: `apply(ratings, 2, unique)`
+/// returns a matrix iff every column has the same number u of unique
+/// values, and R reports no ties only when additionally u == ns. Case
+/// analysis (verified in the spec review): that quirky test is exactly
+/// equivalent to "some column contains a duplicate value", which is
+/// what this implementation checks.
+///
+/// Each pairwise Pearson-on-midranks uses a single square root,
+/// `Sxy / sqrt(Sxx*Syy)`, so that exactly reversed or duplicated
+/// permutation columns (whose midranks are exact halves) give
+/// rho = +/-1 exactly and are dropped by the strict filter, as in R.
+///
+/// Deviations from R (silent NaN/warnings there, hard errors here):
+/// constant rater columns (constant midranks; R cor NA), fewer than 4
+/// kept subjects when `fisher` (R SE is Inf/NaN at m <= 3), and all
+/// pairs perfect under `fisher` (R mean of empty = NaN) all return
+/// Err. R only appends warning strings for dropped pairs and ties;
+/// here `dropped` and `ties` report them.
+///
+/// `ratings` is row-major `ns x nr` (subjects x raters). NaN marks
+/// missing values and triggers listwise (whole-row) deletion; infinite
+/// values are rejected.
+pub fn mean_pairwise_rho(
+    ratings: &[f64],
+    ns: usize,
+    nr: usize,
+    fisher: bool,
+) -> Result<MeanRhoResult, String> {
+    if nr < 2 {
+        return Err("meanrho: at least 2 raters required".into());
+    }
+    if ns == 0 {
+        return Err("meanrho: at least 1 subject required".into());
+    }
+    if ns > 1_000_000 {
+        return Err("meanrho: ns exceeds 1e6".into());
+    }
+    if nr > 10_000 {
+        return Err("meanrho: nr exceeds 1e4".into());
+    }
+    let expected = ns
+        .checked_mul(nr)
+        .ok_or_else(|| "meanrho: ns*nr overflows".to_string())?;
+    if ratings.len() != expected {
+        return Err(format!(
+            "meanrho: ratings length {} != ns*nr = {}",
+            ratings.len(),
+            expected
+        ));
+    }
+    if ratings.iter().any(|v| v.is_infinite()) {
+        return Err("meanrho: infinite values not allowed (use NaN for missing)".into());
+    }
+    // Listwise deletion: keep rows with no NaN.
+    let kept: Vec<usize> = (0..ns)
+        .filter(|&i| (0..nr).all(|j| !ratings[i * nr + j].is_nan()))
+        .collect();
+    let m = kept.len();
+    if m < 2 {
+        return Err("meanrho: fewer than 2 complete subjects after listwise deletion".into());
+    }
+    if fisher && m < 4 {
+        return Err(
+            "meanrho: fisher z test requires at least 4 complete subjects (R SE is \
+             infinite or undefined at m <= 3)"
+                .into(),
+        );
+    }
+    let mf = m as f64;
+    // Midrank transform per column (R rank() default: ties averaged)
+    // and the ties flag (any duplicate within a column).
+    let mut ranks = vec![0.0_f64; m * nr];
+    let mut ties = false;
+    for j in 0..nr {
+        let mut order: Vec<usize> = (0..m).collect();
+        order.sort_by(|&a, &b| {
+            let va = ratings[kept[a] * nr + j];
+            let vb = ratings[kept[b] * nr + j];
+            // NaN rows were excluded by the listwise drop, so total_cmp
+            // agrees with the numeric order (and cannot panic).
+            va.total_cmp(&vb)
+        });
+        let mut s = 0;
+        while s < m {
+            let mut e = s;
+            let v = ratings[kept[order[s]] * nr + j];
+            while e + 1 < m && ratings[kept[order[e + 1]] * nr + j] == v {
+                e += 1;
+            }
+            if e > s {
+                ties = true;
+            }
+            // ranks s+1 ..= e+1 averaged -> (s + e + 2) / 2
+            let mid = (s + e + 2) as f64 / 2.0;
+            for k in s..=e {
+                ranks[order[k] * nr + j] = mid;
+            }
+            s = e + 1;
+        }
+    }
+    // Column means and centered sums of squares on midranks; constant
+    // columns (all values tied) have zero rank variance and Err.
+    let mut col_means = vec![0.0; nr];
+    for (j, cm) in col_means.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for i in 0..m {
+            s += ranks[i * nr + j];
+        }
+        *cm = s / mf;
+    }
+    let mut sxx = vec![0.0; nr];
+    for j in 0..nr {
+        for i in 0..m {
+            let d = ranks[i * nr + j] - col_means[j];
+            sxx[j] += d * d;
+        }
+        if !(sxx[j] > 0.0) || !sxx[j].is_finite() {
+            return Err(format!(
+                "meanrho: rater column {j} is constant; Spearman correlation undefined \
+                 (R cor would return NA)"
+            ));
+        }
+    }
+    // Pairwise rho over i < j, in R's nested-loop order.
+    let mut rs = Vec::with_capacity(nr * (nr - 1) / 2);
+    for a in 0..nr {
+        for b in (a + 1)..nr {
+            let mut sxy = 0.0;
+            for i in 0..m {
+                sxy += (ranks[i * nr + a] - col_means[a]) * (ranks[i * nr + b] - col_means[b]);
+            }
+            let r = sxy / (sxx[a] * sxx[b]).sqrt();
+            if !r.is_finite() {
+                return Err("meanrho: non-finite pairwise correlation".into());
+            }
+            rs.push(r);
+        }
+    }
+    if !fisher {
+        let value = rs.iter().sum::<f64>() / rs.len() as f64;
+        if !value.is_finite() {
+            return Err("meanrho: non-finite result".into());
+        }
+        return Ok(MeanRhoResult {
+            value,
+            statistic: f64::NAN,
+            p_value: f64::NAN,
+            dropped: 0,
+            ties,
+            subjects: m as u64,
+            raters: nr as u64,
+        });
+    }
+    // Strict (r < 1) & (r > -1) filter, as in meanrho.R.
+    let total = rs.len();
+    rs.retain(|&r| -1.0 < r && r < 1.0);
+    let dropped = (total - rs.len()) as u64;
+    if rs.is_empty() {
+        return Err(
+            "meanrho: all rater pairs are perfectly correlated; fisher z average \
+             undefined (R would return NaN)"
+                .into(),
+        );
+    }
+    let mrz = rs.iter().map(|&r| r.atanh()).sum::<f64>() / rs.len() as f64;
+    let value = mrz.tanh();
+    let se = (1.0 / (mf - 3.0)).sqrt();
+    let statistic = value / se;
+    // p = 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)); the rational erfc
+    // approximation can exceed 1 by ~1e-7 near z = 0, so clamp.
+    let p_value = crate::fitstats::erfc(statistic.abs() / std::f64::consts::SQRT_2).clamp(0.0, 1.0);
+    if !value.is_finite() || !statistic.is_finite() || !p_value.is_finite() {
+        return Err("meanrho: non-finite result".into());
+    }
+    Ok(MeanRhoResult {
+        value,
+        statistic,
+        p_value,
+        dropped,
+        ties,
+        subjects: m as u64,
+        raters: nr as u64,
+    })
+}
+
+/// Result of the Stuart-Maxwell marginal homogeneity test
+/// ([`stuart_maxwell_mh`]).
+#[derive(Debug, Clone)]
+pub struct StuartMaxwellResult {
+    /// Chi-square statistic `d' S^-1 d`.
+    pub value: f64,
+    /// Degrees of freedom `K - 1` (K = categories after the drop).
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(value, df)`.
+    pub p_value: f64,
+    /// Categories removed by the one-shot equal-marginal drop.
+    pub dropped: u64,
+    /// Sum of the REDUCED table (R `sum(smx)` after the drop).
+    pub subjects: u64,
+    /// Categories remaining after the drop (K).
+    pub categories: u64,
+}
+
+/// Stuart-Maxwell marginal homogeneity test for a `C x C` two-rater
+/// contingency table, transcribed from the CRAN irr 0.84.1 R source
+/// `stuart.maxwell.R` (read in full; the function
+/// `stuart.maxwell.mh`). Stuart (1955) and Maxwell (1970) were NOT
+/// read; they are cited as the method's origin only.
+///
+/// `table` is row-major `c x c` nonnegative integral counts
+/// (`table[i*c + j]` = objects rater 1 assigned to category `i` and
+/// rater 2 to category `j`). Only R's CxC-table branch is implemented;
+/// the R `nx2` score-matrix branch is a thin `table()` cross-tab left
+/// to callers (deliberate reduced scope).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// r_i = rowsums, c_i = colsums
+/// drop ALL i with r_i == c_i simultaneously, ONCE (R does not
+///   re-check equality after the drop); error if < 2 remain
+/// K = remaining categories; for i = 0..K-2:
+///   d_i = r_i - c_i
+///   S_ii = r_i + c_i - 2 x_ii ;  S_ij = -(x_ij + x_ji)  (i != j)
+/// value = d' S^-1 d ;  df = K - 1 ;  p = chi2_sf(value, df)
+/// subjects = sum of the reduced table
+/// ```
+///
+/// The solve follows the checked Gaussian-elimination pattern of
+/// `lltm::solve_small_checked` (singular pivot is an error, matching
+/// R `solve()` failure; `poly::solve_small`'s silent fallback is NOT
+/// reused). Disclosed test identities: the statistic is invariant
+/// under `d -> -d` (quadratic form) and under transposing `S` inside
+/// the solver (S is symmetric by construction), so mutants of either
+/// kind are unkillable in principle; the mutation suite targets the
+/// killable structure instead (S entries, d construction, drop, df).
+///
+/// Errors (deliberately stricter than R, which prints or propagates
+/// `solve()` errors): non-square input, `c < 2`, `c > 1000`, NaN,
+/// infinite, negative, or non-integral cells, cells above
+/// `2^53 / (2 c)` (keeps every marginal sum and `r + c - 2 x` exact in
+/// f64; `subjects` is accumulated in checked u64), fewer than 2
+/// categories after the drop, and a singular `S`.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Stuart, A. (1955). A test for homogeneity of the marginal
+///         distributions in a two-way classification. *Biometrika,
+///         42*(3/4), 412-416. (as cited in Gamer et al., 2019; not read)
+///     Maxwell, A. E. (1970). Comparing the classification of subjects
+///         by two independent judges. *The British Journal of
+///         Psychiatry, 116*(535), 651-655. (as cited in Gamer et al.,
+///         2019; not read)
+pub fn stuart_maxwell_mh(table: &[f64], c: usize) -> Result<StuartMaxwellResult, String> {
+    if c < 2 {
+        return Err("stuart_maxwell: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("stuart_maxwell: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "stuart_maxwell: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "stuart_maxwell: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    // Per-cell cap floor(2^53/(2c)): row/col sums <= 2^52 and
+    // r_i + c_i - 2*x_ii <= 2^53 stay exactly representable in f64.
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("stuart_maxwell: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("stuart_maxwell: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("stuart_maxwell: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("stuart_maxwell: count too large for exact arithmetic".to_string());
+        }
+    }
+    let rowsum = |t: &[f64], k: usize, i: usize| -> f64 { (0..k).map(|j| t[i * k + j]).sum() };
+    let colsum = |t: &[f64], k: usize, j: usize| -> f64 { (0..k).map(|i| t[i * k + j]).sum() };
+    let rows: Vec<f64> = (0..c).map(|i| rowsum(table, c, i)).collect();
+    let cols: Vec<f64> = (0..c).map(|j| colsum(table, c, j)).collect();
+    // One-shot simultaneous drop of every equal-marginal category
+    // (R `smx[!equalsums, !equalsums]`; equality is NOT re-checked
+    // after the drop).
+    let keep: Vec<usize> = (0..c).filter(|&i| rows[i] != cols[i]).collect();
+    let dropped = (c - keep.len()) as u64;
+    if keep.len() < 2 {
+        return Err("stuart_maxwell: too many equal marginals, cannot compute".to_string());
+    }
+    let k = keep.len();
+    let t: Vec<f64> = keep
+        .iter()
+        .flat_map(|&i| keep.iter().map(move |&j| table[i * c + j]))
+        .collect();
+    let rows: Vec<f64> = (0..k).map(|i| rowsum(&t, k, i)).collect();
+    let cols: Vec<f64> = (0..k).map(|j| colsum(&t, k, j)).collect();
+    let mut subjects: u64 = 0;
+    for &v in &t {
+        subjects = subjects
+            .checked_add(v as u64)
+            .ok_or_else(|| "stuart_maxwell: subject count overflow".to_string())?;
+    }
+    let km1 = k - 1;
+    let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+    let s: Vec<Vec<f64>> = (0..km1)
+        .map(|i| {
+            (0..km1)
+                .map(|j| {
+                    if i == j {
+                        rows[i] + cols[i] - 2.0 * t[i * k + i]
+                    } else {
+                        -(t[i * k + j] + t[j * k + i])
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    // Checked Gaussian elimination with partial pivoting; the pivot
+    // threshold is scaled by the largest |S| entry (dif.rs pattern,
+    // spec "pivot < 1e-12 scaled") so numerically singular S is
+    // rejected at any count scale. S == 0 (all-diagonal table) has
+    // scale 0 and errors on the first pivot.
+    let scale = s
+        .iter()
+        .flat_map(|row| row.iter())
+        .fold(0.0f64, |m, &v| m.max(v.abs()))
+        .max(1.0);
+    let mut a = s;
+    let mut b = d.clone();
+    for col in 0..km1 {
+        let piv = (col..km1)
+            .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
+            .unwrap();
+        if a[piv][col].abs() < 1e-12 * scale {
+            return Err("stuart_maxwell: singular S matrix".to_string());
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        let pv = a[col][col];
+        for j in col..km1 {
+            a[col][j] /= pv;
+        }
+        b[col] /= pv;
+        for r in 0..km1 {
+            if r != col && a[r][col] != 0.0 {
+                let f = a[r][col];
+                for j in col..km1 {
+                    a[r][j] -= f * a[col][j];
+                }
+                b[r] -= f * b[col];
+            }
+        }
+    }
+    let value: f64 = d.iter().zip(&b).map(|(di, xi)| di * xi).sum();
+    if !value.is_finite() {
+        return Err("stuart_maxwell: non-finite statistic".to_string());
+    }
+    let df = km1 as u64;
+    let p_value = crate::fitstats::chi2_sf(value, df as f64).clamp(0.0, 1.0);
+    Ok(StuartMaxwellResult {
+        value,
+        df,
+        p_value,
+        dropped,
+        subjects,
+        categories: k as u64,
+    })
+}
+
+/// Result of the Bhapkar marginal homogeneity test ([`bhapkar_mh`]).
+#[derive(Debug, Clone)]
+pub struct BhapkarResult {
+    /// Chi-square statistic `d' W^-1 d`.
+    pub value: f64,
+    /// Degrees of freedom `C - 1`.
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(value, df)`.
+    pub p_value: f64,
+    /// Total count of the full table.
+    pub subjects: u64,
+    /// Categories `C` of the input table.
+    pub categories: u64,
+}
+
+/// Bhapkar marginal homogeneity test for a `C x C` two-rater
+/// contingency table, transcribed from the CRAN irr 0.84.1 R source
+/// `bhapkar.r` (read in full). Bhapkar (1966) was NOT read; it is
+/// cited as the method's origin only.
+///
+/// `table` is row-major `c x c` nonnegative integral counts, exactly
+/// as in [`stuart_maxwell_mh`]. Only R's CxC-table branch is
+/// implemented; R's raw two-column ratings front-end (factor-level
+/// union handling) is a thin `table()` cross-tab left to callers
+/// (the same deliberate reduced scope as `stuart_maxwell_mh`).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// over the first C-1 categories (R deletes the LAST category; unlike
+/// stuart.maxwell.R there is NO equal-marginal drop step):
+///   d_i = r_i - c_i
+///   S_ii = r_i + c_i - 2 x_ii ;  S_ij = -(x_ij + x_ji)   (i != j)
+///   W = S - d d' / n            (n = total count)
+/// value = d' W^-1 d ;  df = C - 1 ;  p = chi2_sf(value, df)
+/// ```
+///
+/// R computes `sum(dmat * t(dmat) * solve(W))` with `dmat` built
+/// `byrow=TRUE` from `d`, so `dmat_ij = d_j` and the elementwise
+/// product is the outer product `d_i d_j`; the sum equals
+/// `d' W^-1 d` (verified in the executed oracle). The oracle also
+/// proves, exactly on the pinned fixtures, the identity
+/// `value = SM / (1 - SM / n)` against the NO-DROP Stuart-Maxwell
+/// statistic, and that the statistic is invariant to WHICH single
+/// category is deleted (the implementation always deletes the last,
+/// matching R). Disclosed unkillable mutants, as for
+/// [`stuart_maxwell_mh`]: `d -> -d` (quadratic form; `d d'` is also
+/// even in `d`) and transposing `W` in the solver (W symmetric by
+/// construction).
+///
+/// The per-cell cap `2^53 / (2 c)` keeps every cell, marginal sum and
+/// integral `S` entry exactly representable in f64 and `subjects`
+/// within checked u64; `W` itself is rational (the `d d'/n` term) and
+/// is computed in ordinary f64 -- no exactness is claimed for it.
+///
+/// Errors (deliberately stricter than R, which propagates `solve()`
+/// failures): non-square input, `c < 2`, `c > 1000`, NaN, infinite,
+/// negative, or non-integral cells, cells above the cap, `n == 0`,
+/// a numerically singular `W` (pivot below `1e-12 * max|W|`, scaled
+/// as in `stuart_maxwell_mh`; e.g. perfect agreement gives `W = 0`,
+/// and an unused kept category gives a zero `W` row -- R's `solve()`
+/// fails there too), and a non-finite statistic.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Bhapkar, V. P. (1966). A note on the equivalence of two test
+///         criteria for hypotheses in categorical data. *Journal of
+///         the American Statistical Association, 61*(313), 228-235.
+///         (as cited in Gamer et al., 2019; not read)
+pub fn bhapkar_mh(table: &[f64], c: usize) -> Result<BhapkarResult, String> {
+    if c < 2 {
+        return Err("bhapkar: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("bhapkar: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "bhapkar: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "bhapkar: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("bhapkar: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("bhapkar: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("bhapkar: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("bhapkar: count too large for exact arithmetic".to_string());
+        }
+    }
+    let mut subjects: u64 = 0;
+    for &v in table {
+        subjects = subjects
+            .checked_add(v as u64)
+            .ok_or_else(|| "bhapkar: subject count overflow".to_string())?;
+    }
+    if subjects == 0 {
+        return Err("bhapkar: empty table".to_string());
+    }
+    let rows: Vec<f64> = (0..c)
+        .map(|i| (0..c).map(|j| table[i * c + j]).sum())
+        .collect();
+    let cols: Vec<f64> = (0..c)
+        .map(|j| (0..c).map(|i| table[i * c + j]).sum())
+        .collect();
+    let km1 = c - 1;
+    let n = subjects as f64;
+    let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+    // W = S - d d' / n over the first C-1 categories.
+    let w: Vec<Vec<f64>> = (0..km1)
+        .map(|i| {
+            (0..km1)
+                .map(|j| {
+                    let s = if i == j {
+                        rows[i] + cols[i] - 2.0 * table[i * c + i]
+                    } else {
+                        -(table[i * c + j] + table[j * c + i])
+                    };
+                    s - d[i] * d[j] / n
+                })
+                .collect()
+        })
+        .collect();
+    // Checked Gaussian elimination with partial pivoting; pivot
+    // threshold scaled by max|W| (stuart_maxwell_mh / dif.rs pattern).
+    let scale = w
+        .iter()
+        .flat_map(|row| row.iter())
+        .fold(0.0f64, |m, &v| m.max(v.abs()))
+        .max(1.0);
+    let mut a = w;
+    let mut b = d.clone();
+    for col in 0..km1 {
+        let piv = (col..km1)
+            .max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))
+            .unwrap();
+        if a[piv][col].abs() < 1e-12 * scale {
+            return Err("bhapkar: singular W matrix".to_string());
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        let pv = a[col][col];
+        for j in col..km1 {
+            a[col][j] /= pv;
+        }
+        b[col] /= pv;
+        for r in 0..km1 {
+            if r != col && a[r][col] != 0.0 {
+                let f = a[r][col];
+                for j in col..km1 {
+                    a[r][j] -= f * a[col][j];
+                }
+                b[r] -= f * b[col];
+            }
+        }
+    }
+    let value: f64 = d.iter().zip(&b).map(|(di, xi)| di * xi).sum();
+    if !value.is_finite() {
+        return Err("bhapkar: non-finite statistic".to_string());
+    }
+    let df = km1 as u64;
+    let p_value = crate::fitstats::chi2_sf(value, df as f64).clamp(0.0, 1.0);
+    Ok(BhapkarResult {
+        value,
+        df,
+        p_value,
+        subjects,
+        categories: c as u64,
+    })
+}
+
+/// Result of the rater bias test ([`rater_bias`]).
+#[derive(Debug, Clone)]
+pub struct RaterBiasResult {
+    /// Bias ratio `rbb / (rbb + rbc)` (upper-triangle share).
+    pub value: f64,
+    /// Chi-square statistic `(rbb - rbc)^2 / (rbb + rbc)`, df 1.
+    pub statistic: f64,
+    /// Degrees of freedom (always 1).
+    pub df: u64,
+    /// Upper-tail p `chi2_sf(statistic, 1)`.
+    pub p_value: f64,
+    /// Total count of the full table (all cells, incl. diagonal).
+    pub subjects: u64,
+}
+
+/// Rater bias chi-square for a `C x C` two-rater agreement table,
+/// transcribed from the CRAN irr 0.84.1 R source `rater.bias.R`
+/// (read in full). The statistic is McNemar-style, but McNemar (1947)
+/// was NOT read and is not cited as normative.
+///
+/// `table` is row-major `c x c` nonnegative integral counts, exactly
+/// as in [`bhapkar_mh`]. Only R's CxC-table branch is implemented;
+/// R's `nx2` / `2xn` raw-score `table()` front-end is a thin
+/// cross-tab left to callers (the same deliberate reduced scope as
+/// `stuart_maxwell_mh` / `bhapkar_mh`).
+///
+/// Formula (hand-derived from the R source; verified against an
+/// executed exact-Fraction oracle):
+///
+/// ```text
+/// rbb  = sum of the strict upper triangle
+/// rbc  = sum of the strict lower triangle
+/// value = |rbb / (rbb + rbc)|      (abs is a no-op: counts nonneg)
+/// stat  = (rbb - rbc)^2 / (rbb + rbc) ;  df = 1
+/// p     = chi2_sf(stat, 1)
+/// subjects = sum of ALL cells (R: sum(rbx), incl. diagonal)
+/// ```
+///
+/// Arithmetic: the per-cell cap `2^53 / (2 c)` does NOT keep f64
+/// triangle sums exact for large `c` (spec-review finding, adopted),
+/// so `rbb`/`rbc` are accumulated in u64 (exact: each triangle sum is
+/// at most `c^2/2 * 2^53/(2c) = 2^51 c <= 2^61`), the difference and
+/// its square are formed in i128 (`(2^61)^2 = 2^122 < 2^127`), and
+/// f64 rounding happens only in the final divisions. Disclosed
+/// unkillable mutant: removing the R `abs()` (the validated domain is
+/// nonnegative with `rbb + rbc > 0`, so the ratio is already >= 0).
+///
+/// Errors (deliberately stricter than R): non-square input, `c < 2`,
+/// `c > 1000`, NaN, infinite, negative, or non-integral cells, cells
+/// above the cap, and `rbb + rbc == 0` (no off-diagonal
+/// disagreements; R would form 0/0). All-zero and diagonal-only
+/// tables hit that arm, so a separate `n == 0` check is unreachable
+/// and deliberately omitted; `subjects` is a plain u64 sum (bounded
+/// by `c^2 * 2^53/(2c) <= 2^52 c^2 / c = 2^52 c <= 2^62`, no
+/// overflow for `c <= 1000`).
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+pub fn rater_bias(table: &[f64], c: usize) -> Result<RaterBiasResult, String> {
+    if c < 2 {
+        return Err("rater_bias: need at least a 2x2 table".to_string());
+    }
+    if c > 1000 {
+        return Err("rater_bias: more than 1000 categories".to_string());
+    }
+    let n_cells = c
+        .checked_mul(c)
+        .ok_or_else(|| "rater_bias: table size overflow".to_string())?;
+    if table.len() != n_cells {
+        return Err(format!(
+            "rater_bias: table length {} != {}x{}",
+            table.len(),
+            c,
+            c
+        ));
+    }
+    let cell_cap = (9007199254740992.0 / (2.0 * c as f64)).floor();
+    for &v in table {
+        if !v.is_finite() {
+            return Err("rater_bias: counts must be finite".to_string());
+        }
+        if v < 0.0 {
+            return Err("rater_bias: counts must be nonnegative".to_string());
+        }
+        if v != v.trunc() {
+            return Err("rater_bias: counts must be integers".to_string());
+        }
+        if v > cell_cap {
+            return Err("rater_bias: count too large for exact arithmetic".to_string());
+        }
+    }
+    let mut rbb: u64 = 0;
+    let mut rbc: u64 = 0;
+    let mut subjects: u64 = 0;
+    for i in 0..c {
+        for j in 0..c {
+            let v = table[i * c + j] as u64;
+            subjects += v;
+            if i < j {
+                rbb += v;
+            } else if i > j {
+                rbc += v;
+            }
+        }
+    }
+    let denom = rbb + rbc;
+    if denom == 0 {
+        return Err("rater_bias: no off-diagonal disagreements".to_string());
+    }
+    let diff = rbb as i128 - rbc as i128;
+    let value = rbb as f64 / denom as f64;
+    let statistic = (diff * diff) as f64 / denom as f64;
+    let p_value = crate::fitstats::chi2_sf(statistic, 1.0).clamp(0.0, 1.0);
+    Ok(RaterBiasResult {
+        value,
+        statistic,
+        df: 1,
+        p_value,
+        subjects,
+    })
+}
+
+/// Result of the Cantor-style sample-size computation for Cohen's kappa.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NCohenKappaResult {
+    /// Required number of subjects (ceiling of `pre_ceil`).
+    pub n: u64,
+    /// Large-sample variance factor Q under the alternative kappa `k1`.
+    pub q1: f64,
+    /// Large-sample variance factor Q under the null kappa `k0`.
+    pub q0: f64,
+    /// Sample size before the ceiling is applied (transparency for tests).
+    pub pre_ceil: f64,
+}
+
+/// 2x2 cell probabilities implied by marginals (rate1, rate2) and kappa.
+///
+/// Follows irr's `N.cohen.kappa` exactly:
+/// `pi0 = k*(1-pie) + pie`, `pi22 = (pi0 - rate1 + (1-rate2))/2`,
+/// `pi11 = pi0 - pi22`, `pi12 = rate1 - pi11`, `pi21 = rate2 - pi11`.
+fn ncohen_cells(rate1: f64, rate2: f64, k: f64, pie: f64) -> (f64, f64, f64, f64, f64) {
+    let pi0 = k * (1.0 - pie) + pie;
+    let pi22 = (pi0 - rate1 + (1.0 - rate2)) / 2.0;
+    let pi11 = pi0 - pi22;
+    let pi12 = rate1 - pi11;
+    let pi21 = rate2 - pi11;
+    (pi0, pi11, pi12, pi21, pi22)
+}
+
+/// Large-sample variance factor Q from irr's `N.cohen.kappa`.
+#[allow(clippy::too_many_arguments)]
+fn ncohen_q(
+    rate1: f64,
+    rate2: f64,
+    pie: f64,
+    pi0: f64,
+    pi11: f64,
+    pi12: f64,
+    pi21: f64,
+    pi22: f64,
+) -> f64 {
+    let pi2d = 1.0 - rate1; // R's pi2.
+    let pid2 = 1.0 - rate2; // R's pi.2
+    let one_m_pie = 1.0 - pie;
+    let one_m_pi0 = 1.0 - pi0;
+    let t1 = pi11 * (one_m_pie - (rate2 + rate1) * one_m_pi0).powi(2);
+    let t2 = pi22 * (one_m_pie - (pid2 + pi2d) * one_m_pi0).powi(2);
+    let t3 =
+        one_m_pi0 * one_m_pi0 * (pi12 * (rate2 + pi2d).powi(2) + pi21 * (pid2 + rate1).powi(2));
+    let t4 = (pi0 * pie - 2.0 * pie + pi0).powi(2);
+    (t1 + t2 + t3 - t4) / one_m_pie.powi(4)
+}
+
+/// Closed-form sample size for testing Cohen's kappa on a 2x2 table.
+///
+/// Port of `N.cohen.kappa` from the irr R package (version 0.84.1),
+/// whose source was read directly and is the sole normative reference
+/// for this implementation. irr's documentation attributes the method
+/// to Cantor (1996); that paper was NOT read and is cited only as the
+/// origin per irr's attribution.
+///
+/// Contract (verified against an executed exact-Fraction oracle):
+///
+/// ```text
+/// d    = 1 (one-sided) or 2 (two-sided)
+/// pie  = rate1*rate2 + (1-rate1)*(1-rate2)
+/// Q(k) = large-sample variance factor at kappa k (see ncohen_q)
+/// n    = ceil(((qnorm(1-alpha/d)*sqrt(Q(k0))
+///             + qnorm(power)*sqrt(Q(k1))) / (k1-k0))^2)
+/// ```
+///
+/// `qnorm` is this crate's `nodes::inv_normal_cdf` (Acklam rational
+/// approximation, relative error < 1.15e-9). The executed oracle
+/// compares Acklam-derived pre-ceil values against high-precision
+/// quantiles and asserts the pinned fixtures sit > 1e-4 away from
+/// integer boundaries, so the approximation cannot flip the ceiling.
+///
+/// Stricter than R (which silently produces NaN or bogus sizes):
+/// boundary/degenerate marginals, infeasible cell probabilities under
+/// either kappa, and nonpositive variance factors are all rejected.
+///
+/// References (APA 7th ed.):
+///     Gamer, M., Lemon, J., Fellows, I., & Singh, P. (2019). *irr:
+///         Various coefficients of interrater reliability and
+///         agreement* [R package]. https://CRAN.R-project.org/package=irr
+///     Cantor, A. B. (1996). Sample-size calculations for Cohen's
+///         kappa. *Psychological Methods, 1*(2), 150-153. [NOT READ;
+///         cited as method origin per irr documentation only.]
+pub fn n_cohen_kappa(
+    rate1: f64,
+    rate2: f64,
+    k1: f64,
+    k0: f64,
+    alpha: f64,
+    power: f64,
+    twosided: bool,
+) -> Result<NCohenKappaResult, String> {
+    for (name, v) in [("rate1", rate1), ("rate2", rate2)] {
+        if !v.is_finite() || v <= 0.0 || v >= 1.0 {
+            return Err(format!(
+                "n_cohen_kappa: {name} must be strictly inside (0, 1); \
+                 boundary rates are degenerate rater marginals"
+            ));
+        }
+    }
+    for (name, v) in [("k1", k1), ("k0", k0)] {
+        if !v.is_finite() || !(-1.0..=1.0).contains(&v) {
+            return Err(format!("n_cohen_kappa: {name} must be finite in [-1, 1]"));
+        }
+    }
+    if k1 == k0 {
+        return Err("n_cohen_kappa: k1 must differ from k0".to_string());
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
+        return Err("n_cohen_kappa: alpha must be strictly inside (0, 1)".to_string());
+    }
+    if !power.is_finite() || power <= 0.0 || power >= 1.0 {
+        return Err("n_cohen_kappa: power must be strictly inside (0, 1)".to_string());
+    }
+    let d = if twosided { 2.0 } else { 1.0 };
+    let pie = rate1 * rate2 + (1.0 - rate1) * (1.0 - rate2);
+    let (pi0_1, pi11_1, pi12_1, pi21_1, pi22_1) = ncohen_cells(rate1, rate2, k1, pie);
+    let (pi0_0, pi11_0, pi12_0, pi21_0, pi22_0) = ncohen_cells(rate1, rate2, k0, pie);
+    for &cell in &[
+        pi11_1, pi12_1, pi21_1, pi22_1, pi11_0, pi12_0, pi21_0, pi22_0,
+    ] {
+        if !(0.0..=1.0).contains(&cell) {
+            return Err(
+                "n_cohen_kappa: infeasible (rate1, rate2, kappa) combination; \
+                 an implied cell probability falls outside [0, 1]"
+                    .to_string(),
+            );
+        }
+    }
+    let q1 = ncohen_q(rate1, rate2, pie, pi0_1, pi11_1, pi12_1, pi21_1, pi22_1);
+    let q0 = ncohen_q(rate1, rate2, pie, pi0_0, pi11_0, pi12_0, pi21_0, pi22_0);
+    if !(q1.is_finite() && q1 > 0.0 && q0.is_finite() && q0 > 0.0) {
+        return Err("n_cohen_kappa: nonpositive variance factor Q".to_string());
+    }
+    let za = crate::nodes::inv_normal_cdf(1.0 - alpha / d);
+    let zb = crate::nodes::inv_normal_cdf(power);
+    let pre_ceil = ((za * q0.sqrt() + zb * q1.sqrt()) / (k1 - k0)).powi(2);
+    if !pre_ceil.is_finite() || pre_ceil <= 0.0 {
+        return Err("n_cohen_kappa: non-finite sample size".to_string());
+    }
+    // Reject sizes past exact-integer f64 range (2^53): `as u64` would
+    // silently saturate above u64::MAX, and even below that the ceiling
+    // is no longer an exact integer. Such sizes are useless in practice
+    // (they arise only from near-equal kappas) and are refused instead.
+    let n = pre_ceil.ceil();
+    if n > 9007199254740992.0 {
+        return Err("n_cohen_kappa: required sample size exceeds 2^53; \
+             k1 and k0 are too close to distinguish"
+            .to_string());
+    }
+    Ok(NCohenKappaResult {
+        n: n as u64,
+        q1,
+        q0,
+        pre_ceil,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/reliability_tests.rs"]
 mod tests;

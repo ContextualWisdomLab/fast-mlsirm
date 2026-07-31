@@ -62,6 +62,7 @@ class GTheoryResult:
 
 
 def _to_result(res: dict) -> GTheoryResult:
+    """Build a :class:`GTheoryResult` (ANOVA table + D-study) from the core dict."""
     return GTheoryResult(
         df=[float(v) for v in res["df"]],
         ss=[float(v) for v in res["ss"]],
@@ -83,6 +84,7 @@ def _to_result(res: dict) -> GTheoryResult:
 
 
 def _core_or_raise(name: str):
+    """Return the Rust core, raising if it or the required function ``name`` is absent."""
     from .fitstats import _core_module
 
     core = _core_module()
@@ -108,7 +110,7 @@ def gtheory_pi(
     their denominator is <= 1e-12. In LLM-as-a-Judge quality management
     this asks how many judge items are needed for a dependable rating.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pi")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
@@ -116,6 +118,9 @@ def gtheory_pi(
     n_p, n_i = x.shape
     primes = [int(v) for v in n_i_prime]
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
+
+
+gtheory_pi.__doc__ += _REFERENCES
 
 
 def gtheory_pio(
@@ -132,7 +137,7 @@ def gtheory_pio(
     ``(n_i', n_o')`` D-study pairs; the clamped-ANOVA and NaN-denominator
     policies match :func:`gtheory_pi`.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pio")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 3:
@@ -142,6 +147,9 @@ def gtheory_pio(
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
+
+
+gtheory_pio.__doc__ += _REFERENCES
 
 
 @dataclass
@@ -190,7 +198,7 @@ def phi_lambda(
     LLM-as-a-Judge quality management this asks how dependably a judge
     panel classifies systems against a fixed quality threshold.
 
-    """ + _PHI_LAMBDA_REFERENCES
+    """
     core = _core_or_raise("phi_lambda")
     x = np.asarray(data)
     if np.iscomplexobj(x):
@@ -213,3 +221,6 @@ def phi_lambda(
         signal=float(res["signal"]),
         phi=[float(v) for v in res["phi"]],
     )
+
+
+phi_lambda.__doc__ += _PHI_LAMBDA_REFERENCES

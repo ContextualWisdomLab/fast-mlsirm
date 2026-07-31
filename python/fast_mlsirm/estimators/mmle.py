@@ -28,6 +28,7 @@ from numpy.polynomial.hermite_e import hermegauss
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
+    """Logistic sigmoid with the exponent clipped to ``[-35, 35]`` for stability."""
     return 1.0 / (1.0 + np.exp(-np.clip(x, -35.0, 35.0)))
 
 
