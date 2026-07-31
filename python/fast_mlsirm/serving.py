@@ -35,6 +35,7 @@ MAX_ABS_ITEM_PARAMETER = 1_000_000.0
 
 
 def _core_module():
+    """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
         from . import _core  # type: ignore
 
@@ -194,10 +195,12 @@ def export_serving_bundle(
 
 
 def _reject_nonfinite_json(literal: str) -> float:
+    """JSON ``parse_constant`` hook that rejects ``NaN``/``Infinity`` literals."""
     raise ValueError(f"serving bundle contains a non-finite JSON constant {literal!r}")
 
 
 def _finite_number(x) -> bool:
+    """Return whether ``x`` is a finite, non-boolean real number."""
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
 
 
@@ -217,6 +220,7 @@ def _validate_bundle(bundle: Any) -> None:
         raise ValueError("bundle population must be an object or null")
 
     def _pos_int(key: str, hi: int) -> int:
+        """Return bundle field ``key`` as an integer in ``1..hi`` or raise."""
         v = bundle.get(key)
         if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= hi):
             raise ValueError(f"bundle {key} must be an integer in 1..{hi}")
@@ -349,6 +353,11 @@ def _validate_bundle(bundle: Any) -> None:
 
 
 def load_serving_bundle(path: str | Path) -> dict[str, Any]:
+    """Load and validate a serving bundle JSON file for scoring.
+
+    Reads the bounded JSON (rejecting non-finite constants) and runs the full
+    structural/size/numeric-domain validation before returning the bundle.
+    """
     bundle = _load_json_bounded(
         path,
         source="serving bundle",
@@ -565,6 +574,7 @@ def score_respondents(
 
 
 def _bundle_bank_args(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Assemble the Rust item-bank keyword arguments from a serving bundle."""
     items = bundle["items"]
     return dict(
         alpha=np.array([it["alpha"] for it in items], dtype=np.float64),

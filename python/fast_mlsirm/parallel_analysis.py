@@ -63,7 +63,7 @@ def parallel_analysis(
     quality management this estimates how many latent dimensions the judge
     rubric actually measures.
 
-    """ + _REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -92,3 +92,6 @@ def parallel_analysis(
             res["adjusted_eigenvalues"], dtype=np.float64
         ),
     )
+
+
+parallel_analysis.__doc__ += _REFERENCES
