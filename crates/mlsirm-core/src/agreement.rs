@@ -241,6 +241,198 @@ pub fn validate_scoring(
     })
 }
 
+/// Result of Fleiss' multi-rater kappa (`fleiss_kappa`).
+///
+/// In exact (Conger) mode `z`/`p_value` are NaN and the category vectors
+/// are empty, mirroring irr's `kappam.fleiss(exact=TRUE)` which returns
+/// neither a test statistic nor category detail.
+#[derive(Clone, Debug)]
+pub struct FleissKappaResult {
+    pub kappa: f64,
+    /// Subjects remaining after listwise deletion of rows with missing codes.
+    pub subjects_used: usize,
+    pub z: f64,
+    pub p_value: f64,
+    /// Category-wise kappas (classic mode only); NaN for empty categories.
+    pub category_kappa: Vec<f64>,
+    pub category_z: Vec<f64>,
+    pub category_p: Vec<f64>,
+}
+
+/// Fleiss' kappa for nominal agreement among `nr` raters over `ns` subjects,
+/// with the exact (Conger) chance-agreement variant.
+///
+/// Reimplements `kappam.fleiss()` from CRAN irr 0.85 (`R/kappam.fleiss.R`,
+/// READ in full; algorithm source of truth). The model originates in
+/// Fleiss, J. L. (1971), "Measuring nominal scale agreement among many
+/// raters," Psychological Bulletin, 76(5), 378-382, and the exact variant in
+/// Conger, A. J. (1980), "Integration and generalization of kappas for
+/// multiple raters," Psychological Bulletin, 88(2), 322-328 — both cited as
+/// origins only (NOT READ); every formula below was verified against the irr
+/// R source.
+///
+/// `ratings` is row-major `ns x nr` with category codes `0..k-1`; a negative
+/// code marks a missing rating and drops the whole subject row (listwise, as
+/// in R: `ratings[apply(is.na(ratings),1,sum)==0,]`). With `m` used subjects
+/// and `ttab[i][j]` = raters assigning subject `i` to category `j`:
+///
+/// - `agreeP = (1/m) sum_i (sum_j ttab_ij^2 - nr) / (nr(nr-1))`
+/// - classic `chanceP = sum_j p_j^2` with `p_j = C_j/(m nr)`, `C_j` column sums
+/// - exact `chanceP = sum_j p_j^2 - (1/nr) sum_j s2_j`, `s2_j` the sample
+///   variance (divisor `nr-1`) over raters of per-rater category proportions
+///   (algebraically equal to R's `sum(apply(rtab,2,var)*(nr-1)/nr)/(nr-1)`)
+/// - `kappa = (agreeP - chanceP)/(1 - chanceP)`
+///
+/// Classic mode adds Fleiss' large-sample test
+/// `var = 2[(sum p_j q_j)^2 - sum p_j q_j (q_j - p_j)] /
+///        [(sum p_j q_j)^2 m nr (nr-1)]`, `z = kappa/sqrt(var)`,
+/// `p = 2(1 - Phi(|z|))`, and category-wise kappas
+/// `pjk_j = (sum_i ttab_ij^2 - m nr p_j)/(m nr (nr-1) p_j)`,
+/// `kappa_j = (pjk_j - p_j)/(1 - p_j)`, `var_j = 2/(m nr (nr-1))`
+/// (computed unconditionally; identical to irr's `detail=TRUE`). Empty
+/// categories yield NaN, matching R's 0/0.
+///
+/// API deviations from R (documented contract, not transcription): codes are
+/// index-based `0..k-1` with explicit `k` (R derives factor levels; negative
+/// numeric labels must be remapped by the caller since negative = missing
+/// here), degenerate `1 - chanceP == 0` is an error (R returns NaN), and the
+/// size caps below are safety bounds.
+pub fn fleiss_kappa(
+    ratings: &[i64],
+    ns: usize,
+    nr: usize,
+    k: usize,
+    exact: bool,
+) -> Result<FleissKappaResult, String> {
+    if ns == 0 {
+        return Err("need at least one subject".into());
+    }
+    if nr < 2 {
+        return Err("need at least 2 raters".into());
+    }
+    if k < 2 {
+        return Err("need at least 2 categories".into());
+    }
+    if ns > 1_000_000 || nr > 10_000 || k > 10_000 {
+        return Err("size caps: ns <= 1e6, nr <= 1e4, k <= 1e4".into());
+    }
+    if ratings.len() != ns * nr {
+        return Err(format!(
+            "ratings length {} != ns*nr = {}",
+            ratings.len(),
+            ns * nr
+        ));
+    }
+    for &c in ratings {
+        if c >= k as i64 {
+            return Err(format!("category code {c} out of range 0..{k}"));
+        }
+    }
+    // Listwise drop of rows containing any negative (missing) code, then
+    // classification table ttab[i][j] and per-rater counts. Counts are exact
+    // in f64: entries <= nr <= 1e4, sums of squares <= m*nr^2 <= 1e14 < 2^53.
+    let mut ttab: Vec<Vec<f64>> = Vec::new();
+    let mut rater_counts = vec![vec![0.0_f64; k]; nr];
+    for i in 0..ns {
+        let row = &ratings[i * nr..(i + 1) * nr];
+        if row.iter().any(|&c| c < 0) {
+            continue;
+        }
+        let mut t = vec![0.0_f64; k];
+        for (r, &c) in row.iter().enumerate() {
+            t[c as usize] += 1.0;
+            rater_counts[r][c as usize] += 1.0;
+        }
+        ttab.push(t);
+    }
+    let m = ttab.len();
+    if m == 0 {
+        return Err("all subject rows dropped for missing ratings".into());
+    }
+    let mf = m as f64;
+    let nrf = nr as f64;
+
+    let agree_p: f64 = ttab
+        .iter()
+        .map(|t| (t.iter().map(|&v| v * v).sum::<f64>() - nrf) / (nrf * (nrf - 1.0)))
+        .sum::<f64>()
+        / mf;
+
+    let col: Vec<f64> = (0..k)
+        .map(|j| ttab.iter().map(|t| t[j]).sum::<f64>())
+        .collect();
+    let p: Vec<f64> = col.iter().map(|&c| c / (mf * nrf)).collect();
+    let mut chance_p: f64 = p.iter().map(|&v| v * v).sum();
+    if exact {
+        // Sample variance over raters of rtab[r][j] = rater_counts[r][j]/m.
+        let mut s2_sum = 0.0_f64;
+        for j in 0..k {
+            let props: Vec<f64> = (0..nr).map(|r| rater_counts[r][j] / mf).collect();
+            let mean = props.iter().sum::<f64>() / nrf;
+            let s2 = props.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / (nrf - 1.0);
+            s2_sum += s2;
+        }
+        chance_p -= s2_sum / nrf;
+    }
+    let denom = 1.0 - chance_p;
+    if denom.abs() < 1e-12 {
+        return Err("degenerate marginals: no chance-corrected agreement is defined".into());
+    }
+    let kappa = (agree_p - chance_p) / denom;
+
+    if exact {
+        return Ok(FleissKappaResult {
+            kappa,
+            subjects_used: m,
+            z: f64::NAN,
+            p_value: f64::NAN,
+            category_kappa: Vec::new(),
+            category_z: Vec::new(),
+            category_p: Vec::new(),
+        });
+    }
+
+    let sqrt2 = std::f64::consts::SQRT_2;
+    let pq: f64 = p.iter().map(|&v| v * (1.0 - v)).sum();
+    let var = 2.0
+        * (pq * pq
+            - p.iter()
+                .map(|&v| v * (1.0 - v) * (1.0 - 2.0 * v))
+                .sum::<f64>())
+        / (pq * pq * mf * nrf * (nrf - 1.0));
+    let z = kappa / var.sqrt();
+    let p_value = crate::fitstats::erfc(z.abs() / sqrt2);
+
+    let var_k = 2.0 / (mf * nrf * (nrf - 1.0));
+    let mut category_kappa = Vec::with_capacity(k);
+    let mut category_z = Vec::with_capacity(k);
+    let mut category_p = Vec::with_capacity(k);
+    for j in 0..k {
+        let sum_sq: f64 = ttab.iter().map(|t| t[j] * t[j]).sum();
+        // Empty category: p_j = 0 gives R's 0/0 = NaN, preserved here.
+        let pjk = (sum_sq - mf * nrf * p[j]) / (mf * nrf * (nrf - 1.0) * p[j]);
+        let kj = (pjk - p[j]) / (1.0 - p[j]);
+        let zj = kj / var_k.sqrt();
+        category_kappa.push(kj);
+        category_z.push(zj);
+        category_p.push(if zj.is_finite() {
+            crate::fitstats::erfc(zj.abs() / sqrt2)
+        } else {
+            f64::NAN
+        });
+    }
+
+    Ok(FleissKappaResult {
+        kappa,
+        subjects_used: m,
+        z,
+        p_value,
+        category_kappa,
+        category_z,
+        category_p,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/agreement_tests.rs"]
 mod tests;
