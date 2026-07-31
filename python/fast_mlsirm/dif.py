@@ -239,6 +239,7 @@ def logistic_dif_purified(
 
 
 def _purify_meta(res) -> dict[str, np.ndarray]:
+    """Extract the anchor-purification metadata from a Rust DIF result dict."""
     # `purify_converged`, not `converged`: the logistic rows already carry a PER-ITEM `converged` array
     # and this dict is merged over them, so the loop's scalar flag must not share the name.
     return {
@@ -251,6 +252,7 @@ def _purify_meta(res) -> dict[str, np.ndarray]:
 
 
 def _mh_rows(res) -> dict[str, np.ndarray]:
+    """Extract the per-item Mantel-Haenszel DIF statistics from a result dict."""
     return {
         "item": np.asarray(res["item"], dtype=np.int64),
         "alpha_mh": np.asarray(res["alpha_mh"], dtype=np.float64),
@@ -444,6 +446,7 @@ def raju_area(
     if core is None or not hasattr(core, "raju_area"):
         raise RuntimeError("raju_area requires the compiled Rust core")
     def _vec(v, name: str) -> np.ndarray:
+        """Coerce ``v`` to a contiguous 1-D float64 array or raise ``ValueError``."""
         arr = np.asarray(v, dtype=np.float64)
         if arr.ndim != 1:
             raise ValueError(f"{name} must be a 1-D array, got ndim={arr.ndim}")
@@ -478,6 +481,7 @@ def raju_area(
 
 
 def _logistic_rows(res) -> dict[str, np.ndarray]:
+    """Extract the per-item logistic-regression DIF statistics from a result dict."""
     return {
         "item": np.asarray(res["item"], dtype=np.int64),
         "chi2_uniform": np.asarray(res["chi2_uniform"], dtype=np.float64),

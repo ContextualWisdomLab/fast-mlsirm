@@ -71,10 +71,16 @@ def link_fixed_item_parameters(
             continue
         target_a = target.a[dim_anchors]
         if np.any(target_a <= 0):
+            # Reachable: a = exp(alpha) underflows to 0.0 for a finite but very
+            # negative alpha (which passes the finiteness check), and params can
+            # be constructed with a non-positive anchor slope directly.
             raise ValueError("target anchor slopes must be positive")
         scale[dim] = float(np.exp(np.mean(np.log(source.a[dim_anchors] / target_a))))
         shift[dim] = float(np.mean((source.b[dim_anchors] - target.b[dim_anchors]) / target_a))
         if not (np.isfinite(scale[dim]) and scale[dim] > 0.0 and np.isfinite(shift[dim])):
+            # Reachable: a source anchor slope that underflows to 0 makes
+            # log(source.a / target_a) = -inf, so scale underflows to 0.0 even
+            # when every target slope is strictly positive.
             raise ValueError("non-finite or non-positive linking coefficients (check anchor parameters)")
 
         items = factors == dim

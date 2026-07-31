@@ -46,6 +46,7 @@ def _atomic_write(path: str | Path, writer: Callable[[BinaryIO], object]) -> Non
 
 
 def _atomic_write_text(path: str | Path, content: str) -> None:
+    """Atomically write UTF-8 ``content`` to ``path`` (temp file + rename)."""
     _atomic_write(path, lambda stream: stream.write(content.encode("utf-8")))
 
 
@@ -86,6 +87,12 @@ def _validate_npy_header(stream: BinaryIO, source: str) -> tuple[int, int]:
 
 
 def _validate_numpy_file(path: Path) -> None:
+    """Validate a ``.npy``/``.npz`` file before loading it.
+
+    Enforces file-size, member-count, and declared-array element/byte caps and
+    rejects object dtypes or truncated arrays, guarding against
+    memory-exhaustion and unpickling attacks from untrusted numpy inputs.
+    """
     file_size = path.stat().st_size
     if file_size > MAX_NUMPY_ARCHIVE_BYTES:
         raise ValueError(
@@ -201,6 +208,11 @@ def _load_numpy_bounded(path: str | Path):
 
 
 def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
+    """Persist a simulation to ``run_dir``.
+
+    Writes the config, responses, ground-truth parameters, item-to-factor CSV,
+    and a manifest describing the run.
+    """
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(out / "config.json", json.dumps(asdict(data.config), indent=2))
@@ -240,6 +252,12 @@ def save_simulation(data: SimulationData, run_dir: str | Path) -> None:
 
 
 def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
+    """Persist a fit to ``run_dir``.
+
+    Writes the estimated parameter arrays to ``params.npz`` and a JSON summary
+    (optimizer/backend metadata, objective, convergence, information criteria,
+    and any marginal population structure) to ``fit_summary.json``.
+    """
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     p = result.params
@@ -273,6 +291,7 @@ def save_fit_result(result: FitResult, run_dir: str | Path) -> None:
 
 
 def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> None:
+    """Write fit-diagnostic tables to ``fit_diagnostics.json`` in ``run_dir``."""
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -290,6 +309,7 @@ def save_fit_diagnostics(diagnostics: FitDiagnostics, run_dir: str | Path) -> No
 
 
 def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_dir: str | Path) -> None:
+    """Write the dimensionality-search candidates/best to JSON in ``run_dir``."""
     out = Path(run_dir)
     out.mkdir(parents=True, exist_ok=True)
     payload = {"candidates": diagnostics.candidates, "best": diagnostics.best}
@@ -297,11 +317,13 @@ def save_dimensionality_diagnostics(diagnostics: DimensionalityDiagnostics, run_
 
 
 def load_params(path: str | Path) -> MLSIRMParams:
+    """Load an :class:`MLSIRMParams` from a bounded ``params.npz`` file."""
     with _load_numpy_bounded(path) as data:
         return MLSIRMParams(theta=data["theta"], alpha=data["alpha"], b=data["b"], xi=data["xi"], zeta=data["zeta"], tau=float(data["tau"]))
 
 
 def load_factor_csv(path: str | Path) -> np.ndarray:
+    """Load the ``factor_id`` column from a bounded item-factor CSV file."""
     import warnings
 
     content = _read_text_bounded(
@@ -325,10 +347,12 @@ def load_factor_csv(path: str | Path) -> np.ndarray:
 
 
 def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:
+    """Atomically write an ``item_id,factor_id`` CSV for the given assignment."""
     item_ids = np.arange(len(factor_id))
     data = np.column_stack((item_ids, factor_id))
 
     def write_csv(stream: BinaryIO) -> None:
+        """Serialize the item/factor table as CSV to ``stream``."""
         text_stream = io.TextIOWrapper(stream, encoding="utf-8", newline="")
         try:
             np.savetxt(
@@ -347,4 +371,5 @@ def _write_factor_csv(path: Path, factor_id: np.ndarray) -> None:
 
 
 def _arrays_to_lists(values: dict[str, np.ndarray]) -> dict[str, list[float]]:
+    """Convert a dict of numeric arrays to JSON-serializable nested lists."""
     return {key: np.asarray(value, dtype=float).tolist() for key, value in values.items()}

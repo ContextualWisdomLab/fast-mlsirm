@@ -9,6 +9,12 @@ from .types import MLSIRMParams
 
 
 def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Validate a binary response matrix and derive its observed-entry mask.
+
+    Entries that are non-finite or ``-1`` are treated as missing; an optional
+    ``mask`` is intersected with that rule. Observed entries must be 0/1.
+    Returns ``(clean, observed)`` where missing cells in ``clean`` are zeroed.
+    """
     y = np.asarray(responses, dtype=np.float64)
     if y.ndim != 2:
         raise ValueError("responses must be a 2D matrix")
@@ -32,6 +38,11 @@ def prepare_response(responses: np.ndarray, mask: np.ndarray | None = None) -> t
 
 
 def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.ndarray:
+    """Validate the item-to-trait assignment and return it as ``int64``.
+
+    ``factor_id`` must have one integer entry per item, each in
+    ``0..n_dims-1`` (the simple-structure trait each item loads on).
+    """
     raw = np.asarray(factor_id)
     if raw.shape != (n_items,):
         raise ValueError("factor_id length must match number of items")
@@ -43,6 +54,12 @@ def validate_factor_id(factor_id: np.ndarray, n_items: int, n_dims: int) -> np.n
 
 
 def model_flags(model: str) -> tuple[bool, bool]:
+    """Return ``(free_alpha, uses_space)`` capability flags for a model variant.
+
+    ``free_alpha`` is false for the Rasch-type variants (``MLSRM``/``ULSRM``)
+    that fix discriminations to 1; ``uses_space`` is false only for plain
+    ``MIRT``, which has no latent-space distance term.
+    """
     name = model.upper()
     if name not in VALID_MODELS:
         raise ValueError(f"model must be one of {sorted(VALID_MODELS)}")
@@ -104,6 +121,15 @@ def neg_loglik_and_grad(
     backend: str = "numpy",
     device: str | None = None,
 ) -> tuple[float, MLSIRMParams, float]:
+    """Compute the penalized negative log-likelihood and its gradient.
+
+    Evaluates the JMLE objective for the current ``params`` over the observed
+    responses and returns ``(nll, gradients, loglik)``, where ``gradients`` is
+    an :class:`MLSIRMParams` of partial derivatives and ``loglik`` is the
+    unpenalized log-likelihood. Dispatches to the Rust core when ``backend``
+    resolves to ``rust``; the NumPy path below is the numerically identical
+    reference. ``mask``/``-1``/NaN mark missing responses.
+    """
     config = config or FitConfig()
     model = config.normalized_model()
     if model == "BIFAC2PLM":
@@ -188,6 +214,12 @@ def _neg_loglik_and_grad_rust(
     mask: np.ndarray | None,
     device: str = "cpu",
 ) -> tuple[float, MLSIRMParams, float]:
+    """Evaluate the penalized objective and gradient via the Rust core.
+
+    Marshals validated arrays into ``fast_mlsirm._core.neg_loglik_and_grad`` on
+    the requested ``device`` and reshapes the returned gradient blocks back into
+    an :class:`MLSIRMParams`. Kept numerically identical to the NumPy path.
+    """
     model = config.normalized_model()
     penalty = config.penalty
     y, observed = prepare_response(responses, mask)
@@ -231,6 +263,12 @@ def _neg_loglik_and_grad_rust(
 
 
 def _add_penalty(params: MLSIRMParams, penalty: PenaltyConfig, free_alpha: bool, uses_space: bool) -> float:
+    """Return the ridge-penalty contribution to the objective for ``params``.
+
+    Sums the half-weighted squared deviations of each active parameter block
+    from their respective centers (discriminations and latent-space terms are
+    included only when the model variant uses them).
+    """
     # Optimized penalty calculation: replace np.sum(x * x) with np.vdot(x, x) to avoid intermediate array allocation
     value = 0.5 * penalty.lambda_theta * float(np.vdot(params.theta, params.theta))
     value += 0.5 * penalty.lambda_b * float(np.vdot(params.b, params.b))
