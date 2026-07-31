@@ -41,6 +41,7 @@ MAX_POLY_CAT_ITEMS = 10_000
 
 
 def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
+    """Validate that ``value`` is an integer in ``[lower, upper]`` and return it."""
     if (
         not isinstance(value, (int, np.integer))
         or isinstance(value, (bool, np.bool_))
@@ -51,6 +52,7 @@ def _bounded_integer(value, name: str, lower: int, upper: int) -> int:
 
 
 def _quadrature_points(value) -> int:
+    """Validate and return the Gauss-Hermite quadrature node count ``q_theta``."""
     return _bounded_integer(value, "q_theta", 1, MAX_POLY_QUADRATURE_POINTS)
 
 
@@ -81,6 +83,7 @@ class PolytomousFit:
 
 
 def _core_module():
+    """Return the compiled Rust core module, or ``None`` if it is unavailable."""
     try:
         from . import _core  # type: ignore
 
