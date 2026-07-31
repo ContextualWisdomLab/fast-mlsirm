@@ -186,7 +186,7 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
 
 impl GpuContext {
     fn init() -> Option<Self> {
-        let instance = wgpu::Instance::default();
+        let instance = crate::gpu_init::new_instance();
         let adapter =
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
                 .ok()?;

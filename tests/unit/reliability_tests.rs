@@ -643,3 +643,2306 @@ fn seprel_overflow_guard() {
     assert!(separation_reliability(&[1e308, 1e308], &[0.1, 0.1]).is_err());
     assert!(separation_reliability(&[0.0, 1.0], &[1e200, 1e200]).is_err());
 }
+
+// ===================== icc (Shrout-Fleiss family) =========================
+// Pins from the exact-Fraction oracle (session files/icc_oracle.py,
+// EXECUTED; scipy F dist for qf/pf), transcribed from CRAN irr 0.85
+// R/icc.R. Every assert reads IccResult fields returned by `icc`.
+//
+// Mutation kills verified by editing the implementation (each FAILED, then
+// restored):
+// - MU1 MSw normalized by /nr instead of /ns -> ic_anchor_i1 o_s coeff.
+// - MU2 FU quantile df order swapped -> ic_anchor_i1 o_s ubound.
+// - MU3 agreement-single denominator drops (nr/ns)(MSc-MSe) ->
+//   ic_anchor_i1 a_s coeff (would collapse to the consistency 920/1287).
+// - MU4 r0 ignored in the F statistic -> ic_r0_i3 fvalue pins.
+// - MU5 column-major stride bug -> ic_asym_i2 coeff pins.
+// - MU6 CI Satterthwaite uses r0 instead of the coefficient plug-in ->
+//   ic_anchor_i1 a_s lbound/ubound.
+
+fn icc_rel(a: f64, b: f64, tol: f64) -> bool {
+    (a - b).abs() <= tol * b.abs().max(1.0)
+}
+
+fn sf_table2() -> Vec<f64> {
+    vec![
+        9.0, 2.0, 5.0, 8.0, //
+        6.0, 1.0, 3.0, 2.0, //
+        8.0, 4.0, 6.0, 8.0, //
+        7.0, 1.0, 2.0, 6.0, //
+        10.0, 5.0, 6.0, 9.0, //
+        6.0, 2.0, 4.0, 7.0,
+    ]
+}
+
+fn icc_all6(data: &[f64], ns: usize, nr: usize, r0: f64, conf: f64) -> Vec<IccResult> {
+    [
+        ("oneway", "consistency", "single"),
+        ("twoway", "consistency", "single"),
+        ("twoway", "agreement", "single"),
+        ("oneway", "consistency", "average"),
+        ("twoway", "consistency", "average"),
+        ("twoway", "agreement", "average"),
+    ]
+    .iter()
+    .map(|(m, t, u)| icc(data, ns, nr, m, t, u, r0, conf).unwrap())
+    .collect()
+}
+
+/// I1: Shrout-Fleiss (1979) Table 2, all six variants (r0=0, conf=.95).
+/// Kills MU1 (o_s coeff), MU2 (o_s ubound), MU3 (a_s coeff), MU6 (a_s CI).
+#[test]
+fn ic_anchor_i1_sf_all_six() {
+    let r = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let coeffs = [
+        448.0 / 2703.0,
+        920.0 / 1287.0,
+        184.0 / 635.0,
+        1792.0 / 4047.0,
+        3680.0 / 4047.0,
+        736.0 / 1187.0,
+    ];
+    for (res, want) in r.iter().zip(coeffs) {
+        assert!(icc_rel(res.value, want, 1e-12), "{} vs {want}", res.value);
+        assert_eq!(res.subjects, 6);
+        assert_eq!(res.raters, 4);
+        assert_eq!(res.df1, 5.0);
+    }
+    // F/df2/p: oneway pair shares F, twoway quartet shares F at r0=0
+    // (agreement Satterthwaite v == (ns-1)(nr-1) exactly when r0=0).
+    for i in [0usize, 3] {
+        assert!(icc_rel(r[i].fvalue, 1.7946784922394678, 1e-12));
+        assert_eq!(r[i].df2, 18.0);
+        assert!((r[i].p_value - 0.16476880834463953).abs() < 1e-9);
+    }
+    for i in [1usize, 2, 4, 5] {
+        assert!(icc_rel(r[i].fvalue, 11.02724795640327, 1e-12));
+        assert!(icc_rel(r[i].df2, 15.0, 1e-12));
+        assert!((r[i].p_value - 0.00013456651648433688).abs() < 1e-9);
+    }
+    let cis = [
+        (-0.13293232487475098, 0.722560062328121),
+        (0.3424647650339252, 0.9458582599553595),
+        (0.018786513374712013, 0.7610843696489528),
+        (-0.8844421552381201, 0.9124154203407755),
+        (0.6756747138163046, 0.9858916781690623),
+        (0.03944017992139112, 0.9285731833771681),
+    ];
+    for (res, (lb, ub)) in r.iter().zip(cis) {
+        assert!(icc_rel(res.lbound, lb, 1e-9), "lb {} vs {lb}", res.lbound);
+        assert!(icc_rel(res.ubound, ub, 1e-9), "ub {} vs {ub}", res.ubound);
+    }
+}
+
+/// I2: asymmetric 4x3 fixture; kills MU5 (stride/transposition bugs).
+#[test]
+fn ic_asym_i2() {
+    let data = vec![1.0, 3.0, 6.0, 2.0, 2.0, 7.0, 4.0, 5.0, 9.0, 3.0, 3.0, 8.0];
+    let r = icc_all6(&data, 4, 3, 0.0, 0.95);
+    let coeffs = [
+        -23.0 / 139.0,
+        48.0 / 59.0,
+        8.0 / 53.0,
+        -23.0 / 31.0,
+        144.0 / 155.0,
+        8.0 / 23.0,
+    ];
+    for (res, want) in r.iter().zip(coeffs) {
+        assert!(icc_rel(res.value, want, 1e-12), "{} vs {want}", res.value);
+    }
+    assert!(icc_rel(r[1].fvalue, 14.090909090909092, 1e-12));
+    assert_eq!(r[1].df2, 6.0);
+    assert!((r[1].p_value - 0.00399953361525563).abs() < 1e-9);
+    assert!(icc_rel(r[2].lbound, -0.005333344546176069, 1e-9));
+    assert!(icc_rel(r[2].ubound, 0.7496392441094206, 1e-9));
+}
+
+/// I3: r0=0.3 changes F/df2/p but not coefficients or CIs. Kills MU4.
+#[test]
+fn ic_r0_i3() {
+    let base = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let r = icc_all6(&sf_table2(), 6, 4, 0.3, 0.95);
+    for (a, b) in r.iter().zip(&base) {
+        assert_eq!(a.value, b.value); // coeff bitwise-unaffected by r0
+        assert_eq!(a.lbound, b.lbound);
+        assert_eq!(a.ubound, b.ubound);
+    }
+    assert!(icc_rel(r[0].fvalue, 0.6611973392461197, 1e-12));
+    assert!((r[0].p_value - 0.6573818056947218).abs() < 1e-9);
+    assert!(icc_rel(r[1].fvalue, 4.062670299727521, 1e-12));
+    assert!(icc_rel(r[2].fvalue, 0.9561240676364373, 1e-12));
+    assert!(icc_rel(r[2].df2, 4.7463353743354775, 1e-12));
+    assert!((r[2].p_value - 0.5219672328433673).abs() < 1e-9);
+    assert!(icc_rel(r[3].fvalue, 1.2562749445676273, 1e-12));
+    assert!(icc_rel(r[4].fvalue, 7.719073569482289, 1e-12));
+    assert!(icc_rel(r[5].fvalue, 3.0350332119134347, 1e-12));
+    assert!(icc_rel(r[5].df2, 7.136518826153806, 1e-12));
+}
+
+/// I4: conf=.80 changes CIs but not F/p. Kills conf-ignored mutants.
+#[test]
+fn ic_conf_i4() {
+    let base = icc_all6(&sf_table2(), 6, 4, 0.0, 0.95);
+    let r = icc_all6(&sf_table2(), 6, 4, 0.0, 0.80);
+    for (a, b) in r.iter().zip(&base) {
+        assert_eq!(a.fvalue, b.fvalue);
+        assert_eq!(a.p_value, b.p_value);
+    }
+    assert!(icc_rel(r[0].lbound, -0.047857465433838266, 1e-9));
+    assert!(icc_rel(r[0].ubound, 0.5441024283192402, 1e-9));
+    assert!(icc_rel(r[1].lbound, 0.4905340604697688, 1e-9));
+    assert!(icc_rel(r[1].ubound, 0.8966577783576283, 1e-9));
+    assert!(icc_rel(r[2].lbound, 0.0788459479007961, 1e-9));
+    assert!(icc_rel(r[2].ubound, 0.6022571128642371, 1e-9));
+    assert!(icc_rel(r[5].lbound, 0.2287806352847549, 1e-9));
+    assert!(icc_rel(r[5].ubound, 0.8597203175540028, 1e-9));
+}
+
+/// I5: a NaN anywhere in a row drops it listwise; results are bitwise
+/// identical to calling with that row removed.
+#[test]
+fn ic_nan_drop_i5() {
+    let mut with_nan = sf_table2();
+    with_nan[3 * 4 + 2] = f64::NAN; // poison row 3
+    let direct: Vec<f64> = sf_table2()
+        .chunks(4)
+        .enumerate()
+        .filter(|(i, _)| *i != 3)
+        .flat_map(|(_, r)| r.to_vec())
+        .collect();
+    for (m, t, u) in [
+        ("oneway", "consistency", "single"),
+        ("twoway", "consistency", "single"),
+        ("twoway", "agreement", "average"),
+    ] {
+        let a = icc(&with_nan, 6, 4, m, t, u, 0.0, 0.95).unwrap();
+        let b = icc(&direct, 5, 4, m, t, u, 0.0, 0.95).unwrap();
+        assert_eq!(a.subjects, 5);
+        assert_eq!(a.value.to_bits(), b.value.to_bits());
+        assert_eq!(a.fvalue.to_bits(), b.fvalue.to_bits());
+        assert_eq!(a.lbound.to_bits(), b.lbound.to_bits());
+        assert_eq!(a.ubound.to_bits(), b.ubound.to_bits());
+    }
+    // Oracle pin for the dropped-row fixture (c_s).
+    let c = icc(&direct, 5, 4, "twoway", "consistency", "single", 0.0, 0.95).unwrap();
+    assert!(icc_rel(c.value, 329.0 / 459.0, 1e-12));
+    assert!(icc_rel(c.fvalue, 11.123076923076923, 1e-12));
+    assert_eq!(c.df2, 12.0);
+}
+
+/// Every documented error branch. Asserts read crate Err values.
+#[test]
+fn ic_error_contract() {
+    let d = sf_table2();
+    let ok = |e: Result<IccResult, String>, frag: &str| {
+        let msg = e.unwrap_err();
+        assert!(msg.contains(frag), "{msg} lacks {frag}");
+    };
+    ok(
+        icc(&d, 6, 4, "3way", "consistency", "single", 0.0, 0.95),
+        "model",
+    );
+    ok(icc(&d, 6, 4, "twoway", "abs", "single", 0.0, 0.95), "type");
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "med", 0.0, 0.95),
+        "unit",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 1.0, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", -0.1, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", f64::NAN, 0.95),
+        "r0",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 0.0, 1.0),
+        "conf_level",
+    );
+    ok(
+        icc(&d, 6, 4, "twoway", "consistency", "single", 0.0, f64::NAN),
+        "conf_level",
+    );
+    ok(
+        icc(&d[..4], 4, 1, "oneway", "consistency", "single", 0.0, 0.95),
+        "raters",
+    );
+    ok(
+        icc(&d, 5, 4, "oneway", "consistency", "single", 0.0, 0.95),
+        "length",
+    );
+    ok(
+        icc(
+            &[f64::INFINITY, 0.0, 1.0, 2.0],
+            2,
+            2,
+            "oneway",
+            "consistency",
+            "single",
+            0.0,
+            0.95,
+        ),
+        "infinit",
+    );
+    // All-but-one rows dropped -> too few complete rows.
+    let mut nan_heavy = sf_table2();
+    for i in 0..5 {
+        nan_heavy[i * 4] = f64::NAN;
+    }
+    ok(
+        icc(
+            &nan_heavy,
+            6,
+            4,
+            "oneway",
+            "consistency",
+            "single",
+            0.0,
+            0.95,
+        ),
+        "complete subject rows",
+    );
+    // Constant matrix: every mean square is 0 -> degenerate.
+    let konst = vec![3.0; 12];
+    assert!(icc(&konst, 4, 3, "oneway", "consistency", "single", 0.0, 0.95).is_err());
+    // Perfect agreement (rows differ, columns identical): MSe == MSw == 0,
+    // icc == 1 -> degenerate CI/pivot must Err, not leak inf/NaN.
+    let perfect = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0];
+    assert!(icc(&perfect, 4, 2, "twoway", "agreement", "single", 0.0, 0.95).is_err());
+    assert!(icc(&perfect, 4, 2, "twoway", "consistency", "single", 0.0, 0.95).is_err());
+    // Huge magnitudes overflow the SS accumulation -> explicit error.
+    let huge = vec![1e300, -1e300, 1e300, -1e300, -1e300, 1e300, 1e300, 1e300];
+    assert!(icc(&huge, 4, 2, "oneway", "consistency", "single", 0.0, 0.95).is_err());
+}
+
+/// MC-500: subject- and rater-permutation invariance plus the
+/// Spearman-Brown identity between the crate's own single- and
+/// average-unit outputs, for all three model families (algebraic identity
+/// verified in spec review; both sides read crate outputs, so a mutation
+/// breaking either unit's formula independently fails the bridge).
+#[test]
+#[ignore]
+fn ic_mc_500_invariance() {
+    let mut state = 0x1CC5EEDu64;
+    let mut uni = |s: &mut u64| -> f64 {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*s >> 11) as f64 / (1u64 << 53) as f64
+    };
+    for rep in 0..500 {
+        let ns = 4 + (uni(&mut state) * 6.0) as usize;
+        let nr = 2 + (uni(&mut state) * 4.0) as usize;
+        let data: Vec<f64> = (0..ns * nr)
+            .map(|_| (uni(&mut state) * 10.0).round())
+            .collect();
+        let variants = [
+            ("oneway", "consistency"),
+            ("twoway", "consistency"),
+            ("twoway", "agreement"),
+        ];
+        // Skip degenerate draws (constant matrices, near-1 CI pivots etc.)
+        // in ANY variant/unit combination.
+        if variants.iter().any(|(m, t)| {
+            icc(&data, ns, nr, m, t, "single", 0.0, 0.95).is_err()
+                || icc(&data, ns, nr, m, t, "average", 0.0, 0.95).is_err()
+        }) {
+            continue;
+        }
+        // Subject reversal.
+        let rev_rows: Vec<f64> = (0..ns)
+            .rev()
+            .flat_map(|i| data[i * nr..(i + 1) * nr].to_vec())
+            .collect();
+        // Rater reversal.
+        let rev_cols: Vec<f64> = (0..ns)
+            .flat_map(|i| (0..nr).rev().map(move |j| (i, j)))
+            .map(|(i, j)| data[i * nr + j])
+            .collect();
+        for (m, t) in variants {
+            let s = icc(&data, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            let a = icc(&data, ns, nr, m, t, "average", 0.0, 0.95).unwrap();
+            let sr = icc(&rev_rows, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            let sc = icc(&rev_cols, ns, nr, m, t, "single", 0.0, 0.95).unwrap();
+            assert!(icc_rel(sr.value, s.value, 1e-10), "rep {rep} row-perm");
+            assert!(icc_rel(sc.value, s.value, 1e-10), "rep {rep} col-perm");
+            // Spearman-Brown bridge between two crate outputs.
+            let k = nr as f64;
+            let sb = k * s.value / (1.0 + (k - 1.0) * s.value);
+            assert!(
+                icc_rel(a.value, sb, 1e-10),
+                "rep {rep} {m}/{t} SB: {} vs {sb}",
+                a.value
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// kripp_alpha (irr 0.85 kripp.alpha.R). Pins are exact Fractions from the
+// executed oracle (files/kripp_oracle.py); K1 matches the irr man page's
+// published values. Every assert reads KrippResult fields returned by the
+// crate.
+// ---------------------------------------------------------------------------
+
+fn ka_close(a: f64, b: f64) -> bool {
+    let d = (a - b).abs();
+    d <= 1e-12 || d <= 1e-12 * b.abs()
+}
+
+/// irr man-page `nmm` matrix, raters x subjects (4 x 12); NaN = missing.
+fn ka_k1() -> Vec<f64> {
+    let nan = f64::NAN;
+    // Column-major R matrix(nrow=4) transposed to rater rows.
+    let cols: [[f64; 4]; 12] = [
+        [1.0, 1.0, nan, 1.0],
+        [2.0, 2.0, 3.0, 2.0],
+        [3.0, 3.0, 3.0, 3.0],
+        [3.0, 3.0, 3.0, 3.0],
+        [2.0, 2.0, 2.0, 2.0],
+        [1.0, 2.0, 3.0, 4.0],
+        [4.0, 4.0, 4.0, 4.0],
+        [1.0, 1.0, 2.0, 1.0],
+        [2.0, 2.0, 2.0, 2.0],
+        [nan, 5.0, 5.0, 5.0],
+        [nan, nan, 1.0, 1.0],
+        [nan, nan, 3.0, nan],
+    ];
+    let mut x = vec![0.0; 4 * 12];
+    for (c, col) in cols.iter().enumerate() {
+        for (r, v) in col.iter().enumerate() {
+            x[r * 12 + c] = *v;
+        }
+    }
+    x
+}
+
+#[test]
+fn ka_anchor_k1_all_methods() {
+    // Kills MU1 (diag 1/mc: nominal -> 501/869 = 0.5765...), MU3 (ordinal
+    // full weights -> 167915/216366), MU4 (interval |d| -> 417/521),
+    // MU5 (nmv excludes diagonal -> 145/152), MU6 (num*nc products).
+    let x = ka_k1();
+    let want = [
+        ("nominal", 113.0 / 152.0),
+        ("ordinal", 108577.0 / 133160.0),
+        ("interval", 951.0 / 1120.0),
+        ("ratio", 18222619.0 / 22852465.0),
+    ];
+    for (m, v) in want {
+        let r = kripp_alpha(&x, 4, 12, m).unwrap();
+        assert!(ka_close(r.value, v), "{m}: {} vs {v}", r.value);
+        assert_eq!(r.nmatchval, 40.0, "{m} nmv");
+        assert_eq!(r.subjects, 12);
+        assert_eq!(r.raters, 4);
+        assert_eq!(r.levels, 5);
+    }
+}
+
+#[test]
+fn ka_no_na_quirk_k2() {
+    // Complete data uses divisor mc = 1, NOT m - 1 (R lines 12-13 quirk).
+    // Kills MU2 (mc always m-1): mutant nominal would be 11/18 != 43/72.
+    let x = [
+        1.0, 2.0, 3.0, 3.0, 2.0, //
+        1.0, 2.0, 3.0, 3.0, 1.0, //
+        2.0, 2.0, 3.0, 3.0, 2.0,
+    ];
+    let n = kripp_alpha(&x, 3, 5, "nominal").unwrap();
+    assert!(ka_close(n.value, 43.0 / 72.0), "nominal {}", n.value);
+    assert_eq!(n.nmatchval, 30.0);
+    let i = kripp_alpha(&x, 3, 5, "interval").unwrap();
+    assert!(ka_close(i.value, 97.0 / 126.0), "interval {}", i.value);
+    // Guard the guard: the MU2 mutant value differs from the true pin.
+    assert!(!ka_close(n.value, 11.0 / 18.0));
+}
+
+#[test]
+fn ka_hand_fixture_k3() {
+    let x = [1.0, 2.0, 3.0, 1.0, 1.0, 3.0, 3.0, 2.0];
+    let n = kripp_alpha(&x, 2, 4, "nominal").unwrap();
+    assert!(ka_close(n.value, 1.0 / 3.0), "nominal {}", n.value);
+    let o = kripp_alpha(&x, 2, 4, "ordinal").unwrap();
+    assert!(ka_close(o.value, 17.0 / 24.0), "ordinal {}", o.value);
+    // Interval coincidentally equals ordinal on this fixture (both crate
+    // outputs; the ordinal/interval swap mutant is killed on K1 where the
+    // two pins differ).
+    let iv = kripp_alpha(&x, 2, 4, "interval").unwrap();
+    assert!(ka_close(iv.value, 17.0 / 24.0), "interval {}", iv.value);
+    assert!(ka_close(iv.value, o.value));
+    let rt = kripp_alpha(&x, 2, 4, "ratio").unwrap();
+    assert!(ka_close(rt.value, 1889.0 / 2841.0), "ratio {}", rt.value);
+    assert_eq!(n.nmatchval, 8.0);
+    assert_eq!(n.levels, 3);
+}
+
+#[test]
+fn ka_single_level_k4() {
+    // R line 45: fewer than 2 levels -> alpha = 1.
+    let x = [2.0, 2.0, 2.0, 2.0];
+    let r = kripp_alpha(&x, 2, 2, "nominal").unwrap();
+    assert_eq!(r.value, 1.0);
+    assert_eq!(r.nmatchval, 4.0);
+    assert_eq!(r.levels, 1);
+}
+
+#[test]
+fn ka_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0];
+    assert!(kripp_alpha(&ok, 2, 2, "euclid")
+        .unwrap_err()
+        .contains("method"));
+    assert!(kripp_alpha(&ok, 1, 4, "nominal")
+        .unwrap_err()
+        .contains("raters"));
+    assert!(kripp_alpha(&[], 2, 0, "nominal")
+        .unwrap_err()
+        .contains("subject"));
+    assert!(kripp_alpha(&ok, 2, 3, "nominal")
+        .unwrap_err()
+        .contains("length"));
+    let inf = [1.0, f64::INFINITY, 2.0, 1.0];
+    assert!(kripp_alpha(&inf, 2, 2, "nominal")
+        .unwrap_err()
+        .contains("infinit"));
+    let nan = f64::NAN;
+    assert!(kripp_alpha(&[nan, nan, nan, nan], 2, 2, "nominal")
+        .unwrap_err()
+        .contains("missing"));
+    // Ratio metric undefined when a level pair sums to zero.
+    let zsum = [-1.0, 1.0, 1.0, -1.0];
+    assert!(kripp_alpha(&zsum, 2, 2, "ratio")
+        .unwrap_err()
+        .contains("ratio"));
+    // Same data is fine for nominal/interval (crate outputs finite).
+    assert!(kripp_alpha(&zsum, 2, 2, "nominal")
+        .unwrap()
+        .value
+        .is_finite());
+    assert!(kripp_alpha(&zsum, 2, 2, "interval")
+        .unwrap()
+        .value
+        .is_finite());
+}
+
+#[test]
+#[ignore = "MC-500: run explicitly with cargo test -- --ignored"]
+fn ka_mc_500_permutation_invariance() {
+    // Alpha is invariant under rater-row and subject-column permutation;
+    // both sides of every comparison are crate outputs.
+    let mut state = 0xCA5EEDu64;
+    let mut next = |s: &mut u64| -> u64 {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *s >> 11
+    };
+    let base = ka_k1();
+    let methods = ["nominal", "ordinal", "interval", "ratio"];
+    for rep in 0..500 {
+        let m = methods[rep % 4];
+        let want = kripp_alpha(&base, 4, 12, m).unwrap();
+        // Fisher-Yates over rater rows.
+        let mut rows: Vec<usize> = (0..4).collect();
+        for i in (1..4).rev() {
+            let j = (next(&mut state) % (i as u64 + 1)) as usize;
+            rows.swap(i, j);
+        }
+        let mut cols: Vec<usize> = (0..12).collect();
+        for i in (1..12).rev() {
+            let j = (next(&mut state) % (i as u64 + 1)) as usize;
+            cols.swap(i, j);
+        }
+        let mut xp = vec![0.0; 48];
+        for (rn, &ro) in rows.iter().enumerate() {
+            for (cn, &co) in cols.iter().enumerate() {
+                xp[rn * 12 + cn] = base[ro * 12 + co];
+            }
+        }
+        let got = kripp_alpha(&xp, 4, 12, m).unwrap();
+        assert!(
+            ka_close(got.value, want.value),
+            "rep {rep} {m}: {} vs {}",
+            got.value,
+            want.value
+        );
+        assert_eq!(got.nmatchval, want.nmatchval, "rep {rep} nmv");
+        assert_eq!(got.levels, want.levels, "rep {rep} levels");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Finn (1970) coefficient (`finn_coefficient`). Pins from the EXECUTED
+// exact-Fraction oracle (session files/finn_oracle.py, output
+// finn_oracle_output.txt); every assert reads FinnResult fields returned by
+// the crate. Mutation kills (each EXECUTED: mutant compiled, test FAILED,
+// restored): MU1 MSexp = s^2/12 -> fn1_anchor_oneway value pin; MU2
+// population row variance -> fn1_anchor_oneway; MU3 twoway MSe drops MSc ->
+// fn1_anchor_twoway; MU4 df2 = (ns-1)(nr-1) -> fn1_anchor_oneway p pin; MU5
+// flipped p tail -> fn1_anchor_oneway p pin; MU6 listwise drop skipped ->
+// fn1_listwise_drop (NaN row must reproduce the 5-row pins exactly).
+
+// FN1 fixture: 6x4 integer ratings, s = 5 (oracle FN1).
+const FN1: [f64; 24] = [
+    2.0, 3.0, 2.0, 3.0, 4.0, 4.0, 5.0, 4.0, 1.0, 2.0, 1.0, 1.0, 3.0, 3.0, 3.0, 4.0, 5.0, 4.0, 5.0,
+    5.0, 2.0, 2.0, 3.0, 2.0,
+];
+
+#[test]
+fn fn1_anchor_oneway() {
+    // Oracle FN1: coeff = 125/144, F = 144/19, df2 = 18,
+    // p = 4.47127350746514e-06. Kills MU1 (131/150), MU2 (173/192),
+    // MU4 (p 2.7664901762462074e-05), MU5 (p 0.9999955287264926).
+    let r = finn_coefficient(&FN1, 6, 4, 5, "oneway").unwrap();
+    assert!((r.value - 125.0 / 144.0).abs() < 1e-15);
+    assert!((r.statistic - 144.0 / 19.0).abs() < 1e-13);
+    assert_eq!(r.df2, 18.0);
+    assert!((r.p_value - 4.47127350746514e-06).abs() < 1e-12);
+    assert_eq!(r.subjects, 6);
+    assert_eq!(r.raters, 4);
+}
+
+#[test]
+fn fn1_anchor_twoway() {
+    // Oracle FN2: coeff = 617/720, F = 720/103, df2 = 18 (R quirk: twoway
+    // also uses ns*(nr-1)), p = 8.469265956566033e-06. Kills MU3 (101/120).
+    let r = finn_coefficient(&FN1, 6, 4, 5, "twoway").unwrap();
+    assert!((r.value - 617.0 / 720.0).abs() < 1e-15);
+    assert!((r.statistic - 720.0 / 103.0).abs() < 1e-13);
+    assert_eq!(r.df2, 18.0);
+    assert!((r.p_value - 8.469265956566033e-06).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_listwise_drop() {
+    // FN1 rows minus row 2 plus a NaN row: must equal the oracle FN3 5-row
+    // pins exactly (coeff 13/15, F 15/2, df2 15, p 2.9654977282546142e-05).
+    // A mutant that keeps, imputes, or NaN-propagates the row cannot
+    // reproduce these finite pins (kills MU6).
+    let mut with_nan: Vec<f64> = Vec::new();
+    for (i, chunk) in FN1.chunks(4).enumerate() {
+        if i == 2 {
+            with_nan.extend_from_slice(&[1.0, f64::NAN, 1.0, 1.0]);
+        } else {
+            with_nan.extend_from_slice(chunk);
+        }
+    }
+    let r = finn_coefficient(&with_nan, 6, 4, 5, "oneway").unwrap();
+    assert_eq!(r.subjects, 5);
+    assert!((r.value - 13.0 / 15.0).abs() < 1e-15);
+    assert!((r.statistic - 7.5).abs() < 1e-13);
+    assert_eq!(r.df2, 15.0);
+    assert!((r.p_value - 2.9654977282546142e-05).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_anchor_two_raters() {
+    // Oracle FN4 5x2 s=3: oneway coeff 1/10, F 10/9, df2 5,
+    // p 0.5201165618867003; twoway coeff -1/8 (negative valid), F 8/9,
+    // p 0.655566243225814.
+    let fn4 = [1.0, 2.0, 2.0, 2.0, 3.0, 1.0, 1.0, 1.0, 2.0, 3.0];
+    let r = finn_coefficient(&fn4, 5, 2, 3, "oneway").unwrap();
+    assert!((r.value - 0.1).abs() < 1e-15);
+    assert!((r.statistic - 10.0 / 9.0).abs() < 1e-14);
+    assert_eq!(r.df2, 5.0);
+    assert!((r.p_value - 0.5201165618867003).abs() < 1e-12);
+    let t = finn_coefficient(&fn4, 5, 2, 3, "twoway").unwrap();
+    assert!((t.value - (-0.125)).abs() < 1e-15);
+    assert!((t.statistic - 8.0 / 9.0).abs() < 1e-14);
+    assert!((t.p_value - 0.655566243225814).abs() < 1e-12);
+}
+
+#[test]
+fn fn1_perfect_agreement() {
+    // MSw == 0 (oneway): all raters agree per row -> value 1, F +Inf, p 0.
+    let perfect = [1.0, 1.0, 3.0, 3.0, 5.0, 5.0, 2.0, 2.0];
+    let r = finn_coefficient(&perfect, 4, 2, 5, "oneway").unwrap();
+    assert_eq!(r.value, 1.0);
+    assert!(r.statistic.is_infinite() && r.statistic > 0.0);
+    assert_eq!(r.p_value, 0.0);
+    // MSe == 0 (twoway): additive row + column structure has zero residual;
+    // x_ij = row_i + col_j with rows [0,1,2], cols [0,1].
+    let additive = [1.0, 2.0, 2.0, 3.0, 3.0, 4.0];
+    let t = finn_coefficient(&additive, 3, 2, 5, "twoway").unwrap();
+    assert_eq!(t.value, 1.0);
+    assert!(t.statistic.is_infinite() && t.statistic > 0.0);
+    assert_eq!(t.p_value, 0.0);
+}
+
+#[test]
+fn fn1_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0];
+    assert!(finn_coefficient(&ok, 2, 2, 3, "both")
+        .unwrap_err()
+        .contains("model"));
+    assert!(finn_coefficient(&ok, 2, 2, 1, "oneway")
+        .unwrap_err()
+        .contains("s_levels"));
+    assert!(finn_coefficient(&ok, 4, 1, 3, "oneway")
+        .unwrap_err()
+        .contains("raters"));
+    assert!(finn_coefficient(&ok, 2, 3, 3, "oneway")
+        .unwrap_err()
+        .contains("length"));
+    let inf = [1.0, f64::INFINITY, 2.0, 1.0];
+    assert!(finn_coefficient(&inf, 2, 2, 3, "oneway")
+        .unwrap_err()
+        .contains("infinit"));
+    // NaN deletion leaving exactly one complete row.
+    let nan = f64::NAN;
+    let one_left = [1.0, 2.0, nan, 2.0, 3.0, nan];
+    assert!(finn_coefficient(&one_left, 3, 2, 3, "oneway")
+        .unwrap_err()
+        .contains("complete"));
+}
+
+#[test]
+#[ignore = "MC-500: run with --ignored"]
+fn fn1_mc_500_permutation_invariance() {
+    // Property: oneway/twoway Finn coefficients are invariant under subject
+    // permutation, and oneway is invariant under rater permutation (MSw is
+    // a row-wise statistic; twoway MSe is also rater-permutation invariant
+    // since MSc uses the unordered set of column means). Asserts compare
+    // crate outputs against crate outputs on permuted input.
+    let mut state: u64 = 0x00C0FFEE;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) % 7) as f64 + 1.0
+    };
+    for rep in 0..500 {
+        let ns = 4 + (rep % 5);
+        let nr = 2 + (rep % 3);
+        let data: Vec<f64> = (0..ns * nr).map(|_| next()).collect();
+        for model in ["oneway", "twoway"] {
+            let base = finn_coefficient(&data, ns, nr, 7, model).unwrap();
+            // Subject permutation: reverse rows.
+            let rev: Vec<f64> = (0..ns)
+                .rev()
+                .flat_map(|i| data[i * nr..(i + 1) * nr].to_vec())
+                .collect();
+            let p = finn_coefficient(&rev, ns, nr, 7, model).unwrap();
+            assert!((base.value - p.value).abs() < 1e-12, "{model} rep {rep}");
+            assert!((base.p_value - p.p_value).abs() < 1e-12);
+            // Rater permutation: reverse columns.
+            let cperm: Vec<f64> = (0..ns)
+                .flat_map(|i| (0..nr).rev().map(move |j| (i, j)))
+                .map(|(i, j)| data[i * nr + j])
+                .collect();
+            let c = finn_coefficient(&cperm, ns, nr, 7, model).unwrap();
+            assert!((base.value - c.value).abs() < 1e-12, "{model} rep {rep}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Maxwell's RE (maxwell_re) — anchors from the executed exact-Fraction oracle
+// replicating irr 0.84.1 maxwell.R. Every assert reads crate outputs.
+// Known unkillable identity: column swap (the match count #{r1 == r2} is
+// symmetric in the two columns by definition — an estimand property).
+// ---------------------------------------------------------------------------
+
+/// M1 anchor: 10 subjects in {0,1}, 7 exact matches -> RE = 2*7/10 - 1 = 2/5.
+/// 2/5 is not dyadic -> tolerance assert. Kills MU5a (self-compare counts
+/// 10/10 -> 1.0) and MU5b (`<=` counts 9/10 -> 0.8).
+#[test]
+fn mx_anchor_m1() {
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+        0.0, 1.0,
+    ];
+    let out = maxwell_re(&r, 10, 2).unwrap();
+    assert!((out.value - 0.4).abs() < 1e-15, "value {}", out.value);
+    assert_eq!(out.subjects, 10);
+    assert_eq!(out.raters, 2);
+}
+
+/// M2: M1 plus two NaN rows (one NaN in each column) inserted mid-matrix.
+/// Listwise deletion must drop both rows, leaving the M1 result with
+/// subjects == 10 (not 12). Kills MU4 (skip deletion -> NaN rows counted in
+/// the denominator, no NaN agreements -> value (2*7/12 - 1) != 2/5 and
+/// subjects 12).
+#[test]
+fn mx_nan_rows_dropped_m2() {
+    let nan = f64::NAN;
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, nan, 1.0, 0.0, nan, 1.0, 0.0, 1.0, 1.0,
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    ];
+    let out = maxwell_re(&r, 12, 2).unwrap();
+    assert!((out.value - 0.4).abs() < 1e-15, "value {}", out.value);
+    assert_eq!(out.subjects, 10);
+}
+
+/// M2b anchor: 10 rows, 2 dropped by NaN -> ns = 8, agree = 5,
+/// RE = 2*5/8 - 1 = 1/4 exactly (dyadic -> exact ==). Mutant pins (executed):
+/// MU1 (drop factor 2) -> -0.375; MU2 (drop -1) -> 1.25; MU4 (no deletion)
+/// -> 0.0 with subjects 10.
+#[test]
+fn mx_anchor_m2b_exact() {
+    let nan = f64::NAN;
+    let r = [
+        0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, nan, 0.0,
+        0.0, nan,
+    ];
+    let out = maxwell_re(&r, 10, 2).unwrap();
+    assert_eq!(out.value, 0.25, "value {}", out.value);
+    assert_eq!(out.subjects, 8);
+}
+
+/// M3: perfect agreement -> exactly 1.0 (also exercises the allowed
+/// single-distinct-value case); total disagreement -> exactly -1.0.
+#[test]
+fn mx_bounds_m3() {
+    let perfect = [1.0; 12];
+    let out = maxwell_re(&perfect, 6, 2).unwrap();
+    assert_eq!(out.value, 1.0);
+    let disagree = [0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    let out = maxwell_re(&disagree, 6, 2).unwrap();
+    assert_eq!(out.value, -1.0);
+}
+
+/// M4: nonstandard binary labels {2.5, 7.0}; 4 of 6 agree -> RE = 1/3.
+/// Kills mutants hard-coding {0,1} labels.
+#[test]
+fn mx_nonstandard_labels_m4() {
+    let r = [2.5, 2.5, 7.0, 7.0, 2.5, 7.0, 7.0, 7.0, 2.5, 2.5, 7.0, 2.5];
+    let out = maxwell_re(&r, 6, 2).unwrap();
+    assert!((out.value - 1.0 / 3.0).abs() < 1e-15, "value {}", out.value);
+}
+
+/// E1 + error contract. E1 (col1 in {0,1}, col2 in {0,2}: each column
+/// individually binary but union has 3 levels) kills MU3 (per-column binary
+/// check instead of union).
+#[test]
+fn mx_error_contract() {
+    // E1: union of 3 levels rejected.
+    let e1 = [0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0, 2.0];
+    assert!(maxwell_re(&e1, 4, 2).is_err());
+    // 3 distinct values within one column.
+    let tri = [0.0, 0.0, 1.0, 1.0, 2.0, 2.0];
+    assert!(maxwell_re(&tri, 3, 2).is_err());
+    // nr != 2.
+    assert!(maxwell_re(&[0.0, 1.0], 2, 1).is_err());
+    assert!(maxwell_re(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0], 2, 3).is_err());
+    // ns == 0 and length mismatch.
+    assert!(maxwell_re(&[], 0, 2).is_err());
+    assert!(maxwell_re(&[0.0, 1.0, 0.0], 2, 2).is_err());
+    // Inf rejected.
+    assert!(maxwell_re(&[0.0, f64::INFINITY, 1.0, 1.0], 2, 2).is_err());
+    // All rows NaN-dropped.
+    let nan = f64::NAN;
+    assert!(maxwell_re(&[nan, 0.0, 1.0, nan], 2, 2).is_err());
+    // One row remaining after drop is allowed (ns = 1 after deletion).
+    let out = maxwell_re(&[nan, 0.0, 1.0, 1.0], 2, 2).unwrap();
+    assert_eq!(out.value, 1.0);
+    assert_eq!(out.subjects, 1);
+}
+
+/// MC-500: random binary 2-column matrices with random NaN holes. The
+/// test-side oracle is an independent loop (listwise drop, union check,
+/// match count, 2*A/m - 1) that never calls the crate. Also checks
+/// row-permutation invariance crate-vs-crate (kills row-position
+/// dependence).
+#[test]
+#[ignore]
+fn mx_mc_500_independent_oracle() {
+    let mut state: u64 = 0x4D61_7857_454C_4C31;
+    let mut lcg = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    for rep in 0..500 {
+        let ns = 4 + (lcg() * 40.0) as usize;
+        let hi = 1.0 + lcg() * 9.0; // nonstandard second label
+        let mut r = Vec::with_capacity(ns * 2);
+        for _ in 0..(ns * 2) {
+            let u = lcg();
+            if u < 0.1 {
+                r.push(f64::NAN);
+            } else if u < 0.55 {
+                r.push(0.0);
+            } else {
+                r.push(hi);
+            }
+        }
+        // Independent test-side oracle: listwise drop + match count.
+        let mut m = 0usize;
+        let mut agree = 0usize;
+        for p in 0..ns {
+            let (a, b) = (r[p * 2], r[p * 2 + 1]);
+            if a.is_nan() || b.is_nan() {
+                continue;
+            }
+            m += 1;
+            if a == b {
+                agree += 1;
+            }
+        }
+        let res = maxwell_re(&r, ns, 2);
+        if m == 0 {
+            assert!(res.is_err(), "rep {rep}: expected Err on empty");
+            continue;
+        }
+        let expected = 2.0 * agree as f64 / m as f64 - 1.0;
+        let out = res.unwrap();
+        assert!(
+            (out.value - expected).abs() < 1e-14,
+            "rep {rep}: crate {} vs oracle {}",
+            out.value,
+            expected
+        );
+        assert_eq!(out.subjects, m as u64, "rep {rep}");
+        // Row-permutation invariance (deterministic rotation), crate-vs-crate.
+        let k = 1 + (lcg() * (ns as f64 - 1.0)) as usize;
+        let mut rot = Vec::with_capacity(ns * 2);
+        for p in 0..ns {
+            let q = (p + k) % ns;
+            rot.push(r[q * 2]);
+            rot.push(r[q * 2 + 1]);
+        }
+        let out2 = maxwell_re(&rot, ns, 2).unwrap();
+        assert_eq!(out.value, out2.value, "rep {rep}: permutation variance");
+    }
+}
+
+// ---- Robinson's A (robinson_a) ----
+// Oracle pins from exact-Fraction computation against irr 0.84.1 robinson.R.
+
+#[test]
+fn rb_anchor_r1() {
+    // R1: 4x3 asymmetric fixture, A = 107/171 (non-dyadic -> tolerance).
+    let x = [1.0, 2.0, 5.0, 3.0, 3.0, 4.0, 2.0, 5.0, 5.0, 1.0, 1.0, 3.0];
+    let r = robinson_a(&x, 4, 3).unwrap();
+    assert!((r.value - 107.0 / 171.0).abs() < 1e-15);
+    assert_eq!(r.subjects, 4);
+    assert_eq!(r.raters, 3);
+}
+
+#[test]
+fn rb_transpose_differs() {
+    // R1t: transposed roles give 19/27, distinct from 107/171 — kills any
+    // row/column role swap in SSb.
+    let xt = [1.0, 3.0, 2.0, 1.0, 2.0, 3.0, 5.0, 1.0, 5.0, 4.0, 5.0, 3.0];
+    let r = robinson_a(&xt, 3, 4).unwrap();
+    assert!((r.value - 19.0 / 27.0).abs() < 1e-15);
+    let r1 = robinson_a(
+        &[1.0, 2.0, 5.0, 3.0, 3.0, 4.0, 2.0, 5.0, 5.0, 1.0, 1.0, 3.0],
+        4,
+        3,
+    )
+    .unwrap();
+    assert!((r.value - r1.value).abs() > 0.05);
+}
+
+#[test]
+fn rb_nan_row_dropped() {
+    // R2: R1 plus a NaN-holed row -> identical A, subjects still 4.
+    let x = [
+        1.0,
+        2.0,
+        5.0,
+        3.0,
+        3.0,
+        4.0,
+        2.0,
+        f64::NAN,
+        4.0,
+        2.0,
+        5.0,
+        5.0,
+        1.0,
+        1.0,
+        3.0,
+    ];
+    let r = robinson_a(&x, 5, 3).unwrap();
+    assert!((r.value - 107.0 / 171.0).abs() < 1e-15);
+    assert_eq!(r.subjects, 4);
+}
+
+#[test]
+fn rb_perfect_agreement() {
+    // R3: constant rows, distinct subjects -> SSr exactly 0, A == 1.0 exact
+    // (row means exact integers; column/grand means exactly 3).
+    let x = [1.0, 1.0, 1.0, 4.0, 4.0, 4.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0];
+    let r = robinson_a(&x, 4, 3).unwrap();
+    assert_eq!(r.value, 1.0);
+}
+
+#[test]
+fn rb_anchor_r4() {
+    // R4: 5x2 fixture, A = 13/20 = 0.65 (non-dyadic -> tolerance).
+    let x = [1.0, 2.0, 2.0, 4.0, 3.0, 3.0, 4.0, 1.0, 5.0, 5.0];
+    let r = robinson_a(&x, 5, 2).unwrap();
+    assert!((r.value - 0.65).abs() < 1e-15);
+    assert_eq!(r.subjects, 5);
+    assert_eq!(r.raters, 2);
+}
+
+#[test]
+fn rb_degenerate_err() {
+    // E1: identical rows -> SSb = SSr = 0 -> Err (R yields NaN 0/0).
+    let e1 = [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0];
+    // Message assert kills a mutant that weakens the degenerate branch to
+    // denom < 0.0 (the NaN backstop would otherwise mask it with a
+    // different error).
+    let err = robinson_a(&e1, 3, 3).unwrap_err();
+    assert!(err.contains("degenerate"), "{err}");
+    // E2: constant matrix -> Err.
+    let e2 = [4.0; 8];
+    assert!(robinson_a(&e2, 4, 2).is_err());
+}
+
+#[test]
+fn rb_error_contract() {
+    assert!(robinson_a(&[1.0, 2.0], 2, 1).is_err()); // nr < 2
+    assert!(robinson_a(&[], 0, 2).is_err()); // ns == 0
+    assert!(robinson_a(&[1.0, 2.0, 3.0], 2, 2).is_err()); // len mismatch
+    assert!(robinson_a(&[1.0, f64::INFINITY, 2.0, 3.0], 2, 2).is_err()); // Inf
+    assert!(robinson_a(&[f64::NAN; 6], 3, 2).is_err()); // all rows dropped
+                                                        // one complete row after drop -> m < 2
+    assert!(robinson_a(&[1.0, 2.0, f64::NAN, 3.0], 2, 2).is_err());
+}
+
+#[test]
+#[ignore]
+fn rb_mc_500_independent_oracle() {
+    // Independent test-side SS computation (never calls the crate for the
+    // reference value) over 500 LCG-random matrices, plus row-rotation and
+    // column-reversal invariance checks on crate outputs.
+    let mut state: u64 = 0x1234_5678_9ABC_DEF0;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 3 + (next() * 38.0) as usize;
+        let nr = 2 + (next() * 5.0) as usize;
+        let mut x = vec![0.0f64; ns * nr];
+        for v in x.iter_mut() {
+            *v = if next() < 0.10 {
+                f64::NAN
+            } else {
+                1.0 + (next() * 7.0).floor()
+            };
+        }
+        // Independent oracle: listwise drop, then centered SS sums.
+        let kept: Vec<usize> = (0..ns)
+            .filter(|&i| (0..nr).all(|j| !x[i * nr + j].is_nan()))
+            .collect();
+        let m = kept.len();
+        if m < 2 {
+            continue;
+        }
+        let mut gsum = 0.0;
+        for &i in &kept {
+            for j in 0..nr {
+                gsum += x[i * nr + j];
+            }
+        }
+        let grand = gsum / (m * nr) as f64;
+        let rowm: Vec<f64> = kept
+            .iter()
+            .map(|&i| (0..nr).map(|j| x[i * nr + j]).sum::<f64>() / nr as f64)
+            .collect();
+        let colm: Vec<f64> = (0..nr)
+            .map(|j| kept.iter().map(|&i| x[i * nr + j]).sum::<f64>() / m as f64)
+            .collect();
+        let ssb: f64 = nr as f64 * rowm.iter().map(|r| (r - grand) * (r - grand)).sum::<f64>();
+        let mut ssr = 0.0;
+        for (r, &i) in kept.iter().enumerate() {
+            for j in 0..nr {
+                let d = x[i * nr + j] - rowm[r] - colm[j] + grand;
+                ssr += d * d;
+            }
+        }
+        if ssb + ssr <= 1e-12 {
+            continue;
+        }
+        let expect = ssb / (ssb + ssr);
+        let got = robinson_a(&x, ns, nr).unwrap();
+        assert!((got.value - expect).abs() < 1e-12);
+        assert_eq!(got.subjects, m as u64);
+        // Row rotation invariance.
+        let mut rot = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            let src = (i + 1) % ns;
+            rot[i * nr..(i + 1) * nr].copy_from_slice(&x[src * nr..(src + 1) * nr]);
+        }
+        let grot = robinson_a(&rot, ns, nr).unwrap();
+        assert!((grot.value - got.value).abs() < 1e-12);
+        // Column reversal invariance (spec-verify mandatory).
+        let mut rev = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            for j in 0..nr {
+                rev[i * nr + j] = x[i * nr + (nr - 1 - j)];
+            }
+        }
+        let grev = robinson_a(&rev, ns, nr).unwrap();
+        assert!((grev.value - got.value).abs() < 1e-12);
+        done += 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// mean_pairwise_cor (irr meancor.R) tests.
+//
+// Fixture pins come from an EXECUTED exact-Fraction oracle (session
+// files/meancor_oracle.py): columns are permutations of 1..ns so every
+// pairwise Pearson r is exactly rational (Sxx*Syy a perfect square).
+// Every assert reads a MeanCorResult field returned by mean_pairwise_cor.
+// p-value pins use tol 2e-7 because the crate's fitstats::erfc rational
+// approximation has |error| < 1.2e-7 vs the oracle's math.erfc.
+//
+// Mutation kills verified by hand-editing the implementation (each FAILED,
+// then was restored):
+// - MU1 omit the tanh back-transform (value = mrz) -> mcr_c1_fisher value
+//   pin (mutant 0.5972531564093516 vs 0.5350920914541507).
+// - MU2 drop the strict perfect-pair filter -> atanh(1) diverges on C2 ->
+//   mcr_c2_dup_column (Ok+pins fail).
+// - MU3 SE uses (m-1) instead of (m-3) -> mcr_c7_ns7 statistic pin.
+// - MU4 one-sided p (erfc/2) -> mcr_c1_fisher p pin (0.296... vs 0.592...).
+// - MU5 pair loop skips pairs (b starts at a+2) -> mcr_c1_plain 7/15 pin.
+// - MU6 listwise deletion removed -> mcr_c4_nan_row poisoned.
+//
+// Known identity limit (disclosed): at m = 4 subjects, SE = sqrt(1/1) = 1,
+// so statistic == value is an IDENTITY on C1/C2/C8 and cannot kill SE
+// mutants there; mcr_c7_ns7 (m = 7, SE = 1/2, statistic = 2*value) is the
+// discriminating anchor.
+
+// C1: 4 subjects x 3 raters; columns X=[1,2,3,4], Y=[1,3,2,4], Z=[2,1,4,3];
+// pairwise r exactly [4/5, 3/5, 0].
+const MCR_C1: [f64; 12] = [1.0, 1.0, 2.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 4.0, 4.0, 3.0];
+
+#[test]
+fn mcr_c1_plain() {
+    let g = mean_pairwise_cor(&MCR_C1, 4, 3, false).unwrap();
+    assert!((g.value - 7.0 / 15.0).abs() < 1e-15); // oracle exact 7/15
+    assert!(g.statistic.is_nan() && g.p_value.is_nan()); // documented shape
+    assert_eq!(g.dropped, 0);
+    assert_eq!(g.subjects, 4);
+    assert_eq!(g.raters, 3);
+}
+
+#[test]
+fn mcr_c1_fisher() {
+    let g = mean_pairwise_cor(&MCR_C1, 4, 3, true).unwrap();
+    assert!((g.value - 0.5350920914541507).abs() < 1e-12);
+    // m = 4 -> SE = 1 -> statistic == value (identity here; see MU3 note).
+    assert!((g.statistic - 0.5350920914541507).abs() < 1e-12);
+    assert!((g.p_value - 0.592586178359586).abs() < 2e-7); // erfc approx
+    assert_eq!(g.dropped, 0);
+    assert_eq!(g.subjects, 4);
+}
+
+#[test]
+fn mcr_c2_dup_column() {
+    // C1 plus a duplicate X column: one r == 1 pair.
+    let x = [
+        1.0, 1.0, 2.0, 1.0, //
+        2.0, 3.0, 1.0, 2.0, //
+        3.0, 2.0, 4.0, 3.0, //
+        4.0, 4.0, 3.0, 4.0,
+    ];
+    let g = mean_pairwise_cor(&x, 4, 4, true).unwrap();
+    assert_eq!(g.dropped, 1); // the perfect pair was dropped, not averaged
+    assert!((g.value - 0.6148634005909716).abs() < 1e-12);
+    assert!((g.p_value - 0.5386449349799869).abs() < 2e-7);
+    let gp = mean_pairwise_cor(&x, 4, 4, false).unwrap();
+    assert!((gp.value - 19.0 / 30.0).abs() < 1e-15); // perfect pair KEPT
+    assert_eq!(gp.dropped, 0);
+}
+
+#[test]
+fn mcr_c7_ns7() {
+    // 7 subjects: pairwise r exactly [13/14, 23/28, 19/28]; SE = 1/2 so
+    // statistic = 2*value -- kills SE mutants that m=4 fixtures cannot.
+    let x = [
+        1.0, 1.0, 2.0, //
+        2.0, 3.0, 1.0, //
+        3.0, 2.0, 4.0, //
+        4.0, 4.0, 3.0, //
+        5.0, 6.0, 6.0, //
+        6.0, 5.0, 7.0, //
+        7.0, 7.0, 5.0,
+    ];
+    let g = mean_pairwise_cor(&x, 7, 3, true).unwrap();
+    assert!((g.value - 0.8372359434555405).abs() < 1e-12);
+    assert!((g.statistic - 1.674471886911081).abs() < 1e-12);
+    assert!((g.p_value - 0.09403789503668993).abs() < 2e-7);
+    assert_eq!(g.subjects, 7);
+    let gp = mean_pairwise_cor(&x, 7, 3, false).unwrap();
+    assert!((gp.value - 17.0 / 21.0).abs() < 1e-15);
+}
+
+#[test]
+fn mcr_c8_negative_one_boundary() {
+    // C1 plus NX = reversed X: r(X,NX) = -1 exactly (single-sqrt
+    // denominator keeps it exact); strict filter drops the -1 side too.
+    let x = [
+        1.0, 1.0, 2.0, 4.0, //
+        2.0, 3.0, 1.0, 3.0, //
+        3.0, 2.0, 4.0, 2.0, //
+        4.0, 4.0, 3.0, 1.0,
+    ];
+    let g = mean_pairwise_cor(&x, 4, 4, true).unwrap();
+    assert_eq!(g.dropped, 1); // exactly the r == -1 pair
+                              // Kept z values cancel in exact arithmetic; f64 atanh may leave dust.
+    assert!(g.value.abs() < 1e-12);
+    assert!(g.statistic.abs() < 1e-12);
+    assert!((g.p_value - 1.0).abs() < 2e-7);
+    let gp = mean_pairwise_cor(&x, 4, 4, false).unwrap();
+    assert!((gp.value - (-1.0 / 6.0)).abs() < 1e-15); // -1 pair KEPT
+}
+
+#[test]
+fn mcr_c4_nan_row() {
+    // C1 plus an all-NaN row and a partial-NaN row: listwise drop leaves
+    // exactly C1. Poisoned values are non-trivial so a skipped drop
+    // changes every pin (kills MU6).
+    let mut x = MCR_C1.to_vec();
+    x.extend_from_slice(&[f64::NAN, f64::NAN, f64::NAN]);
+    x.extend_from_slice(&[9.0, f64::NAN, -7.0]);
+    let g = mean_pairwise_cor(&x, 6, 3, true).unwrap();
+    assert_eq!(g.subjects, 4);
+    assert!((g.value - 0.5350920914541507).abs() < 1e-12);
+}
+
+#[test]
+fn mcr_error_contract() {
+    assert!(mean_pairwise_cor(&[1.0, 2.0], 2, 1, false).is_err()); // nr < 2
+    assert!(mean_pairwise_cor(&[], 0, 2, false).is_err()); // ns == 0
+    assert!(mean_pairwise_cor(&[1.0, 2.0, 3.0], 2, 2, false).is_err()); // len
+    assert!(mean_pairwise_cor(&[1.0, f64::INFINITY, 2.0, 3.0], 2, 2, false).is_err());
+    assert!(mean_pairwise_cor(&[f64::NAN; 6], 3, 2, false).is_err()); // m = 0
+                                                                      // m = 1 after drop -> m < 2.
+    assert!(mean_pairwise_cor(&[1.0, 2.0, f64::NAN, 3.0], 2, 2, false).is_err());
+    // fisher with m = 3 -> Err (R SE infinite); plain m = 3 is fine.
+    let c6 = [1.0, 1.0, 2.0, 3.0, 3.0, 2.0];
+    assert!(mean_pairwise_cor(&c6, 3, 2, true).is_err());
+    assert!(mean_pairwise_cor(&c6, 3, 2, false).is_ok());
+    // Constant column -> Err (R cor NA).
+    assert!(mean_pairwise_cor(&[1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0, 5.0], 4, 2, false).is_err());
+    // All pairs perfect under fisher -> Err; plain returns mean 1.
+    let prop = [1.0, 2.0, 2.0, 4.0, 3.0, 6.0, 4.0, 8.0];
+    assert!(mean_pairwise_cor(&prop, 4, 2, true).is_err());
+    let gp = mean_pairwise_cor(&prop, 4, 2, false).unwrap();
+    assert!((gp.value - 1.0).abs() < 1e-15);
+}
+
+#[test]
+#[ignore]
+fn mcr_mc_500_independent_oracle() {
+    // Independent test-side recomputation (never calls the crate for the
+    // reference values) over 500 LCG matrices, plus column-reversal
+    // invariance of crate outputs (Pearson is symmetric; the unordered
+    // pair set is permutation-invariant). p_value is pinned against the
+    // oracle in the anchor tests; here it is only sanity-bounded because
+    // an independent erfc is not available in std.
+    let mut state: u64 = 0x0FED_CBA9_8765_4321;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 5 + (next() * 36.0) as usize;
+        let nr = 2 + (next() * 5.0) as usize;
+        let mut x = vec![0.0f64; ns * nr];
+        for v in x.iter_mut() {
+            *v = if next() < 0.10 {
+                f64::NAN
+            } else {
+                1.0 + (next() * 7.0).floor()
+            };
+        }
+        // Independent oracle.
+        let kept: Vec<usize> = (0..ns)
+            .filter(|&i| (0..nr).all(|j| !x[i * nr + j].is_nan()))
+            .collect();
+        let m = kept.len();
+        if m < 4 {
+            continue;
+        }
+        let colm: Vec<f64> = (0..nr)
+            .map(|j| kept.iter().map(|&i| x[i * nr + j]).sum::<f64>() / m as f64)
+            .collect();
+        let mut rs: Vec<f64> = Vec::new();
+        let mut degenerate = false;
+        for a in 0..nr {
+            for b in (a + 1)..nr {
+                let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+                for &i in &kept {
+                    let da = x[i * nr + a] - colm[a];
+                    let db = x[i * nr + b] - colm[b];
+                    sab += da * db;
+                    saa += da * da;
+                    sbb += db * db;
+                }
+                if saa <= 0.0 || sbb <= 0.0 {
+                    degenerate = true;
+                } else {
+                    rs.push(sab / (saa * sbb).sqrt());
+                }
+            }
+        }
+        if degenerate {
+            continue;
+        }
+        let plain_expect = rs.iter().sum::<f64>() / rs.len() as f64;
+        let kept_rs: Vec<f64> = rs
+            .iter()
+            .copied()
+            .filter(|&r| -1.0 < r && r < 1.0)
+            .collect();
+        if kept_rs.is_empty() {
+            continue;
+        }
+        let mrz = kept_rs.iter().map(|&r| r.atanh()).sum::<f64>() / kept_rs.len() as f64;
+        let val_expect = mrz.tanh();
+        let z_expect = val_expect / (1.0 / (m as f64 - 3.0)).sqrt();
+
+        let gp = mean_pairwise_cor(&x, ns, nr, false).unwrap();
+        assert!((gp.value - plain_expect).abs() < 1e-12);
+        assert_eq!(gp.subjects, m as u64);
+        let gf = mean_pairwise_cor(&x, ns, nr, true).unwrap();
+        assert!((gf.value - val_expect).abs() < 1e-12);
+        assert!((gf.statistic - z_expect).abs() < 1e-12);
+        assert_eq!(gf.dropped, (rs.len() - kept_rs.len()) as u64);
+        assert!(gf.p_value > 0.0 && gf.p_value <= 1.0);
+        // Column reversal invariance.
+        let mut rev = vec![0.0f64; ns * nr];
+        for i in 0..ns {
+            for j in 0..nr {
+                rev[i * nr + j] = x[i * nr + (nr - 1 - j)];
+            }
+        }
+        let gr = mean_pairwise_cor(&rev, ns, nr, true).unwrap();
+        assert!((gr.value - gf.value).abs() < 1e-12);
+        assert!((gr.statistic - gf.statistic).abs() < 1e-12);
+        assert_eq!(gr.dropped, gf.dropped);
+        done += 1;
+    }
+}
+
+// ---------------------------------------------------------------------
+// mean_pairwise_rho (irr 0.84.1 meanrho.R): oracle anchors S1-S6 from
+// the exact-Fraction midrank oracle (session files/meanrho_oracle.py,
+// EXECUTED). Every assert below reads fields of the MeanRhoResult the
+// crate returned; expected literals come from the oracle pins.
+// Known identity limits (disclosed): S2's equal rhos make the fisher
+// value equal the plain mean there (S5 discriminates the averaging
+// path); at m = 4 the SE is 1 so statistic == value (these fixtures
+// use m = 5..6, and S2 pins statistic = value * sqrt(3)).
+
+// S1: 5x3 permutation columns with X-vs-Z exactly reversed (rho = -1).
+// Kills: keep-perfect-pairs mutants (atanh(-1) infinite / dropped=0).
+#[test]
+fn mrh_s1_reversed_pair_dropped() {
+    let s1 = [
+        1.0, 2.0, 5.0, //
+        2.0, 1.0, 4.0, //
+        3.0, 4.0, 3.0, //
+        4.0, 3.0, 2.0, //
+        5.0, 5.0, 1.0,
+    ];
+    let r = mean_pairwise_rho(&s1, 5, 3, true).unwrap();
+    assert_eq!(r.dropped, 1);
+    assert!(!r.ties);
+    assert_eq!(r.subjects, 5);
+    assert_eq!(r.raters, 3);
+    // rxy = 4/5 and ryz = -4/5: the retained z's cancel. Rust atanh is
+    // not guaranteed odd-exact, so assert dust bounds, not == 0.
+    assert!(r.value.abs() < 1e-12, "value = {}", r.value);
+    assert!(r.statistic.abs() < 1e-12);
+    assert!((r.p_value - 1.0).abs() < 1e-12);
+    // Plain mean keeps the perfect pair: (4/5 - 1 - 4/5)/3 = -1/3.
+    let p = mean_pairwise_rho(&s1, 5, 3, false).unwrap();
+    assert!((p.value - (-1.0 / 3.0)).abs() < 1e-15);
+    assert_eq!(p.dropped, 0);
+    assert!(p.statistic.is_nan() && p.p_value.is_nan());
+}
+
+// S2: 6x3 cyclic-shift permutations; all three rhos are exactly 23/35.
+// Kills: no-tanh mutants (value = mrz would give atanh(23/35) =
+// 0.7877681803792096 != 23/35) and SE mutants (m = 6: SE = sqrt(1/3),
+// so statistic = value * sqrt(3); an m-1 mutant gives sqrt(1/2)).
+#[test]
+fn mrh_s2_equal_rhos_statistic() {
+    let s2 = [
+        1.0, 3.0, 2.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 2.0, 1.0, //
+        4.0, 6.0, 5.0, //
+        5.0, 4.0, 6.0, //
+        6.0, 5.0, 4.0,
+    ];
+    let r = mean_pairwise_rho(&s2, 6, 3, true).unwrap();
+    assert!((r.value - 0.6571428571428571).abs() < 1e-15);
+    assert!((r.statistic - 1.1382048164024052).abs() < 1e-14);
+    assert!((r.p_value - 0.25503496799512926).abs() < 2e-7);
+    assert_eq!(r.dropped, 0);
+    assert!(!r.ties);
+    // statistic = value * sqrt(3) identity read back from crate fields.
+    assert!((r.statistic - r.value * 3.0_f64.sqrt()).abs() < 1e-14);
+}
+
+// S3: 5x2 with ties -> midranks X = [1.5,1.5,3,4.5,4.5],
+// Y = [1,2.5,2.5,4,5]; rho = (33/4)/sqrt(9 * 19/2) (irrational).
+// Kills: raw-value (no rank) mutants and ordinal-rank (non-midrank)
+// mutants -- both change this pin -- and pins ties = true.
+#[test]
+fn mrh_s3_ties_midranks() {
+    let s3 = [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
+    let r = mean_pairwise_rho(&s3, 5, 2, false).unwrap();
+    assert!((r.value - 0.8922178162191939).abs() < 1e-15);
+    assert!(r.ties);
+    assert_eq!(r.subjects, 5);
+}
+
+// S4: S2 plus a NaN row -> listwise drop makes it bitwise-equal to S2.
+// Kills: skip-listwise-drop mutants.
+#[test]
+fn mrh_s4_nan_row_dropped() {
+    let s4 = [
+        1.0,
+        3.0,
+        2.0,
+        2.0,
+        1.0,
+        3.0,
+        3.0,
+        2.0,
+        1.0,
+        4.0,
+        6.0,
+        5.0,
+        5.0,
+        4.0,
+        6.0,
+        6.0,
+        5.0,
+        4.0,
+        7.0,
+        f64::NAN,
+        7.0,
+    ];
+    let s2 = [
+        1.0, 3.0, 2.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 2.0, 1.0, //
+        4.0, 6.0, 5.0, //
+        5.0, 4.0, 6.0, //
+        6.0, 5.0, 4.0,
+    ];
+    let r4 = mean_pairwise_rho(&s4, 7, 3, true).unwrap();
+    let r2 = mean_pairwise_rho(&s2, 6, 3, true).unwrap();
+    assert_eq!(r4.subjects, 6);
+    assert_eq!(r4.value.to_bits(), r2.value.to_bits());
+    assert_eq!(r4.statistic.to_bits(), r2.statistic.to_bits());
+    assert_eq!(r4.p_value.to_bits(), r2.p_value.to_bits());
+}
+
+// S5: 6x3 permutations with DISTINCT rhos 29/35, 27/35, 13/35.
+// Kills: skip-Fisher-averaging mutants (plain mean 23/35 != fisher
+// value 0.6992488340329346) -- S2 cannot, its equal rhos make the full
+// fisher chain collapse to the plain mean.
+#[test]
+fn mrh_s5_distinct_rhos_fisher() {
+    let s5 = [
+        1.0, 2.0, 1.0, //
+        2.0, 1.0, 3.0, //
+        3.0, 4.0, 2.0, //
+        4.0, 3.0, 6.0, //
+        5.0, 6.0, 4.0, //
+        6.0, 5.0, 5.0,
+    ];
+    let r = mean_pairwise_rho(&s5, 6, 3, true).unwrap();
+    assert!((r.value - 0.6992488340329346).abs() < 1e-15);
+    assert!((r.statistic - 1.2111345076783402).abs() < 1e-14);
+    assert!((r.p_value - 0.22584385801024365).abs() < 2e-7);
+    assert_eq!(r.dropped, 0);
+    let p = mean_pairwise_rho(&s5, 6, 3, false).unwrap();
+    assert!((p.value - 23.0 / 35.0).abs() < 1e-15);
+    // The fisher value differs from the plain mean here (distinct rhos).
+    assert!((r.value - p.value).abs() > 1e-6);
+}
+
+// S6: S5 plus a duplicate of column 0 (6x4). The duplicate pair has
+// rho = 1 exactly (dropped) while the retained fisher value is nonzero.
+// Kills: mutants that zero/mangle the value whenever a perfect pair
+// was dropped (S1 cannot -- its retained value is ~0 by design).
+#[test]
+fn mrh_s6_dropped_with_nonzero_value() {
+    let s6 = [
+        1.0, 2.0, 1.0, 1.0, //
+        2.0, 1.0, 3.0, 2.0, //
+        3.0, 4.0, 2.0, 3.0, //
+        4.0, 3.0, 6.0, 4.0, //
+        5.0, 6.0, 4.0, 5.0, //
+        6.0, 5.0, 5.0, 6.0,
+    ];
+    let r = mean_pairwise_rho(&s6, 6, 4, true).unwrap();
+    assert_eq!(r.dropped, 1);
+    assert!(!r.ties);
+    assert!((r.value - 0.7447132997063424).abs() < 1e-15);
+    assert!((r.statistic - 1.2898812721636537).abs() < 1e-14);
+    assert!((r.p_value - 0.1970918840947284).abs() < 2e-7);
+    // Plain mean keeps the perfect pair: exact rational 16/21.
+    let p = mean_pairwise_rho(&s6, 6, 4, false).unwrap();
+    assert!((p.value - 16.0 / 21.0).abs() < 1e-15);
+}
+
+#[test]
+fn mrh_error_contract() {
+    let ok = [1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0];
+    // nr < 2
+    assert!(mean_pairwise_rho(&ok, 8, 1, true).is_err());
+    // ns == 0
+    assert!(mean_pairwise_rho(&[], 0, 2, true).is_err());
+    // length mismatch
+    assert!(mean_pairwise_rho(&ok, 5, 2, true).is_err());
+    // infinite value
+    let mut inf = ok;
+    inf[3] = f64::INFINITY;
+    assert!(mean_pairwise_rho(&inf, 4, 2, true).is_err());
+    // fisher with m < 4 (3 complete rows)
+    let three = [1.0, 2.0, 2.0, 1.0, 3.0, 4.0];
+    assert!(mean_pairwise_rho(&three, 3, 2, true).is_err());
+    // ... but plain mean is fine at m = 3
+    assert!(mean_pairwise_rho(&three, 3, 2, false).is_ok());
+    // constant column (constant midranks)
+    let cst = [1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0, 5.0];
+    assert!(mean_pairwise_rho(&cst, 4, 2, true).is_err());
+    // all pairs perfect under fisher (column vs itself)
+    let dup = [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0];
+    assert!(mean_pairwise_rho(&dup, 4, 2, true).is_err());
+    // m < 2 after listwise drop
+    let nan2 = [1.0, f64::NAN, 2.0, 3.0, f64::NAN, 4.0];
+    assert!(mean_pairwise_rho(&nan2, 3, 2, false).is_err());
+}
+
+// MC-500: random integer matrices (ties injected via small value range)
+// against an independent in-test midrank + Fisher recompute, plus
+// column-permutation invariance. p_value is only sanity-bounded in
+// (0, 1] here: the crate has no second, independent erfc to compare
+// against (limitation disclosed); the anchors above pin p against
+// Python math.erfc at 2e-7.
+#[test]
+#[ignore]
+fn mrh_mc_500_independent_oracle() {
+    let mut state: u64 = 0x9E3779B97F4A7C15;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let midranks = |col: &[f64]| -> Vec<f64> {
+        let m = col.len();
+        let mut ord: Vec<usize> = (0..m).collect();
+        ord.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+        let mut out = vec![0.0; m];
+        let mut s = 0;
+        while s < m {
+            let mut e = s;
+            while e + 1 < m && col[ord[e + 1]] == col[ord[s]] {
+                e += 1;
+            }
+            let mid = (s + e + 2) as f64 / 2.0;
+            for k in s..=e {
+                out[ord[k]] = mid;
+            }
+            s = e + 1;
+        }
+        out
+    };
+    let pearson = |x: &[f64], y: &[f64]| -> f64 {
+        let n = x.len() as f64;
+        let mx = x.iter().sum::<f64>() / n;
+        let my = y.iter().sum::<f64>() / n;
+        let mut sxy = 0.0;
+        let mut sxx = 0.0;
+        let mut syy = 0.0;
+        for (a, b) in x.iter().zip(y) {
+            sxy += (a - mx) * (b - my);
+            sxx += (a - mx) * (a - mx);
+            syy += (b - my) * (b - my);
+        }
+        sxy / (sxx * syy).sqrt()
+    };
+    let mut done = 0;
+    while done < 500 {
+        let ns = 6 + (next() * 10.0) as usize;
+        let nr = 3 + (next() * 3.0) as usize;
+        let data: Vec<f64> = (0..ns * nr).map(|_| (next() * 8.0).floor()).collect();
+        let Ok(r) = mean_pairwise_rho(&data, ns, nr, true) else {
+            continue; // constant column / all-perfect draws are skipped
+        };
+        // Independent recompute of the fisher chain on midranks.
+        let cols: Vec<Vec<f64>> = (0..nr)
+            .map(|j| (0..ns).map(|i| data[i * nr + j]).collect())
+            .collect();
+        let rcols: Vec<Vec<f64>> = cols.iter().map(|c| midranks(c)).collect();
+        let mut zs = Vec::new();
+        let mut dropped = 0u64;
+        for a in 0..nr {
+            for b in (a + 1)..nr {
+                let rho = pearson(&rcols[a], &rcols[b]);
+                if -1.0 < rho && rho < 1.0 {
+                    zs.push(rho.atanh());
+                } else {
+                    dropped += 1;
+                }
+            }
+        }
+        let value = (zs.iter().sum::<f64>() / zs.len() as f64).tanh();
+        let statistic = value / (1.0 / (ns as f64 - 3.0)).sqrt();
+        assert!((r.value - value).abs() < 1e-12);
+        assert!((r.statistic - statistic).abs() < 1e-12);
+        assert_eq!(r.dropped, dropped);
+        assert_eq!(r.subjects, ns as u64);
+        assert!(r.p_value > 0.0 && r.p_value <= 1.0);
+        // Column-permutation invariance: swap the first two raters.
+        let mut sw = data.clone();
+        for i in 0..ns {
+            sw.swap(i * nr, i * nr + 1);
+        }
+        let rs = mean_pairwise_rho(&sw, ns, nr, true).unwrap();
+        assert!((rs.value - r.value).abs() < 1e-12);
+        assert_eq!(rs.dropped, r.dropped);
+        done += 1;
+    }
+}
+
+// ---------------- Stuart-Maxwell marginal homogeneity ----------------
+// Fixtures and pins transcribed from the executed exact-Fraction oracle
+// (files/stuartmaxwell_oracle.py, ALL PASS). Every assert reads crate
+// outputs from stuart_maxwell_mh. Disclosed unkillable identities:
+// d -> -d (quadratic form) and solve(S,d) vs solve(S',d) (S symmetric).
+
+/// M1 3x3 anchor. Kills MU1 (S_ii uses -x_ii -> 3.4097793163132843),
+/// MU2 (S_ij sign flip -> 5.265392781316348), MU3 (d = r + c ->
+/// 908.7048832271762), MU6 (S_ij = -x_ij only -> 6.622950819672131):
+/// the exact stat is 1520/157 = 9.681528662420382. Kills MU4 (df = K)
+/// via the df and p_value pins.
+#[test]
+fn smh_anchor_m1_3x3() {
+    let m1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let out = stuart_maxwell_mh(&m1, 3).unwrap();
+    assert!((out.value - 1520.0 / 157.0).abs() <= 1e-14 * (1520.0 / 157.0));
+    assert_eq!(out.df, 2);
+    assert!((out.p_value - 0.007901012752471986).abs() <= 1e-12);
+    assert_eq!(out.dropped, 0);
+    assert_eq!(out.subjects, 129);
+    assert_eq!(out.categories, 3);
+}
+
+/// M2 4x4 with row 3 sum == col 3 sum == 30: the one-shot drop removes
+/// exactly that category. Kills MU5 (skip drop: stat would be
+/// 1.6721149083704805 with dropped == 0). Structural pin: the drop
+/// path must equal the crate run on the direct 3x3 submatrix.
+#[test]
+fn smh_drop_m2_4x4() {
+    let m2 = [
+        25.0, 5.0, 3.0, 3.0, 4.0, 30.0, 6.0, 1.0, 2.0, 3.0, 28.0, 4.0, 1.0, 2.0, 5.0, 22.0,
+    ];
+    let out = stuart_maxwell_mh(&m2, 4).unwrap();
+    assert_eq!(out.dropped, 1);
+    assert_eq!(out.df, 2);
+    assert_eq!(out.subjects, 106);
+    assert_eq!(out.categories, 3);
+    let want = 200.0 / 171.0;
+    assert!((out.value - want).abs() <= 1e-14 * want);
+    assert!((out.p_value - 0.5572199009980283).abs() <= 1e-12);
+    // Direct submatrix (categories 0, 1, 2 of M2; category 3 has
+    // row sum == col sum == 30 and is dropped) computed by the crate.
+    let sub = [25.0, 5.0, 3.0, 4.0, 30.0, 6.0, 2.0, 3.0, 28.0];
+    let direct = stuart_maxwell_mh(&sub, 3).unwrap();
+    assert!((out.value - direct.value).abs() <= 1e-14 * want);
+    assert_eq!(out.df, direct.df);
+    assert_eq!(out.subjects, direct.subjects);
+}
+
+/// M3 2x2 reduces to McNemar (b - c)^2 / (b + c) = (6 - 2)^2 / 8 = 2
+/// exactly (dyadic-safe, so ==). p tolerance 1e-12 per the executed
+/// chi2_sf transcription check (abs err ~5.6e-16 at df = 1).
+#[test]
+fn smh_mcnemar_m3_2x2() {
+    let m3 = [10.0, 6.0, 2.0, 12.0];
+    let out = stuart_maxwell_mh(&m3, 2).unwrap();
+    assert_eq!(out.value, 2.0);
+    assert_eq!(out.df, 1);
+    assert!((out.p_value - 0.1572992070502851).abs() <= 1e-12);
+    assert_eq!(out.subjects, 30);
+}
+
+/// M5: simultaneous row+column permutation of M1 leaves the statistic
+/// invariant (both sides read crate outputs).
+#[test]
+fn smh_permutation_m5() {
+    let m1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let perm = [2usize, 0, 1];
+    let mut pm = [0.0; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            pm[i * 3 + j] = m1[perm[i] * 3 + perm[j]];
+        }
+    }
+    let a = stuart_maxwell_mh(&m1, 3).unwrap();
+    let b = stuart_maxwell_mh(&pm, 3).unwrap();
+    assert!((a.value - b.value).abs() <= 1e-12 * a.value.max(1.0));
+    assert_eq!(a.df, b.df);
+    assert_eq!(a.subjects, b.subjects);
+}
+
+/// Error contract: M6 all-equal marginals, shape, domain, cap.
+#[test]
+fn smh_error_contract() {
+    // M6: every r_i == c_i -> everything dropped -> Err.
+    assert!(stuart_maxwell_mh(&[5.0, 3.0, 3.0, 7.0], 2).is_err());
+    // Non-square length.
+    assert!(stuart_maxwell_mh(&[1.0, 2.0, 3.0], 2).is_err());
+    // c < 2.
+    assert!(stuart_maxwell_mh(&[4.0], 1).is_err());
+    // Negative / NaN / Inf / non-integral cells.
+    assert!(stuart_maxwell_mh(&[10.0, -6.0, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[10.0, f64::INFINITY, 2.0, 12.0], 2).is_err());
+    assert!(stuart_maxwell_mh(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    let big = 4503599627370496.0;
+    assert!(stuart_maxwell_mh(&[big, 6.0, 2.0, 12.0], 2).is_err());
+    // Just below the cap is accepted (marginals unequal).
+    let ok = (9007199254740992.0f64 / 4.0).floor();
+    assert!(stuart_maxwell_mh(&[ok, 6.0, 2.0, 12.0], 2).is_ok());
+    // Scaled singular-pivot contract (impl-review probe): this valid
+    // large-count table has second pivot 2.0 against scale 1e13, i.e.
+    // numerically singular under the spec's `pivot < 1e-12 scaled`;
+    // an absolute cutoff would accept it and return a saturated stat.
+    let probe = [0.0, 9999999999999.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+    assert!(stuart_maxwell_mh(&probe, 3).is_err());
+}
+
+/// MC-500: random 3x3 and 4x4 integral tables. The crate statistic is
+/// compared to an independent in-test Cramer-rule recompute of
+/// d' S^-1 d (the assert reads the crate value on one side), and the
+/// crate output must be invariant under a random simultaneous
+/// permutation. Run with: cargo test smh_mc_500 -- --include-ignored
+#[test]
+#[ignore]
+fn smh_mc_500() {
+    let mut state: u64 = 0x5EED_5417_ABCD_0101;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut tested = 0usize;
+    while tested < 500 {
+        let c = if next() < 0.5 { 3 } else { 4 };
+        let t: Vec<f64> = (0..c * c).map(|_| (next() * 30.0).floor()).collect();
+        let out = match stuart_maxwell_mh(&t, c) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        // Reconstruct reduced table exactly as the contract states.
+        let rows: Vec<f64> = (0..c).map(|i| (0..c).map(|j| t[i * c + j]).sum()).collect();
+        let cols: Vec<f64> = (0..c).map(|j| (0..c).map(|i| t[i * c + j]).sum()).collect();
+        let keep: Vec<usize> = (0..c).filter(|&i| rows[i] != cols[i]).collect();
+        let k = keep.len();
+        assert_eq!(out.categories as usize, k);
+        let tr = &t;
+        let rt: Vec<f64> = keep
+            .iter()
+            .flat_map(|&i| keep.iter().map(move |&j| tr[i * c + j]))
+            .collect();
+        let rr: Vec<f64> = (0..k)
+            .map(|i| (0..k).map(|j| rt[i * k + j]).sum())
+            .collect();
+        let rc: Vec<f64> = (0..k)
+            .map(|j| (0..k).map(|i| rt[i * k + j]).sum())
+            .collect();
+        let m = k - 1;
+        let d: Vec<f64> = (0..m).map(|i| rr[i] - rc[i]).collect();
+        let s = |i: usize, j: usize| -> f64 {
+            if i == j {
+                rr[i] + rc[i] - 2.0 * rt[i * k + i]
+            } else {
+                -(rt[i * k + j] + rt[j * k + i])
+            }
+        };
+        // Cramer-rule solve of S x = d (m <= 3).
+        let det3 = |a: &[f64; 9]| -> f64 {
+            a[0] * (a[4] * a[8] - a[5] * a[7]) - a[1] * (a[3] * a[8] - a[5] * a[6])
+                + a[2] * (a[3] * a[7] - a[4] * a[6])
+        };
+        let stat_ref = match m {
+            1 => {
+                if s(0, 0) == 0.0 {
+                    continue;
+                }
+                d[0] * d[0] / s(0, 0)
+            }
+            2 => {
+                let det = s(0, 0) * s(1, 1) - s(0, 1) * s(1, 0);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let x0 = (d[0] * s(1, 1) - s(0, 1) * d[1]) / det;
+                let x1 = (s(0, 0) * d[1] - d[0] * s(1, 0)) / det;
+                d[0] * x0 + d[1] * x1
+            }
+            3 => {
+                let a: [f64; 9] = [
+                    s(0, 0),
+                    s(0, 1),
+                    s(0, 2),
+                    s(1, 0),
+                    s(1, 1),
+                    s(1, 2),
+                    s(2, 0),
+                    s(2, 1),
+                    s(2, 2),
+                ];
+                let det = det3(&a);
+                if det.abs() < 1e-9 {
+                    continue;
+                }
+                let mut x = [0.0; 3];
+                for col in 0..3 {
+                    let mut ac = a;
+                    for r in 0..3 {
+                        ac[r * 3 + col] = d[r];
+                    }
+                    x[col] = det3(&ac) / det;
+                }
+                d[0] * x[0] + d[1] * x[1] + d[2] * x[2]
+            }
+            _ => unreachable!(),
+        };
+        assert!(
+            (out.value - stat_ref).abs() <= 1e-8 * stat_ref.abs().max(1.0),
+            "crate {} vs cramer {}",
+            out.value,
+            stat_ref
+        );
+        // Random simultaneous permutation invariance.
+        let mut perm: Vec<usize> = (0..c).collect();
+        for i in (1..c).rev() {
+            let j = (next() * ((i + 1) as f64)).floor() as usize;
+            perm.swap(i, j.min(i));
+        }
+        let mut pt = vec![0.0; c * c];
+        for i in 0..c {
+            for j in 0..c {
+                pt[i * c + j] = t[perm[i] * c + perm[j]];
+            }
+        }
+        let pout = stuart_maxwell_mh(&pt, c).unwrap();
+        assert!((out.value - pout.value).abs() <= 1e-10 * out.value.abs().max(1.0));
+        assert_eq!(out.df, pout.df);
+        tested += 1;
+    }
+}
+
+// ---------------- Bhapkar marginal homogeneity ----------------
+// Fixtures and pins transcribed from the executed exact-Fraction oracle
+// (files/bhapkar_oracle.py, ALL PASS). Every assert reads crate outputs
+// from bhapkar_mh. Disclosed unkillable identities: d -> -d (quadratic
+// form; d d' also even in d) and solve(W,d) vs solve(W',d) (W symmetric).
+
+/// B1 3x3 anchor. Exact stat 196080/18733 = 10.46709016174665. Kills
+/// MU1 (W = S + dd'/n -> 9.0056), MU2 (omit /n -> -1.115), MU3 (use S,
+/// skip dd'/n correction -> SM stat 9.6815), MU5 (S_ij = -x_ij only ->
+/// 6.9814); kills MU4 (df = C) via the df and p pins.
+#[test]
+fn bh_anchor_b1() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let out = bhapkar_mh(&b1, 3).unwrap();
+    let want = 196080.0 / 18733.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 2);
+    assert!((out.p_value - 0.00533458022326506).abs() <= 1e-12);
+    assert_eq!(out.subjects, 129);
+    assert_eq!(out.categories, 3);
+}
+
+/// B2 4x4 anchor (n = 130). NOTE: B2 has an equal marginal (category 1,
+/// r == c == 31), which Bhapkar KEEPS (no drop step, unlike
+/// stuart_maxwell_mh) — this fixture therefore also guards against
+/// accidentally reusing the Stuart-Maxwell drop.
+#[test]
+fn bh_anchor_b2_4x4() {
+    let b2 = [
+        22.0, 5.0, 3.0, 6.0, 4.0, 18.0, 7.0, 2.0, 1.0, 6.0, 25.0, 5.0, 3.0, 2.0, 4.0, 17.0,
+    ];
+    let out = bhapkar_mh(&b2, 4).unwrap();
+    let want = 60580.0 / 30799.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 3);
+    assert!((out.p_value - 0.579295246854257).abs() <= 1e-12);
+    assert_eq!(out.subjects, 130);
+    assert_eq!(out.categories, 4);
+}
+
+/// B3 2x2: exact stat 15/7. p tolerance 1e-12 per the executed chi2_sf
+/// transcription check at df = 1.
+#[test]
+fn bh_2x2_b3() {
+    let b3 = [10.0, 6.0, 2.0, 12.0];
+    let out = bhapkar_mh(&b3, 2).unwrap();
+    let want = 15.0 / 7.0;
+    assert!((out.value - want).abs() <= 1e-12 * want);
+    assert_eq!(out.df, 1);
+    assert!((out.p_value - 0.1432349075246697).abs() <= 1e-12);
+    assert_eq!(out.subjects, 30);
+}
+
+/// Cross-implementation anchor, B1 ONLY: the oracle proves exactly that
+/// bhapkar = SM / (1 - SM/n) where SM is the NO-DROP Stuart-Maxwell
+/// statistic. B1 has no equal marginals (rows [35,48,46] vs cols
+/// [25,44,60]), so the crate's stuart_maxwell_mh performs no drop and
+/// its output is the no-drop SM. Both sides read crate outputs. (B2 is
+/// NOT eligible: its equal marginal makes the crate SM a reduced-table
+/// statistic — spec-review finding 1.)
+#[test]
+fn bh_sm_identity() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let bh = bhapkar_mh(&b1, 3).unwrap();
+    let sm = stuart_maxwell_mh(&b1, 3).unwrap();
+    assert_eq!(sm.dropped, 0); // precondition: no-drop SM
+    let n = bh.subjects as f64;
+    let want = sm.value / (1.0 - sm.value / n);
+    assert!((bh.value - want).abs() <= 1e-12 * want);
+}
+
+/// B5: symmetric-marginals (but non-diagonal) table has d = 0, so the
+/// statistic is exactly 0 and p = 1.
+#[test]
+fn bh_zero_d_b5() {
+    let b5 = [10.0, 4.0, 2.0, 2.0, 20.0, 4.0, 4.0, 2.0, 30.0];
+    let out = bhapkar_mh(&b5, 3).unwrap();
+    assert_eq!(out.value, 0.0);
+    assert_eq!(out.p_value, 1.0);
+    assert_eq!(out.subjects, 78);
+}
+
+/// Error contract: shape, domain, cap, empty, singular W (small and
+/// large scale).
+#[test]
+fn bh_error_contract() {
+    // c < 2, non-square length.
+    assert!(bhapkar_mh(&[4.0], 1).is_err());
+    assert!(bhapkar_mh(&[1.0, 2.0, 3.0], 2).is_err());
+    // Negative / NaN / Inf / non-integral cells.
+    assert!(bhapkar_mh(&[10.0, -6.0, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[10.0, f64::INFINITY, 2.0, 12.0], 2).is_err());
+    assert!(bhapkar_mh(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    assert!(bhapkar_mh(&[4503599627370496.0, 6.0, 2.0, 12.0], 2).is_err());
+    // Empty table.
+    assert!(bhapkar_mh(&[0.0, 0.0, 0.0, 0.0], 2).is_err());
+    // B4: perfect agreement -> d = 0 and S = 0 -> W = 0 -> singular.
+    assert!(bhapkar_mh(&[5.0, 0.0, 0.0, 7.0], 2).is_err());
+    // Large-scale singular: kept category 0 is entirely unused, so the
+    // W row for it is zero while max|W| ~ 2e10 — only a SCALED pivot
+    // threshold rejects this (spec-review finding 2 replacement probe).
+    let probe = [0.0, 0.0, 0.0, 0.0, 9999999999.0, 6.0, 0.0, 2.0, 12.0];
+    assert!(bhapkar_mh(&probe, 3).is_err());
+}
+
+/// MC-500: random 3x3 and 4x4 integral tables. The crate statistic is
+/// compared to an independent in-test Cramer/Gaussian recompute of
+/// d' W^-1 d with W built locally (never calling bhapkar_mh or any
+/// crate solver), and the crate output must be invariant under a
+/// random simultaneous row+column permutation (drop-invariance was
+/// proven exactly in the oracle). Run with:
+/// cargo test bh_mc_500 -- --include-ignored
+#[test]
+#[ignore]
+fn bh_mc_500() {
+    let mut state: u64 = 0xB4A9_0217_5EED_7331;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    // Local Gaussian solve with partial pivoting (independent of crate).
+    let solve = |a0: &[Vec<f64>], b0: &[f64]| -> Option<Vec<f64>> {
+        let m = b0.len();
+        let mut a: Vec<Vec<f64>> = a0.to_vec();
+        let mut b = b0.to_vec();
+        for col in 0..m {
+            let piv = (col..m).max_by(|&x, &y| a[x][col].abs().total_cmp(&a[y][col].abs()))?;
+            if a[piv][col].abs() < 1e-9 {
+                return None;
+            }
+            a.swap(col, piv);
+            b.swap(col, piv);
+            let pv = a[col][col];
+            for j in col..m {
+                a[col][j] /= pv;
+            }
+            b[col] /= pv;
+            for r in 0..m {
+                if r != col {
+                    let f = a[r][col];
+                    if f != 0.0 {
+                        for j in col..m {
+                            a[r][j] -= f * a[col][j];
+                        }
+                        b[r] -= f * b[col];
+                    }
+                }
+            }
+        }
+        Some(b)
+    };
+    let mut tested = 0usize;
+    while tested < 500 {
+        let c = if next() < 0.5 { 3usize } else { 4 };
+        let t: Vec<f64> = (0..c * c).map(|_| (next() * 30.0).floor()).collect();
+        let Ok(out) = bhapkar_mh(&t, c) else {
+            continue; // singular / empty draws are skipped
+        };
+        // Independent recompute.
+        let n: f64 = t.iter().sum();
+        let rows: Vec<f64> = (0..c).map(|i| (0..c).map(|j| t[i * c + j]).sum()).collect();
+        let cols: Vec<f64> = (0..c).map(|j| (0..c).map(|i| t[i * c + j]).sum()).collect();
+        let km1 = c - 1;
+        let d: Vec<f64> = (0..km1).map(|i| rows[i] - cols[i]).collect();
+        let w: Vec<Vec<f64>> = (0..km1)
+            .map(|i| {
+                (0..km1)
+                    .map(|j| {
+                        let s = if i == j {
+                            rows[i] + cols[i] - 2.0 * t[i * c + i]
+                        } else {
+                            -(t[i * c + j] + t[j * c + i])
+                        };
+                        s - d[i] * d[j] / n
+                    })
+                    .collect()
+            })
+            .collect();
+        let Some(x) = solve(&w, &d) else {
+            continue; // near-singular under the looser local cutoff
+        };
+        let want: f64 = d.iter().zip(&x).map(|(di, xi)| di * xi).sum();
+        assert!(
+            (out.value - want).abs() <= 1e-8 * want.abs().max(1.0),
+            "crate {} vs recompute {}",
+            out.value,
+            want
+        );
+        assert_eq!(out.df, km1 as u64);
+        assert!(out.p_value >= 0.0 && out.p_value <= 1.0);
+        // Simultaneous permutation invariance (crate outputs both sides).
+        let off = 1 + (next() * (c as f64 - 1.0)) as usize;
+        let perm: Vec<usize> = (0..c).map(|i| (i + off) % c).collect();
+        let mut pt = vec![0.0; c * c];
+        for i in 0..c {
+            for j in 0..c {
+                pt[i * c + j] = t[perm[i] * c + perm[j]];
+            }
+        }
+        if let Ok(po) = bhapkar_mh(&pt, c) {
+            assert!(
+                (po.value - out.value).abs() <= 1e-8 * out.value.abs().max(1.0),
+                "perm {} vs {}",
+                po.value,
+                out.value
+            );
+            assert_eq!(po.df, out.df);
+            assert_eq!(po.subjects, out.subjects);
+        }
+        tested += 1;
+    }
+}
+
+// ---- rater_bias (irr rater.bias.R) ------------------------------------
+// Oracle: exact-Fraction files/raterbias_oracle.py (session), EXECUTED.
+// Every assert below reads crate outputs.
+
+/// Kills MU1 (triangle swap: 3/13 != 10/13), MU2 (denominator rbb-rbc:
+/// stat 21 != 147/13), MU3 (subjects off-diag only: 39 != 129),
+/// MU4 (diagonal in rbb: value 40/43), MU5 (df 2: p 0.003504 != pin).
+#[test]
+fn rbias_anchor_b1() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let r = rater_bias(&b1, 3).unwrap();
+    // rbb = 30, rbc = 9 (asymmetric). Pins: 10/13, 147/13.
+    assert!((r.value - 10.0 / 13.0).abs() <= 1e-15 * (10.0 / 13.0));
+    assert!((r.statistic - 147.0 / 13.0).abs() <= 1e-15 * (147.0 / 13.0));
+    assert_eq!(r.df, 1);
+    assert!((r.p_value - 0.0007718664488286608).abs() < 1e-12);
+    assert_eq!(r.subjects, 129);
+}
+
+/// 4x4, rbb = 12 < rbc = 15: exercises the value < 1/2 side (kills a
+/// one-sided |.| or max(rbb,rbc) mutant that B1 alone would miss).
+#[test]
+fn rbias_anchor_b4_4x4() {
+    let b4 = [
+        7.0, 2.0, 0.0, 1.0, 5.0, 9.0, 3.0, 2.0, 1.0, 0.0, 11.0, 4.0, 2.0, 6.0, 1.0, 13.0,
+    ];
+    let r = rater_bias(&b4, 4).unwrap();
+    assert!((r.value - 4.0 / 9.0).abs() <= 1e-15 * (4.0 / 9.0));
+    assert!((r.statistic - 1.0 / 3.0).abs() <= 1e-15 * (1.0 / 3.0));
+    assert!((r.p_value - 0.5637028616507731).abs() < 1e-12);
+    assert_eq!(r.subjects, 67);
+}
+
+/// Dyadic pins allow exact ==: B2 (3/4, 2) and B3 (rbb == rbc -> 0, p 1).
+#[test]
+fn rbias_dyadic_b2_b3() {
+    let r = rater_bias(&[10.0, 6.0, 2.0, 12.0], 2).unwrap();
+    assert_eq!(r.value, 0.75);
+    assert_eq!(r.statistic, 2.0);
+    assert!((r.p_value - 0.1572992070502851).abs() < 1e-12);
+    assert_eq!(r.subjects, 30);
+    let r = rater_bias(&[5.0, 3.0, 3.0, 7.0], 2).unwrap();
+    assert_eq!(r.value, 0.5);
+    assert_eq!(r.statistic, 0.0);
+    assert_eq!(r.p_value, 1.0);
+    assert_eq!(r.subjects, 18);
+}
+
+/// Transposing the table swaps rbb/rbc: stat, p, subjects invariant;
+/// values sum to 1. Both sides read crate outputs.
+#[test]
+fn rbias_transpose_antisymmetry() {
+    let b1 = [20.0, 10.0, 5.0, 3.0, 30.0, 15.0, 2.0, 4.0, 40.0];
+    let mut t = [0.0f64; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            t[j * 3 + i] = b1[i * 3 + j];
+        }
+    }
+    let a = rater_bias(&b1, 3).unwrap();
+    let b = rater_bias(&t, 3).unwrap();
+    assert_eq!(a.statistic, b.statistic);
+    assert_eq!(a.p_value, b.p_value);
+    assert_eq!(a.subjects, b.subjects);
+    assert!((a.value + b.value - 1.0).abs() < 1e-15);
+}
+
+#[test]
+fn rbias_error_contract() {
+    // c < 2 / c > 1000.
+    assert!(rater_bias(&[5.0], 1).is_err());
+    assert!(rater_bias(&vec![0.0; 1001 * 1001], 1001).is_err());
+    // Length mismatch.
+    assert!(rater_bias(&[1.0, 2.0, 3.0], 2).is_err());
+    // NaN / Inf / negative / non-integral.
+    assert!(rater_bias(&[f64::NAN, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[f64::INFINITY, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[-1.0, 6.0, 2.0, 12.0], 2).is_err());
+    assert!(rater_bias(&[10.0, 6.5, 2.0, 12.0], 2).is_err());
+    // Per-cell cap floor(2^53 / (2c)) — 2^52 exceeds it for c = 2.
+    assert!(rater_bias(&[4503599627370496.0, 6.0, 2.0, 12.0], 2).is_err());
+    // rbb + rbc == 0: all-zero and diagonal-only tables.
+    assert!(rater_bias(&[0.0, 0.0, 0.0, 0.0], 2).is_err());
+    assert!(rater_bias(&[4.0, 0.0, 0.0, 9.0], 2).is_err());
+}
+
+/// 500 LCG random tables: crate outputs vs an independent index-walk
+/// recomputation of rbb/rbc (i < j vs i > j) inside the test.
+#[test]
+#[ignore]
+fn rbias_mc_500() {
+    let mut state: u64 = 0x1234_5678_9ABC_DEF0;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let mut done = 0;
+    while done < 500 {
+        let c = 2 + (next() * 4.0) as usize % 4; // 2..=5
+        let table: Vec<f64> = (0..c * c).map(|_| (next() * 50.0).floor()).collect();
+        let (mut rbb, mut rbc, mut tot) = (0u64, 0u64, 0u64);
+        for i in 0..c {
+            for j in 0..c {
+                let v = table[i * c + j] as u64;
+                tot += v;
+                if i < j {
+                    rbb += v;
+                } else if i > j {
+                    rbc += v;
+                }
+            }
+        }
+        if rbb + rbc == 0 {
+            continue;
+        }
+        let r = rater_bias(&table, c).unwrap();
+        let denom = (rbb + rbc) as f64;
+        let ev = rbb as f64 / denom;
+        let es = ((rbb as i128 - rbc as i128).pow(2)) as f64 / denom;
+        assert!((r.value - ev).abs() <= 1e-14 * ev.max(1.0));
+        assert!((r.statistic - es).abs() <= 1e-14 * es.max(1.0));
+        assert_eq!(r.subjects, tot);
+        assert!(r.p_value >= 0.0 && r.p_value <= 1.0);
+        if es == 0.0 {
+            assert_eq!(r.p_value, 1.0);
+        }
+        done += 1;
+    }
+}
+
+// ---- n_cohen_kappa (irr N.cohen.kappa.R) -------------------------------
+// Oracle: exact-Fraction files/ncohen_oracle.py (session), EXECUTED; the
+// oracle also cross-checks the crate's Acklam qnorm against stdlib
+// NormalDist and asserts pre-ceil values sit > 1e-4 from integers.
+// Every assert below reads crate outputs. Disclosed unkillable mutant:
+// rate1 <-> rate2 swap is a real mathematical symmetry of the result
+// (executed check in the spec review), so no swap kill is claimed.
+
+/// Kills MU1 (pie missing (1-r1)(1-r2): Q goes negative -> Err),
+/// MU2 (Q roles swapped: pre 50.16 != 58.42), MU4 (pi22 missing /2),
+/// MU5 (floor: n 58 != 59), MU6 ((k1-k0) not squared: n 18 != 59).
+#[test]
+fn nck_anchor_k1() {
+    let r = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.8, false).unwrap();
+    // Exact-Fraction pins: Q1 = 307/500, Q0 = 863/875.
+    assert!((r.q1 - 307.0 / 500.0).abs() <= 1e-12 * (307.0 / 500.0));
+    assert!((r.q0 - 863.0 / 875.0).abs() <= 1e-12 * (863.0 / 875.0));
+    assert!((r.pre_ceil - 58.421285144581596).abs() <= 1e-9 * 58.421285144581596);
+    assert_eq!(r.n, 59);
+}
+
+/// Kills MU3 (d forced to 1: one-sided K2 gives N=68, executed in the
+/// spec review, vs the two-sided pin 87).
+#[test]
+fn nck_anchor_k2_twosided() {
+    let r = n_cohen_kappa(0.25, 0.3, 0.6, 0.3, 0.05, 0.8, true).unwrap();
+    assert!((r.q1 - 399.0 / 500.0).abs() <= 1e-12 * (399.0 / 500.0));
+    assert!((r.q0 - 34377.0 / 32000.0).abs() <= 1e-12 * (34377.0 / 32000.0));
+    assert!((r.pre_ceil - 86.07397414572826).abs() <= 1e-9 * 86.07397414572826);
+    assert_eq!(r.n, 87);
+}
+
+/// Non-default alpha/power (kills default-hardcode mutants) plus a
+/// second independent fixture.
+#[test]
+fn nck_anchor_k3_k4() {
+    let r3 = n_cohen_kappa(0.5, 0.5, 0.8, 0.5, 0.01, 0.9, false).unwrap();
+    assert!((r3.q1 - 9.0 / 25.0).abs() <= 1e-12 * (9.0 / 25.0));
+    assert!((r3.q0 - 3.0 / 4.0).abs() <= 1e-12 * (3.0 / 4.0));
+    assert!((r3.pre_ceil - 86.09410641021708).abs() <= 1e-9 * 86.09410641021708);
+    assert_eq!(r3.n, 87);
+    let r4 = n_cohen_kappa(0.2, 0.2, 0.5, 0.2, 0.05, 0.8, false).unwrap();
+    assert!((r4.q1 - 75.0 / 64.0).abs() <= 1e-12 * (75.0 / 64.0));
+    assert!((r4.q0 - 321.0 / 250.0).abs() <= 1e-12 * (321.0 / 250.0));
+    assert!((r4.pre_ceil - 85.55797394094165).abs() <= 1e-9 * 85.55797394094165);
+    assert_eq!(r4.n, 86);
+}
+
+/// Structural invariants read from crate outputs (not identities):
+/// narrower kappa gap and higher power both demand more subjects.
+#[test]
+fn nck_monotonicity() {
+    let base = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.8, false).unwrap();
+    let narrow = n_cohen_kappa(0.3, 0.3, 0.7, 0.5, 0.05, 0.8, false).unwrap();
+    assert!(narrow.n > base.n, "narrower gap {} !> {}", narrow.n, base.n);
+    let strong = n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.95, false).unwrap();
+    assert!(strong.n >= base.n, "higher power {} < {}", strong.n, base.n);
+    assert!(strong.pre_ceil > base.pre_ceil);
+}
+
+#[test]
+fn nck_error_contract() {
+    // boundary/degenerate marginals
+    assert!(n_cohen_kappa(0.0, 0.3, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(1.0, 0.3, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, f64::NAN, 0.7, 0.4, 0.05, 0.8, false).is_err());
+    // kappas out of range / equal
+    assert!(n_cohen_kappa(0.3, 0.3, 1.5, 0.4, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, f64::INFINITY, 0.05, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.4, 0.4, 0.05, 0.8, false).is_err());
+    // alpha/power out of (0,1)
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.0, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 1.0, 0.8, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 0.0, false).is_err());
+    assert!(n_cohen_kappa(0.3, 0.3, 0.7, 0.4, 0.05, 1.0, false).is_err());
+    // K5 oracle probe: infeasible cell (pi11 > 1)
+    assert!(n_cohen_kappa(0.9, 0.1, 0.9, 0.1, 0.05, 0.8, false).is_err());
+    // spec-review executed probe: k1 valid, k0 infeasible (Q0 < 0)
+    assert!(n_cohen_kappa(0.1, 0.1, -0.1, -1.0, 0.05, 0.8, false).is_err());
+    // impl-review MAJOR: near-equal kappas give pre_ceil ~3.8e30; the
+    // old `as u64` cast silently saturated to u64::MAX (executed in the
+    // review). Crate must reject sizes past exact-integer f64 range.
+    assert!(n_cohen_kappa(0.3, 0.3, 0.700000000000001, 0.7, 0.05, 0.8, false).is_err());
+}
+
+/// 500 feasible-region draws; in-test recompute of the R chain is a
+/// SECONDARY oracle compared against crate q1/q0/pre_ceil/n outputs.
+#[test]
+#[ignore]
+fn nck_mc_500() {
+    let mut state: u64 = 0x00C0FFEE;
+    let mut next = move || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((state >> 33) as f64) / ((1u64 << 31) as f64)
+    };
+    let mut done = 0;
+    while done < 500 {
+        let rate1 = 0.2 + 0.6 * next();
+        let rate2 = 0.2 + 0.6 * next();
+        let k0 = 0.4 * next();
+        let k1 = k0 + 0.2 + (0.7 - k0 - 0.2) * next();
+        let alpha = 0.01 + 0.09 * next();
+        let power = 0.7 + 0.25 * next();
+        let twosided = next() > 0.5;
+        let Ok(r) = n_cohen_kappa(rate1, rate2, k1, k0, alpha, power, twosided) else {
+            continue; // infeasible draw under the strict contract
+        };
+        // secondary oracle: recompute the R chain independently
+        let d = if twosided { 2.0 } else { 1.0 };
+        let pie = rate1 * rate2 + (1.0 - rate1) * (1.0 - rate2);
+        let q_of = |k: f64| {
+            let pi0 = k * (1.0 - pie) + pie;
+            let pi22 = (pi0 - rate1 + (1.0 - rate2)) / 2.0;
+            let pi11 = pi0 - pi22;
+            let pi12 = rate1 - pi11;
+            let pi21 = rate2 - pi11;
+            (pi11 * (1.0 - pie - (rate2 + rate1) * (1.0 - pi0)).powi(2)
+                + pi22 * (1.0 - pie - ((1.0 - rate2) + (1.0 - rate1)) * (1.0 - pi0)).powi(2)
+                + (1.0 - pi0).powi(2)
+                    * (pi12 * (rate2 + (1.0 - rate1)).powi(2)
+                        + pi21 * ((1.0 - rate2) + rate1).powi(2))
+                - (pi0 * pie - 2.0 * pie + pi0).powi(2))
+                / (1.0 - pie).powi(4)
+        };
+        let (q1, q0) = (q_of(k1), q_of(k0));
+        assert!((r.q1 - q1).abs() <= 1e-12 * q1.abs().max(1.0));
+        assert!((r.q0 - q0).abs() <= 1e-12 * q0.abs().max(1.0));
+        let za = crate::nodes::inv_normal_cdf(1.0 - alpha / d);
+        let zb = crate::nodes::inv_normal_cdf(power);
+        let pre = ((za * q0.sqrt() + zb * q1.sqrt()) / (k1 - k0)).powi(2);
+        assert!((r.pre_ceil - pre).abs() <= 1e-9 * pre.max(1.0));
+        assert_eq!(r.n, r.pre_ceil.ceil() as u64);
+        assert!(r.n >= 1);
+        done += 1;
+    }
+}

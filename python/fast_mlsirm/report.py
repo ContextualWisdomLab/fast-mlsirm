@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from html import escape
 from pathlib import Path
 from typing import Any
+
+from .io import _load_json_bounded
 
 
 def render_diagnostics_report(
@@ -17,7 +18,8 @@ def render_diagnostics_report(
     """Render saved diagnostics JSON as a standalone HTML report."""
 
     source = Path(diagnostics_path)
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    # 🛡️ Sentinel: Prevent JSON DoS via unbounded recursion or memory exhaustion by using bounded loader
+    payload = _load_json_bounded(source, source="diagnostics JSON")
     if not isinstance(payload, dict):
         raise ValueError("diagnostics JSON must contain an object")
 
@@ -317,11 +319,14 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     columns = _columns(rows)
     body_rows = []
     for row in rows[:limit]:
-        cells = "".join(
-            f"<td>{escape(_format_value(row.get(column, '')))}</td>"
-            for column in columns
-        )
-        body_rows.append(f"<tr>{cells}</tr>")
+        cells = []
+        for i, column in enumerate(columns):
+            value = escape(_format_value(row.get(column, "")))
+            if i == 0:
+                cells.append(f'<th scope="row">{value}</th>')
+            else:
+                cells.append(f"<td>{value}</td>")
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
     note = ""
     described_by = ""
@@ -679,20 +684,27 @@ caption {
   border: 0;
 }
 
-th,
+thead th,
+tbody th,
 td {
   padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-th {
+thead th {
   background: #f1f4ef;
   color: #2f3437;
   font-size: 0.8rem;
 }
 
+tbody th {
+  font-weight: normal;
+}
+
+tbody tr:last-child th,
 tr:last-child td {
   border-bottom: 0;
 }
