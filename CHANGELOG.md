@@ -119,6 +119,7 @@
 
 ### Added
 
+- `metrics_rating` prediction-quality metrics for binary-outcome forecasts (binomial deviance on capped predictions, RMSE/MAE on raw predictions, optional 0.5-baseline scaling), a Rust reimplementation of CRAN PlayerRatings 1.1-0 `metrics()` with its cap quirk and elementwise NaN semantics preserved; exact-oracle anchor tests, mutation-kill map, and MC-500 invariants.
 - **Multiplayer Elo rating (CRAN PlayerRatings 1.1-0 `elom()`
   `R/ratings.R` lines 739–932 + `elom_c` C kernel `src/ratings.c`
   lines 45–80, and `kriichi` K-factor lines 1006–1020 — all READ and

@@ -3255,6 +3255,168 @@ pub fn elom_rating(
     })
 }
 
+/// Prediction-quality metrics for binary-outcome forecasts: binomial
+/// deviance, root-mean-square error, and mean absolute error, each
+/// multiplied by 100 and optionally scaled by the 0.5-constant-predictor
+/// baseline.
+///
+/// # Citation governance
+///
+/// Normative source (READ): CRAN PlayerRatings 1.1-0, `R/ratings.R`
+/// lines 936-957 (`metrics`). NO journal paper exists for this function;
+/// its provenance is the CRAN package alone. Verified semantics:
+///
+/// - The binomial deviance uses the CAPPED predictor column
+///   (`pmax.int(pmin.int(pred[,i], cap[2]), cap[1])`, R:946-947) while
+///   MSE (R:949) and MAE (R:951) use the RAW UNCAPPED column -- the R
+///   source references `pred[,i]`, not `predc`, in those two lines.
+/// - `mean(..., na.rm = TRUE)` drops NaN terms elementwise PER METRIC:
+///   a numerator term is NaN iff `act[i]` or `pred[i, j]` is NaN. The
+///   `scale = TRUE` baselines (R:948, 950, 952) involve only `act`, so
+///   their row set is the act-non-NaN rows -- a DIFFERENT row set from
+///   the numerator whenever the predictor column has NaNs.
+/// - The bdev baseline `-mean(act*log(0.5) + (1-act)*log(0.5))` equals
+///   `ln 2` exactly for any FINITE non-NaN act (algebraic identity
+///   `a*c + (1-a)*c = c`); this implementation uses `LN_2` directly,
+///   which can differ from R\u{2019}s numeric summation by float
+///   rounding for non-0/1 act values (within a few ulp).
+/// - Results are multiplied by 100 (R:954).
+///
+/// REDUCED-SCOPE divergences from R (input sanity / presentation):
+/// `which`/`sort`/`digits`/`drop` (R:936, 954-956) are presentation and
+/// not implemented -- the full `np x 3` unrounded matrix is always
+/// returned; `na.rm = FALSE` is not implemented (always elementwise
+/// NaN-drop); R\u{2019}s vector recycling of a short `act` is rejected;
+/// non-finite non-NaN inputs (Inf) are rejected; an empty per-column
+/// row set after NaN removal is rejected (R yields NaN); `scale = TRUE`
+/// with an all-0.5 act baseline (zero mae/mse denominator, R yields
+/// Inf/NaN) is rejected; caps must satisfy `0 < lo <= hi < 1` (R would
+/// take `log` out of domain).
+///
+/// `pred` is row-major `nr x np` (`pred[i * np + j]`); the output is
+/// row-major `np x 3` with per-column `[bdev, mse, mae]`.
+pub fn metrics_rating(
+    act: &[f64],
+    pred: &[f64],
+    nr: usize,
+    np: usize,
+    cap: (f64, f64),
+    scale: bool,
+) -> Result<Vec<f64>, String> {
+    if nr == 0 || nr > 10_000_000 {
+        return Err(format!("metrics_rating: nr = {nr} must be in 1..=10000000"));
+    }
+    if np == 0 || np > 10_000 {
+        return Err(format!("metrics_rating: np = {np} must be in 1..=10000"));
+    }
+    if act.len() != nr {
+        return Err(format!(
+            "metrics_rating: act has length {} but nr = {nr}",
+            act.len()
+        ));
+    }
+    // Checked multiplication BEFORE any indexing: an nr * np overflow must
+    // fail loudly instead of wrapping into a bogus expected length.
+    let expected = nr
+        .checked_mul(np)
+        .ok_or_else(|| "metrics_rating: nr * np overflows usize".to_string())?;
+    if pred.len() != expected {
+        return Err(format!(
+            "metrics_rating: pred has length {} but nr * np = {expected}",
+            pred.len()
+        ));
+    }
+    let (lo, hi) = cap;
+    if !(lo.is_finite() && hi.is_finite() && 0.0 < lo && lo <= hi && hi < 1.0) {
+        return Err(format!(
+            "metrics_rating: cap ({lo}, {hi}) must satisfy 0 < lo <= hi < 1"
+        ));
+    }
+    for (i, &a) in act.iter().enumerate() {
+        if a.is_infinite() {
+            return Err(format!(
+                "metrics_rating: act[{i}] is infinite (NaN marks missing)"
+            ));
+        }
+    }
+    for (k, &p) in pred.iter().enumerate() {
+        if p.is_infinite() {
+            return Err(format!(
+                "metrics_rating: pred[{k}] is infinite (NaN marks missing)"
+            ));
+        }
+    }
+    // scale = TRUE baselines run over the act-non-NaN rows only (R:948,
+    // 950, 952 involve no pred terms).
+    let mut base_sq = 0.0f64;
+    let mut base_abs = 0.0f64;
+    let mut n_act = 0usize;
+    for &a in act {
+        if a.is_nan() {
+            continue;
+        }
+        let d = 0.5 - a;
+        base_sq += d * d;
+        base_abs += d.abs();
+        n_act += 1;
+    }
+    if scale {
+        if n_act == 0 {
+            return Err(
+                "metrics_rating: scale requires at least one non-NaN act value".to_string(),
+            );
+        }
+        if base_sq == 0.0 || base_abs == 0.0 {
+            return Err(
+                "metrics_rating: scale baseline is zero (all non-NaN act values are 0.5)"
+                    .to_string(),
+            );
+        }
+    }
+    let base_sq_mean = base_sq / n_act.max(1) as f64;
+    let base_abs_mean = base_abs / n_act.max(1) as f64;
+    let mut out = Vec::with_capacity(np * 3);
+    for j in 0..np {
+        let mut sum_bdev = 0.0f64;
+        let mut sum_sq = 0.0f64;
+        let mut sum_abs = 0.0f64;
+        let mut n_pair = 0usize;
+        for i in 0..nr {
+            let a = act[i];
+            let p = pred[i * np + j];
+            if a.is_nan() || p.is_nan() {
+                continue;
+            }
+            // bdev uses the CAPPED value (R:946-947); mse/mae use the
+            // raw pred (R:949, 951) -- the key quirk of the R source.
+            let pc = p.clamp(lo, hi);
+            sum_bdev += a * pc.ln() + (1.0 - a) * (1.0 - pc).ln();
+            let d = p - a;
+            sum_sq += d * d;
+            sum_abs += d.abs();
+            n_pair += 1;
+        }
+        if n_pair == 0 {
+            return Err(format!(
+                "metrics_rating: predictor column {j} has no rows where both act and pred are non-NaN"
+            ));
+        }
+        let n = n_pair as f64;
+        let mut bdev = -sum_bdev / n;
+        let mut mse = (sum_sq / n).sqrt();
+        let mut mae = sum_abs / n;
+        if scale {
+            bdev /= std::f64::consts::LN_2;
+            mse /= base_sq_mean.sqrt();
+            mae /= base_abs_mean;
+        }
+        out.push(100.0 * bdev);
+        out.push(100.0 * mse);
+        out.push(100.0 * mae);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;
