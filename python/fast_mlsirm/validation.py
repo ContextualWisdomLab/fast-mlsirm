@@ -42,6 +42,12 @@ def _validate_labels(a, name: str, *, k: int | None = None, n: int | None = None
 
 @dataclass
 class ValidationVerdict:
+    """Outcome of validating a judge against reference labels.
+
+    Holds the per-gate results, the exact and adjacent agreement rates, the
+    overall pass/fail verdict, and the names of any gates that failed.
+    """
+
     gates: list[dict[str, Any]]
     exact_agreement: float
     adjacent_agreement: float

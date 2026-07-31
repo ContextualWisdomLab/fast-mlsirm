@@ -31,6 +31,7 @@ class EbDifResult:
 
 
 def _validated_1d(x, name: str) -> np.ndarray:
+    """Validate ``x`` is a real 1-D array and return it (raises otherwise)."""
     xa = np.asarray(x)
     if xa.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
