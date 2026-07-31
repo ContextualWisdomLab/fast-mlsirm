@@ -223,6 +223,21 @@ from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
 from .simulation import simulate as simulate
 from .test_design import assemble_test_form as assemble_test_form, item_information as item_information, select_cat_item as select_cat_item
+from .cat import (
+    AbilityEstimate as AbilityEstimate,
+    AdaptiveTestResult as AdaptiveTestResult,
+    ability_standard_error as ability_standard_error,
+    administer_adaptive_test as administer_adaptive_test,
+    estimate_ability_eap as estimate_ability_eap,
+    estimate_ability_mle as estimate_ability_mle,
+    select_max_information_item as select_max_information_item,
+    simulate_adaptive_test as simulate_adaptive_test,
+)
+from .ata import (
+    AssembledForm as AssembledForm,
+    assemble_to_target as assemble_to_target,
+    item_information_matrix as item_information_matrix,
+)
 from .types import DimensionalityDiagnostics as DimensionalityDiagnostics, FitDiagnostics as FitDiagnostics, FitResult as FitResult, MLSIRMParams as MLSIRMParams, RecoveryReport as RecoveryReport, SimulationData as SimulationData
 
 try:
@@ -244,6 +259,17 @@ __all__ = [
     "SimulationData",
     "align_latent_space",
     "assemble_test_form",
+    "AbilityEstimate",
+    "AdaptiveTestResult",
+    "ability_standard_error",
+    "administer_adaptive_test",
+    "estimate_ability_eap",
+    "estimate_ability_mle",
+    "select_max_information_item",
+    "simulate_adaptive_test",
+    "AssembledForm",
+    "assemble_to_target",
+    "item_information_matrix",
     "dimensionality_diagnostics",
     "ValidationVerdict",
     "FleissKappaResult",

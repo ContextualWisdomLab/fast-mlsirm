@@ -16,7 +16,8 @@ the full discrimination-vector model.
 - Jeon, M., Jin, I. H., Schweinberger, M., & Baugh, S. (2021). *Mapping
   Unobserved Item-Respondent Interactions: A Latent Space Item Response Model
   with Interaction Map.* Psychometrika, 86(2), 378-403.
-  DOI: [10.1007/s11336-021-09762-5](https://doi.org/10.1007/s11336-021-09762-5)
+  DOI: [10.1007/s11336-021-09762-5](https://doi.org/10.1007/s11336-021-09762-5).
+  Open-access preprint: [arXiv:2007.08719](https://arxiv.org/abs/2007.08719).
   — defines the Latent Space Item Response Model (LSIRM):
   `logit P(Y = 1) = theta_p + b_i - gamma * ||u_p - v_i||`.
 - Molenaar, D., & Jeon, M. (2026). *Regularized Joint Maximum Likelihood
@@ -29,9 +30,12 @@ the full discrimination-vector model.
   90(2), 799-826. DOI: [10.1017/psy.2025.5](https://doi.org/10.1017/psy.2025.5)
   — the multidimensional (MLS2PLM) generalization.
 
-PDFs are not redistributed here (the primary sources are not open-access); cite
-via the DOIs above. This document reproduces only the equations needed to verify
-the code, which are facts and not copyrightable expression.
+PDFs are not redistributed here. The published *Psychometrika* versions are
+paywalled, so cite via the DOIs above; where a freely accessible author preprint
+exists (the foundational LSIRM paper, arXiv:2007.08719), its open-access link is
+given alongside the DOI so the grounding source can be read without a paywall.
+This document reproduces only the equations needed to verify the code, which are
+facts and not copyrightable expression.
 
 ## Model
 
