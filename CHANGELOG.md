@@ -12,6 +12,16 @@
   unavailable or unsupported GPU work falls back to fixed contiguous Rust CPU
   workers instead of performing respondent score aggregation in Python.
 
+## [0.1.1] - 2026-07-31
+
+### Fixed
+- Coarse fixed-shard Rust multithreading for the JML `neg_loglik_and_grad` hot path (`thread::scope` person shards, N≥256) with bit-identical reduction vs single-thread (PR #371).
+- wgpu GPU init uses `Backends::PRIMARY` only (no GL/EGL), so sandboxes with broken `/dev/dri` soft-fail to the f64 CPU path instead of SIGSEGV (PR #371).
+- Paper-grounded simple-structure MLS2PLM formula contract reaffirmed (Kang & Jeon 2025; Jeon et al. 2021); no formula drift.
+
+### Changed
+- Unit test forces multi-worker NLL shards and compares all gradient blocks to the single-thread reference.
+
 ## Unreleased
 
 ### Changed
