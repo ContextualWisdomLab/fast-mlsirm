@@ -8605,3 +8605,2735 @@ class TestThurstoneCaseV:
             thurstone_case_v(
                 np.array([[0.5, "a"], [0.25, 0.5]], dtype=object)
             )
+
+class TestBradleyTerry:
+    """Bradley-Terry MM fit (choix 0.4.1 opt.mm pairwise path, source READ).
+
+    Pins from files/bt_oracle.py (mpmath 50-digit, EXECUTED; choix
+    cross-checked to <= 1.4e-12). All asserts read the BradleyTerryResult
+    returned by the crate.
+    """
+
+    def test_fixture_a_params_weights_iterations(self):
+        # Asymmetric 3x3; kills winner-accumulation / denominator /
+        # centering mutants; iterations == 18 pins the tol*n convergence
+        # semantics (reviewer-executed MU5 evidence).
+        import numpy as np
+        from fast_mlsirm import bradley_terry_mm
+
+        wins = np.array([[0.0, 3.0, 1.0], [2.0, 0.0, 4.0], [5.0, 1.0, 0.0]])
+        r = bradley_terry_mm(wins)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.378869072353494149, 0.274223212389322699,
+             0.104645859964171450],
+            rtol=0,
+            atol=1e-7,
+        )
+        np.testing.assert_allclose(
+            r.weights,
+            [0.660321972720804678, 1.268791102424604100,
+             1.070886924854591222],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 18
+        assert abs(float(np.mean(r.params))) < 1e-12
+        assert abs(float(np.sum(r.weights)) - 3.0) < 1e-9
+
+    def test_fixture_b_closed_form_and_alpha(self):
+        # 2x2 closed form: params = +/- ln(3)/2 (verified symbolically in
+        # the oracle); fixture D pins the alpha=0.5 MAP path, which kills
+        # the weight-normalization mutant (alpha=0 is scale-invariant).
+        import numpy as np
+        from fast_mlsirm import bradley_terry_mm
+
+        r = bradley_terry_mm(np.array([[0.0, 3.0], [1.0, 0.0]]))
+        half_ln3 = 0.549306144334054846
+        np.testing.assert_allclose(
+            r.params, [half_ln3, -half_ln3], rtol=0, atol=1e-7
+        )
+        np.testing.assert_allclose(r.weights, [1.5, 0.5], rtol=0, atol=1e-7)
+
+        wins = np.array([[0.0, 3.0, 1.0], [2.0, 0.0, 4.0], [5.0, 1.0, 0.0]])
+        d = bradley_terry_mm(wins, alpha=0.5)
+        np.testing.assert_allclose(
+            d.params,
+            [-0.337946615223381393, 0.240502957855231605,
+             0.097443657368149788],
+            rtol=0,
+            atol=1e-7,
+        )
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import bradley_terry_mm
+
+        good = np.array([[0.0, 3.0], [1.0, 0.0]])
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good[:1])  # non-square
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.array([[0.0]]))  # n < 2
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.zeros((2, 2)))  # all-zero rejected
+        with pytest.raises(ValueError):
+            bradley_terry_mm(np.zeros((2, 2)), alpha=0.5)  # even with alpha
+        bad = good.copy()
+        bad[0, 0] = 1.0
+        with pytest.raises(ValueError):
+            bradley_terry_mm(bad)  # nonzero diagonal
+        with pytest.raises(ValueError):
+            bradley_terry_mm(-good)  # negative counts
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good + 0j)  # complex rejected
+        with pytest.raises(ValueError):
+            bradley_terry_mm(
+                np.array([[0.0, "a"], [1.0, 0.0]], dtype=object)
+            )
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good, tol=0.0)
+        with pytest.raises(ValueError):
+            bradley_terry_mm(good, max_iter=0)
+        # zero-wins item at alpha=0: no finite log-worth
+        winless = np.array(
+            [[0.0, 2.0, 3.0], [0.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+        )
+        with pytest.raises(ValueError):
+            bradley_terry_mm(winless)
+
+
+class TestLsr:
+    """Luce Spectral Ranking (choix 0.4.1 lsr.py; Maystre & Grossglauser,
+    2015). Pins from the EXECUTED exact-Fraction/mpmath oracle
+    (session files lsr_oracle.py), cross-checked against pip choix 0.4.1.
+    atol 1e-7 on I-LSR pins: converged iterate at tol=1e-8 sits ~5e-9 from
+    the fixed point; mutant deviations are >= 3e-2."""
+
+    def test_lsr_one_shot_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import lsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = lsr_pairwise(a)
+        assert r.iterations == 1
+        np.testing.assert_allclose(
+            r.weights, [12 / 17, 45 / 34, 33 / 34], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            r.params,
+            [-0.31568746351363625, 0.31292119590873789, 0.00276626760489836],
+            atol=1e-13,
+        )
+        # n = 2 closed form: +/- ln(3)/2.
+        b = np.array([[0, 3], [1, 0]], dtype=float)
+        rb = lsr_pairwise(b)
+        np.testing.assert_allclose(
+            rb.params, [np.log(3) / 2, -np.log(3) / 2], atol=1e-14
+        )
+
+    def test_ilsr_matches_bradley_terry(self):
+        import numpy as np
+
+        from fast_mlsirm import bradley_terry_mm, ilsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = ilsr_pairwise(a)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.37886907235349415, 0.27422321238932270, 0.10464585996417145],
+            atol=1e-7,
+        )
+        assert r.iterations == 15
+        bt = bradley_terry_mm(a)
+        np.testing.assert_allclose(r.params, bt.params, atol=1e-6)
+        assert abs(float(np.sum(r.weights)) - 3.0) < 1e-9
+
+    def test_lsr_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import ilsr_pairwise, lsr_pairwise
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.ones((2, 3)))
+        with pytest.raises(ValueError):
+            lsr_pairwise(a + 1j * a)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.array([["x"] * 3] * 3, dtype=object))
+        with pytest.raises(ValueError):
+            lsr_pairwise(-a)
+        with pytest.raises(ValueError):
+            lsr_pairwise(np.zeros((3, 3)))
+        with pytest.raises(ValueError):
+            lsr_pairwise(a, alpha=-1.0)
+        # Disconnected comparison graph at alpha = 0.
+        d = np.array(
+            [[0, 2, 0, 0], [1, 0, 0, 0], [0, 0, 0, 3], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        with pytest.raises(ValueError):
+            lsr_pairwise(d)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(d)
+        # ... but estimable with alpha > 0.
+        rd = lsr_pairwise(d, alpha=0.5)
+        assert np.all(np.isfinite(rd.params))
+        # Overflow must raise, never return NaN. n = 4 at 1.7e308 makes
+        # each generator row sum overflow to inf (an n = 3 all-1e308
+        # matrix stays finite and is now correctly accepted).
+        huge = np.full((4, 4), 1.7e308)
+        np.fill_diagonal(huge, 0.0)
+        with pytest.raises(ValueError):
+            lsr_pairwise(huge)
+        with pytest.raises(ValueError):
+            lsr_pairwise(a, alpha=1e308)
+        # Scale invariance: globally rescaled huge counts must match.
+        base = lsr_pairwise(a)
+        big = lsr_pairwise(a * 1e20)
+        assert np.allclose(big.params, base.params, atol=1e-12)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(a, max_iter=0)
+        with pytest.raises(ValueError):
+            ilsr_pairwise(a, tol=0.0)
+
+class TestRankCentrality:
+    """Rank Centrality (choix 0.4.1 rank_centrality; Negahban, Oh, & Shah,
+    2017, as ported by choix -- continuous-time win-ratio chain). Pins from
+    the EXECUTED exact-Fraction/mpmath oracle (session files
+    rank_centrality_oracle.py), cross-checked against pip choix 0.4.1."""
+
+    def test_rank_centrality_exact(self):
+        import numpy as np
+
+        from fast_mlsirm import lsr_pairwise, rank_centrality
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        r = rank_centrality(a)
+        assert r.iterations == 1
+        np.testing.assert_allclose(
+            r.weights, [138 / 181, 237 / 181, 168 / 181], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            r.params,
+            [-0.2458389167413269, 0.2949675392365996, -0.0491286224952727],
+            atol=1e-13,
+        )
+        # RC is the ratio chain, NOT the LSR rate chain (kills a
+        # dispatch-to-lsr mutant): weights differ on the same input.
+        rl = lsr_pairwise(a)
+        assert np.max(np.abs(r.weights - rl.weights)) > 1e-2
+        # alpha regularizes the ratio numerator and denominator.
+        ra = rank_centrality(a, alpha=0.5)
+        np.testing.assert_allclose(
+            ra.weights, [207 / 265, 333 / 265, 255 / 265], atol=1e-13
+        )
+        np.testing.assert_allclose(
+            ra.params,
+            [-0.2279894828693773, 0.2474342138456975, -0.0194447309763202],
+            atol=1e-13,
+        )
+
+    def test_rank_centrality_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import rank_centrality
+
+        a = np.array([[0, 3, 1], [2, 0, 4], [5, 1, 0]], dtype=float)
+        with pytest.raises(ValueError):
+            rank_centrality(np.ones((2, 3)))
+        with pytest.raises(ValueError):
+            rank_centrality(a + 1j * a)
+        with pytest.raises(ValueError):
+            rank_centrality(-a)
+        with pytest.raises(ValueError):
+            rank_centrality(np.zeros((3, 3)))
+        with pytest.raises(ValueError):
+            rank_centrality(a, alpha=-1.0)
+        # Disconnected comparison graph at alpha = 0; estimable at 0.5.
+        d = np.array(
+            [[0, 2, 0, 0], [1, 0, 0, 0], [0, 0, 0, 3], [0, 0, 1, 0]],
+            dtype=float,
+        )
+        with pytest.raises(ValueError):
+            rank_centrality(d)
+        rd = rank_centrality(d, alpha=0.5)
+        np.testing.assert_allclose(
+            rd.weights, [9 / 8, 7 / 8, 6 / 5, 4 / 5], atol=1e-13
+        )
+        # Denominator overflow (2 * alpha -> inf) must raise, not NaN.
+        with pytest.raises(ValueError):
+            rank_centrality(a, alpha=1e308)
+        # Exact scale invariance at alpha = 0 only.
+        base = rank_centrality(a)
+        big = rank_centrality(a * 1e20)
+        assert np.allclose(big.params, base.params, atol=1e-12)
+
+class TestPlackettLuceRankings:
+    """Plackett-Luce rankings LSR/I-LSR (choix 0.4.1 lsr_rankings /
+    ilsr_rankings). Pins from the executed exact-Fraction oracle."""
+
+    def test_lsr_rankings_fixtures(self):
+        import numpy as np
+        from fast_mlsirm import lsr_rankings
+
+        ra = [[1, 0, 2], [2, 1, 0], [0, 1, 2], [1, 2, 0]]
+        r = lsr_rankings(ra, 3)
+        np.testing.assert_allclose(
+            r.weights, [6 / 11, 21 / 11, 6 / 11], rtol=0, atol=1e-14
+        )
+        assert r.iterations == 1
+        r5 = lsr_rankings(ra, 3, alpha=0.5)
+        np.testing.assert_allclose(r5.weights, [0.75, 1.5, 0.75], rtol=0, atol=1e-14)
+        # Partial rankings (kills the all-items-sum mutant).
+        rb = [[0, 1, 2], [3, 2], [1, 3], [2, 0, 3], [3, 1, 0]]
+        rp = lsr_rankings(rb, 4)
+        np.testing.assert_allclose(
+            rp.weights,
+            [172 / 175, 12 / 7, 16 / 35, 148 / 175],
+            rtol=0,
+            atol=1e-14,
+        )
+
+    def test_ilsr_rankings_fixed_point(self):
+        import numpy as np
+        from fast_mlsirm import ilsr_rankings
+
+        ra = [[1, 0, 2], [2, 1, 0], [0, 1, 2], [1, 2, 0]]
+        r = ilsr_rankings(ra, 3)
+        np.testing.assert_allclose(
+            r.params,
+            [-0.39145300187318292, 0.78290600374636584, -0.39145300187318292],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 8
+        assert (r.weights > 0).all()
+        assert abs(r.weights.sum() - 3.0) < 1e-9
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import ilsr_rankings, lsr_rankings
+
+        with pytest.raises(ValueError):
+            lsr_rankings([[0]], 2)  # length-1 ranking (choix would no-op)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, -1]], 2)  # negative index must NOT wrap
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1.5]], 2)  # non-integer item
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 2]], 2)  # out of range
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1, 0]], 2)  # within-ranking duplicate
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 1)  # n < 2
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1], [1, 0], [2, 3], [3, 2]], 4)  # disconnected
+        with pytest.raises(ValueError):
+            ilsr_rankings([[0, 1], [1, 0]], 2, max_iter=0)
+        # object-dtype backstop: a non-numeric object item must raise
+        # ValueError, not TypeError.
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, object()]], 2)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.complex128(1)]], 2)
+        # Impl-review regressions: np.bool_ items must be rejected like
+        # Python bool; infinite items must raise ValueError (not
+        # OverflowError); huge n must Err (not abort the process).
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.bool_(True)]], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, np.float64("inf")]], 2)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 1_000_000)
+        # Huge n / indices beyond u64 must raise ValueError before any
+        # unsigned cast, never a raw OverflowError (impl-review #295).
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 1]], 2**81)
+        with pytest.raises(ValueError):
+            lsr_rankings([[0, 2**80]], 3)
+
+class TestPlackettLuceTop1:
+    """Plackett-Luce top-1 LSR/I-LSR (choix 0.4.1 lsr_top1 / ilsr_top1).
+    Pins from the executed exact-Fraction oracle."""
+
+    def test_lsr_top1_fixtures(self):
+        import numpy as np
+        from fast_mlsirm import lsr_top1
+
+        ta = [(1, [0, 2]), (1, [0, 2]), (0, [1, 2]), (2, [0, 1]), (1, [0, 2])]
+        r = lsr_top1(ta, 3)
+        np.testing.assert_allclose(r.weights, [0.6, 1.8, 0.6], rtol=0, atol=1e-14)
+        assert r.iterations == 1
+        r5 = lsr_top1(ta, 3, alpha=0.5)
+        np.testing.assert_allclose(
+            r5.weights, [15 / 19, 27 / 19, 15 / 19], rtol=0, atol=1e-14
+        )
+        # Partial choice sets (kills the winner-excluded / all-items
+        # denominator mutants, both invisible on TA).
+        tb = [(0, [1, 2]), (3, [2]), (1, [3]), (2, [0, 3]), (3, [1, 0]), (1, [2])]
+        rp = lsr_top1(tb, 4)
+        np.testing.assert_allclose(
+            rp.weights,
+            [38 / 41, 54 / 41, 22 / 41, 50 / 41],
+            rtol=0,
+            atol=1e-14,
+        )
+
+    def test_ilsr_top1_fixed_point(self):
+        import numpy as np
+        from fast_mlsirm import ilsr_top1
+
+        tb = [(0, [1, 2]), (3, [2]), (1, [3]), (2, [0, 3]), (3, [1, 0]), (1, [2])]
+        r = ilsr_top1(tb, 4)
+        np.testing.assert_allclose(
+            r.params,
+            [
+                0.038399971408422691,
+                0.26272439694352421,
+                -0.56384876453083402,
+                0.26272439617888712,
+            ],
+            rtol=0,
+            atol=1e-7,
+        )
+        assert r.iterations == 12
+        assert (r.weights > 0).all()
+        assert abs(r.weights.sum() - 4.0) < 1e-9
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import ilsr_top1, lsr_top1
+
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [])], 2)  # empty loser set (choix would no-op)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [-1])], 2)  # negative index must NOT wrap
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1.5])], 2)  # non-integral loser
+        with pytest.raises(ValueError):
+            lsr_top1([(0.5, [1])], 2)  # non-integral winner
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [2])], 2)  # loser out of range
+        with pytest.raises(ValueError):
+            lsr_top1([(2, [0])], 2)  # winner out of range
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [0, 1])], 2)  # winner in its own loser set
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1, 1])], 3)  # duplicate loser
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 1)  # n < 2
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1]), (1, [0]), (2, [3]), (3, [2])], 4)  # disconnected
+        with pytest.raises(ValueError):
+            ilsr_top1([(0, [1]), (1, [0])], 2, max_iter=0)
+        # Object-dtype backstop: a non-numeric object must raise
+        # ValueError, not TypeError.
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [object()])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.complex128(1)])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(np.complex128(0), [1])], 2)
+        # bool / np.bool_ are not item indices; inf must raise ValueError
+        # (not OverflowError); huge n must Err (not abort the process).
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.bool_(True)])], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_top1([(True, [1])], 2, alpha=0.5)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [np.float64("inf")])], 2)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 1_000_000)
+        # Huge n / indices beyond u64 must raise ValueError before any
+        # unsigned cast, never a raw OverflowError (impl-review finding).
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [1])], 2**81)
+        with pytest.raises(ValueError):
+            lsr_top1([(0, [2**80])], 3)
+        with pytest.raises(ValueError):
+            lsr_top1([(2**80, [1])], 3)
+
+class TestKendallCircular:
+    """circular_triads wrapper. Every assert reads crate-returned fields.
+
+    Fixture pins are exact-Fraction oracle values (files/kendall_oracle.py,
+    EXECUTED): dog example T=5, T_max=8, zeta=3/8, p_less=1043/2048;
+    exact p-values are dyadic rationals so == comparison is exact.
+    """
+
+    DOG = [
+        [0, 1, 1, 0, 1, 1],
+        [0, 0, 0, 1, 1, 0],
+        [0, 1, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 0, 1],
+        [0, 1, 0, 1, 0, 0],
+    ]
+
+    def test_dog_exact(self):
+        # Mutation kill: dropping the pairing C(d,2) shifts T off 5.
+        from fast_mlsirm import circular_triads
+
+        r = circular_triads(self.DOG, alternative="less")
+        assert r.t == 5.0
+        assert r.t_max == 8.0
+        assert r.t_exp == 5.0
+        assert r.zeta == 3.0 / 8.0
+        assert r.p_value == 1043.0 / 2048.0
+        assert r.exact is True
+        import math
+
+        assert math.isnan(r.chi2) and math.isnan(r.df)
+
+    def test_two_sided_and_greater(self):
+        from fast_mlsirm import circular_triads
+
+        r2 = circular_triads(self.DOG, alternative="two.sided")
+        assert r2.p_value == 1.0
+        rg = circular_triads(self.DOG, alternative="greater")
+        assert rg.p_value == 1233.0 / 2048.0
+
+    def test_chi2_path_n12(self):
+        # n=12 tournament: i beats j (i<j) iff (i+j)%3 != 0; oracle pins
+        # T=60, zeta=1/7, corrected less-tail chi2 uses corr=-0.5.
+        import numpy as np
+
+        from fast_mlsirm import circular_triads
+
+        n = 12
+        m = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                if (i + j) % 3 != 0:
+                    m[i, j] = 1.0
+                else:
+                    m[j, i] = 1.0
+        r = circular_triads(m, alternative="less")
+        assert r.t == 60.0
+        assert abs(r.zeta - 1.0 / 7.0) < 1e-15
+        assert r.exact is False
+        assert abs(r.chi2 - 121.0 / 8.0) < 1e-12
+        assert abs(r.df - 165.0 / 8.0) < 1e-12
+        assert abs(r.p_value - 0.7996995989775597) < 1e-9
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import circular_triads
+
+        ok = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
+        with pytest.raises(ValueError):
+            circular_triads([[0, 1], [0, 0]])  # incomplete pair
+        with pytest.raises(ValueError):
+            circular_triads([[0, 1], [1, 0]])  # n=2 rejected
+        with pytest.raises(ValueError):
+            circular_triads(ok, alternative="sideways")
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok)[:2, :])  # non-square
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok) + 0.5)  # non-binary
+        with pytest.raises(ValueError):
+            circular_triads(np.array(ok, dtype=complex))
+        bad_diag = np.array(ok, dtype=float)
+        bad_diag[0, 0] = 1.0
+        with pytest.raises(ValueError):
+            circular_triads(bad_diag)
+        with pytest.raises(ValueError):
+            circular_triads(np.array([["a", "b"], ["c", "d"]], dtype=object))
+
+
+class TestKendallU:
+    """kendall_u wrapper. Oracle pins (files/kendall_oracle.py, EXECUTED):
+    KU-A Sigma=11, u=2/9, chi2=11, df=9; KU-B perfect u=1."""
+
+    def test_fixture_a(self):
+        from fast_mlsirm import kendall_u
+
+        r = kendall_u([[0, 3, 4], [1, 0, 2], [0, 2, 0]])
+        assert r.sigma == 11.0
+        assert abs(r.u - 2.0 / 9.0) < 1e-15
+        assert r.min_u == -1.0 / 3.0
+        assert r.chi2 == 11.0
+        assert r.df == 9.0
+        assert abs(r.p_value - 0.27570893677222197) < 1e-9
+
+    def test_perfect_agreement(self):
+        from fast_mlsirm import kendall_u
+
+        n, m = 4, 5
+        mat = [[0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(i + 1, n):
+                mat[i][j] = m
+        r = kendall_u(mat)
+        assert r.sigma == 60.0
+        assert r.u == 1.0
+        assert r.min_u == -1.0 / 5.0
+        assert abs(r.chi2 - 52.0) < 1e-12
+        assert abs(r.df - 40.0 / 3.0) < 1e-12
+
+    def test_negative_chi2_raw(self):
+        # n=2, m=4, perfect split: raw chi2 = -1 must NOT be clamped in
+        # the returned statistic; only the p-value clamps (p = 1).
+        from fast_mlsirm import kendall_u
+
+        r = kendall_u([[0, 2], [2, 0]])
+        assert r.chi2 == -1.0
+        assert r.min_u == -1.0 / 3.0
+        assert abs(r.u - r.min_u) < 1e-15
+        assert r.p_value == 1.0
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import kendall_u
+
+        with pytest.raises(ValueError):
+            kendall_u([[0, 3, 3], [1, 0, 3], [1, 2, 0]])  # unequal m across pairs
+        with pytest.raises(ValueError):
+            kendall_u([[0, 1], [1, 0]])  # m=2 < 3
+        with pytest.raises(ValueError):
+            kendall_u([[0, 1.5], [1.5, 0]])  # non-integer
+        with pytest.raises(ValueError):
+            kendall_u([[0, -1], [4, 0]])  # negative
+        with pytest.raises(ValueError):
+            kendall_u([[5]])  # n=1 and nonzero diagonal
+        with pytest.raises(ValueError):
+            kendall_u(np.array([[0, 2], [2, 0]], dtype=complex))
+
+
+class TestElo:
+    """Elo rating (PlayerRatings elo() semantics); pins from the executed
+    exact-rational oracle. Every assert reads wrapper/crate outputs."""
+
+    def test_ea_exact_anchor(self):
+        import numpy as np
+
+        from fast_mlsirm import elo_rating
+
+        r = elo_rating(
+            [[1, 0, 1, 1.0], [1, 0, 2, 0.5]], 3, init=2000, kfac=32, gamma=[0.0, 400.0]
+        )
+        assert abs(r.ratings[0] - 22032 / 11) < 1e-12
+        assert r.ratings[1] == 1984.0  # dyadic, exact
+        assert abs(r.ratings[2] - 22144 / 11) < 1e-12
+        assert list(r.games) == [2, 1, 1]
+        assert list(r.wins) == [1, 0, 0]
+        assert list(r.draws) == [1, 0, 1]
+        assert list(r.losses) == [0, 1, 0]
+        assert list(r.lag) == [0, 0, 0]
+        assert isinstance(r.ratings, np.ndarray)
+
+    def test_eb_batch_and_lag(self):
+        from fast_mlsirm import elo_rating
+
+        r = elo_rating(
+            [[1, 0, 1, 1.0], [1, 0, 2, 0.5], [2, 0, 1, 1.0]], 3, init=2000, kfac=400
+        )
+        assert abs(r.ratings[0] - 24600 / 11) < 1e-12
+        assert abs(r.ratings[1] - 19400 / 11) < 1e-12
+        assert r.ratings[2] == 2000.0
+        assert list(r.lag) == [0, 0, 1]
+
+    def test_gamma_scalar_broadcast(self):
+        from fast_mlsirm import elo_rating
+
+        # ED closed-form nonzero-gamma pin; differs from gamma=0 (2016/1984).
+        r = elo_rating([[1, 0, 1, 1.0]], 2, init=2000, kfac=32, gamma=100.0)
+        assert abs(r.ratings[0] - 2011.5179200063076) < 1e-12
+        assert abs(r.ratings[1] - 1988.4820799936924) < 1e-12
+        r0 = elo_rating([[1, 0, 1, 1.0]], 2, init=2000, kfac=32)
+        assert r0.ratings[0] == 2016.0
+        assert r0.ratings[1] == 1984.0
+
+    def test_defaults_and_conservation(self):
+        from fast_mlsirm import elo_rating
+
+        # PlayerRatings defaults init=2200, kfac=27; rating-sum conservation.
+        r = elo_rating([[1, 0, 1, 1.0], [2, 1, 2, 0.5]], 3)
+        assert abs(float(r.ratings.sum()) - 3 * 2200.0) < 1e-9
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 2, 1.0]], 2)  # index out of range
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, 1.5]], 2)  # score out of range
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0.5, 1, 1.0]], 2)  # non-integral player index
+        with pytest.raises(ValueError):
+            elo_rating([[-1, 0, 1, 1.0]], 2)  # negative period
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1]], 2)  # wrong shape
+        with pytest.raises(ValueError):
+            elo_rating(np.zeros((0, 4)), 2)  # no games
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, np.nan]], 2)  # non-finite
+        with pytest.raises(ValueError):
+            elo_rating(np.array([[1, 0, 1, 1.0]], dtype=complex), 2)  # complex
+        with pytest.raises(ValueError):
+            elo_rating([[1, 0, 1, 1.0]], 2, gamma=[1.0, 2.0])  # gamma length
+        with pytest.raises(ValueError):
+            elo_rating([["a", 0, 1, 1.0]], 2)  # object dtype backstop
+
+    def test_large_period_labels_exact(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        # Integer-array path keeps u64 period fidelity above 2**53: the two
+        # labels are DISTINCT periods, so sequential (not batch) updates
+        # apply and player 0 loses rating (impl-review finding fix).
+        big = 2**53
+        g = np.array(
+            [[big, 0, 1, 1], [big + 1, 1, 0, 1]], dtype=np.uint64
+        )
+        r = elo_rating(g, 2, init=2000, kfac=400)
+        assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
+        assert abs(float(r.ratings.sum()) - 4000.0) < 1e-9
+        # Float path must REJECT unrepresentable labels, not merge them.
+        with pytest.raises(ValueError):
+            elo_rating([[float(big + 1), 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            elo_rating([[1e300, 0, 1, 1.0]], 2)
+
+    def test_float32_period_labels_rejected(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elo_rating
+
+        # float32 loses integer fidelity above 2**24 (round-2 review):
+        # labels 2**24 and 2**24+1 merge in the raw array, so the wrapper
+        # must reject float32 periods at/above 2**24 rather than batch them.
+        g = np.array(
+            [[2**24, 0, 1, 1.0], [2**24 + 1, 1, 0, 1.0]], dtype=np.float32
+        )
+        with pytest.raises(ValueError):
+            elo_rating(g, 2)
+        # below the bound the float32 path still works (crate output read)
+        g_ok = np.array([[1, 0, 1, 1.0], [2, 1, 0, 1.0]], dtype=np.float32)
+        r = elo_rating(g_ok, 2, init=2000, kfac=400)
+        assert abs(r.ratings[0] - (2200 - 400 * 10 / 11)) < 1e-9
+        # boundary: 2**24 - 1 is exactly representable and must be accepted
+        # (glicko impl-review: nmant excludes hidden bit; bound is nmant + 1)
+        g_edge = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r_edge = elo_rating(g_edge, 2)
+        assert r_edge.games.tolist() == [1, 1]
+        r53 = elo_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
+
+
+class TestGlicko:
+    """Glicko rating wrapper (Glickman's note + PlayerRatings glicko();
+    every assert reads crate-returned values via the Python wrapper)."""
+
+    def test_paper_anchor_ga(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko_rating
+
+        # Glickman's worked example: heterogeneous per-player init arrays.
+        g = [[1, 0, 1, 1.0], [1, 0, 2, 0.0], [1, 0, 3, 0.0]]
+        r = glicko_rating(
+            g,
+            4,
+            init=(
+                np.array([1500.0, 1400.0, 1550.0, 1700.0]),
+                np.array([200.0, 30.0, 100.0, 300.0]),
+            ),
+            cval=0.0,
+        )
+        assert abs(r.ratings[0] - 1464.1064627569112) < 1e-12
+        assert abs(r.deviations[0] - 151.39890244796933) < 1e-12
+        assert r.games.tolist() == [3, 1, 1, 1]
+        assert r.wins.tolist() == [1, 0, 1, 1]
+        assert r.losses.tolist() == [2, 1, 0, 0]
+
+    def test_two_period_gb(self):
+        from fast_mlsirm import glicko_rating
+
+        # Scalar-pair init broadcast; inflation + lag + idle player pins.
+        g = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 2, 0, 1.0]]
+        r = glicko_rating(g, 3, init=(2200.0, 300.0), cval=15.0)
+        er = [2190.0061185685217, 2094.5895980175137, 2345.066036571678]
+        ed = [223.91939158372585, 224.94066563436596, 223.91939158372585]
+        for p in range(3):
+            assert abs(r.ratings[p] - er[p]) < 1e-12
+            assert abs(r.deviations[p] - ed[p]) < 1e-12
+        assert r.lag.tolist() == [0, 1, 0]
+        assert r.draws.tolist() == [0, 1, 1]
+        # Documented non-identity: Glicko does NOT conserve the rating sum.
+        assert abs(float(r.ratings.sum()) - 6600.0) > 1e-3
+
+    def test_gamma_and_clamp(self):
+        from fast_mlsirm import glicko_rating
+
+        # GD gamma pins (kills a wrapper-level gamma mixup).
+        r = glicko_rating(
+            [[1, 0, 1, 1.0]], 2, init=(2000.0, 200.0), gamma=30.0, cval=0.0
+        )
+        assert abs(r.ratings[0] - 2072.980891506514) < 1e-12
+        assert abs(r.ratings[1] - 1927.019108493486) < 1e-12
+        # GC rdmax clamp active.
+        rc = glicko_rating(
+            [[1, 0, 1, 0.5]], 2, init=(2200.0, 300.0), cval=400.0, rdmax=350.0
+        )
+        assert abs(rc.deviations[0] - 290.2305060910912) < 1e-12
+        assert rc.ratings.tolist() == [2200.0, 2200.0]
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import glicko_rating
+
+        ok = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            glicko_rating([], 2)
+        with pytest.raises(ValueError):
+            glicko_rating([[1, 0, 1]], 2)  # wrong width
+        with pytest.raises(ValueError):
+            glicko_rating([[1.5, 0, 1, 1.0]], 2)  # fractional period
+        with pytest.raises(ValueError):
+            glicko_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 1)  # n < 2
+        with pytest.raises(ValueError):
+            glicko_rating(np.array(ok, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(2200.0,))  # not a pair
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(np.array([2200.0]), np.array([300.0])))
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, init=(2200.0, 400.0), rdmax=350.0)  # dev>rdmax
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, cval=-1.0)
+        with pytest.raises(ValueError):
+            glicko_rating(ok, 2, gamma=[1.0, 2.0])  # wrong gamma length
+        # float-path period-fidelity bound (inherited elo contract)
+        with pytest.raises(ValueError):
+            glicko_rating([[float(2**53), 0, 1, 1.0]], 2)
+        g32 = np.array([[2**24, 0, 1, 1.0]], dtype=np.float32)
+        with pytest.raises(ValueError):
+            glicko_rating(g32, 2)
+        # boundary acceptance: labels below the exact-integer bound must pass
+        # (impl-review: nmant excludes the hidden bit, bound is nmant + 1).
+        # Asserts read crate outputs (games tally) — kills a 2**nmant mutant.
+        r53 = glicko_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
+        g32ok = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r24 = glicko_rating(g32ok, 2)
+        assert r24.games.tolist() == [1, 1]
+        # integer-dtype lossless path (crate output read)
+        gi = np.array([[2**53, 0, 1, 1], [2**53 + 1, 1, 0, 1]], dtype=np.uint64)
+        r = glicko_rating(gi, 2, init=(2200.0, 300.0), cval=0.0)
+        assert r.lag.tolist() == [0, 0]
+        assert r.games.tolist() == [2, 2]
+
+
+class TestGlicko2:
+    """Glicko-2 rating wrapper (Glickman 2022 + PlayerRatings glicko2();
+    every assert reads crate-returned values via the Python wrapper)."""
+
+    def test_paper_anchor_g2a(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko2_rating
+
+        # Glickman's (2022) worked example, heterogeneous init triple.
+        g = [[1, 0, 1, 1.0], [1, 0, 2, 0.0], [1, 0, 3, 0.0]]
+        r = glicko2_rating(
+            g,
+            4,
+            init=(
+                np.array([1500.0, 1400.0, 1550.0, 1700.0]),
+                np.array([200.0, 30.0, 100.0, 300.0]),
+                np.array([0.06] * 4),
+            ),
+            tau=0.5,
+        )
+        assert abs(r.ratings[0] - 1464.0506708196929) < 1e-7
+        assert abs(r.deviations[0] - 151.51652192592556) < 1e-7
+        assert abs(r.volatilities[0] - 0.05999598428664987) < 1e-7
+        assert r.games.tolist() == [3, 1, 1, 1]
+        assert r.wins.tolist() == [1, 0, 1, 1]
+        assert r.losses.tolist() == [2, 1, 0, 0]
+
+    def test_two_period_g2b(self):
+        from fast_mlsirm import glicko2_rating
+
+        # Scalar-triple init broadcast; inflation + lag + idle player pins.
+        g = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 0, 2, 0.0]]
+        r = glicko2_rating(g, 3, init=(2200.0, 300.0, 0.15), tau=1.2)
+        er = [2189.2376693682463, 2094.286091224066, 2346.354869237831]
+        ev = [0.15002063478252045, 0.1498718983333671, 0.14993884055293957]
+        for p in range(3):
+            assert abs(r.ratings[p] - er[p]) < 1e-7
+            assert abs(r.volatilities[p] - ev[p]) < 1e-7
+        assert r.lag.tolist() == [0, 1, 0]
+        # Documented non-identity: rating sum is NOT conserved.
+        assert abs(float(r.ratings.sum()) - 6600.0) > 1e-3
+
+    def test_gamma_and_tau0(self):
+        from fast_mlsirm import glicko2_rating
+
+        # G2D: favored white draws with gamma=30 and DROPS (crate ratings).
+        r = glicko2_rating(
+            [[1, 0, 1, 0.5]], 2, init=(2200.0, 300.0, 0.15), gamma=30.0, tau=1.2
+        )
+        assert abs(r.ratings[0] - 2191.52226104287) < 1e-7
+        assert abs(r.ratings[1] - 2208.47773895713) < 1e-7
+        # tau = 0 freezes volatility EXACTLY (crate volatilities read).
+        rf = glicko2_rating(
+            [[1, 0, 1, 0.25], [2, 1, 2, 1.0]], 3, init=(2200.0, 300.0, 0.15), tau=0.0
+        )
+        assert rf.volatilities.tolist() == [0.15, 0.15, 0.15]
+        assert rf.wins.tolist() == [0, 1, 0]
+        assert rf.games.tolist() == [1, 2, 1]
+
+    def test_error_contract(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import glicko2_rating
+
+        ok = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            glicko2_rating([], 2)
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1]], 2)  # wrong width
+        with pytest.raises(ValueError):
+            glicko2_rating([[1.5, 0, 1, 1.0]], 2)  # fractional period
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 1)  # n < 2
+        with pytest.raises(ValueError):
+            glicko2_rating(np.array(ok, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0))  # pair, not triple
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0, 0.0))  # vol <= 0
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, init=(2200.0, 300.0, 3.0))  # vol > q*rdmax
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=-0.5)  # negative tau
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=0.0)
+        with pytest.raises(ValueError):
+            # mixed scalar/array init rejected
+            glicko2_rating(
+                ok, 2, init=(np.array([2200.0, 2200.0]), 300.0, 0.15)
+            )
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, "x"]], 2)  # non-numeric
+        with pytest.raises(ValueError):
+            g = np.array(ok, dtype=object)
+            g[0][3] = object()
+            glicko2_rating(g, 2)
+        # --- coverage added in impl-review round 2 (all must be ValueError,
+        # not TypeError/OverflowError leaks) ---
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, float("inf"))  # int(n_players) overflow
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, None)  # int(None) TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=object())  # asarray TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=None)  # float(None) TypeError
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=None)
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 2, 1.0]], 2)  # player index out of range
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, -1, 1, 1.0]], 2)  # negative player index
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, 1.5]], 2)  # score > 1
+        with pytest.raises(ValueError):
+            glicko2_rating([[1, 0, 1, -0.5]], 2)  # score < 0
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=[10.0, 20.0])  # gamma length != g
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=float("nan"))  # non-finite gamma
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, gamma=1j)  # complex gamma
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, tau=float("nan"))
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=float("inf"))
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 2, rdmax=-350.0)
+        with pytest.raises(ValueError):
+            glicko2_rating(
+                ok, 2, init=(np.array([np.nan, 2200.0]), np.array([300.0] * 2),
+                             np.array([0.15] * 2))
+            )
+        with pytest.raises(ValueError):
+            glicko2_rating(
+                ok, 2, init=(np.array([2200.0]), np.array([300.0]),
+                             np.array([0.15]))
+            )  # init length != n_players
+        with pytest.raises(ValueError):
+            glicko2_rating(ok, 10001)  # n_players cap
+
+    def test_period_fidelity(self):
+        import numpy as np
+
+        from fast_mlsirm import glicko2_rating
+
+        # float64 2**53 rejected (labels at/above the exact-integer bound)
+        import pytest
+
+        with pytest.raises(ValueError):
+            glicko2_rating([[float(2**53), 0, 1, 1.0]], 2)
+        g32 = np.array([[2**24, 0, 1, 1.0]], dtype=np.float32)
+        with pytest.raises(ValueError):
+            glicko2_rating(g32, 2)
+        # Largest exactly-representable labels ACCEPTED; asserts read crate
+        # outputs (games tally) — kills a 2**nmant mutant.
+        r53 = glicko2_rating([[float(2**53 - 1), 0, 1, 1.0]], 2)
+        assert r53.games.tolist() == [1, 1]
+        g32ok = np.array([[2**24 - 1, 0, 1, 1.0]], dtype=np.float32)
+        r24 = glicko2_rating(g32ok, 2)
+        assert r24.games.tolist() == [1, 1]
+        # integer-dtype lossless path (crate output read)
+        gi = np.array([[2**53, 0, 1, 1], [2**53 + 1, 1, 0, 1]], dtype=np.uint64)
+        r = glicko2_rating(gi, 2, init=(2200.0, 300.0, 0.15), tau=0.0)
+        assert r.lag.tolist() == [0, 0]
+        assert r.games.tolist() == [2, 2]
+
+
+class TestStephenson:
+    """stephenson_rating vs the EXECUTED PlayerRatings-1.1.0 oracle
+    (files/stephenson_oracle.py port of ratings.R steph() + ratings.c
+    stephenson_c). Every assert reads crate outputs returned through the
+    binding; anchors are float pins from the oracle run."""
+
+    def test_anchor_s1_heterogeneous_init(self):
+        # Kills: opponent-g swap (MU5), (lag+1) inflation drop (MU4) --
+        # heterogeneous init deviations make own-g vs opponent-g diverge.
+        import numpy as np
+
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 1.0]],
+            3,
+            init=(
+                np.array([2200.0, 2300.0, 2100.0]),
+                np.array([300.0, 80.0, 150.0]),
+            ),
+        )
+        assert res.ratings[0] == pytest.approx(2395.927345489556, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(233.84458992614066, rel=1e-12)
+        assert res.ratings[1] == pytest.approx(2281.863290035741, rel=1e-12)
+        assert res.deviations[1] == pytest.approx(80.14766179107052, rel=1e-12)
+        # Non-participant keeps init state exactly (identity step-4 path).
+        assert res.ratings[2] == 2100.0
+        assert res.deviations[2] == 150.0
+        assert list(res.games) == [1, 1, 0]
+        assert list(res.wins) == [1, 0, 0]
+        assert list(res.losses) == [0, 1, 0]
+        assert list(res.lag) == [0, 0, 0]
+
+    def test_full_knobs_s3(self):
+        # Kills: bval drop (MU1), lambda sign flip (MU2), per-game hval
+        # scaling drop (MU3) -- all knobs nonzero and gamma asymmetric.
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 0.5], [2, 1, 2, 1.0]],
+            3,
+            gamma=[30.0, 0.0],
+            cval=8.0,
+            hval=15.0,
+            bval=5.0,
+            lambda_=5.0,
+        )
+        assert res.ratings[0] == pytest.approx(2205.081933917611, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(254.8041343216954, rel=1e-12)
+        assert res.ratings[1] == pytest.approx(2332.590625814148, rel=1e-12)
+        assert res.deviations[1] == pytest.approx(225.48194679176544, rel=1e-12)
+        assert res.ratings[2] == pytest.approx(2082.6278256782653, rel=1e-12)
+        assert res.deviations[2] == pytest.approx(249.45302895967546, rel=1e-12)
+        assert list(res.lag) == [1, 0, 0]
+        assert list(res.draws) == [1, 1, 0]
+
+    def test_prior_run_continuation_s4(self):
+        # init_games/init_lag path + rdmax clamp: (lag+1)*cval^2 would blow
+        # past rdmax=350 without the clamp; games accumulate 5+1.
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 1.0]],
+            2,
+            init=(2200.0, 340.0),
+            cval=60.0,
+            init_games=[5, 5],
+            init_lag=[4, 4],
+        )
+        assert res.ratings[0] == pytest.approx(2362.303032952076, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(290.31193063897507, rel=1e-12)
+        assert list(res.games) == [6, 6]
+        # Current-run tallies only (init run's W/D/L are not represented).
+        assert list(res.wins) == [1, 0]
+
+    def test_lambda_zero_contrast(self):
+        # Same schedule as oracle S2: lambda=0 must reproduce the S2-lam0
+        # pins and differ from S2 defaults only on participants of the
+        # final period's drift (p1 identical).
+        from fast_mlsirm import stephenson_rating
+
+        sched = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 0, 2, 0.0]]
+        base = stephenson_rating(sched, 3)
+        lam0 = stephenson_rating(sched, 3, lambda_=0.0)
+        assert base.ratings[0] == pytest.approx(2187.33261103678, rel=1e-12)
+        assert lam0.ratings[0] == pytest.approx(2190.0339057939964, rel=1e-12)
+        assert lam0.ratings[2] == pytest.approx(2345.0308320668346, rel=1e-12)
+        assert lam0.ratings[1] == base.ratings[1]
+        assert lam0.deviations[0] == base.deviations[0]
+
+    def test_error_contract(self):
+        import numpy as np
+
+        from fast_mlsirm import stephenson_rating
+
+        good = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            stephenson_rating([], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating(np.array(good, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, np.nan]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1.5, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[-1, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2.5)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, None)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 1)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 10001)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 2, 1.0]], 2)  # index out of range
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, 1.5]], 2)  # score out of [0,1]
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, gamma=[1.0, 2.0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, gamma=np.array([1j]))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(2200.0,))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(np.array([2200.0]), np.array([300.0])))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(2200.0, 400.0), rdmax=350.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_games=[1, 2, 3])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_games=[-1, 0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_lag=[0.5, 0.0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, cval=np.nan)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, cval=-1.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, rdmax=0.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, lambda_=None)
+        with pytest.raises(ValueError):
+            stephenson_rating(np.array([["a", "b", "c", "d"]], dtype=object), 2)
+        # Float player ids at/above 2**53 lose integer fidelity pre-cast.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 2.0**53, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 2.0**53, 1.0]], 2)
+        # n_players cap rejects BEFORE any length-n allocation.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, 1.0]], 10**18)
+
+
+class TestElom:
+    def test_e1_scalar_single_event(self):
+        import numpy as np
+
+        from fast_mlsirm import elom_rating
+
+        r = elom_rating(
+            periods=np.array([1], dtype=np.uint64),
+            players=np.array([[0, 1, 2]], dtype=np.int64),
+            scores=np.array([[3.0, 2.0, 1.0]]),
+            n_players=3,
+            base=(20.0, 0.0, -20.0),
+            kfac=0.5,
+        )
+        # Reads crate outputs (oracle E1). Killed by K-scaling or base-rank
+        # mutants: ratings would leave [1510, 1500, 1490].
+        assert list(r.ratings) == [1510.0, 1500.0, 1490.0]
+        assert list(r.games) == [1, 1, 1]
+        assert r.places.shape == (3, 3)
+        assert list(r.places[0]) == [1, 0, 0]
+        assert list(r.lag) == [0, 0, 0]
+
+    def test_e8_once_shrunk_base(self):
+        import numpy as np
+
+        from fast_mlsirm import elom_rating
+
+        # nn=4, two empty seats: PlayerRatings shrinks the ORIGINAL base
+        # exactly once (not once per empty seat). Oracle E8.
+        r = elom_rating(
+            periods=np.array([1], dtype=np.uint64),
+            players=np.array([[0, 1, -1, -1]], dtype=np.int64),
+            scores=np.array([[2.0, 1.0, np.nan, np.nan]]),
+            n_players=3,
+            base=(30.0, 10.0, -10.0, -30.0),
+            kfac=1.0,
+        )
+        # Once-shrunk base (30, 0, -30); ranks 1, 2 -> +30, +0 minus the
+        # expected term 0 (equal ratings). Cumulative-shrink mutant gives
+        # a different base and fails this crate-value pin.
+        assert list(r.ratings) == [1530.0, 1500.0, 1500.0]
+        assert list(r.games) == [1, 1, 0]
+
+    def test_kriichi_default_and_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import elom_rating
+
+        periods = np.array([1], dtype=np.uint64)
+        players = np.array([[0, 1, 2, 3]], dtype=np.int64)
+        scores = np.array([[4.0, 3.0, 2.0, 1.0]])
+        # Default kriichi(gv=400, kv=0.2) with zero games: K = 1 exactly.
+        r = elom_rating(periods, players, scores, n_players=4)
+        assert list(r.ratings) == [1530.0, 1510.0, 1490.0, 1470.0]
+        with pytest.raises(ValueError):
+            elom_rating(periods, players, scores, n_players=1)
+        with pytest.raises(ValueError):
+            elom_rating(periods, players + 1j, scores, n_players=4)
+        with pytest.raises(ValueError):
+            elom_rating(periods, players, scores, n_players=4, kfac=("bogus", 1, 1))
+        with pytest.raises(ValueError):
+            # NaN score in an occupied seat must be rejected by the core.
+            bad = scores.copy()
+            bad[0, 0] = np.nan
+            elom_rating(periods, players, bad, n_players=4)
+        with pytest.raises(ValueError):
+            # uint64::MAX must not wrap to the -1 empty-seat sentinel
+            # through the int64 narrowing cast (impl-review finding 1).
+            up = np.array([[0, 1, 2, np.iinfo(np.uint64).max]], dtype=np.uint64)
+            us = np.array([[4.0, 3.0, 2.0, np.nan]])
+            elom_rating(periods, up, us, n_players=4)
+
+
+class TestMetrics:
+    def test_anchor_m1_and_cap_quirk(self):
+        import numpy as np
+        from fast_mlsirm import metrics_rating
+
+        out = metrics_rating(
+            [1.0, 0.0, 1.0, 0.0], [0.75, 0.25, 0.5, 0.5], scale=False
+        )
+        assert out.shape == (1, 3)
+        assert abs(out[0, 0] - 49.041462650586311) < 1e-12
+        assert abs(out[0, 1] - 39.528470752104745) < 1e-12
+        assert out[0, 2] == 37.5
+        # cap quirk: bdev capped, mse/mae raw
+        q = metrics_rating([1.0, 0.0], [0.999, 0.001], scale=False)
+        assert abs(q[0, 0] - 1.0050335853501451) < 1e-12
+        assert abs(q[0, 1] - 0.1) < 1e-12
+        assert abs(q[0, 2] - 0.1) < 1e-12
+
+    def test_scaled_two_columns(self):
+        import numpy as np
+        from fast_mlsirm import metrics_rating
+
+        pred = np.array(
+            [[0.75, 0.50], [0.25, 0.50], [0.50, 0.25], [0.50, 0.75]]
+        )
+        out = metrics_rating([1.0, 0.0, 1.0, 0.0], pred, scale=False)
+        assert out.shape == (2, 3)
+        assert abs(out[0, 0] - 49.041462650586311) < 1e-12
+        assert abs(out[1, 0] - 103.97207708399179) < 1e-12
+        assert abs(out[1, 1] - 63.737743919909803) < 1e-12
+        assert out[1, 2] == 62.5
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import metrics_rating
+
+        with pytest.raises(ValueError, match="real-valued"):
+            metrics_rating(np.array([1j, 0.0]), [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array(["a", "b"], dtype=object), [0.6, 0.4])
+        with pytest.raises(ValueError, match="length"):
+            metrics_rating([1.0], [0.6, 0.4])
+        with pytest.raises(ValueError, match="cap"):
+            metrics_rating([1.0, 0.0], [0.6, 0.4], cap=(0.5,))
+        with pytest.raises(ValueError, match="infinite"):
+            metrics_rating([1.0, np.inf], [0.6, 0.4])
+        with pytest.raises(ValueError, match="0.5"):
+            metrics_rating([0.5, 0.5], [0.6, 0.4], scale=True)
+        # regressions: string/bool inputs and 0-D scalars are rejected
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(["1", "0"], [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(
+                np.array(["1", "0"], dtype=object), [0.6, 0.4]
+            )
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating([1.0, 0.0], [0.6, 0.4], cap=("0.01", "0.99"))
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array([True, False]), [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(
+                np.array([np.bool_(True), np.bool_(False)], dtype=object),
+                [0.6, 0.4],
+            )
+        with pytest.raises(ValueError, match="1-D"):
+            metrics_rating(np.array(1.0), np.array(0.6))
+        # regression: object-dtype None must not silently become NaN
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating(np.array([1.0, None], dtype=object), [0.6, 0.4])
+        with pytest.raises(ValueError, match="numeric"):
+            metrics_rating([1.0, 0.0], np.array([0.6, None], dtype=object))
+        # regression: masked arrays must not silently drop their mask
+        with pytest.raises(ValueError, match="masked"):
+            metrics_rating(
+                np.ma.masked_array([1.0, 0.0], mask=[False, True]),
+                [0.6, 0.4],
+            )
+        with pytest.raises(ValueError, match="masked"):
+            metrics_rating(
+                [1.0, 0.0],
+                np.ma.masked_array([0.6, 0.4], mask=[False, True]),
+            )
+
+
+class TestFide:
+    def test_anchor_f1_exact(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating([[1, 0, 1, 1.0]], 2)
+        assert res.ratings.tolist() == [2215.0, 2185.0]
+        # opponent averages read POST-update ratings (R quirk)
+        assert res.opponent.tolist() == [2185.0, 2215.0]
+        assert res.games.tolist() == [1, 1]
+        assert res.wins.tolist() == [1, 0]
+        assert res.losses.tolist() == [0, 1]
+        assert res.elite.tolist() == [0, 0]
+
+    def test_k_switch_f2(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        rows = [[1, 0, i, 1.0] for i in range(1, 30)]
+        rows.append([2, 0, 1, 1.0])
+        res = fide_rating(np.array(rows), 31, init=1500.0)
+        # 29 period-start games in period 2 -> K stays kv[2]=30
+        assert abs(res.ratings[0] - 1937.0927486207672) < 1e-12
+        assert abs(res.ratings[1] - 1482.9072513792328) < 1e-12
+        assert res.ratings[2] == 1485.0
+        assert res.ratings[30] == 1500.0
+        assert abs(res.opponent[0] - 1484.9302417126412) < 1e-12
+        assert res.games.tolist()[:2] == [30, 2]
+        assert res.elite.tolist() == [0] * 31
+
+    def test_elite_sticky_f3(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating(
+            [[1, 0, 1, 1.0], [2, 0, 1, 0.0], [3, 0, 1, 0.0], [4, 0, 1, 1.0]],
+            2,
+            init=2395.0,
+        )
+        assert res.elite.tolist() == [1, 1]
+        assert abs(res.ratings[0] - 2404.6257234642635) < 1e-12
+        assert abs(res.ratings[1] - 2406.4738023175405) < 1e-12
+        assert abs(res.opponent[0] - 2398.603771437728) < 1e-12
+
+    def test_opponent_weights_f5(self):
+        import numpy as np
+        from fast_mlsirm import fide_rating
+
+        res = fide_rating(
+            [[1, 0, 1, 1.0], [2, 0, 2, 1.0], [3, 0, 3, 0.5]], 4
+        )
+        assert abs(res.ratings[0] - 2228.088544238428) < 1e-12
+        assert abs(res.opponent[0] - 2190.6371519205236) < 1e-12
+        assert res.opponent[1] == 2215.0
+        assert abs(res.opponent[3] - 2228.088544238428) < 1e-12
+        assert res.draws.tolist() == [1, 0, 0, 1]
+        assert res.lag.tolist() == [0, 2, 1, 0]
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import fide_rating
+
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating(np.array([[1, 0, 1, 1.0 + 0j]]), 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(np.array([[1, 0, 1, "x"]], dtype=object), 2)
+        with pytest.raises(ValueError, match="masked"):
+            fide_rating(
+                np.ma.masked_array(
+                    [[1, 0, 1, 1.0]], mask=[[False, False, False, True]]
+                ),
+                2,
+            )
+        with pytest.raises(ValueError, match=r"\(g, 4\)"):
+            fide_rating([[1, 0, 1]], 2)
+        with pytest.raises(ValueError, match="self-play"):
+            fide_rating([[1, 0, 0, 1.0]], 2)
+        with pytest.raises(ValueError, match="score"):
+            fide_rating([[1, 0, 1, 1.5]], 2)
+        with pytest.raises(ValueError, match="two players"):
+            fide_rating([[1, 0, 1, 1.0]], 1)
+        with pytest.raises(ValueError, match="triple"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10.0, 15.0))
+        with pytest.raises(ValueError, match="finite"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10.0, 15.0, np.inf))
+        with pytest.raises(ValueError, match="integral"):
+            fide_rating([[1.5, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError, match="gamma"):
+            fide_rating([[1, 0, 1, 1.0]], 2, gamma=[0.0, 0.0])
+        # regressions: bool/datetime games silently coerced to numbers
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating([[1, 0, 1, True]], 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating([[True, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(np.array([[True, False, True, True]]), 2)
+        with pytest.raises(ValueError, match="numeric"):
+            fide_rating(
+                np.array(
+                    [[np.datetime64("2020-01-01"), 0, 1, 1.0]], dtype=object
+                ),
+                2,
+            )
+        # regressions: complex kv/init raise ValueError, not TypeError
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(10 + 1j, 15, 30))
+        with pytest.raises(ValueError, match="complex"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=2200 + 0j)
+        # regressions: bool kv/init rejected (round-2 finding)
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=(True, 15.0, 30.0))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, kv=np.array([True, True, True]))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=True)
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=np.array(True))
+        with pytest.raises(ValueError, match="bool"):
+            fide_rating([[1, 0, 1, 1.0]], 2, init=np.array(True, dtype=object))
+
+    def test_elo_reduction(self):
+        import numpy as np
+        from fast_mlsirm import elo_rating, fide_rating
+
+        sched = [[1, 0, 1, 1.0], [1, 2, 3, 0.5], [2, 0, 2, 0.0]]
+        f = fide_rating(sched, 4, init=1500.0, kv=(27.0, 27.0, 27.0))
+        e = elo_rating(sched, 4, init=1500.0, kfac=27.0)
+        assert f.ratings.tolist() == e.ratings.tolist()
+        assert f.games.tolist() == e.games.tolist()
+        assert f.lag.tolist() == e.lag.tolist()
+
+
+class TestPredict:
+    """predict_rating / predict_rating_multi (PlayerRatings predict.rating,
+    R lines 1056-1133). Pins from the executed oracle
+    (files/predict_oracle.py); every assert reads wrapper/crate outputs."""
+
+    def test_elo_branch_pins(self):
+        import numpy as np
+        from fast_mlsirm import predict_rating
+
+        p1 = predict_rating([2200.0, 2200.0], [20, 20], [0], [1], gamma=0.0)
+        assert p1.shape == (1,)
+        assert p1[0] == 0.5
+        p2 = predict_rating([2200.0, 2000.0], [20, 20], [0], [1], gamma=30.0)
+        assert abs(p2[0] - 0.7898441797581306) < 1e-14
+        # per-game gamma array and scalar broadcast agree (crate values)
+        p2b = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0, 0], [1, 1], gamma=np.array([30.0, 30.0])
+        )
+        assert p2b[0] == p2[0] and p2b[1] == p2[0]
+
+    def test_deviation_branch(self):
+        from fast_mlsirm import predict_rating
+
+        p3 = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[50.0, 100.0], gamma=30.0,
+        )
+        assert abs(p3[0] - 0.776912664201114) < 1e-14
+        p3z = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[0.0, 0.0], gamma=30.0,
+        )
+        p2 = predict_rating([2200.0, 2000.0], [20, 20], [0], [1], gamma=30.0)
+        assert p3z[0] == p2[0]
+
+    def test_tng_trat_unmatched(self):
+        import math
+        from fast_mlsirm import predict_rating
+
+        kept = predict_rating([2200.0, 2000.0], [15, 15], [0], [1], gamma=0.0)
+        assert abs(kept[0] - 0.7597469266479578) < 1e-14
+        dropped = predict_rating([2200.0, 2000.0], [14, 15], [0], [1], gamma=0.0)
+        assert math.isnan(dropped[0])
+        replaced = predict_rating(
+            [2200.0, 2000.0], [14, 15], [0], [1], gamma=0.0, trat=2000.0
+        )
+        assert replaced[0] == 0.5
+        un = predict_rating([2200.0, 2000.0], [20, 20], [-1], [1], gamma=0.0)
+        assert math.isnan(un[0])
+        un_t = predict_rating(
+            [2200.0, 2000.0], [20, 20], [-1], [1], gamma=0.0, trat=2000.0
+        )
+        assert un_t[0] == 0.5
+        # stored-NaN + pair trat with deviations
+        p9c = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[float("nan"), 50.0], gamma=30.0, trat=(2200.0, 50.0),
+        )
+        assert abs(p9c[0] - 0.7844611342833985) < 1e-14
+
+    def test_thresh(self):
+        import math
+        from fast_mlsirm import predict_rating
+
+        p = predict_rating(
+            [2200.0, 2200.0], [20, 20], [0, -1], [1, 1], gamma=0.0, thresh=0.5
+        )
+        assert p[0] == 1.0  # exact equality maps to 1 (>=)
+        assert math.isnan(p[1])
+
+    def test_multi_and_placing(self):
+        import math
+        import numpy as np
+        from fast_mlsirm import predict_rating_multi
+
+        p7 = predict_rating_multi(
+            [2300.0, 2200.0, 2100.0, 2000.0], [20] * 4,
+            np.array([[0, 1, 2], [0, 3, -1]]),
+        )
+        assert p7.shape == (2, 3)
+        assert p7[0].tolist() == [2.5, 0.0, -2.5]
+        assert p7[1][0] == 3.75 and p7[1][1] == -3.75 and math.isnan(p7[1][2])
+        p8 = predict_rating_multi(
+            [2300.0, 2300.0, 2100.0, 2000.0], [20] * 4,
+            np.array([[0, 1, 2, -1]]), placing=True,
+        )
+        assert p8[0][0] == 1.0 and p8[0][1] == 1.0 and p8[0][2] == 3.0
+        assert math.isnan(p8[0][3])
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import predict_rating, predict_rating_multi
+
+        with pytest.raises(ValueError, match="2..=10000"):
+            predict_rating([2200.0], [20], [0], [0], gamma=0.0)
+        with pytest.raises(ValueError, match="complex"):
+            predict_rating([2200.0 + 1j, 2000.0], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="complex|bool"):
+            predict_rating(np.array([True, False]), [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="non-numeric"):
+            predict_rating([2200.0, "x"], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="masked"):
+            predict_rating(
+                np.ma.masked_array([2200.0, 2000.0], mask=[False, True]),
+                [20, 20], [0], [1],
+            )
+        with pytest.raises(ValueError, match="infinit"):
+            predict_rating([np.inf, 2000.0], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="NaN"):
+            predict_rating([2200.0, 2000.0], [np.nan, 20], [0], [1])
+        with pytest.raises(ValueError, match=">= -1"):
+            predict_rating([2200.0, 2000.0], [20, 20], [-2], [1])
+        with pytest.raises(ValueError, match="self-play"):
+            predict_rating([2200.0, 2000.0], [20, 20], [1], [1])
+        with pytest.raises(ValueError, match="pair"):
+            predict_rating(
+                [2200.0, 2000.0], [20, 20], [0], [1],
+                deviations=[50.0, 50.0], trat=2000.0,
+            )
+        with pytest.raises(ValueError, match="bool"):
+            predict_rating([2200.0, 2000.0], [20, 20], [0], [1], thresh=True)
+        with pytest.raises(ValueError, match="2-D"):
+            predict_rating_multi([2200.0, 2000.0], [20, 20], [0, 1])
+        with pytest.raises(ValueError, match="bool"):
+            predict_rating_multi(
+                [2200.0, 2000.0], [20, 20], np.array([[0, 1]]), trat=True
+            )
+        # NaN ratings are allowed (R NA), not an error
+        import math
+        out = predict_rating([float("nan"), 2000.0], [20, 20], [0], [1], gamma=0.0)
+        assert math.isnan(out[0])
+
+    def test_u64_fidelity_and_overflow(self):
+        import math
+        import numpy as np
+        import pytest
+        from fast_mlsirm import predict_rating, predict_rating_multi
+
+        big = 2**53
+        # int-dtype games keep exact counts above 2**53: games == 2**53 is
+        # strictly below tng == 2**53 + 1, so both players are unrated -> NaN.
+        out = predict_rating(
+            [2200.0, 2000.0], [big, big], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert math.isnan(out[0])
+        outm = predict_rating_multi(
+            [2300.0, 2200.0], [big, big], np.array([[0, 1]]), tng=big + 1
+        )
+        assert math.isnan(outm[0][0]) and math.isnan(outm[0][1])
+        # float games at/above the dtype exact-integer bound are rejected
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), [0], [1]
+            )
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating_multi(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), np.array([[0, 1]])
+            )
+        # float tng at/above 2**53 rejected; huge int tng still exact
+        with pytest.raises(ValueError, match='pass tng as an int'):
+            predict_rating([2200.0, 2000.0], [20, 20], [0], [1], tng=float(big))
+        kept = predict_rating(
+            [2200.0, 2000.0], [big + 2, big + 2], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert abs(kept[0] - 0.7597469266479578) < 1e-14
+        # core-level nr*np overflow is a checked ValueError, not a panic
+        import fast_mlsirm._core as core
+        with pytest.raises(ValueError, match='overflows'):
+            core.predict_rating_multi(
+                np.array([1.0, 2.0]),
+                np.array([1, 1], dtype=np.uint64),
+                np.array([], dtype=np.int64),
+                1 << 61,
+                8,
+                15,
+                None,
+                False,
+            )
+
+
+class TestBratt:
+    """bratt_mm: Bradley-Terry with additive-alpha0 ties (VGAM bratt).
+
+    Oracle: exact-Fraction MM iterates (files/bratt_oracle.py, session
+    evidence). Every assert reads values returned by the crate through the
+    binding.
+    """
+
+    @staticmethod
+    def _fixture():
+        import numpy as np
+
+        y = np.array([[0, 3, 1], [1, 0, 2], [2, 1, 0]], dtype=float)
+        t = np.array([[0, 1, 1], [1, 0, 2], [1, 2, 0]], dtype=float)
+        return y, t
+
+    def test_b1_iter1_exact(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, ref_index=0, ref_value=1.0, max_iter=100, tol=0.5)
+        assert r.iterations == 1
+        np.testing.assert_allclose(r.alpha, [1.0, 27.0 / 40.0, 3.0 / 4.0], rtol=1e-15)
+        np.testing.assert_allclose(r.alpha0, 9.0 / 14.0, rtol=1e-15)
+
+    def test_b2_converged(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, tol=1e-13)
+        np.testing.assert_allclose(
+            r.alpha, [1.0, 0.6150318884241122, 0.686344995662376], rtol=1e-10
+        )
+        np.testing.assert_allclose(r.alpha0, 0.6038293879270596, rtol=1e-10)
+        np.testing.assert_allclose(r.log_likelihood, -15.12765635227613, rtol=1e-12)
+
+    def test_b4_reference_rescale(self):
+        import numpy as np
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        r = bratt_mm(y, t, tol=1e-13)
+        r2 = bratt_mm(y, t, ref_index=1, ref_value=2.0, tol=1e-13)
+        c = 2.0 / r.alpha[1]
+        np.testing.assert_allclose(r2.alpha, r.alpha * c, rtol=1e-12)
+        np.testing.assert_allclose(r2.alpha0, r.alpha0 * c, rtol=1e-12)
+        np.testing.assert_allclose(r2.log_likelihood, r.log_likelihood, rtol=1e-12)
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import bratt_mm
+
+        y, t = self._fixture()
+        with pytest.raises(ValueError, match="masked"):
+            bratt_mm(np.ma.masked_array(y), t)
+        with pytest.raises(ValueError, match="real-valued"):
+            bratt_mm(y.astype(complex), t)
+        with pytest.raises(ValueError, match="numeric"):
+            bratt_mm(y.astype(bool), t)
+        with pytest.raises(ValueError, match="numeric"):
+            bratt_mm(np.array([["a"] * 3] * 3, dtype=object), t)
+        with pytest.raises(ValueError, match="square"):
+            bratt_mm(y[:2], t)
+        with pytest.raises(ValueError, match="same shape"):
+            bratt_mm(y, np.zeros((4, 4)))
+        with pytest.raises(ValueError, match="ref_index must be an integer"):
+            bratt_mm(y, t, ref_index=0.5)
+        with pytest.raises(ValueError, match="ref_index must be an integer"):
+            bratt_mm(y, t, ref_index=True)
+        with pytest.raises(ValueError, match="nonnegative"):
+            bratt_mm(y, t, ref_index=-1)
+        # Crate error contract surfaces through the binding:
+        with pytest.raises(ValueError, match="use bradley_terry_mm"):
+            bratt_mm(y, np.zeros((3, 3)))
+        with pytest.raises(ValueError, match="symmetric"):
+            tt = t.copy()
+            tt[0, 1] = 5.0
+            bratt_mm(y, tt)
+        with pytest.raises(ValueError, match="no wins"):
+            y0 = y.copy()
+            y0[1] = 0.0
+            bratt_mm(y0, t)
+        with pytest.raises(ValueError, match="did not converge"):
+            bratt_mm(y, t, max_iter=1, tol=1e-15)
+        # Impl-review regressions:
+        with pytest.raises(ValueError, match="not boolean"):
+            yb = np.full((3, 3), True, dtype=object)
+            np.fill_diagonal(yb, False)
+            tb = np.full((3, 3), True, dtype=object)
+            np.fill_diagonal(tb, False)
+            bratt_mm(yb, tb)
+        with pytest.raises(ValueError, match="overflow"):
+            h = 9e307
+            yh = np.array([[0, 1, 1], [1, 0, h], [1, h, 0]], dtype=float)
+            bratt_mm(yh, t, max_iter=3, tol=2.0)
+
+
+class TestFleiss:
+    """fleiss_kappa binding + wrapper (irr 0.85 kappam.fleiss oracle anchors)."""
+
+    @staticmethod
+    def _fk():
+        import numpy as np
+
+        return np.array(
+            [[0, 0, 0, 1], [0, 1, 1, 1], [2, 2, 2, 2], [0, 0, 2, 2], [1, 1, 1, 0]]
+        )
+
+    def test_classic_anchor(self):
+        import numpy as np
+
+        from fast_mlsirm import fleiss_kappa
+
+        res = fleiss_kappa(self._fk())
+        assert abs(res.kappa - 139.0 / 399.0) < 1e-14
+        assert res.subjects_used == 5
+        assert abs(res.z - 2.694739854085488) < 1e-10
+        assert abs(res.p_value - 0.007044360582468963) < 5e-7
+        np.testing.assert_allclose(
+            res.category_kappa, [1 / 21, 31 / 91, 43 / 63], rtol=1e-14
+        )
+
+    def test_exact_and_missing(self):
+        import numpy as np
+
+        from fast_mlsirm import fleiss_kappa
+
+        res = fleiss_kappa(self._fk(), exact=True)
+        assert abs(res.kappa - 37.0 / 102.0) < 1e-14
+        assert np.isnan(res.z) and np.isnan(res.p_value)
+        assert res.category_kappa.size == 0
+        # NaN row drops listwise and reproduces the classic anchor.
+        withnan = np.vstack([[0.0, np.nan, 1.0, 2.0], self._fk().astype(float)])
+        res2 = fleiss_kappa(withnan)
+        assert res2.subjects_used == 5
+        assert abs(res2.kappa - 139.0 / 399.0) < 1e-14
+        # Explicit k adds an empty category with NaN detail.
+        res3 = fleiss_kappa(self._fk(), k=4)
+        assert np.isnan(res3.category_kappa[3])
+        assert abs(res3.kappa - 139.0 / 399.0) < 1e-14
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import fleiss_kappa
+
+        fk = self._fk()
+        with pytest.raises(ValueError, match="2-D"):
+            fleiss_kappa(fk.reshape(-1))
+        with pytest.raises(ValueError, match="masked"):
+            fleiss_kappa(np.ma.masked_array(fk, mask=False))
+        with pytest.raises(ValueError, match="complex|real"):
+            fleiss_kappa(fk.astype(complex))
+        with pytest.raises(ValueError, match="boolean"):
+            fleiss_kappa(np.array([[True, False], [False, True]], dtype=object))
+        with pytest.raises(ValueError, match="boolean"):
+            fleiss_kappa(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError, match="integer"):
+            fleiss_kappa(fk + 0.5)
+        with pytest.raises(ValueError, match="infinit"):
+            fleiss_kappa(np.array([[np.inf, 0.0], [1.0, 0.0]]))
+        with pytest.raises(ValueError, match="raters"):
+            fleiss_kappa(fk[:, :1])
+        with pytest.raises(ValueError, match="infer"):
+            fleiss_kappa(np.full((2, 2), np.nan))
+        with pytest.raises(ValueError, match="dropped"):
+            fleiss_kappa(np.full((2, 2), np.nan), k=2)
+        with pytest.raises(ValueError, match="degenerate"):
+            fleiss_kappa(np.ones((3, 2), dtype=int), k=2)
+        # uint64 above i64::MAX must be rejected, not wrapped negative
+        # (silent listwise drop). Reads the wrapper's guard, killed by
+        # removing the unsigned-range check before astype(int64).
+        big = np.array([[2**63, 0], [0, 1], [1, 1]], dtype=np.uint64)
+        with pytest.raises(ValueError, match="int64"):
+            fleiss_kappa(big, k=2)
+        # Explicit k must be a true integer, not lossy-coerced.
+        for bad_k in (3.9, "3", np.float64(3.0), True):
+            with pytest.raises(ValueError, match="k must be an integer"):
+                fleiss_kappa(fk, k=bad_k)
+        # np.integer k still accepted.
+        assert fleiss_kappa(fk, k=np.int64(3)).subjects_used == 5
+
+
+class TestIcc:
+    """icc (irr icc.R; Shrout-Fleiss taxonomy). Pins from the exact-Fraction
+    oracle executed on Shrout-Fleiss (1979) Table 2. Every assert reads
+    IccResult fields returned by the crate through the wrapper."""
+
+    SF = [[9, 2, 5, 8], [6, 1, 3, 2], [8, 4, 6, 8], [7, 1, 2, 6], [10, 5, 6, 9], [6, 2, 4, 7]]
+
+    def test_anchor_all_six(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        want = {
+            ("oneway", "consistency", "single"): 448 / 2703,
+            ("twoway", "consistency", "single"): 920 / 1287,
+            ("twoway", "agreement", "single"): 184 / 635,
+            ("oneway", "consistency", "average"): 1792 / 4047,
+            ("twoway", "consistency", "average"): 3680 / 4047,
+            ("twoway", "agreement", "average"): 736 / 1187,
+        }
+        for (m, t, u), v in want.items():
+            r = icc(np.array(self.SF, dtype=float), model=m, type=t, unit=u)
+            assert abs(r.value - v) < 1e-12
+            assert r.subjects == 6 and r.raters == 4
+        r = icc(np.array(self.SF, dtype=float), model="twoway", type="agreement", unit="single")
+        assert abs(r.fvalue - 11.02724795640327) < 1e-9
+        assert abs(r.df2 - 15.0) < 1e-9
+        assert abs(r.p_value - 0.00013456651648433688) < 1e-9
+        assert abs(r.lbound - 0.018786513374712013) < 1e-9
+        assert abs(r.ubound - 0.7610843696489528) < 1e-9
+
+    def test_r0_and_conf(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        r = icc(x, model="twoway", type="agreement", unit="single", r0=0.3)
+        assert abs(r.fvalue - 0.9561240676364373) < 1e-12
+        assert abs(r.df2 - 4.7463353743354775) < 1e-9
+        c = icc(x, model="twoway", type="consistency", unit="single", conf_level=0.80)
+        assert abs(c.lbound - 0.4905340604697688) < 1e-9
+        assert abs(c.ubound - 0.8966577783576283) < 1e-9
+
+    def test_nan_listwise(self):
+        import numpy as np
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        x[3, 2] = np.nan
+        r = icc(x, model="twoway", type="consistency", unit="single")
+        assert r.subjects == 5
+        assert abs(r.value - 329 / 459) < 1e-12
+        assert abs(r.fvalue - 11.123076923076923) < 1e-12
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import icc
+
+        x = np.array(self.SF, dtype=float)
+        with pytest.raises(ValueError):
+            icc(x, model="threeway")
+        with pytest.raises(ValueError):
+            icc(x, type="absolute")
+        with pytest.raises(ValueError):
+            icc(x, unit="median")
+        with pytest.raises(ValueError):
+            icc(x, r0=1.0)
+        with pytest.raises(ValueError):
+            icc(x, conf_level=1.0)
+        with pytest.raises(ValueError):
+            icc(np.array([1.0, 2.0, 3.0]))  # 1-D
+        with pytest.raises(ValueError):
+            icc(np.array([[1.0, np.inf], [2.0, 3.0]]))
+        with pytest.raises(ValueError):
+            icc(np.ma.masked_array(x, mask=False))
+        with pytest.raises(ValueError):
+            icc(x.astype(complex))
+        with pytest.raises(ValueError):
+            icc(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            icc(np.array([[True, False], [False, True]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(np.array([[np.array(True), 2.0], [3.0, 4.0]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(np.array([[np.array(True, dtype=object), 2.0], [3.0, 4.0]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(
+                np.array(
+                    [[np.array(np.bool_(True), dtype=object), 2.0], [3.0, 4.0]], dtype=object
+                )
+            )
+        with pytest.raises((ValueError, TypeError)):
+            icc(np.array([["a", "b"], ["c", "d"]], dtype=object))
+        void_bool = np.zeros((), dtype=[("f", "?")])[()]  # np.void w/ bool field
+        with pytest.raises(ValueError):
+            icc(np.array([[void_bool, 2.0], [3.0, 4.0]], dtype=object))
+        with pytest.raises(ValueError):
+            icc(x, r0=True)
+        with pytest.raises(ValueError):
+            icc(np.full((4, 3), 7.0))  # constant matrix -> degenerate
+class TestKripp:
+    """kripp_alpha (irr kripp.alpha.R). Pins are exact Fractions from the
+    executed oracle; K1 matches the irr man page's published values. Every
+    assert reads KrippResult fields returned by the crate via the wrapper."""
+
+    @staticmethod
+    def k1():
+        import numpy as np
+
+        nan = float("nan")
+        cols = [
+            [1, 1, nan, 1], [2, 2, 3, 2], [3, 3, 3, 3], [3, 3, 3, 3],
+            [2, 2, 2, 2], [1, 2, 3, 4], [4, 4, 4, 4], [1, 1, 2, 1],
+            [2, 2, 2, 2], [nan, 5, 5, 5], [nan, nan, 1, 1], [nan, nan, 3, nan],
+        ]
+        return np.array(cols, dtype=float).T  # 4 raters x 12 subjects
+
+    def test_anchor_k1(self):
+        from fast_mlsirm import kripp_alpha
+
+        x = self.k1()
+        want = {
+            "nominal": 113 / 152,
+            "ordinal": 108577 / 133160,
+            "interval": 951 / 1120,
+            "ratio": 18222619 / 22852465,
+        }
+        for m, v in want.items():
+            r = kripp_alpha(x, method=m)
+            assert abs(r.value - v) < 1e-12, m
+            assert r.nmatchval == 40.0
+            assert r.subjects == 12 and r.raters == 4 and r.levels == 5
+
+    def test_no_na_quirk(self):
+        import numpy as np
+        from fast_mlsirm import kripp_alpha
+
+        x = np.array([[1, 2, 3, 3, 2], [1, 2, 3, 3, 1], [2, 2, 3, 3, 2]], dtype=float)
+        r = kripp_alpha(x, method="nominal")
+        assert abs(r.value - 43 / 72) < 1e-12
+        assert r.nmatchval == 30.0  # mc = 1 on complete data (irr quirk)
+
+    def test_single_level(self):
+        import numpy as np
+        from fast_mlsirm import kripp_alpha
+
+        r = kripp_alpha(np.full((2, 2), 2.0))
+        assert r.value == 1.0 and r.levels == 1
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import kripp_alpha
+
+        x = self.k1()
+        with pytest.raises(ValueError):
+            kripp_alpha(x, method="euclid")
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([1.0, 2.0]))  # 1-D
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[1.0, np.inf], [2.0, 3.0]]))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.full((2, 2), np.nan))  # all missing
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[-1.0, 1.0], [1.0, -1.0]]), method="ratio")
+        with pytest.raises(ValueError):
+            kripp_alpha(np.ma.masked_array(x, mask=False))
+        with pytest.raises(ValueError):
+            kripp_alpha(x.astype(complex))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            kripp_alpha(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=object))
+
+    def test_large_integer_levels_rejected(self):
+        # Review finding: int64 levels beyond 2**53 collapse in the float64
+        # cast (2**53 and 2**53+1 map to the same f64), silently turning
+        # complete disagreement into alpha=1 with a single level. Reads the
+        # wrapper's rejection; the accepted-boundary asserts read crate output.
+        import numpy as np
+        import pytest
+        from fast_mlsirm import kripp_alpha
+
+        big = 2**53
+        x = np.array([[big, big + 1], [big + 1, big]], dtype=np.int64)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(x)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(np.array([[2**63, 2**63 + 2]], dtype=np.uint64).reshape(2, 1).T)
+        with pytest.raises(ValueError, match="2\\*\\*53"):
+            kripp_alpha(-x)  # negative side
+        # Boundary: values at exactly +/-2**53 are exactly representable.
+        ok = np.array([[big, -big], [-big, big]], dtype=np.int64)
+        r = kripp_alpha(ok)
+        assert r.levels == 2 and abs(r.value - (-0.5)) < 1e-12
+
+
+class TestLight:
+    """Light's kappa (irr 0.85 kappam.light + unweighted kappa2, both READ).
+
+    Pins from the exact-Fraction oracle; every assert reads outputs of the
+    crate-backed light_kappa wrapper.
+    """
+
+    def _l1(self):
+        import numpy as np
+
+        return np.array(
+            [
+                [1, 1, 2], [2, 2, 2], [3, 3, 3], [1, 2, 1], [2, 2, 2],
+                [1, 1, 1], [3, 3, 3], [2, 2, 3], [1, 1, 1], [2, 3, 2],
+            ],
+            dtype=np.int64,
+        )
+
+    def test_anchor_l1(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        r = light_kappa(self._l1())
+        assert r.subjects_used == 10 and r.raters == 3
+        assert np.allclose(
+            r.kappas, [23 / 33, 23 / 33, 13 / 33], rtol=1e-15, atol=0
+        )
+        assert abs(r.value - 59 / 99) < 1e-15
+        assert abs(r.z - 4.719794049843912) < 1e-12
+        # crate erfc is a rational approximation; rel tolerance per spec.
+        assert abs(r.p_value - 2.3608354551285515e-06) < 1e-12
+
+    def test_nan_listwise_missing(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        # Oracle L5 with the missing code expressed as NaN (float payload).
+        m = np.array(
+            [
+                [1, 1, 2], [2, 2, 2], [np.nan, 1, 1], [1, 2, 1],
+                [2, 2, 2], [1, 1, 1], [2, 1, 2],
+            ]
+        )
+        r = light_kappa(m)
+        assert r.subjects_used == 6
+        assert abs(r.value - 1 / 3) < 1e-15
+        assert abs(r.z - 0.6324555320336758) < 1e-12
+        # Same data with integer -1 as the missing sentinel: identical
+        # crate outputs.
+        mi = np.where(np.isnan(m), -1.0, m).astype(np.int64)
+        ri = light_kappa(mi)
+        assert ri.value == r.value and ri.z == r.z
+        assert ri.kappas.tolist() == r.kappas.tolist()
+
+    def test_input_rejections(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import light_kappa
+
+        ok = self._l1()
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(np.float64) + 0.5)  # 2.5 non-integer
+        neg = ok.astype(np.float64)
+        neg[0, 0] = -1.0
+        with pytest.raises(ValueError):
+            light_kappa(neg)  # negative FLOAT rejected (not missing)
+        with pytest.raises(ValueError):
+            light_kappa(np.ma.masked_array(ok))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(object))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(np.complex128))
+        with pytest.raises(ValueError):
+            light_kappa(ok.astype(bool))
+        with pytest.raises(ValueError):
+            light_kappa(ok.reshape(-1))  # 1-D
+        inf = ok.astype(np.float64)
+        inf[0, 0] = np.inf
+        with pytest.raises(ValueError):
+            light_kappa(inf)
+        with pytest.raises(ValueError):
+            light_kappa(np.array([[2**32 + 1, 1], [2, 2]], dtype=np.int64))
+        with pytest.raises(ValueError):
+            # chanceP <= 0 on valid data: disjoint rater level sets.
+            light_kappa(np.array([[1, 2, 3], [1, 2, 3]], dtype=np.int64))
+
+    def test_two_raters_l2(self):
+        import numpy as np
+
+        from fast_mlsirm import light_kappa
+
+        m = np.array([[1, 1], [1, 2], [2, 2], [2, 2], [1, 1], [2, 1]])
+        r = light_kappa(m)
+        assert r.kappas.shape == (1,)
+        assert abs(r.value - 1 / 3) < 1e-15
+        assert r.value == float(r.kappas[0])
+        assert abs(r.z - 0.816496580927726) < 1e-12
+class TestFinn:
+    """Finn (1970) coefficient: anchors from the exact-Fraction oracle
+    (session files/finn_oracle.py, EXECUTED; transcribed from CRAN irr
+    0.85 finn.R, read in full). Every assert reads FinnResult fields
+    returned by the crate."""
+
+    FN1 = [
+        [2, 3, 2, 3],
+        [4, 4, 5, 4],
+        [1, 2, 1, 1],
+        [3, 3, 3, 4],
+        [5, 4, 5, 5],
+        [2, 2, 3, 2],
+    ]
+
+    def test_oneway_anchor(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        r = finn_coefficient(np.array(self.FN1, dtype=float), s_levels=5)
+        assert abs(r.value - 125.0 / 144.0) < 1e-15
+        assert abs(r.statistic - 144.0 / 19.0) < 1e-13
+        assert r.df2 == 18.0
+        # crate chi2_sf is a rational approximation; abs tol 1e-12.
+        assert abs(r.p_value - 4.47127350746514e-06) < 1e-12
+        assert r.subjects == 6 and r.raters == 4
+
+    def test_twoway_anchor_and_listwise_drop(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        t = finn_coefficient(np.array(self.FN1, dtype=float), 5, model="twoway")
+        assert abs(t.value - 617.0 / 720.0) < 1e-15
+        assert abs(t.statistic - 720.0 / 103.0) < 1e-13
+        assert t.df2 == 18.0  # R quirk: twoway also uses ns*(nr-1)
+        assert abs(t.p_value - 8.469265956566033e-06) < 1e-12
+        # NaN row -> oracle FN3 5-row pins.
+        m = np.array(self.FN1, dtype=float)
+        m[2, 1] = np.nan
+        d = finn_coefficient(m, 5)
+        assert d.subjects == 5
+        assert abs(d.value - 13.0 / 15.0) < 1e-15
+        assert abs(d.p_value - 2.9654977282546142e-05) < 1e-12
+
+    def test_perfect_agreement(self):
+        import numpy as np
+        from fast_mlsirm import finn_coefficient
+
+        r = finn_coefficient(np.array([[1, 1], [3, 3], [5, 5], [2, 2]], dtype=float), 5)
+        assert r.value == 1.0
+        assert r.statistic == float("inf")
+        assert r.p_value == 0.0
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import finn_coefficient
+
+        good = np.array([[1, 2], [2, 2], [3, 1]], dtype=float)
+        with pytest.raises(ValueError, match="masked"):
+            finn_coefficient(np.ma.masked_array(good), 3)
+        with pytest.raises(ValueError, match="object"):
+            finn_coefficient(np.array([[1, "a"], [2, 3]], dtype=object), 3)
+        with pytest.raises(ValueError, match="real"):
+            finn_coefficient(good.astype(complex), 3)
+        with pytest.raises(ValueError, match="boolean"):
+            finn_coefficient(good.astype(bool), 3)
+        with pytest.raises(ValueError, match="2-D"):
+            finn_coefficient(good.ravel(), 3)
+        # bool s_levels: True is an int subclass and would become 1.
+        with pytest.raises(ValueError, match="s_levels must be an integer"):
+            finn_coefficient(good, True)
+        with pytest.raises(ValueError, match="at least 2"):
+            finn_coefficient(good, 1)
+        with pytest.raises(ValueError, match="model"):
+            finn_coefficient(good, 3, model="both")
+        with pytest.raises(ValueError, match="infinit"):
+            finn_coefficient(np.array([[1.0, np.inf], [2.0, 3.0]]), 3)
+class TestMaxwell:
+    """Maxwell's RE (irr maxwell.R): anchors from the executed
+    exact-Fraction oracle. Every assert reads crate outputs through the
+    Python wrapper."""
+
+    def test_anchor_m2b(self):
+        import numpy as np
+        from fast_mlsirm import maxwell_re
+
+        nan = float("nan")
+        r = np.array(
+            [
+                [0, 0], [1, 1], [0, 1], [1, 1], [0, 0],
+                [1, 0], [1, 0], [1, 1], [nan, 0], [0, nan],
+            ],
+            dtype=float,
+        )
+        out = maxwell_re(r)
+        assert out.value == 0.25
+        assert out.subjects == 8
+        assert out.raters == 2
+
+    def test_anchor_m1_and_labels(self):
+        import numpy as np
+        from fast_mlsirm import maxwell_re
+
+        m1 = np.array(
+            [
+                [0, 0], [1, 1], [0, 1], [1, 1], [0, 0],
+                [1, 0], [1, 1], [0, 0], [1, 1], [0, 1],
+            ],
+            dtype=float,
+        )
+        assert abs(maxwell_re(m1).value - 0.4) < 1e-15
+        m4 = np.array(
+            [[2.5, 2.5], [7.0, 7.0], [2.5, 7.0], [7.0, 7.0], [2.5, 2.5], [7.0, 2.5]]
+        )
+        assert abs(maxwell_re(m4).value - 1.0 / 3.0) < 1e-15
+
+    def test_not_binary_union(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import maxwell_re
+
+        # Each column binary, union of 3 levels -> rejected (E1).
+        e1 = np.array([[0, 0], [1, 2], [0, 0], [1, 2]], dtype=float)
+        with pytest.raises(ValueError):
+            maxwell_re(e1)
+
+    def test_input_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import maxwell_re
+
+        ok = np.array([[0, 0], [1, 1]], dtype=float)
+        with pytest.raises(ValueError):
+            maxwell_re(np.ma.masked_array(ok))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(object))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(complex))
+        with pytest.raises(ValueError):
+            maxwell_re(ok.astype(bool))
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([0.0, 1.0]))  # 1-D
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 0, 0], [1, 1, 1]], dtype=float))  # nr=3
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 2**53 + 2], [1, 1]], dtype=np.int64))
+        # Regression: np.abs overflows on int64 min, which previously let
+        # -2**63 slip past the 2**53 fidelity guard (impl-review round 1).
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[-2**63, -2**63], [0, 0]], dtype=np.int64))
+        with pytest.raises(ValueError):
+            maxwell_re(np.array([[0, 2**63 - 1], [1, 1]], dtype=np.uint64))
+class TestRobinson:
+    """Robinson's A (irr 0.84.1 robinson.R; exact-Fraction oracle pins)."""
+
+    def test_anchor_r1(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        r = robinson_a(np.array([[1, 2, 5], [3, 3, 4], [2, 5, 5], [1, 1, 3]], dtype=float))
+        # Oracle pin: A = 107/171 (exact-Fraction oracle, EXECUTED).
+        assert abs(r.value - 107.0 / 171.0) < 1e-15
+        assert r.subjects == 4
+        assert r.raters == 3
+
+    def test_nan_row_dropped(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        x = np.array(
+            [[1, 2, 5], [3, 3, 4], [2, np.nan, 4], [2, 5, 5], [1, 1, 3]], dtype=float
+        )
+        r = robinson_a(x)
+        assert abs(r.value - 107.0 / 171.0) < 1e-15
+        assert r.subjects == 4
+
+    def test_degenerate_and_input_rejects(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import robinson_a
+
+        with pytest.raises(ValueError, match="degenerate"):
+            robinson_a(np.array([[1, 2, 3], [1, 2, 3], [1, 2, 3]], dtype=float))
+        with pytest.raises(ValueError):
+            robinson_a(np.ma.masked_array([[1.0, 2.0], [3.0, 4.0]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[1, 2], [3, "a"]], dtype=object))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[1 + 1j, 2], [3, 4]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            robinson_a(np.array([1.0, 2.0, 3.0]))
+
+    def test_integer_dtype_accepted(self):
+        import numpy as np
+
+        from fast_mlsirm import robinson_a
+
+        r = robinson_a(np.array([[1, 2], [2, 4], [3, 3], [4, 1], [5, 5]]))
+        # Oracle pin: R4 A = 13/20.
+        assert abs(r.value - 0.65) < 1e-15
+        assert r.raters == 2
+
+
+class TestMeancor:
+    """Mean pairwise correlation (irr 0.84.1 meancor.R; oracle pins)."""
+
+    # C1 fixture: columns are permutations of 1..4 so every pairwise r
+    # is exactly rational (oracle pins EXECUTED): r = [4/5, 3/5, 0].
+    C1 = [[1, 1, 2], [2, 3, 1], [3, 2, 4], [4, 4, 3]]
+
+    def test_anchor_c1_fisher(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        r = mean_pairwise_cor(np.array(self.C1, dtype=float))
+        assert abs(r.value - 0.5350920914541507) < 1e-12
+        # 2e-7 tolerance: the Rust core's erfc rational approximation
+        # has documented |error| < 1.2e-7 vs the oracle's math.erfc.
+        assert abs(r.p_value - 0.592586178359586) < 2e-7
+        assert r.dropped == 0
+        assert r.subjects == 4
+        assert r.raters == 3
+
+    def test_plain_mean_and_none_shape(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        r = mean_pairwise_cor(np.array(self.C1), fisher=False)
+        # Oracle pin: mean(4/5, 3/5, 0) = 7/15 exactly.
+        assert abs(r.value - 7.0 / 15.0) < 1e-15
+        assert r.statistic is None and r.p_value is None
+        assert r.dropped == 0
+
+    def test_perfect_pair_dropped(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        x = np.array([row + [row[0]] for row in self.C1], dtype=float)
+        r = mean_pairwise_cor(x)
+        assert r.dropped == 1  # the duplicated column's r == 1 pair
+        assert abs(r.value - 0.6148634005909716) < 1e-12
+        rp = mean_pairwise_cor(x, fisher=False)
+        assert abs(rp.value - 19.0 / 30.0) < 1e-15  # perfect pair kept
+
+    def test_rejects_and_bool_policy(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import mean_pairwise_cor
+
+        x = np.array(self.C1, dtype=float)
+        # fisher must be a real bool (deliberate stricter-than-legacy
+        # policy; spec-verify mandatory change 4).
+        with pytest.raises(TypeError):
+            mean_pairwise_cor(x, fisher=1)
+        with pytest.raises(TypeError):
+            mean_pairwise_cor(x, fisher="false")
+        assert mean_pairwise_cor(x, fisher=np.bool_(True)).p_value is not None
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.ma.masked_array(x))
+        # Guard-order regression: masked reject fires BEFORE the fisher
+        # bool check (impl-review round-1 finding).
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.ma.masked_array(x), fisher=1)
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(x.astype(complex))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([1.0, 2.0]))
+        # Constant column and fisher m < 4 are hard errors.
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
+        with pytest.raises(ValueError):
+            mean_pairwise_cor(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))
+
+
+class TestMeanrho:
+    """Mean pairwise Spearman rho (irr 0.84.1 meanrho.R; oracle pins)."""
+
+    # S5 fixture: columns are permutations of 1..6 with three distinct
+    # pairwise rhos (oracle pins EXECUTED): rho = [29/35, 27/35, 13/35].
+    S5 = [[1, 2, 1], [2, 1, 3], [3, 4, 2], [4, 3, 6], [5, 6, 4], [6, 5, 5]]
+
+    def test_anchor_s5_fisher(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        r = mean_pairwise_rho(np.array(self.S5, dtype=float))
+        assert abs(r.value - 0.6992488340329346) < 1e-12
+        assert abs(r.statistic - 1.2111345076783402) < 1e-12
+        # 2e-7 tolerance: the Rust core's erfc rational approximation
+        # has documented |error| < 1.2e-7 vs the oracle's math.erfc.
+        assert abs(r.p_value - 0.22584385801024365) < 2e-7
+        assert r.dropped == 0
+        assert r.ties is False
+        assert r.subjects == 6
+        assert r.raters == 3
+
+    def test_plain_mean_and_none_shape(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        r = mean_pairwise_rho(np.array(self.S5), fisher=False)
+        # Oracle pin: mean(29/35, 27/35, 13/35) = 23/35 exactly.
+        assert abs(r.value - 23.0 / 35.0) < 1e-15
+        assert r.statistic is None and r.p_value is None
+        assert r.dropped == 0
+
+    def test_perfect_pair_dropped_and_ties(self):
+        import numpy as np
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        # S6 = S5 plus a duplicate of column 0: one rho == 1 pair.
+        x = np.array([[row[0]] + row for row in self.S5], dtype=float)
+        r = mean_pairwise_rho(x)
+        assert r.dropped == 1
+        assert abs(r.value - 0.7447132997063424) < 1e-12
+        rp = mean_pairwise_rho(x, fisher=False)
+        assert abs(rp.value - 16.0 / 21.0) < 1e-15  # perfect pair kept
+        # Ties flag: midranks engage (S3-style column with a duplicate).
+        t = mean_pairwise_rho(
+            np.array([[1, 1], [1, 2], [2, 2], [3, 3], [3, 4]], dtype=float),
+            fisher=False,
+        )
+        assert t.ties is True
+        assert abs(t.value - 0.8922178162191939) < 1e-12
+
+    def test_rejects_and_bool_policy(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import mean_pairwise_rho
+
+        x = np.array(self.S5, dtype=float)
+        with pytest.raises(TypeError):
+            mean_pairwise_rho(x, fisher=1)
+        with pytest.raises(TypeError):
+            mean_pairwise_rho(x, fisher="false")
+        assert mean_pairwise_rho(x, fisher=np.bool_(True)).p_value is not None
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.ma.masked_array(x))
+        # Guard-order regression: masked reject fires BEFORE the fisher
+        # bool check (meancor impl-review round-1 precedent).
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.ma.masked_array(x), fisher=1)
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(x.astype(complex))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([1.0, 2.0]))
+        # Constant column and fisher m < 4 are hard errors.
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, 5], [2, 5], [3, 5], [4, 5]], dtype=float))
+        with pytest.raises(ValueError):
+            mean_pairwise_rho(np.array([[1, 1], [2, 3], [3, 2]], dtype=float))
+
+
+class TestStuartMaxwell:
+    """Stuart-Maxwell MH test (irr 0.84.1 stuart.maxwell.R; oracle pins)."""
+
+    # Oracle fixtures (files/stuartmaxwell_oracle.py, EXECUTED ALL PASS).
+    M1 = [[20, 10, 5], [3, 30, 15], [2, 4, 40]]
+    M2 = [[25, 5, 3, 3], [4, 30, 6, 1], [2, 3, 28, 4], [1, 2, 5, 22]]
+
+    def test_anchor_m1(self):
+        import numpy as np
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        r = stuart_maxwell_mh(np.array(self.M1, dtype=float))
+        # Oracle pin: stat = 1520/157 exactly.
+        assert abs(r.value - 1520.0 / 157.0) < 1e-13
+        assert r.df == 2
+        assert abs(r.p_value - 0.007901012752471986) < 1e-12
+        assert r.dropped == 0
+        assert r.subjects == 129
+        assert r.categories == 3
+
+    def test_drop_path_m2(self):
+        import numpy as np
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        r = stuart_maxwell_mh(np.array(self.M2))
+        assert r.dropped == 1
+        assert r.df == 2
+        assert r.subjects == 106
+        # Oracle pin: stat = 200/171 exactly.
+        assert abs(r.value - 200.0 / 171.0) < 1e-13
+        assert abs(r.p_value - 0.5572199009980283) < 1e-12
+        # McNemar reduction (oracle M3): (6-2)^2/8 == 2 exactly.
+        m3 = stuart_maxwell_mh(np.array([[10, 6], [2, 12]], dtype=float))
+        assert m3.value == 2.0
+        assert m3.df == 1
+        assert abs(m3.p_value - 0.1572992070502851) < 1e-12
+
+    def test_rejects(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import stuart_maxwell_mh
+
+        x = np.array(self.M1, dtype=float)
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.ma.masked_array(x))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[1, "a"], [2, 3]], dtype=object))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(x.astype(complex))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[True, False], [False, True]]))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([1.0, 2.0]))  # not 2-D
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[1, 2, 3], [4, 5, 6]], dtype=float))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[10, -6], [2, 12]], dtype=float))
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[10, 6.5], [2, 12]], dtype=float))
+        # All marginals equal -> everything dropped -> error (oracle M6).
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[5, 3], [3, 7]], dtype=float))
+        # Integer fidelity guard fires before the f64 cast.
+        with pytest.raises(ValueError):
+            stuart_maxwell_mh(np.array([[2**60, 6], [2, 12]], dtype=np.int64))
+class TestBhapkar:
+    """Bhapkar marginal homogeneity (irr bhapkar.r; exact-oracle pins)."""
+
+    def test_anchor_b1(self):
+        import numpy as np
+
+        from fast_mlsirm import bhapkar_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        r = bhapkar_mh(b1)
+        want = 196080 / 18733
+        assert abs(r.value - want) <= 1e-12 * want
+        assert r.df == 2
+        assert abs(r.p_value - 0.00533458022326506) <= 1e-12
+        assert r.subjects == 129
+        assert r.categories == 3
+
+    def test_sm_identity_b1(self):
+        # Oracle-proven exact identity bhapkar = SM / (1 - SM/n) with the
+        # NO-DROP Stuart-Maxwell statistic; B1 has no equal marginals so
+        # the crate stuart_maxwell_mh performs no drop (dropped == 0).
+        import numpy as np
+
+        from fast_mlsirm import bhapkar_mh, stuart_maxwell_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        bh = bhapkar_mh(b1)
+        sm = stuart_maxwell_mh(b1)
+        assert sm.dropped == 0
+        want = sm.value / (1.0 - sm.value / bh.subjects)
+        assert abs(bh.value - want) <= 1e-12 * want
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import bhapkar_mh
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.ma.masked_array(b1))
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1.astype(object))
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1 + 0j)
+        with pytest.raises(ValueError):
+            bhapkar_mh(b1.astype(bool))
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[10.0, -6.0], [2.0, 12.0]]))
+        # Perfect agreement -> W = 0 -> singular.
+        with pytest.raises(ValueError):
+            bhapkar_mh(np.array([[5.0, 0.0], [0.0, 7.0]]))
+        # int64 min must be rejected (np.abs-overflow guard regression).
+        bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
+        with pytest.raises(ValueError):
+            bhapkar_mh(bad)
+
+class TestRaterBias:
+    """Rater bias chi-square (irr rater.bias.R; exact-oracle pins)."""
+
+    def test_anchor_b1(self):
+        import numpy as np
+
+        from fast_mlsirm import rater_bias
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        r = rater_bias(b1)
+        assert abs(r.value - 10 / 13) <= 1e-15 * (10 / 13)
+        assert abs(r.statistic - 147 / 13) <= 1e-15 * (147 / 13)
+        assert r.df == 1
+        assert abs(r.p_value - 0.0007718664488286608) <= 1e-12
+        assert r.subjects == 129
+
+    def test_dyadic_and_balanced(self):
+        import numpy as np
+
+        from fast_mlsirm import rater_bias
+
+        r = rater_bias(np.array([[10, 6], [2, 12]], dtype=float))
+        assert r.value == 0.75 and r.statistic == 2.0 and r.subjects == 30
+        r = rater_bias(np.array([[5, 3], [3, 7]], dtype=float))
+        assert r.statistic == 0.0 and r.p_value == 1.0 and r.value == 0.5
+
+    def test_errors(self):
+        import numpy as np
+        import pytest
+
+        from fast_mlsirm import rater_bias
+
+        b1 = np.array([[20, 10, 5], [3, 30, 15], [2, 4, 40]], dtype=float)
+        with pytest.raises(ValueError):
+            rater_bias(np.ma.masked_array(b1))
+        with pytest.raises(ValueError):
+            rater_bias(b1.astype(object))
+        with pytest.raises(ValueError):
+            rater_bias(b1 + 0j)
+        with pytest.raises(ValueError):
+            rater_bias(b1.astype(bool))
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[10.0, -6.0], [2.0, 12.0]]))
+        # Diagonal-only table: rbb + rbc == 0.
+        with pytest.raises(ValueError):
+            rater_bias(np.array([[5.0, 0.0], [0.0, 7.0]]))
+        # int64 min must be rejected (np.abs-overflow guard regression).
+        bad = np.array([[np.iinfo(np.int64).min, 6], [2, 12]], dtype=np.int64)
+        with pytest.raises(ValueError):
+            rater_bias(bad)
+class TestNCohenKappa:
+    """Sample size for Cohen's kappa vs the executed exact-Fraction
+    oracle (files/ncohen_oracle.py, session). Every assert reads
+    values returned by the crate through the wrapper."""
+
+    def test_anchor_pins(self):
+        from fast_mlsirm import n_cohen_kappa
+
+        r = n_cohen_kappa(0.3, 0.3, 0.7, 0.4)
+        assert r.n == 59
+        assert abs(r.q1 - 307 / 500) <= 1e-12 * (307 / 500)
+        assert abs(r.q0 - 863 / 875) <= 1e-12 * (863 / 875)
+        assert abs(r.pre_ceil - 58.421285144581596) <= 1e-9 * 58.421285144581596
+        r2 = n_cohen_kappa(0.25, 0.3, 0.6, 0.3, twosided=True)
+        assert r2.n == 87
+        assert abs(r2.q0 - 34377 / 32000) <= 1e-12 * (34377 / 32000)
+        r3 = n_cohen_kappa(0.5, 0.5, 0.8, 0.5, alpha=0.01, power=0.9)
+        assert r3.n == 87
+        assert abs(r3.q1 - 9 / 25) <= 1e-12 * (9 / 25)
+
+    def test_error_contract(self):
+        import pytest
+
+        from fast_mlsirm import n_cohen_kappa
+
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.0, 0.3, 0.7, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.4, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.9, 0.1, 0.9, 0.1)  # infeasible cells
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.7, 0.4, alpha=1.0)
+        with pytest.raises(ValueError):
+            n_cohen_kappa(True, 0.3, 0.7, 0.4)
+        with pytest.raises(ValueError):
+            n_cohen_kappa("0.3", 0.3, 0.7, 0.4)  # impl-review: str parsed by float()
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.700000000000001, 0.7)  # n > 2^53
+        with pytest.raises(ValueError):
+            n_cohen_kappa(0.3, 0.3, 0.7, 0.4, twosided=1)
+
+    def test_result_type(self):
+        from fast_mlsirm import NCohenKappaResult, n_cohen_kappa
+
+        r = n_cohen_kappa(0.2, 0.2, 0.5, 0.2)
+        assert isinstance(r, NCohenKappaResult)
+        assert isinstance(r.n, int) and r.n == 86
+        assert r.pre_ceil < r.n <= r.pre_ceil + 1
