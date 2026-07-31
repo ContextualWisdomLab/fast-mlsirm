@@ -23,3 +23,7 @@
 ## 2025-02-12 - Table Body `<th scope="row">` and Tabular Numbers
 **Learning:** Using `<td>` for the first column in data tables makes it difficult for screen reader users to associate row data with its identifying header. Additionally, numbers in data tables can jitter horizontally if proportional fonts are used.
 **Action:** When generating HTML data tables, always use `<th scope="row">` for the first identifying column to improve screen reader accessibility. Apply `font-variant-numeric: tabular-nums;` to base table cell styles to ensure numbers align properly, and explicitly update primary cell CSS selectors (e.g., from `th, td { ... }` to `thead th, tbody th, td { ... }`) and add `tbody th { font-weight: normal; }` to maintain consistent baseline styling.
+
+## 2024-08-01 - Focus Visible Styles for Skip-to-Content Targets
+**Learning:** While `outline: none;` on a `<main>` container properly removes the visual artifact when users click inside the content area, it completely breaks keyboard accessibility for users navigating via the "Skip to main content" link because no focus indicator is shown when the target is focused.
+**Action:** When overriding the focus outline on semantic containers like `<main>`, always provide a `.element:focus-visible` rule (e.g., `outline: 3px solid var(--primary-color)`) after the `:focus { outline: none; }` rule to ensure keyboard navigation remains visibly accessible without disrupting mouse interactions.
