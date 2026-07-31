@@ -22,6 +22,29 @@ from .linking import link_fixed_item_parameters as link_fixed_item_parameters
 from .linking import irt_link as irt_link, IrtLinkResult as IrtLinkResult
 from .equating import equate_observed_scores as equate_observed_scores, equate_neat as equate_neat, EquateResult as EquateResult, equate_observed_scores_kernel as equate_observed_scores_kernel, loglinear_smooth as loglinear_smooth, equate_neat_linear as equate_neat_linear, equating_standard_errors as equating_standard_errors, circle_arc_equate as circle_arc_equate, circle_arc_middle_anchor as circle_arc_middle_anchor, CircleArcResult as CircleArcResult, nominal_weights_mean_equate as nominal_weights_mean_equate, composite_linking as composite_linking
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
+from .scaling import thurstone_case_v as thurstone_case_v, ThurstoneResult as ThurstoneResult
+from .scaling import bradley_terry_mm as bradley_terry_mm, BradleyTerryResult as BradleyTerryResult
+from .scaling import bratt_mm as bratt_mm, BrattResult as BrattResult
+from .scaling import lsr_pairwise as lsr_pairwise, ilsr_pairwise as ilsr_pairwise, LsrResult as LsrResult
+from .scaling import rank_centrality as rank_centrality
+from .scaling import lsr_rankings as lsr_rankings, ilsr_rankings as ilsr_rankings
+from .scaling import lsr_top1 as lsr_top1, ilsr_top1 as ilsr_top1
+from .scaling import circular_triads as circular_triads, CircularTriadsResult as CircularTriadsResult
+from .scaling import kendall_u as kendall_u, KendallUResult as KendallUResult
+from .scaling import elo_rating as elo_rating, EloResult as EloResult
+from .scaling import glicko_rating as glicko_rating, GlickoResult as GlickoResult
+from .scaling import glicko2_rating as glicko2_rating, Glicko2Result as Glicko2Result
+from .scaling import (
+    stephenson_rating as stephenson_rating,
+    StephensonResult as StephensonResult,
+    elom_rating as elom_rating,
+    ElomResult as ElomResult,
+    metrics_rating as metrics_rating,
+    fide_rating as fide_rating,
+    FideResult as FideResult,
+    predict_rating as predict_rating,
+    predict_rating_multi as predict_rating_multi,
+)
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
@@ -100,6 +123,28 @@ from .reliability import (
     AlphaCiResult as AlphaCiResult,
     separation_reliability as separation_reliability,
     SeparationReliabilityResult as SeparationReliabilityResult,
+    icc as icc,
+    IccResult as IccResult,
+    kripp_alpha as kripp_alpha,
+    KrippResult as KrippResult,
+    finn_coefficient as finn_coefficient,
+    FinnResult as FinnResult,
+    maxwell_re as maxwell_re,
+    MaxwellResult as MaxwellResult,
+    robinson_a as robinson_a,
+    RobinsonResult as RobinsonResult,
+    mean_pairwise_cor as mean_pairwise_cor,
+    MeanCorResult as MeanCorResult,
+    mean_pairwise_rho as mean_pairwise_rho,
+    bhapkar_mh as bhapkar_mh,
+    n_cohen_kappa as n_cohen_kappa,
+    rater_bias as rater_bias,
+    stuart_maxwell_mh as stuart_maxwell_mh,
+    MeanRhoResult as MeanRhoResult,
+    BhapkarResult as BhapkarResult,
+    NCohenKappaResult as NCohenKappaResult,
+    RaterBiasResult as RaterBiasResult,
+    StuartMaxwellResult as StuartMaxwellResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -152,7 +197,11 @@ from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFo
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
 from .report import render_diagnostics_report as render_diagnostics_report
-from .validation import (ValidationVerdict as ValidationVerdict,
+from .validation import (FleissKappaResult as FleissKappaResult,
+                         LightKappaResult as LightKappaResult,
+                         ValidationVerdict as ValidationVerdict,
+                         fleiss_kappa as fleiss_kappa,
+                         light_kappa as light_kappa,
                          validate_judge as validate_judge)
 from .serving import (bank_information as bank_information,
                       cat_next_item as cat_next_item,
@@ -197,6 +246,10 @@ __all__ = [
     "assemble_test_form",
     "dimensionality_diagnostics",
     "ValidationVerdict",
+    "FleissKappaResult",
+    "fleiss_kappa",
+    "LightKappaResult",
+    "light_kappa",
     "benjamini_hochberg",
     "chi2_sf",
     "dif_analysis",
@@ -225,6 +278,39 @@ __all__ = [
     "circle_arc_equate",
     "nominal_weights_mean_equate",
     "composite_linking",
+    "thurstone_case_v",
+    "ThurstoneResult",
+    "bradley_terry_mm",
+    "BradleyTerryResult",
+    "bratt_mm",
+    "BrattResult",
+    "lsr_pairwise",
+    "ilsr_pairwise",
+    "rank_centrality",
+    "lsr_rankings",
+    "ilsr_rankings",
+    "lsr_top1",
+    "ilsr_top1",
+    "LsrResult",
+    "circular_triads",
+    "CircularTriadsResult",
+    "kendall_u",
+    "KendallUResult",
+    "elo_rating",
+    "EloResult",
+    "glicko_rating",
+    "GlickoResult",
+    "glicko2_rating",
+    "Glicko2Result",
+    "stephenson_rating",
+    "StephensonResult",
+    "elom_rating",
+    "ElomResult",
+    "metrics_rating",
+    "fide_rating",
+    "FideResult",
+    "predict_rating",
+    "predict_rating_multi",
     "circle_arc_middle_anchor",
     "CircleArcResult",
     "fit_response_times",
@@ -302,6 +388,28 @@ __all__ = [
     "AlphaCiResult",
     "separation_reliability",
     "SeparationReliabilityResult",
+    "icc",
+    "IccResult",
+    "kripp_alpha",
+    "KrippResult",
+    "finn_coefficient",
+    "FinnResult",
+    "maxwell_re",
+    "MaxwellResult",
+    "robinson_a",
+    "RobinsonResult",
+    "mean_pairwise_cor",
+    "MeanCorResult",
+    "mean_pairwise_rho",
+    "bhapkar_mh",
+    "n_cohen_kappa",
+    "rater_bias",
+    "stuart_maxwell_mh",
+    "MeanRhoResult",
+    "BhapkarResult",
+    "NCohenKappaResult",
+    "RaterBiasResult",
+    "StuartMaxwellResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",

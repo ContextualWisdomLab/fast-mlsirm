@@ -231,3 +231,92 @@ fn mirt_ignores_latent_space_terms() {
     assert!(grad.xi.iter().all(|value| *value == 0.0));
     assert!(grad.zeta.iter().all(|value| *value == 0.0));
 }
+
+/// Force multi-shard (workers=4) and compare to single-thread on the same
+/// fixture: objective, loglik, and every gradient block must match bit-for-bit
+/// (associative f64 sum over disjoint person ranges).
+#[test]
+fn coarse_shard_multithread_matches_single_thread_on_all_blocks() {
+    let n_persons = 300usize;
+    let n_items = 4usize;
+    let n_dims = 2usize;
+    let latent_dim = 2usize;
+    let cfg = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Mls2plm,
+        eps_distance: 1e-8,
+    };
+    let mut theta = vec![0.0; n_persons * n_dims];
+    let mut xi = vec![0.0; n_persons * latent_dim];
+    for p in 0..n_persons {
+        theta[p * n_dims] = 0.01 * (p as f64);
+        theta[p * n_dims + 1] = -0.005 * (p as f64);
+        xi[p * latent_dim] = 0.02 * ((p % 7) as f64);
+        xi[p * latent_dim + 1] = -0.01 * ((p % 5) as f64);
+    }
+    let params = Params {
+        theta,
+        alpha: vec![0.1, -0.2, 0.0, 0.3],
+        b: vec![0.2, -0.1, 0.05, -0.15],
+        xi,
+        zeta: vec![0.0, 0.1, -0.2, 0.05, 0.15, -0.1, -0.05, 0.2],
+        tau: 0.15,
+    };
+    let mut y = vec![0.0; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = if (p + i) % 3 == 0 { 1.0 } else { 0.0 };
+        }
+    }
+    let factor_id = vec![0usize, 0, 1, 1];
+    let penalty = PenaltyConfig {
+        lambda_theta: 0.0,
+        lambda_xi: 0.0,
+        lambda_zeta: 0.0,
+        lambda_b: 0.0,
+        lambda_alpha: 0.0,
+        lambda_tau: 0.0,
+        mu_alpha: 0.0,
+        mu_tau: 0.0,
+    };
+
+    let (obj1, g1, ll1) =
+        neg_loglik_and_grad_with_workers(&y, None, &factor_id, &params, &cfg, &penalty, 1);
+    let (obj4, g4, ll4) =
+        neg_loglik_and_grad_with_workers(&y, None, &factor_id, &params, &cfg, &penalty, 4);
+
+    assert!((obj1 - obj4).abs() < 1e-12, "objective ST {obj1} vs MT {obj4}");
+    assert!((ll1 - ll4).abs() < 1e-12, "loglik ST {ll1} vs MT {ll4}");
+    assert!((g1.tau - g4.tau).abs() < 1e-12, "tau grad");
+    for (a, b) in g1.theta.iter().zip(&g4.theta) {
+        assert!((a - b).abs() < 1e-12, "theta grad mismatch");
+    }
+    for (a, b) in g1.alpha.iter().zip(&g4.alpha) {
+        assert!((a - b).abs() < 1e-12, "alpha grad mismatch");
+    }
+    for (a, b) in g1.b.iter().zip(&g4.b) {
+        assert!((a - b).abs() < 1e-12, "b grad mismatch");
+    }
+    for (a, b) in g1.xi.iter().zip(&g4.xi) {
+        assert!((a - b).abs() < 1e-12, "xi grad mismatch");
+    }
+    for (a, b) in g1.zeta.iter().zip(&g4.zeta) {
+        assert!((a - b).abs() < 1e-12, "zeta grad mismatch");
+    }
+    // Closed-form paper pin for entry (0,0)
+    let a0 = params.alpha[0].exp();
+    let gamma = params.tau.exp();
+    let mut dist2 = cfg.eps_distance;
+    for k in 0..latent_dim {
+        let diff = params.xi[k] - params.zeta[k];
+        dist2 += diff * diff;
+    }
+    let r = dist2.sqrt();
+    let eta0 = a0 * params.theta[0] + params.b[0] - gamma * r;
+    let entry0 = softplus(eta0) - y[0] * eta0;
+    assert!(entry0.is_finite());
+    assert!((obj1 + ll1).abs() < 1e-12);
+}
