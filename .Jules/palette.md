@@ -8,3 +8,10 @@
 ## 2024-10-24 - CSS Bar Chart Animation
 **Learning:** CSS animations can enhance static data visualizations without requiring JavaScript, providing visual polish and reducing perceived loading times for data.
 **Action:** Use CSS keyframe animations for simple visual improvements in static reports.
+## 2024-11-20 - ARIA Status Role for Empty States
+**Learning:** Using `role="status"` on empty state containers (e.g., `<div class="empty-state" role="status">`) instead of standard paragraph tags ensures assistive technologies actively announce when no data or rows are recorded, without interrupting the user's flow.
+**Action:** Use `role="status"` on empty states in HTML components instead of standard `p` tags.
+
+## 2024-11-20 - Tabular Nums for Readability
+**Learning:** Numbers of varying widths can be hard to scan vertically in data-heavy reports, negatively impacting readability and usability.
+**Action:** Always include `font-variant-numeric: tabular-nums;` in body styles or data-heavy components within HTML reports to ensure numbers align properly vertically.
