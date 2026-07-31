@@ -2487,6 +2487,356 @@ pub fn glicko2_rating(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Stephenson rating system, PlayerRatings `steph()` semantics.
+//
+// Citation governance:
+// - READ: PlayerRatings R package source, R/ratings.R `steph()` driver and
+//   src/ratings.c `stephenson_c` kernel (Stephenson, A., & Sonas, J.,
+//   PlayerRatings: Dynamic updating methods for player ratings estimation,
+//   R package; steph() driver and C kernel read in full). All formulas
+//   below cite that source code; R/C line references are to the read copy.
+// - NOT READ (provenance only): the system has no standalone journal
+//   paper. It originates from Alec Stephenson's winning entry to the 2010
+//   Kaggle "Chess ratings: Elo vs the Rest of the World" competition and
+//   is documented only in the PlayerRatings package. No formula here is
+//   attributed to any unread document.
+//
+// Model per rating period (ascending unique period labels), with
+// qv = ln(10)/400, qip3 = 3 (qv/pi)^2, state ratings r_p and deviation
+// VARIANCE c_p, per-period participant set `playi`:
+//
+// 1. Inflation, participants only (R 689):
+//      c_p <- min(c_p + (lag_p + 1) cval^2, rdmax^2)
+//    Note (lag+1), unlike Glicko-2's lag * sigma^2: a fresh participant is
+//    inflated by one cval^2 every period it plays.
+// 2. g factor for ALL players (R 690): g_p = 1/sqrt(1 + qip3 c_p).
+// 3. Kernel accumulation per game (C 181-197), B = bval/100 (R 696):
+//    white w vs black b with score s and per-game advantage gamma_k:
+//      asc_w = s + B
+//      e_w = 1/(1 + 10^( g_b (r_b - r_w - gamma_k) / 400 ))
+//      dval_w += qv^2 g_b^2 e_w (1 - e_w)
+//      dscore_w += g_b (asc_w - e_w)
+//      l1t_w += r_b - r_w
+//    and mirrored for black with asc_b = 1 - s + B, opponent g_w, and
+//    +gamma_k in the exponent. With heterogeneous deviations e_w + e_b
+//    != 1 in general (deliberate; inherited from Glicko).
+// 4. Posterior for ALL players (R 702-703); non-participants have
+//    ngamesi = dval = dscore = 0 so the update is the identity:
+//      c_p <- 1/( 1/(c_p + ngamesi_p hval^2) + dval_p )
+//      r_p += c_p qv dscore_p
+// 5. Lambda drift, participants only (R 704), per-PERIOD game counts:
+//      r_p += (lambda/100) l1t_p / ngamesi_p
+// 6. Tallies (R 706-712): win iff score exactly 1 (white) / 0 (black);
+//    draw iff exactly 0.5 (both sides); loss mirrored. Other scores in
+//    (0, 1) update ratings but no W/D/L tally.
+// 7. Lag (R 713-714): lag_p += 1 if cumulative games_p != 0, then
+//    lag_p = 0 for participants.
+//
+// Output deviation is sqrt(c_p) (R 726).
+//
+// Documented divergences from the R driver (same set as `glicko_rating`):
+// players are pre-indexed 0..n-1 (no name matching, no `status` frame,
+// no `history`); self-play rejected; u64 period labels grouped ascending
+// with stable row order. `init_games`/`init_lag` replace the status
+// frame's Games/Lag columns; W/D/L outputs are CURRENT-RUN tallies
+// (prior Win/Draw/Loss columns are out of scope). Lag continuation for
+// indexed non-participants IS reproduced: the step-7 loop over all n
+// players matches R 666's `olag += nm` for players with prior games and
+// no appearances in the data.
+// ---------------------------------------------------------------------------
+
+/// Result of [`stephenson_rating`]: ratings, deviations, counts.
+#[derive(Debug, Clone)]
+pub struct StephensonResult {
+    /// Post-update rating per player (Glicko scale, length `n`).
+    pub ratings: Vec<f64>,
+    /// Post-update rating deviation per player.
+    pub deviations: Vec<f64>,
+    /// Cumulative game appearances per player (init_games + current run).
+    pub games: Vec<u64>,
+    /// Current-run wins (score exactly 1 as white, or exactly 0 as black).
+    pub wins: Vec<u64>,
+    /// Current-run draws (score exactly 0.5, both sides).
+    pub draws: Vec<u64>,
+    /// Current-run losses (score exactly 0 as white, or exactly 1 as black).
+    pub losses: Vec<u64>,
+    /// Rating periods since the player's last appearance (continued from
+    /// `init_lag`; 0 if the player appeared in the final period or has
+    /// never played).
+    pub lag: Vec<u64>,
+}
+
+/// Stephenson ratings from a game schedule, PlayerRatings `steph()`
+/// semantics (Stephenson's 2010 Kaggle chess-rating system).
+///
+/// `periods[k]`, `white[k]`, `black[k]`, `score[k]`, `gamma[k]` describe
+/// game `k`: rating-period label, player indices in `0..n`, white's score
+/// in `[0, 1]`, and white's per-game advantage (rating points).
+/// `init_rating`/`init_dev` give each player's starting rating and
+/// deviation (`n` = their common length); `init_games`/`init_lag`
+/// continue a previous run's cumulative game counts and lags (pass zeros
+/// for a fresh run). `cval` is the per-period deviation inflation,
+/// `hval` the per-game neighborhood variance, `bval` the per-game bonus
+/// added to BOTH players' actual scores (in units of bval/100), `lambda`
+/// the drift toward opponents' ratings (percent), and `rdmax` the
+/// deviation ceiling. `bval` and `lambda` may be negative (the R package
+/// does not restrict them).
+#[allow(clippy::too_many_arguments)]
+pub fn stephenson_rating(
+    periods: &[u64],
+    white: &[usize],
+    black: &[usize],
+    score: &[f64],
+    gamma: &[f64],
+    init_rating: &[f64],
+    init_dev: &[f64],
+    init_games: &[u64],
+    init_lag: &[u64],
+    cval: f64,
+    hval: f64,
+    bval: f64,
+    lambda: f64,
+    rdmax: f64,
+) -> Result<StephensonResult, String> {
+    let g = periods.len();
+    if g == 0 {
+        return Err("stephenson_rating: at least one game is required".to_string());
+    }
+    if white.len() != g || black.len() != g || score.len() != g || gamma.len() != g {
+        return Err(format!(
+            "stephenson_rating: length mismatch (periods {}, white {}, black {}, score {}, gamma {})",
+            g,
+            white.len(),
+            black.len(),
+            score.len(),
+            gamma.len()
+        ));
+    }
+    let n = init_rating.len();
+    if n < 2 {
+        return Err("stephenson_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "stephenson_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    if init_dev.len() != n || init_games.len() != n || init_lag.len() != n {
+        return Err(format!(
+            "stephenson_rating: init_rating (len {}), init_dev (len {}), init_games (len {}), and init_lag (len {}) must match",
+            n,
+            init_dev.len(),
+            init_games.len(),
+            init_lag.len()
+        ));
+    }
+    // Counters increment at most once per game (games) / per period (lag),
+    // both bounded by g; reject inputs that could overflow u64 rather than
+    // panic (debug) or wrap (release) mid-update.
+    let g_u64 = g as u64;
+    for p in 0..n {
+        if init_games[p] > u64::MAX - g_u64 || init_lag[p] > u64::MAX - g_u64 {
+            return Err(format!(
+                "stephenson_rating: init_games/init_lag for player {} is too large to update without u64 overflow",
+                p
+            ));
+        }
+    }
+    if !rdmax.is_finite() || rdmax <= 0.0 {
+        return Err(format!(
+            "stephenson_rating: rdmax {} must be finite and > 0",
+            rdmax
+        ));
+    }
+    if !cval.is_finite() || cval < 0.0 {
+        return Err(format!(
+            "stephenson_rating: cval {} must be finite and >= 0",
+            cval
+        ));
+    }
+    if !hval.is_finite() || hval < 0.0 {
+        return Err(format!(
+            "stephenson_rating: hval {} must be finite and >= 0",
+            hval
+        ));
+    }
+    if !bval.is_finite() {
+        return Err(format!("stephenson_rating: bval {} must be finite", bval));
+    }
+    if !lambda.is_finite() {
+        return Err(format!(
+            "stephenson_rating: lambda {} must be finite",
+            lambda
+        ));
+    }
+    for p in 0..n {
+        if !init_rating[p].is_finite() {
+            return Err(format!(
+                "stephenson_rating: init_rating[{}] is not finite",
+                p
+            ));
+        }
+        if !init_dev[p].is_finite() || init_dev[p] <= 0.0 {
+            return Err(format!(
+                "stephenson_rating: init_dev[{}] = {} must be finite and > 0",
+                p, init_dev[p]
+            ));
+        }
+        if init_dev[p] > rdmax {
+            return Err(format!(
+                "stephenson_rating: init_dev[{}] = {} exceeds rdmax {}",
+                p, init_dev[p], rdmax
+            ));
+        }
+    }
+    for k in 0..g {
+        if white[k] >= n || black[k] >= n {
+            return Err(format!(
+                "stephenson_rating: game {} has player index out of range (white {}, black {}, n {})",
+                k, white[k], black[k], n
+            ));
+        }
+        if white[k] == black[k] {
+            return Err(format!(
+                "stephenson_rating: game {} has white == black == {} (self-play is not supported)",
+                k, white[k]
+            ));
+        }
+        if !score[k].is_finite() || !(0.0..=1.0).contains(&score[k]) {
+            return Err(format!(
+                "stephenson_rating: game {} has score {} outside [0, 1]",
+                k, score[k]
+            ));
+        }
+        if !gamma[k].is_finite() {
+            return Err(format!(
+                "stephenson_rating: game {} has non-finite gamma",
+                k
+            ));
+        }
+    }
+
+    let qv = std::f64::consts::LN_10 / 400.0;
+    // qip3 = 3 (qv/pi)^2 (R 675). NOT Glicko-2's 3/pi^2: Stephenson works
+    // on the raw rating scale, so the qv^2 factor stays in qip3.
+    let qip3 = 3.0 * (qv / std::f64::consts::PI) * (qv / std::f64::consts::PI);
+    let rdmax2 = rdmax * rdmax;
+    let b100 = bval / 100.0;
+    let mut ratings: Vec<f64> = init_rating.to_vec();
+    // Internal deviation state is the VARIANCE cdevs = dev^2 (R 668).
+    let mut cdevs: Vec<f64> = init_dev.iter().map(|d| d * d).collect();
+    let mut games: Vec<u64> = init_games.to_vec();
+    let mut wins = vec![0u64; n];
+    let mut draws = vec![0u64; n];
+    let mut losses = vec![0u64; n];
+    let mut lag: Vec<u64> = init_lag.to_vec();
+    let mut appeared = vec![false; n];
+    let mut gdevs = vec![0.0f64; n];
+
+    // Group by ascending period, preserving row order within a period.
+    let mut order: Vec<usize> = (0..g).collect();
+    order.sort_by_key(|&k| periods[k]); // stable sort keeps row order
+
+    let mut i = 0usize;
+    while i < g {
+        let period = periods[order[i]];
+        let mut j = i;
+        while j < g && periods[order[j]] == period {
+            j += 1;
+        }
+
+        for player in appeared.iter_mut() {
+            *player = false;
+        }
+        let mut ngamesi = vec![0u64; n];
+        for &k in &order[i..j] {
+            appeared[white[k]] = true;
+            appeared[black[k]] = true;
+            ngamesi[white[k]] += 1;
+            ngamesi[black[k]] += 1;
+        }
+        // Step 1 (R 689): participants only, (lag+1) cval^2, clamped.
+        for p in 0..n {
+            if appeared[p] {
+                cdevs[p] = (cdevs[p] + (lag[p] + 1) as f64 * cval * cval).min(rdmax2);
+            }
+        }
+        // Step 2 (R 690): g factor for ALL players, post-inflation.
+        for p in 0..n {
+            gdevs[p] = 1.0 / (1.0 + qip3 * cdevs[p]).sqrt();
+        }
+
+        // Step 3 (C 181-197): kernel accumulation from period-START
+        // ratings; base-10 exponent on the raw scale; tallies inline.
+        let mut dscore = vec![0.0f64; n];
+        let mut dval = vec![0.0f64; n];
+        let mut l1t = vec![0.0f64; n];
+        for &k in &order[i..j] {
+            let (w, b, s, gam) = (white[k], black[k], score[k], gamma[k]);
+            let asc_w = s + b100;
+            let e_w = 1.0 / (1.0 + 10f64.powf(gdevs[b] * (ratings[b] - ratings[w] - gam) / 400.0));
+            dval[w] += qv * qv * gdevs[b] * gdevs[b] * e_w * (1.0 - e_w);
+            dscore[w] += gdevs[b] * (asc_w - e_w);
+            l1t[w] += ratings[b] - ratings[w];
+            let asc_b = 1.0 - s + b100;
+            let e_b = 1.0 / (1.0 + 10f64.powf(gdevs[w] * (ratings[w] - ratings[b] + gam) / 400.0));
+            dval[b] += qv * qv * gdevs[w] * gdevs[w] * e_b * (1.0 - e_b);
+            dscore[b] += gdevs[w] * (asc_b - e_b);
+            l1t[b] += ratings[w] - ratings[b];
+
+            games[w] += 1;
+            games[b] += 1;
+            if s == 1.0 {
+                wins[w] += 1;
+                losses[b] += 1;
+            } else if s == 0.5 {
+                draws[w] += 1;
+                draws[b] += 1;
+            } else if s == 0.0 {
+                losses[w] += 1;
+                wins[b] += 1;
+            }
+        }
+        // Step 4 (R 702-703): posterior for ALL players, variance first,
+        // THEN rating with the NEW variance (identity for non-participants).
+        for p in 0..n {
+            cdevs[p] = 1.0 / (1.0 / (cdevs[p] + ngamesi[p] as f64 * hval * hval) + dval[p]);
+            ratings[p] += cdevs[p] * qv * dscore[p];
+        }
+        // Step 5 (R 704): lambda drift, participants only, per-period
+        // ngamesi (participants always have ngamesi > 0).
+        for p in 0..n {
+            if appeared[p] {
+                ratings[p] += (lambda / 100.0) * l1t[p] / ngamesi[p] as f64;
+            }
+        }
+        // Step 7 (R 713-714): lag on cumulative games, participants reset.
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                lag[p] = 0;
+            }
+        }
+        i = j;
+    }
+
+    Ok(StephensonResult {
+        ratings,
+        deviations: cdevs.iter().map(|c| c.sqrt()).collect(),
+        games,
+        wins,
+        draws,
+        losses,
+        lag,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

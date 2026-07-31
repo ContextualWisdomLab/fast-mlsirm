@@ -9617,3 +9617,161 @@ class TestGlicko2:
         r = glicko2_rating(gi, 2, init=(2200.0, 300.0, 0.15), tau=0.0)
         assert r.lag.tolist() == [0, 0]
         assert r.games.tolist() == [2, 2]
+
+
+class TestStephenson:
+    """stephenson_rating vs the EXECUTED PlayerRatings-1.1.0 oracle
+    (files/stephenson_oracle.py port of ratings.R steph() + ratings.c
+    stephenson_c). Every assert reads crate outputs returned through the
+    binding; anchors are float pins from the oracle run."""
+
+    def test_anchor_s1_heterogeneous_init(self):
+        # Kills: opponent-g swap (MU5), (lag+1) inflation drop (MU4) --
+        # heterogeneous init deviations make own-g vs opponent-g diverge.
+        import numpy as np
+
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 1.0]],
+            3,
+            init=(
+                np.array([2200.0, 2300.0, 2100.0]),
+                np.array([300.0, 80.0, 150.0]),
+            ),
+        )
+        assert res.ratings[0] == pytest.approx(2395.927345489556, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(233.84458992614066, rel=1e-12)
+        assert res.ratings[1] == pytest.approx(2281.863290035741, rel=1e-12)
+        assert res.deviations[1] == pytest.approx(80.14766179107052, rel=1e-12)
+        # Non-participant keeps init state exactly (identity step-4 path).
+        assert res.ratings[2] == 2100.0
+        assert res.deviations[2] == 150.0
+        assert list(res.games) == [1, 1, 0]
+        assert list(res.wins) == [1, 0, 0]
+        assert list(res.losses) == [0, 1, 0]
+        assert list(res.lag) == [0, 0, 0]
+
+    def test_full_knobs_s3(self):
+        # Kills: bval drop (MU1), lambda sign flip (MU2), per-game hval
+        # scaling drop (MU3) -- all knobs nonzero and gamma asymmetric.
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 0.5], [2, 1, 2, 1.0]],
+            3,
+            gamma=[30.0, 0.0],
+            cval=8.0,
+            hval=15.0,
+            bval=5.0,
+            lambda_=5.0,
+        )
+        assert res.ratings[0] == pytest.approx(2205.081933917611, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(254.8041343216954, rel=1e-12)
+        assert res.ratings[1] == pytest.approx(2332.590625814148, rel=1e-12)
+        assert res.deviations[1] == pytest.approx(225.48194679176544, rel=1e-12)
+        assert res.ratings[2] == pytest.approx(2082.6278256782653, rel=1e-12)
+        assert res.deviations[2] == pytest.approx(249.45302895967546, rel=1e-12)
+        assert list(res.lag) == [1, 0, 0]
+        assert list(res.draws) == [1, 1, 0]
+
+    def test_prior_run_continuation_s4(self):
+        # init_games/init_lag path + rdmax clamp: (lag+1)*cval^2 would blow
+        # past rdmax=350 without the clamp; games accumulate 5+1.
+        from fast_mlsirm import stephenson_rating
+
+        res = stephenson_rating(
+            [[1, 0, 1, 1.0]],
+            2,
+            init=(2200.0, 340.0),
+            cval=60.0,
+            init_games=[5, 5],
+            init_lag=[4, 4],
+        )
+        assert res.ratings[0] == pytest.approx(2362.303032952076, rel=1e-12)
+        assert res.deviations[0] == pytest.approx(290.31193063897507, rel=1e-12)
+        assert list(res.games) == [6, 6]
+        # Current-run tallies only (init run's W/D/L are not represented).
+        assert list(res.wins) == [1, 0]
+
+    def test_lambda_zero_contrast(self):
+        # Same schedule as oracle S2: lambda=0 must reproduce the S2-lam0
+        # pins and differ from S2 defaults only on participants of the
+        # final period's drift (p1 identical).
+        from fast_mlsirm import stephenson_rating
+
+        sched = [[1, 0, 1, 1.0], [1, 1, 2, 0.5], [2, 0, 2, 0.0]]
+        base = stephenson_rating(sched, 3)
+        lam0 = stephenson_rating(sched, 3, lambda_=0.0)
+        assert base.ratings[0] == pytest.approx(2187.33261103678, rel=1e-12)
+        assert lam0.ratings[0] == pytest.approx(2190.0339057939964, rel=1e-12)
+        assert lam0.ratings[2] == pytest.approx(2345.0308320668346, rel=1e-12)
+        assert lam0.ratings[1] == base.ratings[1]
+        assert lam0.deviations[0] == base.deviations[0]
+
+    def test_error_contract(self):
+        import numpy as np
+
+        from fast_mlsirm import stephenson_rating
+
+        good = [[1, 0, 1, 1.0]]
+        with pytest.raises(ValueError):
+            stephenson_rating([], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating(np.array(good, dtype=complex), 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, np.nan]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1.5, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[-1, 0, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2.5)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, None)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 1)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 10001)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 2, 1.0]], 2)  # index out of range
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 0, 1.0]], 2)  # self-play
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, 1.5]], 2)  # score out of [0,1]
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, gamma=[1.0, 2.0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, gamma=np.array([1j]))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(2200.0,))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(np.array([2200.0]), np.array([300.0])))
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init=(2200.0, 400.0), rdmax=350.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_games=[1, 2, 3])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_games=[-1, 0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, init_lag=[0.5, 0.0])
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, cval=np.nan)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, cval=-1.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, rdmax=0.0)
+        with pytest.raises(ValueError):
+            stephenson_rating(good, 2, lambda_=None)
+        with pytest.raises(ValueError):
+            stephenson_rating(np.array([["a", "b", "c", "d"]], dtype=object), 2)
+        # Float player ids at/above 2**53 lose integer fidelity pre-cast.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 2.0**53, 1, 1.0]], 2)
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 2.0**53, 1.0]], 2)
+        # n_players cap rejects BEFORE any length-n allocation.
+        with pytest.raises(ValueError):
+            stephenson_rating([[1, 0, 1, 1.0]], 10**18)

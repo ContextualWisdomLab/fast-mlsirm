@@ -5528,6 +5528,75 @@ fn glicko2_rating(
     Ok(d.into())
 }
 
+/// Stephenson rating for a game schedule, PlayerRatings `steph()` semantics
+/// (see `mlsirm_core::scaling::stephenson_rating`). Returns dict with
+/// ratings, deviations, games, wins, draws, losses, lag.
+#[pyfunction]
+#[pyo3(signature = (periods, white, black, score, gamma, init_rating, init_dev, init_games, init_lag, cval, hval, bval, lambda_, rdmax))]
+#[allow(clippy::too_many_arguments)]
+fn stephenson_rating(
+    py: Python<'_>,
+    periods: PyReadonlyArray1<'_, u64>,
+    white: PyReadonlyArray1<'_, u64>,
+    black: PyReadonlyArray1<'_, u64>,
+    score: PyReadonlyArray1<'_, f64>,
+    gamma: PyReadonlyArray1<'_, f64>,
+    init_rating: PyReadonlyArray1<'_, f64>,
+    init_dev: PyReadonlyArray1<'_, f64>,
+    init_games: PyReadonlyArray1<'_, u64>,
+    init_lag: PyReadonlyArray1<'_, u64>,
+    cval: f64,
+    hval: f64,
+    bval: f64,
+    lambda_: f64,
+    rdmax: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    // usize::try_from (not `as`): a u64 id above usize::MAX must fail
+    // loudly on 32-bit targets instead of truncating into a valid index.
+    let white: Vec<usize> = white
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("stephenson_rating: player index exceeds platform usize")
+        })?;
+    let black: Vec<usize> = black
+        .as_slice()?
+        .iter()
+        .map(|&v| usize::try_from(v))
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            PyValueError::new_err("stephenson_rating: player index exceeds platform usize")
+        })?;
+    let res = mlsirm_core::scaling::stephenson_rating(
+        periods.as_slice()?,
+        &white,
+        &black,
+        score.as_slice()?,
+        gamma.as_slice()?,
+        init_rating.as_slice()?,
+        init_dev.as_slice()?,
+        init_games.as_slice()?,
+        init_lag.as_slice()?,
+        cval,
+        hval,
+        bval,
+        lambda_,
+        rdmax,
+    )
+    .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("ratings", PyArray1::from_slice(py, &res.ratings))?;
+    d.set_item("deviations", PyArray1::from_slice(py, &res.deviations))?;
+    d.set_item("games", PyArray1::from_slice(py, &res.games))?;
+    d.set_item("wins", PyArray1::from_slice(py, &res.wins))?;
+    d.set_item("draws", PyArray1::from_slice(py, &res.draws))?;
+    d.set_item("losses", PyArray1::from_slice(py, &res.losses))?;
+    d.set_item("lag", PyArray1::from_slice(py, &res.lag))?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7878,6 +7947,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(elo_rating, m)?)?;
     m.add_function(wrap_pyfunction!(glicko_rating, m)?)?;
     m.add_function(wrap_pyfunction!(glicko2_rating, m)?)?;
+    m.add_function(wrap_pyfunction!(stephenson_rating, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

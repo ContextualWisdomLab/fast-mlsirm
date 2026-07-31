@@ -3346,3 +3346,888 @@ fn g2_mc_500() {
         assert_eq!(total_games, 2 * m as u64);
     }
 }
+
+// ---------------------------------------------------------------------------
+// stephenson_rating tests. Oracle: faithful Python port of the READ
+// PlayerRatings steph() R driver + stephenson_c C kernel, EXECUTED
+// (session files/stephenson_oracle.py); anchors below are its pins.
+// Every assert reads crate-returned StephensonResult fields.
+// ---------------------------------------------------------------------------
+
+fn st_close(a: f64, b: f64, tol: f64) -> bool {
+    (a - b).abs() <= tol * b.abs().max(1.0)
+}
+
+/// S1: single game, heterogeneous init deviations (gdevs[w] != gdevs[b],
+/// so this kills the wrong-side-g mutant MU5). Asserts read
+/// ratings/deviations/games/wins/losses from the crate result.
+/// Killing mutants: MU4 (lag+1 -> lag: fresh players get NO inflation,
+/// every pin moves), MU5 (own g instead of opponent's).
+#[test]
+fn st_anchor_s1() {
+    let r = stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0, 2300.0, 2100.0],
+        &[300.0, 80.0, 150.0],
+        &[0, 0, 0],
+        &[0, 0, 0],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(r.ratings[0], 2395.927345489556, 1e-9));
+    assert!(st_close(r.deviations[0], 233.84458992614066, 1e-9));
+    assert!(st_close(r.ratings[1], 2281.863290035741, 1e-9));
+    assert!(st_close(r.deviations[1], 80.14766179107052, 1e-9));
+    // untouched non-participant: exact state passthrough
+    assert_eq!(r.ratings[2], 2100.0);
+    assert_eq!(r.deviations[2], 150.0);
+    assert_eq!(r.games, vec![1, 1, 0]);
+    assert_eq!(r.wins, vec![1, 0, 0]);
+    assert_eq!(r.losses, vec![0, 1, 0]);
+    assert_eq!(r.draws, vec![0, 0, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0]);
+}
+
+/// S2: two periods with a draw and an idle player (p1 idle in period 2).
+/// Killing mutants: MU3 (drop per-game hval^2), lag bookkeeping mutants.
+#[test]
+fn st_two_period_s2() {
+    let r = stephenson_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(r.ratings[0], 2187.33261103678, 1e-9));
+    assert!(st_close(r.deviations[0], 223.83153574055694, 1e-9));
+    assert!(st_close(r.ratings[1], 2094.536265834189, 1e-9));
+    assert!(st_close(r.deviations[1], 224.9604507965822, 1e-9));
+    assert!(st_close(r.ratings[2], 2347.732126824051, 1e-9));
+    assert_eq!(r.games, vec![2, 2, 2]);
+    assert_eq!(r.wins, vec![1, 0, 1]);
+    assert_eq!(r.draws, vec![0, 1, 1]);
+    assert_eq!(r.losses, vec![1, 1, 0]);
+    assert_eq!(r.lag, vec![0, 1, 0]);
+}
+
+/// Lambda drift is participant-only and separable: with lambda = 0 the S2
+/// fixture's p0/p2 move but p1 (idle in period 2) is IDENTICAL across the
+/// two crate calls. Killing mutants: MU2 (lambda sign flip: p0 pin moves
+/// by 2 * 2.701 the other way), lambda-applied-to-all mutants.
+#[test]
+fn st_lambda_zero() {
+    let base = stephenson_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    let nolam = stephenson_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        10.0,
+        10.0,
+        0.0,
+        0.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(nolam.ratings[0], 2190.0339057939964, 1e-9));
+    assert!(st_close(nolam.ratings[2], 2345.0308320668346, 1e-9));
+    // p1's period-2 state is untouched by lambda (participant-only drift):
+    // both crate calls must return bit-identical p1 ratings.
+    assert_eq!(base.ratings[1], nolam.ratings[1]);
+    // direction: lambda = 2 pulls p0 DOWN toward its lower-rated pool
+    assert!(base.ratings[0] < nolam.ratings[0]);
+}
+
+/// S3: every knob nonzero at once (gamma = [30, 0], cval = 8, hval = 15,
+/// bval = 5, lambda = 5). Killing mutants: MU1 (drop bval), MU3 (hval),
+/// gamma-side mutants.
+#[test]
+fn st_full_knobs_s3() {
+    let r = stephenson_rating(
+        &[1, 2],
+        &[0, 1],
+        &[1, 2],
+        &[0.5, 1.0],
+        &[30.0, 0.0],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        8.0,
+        15.0,
+        5.0,
+        5.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(r.ratings[0], 2205.081933917611, 1e-9));
+    assert!(st_close(r.deviations[0], 254.8041343216954, 1e-9));
+    assert!(st_close(r.ratings[1], 2332.590625814148, 1e-9));
+    assert!(st_close(r.deviations[1], 225.48194679176544, 1e-9));
+    assert!(st_close(r.ratings[2], 2082.6278256782653, 1e-9));
+    assert!(st_close(r.deviations[2], 249.45302895967546, 1e-9));
+    assert_eq!(r.lag, vec![1, 0, 0]);
+    assert_eq!(r.games, vec![1, 2, 1]);
+    assert_eq!(r.draws, vec![1, 1, 0]);
+    assert_eq!(r.wins, vec![0, 1, 0]);
+    assert_eq!(r.losses, vec![0, 0, 1]);
+}
+
+/// S4: rdmax clamp binds (init dev 340, cval = 60, continued lag 4 =>
+/// unclamped variance 340^2 + 5 * 3600 > 350^2) and init_games/init_lag
+/// continuation feeds both the inflation multiplier and the games output.
+#[test]
+fn st_rdmax_clamp_s4() {
+    let r = stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0; 2],
+        &[340.0; 2],
+        &[5, 5],
+        &[4, 4],
+        60.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(r.ratings[0], 2362.303032952076, 1e-9));
+    assert!(st_close(r.deviations[0], 290.31193063897507, 1e-9));
+    assert!(st_close(r.ratings[1], 2037.6969670479239, 1e-9));
+    assert_eq!(r.games, vec![6, 6]);
+    // W/D/L are current-run tallies (init W/D/L is out of scope)
+    assert_eq!(r.wins, vec![1, 0]);
+    assert_eq!(r.losses, vec![0, 1]);
+    assert_eq!(r.lag, vec![0, 0]);
+}
+
+/// S5: bval = 10 adds the bonus to BOTH actual scores; the loser's rating
+/// RISES relative to the bval = 0 run (not a mirror). Killing mutant:
+/// MU1 (asc = s, bonus dropped, reverts to the bval = 0 pins).
+#[test]
+fn st_bonus_s5() {
+    let bonus = stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0; 2],
+        &[300.0; 2],
+        &[0; 2],
+        &[0; 2],
+        10.0,
+        10.0,
+        10.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    let plain = stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0; 2],
+        &[300.0; 2],
+        &[0; 2],
+        &[0; 2],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(st_close(bonus.ratings[0], 2362.077685432997, 1e-9));
+    assert!(st_close(bonus.ratings[1], 2091.9482097113355, 1e-9));
+    assert!(st_close(plain.ratings[0], 2335.064737860831, 1e-9));
+    assert!(st_close(plain.ratings[1], 2064.935262139169, 1e-9));
+    // bonus lifts BOTH players (crate outputs compared across calls)
+    assert!(bonus.ratings[0] > plain.ratings[0]);
+    assert!(bonus.ratings[1] > plain.ratings[1]);
+}
+
+/// Period grouping sorts unique labels ascending regardless of row order:
+/// the S2 fixture fed in reversed row order returns identical output.
+#[test]
+fn st_unsorted() {
+    let sorted = stephenson_rating(
+        &[1, 1, 2],
+        &[0, 1, 0],
+        &[1, 2, 2],
+        &[1.0, 0.5, 0.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    let rev = stephenson_rating(
+        &[2, 1, 1],
+        &[0, 1, 0],
+        &[2, 2, 1],
+        &[0.0, 0.5, 1.0],
+        &[0.0; 3],
+        &[2200.0; 3],
+        &[300.0; 3],
+        &[0; 3],
+        &[0; 3],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0,
+    )
+    .unwrap();
+    for p in 0..3 {
+        assert_eq!(sorted.ratings[p], rev.ratings[p]);
+        assert_eq!(sorted.deviations[p], rev.deviations[p]);
+        assert_eq!(sorted.lag[p], rev.lag[p]);
+    }
+}
+
+/// Every rejection path returns Err; boundary accepts are pinned too.
+#[test]
+fn st_error_contract() {
+    // u64 overflow guard: counters must reject rather than wrap/panic.
+    assert!(stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0, 2200.0],
+        &[300.0, 300.0],
+        &[u64::MAX, 0],
+        &[0, 0],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(stephenson_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2200.0, 2200.0],
+        &[300.0, 300.0],
+        &[0, 0],
+        &[0, u64::MAX],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+
+    #[allow(clippy::too_many_arguments)]
+    fn call(
+        p: &[u64],
+        w: &[usize],
+        b: &[usize],
+        s: &[f64],
+        gm: &[f64],
+        ir: &[f64],
+        id: &[f64],
+        ig: &[u64],
+        il: &[u64],
+        cval: f64,
+        hval: f64,
+        bval: f64,
+        lambda: f64,
+        rdmax: f64,
+    ) -> Result<StephensonResult, String> {
+        stephenson_rating(
+            p, w, b, s, gm, ir, id, ig, il, cval, hval, bval, lambda, rdmax,
+        )
+    }
+    let ok_p: Vec<u64> = vec![1];
+    let ok_w: Vec<usize> = vec![0];
+    let ok_b: Vec<usize> = vec![1];
+    let ok_s = vec![1.0];
+    let ok_g = vec![0.0];
+    let r2 = vec![2200.0, 2200.0];
+    let d2 = vec![300.0, 300.0];
+    let z2: Vec<u64> = vec![0, 0];
+    // empty games
+    assert!(call(
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // length mismatches
+    assert!(call(
+        &ok_p,
+        &[0, 1],
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[1.0, 0.0],
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &[0.0, 0.0],
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // n < 2 / n > 10000
+    assert!(call(
+        &ok_p,
+        &[0],
+        &[0],
+        &ok_s,
+        &ok_g,
+        &[2200.0],
+        &[300.0],
+        &[0],
+        &[0],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    let big = vec![2200.0; 10_001];
+    let bigd = vec![300.0; 10_001];
+    let bigz = vec![0u64; 10_001];
+    assert!(call(
+        &ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &big, &bigd, &bigz, &bigz, 10.0, 10.0, 0.0, 2.0, 350.0
+    )
+    .is_err());
+    // init length mismatches: dev, games, lag each individually
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[300.0],
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &[0],
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &[0],
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // player index out of range / self-play
+    assert!(call(
+        &ok_p,
+        &[2],
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &[1],
+        &[1],
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // score / gamma
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[1.5],
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[-0.5],
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &[f64::NAN],
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &[f64::INFINITY],
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // init values
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &[f64::NAN, 2200.0],
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[0.0, 300.0],
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[400.0, 300.0],
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    // knobs
+    assert!(call(
+        &ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &z2, &z2, -1.0, 10.0, 0.0, 2.0, 350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        f64::NAN,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &z2, &z2, 10.0, -1.0, 0.0, 2.0, 350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        f64::INFINITY,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        f64::NAN,
+        2.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        f64::NAN,
+        350.0
+    )
+    .is_err());
+    assert!(
+        call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &z2, &z2, 10.0, 10.0, 0.0, 2.0, 0.0)
+            .is_err()
+    );
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &d2,
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        f64::NAN
+    )
+    .is_err());
+    // negative bval / lambda are VALID (R does not restrict them);
+    // cval = 0 and hval = 0 are VALID.
+    assert!(call(
+        &ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &z2, &z2, 10.0, 10.0, -5.0, -2.0, 350.0
+    )
+    .is_ok());
+    assert!(
+        call(&ok_p, &ok_w, &ok_b, &ok_s, &ok_g, &r2, &d2, &z2, &z2, 0.0, 0.0, 0.0, 2.0, 350.0)
+            .is_ok()
+    );
+    // init_dev exactly AT rdmax is VALID (R rejects only strictly greater)
+    assert!(call(
+        &ok_p,
+        &ok_w,
+        &ok_b,
+        &ok_s,
+        &ok_g,
+        &r2,
+        &[350.0, 300.0],
+        &z2,
+        &z2,
+        10.0,
+        10.0,
+        0.0,
+        2.0,
+        350.0
+    )
+    .is_ok());
+}
+
+/// 500-rep Monte Carlo: random schedules with scores in {0, 0.5, 1} must
+/// satisfy structural invariants read from crate outputs: finiteness,
+/// deviations in (0, rdmax], per-player W + D + L == games (init_games
+/// == 0 here; W/D/L are current-run tallies and every score is tallied),
+/// lag == 0 for final-period participants, and reversed row order gives
+/// identical output.
+#[test]
+#[ignore = "500-rep Monte Carlo; run explicitly"]
+fn st_mc_500() {
+    let mut rng = Lcg(20260131);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 6.0) as usize;
+        let g = 2 + (rng.next_f64() * 18.0) as usize;
+        let mut periods = Vec::with_capacity(g);
+        let mut white = Vec::with_capacity(g);
+        let mut black = Vec::with_capacity(g);
+        let mut score = Vec::with_capacity(g);
+        let mut gamma = Vec::with_capacity(g);
+        for _ in 0..g {
+            periods.push(1 + (rng.next_f64() * 4.0) as u64);
+            let w = (rng.next_f64() * n as f64) as usize % n;
+            let mut b = (rng.next_f64() * n as f64) as usize % n;
+            if b == w {
+                b = (b + 1) % n;
+            }
+            white.push(w);
+            black.push(b);
+            score.push([0.0, 0.5, 1.0][(rng.next_f64() * 3.0) as usize % 3]);
+            gamma.push((rng.next_f64() - 0.5) * 60.0);
+        }
+        let ir = vec![2200.0; n];
+        let id = vec![300.0; n];
+        let zz = vec![0u64; n];
+        let cval = rng.next_f64() * 20.0;
+        let hval = rng.next_f64() * 20.0;
+        let bval = (rng.next_f64() - 0.5) * 10.0;
+        let lambda = (rng.next_f64() - 0.5) * 8.0;
+        let r = stephenson_rating(
+            &periods, &white, &black, &score, &gamma, &ir, &id, &zz, &zz, cval, hval, bval, lambda,
+            350.0,
+        )
+        .unwrap_or_else(|e| panic!("rep {}: {}", rep, e));
+        let last = *periods.iter().max().unwrap();
+        for p in 0..n {
+            assert!(r.ratings[p].is_finite(), "rep {}", rep);
+            assert!(
+                r.deviations[p] > 0.0 && r.deviations[p] <= 350.0 + 1e-9,
+                "rep {}: dev {}",
+                rep,
+                r.deviations[p]
+            );
+            assert_eq!(
+                r.wins[p] + r.draws[p] + r.losses[p],
+                r.games[p],
+                "rep {}: tally mismatch",
+                rep
+            );
+            let in_last =
+                (0..periods.len()).any(|k| periods[k] == last && (white[k] == p || black[k] == p));
+            if in_last {
+                assert_eq!(r.lag[p], 0, "rep {}: participant lag", rep);
+            }
+        }
+        // order independence: periods permuted (descending blocks) with
+        // within-period row order PRESERVED (float accumulation order
+        // inside a period is part of the contract), identical output
+        let mut uniq: Vec<u64> = periods.clone();
+        uniq.sort_unstable();
+        uniq.dedup();
+        let mut rp = Vec::with_capacity(g);
+        let mut rw = Vec::with_capacity(g);
+        let mut rb = Vec::with_capacity(g);
+        let mut rs = Vec::with_capacity(g);
+        let mut rg = Vec::with_capacity(g);
+        for &m in uniq.iter().rev() {
+            for k in 0..g {
+                if periods[k] == m {
+                    rp.push(periods[k]);
+                    rw.push(white[k]);
+                    rb.push(black[k]);
+                    rs.push(score[k]);
+                    rg.push(gamma[k]);
+                }
+            }
+        }
+        let r2 = stephenson_rating(
+            &rp, &rw, &rb, &rs, &rg, &ir, &id, &zz, &zz, cval, hval, bval, lambda, 350.0,
+        )
+        .unwrap();
+        for p in 0..n {
+            assert_eq!(r.ratings[p], r2.ratings[p], "rep {}: order dep", rep);
+        }
+    }
+}

@@ -1040,3 +1040,226 @@ def glicko2_rating(
         losses=np.asarray(res["losses"]),
         lag=np.asarray(res["lag"]),
     )
+
+
+@dataclass
+class StephensonResult:
+    """Stephenson ratings, deviations, and bookkeeping (the CRAN
+    PlayerRatings package's ``steph()``; no journal paper exists for this
+    system, so the R driver and C kernel of PlayerRatings 1.1.0 are the
+    normative sources -- READ, lines cited in the Rust core). Extends
+    Glicko with a per-game neighborhood term ``hval``, a bonus ``bval``
+    added to each played game's score, and a lambda drift toward
+    opponents' ratings. Wins, draws, and losses count only scores exactly
+    1, 0.5, and 0 in the CURRENT run; ``lag`` is the number of rating
+    periods since the player's last appearance."""
+
+    ratings: "np.ndarray"
+    deviations: "np.ndarray"
+    games: "np.ndarray"
+    wins: "np.ndarray"
+    draws: "np.ndarray"
+    losses: "np.ndarray"
+    lag: "np.ndarray"
+
+
+def stephenson_rating(
+    games,
+    n_players,
+    init=(2200.0, 300.0),
+    gamma=None,
+    init_games=None,
+    init_lag=None,
+    cval=10.0,
+    hval=10.0,
+    bval=0.0,
+    lambda_=2.0,
+    rdmax=350.0,
+):
+    """Stephenson ratings from a (g, 4) game schedule.
+
+    Each row of ``games`` is ``[period, white, black, score]`` exactly as in
+    :func:`elo_rating`. ``init`` is either a ``(rating, deviation)`` scalar
+    pair broadcast to all players or a pair of length-``n_players`` arrays;
+    ``init_games``/``init_lag`` optionally continue a prior run (length-
+    ``n_players`` nonnegative integer arrays, default all-zero). ``cval`` is
+    the per-period deviation inflation, ``hval`` the per-game neighborhood
+    inflation, ``bval`` the per-game bonus (added to each played game's
+    score as ``bval/100``), ``lambda_`` the drift toward opponents' ratings
+    (``lambda_=0`` disables drift), and ``rdmax`` the deviation ceiling.
+    Defaults ``init=(2200, 300), cval=10, hval=10, bval=0, lambda_=2,
+    rdmax=350`` are the PlayerRatings defaults. Results cover ALL players
+    in ``0..n_players``: never-playing players keep their init state with
+    zero current-run tallies. Raises ValueError on invalid input.
+    """
+    import numpy as np
+
+    from .fitstats import _core_module
+
+    if np.iscomplexobj(np.asarray(games)):
+        raise ValueError("stephenson_rating: games must be real, not complex")
+    raw = np.asarray(games)
+    try:
+        arr = np.asarray(games, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"stephenson_rating: games is not numeric: {exc}") from None
+    if arr.ndim != 2 or arr.shape[1] != 4:
+        raise ValueError(
+            f"stephenson_rating: games must be (g, 4) [period, white, black, score], got {arr.shape}"
+        )
+    if arr.shape[0] == 0:
+        raise ValueError("stephenson_rating: at least one game is required")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("stephenson_rating: games contains non-finite values")
+    periods, white, black, score = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+    for name, col in (("period", periods), ("white", white), ("black", black)):
+        if np.any(col != np.floor(col)):
+            raise ValueError(f"stephenson_rating: {name} column must be integral")
+    if np.any(periods < 0):
+        raise ValueError("stephenson_rating: period labels must be nonnegative")
+    # Period labels are u64 in the core; a float column loses integer
+    # fidelity above the dtype's exact-integer bound (distinct labels would
+    # silently merge into one rating period). Same contract as elo_rating.
+    if raw.ndim == 2 and raw.dtype.kind in "iu":
+        if raw.dtype.kind == "i" and np.any(raw[:, 0] < 0):
+            raise ValueError("stephenson_rating: period labels must be nonnegative")
+        periods_u64 = raw[:, 0].astype(np.uint64)
+        white_u64 = raw[:, 1].astype(np.uint64)
+        black_u64 = raw[:, 2].astype(np.uint64)
+    else:
+        # np.finfo(...).nmant excludes the implicit leading bit, so the
+        # exact-integer bound is nmant + 1 (float64 2**53, float32 2**24).
+        if raw.dtype.kind == "f":
+            fidelity = 2.0 ** (np.finfo(raw.dtype).nmant + 1)
+        else:
+            fidelity = 2.0**53
+        for name, col in (("period", periods), ("white", white), ("black", black)):
+            if np.any(col >= fidelity):
+                raise ValueError(
+                    f"stephenson_rating: {name} labels at or above {int(fidelity)} are not "
+                    f"reliably representable in {raw.dtype if raw.dtype.kind == 'f' else 'float64'}; "
+                    "pass games as an integer array"
+                )
+        periods_u64 = periods.astype(np.uint64)
+        white_u64 = white.astype(np.uint64)
+        black_u64 = black.astype(np.uint64)
+    if np.any(white < 0) or np.any(black < 0):
+        raise ValueError("stephenson_rating: player indices must be nonnegative")
+    try:
+        n = int(n_players)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            f"stephenson_rating: n_players is not an integer: {exc}"
+        ) from None
+    if n != n_players:
+        raise ValueError("stephenson_rating: n_players must be an integer")
+    # Enforce the core's cap BEFORE any length-n allocation below.
+    if n < 2:
+        raise ValueError("stephenson_rating: at least two players are required")
+    if n > 10_000:
+        raise ValueError(
+            f"stephenson_rating: n = {n} exceeds the supported cap of 10000"
+        )
+    g = arr.shape[0]
+    if gamma is None:
+        gamma_arr = np.zeros(g)
+    else:
+        if np.iscomplexobj(np.asarray(gamma)):
+            raise ValueError("stephenson_rating: gamma must be real, not complex")
+        try:
+            gamma_arr = np.asarray(gamma, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"stephenson_rating: gamma is not numeric: {exc}"
+            ) from None
+        if gamma_arr.ndim == 0:
+            gamma_arr = np.full(g, float(gamma_arr))
+        elif gamma_arr.shape != (g,):
+            raise ValueError(
+                f"stephenson_rating: gamma must be a scalar or length-{g} array, got {gamma_arr.shape}"
+            )
+    try:
+        init_r_in, init_d_in = init
+    except (TypeError, ValueError):
+        raise ValueError(
+            "stephenson_rating: init must be a (rating, deviation) pair"
+        ) from None
+    if np.iscomplexobj(np.asarray(init_r_in)) or np.iscomplexobj(np.asarray(init_d_in)):
+        raise ValueError("stephenson_rating: init must be real, not complex")
+    try:
+        init_r = np.asarray(init_r_in, dtype=float)
+        init_d = np.asarray(init_d_in, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"stephenson_rating: init is not numeric: {exc}") from None
+    if init_r.ndim == 0 and init_d.ndim == 0:
+        init_r = np.full(n, float(init_r))
+        init_d = np.full(n, float(init_d))
+    elif init_r.shape != (n,) or init_d.shape != (n,):
+        raise ValueError(
+            "stephenson_rating: init must be a scalar pair or a pair of "
+            f"length-{n} arrays, got shapes {init_r.shape} and {init_d.shape}"
+        )
+
+    def _count_vec(name, val):
+        if val is None:
+            return np.zeros(n, dtype=np.uint64)
+        if np.iscomplexobj(np.asarray(val)):
+            raise ValueError(f"stephenson_rating: {name} must be real, not complex")
+        try:
+            v = np.asarray(val, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"stephenson_rating: {name} is not numeric: {exc}"
+            ) from None
+        if v.shape != (n,):
+            raise ValueError(
+                f"stephenson_rating: {name} must be a length-{n} array, got {v.shape}"
+            )
+        if not np.all(np.isfinite(v)) or np.any(v < 0) or np.any(v != np.floor(v)):
+            raise ValueError(
+                f"stephenson_rating: {name} must be nonnegative integers"
+            )
+        if np.any(v >= 2.0**53):
+            raise ValueError(
+                f"stephenson_rating: {name} values at or above 2**53 are not "
+                "reliably representable; pass smaller counts"
+            )
+        return v.astype(np.uint64)
+
+    init_g = _count_vec("init_games", init_games)
+    init_l = _count_vec("init_lag", init_lag)
+    try:
+        cval_f = float(cval)
+        hval_f = float(hval)
+        bval_f = float(bval)
+        lambda_f = float(lambda_)
+        rdmax_f = float(rdmax)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            f"stephenson_rating: cval/hval/bval/lambda_/rdmax is not numeric: {exc}"
+        ) from None
+    res = _core_module().stephenson_rating(
+        np.ascontiguousarray(periods_u64),
+        np.ascontiguousarray(white_u64),
+        np.ascontiguousarray(black_u64),
+        np.ascontiguousarray(score),
+        np.ascontiguousarray(gamma_arr),
+        np.ascontiguousarray(init_r),
+        np.ascontiguousarray(init_d),
+        np.ascontiguousarray(init_g),
+        np.ascontiguousarray(init_l),
+        cval_f,
+        hval_f,
+        bval_f,
+        lambda_f,
+        rdmax_f,
+    )
+    return StephensonResult(
+        ratings=np.asarray(res["ratings"]),
+        deviations=np.asarray(res["deviations"]),
+        games=np.asarray(res["games"]),
+        wins=np.asarray(res["wins"]),
+        draws=np.asarray(res["draws"]),
+        losses=np.asarray(res["losses"]),
+        lag=np.asarray(res["lag"]),
+    )
