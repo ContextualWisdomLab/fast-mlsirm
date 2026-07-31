@@ -20,8 +20,31 @@ from .fitstats import (adjusted_chi2_pairs as adjusted_chi2_pairs,
 from .inference import oakes_standard_errors as oakes_standard_errors, observed_information as observed_information, second_order_test as second_order_test, standard_errors_from_vcov as standard_errors_from_vcov, vcov_from_hessian as vcov_from_hessian
 from .linking import link_fixed_item_parameters as link_fixed_item_parameters
 from .linking import irt_link as irt_link, IrtLinkResult as IrtLinkResult
-from .equating import equate_observed_scores as equate_observed_scores, equate_neat as equate_neat, EquateResult as EquateResult, equate_observed_scores_kernel as equate_observed_scores_kernel, loglinear_smooth as loglinear_smooth, equate_neat_linear as equate_neat_linear, equating_standard_errors as equating_standard_errors
+from .equating import equate_observed_scores as equate_observed_scores, equate_neat as equate_neat, EquateResult as EquateResult, equate_observed_scores_kernel as equate_observed_scores_kernel, loglinear_smooth as loglinear_smooth, equate_neat_linear as equate_neat_linear, equating_standard_errors as equating_standard_errors, circle_arc_equate as circle_arc_equate, circle_arc_middle_anchor as circle_arc_middle_anchor, CircleArcResult as CircleArcResult, nominal_weights_mean_equate as nominal_weights_mean_equate, composite_linking as composite_linking
 from .rt import fit_response_times as fit_response_times, RtFit as RtFit, fit_speed_accuracy as fit_speed_accuracy, rt_person_fit as rt_person_fit
+from .scaling import thurstone_case_v as thurstone_case_v, ThurstoneResult as ThurstoneResult
+from .scaling import bradley_terry_mm as bradley_terry_mm, BradleyTerryResult as BradleyTerryResult
+from .scaling import bratt_mm as bratt_mm, BrattResult as BrattResult
+from .scaling import lsr_pairwise as lsr_pairwise, ilsr_pairwise as ilsr_pairwise, LsrResult as LsrResult
+from .scaling import rank_centrality as rank_centrality
+from .scaling import lsr_rankings as lsr_rankings, ilsr_rankings as ilsr_rankings
+from .scaling import lsr_top1 as lsr_top1, ilsr_top1 as ilsr_top1
+from .scaling import circular_triads as circular_triads, CircularTriadsResult as CircularTriadsResult
+from .scaling import kendall_u as kendall_u, KendallUResult as KendallUResult
+from .scaling import elo_rating as elo_rating, EloResult as EloResult
+from .scaling import glicko_rating as glicko_rating, GlickoResult as GlickoResult
+from .scaling import glicko2_rating as glicko2_rating, Glicko2Result as Glicko2Result
+from .scaling import (
+    stephenson_rating as stephenson_rating,
+    StephensonResult as StephensonResult,
+    elom_rating as elom_rating,
+    ElomResult as ElomResult,
+    metrics_rating as metrics_rating,
+    fide_rating as fide_rating,
+    FideResult as FideResult,
+    predict_rating as predict_rating,
+    predict_rating_multi as predict_rating_multi,
+)
 from .cdm import fit_cdm as fit_cdm, CdmFit as CdmFit, fit_gdina as fit_gdina, GdinaFit as GdinaFit, validate_q_matrix as validate_q_matrix, QMatrixValidation as QMatrixValidation, gdina_wald_selection as gdina_wald_selection, WaldModelSelection as WaldModelSelection, fit_ho_cdm as fit_ho_cdm, HoCdmFit as HoCdmFit, fit_ho_gdina as fit_ho_gdina, HoGdinaFit as HoGdinaFit, fit_seq_gdina as fit_seq_gdina, SeqGdinaFit as SeqGdinaFit, fit_seq_gdina_qr as fit_seq_gdina_qr, SeqGdinaQrFit as SeqGdinaQrFit
 from .mixture import fit_mixture as fit_mixture, MixtureFit as MixtureFit
 from .crm import fit_crm as fit_crm, CrmFit as CrmFit
@@ -41,11 +64,50 @@ from .subscores import (
 from .detect import (
     detect_analysis as detect_analysis,
     DetectResult as DetectResult,
+    dimtest as dimtest,
+    DimtestResult as DimtestResult,
+)
+from .security import (
+    wollack_omega as wollack_omega,
+    WollackOmegaResult as WollackOmegaResult,
+    k_index as k_index,
+    KIndexResult as KIndexResult,
+    gbt as gbt,
+    GbtResult as GbtResult,
+    k_variants as k_variants,
+    KVariantsResult as KVariantsResult,
+)
+from .standard_setting import (
+    hofstee as hofstee,
+    HofsteeResult as HofsteeResult,
+)
+from .personfit_np import (
+    person_fit_np as person_fit_np,
+    PersonFitNpResult as PersonFitNpResult,
+)
+from .deltaplot import (
+    delta_plot as delta_plot,
+    DeltaPlotResult as DeltaPlotResult,
+)
+from .ebdif import (
+    eb_mh_dif as eb_mh_dif,
+    EbDifResult as EbDifResult,
 )
 from .classification import (
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
     livingston_lewis as livingston_lewis,
+    hanson_brennan as hanson_brennan,
+    hanson_brennan_from_params as hanson_brennan_from_params,
+    HansonBrennanResult as HansonBrennanResult,
+    subkoviak_agreement as subkoviak_agreement,
+    SubkoviakResult as SubkoviakResult,
+    livingston_k2 as livingston_k2,
+    livingston_correlation as livingston_correlation,
+    LivingstonResult as LivingstonResult,
+    woodruff_sawyer_sb as woodruff_sawyer_sb,
+    woodruff_sawyer_normal as woodruff_sawyer_normal,
+    WoodruffSawyerResult as WoodruffSawyerResult,
 )
 from .parallel_analysis import (
     parallel_analysis as parallel_analysis,
@@ -61,6 +123,28 @@ from .reliability import (
     AlphaCiResult as AlphaCiResult,
     separation_reliability as separation_reliability,
     SeparationReliabilityResult as SeparationReliabilityResult,
+    icc as icc,
+    IccResult as IccResult,
+    kripp_alpha as kripp_alpha,
+    KrippResult as KrippResult,
+    finn_coefficient as finn_coefficient,
+    FinnResult as FinnResult,
+    maxwell_re as maxwell_re,
+    MaxwellResult as MaxwellResult,
+    robinson_a as robinson_a,
+    RobinsonResult as RobinsonResult,
+    mean_pairwise_cor as mean_pairwise_cor,
+    MeanCorResult as MeanCorResult,
+    mean_pairwise_rho as mean_pairwise_rho,
+    bhapkar_mh as bhapkar_mh,
+    n_cohen_kappa as n_cohen_kappa,
+    rater_bias as rater_bias,
+    stuart_maxwell_mh as stuart_maxwell_mh,
+    MeanRhoResult as MeanRhoResult,
+    BhapkarResult as BhapkarResult,
+    NCohenKappaResult as NCohenKappaResult,
+    RaterBiasResult as RaterBiasResult,
+    StuartMaxwellResult as StuartMaxwellResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -76,8 +160,10 @@ from .factor import (
 from .gtheory import (
     gtheory_pi as gtheory_pi,
     gtheory_pio as gtheory_pio,
+    phi_lambda as phi_lambda,
     GTheoryResult as GTheoryResult,
     GTheoryDStudyRow as GTheoryDStudyRow,
+    PhiLambdaResult as PhiLambdaResult,
 )
 from .mokken import mokken_analysis as mokken_analysis, MokkenResult as MokkenResult
 from .utility import (
@@ -95,13 +181,27 @@ from .exposure import (
     kl_select as kl_select,
     owen_update as owen_update,
     owen_cat as owen_cat,
+    ccat_select as ccat_select,
+    epv_select as epv_select,
+    sprt_classify as sprt_classify,
+    ci_classify as ci_classify,
+    flexilevel_administer as flexilevel_administer,
+    flexilevel_score_distribution as flexilevel_score_distribution,
+    stradaptive_administer as stradaptive_administer,
+    pyramidal_administer as pyramidal_administer,
+    two_stage_route as two_stage_route,
+    two_stage_score as two_stage_score,
 )
 from .rsm import fit_rsm as fit_rsm, RsmFit as RsmFit
 from .mixed import fit_mixed_items as fit_mixed_items, MixedFormatFit as MixedFormatFit, MixedItemParameters as MixedItemParameters
 from .lltm import fit_lltm as fit_lltm, LltmFit as LltmFit
 from .testlet import fit_testlet as fit_testlet, TestletFit as TestletFit
 from .report import render_diagnostics_report as render_diagnostics_report
-from .validation import (ValidationVerdict as ValidationVerdict,
+from .validation import (FleissKappaResult as FleissKappaResult,
+                         LightKappaResult as LightKappaResult,
+                         ValidationVerdict as ValidationVerdict,
+                         fleiss_kappa as fleiss_kappa,
+                         light_kappa as light_kappa,
                          validate_judge as validate_judge)
 from .serving import (bank_information as bank_information,
                       cat_next_item as cat_next_item,
@@ -115,6 +215,9 @@ from .dif import (mantel_haenszel_dif as mantel_haenszel_dif, logistic_dif as lo
                   mantel_haenszel_dif_purified as mantel_haenszel_dif_purified,
                   logistic_dif_purified as logistic_dif_purified,
                   sibtest as sibtest,
+                  mantel_smd_dif as mantel_smd_dif,
+    gmh_dif as gmh_dif,
+                  breslow_day_dif as breslow_day_dif,
                   raju_area as raju_area)
 from .wle import score_wle as score_wle, score_wle_poly as score_wle_poly
 from .rasch_cml import fit_rasch_cml as fit_rasch_cml, andersen_lr_test as andersen_lr_test
@@ -143,6 +246,10 @@ __all__ = [
     "assemble_test_form",
     "dimensionality_diagnostics",
     "ValidationVerdict",
+    "FleissKappaResult",
+    "fleiss_kappa",
+    "LightKappaResult",
+    "light_kappa",
     "benjamini_hochberg",
     "chi2_sf",
     "dif_analysis",
@@ -168,6 +275,44 @@ __all__ = [
     "loglinear_smooth",
     "equate_neat_linear",
     "equating_standard_errors",
+    "circle_arc_equate",
+    "nominal_weights_mean_equate",
+    "composite_linking",
+    "thurstone_case_v",
+    "ThurstoneResult",
+    "bradley_terry_mm",
+    "BradleyTerryResult",
+    "bratt_mm",
+    "BrattResult",
+    "lsr_pairwise",
+    "ilsr_pairwise",
+    "rank_centrality",
+    "lsr_rankings",
+    "ilsr_rankings",
+    "lsr_top1",
+    "ilsr_top1",
+    "LsrResult",
+    "circular_triads",
+    "CircularTriadsResult",
+    "kendall_u",
+    "KendallUResult",
+    "elo_rating",
+    "EloResult",
+    "glicko_rating",
+    "GlickoResult",
+    "glicko2_rating",
+    "Glicko2Result",
+    "stephenson_rating",
+    "StephensonResult",
+    "elom_rating",
+    "ElomResult",
+    "metrics_rating",
+    "fide_rating",
+    "FideResult",
+    "predict_rating",
+    "predict_rating_multi",
+    "circle_arc_middle_anchor",
+    "CircleArcResult",
     "fit_response_times",
     "RtFit",
     "fit_speed_accuracy",
@@ -217,9 +362,22 @@ __all__ = [
     "subscore_analysis",
     "SubscoreResult",
     "detect_analysis",
+    "dimtest",
+    "wollack_omega",
     "rudner_classification",
     "lee_classification",
     "livingston_lewis",
+    "hanson_brennan",
+    "hanson_brennan_from_params",
+    "HansonBrennanResult",
+    "subkoviak_agreement",
+    "SubkoviakResult",
+    "livingston_k2",
+    "livingston_correlation",
+    "LivingstonResult",
+    "woodruff_sawyer_sb",
+    "woodruff_sawyer_normal",
+    "WoodruffSawyerResult",
     "parallel_analysis",
     "guttman_lambdas",
     "GuttmanResult",
@@ -230,8 +388,31 @@ __all__ = [
     "AlphaCiResult",
     "separation_reliability",
     "SeparationReliabilityResult",
+    "icc",
+    "IccResult",
+    "kripp_alpha",
+    "KrippResult",
+    "finn_coefficient",
+    "FinnResult",
+    "maxwell_re",
+    "MaxwellResult",
+    "robinson_a",
+    "RobinsonResult",
+    "mean_pairwise_cor",
+    "MeanCorResult",
+    "mean_pairwise_rho",
+    "bhapkar_mh",
+    "n_cohen_kappa",
+    "rater_bias",
+    "stuart_maxwell_mh",
+    "MeanRhoResult",
+    "BhapkarResult",
+    "NCohenKappaResult",
+    "RaterBiasResult",
+    "StuartMaxwellResult",
     "gtheory_pi",
     "gtheory_pio",
+    "phi_lambda",
     "minres_fa",
     "minres_fa_from_data",
     "glb_fa",
@@ -250,13 +431,40 @@ __all__ = [
     "kl_select",
     "owen_update",
     "owen_cat",
+    "ccat_select",
+    "epv_select",
+    "sprt_classify",
+    "ci_classify",
+    "flexilevel_administer",
+    "flexilevel_score_distribution",
+    "stradaptive_administer",
+    "pyramidal_administer",
+    "two_stage_route",
+    "two_stage_score",
     "AStratifiedResult",
     "omega_total_1f",
     "omega_total_1f_from_data",
     "GTheoryResult",
     "GTheoryDStudyRow",
+    "PhiLambdaResult",
     "ClassificationResult",
     "DetectResult",
+    "DimtestResult",
+    "WollackOmegaResult",
+    "k_index",
+    "KIndexResult",
+    "gbt",
+    "GbtResult",
+    "k_variants",
+    "KVariantsResult",
+    "hofstee",
+    "HofsteeResult",
+    "person_fit_np",
+    "PersonFitNpResult",
+    "delta_plot",
+    "DeltaPlotResult",
+    "eb_mh_dif",
+    "EbDifResult",
     "fit_mixed_items",
     "MixedFormatFit",
     "MixedItemParameters",
@@ -281,6 +489,9 @@ __all__ = [
     "cat_simulate_polytomous",
     "dif_polytomous",
     "mantel_haenszel_dif",
+    "mantel_smd_dif",
+    "gmh_dif",
+    "breslow_day_dif",
     "logistic_dif",
     "mantel_haenszel_dif_purified",
     "logistic_dif_purified",

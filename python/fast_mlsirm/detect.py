@@ -110,7 +110,10 @@ def detect_analysis(
             if np.any(c > I64_MAX):
                 raise ValueError("cluster labels must fit in a 64-bit integer")
         elif np.any(c < I64_MIN) or np.any(c > I64_MAX):
-            raise ValueError("cluster labels must fit in a 64-bit integer")
+            # Unreachable for a NumPy signed-integer array: no signed dtype is
+            # wider than int64, so a value cannot fall outside [I64_MIN, I64_MAX].
+            # Kept as a defensive guard.
+            raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
 
     res = core.detect_analysis(
@@ -126,4 +129,112 @@ def detect_analysis(
         pair_i=np.asarray(res["pair_i"], dtype=np.int64),
         pair_j=np.asarray(res["pair_j"], dtype=np.int64),
         ccov=np.asarray(res["ccov"], dtype=np.float64),
+    )
+
+
+@dataclass
+class DimtestResult:
+    """Confirmatory Stout-style DIMTEST statistic.
+
+    ``t = (t_l - t_b) / sqrt(2)`` with ``t_l`` computed on AT1 and the bias
+    correction ``t_b`` on AT2; ``p_value`` is the one-sided upper-tail normal
+    p-value (reject essential unidimensionality when small).
+    ``retained_pt_scores`` are the raw PT total scores of the retained
+    (size >= 20) examinee groups, ascending."""
+
+    t: float
+    t_l: float
+    t_b: float
+    p_value: float
+    groups_used: int
+    n_discarded: int
+    retained_pt_scores: np.ndarray
+
+
+def dimtest(
+    responses: np.ndarray,
+    at1: np.ndarray,
+    at2: np.ndarray,
+) -> DimtestResult:
+    """Confirmatory Stout-style DIMTEST of essential unidimensionality
+    (compute in Rust; Stout, 1987, as described by Nandakumar & Stout, 1993).
+
+    Splits the items into caller-supplied assessment subtests AT1 and AT2
+    (equal length >= 4, disjoint) and the complementary partitioning subtest
+    PT, groups examinees by raw PT total score (groups smaller than 20 are
+    discarded), and within each retained group compares the observed ML
+    variance of AT total scores with the variance expected under local
+    independence, normalized by Stout's standard-error estimate. The AT1
+    statistic ``T_L`` is bias-corrected by the same computation on the
+    difficulty-matched AT2 subtest: ``T = (T_L - T_B) / sqrt(2)``, referred
+    to the upper tail of the standard normal.
+
+    Formulas were transcribed from Nandakumar and Stout's 1992 ERIC
+    technical-report version (ED351383) of the 1993 paper, which describes
+    Stout (1987, Sec. 4). NOT read: Stout (1987) original article, Stout et
+    al. (2001), Froelich and Habing (2008), and DIM-Pack source code; this is
+    the ORIGINAL second-AT bias correction, not DIMTEST 2 (no ATFIND, no
+    bootstrap bias correction, no polytomous items, no missing data).
+
+    In LLM-as-a-Judge item-quality management this tests whether a suspect
+    subset of judge items (AT1) measures a second dimension distinct from
+    the remaining items, with an explicit significance level.
+
+    References (APA 7th ed.):
+        Kieftenbeld, V., & Nandakumar, R. (2015). Alternative hypothesis
+            testing procedures for DIMTEST. *Applied Psychological
+            Measurement, 39*(6), 480-493. (read via PMC5978610)
+        Nandakumar, R., & Stout, W. (1993). Refinements of Stout's procedure
+            for assessing latent trait unidimensionality. *Journal of
+            Educational Statistics, 18*(1), 41-68.
+            https://doi.org/10.2307/1165182 (read as ERIC report ED351383)
+        Stout, W. (1987). A nonparametric approach for assessing latent
+            trait unidimensionality. *Psychometrika, 52*(4), 589-617. (NOT
+            read; as described by Nandakumar & Stout, 1993)
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_dimtest"):
+        raise RuntimeError("dimtest requires the compiled Rust core")
+
+    resp = np.asarray(responses)
+    if np.iscomplexobj(resp):
+        raise ValueError("responses must be real-valued")
+    if resp.dtype.kind not in ("b", "i", "u", "f"):
+        raise ValueError("responses must be a numeric array")
+    y = resp.astype(np.float64, copy=False)
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons < 1 or n_items < 1:
+        raise ValueError("responses must be non-empty")
+    if not np.all(np.isin(y, (0.0, 1.0))):
+        raise ValueError("responses must be exactly 0 or 1 (no missing values)")
+
+    def _index_set(a: np.ndarray, name: str) -> list[int]:
+        """Validate and return an item-index selection as a list of ints."""
+        arr = np.asarray(a).reshape(-1)
+        if np.iscomplexobj(arr):
+            raise ValueError(f"{name} indices must be real integers")
+        if arr.dtype.kind not in ("b", "i", "u", "f"):
+            raise ValueError(f"{name} indices must be a numeric array")
+        af = arr.astype(np.float64)
+        if arr.size == 0 or not np.all(np.isfinite(af)) or np.any(af != np.round(af)):
+            raise ValueError(f"{name} indices must be non-empty integers")
+        if np.any(af < 0) or np.any(af >= n_items):
+            raise ValueError(f"{name} indices must be in [0, n_items)")
+        return [int(v) for v in af]
+
+    idx1 = _index_set(at1, "at1")
+    idx2 = _index_set(at2, "at2")
+    res = core.py_dimtest(y.reshape(-1), int(n_persons), int(n_items), idx1, idx2)
+    return DimtestResult(
+        t=float(res["t"]),
+        t_l=float(res["t_l"]),
+        t_b=float(res["t_b"]),
+        p_value=float(res["p_value"]),
+        groups_used=int(res["groups_used"]),
+        n_discarded=int(res["n_discarded"]),
+        retained_pt_scores=np.asarray(res["retained_pt_scores"], dtype=np.int64),
     )

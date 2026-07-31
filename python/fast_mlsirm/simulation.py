@@ -8,6 +8,14 @@ from .types import MLSIRMParams, SimulationData
 
 
 def simulate(config: MLS2PLMConfig | None = None) -> SimulationData:
+    """Generate a synthetic MLS2PLM dataset from ``config``.
+
+    Draws correlated traits, simple-structure item parameters, and person/item
+    latent-space positions, forms the linear predictor ``a*theta + b - gamma*d``
+    (with ``d`` the person-to-item latent-space distance), and samples Bernoulli
+    responses. Returns the responses, item-to-trait map, generating truth,
+    trait correlation, and per-cell success probabilities.
+    """
     config = config or MLS2PLMConfig()
     config.validate()
 

@@ -19,3 +19,7 @@
 ## 2024-07-13 - CLI Debugging Stack Traces
 **Learning:** Adding a `FAST_MLSIRM_DEBUG` bypass to user-friendly `try/except` blocks is crucial for DX. Otherwise, unexpected runtime errors during development will be swallowed into generic stderr messages, hiding the stack trace needed to actually fix the bug.
 **Action:** When adding `try-except` blocks to Python CLI subcommands to improve Developer Experience (DX) by preventing raw tracebacks for users, include a debug bypass (e.g., `if os.environ.get("FAST_MLSIRM_DEBUG"): raise`) in *all* catch blocks (including `RuntimeError` and `Exception`) to ensure tracebacks aren't swallowed during local development and debugging.
+
+## 2025-02-12 - Table Body `<th scope="row">` and Tabular Numbers
+**Learning:** Using `<td>` for the first column in data tables makes it difficult for screen reader users to associate row data with its identifying header. Additionally, numbers in data tables can jitter horizontally if proportional fonts are used.
+**Action:** When generating HTML data tables, always use `<th scope="row">` for the first identifying column to improve screen reader accessibility. Apply `font-variant-numeric: tabular-nums;` to base table cell styles to ensure numbers align properly, and explicitly update primary cell CSS selectors (e.g., from `th, td { ... }` to `thead th, tbody th, td { ... }`) and add `tbody th { font-weight: normal; }` to maintain consistent baseline styling.

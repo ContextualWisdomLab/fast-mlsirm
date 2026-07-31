@@ -62,6 +62,7 @@ class GTheoryResult:
 
 
 def _to_result(res: dict) -> GTheoryResult:
+    """Build a :class:`GTheoryResult` (ANOVA table + D-study) from the core dict."""
     return GTheoryResult(
         df=[float(v) for v in res["df"]],
         ss=[float(v) for v in res["ss"]],
@@ -83,6 +84,7 @@ def _to_result(res: dict) -> GTheoryResult:
 
 
 def _core_or_raise(name: str):
+    """Return the Rust core, raising if it or the required function ``name`` is absent."""
     from .fitstats import _core_module
 
     core = _core_module()
@@ -108,7 +110,7 @@ def gtheory_pi(
     their denominator is <= 1e-12. In LLM-as-a-Judge quality management
     this asks how many judge items are needed for a dependable rating.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pi")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 2:
@@ -116,6 +118,9 @@ def gtheory_pi(
     n_p, n_i = x.shape
     primes = [int(v) for v in n_i_prime]
     return _to_result(core.gtheory_pi(x.reshape(-1), int(n_p), int(n_i), primes))
+
+
+gtheory_pi.__doc__ += _REFERENCES
 
 
 def gtheory_pio(
@@ -132,7 +137,7 @@ def gtheory_pio(
     ``(n_i', n_o')`` D-study pairs; the clamped-ANOVA and NaN-denominator
     policies match :func:`gtheory_pi`.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("gtheory_pio")
     x = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     if x.ndim != 3:
@@ -142,3 +147,80 @@ def gtheory_pio(
     return _to_result(
         core.gtheory_pio(x.reshape(-1), int(n_p), int(n_i), int(n_o), pairs)
     )
+
+
+gtheory_pio.__doc__ += _REFERENCES
+
+
+@dataclass
+class PhiLambdaResult:
+    """Brennan-Kane ``Phi(lambda)`` output. ``var`` is the clamped
+    ``(p, i, pi)`` component triple; ``var_xbar`` uses the RAW components
+    (unbiasedness of ``signal``); ``signal`` may be negative when the
+    grand mean is within sampling error of ``lambda`` (finite-sample
+    estimator behavior, not a population violation); ``phi`` has one
+    entry per requested ``n_i'`` (NaN when the denominator degenerates).
+    """
+
+    grand_mean: float
+    var: list[float]
+    var_xbar: float
+    signal: float
+    phi: list[float]
+
+
+_PHI_LAMBDA_REFERENCES = """References (APA 7th ed.):
+        Kane, M. T., & Brennan, R. L. (1977). *Agreement coefficients as
+            indices of dependability for domain-referenced tests* (ACT
+            Technical Bulletin No. 28). American College Testing Program.
+            ERIC ED185076. (Read; eqs. 24 and 31-35.)
+        Brennan, R. L., & Kane, M. T. (1977). An index of dependability
+            for mastery tests. *Journal of Educational Measurement, 14*(3),
+            277-289. (As cited in Kane & Brennan, 1977, for estimation
+            formulas; not read — the estimator here is derived
+            independently, see the Rust doc comment.)
+    """
+
+
+def phi_lambda(
+    data: np.ndarray,
+    cut: float,
+    n_i_prime: Sequence[int] = (5, 10, 15, 20),
+) -> PhiLambdaResult:
+    """Brennan-Kane index of dependability ``Phi(lambda)`` for mastery
+    (domain-referenced) tests, one-facet crossed ``p x i`` design (compute
+    in Rust; Kane & Brennan, 1977, eq. 33, with a derived unbiased signal
+    estimator — see the Rust ``phi_lambda`` doc comment for the derivation
+    and citation-governance details).
+
+    ``data`` is a complete, balanced ``n_persons x n_items`` score array;
+    ``cut`` is the cutting score ``lambda`` on the per-item metric. In
+    LLM-as-a-Judge quality management this asks how dependably a judge
+    panel classifies systems against a fixed quality threshold.
+
+    """
+    core = _core_or_raise("phi_lambda")
+    x = np.asarray(data)
+    if np.iscomplexobj(x):
+        raise ValueError("data must be real-valued")
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    if x.ndim != 2:
+        raise ValueError("data must be a 2-D persons x items array")
+    n_p, n_i = x.shape
+    res = core.phi_lambda(
+        x.reshape(-1),
+        int(n_p),
+        int(n_i),
+        float(cut),
+        [int(v) for v in n_i_prime],
+    )
+    return PhiLambdaResult(
+        grand_mean=float(res["grand_mean"]),
+        var=[float(v) for v in res["var"]],
+        var_xbar=float(res["var_xbar"]),
+        signal=float(res["signal"]),
+        phi=[float(v) for v in res["phi"]],
+    )
+
+
+phi_lambda.__doc__ += _PHI_LAMBDA_REFERENCES

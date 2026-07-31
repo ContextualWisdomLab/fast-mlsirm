@@ -239,6 +239,7 @@ def logistic_dif_purified(
 
 
 def _purify_meta(res) -> dict[str, np.ndarray]:
+    """Extract the anchor-purification metadata from a Rust DIF result dict."""
     # `purify_converged`, not `converged`: the logistic rows already carry a PER-ITEM `converged` array
     # and this dict is merged over them, so the loop's scalar flag must not share the name.
     return {
@@ -251,6 +252,7 @@ def _purify_meta(res) -> dict[str, np.ndarray]:
 
 
 def _mh_rows(res) -> dict[str, np.ndarray]:
+    """Extract the per-item Mantel-Haenszel DIF statistics from a result dict."""
     return {
         "item": np.asarray(res["item"], dtype=np.int64),
         "alpha_mh": np.asarray(res["alpha_mh"], dtype=np.float64),
@@ -444,6 +446,7 @@ def raju_area(
     if core is None or not hasattr(core, "raju_area"):
         raise RuntimeError("raju_area requires the compiled Rust core")
     def _vec(v, name: str) -> np.ndarray:
+        """Coerce ``v`` to a contiguous 1-D float64 array or raise ``ValueError``."""
         arr = np.asarray(v, dtype=np.float64)
         if arr.ndim != 1:
             raise ValueError(f"{name} must be a 1-D array, got ndim={arr.ndim}")
@@ -478,6 +481,7 @@ def raju_area(
 
 
 def _logistic_rows(res) -> dict[str, np.ndarray]:
+    """Extract the per-item logistic-regression DIF statistics from a result dict."""
     return {
         "item": np.asarray(res["item"], dtype=np.int64),
         "chi2_uniform": np.asarray(res["chi2_uniform"], dtype=np.float64),
@@ -588,4 +592,251 @@ def logistic_dif(
         "jg_class": np.asarray(res["jg_class"]),
         "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
         "converged": np.asarray(res["converged"], dtype=bool),
+    }
+
+
+def mantel_smd_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Mantel (1963) polytomous DIF chi-square + standardized mean difference (compute in Rust).
+
+    The ordinal-item extension of the Mantel-Haenszel sweep: examinees are matched on the total
+    score (including the studied item, the crate convention shared with
+    :func:`mantel_haenszel_dif`), and within each matching stratum the focal group's observed item
+    score sum ``F_k`` is compared with its conditional (hypergeometric) expectation and variance
+    (Zwick, Donoghue & Grima, 1993, Eq. 8-9). ``chi2`` is ``(sum F_k - sum E(F_k))^2 / sum
+    Var(F_k)``, referred to ``chi2(1)`` for ``p_value``. ``smd`` is the standardized mean
+    difference (Eq. 11): the focal-weighted mean item-score difference (focal minus reference);
+    negative = focal group scores lower than comparable reference examinees. Documented deviation:
+    the SMD focal weights are renormalized over the *used* strata (both groups present) rather
+    than the literal all-focal denominator, matching the crate's standardized P-DIF convention.
+    For 0/1 items ``chi2`` reduces to the MH chi-square *without* the continuity correction.
+
+    ``responses`` is a persons x items array of non-negative integer ordinal scores (no missing
+    data; drop or impute beforehand -- reduced scope). ``group`` is a length-persons array with
+    ``0`` = reference and ``1`` = focal (both must be present). Returns per-item arrays ``chi2``,
+    ``p_value``, ``smd``, ``n_strata_used``; NaN statistics mark items with no usable stratum or
+    zero conditional variance.
+
+    References (APA 7th ed.):
+        Mantel, N. (1963). Chi-square tests with one degree of freedom: Extensions of the
+            Mantel-Haenszel procedure. *Journal of the American Statistical Association, 58*(303),
+            690-700. https://doi.org/10.1080/01621459.1963.10500879 [NOT READ; formulas taken from
+            Zwick, Donoghue & Grima (1993) as read.]
+        Zwick, R., Donoghue, J. R., & Grima, A. (1993). *Assessment of differential item
+            functioning for performance tasks* (ETS Research Report RR-93-14; ERIC ED386493). ETS.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_mantel_smd_dif"):
+        raise RuntimeError("mantel_smd_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(yf == np.round(yf)):
+        raise ValueError("responses must be integer-valued ordinal scores")
+    if np.any(yf < 0):
+        raise ValueError("responses must be non-negative")
+    if np.any(np.abs(yf) > 2**53):
+        raise ValueError("responses exceed the exactly representable integer range")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+
+    res = core.py_mantel_smd_dif(
+        yf.astype(np.int64).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+    )
+    return {
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "smd": np.asarray(res["smd"], dtype=np.float64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+    }
+
+def gmh_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Generalized Mantel-Haenszel nominal DIF statistic (compute in Rust).
+
+    The unordered-category extension of the Mantel-Haenszel sweep (Zwick, Donoghue & Grima, 1993,
+    Eq. 10): examinees are matched on the total score (crate convention shared with
+    :func:`mantel_smd_dif`), and within each matching stratum the reference group's category-count
+    vector ``A_k`` (over any ``T - 1`` of the ``T`` response categories) is compared with its
+    conditional expectation and covariance matrix. ``chi2`` is the pooled quadratic form
+    ``d' S^-1 d``, referred to ``chi2(df)`` with ``df = T_eff - 1`` for ``p_value``. Unlike
+    :func:`mantel_smd_dif`, category ORDER is ignored: this targets composition differences
+    between nominal response categories. For 0/1 items ``chi2`` equals the MH chi-square
+    *without* the continuity correction (identical to the ``mantel_smd_dif`` value).
+
+    ``T_eff`` counts the item's distinct codes among examinees in *used* strata (both groups
+    present); categories seen only in excluded strata do not inflate ``df``. Items with
+    ``T_eff < 2``, no usable stratum, or a singular pooled covariance yield NaN statistics
+    (no silent rank reduction). ``T_eff`` is capped at 64.
+
+    ``responses`` is a persons x items array of non-negative integer category codes (labels,
+    not scores; no missing data -- reduced scope). ``group`` is a length-persons array with
+    ``0`` = reference and ``1`` = focal (both must be present). Returns per-item arrays
+    ``chi2``, ``p_value``, ``df``, ``n_strata_used``.
+
+    References (APA 7th ed.):
+        Somes, G. W. (1986). The generalized Mantel-Haenszel statistic. *The American
+            Statistician, 40*(2), 106-108. https://doi.org/10.1080/00031305.1986.10475369
+            [NOT READ; formulas taken from Zwick, Donoghue & Grima (1993) as read.]
+        Zwick, R., Donoghue, J. R., & Grima, A. (1993). *Assessment of differential item
+            functioning for performance tasks* (ETS Research Report RR-93-14; ERIC ED386493). ETS.
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_gmh_dif"):
+        raise RuntimeError("gmh_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(yf == np.round(yf)):
+        raise ValueError("responses must be integer-valued category codes")
+    if np.any(yf < 0):
+        raise ValueError("responses must be non-negative")
+    if np.any(np.abs(yf) > 2**53):
+        raise ValueError("responses exceed the exactly representable integer range")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+
+    res = core.py_gmh_dif(
+        yf.astype(np.int64).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+    )
+    return {
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.int64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+    }
+
+def breslow_day_dif(
+    responses: np.ndarray,
+    group: np.ndarray,
+    exclude_studied_item: bool = False,
+    fdr_q: float = 0.05,
+) -> dict[str, np.ndarray]:
+    """Breslow-Day (1980, Eq. 4.30) odds-ratio homogeneity DIF test (compute in Rust).
+
+    The classical NON-UNIFORM DIF companion to :func:`mantel_haenszel_dif`: MH tests whether a
+    common odds ratio differs from 1; this tests whether a COMMON odds ratio is tenable at all
+    across the matching-score strata. Per stratum, the fitted reference-correct count ``A_k`` is
+    the admissible root of the quadratic ``A D / (B C) = psi_hat`` with the observed margins, the
+    asymptotic variance is ``1 / (1/A + 1/B + 1/C + 1/D)`` on the fitted cells, and ``chi2`` is
+    ``sum (a_k - A_k)^2 / Var_k`` referred to ``chi2(K - 1)`` over the ``K`` used strata (all four
+    margins positive). The plugged-in ``psi_hat`` is the crate's Mantel-Haenszel ``alpha_mh``,
+    the estimator the read source itself endorses for this test (its worked example: MH 5.158 ->
+    chi2 9.28 vs MLE 5.312 -> 9.33, same conclusion). The Tarone (1985) correction is NOT applied
+    (that source was not read -- out of scope, documented in the core header).
+
+    ``responses`` is a persons x items array of 0/1 scores (no missing data). ``group`` is a
+    length-persons array with ``0`` = reference and ``1`` = focal (both must be present).
+    Returns per-item arrays ``alpha_mh``, ``chi2``, ``df``, ``p_value``, ``n_strata_used``,
+    ``flagged_bh``. NaN statistics mark items with a degenerate MH odds ratio (``sum a d = 0``
+    or ``sum b c = 0``), fewer than two usable strata, or an inadmissible fitted root.
+
+    References (APA 7th ed.):
+        Breslow, N. E., & Day, N. E. (1980). *Statistical methods in cancer research, Volume I:
+            The analysis of case-control studies* (IARC Scientific Publications No. 32).
+            International Agency for Research on Cancer.
+        Tarone, R. E. (1985). On heterogeneity tests based on efficient scores. *Biometrika,
+            72*(1), 91-95. [NOT READ; correction deliberately not implemented.]
+    """
+    from .fitstats import _core_module
+
+    core = _core_module()
+    if core is None or not hasattr(core, "py_breslow_day_dif"):
+        raise RuntimeError("breslow_day_dif requires the compiled Rust core")
+
+    y = np.asarray(responses)
+    if np.iscomplexobj(y):
+        raise ValueError("responses must be real-valued")
+    if y.ndim != 2:
+        raise ValueError("responses must be a 2-D persons x items array")
+    n_persons, n_items = y.shape
+    if n_persons == 0 or n_items == 0:
+        raise ValueError("responses must contain at least one person and one item")
+    # Magnitude check on the ORIGINAL array: a float64 cast silently rounds
+    # integers above 2^53 (e.g. 2^53 + 1 -> 2^53), so it must come first.
+    if y.dtype.kind in "iu" and (int(y.max()) > 2**53 or int(y.min()) < -(2**53)):
+        raise ValueError("responses exceed the exactly representable integer range")
+    yf = np.asarray(y, dtype=np.float64)
+    if not np.all(np.isfinite(yf)):
+        raise ValueError("responses must be finite (no missing-data support)")
+    if not np.all(np.isin(yf, (0.0, 1.0))):
+        raise ValueError("responses must be 0 or 1")
+    g = np.asarray(group)
+    if np.iscomplexobj(g):
+        raise ValueError("group must be real-valued")
+    if g.ndim != 1 or g.shape[0] != n_persons:
+        raise ValueError("group must be a length-n_persons 1-D array")
+    gf = np.asarray(g, dtype=np.float64)
+    if not np.all(np.isin(gf, (0.0, 1.0))):
+        raise ValueError("group labels must be 0 (reference) or 1 (focal)")
+    if not (np.isfinite(fdr_q) and 0.0 < fdr_q < 1.0):
+        raise ValueError("fdr_q must be in (0, 1)")
+
+    res = core.py_breslow_day_dif(
+        yf.astype(np.uint8).reshape(-1),
+        gf.astype(np.uint8),
+        int(n_persons),
+        int(n_items),
+        bool(exclude_studied_item),
+        float(fdr_q),
+    )
+    return {
+        "alpha_mh": np.asarray(res["alpha_mh"], dtype=np.float64),
+        "chi2": np.asarray(res["chi2"], dtype=np.float64),
+        "df": np.asarray(res["df"], dtype=np.float64),
+        "p_value": np.asarray(res["p_value"], dtype=np.float64),
+        "n_strata_used": np.asarray(res["n_strata_used"], dtype=np.int64),
+        "flagged_bh": np.asarray(res["flagged_bh"], dtype=bool),
     }

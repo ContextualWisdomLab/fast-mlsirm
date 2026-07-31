@@ -90,6 +90,7 @@ def fit_mixture(
     n_persons, n_items = y.shape
 
     def bounded_integer(value, name: str, upper: int) -> int:
+        """Validate that ``value`` is an integer in ``1..upper`` and return it."""
         if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
             raise ValueError(f"{name} must be an integer in 1..{upper}")
         result = int(value)

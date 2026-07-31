@@ -12,6 +12,25 @@
   unavailable or unsupported GPU work falls back to fixed contiguous Rust CPU
   workers instead of performing respondent score aggregation in Python.
 
+## [0.1.2] - 2026-07-31
+
+### Added
+- Full paired-comparison / rating / inter-rater stack on main (PR #374 integrating the #290–#328 seonghobae chain tip): Thurstone Case V, Bradley–Terry MM, LSR/I-LSR, Rank Centrality, Plackett–Luce rankings and top-1, Kendall circular triads / *u*, Elo / Glicko / Glicko-2 / Stephenson / multiplayer Elo / FIDE, prediction metrics, BRATT ties model, Fleiss/Light kappa, ICC, Krippendorff α, Finn, Maxwell RE, Robinson *A*, mean pairwise Pearson/Spearman, Stuart–Maxwell / Bhapkar marginal homogeneity, rater bias, and Cohen kappa sample-size helpers — Rust core + PyO3/Python API + unit/paper tests.
+- DeepWiki badge on the primary README docs surface (PR #373).
+
+### Changed
+- Stack features land without regressing the simple-structure MLS2PLM NLL path, coarse person-shard multithreading, or PRIMARY-only wgpu GPU init with soft f64 CPU fallback (preserved from v0.1.1 / PRs #371–#372).
+
+## [0.1.1] - 2026-07-31
+
+### Fixed
+- Coarse fixed-shard Rust multithreading for the JML `neg_loglik_and_grad` hot path (`thread::scope` person shards, N≥256) with bit-identical reduction vs single-thread (PR #371).
+- wgpu GPU init uses `Backends::PRIMARY` only (no GL/EGL), so sandboxes with broken `/dev/dri` soft-fail to the f64 CPU path instead of SIGSEGV (PR #371).
+- Paper-grounded simple-structure MLS2PLM formula contract reaffirmed (Kang & Jeon 2025; Jeon et al. 2021); no formula drift.
+
+### Changed
+- Unit test forces multi-worker NLL shards and compares all gradient blocks to the single-thread reference.
+
 ## Unreleased
 
 ### Changed
@@ -119,6 +138,786 @@
 
 ### Added
 
+- Sample size for Cohen's kappa (`n_cohen_kappa`, Rust core
+  `mlsirm_core::reliability::n_cohen_kappa` + thin Python wrapper):
+  closed-form required-subject count for a one- or two-sided test of
+  H0: kappa = k0 vs H1: kappa = k1 on a 2x2 two-rater table, transcribed
+  from the CRAN irr 0.84.1 R source `N.cohen.kappa.R` (read in full; irr
+  attributes the method to Cantor, 1996, NOT read, cited as origin only).
+  Returns `n`, variance factors `q1`/`q0`, and the pre-ceiling size.
+  Stricter than R: degenerate marginals, infeasible implied cell
+  probabilities, and nonpositive variance factors raise errors where R
+  silently returns NaN. Evidence: exact-Fraction oracle executed
+  (4 pinned fixtures + infeasibility probe; Acklam-vs-NormalDist ceil
+  stability asserted); adversarial spec review APPROVED-WITH-CHANGES,
+  all 4 mandatory changes adopted (rate-swap symmetry disclosed as a
+  real unkillable identity); 6/6 mutation kills EXECUTED (pie term,
+  Q-role swap, sidedness, pi22 halving, floor-for-ceil, unsquared
+  denominator); MC-500 secondary-oracle sweep passes.
+- Rater bias chi-square `rater_bias` (Rust core
+  `mlsirm_core::reliability::rater_bias` + thin Python wrapper), transcribed
+  from the CRAN irr 0.84.1 R source `rater.bias.R` (read in full; the
+  statistic is McNemar-style but McNemar, 1947, was NOT read and is not
+  cited as normative). With `rbb`/`rbc` the strict upper/lower triangle
+  sums of a CxC two-rater table: `value = rbb/(rbb+rbc)`,
+  `statistic = (rbb-rbc)^2/(rbb+rbc)`, df = 1, upper-tail chi-square p;
+  `subjects` sums ALL cells (R: `sum(rbx)`). REDUCED-SCOPE vs R:
+  CxC-table branch only (the nx2/2xn raw-score `table()` front-end is a
+  plain cross-tab left to callers, as for `stuart_maxwell_mh`). Per the
+  adversarial spec review, the `2^53/(2C)` per-cell cap does NOT make f64
+  triangle sums exact for large C, so `rbb`/`rbc` accumulate in u64
+  (exact, bounded by 2^61) and the squared difference is formed in i128;
+  f64 rounding only in the final divisions. Deliberately stricter than R:
+  explicit errors for non-square input, <2 or >1000 categories,
+  negative/NaN/Inf/non-integral counts, cells above the cap, and
+  `rbb + rbc == 0` (R would form 0/0). Disclosed unkillable mutant:
+  removing R's `abs()` (no-op on the validated nonnegative domain).
+  Exact-Fraction oracle anchors (3x3 value 10/13 stat 147/13; 4x4 on the
+  value<1/2 side 4/9, 1/3; dyadic 2x2 3/4, 2 asserted exactly; balanced
+  rbb==rbc stat 0 p 1; diagonal-only error), a transpose-antisymmetry
+  test (stat/p/n invariant, values sum to 1), 5/5 targeted mutants
+  executed-killed (triangle swap, difference denominator, off-diagonal
+  subjects, diagonal in rbb, df 2), and an in-repo `#[ignore]` MC-500
+  independent-recompute test.
+- Bhapkar marginal homogeneity test `bhapkar_mh` (Rust core
+  `mlsirm_core::reliability::bhapkar_mh` + thin Python wrapper), transcribed
+  from the CRAN irr 0.84.1 R source `bhapkar.r` (read in full; Bhapkar, 1966,
+  cited as origin only, not read). Statistic `d' W^-1 d` with
+  `W = S - d d'/n` over the first C-1 categories (no equal-marginal drop,
+  unlike Stuart-Maxwell), df = C-1, upper-tail chi-square p. Verified against
+  an executed exact-Fraction oracle (pins: 3x3 stat 196080/18733, 4x4 with a
+  kept equal marginal, 2x2 15/7, perfect-agreement singular, zero-d table);
+  the oracle also proves exactly the identity `bhapkar = SM/(1-SM/n)` against
+  the no-drop Stuart-Maxwell statistic (cross-implementation test anchor) and
+  drop-invariance. 5/5 targeted mutants executed-killed (W sign, missing /n,
+  skipped dd'/n correction, df, S transpose cell); an in-repo `#[ignore]`
+  MC-500 test cross-checks a local independent solve plus permutation
+  invariance. Singularity uses the scaled pivot threshold
+  `1e-12 * max|W|` from the start.
+- `stuart_maxwell_mh` Stuart-Maxwell marginal homogeneity chi-square test for a C×C two-rater counts table (CRAN irr 0.84.1 `stuart.maxwell.mh()` `R/stuart.maxwell.R` — READ and normative; Stuart 1955 and Maxwell 1970 NOT READ, cited as method origin only): one-shot simultaneous drop of every category with equal row/column marginals (R does NOT re-check equality after the drop — preserved verbatim), then on the remaining K categories `d_i = r_i − c_i`, `S_ii = r_i + c_i − 2x_ii`, `S_ij = −(x_ij + x_ji)` over the first K−1, statistic `d'S⁻¹d` with df = K−1 and upper-tail chi-square p (crate `chi2_sf`, a regularized-upper-incomplete-gamma transcription whose absolute error at the pinned p-values is ≲6e-16 per an executed check). REDUCED-SCOPE vs R: counts-table branch only (R's n×2 raw-score branch is a plain cross-tab left to callers). Deliberately stricter than R: explicit errors for non-square input, <2 categories before/after the drop, negative/NaN/Inf/non-integral counts, cells above 2^53/(2C) (exact f64 marginal sums; subjects accumulated in checked u64), >1000 categories, and singular S (checked Gaussian elimination per the `lltm::solve_small_checked` pattern — no silent fallback). Disclosed unkillable identities: d→−d (quadratic form) and solver transposition (S symmetric by construction). Exact-Fraction oracle anchors M1–M6 (3×3 stat exactly 1520/157 with p 0.007901012752471986; 4×4 drop-path stat 200/171 pinned equal to the crate's direct-submatrix run; 2×2 McNemar reduction (6−2)²/8 = 2 exactly; permutation invariance; all-equal-marginals error), a 6-mutant EXECUTED kill map via a source-mutation harness (S_ii sign, S_ij sign, d = r+c, df = K, skipped drop, missing transpose cell), and an in-repo `#[ignore]` MC-500 test with an independent Cramer-rule recompute plus random simultaneous-permutation invariance.
+- `mean_pairwise_rho` mean of the pairwise Spearman rank correlations between rater columns (CRAN irr 0.84.1 `meanrho()` `R/meanrho.R` — READ and normative; Spearman 1904 NOT READ, cited as method origin only): listwise NaN row drop, midrank transform per column (R `rank` default, tie groups averaged; the hand-derived Spearman = Pearson-on-midranks equivalence is verified by an executed exact-Fraction oracle), then the `mean_pairwise_cor` machinery on ranks — plain mean (`fisher=False`, statistic/p None) or Fisher-z average `tanh(mean(atanh ρ))` with strict ±1 pair exclusion (`dropped` reported), `SE = √(1/(m−3))`, two-sided `p = erfc(|z|/√2)`. A `ties` flag reports duplicates within any column; a documented case analysis shows R's `apply(..., unique)` matrix-collapse quirk never diverges from this flag for nr ≥ 2. Deliberately stricter than R: constant rank columns, fewer than 4 complete rows under fisher, and all-perfect pair sets are explicit errors. Exact-Fraction oracle anchors S1–S6 (reversed pair cancels z's to value 0, cyclic equal-rho fixture kills the missing-tanh mutant exactly at 23/35, ties fixture pins the irrational midrank rho 0.8922178162191939, NaN-row fixture is bitwise-equal to its complete counterpart, distinct-rho fixture 0.6992488340329346 discriminates Fisher averaging, duplicate-column fixture pins dropped=1 at 0.7447132997063424); a 7-mutant kill map (raw values, ordinal ranks, missing tanh, SE m−1, perfect pairs kept, listwise drop skipped, zero-on-drop) executed against the in-repo Rust tests via a source-mutation harness; and an in-repo `#[ignore]` MC-500 test with an independent midrank+Fisher recompute and column-swap invariance.
+- `mean_pairwise_cor` mean of the pairwise Pearson correlations between rater columns (CRAN irr 0.84.1 `meancor()` `R/meancor.R` — READ and normative; Fisher 1925 NOT READ, cited as the z-transformation origin only): listwise NaN row drop, all `C(nr,2)` pairwise correlations with a single-square-root denominator so exactly (anti)proportional columns give r = ±1 exactly, and either the plain mean (`fisher=False`, perfect pairs kept, statistic/p None) or the Fisher-z average `tanh(mean(atanh r))` with strict ±1 pair exclusion (`dropped` reported where R only warns), `SE = √(1/(m−3))`, and two-sided `p = erfc(|z|/√2)` clamped to [0, 1]. Deliberately stricter than R: constant columns, fewer than 4 complete rows under fisher, and all-perfect pair sets are explicit errors. Exact-Fraction oracle anchors C1/C2/C7/C8 (permutation columns give exactly rational r: fisher value 0.5350920914541507 at m=4, m=7 statistic = 2·value pinning the SE division past the m=4 SE=1 identity, r=−1 boundary drop, plain means 7/15, 19/30, 17/21, −1/6), a 6-mutant EXECUTED kill map (tanh omitted, filter dropped, SE m−1, one-sided p, skipped pair, skipped listwise drop), and an MC-500 independent-recompute + column-reversal invariance test.
+- Robinson's A coefficient of agreement `robinson_a` (Rust core + Python wrapper), transcribed from the CRAN irr 0.84.1 `robinson.R` source with listwise NaN deletion; degenerate inputs with no subject variance raise errors where R silently returns NaN.
+- `maxwell_re` Maxwell's RE agreement coefficient for two raters with binary ratings (CRAN irr 0.84.1 `maxwell()` `R/maxwell.R` — READ and normative; Maxwell 1977 NOT READ, cited as method origin only): `RE = 2*A/ns - 1` where `A` counts exact-match subjects after listwise NaN deletion; the distinct-value union across both columns must have at most 2 levels (any two numeric labels accepted; single-level input yields 1). The R diagonal-of-`table(r1, r2)` form is hand-derived to equal the match count regardless of the level-ordering quirk and verified against an executed exact-Fraction oracle. Deliberately stricter than R: explicit errors for `nr != 2`, infinities, and empty input. Rust core with a thin Python wrapper.
+- `finn_coefficient` Finn (1970) reliability coefficient for discrete-scale ratings (CRAN irr 0.85 `finn()` `R/finn.R` — READ and normative; Finn 1970 NOT READ, cited as method origin only): compares the within-subject (oneway `MSw`, mean of per-row sample variances) or two-way residual (`MSe`) mean square against the discrete-uniform expectation `MSexp = (s²−1)/12`, `coeff = 1 − MS/MSexp`, `F = MSexp/MS`, with the R quirk that BOTH models use `df2 = ns(nr−1)` preserved verbatim. The upper-tail p-value implements `pf(F, Inf, df2, lower.tail=FALSE)` via the hand-derived limiting identity `P(F > f) = P(χ²_df2 < df2/f)` (convergence-verified against scipy; valid for F > 0 — negative mean squares from floating cancellation are explicit errors, and perfect agreement returns value 1, statistic +Inf, p 0). Rows with NaN are dropped listwise (R `na.omit`); infinities, `s_levels < 2` (or bool), and fewer than 2 complete rows/raters are explicit stricter-than-R errors. Exact-Fraction oracle anchors FN1–FN4 (oneway 125/144 with p 4.47127350746514e-06, twoway 617/720, listwise-drop 13/15, negative twoway coefficient −1/8), a 6-mutant EXECUTED kill map (MSexp off-by-one, population variance, dropped MSc term, wrong df2, flipped p tail, skipped listwise drop), and an MC-500 subject/rater permutation-invariance test.
+- `light_kappa` Light's kappa for multi-rater nominal agreement (CRAN irr 0.85 `kappam.light()` `R/kappam.light.R` + unweighted branch of `kappa2()` `R/kappa2.R` — both READ and normative; Light 1971 NOT READ, cited as method origin only): mean of the `C(nr,2)` pairwise unweighted Cohen's kappas after listwise missing-row drop, plus Light's chance-product z test `disraterₚ = m² − Σₐc1[a]c2[a]`, `chanceP = 1 − npairs·Π(disraterₚ/m²)` (overflow-safe form, algebraically identical to R's `1 − B/m^(2·npairs)`), `varκ = chanceP/(m(1−chanceP))`, `z = value/√varκ`. R builds each pair's level set from the two columns only; this implementation compacts codes over the full remaining matrix once and reuses `cohen_kappa` — an equivalent shortcut because the unweighted kappa is level-set invariant (PROVEN per-pair in the oracle; the corresponding mutant is an unkillable identity, documented). Deviations: a pair with pe = 1 and `chanceP ≤ 0` — reachable on valid data with disjoint rater level sets, where R silently emits NaN — are explicit errors. Exact-Fraction oracle anchors L1–L5 (value 59/99, chanceP 17189/125000, z 4.719794049843912; six-pair fixture 430543/982080; listwise-drop pins 1/3 vs mutant 91/300), a 5-mutant EXECUTED kill map (mean→sum, disrater diagonal, npairs factor, pair-loop bound, listwise drop), and an MC-500 rater-permutation invariance test.
+- `kripp_alpha` Krippendorff's alpha for inter-rater agreement (CRAN irr 0.85 `kripp.alpha()` `R/kripp.alpha.R` — READ and normative; Krippendorff 1980 NOT READ, cited as method origin only): coincidence matrix over unordered rater pairs per subject with the irr divisor quirk preserved verbatim (`mc = #nonmissing − 1` per column ONLY when the matrix contains any missing value, else 1 — complete-data alpha differs from the m−1 convention), diagonal increment `2/mc`, mirror by assignment, `nmatchval` as total cell mass, and all four distance metrics (nominal, ordinal with half-endpoint coincidence-row-sum weights, interval, ratio) feeding `α = 1 − (nmatchval−1)·Σ(utcm·δ²)/Σ(nc_c·nc_k·δ²)`. Fewer than 2 observed levels yields α = 1 (R line 45). Documented deviations: all-missing matrix, infinities, and ratio level pairs summing to zero are explicit errors (R would return α = 1, propagate, or emit Inf/NaN). Exact-Fraction oracle anchors K1–K4 (irr man-page matrix: nominal 113/152, ordinal 108577/133160, interval 951/1120, ratio 18222619/22852465, nmv = 40; no-NA quirk pin 43/72 vs the m−1 mutant's 11/18), a 6-mutant EXECUTED kill map (diagonal 1/mc, mc always m−1, ordinal full weights, interval |δ|, nmv off-diagonal only, num×nc products), and an MC-500 rater/subject permutation-invariance test.
+- `icc` intraclass correlation coefficients for inter-rater reliability, the full Shrout-Fleiss taxonomy (CRAN irr 0.85 `icc()` `R/icc.R` — READ and normative; Shrout & Fleiss 1979, McGraw & Wong 1996, Bartko 1966 NOT READ, cited as model origins only): `model` oneway/twoway × `type` consistency/agreement × `unit` single/average from one-pass ANOVA mean squares (MSr, MSw, MSc, MSe with sample-variance divisor n−1), the F test of H0: icc = r0 (two-way agreement uses the Satterthwaite df with the R quirk that both units' confidence bounds plug the estimate into the nr-scaled a,b form — icc.R lines 139-141 preserved verbatim), and unclamped confidence bounds. Rows with NaN are dropped listwise (R `na.omit`); infinities rejected; degenerate zero-variance and icc=1 pivots return explicit errors instead of leaking non-finite output. Exact-Fraction oracle anchors on Shrout-Fleiss Table 2 (all six coefficients: 448/2703, 920/1287, 184/635, 1792/4047, 3680/4047, 736/1187 plus scipy F-distribution CI pins), a 6-mutant EXECUTED kill map (MSw divisor, quantile df order, agreement denominator, r0 in F, dimension map, CI plug-in), and an MC-500 test of subject/rater permutation invariance plus the Spearman-Brown single↔average bridge for all three families.
+- `fleiss_kappa` Fleiss' multi-rater kappa for nominal agreement with the exact (Conger) chance-agreement variant (CRAN irr 0.85 `kappam.fleiss()` `R/kappam.fleiss.R` — READ and normative; Fleiss 1971 and Conger 1980 NOT READ, cited as model origins only): classification-table agreement `agreeP = (1/m)Σᵢ(Σⱼtᵢⱼ² − nr)/(nr(nr−1))`, classic chance `Σⱼpⱼ²` vs exact `Σⱼpⱼ² − (1/nr)Σⱼs²ⱼ` (sample variance over per-rater category proportions; algebra verified against R's `apply(rtab,2,var)` form), Fleiss' large-sample z test and category-wise kappas (classic mode; NaN for empty categories, matching R's 0/0), and listwise row drop for missing ratings. API deviations documented: index codes 0..k-1 with explicit/inferred k, negative-or-NaN = missing, error on degenerate `1 − chanceP = 0` (R returns NaN). Exact-Fraction oracle anchors FK1–FK5 (classic κ = 139/399, exact κ = 37/102, category κ = [1/21, 31/91, 43/63]), a 6-mutant EXECUTED kill map (row-vs-column chance sums, missing-as-category, variance-sign, pjk-centering), and an MC-500 subject/rater permutation-invariance test.
+- `bratt_mm` Bradley-Terry model with ties fitted by MM (VGAM 1.1-14 `bratt()` family, `R/family.categorical.R` — READ and normative; Bradley & Terry 1952 NOT READ, cited as model origin): `P(i>j) = αᵢ/(αᵢ+αⱼ+α₀)`, `P(tie) = α₀/(αᵢ+αⱼ+α₀)` with a hand-derived supporting-hyperplane MM ascent (same pattern as the crate's `bradley_terry_mm`) and a joint reference rescale of α AND α₀ (likelihood-preserving; verified identity `Σ wins + T = Σ n_ij`). This is the additive-α₀ ties model, NOT Rao-Kupper/Davidson (neither read; disambiguation only). Contract: fractional weighted counts accepted, symmetric ties matrix required, tie-free data rejected (use `bradley_terry_mm`; an API contract, not VGAM behavior), zero-win contestants rejected, n capped at 10000 (O(n²) guard). Exact-Fraction oracle anchors B1–B4 (iteration-1 pins `[1, 27/40, 3/4]`, α₀ = 9/14), a 5-mutant EXECUTED kill map (incl. a tol-separated convergence anchor killing an α₀-blind convergence check), and an MC-500 log-likelihood dominance test.
+- `predict_rating` / `predict_rating_multi` game-outcome prediction from fitted ratings (CRAN PlayerRatings 1.1-0 `predict.rating` `R/ratings.R` lines 1056–1133 — READ and normative; no journal paper exists for this dispatch, CRAN package provenance only): Elo logistic branch, deviation-shrunk Glicko/Glicko-2/Stephenson branch (`qip3 = 3(ln10/400π)²`, joint shrink over BOTH players' squared deviations), and multi-player EloM branch (`(rating − rowmean)/40`, na.rm row means, optional min-tie placing ranks with NaN kept). R semantics preserved: strict `games < tng` unrated cutoff, `trat` replacement of ALL missing extracted values (unmatched, low-games, stored-NA), `pred >= thresh` binarization with NaN propagation. REDUCED-SCOPE vs R: index-based (−1 = unmatched; caller does name matching), per-game/scalar gamma only. Exact-oracle fixtures P1–P9 and a 7-mutant EXECUTED kill map (incl. both branches' tng comparisons).
+- `fide_rating` FIDE-style Elo ratings (CRAN PlayerRatings 1.1-0 `fide()` `R/ratings.R` lines 125–272 + `kfide()` lines 959–972 — READ and normative; no journal paper exists for this variant, CRAN package provenance only): per-period batch Elo with the kfide K-factor schedule (K = kv[0] elite / kv[1] ≥30 games / kv[2] novice, evaluated from PERIOD-START state), sticky elite flag set from POST-update ratings ≥ 2400, and per-player running mean of POST-update opponent ratings. REDUCED-SCOPE vs R: no status/history frames, kfide-only K schedule, self-play rejected, thresholds 30/2400 hard-coded. kv=(k,k,k) reduces bitwise to `elo_rating(kfac=k)` (MC-500 anchor); exact-oracle fixtures F1–F5 and a 5-mutant EXECUTED kill map.
+- `metrics_rating` prediction-quality metrics for binary-outcome forecasts (binomial deviance on capped predictions, RMSE/MAE on raw predictions, optional 0.5-baseline scaling), a Rust reimplementation of CRAN PlayerRatings 1.1-0 `metrics()` with its cap quirk and elementwise NaN semantics preserved; exact-oracle anchor tests, mutation-kill map, and MC-500 invariants.
+- **Multiplayer Elo rating (CRAN PlayerRatings 1.1-0 `elom()`
+  `R/ratings.R` lines 739–932 + `elom_c` C kernel `src/ratings.c`
+  lines 45–80, and `kriichi` K-factor lines 1006–1020 — all READ and
+  normative; no journal paper exists for this system, CRAN package
+  provenance only)**: `elom_rating` scores nn-seat events (empty seats
+  as player −1/NaN score) with rank base scores, a per-period single
+  update `K·(actual − expected)` where expected sums
+  `(r_p − event mean rating)/40`, and either a constant K or the
+  kriichi experience-decay `max(kv, 1 − (1−kv)·games/gv)`. Faithfully
+  reproduces the R quirk that partial events shrink the ORIGINAL base
+  exactly once regardless of empty-seat count (R:855-866 `sbase <-
+  basev` resets inside the loop). REDUCED-SCOPE vs R: player −1 ⟺ NaN
+  score jointly enforced, sorted periods required, in-event duplicate
+  players rejected, kriichi bounds `gv > 0`, `0 < kv ≤ 1`. Rust core
+  `mlsirm_core::scaling::elom_rating` with exact-value anchors E1–E9
+  (dyadic rationals; hand-derived oracle executed against the R
+  semantics) and a 500-rep Monte-Carlo invariance test; 6 mutation
+  kills executed (K-scaling, event-mean, cumulative-shrink, kriichi
+  games-timing, tie-rank, per-event-update).
+
+- **Stephenson rating system (CRAN PlayerRatings 1.1-0 `steph()`
+  `R/ratings.R` lines 591–737 + `stephenson_c` C kernel
+  `src/ratings.c` lines 157–202 — both READ and normative; no journal
+  paper exists for this system, which the package attributes to Alec
+  Stephenson's winning entry in the 2010 Kaggle chess-rating contest,
+  NOT independently verifiable beyond the package provenance).** New
+  Rust core `mlsirm_core::scaling::stephenson_rating` extending Glicko
+  with a per-game neighborhood variance term (`ngames·hval²`), a
+  per-game bonus `bval/100` added to each played game's score on BOTH
+  sides, a participants-only lambda drift toward opponents' ratings
+  (`(λ/100)·Σ(r_opp−r_self)/ngames`), and `(lag+1)·cval²` per-period
+  deviation-variance inflation clamped at `rdmax²` (all formulas
+  line-cited to the READ R/C source in the code header). Supports
+  prior-run continuation via `init_games`/`init_lag` and per-game
+  white-advantage `gamma`. PyO3 binding + thin NumPy wrapper
+  `fast_mlsirm.stephenson_rating` (defaults `init=(2200, 300)`,
+  `cval=10`, `hval=10`, `bval=0`, `lambda_=2`, `rdmax=350` matching
+  PlayerRatings). Anchored against an EXECUTED faithful oracle port of
+  the R driver + C kernel (heterogeneous-init, two-period draw/lag,
+  full-knobs, rdmax-clamp, bval-symmetry, and λ=0 contrast fixtures
+  pinned to 1e-12; five mutation kills EXECUTED: bval drop, λ sign
+  flip, per-game hval scaling drop, `(lag+1)→lag`, opponent-g→own-g).
+- **Glicko-2 rating system (Glickman's 2022 *Example of the Glicko-2
+  system* note READ — worked example reproduced; CRAN PlayerRatings
+  1.1-0's `glicko2()` `R/ratings.R` + `glicko2_c` C kernel source READ;
+  Glickman's 2001 J. Appl. Statist. derivation paper NOT READ, cited as
+  the origin per both READ sources).** New Rust core
+  `mlsirm_core::scaling::glicko2_rating` with batch-per-period updates on
+  the Glicko-2 scale, per-player rating volatility via Glickman's Step-5
+  Illinois iteration (epsilon 1e-6, endpoint A; DERIVED and documented:
+  Glickman's `f(x)` equals `-1/2` the derivative of PlayerRatings'
+  penalized negative log-likelihood, so the Illinois root matches R's
+  optimum), participant-only pre-period variance inflation
+  `phi^2 <- min(phi^2 + lag * sigma^2, (q rdmax)^2)` (Glicko-2 uses `lag`,
+  not Glicko-1's `lag+1`; R source comment pinned), `tau == 0` volatility
+  freeze, volatility ceiling `q * rdmax`, per-game white advantage
+  `gamma`, and PlayerRatings W/D/L and lag bookkeeping. Documented
+  R-vs-note deviation: the note applies Step 6 to idle players every
+  period; PlayerRatings (and this port) defer idle growth via
+  `lag * sigma^2` at next participation. Python wrapper
+  `fast_mlsirm.glicko2_rating(games, n_players, init=(2200, 300, 0.15),
+  gamma=None, tau=1.2, rdmax=350)` returns a `Glicko2Result` dataclass and
+  inherits the Elo/Glicko period-label fidelity contract. Anchored to an
+  executed float64 oracle (Glickman worked-example anchor with
+  heterogeneous init, two-period inflation/lag/idle pins, rdmax and
+  volatility-ceiling clamps, gamma, unsorted-period, fractional-score +
+  tau-0, and return-after-idle fixtures); nine executed mutation kills
+  (own-g swap, lag off-by-one, variance-clamp drop, volatility-clamp
+  drop, skipped volatility update, stale-sigma inflation, Illinois
+  endpoint swap, gamma sign, rating-before-deviation order).
+- **Glicko rating system (Glickman's *The Glicko system* technical note
+  READ — worked example reproduced exactly; CRAN PlayerRatings 1.1-0's
+  `glicko()` `R/ratings.R` + `glicko_c` C kernel source READ; Glickman's
+  1999 Applied Statistics derivation paper NOT READ, cited as the origin
+  per both READ sources).** New Rust core
+  `mlsirm_core::scaling::glicko_rating` with batch-per-period updates,
+  per-player rating deviations, participant-only pre-period deviation
+  inflation `RD = min(sqrt(RD^2 + (lag+1) c^2), rdmax)` (Step 1b), the
+  Step 2 update with opponent-g weighting and new-variance rating step,
+  per-game white advantage `gamma`, and PlayerRatings W/D/L and lag
+  bookkeeping. Documented non-identity: Glicko does NOT conserve the
+  rating sum (asymmetric opponent-g weighting; pinned by test). Documented
+  divergences: self-play rejected, no `status` carry-in — per-player
+  `init_rating`/`init_dev` arrays with results for ALL `0..n` players.
+  Python wrapper `fast_mlsirm.glicko_rating(games, n_players,
+  init=(2200, 300), gamma=None, cval=15, rdmax=350)` returns a
+  `GlickoResult` dataclass and inherits the Elo period-label fidelity
+  contract (integer-dtype lossless path; dtype-derived float bound).
+  Anchored to an executed float64 oracle (Glickman worked-example anchor
+  with heterogeneous RDs, two-period inflation/lag/idle-player pins,
+  rdmax-clamp, gamma, unsorted-period, and fractional-score fixtures);
+  seven executed mutation kills (opponent-g swap, inflation off-by-one,
+  clamp drop, stale-variance update, missing q^2, gamma sign,
+  all-player inflation).
+
+- **Elo rating system (Elo, 1978, as implemented by CRAN PlayerRatings
+  1.1-0's `elo()` — `R/ratings.R` + `elo_c` C kernel source READ; Elo's
+  1978 book NOT READ, cited as the origin per PlayerRatings).** New Rust
+  core `mlsirm_core::scaling::elo_rating` with batch-per-period updates
+  (all expected scores within a rating period use the period-start
+  ratings), per-game white advantage `gamma`, and PlayerRatings W/D/L and
+  lag bookkeeping (W/D/L only for scores exactly 1/0.5/0; lag counts
+  periods since last appearance). Periods may be unsorted (grouped by
+  ascending label, matching R `split()`); `E_w + E_b = 1` holds
+  identically for any gamma, so rating sums are conserved at `n * init`.
+  Documented divergences: self-play rejected, scalar K factor only, no
+  `status` carry-in. Python wrapper `fast_mlsirm.elo_rating(games,
+  n_players, init=2200, kfac=27, gamma=None)` returns an `EloResult`
+  dataclass. Anchored to an executed exact-rational oracle (single- and
+  two-period exact-fraction fixtures, float regression, closed-form
+  nonzero-gamma pin); five executed mutation kills (sequential-update,
+  black-score flip, gamma sign, lag reset, logistic divisor).
+
+- **Circular-triads consistency test and Kendall's coefficient of
+  agreement u (Kendall & Babington Smith, 1940, as implemented by eba
+  1.10-0's `circular()` / `kendall.u()` — eba source READ; the 1940
+  Biometrika paper and Alway's (1962) exact tables NOT READ, cited as
+  origins per eba's manual pages).** New Rust cores
+  `scaling::circular_triads` (number of circular triads
+  `T = C(n,3) - sum_j C(d_j, 2)`, maximum, consistency coefficient
+  `zeta = 1 - T/T_max`, and a null test that is EXACT for `n <= 10`
+  via embedded null distributions — dyadic-rational p-values — and a
+  continuity-corrected chi-square for `n >= 11`) and
+  `scaling::kendall_u` (agreement between `m >= 3` judges: `Sigma`,
+  `u = 2*Sigma/(C(m,2)*C(n,2)) - 1`, minimum attainable `u`, and an
+  upper-tail chi-square test whose RAW statistic may be negative under
+  the continuity correction; only the p-value clamps). Documented
+  divergences from eba: `n = 2` tournaments and malformed/incomplete
+  input are rejected, and every pair must have the same number of
+  judges (eba reads `m` from the first pair only). Python wrappers
+  `fast_mlsirm.circular_triads` / `kendall_u` return
+  `CircularTriadsResult` / `KendallUResult` dataclasses.
+
+- **Luce-choice top-1 estimation via Luce Spectral Ranking (Maystre &
+  Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_top1` /
+  `ilsr_top1` — choix source READ; the paper itself NOT READ, cited as
+  the algorithm origin per choix's docstrings).** New Rust cores
+  `scaling::lsr_top1` (one-shot) and `scaling::ilsr_top1` (iterative
+  MLE) estimate Luce/Plackett-Luce log-worths from top-1 choice data
+  (`(winner, losers)` observations, CSR layout): each observation
+  accrues rate `1/(sum of choice-set worths)` on every loser-to-winner
+  edge (plus `alpha` regularization), and the centered log stationary
+  distribution of that chain is the estimate. Python wrappers
+  `fast_mlsirm.lsr_top1` / `ilsr_top1` take iterables of
+  `(winner, losers)` pairs and return `LsrResult`. Three documented
+  divergences from choix: empty loser sets are rejected (choix silently
+  no-ops them), a winner in its own loser set is rejected (choix
+  silently inflates the denominator), and duplicate losers are rejected
+  (choix double-counts the edge). Single-loser observations bit-match
+  `lsr_pairwise` on the induced win matrix (regression-pinned).
+- **Plackett-Luce ranking estimation via Luce Spectral Ranking (Maystre &
+  Grossglauser, 2015, as implemented by choix 0.4.1's `lsr_rankings` /
+  `ilsr_rankings` — choix source READ; the paper itself NOT READ, cited as
+  the algorithm origin per choix's docstrings).** New Rust cores
+  `scaling::lsr_rankings` (one-shot) and `scaling::ilsr_rankings`
+  (iterative MLE) estimate Plackett-Luce log-worths from full or partial
+  rankings (best first, CSR layout): each ranking is a sequence of Luce
+  choices, accruing rate `1/(sum of remaining ranked worths)` on every
+  loser-to-winner edge (plus `alpha` regularization), and the centered log
+  stationary distribution of that chain is the estimate. Python wrappers
+  `fast_mlsirm.lsr_rankings` / `ilsr_rankings` take lists of rankings and
+  return `LsrResult`. Three documented divergences from choix: rankings
+  shorter than 2 items are rejected (choix silently no-ops them),
+  within-ranking duplicates are rejected (choix accepts them when the
+  chain stays connected), and negative indices are rejected before the
+  unsigned cast (Python's would silently wrap). Exact rational anchors
+  from an executed exact-Fraction/mpmath oracle (full- and
+  partial-rankings fixtures — the partial fixture is the only one that
+  can see a wrong all-items denominator), length-2 equivalence with
+  `lsr_pairwise` pinned bit-exact, I-LSR fixed-point and iteration-count
+  pins, five executed mutation kills, and a 500-replication Monte-Carlo
+  recovery harness (`--ignored`) with a measured bound.
+- **Rank Centrality paired-comparison estimator (Negahban, Oh, & Shah, 2017,
+  as ported by choix 0.4.1's `rank_centrality` — choix source READ; the
+  paper's discrete-time max-degree walk is NOT what choix computes and only
+  the choix continuous-time win-ratio chain is implemented).** New Rust core
+  `scaling::rank_centrality` builds the Markov chain whose loser-to-winner
+  rates are the regularized win ratios
+  `(alpha + wins[i,j]) / (2*alpha + wins[i,j] + wins[j,i])` and returns the
+  centered log stationary distribution via the shared Gaussian-elimination
+  stationary solver (`statdist_params`, extracted from the LSR pass), with
+  explicit `Err` on disconnected graphs at `alpha = 0` and on overflowing
+  counts or ratio denominators (choix silently degrades there). Exposed as
+  `fast_mlsirm.rank_centrality` returning `LsrResult`. Exact-Fraction oracle
+  anchors (3x3, 4x4, alpha 0 and 1/2, one-sided, disconnected-with-alpha)
+  cross-checked against pip choix 0.4.1 to 2e-16; exact scale invariance
+  pinned at `alpha = 0`; six mutation kills executed (transposed ratio,
+  missing ratio transform, half-updated denominator, dropped normalization,
+  dropped centering, denominator-c-only).
+- **Luce Spectral Ranking (LSR) and iterative LSR (I-LSR) paired-comparison
+  estimators (Maystre & Grossglauser, 2015, as implemented by choix 0.4.1's
+  `lsr.py` dense pairwise path — source READ; Maystre & Grossglauser, 2015
+  NOT READ, cited as described by choix)** (`fast_mlsirm.lsr_pairwise`,
+  `fast_mlsirm.ilsr_pairwise`; in Rust `mlsirm_core::scaling::lsr_pairwise`
+  / `ilsr_pairwise`): builds the LSR Markov chain (rate `c/(w_i + w_j)` on
+  each loser→winner edge plus `alpha` everywhere as a regularizer) and
+  returns the centered log of its stationary distribution (scaled to sum n,
+  choix `statdist` convention). The stationary solve uses Gaussian
+  elimination with partial pivoting plus positivity, sum, and residual
+  guards; disconnected comparison graphs at `alpha = 0` and overflow from
+  huge counts or alpha raise errors instead of returning NaN (divergence
+  from choix, which can emit NaN there). I-LSR at `alpha = 0` converges to
+  the Bradley–Terry MLE and agrees with `bradley_terry_mm` (verified to
+  4e-19 on the oracle fixtures); for `alpha > 0` the two regularization
+  paths deliberately differ (chain-rate vs Dirichlet-MAP, each per its
+  source). Pinned against an EXECUTED exact-Fraction/mpmath oracle
+  cross-checked with pip choix 0.4.1 (≤ 2.2e-13); six mutation kills
+  executed (chain transpose, dropped diagonal subtraction, dropped
+  centering, sum-n→sum-1 normalization via weights pins, denominator
+  collapse via I-LSR pins — one-shot-unobservable limitation documented —
+  and tol·n→tol via a fixture whose iteration counts separate).
+- **Bradley–Terry maximum-likelihood paired-comparison worths via the MM
+  algorithm (Hunter, 2004, as implemented by choix 0.4.1's `opt.mm` pairwise
+  path; Maystre — source READ; Bradley & Terry, 1952 and Hunter, 2004 NOT
+  READ, cited as described by choix)** (`fast_mlsirm.bradley_terry_mm`; in
+  Rust `mlsirm_core::scaling::bradley_terry_mm`): fits centered log-worths
+  from an n×n win-count matrix (`wins[i, j]` = times i beat j; non-integer
+  counts accepted as a DERIVED weighted extension) with choix's
+  regularization `alpha`, exp-scale weights normalized to sum n, and the
+  L1 convergence rule `sum |new − prev| ≤ tol·n` over consecutive updates.
+  All-zero matrices are rejected for every alpha (deliberate divergence from
+  choix's uniform fallback at alpha > 0); zero-wins items at alpha = 0 and
+  Ford-condition violations (an unbeaten item) raise instead of returning a
+  bogus fit. Pinned against a 50-digit mpmath oracle cross-checked with
+  choix itself (max diff ≤ 1.4e-12), including an exact ±ln(3)/2 closed-form
+  2×2 anchor, an alpha = 0.5 MAP anchor, and an iterations == 18 convergence
+  pin; five mutation kills executed (winner accumulation, denominator
+  symmetry, centering, weight normalization, tol·n semantics) plus a 500-rep
+  Monte-Carlo recovery test (`#[ignore]`).
+- **Thurstone Case V paired-comparison scaling (Thurstone, 1927, as
+  implemented by psych's `thurstone()`; Revelle, 2025 — source READ)**
+  (`fast_mlsirm.thurstone_case_v`; in Rust
+  `mlsirm_core::scaling::thurstone_case_v`): scales n objects from an n×n
+  choice-probability matrix (`choice[i, j]` = P(column j preferred over row
+  i)) via `scale_j = colmean(qnorm(choice))_j − min`, fitted model
+  `Phi(scale_j − scale_i)`, residuals, and psych's goodness of fit
+  `1 − sse/ssc` over the full model matrix (pinning the psych *code*
+  behavior; the .Rd "lower off diagonal" prose is stale). Entries must be
+  strictly in (0, 1) — a deliberate safety divergence from psych, whose
+  direct path admits infinite normal quantiles. Pinned against a 50-digit
+  mpmath oracle on asymmetric, exactly-consistent, and intransitive
+  fixtures.
+- **Composite linking (Holland & Strawderman, 2011; as cited by Albano,
+  2016, JSS 74(8), eqs. 31-32)** (`fast_mlsirm.composite_linking`; in Rust
+  `mlsirm_core::equating::composite_linking`): weighted average of H
+  component conversion tables over a shared x grid. With per-component
+  linear slopes supplied, applies the symmetric Holland-Strawderman weight
+  adjustment `W_h = w_h (1 + a_h^p)^(-1/p) / sum(...)` (eq. 32), which for
+  linear components makes the composite of forward links the exact
+  functional inverse of the composite of inverse links (pinned by an exact
+  round-trip test). Without slopes, raw weights are normalized
+  (`W_h = w_h / sum(w)`) — a documented deviation from the R `equate`
+  package's un-normalized non-symmetric path (identical iff weights sum
+  to 1). Exact-fraction oracle pins, 5 executed mutation kills (dropped
+  adjustment, exponent sign flip, skipped normalization, `a^p → a*p` at
+  p=2, weight/table zip reversal), and a 500-rep Monte-Carlo round-trip
+  invariant (`#[ignore]`).
+- **Nominal weights mean equating (Babcock, Albano, & Raymond, 2012; as
+  restated by Albano, 2016, JSS 74(8), eq. 42)**
+  (`fast_mlsirm.nominal_weights_mean_equate`; in Rust
+  `mlsirm_core::equating::nominal_weights_mean_equate`): NEAT-design mean
+  equating for very small samples — the Tucker regression slopes are
+  replaced by the nominal-weights effective-length ratios
+  `gamma1 = k_x/k_v`, `gamma2 = k_y/k_v` (item counts), synthetic means
+  follow Albano (2016) eqs. 37-38, and the conversion is the slope-1 mean
+  shift `yx(x) = x + (mu_sY - mu_sX)` (eq. 10). Synthetic variances
+  (eqs. 39-40, N-denominator moment convention, not the R package's N-1
+  sample variances) are reported but do not enter the conversion. Oracle:
+  exact-Fraction hand computation plus an executed cross-check against the
+  method authors' R package `equate` 2.0.8 (KBneat intercept
+  0.5833490108414594). The 2012 EPM article is paywalled and was NOT read;
+  the method is implemented from Albano (2016) and the authors' own R
+  source, both read. Five mutation kills executed (gamma swap, w1/w2 swap,
+  anchor-mean-difference sign, non-unit slope, dropped w1*w2*g^2*d^2
+  variance term).
+- **Circle-arc small-sample equating (Livingston & Kim, 2008, ETS
+  RR-08-39)** (`fast_mlsirm.circle_arc_equate`,
+  `fast_mlsirm.circle_arc_middle_anchor`; in Rust
+  `mlsirm_core::equating::{circle_arc_equate, circle_arc_middle_anchor}`):
+  constrains the equating curve through two prespecified end-points and an
+  empirically estimated middle point. Method 1 fits a circle arc directly
+  through the three points (circumcenter eqs. 3-4, radius eq. 5, arc
+  branch chosen by the middle point's position relative to the center);
+  Method 2 (the source's most accurate small-sample method) decomposes the
+  curve into the linear component `L(x)` through the end-points plus an
+  arc fitted to the transformed points `y* = y - L(x)`. Collinear points
+  degenerate to the line. `circle_arc_middle_anchor` computes the
+  anchor-design middle point `y2 = m_YB + (s_YB/s_VB)(m_VA - m_VB)`
+  (eq. 9). Reduced scope: scores must lie within the end-points (the
+  source's below-lower-endpoint linear extension is not implemented).
+  Pinned by the paper's worked example (center `(40, -15)`, `r^2 = 1625`;
+  Method-2 transformed center `(12.5, -13)`, `r^2 = 901/4`), a Table-1
+  anchor pin, an exact minus-branch fixture, and a 500-rep randomized
+  anchor-recovery check, all validated against an exact-Fraction oracle.
+
+- **Pass-fail reliability from parallel half-tests (Woodruff & Sawyer,
+  1988, AERA paper, ERIC ED292877)** (`fast_mlsirm.woodruff_sawyer_sb`,
+  `fast_mlsirm.woodruff_sawyer_normal`; in Rust
+  `mlsirm_core::classification::{woodruff_sawyer_sb,
+  woodruff_sawyer_normal}`): estimates the full-test agreement `theta*`
+  and coefficient `phi*` (Cohen's kappa for the symmetric 2x2 pass-fail
+  table) from a single administration split into parallel halves. The SB
+  method symmetrizes the half-test 2x2 table's off-diagonal, computes
+  `phi = 1 - pi01/(pq)` (eq. 1), steps up by Spearman-Brown
+  `phi* = 2 phi/(1+phi)` (eq. 5), and reconstructs the full-length table
+  (eq. 8); the normal method steps up the half-test correlation
+  (`r_SB = 2r/(1+r)`), models parallel full forms as bivariate normal, and
+  evaluates the joint fail-fail cell with the crate's BVN quadrature.
+  Pinned by exact rational fixtures, a Sheppard-orthant exact anchor, and
+  the paper's Table 4 values; six mutation kills executed. Per the source
+  (pp. 9-10), `phi*` from the SB method is positively biased when the
+  halves are not strictly parallel.
+- **Livingston's criterion-referenced reliability k^2 and correlation
+  k(X, Y) (Livingston, 1972, AERA paper, ERIC ED069624)**
+  (`fast_mlsirm.livingston_k2`, `fast_mlsirm.livingston_correlation`; in
+  Rust `mlsirm_core::classification::{livingston_k2,
+  livingston_correlation}`): the classical-test-theory analogues of
+  reliability and correlation with moments taken about a criterion
+  (cut) score instead of the mean, `D^2(X) = var + (mean - cut)^2`,
+  `k^2 = (rho^2 var + (mean-cut)^2) / D^2(X)`, and
+  `k(X,Y) = D(X,Y)/sqrt(D^2(X) D^2(Y))`, with Spearman-Brown test-length
+  projections applied to `k^2` itself. The conversion form is an
+  algebraic reconstruction from the source's Table 1 expectation
+  definitions; `k^2` is NaN only in the exact degenerate case (scores all
+  exactly equal to the cut, detected element-wise, or `var == 0 &&
+  mean == cut`), and returns the formula limit 1 when the squared
+  criterion offset overflows f64 with finite variance (the correlation
+  rejects that overflow with an error); fractional Spearman-Brown lengths are a
+  disclosed continuous extrapolation. Exact-fraction anchors (k2 = 5/6,
+  SB(2) = 10/11, sign-flip k = 5/7 with norm rho = -1, asymmetric-offset
+  k = 22/(7 sqrt(10))), equality-iff-mean=cut and zero-variance property
+  pins, error contracts, and a 500-rep Monte Carlo recovery check
+  (`#[ignore]`).
+- **Brennan-Kane index of dependability Phi(lambda) for mastery tests
+  (Kane & Brennan, 1977, ACT Technical Bulletin No. 28, ERIC ED185076,
+  eq. 33)** (`fast_mlsirm.phi_lambda`; in Rust
+  `mlsirm_core::gtheory::phi_lambda`): the criterion-referenced
+  dependability coefficient theta(d) = Phi(lambda) for a one-facet random
+  `p x i` design at a cutting score `lambda`, built on the module's
+  `gtheory_pi` ANOVA. The `(Xbar - lambda)^2` signal is estimated with a
+  derived unbiased plug-in that subtracts `varhat(Xbar)` computed from the
+  RAW (unclamped) variance components, while `sigma^2(Delta')` and the
+  `sigma^2(p)` numerator keep the module's clamped-component policy; the
+  signal is left unclamped, so estimates may fall below the lambda-free
+  `dependability` (finite-sample behavior, documented). TB-28 defers
+  estimation to Brennan & Kane (1977a, JEM), which was not read; the
+  estimator is derived and adversarially verified independently.
+- **Subkoviak single-administration coefficient of agreement (Subkoviak,
+  1976, ERIC ED120229 / JEM 13(4))** (`fast_mlsirm.subkoviak_agreement`; in
+  Rust `mlsirm_core::classification::subkoviak_agreement`): per-person and
+  group coefficients of agreement, marginal chance agreement, and Cohen's
+  kappa for mastery classifications under the simple binomial true-score
+  model, with the regression estimate of the item-domain proportion
+  (Eq. 16) and optional KR-21 reliability derived from the data with the
+  population (ddof = 0) variance. Supports multi-category criteria
+  (Eqs. 19-22); mastery convention is score `>= C`, verified against
+  Table 1 of the read source (its Eq. 4 OCR prints `>`). The compound
+  binomial refinement (Eqs. 12-14) and Lord's (1959) distribution-free
+  estimate (Eq. 17) are excluded because they defer to sources not read.
+  Exact-fraction oracle pins from the paper's Table 1 fixture; five
+  executed mutation kills (category boundary, P(i) squaring, chance-term
+  aggregation, KR-21 ddof, regression-weight swap).
+- **Hanson-Brennan compound-binomial classification consistency and accuracy
+  (Hanson, 1991, ACT Research Report 91-5)** (`fast_mlsirm.hanson_brennan`,
+  `fast_mlsirm.hanson_brennan_from_params`; in Rust
+  `mlsirm_core::classification::hanson_brennan` /
+  `hanson_brennan_from_params`): single-administration decision consistency,
+  accuracy, sensitivity, specificity, and Cohen's kappa for
+  number-correct cut scores under a four-parameter beta true-score
+  distribution with Lord's two-term approximation to the compound binomial
+  conditional error model. The data path estimates Lord's k from the score
+  mean/variance and reliability (Hanson, 1991, Eq. 6), recovers the first
+  four true-score moments by the HB.tsm recursion (Eqs. 7-8), fits the
+  four-parameter beta by the method of moments with a two-parameter
+  failsafe (identical branch structure to `livingston_lewis`); the params
+  path accepts explicit (l, u, alpha, beta, k). The conditional fail CDF
+  uses a derived closed form
+  `BinCdf(cut-1;K,p) - k p(1-p) [b(cut-1;K-2,p) - b(cut-2;K-2,p)]`,
+  verified as an exact polynomial identity against Lord's term-by-term
+  definition in the oracle. Pinned against an exact-Fraction stdlib oracle
+  (params fixtures at 1e-12; a genuine negative-k 4P data fixture with both
+  beta shapes < 1 at 1e-7); five mutation kills executed.
+- **Two-stage adaptive testing (Betz & Weiss, 1973, Research Report 73-4;
+  Betz & Weiss, 1974, Research Report 74-4)** (`fast_mlsirm.two_stage_route`,
+  `fast_mlsirm.two_stage_score`; in Rust
+  `mlsirm_core::exposure::two_stage_route` / `two_stage_score`, PyO3
+  `py_two_stage_route` / `py_two_stage_score`): routing-test scoring via the
+  truncated normal-ogive ability estimate theta-hat =
+  Phi^-1(((x'/m) - c) / (1 - c)) / a-bar + b-bar (Equation 2; perfect scores
+  truncate to m - 1/2, chance-or-below scores to c*m + 1/2), assignment of
+  the measurement test whose mean difficulty is closest to the routing
+  estimate (minimum absolute difference; ties break to the lowest index, a
+  derived convention), and the item-count-weighted composite
+  (m1*theta1 + m2*theta2)/(m1 + m2) (Equation 3). The scoring entry point
+  re-derives the routing assignment and refuses a mismatched
+  `administered` index so second-stage scores are never combined with the
+  wrong measurement test's parameters. Anchored on the reconstructed
+  Appendix B routing table of Research Report 74-4 and an exact-Fraction
+  oracle through the p-computation; both subtests require m*(1-c) > 1 for
+  distinct truncation endpoints.
+- **Pyramidal adaptive testing (Larkin & Weiss, 1974, Research Report
+  74-3)** (`fast_mlsirm.pyramidal_administer`; in Rust
+  `mlsirm_core::exposure::pyramidal_administer`, PyO3
+  `py_pyramidal_administer`): deterministic single-examinee replay of the
+  classic up-one/down-one equal-offset pyramidal ("branched") design — items
+  in a triangular structure ordered by difficulty (stage s holds s items,
+  n(n+1)/2 total), a correct response routing to the harder stage-(s+1)
+  neighbour and an incorrect response to the easier — with Larkin & Weiss's
+  six scoring methods: number-correct, mean difficulty attempted, mean
+  difficulty correct (NaN when indeterminate), final-item difficulty, the
+  hypothetical (n+1)th-item "final difficulty score" (computed only when the
+  caller supplies the next-stage difficulties; the paper's pool-specific
+  column-mean construction is out of scope), and Hansen's all-item score as
+  described by Larkin & Weiss (verified against the printed 15-stage 0–240
+  range). Routing recurrence and all-item stage scores are DERIVED from the
+  source prose (labelled in the module comment); exact-fraction oracle
+  anchors, checked-arithmetic overflow guards, and a 500-rep Monte-Carlo
+  structural invariant test (`#[ignore]`).
+- **Weiss stradaptive (stratified-adaptive) test administration (Weiss, 1973,
+  Research Report 73-3)** (`fast_mlsirm.stradaptive_administer`; in Rust
+  `mlsirm_core::exposure::stradaptive_administer`, PyO3
+  `py_stradaptive_administer`): deterministic single-examinee replay of
+  Weiss's stratified-adaptive design — an item pool partitioned into S ≥ 2
+  difficulty strata, up-one-stratum after a correct response and
+  down-one-stratum after an incorrect response (edge-clamped, with a DERIVED
+  fallback to the last administered stratum when the clamped target is
+  exhausted), terminating on a ceiling stratum (≥ min_items administered and
+  proportion correct ≤ chance), pool exhaustion, or max_items. Reports
+  ceiling / basal / highest-non-chance strata, Weiss's ten ability scores
+  m1–m10 (NaN when indeterminate; score 7 interpolates between adjacent
+  stratum mean difficulties with side-dependent steps), and a consistency
+  index (population variance of the score-9 stratum set; DERIVED — defined
+  verbally in the report without a printed numeric anchor). The primary
+  source was READ (ERIC ED084301); routing and scores are pinned by the
+  report's William W. protocol (Fig. 2 / Appendix A) and its five printed
+  score-7 cases plus synthetic below-chance anchors that discriminate the
+  lower-step branch (the printed cases alone do not). Score 5's
+  extrapolated-next-stratum variant for exhausted pools and free-response
+  (chance = 0) termination are deliberately out of scope.
+- **Lord self-scoring flexilevel testing (Lord, 1970, RB-70-43; Lord, 1971,
+  RB-71-6)** (`fast_mlsirm.flexilevel_administer` /
+  `fast_mlsirm.flexilevel_score_distribution`; in Rust
+  `mlsirm_core::exposure::flexilevel_administer` /
+  `flexilevel_score_distribution`, PyO3 `py_flexilevel_administer` /
+  `py_flexilevel_score_distribution`): deterministic replay of Lord's
+  branched-adaptive flexilevel design over a full 0/1 response matrix — N
+  (odd) difficulty-sorted items, n = (N+1)/2 administered starting at the
+  median (right → easiest harder, wrong → hardest easier), number-right
+  self-scoring with +1/2 for a wrong last answer — plus the exact conditional
+  score distribution f(x | θ) on the half-integer lattice {1/2, …, n} via
+  Lord's forward recursion over p_v(i), taking caller-supplied per-item
+  correct-response probabilities (ICC-agnostic). Both primary ETS Research
+  Bulletins were READ (ERIC ED042813 / ED051286); the routing is pinned by
+  Lord's RWWRWRRRWR worked example and the recursion is cross-checked exactly
+  against exhaustive path enumeration. Lord's Eq. 3 efficiency ratio and
+  Eq. 4 normal-ogive ICC are deliberately out of scope.
+- **Breslow-Day odds-ratio homogeneity DIF test (Breslow & Day, 1980, Eq. 4.30)**
+  (`fast_mlsirm.breslow_day_dif`; in Rust `mlsirm_core::dif::breslow_day_dif`,
+  PyO3 `py_breslow_day_dif`): the classical NON-UNIFORM DIF companion to
+  `mantel_haenszel_dif` — MH tests a common odds ratio against 1; this tests
+  whether a common odds ratio is tenable at all across the matching-score
+  strata. Per used stratum (all four margins positive) the fitted
+  reference-correct count is the admissible root of the fitted-value quadratic
+  `A·D/(B·C) = ψ̂` (cancellation-stable q-form roots; defensive
+  both-roots admissibility check), the asymptotic variance is
+  `1/(1/A + 1/B + 1/C + 1/D)` on the fitted cells, and
+  `χ² = Σ (a − A)²/Var` is referred to χ²(K − 1). The plugged-in `ψ̂` is the
+  crate's MH `alpha_mh`, the estimator the read source itself endorses
+  (worked example: MH 5.158 → χ² 9.28 vs MLE 5.312 → 9.33). Degenerate MH
+  odds ratio (`Σad = 0` or `Σbc = 0`), fewer than two usable strata, or an
+  inadmissible fitted root yield NaN statistics; Benjamini-Hochberg flags are
+  computed across items on the finite p-values. The Tarone (1985) correction
+  and the Eq. 4.31 trend test are deliberately out of scope (sources not
+  read/documented in the citation-governance header). 0/1 responses only.
+- **Generalized Mantel-Haenszel nominal DIF (Zwick, Donoghue & Grima, Eq. 10)**
+  (`fast_mlsirm.gmh_dif`; in Rust `mlsirm_core::dif::gmh_dif`, PyO3
+  `py_gmh_dif`): unordered-category DIF screening — examinees matched on the
+  full total score; within each usable stratum the reference group's
+  category-count vector over `T − 1` categories is compared with its
+  conditional expectation and covariance; the pooled quadratic form
+  `d′S⁻¹d` is referred to χ²(`T_eff − 1`). Effective categories are counted
+  in used strata only (categories seen solely in excluded strata do not
+  inflate `df`); singular pooled covariance yields NaN (no silent rank
+  reduction); category cap `T_eff ≤ 64`. For 0/1 items the statistic equals
+  the `mantel_smd_dif` χ² (MH without continuity correction). Integer
+  non-negative category codes only (reduced scope; no missing-data support).
+- **Mantel polytomous DIF + standardized mean difference (Zwick, Donoghue & Grima)**
+  (`fast_mlsirm.mantel_smd_dif`; in Rust `mlsirm_core::dif::mantel_smd_dif`, PyO3
+  `py_mantel_smd_dif`): ordinal-item DIF screening — examinees matched on the
+  full total score, per-stratum focal score sums compared with their
+  conditional hypergeometric expectation/variance (Mantel χ², df = 1, Eqs. 8–9
+  of ETS RR-93-14), plus the standardized mean difference effect size (Eq. 11,
+  focal-weighted focal-minus-reference item mean difference; weights
+  renormalized over usable strata — documented deviation matching the crate's
+  standardized P-DIF convention). For 0/1 items the χ² reduces to the MH
+  chi-square without continuity correction. Integer non-negative scores only
+  (reduced scope; no missing-data support).
+- **Empirical Bayes Mantel-Haenszel DIF (Zwick & Thayer)**
+  (`fast_mlsirm.eb_mh_dif`; in Rust `mlsirm_core::dif::eb_mh_dif`, PyO3
+  `py_eb_mh_dif`): shrinkage enhancement of MH D-DIF statistics — prior
+  `N(μ, τ²)` estimated from the supplied item set (`μ` = mean, `τ²` =
+  across-item variance minus mean squared SE, floored at 0), per-item
+  posterior mean `W·MH + (1−W)·μ` and variance `W·SE²` with
+  `W = τ²/(τ² + SE²)`, plus posterior probabilities of the five ETS DIF
+  categories (`C−, B−, A, B+, C+`, normal areas delimited at ±1.5/±1).
+  Formulas trace to the READ report Zwick & Thayer (2003, LSAC RR / ERIC
+  ED481063, statistical-model section); the variance divisor (`n−1`) and
+  the degenerate `τ² = 0` point-mass boundary conventions are documented
+  implementation choices not printed in the source. Takes MH D-DIF/SE
+  pairs (e.g. from `mantel_haenszel_dif`), so any MH pipeline output can
+  be stabilized for small samples.
+- **Angoff Delta plot DIF detection (deltaPlotR-faithful, response input)**
+  (`fast_mlsirm.delta_plot`; in Rust `mlsirm_core::dif::delta_plot`, PyO3
+  `py_delta_plot`): transformed item difficulties `4·qnorm(1−p)+13`, the
+  R-compatible major axis with `max(b1, b2)` root selection (kept even
+  under negative delta covariance, regression-tested), perpendicular
+  distances, normal-approximation or fixed detection thresholds, extreme
+  proportion handling (`constraint` clamp or `add` correction), and IPP1/
+  IPP2/IPP3 iterative item purification with R's membership-row
+  convergence semantics — ported from the CRAN deltaPlotR R package's
+  `deltaPlot.R` and `adjustExtreme.R` (READ at commit e2aeeb6; Angoff &
+  Ford 1973 and Magis & Facon 2012/2014 are cited only as implemented).
+  Response-type input only (the R proportion/delta paths, printing, and
+  plotting are out of scope); non-{0,1,NaN} responses are rejected rather
+  than silently averaged, and returned item indices are 0-based.
+
+- **Nonparametric person-fit statistics (PerFit-faithful, complete data)**
+  (`fast_mlsirm.person_fit_np`; in Rust
+  `mlsirm_core::personfit_np::person_fit_np`, PyO3 `py_person_fit_np`):
+  seven dichotomous statistics — Guttman error count G, normed Guttman
+  errors, the norm conformity index NCI, van der Flier's U3 and
+  standardized ZU3, Sato's caution index C, and the modified caution
+  index C* — ported from the CRAN PerFit R package's `G.R`, `Gnormed.R`,
+  `NCI.R`, `U3.R`, `ZU3.R`, `C.Sato.R`, and `Cstar.R` (READ at commit
+  c9df433; the originating papers are cited only as implemented).
+  Complete 0/1 data only: PerFit's missing-value imputation and
+  polytomous variants are out of scope, and any non-{0,1} entry is
+  rejected. Perfect (all-0s/all-1s) rows are source-faithful: G, normed
+  G, and NCI are 0 (the R source applies `1 - 2*Gnormed` before its
+  NaN→0 replacement) while U3/ZU3/C/C* are NaN, and degenerate
+  all-equal-difficulty data yields NaN rather than an error. Column
+  ordering reproduces R `order(pi, decreasing = TRUE)` including its
+  ascending-index tie-break, pinned by a dedicated tie fixture.
+
+- **Hofstee compromise standard setting (psychometricsGP-faithful)**
+  (`fast_mlsirm.hofstee`; in Rust
+  `mlsirm_core::standard_setting::hofstee`, PyO3 `py_hofstee`): the
+  Hofstee compromise cut score, a computational port of the
+  psychometricsGP R package's `fn_plot_hofstee()` (`R/fn_plot_hofstee.R`,
+  READ — the only inspectable implementation found; single-source port,
+  stated openly; plotting excluded; Hofstee 1983 itself NOT READ, cited
+  only as implemented). Intersects the piecewise-linear cumulative
+  relative frequency ogive over integer score bins 0..=100 (right-closed
+  bins `(s-1, s]`, divide-first `(count/n)*100` arithmetic preserved)
+  with the descending diagonal `(min_cut, max_fail)` → `(max_cut,
+  min_fail)`; when they do not cross, the R fallback pins the cut to
+  `min_cut`/`max_cut` with a strict `<` fail count and two-decimal
+  DIRECTED rounding (ceil up-branch / floor down-branch), `failed=True`.
+  Reduced scope per adversarial spec review: collinear ogive-diagonal
+  overlap and zero-length diagonals are rejected (`spatstat`
+  `crossing.psp` degenerate semantics unverified against an R runtime).
+- **K1/K2/S1/S2 answer-copying indices (CopyDetect-faithful)**
+  (`fast_mlsirm.k_variants`; in Rust `mlsirm_core::security::k_variants`,
+  PyO3 `py_k_variants`): the four regression-baseline copying indices,
+  ported exactly from the CRAN CopyDetect package's internal `ks12()`
+  (`R/similarity1.r`, READ), specialized to complete scored 0/1 data (no
+  missing responses — the port rejects anything but exact 0/1). Number-
+  incorrect subgroups EXCLUDE the source (the opposite of `k_index`'s base
+  `k()` convention — a deliberate CopyDetect asymmetry, regression-anchored
+  in tests). K1/K2 fit linear/quadratic least squares of subgroup incorrect-
+  match rates and take binomial upper tails `P(Bin(ws, p) >= m)`; S1/S2 fit
+  log-linear Poisson GLMs of (weighted) match counts and take bounded
+  Poisson WINDOW probabilities (`P(m <= X <= ws)` / `P(mm <= X <= n_items)`,
+  not plain upper tails — CopyDetect subtracts the tail beyond the cap),
+  with S2 adding the `(1.5e)^(-6·prob)` weighted correct-match term
+  and a RAW ceiling (`mm = ceil(sum) + m`, no epsilon — float noise at
+  integer boundaries can bump `mm`, documented). Numerics: rank-checked
+  modified Gram-Schmidt QR for the OLS fits (degenerate designs raise, no
+  silent normal-equation blowup) and a guarded Newton Poisson GLM with
+  step-halving, bounded eta, and a stable start (nonconvergence raises);
+  `ks12()` itself SUPPRESSES R's non-integer-Poisson warning for the S2
+  fit. Sotaridona & Meijer (2002, *JEM 39*(2)) and (2003, *JEM 40*(1)) NOT
+  read — all four indices cited only as implemented by CopyDetect.
+- **Generalized binomial test (GBT) tail kernel (aberrance-faithful)**
+  (`fast_mlsirm.gbt`; in Rust `mlsirm_core::security::gbt`, PyO3 `py_gbt`):
+  exact Poisson-binomial distribution of the copier-source match count via
+  Bernoulli-convolution DP and the INCLUSIVE upper-tail p-value
+  `P(M >= observed)`, ported exactly from the CRAN aberrance package's
+  `compute_GBT` (`src/compute.cpp`, READ) and corroborated by CopyDetect's
+  internal `GBT()` (`R/similarity1.r`, READ — same distribution, same
+  inclusive tail). Per-item match-probability construction is the caller's
+  job (aberrance directional and CopyDetect symmetric recipes both fit);
+  missing data out of scope (the packages conflict). van der Linden &
+  Sotaridona (2006) NOT read — cited only as implemented. Returns the full
+  pmf plus the p-value; O(n^2) time / O(n) memory nonnegative f64 DP — no
+  cancellation, but tiny extreme large-n masses may underflow.
+- **K-index of matching incorrect answers (CopyDetect-faithful)**
+  (`fast_mlsirm.k_index`; in Rust `mlsirm_core::security::k_index`, PyO3
+  `py_k_index`): binomial upper-tail index of copier-source shared incorrect
+  answers against a number-incorrect subgroup baseline, ported exactly from
+  the CRAN CopyDetect package's internal `k()` (`R/similarity1.r`, READ;
+  corroborated by `R/similarity2.r`), with the binomial tail summed in log
+  space (no factorial overflow or extreme-p underflow). The subgroup
+  includes the copier and,
+  when scores match, the source (CopyDetect convention). Holland (1996,
+  RR-96-07) and Sotaridona & Meijer (2002) NOT read — cited only as
+  implemented; Sotaridona & Meijer (2001, ERIC ED467373) read for
+  background. Validation rejects non-binary/complex/bool inputs and the
+  degenerate all-correct source.
+- **Omega answer-copying statistic (Wollack-style)**
+  (`fast_mlsirm.wollack_omega`; in Rust `mlsirm_core::security::wollack_omega`,
+  PyO3 `py_wollack_omega`): standardized index of answer similarity between a
+  suspected copier and a source. `h` counts identical observed options,
+  `p_i = P_i[source_i]` is the copier's model-implied probability of the
+  source's observed option, `omega = (h - sum p_i)/sqrt(sum p_i (1 - p_i))`
+  with a one-sided upper-tail normal p-value. Formula verified against two
+  independently READ implementations: the CRAN CopyDetect R sources
+  (`similarity1.r`/`similarity2.r`) and the aberrance package
+  (`compute_OMG`); NOT read: Wollack (1997, *Applied Psychological
+  Measurement, 21*(4), 307-320) itself (access blocked) — cited only as
+  implemented by those sources. CopyDetect's printed docs flip the sign
+  (`(E-h)/sqrt(V)`) but both source files use `(h-E)/sqrt(V)`; the source
+  convention is implemented. Scope: omega only — no g2/GBT/K-index, no
+  continuity correction, no missing responses; the caller supplies the
+  copier's fitted option probabilities (e.g. from a nominal response model).
+  Pinned against an independent Python oracle at 1e-12 (p-values 5e-7 via
+  crate erfc); error paths, structural single-item-extension invariant, and
+  a 500-rep Monte Carlo size/power check (`#[ignore]`); 3 executed mutation
+  kills (V-vs-sqrt(V) scaling, copier-probability lookup, two-sided p).
+
+- **DIMTEST test of essential unidimensionality (original Stout-style
+  AT1/AT2 statistic)** (`fast_mlsirm.dimtest`; in Rust
+  `mlsirm_core::detect::dimtest`, PyO3 `py_dimtest`): confirmatory
+  hypothesis test with caller-supplied assessment subtests AT1/AT2 (equal
+  length >= 4, disjoint) and the complementary partitioning subtest PT;
+  examinees are grouped by raw PT total score (groups smaller than 20
+  discarded), within each retained group the observed ML variance of AT
+  totals is compared to the local-independence variance
+  `sum_i p_i (1 - p_i)` normalized by Stout's standard-error estimate
+  `S_k`, giving `T_L = K^{-1/2} sum_k (sigma_k^2 - sigma_U,k^2)/S_k`, the
+  AT2 bias correction `T_B`, and `T = (T_L - T_B)/sqrt(2)` with a one-sided
+  upper-tail normal p-value. Formulas transcribed from Nandakumar & Stout's
+  1992 ERIC technical report ED351383 (published 1993, *Journal of
+  Educational Statistics, 18*(1), 41-68), which describes Stout (1987,
+  Sec. 4); Kieftenbeld & Nandakumar (2015, PMC5978610) READ for the
+  original-vs-bootstrap bias-correction distinction. NOT read: Stout (1987)
+  original article, Stout et al. (2001), Froelich & Habing (2008), DIM-Pack
+  sources — no ATFIND, no DIMTEST 2 / bootstrap correction, no polytomous
+  items, no missing data. Pinned against an independent NumPy oracle
+  (500x18 two-dimensional fixture, agreement 1e-12 on `T_L`/`T_B`/`T`;
+  p-value at 5e-7 due to the crate's Numerical Recipes `erfc`).
+
+- **Confidence-interval (ACI) classification for CAT**
+  (`fast_mlsirm.ci_classify`; in Rust `mlsirm_core::exposure::ci_classify`,
+  PyO3 `py_ci_classify`): single-cut binary-response classification by
+  interim EAP ability estimate on a fixed 41-point `[-4, 4]` grid with
+  standard-normal prior, SE = EAP posterior SD, interval
+  `theta_hat +/- z_crit * se` vs `theta_cut` with STRICT first-crossing
+  decisions -> `"above"`/`"below"`/`"continue"` with 1-based `n_used`; full
+  theta/se/lower/upper traces are returned as offline diagnostics (entries
+  past `n_used` are counterfactual replay values). Verified against R catIrt
+  `termCI.R`/`eapEst.R`/`catIrt.Rd` at commit
+  `c9e979e4812c27d95d367a7f097edfe8e93ac8eb` (READ); Kingsbury & Weiss
+  (1983), Thompson (2007), and Eggen & Straetmans (2000) were NOT
+  method-section verified and are historical/background context only.
+- **Wald SPRT classification for CAT** (`fast_mlsirm.sprt_classify`; in
+  `mlsirm_core::exposure`). Single-cut binary-response sequential probability
+  ratio test: point hypotheses at `theta_cut -/+ delta`, cumulative binary
+  log-likelihood ratio under the D=1 logistic 3PL, and inclusive
+  first-crossing decisions against the log Wald boundaries
+  `A = ln((1-beta)/alpha)`, `B = ln(beta/(1-alpha))` -> `"above"`/`"below"`/
+  `"continue"` with 1-based `n_used`; the full `llr_trace` is returned as an
+  offline diagnostic (entries past `n_used` are counterfactual replay
+  values). Verified against R catIrt `termSPRT.R`/`logLik.brm.R`/`p.brm.R`
+  and Thompson (2007, doi:10.7275/fq3r-zz60); Reckase (1983), Eggen (1999),
+  and Wald (1947) are cited as historical origins via Thompson (not directly
+  read). Log-likelihood ratios are computed in stable log space (softplus /
+  log-sigmoid), so extreme-but-valid parameters that saturate the response
+  probability to numerical 0/1 yield finite LLRs instead of errors. Pinned
+  17-digit interior-crossing oracle, error-path and 500-rep Monte-Carlo
+  structural-invariant tests; 4 executed mutation kills (swapped boundaries,
+  dropped guessing floor, collapsed null hypothesis, off-by-one `n_used`).
+- **Owen-approximate posterior-predictive EPV item selection**
+  (`fast_mlsirm.epv_select`; in `mlsirm_core::exposure`). Deliberately
+  reduced scope of van der Linden's (1998, doi:10.1007/BF02294775) minimum
+  expected posterior variance (MEPV) criterion: the posterior is Owen's
+  normal approximation `N(mu, sig2)`, the predictive probability is
+  `p*_i = c_i + (1-c_i) Phi((mu-b_i)/sqrt(1/a_i^2 + sig2))`, and the outcome
+  posterior variances come from `owen_update` rather than exact numerical
+  posteriors; the unadministered item minimizing
+  `EPV_i = p*_i sig2_i^+ + (1-p*_i) sig2_i^-` is selected (lowest-index
+  ties). van der Linden (1998) READ as ERIC ED424235 (Research Report
+  96-01); the exact-MEPV contract additionally verified against R catR
+  `EPV.R` and mirtCAT `selection_criteria.R` (both READ); Owen (1975) NOT
+  read (update formulas follow the crate's `owen_update`). Pinned oracles
+  and a delegation discriminator (argmin EPV vs. max-info vs. b-matching)
+  fixed by the adversarial spec review.
+- **Kingsbury-Zara constrained CAT (CCAT) content balancing**
+  (`fast_mlsirm.ccat_select`; in `mlsirm_core::exposure`). Single-step
+  content-balanced item selection: eligible groups with zero administered
+  items have priority, otherwise the eligible group with the maximal
+  target-minus-empirical-proportion discrepancy is chosen; within the chosen
+  group the unadministered item with maximal logistic 3PL Fisher information
+  `a^2 (Q/P) ((P-c)/(1-c))^2` is selected. Ties go to the lowest index
+  (documented deterministic deviation from catR's random tie-break).
+  Kingsbury & Zara (1989, doi:10.1207/s15324818ame0204_6) itself NOT read
+  (paywalled); the rule is implemented as reproduced by the R catR package
+  (`nextItem.R` `cbControl` branch; READ), and the information formula was
+  verified against catR `Ii.R`/`Pi.R`. Pinned oracles computed in exact
+  arithmetic by the adversarial spec review.
 - **Owen approximate Bayesian sequential CAT** (`fast_mlsirm.owen_update`,
   `fast_mlsirm.owen_cat`; in `mlsirm_core::exposure`). Closed-form
   normal-approximation posterior moment updates for the 3PNO model
@@ -126,7 +925,7 @@
   b-matching selection (`argmin |b_i - mu|`, ties to the lowest index) and
   posterior-variance stopping rule (plus a `test_length` cap). Owen (1975)
   itself NOT read (paywalled); formulas implemented as reproduced by
-  van der Linden (1998, Research Report 98-01, Appendix A.1-A.6) and
+  van der Linden (1998, Research Report 96-01, Appendix A.1-A.6) and
   cross-checked against the R `irt` package `est_ability_owen.cpp`; pinned
   oracles verified against exact-posterior numerical integration (~1e-13)
   by the adversarial spec review.
