@@ -5615,3 +5615,680 @@ fn fd_mc_500_elo_reduction() {
         assert_eq!(f.lag, e.lag, "rep {rep}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// predict_rating_two / predict_rating_multi (PlayerRatings predict.rating,
+// R lines 1056-1133 READ). Pins from the executed oracle
+// (files/predict_oracle.py / predict_oracle_output.txt).
+// ---------------------------------------------------------------------------
+
+/// P1+P2: Elo branch exact half + gamma-sign pin.
+/// Asserts read `predict_rating_two` return values. Killing mutants:
+/// gamma sign flip (MU1) changes the P2 pin; equal-rating case pins 1/2.
+#[test]
+fn pr_anchor_elo_gamma_sign() {
+    let p1 = predict_rating_two(
+        &[2200.0, 2200.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(p1, vec![0.5]);
+    let p2 = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!((p2[0] - 0.7898441797581306).abs() < 1e-14, "{}", p2[0]);
+    // MU1 (gamma sign flip) would give ~0.7276; assert distance from it.
+    let mu1 = 1.0 / (1.0 + 10f64.powf((2000.0 - 2200.0 + 30.0) / 400.0));
+    assert!((p2[0] - mu1).abs() > 1e-3);
+}
+
+/// P3: deviation-branch shrink pin + dev=0 reduction to the Elo branch.
+/// Asserts read `predict_rating_two` values from BOTH branches. Killing
+/// mutants: qip3 factor 3->2 (MU2) changes the nonzero-dev pin; the dev=0
+/// crate-vs-crate identity kills stray vec offsets.
+#[test]
+fn pr_deviation_shrink() {
+    let p3 = predict_rating_two(
+        &[2200.0, 2000.0],
+        Some(&[50.0, 100.0]),
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!((p3[0] - 0.776912664201114).abs() < 1e-14, "{}", p3[0]);
+    let p3z = predict_rating_two(
+        &[2200.0, 2000.0],
+        Some(&[0.0, 0.0]),
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    let p2 = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(p3z[0], p2[0], "dev=0 must reduce to the Elo branch");
+}
+
+/// P4: tng boundary — games == tng is KEPT (strict <); games < tng is
+/// replaced by trat or NaN. Asserts read `predict_rating_two` values.
+/// Killing mutant: `<` -> `<=` (MU3) turns the kept pin into NaN.
+#[test]
+fn pr_tng_boundary() {
+    let kept = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[15, 15],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!((kept[0] - 0.7597469266479578).abs() < 1e-14, "{}", kept[0]);
+    let dropped = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[14, 15],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(dropped[0].is_nan());
+    let replaced = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[14, 15],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        Some((2000.0, 0.0)),
+        None,
+    )
+    .unwrap();
+    assert_eq!(replaced[0], 0.5);
+}
+
+/// P5+P9: unmatched (-1) and matched-but-stored-NaN players — trat
+/// replaces ALL extracted NAs; without trat they propagate. Asserts read
+/// `predict_rating_two` values (incl. a crate-vs-crate deviation anchor).
+#[test]
+fn pr_unmatched_and_stored_na_trat() {
+    let una = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[20, 20],
+        &[-1],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(una[0].is_nan());
+    let unb = predict_rating_two(
+        &[2200.0, 2000.0],
+        None,
+        &[20, 20],
+        &[-1],
+        &[1],
+        &[0.0],
+        15,
+        Some((2000.0, 0.0)),
+        None,
+    )
+    .unwrap();
+    assert_eq!(unb[0], 0.5);
+    let p9a = predict_rating_two(
+        &[f64::NAN, 2000.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        Some((2000.0, 0.0)),
+        None,
+    )
+    .unwrap();
+    assert_eq!(p9a[0], 0.5);
+    let p9b = predict_rating_two(
+        &[f64::NAN, 2000.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(p9b[0].is_nan());
+    // stored-NaN deviation replaced by trat.1 == crate value with real dev.
+    let p9c = predict_rating_two(
+        &[2200.0, 2000.0],
+        Some(&[f64::NAN, 50.0]),
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        Some((2200.0, 50.0)),
+        None,
+    )
+    .unwrap();
+    let p9c_ref = predict_rating_two(
+        &[2200.0, 2000.0],
+        Some(&[50.0, 50.0]),
+        &[20, 20],
+        &[0],
+        &[1],
+        &[30.0],
+        15,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(p9c[0], p9c_ref[0]);
+    assert!((p9c[0] - 0.7844611342833985).abs() < 1e-14, "{}", p9c[0]);
+}
+
+/// P6: thresh uses >= (exact equality -> 1) and NaN preds stay NaN.
+/// Asserts read `predict_rating_two` values. Killing mutant: `>=` -> `>`
+/// (MU6) turns the exact-equality 1.0 into 0.0.
+#[test]
+fn pr_thresh_ge_and_nan() {
+    let p = predict_rating_two(
+        &[2200.0, 2200.0],
+        None,
+        &[20, 20],
+        &[0, -1],
+        &[1, 1],
+        &[0.0, 0.0],
+        15,
+        None,
+        Some(0.5),
+    )
+    .unwrap();
+    assert_eq!(p[0], 1.0, "pred exactly == thresh must map to 1 (>=)");
+    assert!(p[1].is_nan());
+    let below = predict_rating_two(
+        &[2000.0, 2200.0],
+        None,
+        &[20, 20],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        Some(0.5),
+    )
+    .unwrap();
+    assert_eq!(below[0], 0.0);
+}
+
+/// P7: EloM (rat - rowmean)/40 pins, na.rm rowmean, all-NaN row.
+/// Asserts read `predict_rating_multi` values. Killing mutant: divisor
+/// 40 -> 400 (MU4) changes the exact 2.5/3.75 pins.
+#[test]
+fn pr_elom_rowmean() {
+    let p7 = predict_rating_multi(
+        &[2300.0, 2200.0, 2100.0, 2000.0],
+        &[20, 20, 20, 20],
+        &[0, 1, 2, 0, 3, -1],
+        2,
+        3,
+        15,
+        None,
+        false,
+    )
+    .unwrap();
+    assert_eq!(&p7[0..3], &[2.5, 0.0, -2.5]);
+    assert_eq!(p7[3], 3.75);
+    assert_eq!(p7[4], -3.75);
+    assert!(p7[5].is_nan());
+    let allna = predict_rating_multi(
+        &[2300.0, 2200.0],
+        &[20, 20],
+        &[-1, -1],
+        1,
+        2,
+        15,
+        None,
+        false,
+    )
+    .unwrap();
+    assert!(allna.iter().all(|v| v.is_nan()));
+    // P9d: stored-NaN seat replaced by trat.
+    let p9d = predict_rating_multi(
+        &[f64::NAN, 2200.0, 2100.0],
+        &[20, 20, 20],
+        &[0, 1, 2],
+        1,
+        3,
+        15,
+        Some(2300.0),
+        false,
+    )
+    .unwrap();
+    // tng boundary in the multi branch: games == tng KEPT (strict <).
+    let boundary = predict_rating_multi(
+        &[2300.0, 2200.0, 2100.0],
+        &[15, 20, 20],
+        &[0, 1, 2],
+        1,
+        3,
+        15,
+        None,
+        false,
+    )
+    .unwrap();
+    assert_eq!(&boundary[0..3], &[2.5, 0.0, -2.5]);
+    let dropped = predict_rating_multi(
+        &[2300.0, 2200.0, 2100.0],
+        &[14, 20, 20],
+        &[0, 1, 2],
+        1,
+        3,
+        15,
+        None,
+        false,
+    )
+    .unwrap();
+    assert!(dropped[0].is_nan());
+    assert_eq!(dropped[1], 1.25);
+    assert_eq!(dropped[2], -1.25);
+}
+
+/// P8: placing ranks — ties share the MINIMUM rank, NaN kept.
+/// Asserts read `predict_rating_multi` values. Killing mutant: min ->
+/// average/max tie handling (MU5) changes the (1,1,3) pattern.
+#[test]
+fn pr_placing_min_ties() {
+    let p8 = predict_rating_multi(
+        &[2300.0, 2300.0, 2100.0, 2000.0],
+        &[20, 20, 20, 20],
+        &[0, 1, 2, -1],
+        1,
+        4,
+        15,
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(p8[0], 1.0);
+    assert_eq!(p8[1], 1.0);
+    assert_eq!(p8[2], 3.0);
+    assert!(p8[3].is_nan());
+}
+
+/// Error contract for both functions. Asserts read Err values.
+#[test]
+fn pr_error_contract() {
+    let r = |x: Result<Vec<f64>, String>| x.unwrap_err();
+    // player count bounds
+    assert!(r(predict_rating_two(
+        &[1500.0],
+        None,
+        &[0],
+        &[0],
+        &[0],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("2..=10000"));
+    // games length mismatch
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("games length"));
+    // empty game rows
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[],
+        &[],
+        &[],
+        15,
+        None,
+        None
+    ))
+    .contains("at least one game"));
+    // infinite rating rejected (NaN allowed elsewhere)
+    assert!(r(predict_rating_two(
+        &[f64::INFINITY, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("infinite"));
+    // non-finite gamma
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[1],
+        &[f64::NAN],
+        15,
+        None,
+        None
+    ))
+    .contains("gamma"));
+    // non-finite trat
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        Some((f64::NAN, 0.0)),
+        None
+    ))
+    .contains("trat"));
+    // trat deviation checked only when deviations supplied
+    assert!(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        Some((1500.0, f64::NAN)),
+        None
+    )
+    .is_ok());
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        Some(&[50.0, 50.0]),
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        Some((1500.0, f64::NAN)),
+        None
+    ))
+    .contains("trat deviation"));
+    // non-finite thresh
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        Some(f64::NAN)
+    ))
+    .contains("thresh"));
+    // out-of-range index (only -1 sentinel allowed)
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[-2],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("out of range"));
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[0],
+        &[2],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("out of range"));
+    // self-play
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        None,
+        &[0, 0],
+        &[1],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("self-play"));
+    // deviations length mismatch
+    assert!(r(predict_rating_two(
+        &[1500.0, 1500.0],
+        Some(&[50.0]),
+        &[0, 0],
+        &[0],
+        &[1],
+        &[0.0],
+        15,
+        None,
+        None
+    ))
+    .contains("deviations length"));
+    // multi: seat bounds, players length, nr=0, index range, trat
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[0],
+        1,
+        1,
+        15,
+        None,
+        false
+    ))
+    .contains("2..=1000"));
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[0, 1, 0],
+        1,
+        2,
+        15,
+        None,
+        false
+    ))
+    .contains("players length"));
+    // nr*np usize overflow must be a checked error, not a wrap + panic
+    // (kills: replacing checked_mul with wrapping `nr * np`, which lets an
+    // empty players slice pass the length check and then index OOB).
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[],
+        1usize << 61,
+        8,
+        15,
+        None,
+        false
+    ))
+    .contains("overflows"));
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[],
+        0,
+        2,
+        15,
+        None,
+        false
+    ))
+    .contains("at least one event"));
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[0, 5],
+        1,
+        2,
+        15,
+        None,
+        false
+    ))
+    .contains("out of range"));
+    assert!(r(predict_rating_multi(
+        &[1500.0, 1500.0],
+        &[0, 0],
+        &[0, 1],
+        1,
+        2,
+        15,
+        Some(f64::INFINITY),
+        false
+    ))
+    .contains("trat"));
+}
+
+/// MC-500: structural invariants over random inputs. Every assert reads
+/// crate return values: complement symmetry pred(w,b)+pred(b,w) ~= 1 at
+/// gamma=0 (both branches), preds in (0,1), thresh output consistent with
+/// the crate's own unthresholded preds, placing ranks are a valid
+/// min-tie ranking of the crate's own EloM preds.
+#[test]
+#[ignore]
+fn pr_mc_500_invariants() {
+    let mut rng = Lcg(0x5eed_cafe_1234_0001);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 8.0) as usize;
+        let ratings: Vec<f64> = (0..n).map(|_| 1200.0 + 1600.0 * rng.next_f64()).collect();
+        let devs: Vec<f64> = (0..n).map(|_| 30.0 + 300.0 * rng.next_f64()).collect();
+        let games: Vec<u64> = (0..n)
+            .map(|_| 15 + (rng.next_f64() * 40.0) as u64)
+            .collect();
+        let w = (rng.next_f64() * n as f64) as i64;
+        let mut b = (rng.next_f64() * n as f64) as i64;
+        if b == w {
+            b = (b + 1) % n as i64;
+        }
+        for dev_opt in [None, Some(devs.as_slice())] {
+            let fwd = predict_rating_two(
+                &ratings,
+                dev_opt,
+                &games,
+                &[w],
+                &[b],
+                &[0.0],
+                15,
+                None,
+                None,
+            )
+            .unwrap();
+            let bwd = predict_rating_two(
+                &ratings,
+                dev_opt,
+                &games,
+                &[b],
+                &[w],
+                &[0.0],
+                15,
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(fwd[0] > 0.0 && fwd[0] < 1.0, "rep {rep}");
+            assert!(
+                (fwd[0] + bwd[0] - 1.0).abs() < 1e-12,
+                "rep {rep}: complement symmetry"
+            );
+            let th = predict_rating_two(
+                &ratings,
+                dev_opt,
+                &games,
+                &[w],
+                &[b],
+                &[0.0],
+                15,
+                None,
+                Some(0.5),
+            )
+            .unwrap();
+            let expect = if fwd[0] >= 0.5 { 1.0 } else { 0.0 };
+            assert_eq!(th[0], expect, "rep {rep}: thresh vs crate pred");
+        }
+        // EloM: placing must be the min-tie ranking of the crate's preds.
+        let np = 3.min(n);
+        let seats: Vec<i64> = (0..np as i64).collect();
+        let preds = predict_rating_multi(&ratings, &games, &seats, 1, np, 15, None, false).unwrap();
+        let ranks = predict_rating_multi(&ratings, &games, &seats, 1, np, 15, None, true).unwrap();
+        for s in 0..np {
+            let expected = 1.0
+                + preds
+                    .iter()
+                    .filter(|u| !u.is_nan() && **u > preds[s])
+                    .count() as f64;
+            assert_eq!(ranks[s], expected, "rep {rep} seat {s}");
+        }
+        // Row mean of preds is 0 (crate values; na.rm mean identity).
+        let sum: f64 = preds.iter().sum();
+        assert!(sum.abs() < 1e-9, "rep {rep}: pred row sum {sum}");
+    }
+}

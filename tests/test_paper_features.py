@@ -10067,3 +10067,184 @@ class TestFide:
         assert f.ratings.tolist() == e.ratings.tolist()
         assert f.games.tolist() == e.games.tolist()
         assert f.lag.tolist() == e.lag.tolist()
+
+
+class TestPredict:
+    """predict_rating / predict_rating_multi (PlayerRatings predict.rating,
+    R lines 1056-1133). Pins from the executed oracle
+    (files/predict_oracle.py); every assert reads wrapper/crate outputs."""
+
+    def test_elo_branch_pins(self):
+        import numpy as np
+        from fast_mlsirm import predict_rating
+
+        p1 = predict_rating([2200.0, 2200.0], [20, 20], [0], [1], gamma=0.0)
+        assert p1.shape == (1,)
+        assert p1[0] == 0.5
+        p2 = predict_rating([2200.0, 2000.0], [20, 20], [0], [1], gamma=30.0)
+        assert abs(p2[0] - 0.7898441797581306) < 1e-14
+        # per-game gamma array and scalar broadcast agree (crate values)
+        p2b = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0, 0], [1, 1], gamma=np.array([30.0, 30.0])
+        )
+        assert p2b[0] == p2[0] and p2b[1] == p2[0]
+
+    def test_deviation_branch(self):
+        from fast_mlsirm import predict_rating
+
+        p3 = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[50.0, 100.0], gamma=30.0,
+        )
+        assert abs(p3[0] - 0.776912664201114) < 1e-14
+        p3z = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[0.0, 0.0], gamma=30.0,
+        )
+        p2 = predict_rating([2200.0, 2000.0], [20, 20], [0], [1], gamma=30.0)
+        assert p3z[0] == p2[0]
+
+    def test_tng_trat_unmatched(self):
+        import math
+        from fast_mlsirm import predict_rating
+
+        kept = predict_rating([2200.0, 2000.0], [15, 15], [0], [1], gamma=0.0)
+        assert abs(kept[0] - 0.7597469266479578) < 1e-14
+        dropped = predict_rating([2200.0, 2000.0], [14, 15], [0], [1], gamma=0.0)
+        assert math.isnan(dropped[0])
+        replaced = predict_rating(
+            [2200.0, 2000.0], [14, 15], [0], [1], gamma=0.0, trat=2000.0
+        )
+        assert replaced[0] == 0.5
+        un = predict_rating([2200.0, 2000.0], [20, 20], [-1], [1], gamma=0.0)
+        assert math.isnan(un[0])
+        un_t = predict_rating(
+            [2200.0, 2000.0], [20, 20], [-1], [1], gamma=0.0, trat=2000.0
+        )
+        assert un_t[0] == 0.5
+        # stored-NaN + pair trat with deviations
+        p9c = predict_rating(
+            [2200.0, 2000.0], [20, 20], [0], [1],
+            deviations=[float("nan"), 50.0], gamma=30.0, trat=(2200.0, 50.0),
+        )
+        assert abs(p9c[0] - 0.7844611342833985) < 1e-14
+
+    def test_thresh(self):
+        import math
+        from fast_mlsirm import predict_rating
+
+        p = predict_rating(
+            [2200.0, 2200.0], [20, 20], [0, -1], [1, 1], gamma=0.0, thresh=0.5
+        )
+        assert p[0] == 1.0  # exact equality maps to 1 (>=)
+        assert math.isnan(p[1])
+
+    def test_multi_and_placing(self):
+        import math
+        import numpy as np
+        from fast_mlsirm import predict_rating_multi
+
+        p7 = predict_rating_multi(
+            [2300.0, 2200.0, 2100.0, 2000.0], [20] * 4,
+            np.array([[0, 1, 2], [0, 3, -1]]),
+        )
+        assert p7.shape == (2, 3)
+        assert p7[0].tolist() == [2.5, 0.0, -2.5]
+        assert p7[1][0] == 3.75 and p7[1][1] == -3.75 and math.isnan(p7[1][2])
+        p8 = predict_rating_multi(
+            [2300.0, 2300.0, 2100.0, 2000.0], [20] * 4,
+            np.array([[0, 1, 2, -1]]), placing=True,
+        )
+        assert p8[0][0] == 1.0 and p8[0][1] == 1.0 and p8[0][2] == 3.0
+        assert math.isnan(p8[0][3])
+
+    def test_validation(self):
+        import numpy as np
+        import pytest
+        from fast_mlsirm import predict_rating, predict_rating_multi
+
+        with pytest.raises(ValueError, match="2..=10000"):
+            predict_rating([2200.0], [20], [0], [0], gamma=0.0)
+        with pytest.raises(ValueError, match="complex"):
+            predict_rating([2200.0 + 1j, 2000.0], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="complex|bool"):
+            predict_rating(np.array([True, False]), [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="non-numeric"):
+            predict_rating([2200.0, "x"], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="masked"):
+            predict_rating(
+                np.ma.masked_array([2200.0, 2000.0], mask=[False, True]),
+                [20, 20], [0], [1],
+            )
+        with pytest.raises(ValueError, match="infinit"):
+            predict_rating([np.inf, 2000.0], [20, 20], [0], [1])
+        with pytest.raises(ValueError, match="NaN"):
+            predict_rating([2200.0, 2000.0], [np.nan, 20], [0], [1])
+        with pytest.raises(ValueError, match=">= -1"):
+            predict_rating([2200.0, 2000.0], [20, 20], [-2], [1])
+        with pytest.raises(ValueError, match="self-play"):
+            predict_rating([2200.0, 2000.0], [20, 20], [1], [1])
+        with pytest.raises(ValueError, match="pair"):
+            predict_rating(
+                [2200.0, 2000.0], [20, 20], [0], [1],
+                deviations=[50.0, 50.0], trat=2000.0,
+            )
+        with pytest.raises(ValueError, match="bool"):
+            predict_rating([2200.0, 2000.0], [20, 20], [0], [1], thresh=True)
+        with pytest.raises(ValueError, match="2-D"):
+            predict_rating_multi([2200.0, 2000.0], [20, 20], [0, 1])
+        with pytest.raises(ValueError, match="bool"):
+            predict_rating_multi(
+                [2200.0, 2000.0], [20, 20], np.array([[0, 1]]), trat=True
+            )
+        # NaN ratings are allowed (R NA), not an error
+        import math
+        out = predict_rating([float("nan"), 2000.0], [20, 20], [0], [1], gamma=0.0)
+        assert math.isnan(out[0])
+
+    def test_u64_fidelity_and_overflow(self):
+        import math
+        import numpy as np
+        import pytest
+        from fast_mlsirm import predict_rating, predict_rating_multi
+
+        big = 2**53
+        # int-dtype games keep exact counts above 2**53: games == 2**53 is
+        # strictly below tng == 2**53 + 1, so both players are unrated -> NaN.
+        out = predict_rating(
+            [2200.0, 2000.0], [big, big], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert math.isnan(out[0])
+        outm = predict_rating_multi(
+            [2300.0, 2200.0], [big, big], np.array([[0, 1]]), tng=big + 1
+        )
+        assert math.isnan(outm[0][0]) and math.isnan(outm[0][1])
+        # float games at/above the dtype exact-integer bound are rejected
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), [0], [1]
+            )
+        with pytest.raises(ValueError, match='integer array'):
+            predict_rating_multi(
+                [2200.0, 2000.0], np.array([float(big), 20.0]), np.array([[0, 1]])
+            )
+        # float tng at/above 2**53 rejected; huge int tng still exact
+        with pytest.raises(ValueError, match='pass tng as an int'):
+            predict_rating([2200.0, 2000.0], [20, 20], [0], [1], tng=float(big))
+        kept = predict_rating(
+            [2200.0, 2000.0], [big + 2, big + 2], [0], [1], gamma=0.0, tng=big + 1
+        )
+        assert abs(kept[0] - 0.7597469266479578) < 1e-14
+        # core-level nr*np overflow is a checked ValueError, not a panic
+        import fast_mlsirm._core as core
+        with pytest.raises(ValueError, match='overflows'):
+            core.predict_rating_multi(
+                np.array([1.0, 2.0]),
+                np.array([1, 1], dtype=np.uint64),
+                np.array([], dtype=np.int64),
+                1 << 61,
+                8,
+                15,
+                None,
+                False,
+            )
