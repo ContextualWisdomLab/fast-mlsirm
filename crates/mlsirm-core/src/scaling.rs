@@ -317,6 +317,294 @@ pub fn bradley_terry_mm(
     ))
 }
 
+/// Result of a Luce Spectral Ranking (LSR / I-LSR) fit.
+#[derive(Clone, Debug)]
+pub struct LsrResult {
+    /// Centered log-worth parameters (mean exactly 0; choix
+    /// `log_transform` convention).
+    pub params: Vec<f64>,
+    /// Stationary distribution of the LSR Markov chain, scaled to sum
+    /// `n` (choix `statdist` convention).
+    pub weights: Vec<f64>,
+    /// Number of LSR passes performed (1 for the one-shot spectral
+    /// estimator; the pass count at convergence for I-LSR).
+    pub iterations: usize,
+}
+
+/// Shared input validation for [`lsr_pairwise`] / [`ilsr_pairwise`].
+fn lsr_validate(wins: &[f64], n: usize, alpha: f64) -> Result<(), String> {
+    if n < 2 {
+        return Err("lsr_pairwise needs at least 2 objects".into());
+    }
+    if wins.len() != n * n {
+        return Err(format!(
+            "wins must be a row-major {n}x{n} matrix ({} entries), got {}",
+            n * n,
+            wins.len()
+        ));
+    }
+    for (k, &c) in wins.iter().enumerate() {
+        if !c.is_finite() {
+            return Err("win counts must be finite".into());
+        }
+        if c < 0.0 {
+            return Err("win counts must be nonnegative".into());
+        }
+        if k / n == k % n && c != 0.0 {
+            return Err("diagonal of the wins matrix must be zero".into());
+        }
+    }
+    if wins.iter().all(|&c| c == 0.0) {
+        return Err("wins matrix has no comparisons".into());
+    }
+    if !alpha.is_finite() || alpha < 0.0 {
+        return Err("alpha must be finite and nonnegative".into());
+    }
+    Ok(())
+}
+
+/// One LSR pass: build the Markov-chain generator from `wins` under the
+/// current worths `w`, solve for its stationary distribution scaled to
+/// sum `n`, and return `(params, weights)` (choix `lsr_pairwise_dense` +
+/// `statdist` + `log_transform`).
+fn lsr_pass(wins: &[f64], n: usize, alpha: f64, w: &[f64]) -> Result<(Vec<f64>, Vec<f64>), String> {
+    let nf = n as f64;
+    // chain = alpha * ones(n, n); chain[loser][winner] += c / (w_win + w_lose).
+    // choix seeds the diagonal with alpha too; that is behaviorally
+    // equivalent to seeding off-diagonals only, because the subsequent
+    // row-sum subtraction cancels any initial diagonal (VERIFIED
+    // algebraically; do not treat the variants as distinct).
+    let mut chain = vec![alpha; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            let c = wins[i * n + j];
+            if c > 0.0 {
+                chain[j * n + i] += c / (w[i] + w[j]);
+            }
+        }
+    }
+    for i in 0..n {
+        let row_sum: f64 = (0..n).filter(|&j| j != i).map(|j| chain[i * n + j]).sum();
+        chain[i * n + i] = -row_sum;
+    }
+    // Overflow guard: finite inputs can still overflow the transition
+    // rates or row sums (e.g. counts or alpha near 1e308).
+    if chain.iter().any(|x| !x.is_finite()) {
+        return Err("LSR Markov chain has non-finite transition rates (overflow)".into());
+    }
+    // Normalize the generator to unit max magnitude: the stationary
+    // distribution is invariant under global rescaling of all transition
+    // rates, and without this an O(count) generator dwarfs the O(1)
+    // sum-constraint row, so the relative pivot threshold below would
+    // falsely reject validly connected matrices with huge counts
+    // (impl-review finding; regression-tested for 1e20/1e150 scalings).
+    let cmax = chain.iter().fold(0.0f64, |a, &x| a.max(x.abs()));
+    if cmax > 0.0 {
+        for x in chain.iter_mut() {
+            *x /= cmax;
+        }
+    }
+
+    // Stationary distribution: solve pi . chain = 0 with sum(pi) = n.
+    // The n stationarity equations (columns of `chain`) sum to zero, so
+    // any one is redundant; drop the last and append the sum constraint.
+    // Gaussian elimination with partial pivoting (equivalent to choix's
+    // LU-based `statdist` for a rank-(n-1) irreducible generator).
+    let mut m = vec![0.0f64; n * n];
+    let mut rhs = vec![0.0f64; n];
+    for col in 0..n - 1 {
+        for j in 0..n {
+            m[col * n + j] = chain[j * n + col];
+        }
+    }
+    for j in 0..n {
+        m[(n - 1) * n + j] = 1.0;
+    }
+    rhs[n - 1] = nf;
+    let scale = m.iter().fold(0.0f64, |a, &x| a.max(x.abs()));
+    for col in 0..n {
+        let (piv_row, piv_abs) =
+            (col..n)
+                .map(|r| (r, m[r * n + col].abs()))
+                .fold(
+                    (col, -1.0),
+                    |best, cur| if cur.1 > best.1 { cur } else { best },
+                );
+        if piv_abs <= 1e-12 * scale {
+            return Err(
+                "stationary distribution could not be computed (comparison graph \
+                 may be disconnected; consider alpha > 0)"
+                    .into(),
+            );
+        }
+        if piv_row != col {
+            for j in 0..n {
+                m.swap(col * n + j, piv_row * n + j);
+            }
+            rhs.swap(col, piv_row);
+        }
+        for r in col + 1..n {
+            let f = m[r * n + col] / m[col * n + col];
+            if f != 0.0 {
+                for j in col..n {
+                    m[r * n + j] -= f * m[col * n + j];
+                }
+                rhs[r] -= f * rhs[col];
+            }
+        }
+    }
+    let mut pi = vec![0.0f64; n];
+    for col in (0..n).rev() {
+        let mut v = rhs[col];
+        for j in col + 1..n {
+            v -= m[col * n + j] * pi[j];
+        }
+        pi[col] = v / m[col * n + col];
+    }
+
+    // Post-solve guards: a custom elimination must PROVE stationarity,
+    // not just return something positive (spec-review mandate).
+    if pi.iter().any(|x| !x.is_finite() || *x <= 0.0) {
+        return Err(
+            "stationary distribution could not be computed (non-positive or \
+             non-finite stationary mass; comparison graph may be disconnected)"
+                .into(),
+        );
+    }
+    let pi_sum: f64 = pi.iter().sum();
+    if (pi_sum - nf).abs() > 1e-8 * nf {
+        return Err("stationary distribution failed the sum constraint".into());
+    }
+    for col in 0..n {
+        let mut res = 0.0f64;
+        let mut mag = 0.0f64;
+        for j in 0..n {
+            let term = pi[j] * chain[j * n + col];
+            res += term;
+            mag += term.abs();
+        }
+        if res.abs() > 1e-8 * (mag + 1.0) {
+            return Err("stationary distribution failed the residual check".into());
+        }
+    }
+
+    let logs: Vec<f64> = pi.iter().map(|x| x.ln()).collect();
+    let mean = logs.iter().sum::<f64>() / nf;
+    let params: Vec<f64> = logs.iter().map(|l| l - mean).collect();
+    Ok((params, pi))
+}
+
+/// Luce Spectral Ranking: one-shot spectral estimate of Bradley-Terry
+/// log-worths from a dense pairwise win-count matrix.
+///
+/// Implements the LSR algorithm exactly as implemented by the `choix`
+/// Python package (v0.4.1, `lsr.py` `lsr_pairwise_dense` with uniform
+/// initial weights, `utils.py` `statdist`/`log_transform`).
+///
+/// Source status:
+/// - **READ**: choix 0.4.1 source (`lsr_pairwise_dense`,
+///   `ilsr_pairwise_dense`, `_ilsr`, `statdist`, `log_transform`,
+///   `exp_transform`, `NormOfDifferenceTest`); every formula is
+///   traceable to those lines.
+/// - **NOT READ (as-cited)**: Maystre, L., & Grossglauser, M. (2015).
+///   Fast and accurate inference of Plackett-Luce models. *Advances in
+///   Neural Information Processing Systems, 28*, 172-180 — cited as the
+///   algorithm origin per choix's docstrings ([MG15]).
+///
+/// Model: `P(i beats j) = w_i / (w_i + w_j)`. `wins` is row-major
+/// `n * n`; `wins[i*n + j]` = number of comparisons in which object `i`
+/// beat object `j` (diagonal must be 0; counts need not be integers —
+/// same DERIVED generalization as [`bradley_terry_mm`]). The Markov
+/// chain accrues rate `c / (w_i + w_j)` on the loser→winner edge (plus
+/// `alpha` everywhere as a regularizer); its stationary distribution,
+/// scaled to sum `n`, is the worth estimate, and `params` are its
+/// centered logs. The stationary solve uses Gaussian elimination with
+/// partial pivoting plus positivity, sum, and residual guards, and
+/// errors on disconnected comparison graphs at `alpha = 0` (choix raises
+/// `ValueError` there too).
+///
+/// NOTE: `alpha` here regularizes the *chain rates*; it is NOT the same
+/// regularization path as the Dirichlet-MAP `alpha` of
+/// [`bradley_terry_mm`], and the two estimators disagree for
+/// `alpha > 0` (both follow their sources; verified numerically). At
+/// `alpha = 0` the I-LSR fixed point is the Bradley-Terry MLE, so
+/// [`ilsr_pairwise`] and [`bradley_terry_mm`] agree there.
+///
+/// choix's `initial_params` is not exposed: the one-shot estimator
+/// always starts from uniform weights, so `exp_transform` stability on
+/// shifted inputs is unobservable through this API (documented per spec
+/// review).
+pub fn lsr_pairwise(wins: &[f64], n: usize, alpha: f64) -> Result<LsrResult, String> {
+    lsr_validate(wins, n, alpha)?;
+    let w = vec![1.0f64; n];
+    let (params, weights) = lsr_pass(wins, n, alpha, &w)?;
+    Ok(LsrResult {
+        params,
+        weights,
+        iterations: 1,
+    })
+}
+
+/// Iterative Luce Spectral Ranking: maximum-likelihood Bradley-Terry
+/// estimation by repeated spectral passes (choix `ilsr_pairwise_dense`).
+///
+/// See [`lsr_pairwise`] for the model, source status, and per-pass
+/// algebra. Each pass rebuilds the chain with the current worths
+/// `w = exp_transform(params)` (`exp(params - mean)` scaled to sum `n`)
+/// and re-solves. Convergence (choix `NormOfDifferenceTest`, order 1):
+/// fires when the L1 distance between successive centered parameter
+/// vectors is `<= tol * n`; the first pass never fires, so at least 2
+/// passes occur. `iterations` is the pass count at convergence.
+/// Non-convergence within `max_iter` passes is an error. At `alpha = 0`
+/// the fixed point is the Bradley-Terry MLE (equals
+/// [`bradley_terry_mm`]; verified to 4e-19 on the test fixtures).
+pub fn ilsr_pairwise(
+    wins: &[f64],
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> Result<LsrResult, String> {
+    lsr_validate(wins, n, alpha)?;
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be at least 1".into());
+    }
+    let nf = n as f64;
+    let exp_transform = |params: &[f64]| -> Vec<f64> {
+        let mean = params.iter().sum::<f64>() / nf;
+        let mut w: Vec<f64> = params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= nf / s;
+        }
+        w
+    };
+    let mut params = vec![0.0f64; n];
+    let mut prev: Option<Vec<f64>> = None;
+    for it in 1..=max_iter {
+        let w = exp_transform(&params);
+        let (newp, weights) = lsr_pass(wins, n, alpha, &w)?;
+        if let Some(pr) = &prev {
+            let dist: f64 = newp.iter().zip(pr.iter()).map(|(a, b)| (a - b).abs()).sum();
+            if dist <= tol * nf {
+                return Ok(LsrResult {
+                    params: newp,
+                    weights,
+                    iterations: it,
+                });
+            }
+        }
+        prev = Some(newp.clone());
+        params = newp;
+    }
+    Err(format!(
+        "ilsr_pairwise did not converge after {max_iter} iterations"
+    ))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

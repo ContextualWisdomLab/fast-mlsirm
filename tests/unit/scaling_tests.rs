@@ -443,3 +443,275 @@ fn bt_mc_500_recovery() {
     }
     assert!(worst > 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// LSR / I-LSR (choix 0.4.1 lsr.py; Maystre & Grossglauser, 2015)
+//
+// Oracle: exact-Fraction one-shot statdist + mpmath 50-digit I-LSR fixed
+// points, cross-checked against pip choix 0.4.1 (<= 2.2e-13) and against
+// the shipped bradley_terry_mm pins (<= 4e-19). Fixtures:
+// A = [[0,3,1],[2,0,4],[5,1,0]], B = [[0,3],[1,0]],
+// C = [[0,2,5,0],[4,0,1,2],[1,3,0,6],[0,3,2,0]].
+// ---------------------------------------------------------------------------
+
+/// One-shot LSR exact pins on fixture A. Asserts read
+/// `lsr_pairwise(...)` crate outputs: params, weights, iterations.
+/// Kills: MU1 chain transpose (weights dev 0.685), MU2 dropped diagonal
+/// subtraction (exact statdist becomes [9/2, 3/4, -9/4]; the negative
+/// entry trips the positivity guard -> Err, so the unwrap fails),
+/// MU3 dropped centering (params[0] dev 0.0326), MU4 statdist sum n ->
+/// sum 1 (params PROVEN invariant under centering; the weights pins are
+/// the designated anchor: 12/17 -> 4/51, dev 0.47).
+#[test]
+fn lsr_fixture_a_one_shot() {
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let r = lsr_pairwise(&a, 3, 0.0).unwrap();
+    assert_eq!(r.iterations, 1);
+    // Exact rationals: statdist = [12/17, 45/34, 33/34].
+    let exact_w = [12.0 / 17.0, 45.0 / 34.0, 33.0 / 34.0];
+    let exact_p = [
+        -0.31568746351363625118,
+        0.31292119590873788656,
+        0.0027662676048983646254,
+    ];
+    for k in 0..3 {
+        assert!(
+            (r.weights[k] - exact_w[k]).abs() < 1e-12,
+            "weights[{k}] = {}",
+            r.weights[k]
+        );
+        assert!(
+            (r.params[k] - exact_p[k]).abs() < 1e-12,
+            "params[{k}] = {}",
+            r.params[k]
+        );
+    }
+    // Fixture B: n = 2 one-shot LSR is exact (+/- ln(3)/2, the 2-item
+    // Bradley-Terry closed form) and statdist = [3/2, 1/2].
+    let b = [0.0, 3.0, 1.0, 0.0];
+    let rb = lsr_pairwise(&b, 2, 0.0).unwrap();
+    let half_ln3 = 3.0f64.ln() / 2.0;
+    assert!((rb.params[0] - half_ln3).abs() < 1e-14);
+    assert!((rb.params[1] + half_ln3).abs() < 1e-14);
+    assert!((rb.weights[0] - 1.5).abs() < 1e-14);
+    assert!((rb.weights[1] - 0.5).abs() < 1e-14);
+}
+
+/// One-shot LSR exact pins on fixture C (n = 4, has a zero pair) and on
+/// fixture A with alpha = 1/2 (regularization enters the chain rates).
+/// Asserts read `lsr_pairwise(...)` crate outputs.
+#[test]
+fn lsr_fixture_c_and_alpha() {
+    let c = [
+        0.0, 2.0, 5.0, 0.0, 4.0, 0.0, 1.0, 2.0, 1.0, 3.0, 0.0, 6.0, 0.0, 3.0, 2.0, 0.0,
+    ];
+    let r = lsr_pairwise(&c, 4, 0.0).unwrap();
+    // Exact: statdist = [1256/899, 880/899, 904/899, 556/899].
+    let exact_w = [1256.0 / 899.0, 880.0 / 899.0, 904.0 / 899.0, 556.0 / 899.0];
+    let exact_p = [
+        0.37488561974235523196,
+        0.019120180186463402615,
+        0.046027633106387743118,
+        -0.44003343303520637769,
+    ];
+    for k in 0..4 {
+        assert!((r.weights[k] - exact_w[k]).abs() < 1e-12);
+        assert!((r.params[k] - exact_p[k]).abs() < 1e-12);
+    }
+    // A with alpha = 1/2: statdist = [96/125, 153/125, 126/125].
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let ra = lsr_pairwise(&a, 3, 0.5).unwrap();
+    let exact_wa = [96.0 / 125.0, 153.0 / 125.0, 126.0 / 125.0];
+    let exact_pa = [
+        -0.2460078151360803278,
+        0.22008191478851889676,
+        0.025925900347561431035,
+    ];
+    for k in 0..3 {
+        assert!((ra.weights[k] - exact_wa[k]).abs() < 1e-12);
+        assert!((ra.params[k] - exact_pa[k]).abs() < 1e-12);
+    }
+}
+
+/// I-LSR at alpha = 0 reproduces the Bradley-Terry MLE (cross-algorithm
+/// anchor; mpmath fixed point agrees with the BT oracle to 4e-19).
+/// Asserts read `ilsr_pairwise(...)` AND `bradley_terry_mm(...)` crate
+/// outputs. atol 1e-7: the converged iterate at tol = 1e-8 sits within
+/// ~5e-9 of the fixed point (same rationale as the BT pytest pins);
+/// mutant deviations are >= 3e-2. Kills MU5 (denominator (w_i + w_j) ->
+/// w_i): UNOBSERVABLE in one-shot LSR (uniform weights make it a global
+/// rate scale; statdist invariant — documented limitation, the one-shot
+/// tests above cannot see it), but from pass 2 the weights are
+/// non-uniform and the I-LSR params deviate by 0.331 on A.
+/// Iteration pin (15 at tol = 1e-8) anchors the convergence loop.
+#[test]
+fn ilsr_fixture_a_matches_bt() {
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    let r = ilsr_pairwise(&a, 3, 0.0, 100, 1e-8).unwrap();
+    let mle = [
+        -0.37886907235349414916,
+        0.2742232123893226994,
+        0.10464585996417144976,
+    ];
+    for k in 0..3 {
+        assert!(
+            (r.params[k] - mle[k]).abs() < 1e-7,
+            "params[{k}] = {}",
+            r.params[k]
+        );
+    }
+    assert_eq!(r.iterations, 15);
+    let wsum: f64 = r.weights.iter().sum();
+    assert!((wsum - 3.0).abs() < 1e-9, "weights sum = {wsum}");
+    // Same MLE as the MM algorithm (different algorithm, same likelihood).
+    let bt = bradley_terry_mm(&a, 3, 0.0, 100, 1e-10).unwrap();
+    for k in 0..3 {
+        assert!((r.params[k] - bt.params[k]).abs() < 1e-6);
+    }
+    // alpha = 0.5 I-LSR pins: LSR regularization is NOT MM Dirichlet-MAP
+    // regularization; these deliberately differ from bradley_terry_mm at
+    // the same alpha (both follow their sources).
+    let ra = ilsr_pairwise(&a, 3, 0.5, 100, 1e-8).unwrap();
+    let pa = [
+        -0.27752663700895662385,
+        0.19348504484501984521,
+        0.08404159216393677864,
+    ];
+    for k in 0..3 {
+        assert!((ra.params[k] - pa[k]).abs() < 1e-7);
+    }
+}
+
+/// I-LSR fixture C pins + the tol-semantics iteration anchor.
+/// Asserts read `ilsr_pairwise(...)` crate outputs. Kills MU6
+/// (tol * n -> tol in the convergence test): C converges in 17 passes
+/// with choix semantics but 18 with bare tol (measured; fixture A does
+/// NOT separate the two — both 15 — which is why C carries this pin).
+#[test]
+fn ilsr_fixture_c_iterations() {
+    let c = [
+        0.0, 2.0, 5.0, 0.0, 4.0, 0.0, 1.0, 2.0, 1.0, 3.0, 0.0, 6.0, 0.0, 3.0, 2.0, 0.0,
+    ];
+    let r = ilsr_pairwise(&c, 4, 0.0, 100, 1e-8).unwrap();
+    let mle = [
+        0.36430564921139713618,
+        -0.090796520655515820053,
+        0.14416071627883437422,
+        -0.41766984483471569034,
+    ];
+    for k in 0..4 {
+        assert!((r.params[k] - mle[k]).abs() < 1e-7);
+    }
+    assert_eq!(r.iterations, 17);
+}
+
+/// Error contract for both entry points. Every assert reads a crate
+/// Result. Includes the spec-review overflow mandates: finite-but-huge
+/// counts and huge finite alpha must Err (not NaN or finite garbage).
+#[test]
+fn lsr_error_contract() {
+    let a = [0.0, 3.0, 1.0, 2.0, 0.0, 4.0, 5.0, 1.0, 0.0];
+    // n < 2, wrong length.
+    assert!(lsr_pairwise(&a, 1, 0.0).is_err());
+    assert!(lsr_pairwise(&a[..8], 3, 0.0).is_err());
+    // Non-finite / negative / nonzero-diagonal / all-zero.
+    let mut bad = a;
+    bad[1] = f64::NAN;
+    assert!(lsr_pairwise(&bad, 3, 0.0).is_err());
+    bad[1] = -1.0;
+    assert!(lsr_pairwise(&bad, 3, 0.0).is_err());
+    bad[1] = 3.0;
+    bad[0] = 1.0;
+    assert!(lsr_pairwise(&bad, 3, 0.0).is_err());
+    assert!(lsr_pairwise(&[0.0; 9], 3, 0.0).is_err());
+    // alpha domain (including inf, which choix maps to NaN output).
+    assert!(lsr_pairwise(&a, 3, -0.5).is_err());
+    assert!(lsr_pairwise(&a, 3, f64::INFINITY).is_err());
+    // ilsr knobs.
+    assert!(ilsr_pairwise(&a, 3, 0.0, 0, 1e-8).is_err());
+    assert!(ilsr_pairwise(&a, 3, 0.0, 100, 0.0).is_err());
+    assert!(ilsr_pairwise(&a, 3, 0.0, 100, f64::NAN).is_err());
+    // Non-convergence.
+    assert!(ilsr_pairwise(&a, 3, 0.0, 1, 1e-8).is_err());
+    // Disconnected comparison graph (choix raises ValueError too):
+    // D = [[0,2,0,0],[1,0,0,0],[0,0,0,3],[0,0,1,0]].
+    let d = [
+        0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 1.0, 0.0,
+    ];
+    assert!(lsr_pairwise(&d, 4, 0.0).is_err());
+    assert!(ilsr_pairwise(&d, 4, 0.0, 100, 1e-8).is_err());
+    // alpha > 0 makes the chain irreducible: D becomes estimable.
+    let rd = lsr_pairwise(&d, 4, 0.5).unwrap();
+    assert!(rd.params.iter().all(|p| p.is_finite()));
+    // Overflow mandates: counts / alpha that overflow the generator row
+    // sums -> Err, never NaN output. n = 4 with all off-diagonals at
+    // 1.7e308 makes each row sum 3 * 8.5e307 = 2.55e308 -> inf. (An
+    // n = 3 all-1e308 matrix does NOT overflow -- row sums are 1e308,
+    // finite -- and is covered by the scale-invariance block below.)
+    let mut huge = [1.7e308f64; 16];
+    for k in 0..4 {
+        huge[k * 4 + k] = 0.0;
+    }
+    assert!(lsr_pairwise(&huge, 4, 0.0).is_err());
+    assert!(lsr_pairwise(&a, 3, 1e308).is_err());
+    // Scale invariance (impl-review regression): the stationary
+    // distribution is invariant under global count rescaling, so huge
+    // but non-overflowing counts must give the SAME result, not a false
+    // "disconnected" rejection from the pivot threshold.
+    let base = lsr_pairwise(&a, 3, 0.0).unwrap();
+    let scaled: Vec<f64> = a.iter().map(|c| c * 1e20).collect();
+    let big = lsr_pairwise(&scaled, 3, 0.0).unwrap();
+    for k in 0..3 {
+        assert!(
+            (big.params[k] - base.params[k]).abs() < 1e-12,
+            "scaled params[{k}] = {}",
+            big.params[k]
+        );
+        assert!((big.weights[k] - base.weights[k]).abs() < 1e-12);
+    }
+    let asym = [0.0, 1e150, 2e150, 3e149, 0.0, 4e149, 5e149, 6e149, 0.0];
+    let ra = ilsr_pairwise(&asym, 3, 0.0, 100, 1e-8).unwrap();
+    assert!(ra.params.iter().all(|p| p.is_finite()));
+}
+
+/// 500-rep Monte Carlo recovery (n = 4, bounded truth, 400 comparisons
+/// per pair). Asserts read `ilsr_pairwise(...)` crate outputs.
+#[test]
+#[ignore = "500-rep Monte Carlo; run with -- --ignored"]
+fn ilsr_mc_500_recovery() {
+    let mut worst = 0.0f64;
+    for rep in 0..500 {
+        let mut rng = Lcg(0x1_57AB + rep as u64 * 7919);
+        let n = 4usize;
+        let truth: Vec<f64> = {
+            let raw: Vec<f64> = (0..n).map(|_| rng.normal() * 0.8).collect();
+            let m = raw.iter().sum::<f64>() / n as f64;
+            raw.iter().map(|x| x - m).collect()
+        };
+        let mut wins = vec![0.0f64; n * n];
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let p = 1.0 / (1.0 + (truth[j] - truth[i]).exp());
+                for _ in 0..400 {
+                    if rng.next_f64() < p {
+                        wins[i * n + j] += 1.0;
+                    } else {
+                        wins[j * n + i] += 1.0;
+                    }
+                }
+            }
+        }
+        let r = ilsr_pairwise(&wins, n, 0.0, 100000, 1e-10).unwrap();
+        let mae = truth
+            .iter()
+            .zip(r.params.iter())
+            .map(|(t, p)| (t - p).abs())
+            .sum::<f64>()
+            / n as f64;
+        worst = worst.max(mae);
+        // 0.2 bound: with 400 comparisons/pair the worst-of-500 MAE lands
+        // near 0.155 (measured); mutant deviations are >= 0.33.
+        assert!(mae < 0.2, "rep {rep}: mae = {mae}");
+    }
+    assert!(worst > 0.0);
+}

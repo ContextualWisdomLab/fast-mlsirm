@@ -5165,6 +5165,51 @@ fn bradley_terry_mm(
     Ok(d.into())
 }
 
+/// Luce Spectral Ranking (one-shot) log-worths from a dense pairwise
+/// win-count matrix, as implemented by choix 0.4.1 (`lsr_pairwise_dense`;
+/// see `mlsirm_core::scaling::lsr_pairwise`). Returns dict with params
+/// (centered log-worths), weights (stationary distribution, sum n),
+/// iterations (always 1).
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0))]
+fn lsr_pairwise(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::lsr_pairwise(wins.as_slice()?, n, alpha)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
+/// Iterative Luce Spectral Ranking (Bradley-Terry MLE) as implemented by
+/// choix 0.4.1 (`ilsr_pairwise_dense`; see
+/// `mlsirm_core::scaling::ilsr_pairwise`). Same dict layout as
+/// `lsr_pairwise`; iterations is the LSR pass count at convergence.
+#[pyfunction]
+#[pyo3(signature = (wins, n, alpha=0.0, max_iter=100, tol=1e-8))]
+fn ilsr_pairwise(
+    py: Python<'_>,
+    wins: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::ilsr_pairwise(wins.as_slice()?, n, alpha, max_iter, tol)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("params", PyArray1::from_slice(py, &res.params))?;
+    d.set_item("weights", PyArray1::from_slice(py, &res.weights))?;
+    d.set_item("iterations", res.iterations as u64)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7503,6 +7548,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(composite_linking, m)?)?;
     m.add_function(wrap_pyfunction!(thurstone_case_v, m)?)?;
     m.add_function(wrap_pyfunction!(bradley_terry_mm, m)?)?;
+    m.add_function(wrap_pyfunction!(lsr_pairwise, m)?)?;
+    m.add_function(wrap_pyfunction!(ilsr_pairwise, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;
