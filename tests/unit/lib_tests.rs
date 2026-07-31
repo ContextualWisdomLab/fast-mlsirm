@@ -231,3 +231,99 @@ fn mirt_ignores_latent_space_terms() {
     assert!(grad.xi.iter().all(|value| *value == 0.0));
     assert!(grad.zeta.iter().all(|value| *value == 0.0));
 }
+
+/// Large-N path exercises coarse person-shard multithreading (N >= 256).
+/// Result must match the closed-form simple-structure MLS2PLM objective for
+/// the first observed entry and stay finite for the full gradient.
+#[test]
+fn coarse_shard_multithread_matches_closed_form_and_stays_finite() {
+    let n_persons = 300usize;
+    let n_items = 4usize;
+    let n_dims = 2usize;
+    let latent_dim = 2usize;
+    let cfg = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Mls2plm,
+        eps_distance: 1e-8,
+    };
+    let mut theta = vec![0.0; n_persons * n_dims];
+    let mut xi = vec![0.0; n_persons * latent_dim];
+    for p in 0..n_persons {
+        theta[p * n_dims] = 0.01 * (p as f64);
+        theta[p * n_dims + 1] = -0.005 * (p as f64);
+        xi[p * latent_dim] = 0.02 * ((p % 7) as f64);
+        xi[p * latent_dim + 1] = -0.01 * ((p % 5) as f64);
+    }
+    let params = Params {
+        theta,
+        alpha: vec![0.1, -0.2, 0.0, 0.3],
+        b: vec![0.2, -0.1, 0.05, -0.15],
+        xi,
+        zeta: vec![0.0, 0.1, -0.2, 0.05, 0.15, -0.1, -0.05, 0.2],
+        tau: 0.15,
+    };
+    let mut y = vec![0.0; n_persons * n_items];
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            y[p * n_items + i] = if (p + i) % 3 == 0 { 1.0 } else { 0.0 };
+        }
+    }
+    let factor_id = vec![0usize, 0, 1, 1];
+    let penalty = PenaltyConfig {
+        lambda_theta: 0.0,
+        lambda_xi: 0.0,
+        lambda_zeta: 0.0,
+        lambda_b: 0.0,
+        lambda_alpha: 0.0,
+        lambda_tau: 0.0,
+        mu_alpha: 0.0,
+        mu_tau: 0.0,
+    };
+
+    let (obj, grad, loglik) = neg_loglik_and_grad(&y, None, &factor_id, &params, &cfg, &penalty);
+    assert!(obj.is_finite() && loglik.is_finite());
+    assert!((obj + loglik).abs() < 1e-12, "loglik must be -data NLL when penalty is zero");
+    assert!(grad.tau.is_finite());
+    assert!(grad.theta.iter().all(|v| v.is_finite()));
+    assert!(grad.alpha.iter().all(|v| v.is_finite()));
+    assert!(grad.b.iter().all(|v| v.is_finite()));
+    assert!(grad.xi.iter().all(|v| v.is_finite()));
+    assert!(grad.zeta.iter().all(|v| v.is_finite()));
+
+    // Closed-form pin for entry (p=0, i=0) using the paper formula.
+    let a0 = params.alpha[0].exp();
+    let gamma = params.tau.exp();
+    let mut dist2 = cfg.eps_distance;
+    for k in 0..latent_dim {
+        let diff = params.xi[k] - params.zeta[k];
+        dist2 += diff * diff;
+    }
+    let r = dist2.sqrt();
+    let eta0 = a0 * params.theta[0] + params.b[0] - gamma * r;
+    let entry0 = softplus(eta0) - y[0] * eta0;
+    // Recompute full objective independently (single-threaded) for parity.
+    let mut expected = 0.0;
+    for p in 0..n_persons {
+        for (i, &d) in factor_id.iter().enumerate() {
+            let a = params.alpha[i].exp();
+            let mut d2 = cfg.eps_distance;
+            for k in 0..latent_dim {
+                let diff =
+                    params.xi[p * latent_dim + k] - params.zeta[i * latent_dim + k];
+                d2 += diff * diff;
+            }
+            let rr = d2.sqrt();
+            let eta = a * params.theta[p * n_dims + d] + params.b[i] - gamma * rr;
+            let resp = y[p * n_items + i];
+            expected += softplus(eta) - resp * eta;
+        }
+    }
+    assert!(
+        (obj - expected).abs() < 1e-9,
+        "MT NLL drifted from paper closed form: got {obj} expected {expected}"
+    );
+    assert!((entry0 - softplus(eta0) + y[0] * eta0).abs() < 1e-15);
+}

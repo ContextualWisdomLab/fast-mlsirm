@@ -69,6 +69,8 @@ mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_eapsum;
 #[cfg(all(feature = "gpu", not(coverage)))]
+mod gpu_init;
+#[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_plausible;
@@ -310,6 +312,10 @@ pub struct Gradients {
     pub tau: f64,
 }
 
+/// Minimum person count before coarse-shard multithreading is worthwhile.
+/// Below this the single-threaded loop wins (thread spawn/join dominates).
+const NLL_MT_PERSON_FLOOR: usize = 256;
+
 pub fn neg_loglik_and_grad(
     y: &[f64],
     mask: Option<&[bool]>,
@@ -328,6 +334,83 @@ pub fn neg_loglik_and_grad(
     let (free_alpha, uses_space) = model_exec_flags(config.model_type);
     let gamma = if uses_space { params.tau.exp() } else { 0.0 };
 
+    // Coarse fixed person-shards (not per-cell spawn): one contiguous range per
+    // worker, local gradient buffers, then a single reduction. Minimizes context
+    // switches vs. fine-grained work-stealing on the O(N*J) hot path.
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(config.n_persons.max(1));
+    let (mut objective, mut grad) = if worker_count <= 1 || config.n_persons < NLL_MT_PERSON_FLOOR {
+        neg_loglik_and_grad_range(
+            y,
+            mask,
+            factor_id,
+            params,
+            config,
+            free_alpha,
+            uses_space,
+            gamma,
+            0,
+            config.n_persons,
+        )
+    } else {
+        let chunk = config.n_persons.div_ceil(worker_count);
+        let partials = std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(worker_count);
+            for worker in 0..worker_count {
+                let start = worker * chunk;
+                let end = (start + chunk).min(config.n_persons);
+                if start >= end {
+                    continue;
+                }
+                handles.push(scope.spawn(move || {
+                    neg_loglik_and_grad_range(
+                        y,
+                        mask,
+                        factor_id,
+                        params,
+                        config,
+                        free_alpha,
+                        uses_space,
+                        gamma,
+                        start,
+                        end,
+                    )
+                }));
+            }
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("neg_loglik worker panicked"))
+                .collect::<Vec<_>>()
+        });
+        reduce_nll_partials(partials, config)
+    };
+
+    let loglik = -objective;
+    objective += add_penalty(params, config, penalty, free_alpha, uses_space, &mut grad);
+    (objective, grad, loglik)
+}
+
+/// Data-term NLL + gradients over persons `[start, end)`.
+///
+/// Implements the simple-structure MLS2PLM contract (Kang & Jeon, 2025 eq. 3
+/// under between-item simple structure; Jeon et al., 2021 LSIRM distance term):
+/// `eta_pi = exp(alpha_i) * theta_p,d(i) + b_i - exp(tau) * r_pi` with
+/// `r_pi = sqrt(||xi_p - zeta_i||^2 + eps)`.
+#[allow(clippy::too_many_arguments)]
+fn neg_loglik_and_grad_range(
+    y: &[f64],
+    mask: Option<&[bool]>,
+    factor_id: &[usize],
+    params: &Params,
+    config: &ModelConfig,
+    free_alpha: bool,
+    uses_space: bool,
+    gamma: f64,
+    start: usize,
+    end: usize,
+) -> (f64, Gradients) {
     let mut objective = 0.0;
     let mut grad = Gradients {
         theta: vec![0.0; config.n_persons * config.n_dims],
@@ -338,7 +421,7 @@ pub fn neg_loglik_and_grad(
         tau: 0.0,
     };
 
-    for p in 0..config.n_persons {
+    for p in start..end {
         for (i, &d) in factor_id.iter().enumerate().take(config.n_items) {
             let idx = p * config.n_items + i;
             if mask.is_some_and(|m| !m[idx]) {
@@ -353,6 +436,7 @@ pub fn neg_loglik_and_grad(
                 dist2 += diff * diff;
             }
             let r = if uses_space { dist2.sqrt() } else { 0.0 };
+            // Canonical simple-structure MLS2PLM linear predictor (AGENTS.md).
             let eta = a * params.theta[p * config.n_dims + d] + params.b[i] - gamma * r;
             let pi = sigmoid(eta);
             let response = y[idx];
@@ -376,10 +460,42 @@ pub fn neg_loglik_and_grad(
             }
         }
     }
+    (objective, grad)
+}
 
-    let loglik = -objective;
-    objective += add_penalty(params, config, penalty, free_alpha, uses_space, &mut grad);
-    (objective, grad, loglik)
+fn reduce_nll_partials(
+    partials: Vec<(f64, Gradients)>,
+    config: &ModelConfig,
+) -> (f64, Gradients) {
+    let mut objective = 0.0;
+    let mut grad = Gradients {
+        theta: vec![0.0; config.n_persons * config.n_dims],
+        alpha: vec![0.0; config.n_items],
+        b: vec![0.0; config.n_items],
+        xi: vec![0.0; config.n_persons * config.latent_dim],
+        zeta: vec![0.0; config.n_items * config.latent_dim],
+        tau: 0.0,
+    };
+    for (obj, g) in partials {
+        objective += obj;
+        for (dst, src) in grad.theta.iter_mut().zip(&g.theta) {
+            *dst += src;
+        }
+        for (dst, src) in grad.alpha.iter_mut().zip(&g.alpha) {
+            *dst += src;
+        }
+        for (dst, src) in grad.b.iter_mut().zip(&g.b) {
+            *dst += src;
+        }
+        for (dst, src) in grad.xi.iter_mut().zip(&g.xi) {
+            *dst += src;
+        }
+        for (dst, src) in grad.zeta.iter_mut().zip(&g.zeta) {
+            *dst += src;
+        }
+        grad.tau += g.tau;
+    }
+    (objective, grad)
 }
 
 pub(crate) fn add_penalty(
