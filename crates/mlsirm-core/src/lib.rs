@@ -64,12 +64,14 @@ pub(crate) fn checked_add_usize(a: usize, b: usize, message: &str) -> Result<usi
 // cargo-llvm-cov runs in CPU-only CI against the repository-owned line-coverage
 // baseline. Keep the hardware-backed wgpu module in normal builds, and cover
 // the deterministic CPU fallback contract during coverage builds.
+// Each GPU module declaration carries its own `cfg` attribute (Rust outer
+// attributes bind to the *next* item only — never leave an unguarded `mod`).
 #[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu;
 #[cfg(all(feature = "gpu", not(coverage)))]
-pub(crate) mod gpu_eapsum;
-#[cfg(all(feature = "gpu", not(coverage)))]
 mod gpu_init;
+#[cfg(all(feature = "gpu", not(coverage)))]
+pub(crate) mod gpu_eapsum;
 #[cfg(all(feature = "gpu", not(coverage)))]
 pub(crate) mod gpu_marginal;
 #[cfg(all(feature = "gpu", not(coverage)))]
@@ -324,6 +326,26 @@ pub fn neg_loglik_and_grad(
     config: &ModelConfig,
     penalty: &PenaltyConfig,
 ) -> (f64, Gradients, f64) {
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(config.n_persons.max(1));
+    neg_loglik_and_grad_with_workers(y, mask, factor_id, params, config, penalty, worker_count)
+}
+
+/// Same as [`neg_loglik_and_grad`] but with an explicit worker count.
+///
+/// Used by unit tests to force the multi-shard path even when
+/// `available_parallelism() == 1`. Production callers use the public entry.
+pub(crate) fn neg_loglik_and_grad_with_workers(
+    y: &[f64],
+    mask: Option<&[bool]>,
+    factor_id: &[usize],
+    params: &Params,
+    config: &ModelConfig,
+    penalty: &PenaltyConfig,
+    worker_count: usize,
+) -> (f64, Gradients, f64) {
     assert_distance_kind(config.model_type);
     assert_eq!(y.len(), config.n_persons * config.n_items);
     assert_eq!(factor_id.len(), config.n_items);
@@ -337,11 +359,8 @@ pub fn neg_loglik_and_grad(
     // Coarse fixed person-shards (not per-cell spawn): one contiguous range per
     // worker, local gradient buffers, then a single reduction. Minimizes context
     // switches vs. fine-grained work-stealing on the O(N*J) hot path.
-    let worker_count = std::thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(config.n_persons.max(1));
-    let (mut objective, mut grad) = if worker_count <= 1 || config.n_persons < NLL_MT_PERSON_FLOOR {
+    let workers = worker_count.max(1).min(config.n_persons.max(1));
+    let (mut objective, mut grad) = if workers <= 1 || config.n_persons < NLL_MT_PERSON_FLOOR {
         neg_loglik_and_grad_range(
             y,
             mask,
@@ -355,10 +374,10 @@ pub fn neg_loglik_and_grad(
             config.n_persons,
         )
     } else {
-        let chunk = config.n_persons.div_ceil(worker_count);
+        let chunk = config.n_persons.div_ceil(workers);
         let partials = std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(worker_count);
-            for worker in 0..worker_count {
+            let mut handles = Vec::with_capacity(workers);
+            for worker in 0..workers {
                 let start = worker * chunk;
                 let end = (start + chunk).min(config.n_persons);
                 if start >= end {

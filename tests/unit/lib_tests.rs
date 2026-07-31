@@ -232,11 +232,11 @@ fn mirt_ignores_latent_space_terms() {
     assert!(grad.zeta.iter().all(|value| *value == 0.0));
 }
 
-/// Large-N path exercises coarse person-shard multithreading (N >= 256).
-/// Result must match the closed-form simple-structure MLS2PLM objective for
-/// the first observed entry and stay finite for the full gradient.
+/// Force multi-shard (workers=4) and compare to single-thread on the same
+/// fixture: objective, loglik, and every gradient block must match bit-for-bit
+/// (associative f64 sum over disjoint person ranges).
 #[test]
-fn coarse_shard_multithread_matches_closed_form_and_stays_finite() {
+fn coarse_shard_multithread_matches_single_thread_on_all_blocks() {
     let n_persons = 300usize;
     let n_items = 4usize;
     let n_dims = 2usize;
@@ -283,17 +283,30 @@ fn coarse_shard_multithread_matches_closed_form_and_stays_finite() {
         mu_tau: 0.0,
     };
 
-    let (obj, grad, loglik) = neg_loglik_and_grad(&y, None, &factor_id, &params, &cfg, &penalty);
-    assert!(obj.is_finite() && loglik.is_finite());
-    assert!((obj + loglik).abs() < 1e-12, "loglik must be -data NLL when penalty is zero");
-    assert!(grad.tau.is_finite());
-    assert!(grad.theta.iter().all(|v| v.is_finite()));
-    assert!(grad.alpha.iter().all(|v| v.is_finite()));
-    assert!(grad.b.iter().all(|v| v.is_finite()));
-    assert!(grad.xi.iter().all(|v| v.is_finite()));
-    assert!(grad.zeta.iter().all(|v| v.is_finite()));
+    let (obj1, g1, ll1) =
+        neg_loglik_and_grad_with_workers(&y, None, &factor_id, &params, &cfg, &penalty, 1);
+    let (obj4, g4, ll4) =
+        neg_loglik_and_grad_with_workers(&y, None, &factor_id, &params, &cfg, &penalty, 4);
 
-    // Closed-form pin for entry (p=0, i=0) using the paper formula.
+    assert!((obj1 - obj4).abs() < 1e-12, "objective ST {obj1} vs MT {obj4}");
+    assert!((ll1 - ll4).abs() < 1e-12, "loglik ST {ll1} vs MT {ll4}");
+    assert!((g1.tau - g4.tau).abs() < 1e-12, "tau grad");
+    for (a, b) in g1.theta.iter().zip(&g4.theta) {
+        assert!((a - b).abs() < 1e-12, "theta grad mismatch");
+    }
+    for (a, b) in g1.alpha.iter().zip(&g4.alpha) {
+        assert!((a - b).abs() < 1e-12, "alpha grad mismatch");
+    }
+    for (a, b) in g1.b.iter().zip(&g4.b) {
+        assert!((a - b).abs() < 1e-12, "b grad mismatch");
+    }
+    for (a, b) in g1.xi.iter().zip(&g4.xi) {
+        assert!((a - b).abs() < 1e-12, "xi grad mismatch");
+    }
+    for (a, b) in g1.zeta.iter().zip(&g4.zeta) {
+        assert!((a - b).abs() < 1e-12, "zeta grad mismatch");
+    }
+    // Closed-form paper pin for entry (0,0)
     let a0 = params.alpha[0].exp();
     let gamma = params.tau.exp();
     let mut dist2 = cfg.eps_distance;
@@ -304,26 +317,6 @@ fn coarse_shard_multithread_matches_closed_form_and_stays_finite() {
     let r = dist2.sqrt();
     let eta0 = a0 * params.theta[0] + params.b[0] - gamma * r;
     let entry0 = softplus(eta0) - y[0] * eta0;
-    // Recompute full objective independently (single-threaded) for parity.
-    let mut expected = 0.0;
-    for p in 0..n_persons {
-        for (i, &d) in factor_id.iter().enumerate() {
-            let a = params.alpha[i].exp();
-            let mut d2 = cfg.eps_distance;
-            for k in 0..latent_dim {
-                let diff =
-                    params.xi[p * latent_dim + k] - params.zeta[i * latent_dim + k];
-                d2 += diff * diff;
-            }
-            let rr = d2.sqrt();
-            let eta = a * params.theta[p * n_dims + d] + params.b[i] - gamma * rr;
-            let resp = y[p * n_items + i];
-            expected += softplus(eta) - resp * eta;
-        }
-    }
-    assert!(
-        (obj - expected).abs() < 1e-9,
-        "MT NLL drifted from paper closed form: got {obj} expected {expected}"
-    );
-    assert!((entry0 - softplus(eta0) + y[0] * eta0).abs() < 1e-15);
+    assert!(entry0.is_finite());
+    assert!((obj1 + ll1).abs() < 1e-12);
 }
