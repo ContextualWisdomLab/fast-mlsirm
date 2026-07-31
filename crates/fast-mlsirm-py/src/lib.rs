@@ -5333,6 +5333,58 @@ fn ilsr_top1(
     Ok(d.into())
 }
 
+/// Kendall & Babington Smith (1940) circular-triad consistency test for a
+/// single judge's paired comparisons, as implemented by eba's `circular()`
+/// (see `mlsirm_core::scaling::circular_triads`). `mat` is a flat row-major
+/// n*n 0/1 preference matrix; returns dict with T, T_max, T_exp, zeta, chi2,
+/// df, p_value, exact.
+#[pyfunction]
+#[pyo3(signature = (mat, n, alternative="two.sided", correct=true))]
+fn circular_triads(
+    py: Python<'_>,
+    mat: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    alternative: &str,
+    correct: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::circular_triads(mat.as_slice()?, n, alternative, correct)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("t", res.t)?;
+    d.set_item("t_max", res.t_max)?;
+    d.set_item("t_exp", res.t_exp)?;
+    d.set_item("zeta", res.zeta)?;
+    d.set_item("chi2", res.chi2)?;
+    d.set_item("df", res.df)?;
+    d.set_item("p_value", res.p_value)?;
+    d.set_item("exact", res.exact)?;
+    Ok(d.into())
+}
+
+/// Kendall's coefficient of agreement u between m judges, as implemented by
+/// eba's `kendall.u()` (see `mlsirm_core::scaling::kendall_u`). `mat` is a
+/// flat row-major n*n frequency matrix; returns dict with sigma, u, min_u,
+/// chi2 (raw, may be negative), df, p_value.
+#[pyfunction]
+#[pyo3(signature = (mat, n, correct=true))]
+fn kendall_u(
+    py: Python<'_>,
+    mat: PyReadonlyArray1<'_, f64>,
+    n: usize,
+    correct: bool,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = mlsirm_core::scaling::kendall_u(mat.as_slice()?, n, correct)
+        .map_err(PyValueError::new_err)?;
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("sigma", res.sigma)?;
+    d.set_item("u", res.u)?;
+    d.set_item("min_u", res.min_u)?;
+    d.set_item("chi2", res.chi2)?;
+    d.set_item("df", res.df)?;
+    d.set_item("p_value", res.p_value)?;
+    Ok(d.into())
+}
+
 /// GPCM/nominal softmax cell log-probabilities at one node (parity surface for
 /// the NumPy `category_logprobs` reference).
 #[pyfunction]
@@ -7678,6 +7730,8 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ilsr_rankings, m)?)?;
     m.add_function(wrap_pyfunction!(lsr_top1, m)?)?;
     m.add_function(wrap_pyfunction!(ilsr_top1, m)?)?;
+    m.add_function(wrap_pyfunction!(circular_triads, m)?)?;
+    m.add_function(wrap_pyfunction!(kendall_u, m)?)?;
     m.add_function(wrap_pyfunction!(circle_arc_middle_anchor, m)?)?;
     m.add_function(wrap_pyfunction!(loglinear_smooth, m)?)?;
     m.add_function(wrap_pyfunction!(person_fit_stat, m)?)?;

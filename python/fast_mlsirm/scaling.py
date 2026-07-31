@@ -33,6 +33,19 @@ Revelle, W. (2025). psych: Procedures for psychological, psychometric, and
     personality research (R package). https://CRAN.R-project.org/package=psych
 Thurstone, L. L. (1927). A law of comparative judgment. Psychological
     Review, 34(4), 273-286. [NOT READ; cited as described in psych source]
+
+The circular-triads consistency test and Kendall's coefficient of agreement
+follow eba 1.10-0 (Wickelmaier & Schmid; ``circular.R`` and ``kendall.u.R``,
+source READ). Kendall and Babington Smith (1940) and Alway (1962, exact null
+tables) were NOT read; they are cited as the origins as described by the eba
+source and manual pages.
+
+Kendall, M. G., & Babington Smith, B. (1940). On the method of paired
+    comparisons. Biometrika, 31(3/4), 324-345. [NOT READ; cited as described
+    in eba source]
+Wickelmaier, F., & Schmid, C. (2004). A Matlab function to estimate choice
+    model parameters from paired-comparison data. Behavior Research Methods,
+    Instruments, and Computers, 36(1), 29-40. [eba package source READ]
 """
 
 from __future__ import annotations
@@ -468,4 +481,114 @@ def ilsr_top1(data, n, alpha=0.0, max_iter=100, tol=1e-8):
         params=np.asarray(res["params"], dtype=np.float64),
         weights=np.asarray(res["weights"], dtype=np.float64),
         iterations=int(res["iterations"]),
+    )
+
+
+@dataclass
+class CircularTriadsResult:
+    """Circular-triads consistency test (Kendall & Babington Smith, 1940,
+    as implemented by eba's ``circular()``): ``t`` the number of circular
+    triads T, ``t_max`` its maximum, ``t_exp`` its null expectation
+    C(n,3)/4, ``zeta = 1 - t/t_max`` the consistency coefficient, and the
+    test of the null "preferences are random". For ``n <= 10`` the p-value
+    is EXACT (``exact=True``, ``chi2``/``df`` are NaN); for ``n >= 11`` a
+    chi-square approximation is used and ``chi2`` / ``df`` are filled."""
+
+    t: float
+    t_max: float
+    t_exp: float
+    zeta: float
+    chi2: float
+    df: float
+    p_value: float
+    exact: bool
+
+
+def _kendall_matrix(name, mat):
+    arr = np.asarray(mat)
+    if np.iscomplexobj(arr):
+        raise ValueError(f"{name}: mat must be real-valued")
+    if arr.dtype == object:
+        try:
+            arr = arr.astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name}: mat must be numeric") from exc
+    arr = np.ascontiguousarray(arr, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        raise ValueError(f"{name}: mat must be a square 2-D matrix")
+    return arr, arr.shape[0]
+
+
+def circular_triads(mat, alternative="two.sided", correct=True):
+    """Test one judge's paired comparisons for intransitivity.
+
+    ``mat[i, j] = 1`` means object *i* was preferred over object *j*; the
+    tournament must be complete (``mat[i, j] + mat[j, i] == 1`` for every
+    pair, zero diagonal). ``alternative`` is one of ``"two.sided"``,
+    ``"less"`` (fewer circular triads than chance, i.e. consistency), or
+    ``"greater"``. ``correct`` applies the +-0.5 continuity correction on
+    the chi-square path (``n >= 11``) only. Deliberate divergences from
+    eba's ``circular()``: ``n = 2`` is rejected (T_max = 0 makes zeta
+    undefined) and malformed tournaments raise instead of returning
+    garbage. Raises ValueError on invalid input.
+    """
+    from .fitstats import _core_module
+
+    arr, n = _kendall_matrix("circular_triads", mat)
+    res = _core_module().circular_triads(
+        arr.ravel(), n, str(alternative), bool(correct)
+    )
+    return CircularTriadsResult(
+        t=float(res["t"]),
+        t_max=float(res["t_max"]),
+        t_exp=float(res["t_exp"]),
+        zeta=float(res["zeta"]),
+        chi2=float(res["chi2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
+        exact=bool(res["exact"]),
+    )
+
+
+@dataclass
+class KendallUResult:
+    """Kendall's coefficient of agreement u between m judges (Kendall &
+    Babington Smith, 1940, as implemented by eba's ``kendall.u()``):
+    ``sigma`` the number of agreeing judge pairs, ``u`` the agreement
+    coefficient (1 = perfect agreement; minimum ``min_u`` is -1/m for odd
+    m, -1/(m-1) for even m), and the chi-square test of the null "agreement
+    is by chance". ``chi2`` is returned RAW and can be negative under
+    strong disagreement with the continuity correction; only the p-value
+    clamps (a negative statistic gives p = 1)."""
+
+    sigma: float
+    u: float
+    min_u: float
+    chi2: float
+    df: float
+    p_value: float
+
+
+def kendall_u(mat, correct=True):
+    """Agreement between m judges from an n x n frequency matrix.
+
+    ``mat[i, j]`` counts the judges who preferred object *i* over object
+    *j*. Every pair must have the same number of observations
+    ``m = mat[i, j] + mat[j, i] >= 3`` (a documented STRICTER check than
+    eba, which reads m from the first pair only); entries must be
+    nonnegative integers and the diagonal zero. ``correct`` applies the
+    continuity correction (subtract 1 from Sigma). Raises ValueError on
+    invalid input.
+    """
+    from .fitstats import _core_module
+
+    arr, n = _kendall_matrix("kendall_u", mat)
+    res = _core_module().kendall_u(arr.ravel(), n, bool(correct))
+    return KendallUResult(
+        sigma=float(res["sigma"]),
+        u=float(res["u"]),
+        min_u=float(res["min_u"]),
+        chi2=float(res["chi2"]),
+        df=float(res["df"]),
+        p_value=float(res["p_value"]),
     )
