@@ -1,5 +1,8 @@
 # fast-mlsirm
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/fast-mlsirm)
+
+
 `fast-mlsirm` is an early high-performance toolkit for Multidimensional
 Latent Space Item Response Models, focused on MLS2PLM simulation, regularized
 point estimation, and true-parameter recovery checks.
