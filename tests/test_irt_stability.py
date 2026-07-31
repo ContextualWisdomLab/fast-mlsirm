@@ -69,6 +69,45 @@ def test_fit_handles_missing_by_design_axes_and_extreme_scores():
     assert np.all(np.isfinite(result.params.theta))
 
 
+def test_fit_is_finite_for_perfect_and_zero_score_persons_and_items():
+    """0/full-score robustness: the penalized estimator must keep every parameter
+    and item-fit statistic finite for perfect-score and zero-score response
+    vectors, where an unpenalized IRT MLE would send theta or b to +/-inf.
+    """
+    # Perfect-score person (all correct) and zero-score person (all wrong).
+    perfect_and_zero_persons = np.array(
+        [
+            [1.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0, 0.0],
+        ]
+    )
+    # Perfect item (column all correct) and zero item (column all wrong).
+    perfect_and_zero_items = np.array(
+        [
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0, 1.0],
+        ]
+    )
+    for responses in (perfect_and_zero_persons, perfect_and_zero_items):
+        factors = np.zeros(responses.shape[1], dtype=int)
+        config = FitConfig(
+            model="MIRT", optimizer="adam", max_iter=40, n_restarts=1, latent_dim=1, seed=3
+        )
+        result = fit(responses, factors, config=config)
+        params = result.params
+        assert np.isfinite(result.objective)
+        for block in (params.theta, params.b, params.alpha, params.xi, params.zeta):
+            assert np.all(np.isfinite(block))
+        assert np.isfinite(params.tau)
+        diagnostics = fit_diagnostics(responses, params, factors, model="MIRT")
+        assert _all_finite(diagnostics.itemfit)
+        assert _all_finite(diagnostics.personfit)
+
+
 def test_true_parameters_reproduce_simulation_probabilities():
     data = simulate(MLS2PLMConfig(n_persons=8, n_dims=2, items_per_dim=2, latent_dim=2, seed=9))
 
