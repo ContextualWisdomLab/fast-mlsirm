@@ -1802,6 +1802,293 @@ pub fn elo_rating(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Glicko rating system (batch-per-period update with rating deviations).
+//
+// Citation governance:
+// - READ (formula source): Glickman, M. E. (n.d.). The Glicko system
+//   [Technical note]. Harvard University.
+//   http://www.glicko.net/glicko/glicko.pdf. Defines Step 1b deviation
+//   inflation RD = min(sqrt(RD_old^2 + c^2), 350) and the Step 2 update
+//   r' = r + q/(1/RD^2 + 1/d^2) * sum_j g(RD_j)(s_j - E_j),
+//   RD' = sqrt((1/RD^2 + 1/d^2)^-1), with q = ln(10)/400,
+//   g(RD) = 1/sqrt(1 + 3 q^2 RD^2 / pi^2),
+//   E_j = 1/(1 + 10^(-g(RD_j)(r - r_j)/400)),
+//   d^2 = (q^2 sum_j g(RD_j)^2 E_j (1 - E_j))^-1,
+//   and the worked example (r = 1500, RD = 200 vs opponents (1400, 30),
+//   (1550, 100), (1700, 300) scoring 1, 0, 0 -> r' = 1464, RD' = 151.4)
+//   which is pinned by test `gk_paper_anchor_ga`.
+// - READ (implementation source of record): Stephenson, A., & Sonas, J.
+//   (2020). PlayerRatings: Dynamic updating methods for player ratings
+//   estimation (Version 1.1-0) [R package]. CRAN. `R/ratings.R` `glicko()`
+//   (lines 273-410: per-period splitting, participant-only variance
+//   inflation with (lag+1)*cval^2 and rdmax^2 clamp, W/D/L and lag
+//   bookkeeping) and `src/ratings.c` `glicko_c` (lines 83-119: per-game
+//   accumulation kernel). Both read in full; this implementation was
+//   verified against an independently executed oracle whose GA fixture
+//   reproduces Glickman's worked example.
+// - NOT READ (cited as the method's derivation paper by both read
+//   sources): Glickman, M. E. (1999). Parameter estimation in large
+//   dynamic paired comparison experiments. Applied Statistics, 48(3),
+//   377-394.
+//
+// Model (derived from the read R/C sources; per rating period, ascending
+// period label, batch semantics):
+//   1. participants' variances inflate FIRST:
+//        v_p = min(v_p + (lag_p + 1) * cval^2, rdmax^2)
+//   2. g_k = 1/sqrt(1 + 3 (q/pi)^2 v_k) for ALL players (post-inflation)
+//   3. per game (w, b, s, gamma), using period-START ratings:
+//        E_w = 1/(1 + 10^(g_b (r_b - r_w - gamma)/400))
+//        dval_w += q^2 g_b^2 E_w (1 - E_w); dscore_w += g_b (s - E_w)
+//        E_b = 1/(1 + 10^(g_w (r_w - r_b + gamma)/400))
+//        dval_b += q^2 g_w^2 E_b (1 - E_b); dscore_b += g_w (1 - s - E_b)
+//   4. all players: v <- 1/(1/v + dval), THEN r <- r + v_new * q * dscore
+//      (the NEW variance is the paper's q/(1/RD^2 + 1/d^2) factor).
+// Bookkeeping identical to `elo_rating`: W/D/L only for scores exactly
+// 1 / 0.5 / 0; lag += 1 where cumulative games != 0, then reset to 0 for
+// this period's participants.
+//
+// NOT an invariant (verified by oracle fixture GB): the rating sum is NOT
+// conserved in general — updates are weighted by per-player new variance
+// and opponent g, which is asymmetric. (A symmetric equal-deviation
+// two-player game does conserve; tests must not rely on conservation.)
+//
+// Documented divergences from PlayerRatings `glicko()`:
+// - `white == black` (self-play) is rejected (R silently permits it).
+// - No `status` carry-in / `history`: per-player `init_rating`/`init_dev`
+//   arrays replace R's status frame; entries are returned for ALL players
+//   in 0..n (R's fresh start only creates observed players), and players
+//   that never appear keep their init rating/deviation, zero tallies,
+//   lag 0.
+// - Periods are u64 labels; unsorted input is grouped by ascending period
+//   value with row order preserved within a period (R split() ordering).
+// ---------------------------------------------------------------------------
+
+/// Result of [`glicko_rating`]: per-player ratings, deviations, and counts.
+#[derive(Debug, Clone)]
+pub struct GlickoResult {
+    /// Post-update rating per player (length `n`).
+    pub ratings: Vec<f64>,
+    /// Post-update rating deviation (RD) per player.
+    pub deviations: Vec<f64>,
+    /// Number of game appearances per player.
+    pub games: Vec<u64>,
+    /// Wins (score exactly 1 as white, or exactly 0 as black).
+    pub wins: Vec<u64>,
+    /// Draws (score exactly 0.5, both sides).
+    pub draws: Vec<u64>,
+    /// Losses (score exactly 0 as white, or exactly 1 as black).
+    pub losses: Vec<u64>,
+    /// Rating periods since the player's last appearance (0 if the player
+    /// appeared in the final period or never played).
+    pub lag: Vec<u64>,
+}
+
+/// Glicko ratings from a game schedule, PlayerRatings `glicko()` semantics.
+///
+/// `periods[k]`, `white[k]`, `black[k]`, `score[k]`, `gamma[k]` describe
+/// game `k`: rating-period label, player indices in `0..n`, white's score
+/// in `[0, 1]`, and white's per-game advantage. `init_rating`/`init_dev`
+/// give each player's starting rating and deviation (`n` = their length);
+/// `cval` is the per-period uncertainty growth constant and `rdmax` the
+/// deviation ceiling (Glickman's Step 1b).
+pub fn glicko_rating(
+    periods: &[u64],
+    white: &[usize],
+    black: &[usize],
+    score: &[f64],
+    gamma: &[f64],
+    init_rating: &[f64],
+    init_dev: &[f64],
+    cval: f64,
+    rdmax: f64,
+) -> Result<GlickoResult, String> {
+    let g = periods.len();
+    if g == 0 {
+        return Err("glicko_rating: at least one game is required".to_string());
+    }
+    if white.len() != g || black.len() != g || score.len() != g || gamma.len() != g {
+        return Err(format!(
+            "glicko_rating: length mismatch (periods {}, white {}, black {}, score {}, gamma {})",
+            g,
+            white.len(),
+            black.len(),
+            score.len(),
+            gamma.len()
+        ));
+    }
+    let n = init_rating.len();
+    if n < 2 {
+        return Err("glicko_rating: at least two players are required".to_string());
+    }
+    if n > 10_000 {
+        return Err(format!(
+            "glicko_rating: n = {} exceeds the supported cap of 10000",
+            n
+        ));
+    }
+    if init_dev.len() != n {
+        return Err(format!(
+            "glicko_rating: init_rating (len {}) and init_dev (len {}) must match",
+            n,
+            init_dev.len()
+        ));
+    }
+    if !rdmax.is_finite() || rdmax <= 0.0 {
+        return Err(format!(
+            "glicko_rating: rdmax {} must be finite and > 0",
+            rdmax
+        ));
+    }
+    if !cval.is_finite() || cval < 0.0 {
+        return Err(format!(
+            "glicko_rating: cval {} must be finite and >= 0",
+            cval
+        ));
+    }
+    for p in 0..n {
+        if !init_rating[p].is_finite() {
+            return Err(format!("glicko_rating: init_rating[{}] is not finite", p));
+        }
+        if !init_dev[p].is_finite() || init_dev[p] <= 0.0 {
+            return Err(format!(
+                "glicko_rating: init_dev[{}] = {} must be finite and > 0",
+                p, init_dev[p]
+            ));
+        }
+        if init_dev[p] > rdmax {
+            return Err(format!(
+                "glicko_rating: init_dev[{}] = {} exceeds rdmax {}",
+                p, init_dev[p], rdmax
+            ));
+        }
+    }
+    for k in 0..g {
+        if white[k] >= n || black[k] >= n {
+            return Err(format!(
+                "glicko_rating: game {} has player index out of range (white {}, black {}, n {})",
+                k, white[k], black[k], n
+            ));
+        }
+        if white[k] == black[k] {
+            return Err(format!(
+                "glicko_rating: game {} has white == black == {} (self-play is not supported)",
+                k, white[k]
+            ));
+        }
+        if !score[k].is_finite() || !(0.0..=1.0).contains(&score[k]) {
+            return Err(format!(
+                "glicko_rating: game {} has score {} outside [0, 1]",
+                k, score[k]
+            ));
+        }
+        if !gamma[k].is_finite() {
+            return Err(format!("glicko_rating: game {} has non-finite gamma", k));
+        }
+    }
+
+    // q = ln(10)/400 (paper); qip3 = 3 (q/pi)^2 (R line 355).
+    let qv = std::f64::consts::LN_10 / 400.0;
+    let qip3 = 3.0 * (qv / std::f64::consts::PI).powi(2);
+
+    // Group by ascending period, preserving row order within a period.
+    let mut order: Vec<usize> = (0..g).collect();
+    order.sort_by_key(|&k| periods[k]); // stable sort keeps row order
+
+    let mut ratings: Vec<f64> = init_rating.to_vec();
+    // Internal state is the VARIANCE (deviation squared), as in R.
+    let mut vars: Vec<f64> = init_dev.iter().map(|d| d * d).collect();
+    let mut games = vec![0u64; n];
+    let mut wins = vec![0u64; n];
+    let mut draws = vec![0u64; n];
+    let mut losses = vec![0u64; n];
+    let mut lag = vec![0u64; n];
+    let mut appeared = vec![false; n];
+    let mut gdevs = vec![0.0f64; n];
+
+    let mut i = 0usize;
+    while i < g {
+        let period = periods[order[i]];
+        let mut j = i;
+        while j < g && periods[order[j]] == period {
+            j += 1;
+        }
+
+        for player in appeared.iter_mut() {
+            *player = false;
+        }
+        for &k in &order[i..j] {
+            appeared[white[k]] = true;
+            appeared[black[k]] = true;
+        }
+        // Step 1b (participants only): inflate variance, clamp at rdmax^2.
+        for p in 0..n {
+            if appeared[p] {
+                vars[p] = (vars[p] + (lag[p] + 1) as f64 * cval * cval).min(rdmax * rdmax);
+            }
+        }
+        // g(RD) for ALL players from post-inflation variances (R line 370).
+        for p in 0..n {
+            gdevs[p] = 1.0 / (1.0 + qip3 * vars[p]).sqrt();
+        }
+
+        let mut dscore = vec![0.0f64; n];
+        let mut dval = vec![0.0f64; n];
+        for &k in &order[i..j] {
+            let (w, b, s, gam) = (white[k], black[k], score[k], gamma[k]);
+            // Expectations from period-START ratings (batch semantics),
+            // opponent's g in the exponent (C lines 107, 113).
+            let e_w = 1.0 / (1.0 + 10f64.powf(gdevs[b] * (ratings[b] - ratings[w] - gam) / 400.0));
+            dval[w] += qv * qv * gdevs[b] * gdevs[b] * e_w * (1.0 - e_w);
+            dscore[w] += gdevs[b] * (s - e_w);
+            let e_b = 1.0 / (1.0 + 10f64.powf(gdevs[w] * (ratings[w] - ratings[b] + gam) / 400.0));
+            dval[b] += qv * qv * gdevs[w] * gdevs[w] * e_b * (1.0 - e_b);
+            dscore[b] += gdevs[w] * (1.0 - s - e_b);
+
+            games[w] += 1;
+            games[b] += 1;
+            if s == 1.0 {
+                wins[w] += 1;
+                losses[b] += 1;
+            } else if s == 0.5 {
+                draws[w] += 1;
+                draws[b] += 1;
+            } else if s == 0.0 {
+                losses[w] += 1;
+                wins[b] += 1;
+            }
+        }
+        // Variance first, THEN rating with the NEW variance (R lines
+        // 377-378; the paper's q/(1/RD^2 + 1/d^2) factor). Non-participants
+        // have dval = dscore = 0 and are unchanged.
+        for p in 0..n {
+            vars[p] = 1.0 / (1.0 / vars[p] + dval[p]);
+            ratings[p] += vars[p] * qv * dscore[p];
+        }
+        for p in 0..n {
+            if games[p] != 0 {
+                lag[p] += 1;
+            }
+        }
+        for p in 0..n {
+            if appeared[p] {
+                lag[p] = 0;
+            }
+        }
+        i = j;
+    }
+
+    Ok(GlickoResult {
+        ratings,
+        deviations: vars.iter().map(|v| v.sqrt()).collect(),
+        games,
+        wins,
+        draws,
+        losses,
+        lag,
+    })
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;

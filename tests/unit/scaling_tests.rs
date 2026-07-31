@@ -2136,3 +2136,530 @@ fn el_mc_500() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// glicko_rating tests (fixtures GA-GF from the executed float64 oracle
+// mirroring PlayerRatings glicko(); GA reproduces Glickman's worked
+// example. See the citation-governance header in scaling.rs). Every
+// assertion below reads values returned by the crate's glicko_rating.
+// ---------------------------------------------------------------------------
+
+/// GA: Glickman's worked example (heterogeneous RDs, cval = 0). Kills MU1
+/// (opponent-g swap: uniform-RD fixtures are blind, GA's RDs 200/30/100/300
+/// are not), MU4 (stale variance in the rating update: the paper's 131.9
+/// multiplier is the NEW variance), MU5 (dval missing q^2), and MU6
+/// (dscore sign flip: ratings[0] would rise above 1500 instead of
+/// dropping to 1464.106...).
+#[test]
+fn gk_paper_anchor_ga() {
+    let r = super::glicko_rating(
+        &[1, 1, 1],
+        &[0, 0, 0],
+        &[1, 2, 3],
+        &[1.0, 0.0, 0.0],
+        &[0.0, 0.0, 0.0],
+        &[1500.0, 1400.0, 1550.0, 1700.0],
+        &[200.0, 30.0, 100.0, 300.0],
+        0.0,
+        350.0,
+    )
+    .unwrap();
+    // Paper rounds these to r' = 1464, RD' = 151.4; pins are the exact
+    // float64 oracle values.
+    let er = [
+        1464.1064627569112,
+        1398.342512471733,
+        1570.1876094547742,
+        1784.3502813450064,
+    ];
+    let ed = [
+        151.39890244796933,
+        29.925091041592754,
+        97.21172956677705,
+        251.45899758288715,
+    ];
+    for p in 0..4 {
+        assert!((r.ratings[p] - er[p]).abs() < 1e-12, "rating {p}");
+        assert!((r.deviations[p] - ed[p]).abs() < 1e-12, "deviation {p}");
+    }
+    assert_eq!(r.games, vec![3, 1, 1, 1]);
+    assert_eq!(r.wins, vec![1, 0, 1, 1]);
+    assert_eq!(r.draws, vec![0, 0, 0, 0]);
+    assert_eq!(r.losses, vec![2, 1, 0, 0]);
+    assert_eq!(r.lag, vec![0, 0, 0, 0]);
+}
+
+/// GB: two periods with cval = 15 inflation and an idle player. Kills MU2
+/// (inflation (lag+1)*c^2 -> lag*c^2: period-1 inflation vanishes; GA is
+/// blind because cval = 0 there), MU8 (lag reset before increment: lag
+/// would read [0,0,0]), and MU9 (all-player inflation: idle player 1's
+/// period-2 deviation must stay 224.94066563436596 -- the FULL deviation
+/// vector is pinned for exactly this kill). Also pins the rating sum
+/// 6629.66... != 6600: Glicko does NOT conserve the rating sum (asymmetric
+/// opponent-g weighting), so conservation must never be used as an
+/// invariant.
+#[test]
+fn gk_two_period_gb() {
+    let r = super::glicko_rating(
+        &[1, 1, 2],
+        &[0, 1, 2],
+        &[1, 2, 0],
+        &[1.0, 0.5, 1.0],
+        &[0.0, 0.0, 0.0],
+        &[2200.0, 2200.0, 2200.0],
+        &[300.0, 300.0, 300.0],
+        15.0,
+        350.0,
+    )
+    .unwrap();
+    let er = [2190.0061185685217, 2094.5895980175137, 2345.066036571678];
+    let ed = [223.91939158372585, 224.94066563436596, 223.91939158372585];
+    for p in 0..3 {
+        assert!((r.ratings[p] - er[p]).abs() < 1e-12, "rating {p}");
+        assert!((r.deviations[p] - ed[p]).abs() < 1e-12, "deviation {p}");
+    }
+    assert_eq!(r.games, vec![2, 2, 2]);
+    assert_eq!(r.wins, vec![1, 0, 1]);
+    assert_eq!(r.draws, vec![0, 1, 1]);
+    assert_eq!(r.losses, vec![1, 1, 0]);
+    assert_eq!(r.lag, vec![0, 1, 0]);
+    // Documented non-identity: no rating-sum conservation.
+    let sum: f64 = r.ratings.iter().sum();
+    assert!((sum - 6600.0).abs() > 1e-3, "sum unexpectedly conserved");
+    assert!((sum - 6629.661753157714).abs() < 1e-9);
+}
+
+/// GC: rdmax clamp active (cval = 400 > rdmax = 350). Kills MU3 (clamp
+/// dropped: pre-game variance would be 300^2 + 400^2 = 250000 and the
+/// post-game deviation would exceed 350; GA/GB are blind, their clamp is
+/// inactive). A symmetric draw leaves both ratings exactly at init.
+#[test]
+fn gk_rdmax_clamp_gc() {
+    let r = super::glicko_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[0.5],
+        &[0.0],
+        &[2200.0, 2200.0],
+        &[300.0, 300.0],
+        400.0,
+        350.0,
+    )
+    .unwrap();
+    assert_eq!(r.ratings, vec![2200.0, 2200.0]);
+    for p in 0..2 {
+        assert!(
+            (r.deviations[p] - 290.2305060910912).abs() < 1e-12,
+            "dev {p}"
+        );
+        assert!(r.deviations[p] < 350.0);
+    }
+    assert_eq!(r.draws, vec![1, 1]);
+}
+
+/// GD: nonzero gamma (white advantage 30). The EXACT rating pins kill MU7
+/// (gamma sign swap in the exponents); the structural white-gains-less
+/// comparison alone would not, since both runs would swap together.
+#[test]
+fn gk_gamma_gd() {
+    let r = super::glicko_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[30.0],
+        &[2000.0, 2000.0],
+        &[200.0, 200.0],
+        0.0,
+        350.0,
+    )
+    .unwrap();
+    assert!((r.ratings[0] - 2072.980891506514).abs() < 1e-12);
+    assert!((r.ratings[1] - 1927.019108493486).abs() < 1e-12);
+    assert!((r.deviations[0] - 179.97197655111717).abs() < 1e-12);
+    assert!((r.deviations[1] - 179.97197655111717).abs() < 1e-12);
+    // Structural check (reads crate outputs of both runs): with a white
+    // advantage, E_w > 0.5 and white gains LESS than the gamma = 0 run.
+    let r0 = super::glicko_rating(
+        &[1],
+        &[0],
+        &[1],
+        &[1.0],
+        &[0.0],
+        &[2000.0, 2000.0],
+        &[200.0, 200.0],
+        0.0,
+        350.0,
+    )
+    .unwrap();
+    assert!(r.ratings[0] < r0.ratings[0]);
+}
+
+/// GE: unsorted period labels produce exactly the GB outputs (stable
+/// ascending grouping; both sides of every comparison are crate outputs).
+#[test]
+fn gk_unsorted_ge() {
+    let sorted = super::glicko_rating(
+        &[1, 1, 2],
+        &[0, 1, 2],
+        &[1, 2, 0],
+        &[1.0, 0.5, 1.0],
+        &[0.0, 0.0, 0.0],
+        &[2200.0, 2200.0, 2200.0],
+        &[300.0, 300.0, 300.0],
+        15.0,
+        350.0,
+    )
+    .unwrap();
+    let unsorted = super::glicko_rating(
+        &[2, 1, 1],
+        &[2, 0, 1],
+        &[0, 1, 2],
+        &[1.0, 1.0, 0.5],
+        &[0.0, 0.0, 0.0],
+        &[2200.0, 2200.0, 2200.0],
+        &[300.0, 300.0, 300.0],
+        15.0,
+        350.0,
+    )
+    .unwrap();
+    assert_eq!(sorted.ratings, unsorted.ratings);
+    assert_eq!(sorted.deviations, unsorted.deviations);
+    assert_eq!(sorted.lag, unsorted.lag);
+    assert_eq!(sorted.wins, unsorted.wins);
+}
+
+/// GF: fractional score 0.25 counts a game but no W/D/L (only scores
+/// exactly 1 / 0.5 / 0 update the tallies); exact rating/deviation pins.
+#[test]
+fn gk_fractional_score_gf() {
+    let r = super::glicko_rating(
+        &[1, 1],
+        &[0, 0],
+        &[1, 2],
+        &[0.25, 1.0],
+        &[0.0, 0.0],
+        &[2200.0, 2200.0, 2200.0],
+        &[300.0, 300.0, 300.0],
+        15.0,
+        350.0,
+    )
+    .unwrap();
+    let er = [2252.705200991243, 2267.5360775700997, 2064.9278448598];
+    let ed = [224.94066563436596, 254.6297571494754, 254.6297571494754];
+    for p in 0..3 {
+        assert!((r.ratings[p] - er[p]).abs() < 1e-12, "rating {p}");
+        assert!((r.deviations[p] - ed[p]).abs() < 1e-12, "deviation {p}");
+    }
+    assert_eq!(r.games, vec![2, 1, 1]);
+    assert_eq!(r.wins, vec![1, 0, 0]);
+    assert_eq!(r.draws, vec![0, 0, 0]);
+    assert_eq!(r.losses, vec![0, 0, 1]);
+}
+
+/// Error contract: every rejection path returns Err (crate return value).
+#[test]
+fn gk_error_contract() {
+    let ok = (
+        vec![1u64],
+        vec![0usize],
+        vec![1usize],
+        vec![1.0f64],
+        vec![0.0f64],
+        vec![2000.0f64, 2000.0],
+        vec![200.0f64, 200.0],
+    );
+    let call = |p: &[u64],
+                w: &[usize],
+                b: &[usize],
+                s: &[f64],
+                g: &[f64],
+                ir: &[f64],
+                id: &[f64],
+                c: f64,
+                rm: f64| { super::glicko_rating(p, w, b, s, g, ir, id, c, rm) };
+    // baseline sanity: the ok tuple actually passes
+    assert!(call(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, &ok.5, &ok.6, 15.0, 350.0).is_ok());
+    // empty games
+    assert!(call(&[], &[], &[], &[], &[], &ok.5, &ok.6, 15.0, 350.0).is_err());
+    // column length mismatch
+    assert!(call(
+        &ok.0,
+        &[0, 1],
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+    // n < 2
+    assert!(call(
+        &[1],
+        &[0],
+        &[0],
+        &[1.0],
+        &[0.0],
+        &[2000.0],
+        &[200.0],
+        15.0,
+        350.0
+    )
+    .is_err());
+    // n > 10000
+    let big_r = vec![2000.0; 10_001];
+    let big_d = vec![200.0; 10_001];
+    assert!(call(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, &big_r, &big_d, 15.0, 350.0).is_err());
+    // init arrays length mismatch
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &[200.0],
+        15.0,
+        350.0
+    )
+    .is_err());
+    // init_dev <= 0 / > rdmax / non-finite; init_rating non-finite
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &[0.0, 200.0],
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &[400.0, 200.0],
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &[f64::NAN, 200.0],
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &[f64::INFINITY, 2000.0],
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+    // rdmax <= 0 / non-finite; cval < 0 / non-finite
+    assert!(call(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, &ok.5, &ok.6, 15.0, 0.0).is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        15.0,
+        f64::NAN
+    )
+    .is_err());
+    assert!(call(&ok.0, &ok.1, &ok.2, &ok.3, &ok.4, &ok.5, &ok.6, -1.0, 350.0).is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        f64::NAN,
+        350.0
+    )
+    .is_err());
+    // player index out of range; self-play
+    assert!(call(&ok.0, &[2], &ok.2, &ok.3, &ok.4, &ok.5, &ok.6, 15.0, 350.0).is_err());
+    assert!(call(&ok.0, &[1], &[1], &ok.3, &ok.4, &ok.5, &ok.6, 15.0, 350.0).is_err());
+    // score outside [0,1] / non-finite; gamma non-finite
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[1.5],
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[-0.1],
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &[f64::NAN],
+        &ok.4,
+        &ok.5,
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+    assert!(call(
+        &ok.0,
+        &ok.1,
+        &ok.2,
+        &ok.3,
+        &[f64::NAN],
+        &ok.5,
+        &ok.6,
+        15.0,
+        350.0
+    )
+    .is_err());
+}
+
+/// MC-500: structural invariants on random schedules. All assertions read
+/// crate outputs. Rating-sum conservation is deliberately NOT asserted
+/// (Glicko does not conserve it; see gk_two_period_gb).
+#[test]
+#[ignore]
+fn gk_mc_500() {
+    let mut rng = Lcg(0x61c0_u64 ^ 0x9e3779b97f4a7c15);
+    for rep in 0..500 {
+        let n = 3 + (rng.next_f64() * 6.0) as usize; // 3..=8
+        let g = 2 + (rng.next_f64() * 10.0) as usize; // 2..=11
+        let mut periods = Vec::with_capacity(g);
+        let mut white = Vec::with_capacity(g);
+        let mut black = Vec::with_capacity(g);
+        let mut score = Vec::with_capacity(g);
+        let mut gamma = Vec::with_capacity(g);
+        for _ in 0..g {
+            periods.push(1 + (rng.next_f64() * 4.0) as u64);
+            let w = (rng.next_f64() * n as f64) as usize % n;
+            let mut b = (rng.next_f64() * n as f64) as usize % n;
+            if b == w {
+                b = (b + 1) % n;
+            }
+            white.push(w);
+            black.push(b);
+            score.push([0.0, 0.5, 1.0][(rng.next_f64() * 3.0) as usize % 3]);
+            gamma.push((rng.next_f64() - 0.5) * 60.0);
+        }
+        let init_r = vec![2200.0; n];
+        let init_d = vec![300.0; n];
+        let r = super::glicko_rating(
+            &periods, &white, &black, &score, &gamma, &init_r, &init_d, 15.0, 350.0,
+        )
+        .unwrap();
+        for p in 0..n {
+            // (a) all outputs finite; deviations in (0, rdmax].
+            assert!(r.ratings[p].is_finite(), "rep {rep}");
+            assert!(
+                r.deviations[p] > 0.0 && r.deviations[p] <= 350.0,
+                "rep {rep} dev {}",
+                r.deviations[p]
+            );
+            // (b) games = wins + draws + losses for integer/half scores.
+            assert_eq!(
+                r.games[p],
+                r.wins[p] + r.draws[p] + r.losses[p],
+                "rep {rep} player {p}"
+            );
+        }
+        // (c) every player appearing in the final period has lag 0.
+        let last = *periods.iter().max().unwrap();
+        for k in 0..g {
+            if periods[k] == last {
+                assert_eq!(r.lag[white[k]], 0, "rep {rep}");
+                assert_eq!(r.lag[black[k]], 0, "rep {rep}");
+            }
+        }
+        // (d) permuting game order leaves output identical (batch
+        // semantics + stable ascending grouping by period value).
+        let perm: Vec<usize> = (0..g).rev().collect();
+        let r2 = super::glicko_rating(
+            &perm.iter().map(|&k| periods[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| white[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| black[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| score[k]).collect::<Vec<_>>(),
+            &perm.iter().map(|&k| gamma[k]).collect::<Vec<_>>(),
+            &init_r,
+            &init_d,
+            15.0,
+            350.0,
+        )
+        .unwrap();
+        for p in 0..n {
+            assert!(
+                (r.ratings[p] - r2.ratings[p]).abs() < 1e-12,
+                "rep {rep} player {p}: order dependence"
+            );
+        }
+        // (e) cval = 0, every-period player: deviation never increases.
+        // Run a two-period schedule where player 0 plays both periods and
+        // compare crate deviations after period 1 vs after period 2.
+        let one = super::glicko_rating(
+            &[1],
+            &[0],
+            &[1],
+            &[1.0],
+            &[0.0],
+            &init_r[..2],
+            &init_d[..2],
+            0.0,
+            350.0,
+        )
+        .unwrap();
+        let two = super::glicko_rating(
+            &[1, 2],
+            &[0, 0],
+            &[1, 1],
+            &[1.0, 1.0],
+            &[0.0, 0.0],
+            &init_r[..2],
+            &init_d[..2],
+            0.0,
+            350.0,
+        )
+        .unwrap();
+        assert!(two.deviations[0] <= one.deviations[0], "rep {rep}");
+    }
+}
