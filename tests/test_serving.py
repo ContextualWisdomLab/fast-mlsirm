@@ -91,6 +91,87 @@ def test_information_and_cat_device_contract(capfd):
         bank_information(bundle, theta, device="tpu")
 
 
+def test_cat_next_item_selects_maximum_information_unadministered_item():
+    """Pin the two defining invariants of one adaptive item-selection step.
+
+    A computerized adaptive test picks, as the next item, the one whose Fisher
+    information is largest at the interim ability estimate -- the maximum-
+    information (MFI) criterion (Lord, 1980; Weiss, 1982) -- and never re-
+    administers an item already seen (van der Linden & Pashley, 2010). This
+    cross-checks ``cat_next_item``'s ranking against ``bank_information``
+    evaluated at the EAP estimate the same step returned, so the top pick is
+    provably the most informative *unadministered* item and the administered
+    item is excluded from the ranking.
+
+    References
+    ----------
+    Lord, F. M. (1980). *Applications of item response theory to practical
+    testing problems*. Lawrence Erlbaum Associates.
+
+    van der Linden, W. J., & Pashley, P. J. (2010). Item selection and ability
+    estimation in adaptive testing. In W. J. van der Linden & C. A. W. Glas
+    (Eds.), *Elements of adaptive testing* (pp. 3-30). Springer.
+    https://doi.org/10.1007/978-0-387-85461-8_1
+    """
+    parameters = [
+        (0.1, -0.7, -0.3),
+        (0.9, -0.1, 0.2),
+        (0.3, 0.4, 0.5),
+        (0.6, 0.9, -0.4),
+    ]
+    items = [
+        {
+            "code": f"i{index}",
+            "factor_id": 0,
+            "alpha": alpha,
+            "b": intercept,
+            "zeta": [zeta],
+        }
+        for index, (alpha, intercept, zeta) in enumerate(parameters)
+    ]
+    bundle = {
+        "schema_version": 1,
+        "model": "MLS2PLM",
+        "n_items": len(items),
+        "n_dims": 1,
+        "latent_dim": 1,
+        "quadrature": {"q_theta": 7, "q_xi": 7},
+        "eps_distance": 1e-8,
+        "tau": -0.2,
+        "population": None,
+        "eapsum_tables": None,
+        "items": items,
+    }
+
+    administered = {"i0": 1}
+    result = cat_next_item(bundle, administered)
+    ranked_codes = result["ranked_codes"]
+
+    # (1) No re-administration: the seen item is excluded and exactly the
+    # remaining bank is ranked (the CAT exposure invariant).
+    assert "i0" not in ranked_codes
+    assert set(ranked_codes) == {"i1", "i2", "i3"}
+    assert len(ranked_codes) == len(items) - len(administered)
+
+    # (2) MFI: the ranking equals item information (descending) at the EAP
+    # estimate the step returned, so the top recommendation is the most
+    # informative unadministered item.
+    theta_point = np.asarray(result["theta_eap"], dtype=float).reshape(1, -1)
+    item_info = bank_information(bundle, theta_point)["item_info"][0]
+    code_to_col = {item["code"]: col for col, item in enumerate(items)}
+    info_descending = sorted(
+        ranked_codes, key=lambda code: item_info[code_to_col[code]], reverse=True
+    )
+    assert ranked_codes == info_descending
+    assert ranked_codes[0] == max(
+        ranked_codes, key=lambda code: item_info[code_to_col[code]]
+    )
+
+    # The reported per-item information used for the ranking is non-increasing.
+    ranked_info = np.asarray(result["ranked_info"], dtype=float)
+    assert np.all(np.diff(ranked_info) <= 1e-9)
+
+
 def test_eap_scoring_never_falls_back_to_python(monkeypatch):
     import fast_mlsirm.serving as serving
 
