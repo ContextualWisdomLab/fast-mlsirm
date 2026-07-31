@@ -24,6 +24,7 @@ class WollackOmegaResult:
 
 
 def _index_vector(arr: np.ndarray, name: str, n_options: int) -> np.ndarray:
+    """Validate and coerce a 1-D option-index vector into ``0..n_options-1``."""
     a = np.asarray(arr)
     if a.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
