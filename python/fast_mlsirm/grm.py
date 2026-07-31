@@ -123,6 +123,7 @@ def fit_grm(
         )
 
     def _finite_int(value, name: str) -> int:
+        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
         scalar = np.asarray(value)
         if (
             scalar.ndim != 0

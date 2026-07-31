@@ -66,7 +66,7 @@ def guttman_lambdas(
     matrices instead of a pseudoinverse. In LLM-as-a-Judge quality
     management these bound the internal consistency of a judge rubric.
 
-    """ + _REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -95,6 +95,9 @@ def guttman_lambdas(
         n_splits=int(res["n_splits"]),
         exhaustive=bool(res["exhaustive"]),
     )
+
+
+guttman_lambdas.__doc__ += _REFERENCES
 
 
 @dataclass
@@ -138,7 +141,7 @@ def tenberge_mu(data: np.ndarray) -> TenBergeResult:
     management the series tightens the lower bound on rubric internal
     consistency beyond alpha.
 
-    """ + _TENBERGE_REFERENCES
+    """
     from .fitstats import _core_module
 
     core = _core_module()
@@ -155,6 +158,9 @@ def tenberge_mu(data: np.ndarray) -> TenBergeResult:
         mu2=float(res["mu2"]),
         mu3=float(res["mu3"]),
     )
+
+
+tenberge_mu.__doc__ += _TENBERGE_REFERENCES
 
 
 @dataclass
