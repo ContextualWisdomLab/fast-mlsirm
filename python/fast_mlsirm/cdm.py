@@ -26,6 +26,7 @@ def _prepare_binary_responses(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _validate_stopping_controls(max_iter: int, tol: float) -> tuple[int, float]:
+    """Validate and return the EM iteration cap and convergence tolerance."""
     if (
         not isinstance(max_iter, (int, np.integer))
         or isinstance(max_iter, (bool, np.bool_))

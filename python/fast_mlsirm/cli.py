@@ -38,6 +38,7 @@ MAX_CANDIDATE_BYTES = 512 * 1024 * 1024
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--json`` machine-readable-output flag on a parser."""
     parser.add_argument(
         "--json",
         action="store_true",
@@ -74,11 +75,17 @@ def _load_fit_context(
 
 
 def _progress(args: argparse.Namespace, message: str) -> None:
+    """Print a human-readable progress line unless ``--json`` mode is active."""
     if not getattr(args, "json", False):
         print(message)
 
 
 def _complete(args: argparse.Namespace, message: str, payload: dict[str, object]) -> int:
+    """Emit the command result and return exit code 0.
+
+    Prints the JSON ``payload`` in ``--json`` mode, otherwise the human-readable
+    ``message``.
+    """
     if getattr(args, "json", False):
         print(json.dumps(payload, sort_keys=True))
     else:
@@ -87,10 +94,12 @@ def _complete(args: argparse.Namespace, message: str, payload: dict[str, object]
 
 
 def _output_file(run_dir: str, filename: str) -> str:
+    """Join an output ``run_dir`` and ``filename`` into a path string."""
     return str(Path(run_dir) / filename)
 
 
 def _load_response_and_factors(responses_path: str, factors_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Load and cross-validate the response ``.npy`` and factor CSV inputs."""
     responses = _load_numpy_bounded(responses_path)
     factors = load_factor_csv(factors_path)
     _validate_response_and_factors(responses, factors)
@@ -98,6 +107,7 @@ def _load_response_and_factors(responses_path: str, factors_path: str) -> tuple[
 
 
 def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -> None:
+    """Check the response matrix is 2D and the factor vector matches item count."""
     if responses.ndim != 2:
         raise ValueError("responses must be a 2D persons x items array")
     if factors.ndim != 1:
@@ -109,6 +119,12 @@ def _validate_response_and_factors(responses: np.ndarray, factors: np.ndarray) -
 
 
 def _main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch to the selected subcommand.
+
+    Builds the full ``fast-mlsirm`` argument parser (simulate, fit, and the
+    diagnose/render subcommands), runs the chosen command, and returns its
+    process exit code.
+    """
     parser = argparse.ArgumentParser(
         prog="fast-mlsirm",
         description="Fast simulation, fitting, and recovery diagnostics for MLSIRM/MLS2PLM models.",
@@ -706,6 +722,11 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: run :func:`_main` with top-level error handling.
+
+    Maps ``KeyboardInterrupt`` to exit code 130 and any other exception to exit
+    code 1 (re-raising when ``FAST_MLSIRM_DEBUG`` is set).
+    """
     try:
         return _main(argv)
     except KeyboardInterrupt:
@@ -719,10 +740,16 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _load_optional_npy(path: str | None) -> np.ndarray | None:
+    """Load a bounded ``.npy`` array, or return ``None`` when no path is given."""
     return None if path is None else _load_numpy_bounded(path)
 
 
 def _load_candidate_probabilities(specs: list[str]) -> dict[str, np.ndarray]:
+    """Load labelled candidate-probability arrays from ``label=path`` specs.
+
+    Enforces the candidate-count and aggregate element/byte caps and rejects
+    empty or duplicate labels, returning a mapping of label to loaded array.
+    """
     if len(specs) > MAX_CANDIDATE_COUNT:
         raise ValueError(
             f"candidate count exceeds the {MAX_CANDIDATE_COUNT}-candidate limit"

@@ -152,6 +152,7 @@ def fit_mhrm(
         raise ValueError(f"loading_pattern dimensions must be between 1 and {_MAX_DIMS}")
 
     def _finite_int(value, name: str) -> int:
+        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
         scalar = np.asarray(value)
         if (
             scalar.ndim != 0

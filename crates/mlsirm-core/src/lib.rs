@@ -34,6 +34,7 @@ pub mod reliability;
 pub mod rsm;
 pub mod rt;
 pub mod rt_joint;
+pub mod scaling;
 pub mod scoring;
 pub mod security;
 pub mod standard_setting;
