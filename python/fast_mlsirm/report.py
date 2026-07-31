@@ -43,6 +43,7 @@ def render_diagnostics_report(
 
 
 def _diagnostics_type(payload: dict[str, Any]) -> str:
+    """Classify a diagnostics payload as ``"fit"`` or ``"dimensions"``."""
     if "model_fit" in payload:
         return "fit"
     if "candidates" in payload and "best" in payload:
@@ -53,6 +54,7 @@ def _diagnostics_type(payload: dict[str, Any]) -> str:
 
 
 def _default_title(report_type: str) -> str:
+    """Return the default report title for a diagnostics report type."""
     return (
         "Fit Diagnostics Report"
         if report_type == "fit"
@@ -63,6 +65,11 @@ def _default_title(report_type: str) -> str:
 def _render_html(
     payload: dict[str, Any], report_type: str, title: str, source_name: str
 ) -> str:
+    """Assemble the full self-contained HTML document for a report.
+
+    Wraps the rendered sections in an accessible page shell with a strict
+    Content-Security-Policy and inline styles (no external resources).
+    """
     if report_type == "fit":
         sections = _render_fit_report(payload)
     else:
@@ -100,6 +107,11 @@ def _render_html(
 
 
 def _render_fit_report(payload: dict[str, Any]) -> list[str]:
+    """Build the HTML sections for a fit-diagnostics report.
+
+    Renders the model-fit metric cards, the item/person/factor/category/group/
+    cluster fit tables that have data, and a coverage summary of what was empty.
+    """
     model_fit = payload.get("model_fit", {})
     if not isinstance(model_fit, dict):
         raise ValueError("model_fit must be an object")
@@ -149,6 +161,11 @@ def _render_fit_report(payload: dict[str, Any]) -> list[str]:
 
 
 def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
+    """Build the HTML sections for a dimensionality-diagnostics report.
+
+    Renders the best-candidate metric cards, a candidate-comparison table, and
+    a coverage summary of any missing content.
+    """
     best = payload.get("best", {})
     candidates = payload.get("candidates", [])
     if not isinstance(best, dict):
@@ -181,6 +198,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
+    """Render a labelled metric-card grid, or ``None`` when there are no metrics."""
     cards = []
     for key, value in metrics.items():
         cards.append(
@@ -211,6 +229,7 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
 def _table_section(
     heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None
 ) -> str:
+    """Render a report section with an optional bar chart and a data table."""
     chart = _bar_chart(rows, chart_value) if chart_value else ""
     return "\n".join(
         [
@@ -229,6 +248,7 @@ def _availability_section(
     no_row_tables: list[str],
     no_metric_sections: list[str] | None = None,
 ) -> str:
+    """Render the coverage section listing rendered vs. empty diagnostics scopes."""
     no_metric_sections = no_metric_sections or []
     columns = []
     if available:
@@ -254,6 +274,7 @@ def _availability_section(
 
 
 def _coverage_column(heading: str, items: list[str], *, muted: bool = False) -> str:
+    """Render one titled pill list within the coverage grid."""
     class_name = "coverage-list coverage-list-muted" if muted else "coverage-list"
     item_markup = "\n".join(f"<li>{escape(name)}</li>" for name in items)
     return "\n".join(
@@ -267,6 +288,11 @@ def _coverage_column(heading: str, items: list[str], *, muted: bool = False) -> 
 
 
 def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
+    """Render a decorative horizontal bar chart of ``value_key`` across rows.
+
+    Bars are min-max scaled over the (up to 12) finite numeric values; returns
+    an empty string when there is nothing numeric to plot.
+    """
     if not value_key:
         return ""
     if not rows:
@@ -300,7 +326,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
             )
         )
 
-    if not chart_rows:
+    if not chart_rows:  # pragma: no cover - unreachable: non-empty values guarantee >=1 chart row
         return ""
 
     return "\n".join(
@@ -313,8 +339,13 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
 
 
 def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
+    """Render an accessible HTML table of up to ``limit`` rows.
+
+    Emits a scrollable, captioned, region-labelled table; when truncated it adds
+    a note describing how many of the total rows are shown.
+    """
     if not rows:
-        return '<p class="empty-state">No rows were recorded in this section.</p>'
+        return '<div class="empty-state" role="status">No rows were recorded in this section.</div>'
 
     columns = _columns(rows)
     body_rows = []
@@ -358,6 +389,7 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
 
 
 def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
+    """Transpose a column-oriented diagnostics section into a list of row dicts."""
     if not isinstance(section, dict) or not section:
         return []
 
@@ -377,6 +409,7 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
 
 
 def _columns(rows: list[dict[str, Any]]) -> list[str]:
+    """Return the union of row keys in first-seen order for table columns."""
     ordered = []
     for row in rows:
         for key in row:
@@ -386,18 +419,21 @@ def _columns(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def _value_length(value: Any) -> int:
+    """Return a value's row count: its length if a list, else 1 (scalar)."""
     if isinstance(value, list):
         return len(value)
     return 1
 
 
 def _index_value(value: Any, index: int) -> Any:
+    """Index into a columnar value, returning ``""`` when out of range."""
     if isinstance(value, list):
         return value[index] if index < len(value) else ""
     return value if index == 0 else ""
 
 
 def _row_label(row: dict[str, Any], index: int) -> str:
+    """Derive a human-readable chart label from a row's identifier column."""
     for key in (
         "candidate_label",
         "latent_dim",
@@ -414,10 +450,12 @@ def _row_label(row: dict[str, Any], index: int) -> str:
 
 
 def _label(value: str) -> str:
+    """Humanize a snake_case key into Title Case for display."""
     return value.replace("_", " ").strip().title()
 
 
 def _format_value(value: Any) -> str:
+    """Format a scalar for display (4-significant-digit floats, ``""`` for None)."""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
@@ -432,12 +470,14 @@ def _format_value(value: Any) -> str:
 
 
 def _format_label_value(value: Any) -> str:
+    """Format an identifier value, rendering integral floats without a decimal."""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return _format_value(value)
 
 
 def _is_number(value: Any) -> bool:
+    """Return whether ``value`` is a finite, non-boolean real number."""
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)
@@ -446,10 +486,12 @@ def _is_number(value: Any) -> bool:
 
 
 def _content_security_policy() -> str:
+    """Return the strict CSP string embedded in every generated report."""
     return "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 
 def _css() -> str:
+    """Return the inline stylesheet for the standalone HTML report."""
     return """
 :root {
   color-scheme: light;

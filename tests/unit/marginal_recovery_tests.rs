@@ -835,6 +835,89 @@ fn concurrent_calibration_two_forms_with_anchor_block() {
 }
 
 #[test]
+fn concurrent_calibration_is_robust_to_random_nonresponse() {
+    // Concurrent (multigroup common-item) calibration must stay stable when
+    // sporadic item nonresponse is layered on top of the planned-missing
+    // Hanson-Beguin design. Marginal maximum likelihood integrates the latent
+    // trait over only the observed responses, so ignorable (MAR/MCAR)
+    // missingness is handled without bias: the shared anchor block still
+    // identifies the common metric and the group-mean shift stays recoverable.
+    //
+    // Mislevy, R. J., & Wu, P.-K. (1996). Missing responses and IRT ability
+    // estimation: Omits, choice, time limits, and adaptive testing (ETS
+    // Research Report RR-96-30). Educational Testing Service.
+    // https://doi.org/10.1002/j.2333-8504.1996.tb01708.x
+    let mut rng = Lcg(4242);
+    let (n_persons, n_items, n_dims, latent_dim) = (800usize, 15usize, 1usize, 1usize);
+    let group_id: Vec<usize> = (0..n_persons).map(|p| p % 2).collect();
+    let mut sim = simulate(
+        &mut rng,
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        0.8,
+        &[0.0, 0.7],
+        &group_id,
+        0.0,
+        &[],
+        0,
+    );
+    // Planned-missing common-item design: items 0..5 unique to form A,
+    // 5..10 shared anchors, 10..15 unique to form B.
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            let unique_a = i < 5;
+            let unique_b = i >= 10;
+            if (group_id[p] == 1 && unique_a) || (group_id[p] == 0 && unique_b) {
+                sim.observed[p * n_items + i] = false;
+            }
+        }
+    }
+    // Layer ~15% sporadic nonresponse on the still-observed cells (the anchor
+    // block stays well populated across 800 persons).
+    for p in 0..n_persons {
+        for i in 0..n_items {
+            let idx = p * n_items + i;
+            if sim.observed[idx] && rng.next_f64() < 0.15 {
+                sim.observed[idx] = false;
+            }
+        }
+    }
+    let config = ModelConfig {
+        n_persons,
+        n_items,
+        n_dims,
+        latent_dim,
+        model_type: ModelType::Uls2plm,
+        eps_distance: 1e-8,
+    };
+    let res = fit_marginal(
+        &sim.y,
+        &sim.observed,
+        &sim.factor_id,
+        &config,
+        &PopulationSpec::Multigroup {
+            group_id,
+            n_groups: 2,
+        },
+        &small_cfg(),
+        &PenaltyConfig::lsirm_prior(),
+        Device::Cpu,
+    )
+    .expect("concurrent calibration should succeed under added nonresponse");
+    assert!((res.mu[0]).abs() < 1e-12, "reference group stays pinned");
+    assert!(
+        res.mu[1] > 0.3 && res.mu[1] < 1.2,
+        "group shift stays recoverable under added nonresponse, got {}",
+        res.mu[1]
+    );
+    assert_monotone(&res.loglik_trace);
+    // every item still calibrated under structural + sporadic missingness
+    assert!(res.b.iter().all(|v| v.is_finite()));
+}
+
+#[test]
 fn zero_inflation_recovers_mixing_weight() {
     let mut rng = Lcg(2027);
     let (n_persons, n_items, n_dims, latent_dim) = (800usize, 12usize, 1usize, 1usize);
