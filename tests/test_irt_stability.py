@@ -7,6 +7,7 @@ from fast_mlsirm.inference import observed_information, second_order_test, stand
 from fast_mlsirm.linking import link_fixed_item_parameters
 from fast_mlsirm.objective import neg_loglik_and_grad, prepare_response
 from fast_mlsirm.test_design import assemble_test_form, item_information, select_cat_item
+from fast_mlsirm.wle import score_wle
 
 
 def _all_finite(table: dict[str, np.ndarray]) -> bool:
@@ -335,6 +336,99 @@ def test_fixed_item_parameter_linking_recovers_anchor_metric():
     assert np.allclose(linked.theta, target.theta)
     assert np.allclose(linked.alpha, target.alpha)
     assert np.allclose(linked.b, target.b)
+
+
+def test_wle_stays_finite_and_monotone_for_perfect_and_zero_scores():
+    """WLE gives a finite, ordered ability estimate for the all-correct and
+    all-incorrect patterns, where the MLE diverges to +/-infinity.
+
+    This pins the 0-score / full-score robustness contract that ``score_wle``
+    documents but no test exercised: the weighted-likelihood estimator has a
+    genuine finite interior root (not a clamped boundary value) for extreme
+    response vectors, preserves the score ordering, and reports a positive SE.
+
+    Reference (APA 7th ed.):
+        Warm, T. A. (1989). Weighted likelihood estimation of ability in item
+            response theory. *Psychometrika, 54*(3), 427-450.
+            https://doi.org/10.1007/BF02294627
+    """
+    a = np.array([1.0, 1.2, 0.8, 1.5, 1.0])
+    b = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])
+
+    perfect = score_wle(a, b, np.ones((1, 5)))
+    zero = score_wle(a, b, np.zeros((1, 5)))
+    mixed = score_wle(a, b, np.array([[1.0, 1.0, 0.0, 0.0, 1.0]]))
+
+    # Finite (not +/-inf) with a positive SE for every pattern, extremes included.
+    for out in (perfect, zero, mixed):
+        assert np.all(np.isfinite(out["theta"]))
+        assert np.all(out["se"] > 0.0)
+
+    # The extremes are genuine finite roots, not values clamped to theta_bound.
+    assert not bool(perfect["boundary"][0])
+    assert not bool(zero["boundary"][0])
+
+    # Perfect > mixed > zero: the estimator preserves the raw-score ordering.
+    assert perfect["theta"][0] > mixed["theta"][0] > zero["theta"][0]
+
+    # Missing responses (NaN) are dropped per person; a full-correct pattern on
+    # the observed subset is still finite.
+    partial = score_wle(a, b, np.array([[1.0, 1.0, np.nan, np.nan, 1.0]]))
+    assert np.isfinite(partial["theta"][0])
+
+
+def test_fipc_freezes_anchors_under_missing_response_data():
+    """FIPC holds anchor item parameters exactly fixed and still recovers the
+    free population when the new-form responses are ~25% missing (MCAR).
+
+    This is the concurrent-calibration missing-value robustness a common-item
+    nonequivalent-groups linking design depends on: in a real linking study the
+    new form is administered to a different group, so item-by-person missingness
+    is the norm, yet the anchored (old-form) parameters must remain exactly
+    frozen and the free population mean must still recover the group's shift.
+    The existing FIPC test uses a complete matrix; this pins the missing-data
+    case.
+
+    References (APA 7th ed.):
+        Kim, S. (2006). A comparative study of IRT fixed parameter calibration
+            methods. *Journal of Educational Measurement, 43*(4), 355-381.
+            https://doi.org/10.1111/j.1745-3984.2006.00021.x
+        Rose, N., von Davier, M., & Nagengast, B. (2017). Modeling omitted and
+            not-reached items in IRT models. *Psychometrika, 82*(3), 795-819.
+            https://doi.org/10.1007/s11336-016-9544-7
+    """
+    rng = np.random.default_rng(11)
+    n_persons, n_items = 600, 12
+    factors = np.zeros(n_items, dtype=np.int64)
+    a_true = 0.8 + 0.6 * rng.random(n_items)
+    b_true = -1.0 + 2.0 * rng.random(n_items)
+    theta = 0.8 + rng.standard_normal(n_persons)  # shifted new-form population
+    eta = a_true[None, :] * theta[:, None] + b_true[None, :]
+    responses = (rng.random((n_persons, n_items)) < 1.0 / (1.0 + np.exp(-eta))).astype(float)
+
+    # ~25% missing-completely-at-random responses on the new form.
+    responses[rng.random((n_persons, n_items)) < 0.25] = np.nan
+
+    anchors = dict(
+        fixed=np.arange(n_items) < 6,
+        alpha=np.log(a_true),
+        b=b_true,
+        zeta=np.zeros((n_items, 1)),
+        tau=-30.0,
+    )
+    config = FitConfig(model="ULS2PLM", estimator="mmle", max_iter=80, q_theta=15, latent_dim=1)
+    result = fit(responses, factors, config, anchors=anchors)
+
+    # Anchor items stay exactly fixed despite the missing data.
+    np.testing.assert_allclose(result.params.b[:6], b_true[:6])
+    np.testing.assert_allclose(np.exp(result.params.alpha[:6]), a_true[:6])
+
+    # Every estimate is finite, and the free population recovers the ~0.8 shift.
+    assert np.all(np.isfinite(result.params.b))
+    assert np.all(np.isfinite(result.params.alpha))
+    assert np.all(np.isfinite(result.params.theta))
+    assert result.population["kind"] == "singlefree"
+    assert 0.3 < result.population["mu"][0, 0] < 1.4
 
 
 def test_cat_item_selection_and_greedy_ata_constraints():
