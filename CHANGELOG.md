@@ -129,6 +129,19 @@
 
 ### Added
 
+- **Thurstone Case V paired-comparison scaling (Thurstone, 1927, as
+  implemented by psych's `thurstone()`; Revelle, 2025 — source READ)**
+  (`fast_mlsirm.thurstone_case_v`; in Rust
+  `mlsirm_core::scaling::thurstone_case_v`): scales n objects from an n×n
+  choice-probability matrix (`choice[i, j]` = P(column j preferred over row
+  i)) via `scale_j = colmean(qnorm(choice))_j − min`, fitted model
+  `Phi(scale_j − scale_i)`, residuals, and psych's goodness of fit
+  `1 − sse/ssc` over the full model matrix (pinning the psych *code*
+  behavior; the .Rd "lower off diagonal" prose is stale). Entries must be
+  strictly in (0, 1) — a deliberate safety divergence from psych, whose
+  direct path admits infinite normal quantiles. Pinned against a 50-digit
+  mpmath oracle on asymmetric, exactly-consistent, and intransitive
+  fixtures.
 - **Composite linking (Holland & Strawderman, 2011; as cited by Albano,
   2016, JSS 74(8), eqs. 31-32)** (`fast_mlsirm.composite_linking`; in Rust
   `mlsirm_core::equating::composite_linking`): weighted average of H
