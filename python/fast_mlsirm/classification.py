@@ -116,7 +116,14 @@ _REFERENCES = """References (APA 7th ed.):
 
 
 def _to_result(res: dict, m: int, n: int) -> ClassificationResult:
+    """Convert a Rust-core result dict into a :class:`ClassificationResult`.
+
+    ``m`` is the number of cut scores and ``n`` the number of points, used to
+    reshape the flattened conditional accuracy/consistency arrays.
+    """
+
     def arr(key: str) -> np.ndarray:
+        """Return result entry ``key`` as a float64 array."""
         return np.asarray(res[key], dtype=np.float64)
 
     return ClassificationResult(
@@ -136,6 +143,7 @@ def _to_result(res: dict, m: int, n: int) -> ClassificationResult:
 
 
 def _core_or_raise(name: str):
+    """Return the Rust core, raising if it or the required function ``name`` is absent."""
     from .fitstats import _core_module
 
     core = _core_module()
@@ -166,7 +174,7 @@ def rudner_classification(
     this quantifies how reliably a judge's cut score separates pass from
     fail given the calibration's standard errors.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("rudner_classification")
     t = np.ascontiguousarray(np.asarray(theta, dtype=np.float64).reshape(-1))
     s = np.ascontiguousarray(np.asarray(sem, dtype=np.float64).reshape(-1))
@@ -180,6 +188,9 @@ def rudner_classification(
     cuts = [float(c) for c in cutscores]
     res = core.rudner_classification(t, s, w, cuts)
     return _to_result(res, len(cuts), t.shape[0])
+
+
+rudner_classification.__doc__ += _REFERENCES
 
 
 def lee_classification(
@@ -200,7 +211,7 @@ def lee_classification(
     (left-closed; cacIRT's ``Lee.D`` alone is right-closed — divergence
     documented in the Rust core). ``weights`` defaults to uniform.
 
-    """ + _REFERENCES
+    """
     core = _core_or_raise("lee_classification")
     p = np.ascontiguousarray(np.asarray(probs, dtype=np.float64))
     if p.ndim != 2:
@@ -218,6 +229,9 @@ def lee_classification(
         p.reshape(-1), int(n_points), int(n_items), w, cuts
     )
     return _to_result(res, len(cuts), n_points)
+
+
+lee_classification.__doc__ += _REFERENCES
 
 
 def livingston_lewis(
@@ -246,19 +260,6 @@ def livingston_lewis(
     kappa are ``NaN`` when their margin or chance denominator vanishes
     (e.g. a cut outside the fitted beta support).
 
-    """ + _REFERENCES + """
-        Haakstad, H. (2022). *betafunctions: Functions for working with
-            two- and four-parameter beta probability distributions and
-            psychometric analysis of classifications* (Version 1.9.0)
-            [R package]. https://CRAN.R-project.org/package=betafunctions
-        Hanson, B. A. (1991). *Method of moments estimates for the
-            four-parameter beta compound binomial model and the calculation
-            of classification consistency indexes* (ACT Research Report
-            91-5). (as cited in Haakstad, 2022)
-        Livingston, S. A., & Lewis, C. (1995). Estimating the consistency
-            and accuracy of classifications based on test scores. *Journal
-            of Educational Measurement, 32*(2), 179-197. (as cited in
-            Haakstad, 2022)
     """
     core = _core_or_raise("livingston_lewis")
     x = np.ascontiguousarray(np.asarray(scores, dtype=np.float64).reshape(-1))
@@ -290,7 +291,24 @@ def livingston_lewis(
     )
 
 
+livingston_lewis.__doc__ += _REFERENCES + """
+        Haakstad, H. (2022). *betafunctions: Functions for working with
+            two- and four-parameter beta probability distributions and
+            psychometric analysis of classifications* (Version 1.9.0)
+            [R package]. https://CRAN.R-project.org/package=betafunctions
+        Hanson, B. A. (1991). *Method of moments estimates for the
+            four-parameter beta compound binomial model and the calculation
+            of classification consistency indexes* (ACT Research Report
+            91-5). (as cited in Haakstad, 2022)
+        Livingston, S. A., & Lewis, C. (1995). Estimating the consistency
+            and accuracy of classifications based on test scores. *Journal
+            of Educational Measurement, 32*(2), 179-197. (as cited in
+            Haakstad, 2022)
+    """
+
+
 def _hb_to_result(res: dict) -> HansonBrennanResult:
+    """Convert a Rust-core Hanson-Brennan result dict into a result dataclass."""
     return HansonBrennanResult(
         lords_k=float(res["lords_k"]),
         true_score_moments=np.asarray(
@@ -361,7 +379,7 @@ def hanson_brennan(
     specificity, and kappa are ``NaN`` when their margin or chance
     denominator vanishes (e.g. ``cut == n_items``).
 
-    """ + _REFERENCES + _HB_REFERENCES
+    """
     core = _core_or_raise("hanson_brennan")
     x = np.asarray(scores)
     if np.iscomplexobj(x):
@@ -378,6 +396,9 @@ def hanson_brennan(
     return _hb_to_result(res)
 
 
+hanson_brennan.__doc__ += _REFERENCES + _HB_REFERENCES
+
+
 def hanson_brennan_from_params(
     n_items: int,
     lords_k: float,
@@ -392,7 +413,7 @@ def hanson_brennan_from_params(
     Rust; Hanson, 1991; CRAN betafunctions 1.9.0 ``HB.CA``). Same
     pass-positive orientation as :func:`hanson_brennan`.
 
-    """ + _REFERENCES + _HB_REFERENCES
+    """
     core = _core_or_raise("hanson_brennan_from_params")
     res = core.hanson_brennan_from_params(
         int(n_items),
@@ -404,6 +425,9 @@ def hanson_brennan_from_params(
         int(cut),
     )
     return _hb_to_result(res)
+
+
+hanson_brennan_from_params.__doc__ += _REFERENCES + _HB_REFERENCES
 
 
 @dataclass
@@ -465,7 +489,7 @@ def subkoviak_agreement(
     reclassify the same outputs on a hypothetical retest, from one
     administration only.
 
-    """ + _SUBKOVIAK_REFERENCES
+    """
     core = _core_or_raise("subkoviak_agreement")
     x = np.asarray(scores)
     c = np.asarray(cuts)
@@ -495,6 +519,10 @@ def subkoviak_agreement(
         chance_agreement=float(res["chance_agreement"]),
         kappa=float(res["kappa"]),
     )
+
+
+subkoviak_agreement.__doc__ += _SUBKOVIAK_REFERENCES
+
 
 @dataclass
 class LivingstonResult:
@@ -634,6 +662,7 @@ _WOODRUFF_SAWYER_REFERENCES = """
 
 
 def _ws_result(res: dict) -> WoodruffSawyerResult:
+    """Convert a Rust-core Woodruff-Sawyer result dict into a result dataclass."""
     return WoodruffSawyerResult(
         pass_rate=float(res["pass_rate"]),
         phi_half=float(res["phi_half"]),

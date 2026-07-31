@@ -333,10 +333,13 @@ def _fit_mmle_marginal(
             anchor_tau=anchor_tau,
         )
     if ids is not None:
+        # ids only ever comes from _compact_population_labels, whose np.unique
+        # return_inverse output is always 1-D of length n_persons with values
+        # in [0, k); these shape/sign guards are unreachable via fit().
         if ids.shape != (n_persons,):
-            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")
+            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")  # pragma: no cover
         if ids.size and ids.min() < 0:
-            raise ValueError(f"{pop_kind} ids must be >= 0")
+            raise ValueError(f"{pop_kind} ids must be >= 0")  # pragma: no cover
 
     # MAP penalties: the paper priors, unless the caller customized the
     # penalty config away from its (JML-oriented) defaults.
@@ -519,6 +522,12 @@ def _run_single_fit(
     backend: str,
     device: str,
 ) -> FitResult:
+    """Run one random restart of the JMLE optimizer and return its result.
+
+    Initializes parameters (seeded by ``config.seed + restart``), runs the
+    configured Adam and/or L-BFGS phases, re-normalizes the latent space, and
+    packages the final estimates and traces into a :class:`FitResult`.
+    """
     rng = np.random.default_rng(config.seed + restart)
     params0 = _initial_params(
         y, observed, factors, n_dims, config.latent_dim, config, rng
@@ -587,6 +596,13 @@ def _initial_params(
     config: FitConfig,
     rng: np.random.Generator,
 ) -> MLSIRMParams:
+    """Construct starting parameters for an optimizer restart.
+
+    Seeds traits from standardized per-trait proportion-correct scores,
+    easiness ``b`` from logit item means, discriminations from small random
+    noise, and latent-space positions from small random jitter, then
+    normalizes the latent space.
+    """
     n_persons, n_items = y.shape
     theta = np.zeros((n_persons, n_dims), dtype=np.float64)
 
@@ -619,9 +635,16 @@ def _make_objective(
     backend: str,
     device: str,
 ) -> Callable[[np.ndarray], tuple[float, np.ndarray, float]]:
+    """Build the packed-vector objective closure used by the optimizers.
+
+    Returns a callable mapping a flat parameter vector to ``(objective,
+    packed_gradient, loglik)`` by unpacking, evaluating
+    :func:`neg_loglik_and_grad`, and applying gradient-norm clipping.
+    """
     model = config.normalized_model()
 
     def objective(x: np.ndarray) -> tuple[float, np.ndarray, float]:
+        """Evaluate the objective and packed gradient at packed vector ``x``."""
         params = _unpack(x, template, model)
         obj, grad, loglik = neg_loglik_and_grad(
             y, factor_id, params, config, mask=observed, backend=backend, device=device
@@ -637,6 +660,11 @@ def _make_objective(
 
 
 def _pack(params: MLSIRMParams, model: str) -> np.ndarray:
+    """Flatten the free parameter blocks for ``model`` into a single vector.
+
+    Only blocks the model variant estimates are included (discriminations and
+    latent-space terms are omitted for the Rasch/MIRT variants respectively).
+    """
     free_alpha, uses_space = model_flags(model)
     parts = [params.theta.ravel()]
     if free_alpha:
@@ -654,6 +682,12 @@ def _pack(params: MLSIRMParams, model: str) -> np.ndarray:
 
 
 def _unpack(x: np.ndarray, template: MLSIRMParams, model: str) -> MLSIRMParams:
+    """Reconstruct an :class:`MLSIRMParams` from a packed vector.
+
+    Inverse of :func:`_pack`: slices ``x`` back into blocks shaped like
+    ``template``, filling fixed discriminations/latent-space terms with their
+    inactive defaults for the variants that do not estimate them.
+    """
     free_alpha, uses_space = model_flags(model)
     cursor = 0
 
@@ -699,6 +733,12 @@ def _adam(
     config: FitConfig,
     max_iter: int,
 ) -> tuple[np.ndarray, list[float], list[float], str]:
+    """Minimize the objective with the Adam optimizer.
+
+    Runs bias-corrected Adam updates until the relative-objective tolerance is
+    met or ``max_iter`` is reached, returning the final vector, objective and
+    log-likelihood traces, and a convergence status string.
+    """
     x = x0.copy()
     m = np.zeros_like(x)
     v = np.zeros_like(x)
@@ -735,6 +775,12 @@ def _lbfgs(
     config: FitConfig,
     max_iter: int,
 ) -> tuple[np.ndarray, list[float], list[float], str]:
+    """Minimize the objective with limited-memory BFGS and backtracking.
+
+    Uses the two-loop recursion for the search direction and an Armijo
+    backtracking line search, keeping at most ``config.lbfgs_history`` curvature
+    pairs. Returns the final vector, traces, and a convergence status string.
+    """
     x = x0.copy()
     obj, grad, loglik = objective(x)
     trace = [float(obj)]
@@ -792,6 +838,11 @@ def _lbfgs_direction(
     y_hist: list[np.ndarray],
     rho_hist: list[float],
 ) -> np.ndarray:
+    """Apply the L-BFGS two-loop recursion to approximate ``H @ grad``.
+
+    Combines the stored curvature pairs (``s_hist``/``y_hist``/``rho_hist``)
+    with an initial Hessian scaling to produce the (unsigned) descent step.
+    """
     q = grad.copy()
     alphas: list[float] = []
     for s, y, rho in zip(reversed(s_hist), reversed(y_hist), reversed(rho_hist)):
