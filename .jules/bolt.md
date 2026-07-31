@@ -36,3 +36,6 @@
 ## 2024-07-18 - NumPy In-Place Operations for Distance Calculation
 **Learning:** In the `fast_mlsirm` distance calculation, creating multiple intermediate arrays of size `(N, J)` during arithmetic operations (addition, `np.maximum`, `np.sqrt`) is a significant bottleneck. Using `dist_sq += ...` and `out=` kwargs (e.g. `np.sqrt(dist_sq, out=dist_sq)`) reduces memory overhead and improves performance drastically for large matrices.
 **Action:** Always prefer in-place NumPy operations (like `+=`, `-=`, and `out=`) when calculating large pairwise metrics if it is safe to overwrite the array, ensuring memory efficiency and faster execution times without introducing regressions.
+## 2025-02-01 - Avoid Large Intermediate Array Allocations in Alpha Gradient Computation
+**Learning:** In Python numerical gradients, calculating summations over factor slices like `(e * theta[:, factors]).sum(axis=0)` allocates large intermediate arrays (e.g. `e * theta[:, factors]`) which hurts performance, especially when `N` and `J` are large.
+**Action:** Replace `(e * theta[:, factors]).sum(axis=0)` with transposed matrix multiplication and index selection `(e.T @ theta)[np.arange(e.shape[1]), factors]` to significantly improve performance by avoiding intermediate 2D array allocations.
