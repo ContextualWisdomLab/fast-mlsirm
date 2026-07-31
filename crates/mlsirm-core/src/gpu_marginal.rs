@@ -220,7 +220,7 @@ static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
 fn context() -> Option<&'static GpuContext> {
     CONTEXT
         .get_or_init(|| {
-            let instance = wgpu::Instance::default();
+            let instance = crate::gpu_init::new_instance();
             let adapter =
                 pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::HighPerformance,
