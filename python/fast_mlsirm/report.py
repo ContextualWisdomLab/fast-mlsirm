@@ -17,8 +17,6 @@ def render_diagnostics_report(
     """Render saved diagnostics JSON as a standalone HTML report."""
 
     source = Path(diagnostics_path)
-    if source.stat().st_size > 16 * 1024 * 1024:
-        raise ValueError("diagnostics JSON exceeds 16 MiB limit")
     payload = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("diagnostics JSON must contain an object")
@@ -156,12 +154,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
     if not isinstance(candidates, list):
         raise ValueError("candidates must be a list")
 
-    rows = []
-    for row in candidates:
-        if isinstance(row, dict):
-            rows.append(row)
-        if len(rows) >= 100:
-            break
+    rows = [row for row in candidates if isinstance(row, dict)]
     sections = []
     no_metric_sections = []
     best_section = _metric_section("Best Candidate", best)
@@ -187,7 +180,7 @@ def _render_dimensionality_report(payload: dict[str, Any]) -> list[str]:
 
 def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     cards = []
-    for key, value in list(metrics.items())[:24]:
+    for key, value in metrics.items():
         cards.append(
             "\n".join(
                 [
@@ -276,16 +269,11 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
         return ""
     if not rows:
         return ""
-    numeric_rows = []
-    for index, row in enumerate(rows):
-        val = row.get(value_key)
-        if _is_number(val):
-            try:
-                numeric_rows.append((index, row, float(val)))
-            except (OverflowError, ValueError, TypeError):
-                pass
-        if len(numeric_rows) >= 12:
-            break
+    numeric_rows = [
+        (index, row, float(row[value_key]))
+        for index, row in enumerate(rows)
+        if _is_number(row.get(value_key))
+    ]
     values = [value for _, _, value in numeric_rows]
     if not values:
         return ""
@@ -370,14 +358,14 @@ def _rows_from_columnar(section: Any) -> list[dict[str, Any]]:
     if not isinstance(section, dict) or not section:
         return []
 
-    columns = list(section)[:20]
+    columns = list(section)
     lengths = [_value_length(section[column]) for column in columns]
     row_count = max(lengths) if lengths else 0
     if row_count == 0:
         return []
 
     rows = []
-    for index in range(min(row_count, 100)):
+    for index in range(row_count):
         row = {}
         for column in columns:
             row[column] = _index_value(section[column], index)
@@ -391,8 +379,6 @@ def _columns(rows: list[dict[str, Any]]) -> list[str]:
         for key in row:
             if key not in ordered:
                 ordered.append(key)
-                if len(ordered) >= 20:
-                    return ordered
     return ordered
 
 
@@ -432,17 +418,14 @@ def _format_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
-        s = str(value)
-        return s if len(s) <= 100 else s[:100] + "..."
+        return str(value)
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return str(value)
         return f"{value:.4g}"
     if value is None:
         return ""
-    s = str(value)
-    return s if len(s) <= 100 else s[:100] + "..."
-
+    return str(value)
 
 
 def _format_label_value(value: Any) -> str:
@@ -452,12 +435,11 @@ def _format_label_value(value: Any) -> str:
 
 
 def _is_number(value: Any) -> bool:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return False
-    try:
-        return math.isfinite(float(value))
-    except (OverflowError, ValueError, TypeError):
-        return False
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
 
 
 def _content_security_policy() -> str:
