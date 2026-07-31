@@ -701,6 +701,225 @@ pub fn rank_centrality(wins: &[f64], n: usize, alpha: f64) -> Result<LsrResult, 
     })
 }
 
+/// Shared input validation for [`lsr_rankings`] / [`ilsr_rankings`].
+///
+/// CSR layout: ranking `r` is `rankings[starts[r]..starts[r + 1]]`
+/// (best-first item indices).
+fn rankings_validate(
+    rankings: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+) -> Result<(), String> {
+    if n < 2 {
+        return Err("lsr_rankings needs at least 2 items".into());
+    }
+    // ponytail: dense O(n^2) chain; hard cap keeps a tiny input from
+    // requesting a terabyte allocation and aborting the process. Raise
+    // alongside a sparse chain if ever needed.
+    if n > 10_000 {
+        return Err(format!(
+            "n = {n} exceeds the 10000-item cap for the dense O(n^2) chain"
+        ));
+    }
+    if starts.len() < 2 {
+        return Err("rankings data is empty (need at least one ranking)".into());
+    }
+    if starts[0] != 0 {
+        return Err("starts[0] must be 0".into());
+    }
+    if *starts.last().unwrap() != rankings.len() {
+        return Err("starts must end at rankings.len()".into());
+    }
+    let mut seen = vec![usize::MAX; n];
+    for r in 0..starts.len() - 1 {
+        let (a, b) = (starts[r], starts[r + 1]);
+        if b < a {
+            return Err("starts must be nondecreasing".into());
+        }
+        if b - a < 2 {
+            return Err(
+                "each ranking needs at least 2 items (choix silently no-ops \
+                 shorter rankings; rejected here as a documented divergence)"
+                    .into(),
+            );
+        }
+        for &item in &rankings[a..b] {
+            if item >= n {
+                return Err(format!("item index {item} out of range for n = {n}"));
+            }
+            if seen[item] == r {
+                return Err("duplicate item within a ranking (choix accepts duplicates \
+                     when the chain stays connected; rejected here as a \
+                     documented divergence)"
+                    .into());
+            }
+            seen[item] = r;
+        }
+    }
+    if !alpha.is_finite() || alpha < 0.0 {
+        return Err("alpha must be finite and nonnegative".into());
+    }
+    Ok(())
+}
+
+/// One LSR-rankings pass: build the Markov-chain generator from ranking
+/// data under the current worths `w`, solve for its stationary
+/// distribution, and return `(params, weights)` (choix `lsr_rankings` +
+/// `statdist` + `log_transform`).
+fn lsr_rankings_pass(
+    rankings: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+    w: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>), String> {
+    // chain = alpha * ones(n, n); the alpha on the diagonal cancels in
+    // the row-sum subtraction (same algebra as lsr_pass; VERIFIED).
+    let mut chain = vec![alpha; n * n];
+    for r in 0..starts.len() - 1 {
+        let rk = &rankings[starts[r]..starts[r + 1]];
+        // Ranked-SUBSET worth sum only (an all-items sum is a distinct,
+        // wrong model on partial rankings; regression-pinned by the
+        // partial-rankings fixture).
+        let mut s: f64 = rk.iter().map(|&i| w[i]).sum();
+        for i in 0..rk.len() - 1 {
+            let winner = rk[i];
+            // val is the rate for THIS placement, computed before the
+            // placed winner's worth is removed from the running sum.
+            let val = 1.0 / s;
+            for &loser in &rk[i + 1..] {
+                chain[loser * n + winner] += val;
+            }
+            s -= w[winner];
+        }
+    }
+    for i in 0..n {
+        let row_sum: f64 = (0..n).filter(|&j| j != i).map(|j| chain[i * n + j]).sum();
+        chain[i * n + i] = -row_sum;
+    }
+    if chain.iter().any(|x| !x.is_finite()) {
+        return Err("rankings Markov chain has non-finite transition rates (overflow)".into());
+    }
+    statdist_params(chain, n)
+}
+
+/// Luce Spectral Ranking for full or partial ranking data (one-shot):
+/// Plackett-Luce log-worth estimation.
+///
+/// Implements the algorithm exactly as implemented by the `choix`
+/// Python package (v0.4.1, `lsr.py` `lsr_rankings`, `utils.py`
+/// `statdist`/`log_transform`).
+///
+/// Source status:
+/// - **READ**: choix 0.4.1 source (`lsr_rankings`, `_init_lsr`,
+///   `statdist`, `log_transform`); every formula is traceable to those
+///   lines.
+/// - **NOT READ (as-cited)**: Maystre, L., & Grossglauser, M. (2015).
+///   Fast and accurate inference of Plackett-Luce models. *Advances in
+///   Neural Information Processing Systems, 28*, 172-180 — cited as the
+///   algorithm origin per choix's docstrings ([MG15]).
+///
+/// Model (Plackett-Luce): a ranking is a sequence of Luce choices —
+/// the item placed at each position is chosen from the not-yet-placed
+/// items with probability proportional to its worth. Each ranking
+/// `r[0..k-1]` (best first, `k >= 2`) contributes, for every position
+/// `i`, the rate `1 / (sum of current worths of r[i..k-1])` on each
+/// loser->winner edge `r[j] -> r[i]`, `j > i` (plus `alpha` everywhere
+/// as a regularizer). The stationary distribution of that chain, scaled
+/// to sum `n`, is the worth estimate; `params` are its centered logs.
+/// Errors on disconnected comparison graphs at `alpha = 0` (choix
+/// raises there too) and on overflowing transition rates.
+///
+/// Data layout: CSR — ranking `r` is `rankings[starts[r]..starts[r+1]]`,
+/// with `starts[0] == 0` and `starts.last() == rankings.len()`.
+///
+/// Duplicating the whole dataset is exactly invariant at `alpha = 0`
+/// (the generator doubles; its stationary distribution is unchanged)
+/// but NOT at `alpha > 0` (regression-pinned).
+///
+/// DOCUMENTED DIVERGENCES from choix: rankings shorter than 2 items are
+/// rejected (choix silently no-ops them); duplicate items within one
+/// ranking are rejected (choix accepts them when the chain stays
+/// connected, silently corrupting the subset sum); negative indices
+/// never reach this API (Python's silent negative-index wrapping is
+/// rejected in the wrapper).
+pub fn lsr_rankings(
+    rankings: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+) -> Result<LsrResult, String> {
+    rankings_validate(rankings, starts, n, alpha)?;
+    let w = vec![1.0f64; n];
+    let (params, weights) = lsr_rankings_pass(rankings, starts, n, alpha, &w)?;
+    Ok(LsrResult {
+        params,
+        weights,
+        iterations: 1,
+    })
+}
+
+/// Iterative Luce Spectral Ranking for ranking data: maximum-likelihood
+/// Plackett-Luce estimation by repeated spectral passes (choix
+/// `ilsr_rankings`).
+///
+/// See [`lsr_rankings`] for the model, source status, data layout, and
+/// per-pass algebra. Each pass rebuilds the chain with the current
+/// worths `w = exp_transform(params)` (`exp(params - mean)` scaled to
+/// sum `n`) and re-solves. Convergence (choix `NormOfDifferenceTest`,
+/// order 1): fires when the L1 distance between successive centered
+/// parameter vectors is `<= tol * n`; the first pass never fires, so at
+/// least 2 passes occur. `iterations` is the pass count at convergence.
+/// Non-convergence within `max_iter` passes is an error.
+pub fn ilsr_rankings(
+    rankings: &[usize],
+    starts: &[usize],
+    n: usize,
+    alpha: f64,
+    max_iter: usize,
+    tol: f64,
+) -> Result<LsrResult, String> {
+    rankings_validate(rankings, starts, n, alpha)?;
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err("tol must be finite and positive".into());
+    }
+    if max_iter == 0 {
+        return Err("max_iter must be at least 1".into());
+    }
+    let nf = n as f64;
+    let exp_transform = |params: &[f64]| -> Vec<f64> {
+        let mean = params.iter().sum::<f64>() / nf;
+        let mut w: Vec<f64> = params.iter().map(|p| (p - mean).exp()).collect();
+        let s: f64 = w.iter().sum();
+        for x in w.iter_mut() {
+            *x *= nf / s;
+        }
+        w
+    };
+    let mut params = vec![0.0f64; n];
+    let mut prev: Option<Vec<f64>> = None;
+    for it in 1..=max_iter {
+        let w = exp_transform(&params);
+        let (newp, weights) = lsr_rankings_pass(rankings, starts, n, alpha, &w)?;
+        if let Some(pr) = &prev {
+            let dist: f64 = newp.iter().zip(pr.iter()).map(|(a, b)| (a - b).abs()).sum();
+            if dist <= tol * nf {
+                return Ok(LsrResult {
+                    params: newp,
+                    weights,
+                    iterations: it,
+                });
+            }
+        }
+        prev = Some(newp.clone());
+        params = newp;
+    }
+    Err(format!(
+        "ilsr_rankings did not converge after {max_iter} iterations"
+    ))
+}
+
 #[cfg(test)]
 #[path = "../../../tests/unit/scaling_tests.rs"]
 mod tests;
