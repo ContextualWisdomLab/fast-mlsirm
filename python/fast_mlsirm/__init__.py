@@ -125,6 +125,8 @@ from .reliability import (
     SeparationReliabilityResult as SeparationReliabilityResult,
     icc as icc,
     IccResult as IccResult,
+    kripp_alpha as kripp_alpha,
+    KrippResult as KrippResult,
 )
 from .factor import (
     minres_fa as minres_fa,
@@ -366,6 +368,8 @@ __all__ = [
     "SeparationReliabilityResult",
     "icc",
     "IccResult",
+    "kripp_alpha",
+    "KrippResult",
     "gtheory_pi",
     "gtheory_pio",
     "phi_lambda",

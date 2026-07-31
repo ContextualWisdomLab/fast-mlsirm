@@ -110,7 +110,7 @@ use mlsirm_core::reliability::guttman_lambdas as core_guttman_lambdas;
 use mlsirm_core::reliability::tenberge_mu as core_tenberge_mu;
 use mlsirm_core::reliability::{
     cronbach_alpha as core_cronbach_alpha, feldt_alpha_ci as core_feldt_alpha_ci, icc as core_icc,
-    separation_reliability as core_separation_reliability,
+    kripp_alpha as core_kripp_alpha, separation_reliability as core_separation_reliability,
 };
 use mlsirm_core::rsm::fit_rsm as core_fit_rsm;
 use mlsirm_core::rt::{
@@ -3616,6 +3616,30 @@ fn icc(
     out.set_item("p_value", res.p_value)?;
     out.set_item("lbound", res.lbound)?;
     out.set_item("ubound", res.ubound)?;
+    Ok(out.into())
+}
+
+/// Krippendorff's alpha (`mlsirm_core::reliability`; transcribed from
+/// CRAN irr 0.85 `kripp.alpha.R`, READ). `ratings` is row-major
+/// nraters x nsubjects; NaN marks missing. `method` is one of "nominal",
+/// "ordinal", "interval", "ratio". Returns a dict with `value`,
+/// `subjects`, `raters`, `levels`, `nmatchval`.
+#[pyfunction]
+fn kripp_alpha(
+    py: Python<'_>,
+    ratings: PyReadonlyArray1<'_, f64>,
+    nraters: usize,
+    nsubjects: usize,
+    method: &str,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let res = core_kripp_alpha(ratings.as_slice()?, nraters, nsubjects, method)
+        .map_err(PyValueError::new_err)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", res.value)?;
+    out.set_item("subjects", res.subjects)?;
+    out.set_item("raters", res.raters)?;
+    out.set_item("levels", res.levels)?;
+    out.set_item("nmatchval", res.nmatchval)?;
     Ok(out.into())
 }
 
@@ -8224,6 +8248,7 @@ fn fast_mlsirm_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cronbach_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(feldt_alpha_ci, m)?)?;
     m.add_function(wrap_pyfunction!(icc, m)?)?;
+    m.add_function(wrap_pyfunction!(kripp_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(separation_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(fit_mixture, m)?)?;
     m.add_function(wrap_pyfunction!(fit_lltm, m)?)?;
