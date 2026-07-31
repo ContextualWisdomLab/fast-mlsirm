@@ -82,6 +82,11 @@ class MixedFormatFit:
 
 
 def _normalize_models(item_models, n_items: int) -> tuple[str, ...]:
+    """Resolve per-item model names to canonical forms, one per response column.
+
+    Accepts a single model name (broadcast to all items) or a per-item sequence,
+    validating each against the supported response-model aliases.
+    """
     if isinstance(item_models, str):
         raw = [item_models] * n_items
     else:
@@ -101,6 +106,7 @@ def _normalize_models(item_models, n_items: int) -> tuple[str, ...]:
 
 
 def _categories(y: np.ndarray, observed: np.ndarray, n_categories) -> np.ndarray:
+    """Return the per-item response-category count, inferring it from data if unset."""
     n_items = y.shape[1]
     if n_categories is None:
         out = np.empty(n_items, dtype=np.int64)

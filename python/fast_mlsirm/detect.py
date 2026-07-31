@@ -110,7 +110,10 @@ def detect_analysis(
             if np.any(c > I64_MAX):
                 raise ValueError("cluster labels must fit in a 64-bit integer")
         elif np.any(c < I64_MIN) or np.any(c > I64_MAX):
-            raise ValueError("cluster labels must fit in a 64-bit integer")
+            # Unreachable for a NumPy signed-integer array: no signed dtype is
+            # wider than int64, so a value cannot fall outside [I64_MIN, I64_MAX].
+            # Kept as a defensive guard.
+            raise ValueError("cluster labels must fit in a 64-bit integer")  # pragma: no cover
         c = c.astype(np.int64)
 
     res = core.detect_analysis(
@@ -210,6 +213,7 @@ def dimtest(
         raise ValueError("responses must be exactly 0 or 1 (no missing values)")
 
     def _index_set(a: np.ndarray, name: str) -> list[int]:
+        """Validate and return an item-index selection as a list of ints."""
         arr = np.asarray(a).reshape(-1)
         if np.iscomplexobj(arr):
             raise ValueError(f"{name} indices must be real integers")
