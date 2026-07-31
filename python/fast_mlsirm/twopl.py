@@ -144,6 +144,7 @@ def fit_2pl(
         raise ValueError("responses must be 0, 1, or NaN (missing)")
 
     def _finite_integer(value: int, name: str) -> int:
+        """Coerce ``value`` to a finite scalar integer or raise ``ValueError``."""
         scalar = np.asarray(value)
         if (
             scalar.ndim != 0
