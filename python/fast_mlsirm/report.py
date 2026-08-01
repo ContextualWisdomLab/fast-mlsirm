@@ -494,7 +494,7 @@ def _css() -> str:
     """Return the inline stylesheet for the standalone HTML report."""
     return """
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --bg: #f7f8f5;
   --panel: #ffffff;
   --text: #202124;
@@ -502,6 +502,28 @@ def _css() -> str:
   --line: #d9ded6;
   --teal: #0f766e;
   --coral: #b45309;
+  --card-bg: #fafafa;
+  --header-bg: #f1f4ef;
+  --header-text: #2f3437;
+  --hover-bg: #fbfcfa;
+  --track-bg: #eef1eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --panel: #1e1e1e;
+    --text: #e0e0e0;
+    --muted: #9e9e9e;
+    --line: #333333;
+    --teal: #4db8ff;
+    --coral: #ff8a65;
+    --card-bg: #2a2a2a;
+    --header-bg: #333333;
+    --header-text: #e0e0e0;
+    --hover-bg: #2a2a2a;
+    --track-bg: #333333;
+  }
 }
 
 * {
@@ -531,7 +553,7 @@ body {
 
 .skip-link:focus-visible {
   top: 0;
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 2px;
 }
 
@@ -586,7 +608,7 @@ h2 {
 
 h3 {
   margin: 0;
-  color: #2f3437;
+  color: var(--header-text);
   font-size: 0.9rem;
   letter-spacing: 0;
 }
@@ -603,7 +625,7 @@ h3 {
   padding: 14px;
   border-left: 4px solid var(--coral);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--card-bg);
 }
 
 .metric-card dt {
@@ -663,13 +685,13 @@ h3 {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #f1f4ef;
-  color: #2f3437;
+  background: var(--header-bg);
+  color: var(--header-text);
   font-size: 0.82rem;
 }
 
 .coverage-list-muted li {
-  background: #fbfcfa;
+  background: var(--hover-bg);
   color: var(--muted);
 }
 
@@ -680,7 +702,7 @@ h3 {
 .bar-track {
   height: 12px;
   overflow: hidden;
-  background: #eef1eb;
+  background: var(--track-bg);
   border-radius: 999px;
 }
 
@@ -704,7 +726,7 @@ h3 {
 }
 
 .table-wrap:focus-visible {
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 3px;
 }
 
@@ -737,8 +759,8 @@ td {
 }
 
 thead th {
-  background: #f1f4ef;
-  color: #2f3437;
+  background: var(--header-bg);
+  color: var(--header-text);
   font-size: 0.8rem;
 }
 
@@ -756,7 +778,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fbfcfa;
+  background: var(--hover-bg);
 }
 
 .empty-state {
@@ -764,7 +786,7 @@ tbody tr:hover {
   padding: 14px;
   border: 1px dashed var(--line);
   border-radius: 8px;
-  background: #fbfcfa;
+  background: var(--hover-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
