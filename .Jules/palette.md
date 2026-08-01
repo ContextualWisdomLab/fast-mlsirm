@@ -11,3 +11,6 @@
 ## 2025-01-28 - ARIA Live Regions for Empty States
 **Learning:** Using standard `<p>` tags for empty states in dynamic or conditionally rendered tables can lead to screen readers silently skipping the section, leaving users confused about missing data.
 **Action:** Use `<div class="empty-state" role="status">` for empty states to leverage ARIA live regions, ensuring assistive technologies actively announce that no rows were recorded.
+## 2025-02-12 - Native Dark Mode for Static Reports
+**Learning:** Hardcoded light colors in static HTML reports ignore OS-level theme preferences, leading to poor UX and increased eye strain for users who rely on dark mode in data-heavy environments.
+**Action:** Extract hardcoded hex colors into CSS variables and add a `@media (prefers-color-scheme: dark)` block to support native dark mode in Python-generated HTML report templates.
