@@ -91,10 +91,10 @@ def _render_html(
             "<body>",
             '<a href="#main-content" class="skip-link">Skip to main content</a>',
             '<main id="main-content" tabindex="-1">',
-            '<section class="hero">',
+            '<section class="hero" aria-labelledby="hero-heading">',
             '<div class="hero-copy">',
             "<p>fast-mlsirm diagnostics</p>",
-            f"<h1>{escape(title)}</h1>",
+            f'<h1 id="hero-heading">{escape(title)}</h1>',
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
             "</section>",
@@ -214,10 +214,11 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     if not cards:
         return None
 
+    heading_id = heading.lower().replace(" ", "-")
     return "\n".join(
         [
-            '<section class="report-section">',
-            f"<h2>{escape(heading)}</h2>",
+            f'<section class="report-section" aria-labelledby="{heading_id}">',
+            f'<h2 id="{heading_id}">{escape(heading)}</h2>',
             '<dl class="metrics-grid">',
             *cards,
             "</dl>",
@@ -231,10 +232,11 @@ def _table_section(
 ) -> str:
     """Render a report section with an optional bar chart and a data table."""
     chart = _bar_chart(rows, chart_value) if chart_value else ""
+    heading_id = heading.lower().replace(" ", "-")
     return "\n".join(
         [
-            '<section class="report-section">',
-            f"<h2>{escape(heading)}</h2>",
+            f'<section class="report-section" aria-labelledby="{heading_id}">',
+            f'<h2 id="{heading_id}">{escape(heading)}</h2>',
             chart,
             _table(rows, label=f"{heading} diagnostics table"),
             "</section>",
@@ -262,8 +264,8 @@ def _availability_section(
 
     return "\n".join(
         [
-            '<section class="report-section report-coverage">',
-            "<h2>Diagnostics Coverage</h2>",
+            '<section class="report-section report-coverage" aria-labelledby="coverage-heading">',
+            '<h2 id="coverage-heading">Diagnostics Coverage</h2>',
             '<div class="coverage-grid">',
             *columns,
             "</div>",
@@ -496,7 +498,7 @@ def _css() -> str:
     """Return the inline stylesheet for the standalone HTML report."""
     return """
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --bg: #f7f8f5;
   --panel: #ffffff;
   --text: #202124;
@@ -504,6 +506,28 @@ def _css() -> str:
   --line: #d9ded6;
   --teal: #0f766e;
   --coral: #b45309;
+  --card-bg: #fafafa;
+  --header-bg: #f1f4ef;
+  --header-text: #2f3437;
+  --hover-bg: #fbfcfa;
+  --track-bg: #eef1eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --panel: #1e1e1e;
+    --text: #e0e0e0;
+    --muted: #9e9e9e;
+    --line: #333333;
+    --teal: #4db8ff;
+    --coral: #ff8a65;
+    --card-bg: #2a2a2a;
+    --header-bg: #333333;
+    --header-text: #e0e0e0;
+    --hover-bg: #2a2a2a;
+    --track-bg: #333333;
+  }
 }
 
 * {
@@ -533,7 +557,7 @@ body {
 
 .skip-link:focus-visible {
   top: 0;
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 2px;
 }
 
@@ -548,7 +572,7 @@ main:focus {
 }
 
 main:focus-visible {
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 3px;
 }
 
@@ -593,7 +617,7 @@ h2 {
 
 h3 {
   margin: 0;
-  color: #2f3437;
+  color: var(--header-text);
   font-size: 0.9rem;
   letter-spacing: 0;
 }
@@ -610,7 +634,7 @@ h3 {
   padding: 14px;
   border-left: 4px solid var(--coral);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--card-bg);
 }
 
 .metric-card dt {
@@ -635,11 +659,16 @@ h3 {
   margin-bottom: 16px;
 }
 
+.bar-chart:hover .bar-row:not(:hover) {
+  opacity: 0.5;
+}
+
 .bar-row {
   display: grid;
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
+  transition: opacity 0.2s ease;
 }
 
 .bar-label,
@@ -670,13 +699,13 @@ h3 {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #f1f4ef;
-  color: #2f3437;
+  background: var(--header-bg);
+  color: var(--header-text);
   font-size: 0.82rem;
 }
 
 .coverage-list-muted li {
-  background: #fbfcfa;
+  background: var(--hover-bg);
   color: var(--muted);
 }
 
@@ -687,7 +716,7 @@ h3 {
 .bar-track {
   height: 12px;
   overflow: hidden;
-  background: #eef1eb;
+  background: var(--track-bg);
   border-radius: 999px;
 }
 
@@ -711,7 +740,7 @@ h3 {
 }
 
 .table-wrap:focus-visible {
-  outline: 3px solid #0f766e;
+  outline: 3px solid var(--teal);
   outline-offset: 3px;
 }
 
@@ -744,8 +773,8 @@ td {
 }
 
 thead th {
-  background: #f1f4ef;
-  color: #2f3437;
+  background: var(--header-bg);
+  color: var(--header-text);
   font-size: 0.8rem;
 }
 
@@ -763,7 +792,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fbfcfa;
+  background: var(--hover-bg);
 }
 
 .empty-state {
@@ -771,7 +800,7 @@ tbody tr:hover {
   padding: 14px;
   border: 1px dashed var(--line);
   border-radius: 8px;
-  background: #fbfcfa;
+  background: var(--hover-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
