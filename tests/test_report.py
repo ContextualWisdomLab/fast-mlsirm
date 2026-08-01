@@ -118,7 +118,7 @@ def test_render_report_summarizes_empty_metric_sections(tmp_path):
     no_metric_column = html[html.index("<h3>No metric data</h3>") :]
     no_metric_column = no_metric_column[: no_metric_column.index("</div>")]
     assert "Model Fit" in no_metric_column
-    assert "<h2>Model Fit</h2>" not in html
+    assert '<h2 id="model-fit">Model Fit</h2>' not in html
     assert "No metrics were recorded in this diagnostics file." not in html
 
 
@@ -144,8 +144,8 @@ def test_render_dimensionality_report_summarizes_empty_best_candidate(tmp_path):
     no_metric_column = no_metric_column[: no_metric_column.index("</div>")]
     assert "Best Candidate" in no_metric_column
     assert "Candidate Comparison" in html
-    assert "<h2>Best Candidate</h2>" not in html
-    assert "<h2>Candidate Comparison</h2>" in html
+    assert '<h2 id="best-candidate">Best Candidate</h2>' not in html
+    assert '<h2 id="candidate-comparison">Candidate Comparison</h2>' in html
     assert "No metrics were recorded in this diagnostics file." not in html
 
 
@@ -188,7 +188,7 @@ def test_render_table_section_omits_empty_chart_placeholder(tmp_path):
     render_diagnostics_report(source, out)
 
     html = out.read_text(encoding="utf-8")
-    assert "<h2>Item Fit</h2>" in html
+    assert '<h2 id="item-fit">Item Fit</h2>' in html
     assert "<table>" in html
     assert "No chartable values were recorded for this section." not in html
 
