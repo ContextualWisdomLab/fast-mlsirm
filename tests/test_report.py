@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from fast_mlsirm.io import MAX_JSON_NESTING_DEPTH
 from fast_mlsirm.report import render_diagnostics_report
 
 
@@ -222,6 +223,18 @@ def test_render_report_rejects_unknown_payload(tmp_path):
 
     with pytest.raises(ValueError, match="unsupported diagnostics JSON"):
         render_diagnostics_report(source, out)
+
+
+def test_render_report_rejects_excessive_json_nesting(tmp_path):
+    source = tmp_path / "deep.json"
+    out = tmp_path / "report.html"
+    depth = MAX_JSON_NESTING_DEPTH + 1
+    source.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="maximum JSON nesting depth"):
+        render_diagnostics_report(source, out)
+
+    assert not out.exists()
 
 
 def test_render_report_requires_html_output(tmp_path):
