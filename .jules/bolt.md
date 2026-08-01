@@ -36,3 +36,7 @@
 ## 2024-07-18 - NumPy In-Place Operations for Distance Calculation
 **Learning:** In the `fast_mlsirm` distance calculation, creating multiple intermediate arrays of size `(N, J)` during arithmetic operations (addition, `np.maximum`, `np.sqrt`) is a significant bottleneck. Using `dist_sq += ...` and `out=` kwargs (e.g. `np.sqrt(dist_sq, out=dist_sq)`) reduces memory overhead and improves performance drastically for large matrices.
 **Action:** Always prefer in-place NumPy operations (like `+=`, `-=`, and `out=`) when calculating large pairwise metrics if it is safe to overwrite the array, ensuring memory efficiency and faster execution times without introducing regressions.
+
+## 2024-08-01 - Avoid allocating N x J arrays in axis reductions
+**Learning:** Operations like `(e * theta[:, factors]).sum(axis=0) * a` allocate a full N x J array just to compute the elementwise product before summing over the rows. Using dense matrix multiplication followed by integer indexing `(e.T @ theta)[np.arange(e.shape[1]), factors] * a` avoids the massive intermediate allocation and leverages highly optimized BLAS operations.
+**Action:** Replace `(A * B[:, factors]).sum(axis=0)` patterns with dense matrix multiplication `(A.T @ B)[np.arange(A.shape[1]), factors]` to improve speed and reduce memory overhead, specially when computing gradients for parameters across dimensions.
