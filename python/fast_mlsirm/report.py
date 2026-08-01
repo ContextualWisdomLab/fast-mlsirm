@@ -91,10 +91,10 @@ def _render_html(
             "<body>",
             '<a href="#main-content" class="skip-link">Skip to main content</a>',
             '<main id="main-content" tabindex="-1">',
-            '<section class="hero">',
+            '<section class="hero" aria-labelledby="hero-heading">',
             '<div class="hero-copy">',
             "<p>fast-mlsirm diagnostics</p>",
-            f"<h1>{escape(title)}</h1>",
+            f'<h1 id="hero-heading">{escape(title)}</h1>',
             f"<span>Source: {escape(source_name)}</span>",
             "</div>",
             "</section>",
@@ -214,10 +214,11 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
     if not cards:
         return None
 
+    heading_id = heading.lower().replace(" ", "-")
     return "\n".join(
         [
-            '<section class="report-section">',
-            f"<h2>{escape(heading)}</h2>",
+            f'<section class="report-section" aria-labelledby="{heading_id}">',
+            f'<h2 id="{heading_id}">{escape(heading)}</h2>',
             '<dl class="metrics-grid">',
             *cards,
             "</dl>",
@@ -231,10 +232,11 @@ def _table_section(
 ) -> str:
     """Render a report section with an optional bar chart and a data table."""
     chart = _bar_chart(rows, chart_value) if chart_value else ""
+    heading_id = heading.lower().replace(" ", "-")
     return "\n".join(
         [
-            '<section class="report-section">',
-            f"<h2>{escape(heading)}</h2>",
+            f'<section class="report-section" aria-labelledby="{heading_id}">',
+            f'<h2 id="{heading_id}">{escape(heading)}</h2>',
             chart,
             _table(rows, label=f"{heading} diagnostics table"),
             "</section>",
@@ -262,8 +264,8 @@ def _availability_section(
 
     return "\n".join(
         [
-            '<section class="report-section report-coverage">',
-            "<h2>Diagnostics Coverage</h2>",
+            '<section class="report-section report-coverage" aria-labelledby="coverage-heading">',
+            '<h2 id="coverage-heading">Diagnostics Coverage</h2>',
             '<div class="coverage-grid">',
             *columns,
             "</div>",
@@ -628,11 +630,16 @@ h3 {
   margin-bottom: 16px;
 }
 
+.bar-chart:hover .bar-row:not(:hover) {
+  opacity: 0.5;
+}
+
 .bar-row {
   display: grid;
   grid-template-columns: minmax(104px, 180px) 1fr minmax(64px, auto);
   gap: 10px;
   align-items: center;
+  transition: opacity 0.2s ease;
 }
 
 .bar-label,
