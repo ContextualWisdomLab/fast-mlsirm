@@ -40,3 +40,7 @@
 ## 2024-08-01 - Avoid allocating N x J arrays in axis reductions
 **Learning:** Operations like `(e * theta[:, factors]).sum(axis=0) * a` allocate a full N x J array just to compute the elementwise product before summing over the rows. Using dense matrix multiplication followed by integer indexing `(e.T @ theta)[np.arange(e.shape[1]), factors] * a` avoids the massive intermediate allocation and leverages highly optimized BLAS operations.
 **Action:** Replace `(A * B[:, factors]).sum(axis=0)` patterns with dense matrix multiplication `(A.T @ B)[np.arange(A.shape[1]), factors]` to improve speed and reduce memory overhead, specially when computing gradients for parameters across dimensions.
+
+## 2025-05-19 - Replacing einsum with BLAS matrix multiplication for tensor accumulation
+**Learning:** Using `np.einsum("pi,piqx->iqx", pos, dsel)` (or similar complex index notations) to accumulate expected counts in the MMLE E-step is highly inefficient because it doesn't effectively leverage BLAS optimizations and may create large intermediate tensors or run unoptimized reduction loops under the hood.
+**Action:** Replace complex `np.einsum` loops that perform batch reductions over large tensor axes with targeted BLAS matrix multiplications (`@`). By looping over the smaller categorical dimensions (e.g., latent dimensions `d`), reshaping the weight tensors to 2D matrices, and applying dense matrix multiplication `(pos_d.T @ w_d).reshape(...)`, you can avoid intermediate tensor allocations and achieve dramatic speedups (~24x in testing).

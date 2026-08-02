@@ -396,10 +396,20 @@ def _accumulate(
         nbar[s] += wpost[sel].sum(axis=0)
         pos = np.where(observed[sel], y[sel], 0.0)  # (Ps, I)
         miss = (~observed[sel]).astype(np.float64)
-        dsel = wpost[sel][:, factor_id]  # (Ps, I, Qt, Nx)
-        rbar[s] += np.einsum("pi,piqx->iqx", pos, dsel, optimize=True)
-        if miss.any():
-            mbar[s] += np.einsum("pi,piqx->iqx", miss, dsel, optimize=True)
+        # Optimized expectation accumulation: replace memory-intensive einsum with BLAS matrix multiplication
+        wpost_sel = wpost[sel]
+        Ps = pos.shape[0]
+        has_miss = miss.any()
+        for d in range(wpost_sel.shape[1]):
+            items_d = factor_id == d
+            if not items_d.any():
+                continue
+            w_d = wpost_sel[:, d].reshape(Ps, -1)
+            pos_d = pos[:, items_d]
+            rbar[s, items_d] += (pos_d.T @ w_d).reshape(-1, wpost_sel.shape[2], wpost_sel.shape[3])
+            if has_miss:
+                miss_d = miss[:, items_d]
+                mbar[s, items_d] += (miss_d.T @ w_d).reshape(-1, wpost_sel.shape[2], wpost_sel.shape[3])
 
 
 def _item_q(
