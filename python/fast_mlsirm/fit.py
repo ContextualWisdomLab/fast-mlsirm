@@ -7,8 +7,12 @@ import numpy as np
 from .backend import normalize_device, resolve_backend
 from .config import FitConfig, PenaltyConfig
 from .math import logit, normalize_latent_positions, standardize
-from .objective import (model_flags, neg_loglik_and_grad, prepare_response,
-                        validate_factor_id)
+from .objective import (
+    model_flags,
+    neg_loglik_and_grad,
+    prepare_response,
+    validate_factor_id,
+)
 from .types import FitResult, MLSIRMParams
 
 
@@ -23,7 +27,9 @@ def _compact_population_labels(raw, n_persons: int, name: str):
 
     arr = _np.asarray(raw)
     if arr.ndim != 1 or arr.shape[0] != n_persons:
-        raise ValueError(f"{name} must be a 1-D array of length n_persons ({n_persons})")
+        raise ValueError(
+            f"{name} must be a 1-D array of length n_persons ({n_persons})"
+        )
     fl = arr.astype(_np.float64)
     if not _np.all(_np.isfinite(fl)):
         raise ValueError(f"{name} must be finite")
@@ -132,7 +138,9 @@ def fit(
     if covariate is not None and config.estimator != "mmle":
         raise ValueError("item covariates require estimator='mmle'")
     if covariate is not None and cluster_id is not None:
-        raise ValueError("item covariates with a multilevel structure are not supported")
+        raise ValueError(
+            "item covariates with a multilevel structure are not supported"
+        )
 
     if model == "BIFAC2PLM" and config.estimator != "mmle":
         raise NotImplementedError(
@@ -154,8 +162,17 @@ def fit(
             # latent-space fit.
             return _fit_mmle(y, observed, model, config)
         return _fit_mmle_marginal(
-            y, observed, factors, n_dims, model, config, backend, device,
-            group_id=group_id, cluster_id=cluster_id, anchors=anchors,
+            y,
+            observed,
+            factors,
+            n_dims,
+            model,
+            config,
+            backend,
+            device,
+            group_id=group_id,
+            cluster_id=cluster_id,
+            anchors=anchors,
             covariate=covariate,
         )
     if config.estimator in {"em", "bayes"}:
@@ -173,7 +190,9 @@ def fit(
             best = candidate
 
     if best is None:
-        raise RuntimeError("Optimization failed to find a valid fit.")  # pragma: no cover
+        raise RuntimeError(
+            "Optimization failed to find a valid fit."
+        )  # pragma: no cover
     return best
 
 
@@ -313,7 +332,11 @@ def _fit_mmle_marginal(
             raise ValueError(f"anchor alpha/b must have shape ({n_items},)")
         if a_zeta.size != n_items * int(config.latent_dim):
             raise ValueError("anchor zeta must have n_items x latent_dim entries")
-        if not (np.all(np.isfinite(a_alpha)) and np.all(np.isfinite(a_b)) and np.all(np.isfinite(a_zeta))):
+        if not (
+            np.all(np.isfinite(a_alpha))
+            and np.all(np.isfinite(a_b))
+            and np.all(np.isfinite(a_zeta))
+        ):
             raise ValueError("anchor alpha/b/zeta must be finite")
         fixed_per_dim = np.bincount(factors[fixed], minlength=n_dims)
         if pop_kind == "singlefree" and np.any(fixed_per_dim < 2):
@@ -337,7 +360,9 @@ def _fit_mmle_marginal(
         # return_inverse output is always 1-D of length n_persons with values
         # in [0, k); these shape/sign guards are unreachable via fit().
         if ids.shape != (n_persons,):
-            raise ValueError(f"{pop_kind} ids must have shape (n_persons,)")  # pragma: no cover
+            raise ValueError(
+                f"{pop_kind} ids must have shape (n_persons,)"
+            )  # pragma: no cover
         if ids.size and ids.min() < 0:
             raise ValueError(f"{pop_kind} ids must be >= 0")  # pragma: no cover
 
@@ -614,7 +639,9 @@ def _initial_params(
         theta[:, d] = standardize(x[:, d])
 
     item_counts = np.maximum(observed.sum(axis=0), 1)
-    item_means = (y * observed).sum(axis=0) / item_counts
+    # Optimized item_means calculation: avoid N x J intermediate allocation for (y * observed)
+    obs_f = observed.astype(y.dtype)
+    item_means = np.einsum("ij,ij->j", y, obs_f) / item_counts
     b = logit(item_means)
     alpha = rng.normal(0.0, 0.02, size=n_items)
 

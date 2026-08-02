@@ -40,3 +40,6 @@
 ## 2024-08-01 - Avoid allocating N x J arrays in axis reductions
 **Learning:** Operations like `(e * theta[:, factors]).sum(axis=0) * a` allocate a full N x J array just to compute the elementwise product before summing over the rows. Using dense matrix multiplication followed by integer indexing `(e.T @ theta)[np.arange(e.shape[1]), factors] * a` avoids the massive intermediate allocation and leverages highly optimized BLAS operations.
 **Action:** Replace `(A * B[:, factors]).sum(axis=0)` patterns with dense matrix multiplication `(A.T @ B)[np.arange(A.shape[1]), factors]` to improve speed and reduce memory overhead, specially when computing gradients for parameters across dimensions.
+## 2025-05-19 - Fast element-wise reduction using einsum
+**Learning:** `(x * observed).sum(axis=0)` and `(resid2 / v * observed).sum(axis=0)` create large intermediate 2D arrays because `observed` is a multi-dimensional boolean/float mask. This causes severe memory allocation overhead on hot paths such as fit statistics or item mean initialization.
+**Action:** Replace `(A * B).sum(axis=0)` with `np.einsum('ij,ij->j', A, B)` where `B` is typically an explicitly cast boolean mask `observed.astype(A.dtype)`. This entirely skips the 2D array allocation and computes the dot-products efficiently along the axis.
