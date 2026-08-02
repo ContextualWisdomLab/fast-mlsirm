@@ -40,3 +40,7 @@
 ## 2024-08-01 - Avoid allocating N x J arrays in axis reductions
 **Learning:** Operations like `(e * theta[:, factors]).sum(axis=0) * a` allocate a full N x J array just to compute the elementwise product before summing over the rows. Using dense matrix multiplication followed by integer indexing `(e.T @ theta)[np.arange(e.shape[1]), factors] * a` avoids the massive intermediate allocation and leverages highly optimized BLAS operations.
 **Action:** Replace `(A * B[:, factors]).sum(axis=0)` patterns with dense matrix multiplication `(A.T @ B)[np.arange(A.shape[1]), factors]` to improve speed and reduce memory overhead, specially when computing gradients for parameters across dimensions.
+
+## 2026-08-02 - Vectorize iterative Newton steps across independent dimensions
+**Learning:** During the M-step of MMLE estimation, performing a Python loop over `n_items` to run an iterative inner loop (like Newton-Raphson) creates severe overhead. Independent scalar iterative calculations (like updating item difficulties) are very slow in Python.
+**Action:** Replace outer Python loops over independent elements with a fully vectorized inner loop. Use a boolean array to track active components (e.g. `active = np.ones(n_items, dtype=bool)`) and process only the active subset in each iteration, stopping early for components that converge via boolean masking. This transforms slow Python scalar iterations into fast C-level numpy operations.

@@ -122,30 +122,49 @@ def fit_mmle_2pl(
 
         a_new = a.copy()
         b_new = b.copy()
-        for i in range(n_items):
-            ai, bi = a[i], b[i]
-            # Newton steps on the item's expected log-likelihood over nodes.
-            for _ in range(25):
-                eta = ai * nodes + bi
-                p = _sigmoid(eta)
-                w = n_iq[i] * p * (1.0 - p)
-                resid = r_iq[i] - n_iq[i] * p
-                g_a = float((resid * nodes).sum()) - ridge_a * ai
-                g_b = float(resid.sum()) - ridge_b * bi
-                h_aa = -float((w * nodes * nodes).sum()) - ridge_a
-                h_bb = -float(w.sum()) - ridge_b
-                h_ab = -float((w * nodes).sum())
-                det = h_aa * h_bb - h_ab * h_ab
-                if abs(det) < 1e-12:
-                    break
-                da = (h_bb * g_a - h_ab * g_b) / det
-                db = (h_aa * g_b - h_ab * g_a) / det
-                ai -= da
-                bi -= db
-                ai = float(np.clip(ai, 1e-3, 10.0))
-                if abs(da) + abs(db) < 1e-8:
-                    break
-            a_new[i], b_new[i] = ai, bi
+
+        # Optimized M-step: Vectorize Newton-Raphson across all active items simultaneously
+        # to avoid slow Python loops and per-item array overhead.
+        active = np.ones(n_items, dtype=bool)
+        nodes_sq = nodes * nodes
+
+        for _ in range(25):
+            if not active.any():
+                break
+
+            eta = a_new[active, None] * nodes[None, :] + b_new[active, None]
+            p = _sigmoid(eta)
+
+            n_act = n_iq[active]
+            r_act = r_iq[active]
+
+            w = n_act * p * (1.0 - p)
+            resid = r_act - n_act * p
+
+            g_a = resid @ nodes - ridge_a * a_new[active]
+            g_b = resid.sum(axis=1) - ridge_b * b_new[active]
+
+            h_aa = -(w @ nodes_sq) - ridge_a
+            h_bb = -w.sum(axis=1) - ridge_b
+            h_ab = -(w @ nodes)
+
+            det = h_aa * h_bb - h_ab * h_ab
+            det_ok = np.abs(det) >= 1e-12
+
+            da = np.zeros_like(g_a)
+            db = np.zeros_like(g_b)
+
+            da[det_ok] = (h_bb[det_ok] * g_a[det_ok] - h_ab[det_ok] * g_b[det_ok]) / det[det_ok]
+            db[det_ok] = (h_aa[det_ok] * g_b[det_ok] - h_ab[det_ok] * g_a[det_ok]) / det[det_ok]
+
+            a_new[active] -= da
+            b_new[active] -= db
+            a_new[active] = np.clip(a_new[active], 1e-3, 10.0)
+
+            done = (~det_ok) | ((np.abs(da) + np.abs(db)) < 1e-8)
+            if done.any():
+                active_idx = np.where(active)[0]
+                active[active_idx[done]] = False
 
         a, b = a_new, b_new
 
