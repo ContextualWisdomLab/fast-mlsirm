@@ -26,3 +26,11 @@ Explicitly defining `allow_pickle=False` is a robust defense-in-depth practice. 
 **Vulnerability:** The HTML report generator `fast_mlsirm/report.py` used `json.loads(source.read_text())` directly on potentially unconstrained diagnostics output. This presents a DoS risk where a malicious or malformed input JSON could trigger unbounded recursion (excessive nesting) or memory exhaustion (loading massive payloads into memory).
 **Learning:** Directly using `json.loads()` on file contents bypasses size and depth limitations, making the application vulnerable to DoS attacks. The `_load_json_bounded` utility in `fast_mlsirm.io` provides a robust, defense-in-depth alternative by enforcing explicit size limits and depth checks before delegating to `json.loads()`.
 **Prevention:** Never use `json.loads()` on unvalidated file input. Always utilize `_load_json_bounded` or a similar bounded deserialization utility to protect against memory exhaustion and unbounded recursion attacks.
+## 2026-08-02 - [Subprocess Timeout Hangs & Unbounded Script JSON Loading]
+**Vulnerability:**
+1. In build/CI scripts like `scripts/build_pr_queue_governance.py`, `json.load()` was used directly without size limits, introducing a memory exhaustion DoS risk if a malicious or unexpectedly massive JSON snapshot is passed.
+2. `subprocess.run()` calls (e.g., executing `gh pr list` or `git rev-parse`) did not have `timeout` constraints. If the external API or process hangs (due to rate-limiting, network issues, etc.), it causes the CI script to hang indefinitely (DoS).
+**Learning:** Build and governance scripts running in CI pipelines are also susceptible to DoS attacks and resource exhaustion via external dependencies and large payload parsing.
+**Prevention:**
+- Enforce explicit `timeout` arguments (e.g., `timeout=60`) on all `subprocess.run()` calls to ensure scripts fail securely rather than hanging.
+- Apply bounded JSON loading (e.g., checking `path.stat().st_size` against a limit like 32MB) even in non-production CLI scripts to prevent memory exhaustion.

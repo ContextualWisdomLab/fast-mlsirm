@@ -71,6 +71,8 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    if path.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError(f"JSON artifact exceeds the 32MB limit: {path}")
     with path.open(encoding="utf-8") as fh:
         payload = json.load(fh)
     if not isinstance(payload, dict):
@@ -93,14 +95,22 @@ def _source_commit(repo_root: Path) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
 
 
-def _check(name: str, category: str, ok: bool, detail: str, **metadata: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {"name": name, "category": category, "ok": ok, "detail": detail}
+def _check(
+    name: str, category: str, ok: bool, detail: str, **metadata: Any
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": name,
+        "category": category,
+        "ok": ok,
+        "detail": detail,
+    }
     payload.update(metadata)
     return payload
 
@@ -133,8 +143,28 @@ def _run_gh_snapshot(repo: str) -> dict[str, Any]:
         "--json",
         "number,title,headRefName,baseRefName,isDraft,mergeStateStatus,reviewDecision,updatedAt,url",
     ]
-    repo_result = subprocess.run(repo_command, capture_output=True, text=True)
-    prs_result = subprocess.run(prs_command, capture_output=True, text=True)
+    try:
+        repo_result = subprocess.run(
+            repo_command, capture_output=True, text=True, timeout=60
+        )
+        prs_result = subprocess.run(
+            prs_command, capture_output=True, text=True, timeout=60
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "mode": "live",
+            "repo": repo,
+            "default_branch": "",
+            "repo_snapshot": None,
+            "open_prs": [],
+            "errors": [
+                {
+                    "command": str(exc.cmd),
+                    "stderr": "subprocess timed out after 60s",
+                    "returncode": 124,
+                }
+            ],
+        }
     repo_payload = _json_from_completed(repo_result)
     prs_payload = _json_from_completed(prs_result)
     if not isinstance(prs_payload, list):
@@ -146,9 +176,21 @@ def _run_gh_snapshot(repo: str) -> dict[str, Any]:
             default_branch = str(branch_ref.get("name", ""))
     errors = []
     if repo_result.returncode != 0:
-        errors.append({"command": "repo", "stderr": repo_result.stderr.strip(), "returncode": repo_result.returncode})
+        errors.append(
+            {
+                "command": "repo",
+                "stderr": repo_result.stderr.strip(),
+                "returncode": repo_result.returncode,
+            }
+        )
     if prs_result.returncode != 0:
-        errors.append({"command": "open_prs", "stderr": prs_result.stderr.strip(), "returncode": prs_result.returncode})
+        errors.append(
+            {
+                "command": "open_prs",
+                "stderr": prs_result.stderr.strip(),
+                "returncode": prs_result.returncode,
+            }
+        )
     return {
         "mode": "live",
         "repo": repo,
@@ -175,7 +217,13 @@ def _snapshot_from_args(args: argparse.Namespace, repo_root: Path) -> dict[str, 
             "repo": args.repo,
             "default_branch": "",
             "open_prs": [],
-            "errors": [{"command": "snapshot", "stderr": "offline mode requires --offline-snapshot", "returncode": 2}],
+            "errors": [
+                {
+                    "command": "snapshot",
+                    "stderr": "offline mode requires --offline-snapshot",
+                    "returncode": 2,
+                }
+            ],
         }
     return _run_gh_snapshot(args.repo)
 
@@ -191,7 +239,9 @@ def _extract_open_prs(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def classify_pr(pr: dict[str, Any], *, now: datetime, max_stale_days: int) -> dict[str, Any]:
+def classify_pr(
+    pr: dict[str, Any], *, now: datetime, max_stale_days: int
+) -> dict[str, Any]:
     title = str(pr.get("title", ""))
     head = str(pr.get("headRefName", ""))
     text = f"{title} {head}".lower()
@@ -211,7 +261,9 @@ def classify_pr(pr: dict[str, Any], *, now: datetime, max_stale_days: int) -> di
     duplicate_terms = sorted(term for term in DUPLICATE_TERMS if term in text)
     changes_requested = review_decision == "CHANGES_REQUESTED"
     stale = age_days is not None and age_days > max_stale_days
-    review_or_check_delay = review_decision == "REVIEW_REQUIRED" or merge_state == "QUEUED"
+    review_or_check_delay = (
+        review_decision == "REVIEW_REQUIRED" or merge_state == "QUEUED"
+    )
     release_scope_conflict = bool(release_scope_terms)
     duplicate_candidate = bool(duplicate_terms) and not release_scope_conflict
 
@@ -249,7 +301,10 @@ def classify_pr(pr: dict[str, Any], *, now: datetime, max_stale_days: int) -> di
 
 
 def _risk_counts(classified_prs: list[dict[str, Any]]) -> dict[str, int]:
-    return {key: sum(1 for pr in classified_prs if pr.get(key) is True) for key in RISK_COUNT_KEYS}
+    return {
+        key: sum(1 for pr in classified_prs if pr.get(key) is True)
+        for key in RISK_COUNT_KEYS
+    }
 
 
 def _safe_url(url: object) -> str:
@@ -325,13 +380,32 @@ def _render_report(manifest: dict[str, Any]) -> str:
     cards = [
         ("Status", manifest.get("status", "")),
         ("Open PRs", manifest.get("open_pr_count", "")),
-        ("Changes Requested", risk_counts.get("changes_requested", "") if isinstance(risk_counts, dict) else ""),
-        ("Stale", risk_counts.get("stale", "") if isinstance(risk_counts, dict) else ""),
-        ("Release Scope", risk_counts.get("release_scope_conflict", "") if isinstance(risk_counts, dict) else ""),
-        ("Review Delay", risk_counts.get("review_or_check_delay", "") if isinstance(risk_counts, dict) else ""),
+        (
+            "Changes Requested",
+            risk_counts.get("changes_requested", "")
+            if isinstance(risk_counts, dict)
+            else "",
+        ),
+        (
+            "Stale",
+            risk_counts.get("stale", "") if isinstance(risk_counts, dict) else "",
+        ),
+        (
+            "Release Scope",
+            risk_counts.get("release_scope_conflict", "")
+            if isinstance(risk_counts, dict)
+            else "",
+        ),
+        (
+            "Review Delay",
+            risk_counts.get("review_or_check_delay", "")
+            if isinstance(risk_counts, dict)
+            else "",
+        ),
     ]
     card_markup = [
-        "<article class=\"metric-card\">" f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
+        '<article class="metric-card">'
+        f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
         for label, value in cards
     ]
     rows = []
@@ -340,7 +414,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             continue
         rows.append(
             "<tr>"
-            f"<th scope=\"row\"><a href=\"{escape(_safe_url(pr.get('url')), quote=True)}\">#{escape(str(pr.get('number', '')))}</a></th>"
+            f'<th scope="row"><a href="{escape(_safe_url(pr.get("url")), quote=True)}">#{escape(str(pr.get("number", "")))}</a></th>'
             f"<td>{escape(str(pr.get('title', '')))}</td>"
             f"<td>{escape(str(pr.get('reviewDecision', '')))}</td>"
             f"<td>{escape(str(pr.get('mergeStateStatus', '')))}</td>"
@@ -355,7 +429,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             continue
         check_rows.append(
             "<tr>"
-            f"<th scope=\"row\">{escape(str(check.get('name', '')))}</th>"
+            f'<th scope="row">{escape(str(check.get("name", "")))}</th>'
             f"<td>{escape(str(check.get('category', '')))}</td>"
             f"<td>{escape('go' if check.get('ok') else 'failed')}</td>"
             f"<td>{escape(str(check.get('detail', '')))}</td>"
@@ -383,7 +457,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<section class="report-section"><h2>Open PR Risk Classification</h2>',
             '<div class="table-wrap" role="region" aria-label="PR queue governance table" tabindex="0">',
             "<table><caption>PR queue governance table</caption>",
-            "<thead><tr><th scope=\"col\">PR</th><th scope=\"col\">Title</th><th scope=\"col\">Review</th><th scope=\"col\">Merge</th><th scope=\"col\">Age Days</th><th scope=\"col\">Risk Reasons</th><th scope=\"col\">Head</th></tr></thead><tbody>",
+            '<thead><tr><th scope="col">PR</th><th scope="col">Title</th><th scope="col">Review</th><th scope="col">Merge</th><th scope="col">Age Days</th><th scope="col">Risk Reasons</th><th scope="col">Head</th></tr></thead><tbody>',
             *rows,
             "</tbody></table></div>",
             '<p class="note">Open PRs are inventoried as queue governance evidence. Review waits and queued checks are tracked separately from release-scope blockers.</p>',
@@ -391,7 +465,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<section class="report-section"><h2>Evidence Checks</h2>',
             '<div class="table-wrap" role="region" aria-label="PR queue governance check table" tabindex="0">',
             "<table><caption>PR queue governance check table</caption>",
-            "<thead><tr><th scope=\"col\">Check</th><th scope=\"col\">Category</th><th scope=\"col\">Status</th><th scope=\"col\">Detail</th></tr></thead><tbody>",
+            '<thead><tr><th scope="col">Check</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Detail</th></tr></thead><tbody>',
             *check_rows,
             "</tbody></table></div>",
             "</section></main></body></html>",
@@ -403,12 +477,17 @@ def build_pr_queue_governance(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = Path(args.repo_root).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    generated_at = getattr(args, "generated_at", None) or datetime.now(UTC).isoformat(timespec="seconds")
+    generated_at = getattr(args, "generated_at", None) or datetime.now(UTC).isoformat(
+        timespec="seconds"
+    )
     now = _parse_datetime(generated_at)
     snapshot = _snapshot_from_args(args, repo_root)
     open_prs = _extract_open_prs(snapshot)
     classified = [
-        classify_pr(pr, now=now, max_stale_days=int(getattr(args, "max_stale_days", 14))) for pr in open_prs
+        classify_pr(
+            pr, now=now, max_stale_days=int(getattr(args, "max_stale_days", 14))
+        )
+        for pr in open_prs
     ]
     risk_counts = _risk_counts(classified)
     snapshot_errors = snapshot.get("errors")
@@ -466,23 +545,46 @@ def build_pr_queue_governance(args: argparse.Namespace) -> dict[str, Any]:
     html_path.write_text(_render_report(manifest), encoding="utf-8")
     manifest["html_report_file"] = str(html_path)
     manifest["html_report_sha256"] = _sha256(html_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build PR queue governance evidence for fast-mlsirm.")
+    parser = argparse.ArgumentParser(
+        description="Build PR queue governance evidence for fast-mlsirm."
+    )
     parser.add_argument("--repo-root", default=".", help="Repository root.")
-    parser.add_argument("--out", default="pr-queue-governance", help="Output directory.")
-    parser.add_argument("--repo", default="ContextualWisdomLab/fast-mlsirm", help="GitHub repository name.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
-    parser.add_argument("--offline-snapshot", help="JSON snapshot with open_prs for offline governance checks.")
+    parser.add_argument(
+        "--out", default="pr-queue-governance", help="Output directory."
+    )
+    parser.add_argument(
+        "--repo",
+        default="ContextualWisdomLab/fast-mlsirm",
+        help="GitHub repository name.",
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
+    parser.add_argument(
+        "--offline-snapshot",
+        help="JSON snapshot with open_prs for offline governance checks.",
+    )
     parser.add_argument(
         "--offline-github",
         action="store_true",
         help="Fail fast unless --offline-snapshot is supplied; used to prove offline fixture coverage.",
     )
-    parser.add_argument("--max-stale-days", type=int, default=14, help="Age in days after which an open PR is stale.")
+    parser.add_argument(
+        "--max-stale-days",
+        type=int,
+        default=14,
+        help="Age in days after which an open PR is stale.",
+    )
     return parser
 
 
@@ -499,7 +601,9 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
-                "manifest": str(Path(args.out).resolve() / "pr_queue_governance_manifest.json"),
+                "manifest": str(
+                    Path(args.out).resolve() / "pr_queue_governance_manifest.json"
+                ),
                 "html": manifest["html_report_file"],
                 "open_pr_count": manifest["open_pr_count"],
                 "failed_checks": len(manifest["failed_checks"]),
