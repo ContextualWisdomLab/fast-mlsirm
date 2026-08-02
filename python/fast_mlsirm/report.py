@@ -702,6 +702,11 @@ h3 {
   background: var(--header-bg);
   color: var(--header-text);
   font-size: 0.82rem;
+  transition: opacity 0.15s ease-in-out;
+}
+
+.coverage-list:hover li:not(:hover) {
+  opacity: 0.5;
 }
 
 .coverage-list-muted li {
@@ -793,6 +798,10 @@ tbody tr {
 
 tbody tr:hover {
   background: var(--hover-bg);
+}
+
+tbody:hover tr:not(:hover) {
+  opacity: 0.5;
 }
 
 .empty-state {
