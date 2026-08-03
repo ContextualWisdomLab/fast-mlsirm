@@ -8,6 +8,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 _PR_CI = _ROOT / ".github" / "workflows" / "ci.yml"
 _STUDIES = _ROOT / ".github" / "workflows" / "statistical-studies.yml"
+_WORKSPACE = _ROOT / "Cargo.toml"
+_SHARD_RUNNER = _ROOT / "scripts" / "run_ignored_rust_shard.py"
 
 
 def test_pull_request_ci_keeps_exhaustive_studies_out_of_the_queue():
@@ -43,15 +45,42 @@ def test_statistical_studies_are_read_only_and_never_rewrite_source():
     assert "--exact" in text
 
 
-def test_dedicated_study_exclusions_are_exact_and_executed_elsewhere():
-    """Every shard exclusion is an exact name with a matching dedicated command."""
+def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
+    """The general inventory uses workspace metadata; excluded PyO3 is separate."""
+    workflow = _STUDIES.read_text(encoding="utf-8")
+    workspace = _WORKSPACE.read_text(encoding="utf-8")
+    runner = _SHARD_RUNNER.read_text(encoding="utf-8")
+    assert 'members = ["crates/mlsirm-core"]' in workspace
+    assert 'exclude = ["crates/fast-mlsirm-py"]' in workspace
+    assert "cargo_metadata_command" in runner
+    assert '"metadata"' in runner
+    assert '"workspace_members"' in runner
+    assert "--exclude-package" not in workflow
+    assert (
+        "cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml"
+        in workflow
+    )
+
+
+def test_dedicated_study_exclusions_are_target_qualified_and_executed_elsewhere():
+    """Every shard exclusion identifies one package, target, and test function."""
     text = _STUDIES.read_text(encoding="utf-8")
-    dedicated = (
+    identifiers = (
+        "mlsirm-core/test/literature_true_parameter_recovery::"
+        "kang_jeon_2025_minimum_cell_recovers_true_parameters",
+        "mlsirm-core/test/literature_true_parameter_recovery::"
+        "gpu_recovery_matches_cpu_on_paper_design",
+        "mlsirm-core/test/higher_order_mc_recovery::"
+        "higher_order_dina_recovery_respects_monte_carlo_tolerance",
+    )
+    raw_names = (
         "kang_jeon_2025_minimum_cell_recovers_true_parameters",
         "gpu_recovery_matches_cpu_on_paper_design",
         "higher_order_dina_recovery_respects_monte_carlo_tolerance",
     )
-    for name in dedicated:
-        assert f"--skip {name}" in text
+    for identifier in identifiers:
+        assert f"--skip {identifier}" in text
+    for name in raw_names:
         assert text.count(name) == 2
+        assert f"--skip {name}" not in text
     assert "mc_ho_recovery_500" not in text
