@@ -196,6 +196,25 @@ def test_sign_cancelled_composite_variance_is_rejected_by_rust():
         bifactor_scoreability(loadings, np.zeros(2, dtype=np.float64))
 
 
+def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatch):
+    """The public boundary rejects expensive shapes before extension dispatch."""
+    class UnexpectedCore:
+        """Fail if the compiled extension is consulted after a shape rejection."""
+
+        def bifactor_indices(self, *_args, **_kwargs):
+            """Signal that Python failed to enforce the pre-dispatch budget."""
+            raise AssertionError("compiled bifactor function must not be called")
+
+    monkeypatch.setattr(
+        "fast_mlsirm.bifactor_scoreability.bifactor_core",
+        lambda: UnexpectedCore(),
+    )
+    loadings = np.zeros((12_208, 64), dtype=np.float64)
+    uniquenesses = np.ones(12_208, dtype=np.float64)
+    with pytest.raises(ValueError, match="work budget"):
+        bifactor_scoreability(loadings, uniquenesses)
+
+
 def test_loader_caches_the_secondary_extension_module():
     """Repeated calls reuse one initialized `_bifactor_core` module."""
     assert bifactor_core() is bifactor_core()
