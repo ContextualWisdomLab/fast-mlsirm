@@ -4,7 +4,7 @@
 
 **Goal:** Add a literature-traceable, Rust-only MLS2PLM true-parameter recovery experiment and make every previously ignored or hardware-skipped CI path execute.
 
-**Architecture:** Keep the existing simple-structure MLS2PLM implementation unchanged. Add a Rust integration experiment that generates a Kang-and-Jeon simulation cell, calls the compiled marginal estimator, and computes identification-safe recovery metrics in Rust. Extend GitHub Actions with an ignored-statistics job and a Mesa/Lavapipe software-Vulkan job; remove the duplicate NumPy recovery experiment.
+**Architecture:** Keep the existing simple-structure MLS2PLM implementation unchanged. Add a Rust integration experiment that generates a bounded Kang-and-Jeon simulation condition, calls the compiled marginal estimator, and computes identification-safe recovery metrics in Rust. Extend GitHub Actions with separate ignored-test, CPU-recovery, and Mesa/Lavapipe software-Vulkan jobs; remove the duplicate NumPy recovery experiment.
 
 **Tech Stack:** Rust 2021, `mlsirm-core`, wgpu/Vulkan, GitHub Actions, PyO3/maturin, pytest.
 
@@ -30,7 +30,7 @@
 - Produces: a stable equation-to-experiment contract used by the Rust test and PR review.
 
 - [x] **Step 1: Record the verified general and simple-structure equations**
-- [x] **Step 2: Record the exact deterministic paper simulation cell**
+- [x] **Step 2: Record the exact deterministic paper simulation condition**
 - [x] **Step 3: Define identification-safe recovery metrics and thresholds**
 - [x] **Step 4: Document CPU, GPU, skip, coverage, and docstring evidence**
 - [x] **Step 5: Commit the research contract**
@@ -43,56 +43,33 @@
 
 **Interfaces:**
 - Consumes: `mlsirm_core::marginal::fit_marginal`, `MarginalConfig`, `PopulationSpec`, `Device`, `ModelConfig`, `ModelType`, and `PenaltyConfig`.
-- Produces: deterministic ignored tests named `kang_jeon_2025_minimum_cell_recovers_true_parameters` and `gpu_recovery_matches_cpu_on_paper_design`.
+- Produces: deterministic ignored tests named `kang_jeon_2025_minimum_cell_recovers_true_parameters` and `gpu_recovery_matches_cpu_on_paper_design`. In the first name, “minimum” refers to the paper's lowest dimensionality and item-count levels; the sample size is the paper's `P=500` condition.
 
-- [ ] **Step 1: Add the deterministic Rust simulation and a failing recovery test**
+- [x] **Step 1: Add the deterministic Rust simulation and recovery test**
 
-The test must generate `P=500`, `D=2`, `I_d=8`, `K=2`, `rho=.30`, `gamma=1.5`, `a in [.5,2.5]`, and deterministically permuted `b in [0,5]`.
+The test generates `P=500`, `D=2`, `I_d=8`, `K=2`, `rho=.30`, `gamma=1.5`, `a in [.5,2.5]`, and deterministically permuted `b in [0,5]`.
 
-- [ ] **Step 2: Run the targeted test and capture the expected red result**
+- [x] **Step 2: Establish a failing build/test before the corrected implementation**
 
-Run:
+The first same-head CI attempt failed in the new equation fixture before the explicit floating-point types were corrected, preserving a red-to-green implementation record.
 
-```bash
-cargo test --release -p mlsirm-core --test literature_true_parameter_recovery \
-  kang_jeon_2025_minimum_cell_recovers_true_parameters -- --ignored --nocapture
-```
+- [x] **Step 3: Implement all metric helpers in Rust**
 
-Expected: the initial recovery threshold or missing helper fails before the final implementation is accepted.
+The integration test implements deterministic PRNG/normal generation, Pearson correlation, RMSE, interaction-adjusted easiness, pairwise item-map distances, and likelihood-trace checks. No NumPy or Python arithmetic is used.
 
-- [ ] **Step 3: Implement all metric helpers in Rust**
+- [x] **Step 4: Add the explicit CPU/GPU parity recovery test**
 
-Implement deterministic PRNG/normal generation, Pearson correlation, RMSE,
-interaction-adjusted easiness, pairwise item-map distances, and likelihood-trace
-checks in the integration test. No NumPy or Python arithmetic is permitted.
+The GPU test calls `fit_marginal(..., Device::Gpu)` and compares the result to `Device::Cpu` with documented f32 tolerances.
 
-- [ ] **Step 4: Add the explicit CPU/GPU parity recovery test**
+- [x] **Step 5: Delete the NumPy-only recovery test**
 
-The GPU test must call `fit_marginal(..., Device::Gpu)` and compare the result to
-`Device::Cpu` with documented f32 tolerances.
+`tests/test_true_parameter_recovery.py` is removed; the public `recovery_report` unit coverage remains in the existing diagnostics tests.
 
-- [ ] **Step 5: Delete the NumPy-only recovery test**
+- [x] **Step 6: Run ordinary targeted suites to green**
 
-Remove `tests/test_true_parameter_recovery.py`; the public `recovery_report`
-unit coverage remains in the existing diagnostics tests.
+The ordinary Python, Rust workspace, PyO3, package, fuzz, and GPU suites pass on the PR head. The long-running CPU recovery and complete ignored-test sweeps remain merge gates.
 
-- [ ] **Step 6: Run the targeted tests to green**
-
-```bash
-cargo test --release -p mlsirm-core --test literature_true_parameter_recovery \
-  -- --ignored --test-threads=1 --nocapture
-cargo test --workspace
-cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
-pytest
-```
-
-- [ ] **Step 7: Commit the Rust recovery experiment**
-
-```bash
-git add crates/mlsirm-core/tests/literature_true_parameter_recovery.rs \
-  tests/test_true_parameter_recovery.py
-git commit -m "test: add Rust literature recovery experiment"
-```
+- [x] **Step 7: Commit the Rust recovery experiment**
 
 ### Task 3: Execute every ignored Rust test
 
@@ -101,20 +78,24 @@ git commit -m "test: add Rust literature recovery experiment"
 
 **Interfaces:**
 - Consumes: all `#[ignore]` tests in the workspace and excluded PyO3 crate.
-- Produces: required `rust-statistical` CI evidence.
+- Produces: required `rust-ignored`, `rust-recovery`, and `gpu-software` evidence whose union executes every ignored path.
 
-- [ ] **Step 1: Add a release-mode ignored-test job**
+- [x] **Step 1: Add a release-mode ignored-test sweep**
 
-Run both commands serially with a 120-minute job timeout:
+The general sweep executes all ignored workspace tests except the two recovery tests, which are executed explicitly in the dedicated CPU and GPU jobs. The excluded PyO3 crate's ignored tests run separately.
+
+- [x] **Step 2: Add a dedicated CPU recovery job**
+
+The job first exercises the explicit four-worker objective parity test, then runs:
 
 ```bash
-cargo test --release --workspace -- --ignored --test-threads=1 --nocapture
-cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml \
-  -- --ignored --test-threads=1 --nocapture
+cargo test --release -p mlsirm-core \
+  --test literature_true_parameter_recovery \
+  kang_jeon_2025_minimum_cell_recovers_true_parameters \
+  -- --ignored --exact --nocapture
 ```
 
-- [ ] **Step 2: Verify the job runs the new recovery experiment**
-- [ ] **Step 3: Commit the ignored-test gate**
+- [ ] **Step 3: Confirm both jobs pass on the final unchanged head**
 
 ### Task 4: Execute the real GPU path without skips
 
@@ -125,13 +106,13 @@ cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml \
 - Consumes: Mesa Lavapipe, wgpu Vulkan, and `tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely`.
 - Produces: required `gpu-software` evidence with zero skipped tests.
 
-- [ ] **Step 1: Install Mesa Vulkan packages on Ubuntu**
-- [ ] **Step 2: Discover and export the Lavapipe ICD JSON path**
-- [ ] **Step 3: Build the PyO3 extension and confirm `vulkaninfo` sees an adapter**
-- [ ] **Step 4: Run the explicit Python GPU parity test with JUnit XML**
-- [ ] **Step 5: Parse JUnit XML and fail if `skipped != 0`**
-- [ ] **Step 6: Run the Rust GPU recovery parity test**
-- [ ] **Step 7: Commit the accelerator gate**
+- [x] **Step 1: Install Mesa Vulkan packages on Ubuntu**
+- [x] **Step 2: Discover and export the Lavapipe ICD JSON path**
+- [x] **Step 3: Build the PyO3 extension and confirm `vulkaninfo` sees an adapter**
+- [x] **Step 4: Run the explicit Python GPU parity test with JUnit XML**
+- [x] **Step 5: Parse JUnit XML and fail if `skipped != 0`**
+- [x] **Step 6: Run the Rust GPU recovery parity test**
+- [ ] **Step 7: Confirm the GPU job passes on the final unchanged head**
 
 ### Task 5: Full same-head verification and merge
 
@@ -142,8 +123,9 @@ cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml \
 - Consumes: GitHub review threads and all same-head checks.
 - Produces: a mergeable PR closing issue #389.
 
-- [ ] **Step 1: Open a draft PR linked to #389**
-- [ ] **Step 2: Inspect CodeRabbit/OpenCode review findings**
-- [ ] **Step 3: Fix every valid finding and resolve review threads**
-- [ ] **Step 4: Confirm CI, Security Scan, SAST, coverage, and docstring evidence**
-- [ ] **Step 5: Mark ready and merge only when the head SHA is unchanged**
+- [x] **Step 1: Open a draft PR linked to #389**
+- [x] **Step 2: Mark the PR ready after ordinary suites pass**
+- [ ] **Step 3: Inspect CodeRabbit/OpenCode review findings**
+- [ ] **Step 4: Fix every valid finding and resolve review threads**
+- [ ] **Step 5: Confirm CI, Security Scan, SAST, coverage, and docstring evidence**
+- [ ] **Step 6: Merge only when the head SHA is unchanged**
