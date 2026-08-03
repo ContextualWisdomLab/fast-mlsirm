@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Render authoritative unreleased changelog fragments deterministically."""
+"""Render and synchronize authoritative unreleased changelog fragments."""
 
 from __future__ import annotations
 
 import argparse
 from collections import defaultdict
 from pathlib import Path
+import re
 import sys
 from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 FRAGMENT_DIR = ROOT / "docs" / "changelog.d"
+CHANGELOG_PATH = ROOT / "CHANGELOG.md"
+BEGIN_MARKER = "<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->"
+END_MARKER = "<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->"
 _ALLOWED_SECTIONS = (
     "Added",
     "Changed",
@@ -19,6 +23,8 @@ _ALLOWED_SECTIONS = (
     "Fixed",
     "Security",
 )
+_UNRELEASED_HEADING = re.compile(r"^## Unreleased\s*$", re.MULTILINE)
+_NEXT_RELEASE_HEADING = re.compile(r"^## (?!Unreleased\s*$).+$", re.MULTILINE)
 
 
 def fragment_paths(directory: Path = FRAGMENT_DIR) -> tuple[Path, ...]:
@@ -82,16 +88,107 @@ def render_unreleased(paths: Iterable[Path] | None = None) -> str:
     return "\n".join(output).rstrip() + "\n"
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Render fragments to stdout or an explicitly selected output file."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, help="write rendered Markdown here")
-    args = parser.parse_args(argv)
-    rendered = render_unreleased()
-    if args.output is None:
-        sys.stdout.write(rendered)
+def _managed_block(rendered: str) -> str:
+    """Return the marker-delimited fragment body embedded under Unreleased."""
+    heading, separator, body = rendered.partition("\n\n")
+    if heading != "## Unreleased" or not separator or not body.strip():
+        raise ValueError("rendered changelog must contain one non-empty Unreleased block")
+    return f"{BEGIN_MARKER}\n{body.rstrip()}\n{END_MARKER}\n"
+
+
+def synchronize_text(changelog: str, rendered: str) -> str:
+    """Return changelog text with exactly one managed Unreleased fragment block.
+
+    Existing manually maintained Unreleased notes and every historical release
+    remain byte-for-byte unchanged. The marker-delimited fragment block is
+    inserted or replaced only inside the single ``## Unreleased`` section.
+    """
+    headings = tuple(_UNRELEASED_HEADING.finditer(changelog))
+    if len(headings) != 1:
+        raise ValueError("CHANGELOG.md must contain exactly one ## Unreleased heading")
+    heading = headings[0]
+    next_release = _NEXT_RELEASE_HEADING.search(changelog, heading.end())
+    section_end = next_release.start() if next_release is not None else len(changelog)
+    section = changelog[heading.end() : section_end]
+
+    begin_count = section.count(BEGIN_MARKER)
+    end_count = section.count(END_MARKER)
+    if begin_count != end_count or begin_count > 1:
+        raise ValueError("Unreleased must contain zero or one complete fragment marker pair")
+    if changelog[: heading.end()].count(BEGIN_MARKER) or changelog[section_end:].count(
+        BEGIN_MARKER
+    ):
+        raise ValueError("fragment markers must occur only inside Unreleased")
+    if changelog[: heading.end()].count(END_MARKER) or changelog[section_end:].count(
+        END_MARKER
+    ):
+        raise ValueError("fragment markers must occur only inside Unreleased")
+
+    managed = _managed_block(rendered)
+    if begin_count == 1:
+        begin = section.index(BEGIN_MARKER)
+        end = section.index(END_MARKER, begin) + len(END_MARKER)
+        replacement = section[:begin] + managed.rstrip("\n") + section[end:]
     else:
-        args.output.write_text(rendered, encoding="utf-8")
+        prefix = section.rstrip()
+        replacement = f"{prefix}\n\n{managed}" if prefix else f"\n\n{managed}"
+
+    return changelog[: heading.end()] + replacement + changelog[section_end:]
+
+
+def check_changelog(
+    path: Path = CHANGELOG_PATH, paths: Iterable[Path] | None = None
+) -> None:
+    """Fail when the managed fragment block is absent or differs from fragments."""
+    current = path.read_text(encoding="utf-8")
+    expected = synchronize_text(current, render_unreleased(paths))
+    if current != expected:
+        raise ValueError(
+            f"{path}: authoritative changelog fragments are stale; run "
+            f"{Path(__file__).name} --update {path}"
+        )
+
+
+def update_changelog(
+    path: Path = CHANGELOG_PATH, paths: Iterable[Path] | None = None
+) -> None:
+    """Write the deterministic managed fragment block into ``path``."""
+    current = path.read_text(encoding="utf-8")
+    updated = synchronize_text(current, render_unreleased(paths))
+    path.write_text(updated, encoding="utf-8")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Render fragments or check/update a changelog file deterministically."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--output", type=Path, help="write rendered Markdown here")
+    actions.add_argument(
+        "--check",
+        type=Path,
+        metavar="CHANGELOG",
+        help="fail when CHANGELOG does not match authoritative fragments",
+    )
+    actions.add_argument(
+        "--update",
+        type=Path,
+        metavar="CHANGELOG",
+        help="synchronize authoritative fragments into CHANGELOG",
+    )
+    args = parser.parse_args(argv)
+    try:
+        if args.check is not None:
+            check_changelog(args.check)
+        elif args.update is not None:
+            update_changelog(args.update)
+        else:
+            rendered = render_unreleased()
+            if args.output is None:
+                sys.stdout.write(rendered)
+            else:
+                args.output.write_text(rendered, encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"error: {exc}\n")
     return 0
 
 
