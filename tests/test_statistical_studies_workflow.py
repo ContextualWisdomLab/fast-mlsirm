@@ -54,5 +54,4 @@ def test_dedicated_study_exclusions_are_exact_and_executed_elsewhere():
     for name in dedicated:
         assert f"--skip {name}" in text
         assert text.count(name) == 2
-    assert "--skip cdm::tests::mc_ho_recovery_500" in text
-    assert "--skip mc_ho_recovery_500" not in text
+    assert "mc_ho_recovery_500" not in text

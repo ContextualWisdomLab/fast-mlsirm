@@ -40,7 +40,6 @@ jobs:
           --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
           --skip gpu_recovery_matches_cpu_on_paper_design
           --skip higher_order_dina_recovery_respects_monte_carlo_tolerance
-          --skip cdm::tests::mc_ho_recovery_500
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies

@@ -2931,6 +2931,21 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Rust-only literature true-parameter recovery gate
+
+- A Rust-only true-parameter recovery experiment for a bounded representative
+  Kang and Jeon (2025) MLS2PLM simulation cell (`P = 500`), tracing the
+  simple-structure equation, sign convention, identification handling,
+  recovery metrics, and citations.
+- Orientation-invariant latent-map recovery metrics covering item parameters,
+  person traits, person and item interaction positions, and distance weights.
+- Scheduled, manual-dispatch, and release-tag statistical-study workflows that
+  execute exhaustive ignored Rust studies in exact-name-validated shards while
+  pull-request CI retains bounded CPU/GPU sentinels.
+- A source-backed finite-Monte-Carlo convergence floor
+  (`p0 - 2 * sqrt(p0 * (1 - p0) / R)`) for the 500-replication higher-order
+  DINA recovery study.
+
 #### Fail-closed Vuong selection summary
 
 - A bounded public `compare_nonnested_models` orchestration API that preserves Rust-computed casewise likelihood-ratio mean, variance scale, corrected selection statistic, and two-sided probability together with explicit model-relation metadata when the normal-selection kernel is applicable.
@@ -2974,6 +2989,17 @@
 
 ### Changed
 
+#### Rust-only literature true-parameter recovery gate
+
+- The duplicate NumPy-only recovery experiment is removed; the Rust core is
+  the single evidence path for literature recovery gates.
+- The historical `cdm::tests::mc_ho_recovery_500` study is removed at the
+  source level. Its generating design, fixed seeds, and RMSE, bias, and
+  agreement thresholds are preserved verbatim by the reviewed
+  `higher_order_dina_recovery_respects_monte_carlo_tolerance` integration
+  study, which gates convergence on the documented two-standard-error binomial
+  floor instead of an exact finite-sample proportion.
+
 #### CI queue and review-governance hardening
 
 - Pull-request CI runs now share a PR-number-scoped concurrency group, so a newer head cancels superseded queued or running CI evidence instead of consuming capacity for an obsolete commit.
@@ -2981,6 +3007,15 @@
 - Draft pull requests no longer consume automatic CodeRabbit reviews, and automatic incremental review-on-every-push is disabled; maintainers request a final review only after a stable head is ready.
 - The hourly read-only PR-governance workflow verifies its repository contract with the Python standard library, fails closed when no matching test is discovered, and no longer assumes that `pytest` is preinstalled on a fresh scheduled runner.
 No test, security, packaging, coverage, or merge requirement is weakened by these operational changes.
+
+### Fixed
+
+#### Rust-only literature true-parameter recovery gate
+
+- Ignored-test shard discovery rejects stale skip declarations, duplicate
+  skips, ambiguous final-component exclusions, and silently empty shards.
+- Explicit-GPU parity evidence fails closed when the Vulkan adapter is
+  unavailable instead of silently skipping.
 
 ### Security
 

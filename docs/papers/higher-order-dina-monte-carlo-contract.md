@@ -48,33 +48,28 @@ calculation itself is covered by a non-ignored Rust test; the full 500-
 replication replacement test executes in the dedicated scheduled/manual
 statistical-studies job.
 
-## Historical duplicate quarantine
+## Historical test retirement
 
-The historical test is retained unchanged as provenance because it lives in a
-large legacy unit-test module whose unrelated studies must not be rewritten as
-part of this focused recovery change. It is not accepted as active release
-evidence: the exhaustive shard excludes only the exact fully qualified path
-`cdm::tests::mc_ho_recovery_500`, while the dedicated job executes the reviewed
-replacement on the same workflow head.
+The historical unit study was initially quarantined by its exact fully
+qualified path while the reviewed replacement ran in a dedicated job. That
+quarantine did not satisfy the repository's exhaustive-source contract, so the
+historical `cdm::tests::mc_ho_recovery_500` function has been physically
+removed from `tests/unit/cdm_tests.rs`. Its generating design, fixed seed
+schedule, replication count, RMSE and bias thresholds, and
+attribute-agreement bound are preserved verbatim by
+`higher_order_dina_recovery_respects_monte_carlo_tolerance`; the only
+behavioral difference is the documented finite-Monte-Carlo convergence floor.
 
 This is a transparent supersession, not a broad pattern skip or a hidden
 exception. Repository contract tests require all of the following:
 
-- the historical function and its known exact-threshold assertion remain
-  detectable;
-- exactly one fully qualified exclusion exists;
-- the final-component name cannot be used as a skip pattern;
+- the historical function name and its exact-threshold assertion stay absent
+  from the source tree and from every workflow skip list;
 - the replacement study contains the explicit nominal target, Monte Carlo
   standard error, and convergence floor;
 - the replacement is both removed from the general shard and executed exactly
   once by its dedicated command; and
 - no write-capable workflow patches reviewed source at run time.
-
-The historical function should be physically deleted when the legacy CDM test
-module is split into reviewable files. That cleanup does not block this
-scientific gate because the conflicting test is excluded from every evidence
-claim and its replacement preserves the generating design and recovery
-thresholds under an explicit finite-replication rule.
 
 ## Model traceability
 

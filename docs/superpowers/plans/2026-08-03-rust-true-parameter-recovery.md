@@ -83,7 +83,7 @@ The ordinary Python, Rust workspace, PyO3, package, fuzz, and GPU suites passed 
 
 **Interfaces:**
 - Consumes: the exact inventory of `#[ignore]` tests in the workspace and excluded PyO3 crate.
-- Produces: non-overlapping `rust-ignored`, `rust-pyo3-ignored`, `rust-recovery`, `higher-order-recovery`, and `gpu-recovery` evidence, plus one exact quarantine for `cdm::tests::mc_ho_recovery_500`.
+- Produces: non-overlapping `rust-ignored`, `rust-pyo3-ignored`, `rust-recovery`, `higher-order-recovery`, and `gpu-recovery` evidence; the superseded `cdm::tests::mc_ho_recovery_500` study is removed at the source level rather than quarantined.
 
 - [x] **Step 1: Add a source-read-only exact-name shard runner**
 

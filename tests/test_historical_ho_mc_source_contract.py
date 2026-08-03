@@ -1,9 +1,14 @@
-"""Contracts for the quarantined historical higher-order DINA Monte Carlo gate.
+"""Contracts for the retired historical higher-order DINA Monte Carlo gate.
 
-The historical unit test is retained as provenance, but its exact finite-sample
-``0.95`` assertion is superseded by the reviewed integration study.  The
-statistical workflow must therefore quarantine only that fully qualified test
-name and execute the replacement study in a dedicated job.
+The historical ``cdm::tests::mc_ho_recovery_500`` unit study asserted the
+deterministic exact convergence proportion ``conv_rate >= 0.95``, which a
+finite 500-replication Monte Carlo experiment cannot be required to attain.
+The reviewed integration study
+``higher_order_dina_recovery_respects_monte_carlo_tolerance`` reproduces the
+same generating design, fixed seeds, and RMSE/bias/agreement thresholds while
+gating convergence on the two-standard-error binomial floor.  The historical
+test has therefore been removed at the source level, and no workflow may
+quarantine test names instead of fixing their source.
 """
 
 from __future__ import annotations
@@ -25,16 +30,14 @@ _STATISTICAL_WORKFLOW = (
 )
 
 
-def test_historical_exact_threshold_is_quarantined_by_exact_name() -> None:
-    """Only the known superseded test may be excluded from the exhaustive shard."""
+def test_historical_exact_threshold_test_stays_removed() -> None:
+    """The superseded exact-proportion study must not return, nor be skipped."""
     source = _CDM_TESTS.read_text(encoding="utf-8")
     workflow = _STATISTICAL_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "fn mc_ho_recovery_500()" in source
-    assert "conv_rate >= 0.95" in source
-    exact_skip = "--skip cdm::tests::mc_ho_recovery_500"
-    assert workflow.count(exact_skip) == 1
-    assert "--skip mc_ho_recovery_500" not in workflow
+    assert "mc_ho_recovery_500" not in source
+    assert "conv_rate >= 0.95" not in source
+    assert "mc_ho_recovery_500" not in workflow
 
 
 def test_replacement_gate_owns_finite_monte_carlo_acceptance() -> None:
