@@ -18,54 +18,55 @@ sys.modules[_SPEC.name] = sharder
 _SPEC.loader.exec_module(sharder)
 
 
-def _metadata() -> str:
-    """Return a compact workspace with duplicate test names across targets."""
-    return json.dumps(
-        {
-            "workspace_members": [
-                "path+file:///repo/crates/mlsirm-core#0.9.0",
-                "path+file:///repo/crates/fast-mlsirm-py#0.9.0",
-            ],
-            "packages": [
-                {
-                    "id": "path+file:///repo/crates/mlsirm-core#0.9.0",
-                    "name": "mlsirm-core",
-                    "targets": [
-                        {
-                            "name": "mlsirm_core",
-                            "kind": ["lib"],
-                            "test": True,
-                            "doctest": True,
-                        },
-                        {
-                            "name": "literature_true_parameter_recovery",
-                            "kind": ["test"],
-                            "test": True,
-                            "doctest": False,
-                        },
-                        {
-                            "name": "helper",
-                            "kind": ["bin"],
-                            "test": False,
-                            "doctest": False,
-                        },
-                    ],
-                },
-                {
-                    "id": "path+file:///repo/crates/fast-mlsirm-py#0.9.0",
-                    "name": "fast-mlsirm-py",
-                    "targets": [
-                        {
-                            "name": "fast_mlsirm_py",
-                            "kind": ["lib"],
-                            "test": True,
-                            "doctest": False,
-                        }
-                    ],
-                },
-            ],
-        }
-    )
+def _metadata() -> dict[str, object]:
+    """Return a workspace plus one package explicitly outside that workspace."""
+    return {
+        "workspace_members": ["core-id"],
+        "packages": [
+            {
+                "id": "core-id",
+                "name": "mlsirm-core",
+                "targets": [
+                    {
+                        "name": "mlsirm_core",
+                        "kind": ["lib"],
+                        "test": True,
+                        "doctest": True,
+                    },
+                    {
+                        "name": "literature_true_parameter_recovery",
+                        "kind": ["test"],
+                        "test": True,
+                        "doctest": False,
+                    },
+                    {
+                        "name": "helper",
+                        "kind": ["bin"],
+                        "test": False,
+                        "doctest": False,
+                    },
+                    {
+                        "name": "criterion_bench",
+                        "kind": ["bench"],
+                        "test": True,
+                        "doctest": False,
+                    },
+                ],
+            },
+            {
+                "id": "pyo3-id",
+                "name": "fast-mlsirm-py",
+                "targets": [
+                    {
+                        "name": "fast_mlsirm_core",
+                        "kind": ["cdylib"],
+                        "test": True,
+                        "doctest": False,
+                    }
+                ],
+            },
+        ],
+    }
 
 
 def test_sharding_runner_contains_no_source_mutation_contract():
@@ -89,12 +90,9 @@ zeta::two: test
     assert sharder.parse_test_names(output) == ["alpha::one", "zeta::two"]
 
 
-def test_workspace_targets_are_explicit_and_separately_governed_packages_are_excluded():
-    """Cargo metadata becomes exact target selectors without PyO3 duplication."""
-    targets = sharder.parse_workspace_targets(
-        _metadata(),
-        excluded_packages=["fast-mlsirm-py"],
-    )
+def test_workspace_targets_are_explicit_and_nonmembers_stay_out_of_scope():
+    """Cargo metadata becomes exact selectors for workspace members only."""
+    targets = sharder.parse_workspace_targets(json.dumps(_metadata()))
     assert targets == [
         sharder.CargoTarget("mlsirm-core", "doc", "mlsirm_core"),
         sharder.CargoTarget("mlsirm-core", "lib", "mlsirm_core"),
@@ -104,20 +102,69 @@ def test_workspace_targets_are_explicit_and_separately_governed_packages_are_exc
             "literature_true_parameter_recovery",
         ),
     ]
+    assert all(target.package != "fast-mlsirm-py" for target in targets)
 
 
-def test_workspace_target_validation_rejects_stale_or_duplicate_exclusions():
-    """Package exclusions must be unique exact workspace package names."""
-    with pytest.raises(ValueError, match="must be unique"):
-        sharder.parse_workspace_targets(
-            _metadata(),
-            excluded_packages=["fast-mlsirm-py", "fast-mlsirm-py"],
-        )
-    with pytest.raises(ValueError, match="missing-package"):
-        sharder.parse_workspace_targets(
-            _metadata(),
-            excluded_packages=["missing-package"],
-        )
+def test_workspace_metadata_rejects_duplicate_member_package_names():
+    """Two workspace members cannot collapse onto one package audit identity."""
+    metadata = _metadata()
+    metadata["workspace_members"] = ["core-id", "duplicate-id"]
+    packages = metadata["packages"]
+    assert isinstance(packages, list)
+    packages.append(
+        {
+            "id": "duplicate-id",
+            "name": "mlsirm-core",
+            "targets": [],
+        }
+    )
+    with pytest.raises(ValueError, match="duplicate Cargo workspace package name"):
+        sharder.parse_workspace_targets(json.dumps(metadata))
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ([], "root must be an object"),
+        ({"packages": [], "workspace_members": []}, "workspace package inventory"),
+        (
+            {"packages": ["bad"], "workspace_members": ["core-id"]},
+            "package entries must be objects",
+        ),
+        (
+            {
+                "packages": [{"id": "core-id", "name": "", "targets": []}],
+                "workspace_members": ["core-id"],
+            },
+            "no valid name",
+        ),
+    ],
+)
+def test_workspace_metadata_rejects_malformed_inventories(metadata, message):
+    """Malformed Cargo metadata fails before any target command is constructed."""
+    with pytest.raises(ValueError, match=message):
+        sharder.parse_workspace_targets(json.dumps(metadata))
+
+
+def test_workspace_metadata_rejects_unknown_default_test_target_kinds():
+    """A new test-bearing target kind cannot disappear from evidence silently."""
+    metadata = _metadata()
+    packages = metadata["packages"]
+    assert isinstance(packages, list)
+    core = packages[0]
+    assert isinstance(core, dict)
+    targets = core["targets"]
+    assert isinstance(targets, list)
+    targets.append(
+        {
+            "name": "future_target",
+            "kind": ["future-kind"],
+            "test": True,
+            "doctest": False,
+        }
+    )
+    with pytest.raises(ValueError, match="unsupported default-tested Cargo target"):
+        sharder.parse_workspace_targets(json.dumps(metadata))
 
 
 def test_target_qualified_identifiers_preserve_same_named_tests():
