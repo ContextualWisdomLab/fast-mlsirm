@@ -50,15 +50,39 @@ def test_release_version_and_changelog_section_fail_closed():
     assert "grep -q '[^[:space:]]' release_notes.md" in text
 
 
-def test_existing_tag_or_release_and_api_uncertainty_block_publication():
-    """Neither an existing Git ref nor an API failure can be treated as absence."""
+def test_existing_release_and_api_uncertainty_block_publication():
+    """An existing release or an uncertain API answer can never be reused."""
     text = _workflow_text()
-    assert 'check_absent "git/ref/tags/v$RELEASE_VERSION"' in text
-    assert 'check_absent "releases/tags/v$RELEASE_VERSION"' in text
+    assert '"releases/tags/v$RELEASE_VERSION"' in text
+    assert '"git/ref/tags/v$RELEASE_VERSION"' in text
     assert "404)" in text
     assert "200)" in text
     assert "GitHub API returned HTTP $status" in text
     assert "refusing to overwrite or reuse it" in text
+
+
+def test_tag_without_release_resumes_instead_of_retagging():
+    """A prior interrupted run resumes on its immutable tag, never a new one."""
+    text = _workflow_text()
+    assert "resume_existing_tag=true" in text
+    assert "resume_existing_tag=false" in text
+    assert "resuming publication for the existing immutable tag" in text
+    guard = "if: steps.release_tag_state.outputs.resume_existing_tag != 'true'"
+    create_step = "Atomically create the immutable release tag"
+    assert guard in text
+    assert text.index(create_step) < text.index(guard) + len(guard)
+    assert abs(text.index(guard) - text.index(create_step)) < 200
+
+
+def test_oversized_release_notes_are_capped_with_authoritative_pointer():
+    """A CHANGELOG section beyond the API body limit becomes a linked summary."""
+    text = _workflow_text()
+    assert "body_limit = 120_000" in text
+    assert "release-body limit" in text
+    assert "Full authoritative notes" in text
+    assert "CHANGELOG.md" in text
+    assert 'line.startswith("#### ")' in text
+    assert "(contents list truncated)" in text
 
 
 def test_release_tag_is_created_atomically_at_the_dispatch_sha():
@@ -79,7 +103,7 @@ def test_release_tag_is_created_atomically_at_the_dispatch_sha():
 def test_release_creation_requires_the_verified_existing_tag():
     """Release publication cannot silently create or retarget a tag after checks."""
     text = _workflow_text()
-    preflight = 'check_absent "git/ref/tags/v$RELEASE_VERSION"'
+    preflight = "Verify the release is absent and classify the tag state"
     atomic_create = "Atomically create the immutable release tag"
     publish = 'gh release create "v$RELEASE_VERSION"'
     assert publish in text
