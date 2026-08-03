@@ -14,7 +14,7 @@ generation contract
   -> immutable GeneratedItemCandidate
   -> deterministic CandidateAuditReport
   -> replay-verified pilot admission
-  -> immutable PilotCandidateRecord
+  -> factory-sealed PilotCandidateRecord
 ```
 
 ## Lifecycle contract
@@ -34,9 +34,16 @@ rejects a stale report, a changed candidate, any report that remains in
 installed package. Before admission, it reruns the named package policy over
 the exact candidate and requires the complete report fingerprint to match.
 This prevents callers from constructing a clean-looking report that hides real
-findings. The pilot record requires descriptive nonnumeric identifiers for the
+findings. The public `PilotCandidateRecord` also rejects ordinary direct
+construction, so supported callers must pass through the replay-verified
+factory. The pilot record requires descriptive nonnumeric identifiers for the
 pilot study, query/testlet, generator family, judge policy, occasion, item,
 blueprint, and rubric.
+
+The factory seal is an API-governance boundary, not a cryptographic capability
+inside a hostile Python process. Downstream services must verify the complete
+candidate, audit-report, and pilot-record fingerprints instead of trusting an
+in-memory object solely because it has the expected class name.
 
 ## Deterministic findings
 
