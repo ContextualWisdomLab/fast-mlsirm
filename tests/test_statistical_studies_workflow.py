@@ -41,4 +41,18 @@ def test_statistical_studies_are_read_only_and_never_rewrite_source():
     assert "git push" not in text
     assert "write_text(" not in text
     assert "--exact" in text
-    assert "--skip mc_ho_recovery_500" in text
+
+
+def test_dedicated_study_exclusions_are_exact_and_executed_elsewhere():
+    """Every shard exclusion is an exact name with a matching dedicated command."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    dedicated = (
+        "kang_jeon_2025_minimum_cell_recovers_true_parameters",
+        "gpu_recovery_matches_cpu_on_paper_design",
+        "higher_order_dina_recovery_respects_monte_carlo_tolerance",
+    )
+    for name in dedicated:
+        assert f"--skip {name}" in text
+        assert text.count(name) == 2
+    assert "--skip cdm::tests::mc_ho_recovery_500" in text
+    assert "--skip mc_ho_recovery_500" not in text
