@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .models import BlueprintPlan, ItemBlueprint, RubricSpecification, _sha256_hex
 
 MAX_BLUEPRINTS = 10_000
@@ -52,8 +54,9 @@ def compile_item_blueprints(
         for difficulty_band in resolved_plan.difficulty_bands:
             for evidence_mode in resolved_plan.evidence_modes:
                 for replicate_index in range(resolved_plan.items_per_cell):
-                    identity = {
+                    seed_identity = {
                         "schema_version": rubric.schema_version,
+                        "rubric_version": rubric.rubric_version,
                         "rubric_fingerprint": rubric_fingerprint,
                         "plan_seed": resolved_plan.seed,
                         "task_family": task_family,
@@ -61,22 +64,30 @@ def compile_item_blueprints(
                         "evidence_mode": evidence_mode.value,
                         "replicate_index": replicate_index,
                     }
-                    digest = _sha256_hex(identity)
+                    seed_digest = _sha256_hex(seed_identity)
+                    provisional = ItemBlueprint(
+                        blueprint_id="item_blueprint_pending",
+                        rubric_id=rubric.rubric_id,
+                        rubric_fingerprint=rubric_fingerprint,
+                        task_family=task_family,
+                        difficulty_band=difficulty_band,
+                        evidence_mode=evidence_mode,
+                        replicate_index=replicate_index,
+                        generation_seed=int(seed_digest[:16], 16),
+                        response_format=rubric.response_format,
+                        scoring_levels=scoring_levels,
+                        evidence_requirements=rubric.evidence_requirements,
+                        prohibited_patterns=rubric.prohibited_patterns,
+                        rubric_version=rubric.rubric_version,
+                        schema_version=rubric.schema_version,
+                    )
                     compiled.append(
-                        ItemBlueprint(
-                            blueprint_id=f"item_blueprint_{digest[:16]}",
-                            rubric_id=rubric.rubric_id,
-                            rubric_fingerprint=rubric_fingerprint,
-                            task_family=task_family,
-                            difficulty_band=difficulty_band,
-                            evidence_mode=evidence_mode,
-                            replicate_index=replicate_index,
-                            generation_seed=int(digest[:16], 16),
-                            response_format=rubric.response_format,
-                            scoring_levels=scoring_levels,
-                            evidence_requirements=rubric.evidence_requirements,
-                            prohibited_patterns=rubric.prohibited_patterns,
-                            schema_version=rubric.schema_version,
+                        replace(
+                            provisional,
+                            blueprint_id=(
+                                "item_blueprint_"
+                                f"{provisional.blueprint_fingerprint[:16]}"
+                            ),
                         )
                     )
     return tuple(compiled)
