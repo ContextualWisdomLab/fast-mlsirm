@@ -26,7 +26,7 @@ This slice deliberately does not call an LLM, accept model credentials, score ca
 1. **Evidence-Centered Design before prompting.** The rubric identifies the construct and observable evidence; the blueprint defines task conditions under which that evidence should be elicited.
 2. **Separate governance from serialization.** `rubric_version` records a human-governed semantic revision; `schema_version` records the package wire contract.
 3. **Fail closed.** Unknown schema versions, non-canonical rubric versions, malformed identifiers, non-contiguous score levels, duplicate design cells, replay under a changed rubric, and caller-controlled work above fixed limits are rejected.
-4. **Complete content addressing.** Rubrics, blueprints, and generation contracts retain full SHA-256 fingerprints from canonical UTF-8 JSON. Sixteen-hex identifiers are display handles only.
+4. **Complete content addressing.** Rubrics, blueprints, and generation contracts retain full SHA-256 fingerprints from canonical UTF-8 JSON. Authoritative public `blueprint_handle` and `contract_handle` values use 32 hexadecimal characters (128 bits); legacy 16-hex identifiers remain non-authoritative convenience display labels only.
 5. **Provider neutrality.** The core package has no hosted-model SDK, network call, API key, or provider-specific response shape.
 6. **Bounded orchestration.** The Python layer performs schema validation, deterministic Cartesian compilation, canonical serialization, and cryptographic hashing only.
 7. **Modular boundaries.** Models, compilation, and generation contracts are separate modules so later provider, screening, item-bank, and service layers depend on stable interfaces.
@@ -53,7 +53,7 @@ All public identifiers use two-or-more-token lower `snake_case`. Scores are cont
 - canonical numeric `rubric_version`, such as `1.2.3`, for measurement governance;
 - `fingerprint`, the full SHA-256 digest of canonical normalized rubric content.
 
-`ItemBlueprint` copies the exact rubric version and fingerprint and exposes `blueprint_fingerprint`, a full SHA-256 digest over normalized blueprint content excluding display-derived identifiers. `to_dict()` includes both the short display id and full fingerprint.
+`ItemBlueprint` copies the exact rubric version and fingerprint and exposes `blueprint_fingerprint`, a full SHA-256 digest over normalized blueprint content excluding display-derived identifiers. Its serialized contract includes the legacy 64-bit `blueprint_id`, authoritative 128-bit `blueprint_handle`, and full `blueprint_fingerprint`; durable provenance and replay decisions use the handle and full digest rather than the convenience id.
 
 ### `fast_mlsirm.rubric.compiler`
 
@@ -65,7 +65,7 @@ task_families x difficulty_bands x evidence_modes x range(items_per_cell)
 
 The request is rejected before allocation when it exceeds `MAX_BLUEPRINTS = 10_000`. Ordering is stable: rubric task-family order, plan difficulty order, evidence-mode order, then replicate index.
 
-A deterministic seed identity includes the schema version, rubric governance version, rubric fingerprint, plan seed, task family, difficulty, evidence mode, and replicate. Its digest derives the provider seed. The full normalized blueprint then derives `blueprint_fingerprint`, and the readable id is `item_blueprint_<first 16 hex>`.
+A deterministic seed identity includes the schema version, rubric governance version, rubric fingerprint, plan seed, task family, difficulty, evidence mode, and replicate. Its digest derives the provider seed. The full normalized blueprint then derives `blueprint_fingerprint`; `blueprint_id` uses the first 16 hex characters for compatibility, while `blueprint_handle` uses the first 32 hex characters as the public audit handle.
 
 No timestamp, process-global random state, or provider response participates in identity.
 
@@ -85,10 +85,11 @@ It returns:
 
 - `contract_schema_version`;
 - operation metadata;
-- complete rubric and blueprint payloads;
+- complete rubric and blueprint payloads, including `blueprint_handle`;
 - non-negotiable authoring instructions;
 - a strict JSON Schema Draft 2020-12 output contract;
-- the readable `contract_id`; and
+- the non-authoritative 64-bit convenience `contract_id`;
+- the authoritative 128-bit public `contract_handle`; and
 - the full `contract_fingerprint`.
 
 The output contract is closed and bounded. It requires item identity, stem, stimulus, response format, options, answer key, scoring guide, rubric alignment, source attributions, and safety notes. Score-level arrays use ordered `prefixItems` so every declared score appears exactly once.
@@ -110,6 +111,7 @@ Answer keys are response-format-specific closed objects and always include an ex
 - Nested output objects set `additionalProperties` to `false`; generated text and collection fields are bounded.
 - No current time, process id, random state, network result, or provider identity enters a fingerprint.
 - A rubric-version change invalidates every downstream fingerprint and replay contract.
+- Legacy 64-bit ids are never accepted as authoritative provenance in place of 128-bit public handles and full SHA-256 fingerprints.
 
 ## Error handling
 
@@ -123,10 +125,10 @@ The test suite covers:
 - independent governance and schema versioning;
 - rejection of ambiguous semantic versions;
 - every identifier, text, integer, enum, sequence, ordering, uniqueness, and size guard;
-- deterministic blueprint count, order, full fingerprints, display ids, seeds, and serialization;
+- deterministic blueprint count, order, full fingerprints, 128-bit public handles, convenience display ids, seeds, and serialization;
 - budget rejection before materializing an oversized matrix;
 - every rubric/blueprint replay guard, including governance version;
-- deterministic full contract fingerprints and byte-identical canonical JSON;
+- deterministic full contract fingerprints, 128-bit contract handles, and byte-identical canonical JSON;
 - JSON Schema Draft 2020-12 declaration;
 - response-format-specific option cardinality and typed closed answer keys;
 - ordered score-level coverage via `prefixItems`;
