@@ -39,6 +39,66 @@ jobs:
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
+  rust-statistical:
+    # Every repository-owned ignored statistical study is executable evidence,
+    # not dead test code. Release optimization keeps the recovery suite bounded.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run all ignored Rust workspace studies
+        run: cargo test --release --workspace -- --ignored --test-threads=1 --nocapture
+      - name: Run all ignored PyO3-crate studies
+        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
+
+  gpu-software:
+    # Mesa Lavapipe supplies a deterministic Vulkan compute adapter on the
+    # hosted runner. The JUnit assertion makes a CPU fallback/pytest.skip fail.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      WGPU_BACKEND: vulkan
+      XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Install software Vulkan adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
+          test -n "$LVP_ICD"
+          echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
+      - name: Prove Vulkan compute adapter availability
+        run: vulkaninfo --summary
+      - run: python -m pip install --require-hashes -r requirements/ci.txt
+      - run: python -m pip install --no-deps --no-build-isolation -e .
+      - name: Run explicit GPU parity without a skip
+        run: pytest tests/test_marginal_parity.py::test_marginal_gpu_agrees_with_cpu_loosely -q --junitxml=gpu-junit.xml
+      - name: Reject skipped GPU evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          root = ElementTree.parse(Path("gpu-junit.xml")).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          if tests < 1:
+              raise SystemExit("GPU evidence did not execute a test")
+          if skipped != 0:
+              raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
+          PY
+      - name: Run Rust recovery through the explicit GPU device
+        run: cargo test --release -p mlsirm-core --test literature_true_parameter_recovery gpu_recovery_matches_cpu_on_paper_design -- --ignored --exact --nocapture
+
   fuzz:
     # Short, bounded coverage-guided fuzzing so PR cost stays low. The
     # property-based Hypothesis tests already run in the `python` job (via the
