@@ -109,6 +109,7 @@ def _options_schema(response_format: ResponseFormat) -> dict[str, Any]:
 def _answer_key_schema(rubric: RubricSpecification) -> dict[str, Any]:
     """Return a bounded typed answer-key contract for the response format."""
     rationale = _bounded_text_schema()
+    conditional_rules: list[dict[str, Any]] = []
     if rubric.response_format is ResponseFormat.CONSTRUCTED_RESPONSE:
         required = ["reference_response", "accepted_variants", "rationale"]
         properties = {
@@ -149,19 +150,55 @@ def _answer_key_schema(rubric: RubricSpecification) -> dict[str, Any]:
             "rationale": rationale,
         }
     else:
-        required = ["preferred_option_id", "rationale"]
+        required = ["outcome", "preferred_option_id", "rationale"]
         properties = {
-            "preferred_option_id": _bounded_text_schema(
-                maximum=_MAX_OPTION_ID_LENGTH
-            ),
+            "outcome": {
+                "type": "string",
+                "enum": ["left_option", "right_option", "tie"],
+            },
+            "preferred_option_id": {
+                "oneOf": [
+                    _bounded_text_schema(maximum=_MAX_OPTION_ID_LENGTH),
+                    {"type": "null"},
+                ]
+            },
             "rationale": rationale,
         }
-    return {
+        conditional_rules = [
+            {
+                "if": {
+                    "properties": {"outcome": {"const": "tie"}},
+                    "required": ["outcome"],
+                },
+                "then": {
+                    "properties": {"preferred_option_id": {"type": "null"}}
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "outcome": {"enum": ["left_option", "right_option"]}
+                    },
+                    "required": ["outcome"],
+                },
+                "then": {
+                    "properties": {
+                        "preferred_option_id": _bounded_text_schema(
+                            maximum=_MAX_OPTION_ID_LENGTH
+                        )
+                    }
+                },
+            },
+        ]
+    schema: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
         "required": required,
         "properties": properties,
     }
+    if conditional_rules:
+        schema["allOf"] = conditional_rules
+    return schema
 
 
 def _output_schema(
@@ -289,6 +326,7 @@ def build_generation_contract(
             "Return scoring_guide and rubric_alignment entries once each in ascending rubric-score order.",
             "Use a unique option_id for every declared option.",
             "For choice formats, answer_key option identifiers must reference declared options.",
+            "For pairwise comparisons, represent equivalence with outcome='tie' and a null preferred_option_id.",
             "Return only an object conforming to output_schema.",
         ],
         "output_schema": _output_schema(rubric, blueprint),
