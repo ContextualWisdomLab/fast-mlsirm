@@ -6,11 +6,11 @@
 
 **Architecture:** A new `mlsirm_core::bifactor_indices` module accepts a standardized item-by-factor loading matrix, item uniquenesses, an explicit general-factor index, and a structural-zero tolerance. It computes ECV variants, item ECV, PUC when the loading pattern is a strict bifactor pattern, omega total, omega hierarchical, and construct replicability H. A separate explicitly named entry point converts logistic IRT slopes to a continuous latent-response loading solution. Integration tests pin the formulas to the published CRAN calculator example; documentation separates score interpretability from model selection and continuous latent-response omega from categorical observed-score reliability.
 
-**Tech Stack:** Rust 2021, existing `mlsirm-core` crate, Cargo integration tests, repository documentation and CI.
+**Tech Stack:** Rust 2021, existing `mlsirm-core` crate, Cargo integration tests, PyO3 package binding, repository documentation, and CI.
 
 ## Global Constraints
 
-- All numerical computation must execute in Rust; no Python numerical fallback is introduced.
+- All scoreability arithmetic executes in the Rust kernel. This bounded post-fit diagnostic is not part of the `{numpy, rust, auto}` estimation-backend axis documented for objective, gradient, and distance kernels, and it exposes no backend selector. The Python layer performs bounded validation, extension loading, and immutable result marshalling only; a second formula implementation is not added without a separate parity-reviewed architecture change.
 - Every public item and non-obvious formula must have complete Rust documentation with APA 7th references.
 - Production line and branch coverage remain 100% under the repository coverage contract.
 - The primary API requires standardized orthogonal-factor loadings and explicit uniquenesses; it never silently converts raw IRT slopes.
@@ -105,6 +105,7 @@ git commit -m "feat: add Rust bifactor scoreability indices"
 **Files:**
 - Create: `docs/bifactor_scoreability_indices.md`
 - Modify: `docs/papers/implemented-literature-map.md`
+- Create: `docs/papers/bifactor-scoreability-primary-source-verification.md`
 - Create: `docs/changelog.d/401-bifactor-scoreability.md`
 
 **Interfaces:**
@@ -117,7 +118,7 @@ Explain each index, the strict-pattern requirement for PUC, the distinction betw
 
 - [ ] **Step 2: Record source status in APA 7th form**
 
-Mark the CRAN `BifactorIndicesCalculator` source files as read implementation oracles and Rodriguez, Reise, and Haviland (2016) as the cited methodological origin; avoid claiming the article was read in full.
+Record the complete CRAN `BifactorIndicesCalculator` source files as implementation oracles. Record exactly that the complete author-posted Rodriguez, Reise, and Haviland (2016a) text and its publisher correction were reviewed, while Rodriguez, Reise, and Haviland (2016b) was verified only through its bibliographic record and abstract. Do not imply that the 2016b full text was reviewed.
 
 - [ ] **Step 3: Update literature map and changelog fragment**
 
@@ -127,6 +128,7 @@ Add the Rust module and test paths to the implemented-literature map and create 
 
 ```bash
 git add docs/bifactor_scoreability_indices.md \
+  docs/papers/bifactor-scoreability-primary-source-verification.md \
   docs/papers/implemented-literature-map.md \
   docs/changelog.d/401-bifactor-scoreability.md
 git commit -m "docs: document bifactor scoreability diagnostics"
@@ -141,13 +143,14 @@ git commit -m "docs: document bifactor scoreability diagnostics"
 - Consumes: completed implementation and documentation.
 - Produces: reviewed pull request with reproducible evidence.
 
-- [ ] **Step 1: Run Rust verification**
+- [ ] **Step 1: Run Rust and package verification**
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
-cargo llvm-cov --workspace --all-features --fail-under-lines 100
+cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
+pytest
 ```
 
 - [ ] **Step 2: Review the diff for formula and citation drift**
