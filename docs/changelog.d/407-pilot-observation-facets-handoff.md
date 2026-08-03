@@ -14,9 +14,6 @@
   Rust-backed `fit_facets` API.
 - Content-addressed preservation of the exact response-state tensor alongside
   the numeric `NaN` representation used for many-facet estimation.
-
-## Boundary
-
 - This handoff performs no psychometric arithmetic and makes no adequacy,
   connectedness, fairness, scoreability, calibration, or validity claim.
   MIRT, bifactor, testlet, DIF, and G-theory handoffs remain follow-up slices
