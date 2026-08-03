@@ -1,0 +1,98 @@
+name: Statistical Studies
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Stagger from the top of the hour to reduce hosted-runner congestion.
+    - cron: "17 2 * * *"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: statistical-studies-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rust-ignored:
+    name: Ignored Rust studies shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run exact ignored Rust shard
+        run: >-
+          python scripts/run_ignored_rust_shard.py
+          --shard ${{ matrix.shard }}
+          --shards 12
+          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
+          --skip gpu_recovery_matches_cpu_on_paper_design
+          --skip higher_order_dina_recovery_respects_monte_carlo_tolerance
+
+  rust-pyo3-ignored:
+    name: Ignored PyO3 studies
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
+
+  rust-recovery:
+    name: Literature CPU recovery studies
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run Kang-Jeon paper-design recovery
+        run: >-
+          cargo test --release -p mlsirm-core
+          --test literature_true_parameter_recovery
+          kang_jeon_2025_minimum_cell_recovers_true_parameters
+          -- --ignored --exact --nocapture
+      - name: Run higher-order DINA Monte Carlo recovery
+        run: >-
+          cargo test --release -p mlsirm-core
+          --test higher_order_mc_recovery
+          higher_order_dina_recovery_respects_monte_carlo_tolerance
+          -- --ignored --exact --nocapture
+
+  gpu-recovery:
+    name: Literature GPU recovery parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      WGPU_BACKEND: vulkan
+      XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Install software Vulkan adapter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          LVP_ICD="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name '*lvp*.json' -print -quit)"
+          test -n "$LVP_ICD"
+          echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
+      - run: vulkaninfo --summary
+      - name: Run paper-design GPU recovery parity
+        run: >-
+          cargo test --release -p mlsirm-core
+          --test literature_true_parameter_recovery
+          gpu_recovery_matches_cpu_on_paper_design
+          -- --ignored --exact --nocapture
