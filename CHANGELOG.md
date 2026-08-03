@@ -20,6 +20,12 @@
   disabled, per WCAG 2.2 success criteria 1.3.1, 1.4.13, 2.1.1, and 4.1.2
   (issue #409). Chart markup and the summarized 12-row tables are unchanged.
 
+#### Currency-explicit enterprise due-diligence gate
+
+- Added a deterministic `enterprise_due_diligence_gate` manifest utility that separates the amount-neutral software evidence gate from a currency-explicit procurement scenario and always records `valuation_claim: false`.
+- Added a bounded deprecation bridge for legacy `20b` gate aliases and `--require-20b-product`, with canonical output and explicit warnings.
+- Documented the distinction among enterprise evidence, the KRW 2,000,000,000 procurement scenario, and the aspirational USD 20,000,000,000 enterprise-value thesis.
+
 #### Manual release-tag workflow
 
 - A fail-closed `workflow_dispatch` release workflow (`release-tag.yml`) that
