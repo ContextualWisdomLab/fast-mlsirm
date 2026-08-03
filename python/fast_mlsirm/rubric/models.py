@@ -22,6 +22,9 @@ MAX_U64 = (1 << 64) - 1
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 _LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_SEMANTIC_VERSION_PATTERN = re.compile(
+    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
+)
 
 EnumValue = TypeVar("EnumValue", bound=Enum)
 
@@ -187,6 +190,14 @@ def _schema_version(value: Any) -> str:
     return normalized
 
 
+def _semantic_version(value: Any, name: str = "rubric_version") -> str:
+    """Normalize a canonical numeric semantic version without ambiguous zeros."""
+    normalized = _text(value, name, maximum=64)
+    if _SEMANTIC_VERSION_PATTERN.fullmatch(normalized) is None:
+        raise ValueError(f"{name} must be a canonical semantic version (major.minor.patch)")
+    return normalized
+
+
 def _canonical_json(payload: Any) -> str:
     """Serialize JSON-compatible content with a stable UTF-8 representation."""
     return json.dumps(
@@ -252,6 +263,7 @@ class RubricSpecification:
     evidence_requirements: tuple[str, ...]
     prohibited_patterns: tuple[str, ...] = ()
     locale: str = "en"
+    rubric_version: str = "1.0.0"
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -319,6 +331,11 @@ class RubricSpecification:
         object.__setattr__(self, "locale", locale)
         object.__setattr__(
             self,
+            "rubric_version",
+            _semantic_version(self.rubric_version),
+        )
+        object.__setattr__(
+            self,
             "schema_version",
             _schema_version(self.schema_version),
         )
@@ -332,6 +349,7 @@ class RubricSpecification:
         """Return a JSON-compatible rubric representation without derived ids."""
         return {
             "schema_version": self.schema_version,
+            "rubric_version": self.rubric_version,
             "rubric_id": self.rubric_id,
             "construct_id": self.construct_id,
             "construct_definition": self.construct_definition,
@@ -394,6 +412,7 @@ class ItemBlueprint:
     scoring_levels: tuple[int, ...]
     evidence_requirements: tuple[str, ...]
     prohibited_patterns: tuple[str, ...] = ()
+    rubric_version: str = "1.0.0"
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -484,15 +503,20 @@ class ItemBlueprint:
         )
         object.__setattr__(
             self,
+            "rubric_version",
+            _semantic_version(self.rubric_version),
+        )
+        object.__setattr__(
+            self,
             "schema_version",
             _schema_version(self.schema_version),
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-compatible compiled blueprint representation."""
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        """Return stable blueprint content excluding display and derived ids."""
         return {
             "schema_version": self.schema_version,
-            "blueprint_id": self.blueprint_id,
+            "rubric_version": self.rubric_version,
             "rubric_id": self.rubric_id,
             "rubric_fingerprint": self.rubric_fingerprint,
             "task_family": self.task_family,
@@ -504,4 +528,17 @@ class ItemBlueprint:
             "scoring_levels": list(self.scoring_levels),
             "evidence_requirements": list(self.evidence_requirements),
             "prohibited_patterns": list(self.prohibited_patterns),
+        }
+
+    @property
+    def blueprint_fingerprint(self) -> str:
+        """Return the full SHA-256 identity of the normalized blueprint content."""
+        return _sha256_hex(self._fingerprint_payload())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-compatible compiled blueprint representation."""
+        return {
+            **self._fingerprint_payload(),
+            "blueprint_id": self.blueprint_id,
+            "blueprint_fingerprint": self.blueprint_fingerprint,
         }
