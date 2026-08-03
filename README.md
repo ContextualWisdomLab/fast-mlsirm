@@ -86,6 +86,9 @@ print(fixed_item_calibration.best)
 - aFIPC-style fixed-item calibration diagnostics that select candidate
   probability tensors using fixed evaluation-item likelihood and kaefa-style
   item-fit penalty.
+- Rubric-centered schemas, deterministic bounded item-blueprint compilation,
+  and canonical provider-neutral generation contracts. See
+  [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
