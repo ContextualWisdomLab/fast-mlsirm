@@ -45,6 +45,8 @@ from .models import RubricLevel as RubricLevel
 from .models import RubricSpecification as RubricSpecification
 from .pilot_observations import MAX_PILOT_OBSERVATIONS as MAX_PILOT_OBSERVATIONS
 from .pilot_observations import FacetsPilotDesign as FacetsPilotDesign
+from .pilot_observations import MirtPilotDesign as MirtPilotDesign
+from .pilot_observations import build_mirt_pilot_design as build_mirt_pilot_design
 from .pilot_observations import PilotItemProvenance as PilotItemProvenance
 from .pilot_observations import PilotObservationError as PilotObservationError
 from .pilot_observations import PilotObservationRecord as PilotObservationRecord

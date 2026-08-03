@@ -28,8 +28,12 @@ MAX_PILOT_OBSERVATIONS = 100_000
 # sparse records, so untrusted identifiers cannot amplify a bounded input into
 # an unbounded dense allocation.
 MAX_FACETS_PILOT_CELLS = 1_000_000
+# The MIRT handoff materializes a dense persons-by-items matrix; bound the full
+# cross-product for the same amplification reason as the facets design.
+MAX_MIRT_PILOT_CELLS = 1_000_000
 _OBSERVATION_TOKEN = object()
 _DESIGN_TOKEN = object()
+_MIRT_DESIGN_TOKEN = object()
 
 
 class PilotResponseState(str, Enum):
@@ -364,6 +368,107 @@ def _normalized_n_cat(
     return normalized
 
 
+@dataclass(frozen=True)
+class MirtPilotDesign:
+    """Deterministic persons-by-items binary handoff for ``fast_mlsirm.fit``.
+
+    Items are assigned to trait dimensions by their ``query_testlet_id`` in
+    sorted testlet order, matching this repository's simple-structure model
+    specialization: every item generated for one query testlet loads on that
+    testlet's dimension. The mapping is fully disclosed through
+    ``factor_testlet_ids`` and ``item_factor_ids`` and is part of the
+    content-addressed design identity, so a buyer can audit exactly which
+    dimension each pilot item was calibrated on.
+    """
+
+    pilot_study_id: str
+    respondent_ids: tuple[str, ...]
+    item_provenance: tuple[PilotItemProvenance, ...]
+    factor_testlet_ids: tuple[str, ...]
+    item_factor_ids: tuple[int, ...]
+    responses: tuple[tuple[int | None, ...], ...]
+    response_states: tuple[tuple[PilotResponseState, ...], ...]
+    rater_assignments: tuple[tuple[str | None, ...], ...]
+    schema_version: str = SCHEMA_VERSION
+    _design_token: InitVar[object | None] = None
+
+    def __post_init__(self, _design_token: object | None) -> None:
+        """Reject direct construction outside the validated batch assembler."""
+        if _design_token is not _MIRT_DESIGN_TOKEN:
+            raise ValueError(
+                "MirtPilotDesign must be created by build_mirt_pilot_design"
+            )
+        object.__setattr__(
+            self,
+            "pilot_study_id",
+            _identifier(self.pilot_study_id, "pilot_study_id"),
+        )
+        object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
+
+    @property
+    def item_ids(self) -> tuple[str, ...]:
+        """Return item identifiers in response-matrix column order."""
+        return tuple(entry.item_id for entry in self.item_provenance)
+
+    def _content_dict(self) -> dict[str, Any]:
+        """Return canonical design content without derived identities."""
+        return {
+            "schema_version": self.schema_version,
+            "pilot_study_id": self.pilot_study_id,
+            "respondent_ids": list(self.respondent_ids),
+            "item_provenance": [entry.to_dict() for entry in self.item_provenance],
+            "factor_testlet_ids": list(self.factor_testlet_ids),
+            "item_factor_ids": list(self.item_factor_ids),
+            "responses": [list(item_values) for item_values in self.responses],
+            "response_states": [
+                [state.value for state in item_states]
+                for item_states in self.response_states
+            ],
+            "rater_assignments": [
+                list(item_raters) for item_raters in self.rater_assignments
+            ],
+        }
+
+    @property
+    def design_fingerprint(self) -> str:
+        """Return SHA-256 over the complete ordered calibration design."""
+        return _sha256_hex(self._content_dict())
+
+    @property
+    def design_id(self) -> str:
+        """Return a descriptive 128-bit public design handle."""
+        return f"mirt_pilot_design_{self.design_fingerprint[:32]}"
+
+    def responses_array(self) -> np.ndarray:
+        """Return a fresh float matrix with non-observed states represented by NaN."""
+        return np.asarray(
+            [
+                [np.nan if value is None else value for value in item_values]
+                for item_values in self.responses
+            ],
+            dtype=np.float64,
+        )
+
+    def factor_id_array(self) -> np.ndarray:
+        """Return a fresh per-item trait-dimension assignment vector."""
+        return np.asarray(self.item_factor_ids, dtype=np.int64)
+
+    def to_fit_kwargs(self) -> dict[str, Any]:
+        """Return copied arguments accepted directly by ``fast_mlsirm.fit``."""
+        return {
+            "responses": self.responses_array(),
+            "factor_id": self.factor_id_array(),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return canonical design content and deterministic identities."""
+        return {
+            **self._content_dict(),
+            "design_id": self.design_id,
+            "design_fingerprint": self.design_fingerprint,
+        }
+
+
 def build_facets_pilot_design(
     records: Iterable[PilotObservationRecord],
     *,
@@ -499,4 +604,145 @@ def build_facets_pilot_design(
             for item_states in states
         ),
         _design_token=_DESIGN_TOKEN,
+    )
+
+
+def build_mirt_pilot_design(
+    records: Iterable[PilotObservationRecord],
+) -> MirtPilotDesign:
+    """Assemble bounded pilot records into a deterministic binary MIRT matrix.
+
+    Absent cells and explicit ``missing`` records become ``NaN`` for
+    ``fast_mlsirm.fit``; ``not_applicable`` and ``insufficient_evidence`` also
+    remain ``NaN`` numerically while their exact states and per-cell rater
+    assignments are retained in the content-addressed design artifact. Each
+    respondent-item pair may carry at most one response regardless of rater,
+    and observed categories must already be binary; multi-rater or polytomous
+    pilot data belongs to ``build_facets_pilot_design`` instead of being
+    silently aggregated or dichotomized here. The full dense persons-by-items
+    matrix is bounded before allocation.
+    """
+    materialized = _bounded_values(
+        records,
+        "records",
+        minimum=1,
+        maximum=MAX_PILOT_OBSERVATIONS,
+    )
+    for index, record in enumerate(materialized):
+        if not isinstance(record, PilotObservationRecord):
+            raise TypeError(f"records[{index}] must be a PilotObservationRecord")
+
+    pilot_study_id = materialized[0].pilot_study_id
+    item_metadata: dict[str, PilotItemProvenance] = {}
+    cells: dict[tuple[str, str], PilotObservationRecord] = {}
+    observed_respondent_ids: set[str] = set()
+    observed_item_ids: set[str] = set()
+    for index, record in enumerate(materialized):
+        if record.pilot_study_id != pilot_study_id:
+            raise _error(
+                "mixed_pilot_study",
+                f"$.records[{index}].pilot_study_id",
+                "all observations must belong to one pilot study",
+            )
+        provenance = _item_provenance(record)
+        previous = item_metadata.get(record.item_id)
+        if previous is not None and previous != provenance:
+            raise _error(
+                "item_provenance_conflict",
+                f"$.records[{index}].item_id",
+                "one item identifier is bound to conflicting pilot provenance",
+            )
+        item_metadata[record.item_id] = provenance
+        cell = (record.respondent_id, record.item_id)
+        if cell in cells:
+            raise _error(
+                "duplicate_person_item_cell",
+                f"$.records[{index}]",
+                "each respondent-item pair may carry one response; "
+                "multi-rater designs require build_facets_pilot_design",
+            )
+        cells[cell] = record
+        if record.response_state is PilotResponseState.OBSERVED:
+            if record.category not in (0, 1):
+                raise _error(
+                    "non_binary_observed_category",
+                    f"$.records[{index}].category",
+                    "MIRT calibration accepts binary categories 0 and 1; "
+                    "polytomous designs require build_facets_pilot_design",
+                )
+            observed_respondent_ids.add(record.respondent_id)
+            observed_item_ids.add(record.item_id)
+
+    if not observed_respondent_ids:
+        raise _error(
+            "no_observed_response",
+            "$.records",
+            "at least one observed response is required",
+        )
+    respondent_ids = tuple(sorted({record.respondent_id for record in materialized}))
+    item_ids = tuple(sorted(item_metadata))
+    for respondent_id in respondent_ids:
+        if respondent_id not in observed_respondent_ids:
+            raise _error(
+                "unobserved_respondent",
+                "$.records",
+                "every respondent must have at least one observed response",
+            )
+    for item_id in item_ids:
+        if item_id not in observed_item_ids:
+            raise _error(
+                "unobserved_item",
+                "$.records",
+                "every item must have at least one observed response",
+            )
+
+    dense_cell_count = len(respondent_ids) * len(item_ids)
+    if dense_cell_count > MAX_MIRT_PILOT_CELLS:
+        raise _error(
+            "mirt_design_cell_budget_exceeded",
+            "$.records",
+            f"dense MIRT design requires {dense_cell_count} cells; "
+            f"maximum is {MAX_MIRT_PILOT_CELLS}",
+        )
+
+    factor_testlet_ids = tuple(
+        sorted({entry.query_testlet_id for entry in item_metadata.values()})
+    )
+    testlet_factor_index = {
+        value: index for index, value in enumerate(factor_testlet_ids)
+    }
+    item_factor_ids = tuple(
+        testlet_factor_index[item_metadata[item_id].query_testlet_id]
+        for item_id in item_ids
+    )
+
+    respondent_index = {value: index for index, value in enumerate(respondent_ids)}
+    item_index = {value: index for index, value in enumerate(item_ids)}
+    responses: list[list[int | None]] = [
+        [None for _item in item_ids] for _respondent in respondent_ids
+    ]
+    states: list[list[PilotResponseState]] = [
+        [PilotResponseState.MISSING for _item in item_ids]
+        for _respondent in respondent_ids
+    ]
+    raters: list[list[str | None]] = [
+        [None for _item in item_ids] for _respondent in respondent_ids
+    ]
+    for record in materialized:
+        person_position = respondent_index[record.respondent_id]
+        item_position = item_index[record.item_id]
+        states[person_position][item_position] = record.response_state
+        responses[person_position][item_position] = record.category
+        raters[person_position][item_position] = record.rater_id
+
+    return MirtPilotDesign(
+        pilot_study_id=pilot_study_id,
+        respondent_ids=respondent_ids,
+        item_provenance=tuple(item_metadata[item_id] for item_id in item_ids),
+        factor_testlet_ids=factor_testlet_ids,
+        item_factor_ids=item_factor_ids,
+        responses=tuple(tuple(item_values) for item_values in responses),
+        response_states=tuple(tuple(item_states) for item_states in states),
+        rater_assignments=tuple(tuple(item_raters) for item_raters in raters),
+        _design_token=_MIRT_DESIGN_TOKEN,
     )
