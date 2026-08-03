@@ -22,9 +22,8 @@
 //!
 //! Let `Lambda` be an item-by-factor standardized loading matrix, `Theta` the
 //! vector of item uniquenesses, and `g` the explicitly supplied general-factor
-//! column. Structural membership is `|lambda_if| > zero_tolerance`; numerical
-//! sums retain the original loading values, including values below that
-//! structural tolerance.
+//! column. Structural membership is `|lambda_if| > zero_tolerance`; active
+//! loadings retain their original numerical values rather than being rounded.
 //!
 //! For factor `f`, with membership indicator `I_if`:
 //!
@@ -111,7 +110,7 @@ pub struct BifactorIndicesResult {
 /// finite standardized loadings with absolute value below one. `uniquenesses`
 /// contains one finite non-negative item residual variance per row. The factors
 /// are assumed orthogonal; callers with logistic IRT slopes should use
-/// [`bifactor_indices_from_logit_slopes`].
+/// [`bifactor_latent_response_indices_from_logit_slopes`].
 ///
 /// This function deliberately returns descriptive indices, not a pass/fail
 /// verdict. Model selection should use likelihood, predictive, recovery, and
@@ -246,7 +245,8 @@ pub fn bifactor_indices(
     })
 }
 
-/// Standardize orthogonal logistic-IRT slopes and compute bifactor indices.
+/// Convert orthogonal logistic-IRT slopes to latent-response loadings and
+/// compute bifactor indices.
 ///
 /// For item `i`, raw slope vector `a_i`, and unit-variance orthogonal factors,
 /// the latent-response representation has logistic residual variance
@@ -259,10 +259,17 @@ pub fn bifactor_indices(
 /// `psi_i = (pi^2/3) / (sum_h a_ih^2 + pi^2/3)`.
 ///
 /// The implementation performs the normalization in row-scaled coordinates to
-/// avoid overflow for large finite slopes. It is the direct entry point for the
-/// fitted `BIFAC2PLM` slope matrix; it must not be used for probit or other
-/// response links with a different residual-variance convention.
-pub fn bifactor_indices_from_logit_slopes(
+/// avoid overflow for large finite slopes. It is the direct entry point for a
+/// fitted logistic `BIFAC2PLM` slope matrix; it must not be used for probit or
+/// other response links with a different residual-variance convention.
+///
+/// The returned omega values are reliability coefficients for the standardized
+/// *continuous latent-response representation*. They are not Green-Yang
+/// categorical omega coefficients for an observed binary or ordinal sum score,
+/// because category thresholds and observed-score covariance are not inputs to
+/// this function. ECV, item ECV, PUC, and `H` likewise describe the transformed
+/// loading solution rather than validating an operational score by themselves.
+pub fn bifactor_latent_response_indices_from_logit_slopes(
     logit_slopes: &[f64],
     config: BifactorIndicesConfig,
 ) -> Result<BifactorIndicesResult, String> {
