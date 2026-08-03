@@ -32,11 +32,6 @@ def _require_compatible(
         raise ValueError("blueprint rubric_fingerprint does not match rubric")
     if blueprint.task_family not in rubric.task_families:
         raise ValueError("blueprint task_family is not declared by rubric")
-    expected_blueprint_id = (
-        f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
-    )
-    if blueprint.blueprint_id != expected_blueprint_id:
-        raise ValueError("blueprint_id must match blueprint_fingerprint")
     if rubric.response_format is not blueprint.response_format:
         raise ValueError("blueprint response_format does not match rubric")
     if tuple(level.score for level in rubric.levels) != blueprint.scoring_levels:
@@ -45,6 +40,9 @@ def _require_compatible(
         raise ValueError("blueprint evidence_requirements do not match rubric")
     if rubric.prohibited_patterns != blueprint.prohibited_patterns:
         raise ValueError("blueprint prohibited_patterns do not match rubric")
+    expected_blueprint_id = f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+    if blueprint.blueprint_id != expected_blueprint_id:
+        raise ValueError("blueprint_id must match blueprint_fingerprint")
 
 
 def _bounded_text_schema(*, maximum: int = MAX_TEXT_LENGTH) -> dict[str, Any]:
