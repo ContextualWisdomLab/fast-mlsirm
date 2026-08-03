@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pytest
 
-import fast_mlsirm.bifactor_scoreability as scoreability_module
+scoreability_module = importlib.import_module("fast_mlsirm.bifactor_scoreability")
 
 
 def _compiled_mapping() -> dict[str, object]:
