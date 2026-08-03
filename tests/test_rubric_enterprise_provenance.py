@@ -81,27 +81,32 @@ def test_rubric_revision_requires_canonical_semantic_version(version):
         )
 
 
-def test_blueprint_exposes_full_sha256_fingerprint_and_128_bit_public_id():
-    """A public handle has 128-bit entropy and never replaces the full audit identity."""
+def test_blueprint_exposes_full_sha256_and_migration_safe_128_bit_handle():
+    """Legacy display ids coexist with a stronger public audit handle and full digest."""
+    rubric = _rubric()
     blueprint = _blueprint()
+    contract = build_generation_contract(rubric, blueprint)
     assert re.fullmatch(r"[0-9a-f]{64}", blueprint.blueprint_fingerprint)
     assert blueprint.to_dict()["blueprint_fingerprint"] == (
         blueprint.blueprint_fingerprint
     )
     assert blueprint.blueprint_id == (
+        f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+    )
+    assert contract["blueprint"]["blueprint_handle"] == (
         f"item_blueprint_{blueprint.blueprint_fingerprint[:32]}"
     )
 
 
-def test_generation_contract_exposes_full_sha256_fingerprint():
-    """Generation provenance remains collision-resistant at the contract layer."""
+def test_generation_contract_exposes_full_sha256_and_128_bit_handle():
+    """Generation provenance remains collision-resistant without breaking display ids."""
     rubric = _rubric()
     blueprint = compile_item_blueprints(rubric)[0]
     contract = build_generation_contract(rubric, blueprint)
-    assert re.fullmatch(r"[0-9a-f]{64}", contract["contract_fingerprint"])
-    assert contract["contract_id"] == (
-        f"generation_contract_{contract['contract_fingerprint'][:32]}"
-    )
+    fingerprint = contract["contract_fingerprint"]
+    assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+    assert contract["contract_id"] == f"generation_contract_{fingerprint[:16]}"
+    assert contract["contract_handle"] == f"generation_contract_{fingerprint[:32]}"
     assert contract["blueprint"]["blueprint_fingerprint"] == (
         blueprint.blueprint_fingerprint
     )
@@ -119,16 +124,17 @@ def test_structured_output_echoes_immutable_rubric_and_blueprint_provenance():
     """Wrong-blueprint replay fails structural validation before semantic checks."""
     rubric = _rubric()
     blueprint = compile_item_blueprints(rubric)[0]
-    schema = build_generation_contract(rubric, blueprint)["output_schema"]
-    required = set(schema["required"])
+    contract = build_generation_contract(rubric, blueprint)
+    schema = contract["output_schema"]
     provenance = {
         "blueprint_id": blueprint.blueprint_id,
+        "blueprint_handle": contract["blueprint"]["blueprint_handle"],
         "blueprint_fingerprint": blueprint.blueprint_fingerprint,
         "rubric_id": rubric.rubric_id,
         "rubric_version": rubric.rubric_version,
         "rubric_fingerprint": rubric.fingerprint,
     }
-    assert provenance.keys() <= required
+    assert schema["allOf"] == [{"required": list(provenance)}]
     for field, expected in provenance.items():
         assert schema["properties"][field] == {"const": expected}
 
@@ -165,7 +171,12 @@ def test_structured_output_echoes_immutable_rubric_and_blueprint_provenance():
         (
             ResponseFormat.PAIRWISE_COMPARISON,
             "preferred_option_id",
-            {"type": "string", "minLength": 1, "maxLength": 128},
+            {
+                "oneOf": [
+                    {"type": "string", "minLength": 1, "maxLength": 128},
+                    {"type": "null"},
+                ]
+            },
         ),
     ],
 )
