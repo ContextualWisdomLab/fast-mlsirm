@@ -26,6 +26,8 @@ def _require_compatible(
     """Reject reuse of a blueprint under any changed rubric contract."""
     if rubric.rubric_id != blueprint.rubric_id:
         raise ValueError("blueprint rubric_id does not match rubric")
+    if rubric.rubric_version != blueprint.rubric_version:
+        raise ValueError("blueprint rubric_version does not match rubric")
     if rubric.fingerprint != blueprint.rubric_fingerprint:
         raise ValueError("blueprint rubric_fingerprint does not match rubric")
     if rubric.response_format is not blueprint.response_format:
@@ -275,8 +277,13 @@ def build_generation_contract(
         ],
         "output_schema": _output_schema(rubric),
     }
-    contract_id = f"generation_contract_{_sha256_hex(body)[:16]}"
-    return {"contract_id": contract_id, **body}
+    contract_fingerprint = _sha256_hex(body)
+    contract_id = f"generation_contract_{contract_fingerprint[:16]}"
+    return {
+        "contract_id": contract_id,
+        "contract_fingerprint": contract_fingerprint,
+        **body,
+    }
 
 
 def canonical_generation_contract(
