@@ -10,7 +10,7 @@ documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/RE
 
 [lib]
 name = "mlsirm_core"
-path = "src/lib.rs"
+path = "src/entrypoint.rs"
 
 [dependencies]
 bytemuck = { version = "1.25.0", features = ["derive"], optional = true }
