@@ -1,4 +1,4 @@
-"""Public Python immutability and pre-allocation budget contracts."""
+"""Extension-independent mapping and pre-allocation boundary contracts."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ def _compiled_mapping() -> dict[str, object]:
     }
 
 
-def test_result_vectors_cannot_reenable_writes() -> None:
-    """Frozen result vectors remain immutable even through NumPy setflags."""
+def test_mapping_result_vectors_cannot_reenable_writes() -> None:
+    """The extension-independent mapping adapter creates immutable buffers."""
     result = scoreability_module._result_from_mapping(_compiled_mapping())
 
     for vector in (
@@ -45,6 +45,15 @@ def test_result_vectors_cannot_reenable_writes() -> None:
             vector.setflags(write=True)
 
 
+def test_mapping_result_reports_compiled_field_contract_mismatch() -> None:
+    """A stale compiled module fails with a diagnostic instead of ``KeyError``."""
+    raw = _compiled_mapping()
+    del raw["omega_hierarchical"]
+
+    with pytest.raises(RuntimeError, match="omega_hierarchical"):
+        scoreability_module._result_from_mapping(raw)
+
+
 class _ExplodingFloat:
     """Sentinel proving dtype conversion did not occur before shape rejection."""
 
@@ -53,8 +62,18 @@ class _ExplodingFloat:
         raise AssertionError("oversized matrix was converted before budget validation")
 
 
+class _ExplodingArrayLike:
+    """Array-like proving advertised uniqueness shape is checked before conversion."""
+
+    shape = (3,)
+
+    def __array__(self, dtype: object = None) -> np.ndarray:
+        """Fail if NumPy conversion occurs before the shape mismatch is rejected."""
+        raise AssertionError("uniquenesses were converted before shape validation")
+
+
 def test_oversized_ndarray_shape_is_rejected_before_dtype_conversion() -> None:
-    """Existing ndarray dimensions are bounded before any allocating cast."""
+    """The extension-independent matrix adapter bounds work before casting."""
     oversized = np.empty(
         (2, scoreability_module.MAX_BIFACTOR_FACTORS + 1),
         dtype=object,
@@ -63,3 +82,9 @@ def test_oversized_ndarray_shape_is_rejected_before_dtype_conversion() -> None:
 
     with pytest.raises(ValueError, match="factors"):
         scoreability_module._matrix(oversized, "loadings")
+
+
+def test_uniqueness_shape_is_rejected_before_dtype_conversion() -> None:
+    """Advertised vector length is checked before an allocating dtype cast."""
+    with pytest.raises(ValueError, match="loading row count"):
+        scoreability_module._uniqueness_vector(_ExplodingArrayLike(), 2)
