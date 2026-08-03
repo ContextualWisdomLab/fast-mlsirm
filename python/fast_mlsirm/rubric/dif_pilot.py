@@ -247,17 +247,17 @@ def build_dif_pilot_design(
 
     expected = set(binary_design.respondent_ids)
     supplied = set(normalized_mapping)
-    if expected - supplied:
-        raise _error(
-            "dif_missing_group_assignment",
-            "$.respondent_groups",
-            "every respondent must have one explicit reference or focal assignment",
-        )
     if supplied - expected:
         raise _error(
             "dif_unknown_respondent_assignment",
             "$.respondent_groups",
             "group assignments may reference only respondents in the pilot design",
+        )
+    if expected - supplied:
+        raise _error(
+            "dif_missing_group_assignment",
+            "$.respondent_groups",
+            "every respondent must have one explicit reference or focal assignment",
         )
 
     allowed_groups = {reference, focal}

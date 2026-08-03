@@ -203,10 +203,17 @@ def test_group_assignment_contract_rejects_missing_unknown_and_undeclared_values
         _design(records, missing)
     assert missing_error.value.code == "dif_missing_group_assignment"
 
-    unknown = {**_groups(), "respondent_unknown": "focal_group_alpha"}
+    surplus = {**_groups(), "respondent_unknown": "focal_group_alpha"}
+    with pytest.raises(PilotObservationError) as surplus_error:
+        _design(records, surplus)
+    assert surplus_error.value.code == "dif_group_assignment_count_exceeded"
+
+    unknown = _groups()
+    unknown.pop("respondent_delta")
+    unknown["respondent_unknown"] = "focal_group_alpha"
     with pytest.raises(PilotObservationError) as unknown_error:
         _design(records, unknown)
-    assert unknown_error.value.code == "dif_group_assignment_count_exceeded"
+    assert unknown_error.value.code == "dif_unknown_respondent_assignment"
 
     undeclared = {**_groups(), "respondent_delta": "comparison_group_beta"}
     with pytest.raises(PilotObservationError) as undeclared_error:
