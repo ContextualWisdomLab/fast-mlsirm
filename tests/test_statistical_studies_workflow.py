@@ -43,15 +43,36 @@ def test_statistical_studies_are_read_only_and_never_rewrite_source():
     assert "--exact" in text
 
 
-def test_dedicated_study_exclusions_are_exact_and_executed_elsewhere():
-    """Every shard exclusion is an exact name with a matching dedicated command."""
+def test_general_shards_exclude_the_separately_governed_pyo3_package():
+    """PyO3 ignored tests execute in one dedicated job rather than twice."""
     text = _STUDIES.read_text(encoding="utf-8")
-    dedicated = (
+    assert "--exclude-package fast-mlsirm-py" in text
+    assert text.count("fast-mlsirm-py") == 2
+    assert (
+        "cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml"
+        in text
+    )
+
+
+def test_dedicated_study_exclusions_are_target_qualified_and_executed_elsewhere():
+    """Every shard exclusion identifies one package, target, and test function."""
+    text = _STUDIES.read_text(encoding="utf-8")
+    identifiers = (
+        "mlsirm-core/test/literature_true_parameter_recovery::"
+        "kang_jeon_2025_minimum_cell_recovers_true_parameters",
+        "mlsirm-core/test/literature_true_parameter_recovery::"
+        "gpu_recovery_matches_cpu_on_paper_design",
+        "mlsirm-core/test/higher_order_mc_recovery::"
+        "higher_order_dina_recovery_respects_monte_carlo_tolerance",
+    )
+    raw_names = (
         "kang_jeon_2025_minimum_cell_recovers_true_parameters",
         "gpu_recovery_matches_cpu_on_paper_design",
         "higher_order_dina_recovery_respects_monte_carlo_tolerance",
     )
-    for name in dedicated:
-        assert f"--skip {name}" in text
+    for identifier in identifiers:
+        assert f"--skip {identifier}" in text
+    for name in raw_names:
         assert text.count(name) == 2
+        assert f"--skip {name}" not in text
     assert "mc_ho_recovery_500" not in text
