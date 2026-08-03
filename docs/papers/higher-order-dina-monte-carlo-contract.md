@@ -27,8 +27,8 @@ the standard error of the observed convergence proportion is
   = \sqrt{\frac{p_0(1-p_0)}{R}}.
 \]
 
-The deterministic regression gate uses the pre-registered two-standard-error
-lower tolerance
+The deterministic regression gate uses a source-backed, prospectively fixed
+two-standard-error lower tolerance
 
 \[
 p_{\min}
@@ -36,17 +36,24 @@ p_{\min}
   = 0.9305064113.
 \]
 
+This is not described as pre-registration: the historical deterministic result
+was already known when the replacement contract was introduced. The rule is
+instead recorded explicitly so future implementation changes are assessed
+against a stable finite-Monte-Carlo tolerance rather than an undocumented
+post-hoc exception.
+
 The observed `474 / 500 = 0.948` therefore passes the sampling-aware tolerance
 without weakening any parameter-recovery or classification threshold. The
 calculation itself is covered by a non-ignored Rust test; the full 500-
-replication recovery remains an ignored literature-grade test executed by the
-sharded Rust CI inventory.
+replication replacement test executes in the dedicated scheduled/manual
+statistical-studies job.
 
-The old exact-threshold test is explicitly excluded from the shard command so
-CI does not run two conflicting acceptance rules over the same deterministic
-experiment. The replacement is not a failure-accepting compatibility shim: it
-executes the model fit and all recovery assertions directly through the public
-Rust core.
+The historical exact-threshold test remains an explicit release blocker until
+it is removed or transparently rewritten in reviewed Rust source. It is named
+by its exact fully qualified test path while the replacement is evaluated, so
+no final-component pattern can suppress another test accidentally. The pull
+request must remain draft and must not claim an exhaustive active inventory
+until that duplicate conflicting contract is eliminated.
 
 ## Model traceability
 
