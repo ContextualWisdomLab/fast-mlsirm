@@ -35,14 +35,15 @@ class ModelRelation(str, Enum):
 class ComparisonStatus(str, Enum):
     """Fail-closed interpretation status for a model-selection summary."""
 
+    KERNEL_ERROR = "kernel_error"
     VARIANCE_DEGENERATE = "variance_degenerate"
     REQUIRES_LIKELIHOOD_RATIO = "requires_likelihood_ratio"
     REQUIRES_DISTINGUISHABILITY_TEST = "requires_distinguishability_test"
     UNKNOWN_RELATION = "unknown_relation"
 
 
-class VuongVarianceDegenerateError(ValueError):
-    """Typed boundary signal for exact zero variance in casewise differences."""
+class VuongKernelError(RuntimeError):
+    """Redacted typed boundary for any compiled Vuong-kernel rejection."""
 
 
 @dataclass(frozen=True)
@@ -51,10 +52,13 @@ class ModelComparisonResult:
 
     ``raw_mean_loglik_difference``, ``omega``, ``raw_z``, and
     ``raw_p_two_sided`` preserve values returned by the Rust selection kernel.
-    ``z`` and ``p_two_sided`` remain unavailable until the mathematically
-    required relation-specific precondition has been satisfied. In particular,
-    positive sample variance is a numerical stability condition and is not
-    Vuong's formal weighted-chi-square distinguishability test.
+    If that compiled boundary rejects an input, all raw numerical fields remain
+    unavailable and the result reports ``kernel_error`` without guessing which
+    low-level validation branch fired. ``z`` and ``p_two_sided`` remain
+    unavailable until the mathematically required relation-specific
+    precondition has been satisfied. Positive sample variance is a numerical
+    stability condition and is not Vuong's formal weighted-chi-square
+    distinguishability test.
     """
 
     model_a: str
@@ -146,7 +150,7 @@ def _run_vuong(
     *,
     bic_correction: bool,
 ) -> dict[str, Any]:
-    """Call the trusted kernel and translate its legacy zero-variance signal."""
+    """Call the trusted kernel and redact any compiled validation failure."""
     try:
         return vuong_nonnested(
             values_a,
@@ -156,10 +160,8 @@ def _run_vuong(
             bic_correction=bic_correction,
         )
     except ValueError as exc:
-        if "omega^2 = 0" not in str(exc):
-            raise
-        raise VuongVarianceDegenerateError(
-            "casewise log-likelihood differences have exact zero variance"
+        raise VuongKernelError(
+            "compiled Vuong kernel rejected the supplied inputs"
         ) from exc
 
 
@@ -210,7 +212,9 @@ def compare_nonnested_models(
     standard deviation ``omega``, BIC-corrected or uncorrected Vuong z
     statistic, and two-sided normal p value. This wrapper deliberately returns
     no preferred model until the relation-appropriate inferential prerequisite
-    has been established.
+    has been established. Compiled validation failures are represented by one
+    redacted ``kernel_error`` status rather than classified through exception
+    text or reimplemented statistical moments in Python.
 
     Parameters
     ----------
@@ -276,14 +280,14 @@ def compare_nonnested_models(
             count_b,
             bic_correction=bic_correction,
         )
-    except VuongVarianceDegenerateError:
-        raw_mean = raw_z = raw_p = float("nan")
-        omega = 0.0
+    except VuongKernelError:
+        raw_mean = omega = raw_z = raw_p = float("nan")
         variance_positive = False
-        status = ComparisonStatus.VARIANCE_DEGENERATE
+        status = ComparisonStatus.KERNEL_ERROR
         warning = (
-            "Casewise log-likelihood differences have exact zero variance; "
-            "selection inference is undefined."
+            "The compiled Vuong kernel rejected the supplied inputs. No low-level "
+            "failure subtype is inferred from exception wording, and no model "
+            "preference is available."
         )
     else:
         raw_mean = float(statistic["mean_diff"])
