@@ -67,7 +67,17 @@ def test_strict_nonnested_requires_formal_distinguishability(monkeypatch):
     assert result.raw_p_two_sided == pytest.approx(0.01)
 
 
-def test_relation_inapplicable_paths_do_not_call_vuong_kernel(monkeypatch):
+@pytest.mark.parametrize(
+    ("relation", "expected"),
+    [
+        (ModelRelation.NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
+        (ModelRelation.BOUNDARY_NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
+        (ModelRelation.UNKNOWN, ComparisonStatus.UNKNOWN_RELATION),
+    ],
+)
+def test_relation_inapplicable_paths_do_not_call_vuong_kernel(
+    monkeypatch, relation, expected
+):
     """Nested, boundary, and unknown relations retain their required procedure."""
     monkeypatch.setattr(
         comparison_module,
@@ -76,22 +86,17 @@ def test_relation_inapplicable_paths_do_not_call_vuong_kernel(monkeypatch):
             AssertionError("relation-inapplicable comparison reached kernel")
         ),
     )
-    for relation, expected in [
-        (ModelRelation.NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
-        (ModelRelation.BOUNDARY_NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
-        (ModelRelation.UNKNOWN, ComparisonStatus.UNKNOWN_RELATION),
-    ]:
-        result = compare_nonnested_models(
-            [1.0, 1.5],
-            [0.5, 1.0],
-            2,
-            1,
-            relation=relation,
-        )
-        assert result.status is expected
-        assert result.preferred_model is None
-        assert math.isnan(result.raw_mean_loglik_difference)
-        assert math.isnan(result.omega)
+    result = compare_nonnested_models(
+        [1.0, 1.5],
+        [0.5, 1.0],
+        2,
+        1,
+        relation=relation,
+    )
+    assert result.status is expected
+    assert result.preferred_model is None
+    assert math.isnan(result.raw_mean_loglik_difference)
+    assert math.isnan(result.omega)
 
 
 def test_casewise_iterables_are_bounded(monkeypatch):
@@ -145,6 +150,7 @@ def test_parameter_counts_reject_booleans_and_fractional_values(parameter_count)
         (ValueError, "models are indistinguishable on this sample"),
         (TypeError, "translated marshalling type error"),
         (OverflowError, "integer conversion overflow"),
+        (RuntimeError, "compiled Rust core is unavailable"),
     ],
 )
 def test_kernel_errors_become_one_typed_redacted_boundary(
@@ -164,6 +170,7 @@ def test_kernel_errors_become_one_typed_redacted_boundary(
             bic_correction=True,
         )
     assert message not in str(error.value)
+    assert error.value.__cause__ is None
 
 
 def test_untrusted_numeric_values_fail_with_stable_public_errors():
@@ -180,7 +187,11 @@ def test_untrusted_numeric_values_fail_with_stable_public_errors():
             )
 
 
-def test_typed_kernel_failure_is_consumed_fail_closed(monkeypatch):
+@pytest.mark.parametrize(
+    "relation",
+    [ModelRelation.STRICTLY_NON_NESTED, ModelRelation.OVERLAPPING],
+)
+def test_typed_kernel_failure_is_consumed_fail_closed(monkeypatch, relation):
     """Compiled failures produce no guessed variance status or model preference."""
     def fail(*_args, **_kwargs):
         raise VuongKernelError("compiled Vuong kernel rejected the supplied inputs")
@@ -191,10 +202,12 @@ def test_typed_kernel_failure_is_consumed_fail_closed(monkeypatch):
         [0.0, 1.0],
         1,
         1,
-        relation=ModelRelation.STRICTLY_NON_NESTED,
+        relation=relation,
     )
 
     assert result.status is ComparisonStatus.KERNEL_ERROR
+    assert math.isnan(result.raw_mean_loglik_difference)
     assert math.isnan(result.omega)
     assert math.isnan(result.raw_z)
+    assert math.isnan(result.raw_p_two_sided)
     assert result.preferred_model is None
