@@ -3,9 +3,12 @@
 use mlsirm_core::rotation::{
     rotate_factor_loadings as core_rotate_factor_loadings,
     rotation_criterion_from_name as core_rotation_criterion_from_name,
-    select_rotation_criterion as core_select_rotation_criterion,
     RotationConfig as CoreRotationConfig, RotationMode as CoreRotationMode,
-    RotationSelectionPolicy as CoreRotationSelectionPolicy, RotationSolution as CoreRotationSolution,
+    RotationSolution as CoreRotationSolution,
+};
+use mlsirm_core::rotation_selection::{
+    select_rotation_criterion as core_select_rotation_criterion,
+    RotationSelectionPolicy as CoreRotationSelectionPolicy,
 };
 use numpy::{PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
