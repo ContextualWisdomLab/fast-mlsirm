@@ -24,6 +24,8 @@
 //! vector of item uniquenesses, and `g` the explicitly supplied general-factor
 //! column. Structural membership is `|lambda_if| > zero_tolerance`; active
 //! loadings retain their original numerical values rather than being rounded.
+//! Each standardized item must satisfy `sum_h lambda_ih^2 + theta_i = 1`
+//! within numerical tolerance.
 //!
 //! For factor `f`, with membership indicator `I_if`:
 //!
@@ -53,6 +55,8 @@
 //! Methods, 21*(2), 137-150. https://doi.org/10.1037/met0000045
 
 use crate::checked_mul_usize;
+
+const STANDARDIZATION_TOLERANCE: f64 = 1e-8;
 
 /// Shape and structural-zero controls for [`bifactor_indices`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -108,7 +112,8 @@ pub struct BifactorIndicesResult {
 ///
 /// `loadings` is row-major with shape `n_items x n_factors` and must contain
 /// finite standardized loadings with absolute value below one. `uniquenesses`
-/// contains one finite non-negative item residual variance per row. The factors
+/// contains one finite residual variance in `[0, 1]` per row, and each row's
+/// squared loadings plus uniqueness must sum to one within `1e-8`. The factors
 /// are assumed orthogonal; callers with logistic IRT slopes should use
 /// [`bifactor_latent_response_indices_from_logit_slopes`].
 ///
@@ -360,8 +365,20 @@ fn validate_inputs(
     if uniquenesses.iter().any(|value| !value.is_finite()) {
         return Err("uniquenesses must be finite".into());
     }
-    if uniquenesses.iter().any(|value| *value < 0.0) {
-        return Err("uniquenesses must be non-negative".into());
+    if uniquenesses
+        .iter()
+        .any(|value| !(0.0..=1.0).contains(value))
+    {
+        return Err("uniquenesses must be between zero and one".into());
+    }
+    for (item, row) in loadings.chunks_exact(config.n_factors).enumerate() {
+        let communality = row.iter().map(|loading| loading * loading).sum::<f64>();
+        let standardized_variance = communality + uniquenesses[item];
+        if (standardized_variance - 1.0).abs() > STANDARDIZATION_TOLERANCE {
+            return Err(format!(
+                "squared loadings plus uniqueness must sum to one for item {item}; got {standardized_variance:.12}"
+            ));
+        }
     }
     Ok(())
 }
