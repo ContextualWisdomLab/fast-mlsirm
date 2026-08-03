@@ -8,13 +8,16 @@ parameterization, likelihood, gradients, priors, or identification rules.
 Python is not used to generate responses, fit parameters, align latent
 positions, or calculate recovery statistics.
 
-The merge-gate experiment represents the smallest simulation cell in Kang and
-Jeon (2025): two trait dimensions, eight items per dimension, a two-dimensional
-interaction map, and a deterministic sample of examinees. The full paper uses
-50 replications per condition; CI uses a deterministic sentinel replication so
-that every pull request remains bounded and reproducible. The long-running
-ignored-test job executes the sentinel together with all other repository-owned
-statistical studies.
+The merge-gate experiment uses a bounded, representative condition from Kang
+and Jeon (2025): two trait dimensions, eight items per dimension, a
+two-dimensional interaction map, and `P = 500`, one of the paper's three
+sample-size conditions. The dimensionality and item-count settings are the
+paper's lowest levels, while `P = 500` is deliberately retained as a stable CI
+recovery sentinel rather than described as the minimum sample-size condition.
+The full paper uses 50 replications per condition; CI uses one deterministic
+sentinel replication so that every pull request remains bounded and
+reproducible. The long-running ignored-test jobs execute the sentinel together
+with all other repository-owned statistical studies.
 
 ## Verified response equation
 
@@ -46,15 +49,16 @@ implemented equation is therefore
 
 This is algebraically the paper model under simple structure, with the small
 `epsilon` term used only to keep the Euclidean-distance derivative finite at
-coincident points. The experiment generates data with this same sign convention:
-`b_i` is the item intercept/easiness parameter, not positive item difficulty.
+coincident points. The experiment generates data with this same sign
+convention: `b_i` is the item intercept/easiness parameter, not positive item
+difficulty.
 
 ## Simulation cell
 
-The deterministic Rust experiment follows the lowest-dimensional condition in
-Kang and Jeon (2025):
+The deterministic Rust experiment follows a bounded paper condition with the
+lowest dimensionality and item-count levels from Kang and Jeon (2025):
 
-- persons: `P = 500` (a paper condition),
+- persons: `P = 500` (one of the paper's `300`, `500`, and `1000` conditions),
 - trait dimensions: `D = 2`,
 - items per dimension: `I_d = 8`,
 - latent-space dimensions: `K = 2`,
@@ -89,17 +93,16 @@ the Procrustes alignment used in the source simulation study.
 
 - **Rust backend:** response generation, MMLE-EM fitting, and every recovery
   statistic are implemented in the Rust integration test.
-- **CPU:** the statistical job runs the Rust experiment with `Device::Cpu` and
-  runs all ignored Rust tests in release mode. The core objective already uses
-  coarse person shards through `std::thread::scope` when the sample is large
-  enough.
+- **CPU:** the dedicated recovery job runs the Rust experiment with
+  `Device::Cpu`. The core objective uses coarse person shards through
+  `std::thread::scope` for samples at or above its multithreading threshold.
 - **GPU:** an Ubuntu job installs Mesa's Lavapipe Vulkan driver, executes the
-  explicit `rust_device="gpu"` parity test, and rejects any skipped test. It
-  also runs the Rust recovery device-parity experiment.
-- **Skipped tests:** CI invokes `cargo test --release --workspace -- --ignored`
-  and the excluded PyO3 crate's ignored tests explicitly. The GPU job converts
-  the only hardware-conditional Python skip into an executed software-Vulkan
-  test.
+  explicit `rust_device="gpu"` parity test, rejects any skipped result, and runs
+  the Rust recovery device-parity experiment.
+- **Ignored tests:** CI executes all repository-owned ignored Rust studies. The
+  CPU recovery sentinel and the explicit GPU recovery test are run in dedicated
+  jobs; the remaining ignored workspace and excluded-PyO3 tests are swept
+  separately so no ignored path is silently omitted.
 - **Coverage and docstrings:** the repository thresholds remain fixed at 100%
   in `pyproject.toml` and the Cargo workspace metadata. This PR adds no Python
   production API and therefore creates no uncovered Python or undocumented
