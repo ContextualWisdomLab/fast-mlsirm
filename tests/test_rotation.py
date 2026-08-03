@@ -212,6 +212,30 @@ def test_partial_target_preserves_labelled_columns_and_accepts_nan_cells() -> No
     )
 
 
+def test_public_pst_rejects_continuous_weights() -> None:
+    """The GPArotation-compatible PST contract accepts binary masks only."""
+    mixed = _mixed_orthogonal()
+    target = np.zeros_like(mixed)
+    weights = np.ones_like(mixed)
+    weights[0, 0] = 0.25
+
+    with pytest.raises(ValueError, match="binary zero-or-one"):
+        rotation_criterion_value_gradient(
+            mixed,
+            "pst",
+            target=target,
+            weights=weights,
+        )
+    with pytest.raises(ValueError, match="binary zero-or-one"):
+        rotate_factor_loadings(
+            mixed,
+            "pst",
+            target=target,
+            weights=weights,
+            n_starts=2,
+        )
+
+
 def test_bifactor_rotation_keeps_general_factor_column_first() -> None:
     """Bifactor canonicalization never permutes the designated general column."""
     population = np.asarray(
