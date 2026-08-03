@@ -26,6 +26,9 @@ from dataclasses import dataclass
 
 _TEST_LINE = re.compile(r"^(?P<name>.+): test$")
 _SUPPORTED_SELECTORS = frozenset({"lib", "bin", "test", "example", "doc"})
+_LIBRARY_TARGET_KINDS = frozenset(
+    {"lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"}
+)
 _NON_DEFAULT_TARGET_KINDS = frozenset({"bench", "custom-build"})
 
 
@@ -74,14 +77,31 @@ def cargo_metadata_command() -> list[str]:
     return ["cargo", "metadata", "--no-deps", "--format-version", "1"]
 
 
-def _selector_for_target(kinds: set[str]) -> str | None:
-    """Map Cargo metadata target kinds to an explicit ``cargo test`` selector."""
-    if "lib" in kinds or "proc-macro" in kinds:
-        return "lib"
-    for selector in ("bin", "test", "example"):
+def _selector_for_target(kinds: set[str], crate_types: set[str]) -> str | None:
+    """Map Cargo metadata target categories to one explicit test selector."""
+    for selector in ("test", "example", "bin"):
         if selector in kinds:
             return selector
+    if kinds & _LIBRARY_TARGET_KINDS or crate_types & _LIBRARY_TARGET_KINDS:
+        return "lib"
     return None
+
+
+def _metadata_string_set(
+    target: dict[str, object],
+    field: str,
+    package_name: str,
+    target_name: str,
+) -> set[str]:
+    """Return one validated list-of-strings metadata field as a set."""
+    raw_values = target.get(field, ())
+    if not isinstance(raw_values, list) or not all(
+        isinstance(value, str) for value in raw_values
+    ):
+        raise ValueError(
+            f"Cargo target {package_name}/{target_name} has invalid {field}"
+        )
+    return set(raw_values)
 
 
 def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
@@ -120,24 +140,24 @@ def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
             if not target.get("test", False):
                 continue
             target_name = target.get("name")
-            raw_kinds = target.get("kind", ())
             if not isinstance(target_name, str) or not target_name:
                 raise ValueError(f"Cargo target in {package_name} has no valid name")
-            if not isinstance(raw_kinds, list) or not all(
-                isinstance(kind, str) for kind in raw_kinds
-            ):
-                raise ValueError(
-                    f"Cargo target {package_name}/{target_name} has invalid kinds"
-                )
-            kinds = set(raw_kinds)
-            selector = _selector_for_target(kinds)
+            kinds = _metadata_string_set(target, "kind", package_name, target_name)
+            crate_types = _metadata_string_set(
+                target,
+                "crate_types",
+                package_name,
+                target_name,
+            )
+            selector = _selector_for_target(kinds, crate_types)
             if selector is None:
                 if kinds and kinds <= _NON_DEFAULT_TARGET_KINDS:
                     continue
                 rendered_kinds = ", ".join(sorted(kinds)) or "<empty>"
+                rendered_crate_types = ", ".join(sorted(crate_types)) or "<empty>"
                 raise ValueError(
                     f"unsupported default-tested Cargo target {package_name}/{target_name}: "
-                    f"{rendered_kinds}"
+                    f"kind={rendered_kinds}; crate_types={rendered_crate_types}"
                 )
             targets.add(CargoTarget(package_name, selector, target_name))
             if selector == "lib" and target.get("doctest", False):
