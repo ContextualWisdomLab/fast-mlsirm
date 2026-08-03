@@ -57,12 +57,18 @@ class BifactorScoreabilityResult:
     construct_replicability: np.ndarray
 
 
-def _matrix(value: Any, name: str) -> np.ndarray:
-    """Return a bounded contiguous finite-shape float64 matrix."""
-    matrix = np.asarray(value, dtype=np.float64)
-    if matrix.ndim != 2:
+def _validated_matrix_shape(shape: Any, name: str) -> tuple[int, int]:
+    """Validate a matrix shape and work budget before allocating conversions."""
+    try:
+        dimensions = tuple(shape)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be a 2-D item-by-factor matrix") from exc
+    if len(dimensions) != 2:
         raise ValueError(f"{name} must be a 2-D item-by-factor matrix")
-    n_items, n_factors = map(int, matrix.shape)
+    try:
+        n_items, n_factors = (int(dimensions[0]), int(dimensions[1]))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must have finite integer dimensions") from exc
     if not 2 <= n_items <= MAX_BIFACTOR_ITEMS:
         raise ValueError(
             f"{name} must contain between 2 and {MAX_BIFACTOR_ITEMS} items"
@@ -77,6 +83,27 @@ def _matrix(value: Any, name: str) -> np.ndarray:
             f"{name} exceeds the bifactor diagnostic work budget "
             f"({MAX_BIFACTOR_WORK_UNITS} items*factor^2 units); got {work_units}"
         )
+    return n_items, n_factors
+
+
+def _matrix(value: Any, name: str) -> np.ndarray:
+    """Return a bounded contiguous float64 matrix after pre-allocation checks.
+
+    Existing NumPy arrays and array-likes that expose ``shape`` are bounded
+    before any dtype-converting copy. Generic Python containers necessarily
+    cross NumPy's materialization boundary before their inferred shape can be
+    checked, after which the same public limits are enforced.
+    """
+    if isinstance(value, np.ndarray):
+        _validated_matrix_shape(value.shape, name)
+        return np.ascontiguousarray(value, dtype=np.float64)
+
+    advertised_shape = getattr(value, "shape", None)
+    if advertised_shape is not None:
+        _validated_matrix_shape(advertised_shape, name)
+
+    matrix = np.asarray(value, dtype=np.float64)
+    _validated_matrix_shape(matrix.shape, name)
     return np.ascontiguousarray(matrix)
 
 
@@ -93,12 +120,12 @@ def _uniqueness_vector(value: Any, n_items: int) -> np.ndarray:
 
 
 def _readonly_vector(value: Any, name: str) -> np.ndarray:
-    """Return one immutable float64 result vector from the compiled mapping."""
-    vector = np.asarray(value, dtype=np.float64)
-    if vector.ndim != 1:
+    """Return one genuinely immutable float64 vector from the compiled mapping."""
+    source = np.asarray(value, dtype=np.float64)
+    if source.ndim != 1:
         raise RuntimeError(f"compiled bifactor result field {name} must be 1-D")
-    vector.setflags(write=False)
-    return vector
+    immutable_buffer = source.tobytes(order="C")
+    return np.frombuffer(immutable_buffer, dtype=np.float64)
 
 
 def _result_from_mapping(raw: dict[str, Any]) -> BifactorScoreabilityResult:
