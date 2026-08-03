@@ -6,7 +6,7 @@ finite 500-replication Monte Carlo experiment cannot be required to attain.
 The reviewed integration study
 ``higher_order_dina_recovery_respects_monte_carlo_tolerance`` reproduces the
 same generating design, fixed seeds, and RMSE/bias/agreement thresholds while
-gating convergence on the two-standard-error binomial floor.  The historical
+gating convergence on the two-standard-error binomial floor. The historical
 test has therefore been removed at the source level, and no workflow may
 quarantine test names instead of fixing their source.
 """
@@ -50,8 +50,13 @@ def test_replacement_gate_owns_finite_monte_carlo_acceptance() -> None:
     assert "monte_carlo_se" in source
     assert "convergence_floor" in source
     test_name = "higher_order_dina_recovery_respects_monte_carlo_tolerance"
+    target_qualified_name = (
+        "mlsirm-core/test/higher_order_mc_recovery::"
+        "higher_order_dina_recovery_respects_monte_carlo_tolerance"
+    )
     assert workflow.count(test_name) == 2
-    assert f"--skip {test_name}" in workflow
+    assert f"--skip {target_qualified_name}" in workflow
+    assert f"--skip {test_name}" not in workflow
 
 
 def test_no_source_mutating_statistical_patch_workflow_is_tracked() -> None:

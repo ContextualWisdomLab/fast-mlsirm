@@ -32,14 +32,14 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Run exact ignored Rust shard
+      - name: Run target-qualified ignored Rust shard
         run: >-
           python scripts/run_ignored_rust_shard.py
           --shard ${{ matrix.shard }}
           --shards 12
-          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
-          --skip gpu_recovery_matches_cpu_on_paper_design
-          --skip higher_order_dina_recovery_respects_monte_carlo_tolerance
+          --skip mlsirm-core/test/literature_true_parameter_recovery::kang_jeon_2025_minimum_cell_recovers_true_parameters
+          --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
+          --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
 
   rust-pyo3-ignored:
     name: Ignored PyO3 studies
