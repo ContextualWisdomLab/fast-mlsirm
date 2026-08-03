@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
       # Rust toolchain is required so the maturin build compiles the primary
       # numeric core (fast_mlsirm._core) during the editable install; the
-      # Rust<->numpy parity gate then exercises the Rust path.
+      # Rust<->NumPy parity gate then exercises the Rust path.
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       - run: python -m pip install --require-hashes -r requirements/ci.txt
       - run: python -m pip install --no-deps --no-build-isolation -e .
@@ -38,78 +38,17 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      # `cargo test --workspace` also runs the proptest fuzz harness in
-      # crates/mlsirm-core/tests/proptest_neg_loglik.rs and the explicit
-      # coarse-shard CPU multithreading parity test.
+      # Ordinary Rust tests include the deterministic equation and bounded
+      # recovery-contract sentinels. Exhaustive ignored studies run in the
+      # scheduled Statistical Studies workflow rather than on every PR.
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
-  rust-ignored:
-    # The repository contains more than one hundred literature-grade ignored
-    # studies, including 500-replication recovery experiments. A single serial
-    # job exceeds hosted-runner lifetime. Inventory once per shard and execute
-    # a non-overlapping round-robin partition by exact test name. The dedicated
-    # CPU/GPU sentinels run in their own jobs. The obsolete mc_ho_recovery_500
-    # exact-threshold gate is replaced by the integration-test contract
-    # higher_order_dina_recovery_respects_monte_carlo_tolerance, which preserves
-    # the same deterministic design and recovery bounds while accounting for
-    # finite Monte Carlo sampling error. No source rewrite or failure-accepting
-    # compatibility gate is permitted.
+  gpu-smoke:
+    # One bounded explicit-GPU parity test remains on every PR. The full
+    # paper-design GPU recovery study runs in the scheduled/manual workflow.
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: "3.12"
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Run ignored Rust workspace shard ${{ matrix.shard }}
-        run: >-
-          python scripts/run_ignored_rust_shard.py
-          --shard ${{ matrix.shard }}
-          --shards 12
-          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
-          --skip gpu_recovery_matches_cpu_on_paper_design
-          --skip mc_ho_recovery_500
-
-  rust-pyo3-ignored:
-    # The PyO3 crate is intentionally excluded from the Cargo workspace, so its
-    # ignored inventory must be executed independently.
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Run all ignored PyO3-crate studies
-        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
-
-  rust-recovery:
-    # Run the paper-design recovery sentinel independently from the large
-    # ignored-test sweep so its runtime and failure are directly observable.
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Exercise the explicit four-worker Rust CPU path
-        run: cargo test -p mlsirm-core coarse_shard_multithread_matches_single_thread_on_all_blocks -- --nocapture
-      - name: Run literature true-parameter recovery on the Rust CPU backend
-        run: >-
-          cargo test --release -p mlsirm-core
-          --test literature_true_parameter_recovery
-          kang_jeon_2025_minimum_cell_recovers_true_parameters
-          -- --ignored --exact --nocapture
-
-  gpu-software:
-    # Mesa Lavapipe supplies a deterministic Vulkan compute adapter on the
-    # hosted runner. The JUnit assertion makes a CPU fallback/pytest.skip fail.
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     env:
       WGPU_BACKEND: vulkan
       XDG_RUNTIME_DIR: /tmp/fast-mlsirm-xdg-runtime
@@ -149,8 +88,6 @@ jobs:
           if skipped != 0:
               raise SystemExit(f"GPU evidence contained {skipped} skipped test(s)")
           PY
-      - name: Run Rust recovery through the explicit GPU device
-        run: cargo test --release -p mlsirm-core --test literature_true_parameter_recovery gpu_recovery_matches_cpu_on_paper_design -- --ignored --exact --nocapture
 
   fuzz:
     # Short, bounded coverage-guided fuzzing so PR cost stays low. The
