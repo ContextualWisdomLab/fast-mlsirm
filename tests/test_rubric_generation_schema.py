@@ -51,12 +51,17 @@ def test_generated_text_and_collections_are_resource_bounded():
     properties = _contract()["output_schema"]["properties"]
     assert properties["stem"]["maxLength"] == 8_192
     assert properties["stimulus"]["maxItems"] == 32
-    assert properties["options"]["maxItems"] == 32
+    assert properties["stimulus"]["items"]["minLength"] == 1
+    assert properties["options"]["minItems"] == 0
+    assert properties["options"]["maxItems"] == 0
     assert properties["source_attributions"]["maxItems"] == 32
     assert properties["safety_notes"]["maxItems"] == 32
+    assert properties["safety_notes"]["items"]["minLength"] == 1
+    assert properties["answer_key"]["properties"]["rationale"]["maxLength"] == 8_192
 
 
 def test_authoring_instructions_expose_score_order_contract():
     """The natural-language contract mirrors the machine-enforced order."""
     instructions = _contract()["authoring_instructions"]
     assert any("ascending rubric-score order" in item for item in instructions)
+    assert any("unique option_id" in item for item in instructions)
