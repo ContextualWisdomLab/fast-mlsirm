@@ -51,7 +51,13 @@ def test_nonfinite_omega_fails_closed(monkeypatch):
         "vuong_nonnested",
         lambda *_args, **_kwargs: _kernel_result(omega=float("nan")),
     )
-    result = compare_nonnested_models([0.0, 0.1], [0.2, 0.3], 1, 1)
+    result = compare_nonnested_models(
+        [0.0, 0.1],
+        [0.2, 0.3],
+        1,
+        1,
+        relation=ModelRelation.STRICTLY_NON_NESTED,
+    )
     assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
     assert not result.variance_positive
     assert result.preferred_model is None
