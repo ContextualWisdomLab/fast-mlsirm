@@ -1,10 +1,12 @@
-//! PyO3 entrypoint preserving the established `_core` module and adding rotation.
+//! PyO3 entrypoint preserving `_core` and registering modular extensions.
 //!
-//! PyO3 permits a single shared library to export more than one `PyInit_*`
-//! symbol. The historical module remains `_core`; `rotation_bindings` exports
-//! `_rotation_core` from the same binary so the large, stable binding file does
-//! not need an unrelated mechanical rewrite.
+//! PyO3 permits one shared library to export multiple `PyInit_*` symbols. The
+//! historical module remains `_core`; the bifactor and rotation bindings export
+//! `_bifactor_core` and `_rotation_core` from the same binary. Keeping the
+//! registrations together prevents stacked feature branches from silently
+//! replacing one another's extension-module entrypoint.
 
 include!("lib.rs");
 
+mod bifactor_bindings;
 mod rotation_bindings;
