@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from itertools import islice
 import math
 import operator
 from typing import Any
@@ -43,7 +42,7 @@ class ComparisonStatus(str, Enum):
 
 
 class VuongKernelError(RuntimeError):
-    """Redacted typed boundary for any compiled Vuong-kernel rejection."""
+    """Redacted typed boundary for a compiled or FFI Vuong-kernel rejection."""
 
 
 @dataclass(frozen=True)
@@ -51,14 +50,18 @@ class ModelComparisonResult:
     """Auditable result of one pairwise likelihood-selection calculation.
 
     ``raw_mean_loglik_difference``, ``omega``, ``raw_z``, and
-    ``raw_p_two_sided`` preserve values returned by the Rust selection kernel.
-    If that compiled boundary rejects an input, all raw numerical fields remain
-    unavailable and the result reports ``kernel_error`` without guessing which
-    low-level validation branch fired. ``z`` and ``p_two_sided`` remain
-    unavailable until the mathematically required relation-specific
-    precondition has been satisfied. Positive sample variance is a numerical
-    stability condition and is not Vuong's formal weighted-chi-square
-    distinguishability test.
+    ``raw_p_two_sided`` preserve values returned by the Rust selection kernel
+    only for relations to which the non-nested selection statistic applies.
+    Nested, boundary-nested, and unknown relations are routed to their required
+    procedure before invoking that kernel, so their raw fields remain
+    unavailable. If an applicable compiled boundary rejects an input, all raw
+    numerical fields remain unavailable and the result reports ``kernel_error``
+    without guessing which low-level validation branch fired.
+
+    ``z`` and ``p_two_sided`` remain unavailable until the mathematically
+    required formal distinguishability stage has been supplied. Positive sample
+    variance is a numerical stability condition and is not Vuong's formal
+    weighted-chi-square distinguishability test.
     """
 
     model_a: str
@@ -124,8 +127,8 @@ def _parameter_count(value: Any, name: str) -> int:
     return int(normalized)
 
 
-def _casewise_values(value: Any, name: str) -> tuple[Any, ...]:
-    """Materialize a bounded casewise iterable with stable public errors."""
+def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
+    """Materialize and normalize a bounded iterable of finite numeric values."""
     if isinstance(value, (str, bytes)):
         raise ValueError(f"{name} must be an iterable of numeric casewise values")
     try:
@@ -134,23 +137,48 @@ def _casewise_values(value: Any, name: str) -> tuple[Any, ...]:
         raise ValueError(
             f"{name} must be an iterable of numeric casewise values"
         ) from exc
-    materialized = tuple(islice(iterator, MAX_CASEWISE_VALUES + 1))
-    if len(materialized) > MAX_CASEWISE_VALUES:
-        raise ValueError(
-            f"{name} must contain at most {MAX_CASEWISE_VALUES} casewise values"
+
+    materialized: list[float] = []
+    for index, item in enumerate(iterator):
+        if index >= MAX_CASEWISE_VALUES:
+            raise ValueError(
+                f"{name} must contain at most {MAX_CASEWISE_VALUES} casewise values"
+            )
+        is_numpy_boolean = (
+            item.__class__.__module__.startswith("numpy")
+            and item.__class__.__name__ == "bool_"
         )
-    return materialized
+        if isinstance(item, bool) or is_numpy_boolean:
+            raise ValueError(f"{name}[{index}] must be a finite number")
+        try:
+            numeric = float(item)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name}[{index}] must be a finite number") from exc
+        if not math.isfinite(numeric):
+            raise ValueError(f"{name}[{index}] must be a finite number")
+        materialized.append(numeric)
+    return tuple(materialized)
+
+
+def _validate_casewise_pair(
+    values_a: tuple[float, ...], values_b: tuple[float, ...]
+) -> None:
+    """Require paired independent-case contributions with at least two cases."""
+    if len(values_a) != len(values_b) or len(values_a) < 2:
+        raise ValueError(
+            "casewise log-likelihood vectors must be equal-length with n >= 2"
+        )
 
 
 def _run_vuong(
-    values_a: tuple[Any, ...],
-    values_b: tuple[Any, ...],
+    values_a: tuple[float, ...],
+    values_b: tuple[float, ...],
     k_a: int,
     k_b: int,
     *,
     bic_correction: bool,
 ) -> dict[str, Any]:
-    """Call the trusted kernel and redact any compiled validation failure."""
+    """Call the trusted kernel and redact stable conversion/compiled failures."""
     try:
         return vuong_nonnested(
             values_a,
@@ -159,7 +187,7 @@ def _run_vuong(
             k_b,
             bic_correction=bic_correction,
         )
-    except ValueError as exc:
+    except (ValueError, TypeError, OverflowError) as exc:
         raise VuongKernelError(
             "compiled Vuong kernel rejected the supplied inputs"
         ) from exc
@@ -174,7 +202,7 @@ def _relation_requirement(
             ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO,
             "Nested or boundary-nested models require an ordinary, mixture, or "
             "parametric-bootstrap likelihood-ratio procedure; the Vuong normal "
-            "selection statistic is not interpreted as a preference.",
+            "selection statistic is not computed or interpreted as a preference.",
         )
     if relation in {
         ModelRelation.STRICTLY_NON_NESTED,
@@ -189,7 +217,7 @@ def _relation_requirement(
     return (
         ComparisonStatus.UNKNOWN_RELATION,
         "Model relation is unknown; establish nestedness or overlap before "
-        "interpreting any likelihood-selection statistic.",
+        "computing or interpreting a likelihood-selection statistic.",
     )
 
 
@@ -210,17 +238,18 @@ def compare_nonnested_models(
 
     The Rust core computes the casewise log-likelihood-ratio mean, population
     standard deviation ``omega``, BIC-corrected or uncorrected Vuong z
-    statistic, and two-sided normal p value. This wrapper deliberately returns
-    no preferred model until the relation-appropriate inferential prerequisite
-    has been established. Compiled validation failures are represented by one
-    redacted ``kernel_error`` status rather than classified through exception
-    text or reimplemented statistical moments in Python.
+    statistic, and two-sided normal p value only for explicitly non-nested or
+    overlapping relations. Nested, boundary-nested, and unknown relations are
+    routed to their required procedure before the normal-selection kernel is
+    invoked. This wrapper deliberately returns no preferred model until formal
+    distinguishability evidence has been supplied.
 
     Parameters
     ----------
     loglik_a, loglik_b:
-        Paired casewise marginal log-likelihood contributions for models A and
-        B. At most :data:`MAX_CASEWISE_VALUES` values are accepted per model.
+        Paired finite casewise marginal log-likelihood contributions for models
+        A and B. At most :data:`MAX_CASEWISE_VALUES` values are accepted per
+        model, and the vectors must have equal length with at least two cases.
     k_a, k_b:
         Non-negative free-parameter counts.
     model_a, model_b:
@@ -242,8 +271,9 @@ def compare_nonnested_models(
     Returns
     -------
     ModelComparisonResult
-        Rust-computed audit statistics and the required next statistical
-        procedure. ``preferred_model`` is always ``None`` in this release.
+        Rust-computed audit statistics, when applicable, and the required next
+        statistical procedure. ``preferred_model`` is always ``None`` in this
+        release.
 
     References
     ----------
@@ -272,41 +302,52 @@ def compare_nonnested_models(
 
     values_a = _casewise_values(loglik_a, "loglik_a")
     values_b = _casewise_values(loglik_b, "loglik_b")
-    try:
-        statistic = _run_vuong(
-            values_a,
-            values_b,
-            count_a,
-            count_b,
-            bic_correction=bic_correction,
-        )
-    except VuongKernelError:
+    _validate_casewise_pair(values_a, values_b)
+
+    if relation_value not in {
+        ModelRelation.STRICTLY_NON_NESTED,
+        ModelRelation.OVERLAPPING,
+    }:
         raw_mean = omega = raw_z = raw_p = float("nan")
         variance_positive = False
-        status = ComparisonStatus.KERNEL_ERROR
-        warning = (
-            "The compiled Vuong kernel rejected the supplied inputs. No low-level "
-            "failure subtype is inferred from exception wording, and no model "
-            "preference is available."
-        )
+        status, warning = _relation_requirement(relation_value)
     else:
-        raw_mean = float(statistic["mean_diff"])
-        omega = float(statistic["omega"])
-        raw_z = float(statistic["z"])
-        raw_p = float(statistic["p_two_sided"])
-        variance_positive = math.isfinite(omega) and omega > omega_tol
-        if (
-            not variance_positive
-            or not math.isfinite(raw_z)
-            or not math.isfinite(raw_p)
-        ):
-            status = ComparisonStatus.VARIANCE_DEGENERATE
+        try:
+            statistic = _run_vuong(
+                values_a,
+                values_b,
+                count_a,
+                count_b,
+                bic_correction=bic_correction,
+            )
+        except VuongKernelError:
+            raw_mean = omega = raw_z = raw_p = float("nan")
+            variance_positive = False
+            status = ComparisonStatus.KERNEL_ERROR
             warning = (
-                "Casewise log-likelihood differences have zero, non-finite, or "
-                "numerically degenerate variance; selection inference is undefined."
+                "The compiled Vuong kernel rejected the supplied inputs. No low-level "
+                "failure subtype is inferred from exception wording, and no model "
+                "preference is available."
             )
         else:
-            status, warning = _relation_requirement(relation_value)
+            raw_mean = float(statistic["mean_diff"])
+            omega = float(statistic["omega"])
+            raw_z = float(statistic["z"])
+            raw_p = float(statistic["p_two_sided"])
+            variance_positive = math.isfinite(omega) and omega > omega_tol
+            if (
+                not math.isfinite(raw_mean)
+                or not variance_positive
+                or not math.isfinite(raw_z)
+                or not math.isfinite(raw_p)
+            ):
+                status = ComparisonStatus.VARIANCE_DEGENERATE
+                warning = (
+                    "Casewise log-likelihood differences have zero, non-finite, or "
+                    "numerically degenerate variance; selection inference is undefined."
+                )
+            else:
+                status, warning = _relation_requirement(relation_value)
 
     return ModelComparisonResult(
         model_a=label_a,
