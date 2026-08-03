@@ -169,6 +169,26 @@ fn puc_is_absent_for_cross_loaded_or_incomplete_general_patterns() {
 }
 
 #[test]
+fn strict_pattern_supports_nonfirst_general_factor_and_single_item_domain() {
+    let loadings = vec![
+        0.40, 0.70, 0.00, // item 1
+        0.30, 0.70, 0.00, // item 2
+        0.00, 0.70, 0.50, // item 3
+    ];
+    let uniqueness = uniquenesses(&loadings, 3, 3);
+    let result = bifactor_indices(
+        &loadings,
+        &uniqueness,
+        BifactorIndicesConfig::new(3, 3, 1),
+    )
+    .unwrap();
+
+    assert_eq!(result.factor_item_counts, vec![2, 3, 1]);
+    assert!(result.is_strict_bifactor);
+    assert_close(result.puc.unwrap(), 2.0 / 3.0);
+}
+
+#[test]
 fn structural_zero_tolerance_controls_pattern_not_numeric_sums() {
     let loadings = vec![
         0.70, 0.40, 1e-14, // item 1
@@ -244,6 +264,7 @@ fn numeric_input_guards_reject_undefined_indices() {
         (vec![0.7, 0.2, 0.8, 0.3], vec![f64::INFINITY, 0.3], "finite"),
         (vec![0.0, 0.0, 0.8, 0.3], vec![1.0, 0.3], "every item"),
         (vec![0.7, 0.0, 0.8, 0.0], vec![0.5, 0.3], "every factor"),
+        (vec![1e-300, 0.2, 0.8, 0.3], vec![0.4, 0.3], "too small"),
     ] {
         let error = bifactor_indices(&loadings, &uniquenesses, config).unwrap_err();
         assert!(error.contains(message), "unexpected error: {error}");
@@ -261,4 +282,15 @@ fn numeric_input_guards_reject_undefined_indices() {
         .unwrap_err();
         assert!(error.contains("zero_tolerance"));
     }
+}
+
+#[test]
+fn omega_rejects_zero_variance_composites_created_by_sign_cancellation() {
+    let error = bifactor_indices(
+        &[0.5, 0.5, -0.5, -0.5],
+        &[0.0, 0.0],
+        BifactorIndicesConfig::new(2, 2, 0),
+    )
+    .unwrap_err();
+    assert!(error.contains("omega denominator must be positive"));
 }
