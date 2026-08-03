@@ -273,11 +273,21 @@ impl GpuContext {
         let adapter =
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
                 .ok()?;
+        let adapter_limits = adapter.limits();
+        // The layout binds 16 storage buffers (bindings 1..=16) plus a uniform at
+        // binding 0; fall back to the f64 CPU reference on an adapter that cannot
+        // satisfy that count instead of panicking at pipeline creation (matching
+        // the guards already present in gpu_eapsum and gpu_plausible).
+        if adapter_limits.max_storage_buffers_per_shader_stage < 16
+            || adapter_limits.max_uniform_buffers_per_shader_stage < 1
+        {
+            return None;
+        }
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("mlsirm-gpgpu"),
             // Request the adapter's real limits so the 17-binding layout fits on
             // hardware that exceeds the conservative downlevel defaults.
-            required_limits: adapter.limits(),
+            required_limits: adapter_limits,
             ..Default::default()
         }))
         .ok()?;

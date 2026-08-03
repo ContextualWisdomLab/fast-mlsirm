@@ -227,12 +227,24 @@ fn context() -> Option<&'static GpuContext> {
                     ..Default::default()
                 }))
                 .ok()?;
+            let adapter_limits = adapter.limits();
+            // The score layout binds 18 storage buffers (bindings 1..=18) plus a
+            // uniform at binding 0. An adapter that cannot satisfy that count
+            // (e.g. a software rasterizer capped at 16) would otherwise pass
+            // device creation and only panic later at pipeline creation, so fall
+            // back to the f64 CPU reference here instead -- matching the guards
+            // already present in gpu_eapsum and gpu_plausible.
+            if adapter_limits.max_storage_buffers_per_shader_stage < 18
+                || adapter_limits.max_uniform_buffers_per_shader_stage < 1
+            {
+                return None;
+            }
             let (device, queue) =
                 pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                     label: Some("mlsirm-marginal-gpgpu"),
                     // The adapter's real limits: the 18-binding layout and the
                     // large logz buffer exceed the downlevel defaults.
-                    required_limits: adapter.limits(),
+                    required_limits: adapter_limits,
                     ..Default::default()
                 }))
                 .ok()?;
