@@ -4,6 +4,12 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/hourly-pr-governance.yml
+      - scripts/build_pr_queue_governance.py
+      - tests/test_hourly_pr_governance_workflow.py
 
 permissions:
   contents: read
@@ -25,6 +31,8 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - name: Verify the workflow contract
+        run: python -m pytest tests/test_hourly_pr_governance_workflow.py -q
       - name: Build live PR queue governance evidence
         env:
           GH_TOKEN: ${{ github.token }}
