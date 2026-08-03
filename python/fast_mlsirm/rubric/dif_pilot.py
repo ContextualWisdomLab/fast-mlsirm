@@ -224,13 +224,20 @@ def build_dif_pilot_design(
     if reference == focal:
         raise ValueError("reference_group_id and focal_group_id must differ")
 
-    normalized_mapping = {
-        _identifier(raw_respondent_id, "respondent_groups key"): _identifier(
+    normalized_mapping: dict[str, str] = {}
+    for raw_respondent_id, raw_group_id in respondent_groups.items():
+        respondent_id = _identifier(raw_respondent_id, "respondent_groups key")
+        group_id = _identifier(
             raw_group_id,
-            f"respondent_groups[{raw_respondent_id}]",
+            f"respondent_groups[{respondent_id}]",
         )
-        for raw_respondent_id, raw_group_id in respondent_groups.items()
-    }
+        if respondent_id in normalized_mapping:
+            raise _error(
+                "dif_duplicate_group_assignment",
+                "$.respondent_groups",
+                "respondent group keys must remain unique after normalization",
+            )
+        normalized_mapping[respondent_id] = group_id
 
     expected = set(binary_design.respondent_ids)
     supplied = set(normalized_mapping)
