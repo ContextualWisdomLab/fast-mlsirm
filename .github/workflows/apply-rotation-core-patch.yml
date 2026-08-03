@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/apply-rotation-core-patch.yml
       - scripts/fix_rotation_math_contract.py
+      - scripts/sitecustomize.py
   pull_request:
     branches: [main]
     paths:
@@ -13,6 +14,7 @@ on:
       - python/fast_mlsirm/rotation*.py
       - tests/test_rotation*.py
       - scripts/fix_rotation_math_contract.py
+      - scripts/sitecustomize.py
   workflow_dispatch:
 
 permissions:
@@ -42,6 +44,7 @@ jobs:
         run: |
           rm scripts/apply_rotation_core_patch.py
           rm scripts/fix_rotation_math_contract.py
+          rm scripts/sitecustomize.py
           rm .github/workflows/apply-rotation-core-patch.yml
       - name: Commit reviewed integration
         run: |
@@ -55,6 +58,7 @@ jobs:
             README.md CHANGELOG.md \
             scripts/apply_rotation_core_patch.py \
             scripts/fix_rotation_math_contract.py \
+            scripts/sitecustomize.py \
             .github/workflows/apply-rotation-core-patch.yml
           git commit -m "feat: integrate adaptive factor rotation API"
           git push origin HEAD:feat/adaptive-factor-rotation-core
