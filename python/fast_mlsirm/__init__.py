@@ -7,18 +7,16 @@ from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
 
-# Copy the established package-root attributes that actually exist. Importing
-# with ``from ._legacy_init import *`` would dereference every historical
-# ``__all__`` entry and can break package import when a legacy export is stale;
-# this preserves the previous runtime surface without turning that unrelated
-# registry issue into a blocker for the modular bifactor API.
-for _public_name, _public_value in vars(_legacy_init).items():
-    if not _public_name.startswith("_") or _public_name == "__version__":
-        globals()[_public_name] = _public_value
+# Copy only declared legacy exports that are currently defined. This avoids
+# accidentally publishing helper imports from the compatibility module while
+# preserving its established package-root surface.
+for _public_name in _legacy_init.__all__:
+    if hasattr(_legacy_init, _public_name):
+        globals()[_public_name] = getattr(_legacy_init, _public_name)
 
-# Repair the one historical export declared by the legacy registry but omitted
-# from its import list, so ``from fast_mlsirm import *`` remains valid after the
-# modular package-surface split.
+# Repair the historical export declared by the legacy registry but omitted from
+# its import list. The legacy module itself also imports this symbol on the
+# corrected branch so direct wildcard imports remain valid.
 from .classification import ClassificationResult as ClassificationResult
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
@@ -34,11 +32,10 @@ try:
 except _PackageNotFoundError:
     __version__ = "0+unknown"
 
-__all__ = [
-    *_legacy_init.__all__,
+__all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
 ]
 
-del _PackageNotFoundError, _distribution_version, _public_name, _public_value
+del _PackageNotFoundError, _distribution_version, _public_name
