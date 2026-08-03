@@ -20,9 +20,14 @@
 mod criteria;
 mod matrix;
 mod optimizer;
+mod selector;
 
 pub use criteria::{CriterionEvaluation, RotationCriterion};
-use matrix::{factor_correlation, identity, matmul, random_oblique, random_orthogonal};
+pub use selector::{
+    select_rotation_criterion, RotationCandidateEvidence, RotationSelectionPolicy,
+    RotationSelectionResult,
+};
+use matrix::{identity, matmul, random_oblique, random_orthogonal};
 use optimizer::{optimize_start, OptimizerSettings, StartSolution};
 use std::cmp::Ordering;
 
@@ -584,6 +589,7 @@ fn maximum_off_diagonal(phi: &[f64], factors: usize) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use super::matrix::factor_correlation;
     use super::*;
 
     fn mixed() -> Vec<f64> {

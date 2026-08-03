@@ -16,9 +16,9 @@ use pyo3::wrap_pyfunction;
 fn optional_matrix_values(
     value: Option<PyReadonlyArray2<'_, f64>>,
 ) -> PyResult<Option<Vec<f64>>> {
-    value
+    Ok(value
         .map(|array| array.as_slice().map(|slice| slice.to_vec()))
-        .transpose()
+        .transpose()?)
 }
 
 fn rotation_solution_dict(

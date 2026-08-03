@@ -827,7 +827,11 @@ mod tests {
             .enumerate()
             .map(|(row, column)| costs[row * 3 + column])
             .sum();
-        assert!((total - 0.3).abs() < 1e-12);
+        // Rows 0 and 1 both prefer column 0; a greedy row scan strands row 1
+        // on a 100.0 cell. The unique optimal matching over all six
+        // permutations is (0 -> 1, 1 -> 0, 2 -> 2) = 0.2 + 0.1 + 0.1 = 0.4.
+        assert_eq!(assignment, vec![1, 0, 2]);
+        assert!((total - 0.4).abs() < 1e-12);
         assert!(minimum_cost_assignment(&[], 0).is_err());
         assert!(minimum_cost_assignment(&[f64::NAN; 4], 2).is_err());
     }

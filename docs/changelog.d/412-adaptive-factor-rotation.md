@@ -19,9 +19,6 @@
 - GPArotation-compatible complete/partial target semantics using binary
   zero-or-one masks and the loss `sum(w * residual^2)`. Continuous weights are
   available only through the separately named `lp_wls` kernel.
-
-## Deferred
-
-- Promax, Cubimax, iterative Lp/FSS orchestration, cluster/EIV/echelon
-  procedures, user-defined compiled criteria, and a parity-verified wgpu batch
-  optimizer are not part of this release slice.
+- An explicit scope boundary: Promax, Cubimax, iterative Lp/FSS orchestration,
+  cluster/EIV/echelon procedures, user-defined compiled criteria, and a
+  parity-verified wgpu batch optimizer are not part of this release slice.
