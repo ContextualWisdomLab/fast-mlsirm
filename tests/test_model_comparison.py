@@ -53,14 +53,20 @@ def test_cluster_aggregation_uses_independent_units():
     assert math.isnan(result.bootstrap_ci[0])
 
 
-def test_aic_and_bic_penalize_larger_model():
-    """AIC and BIC corrections reduce model A's corrected mean advantage."""
+def test_aic_and_bic_apply_the_documented_penalties_exactly():
+    """AIC and BIC corrected means use the independent-unit sample size."""
     a, b = _likelihoods()
     raw = compare_nonnested_models(a, b, 3, 1, correction="none", bootstrap=0)
     aic = compare_nonnested_models(a, b, 3, 1, correction="aic", bootstrap=0)
     bic = compare_nonnested_models(a, b, 3, 1, correction="bic", bootstrap=0)
-    assert aic.mean_difference < raw.mean_difference
-    assert bic.mean_difference < raw.mean_difference
+    n = len(a)
+    k_delta = 2
+    assert aic.mean_difference == pytest.approx(
+        raw.mean_difference - k_delta / n
+    )
+    assert bic.mean_difference == pytest.approx(
+        raw.mean_difference - 0.5 * k_delta * math.log(n) / n
+    )
 
 
 def test_indistinguishable_models_return_no_preference():
@@ -98,6 +104,8 @@ def test_boundary_relation_emits_primary_procedure_warning():
         ({"loglik_a": [1.0, 2.0], "loglik_b": [1.0, 2.1], "k_a": -1}, "non-negative"),
         ({"loglik_a": [1.0, 2.0], "loglik_b": [1.0, 2.1], "correction": "x"}, "correction"),
         ({"loglik_a": [1.0, 2.0], "loglik_b": [1.0, 2.1], "relation": "x"}, "relation"),
+        ({"loglik_a": [1.0, 2.0], "loglik_b": [0.9, 1.8], "seed": True}, "seed"),
+        ({"loglik_a": [1.0, 2.0], "loglik_b": [0.9, 1.8], "seed": -1}, "seed"),
     ],
 )
 def test_validation_guards(kwargs, message):
@@ -109,9 +117,25 @@ def test_validation_guards(kwargs, message):
 
 
 def test_cluster_validation_guards():
-    """Cluster labels must align and identify at least two independent units."""
+    """Cluster labels must align, be present, and identify two independent units."""
     a, b = _likelihoods()
     with pytest.raises(ValueError, match="matching"):
         compare_nonnested_models(a, b, 1, 1, cluster_id=[1, 2])
     with pytest.raises(ValueError, match="at least two clusters"):
         compare_nonnested_models(a, b, 1, 1, cluster_id=[1] * len(a))
+    with pytest.raises(ValueError, match="missing"):
+        compare_nonnested_models(
+            a,
+            b,
+            1,
+            1,
+            cluster_id=np.array(["q1", "q1", np.nan, "q2", "q2", "q2"], dtype=object),
+        )
+    with pytest.raises(ValueError, match="missing"):
+        compare_nonnested_models(
+            a,
+            b,
+            1,
+            1,
+            cluster_id=np.array(["q1", "q1", None, "q2", "q2", "q2"], dtype=object),
+        )
