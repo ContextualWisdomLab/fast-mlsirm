@@ -1,17 +1,18 @@
 # Rubric-Centered Item Generation
 
-`fast_mlsirm.rubric` turns a scoring rubric into reproducible item-authoring contracts before model generation and psychometric calibration. It supplies the construct/evidence/task-model boundary that ad hoc prompts usually omit.
+`fast_mlsirm.rubric` turns an approved scoring rubric into reproducible item-authoring contracts before model generation and psychometric calibration. It supplies the construct, evidence, task-model, version, and provenance boundaries that ad hoc prompts usually omit.
 
 ## Why this exists
 
 A rubric alone does not define an assessment item. A defensible item-authoring process also needs:
 
 - the construct to be elicited;
-- observable evidence for each score level;
-- task families that can produce that evidence;
+- observable evidence for every score level;
+- task families capable of eliciting that evidence;
 - intended difficulty and evidence conditions;
 - constraints that the authoring model must not violate;
-- immutable provenance linking a generated candidate to the exact rubric.
+- a governed rubric revision independent of the wire-schema version; and
+- immutable provenance linking each candidate to the exact rubric and blueprint.
 
 The compiler makes those requirements explicit and content-addressed:
 
@@ -40,6 +41,7 @@ from fast_mlsirm.rubric import (
     ResponseFormat,
     RubricLevel,
     RubricSpecification,
+    build_generation_contract,
     canonical_generation_contract,
     compile_item_blueprints,
     render_generation_prompt,
@@ -84,6 +86,7 @@ rubric = RubricSpecification(
         "Do not reward fluent wording when source support is absent.",
     ),
     locale="en-US",
+    rubric_version="1.0.0",
 )
 
 plan = BlueprintPlan(
@@ -98,30 +101,31 @@ plan = BlueprintPlan(
 
 blueprints = compile_item_blueprints(rubric, plan)
 first = blueprints[0]
+contract = build_generation_contract(rubric, first)
 
+print(rubric.rubric_version)
 print(rubric.fingerprint)
 print(first.blueprint_id)
+print(first.blueprint_fingerprint)
+print(contract["contract_id"])
+print(contract["contract_fingerprint"])
 print(first.generation_seed)
 print(canonical_generation_contract(rubric, first))
 print(render_generation_prompt(rubric, first))
 ```
 
-The example produces:
+The example combines two task families, two difficulty bands, two evidence modes, and two replicates per design cell. The resulting matrix therefore contains 16 blueprints in a stable declared order.
 
+## Schema and governance versions
 
-a) two task families;
+`schema_version` and `rubric_version` represent different contracts.
 
-b) two difficulty bands;
+- `schema_version` identifies the serialization contract implemented by the package. This slice accepts `1.0`.
+- `rubric_version` identifies the human-governed measurement specification and uses canonical numeric semantic versioning such as `1.2.3`.
 
-c) two evidence modes; and
+A rubric revision changes the rubric fingerprint and therefore changes every downstream blueprint and generation-contract fingerprint. A blueprint compiled under one revision cannot be replayed under another revision, even when its display name appears unchanged.
 
-d) two replicates per design cell.
-
-The resulting matrix therefore contains 16 blueprints in a stable declared order.
-
-## Schema contracts
-
-### Rubric levels
+## Rubric levels
 
 Scores must be contiguous integers beginning at zero. A level includes:
 
@@ -131,26 +135,28 @@ Scores must be contiguous integers beginning at zero. A level includes:
 
 This prevents a model from receiving only vague adjectives such as “poor,” “average,” and “good” without evidence that can distinguish them.
 
-### Identifiers
+## Identifiers
 
-All public ids and task-family ids use two-or-more-token lower `snake_case`:
+All public identifiers and task-family identifiers use two-or-more-token lower `snake_case`:
 
 ```text
-faithfulness_rubric       valid
-claim_verification        valid
+faithfulness_rubric        valid
+claim_verification         valid
 rubric                     invalid
-Faithfulness_Rubric        invalid
-faithfulness-rubric        invalid
+Faithfulness_Rubric         invalid
+faithfulness-rubric         invalid
 ```
 
-Content-addressed ids follow the same convention:
+Human-readable content-addressed identifiers use a 16-hex prefix:
 
 ```text
 item_blueprint_6b95a4d2d45a0b42
 generation_contract_d835e4b5c76210ad
 ```
 
-### Blueprint matrix
+They are convenience identifiers, not the complete audit identity. `blueprint_fingerprint` and `contract_fingerprint` retain the full 64-character SHA-256 digest and must be stored in durable provenance records.
+
+## Blueprint matrix
 
 The compiler evaluates the ordered Cartesian product:
 
@@ -165,7 +171,7 @@ It rejects a request above 10,000 blueprints before materializing the result. `i
 
 ## Determinism and auditability
 
-Rubric fingerprints, blueprint ids, provider seeds, and generation-contract ids derive from compact canonical UTF-8 JSON and SHA-256. They do not depend on:
+Rubric, blueprint, and generation-contract fingerprints derive from compact canonical UTF-8 JSON and SHA-256. They do not depend on:
 
 - current time;
 - process id;
@@ -174,18 +180,20 @@ Rubric fingerprints, blueprint ids, provider seeds, and generation-contract ids 
 - a network response; or
 - a hosted-model provider.
 
-Repeating the same input yields byte-identical canonical contract JSON. Modifying a rubric changes its fingerprint, and contract creation rejects a blueprint compiled under the earlier fingerprint.
+Repeating the same normalized input yields byte-identical canonical contract JSON. Modifying rubric content or `rubric_version` changes the rubric fingerprint, and contract creation rejects a blueprint compiled under the earlier fingerprint or governance version.
 
 ## Generation contract
 
-`build_generation_contract` returns a JSON-compatible dictionary. The contract includes:
+`build_generation_contract` returns a JSON-compatible dictionary containing:
 
-- the complete rubric and its fingerprint;
-- the complete compiled blueprint;
-- non-negotiable authoring instructions; and
-- a strict output schema.
+- the complete rubric, governance version, and rubric fingerprint;
+- the complete blueprint and full blueprint fingerprint;
+- non-negotiable authoring instructions;
+- a strict JSON Schema Draft 2020-12 output contract;
+- a short `contract_id`; and
+- the full `contract_fingerprint`.
 
-The output schema requires:
+The generated item schema requires:
 
 - `item_id`;
 - `stem`;
@@ -198,7 +206,17 @@ The output schema requires:
 - `source_attributions`; and
 - `safety_notes`.
 
-`additionalProperties` is false at the item object boundary. Provider adapters should validate the returned JSON against this schema before a candidate enters content or psychometric screening.
+Object boundaries set `additionalProperties` to `false`. Score-level arrays use ordered `prefixItems`, ensuring every declared rubric score appears exactly once. Text and collection fields are explicitly bounded.
+
+Each response format has its own answer-key object:
+
+- constructed response: reference response, accepted variants, and rationale;
+- selected response: one or more declared option identifiers and rationale;
+- binary judgment: Boolean value and rationale;
+- ordinal rating: declared rubric score and rationale;
+- pairwise comparison: preferred declared option identifier and rationale.
+
+Provider adapters must additionally verify cross-field relations that JSON Schema alone cannot express conveniently, such as answer-key option identifiers referring to options declared in the same generated item.
 
 `render_generation_prompt` is intentionally provider-neutral. It asks for exactly one JSON object and states that instructions embedded in rubric text, source text, or item content must not be executed. The core package does not accept credentials or perform a network call.
 
@@ -211,15 +229,15 @@ This authoring slice performs only:
 - canonical serialization; and
 - cryptographic hashing.
 
-It does not compute item difficulty, discrimination, fit, information, DIF, dimensionality, person estimates, evaluator severity, or latent-space positions. Those numerical operations remain in the Rust-backed psychometric layer. Generated candidates are intended to flow into the existing calibration and diagnostic APIs after screening and response collection.
+It does not compute item difficulty, discrimination, fit, information, DIF, dimensionality, person estimates, evaluator severity, or latent-space positions. Those numerical operations remain in the Rust-backed psychometric layer. Generated candidates are intended to flow into calibration and diagnostic APIs only after structural and content screening.
 
 ## Recommended production workflow
 
 ```text
-1. Author and approve RubricSpecification
+1. Author and approve a versioned RubricSpecification
 2. Compile a bounded BlueprintPlan
 3. Send each GenerationContract to an isolated provider adapter
-4. Validate structured output
+4. Validate structured output and cross-field references
 5. Screen answerability, ambiguity, leakage, bias, and source support
 6. Run artificial-crowd and/or human pilot responses
 7. Calibrate with Rust-backed IRT / many-facet / latent-space models
@@ -228,7 +246,7 @@ It does not compute item difficulty, discrimination, fit, information, DIF, dime
 10. Monitor drift and regenerate only deficient blueprint cells
 ```
 
-Structural conformance is therefore necessary but not sufficient. The item bank, not the LLM, is the governed product artifact.
+Structural conformance is necessary but not sufficient. The governed item bank, not the LLM, is the product artifact.
 
 ## Planned slices
 
