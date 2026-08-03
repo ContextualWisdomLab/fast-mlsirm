@@ -110,8 +110,8 @@ pub struct BifactorIndicesResult {
 /// `loadings` is row-major with shape `n_items x n_factors` and must contain
 /// finite standardized loadings with absolute value below one. `uniquenesses`
 /// contains one finite non-negative item residual variance per row. The factors
-/// are assumed orthogonal; callers must standardize IRT slopes before using
-/// this function.
+/// are assumed orthogonal; callers with logistic IRT slopes should use
+/// [`bifactor_indices_from_logit_slopes`].
 ///
 /// This function deliberately returns descriptive indices, not a pass/fail
 /// verdict. Model selection should use likelihood, predictive, recovery, and
@@ -246,11 +246,63 @@ pub fn bifactor_indices(
     })
 }
 
-fn validate_inputs(
-    loadings: &[f64],
-    uniquenesses: &[f64],
+/// Standardize orthogonal logistic-IRT slopes and compute bifactor indices.
+///
+/// For item `i`, raw slope vector `a_i`, and unit-variance orthogonal factors,
+/// the latent-response representation has logistic residual variance
+/// `pi^2 / 3`. The standardized loading and uniqueness are therefore
+///
+/// `lambda_if = a_if / sqrt(sum_h a_ih^2 + pi^2/3)`
+///
+/// and
+///
+/// `psi_i = (pi^2/3) / (sum_h a_ih^2 + pi^2/3)`.
+///
+/// The implementation performs the normalization in row-scaled coordinates to
+/// avoid overflow for large finite slopes. It is the direct entry point for the
+/// fitted `BIFAC2PLM` slope matrix; it must not be used for probit or other
+/// response links with a different residual-variance convention.
+pub fn bifactor_indices_from_logit_slopes(
+    logit_slopes: &[f64],
     config: BifactorIndicesConfig,
-) -> Result<(), String> {
+) -> Result<BifactorIndicesResult, String> {
+    let expected = validate_config(config)?;
+    if logit_slopes.len() != expected {
+        return Err(format!(
+            "logit slope matrix length must be n_items * n_factors ({expected}); got {}",
+            logit_slopes.len()
+        ));
+    }
+    if logit_slopes.iter().any(|slope| !slope.is_finite()) {
+        return Err("logit slopes must be finite".into());
+    }
+
+    let residual_sd = std::f64::consts::PI / 3.0_f64.sqrt();
+    let mut loadings = Vec::with_capacity(expected);
+    let mut uniquenesses = Vec::with_capacity(config.n_items);
+    for row in logit_slopes.chunks_exact(config.n_factors) {
+        let scale = row
+            .iter()
+            .map(|slope| slope.abs())
+            .fold(residual_sd, f64::max);
+        let residual_ratio = residual_sd / scale;
+        let scaled_total = residual_ratio * residual_ratio
+            + row
+                .iter()
+                .map(|slope| {
+                    let scaled = *slope / scale;
+                    scaled * scaled
+                })
+                .sum::<f64>();
+        let denominator = scaled_total.sqrt();
+        loadings.extend(row.iter().map(|slope| (*slope / scale) / denominator));
+        uniquenesses.push(residual_ratio * residual_ratio / scaled_total);
+    }
+
+    bifactor_indices(&loadings, &uniquenesses, config)
+}
+
+fn validate_config(config: BifactorIndicesConfig) -> Result<usize, String> {
     if config.n_items < 2 {
         return Err("bifactor indices require at least two items".into());
     }
@@ -266,11 +318,19 @@ fn validate_inputs(
     if !(config.zero_tolerance.is_finite() && config.zero_tolerance >= 0.0) {
         return Err("zero_tolerance must be finite and non-negative".into());
     }
-    let expected = checked_mul_usize(
+    checked_mul_usize(
         config.n_items,
         config.n_factors,
         "loading matrix dimensions overflow usize",
-    )?;
+    )
+}
+
+fn validate_inputs(
+    loadings: &[f64],
+    uniquenesses: &[f64],
+    config: BifactorIndicesConfig,
+) -> Result<(), String> {
+    let expected = validate_config(config)?;
     if loadings.len() != expected {
         return Err(format!(
             "loading matrix length must be n_items * n_factors ({expected}); got {}",
