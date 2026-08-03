@@ -206,7 +206,7 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
                 [
                     '<div class="metric-card">',
                     f"<dt>{escape(_label(key))}</dt>",
-                    f"<dd>{escape(_format_value(value))}</dd>",
+                    f"<dd{_title_attr(value)}>{escape(_format_value(value))}</dd>",
                     "</div>",
                 ]
             )
@@ -322,7 +322,7 @@ def _bar_chart(rows: list[dict[str, Any]], value_key: str | None) -> str:
                     '<div class="bar-track" aria-hidden="true">',
                     f'<div class="bar-fill" style="width: {width:.1f}%"></div>',
                     "</div>",
-                    f'<span class="bar-value">{escape(_format_value(value))}</span>',
+                    f'<span class="bar-value"{_title_attr(value)}>{escape(_format_value(value))}</span>',
                     "</div>",
                 ]
             )
@@ -356,11 +356,13 @@ def _table(rows: list[dict[str, Any]], *, label: str, limit: int = 12) -> str:
     for row in rows[:limit]:
         cells = []
         for i, column in enumerate(columns):
-            value = escape(_format_value(row.get(column, "")))
+            raw_value = row.get(column, "")
+            value = escape(_format_value(raw_value))
+            title = _title_attr(raw_value)
             if i == 0:
-                cells.append(f'<th scope="row">{value}</th>')
+                cells.append(f'<th scope="row"{title}>{value}</th>')
             else:
-                cells.append(f"<td>{value}</td>")
+                cells.append(f"<td{title}>{value}</td>")
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
     note = ""
@@ -478,6 +480,13 @@ def _format_label_value(value: Any) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return _format_value(value)
+
+
+def _title_attr(value: Any) -> str:
+    """Return a title attribute with full precision for finite floats, or empty string."""
+    if isinstance(value, float) and math.isfinite(value):
+        return f' title="{value}"'
+    return ""
 
 
 def _is_number(value: Any) -> bool:

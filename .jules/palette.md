@@ -39,3 +39,7 @@
 ## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
 **Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
 **Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
+
+## 2025-02-12 - Exposing Exact Values on Hover via `title` Attribute
+**Learning:** When numeric data is formatted for display (e.g., restricted to 4 significant digits), users lose the ability to see the exact floating-point value. This can make debugging or verifying precision difficult in data-heavy HTML reports.
+**Action:** Always provide the full-precision, exact numeric string representation in the native HTML `title` attribute of the element containing the formatted value. This gives users immediate access to the underlying data on hover without visually cluttering the UI.
