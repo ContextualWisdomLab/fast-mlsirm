@@ -69,14 +69,18 @@ fn q_matrix() -> Vec<u8> {
     matrix
 }
 
-fn q_mask(matrix: &[u8], item: usize) -> usize {
-    let mut mask = 0_usize;
-    for attribute in 0..N_ATTRIBUTES {
-        if matrix[item * N_ATTRIBUTES + attribute] != 0 {
-            mask |= 1 << attribute;
-        }
-    }
-    mask
+fn q_masks(matrix: &[u8]) -> Vec<usize> {
+    (0..N_ITEMS)
+        .map(|item| {
+            let mut mask = 0_usize;
+            for attribute in 0..N_ATTRIBUTES {
+                if matrix[item * N_ATTRIBUTES + attribute] != 0 {
+                    mask |= 1 << attribute;
+                }
+            }
+            mask
+        })
+        .collect()
 }
 
 fn simulate(
@@ -84,7 +88,7 @@ fn simulate(
     attribute_intercept: &[f64],
     slip: &[f64],
     guess: &[f64],
-    matrix: &[u8],
+    item_masks: &[usize],
     skew: bool,
     rng: &mut Lcg,
 ) -> (Vec<f64>, Vec<usize>) {
@@ -115,7 +119,7 @@ fn simulate(
         profiles[person] = profile;
 
         for item in 0..N_ITEMS {
-            let mastered = (profile & q_mask(matrix, item)) == q_mask(matrix, item);
+            let mastered = (profile & item_masks[item]) == item_masks[item];
             let probability = if mastered {
                 1.0 - slip[item]
             } else {
@@ -149,10 +153,7 @@ fn bias(estimate: &[f64], truth: &[f64]) -> f64 {
         / estimate.len() as f64
 }
 
-fn attribute_agreement(
-    estimated_probability: &[f64],
-    profiles: &[usize],
-) -> f64 {
+fn attribute_agreement(estimated_probability: &[f64], profiles: &[usize]) -> f64 {
     let mut correct = 0_usize;
     for person in 0..N_PERSONS {
         for attribute in 0..N_ATTRIBUTES {
@@ -183,6 +184,7 @@ fn two_standard_error_floor_matches_the_registered_design() {
 #[ignore = "literature-grade 500-replication recovery; executed by rust-ignored CI"]
 fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
     let matrix = q_matrix();
+    let item_masks = q_masks(&matrix);
     let attribute_slope = [1.2, 1.5, 0.9];
     let attribute_intercept = [0.3, -0.5, 0.6];
     let slip = [0.12; N_ITEMS];
@@ -209,7 +211,7 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
                 &attribute_intercept,
                 &slip,
                 &guess,
-                &matrix,
+                &item_masks,
                 skew,
                 &mut rng,
             );
@@ -238,8 +240,8 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
         let convergence_rate = converged as f64 / REPLICATIONS as f64;
         assert!(
             convergence_rate >= floor,
-            "higher-order convergence rate {convergence_rate:.3} below the "
-                + "two-standard-error floor {floor:.3} for skew={skew}"
+            "higher-order convergence rate {convergence_rate:.3} below the \
+             two-standard-error floor {floor:.3} for skew={skew}"
         );
         assert!(converged > 0);
         let denominator = converged as f64;
@@ -250,10 +252,10 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
         agreement /= denominator;
 
         println!(
-            "[HO-DINA MC skew={skew}] reps={REPLICATIONS} converged={converged} "
-                + "({convergence_rate:.3}; floor={floor:.3}) RMSE(a)={slope_rmse:.3} "
-                + "RMSE(d)={intercept_rmse:.3} bias(a)={slope_bias:.3} "
-                + "bias(d)={intercept_bias:.3} attr-agree={agreement:.3}"
+            "[HO-DINA MC skew={skew}] reps={REPLICATIONS} converged={converged} \
+             ({convergence_rate:.3}; floor={floor:.3}) RMSE(a)={slope_rmse:.3} \
+             RMSE(d)={intercept_rmse:.3} bias(a)={slope_bias:.3} \
+             bias(d)={intercept_bias:.3} attr-agree={agreement:.3}"
         );
 
         let (slope_bound, intercept_bound) = if skew {
