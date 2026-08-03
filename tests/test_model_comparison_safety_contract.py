@@ -11,7 +11,7 @@ import fast_mlsirm.model_comparison as comparison_module
 from fast_mlsirm.model_comparison import (
     ComparisonStatus,
     ModelRelation,
-    VuongVarianceDegenerateError,
+    VuongKernelError,
     compare_nonnested_models,
 )
 
@@ -108,13 +108,21 @@ def test_parameter_counts_reject_booleans_and_fractional_values(parameter_count)
         )
 
 
-def test_legacy_kernel_zero_variance_becomes_a_typed_boundary_signal(monkeypatch):
-    """Only the adapter, not decision logic, knows the legacy Rust error text."""
+@pytest.mark.parametrize(
+    "message",
+    [
+        "models are indistinguishable on this sample",
+        "translated wording without omega notation",
+        "future compiled validation text",
+    ],
+)
+def test_kernel_errors_become_one_typed_redacted_boundary(monkeypatch, message):
+    """Classification never depends on human-readable Rust exception wording."""
     def legacy_kernel(*_args, **_kwargs):
-        raise ValueError("vuong_nonnested: omega^2 = 0")
+        raise ValueError(message)
 
     monkeypatch.setattr(comparison_module, "vuong_nonnested", legacy_kernel)
-    with pytest.raises(VuongVarianceDegenerateError):
+    with pytest.raises(VuongKernelError, match="compiled Vuong kernel rejected") as error:
         comparison_module._run_vuong(
             (1.0, 2.0),
             (0.0, 1.0),
@@ -122,12 +130,13 @@ def test_legacy_kernel_zero_variance_becomes_a_typed_boundary_signal(monkeypatch
             1,
             bic_correction=True,
         )
+    assert message not in str(error.value)
 
 
-def test_typed_degenerate_signal_is_consumed(monkeypatch):
-    """Exact zero variance returns a reportable status instead of string matching."""
+def test_typed_kernel_failure_is_consumed_fail_closed(monkeypatch):
+    """Compiled failures produce no guessed variance status or model preference."""
     def fail(*_args, **_kwargs):
-        raise VuongVarianceDegenerateError("zero variance")
+        raise VuongKernelError("compiled Vuong kernel rejected the supplied inputs")
 
     monkeypatch.setattr(comparison_module, "_run_vuong", fail)
     result = compare_nonnested_models(
@@ -138,6 +147,7 @@ def test_typed_degenerate_signal_is_consumed(monkeypatch):
         relation=ModelRelation.STRICTLY_NON_NESTED,
     )
 
-    assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
-    assert result.omega == 0.0
+    assert result.status is ComparisonStatus.KERNEL_ERROR
+    assert math.isnan(result.omega)
+    assert math.isnan(result.raw_z)
     assert result.preferred_model is None
