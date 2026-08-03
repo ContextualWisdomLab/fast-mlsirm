@@ -80,7 +80,7 @@ _CATALOGUE: Final[tuple[RotationCriterionInfo, ...]] = (
     RotationCriterionInfo("covarimin", "oblimin", False, True, False, "Direct-oblimin gamma=1 special case."),
     RotationCriterionInfo("geomin", "geomin", True, True, False, "Geometric-mean row-complexity criterion."),
     RotationCriterionInfo("target", "target", True, True, True, "Complete or NaN-partially specified target rotation."),
-    RotationCriterionInfo("pst", "target", True, True, True, "Weighted partially specified target rotation."),
+    RotationCriterionInfo("pst", "target", True, True, True, "Binary-mask partially specified target rotation."),
     RotationCriterionInfo("entropy", "information", True, True, False, "Minimum entropy criterion."),
     RotationCriterionInfo("infomax", "information", True, True, False, "Infomax information criterion."),
     RotationCriterionInfo("mccammon", "information", True, False, False, "McCammon minimum entropy-ratio criterion."),
@@ -101,6 +101,7 @@ _ORTHOGONAL_ONLY: Final[frozenset[str]] = frozenset(
 _OBLIQUE_ONLY: Final[frozenset[str]] = frozenset(
     {"oblimin", "quartimin", "biquartimin", "covarimin", "simplimax", "oblimax"}
 )
+_TARGET_METHODS: Final[frozenset[str]] = frozenset({"target", "pst", "partial_target"})
 
 
 def available_rotation_criteria() -> tuple[RotationCriterionInfo, ...]:
@@ -167,6 +168,19 @@ def _optional_matrix(
     return matrix
 
 
+def _validate_weights(method: str, weights: np.ndarray | None) -> None:
+    """Enforce criterion-specific weight domains before crossing into Rust."""
+
+    if weights is None:
+        return
+    if np.any(weights < 0.0):
+        raise ValueError("weights must be non-negative")
+    if method in _TARGET_METHODS and not np.all(
+        np.logical_or(weights == 0.0, weights == 1.0)
+    ):
+        raise ValueError("target weights must be binary zero-or-one values")
+
+
 def _solution_from_core(result: dict[str, object]) -> RotationSolution:
     """Convert the Rust core dictionary into a public immutable result."""
 
@@ -222,8 +236,9 @@ def rotate_factor_loadings(
     """Rotate an unrotated loading matrix with deterministic multi-start GPA.
 
     More starts reduce, but never eliminate, local-minimum risk. Target matrices
-    may contain ``NaN`` in unspecified cells; ``pst`` additionally requires
-    non-negative weights.
+    may contain ``NaN`` in unspecified cells. ``target`` and ``pst`` use binary
+    zero-or-one masks matching the GPArotation partial-target contract; use the
+    separately named ``lp_wls`` criterion for continuous non-negative weights.
     """
 
     matrix = _matrix(loadings, "loadings")
@@ -231,8 +246,7 @@ def rotate_factor_loadings(
     resolved_mode = _mode_name(method, mode)
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
-    if weight_matrix is not None and np.any(weight_matrix < 0.0):
-        raise ValueError("weights must be non-negative")
+    _validate_weights(method, weight_matrix)
     result = rotation_core().rotate_factor_loadings(
         matrix,
         method,
@@ -273,8 +287,7 @@ def rotation_criterion_value_gradient(
     method = _method_name(criterion)
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
-    if weight_matrix is not None and np.any(weight_matrix < 0.0):
-        raise ValueError("weights must be non-negative")
+    _validate_weights(method, weight_matrix)
     value, gradient = rotation_core().rotation_criterion_value_gradient(
         matrix,
         method,
