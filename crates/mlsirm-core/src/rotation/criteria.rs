@@ -2,7 +2,7 @@
 //!
 //! The formulas follow the public GPArotation criterion contract: every
 //! criterion returns a scalar that is minimized and the derivative with respect
-//! to the rotated pattern matrix.  The optimizer is deliberately separate from
+//! to the rotated pattern matrix. The optimizer is deliberately separate from
 //! this registry, so new criteria can be added without duplicating manifold or
 //! multi-start logic.
 
@@ -20,8 +20,11 @@ pub enum RotationCriterion {
     Oblimin { gamma: f64 },
     /// Geomin criterion.
     Geomin { delta: f64 },
-    /// Complete or partially specified target criterion. `NaN` target cells are
-    /// ignored; weights follow GPArotation's squared weighted-residual contract.
+    /// Complete or partially specified target criterion.
+    ///
+    /// `NaN` target cells are ignored and weights must be exactly zero or one,
+    /// matching GPArotation PST semantics. Continuous weights belong to a
+    /// separately named extension and are not accepted by this variant.
     Target { target: Vec<f64>, weights: Vec<f64> },
     /// Minimum entropy.
     Entropy,
@@ -147,10 +150,10 @@ impl RotationCriterion {
                 }
                 let mut specified = 0_usize;
                 for (target_value, weight) in target.iter().zip(weights) {
-                    if !weight.is_finite() || *weight < 0.0 {
-                        return Err("target weights must be finite and non-negative".into());
+                    if !weight.is_finite() || !matches!(*weight, 0.0 | 1.0) {
+                        return Err("target weights must be binary zero-or-one values".into());
                     }
-                    if target_value.is_finite() && *weight > 0.0 {
+                    if target_value.is_finite() && *weight == 1.0 {
                         specified += 1;
                     } else if !target_value.is_nan() && !target_value.is_finite() {
                         return Err("target cells must be finite or NaN".into());
@@ -345,9 +348,9 @@ fn target(l: &[f64], target: &[f64], weights: &[f64]) -> CriterionEvaluation {
         if target[idx].is_nan() || weights[idx] == 0.0 {
             continue;
         }
-        let weighted = weights[idx] * (l[idx] - target[idx]);
-        value += weighted * weighted;
-        gradient[idx] = 2.0 * weights[idx] * weighted;
+        let residual = l[idx] - target[idx];
+        value += weights[idx] * residual * residual;
+        gradient[idx] = 2.0 * weights[idx] * residual;
     }
     CriterionEvaluation { value, gradient }
 }
@@ -692,6 +695,18 @@ mod tests {
     }
 
     #[test]
+    fn binary_target_weights_have_unsquared_weight_semantics() {
+        let criterion = RotationCriterion::Target {
+            target: vec![0.0; 8],
+            weights: vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+        };
+        let evaluation = criterion.evaluate(&matrix(), 4, 2).unwrap();
+        let expected = 0.8_f64.powi(2) + 0.1_f64.powi(2) + 0.5_f64.powi(2) + 0.3_f64.powi(2);
+        assert!((evaluation.value - expected).abs() < 1e-12);
+        assert_eq!(evaluation.gradient[1], 0.0);
+    }
+
+    #[test]
     fn bifactor_gradients_and_metadata_are_exercised() {
         let loadings = vec![
             0.7, 0.5, 0.1, 0.6, 0.1, 0.5, 0.8, 0.4, 0.2, 0.6, 0.2, 0.4,
@@ -748,6 +763,14 @@ mod tests {
         assert!(RotationCriterion::Target {
             target: vec![0.0; 8],
             weights: vec![-1.0; 8]
+        }
+        .validate(4, 2)
+        .is_err());
+        let mut continuous_weights = vec![1.0; 8];
+        continuous_weights[0] = 0.25;
+        assert!(RotationCriterion::Target {
+            target: vec![0.0; 8],
+            weights: continuous_weights
         }
         .validate(4, 2)
         .is_err());
