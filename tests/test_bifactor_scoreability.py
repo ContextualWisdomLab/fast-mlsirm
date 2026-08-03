@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pytest
 
@@ -205,10 +207,8 @@ def test_python_rejects_oversized_work_before_loading_the_rust_module(monkeypatc
             """Signal that Python failed to enforce the pre-dispatch budget."""
             raise AssertionError("compiled bifactor function must not be called")
 
-    monkeypatch.setattr(
-        "fast_mlsirm.bifactor_scoreability.bifactor_core",
-        lambda: UnexpectedCore(),
-    )
+    module = importlib.import_module("fast_mlsirm.bifactor_scoreability")
+    monkeypatch.setattr(module, "bifactor_core", lambda: UnexpectedCore())
     loadings = np.zeros((12_208, 64), dtype=np.float64)
     uniquenesses = np.ones(12_208, dtype=np.float64)
     with pytest.raises(ValueError, match="work budget"):
