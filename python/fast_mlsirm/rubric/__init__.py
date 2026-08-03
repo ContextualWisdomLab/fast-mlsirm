@@ -32,6 +32,8 @@ from .compiler import compile_item_blueprints as compile_item_blueprints
 from .contracts import build_generation_contract as build_generation_contract
 from .contracts import canonical_generation_contract as canonical_generation_contract
 from .contracts import render_generation_prompt as render_generation_prompt
+from .dif_pilot import DifPilotDesign as DifPilotDesign
+from .dif_pilot import build_dif_pilot_design as build_dif_pilot_design
 from .generation import GenerationExecution as GenerationExecution
 from .generation import GenerationProviderError as GenerationProviderError
 from .generation import GenerationRequest as GenerationRequest
