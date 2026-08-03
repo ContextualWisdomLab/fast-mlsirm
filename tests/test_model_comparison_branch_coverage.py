@@ -11,7 +11,7 @@ import fast_mlsirm.model_comparison as comparison_module
 from fast_mlsirm.model_comparison import (
     ComparisonStatus,
     ModelRelation,
-    VuongVarianceDegenerateError,
+    VuongKernelError,
     compare_nonnested_models,
 )
 
@@ -84,13 +84,13 @@ def test_numpy_integer_counts_are_retained_and_numpy_boolean_is_rejected(monkeyp
         )
 
 
-def test_unrelated_kernel_validation_error_is_not_reclassified(monkeypatch):
-    """Only the dedicated legacy zero-variance text becomes the typed signal."""
+def test_compiled_validation_text_is_redacted(monkeypatch):
+    """Kernel error wording is neither exposed nor used for classification."""
     def invalid_kernel(*_args, **_kwargs):
         raise ValueError("some other low-level validation error")
 
     monkeypatch.setattr(comparison_module, "vuong_nonnested", invalid_kernel)
-    with pytest.raises(ValueError, match="some other"):
+    with pytest.raises(VuongKernelError, match="compiled Vuong kernel rejected") as error:
         comparison_module._run_vuong(
             (0.0, 0.1),
             (0.2, 0.3),
@@ -98,14 +98,15 @@ def test_unrelated_kernel_validation_error_is_not_reclassified(monkeypatch):
             1,
             bic_correction=True,
         )
+    assert "some other" not in str(error.value)
 
 
-def test_typed_variance_error_records_no_raw_statistic(monkeypatch):
-    """A typed exact-zero signal takes the dedicated degenerate-result path."""
-    def zero_variance(*_args, **_kwargs):
-        raise VuongVarianceDegenerateError("zero variance")
+def test_typed_kernel_error_records_no_raw_statistic(monkeypatch):
+    """A compiled rejection takes the dedicated fail-closed result path."""
+    def kernel_failure(*_args, **_kwargs):
+        raise VuongKernelError("compiled Vuong kernel rejected the supplied inputs")
 
-    monkeypatch.setattr(comparison_module, "_run_vuong", zero_variance)
+    monkeypatch.setattr(comparison_module, "_run_vuong", kernel_failure)
     result = compare_nonnested_models(
         [0.0, 0.1],
         [0.2, 0.3],
@@ -113,6 +114,7 @@ def test_typed_variance_error_records_no_raw_statistic(monkeypatch):
         1,
         relation=ModelRelation.OVERLAPPING,
     )
-    assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
+    assert result.status is ComparisonStatus.KERNEL_ERROR
+    assert math.isnan(result.omega)
     assert math.isnan(result.raw_z)
     assert math.isnan(result.raw_p_two_sided)
