@@ -95,43 +95,104 @@ jobs:
             echo "CHANGELOG section for $RELEASE_VERSION is empty" >&2
             exit 1
           fi
-      - name: Verify the release tag and release do not already exist
+      - name: Cap the release body below the GitHub release-body limit
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          notes_path = Path("release_notes.md")
+          notes_text = notes_path.read_text(encoding="utf-8")
+          body_limit = 120_000
+          if len(notes_text) > body_limit:
+              release_version = os.environ["RELEASE_VERSION"]
+              repository = os.environ["GITHUB_REPOSITORY"]
+              changelog_url = (
+                  f"https://github.com/{repository}/blob/"
+                  f"v{release_version}/CHANGELOG.md"
+              )
+              headings = list(
+                  dict.fromkeys(
+                      line
+                      for line in notes_text.splitlines()
+                      if line.startswith("#### ")
+                  )
+              )
+              summary_lines = [
+                  "The complete notes for this release exceed GitHub's "
+                  "release-body limit, so this body is a summary.",
+                  "",
+                  f"Full authoritative notes: the `[{release_version}]` "
+                  f"section of [CHANGELOG.md]({changelog_url}).",
+                  "",
+                  "### Contents",
+                  "",
+              ]
+              summary_lines += [
+                  "- " + line[len("#### "):] for line in headings
+              ]
+              capped_text = "\n".join(summary_lines) + "\n"
+              if len(capped_text) > body_limit:
+                  capped_text = (
+                      capped_text[: body_limit - 60].rsplit("\n", 1)[0]
+                      + "\n\n(contents list truncated)\n"
+                  )
+              notes_path.write_text(capped_text, encoding="utf-8")
+          PY
+      - name: Verify the release is absent and classify the tag state
+        id: release_tag_state
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
-          check_absent() {
+          api_status() {
             endpoint="$1"
-            label="$2"
-            response_file="$(mktemp)"
-            status="$(curl --silent --show-error \
+            response_file="$2"
+            curl --silent --show-error \
               --output "$response_file" \
               --write-out '%{http_code}' \
               --header "Accept: application/vnd.github+json" \
               --header "Authorization: Bearer $GH_TOKEN" \
               --header "X-GitHub-Api-Version: 2022-11-28" \
-              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint")"
-            case "$status" in
-              404)
-                rm -f "$response_file"
-                ;;
-              200)
-                rm -f "$response_file"
-                echo "$label already exists; refusing to overwrite or reuse it" >&2
-                exit 1
-                ;;
-              *)
-                cat "$response_file" >&2
-                rm -f "$response_file"
-                echo "GitHub API returned HTTP $status while checking $label" >&2
-                exit 1
-                ;;
-            esac
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$endpoint"
           }
-          check_absent "git/ref/tags/v$RELEASE_VERSION" "tag v$RELEASE_VERSION"
-          check_absent "releases/tags/v$RELEASE_VERSION" "release v$RELEASE_VERSION"
+          response_file="$(mktemp)"
+          status="$(api_status "releases/tags/v$RELEASE_VERSION" "$response_file")"
+          case "$status" in
+            404)
+              ;;
+            200)
+              echo "release v$RELEASE_VERSION already exists; refusing to overwrite or reuse it" >&2
+              exit 1
+              ;;
+            *)
+              cat "$response_file" >&2
+              echo "GitHub API returned HTTP $status while checking release v$RELEASE_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          status="$(api_status "git/ref/tags/v$RELEASE_VERSION" "$response_file")"
+          case "$status" in
+            404)
+              echo "resume_existing_tag=false" >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              echo "tag v$RELEASE_VERSION exists without a release; resuming publication for the existing immutable tag"
+              echo "resume_existing_tag=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              cat "$response_file" >&2
+              echo "GitHub API returned HTTP $status while checking tag v$RELEASE_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          rm -f "$response_file"
       - name: Atomically create the immutable release tag
+        if: steps.release_tag_state.outputs.resume_existing_tag != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
