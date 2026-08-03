@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import InitVar, dataclass
 import math
 import operator
@@ -86,11 +87,8 @@ class TestletPilotDesign:
         object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
         if self.schema_version != self.binary_design.schema_version:
             raise ValueError("schema_version must match the wrapped binary design")
-        testlet_counts = [
-            self.binary_design.item_factor_ids.count(testlet_position)
-            for testlet_position in range(len(self.binary_design.factor_testlet_ids))
-        ]
-        if max(testlet_counts) < 2:
+        testlet_counts = Counter(self.binary_design.item_factor_ids)
+        if max(testlet_counts.values()) < 2:
             raise ValueError(
                 "testlet design requires at least one query testlet with two or more items"
             )
