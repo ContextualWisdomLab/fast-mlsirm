@@ -56,7 +56,7 @@ the structured error `gtheory_pi_incomplete_design`. It never performs complete-
 case deletion, itemwise deletion, mean substitution, failure-score coercion, or
 model-based imputation.
 
-A study that needs unbalanced, nested, mixed/fixed-facet, or missing-data G theory
+A study with unbalanced data, nested facets, mixed/fixed facets, or missing data
 must use an explicitly specified estimator whose assumptions and identification
 conditions are independently reviewed.
 
