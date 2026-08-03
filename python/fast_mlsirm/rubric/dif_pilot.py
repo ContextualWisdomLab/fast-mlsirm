@@ -218,6 +218,12 @@ def build_dif_pilot_design(
     binary_design = build_mirt_pilot_design(records)
     if not isinstance(respondent_groups, Mapping):
         raise TypeError("respondent_groups must be a mapping")
+    if len(respondent_groups) > len(binary_design.respondent_ids):
+        raise _error(
+            "dif_group_assignment_count_exceeded",
+            "$.respondent_groups",
+            "respondent group assignments cannot exceed indexed respondents",
+        )
 
     reference = _identifier(reference_group_id, "reference_group_id")
     focal = _identifier(focal_group_id, "focal_group_id")
