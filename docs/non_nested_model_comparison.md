@@ -9,6 +9,22 @@ The API accepts paired **casewise marginal log-likelihood** contributions from
 two models fitted to the same independent sampling units. The fail-closed
 default relation is `unknown`.
 
+## Relation-first procedure routing
+
+Model relation is established before a normal-selection statistic is computed.
+
+- `nested` and `boundary_nested` return `requires_likelihood_ratio` and do not
+  invoke the non-nested kernel.
+- `unknown` returns `unknown_relation` and does not invoke the kernel.
+- `strictly_non_nested` and `overlapping` may invoke the Rust selection-statistic
+  kernel, but still return `requires_distinguishability_test` until the formal
+  weighted-chi-square first stage is available.
+
+This order prevents an exact-zero or otherwise rejected non-applicable statistic
+from masking the procedure actually required by the declared model relation.
+Raw Vuong fields are therefore `NaN` for nested, boundary-nested, and unknown
+relations.
+
 ## Rust-computed statistic
 
 For case `i`, define
@@ -68,28 +84,26 @@ raw `Z` value into `MODEL_A_PREFERRED` or `MODEL_B_PREFERRED`.
 1. Model labels are trimmed, limited to 128 printable characters, and must be
    distinct.
 2. Each casewise iterable is consumed only up to the documented maximum of
-   1,000,000 values; oversized and non-terminating iterables fail before an
-   unbounded allocation.
-3. Parameter counts must be non-negative integers; booleans and fractional
+   1,000,000 values. Every value is converted to a finite float under a stable
+   public validation boundary; booleans, opaque objects, non-finite values, and
+   conversion overflows are rejected before FFI.
+3. The two vectors must have equal length with at least two independent cases.
+4. Parameter counts must be non-negative integers; booleans and fractional
    values are rejected.
-4. The Rust core computes `mean_diff`, `omega`, `z`, and the two-sided normal
-   p value.
-5. A compiled-kernel rejection is converted to the redacted typed
-   `VuongKernelError` boundary and returned as `kernel_error`. The wrapper does
-   not inspect or expose human-readable Rust exception wording and does not
-   guess whether the low-level cause was zero variance or another validation
-   failure.
-6. A successful kernel result with zero, non-finite, or numerically tiny
-   `omega` is returned as `variance_degenerate`.
-7. `omega_tol` is a numerical stability floor only. It is **not** Vuong's
-   formal distinguishability test.
-8. `strictly_non_nested` and `overlapping` relations return
-   `requires_distinguishability_test`.
-9. `nested` and `boundary_nested` relations return
-   `requires_likelihood_ratio` because an ordinary, mixture, or parametric
-   bootstrap reference distribution is required.
-10. `unknown` returns `unknown_relation`; the library does not infer nestedness
-    from parameter counts.
+5. Nested, boundary-nested, and unknown relations are routed to their required
+   procedure without invoking the non-nested normal-selection kernel.
+6. For strictly non-nested or overlapping relations, the Rust core computes
+   `mean_diff`, `omega`, `z`, and the two-sided normal p value.
+7. A stable conversion or compiled-kernel rejection is converted to the
+   redacted typed `VuongKernelError` boundary and returned as `kernel_error`.
+   The wrapper does not inspect or expose exception wording and does not guess
+   whether the low-level cause was zero variance or another rejection.
+8. A successful applicable kernel result with zero, non-finite, or numerically
+   tiny `omega` is returned as `variance_degenerate`.
+9. `omega_tol` is a numerical stability floor only. It is **not** Vuong's formal
+   distinguishability test.
+10. `strictly_non_nested` and `overlapping` relations return
+    `requires_distinguishability_test` after a valid raw statistic is available.
 
 ## Example
 
@@ -117,8 +131,8 @@ print(result.preferred_model)
 # None
 ```
 
-The result preserves these audit fields when the compiled kernel returns
-successfully:
+The result preserves these audit fields when an applicable compiled kernel
+returns successfully:
 
 - `raw_mean_loglik_difference`
 - `omega`
@@ -129,10 +143,12 @@ successfully:
 - declared relation and explicit status
 - warning explaining the required next procedure
 
-When the compiled kernel rejects an input, all raw numerical fields are `NaN`
-and the public result is `kernel_error`; no rejected values or exception text
-are copied into the result. The interpreted `z` and `p_two_sided` fields remain
-`NaN`, and `preferred_model` remains `None`, until a future typed formal-
+For relation-inapplicable paths, raw numerical fields are `NaN` because the
+kernel is deliberately not called. When an applicable compiled kernel rejects
+an input, all raw numerical fields are also `NaN` and the public result is
+`kernel_error`; no rejected values or exception text are copied into the
+result. The interpreted `z` and `p_two_sided` fields remain `NaN`, and
+`preferred_model` remains `None`, until a future typed formal-
 distinguishability result is integrated.
 
 ## Scope boundaries
