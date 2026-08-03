@@ -88,6 +88,18 @@ def _relation(value: ModelRelation | str) -> ModelRelation:
         raise ValueError(f"relation must be one of {choices}") from exc
 
 
+def _casewise_values(value, name: str) -> tuple:
+    """Materialize one casewise iterable with a stable public validation error."""
+    if isinstance(value, (str, bytes)):
+        raise ValueError(f"{name} must be an iterable of numeric casewise values")
+    try:
+        return tuple(value)
+    except TypeError as exc:
+        raise ValueError(
+            f"{name} must be an iterable of numeric casewise values"
+        ) from exc
+
+
 def _unsupported_relation(
     relation: ModelRelation,
 ) -> tuple[ComparisonStatus, str] | None:
@@ -187,8 +199,8 @@ def compare_nonnested_models(
     if not math.isfinite(omega_tol) or omega_tol < 0.0:
         raise ValueError("omega_tol must be finite and non-negative")
 
-    values_a = tuple(loglik_a)
-    values_b = tuple(loglik_b)
+    values_a = _casewise_values(loglik_a, "loglik_a")
+    values_b = _casewise_values(loglik_b, "loglik_b")
     try:
         statistic = vuong_nonnested(
             values_a,
