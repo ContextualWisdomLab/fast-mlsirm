@@ -4,7 +4,70 @@
 
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.3.0
+
+- Project version is bumped to 0.3.0 in `pyproject.toml`,
+  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated
+  `Unreleased` notes (the fail-closed manual release-tag workflow with body
+  capping and interrupted-run resume, the accessible exact-value report
+  disclosure, the precomputed marginal distance hot paths with
+  context-sharded threading, the currency-explicit enterprise due-diligence
+  gate, duplicate-issue-claim PR governance, the generated-item audit and
+  pilot admission gate with its facets observation handoff and resource
+  bounds) now form the `[0.3.0] - 2026-08-03` release section.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.3.0] - 2026-08-03
+
 ### Added
+
+#### Generated-item audit and pilot-admission gate
+
+- A deterministic, content-addressed `CandidateAuditReport` that inspects only
+  parser-validated generated-item candidates and emits bounded redacted
+  findings for instruction-override indicators, ambiguity-prone option or
+  stem patterns, duplicate normalized option/evidence surfaces, overlapping
+  rubric indicators, non-atomic criterion indicators, normalized duplicate
+  source attributions, declared safety notes, and excessive finding volume.
+- An enforced `draft -> audited -> pilot` lifecycle: blocking or
+  review-required findings retain the candidate in `draft`; only an exact
+  candidate/audit fingerprint match may produce an immutable
+  `PilotCandidateRecord` with explicit pilot-study, query/testlet, generator,
+  judge-policy, occasion, rubric, blueprint, and item provenance.
+- Public pilot admission replays the package's exact named and versioned audit
+  policy and compares the complete report fingerprint, preventing a caller
+  from constructing a clean-looking report that bypasses real findings or
+  relabeling the current implementation as an unsupported policy version.
+- The top-level public `PilotCandidateRecord` is factory-sealed against
+  ordinary direct construction. This is an API-governance boundary rather
+  than a cryptographic capability; downstream systems must verify the complete
+  candidate, audit-report, and pilot-record fingerprints.
+- The audit is a deterministic screening and governance boundary, not a
+  semantic answerability, fairness, scoreability, psychometric validity, or
+  operational-deployment declaration. Pilot observation conversion and
+  Rust-backed calibration remain follow-up slices of issue #407.
+
+#### Pilot-observation handoff to many-facet calibration
+
+- Factory-built, content-addressed `PilotObservationRecord` values that bind
+  respondent and rater responses to the complete replay-verified pilot item
+  provenance.
+- Explicit `observed`, `missing`, `not_applicable`, and
+  `insufficient_evidence` states; non-observed states cannot carry a category
+  and are never coerced to failure scores.
+- A deterministic `FacetsPilotDesign` assembler that rejects mixed studies,
+  conflicting item provenance, duplicate cells, invalid category regimes, and
+  unobserved indexed facets before producing copied arguments for the existing
+  Rust-backed `fit_facets` API.
+- Content-addressed preservation of the exact response-state tensor alongside
+  the numeric `NaN` representation used for many-facet estimation.
+- This handoff performs no psychometric arithmetic and makes no adequacy,
+  connectedness, fairness, scoreability, calibration, or validity claim.
+  MIRT, bifactor, testlet, DIF, and G-theory handoffs remain follow-up slices
+  of issue #407.
 
 #### Accessible exact-value disclosure in HTML reports
 
@@ -19,6 +82,20 @@
   print/PDF output, under keyboard-only navigation, and with JavaScript
   disabled, per WCAG 2.2 success criteria 1.3.1, 1.4.13, 2.1.1, and 4.1.2
   (issue #409). Chart markup and the summarized 12-row tables are unchanged.
+
+#### Fail-closed duplicate issue-claim governance
+
+- PR queue governance now parses `Closes`, `Fixes`, and `Resolves` references
+  from every active pull-request body and blocks the commercial release gate
+  when multiple open PRs claim one issue without exactly one issue-specific
+  `Canonical-For: #N` designation.
+- Deterministic JSON and accessible standalone HTML evidence now include the
+  repository base SHA, active PR head SHAs, issue references, timestamps,
+  duplicate-head warnings, high changed-file-overlap warnings, and bounded
+  closed/merged claim history.
+- One-file intersections are excluded from changed-file duplicate warnings, and
+  the hourly read-only workflow uploads governance artifacts even when the
+  duplicate-claim gate fails.
 
 #### Currency-explicit enterprise due-diligence gate
 
@@ -83,7 +160,17 @@
   `[0.2.0] - 2026-08-03` release section.
 - Released authoritative fragments are removed from `docs/changelog.d`; the
   directory again holds only genuinely unreleased notes.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+### Fixed
+
+#### Facets-pilot resource bounds
+
+- Reject persons-by-items-by-raters dense pilot designs above 1,000,000 cells
+  before allocating Python tuple tensors or NumPy arrays, preventing bounded
+  sparse observations from amplifying into memory-exhaustion workloads.
+- Validate observed respondent, item, and rater support with precomputed sets
+  before dense construction, replacing repeated full scans with linear-time
+  membership checks.
 
 ## [0.2.0] - 2026-08-03
 
