@@ -4,6 +4,13 @@ on:
   push:
     branches: [feat/adaptive-factor-rotation-core]
     paths: [.github/workflows/apply-rotation-core-patch.yml]
+  pull_request:
+    branches: [main]
+    paths:
+      - crates/mlsirm-core/src/rotation/**
+      - python/fast_mlsirm/rotation*.py
+      - tests/test_rotation*.py
+  workflow_dispatch:
 
 permissions:
   contents: write
