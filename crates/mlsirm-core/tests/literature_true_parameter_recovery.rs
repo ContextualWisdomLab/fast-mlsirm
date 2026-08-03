@@ -414,7 +414,11 @@ fn gpu_recovery_matches_cpu_on_paper_design() {
     assert!(pearson(&cpu.b, &gpu.b) > 0.995);
     assert!(pearson(&cpu.alpha, &gpu.alpha) > 0.995);
     assert!(pearson(&cpu.theta_eap, &gpu.theta_eap) > 0.995);
-    assert!(pearson(&cpu.xi_eap, &gpu.xi_eap) > 0.990);
-    assert!(pearson(&cpu.zeta, &gpu.zeta) > 0.990);
+    let cpu_xi_distances = pairwise_distances(&cpu.xi_eap, cell.n_persons);
+    let gpu_xi_distances = pairwise_distances(&gpu.xi_eap, cell.n_persons);
+    let cpu_zeta_distances = pairwise_distances(&cpu.zeta, N_ITEMS);
+    let gpu_zeta_distances = pairwise_distances(&gpu.zeta, N_ITEMS);
+    assert!(pearson(&cpu_xi_distances, &gpu_xi_distances) > 0.990);
+    assert!(pearson(&cpu_zeta_distances, &gpu_zeta_distances) > 0.990);
     assert!((cpu.tau.exp() - gpu.tau.exp()).abs() < 0.10);
 }
