@@ -100,9 +100,10 @@ fn oblique_gradient(
     transform: &[f64],
     evaluation: &CriterionEvaluation,
 ) -> Vec<f64> {
-    // For L = A T^{-T}, GPA's chain rule is
-    // G_T = -L' G_L T^{-1}. `pattern_gradient` is L' G_L, so a second
-    // transpose would be mathematically incorrect.
+    // For L = A T^{-T}, dL = -L dT' T^{-T}. Therefore the Euclidean
+    // transform gradient is -T^{-T} G_L' L, the transpose of
+    // L' G_L T^{-1}. Preserve that transpose before projecting onto the
+    // product of unit-column spheres.
     let pattern_gradient = crossprod(
         pattern,
         &evaluation.gradient,
@@ -110,13 +111,14 @@ fn oblique_gradient(
         factors,
         factors,
     );
-    let mut gradient = matmul(
+    let chain = matmul(
         &pattern_gradient,
         factors,
         factors,
         inverse_transform,
         factors,
     );
+    let mut gradient = transpose(&chain, factors, factors);
     for value in &mut gradient {
         *value = -*value;
     }
