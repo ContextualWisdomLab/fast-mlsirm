@@ -13,6 +13,10 @@ for _public_name, _public_value in vars(_legacy_init).items():
     if not _public_name.startswith("_") or _public_name == "__version__":
         globals()[_public_name] = _public_value
 
+# Repair the one historical export declared by the legacy registry but omitted
+# from its import list, so ``from fast_mlsirm import *`` remains valid after the
+# modular package-surface split.
+from .classification import ClassificationResult as ClassificationResult
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
     bifactor_scoreability as bifactor_scoreability,
