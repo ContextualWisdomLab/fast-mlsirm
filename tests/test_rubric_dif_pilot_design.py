@@ -206,7 +206,7 @@ def test_group_assignment_contract_rejects_missing_unknown_and_undeclared_values
     unknown = {**_groups(), "respondent_unknown": "focal_group_alpha"}
     with pytest.raises(PilotObservationError) as unknown_error:
         _design(records, unknown)
-    assert unknown_error.value.code == "dif_unknown_respondent_assignment"
+    assert unknown_error.value.code == "dif_group_assignment_count_exceeded"
 
     undeclared = {**_groups(), "respondent_delta": "comparison_group_beta"}
     with pytest.raises(PilotObservationError) as undeclared_error:
