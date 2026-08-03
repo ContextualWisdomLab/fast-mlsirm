@@ -12,26 +12,16 @@ from __future__ import annotations
 from importlib.machinery import ExtensionFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import sys
+import threading
 from types import ModuleType
 
 
 _MODULE_NAME = "fast_mlsirm._bifactor_core"
+_LOAD_LOCK = threading.Lock()
 
 
-def bifactor_core() -> ModuleType:
-    """Return the cached secondary Rust bifactor extension module.
-
-    Raises
-    ------
-    ImportError
-        If the installed wheel predates the dual-module bifactor entrypoint or
-        the extension loader cannot initialize ``PyInit__bifactor_core``.
-    """
-
-    cached = sys.modules.get(_MODULE_NAME)
-    if cached is not None:
-        return cached
-
+def _initialize_module() -> ModuleType:
+    """Initialize and cache the secondary extension module exactly once."""
     from . import _core
 
     binary_path = getattr(_core, "__file__", None)
@@ -49,3 +39,23 @@ def bifactor_core() -> ModuleType:
         sys.modules.pop(_MODULE_NAME, None)
         raise
     return module
+
+
+def bifactor_core() -> ModuleType:
+    """Return the cached secondary Rust bifactor extension module.
+
+    Raises
+    ------
+    ImportError
+        If the installed wheel predates the dual-module bifactor entrypoint or
+        the extension loader cannot initialize ``PyInit__bifactor_core``.
+    """
+
+    cached = sys.modules.get(_MODULE_NAME)
+    if cached is not None:
+        return cached
+    with _LOAD_LOCK:
+        cached = sys.modules.get(_MODULE_NAME)
+        if cached is not None:
+            return cached
+        return _initialize_module()
