@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from typing import Any, Iterable, TypeAlias
 
@@ -47,6 +47,7 @@ _REQUIRED_FIELDS = frozenset(
         "safety_notes",
     }
 )
+_CANDIDATE_PROOF_SEAL = object()
 
 
 class CandidateValidationError(ValueError):
@@ -374,6 +375,19 @@ class SourceAttribution:
 
 
 @dataclass(frozen=True)
+class _CandidateValidationProof:
+    """Private parser-issued seal over exact normalized candidate content."""
+
+    seal: object = field(repr=False, compare=False)
+    candidate_fingerprint: str
+
+    def __post_init__(self) -> None:
+        """Reject proof objects not issued inside this module."""
+        if self.seal is not _CANDIDATE_PROOF_SEAL:
+            raise ValueError("candidate validation proof is invalid")
+
+
+@dataclass(frozen=True)
 class GeneratedItemCandidate:
     """Immutable candidate that passed structural and source-grounding validation."""
 
@@ -399,6 +413,35 @@ class GeneratedItemCandidate:
     source_attributions: tuple[SourceAttribution, ...]
     safety_notes: tuple[str, ...]
     schema_version: str = SCHEMA_VERSION
+    _validation_proof: _CandidateValidationProof | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        """Reject direct construction outside the strict parser boundary."""
+        self._verify_validation_proof()
+
+    @classmethod
+    def _from_validated(cls, **values: Any) -> GeneratedItemCandidate:
+        """Construct one candidate only after every parser gate has succeeded."""
+        expected_fields = set(cls.__dataclass_fields__).difference(
+            {"_validation_proof"}
+        )
+        if set(values) != expected_fields:
+            raise RuntimeError("validated candidate factory received invalid fields")
+        candidate = object.__new__(cls)
+        for field_name in expected_fields:
+            object.__setattr__(candidate, field_name, values[field_name])
+        proof = _CandidateValidationProof(
+            seal=_CANDIDATE_PROOF_SEAL,
+            candidate_fingerprint=_sha256_hex(candidate._content_dict()),
+        )
+        object.__setattr__(candidate, "_validation_proof", proof)
+        candidate._verify_validation_proof()
+        return candidate
 
     def _content_dict(self) -> dict[str, Any]:
         """Return normalized candidate content without its derived fingerprint."""
@@ -431,13 +474,34 @@ class GeneratedItemCandidate:
             "safety_notes": list(self.safety_notes),
         }
 
+    def _computed_candidate_fingerprint(self) -> str:
+        """Return the digest of the candidate's current normalized content."""
+        return _sha256_hex(self._content_dict())
+
+    def _verify_validation_proof(self) -> None:
+        """Fail closed unless parser proof matches every current candidate field."""
+        proof = self._validation_proof
+        if not isinstance(proof, _CandidateValidationProof):
+            raise ValueError(
+                "candidate provenance requires parse_generated_item_candidate"
+            )
+        if proof.seal is not _CANDIDATE_PROOF_SEAL:
+            raise ValueError("candidate provenance proof is invalid")
+        if proof.candidate_fingerprint != self._computed_candidate_fingerprint():
+            raise ValueError("candidate provenance does not match validated content")
+
     @property
     def candidate_fingerprint(self) -> str:
         """Return SHA-256 over canonical normalized candidate content."""
-        return _sha256_hex(self._content_dict())
+        self._verify_validation_proof()
+        proof = self._validation_proof
+        if proof is None:  # pragma: no cover - guarded above for type narrowing
+            raise RuntimeError("candidate validation proof is unavailable")
+        return proof.candidate_fingerprint
 
     def to_dict(self) -> dict[str, Any]:
         """Return normalized content plus its deterministic fingerprint."""
+        self._verify_validation_proof()
         return {
             **self._content_dict(),
             "candidate_fingerprint": self.candidate_fingerprint,
@@ -476,21 +540,21 @@ def _parse_provenance(
     """Validate every provider-echoed provenance field without disclosing mismatches."""
     expected = _expected_provenance(request)
     result: dict[str, str] = {}
-    for field, expected_value in expected.items():
-        path = f"$.{field}"
-        if field.endswith("fingerprint"):
-            actual = _fingerprint(decoded[field], path)
-        elif field == "rubric_version":
-            actual = _string(decoded[field], path, maximum=64)
+    for field_name, expected_value in expected.items():
+        path = f"$.{field_name}"
+        if field_name.endswith("fingerprint"):
+            actual = _fingerprint(decoded[field_name], path)
+        elif field_name == "rubric_version":
+            actual = _string(decoded[field_name], path, maximum=64)
         else:
-            actual = _identifier(decoded[field], path)
+            actual = _identifier(decoded[field_name], path)
         if actual != expected_value:
             raise _error(
                 "provenance_mismatch",
                 path,
                 "value does not match the immutable generation contract",
             )
-        result[field] = actual
+        result[field_name] = actual
     return result
 
 
@@ -927,7 +991,7 @@ def parse_generated_item_candidate(
         unique=True,
     )
 
-    return GeneratedItemCandidate(
+    return GeneratedItemCandidate._from_validated(
         request_id=request.request_id,
         request_fingerprint=request.request_fingerprint,
         contract_id=request.contract_id,
