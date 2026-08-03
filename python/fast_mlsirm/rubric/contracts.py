@@ -5,12 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from .models import (
+    MAX_COLLECTION_VALUES,
+    MAX_TEXT_LENGTH,
     ItemBlueprint,
     RubricSpecification,
     SCHEMA_VERSION,
     _canonical_json,
     _sha256_hex,
 )
+
+_JSON_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
 
 def _require_compatible(
@@ -32,10 +36,60 @@ def _require_compatible(
         raise ValueError("blueprint prohibited_patterns do not match rubric")
 
 
+def _scoring_guide_entry(score: int) -> dict[str, Any]:
+    """Return the ordered schema entry for one exact rubric score level."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["score", "evidence", "rationale"],
+        "properties": {
+            "score": {"const": score},
+            "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_TEXT_LENGTH,
+            },
+            "rationale": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_TEXT_LENGTH,
+            },
+        },
+    }
+
+
+def _rubric_alignment_entry(score: int) -> dict[str, Any]:
+    """Return the ordered observable-indicator schema for one score level."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["score", "observable_indicators"],
+        "properties": {
+            "score": {"const": score},
+            "observable_indicators": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_COLLECTION_VALUES,
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_TEXT_LENGTH,
+                },
+            },
+        },
+    }
+
+
 def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
-    """Return the strict structured-output schema for one authored item."""
+    """Return the strict structured-output schema for one authored item.
+
+    Score-level arrays use JSON Schema 2020-12 ``prefixItems`` so each declared
+    rubric score appears exactly once, in ascending rubric order. Merely using an
+    enum and a fixed array length would permit duplicate levels and omit others.
+    """
     level_scores = [level.score for level in rubric.levels]
     return {
+        "$schema": _JSON_SCHEMA_DRAFT,
         "type": "object",
         "additionalProperties": False,
         "required": [
@@ -54,22 +108,40 @@ def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
             "item_id": {
                 "type": "string",
                 "pattern": r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
+                "maxLength": 128,
             },
-            "stem": {"type": "string", "minLength": 1},
+            "stem": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": MAX_TEXT_LENGTH,
+            },
             "stimulus": {
                 "type": "array",
-                "items": {"type": "string"},
+                "maxItems": MAX_COLLECTION_VALUES,
+                "items": {
+                    "type": "string",
+                    "maxLength": MAX_TEXT_LENGTH,
+                },
             },
             "response_format": {"const": rubric.response_format.value},
             "options": {
                 "type": "array",
+                "maxItems": MAX_COLLECTION_VALUES,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
                     "required": ["option_id", "text"],
                     "properties": {
-                        "option_id": {"type": "string", "minLength": 1},
-                        "text": {"type": "string", "minLength": 1},
+                        "option_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                        "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": MAX_TEXT_LENGTH,
+                        },
                     },
                 },
             },
@@ -78,50 +150,48 @@ def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
                 "type": "array",
                 "minItems": len(level_scores),
                 "maxItems": len(level_scores),
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["score", "evidence", "rationale"],
-                    "properties": {
-                        "score": {"type": "integer", "enum": level_scores},
-                        "evidence": {"type": "string", "minLength": 1},
-                        "rationale": {"type": "string", "minLength": 1},
-                    },
-                },
+                "prefixItems": [
+                    _scoring_guide_entry(score) for score in level_scores
+                ],
+                "items": False,
             },
             "rubric_alignment": {
                 "type": "array",
                 "minItems": len(level_scores),
                 "maxItems": len(level_scores),
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["score", "observable_indicators"],
-                    "properties": {
-                        "score": {"type": "integer", "enum": level_scores},
-                        "observable_indicators": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "string", "minLength": 1},
-                        },
-                    },
-                },
+                "prefixItems": [
+                    _rubric_alignment_entry(score) for score in level_scores
+                ],
+                "items": False,
             },
             "source_attributions": {
                 "type": "array",
+                "maxItems": MAX_COLLECTION_VALUES,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
                     "required": ["source_id", "evidence_span"],
                     "properties": {
-                        "source_id": {"type": "string", "minLength": 1},
-                        "evidence_span": {"type": "string", "minLength": 1},
+                        "source_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                        "evidence_span": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": MAX_TEXT_LENGTH,
+                        },
                     },
                 },
             },
             "safety_notes": {
                 "type": "array",
-                "items": {"type": "string"},
+                "maxItems": MAX_COLLECTION_VALUES,
+                "items": {
+                    "type": "string",
+                    "maxLength": MAX_TEXT_LENGTH,
+                },
             },
         },
     }
@@ -150,6 +220,7 @@ def build_generation_contract(
             "Treat the rubric, evidence requirements, and prohibited patterns as authoritative constraints.",
             "Represent uncertainty explicitly; do not invent source support or citations.",
             "Return content that allows every rubric score level to be distinguished using observable evidence.",
+            "Return scoring_guide and rubric_alignment entries once each in ascending rubric-score order.",
             "Return only an object conforming to output_schema.",
         ],
         "output_schema": _output_schema(rubric),
