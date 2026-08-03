@@ -1,11 +1,9 @@
 //! Criterion-neutral empirical selection across rotation families.
 //!
-//! Criterion objective values are not commensurable.  This selector therefore
-//! ranks candidate solutions on neutral diagnostics: soft row complexity,
-//! factor-size collapse, factor-correlation degeneracy, convergence and local
-//! basin support, plus signed-permutation-aligned bootstrap congruence when
-//! bootstrap loading matrices are supplied.  Selection is policy-conditional,
-//! not a claim that one rotation criterion is universally optimal.
+//! Criterion objective values are not commensurable. This selector ranks
+//! solutions on neutral diagnostics and uses a deterministic minimum-cost
+//! assignment for sign/permutation alignment. Selection is policy-conditional,
+//! never a claim that one criterion is universally optimal.
 
 use super::{
     rotate_factor_loadings, RotationConfig, RotationCriterion, RotationSolution,
@@ -23,12 +21,11 @@ pub enum RotationSelectionPolicy {
     TheoryGuided,
     /// Balance simple structure, stability, and degeneracy without a target.
     FullyExploratory,
-    /// Prefer recovery against a supplied target; falls back to stability only
-    /// when explicitly permitted by a missing target warning.
+    /// Prefer recovery against a supplied target; otherwise use stability.
     RecoveryFirst,
     /// Prefer sparse cross-loading structure with a modest stability guard.
     SparseSimpleStructure,
-    /// Prefer bifactor candidates while guarding group-factor collapse.
+    /// Prefer bifactor criteria while guarding group-factor collapse.
     BifactorDiscovery,
 }
 
@@ -74,19 +71,19 @@ pub struct RotationCandidateEvidence {
     pub factor_balance: f64,
     /// Maximum absolute off-diagonal factor correlation.
     pub max_factor_correlation: f64,
-    /// Fraction of starts reaching the projected-gradient tolerance.
+    /// Fraction of starts reaching projected-gradient tolerance.
     pub convergence_rate: f64,
     /// Fraction of starts in the best observed objective basin.
     pub basin_support_rate: f64,
-    /// Mean signed-permutation-aligned bootstrap Tucker congruence.
+    /// Mean aligned bootstrap Tucker congruence.
     pub bootstrap_congruence: f64,
-    /// Minimum factor-level bootstrap congruence averaged over replicates.
+    /// Mean of each replicate's minimum factor congruence.
     pub bootstrap_min_congruence: f64,
-    /// Root-mean-square deviation from a supplied theory target after alignment.
+    /// Aligned RMSE from an optional finite-or-NaN theory target.
     pub target_rmse: f64,
     /// Policy-specific normalized rank score; lower is preferred.
     pub policy_score: f64,
-    /// Whether no other candidate weakly dominates this one on every active
+    /// Whether no candidate weakly dominates this candidate on every active
     /// neutral objective and strictly improves at least one.
     pub pareto_optimal: bool,
 }
@@ -104,18 +101,13 @@ pub struct RotationSelectionResult {
     pub candidates: Vec<RotationCandidateEvidence>,
     /// Number of bootstrap loading matrices used.
     pub bootstrap_replicates: usize,
-    /// Evidence grade: `single_sample_diagnostic`, `bootstrap_exploratory`, or
-    /// `bootstrap_supported`.
+    /// Evidence grade based on available stability evidence.
     pub evidence_grade: &'static str,
     /// Explicit interpretation warning.
     pub warning: String,
 }
 
-/// Select among already constructed criteria with criterion-neutral evidence.
-///
-/// `bootstrap_loadings` is a flattened sequence of row-major `rows x factors`
-/// loading matrices.  All matrices must be extracted under the same factor
-/// count and identification convention as `loadings`.
+/// Select among constructed criteria using criterion-neutral evidence.
 pub fn select_rotation_criterion(
     loadings: &[f64],
     rows: usize,
@@ -130,8 +122,16 @@ pub fn select_rotation_criterion(
         return Err("criterion selection requires at least two candidates".into());
     }
     if let Some(target) = theory_target {
-        if target.len() != rows * factors || target.iter().any(|x| !x.is_finite() && !x.is_nan()) {
-            return Err("theory_target must match the loading shape and contain finite values or NaN".into());
+        if target.len() != rows * factors
+            || target.iter().any(|x| !x.is_finite() && !x.is_nan())
+        {
+            return Err(
+                "theory_target must match the loading shape and contain finite values or NaN"
+                    .into(),
+            );
+        }
+        if target.iter().all(|x| x.is_nan()) {
+            return Err("theory_target must specify at least one cell".into());
         }
     }
     if matches!(policy, RotationSelectionPolicy::TheoryGuided) && theory_target.is_none() {
@@ -142,7 +142,10 @@ pub fn select_rotation_criterion(
     }
     for replicate in bootstrap_loadings {
         if replicate.len() != rows * factors || replicate.iter().any(|x| !x.is_finite()) {
-            return Err("every bootstrap loading matrix must be finite and match the reference shape".into());
+            return Err(
+                "every bootstrap loading matrix must be finite and match the reference shape"
+                    .into(),
+            );
         }
     }
 
@@ -183,13 +186,9 @@ pub fn select_rotation_criterion(
         });
     }
 
-    assign_pareto_frontier(&mut evidence, theory_target.is_some(), bootstrap_loadings.is_empty());
-    assign_policy_scores(
-        &mut evidence,
-        policy,
-        theory_target.is_some(),
-        bootstrap_loadings.is_empty(),
-    );
+    let no_bootstrap = bootstrap_loadings.is_empty();
+    assign_pareto_frontier(&mut evidence, theory_target.is_some(), no_bootstrap);
+    assign_policy_scores(&mut evidence, policy, theory_target.is_some(), no_bootstrap);
     let selected_index = evidence
         .iter()
         .enumerate()
@@ -214,8 +213,16 @@ pub fn select_rotation_criterion(
         "Selection is conditional on the requested policy and one loading matrix; provide bootstrap loading matrices before treating the result as stability evidence."
     } else {
         "Selection is conditional on the candidate set, extraction model, bootstrap design, and requested policy; it is not a universal or mathematically proven global optimum."
-    }
-    .to_string();
+    };
+    let warning = if matches!(policy, RotationSelectionPolicy::RecoveryFirst)
+        && theory_target.is_none()
+    {
+        format!(
+            "{warning} recovery_first received no theory target and therefore used its documented stability fallback."
+        )
+    } else {
+        warning.to_string()
+    };
     Ok(RotationSelectionResult {
         selected_index,
         selected_criterion: evidence[selected_index].criterion_name,
@@ -255,7 +262,11 @@ fn simple_structure_metrics(
     };
     let minimum = factor_ss.iter().copied().fold(f64::INFINITY, f64::min);
     let maximum = factor_ss.iter().copied().fold(0.0_f64, f64::max);
-    let factor_balance = if maximum > 0.0 { minimum / maximum } else { 0.0 };
+    let factor_balance = if maximum > 0.0 {
+        minimum / maximum
+    } else {
+        0.0
+    };
     (row_complexity, factor_balance)
 }
 
@@ -294,15 +305,55 @@ fn aligned_target_rmse(
     rows: usize,
     factors: usize,
 ) -> Result<f64, String> {
-    let aligned = align_to_reference(pattern, target, rows, factors, false)?;
+    let mut costs = vec![0.0; factors * factors];
+    let mut signs = vec![1.0; factors * factors];
+    let mut counts = vec![0_usize; factors * factors];
+    for target_column in 0..factors {
+        for pattern_column in 0..factors {
+            let mut positive = 0.0;
+            let mut negative = 0.0;
+            let mut count = 0_usize;
+            for i in 0..rows {
+                let target_value = target[i * factors + target_column];
+                if target_value.is_nan() {
+                    continue;
+                }
+                let pattern_value = pattern[i * factors + pattern_column];
+                positive += (pattern_value - target_value).powi(2);
+                negative += (-pattern_value - target_value).powi(2);
+                count += 1;
+            }
+            if count == 0 {
+                return Err(format!(
+                    "theory_target column {target_column} has no specified cells"
+                ));
+            }
+            let index = target_column * factors + pattern_column;
+            if negative < positive {
+                costs[index] = negative / count as f64;
+                signs[index] = -1.0;
+            } else {
+                costs[index] = positive / count as f64;
+            }
+            counts[index] = count;
+        }
+    }
+    let assignment = minimum_cost_assignment(&costs, factors)?;
     let mut sum = 0.0;
     let mut count = 0_usize;
-    for (value, target_value) in aligned.iter().zip(target) {
-        if target_value.is_nan() {
-            continue;
+    for target_column in 0..factors {
+        let pattern_column = assignment[target_column];
+        let index = target_column * factors + pattern_column;
+        let sign = signs[index];
+        for i in 0..rows {
+            let target_value = target[i * factors + target_column];
+            if target_value.is_nan() {
+                continue;
+            }
+            let value = sign * pattern[i * factors + pattern_column];
+            sum += (value - target_value).powi(2);
+            count += 1;
         }
-        sum += (value - target_value).powi(2);
-        count += 1;
     }
     if count == 0 {
         return Err("theory_target contains no specified cells".into());
@@ -317,52 +368,22 @@ fn aligned_column_congruence(
     factors: usize,
     fixes_general: bool,
 ) -> Result<Vec<f64>, String> {
-    let aligned = align_to_reference(candidate, reference, rows, factors, fixes_general)?;
-    let mut out = vec![0.0; factors];
-    for j in 0..factors {
-        let mut dot = 0.0;
-        let mut ss_reference = 0.0;
-        let mut ss_aligned = 0.0;
-        for i in 0..rows {
-            let a = reference[i * factors + j];
-            let b = aligned[i * factors + j];
-            dot += a * b;
-            ss_reference += a * a;
-            ss_aligned += b * b;
-        }
-        if ss_reference <= 1e-24 || ss_aligned <= 1e-24 {
-            return Err("cannot compute congruence for a collapsed factor".into());
-        }
-        out[j] = (dot / (ss_reference * ss_aligned).sqrt()).abs();
-    }
-    Ok(out)
-}
-
-fn align_to_reference(
-    candidate: &[f64],
-    reference: &[f64],
-    rows: usize,
-    factors: usize,
-    fixes_general: bool,
-) -> Result<Vec<f64>, String> {
-    if candidate.len() != rows * factors || reference.len() != rows * factors {
-        return Err("alignment matrices must share the declared shape".into());
-    }
     let first = usize::from(fixes_general);
+    let active = factors - first;
     let mut assignment = vec![usize::MAX; factors];
-    let mut used = vec![false; factors];
+    let mut signs = vec![1.0; factors];
     if fixes_general {
+        let congruence = raw_column_congruence(reference, candidate, rows, factors, 0, 0)?;
         assignment[0] = 0;
-        used[0] = true;
+        signs[0] = if congruence < 0.0 { -1.0 } else { 1.0 };
     }
-    for reference_column in first..factors {
-        let mut best_column = None;
-        let mut best_absolute = -1.0_f64;
-        for candidate_column in first..factors {
-            if used[candidate_column] {
-                continue;
-            }
-            let correlation = raw_column_congruence(
+    let mut costs = vec![0.0; active * active];
+    let mut pair_signs = vec![1.0; active * active];
+    for reference_offset in 0..active {
+        for candidate_offset in 0..active {
+            let reference_column = first + reference_offset;
+            let candidate_column = first + candidate_offset;
+            let congruence = raw_column_congruence(
                 reference,
                 candidate,
                 rows,
@@ -370,33 +391,32 @@ fn align_to_reference(
                 reference_column,
                 candidate_column,
             )?;
-            if correlation.abs() > best_absolute {
-                best_absolute = correlation.abs();
-                best_column = Some(candidate_column);
-            }
+            let index = reference_offset * active + candidate_offset;
+            costs[index] = 1.0 - congruence.abs();
+            pair_signs[index] = if congruence < 0.0 { -1.0 } else { 1.0 };
         }
-        let selected = best_column.ok_or_else(|| "factor alignment assignment failed".to_string())?;
-        assignment[reference_column] = selected;
-        used[selected] = true;
     }
-    let mut aligned = vec![0.0; candidate.len()];
+    let active_assignment = minimum_cost_assignment(&costs, active)?;
+    for reference_offset in 0..active {
+        let candidate_offset = active_assignment[reference_offset];
+        let index = reference_offset * active + candidate_offset;
+        assignment[first + reference_offset] = first + candidate_offset;
+        signs[first + reference_offset] = pair_signs[index];
+    }
+    let mut congruence = vec![0.0; factors];
     for reference_column in 0..factors {
         let candidate_column = assignment[reference_column];
-        let congruence = raw_column_congruence(
+        congruence[reference_column] = raw_column_congruence(
             reference,
             candidate,
             rows,
             factors,
             reference_column,
             candidate_column,
-        )?;
-        let sign = if congruence < 0.0 { -1.0 } else { 1.0 };
-        for i in 0..rows {
-            aligned[i * factors + reference_column] =
-                sign * candidate[i * factors + candidate_column];
-        }
+        )?
+        .abs();
     }
-    Ok(aligned)
+    Ok(congruence)
 }
 
 fn raw_column_congruence(
@@ -421,6 +441,74 @@ fn raw_column_congruence(
         return Err("factor alignment encountered a collapsed column".into());
     }
     Ok(dot / (ss_reference * ss_candidate).sqrt())
+}
+
+/// Hungarian minimum-cost assignment for a finite square matrix.
+fn minimum_cost_assignment(costs: &[f64], size: usize) -> Result<Vec<usize>, String> {
+    if size == 0 || costs.len() != size * size || costs.iter().any(|x| !x.is_finite()) {
+        return Err("assignment cost matrix must be finite and square".into());
+    }
+    let mut u = vec![0.0; size + 1];
+    let mut v = vec![0.0; size + 1];
+    let mut p = vec![0_usize; size + 1];
+    let mut way = vec![0_usize; size + 1];
+    for row in 1..=size {
+        p[0] = row;
+        let mut column0 = 0_usize;
+        let mut minimum = vec![f64::INFINITY; size + 1];
+        let mut used = vec![false; size + 1];
+        loop {
+            used[column0] = true;
+            let row0 = p[column0];
+            let mut delta = f64::INFINITY;
+            let mut column1 = 0_usize;
+            for column in 1..=size {
+                if used[column] {
+                    continue;
+                }
+                let current = costs[(row0 - 1) * size + (column - 1)] - u[row0] - v[column];
+                if current < minimum[column] {
+                    minimum[column] = current;
+                    way[column] = column0;
+                }
+                if minimum[column] < delta {
+                    delta = minimum[column];
+                    column1 = column;
+                }
+            }
+            if !delta.is_finite() {
+                return Err("assignment matrix has no finite perfect matching".into());
+            }
+            for column in 0..=size {
+                if used[column] {
+                    u[p[column]] += delta;
+                    v[column] -= delta;
+                } else {
+                    minimum[column] -= delta;
+                }
+            }
+            column0 = column1;
+            if p[column0] == 0 {
+                break;
+            }
+        }
+        loop {
+            let column1 = way[column0];
+            p[column0] = p[column1];
+            column0 = column1;
+            if column0 == 0 {
+                break;
+            }
+        }
+    }
+    let mut assignment = vec![usize::MAX; size];
+    for column in 1..=size {
+        assignment[p[column] - 1] = column - 1;
+    }
+    if assignment.iter().any(|x| *x == usize::MAX) {
+        return Err("assignment algorithm did not produce a perfect matching".into());
+    }
+    Ok(assignment)
 }
 
 fn assign_pareto_frontier(
@@ -569,17 +657,25 @@ fn ranks(values: Vec<f64>, descending: bool) -> Vec<f64> {
         let comparison = values[*a]
             .partial_cmp(&values[*b])
             .unwrap_or(Ordering::Equal);
-        if descending {
-            comparison.reverse()
-        } else {
-            comparison
-        }
-        .then_with(|| a.cmp(b))
+        (if descending { comparison.reverse() } else { comparison })
+            .then_with(|| a.cmp(b))
     });
     let denominator = values.len().saturating_sub(1).max(1) as f64;
     let mut result = vec![0.0; values.len()];
-    for (rank, index) in order.into_iter().enumerate() {
-        result[index] = rank as f64 / denominator;
+    let mut start = 0_usize;
+    while start < order.len() {
+        let mut end = start + 1;
+        while end < order.len()
+            && (values[order[end]] - values[order[start]]).abs()
+                <= 1e-12 * (1.0 + values[order[start]].abs())
+        {
+            end += 1;
+        }
+        let average_rank = 0.5 * (start + end - 1) as f64 / denominator;
+        for position in start..end {
+            result[order[position]] = average_rank;
+        }
+        start = end;
     }
     result
 }
@@ -590,7 +686,10 @@ mod tests {
     use crate::rotation::{RotationMode, RotationSelectionPolicy::*};
 
     fn reference() -> Vec<f64> {
-        vec![0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25, 0.58]
+        vec![
+            0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25,
+            0.58,
+        ]
     }
 
     fn config() -> RotationConfig {
@@ -647,10 +746,33 @@ mod tests {
     }
 
     #[test]
-    fn theory_policy_uses_target_and_supported_bootstrap_grade() {
+    fn partial_target_assignment_handles_nan_and_zero_only_columns() {
+        let pattern = vec![0.8, 0.1, 0.7, 0.2, 0.1, 0.8, 0.2, 0.7];
+        let target = vec![0.0, 0.8, 0.0, 0.7, f64::NAN, f64::NAN, 0.7, 0.0];
+        let rmse = aligned_target_rmse(&pattern, &target, 4, 2).unwrap();
+        assert!(rmse < 0.2);
+    }
+
+    #[test]
+    fn hungarian_alignment_beats_greedy_conflict() {
+        let costs = vec![0.1, 0.2, 0.3, 0.1, 100.0, 100.0, 0.2, 0.3, 0.1];
+        let assignment = minimum_cost_assignment(&costs, 3).unwrap();
+        let total: f64 = assignment
+            .iter()
+            .enumerate()
+            .map(|(row, column)| costs[row * 3 + column])
+            .sum();
+        assert!((total - 0.3).abs() < 1e-12);
+        assert!(minimum_cost_assignment(&[], 0).is_err());
+        assert!(minimum_cost_assignment(&[f64::NAN; 4], 2).is_err());
+    }
+
+    #[test]
+    fn theory_policy_and_validation_fail_closed() {
         let candidates = vec![RotationCriterion::Varimax, RotationCriterion::Quartimax];
-        let target = vec![0.8, 0.0, 0.7, 0.0, 0.6, 0.0, 0.0, 0.8, 0.0, 0.7, 0.0, 0.6];
-        let bootstraps = vec![reference(); 20];
+        let target = vec![
+            0.8, 0.0, 0.7, 0.0, 0.6, 0.0, 0.0, 0.8, 0.0, 0.7, 0.0, 0.6,
+        ];
         let result = select_rotation_criterion(
             &reference(),
             6,
@@ -658,37 +780,12 @@ mod tests {
             &candidates,
             &config(),
             TheoryGuided,
-            &bootstraps,
+            &vec![reference(); 20],
             Some(&target),
         )
         .unwrap();
         assert_eq!(result.evidence_grade, "bootstrap_supported");
         assert!(result.candidates.iter().all(|x| x.target_rmse.is_finite()));
-    }
-
-    #[test]
-    fn single_sample_policies_and_validation_fail_closed() {
-        let candidates = vec![RotationCriterion::Varimax, RotationCriterion::Quartimax];
-        for policy in [
-            InterpretabilityFirst,
-            StabilityFirst,
-            RecoveryFirst,
-            SparseSimpleStructure,
-        ] {
-            let result = select_rotation_criterion(
-                &reference(),
-                6,
-                2,
-                &candidates,
-                &config(),
-                policy,
-                &[],
-                None,
-            )
-            .unwrap();
-            assert_eq!(result.evidence_grade, "single_sample_diagnostic");
-            assert!(result.warning.contains("one loading matrix"));
-        }
         assert!(select_rotation_criterion(
             &reference(),
             6,
@@ -733,21 +830,10 @@ mod tests {
             None,
         )
         .is_err());
-        assert!(select_rotation_criterion(
-            &reference(),
-            6,
-            2,
-            &candidates,
-            &config(),
-            FullyExploratory,
-            &[],
-            Some(&[0.0; 2]),
-        )
-        .is_err());
     }
 
     #[test]
-    fn policy_parser_and_alignment_edge_cases_are_covered() {
+    fn policies_ranks_and_collapsed_alignment_are_covered() {
         for (name, expected) in [
             ("interpretability-first", InterpretabilityFirst),
             ("stability_first", StabilityFirst),
@@ -760,13 +846,12 @@ mod tests {
             assert_eq!(RotationSelectionPolicy::parse(name), Some(expected));
         }
         assert_eq!(RotationSelectionPolicy::parse("bad"), None);
-        assert!(aligned_target_rmse(&[0.5, 0.1, 0.2, 0.4], &[f64::NAN; 4], 2, 2).is_err());
+        assert_eq!(ranks(vec![1.0, 1.0, 2.0], false), vec![0.25, 0.25, 1.0]);
         assert!(aligned_column_congruence(&[0.0; 4], &[0.0; 4], 2, 2, false).is_err());
-        assert!(align_to_reference(&[0.0; 2], &[0.0; 4], 2, 2, false).is_err());
     }
 
     #[test]
-    fn bifactor_policy_prefers_bifactor_family_when_other_evidence_ties() {
+    fn bifactor_policy_penalizes_non_bifactor_candidates() {
         let mut evidence = vec![
             mock_evidence("varimax"),
             mock_evidence("bifactor"),
