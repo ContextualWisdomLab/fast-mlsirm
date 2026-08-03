@@ -2,8 +2,9 @@
 """List and execute one deterministic shard of ignored Rust tests.
 
 Cargo's test harness can list ignored tests but does not natively partition them
-across GitHub Actions runners. This helper sorts the exact test names, assigns
-index ``i`` to shard ``i % shard_count``, and invokes each selected test with
+across GitHub Actions runners. This helper sorts exact test names, validates that
+every dedicated-test exclusion names exactly one inventoried test, assigns test
+index ``i`` to shard ``i % shard_count``, and invokes selected tests with
 ``--ignored --exact``. The partition is exhaustive and non-overlapping for a
 fixed repository revision. The runner is deliberately read-only: it never
 rewrites source or test files to make a failing statistical contract pass.
@@ -30,24 +31,55 @@ def parse_test_names(output: str) -> list[str]:
     return sorted(names)
 
 
+def validated_skip_set(names: Sequence[str], skipped: Iterable[str]) -> frozenset[str]:
+    """Validate unique, exact dedicated-test names against the inventory."""
+    inventory = set(names)
+    requested = tuple(skipped)
+    if len(set(requested)) != len(requested):
+        raise ValueError("skipped test names must be unique")
+    missing = sorted(set(requested) - inventory)
+    if missing:
+        raise ValueError(
+            "skipped tests were not found by exact name: " + ", ".join(missing)
+        )
+    return frozenset(requested)
+
+
+def partition_inventory(
+    names: Sequence[str],
+    shard_count: int,
+    skipped: Iterable[str] = (),
+) -> tuple[tuple[str, ...], ...]:
+    """Return an exhaustive disjoint partition with no silently empty shard."""
+    if shard_count < 1:
+        raise ValueError("shard_count must be at least 1")
+    inventory = sorted(set(names))
+    skip_set = validated_skip_set(inventory, skipped)
+    retained = [name for name in inventory if name not in skip_set]
+    shards = tuple(
+        tuple(name for index, name in enumerate(retained) if index % shard_count == shard)
+        for shard in range(shard_count)
+    )
+    empty = [str(index) for index, selected in enumerate(shards) if not selected]
+    if empty:
+        raise ValueError(
+            "ignored Rust partition contains empty shards: " + ", ".join(empty)
+        )
+    return shards
+
+
 def select_shard(
     names: Sequence[str],
     shard: int,
     shard_count: int,
     skipped: Iterable[str] = (),
 ) -> list[str]:
-    """Select one exhaustive round-robin shard after applying explicit skips."""
+    """Select one stable shard after exact dedicated-test exclusions."""
     if shard_count < 1:
         raise ValueError("shard_count must be at least 1")
     if not 0 <= shard < shard_count:
         raise ValueError("shard must satisfy 0 <= shard < shard_count")
-    skip_set = set(skipped)
-    retained = [
-        name
-        for name in sorted(set(names))
-        if name not in skip_set and name.rsplit("::", 1)[-1] not in skip_set
-    ]
-    return [name for index, name in enumerate(retained) if index % shard_count == shard]
+    return list(partition_inventory(names, shard_count, skipped)[shard])
 
 
 def cargo_list_command() -> list[str]:
@@ -106,7 +138,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--skip",
         action="append",
         default=[],
-        help="exact or final path component of a test run by another job",
+        help="exact fully qualified test name executed by a dedicated job",
     )
     args = parser.parse_args(argv)
     if args.shards < 1:
