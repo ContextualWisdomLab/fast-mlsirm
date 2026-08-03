@@ -142,7 +142,7 @@ fn published_example_matches_independent_formula_oracle() {
 }
 
 #[test]
-fn puc_is_absent_for_cross_loaded_or_incomplete_general_patterns() {
+fn puc_is_absent_for_cross_loaded_specific_factors() {
     let mut cross_loaded = example_loadings();
     cross_loaded[2] = 0.20;
     let uniqueness = uniquenesses(&cross_loaded, 12, 4);
@@ -154,18 +154,21 @@ fn puc_is_absent_for_cross_loaded_or_incomplete_general_patterns() {
     .unwrap();
     assert!(!cross.is_strict_bifactor);
     assert_eq!(cross.puc, None);
+}
 
+#[test]
+fn incomplete_general_factor_is_rejected() {
     let mut missing_general = example_loadings();
     missing_general[0] = 0.0;
     let uniqueness = uniquenesses(&missing_general, 12, 4);
-    let incomplete = bifactor_indices(
+    let error = bifactor_indices(
         &missing_general,
         &uniqueness,
         BifactorIndicesConfig::new(12, 4, 0),
     )
-    .unwrap();
-    assert!(!incomplete.is_strict_bifactor);
-    assert_eq!(incomplete.puc, None);
+    .unwrap_err();
+    assert!(error.contains("general factor"), "unexpected error: {error}");
+    assert!(error.contains("item 0"), "unexpected error: {error}");
 }
 
 #[test]
