@@ -44,6 +44,15 @@
 //! Cross-loaded specific-factor patterns return `None`; a missing general
 //! loading is rejected rather than emitting bifactor-labelled diagnostics.
 //!
+//! # Execution contract
+//!
+//! The diagnostic is a bounded, non-iterative Rust CPU reduction. Its
+//! worst-case work is proportional to `n_items * n_factors^2`; requests above
+//! [`MAX_BIFACTOR_WORK_UNITS`] are rejected before input-length validation or
+//! allocation. This small deterministic reduction does not amortize GPU
+//! dispatch, transfer, or synchronization overhead. Model fitting remains the
+//! accelerator-relevant path; post-fit scoreability stays on the CPU.
+//!
 //! # References (APA 7th ed.)
 //!
 //! Dueber, D. M. (2021). *BifactorIndicesCalculator: Bifactor indices
@@ -57,6 +66,13 @@
 use crate::checked_mul_usize;
 
 const STANDARDIZATION_TOLERANCE: f64 = 1e-8;
+
+/// Maximum number of item rows accepted by the diagnostic kernel.
+pub const MAX_BIFACTOR_ITEMS: usize = 1_000_000;
+/// Maximum number of factor columns accepted by the diagnostic kernel.
+pub const MAX_BIFACTOR_FACTORS: usize = 64;
+/// Maximum deterministic worst-case `items * factors^2` work units.
+pub const MAX_BIFACTOR_WORK_UNITS: usize = 50_000_000;
 
 /// Shape and structural-zero controls for [`bifactor_indices`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -118,9 +134,11 @@ pub struct BifactorIndicesResult {
 /// assumed orthogonal; callers with logistic IRT slopes should use
 /// [`bifactor_latent_response_indices_from_logit_slopes`].
 ///
-/// This function deliberately returns descriptive indices, not a pass/fail
-/// verdict. Model selection should use likelihood, predictive, recovery, and
-/// non-nested comparison evidence before interpreting these diagnostics.
+/// The request is rejected when `n_items * n_factors^2` exceeds
+/// [`MAX_BIFACTOR_WORK_UNITS`]. This function deliberately returns descriptive
+/// indices, not a pass/fail verdict. Model selection should use likelihood,
+/// predictive, recovery, and non-nested comparison evidence before
+/// interpreting these diagnostics.
 pub fn bifactor_indices(
     loadings: &[f64],
     uniquenesses: &[f64],
@@ -217,6 +235,11 @@ pub fn bifactor_indices(
 
         let common_sum_variance: f64 = column_sums.iter().map(|sum| sum * sum).sum();
         let omega_denominator = common_sum_variance + uniqueness_sum;
+        if !omega_denominator.is_finite() {
+            return Err(format!(
+                "omega denominator must be finite for factor {factor}"
+            ));
+        }
         if omega_denominator <= 0.0 {
             return Err(format!(
                 "omega denominator must be positive for factor {factor}"
@@ -327,8 +350,18 @@ fn validate_config(config: BifactorIndicesConfig) -> Result<usize, String> {
     if config.n_items < 2 {
         return Err("bifactor indices require at least two items".into());
     }
+    if config.n_items > MAX_BIFACTOR_ITEMS {
+        return Err(format!(
+            "bifactor indices support at most {MAX_BIFACTOR_ITEMS} items"
+        ));
+    }
     if config.n_factors < 2 {
         return Err("bifactor indices require at least two factors".into());
+    }
+    if config.n_factors > MAX_BIFACTOR_FACTORS {
+        return Err(format!(
+            "bifactor indices support at most {MAX_BIFACTOR_FACTORS} factors"
+        ));
     }
     if config.general_factor >= config.n_factors {
         return Err(format!(
@@ -339,11 +372,22 @@ fn validate_config(config: BifactorIndicesConfig) -> Result<usize, String> {
     if !(config.zero_tolerance.is_finite() && config.zero_tolerance >= 0.0) {
         return Err("zero_tolerance must be finite and non-negative".into());
     }
-    checked_mul_usize(
+    let matrix_cells = checked_mul_usize(
         config.n_items,
         config.n_factors,
         "loading matrix dimensions overflow usize",
-    )
+    )?;
+    let work_units = checked_mul_usize(
+        matrix_cells,
+        config.n_factors,
+        "bifactor diagnostic work estimate overflows usize",
+    )?;
+    if work_units > MAX_BIFACTOR_WORK_UNITS {
+        return Err(format!(
+            "bifactor diagnostic work budget exceeds {MAX_BIFACTOR_WORK_UNITS} items*factor^2 units; got {work_units}"
+        ));
+    }
+    Ok(matrix_cells)
 }
 
 fn validate_inputs(
