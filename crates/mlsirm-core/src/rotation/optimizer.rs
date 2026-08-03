@@ -100,6 +100,9 @@ fn oblique_gradient(
     transform: &[f64],
     evaluation: &CriterionEvaluation,
 ) -> Vec<f64> {
+    // For L = A T^{-T}, GPA's chain rule is
+    // G_T = -L' G_L T^{-1}. `pattern_gradient` is L' G_L, so a second
+    // transpose would be mathematically incorrect.
     let pattern_gradient = crossprod(
         pattern,
         &evaluation.gradient,
@@ -107,17 +110,17 @@ fn oblique_gradient(
         factors,
         factors,
     );
-    let product = matmul(
+    let mut gradient = matmul(
         &pattern_gradient,
         factors,
         factors,
         inverse_transform,
         factors,
     );
-    let mut gradient = transpose(&product, factors, factors);
     for value in &mut gradient {
         *value = -*value;
     }
+    // Project onto the product of unit spheres used for oblique transforms.
     let mut column_inner = vec![0.0; factors];
     for i in 0..factors {
         for j in 0..factors {
@@ -516,6 +519,29 @@ mod tests {
         assert!(solution.criterion_value < initial);
         assert!(solution.factor_correlation[1].abs() < 0.999);
         assert_eq!(solution.transform.len(), 4);
+    }
+
+    #[test]
+    fn oblique_transform_gradient_matches_finite_difference() {
+        let a = mixed_loadings();
+        let criterion = RotationCriterion::Oblimin { gamma: 0.2 };
+        let transform = random_oblique(2, 31).unwrap();
+        let (pattern, inverse) = oblique_pattern(&a, 6, 2, &transform).unwrap();
+        let evaluation = criterion.evaluate(&pattern, 6, 2).unwrap();
+        let projected = oblique_gradient(&pattern, &inverse, 6, 2, &transform, &evaluation);
+        let h = 1e-6;
+        let mut plus = transform.clone();
+        let mut minus = transform.clone();
+        plus[0] += h;
+        minus[0] -= h;
+        normalize_columns(&mut plus, 2, 2).unwrap();
+        normalize_columns(&mut minus, 2, 2).unwrap();
+        let plus_pattern = oblique_pattern(&a, 6, 2, &plus).unwrap().0;
+        let minus_pattern = oblique_pattern(&a, 6, 2, &minus).unwrap().0;
+        let numeric = (criterion.evaluate(&plus_pattern, 6, 2).unwrap().value
+            - criterion.evaluate(&minus_pattern, 6, 2).unwrap().value)
+            / (2.0 * h);
+        assert!((projected[0] - numeric).abs() < 3e-4);
     }
 
     #[test]
