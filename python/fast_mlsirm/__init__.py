@@ -14,10 +14,6 @@ for _public_name in _legacy_init.__all__:
     if hasattr(_legacy_init, _public_name):
         globals()[_public_name] = getattr(_legacy_init, _public_name)
 
-# Repair the historical export declared by the legacy registry but omitted from
-# its import list. The legacy module itself also imports this symbol on the
-# corrected branch so direct wildcard imports remain valid.
-from .classification import ClassificationResult as ClassificationResult
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
     bifactor_scoreability as bifactor_scoreability,
