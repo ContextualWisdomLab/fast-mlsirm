@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Render authoritative changelog fragments
-        run: python scripts/render_changelog_fragments.py --update
+        run: python scripts/render_changelog_fragments.py --update CHANGELOG.md
       - name: Publish rendered changelog
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
