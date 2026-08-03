@@ -1,7 +1,18 @@
 """Public package surface for fast-mlsirm."""
 
-from ._legacy_init import *
-from ._legacy_init import __all__ as _legacy_all
+from __future__ import annotations
+
+from . import _legacy_init as _legacy_init
+
+# Copy the established package-root attributes that actually exist. Importing
+# with ``from ._legacy_init import *`` would dereference every historical
+# ``__all__`` entry and can break package import when a legacy export is stale;
+# this preserves the previous runtime surface without turning that unrelated
+# registry issue into a blocker for the modular bifactor API.
+for _public_name, _public_value in vars(_legacy_init).items():
+    if not _public_name.startswith("_") or _public_name == "__version__":
+        globals()[_public_name] = _public_value
+
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
     bifactor_scoreability as bifactor_scoreability,
@@ -9,8 +20,10 @@ from .bifactor_scoreability import (
 )
 
 __all__ = [
-    *_legacy_all,
+    *_legacy_init.__all__,
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
 ]
+
+del _public_name, _public_value
