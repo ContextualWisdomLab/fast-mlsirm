@@ -86,6 +86,9 @@ print(fixed_item_calibration.best)
 - aFIPC-style fixed-item calibration diagnostics that select candidate
   probability tensors using fixed evaluation-item likelihood and kaefa-style
   item-fit penalty.
+- Rubric-centered schemas, deterministic bounded item-blueprint compilation,
+  and canonical provider-neutral generation contracts. See
+  [Rubric-Centered Item Generation](docs/rubric_item_generation.md).
 - Standalone HTML reports for saved fit or dimensionality diagnostics.
 - Automated benchmark evidence reports from release-acceptance timing.
 - Release evidence index reports that tie dist artifact hashes, acceptance,
@@ -129,60 +132,6 @@ cargo test --workspace
 
 The PyO3 extension crate is built by maturin and exercised by the Python backend
 parity tests.
-
-## Adaptive Factor Rotation Preview
-
-The compiled rotation API optimizes one declared criterion from deterministic
-identity and seeded random starts, then reports convergence, projected-gradient
-stationarity, observed objective basins, and basin support. A separate selector
-compares resulting loading patterns with criterion-neutral evidence; it never
-compares raw objective values from different criterion families and never
-claims that a finite multi-start search proves a global optimum.
-
-```python
-import numpy as np
-from fast_mlsirm import rotate_factor_loadings
-
-unrotated = np.asarray(
-    [
-        [0.72, 0.39],
-        [0.65, 0.35],
-        [0.60, 0.31],
-        [-0.31, 0.70],
-        [-0.28, 0.64],
-        [-0.25, 0.58],
-    ]
-)
-
-solution = rotate_factor_loadings(
-    unrotated,
-    "geomin",
-    mode="oblique",
-    n_starts=64,
-    seed=20260803,
-)
-print(solution.loadings)
-print(solution.basin_support)
-```
-
-The supported registry covers:
-
-- Orthomax: `quartimax`, `varimax`, continuous `orthomax`, and `varimin`;
-- Crawford-Ferguson: continuous `crawford_ferguson`, `equamax`, `parsimax`,
-  and `factor_parsimony`;
-- direct oblimin: continuous `oblimin`, `quartimin`, `biquartimin`, and
-  `covarimin`;
-- `geomin`, complete/partial `target`, binary-mask `pst`, `entropy`, `infomax`,
-  `mccammon`, `simplimax`, continuous-weight `lp_wls`, `bifactor`, `bigeomin`,
-  `tandem_i`, `tandem_ii`, `oblimax`, and `bentler`.
-
-Promax, Cubimax, iterative Lp/forced-simple-structure orchestration,
-cluster/EIV/echelon procedures, user-defined compiled criteria, and a
-parity-verified wgpu batch optimizer are explicitly deferred and are not
-advertised as supported. See
-[Adaptive exploratory factor rotation](docs/adaptive_factor_rotation.md) for
-the target/PST contract, optimization equations, selection evidence, and
-interpretation boundaries.
 
 ## Commercial Readiness
 

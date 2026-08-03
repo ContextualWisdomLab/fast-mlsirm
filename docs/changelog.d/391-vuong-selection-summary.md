@@ -6,7 +6,7 @@
 - Auditable `ModelRelation`, `ComparisonStatus`, and immutable `ModelComparisonResult` contracts.
 - Relation-appropriate routing for nested, boundary-nested, overlapping, strictly non-nested, and unknown candidate pairs.
 
-## Safety boundary
+## Security
 
 - Omitted relation metadata defaults to `unknown`.
 - Nested, boundary-nested, and unknown relations are routed before the non-nested normal-selection kernel is invoked, so a rejected or exact-zero non-applicable statistic cannot mask the required likelihood-ratio or relation-resolution procedure.
