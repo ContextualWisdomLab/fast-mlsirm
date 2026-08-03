@@ -17,6 +17,7 @@ from ._bifactor_core_loader import bifactor_core
 
 MAX_BIFACTOR_ITEMS = 1_000_000
 MAX_BIFACTOR_FACTORS = 64
+MAX_BIFACTOR_WORK_UNITS = 50_000_000
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,12 @@ def _matrix(value: Any, name: str) -> np.ndarray:
     if not 2 <= n_factors <= MAX_BIFACTOR_FACTORS:
         raise ValueError(
             f"{name} must contain between 2 and {MAX_BIFACTOR_FACTORS} factors"
+        )
+    work_units = n_items * n_factors * n_factors
+    if work_units > MAX_BIFACTOR_WORK_UNITS:
+        raise ValueError(
+            f"{name} exceeds the bifactor diagnostic work budget "
+            f"({MAX_BIFACTOR_WORK_UNITS} items*factor^2 units); got {work_units}"
         )
     return np.ascontiguousarray(matrix)
 
@@ -145,6 +152,11 @@ def bifactor_scoreability(
 
     Notes
     -----
+    Requests are bounded by ``MAX_BIFACTOR_WORK_UNITS`` using the worst-case
+    ``n_items * n_factors**2`` reduction cost. The non-iterative diagnostic runs
+    on the Rust CPU path; GPU transfer and synchronization would exceed the
+    useful work at the accepted sizes.
+
     These indices support post-fit score interpretation; they do not select a
     bifactor model or define universal pass/fail cutoffs. Model selection,
     predictive validation, recovery, invariance, and substantive validity
@@ -184,6 +196,8 @@ def bifactor_scoreability_from_logit_slopes(
     Scaling is performed in overflow-resistant row coordinates in Rust. The
     resulting omega coefficients describe the continuous latent-response
     representation, not observed binary or ordinal sum-score reliability.
+    The same bounded CPU work contract as :func:`bifactor_scoreability`
+    applies.
     """
     slope_matrix = _matrix(logit_slopes, "logit_slopes")
     raw = bifactor_core().bifactor_indices_from_logit_slopes(
