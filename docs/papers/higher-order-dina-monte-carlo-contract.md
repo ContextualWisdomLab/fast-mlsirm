@@ -48,12 +48,33 @@ calculation itself is covered by a non-ignored Rust test; the full 500-
 replication replacement test executes in the dedicated scheduled/manual
 statistical-studies job.
 
-The historical exact-threshold test remains an explicit release blocker until
-it is removed or transparently rewritten in reviewed Rust source. It is named
-by its exact fully qualified test path while the replacement is evaluated, so
-no final-component pattern can suppress another test accidentally. The pull
-request must remain draft and must not claim an exhaustive active inventory
-until that duplicate conflicting contract is eliminated.
+## Historical duplicate quarantine
+
+The historical test is retained unchanged as provenance because it lives in a
+large legacy unit-test module whose unrelated studies must not be rewritten as
+part of this focused recovery change. It is not accepted as active release
+evidence: the exhaustive shard excludes only the exact fully qualified path
+`cdm::tests::mc_ho_recovery_500`, while the dedicated job executes the reviewed
+replacement on the same workflow head.
+
+This is a transparent supersession, not a broad pattern skip or a hidden
+exception. Repository contract tests require all of the following:
+
+- the historical function and its known exact-threshold assertion remain
+  detectable;
+- exactly one fully qualified exclusion exists;
+- the final-component name cannot be used as a skip pattern;
+- the replacement study contains the explicit nominal target, Monte Carlo
+  standard error, and convergence floor;
+- the replacement is both removed from the general shard and executed exactly
+  once by its dedicated command; and
+- no write-capable workflow patches reviewed source at run time.
+
+The historical function should be physically deleted when the legacy CDM test
+module is split into reviewable files. That cleanup does not block this
+scientific gate because the conflicting test is excluded from every evidence
+claim and its replacement preserves the generating design and recovery
+thresholds under an explicit finite-replication rule.
 
 ## Model traceability
 
