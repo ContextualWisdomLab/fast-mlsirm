@@ -39,9 +39,11 @@ def test_release_dispatch_must_target_the_repository_default_branch():
 
 
 def test_release_version_and_changelog_section_fail_closed():
-    """The requested version matches source and exactly one nonempty release note section."""
+    """The requested canonical version matches exactly one nonempty release section."""
     text = _workflow_text()
-    assert "^[0-9]+\\.[0-9]+\\.[0-9]+$" in text
+    assert 'r"(?:0|[1-9][0-9]*)\\."' in text
+    assert text.count('r"(?:0|[1-9][0-9]*)') == 3
+    assert "without leading zeros" in text
     assert "pyproject.toml version" in text
     assert "expected exactly one CHANGELOG section" in text
     assert "if len(matches) != 1:" in text
@@ -59,9 +61,29 @@ def test_existing_tag_or_release_and_api_uncertainty_block_publication():
     assert "refusing to overwrite or reuse it" in text
 
 
-def test_release_creation_targets_the_verified_dispatch_commit():
-    """The immutable workflow dispatch SHA is the target of the new release tag."""
+def test_release_tag_is_created_atomically_at_the_dispatch_sha():
+    """The tag creation API is the race-safe authority for the immutable ref."""
     text = _workflow_text()
-    assert 'gh release create "v$RELEASE_VERSION"' in text
-    assert '--target "$GITHUB_SHA"' in text
-    assert '--notes-file release_notes.md' in text
+    create_step = "Atomically create the immutable release tag"
+    post_ref = '"$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/refs"'
+    assert create_step in text
+    assert '"ref": f"refs/tags/v{os.environ[\'RELEASE_VERSION\']}"' in text
+    assert '"sha": os.environ["GITHUB_SHA"]' in text
+    assert "--request POST" in text
+    assert '--data-binary "@$request_file"' in text
+    assert post_ref in text
+    assert 'if [ "$status" != "201" ]' in text
+    assert 'actual_sha != os.environ["GITHUB_SHA"]' in text
+
+
+def test_release_creation_requires_the_verified_existing_tag():
+    """Release publication cannot silently create or retarget a tag after checks."""
+    text = _workflow_text()
+    preflight = 'check_absent "git/ref/tags/v$RELEASE_VERSION"'
+    atomic_create = "Atomically create the immutable release tag"
+    publish = 'gh release create "v$RELEASE_VERSION"'
+    assert publish in text
+    assert "--verify-tag" in text
+    assert '--target "$GITHUB_SHA"' not in text
+    assert "--notes-file release_notes.md" in text
+    assert text.index(preflight) < text.index(atomic_create) < text.index(publish)
