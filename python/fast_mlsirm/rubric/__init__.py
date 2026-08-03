@@ -43,6 +43,16 @@ from .models import ItemBlueprint as ItemBlueprint
 from .models import ResponseFormat as ResponseFormat
 from .models import RubricLevel as RubricLevel
 from .models import RubricSpecification as RubricSpecification
+from .pilot_observations import MAX_PILOT_OBSERVATIONS as MAX_PILOT_OBSERVATIONS
+from .pilot_observations import FacetsPilotDesign as FacetsPilotDesign
+from .pilot_observations import PilotItemProvenance as PilotItemProvenance
+from .pilot_observations import PilotObservationError as PilotObservationError
+from .pilot_observations import PilotObservationRecord as PilotObservationRecord
+from .pilot_observations import PilotResponseState as PilotResponseState
+from .pilot_observations import build_facets_pilot_design as build_facets_pilot_design
+from .pilot_observations import (
+    build_pilot_observation_record as build_pilot_observation_record,
+)
 from .verified_pilot import PilotCandidateRecord as PilotCandidateRecord
 
 # Preserve the established star-import contract. Audit and pilot types remain
