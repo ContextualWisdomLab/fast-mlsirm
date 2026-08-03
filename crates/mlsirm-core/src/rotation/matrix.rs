@@ -162,10 +162,7 @@ pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f
     if a.iter().any(|value| !value.is_finite()) {
         return Err("criterion matrix must contain only finite values".into());
     }
-    let scale = a
-        .iter()
-        .map(|value| value.abs())
-        .fold(1.0_f64, f64::max);
+    let scale = a.iter().map(|value| value.abs()).fold(1.0_f64, f64::max);
     let symmetry_tolerance = 1e-12 * scale;
     for i in 0..n {
         for j in 0..i {
@@ -179,9 +176,7 @@ pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f
     // floating-point cancellation. Scale the pivot floor to the matrix diagonal
     // so singular Bentler fourth-moment matrices fail closed while genuinely
     // near-singular positive-definite inputs remain supported.
-    let diagonal_scale = (0..n)
-        .map(|i| a[i * n + i].abs())
-        .fold(0.0_f64, f64::max);
+    let diagonal_scale = (0..n).map(|i| a[i * n + i].abs()).fold(0.0_f64, f64::max);
     let pivot_tolerance = 64.0 * f64::EPSILON * diagonal_scale.max(f64::MIN_POSITIVE);
 
     let mut lower = vec![0.0; n * n];
@@ -207,10 +202,7 @@ pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f
         }
     }
 
-    let logdet = 2.0
-        * (0..n)
-            .map(|i| lower[i * n + i].ln())
-            .sum::<f64>();
+    let logdet = 2.0 * (0..n).map(|i| lower[i * n + i].ln()).sum::<f64>();
     if !logdet.is_finite() {
         return Err("criterion matrix log determinant is non-finite".into());
     }
@@ -287,7 +279,11 @@ pub(crate) fn orthogonality_error(transform: &[f64], n: usize) -> f64 {
 }
 
 /// Modified Gram-Schmidt fallback for accumulated orthogonality drift.
-pub(crate) fn orthonormalize_columns(a: &mut [f64], rows: usize, cols: usize) -> Result<(), String> {
+pub(crate) fn orthonormalize_columns(
+    a: &mut [f64],
+    rows: usize,
+    cols: usize,
+) -> Result<(), String> {
     for j in 0..cols {
         for prior in 0..j {
             let mut projection = 0.0;
@@ -389,8 +385,7 @@ mod tests {
     use super::*;
 
     fn determinant_3x3(a: &[f64]) -> f64 {
-        a[0] * (a[4] * a[8] - a[5] * a[7])
-            - a[1] * (a[3] * a[8] - a[5] * a[6])
+        a[0] * (a[4] * a[8] - a[5] * a[7]) - a[1] * (a[3] * a[8] - a[5] * a[6])
             + a[2] * (a[3] * a[7] - a[4] * a[6])
     }
 

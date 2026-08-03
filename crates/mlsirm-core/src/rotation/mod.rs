@@ -23,12 +23,12 @@ mod optimizer;
 mod selector;
 
 pub use criteria::{CriterionEvaluation, RotationCriterion};
+use matrix::{identity, matmul, random_oblique, random_orthogonal};
+use optimizer::{optimize_start, OptimizerSettings, StartSolution};
 pub use selector::{
     select_rotation_criterion, RotationCandidateEvidence, RotationSelectionPolicy,
     RotationSelectionResult,
 };
-use matrix::{identity, matmul, random_oblique, random_orthogonal};
-use optimizer::{optimize_start, OptimizerSettings, StartSolution};
 use std::cmp::Ordering;
 
 /// Rotation manifold.
@@ -174,32 +174,214 @@ pub struct RotationSolution {
 /// Return the built-in criterion catalogue.
 pub fn available_rotation_criteria() -> &'static [RotationCriterionInfo] {
     const CATALOGUE: &[RotationCriterionInfo] = &[
-        RotationCriterionInfo { name: "quartimax", family: "orthomax", orthogonal: true, oblique: false, requires_target: false, description: "Orthogonal variable-complexity minimization." },
-        RotationCriterionInfo { name: "varimax", family: "orthomax", orthogonal: true, oblique: false, requires_target: false, description: "Orthogonal factor-variance maximization." },
-        RotationCriterionInfo { name: "orthomax", family: "orthomax", orthogonal: true, oblique: false, requires_target: false, description: "Continuous Orthomax gamma family." },
-        RotationCriterionInfo { name: "crawford_ferguson", family: "crawford_ferguson", orthogonal: true, oblique: true, requires_target: false, description: "Continuous Crawford-Ferguson kappa family." },
-        RotationCriterionInfo { name: "equamax", family: "crawford_ferguson", orthogonal: true, oblique: true, requires_target: false, description: "Crawford-Ferguson equamax special case." },
-        RotationCriterionInfo { name: "parsimax", family: "crawford_ferguson", orthogonal: true, oblique: true, requires_target: false, description: "Crawford-Ferguson parsimax special case." },
-        RotationCriterionInfo { name: "factor_parsimony", family: "crawford_ferguson", orthogonal: true, oblique: true, requires_target: false, description: "Crawford-Ferguson factor-parsimony endpoint." },
-        RotationCriterionInfo { name: "oblimin", family: "oblimin", orthogonal: false, oblique: true, requires_target: false, description: "Continuous direct-oblimin gamma family." },
-        RotationCriterionInfo { name: "quartimin", family: "oblimin", orthogonal: false, oblique: true, requires_target: false, description: "Direct-oblimin quartimin special case." },
-        RotationCriterionInfo { name: "biquartimin", family: "oblimin", orthogonal: false, oblique: true, requires_target: false, description: "Direct-oblimin gamma=.5 special case." },
-        RotationCriterionInfo { name: "covarimin", family: "oblimin", orthogonal: false, oblique: true, requires_target: false, description: "Direct-oblimin gamma=1 special case." },
-        RotationCriterionInfo { name: "geomin", family: "geomin", orthogonal: true, oblique: true, requires_target: false, description: "Geometric-mean row-complexity criterion." },
-        RotationCriterionInfo { name: "target", family: "target", orthogonal: true, oblique: true, requires_target: true, description: "Complete or NaN-partially specified target rotation." },
-        RotationCriterionInfo { name: "pst", family: "target", orthogonal: true, oblique: true, requires_target: true, description: "Weighted partially specified target rotation." },
-        RotationCriterionInfo { name: "entropy", family: "information", orthogonal: true, oblique: true, requires_target: false, description: "Minimum entropy criterion." },
-        RotationCriterionInfo { name: "infomax", family: "information", orthogonal: true, oblique: true, requires_target: false, description: "Infomax information criterion." },
-        RotationCriterionInfo { name: "mccammon", family: "information", orthogonal: true, oblique: false, requires_target: false, description: "McCammon minimum entropy-ratio criterion." },
-        RotationCriterionInfo { name: "simplimax", family: "component_loss", orthogonal: false, oblique: true, requires_target: false, description: "Kiers simplimax component-loss criterion." },
-        RotationCriterionInfo { name: "bifactor", family: "bifactor", orthogonal: true, oblique: true, requires_target: false, description: "Jennrich-Bentler biquartimin criterion." },
-        RotationCriterionInfo { name: "bigeomin", family: "bifactor", orthogonal: true, oblique: true, requires_target: false, description: "Jennrich-Bentler bi-geomin criterion." },
-        RotationCriterionInfo { name: "tandem_i", family: "tandem", orthogonal: true, oblique: false, requires_target: false, description: "Comrey tandem criterion I." },
-        RotationCriterionInfo { name: "tandem_ii", family: "tandem", orthogonal: true, oblique: false, requires_target: false, description: "Comrey tandem criterion II." },
-        RotationCriterionInfo { name: "oblimax", family: "oblimax", orthogonal: false, oblique: true, requires_target: false, description: "Scale-invariant oblimax criterion." },
-        RotationCriterionInfo { name: "bentler", family: "invariant_simplicity", orthogonal: true, oblique: true, requires_target: false, description: "Bentler invariant pattern-simplicity criterion." },
-        RotationCriterionInfo { name: "varimin", family: "anti_simple_structure", orthogonal: true, oblique: false, requires_target: false, description: "Orthogonal varimin complement of varimax." },
-        RotationCriterionInfo { name: "lp_wls", family: "component_loss", orthogonal: true, oblique: true, requires_target: false, description: "Weighted L2 kernel for iterative Lp/FSS rotation." },
+        RotationCriterionInfo {
+            name: "quartimax",
+            family: "orthomax",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Orthogonal variable-complexity minimization.",
+        },
+        RotationCriterionInfo {
+            name: "varimax",
+            family: "orthomax",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Orthogonal factor-variance maximization.",
+        },
+        RotationCriterionInfo {
+            name: "orthomax",
+            family: "orthomax",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Continuous Orthomax gamma family.",
+        },
+        RotationCriterionInfo {
+            name: "crawford_ferguson",
+            family: "crawford_ferguson",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Continuous Crawford-Ferguson kappa family.",
+        },
+        RotationCriterionInfo {
+            name: "equamax",
+            family: "crawford_ferguson",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Crawford-Ferguson equamax special case.",
+        },
+        RotationCriterionInfo {
+            name: "parsimax",
+            family: "crawford_ferguson",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Crawford-Ferguson parsimax special case.",
+        },
+        RotationCriterionInfo {
+            name: "factor_parsimony",
+            family: "crawford_ferguson",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Crawford-Ferguson factor-parsimony endpoint.",
+        },
+        RotationCriterionInfo {
+            name: "oblimin",
+            family: "oblimin",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Continuous direct-oblimin gamma family.",
+        },
+        RotationCriterionInfo {
+            name: "quartimin",
+            family: "oblimin",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Direct-oblimin quartimin special case.",
+        },
+        RotationCriterionInfo {
+            name: "biquartimin",
+            family: "oblimin",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Direct-oblimin gamma=.5 special case.",
+        },
+        RotationCriterionInfo {
+            name: "covarimin",
+            family: "oblimin",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Direct-oblimin gamma=1 special case.",
+        },
+        RotationCriterionInfo {
+            name: "geomin",
+            family: "geomin",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Geometric-mean row-complexity criterion.",
+        },
+        RotationCriterionInfo {
+            name: "target",
+            family: "target",
+            orthogonal: true,
+            oblique: true,
+            requires_target: true,
+            description: "Complete or NaN-partially specified target rotation.",
+        },
+        RotationCriterionInfo {
+            name: "pst",
+            family: "target",
+            orthogonal: true,
+            oblique: true,
+            requires_target: true,
+            description: "Weighted partially specified target rotation.",
+        },
+        RotationCriterionInfo {
+            name: "entropy",
+            family: "information",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Minimum entropy criterion.",
+        },
+        RotationCriterionInfo {
+            name: "infomax",
+            family: "information",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Infomax information criterion.",
+        },
+        RotationCriterionInfo {
+            name: "mccammon",
+            family: "information",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "McCammon minimum entropy-ratio criterion.",
+        },
+        RotationCriterionInfo {
+            name: "simplimax",
+            family: "component_loss",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Kiers simplimax component-loss criterion.",
+        },
+        RotationCriterionInfo {
+            name: "bifactor",
+            family: "bifactor",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Jennrich-Bentler biquartimin criterion.",
+        },
+        RotationCriterionInfo {
+            name: "bigeomin",
+            family: "bifactor",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Jennrich-Bentler bi-geomin criterion.",
+        },
+        RotationCriterionInfo {
+            name: "tandem_i",
+            family: "tandem",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Comrey tandem criterion I.",
+        },
+        RotationCriterionInfo {
+            name: "tandem_ii",
+            family: "tandem",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Comrey tandem criterion II.",
+        },
+        RotationCriterionInfo {
+            name: "oblimax",
+            family: "oblimax",
+            orthogonal: false,
+            oblique: true,
+            requires_target: false,
+            description: "Scale-invariant oblimax criterion.",
+        },
+        RotationCriterionInfo {
+            name: "bentler",
+            family: "invariant_simplicity",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Bentler invariant pattern-simplicity criterion.",
+        },
+        RotationCriterionInfo {
+            name: "varimin",
+            family: "anti_simple_structure",
+            orthogonal: true,
+            oblique: false,
+            requires_target: false,
+            description: "Orthogonal varimin complement of varimax.",
+        },
+        RotationCriterionInfo {
+            name: "lp_wls",
+            family: "component_loss",
+            orthogonal: true,
+            oblique: true,
+            requires_target: false,
+            description: "Weighted L2 kernel for iterative Lp/FSS rotation.",
+        },
     ];
     CATALOGUE
 }
@@ -222,16 +404,28 @@ pub fn rotation_criterion_from_name(
         "quartimax" => RotationCriterion::Quartimax,
         "varimax" => RotationCriterion::Varimax,
         "varimin" => RotationCriterion::Varimin,
-        "orthomax" => RotationCriterion::Orthomax { gamma: gamma.unwrap_or(1.0) },
-        "crawford_ferguson" | "cf" => RotationCriterion::CrawfordFerguson { kappa: kappa.unwrap_or(0.0) },
-        "equamax" => RotationCriterion::CrawfordFerguson { kappa: factors as f64 / (2.0 * rows as f64) },
-        "parsimax" => RotationCriterion::CrawfordFerguson { kappa: (factors - 1) as f64 / (rows + factors - 2) as f64 },
+        "orthomax" => RotationCriterion::Orthomax {
+            gamma: gamma.unwrap_or(1.0),
+        },
+        "crawford_ferguson" | "cf" => RotationCriterion::CrawfordFerguson {
+            kappa: kappa.unwrap_or(0.0),
+        },
+        "equamax" => RotationCriterion::CrawfordFerguson {
+            kappa: factors as f64 / (2.0 * rows as f64),
+        },
+        "parsimax" => RotationCriterion::CrawfordFerguson {
+            kappa: (factors - 1) as f64 / (rows + factors - 2) as f64,
+        },
         "factor_parsimony" => RotationCriterion::CrawfordFerguson { kappa: 1.0 },
-        "oblimin" => RotationCriterion::Oblimin { gamma: gamma.unwrap_or(0.0) },
+        "oblimin" => RotationCriterion::Oblimin {
+            gamma: gamma.unwrap_or(0.0),
+        },
         "quartimin" => RotationCriterion::Oblimin { gamma: 0.0 },
         "biquartimin" => RotationCriterion::Oblimin { gamma: 0.5 },
         "covarimin" => RotationCriterion::Oblimin { gamma: 1.0 },
-        "geomin" => RotationCriterion::Geomin { delta: delta.unwrap_or(0.01) },
+        "geomin" => RotationCriterion::Geomin {
+            delta: delta.unwrap_or(0.01),
+        },
         "target" => RotationCriterion::Target {
             target: target.ok_or_else(|| "target method requires target".to_string())?,
             weights: weights.unwrap_or_else(|| vec![1.0; rows * factors]),
@@ -243,9 +437,13 @@ pub fn rotation_criterion_from_name(
         "entropy" => RotationCriterion::Entropy,
         "infomax" => RotationCriterion::Infomax,
         "mccammon" => RotationCriterion::McCammon,
-        "simplimax" => RotationCriterion::Simplimax { zeros: simplimax_zeros.unwrap_or(rows) },
+        "simplimax" => RotationCriterion::Simplimax {
+            zeros: simplimax_zeros.unwrap_or(rows),
+        },
         "bifactor" | "biquartimin_bifactor" => RotationCriterion::Bifactor,
-        "bigeomin" | "bi_geomin" => RotationCriterion::BiGeomin { delta: delta.unwrap_or(0.01) },
+        "bigeomin" | "bi_geomin" => RotationCriterion::BiGeomin {
+            delta: delta.unwrap_or(0.01),
+        },
         "tandem_i" | "tandemi" => RotationCriterion::TandemI,
         "tandem_ii" | "tandemii" => RotationCriterion::TandemII,
         "oblimax" => RotationCriterion::Oblimax,
@@ -279,7 +477,11 @@ pub fn rotate_factor_loadings(
     let available = std::thread::available_parallelism()
         .map(|value| value.get())
         .unwrap_or(1);
-    let requested = if config.max_threads == 0 { available } else { config.max_threads };
+    let requested = if config.max_threads == 0 {
+        available
+    } else {
+        config.max_threads
+    };
     let workers = requested.max(1).min(starts.len());
     let chunk_size = starts.len().div_ceil(workers);
     let mut outcomes: Vec<Result<StartSolution, String>> = Vec::with_capacity(starts.len());
@@ -325,7 +527,10 @@ pub fn rotate_factor_loadings(
     if solutions.is_empty() {
         return Err(format!(
             "all rotation starts failed: {}",
-            failures.first().cloned().unwrap_or_else(|| "unknown failure".into())
+            failures
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "unknown failure".into())
         ));
     }
     solutions.sort_by_key(|solution| solution.start_index);
@@ -467,9 +672,7 @@ fn build_starts(
 ) -> Result<Vec<(usize, Vec<f64>)>, String> {
     let mut starts = vec![(0, identity(factors))];
     for index in 1..n_starts {
-        let derived = seed
-            ^ (index as u64).wrapping_mul(0x9E3779B97F4A7C15)
-            ^ 0xA0761D6478BD642F;
+        let derived = seed ^ (index as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ 0xA0761D6478BD642F;
         let transform = match mode {
             RotationMode::Orthogonal => random_orthogonal(factors, derived)?,
             RotationMode::Oblique => random_oblique(factors, derived)?,
@@ -518,8 +721,7 @@ fn canonicalize(
     for i in 0..rows {
         for new_j in 0..factors {
             let old_j = order[new_j];
-            solution.pattern[i * factors + new_j] =
-                old_pattern[i * factors + old_j] * signs[new_j];
+            solution.pattern[i * factors + new_j] = old_pattern[i * factors + old_j] * signs[new_j];
         }
     }
     for i in 0..factors {
@@ -531,9 +733,8 @@ fn canonicalize(
     }
     for new_i in 0..factors {
         for new_j in 0..factors {
-            solution.factor_correlation[new_i * factors + new_j] = signs[new_i]
-                * signs[new_j]
-                * old_phi[order[new_i] * factors + order[new_j]];
+            solution.factor_correlation[new_i * factors + new_j] =
+                signs[new_i] * signs[new_j] * old_phi[order[new_i] * factors + order[new_j]];
         }
     }
 }
@@ -593,48 +794,105 @@ mod tests {
     use super::*;
 
     fn mixed() -> Vec<f64> {
-        vec![0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25, 0.58]
+        vec![
+            0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25, 0.58,
+        ]
     }
 
     #[test]
     fn catalogue_and_parser_cover_named_families() {
         assert!(available_rotation_criteria().len() >= 25);
         let names = [
-            "quartimax", "varimax", "varimin", "orthomax", "cf", "equamax",
-            "parsimax", "factor_parsimony", "oblimin", "quartimin", "biquartimin",
-            "covarimin", "geomin", "entropy", "infomax", "mccammon", "simplimax",
-            "bifactor", "bigeomin", "tandem_i", "tandem_ii", "oblimax", "bentler",
+            "quartimax",
+            "varimax",
+            "varimin",
+            "orthomax",
+            "cf",
+            "equamax",
+            "parsimax",
+            "factor_parsimony",
+            "oblimin",
+            "quartimin",
+            "biquartimin",
+            "covarimin",
+            "geomin",
+            "entropy",
+            "infomax",
+            "mccammon",
+            "simplimax",
+            "bifactor",
+            "bigeomin",
+            "tandem_i",
+            "tandem_ii",
+            "oblimax",
+            "bentler",
         ];
         for name in names {
-            let factors = if matches!(name, "bifactor" | "bigeomin") { 3 } else { 2 };
-            assert!(rotation_criterion_from_name(
-                name, 6, factors, None, None, None, None, None, None
-            )
-            .is_ok(),
-            "{name}");
+            let factors = if matches!(name, "bifactor" | "bigeomin") {
+                3
+            } else {
+                2
+            };
+            assert!(
+                rotation_criterion_from_name(name, 6, factors, None, None, None, None, None, None)
+                    .is_ok(),
+                "{name}"
+            );
         }
         assert!(rotation_criterion_from_name(
-            "target", 4, 2, None, None, None, None, Some(vec![0.0; 8]), None
+            "target",
+            4,
+            2,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0.0; 8]),
+            None
         )
         .is_ok());
         assert!(rotation_criterion_from_name(
-            "pst", 4, 2, None, None, None, None, Some(vec![0.0; 8]), Some(vec![1.0; 8])
+            "pst",
+            4,
+            2,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0.0; 8]),
+            Some(vec![1.0; 8])
         )
         .is_ok());
         assert!(rotation_criterion_from_name(
-            "lp_wls", 4, 2, None, None, None, None, None, Some(vec![1.0; 8])
+            "lp_wls",
+            4,
+            2,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![1.0; 8])
         )
         .is_ok());
+        assert!(
+            rotation_criterion_from_name("unknown", 4, 2, None, None, None, None, None, None)
+                .is_err()
+        );
+        assert!(
+            rotation_criterion_from_name("target", 4, 2, None, None, None, None, None, None)
+                .is_err()
+        );
         assert!(rotation_criterion_from_name(
-            "unknown", 4, 2, None, None, None, None, None, None
-        )
-        .is_err());
-        assert!(rotation_criterion_from_name(
-            "target", 4, 2, None, None, None, None, None, None
-        )
-        .is_err());
-        assert!(rotation_criterion_from_name(
-            "pst", 4, 2, None, None, None, None, Some(vec![0.0; 8]), None
+            "pst",
+            4,
+            2,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![0.0; 8]),
+            None
         )
         .is_err());
     }
@@ -653,10 +911,10 @@ mod tests {
             basin_tolerance: 1e-7,
             max_threads: 2,
         };
-        let first = rotate_factor_loadings(&mixed(), 6, 2, &RotationCriterion::Varimax, &config)
-            .unwrap();
-        let second = rotate_factor_loadings(&mixed(), 6, 2, &RotationCriterion::Varimax, &config)
-            .unwrap();
+        let first =
+            rotate_factor_loadings(&mixed(), 6, 2, &RotationCriterion::Varimax, &config).unwrap();
+        let second =
+            rotate_factor_loadings(&mixed(), 6, 2, &RotationCriterion::Varimax, &config).unwrap();
         assert_eq!(first.pattern_matrix, second.pattern_matrix);
         assert_eq!(first.start_values, second.start_values);
         assert_eq!(first.n_starts, 8);
@@ -703,7 +961,10 @@ mod tests {
     #[test]
     fn invalid_rotation_contracts_fail_closed() {
         let criterion = RotationCriterion::Varimax;
-        let mut config = RotationConfig { mode: RotationMode::Orthogonal, ..RotationConfig::default() };
+        let mut config = RotationConfig {
+            mode: RotationMode::Orthogonal,
+            ..RotationConfig::default()
+        };
         assert!(rotate_factor_loadings(&[0.0; 3], 2, 2, &criterion, &config).is_err());
         assert!(rotate_factor_loadings(&[0.0; 4], 1, 2, &criterion, &config).is_err());
         assert!(rotate_factor_loadings(&[f64::NAN; 4], 2, 2, &criterion, &config).is_err());

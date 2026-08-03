@@ -5,9 +5,7 @@
 //! assignment for sign/permutation alignment. Selection is policy-conditional,
 //! never a claim that one criterion is universally optimal.
 
-use super::{
-    rotate_factor_loadings, RotationConfig, RotationCriterion, RotationSolution,
-};
+use super::{rotate_factor_loadings, RotationConfig, RotationCriterion, RotationSolution};
 use std::cmp::Ordering;
 
 /// Decision policy for aggregating criterion-neutral evidence.
@@ -122,9 +120,7 @@ pub fn select_rotation_criterion(
         return Err("criterion selection requires at least two candidates".into());
     }
     if let Some(target) = theory_target {
-        if target.len() != rows * factors
-            || target.iter().any(|x| !x.is_finite() && !x.is_nan())
-        {
+        if target.len() != rows * factors || target.iter().any(|x| !x.is_finite() && !x.is_nan()) {
             return Err(
                 "theory_target must match the loading shape and contain finite values or NaN"
                     .into(),
@@ -600,7 +596,10 @@ fn assign_policy_scores(
         false,
     );
     let convergence = ranks(evidence.iter().map(|x| x.convergence_rate).collect(), true);
-    let basin = ranks(evidence.iter().map(|x| x.basin_support_rate).collect(), true);
+    let basin = ranks(
+        evidence.iter().map(|x| x.basin_support_rate).collect(),
+        true,
+    );
     let bootstrap = if no_bootstrap {
         vec![0.0; evidence.len()]
     } else {
@@ -667,14 +666,12 @@ fn assign_policy_scores(
                     + 0.10 * correlation[index]
             }
             RotationSelectionPolicy::BifactorDiscovery => {
-                let bifactor_penalty = if matches!(
-                    evidence[index].criterion_name,
-                    "bifactor" | "bigeomin"
-                ) {
-                    0.0
-                } else {
-                    1.0
-                };
+                let bifactor_penalty =
+                    if matches!(evidence[index].criterion_name, "bifactor" | "bigeomin") {
+                        0.0
+                    } else {
+                        1.0
+                    };
                 0.45 * complexity[index]
                     + 0.20 * balance[index]
                     + 0.15 * stability
@@ -691,8 +688,12 @@ fn ranks(values: Vec<f64>, descending: bool) -> Vec<f64> {
         let comparison = values[*a]
             .partial_cmp(&values[*b])
             .unwrap_or(Ordering::Equal);
-        (if descending { comparison.reverse() } else { comparison })
-            .then_with(|| a.cmp(b))
+        (if descending {
+            comparison.reverse()
+        } else {
+            comparison
+        })
+        .then_with(|| a.cmp(b))
     });
     let denominator = values.len().saturating_sub(1).max(1) as f64;
     let mut result = vec![0.0; values.len()];
@@ -721,8 +722,7 @@ mod tests {
 
     fn reference() -> Vec<f64> {
         vec![
-            0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25,
-            0.58,
+            0.72, 0.39, 0.65, 0.35, 0.60, 0.31, -0.31, 0.70, -0.28, 0.64, -0.25, 0.58,
         ]
     }
 
@@ -804,16 +804,7 @@ mod tests {
     #[test]
     fn partial_target_assignment_minimizes_final_cellwise_rmse() {
         let pattern = vec![1.00, 0.00, 1.00, 0.00, 0.30, 0.30, -0.30, -0.30];
-        let target = vec![
-            1.00,
-            1.00,
-            1.00,
-            f64::NAN,
-            0.30,
-            f64::NAN,
-            -0.30,
-            f64::NAN,
-        ];
+        let target = vec![1.00, 1.00, 1.00, f64::NAN, 0.30, f64::NAN, -0.30, f64::NAN];
         let rmse = aligned_target_rmse(&pattern, &target, 4, 2, false).unwrap();
         assert!((rmse - (1.0_f64 / 5.0).sqrt()).abs() < 1e-12);
     }
@@ -839,9 +830,7 @@ mod tests {
     #[test]
     fn theory_policy_and_validation_fail_closed() {
         let candidates = vec![RotationCriterion::Varimax, RotationCriterion::Quartimax];
-        let target = vec![
-            0.8, 0.0, 0.7, 0.0, 0.6, 0.0, 0.0, 0.8, 0.0, 0.7, 0.0, 0.6,
-        ];
+        let target = vec![0.8, 0.0, 0.7, 0.0, 0.6, 0.0, 0.0, 0.8, 0.0, 0.7, 0.0, 0.6];
         let result = select_rotation_criterion(
             &reference(),
             6,

@@ -7,12 +7,3 @@
 include!("lib.rs");
 
 pub mod rotation;
-
-// The criterion-neutral selector is kept in its own source file. Its implementation
-// expects its parent module to provide the core rotation types, so crate-private
-// aliases make that contract explicit without widening the package-root API.
-pub(crate) use rotation::{
-    rotate_factor_loadings, RotationConfig, RotationCriterion, RotationSolution,
-};
-#[path = "rotation/selector.rs"]
-pub mod rotation_selection;

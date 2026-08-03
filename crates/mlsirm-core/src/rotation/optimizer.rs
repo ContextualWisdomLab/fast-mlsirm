@@ -70,13 +70,7 @@ fn orthogonal_gradient(
     transform: &[f64],
     evaluation: &CriterionEvaluation,
 ) -> Vec<f64> {
-    let gradient = crossprod(
-        unrotated,
-        &evaluation.gradient,
-        rows,
-        factors,
-        factors,
-    );
+    let gradient = crossprod(unrotated, &evaluation.gradient, rows, factors, factors);
     let gram = crossprod(transform, &gradient, factors, factors, factors);
     let gram_t = transpose(&gram, factors, factors);
     let symmetric: Vec<f64> = gram
@@ -85,11 +79,7 @@ fn orthogonal_gradient(
         .map(|(a, b)| 0.5 * (a + b))
         .collect();
     let normal = matmul(transform, factors, factors, &symmetric, factors);
-    gradient
-        .iter()
-        .zip(normal)
-        .map(|(a, b)| a - b)
-        .collect()
+    gradient.iter().zip(normal).map(|(a, b)| a - b).collect()
 }
 
 fn oblique_gradient(
@@ -104,13 +94,7 @@ fn oblique_gradient(
     // transform gradient is -T^{-T} G_L' L, the transpose of
     // L' G_L T^{-1}. Preserve that transpose before projecting onto the
     // product of unit-column spheres.
-    let pattern_gradient = crossprod(
-        pattern,
-        &evaluation.gradient,
-        rows,
-        factors,
-        factors,
-    );
+    let pattern_gradient = crossprod(pattern, &evaluation.gradient, rows, factors, factors);
     let chain = matmul(
         &pattern_gradient,
         factors,
@@ -131,8 +115,7 @@ fn oblique_gradient(
     }
     for i in 0..factors {
         for j in 0..factors {
-            gradient[i * factors + j] -=
-                transform[i * factors + j] * column_inner[j];
+            gradient[i * factors + j] -= transform[i * factors + j] * column_inner[j];
         }
     }
     gradient
@@ -181,13 +164,7 @@ fn optimize_orthogonal(
     }
     let mut pattern = matmul(unrotated, rows, factors, &transform, factors);
     let mut evaluation = criterion.evaluate(&pattern, rows, factors)?;
-    let mut projected = orthogonal_gradient(
-        unrotated,
-        rows,
-        factors,
-        &transform,
-        &evaluation,
-    );
+    let mut projected = orthogonal_gradient(unrotated, rows, factors, &transform, &evaluation);
     let mut gradient_norm = norm(&projected);
     let mut step = 1.0;
     let mut history = vec![evaluation.value];
@@ -235,11 +212,8 @@ fn optimize_orthogonal(
                     criterion.evaluate(&candidate_pattern, rows, factors)
                 {
                     if target_value - candidate_evaluation.value > armijo * trial_step {
-                        accepted = Some((
-                            candidate_transform,
-                            candidate_pattern,
-                            candidate_evaluation,
-                        ));
+                        accepted =
+                            Some((candidate_transform, candidate_pattern, candidate_evaluation));
                         break;
                     }
                 }
@@ -255,13 +229,7 @@ fn optimize_orthogonal(
         transform = candidate_transform;
         pattern = candidate_pattern;
         evaluation = candidate_evaluation;
-        projected = orthogonal_gradient(
-            unrotated,
-            rows,
-            factors,
-            &transform,
-            &evaluation,
-        );
+        projected = orthogonal_gradient(unrotated, rows, factors, &transform, &evaluation);
         gradient_norm = norm(&projected);
         step = trial_step;
         history.push(evaluation.value);
@@ -284,13 +252,7 @@ fn optimize_orthogonal(
         evaluation = criterion.evaluate(&best.2, rows, factors)?;
         transform = best.1;
         pattern = best.2;
-        projected = orthogonal_gradient(
-            unrotated,
-            rows,
-            factors,
-            &transform,
-            &evaluation,
-        );
+        projected = orthogonal_gradient(unrotated, rows, factors, &transform, &evaluation);
         gradient_norm = norm(&projected);
         iterations = best.4;
     }
@@ -432,14 +394,7 @@ fn optimize_oblique(
         pattern = best.2;
         let (_, inverse) = oblique_pattern(unrotated, rows, factors, &transform)?;
         evaluation = criterion.evaluate(&pattern, rows, factors)?;
-        projected = oblique_gradient(
-            &pattern,
-            &inverse,
-            rows,
-            factors,
-            &transform,
-            &evaluation,
-        );
+        projected = oblique_gradient(&pattern, &inverse, rows, factors, &transform, &evaluation);
         gradient_norm = norm(&projected);
         iterations = best.4;
     }

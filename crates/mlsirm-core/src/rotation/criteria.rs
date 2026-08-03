@@ -160,7 +160,9 @@ impl RotationCriterion {
                     }
                 }
                 if specified == 0 {
-                    return Err("target rotation requires at least one specified weighted cell".into());
+                    return Err(
+                        "target rotation requires at least one specified weighted cell".into(),
+                    );
                 }
             }
             Self::Simplimax { zeros } => {
@@ -177,7 +179,10 @@ impl RotationCriterion {
                 if weights.len() != rows * factors {
                     return Err("lp_wls weights must match the loading-matrix shape".into());
                 }
-                if weights.iter().any(|value| !value.is_finite() || *value < 0.0) {
+                if weights
+                    .iter()
+                    .any(|value| !value.is_finite() || *value < 0.0)
+                {
                     return Err("lp_wls weights must be finite and non-negative".into());
                 }
             }
@@ -231,7 +236,10 @@ impl RotationCriterion {
             Self::LpWls { weights } => lp_wls(loadings, weights, rows),
         };
         if !result.value.is_finite() || result.gradient.iter().any(|x| !x.is_finite()) {
-            return Err(format!("{} produced a non-finite value or gradient", self.name()));
+            return Err(format!(
+                "{} produced a non-finite value or gradient",
+                self.name()
+            ));
         }
         Ok(result)
     }
@@ -255,11 +263,8 @@ fn cf(l: &[f64], rows: usize, factors: usize, kappa: f64) -> CriterionEvaluation
             let idx = i * factors + j;
             let row_other = row_sum[i] - squared[idx];
             let col_other = col_sum[j] - squared[idx];
-            value += 0.25
-                * squared[idx]
-                * ((1.0 - kappa) * row_other + kappa * col_other);
-            gradient[idx] =
-                l[idx] * ((1.0 - kappa) * row_other + kappa * col_other);
+            value += 0.25 * squared[idx] * ((1.0 - kappa) * row_other + kappa * col_other);
+            gradient[idx] = l[idx] * ((1.0 - kappa) * row_other + kappa * col_other);
         }
     }
     CriterionEvaluation { value, gradient }
@@ -281,8 +286,7 @@ fn orthomax(l: &[f64], rows: usize, factors: usize, gamma: f64) -> CriterionEval
     for i in 0..rows {
         for j in 0..factors {
             let idx = i * factors + j;
-            gradient[idx] = -l[idx]
-                * (l[idx] * l[idx] - gamma * col_sum[j] / rows as f64);
+            gradient[idx] = -l[idx] * (l[idx] * l[idx] - gamma * col_sum[j] / rows as f64);
         }
     }
     CriterionEvaluation { value, gradient }
@@ -334,8 +338,7 @@ fn geomin(
         value += product;
         for j in skip_columns..factors {
             let idx = i * factors + j;
-            gradient[idx] = 2.0 * l[idx] * product
-                / (active as f64 * (l[idx] * l[idx] + delta));
+            gradient[idx] = 2.0 * l[idx] * product / (active as f64 * (l[idx] * l[idx] + delta));
         }
     }
     CriterionEvaluation { value, gradient }
@@ -409,11 +412,7 @@ fn infomax(l: &[f64], rows: usize, factors: usize) -> CriterionEvaluation {
     }
 }
 
-fn mccammon(
-    l: &[f64],
-    rows: usize,
-    factors: usize,
-) -> Result<CriterionEvaluation, String> {
+fn mccammon(l: &[f64], rows: usize, factors: usize) -> Result<CriterionEvaluation, String> {
     let squared: Vec<f64> = l.iter().map(|x| x * x).collect();
     let mut col_sum = vec![0.0; factors];
     for i in 0..rows {
@@ -435,7 +434,10 @@ fn mccammon(
         }
     }
     let p2: Vec<f64> = col_sum.iter().map(|x| x / total).collect();
-    let log_p2: Vec<f64> = p2.iter().map(|x| if *x > 0.0 { x.ln() } else { 0.0 }).collect();
+    let log_p2: Vec<f64> = p2
+        .iter()
+        .map(|x| if *x > 0.0 { x.ln() } else { 0.0 })
+        .collect();
     let q1 = -p.iter().zip(&log_p).map(|(x, y)| x * y).sum::<f64>();
     let q2 = -p2.iter().zip(&log_p2).map(|(x, y)| x * y).sum::<f64>();
     if q1 <= 1e-15 || q2 <= 1e-15 {
@@ -467,11 +469,8 @@ fn mccammon(
 }
 
 fn simplimax(l: &[f64], zeros: usize) -> CriterionEvaluation {
-    let mut ordered: Vec<(usize, f64)> = l
-        .iter()
-        .enumerate()
-        .map(|(idx, x)| (idx, x * x))
-        .collect();
+    let mut ordered: Vec<(usize, f64)> =
+        l.iter().enumerate().map(|(idx, x)| (idx, x * x)).collect();
     ordered.sort_by(|a, b| a.1.partial_cmp(&b.1).expect("finite loadings"));
     let mut value = 0.0;
     let mut gradient = vec![0.0; l.len()];
@@ -560,11 +559,7 @@ fn oblimax(l: &[f64]) -> Result<CriterionEvaluation, String> {
     })
 }
 
-fn bentler(
-    l: &[f64],
-    rows: usize,
-    factors: usize,
-) -> Result<CriterionEvaluation, String> {
+fn bentler(l: &[f64], rows: usize, factors: usize) -> Result<CriterionEvaluation, String> {
     let squared: Vec<f64> = l.iter().map(|x| x * x).collect();
     let gram = crossprod(&squared, &squared, rows, factors, factors);
     let (logdet, inverse_gram) = positive_logdet_inverse(&gram, factors)?;
@@ -617,11 +612,7 @@ fn varimax(l: &[f64], rows: usize, factors: usize, reverse: bool) -> CriterionEv
 fn lp_wls(l: &[f64], weights: &[f64], rows: usize) -> CriterionEvaluation {
     let scale = rows as f64;
     CriterionEvaluation {
-        value: l
-            .iter()
-            .zip(weights)
-            .map(|(x, w)| w * x * x / scale)
-            .sum(),
+        value: l.iter().zip(weights).map(|(x, w)| w * x * x / scale).sum(),
         gradient: l
             .iter()
             .zip(weights)
@@ -708,9 +699,7 @@ mod tests {
 
     #[test]
     fn bifactor_gradients_and_metadata_are_exercised() {
-        let loadings = vec![
-            0.7, 0.5, 0.1, 0.6, 0.1, 0.5, 0.8, 0.4, 0.2, 0.6, 0.2, 0.4,
-        ];
+        let loadings = vec![0.7, 0.5, 0.1, 0.6, 0.1, 0.5, 0.8, 0.4, 0.2, 0.6, 0.2, 0.4];
         for criterion in [
             RotationCriterion::Bifactor,
             RotationCriterion::BiGeomin { delta: 0.01 },
@@ -793,8 +782,7 @@ mod tests {
             .evaluate(&[f64::NAN; 8], 4, 2)
             .is_err());
         assert!(!RotationCriterion::Varimax.supports(RotationMode::Oblique));
-        assert!(!RotationCriterion::Oblimin { gamma: 0.0 }
-            .supports(RotationMode::Orthogonal));
+        assert!(!RotationCriterion::Oblimin { gamma: 0.0 }.supports(RotationMode::Orthogonal));
     }
 
     #[test]

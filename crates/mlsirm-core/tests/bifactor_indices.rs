@@ -67,7 +67,10 @@ fn published_example_matches_independent_formula_oracle() {
 
     assert_eq!(result.factor_item_counts, vec![12, 4, 4, 4]);
     assert!(result.is_strict_bifactor);
-    assert_close(result.puc.expect("strict pattern has PUC"), 0.7272727272727273);
+    assert_close(
+        result.puc.expect("strict pattern has PUC"),
+        0.7272727272727273,
+    );
     assert_vec_close(
         &result.ecv_ss,
         &[
@@ -167,7 +170,10 @@ fn incomplete_general_factor_is_rejected() {
         BifactorIndicesConfig::new(12, 4, 0),
     )
     .unwrap_err();
-    assert!(error.contains("general factor"), "unexpected error: {error}");
+    assert!(
+        error.contains("general factor"),
+        "unexpected error: {error}"
+    );
     assert!(error.contains("item 0"), "unexpected error: {error}");
 }
 
@@ -179,12 +185,8 @@ fn strict_pattern_supports_nonfirst_general_factor_and_single_item_domain() {
         0.00, 0.70, 0.50, // item 3
     ];
     let uniqueness = uniquenesses(&loadings, 3, 3);
-    let result = bifactor_indices(
-        &loadings,
-        &uniqueness,
-        BifactorIndicesConfig::new(3, 3, 1),
-    )
-    .unwrap();
+    let result =
+        bifactor_indices(&loadings, &uniqueness, BifactorIndicesConfig::new(3, 3, 1)).unwrap();
 
     assert_eq!(result.factor_item_counts, vec![2, 3, 1]);
     assert!(result.is_strict_bifactor);
@@ -211,12 +213,8 @@ fn structural_zero_tolerance_controls_pattern_not_numeric_sums() {
         },
     )
     .unwrap();
-    let exact = bifactor_indices(
-        &loadings,
-        &uniqueness,
-        BifactorIndicesConfig::new(4, 3, 0),
-    )
-    .unwrap();
+    let exact =
+        bifactor_indices(&loadings, &uniqueness, BifactorIndicesConfig::new(4, 3, 0)).unwrap();
 
     assert!(tolerant.is_strict_bifactor);
     assert_close(tolerant.puc.unwrap(), 2.0 / 3.0);
@@ -247,12 +245,8 @@ fn constructor_and_dimension_guards_fail_closed() {
     .unwrap_err();
     assert!(error.contains("loading matrix length"));
 
-    let error = bifactor_indices(
-        &valid_loadings,
-        &[0.4],
-        BifactorIndicesConfig::new(2, 2, 0),
-    )
-    .unwrap_err();
+    let error =
+        bifactor_indices(&valid_loadings, &[0.4], BifactorIndicesConfig::new(2, 2, 0)).unwrap_err();
     assert!(error.contains("uniquenesses length"));
 }
 
@@ -262,9 +256,21 @@ fn numeric_input_guards_reject_undefined_indices() {
 
     for (loadings, uniquenesses, message) in [
         (vec![f64::NAN, 0.2, 0.8, 0.3], vec![0.4, 0.3], "finite"),
-        (vec![1.0, 0.0, 0.8, 0.3], vec![0.0, 0.3], "absolute value below 1"),
-        (vec![0.7, 0.2, 0.8, 0.3], vec![-0.1, 0.3], "between zero and one"),
-        (vec![0.7, 0.2, 0.8, 0.3], vec![1.1, 0.27], "between zero and one"),
+        (
+            vec![1.0, 0.0, 0.8, 0.3],
+            vec![0.0, 0.3],
+            "absolute value below 1",
+        ),
+        (
+            vec![0.7, 0.2, 0.8, 0.3],
+            vec![-0.1, 0.3],
+            "between zero and one",
+        ),
+        (
+            vec![0.7, 0.2, 0.8, 0.3],
+            vec![1.1, 0.27],
+            "between zero and one",
+        ),
         (vec![0.7, 0.2, 0.8, 0.3], vec![f64::INFINITY, 0.3], "finite"),
         (
             vec![0.0, 0.0, 0.8, 0.3],
