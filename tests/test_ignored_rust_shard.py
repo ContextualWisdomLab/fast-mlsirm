@@ -30,24 +30,28 @@ def _metadata() -> dict[str, object]:
                     {
                         "name": "mlsirm_core",
                         "kind": ["lib"],
+                        "crate_types": ["lib"],
                         "test": True,
                         "doctest": True,
                     },
                     {
                         "name": "literature_true_parameter_recovery",
                         "kind": ["test"],
+                        "crate_types": ["bin"],
                         "test": True,
                         "doctest": False,
                     },
                     {
                         "name": "helper",
                         "kind": ["bin"],
+                        "crate_types": ["bin"],
                         "test": False,
                         "doctest": False,
                     },
                     {
                         "name": "criterion_bench",
                         "kind": ["bench"],
+                        "crate_types": ["bin"],
                         "test": True,
                         "doctest": False,
                     },
@@ -60,6 +64,7 @@ def _metadata() -> dict[str, object]:
                     {
                         "name": "fast_mlsirm_core",
                         "kind": ["cdylib"],
+                        "crate_types": ["cdylib"],
                         "test": True,
                         "doctest": False,
                     }
@@ -103,6 +108,44 @@ def test_workspace_targets_are_explicit_and_nonmembers_stay_out_of_scope():
         ),
     ]
     assert all(target.package != "fast-mlsirm-py" for target in targets)
+
+
+def test_custom_library_crate_types_use_the_lib_selector():
+    """A workspace cdylib target remains testable through Cargo's lib selector."""
+    metadata = _metadata()
+    metadata["workspace_members"] = ["core-id", "pyo3-id"]
+    targets = sharder.parse_workspace_targets(json.dumps(metadata))
+    assert sharder.CargoTarget(
+        "fast-mlsirm-py",
+        "lib",
+        "fast_mlsirm_core",
+    ) in targets
+
+
+def test_explicit_target_category_wins_over_library_crate_type():
+    """A library-producing example is still selected with ``--example``."""
+    metadata = _metadata()
+    packages = metadata["packages"]
+    assert isinstance(packages, list)
+    core = packages[0]
+    assert isinstance(core, dict)
+    targets = core["targets"]
+    assert isinstance(targets, list)
+    targets.append(
+        {
+            "name": "library_example",
+            "kind": ["example"],
+            "crate_types": ["rlib"],
+            "test": True,
+            "doctest": False,
+        }
+    )
+    parsed = sharder.parse_workspace_targets(json.dumps(metadata))
+    assert sharder.CargoTarget(
+        "mlsirm-core",
+        "example",
+        "library_example",
+    ) in parsed
 
 
 def test_workspace_metadata_rejects_duplicate_member_package_names():
@@ -159,11 +202,28 @@ def test_workspace_metadata_rejects_unknown_default_test_target_kinds():
         {
             "name": "future_target",
             "kind": ["future-kind"],
+            "crate_types": ["future-crate-type"],
             "test": True,
             "doctest": False,
         }
     )
     with pytest.raises(ValueError, match="unsupported default-tested Cargo target"):
+        sharder.parse_workspace_targets(json.dumps(metadata))
+
+
+def test_workspace_metadata_rejects_malformed_crate_types():
+    """Target crate types must remain a bounded metadata string list."""
+    metadata = _metadata()
+    packages = metadata["packages"]
+    assert isinstance(packages, list)
+    core = packages[0]
+    assert isinstance(core, dict)
+    targets = core["targets"]
+    assert isinstance(targets, list)
+    target = targets[0]
+    assert isinstance(target, dict)
+    target["crate_types"] = "lib"
+    with pytest.raises(ValueError, match="invalid crate_types"):
         sharder.parse_workspace_targets(json.dumps(metadata))
 
 
