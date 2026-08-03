@@ -213,11 +213,26 @@ def test_orchestration_validation_guards(monkeypatch, kwargs, message):
         compare_nonnested_models([0.0, 0.1], [0.2, 0.3], 1, 1, **kwargs)
 
 
+@pytest.mark.parametrize(
+    ("bad_a", "bad_b", "message"),
+    [
+        (1.0, [0.0, 0.1], "loglik_a must be an iterable"),
+        ("1.0,2.0", [0.0, 0.1], "loglik_a must be an iterable"),
+        ([0.0, 0.1], object(), "loglik_b must be an iterable"),
+        ([0.0, 0.1], b"0,1", "loglik_b must be an iterable"),
+    ],
+)
+def test_casewise_inputs_require_numeric_iterables(bad_a, bad_b, message):
+    """Scalar and text inputs fail with a stable public validation error."""
+    with pytest.raises(ValueError, match=message):
+        compare_nonnested_models(bad_a, bad_b, 1, 1)
+
+
 def test_low_level_input_validation_is_preserved():
     """Malformed statistical inputs still fail through the trusted wrapper."""
-    with pytest.raises(ValueError, match="at least 2"):
+    with pytest.raises(ValueError, match="equal-length"):
         compare_nonnested_models([1.0], [1.0], 1, 1)
-    with pytest.raises(ValueError, match="same length"):
+    with pytest.raises(ValueError, match="equal-length"):
         compare_nonnested_models([1.0, 2.0], [1.0, 2.0, 3.0], 1, 1)
     with pytest.raises(ValueError, match="non-negative integer"):
         compare_nonnested_models([1.0, 2.0], [0.9, 1.8], -1, 1)
