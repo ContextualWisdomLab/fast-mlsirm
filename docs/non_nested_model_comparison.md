@@ -74,18 +74,22 @@ raw `Z` value into `MODEL_A_PREFERRED` or `MODEL_B_PREFERRED`.
    values are rejected.
 4. The Rust core computes `mean_diff`, `omega`, `z`, and the two-sided normal
    p value.
-5. Exact zero variance is translated into the typed
-   `VuongVarianceDegenerateError` boundary signal and returned as
-   `variance_degenerate`.
-6. `omega_tol` is a numerical stability floor only. It is **not** Vuong's
+5. A compiled-kernel rejection is converted to the redacted typed
+   `VuongKernelError` boundary and returned as `kernel_error`. The wrapper does
+   not inspect or expose human-readable Rust exception wording and does not
+   guess whether the low-level cause was zero variance or another validation
+   failure.
+6. A successful kernel result with zero, non-finite, or numerically tiny
+   `omega` is returned as `variance_degenerate`.
+7. `omega_tol` is a numerical stability floor only. It is **not** Vuong's
    formal distinguishability test.
-7. `strictly_non_nested` and `overlapping` relations return
+8. `strictly_non_nested` and `overlapping` relations return
    `requires_distinguishability_test`.
-8. `nested` and `boundary_nested` relations return
+9. `nested` and `boundary_nested` relations return
    `requires_likelihood_ratio` because an ordinary, mixture, or parametric
    bootstrap reference distribution is required.
-9. `unknown` returns `unknown_relation`; the library does not infer nestedness
-   from parameter counts.
+10. `unknown` returns `unknown_relation`; the library does not infer nestedness
+    from parameter counts.
 
 ## Example
 
@@ -113,7 +117,8 @@ print(result.preferred_model)
 # None
 ```
 
-The result preserves these audit fields:
+The result preserves these audit fields when the compiled kernel returns
+successfully:
 
 - `raw_mean_loglik_difference`
 - `omega`
@@ -124,8 +129,10 @@ The result preserves these audit fields:
 - declared relation and explicit status
 - warning explaining the required next procedure
 
-The interpreted `z` and `p_two_sided` fields remain `NaN`, and
-`preferred_model` remains `None`, until a future typed formal-
+When the compiled kernel rejects an input, all raw numerical fields are `NaN`
+and the public result is `kernel_error`; no rejected values or exception text
+are copied into the result. The interpreted `z` and `p_two_sided` fields remain
+`NaN`, and `preferred_model` remains `None`, until a future typed formal-
 distinguishability result is integrated.
 
 ## Scope boundaries
@@ -159,7 +166,9 @@ common case unit:
 - cluster identifiers where independence is not justified.
 
 Those inputs must feed a Rust weighted-chi-square distinguishability kernel and
-a recovery study before a public model-preference status is enabled.
+a recovery study before a public model-preference status is enabled. A future
+compiled structured error code may refine `kernel_error`, but this release does
+not derive a subtype from message text.
 
 ## References
 
