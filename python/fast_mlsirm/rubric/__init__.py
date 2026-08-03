@@ -1,10 +1,31 @@
-"""Rubric-centered schemas, blueprint compilation, and generation contracts."""
+"""Rubric-centered authoring, governed generation, and candidate validation."""
 
+from .candidates import BinaryAnswerKey as BinaryAnswerKey
+from .candidates import CandidateValidationError as CandidateValidationError
+from .candidates import ConstructedAnswerKey as ConstructedAnswerKey
+from .candidates import GeneratedAnswerKey as GeneratedAnswerKey
+from .candidates import GeneratedItemCandidate as GeneratedItemCandidate
+from .candidates import GeneratedOption as GeneratedOption
+from .candidates import OrdinalAnswerKey as OrdinalAnswerKey
+from .candidates import PairwiseAnswerKey as PairwiseAnswerKey
+from .candidates import RubricAlignmentEntry as RubricAlignmentEntry
+from .candidates import ScoreGuideEntry as ScoreGuideEntry
+from .candidates import SelectedAnswerKey as SelectedAnswerKey
+from .candidates import SourceAttribution as SourceAttribution
+from .candidates import parse_generated_item_candidate as parse_generated_item_candidate
 from .compiler import MAX_BLUEPRINTS as MAX_BLUEPRINTS
 from .compiler import compile_item_blueprints as compile_item_blueprints
 from .contracts import build_generation_contract as build_generation_contract
 from .contracts import canonical_generation_contract as canonical_generation_contract
 from .contracts import render_generation_prompt as render_generation_prompt
+from .generation import GenerationExecution as GenerationExecution
+from .generation import GenerationProviderError as GenerationProviderError
+from .generation import GenerationRequest as GenerationRequest
+from .generation import ItemGenerationProvider as ItemGenerationProvider
+from .generation import SourceDocument as SourceDocument
+from .generation import StaticFixtureProvider as StaticFixtureProvider
+from .generation import build_generation_request as build_generation_request
+from .generation import execute_generation as execute_generation
 from .models import BlueprintPlan as BlueprintPlan
 from .models import DifficultyBand as DifficultyBand
 from .models import EvidenceMode as EvidenceMode
@@ -15,15 +36,36 @@ from .models import RubricSpecification as RubricSpecification
 
 __all__ = [
     "MAX_BLUEPRINTS",
+    "BinaryAnswerKey",
     "BlueprintPlan",
+    "CandidateValidationError",
+    "ConstructedAnswerKey",
     "DifficultyBand",
     "EvidenceMode",
+    "GeneratedAnswerKey",
+    "GeneratedItemCandidate",
+    "GeneratedOption",
+    "GenerationExecution",
+    "GenerationProviderError",
+    "GenerationRequest",
     "ItemBlueprint",
+    "ItemGenerationProvider",
+    "OrdinalAnswerKey",
+    "PairwiseAnswerKey",
     "ResponseFormat",
+    "RubricAlignmentEntry",
     "RubricLevel",
     "RubricSpecification",
+    "ScoreGuideEntry",
+    "SelectedAnswerKey",
+    "SourceAttribution",
+    "SourceDocument",
+    "StaticFixtureProvider",
     "build_generation_contract",
+    "build_generation_request",
     "canonical_generation_contract",
     "compile_item_blueprints",
+    "execute_generation",
+    "parse_generated_item_candidate",
     "render_generation_prompt",
 ]
