@@ -1,117 +1,164 @@
 # Bifactor scoreability diagnostics
 
-A bifactor model can fit better than a correlated-traits, second-order, testlet,
-or latent-space alternative without making every resulting score interpretable.
-`mlsirm_core::bifactor_indices` therefore treats **model selection** and
-**scoreability** as separate decisions:
+A bifactor model can fit better than correlated-traits, second-order, testlet,
+or latent-space alternatives without making every resulting score
+interpretable. `fast-mlsirm` therefore keeps two decisions separate:
 
-1. select or retain a candidate structure using likelihood, predictive,
-   recovery, invariance, and appropriate nested/non-nested comparisons;
-2. examine whether its general and residual domain factors support defensible
-   score reports;
-3. report the indices and uncertainty rather than applying an undocumented
-   universal cutoff.
+1. select a defensible candidate model using likelihood, predictive,
+   recovery, invariance, and relation-appropriate model comparison evidence;
+2. examine whether the retained loading solution supports a general score and
+   residual factor-specific scores.
 
-The computation is implemented entirely in Rust. No Python or NumPy numerical
-fallback is used.
+All scoreability arithmetic is implemented in Rust. Python validates array
+shape, invokes the compiled kernel, and returns an immutable typed result.
+There is no NumPy formula fallback.
 
-## Inputs
+## Public Python API
 
-`bifactor_indices` accepts:
+```python
+import numpy as np
+from fast_mlsirm import (
+    bifactor_scoreability,
+    bifactor_scoreability_from_logit_slopes,
+)
 
-- a row-major standardized loading matrix with shape
-  `n_items x n_factors`;
-- one uniqueness per item;
-- the zero-based general-factor column;
-- a structural-zero tolerance.
+loadings = np.asarray(
+    [
+        [0.70, 0.40, 0.00],
+        [0.70, 0.30, 0.00],
+        [0.70, 0.00, 0.50],
+        [0.70, 0.00, 0.60],
+    ],
+    dtype=np.float64,
+)
+uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
 
-Factors are assumed orthogonal. Every item and factor must have at least one
-structurally non-zero loading. Standardized loadings must be finite and have
-absolute value below one; uniquenesses must be finite and non-negative.
+result = bifactor_scoreability(
+    loadings,
+    uniquenesses,
+    general_factor=0,
+)
 
-For fitted logistic-IRT slopes, use the explicitly named
-`bifactor_latent_response_indices_from_logit_slopes`. With unit-variance
-orthogonal factors and logistic residual variance `pi^2 / 3`, it computes
+print(result.ecv_sg)
+print(result.omega_hierarchical)
+print(result.construct_replicability)
+```
+
+For fitted orthogonal logistic-IRT slopes, use
+`bifactor_scoreability_from_logit_slopes`. The Rust core applies the logistic
+latent-response residual variance `pi^2 / 3` in overflow-resistant scaled
+coordinates.
+
+## Input contract
+
+The standardized-loading entry point requires:
+
+- a finite `n_items x n_factors` loading matrix;
+- at least two items and two factors;
+- one finite uniqueness in `[0, 1]` per item;
+- an in-range zero-based `general_factor` column;
+- an optional finite non-negative `zero_tolerance`;
+- every item to have an active loading on the declared general factor;
+- every factor to have at least one active item loading; and
+- the itemwise standardized identity
+
+\[
+\sum_f \lambda_{if}^{2}+\psi_i=1
+\]
+
+within absolute tolerance `1e-8`.
+
+A loading is structurally active when
+`abs(loading) > zero_tolerance`. The threshold classifies the structural
+pattern only; numerical formulas retain the supplied loading values.
+
+An incomplete declared general-factor column is rejected. The library does not
+emit bifactor-labelled ECV or item-ECV values for a matrix that is not a
+bifactor solution under its declared general factor.
+
+## Logistic latent-response conversion
+
+For item `i`, orthogonal logistic slopes `a_if`, and residual variance
+`pi^2 / 3`, the compiled conversion is
 
 \[
 \lambda_{if}
 =
 \frac{a_{if}}
-{\sqrt{\sum_h a_{ih}^2+\pi^2/3}},
+{\sqrt{\sum_h a_{ih}^{2}+\pi^{2}/3}},
 \qquad
 \psi_i
 =
-\frac{\pi^2/3}
-{\sum_h a_{ih}^2+\pi^2/3}.
+\frac{\pi^{2}/3}
+{\sum_h a_{ih}^{2}+\pi^{2}/3}.
 \]
 
-The implementation performs this normalization in scaled coordinates to avoid
-intermediate overflow for large finite slopes. This conversion is specific to
-the logistic link and must not be applied to probit or other links.
+The returned omega values describe the standardized **continuous
+latent-response representation**. They are not categorical observed-score
+omega coefficients for binary or ordinal sum scores. Threshold-aware
+observed-score reliability requires a separate model and must not be inferred
+from this output.
 
-### Logistic latent-response boundary
+## Returned result
 
-The slope conversion produces a standardized **continuous latent-response**
-loading solution. Consequently, `omega_total` and `omega_hierarchical` returned
-by this entry point are continuous latent-response coefficients. They are not
-Green-Yang categorical omega coefficients for an observed binary or ordinal sum
-score, because category thresholds and observed-score covariance are not inputs
-to the function. Operational categorical-score reliability requires a separate
-threshold-aware implementation and must not be inferred from these values.
+`BifactorScoreabilityResult` contains:
 
-ECV, item ECV, PUC, and `H` likewise describe the transformed loading solution;
-they do not by themselves validate an operational score or decision rule. The
-long function name is intentional so the scale convention remains visible at
-every call site.
+- `factor_item_counts`
+- `is_strict_bifactor`
+- `puc`
+- `ecv_ss`
+- `ecv_sg`
+- `ecv_gs`
+- `item_ecv`
+- `omega_total`
+- `omega_hierarchical`
+- `construct_replicability`
 
-## Returned indices
+The NumPy vectors are read-only. Cross-loaded specific-factor patterns are
+valid descriptive loading solutions but are not strict bifactor patterns;
+`puc` is therefore `None`. Missing general-factor loadings are errors rather
+than a non-strict PUC case.
 
-Let `g` denote the general-factor column and let `I_if` indicate that item `i`
-has a structural loading on factor `f`.
+## Explained common variance
 
-### Explained common variance
-
-Within the item domain of factor `f`:
+Let `g` be the declared general factor and `I_if` indicate that item `i` is
+structurally active on factor `f`.
 
 \[
-\operatorname{ECV}_{SS,f}
+ECV_{SS,f}
 =
-\frac{\sum_i I_{if}\lambda_{if}^2}
-{\sum_i I_{if}\sum_h\lambda_{ih}^2}.
+\frac{\sum_i I_{if}\lambda_{if}^{2}}
+{\sum_i I_{if}\sum_h\lambda_{ih}^{2}},
 \]
-
-Relative to common variance across the whole bank:
 
 \[
-\operatorname{ECV}_{SG,f}
+ECV_{SG,f}
 =
-\frac{\sum_i I_{if}\lambda_{if}^2}
-{\sum_i\sum_h\lambda_{ih}^2}.
+\frac{\sum_i I_{if}\lambda_{if}^{2}}
+{\sum_i\sum_h\lambda_{ih}^{2}},
 \]
-
-General-factor saturation inside each factor's item domain:
 
 \[
-\operatorname{ECV}_{GS,f}
+ECV_{GS,f}
 =
-\frac{\sum_i I_{if}\lambda_{ig}^2}
-{\sum_i I_{if}\sum_h\lambda_{ih}^2}.
+\frac{\sum_i I_{if}\lambda_{ig}^{2}}
+{\sum_i I_{if}\sum_h\lambda_{ih}^{2}},
 \]
 
-Item ECV is
+and
 
 \[
 I\text{-}ECV_i
 =
-\frac{\lambda_{ig}^2}
-{\sum_h\lambda_{ih}^2}.
+\frac{\lambda_{ig}^{2}}
+{\sum_h\lambda_{ih}^{2}}.
 \]
 
-### Percentage of uncontaminated correlations
+## Percentage of uncontaminated correlations
 
-PUC is returned only for a strict bifactor structural pattern: every item loads
-on the general factor and on at most one specific factor. If `n_f` items load
-on specific factor `f`, then
+PUC is defined only when every item has the declared general loading and at
+most one active specific-factor loading. If `n_f` items load on specific factor
+`f`,
 
 \[
 PUC
@@ -121,11 +168,7 @@ PUC
 {\binom{n_{items}}{2}}.
 \]
 
-For cross-loaded, two-tier, or incomplete-general-factor patterns, the API
-returns `None`. It does not silently apply a strict-bifactor formula to an
-incompatible loading structure.
-
-### Omega total and omega hierarchical
+## Omega and construct replicability
 
 For the item domain associated with factor `f`, let
 
@@ -138,111 +181,61 @@ Then
 \[
 \omega_{total,f}
 =
-\frac{\sum_h S_{hf}^2}
-{\sum_h S_{hf}^2+\sum_i I_{if}\psi_i}
+\frac{\sum_h S_{hf}^{2}}
+{\sum_h S_{hf}^{2}+\sum_i I_{if}\psi_i},
 \]
-
-and
 
 \[
 \omega_{H,f}
 =
-\frac{S_{ff}^2}
-{\sum_h S_{hf}^2+\sum_i I_{if}\psi_i}.
+\frac{S_{ff}^{2}}
+{\sum_h S_{hf}^{2}+\sum_i I_{if}\psi_i},
 \]
 
-For the general factor, `omega_hierarchical[g]` quantifies variance in the
-composite attributable to the general factor. For a specific factor, the same
-formula describes the residual target-factor contribution within its item
-domain after all orthogonal common factors are represented in the denominator.
-
-### Construct replicability
-
-For each factor:
+and
 
 \[
 H_f
 =
 \frac{1}
 {1+\left(\sum_i
-\frac{\lambda_{if}^2}{1-\lambda_{if}^2}
+\frac{\lambda_{if}^{2}}{1-\lambda_{if}^{2}}
 \right)^{-1}}.
 \]
 
-`H` describes how well a factor is represented by its indicators under the
-supplied standardized loading solution. It is not a substitute for external
-validity, invariance, or predictive evidence.
+The kernel does not hard-code universal interpretation cutoffs. A deployment
+policy must also consider uncertainty, parameter recovery, predictive
+performance, invariance, DIF, local dependence, testlet effects, and the
+consequences of the intended score use.
 
-## Structural-zero policy
+## Verification
 
-`zero_tolerance` controls the `I_if` membership indicators. Loadings treated as
-active retain their original numerical values rather than being rounded to a
-threshold value; values below the threshold can still contribute where a
-formula sums the full loading row rather than the target-factor membership
-term. This prevents a tiny estimation artifact from turning a strict bifactor
-pattern into a cross-loaded pattern without silently rewriting the supplied
-loading matrix.
+The Rust integration suite pins a 12-item, four-factor numerical oracle and
+covers:
 
-The default constructor uses exact zeroes:
+- ECV-SS, ECV-SG, ECV-GS, and item ECV;
+- PUC, omega total, omega hierarchical, and `H`;
+- a non-first general-factor column;
+- single-item specific-factor domains;
+- cross-loaded specific factors;
+- rejection of an incomplete general-factor column;
+- standardized-identity roundoff and material violations;
+- uniqueness bounds, malformed dimensions, non-finite values, underflow,
+  overflow, and sign-cancelled zero-variance composites; and
+- logistic latent-response conversion.
 
-```rust
-use mlsirm_core::bifactor_indices::{
-    bifactor_latent_response_indices_from_logit_slopes,
-    BifactorIndicesConfig,
-};
+Python tests compare every typed result field directly with the secondary
+PyO3 `_bifactor_core` module and verify package-root exports. They do not use an
+independent Python implementation of the formulas.
 
-let config = BifactorIndicesConfig::new(n_items, n_factors, general_factor);
-let diagnostics =
-    bifactor_latent_response_indices_from_logit_slopes(&logit_slopes, config)?;
-```
+## Source governance
 
-Use a non-zero tolerance only when the estimation and sparsity procedure has an
-explicit numerical-zero contract.
-
-## Decision boundaries
-
-The kernel intentionally does **not** contain hard-coded pass/fail thresholds.
-A defensible deployment policy should also consider:
-
-- uncertainty or bootstrap stability of every index;
-- loading and factor recovery under the intended calibration design;
-- leave-query, leave-domain, and leave-system predictive performance;
-- DIF, judge-family drift, and language/domain invariance;
-- local dependence and testlet effects;
-- whether the bifactor structure wins an appropriate nested or non-nested
-  comparison against simpler alternatives;
-- consequential validity of the score report and decision rule.
-
-A high general-factor index does not by itself validate a single total score,
-and a fitted specific factor does not by itself justify a subscale.
-
-## Verification oracle
-
-The integration tests reproduce the 12-item, four-factor example distributed by
-`BifactorIndicesCalculator` and independently calculate:
-
-- ECV-SS, ECV-SG, and ECV-GS;
-- all item ECV values;
-- PUC;
-- omega total and omega hierarchical;
-- construct replicability `H`.
-
-Additional tests cover non-first general-factor placement, single-item specific
-factors, cross-loadings, missing general loadings, structural-zero tolerance,
-malformed matrices, non-finite inputs, numerical underflow, sign-cancelled
-zero-variance composites, and logistic latent-response standardization.
-
-## Source governance and references
-
-The continuous-indicator functions in the following CRAN package source files
-were read as implementation oracles:
-
-- `R/ECV_Indices.R`
-- `R/Omega_Indices.R`
-- `R/Other_Indices.R`
-
-The journal article below is cited as the methodological origin identified by
-that package; it was not read in full for this implementation.
+The implemented continuous-indicator formulas were independently transcribed
+from the complete CRAN `BifactorIndicesCalculator` 0.2.2 source files
+`R/ECV_Indices.R`, `R/Omega_Indices.R`, and `R/Other_Indices.R`. That package is
+used as a numerical implementation oracle. Full primary-source equation and
+scope verification remains a release-review requirement and is not replaced by
+package parity.
 
 Dueber, D. M. (2021). *BifactorIndicesCalculator: Bifactor indices calculator*
 (Version 0.2.2) [R package].
