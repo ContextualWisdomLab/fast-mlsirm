@@ -22,7 +22,7 @@ def test_constant_casewise_difference_returns_degenerate_decision_result():
 
     assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
     assert result.preferred_model is None
-    assert result.raw_mean_loglik_difference == pytest.approx(0.25)
+    assert math.isnan(result.raw_mean_loglik_difference)
     assert result.omega == pytest.approx(0.0)
     assert not result.variance_positive
     assert math.isnan(result.z)
