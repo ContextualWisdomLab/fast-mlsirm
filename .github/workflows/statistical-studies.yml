@@ -37,7 +37,6 @@ jobs:
           python scripts/run_ignored_rust_shard.py
           --shard ${{ matrix.shard }}
           --shards 12
-          --exclude-package fast-mlsirm-py
           --skip mlsirm-core/test/literature_true_parameter_recovery::kang_jeon_2025_minimum_cell_recovers_true_parameters
           --skip mlsirm-core/test/literature_true_parameter_recovery::gpu_recovery_matches_cpu_on_paper_design
           --skip mlsirm-core/test/higher_order_mc_recovery::higher_order_dina_recovery_respects_monte_carlo_tolerance
