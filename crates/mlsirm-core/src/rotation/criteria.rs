@@ -128,9 +128,17 @@ impl RotationCriterion {
                     return Err("rotation gamma must be finite".into());
                 }
             }
-            Self::Geomin { delta } | Self::BiGeomin { delta } => {
+            Self::Geomin { delta } => {
                 if !delta.is_finite() || *delta <= 0.0 {
                     return Err("geomin delta must be finite and positive".into());
+                }
+            }
+            Self::BiGeomin { delta } => {
+                if !delta.is_finite() || *delta <= 0.0 {
+                    return Err("geomin delta must be finite and positive".into());
+                }
+                if factors < 3 {
+                    return Err("bifactor rotation requires at least three factors".into());
                 }
             }
             Self::Target { target, weights } => {
@@ -157,7 +165,7 @@ impl RotationCriterion {
                     return Err("simplimax zeros must be in 1..=rows*factors".into());
                 }
             }
-            Self::Bifactor | Self::BiGeomin { .. } => {
+            Self::Bifactor => {
                 if factors < 3 {
                     return Err("bifactor rotation requires at least three factors".into());
                 }
@@ -200,7 +208,10 @@ impl RotationCriterion {
             Self::Orthomax { gamma } => orthomax(loadings, rows, factors, *gamma),
             Self::Oblimin { gamma } => oblimin(loadings, rows, factors, *gamma),
             Self::Geomin { delta } => geomin(loadings, rows, factors, *delta, 0),
-            Self::Target { target, weights } => target(loadings, target, weights),
+            Self::Target {
+                target: target_values,
+                weights,
+            } => target(loadings, target_values, weights),
             Self::Entropy => entropy(loadings),
             Self::Infomax => infomax(loadings, rows, factors),
             Self::McCammon => mccammon(loadings, rows, factors)?,
@@ -744,6 +755,9 @@ mod tests {
             .validate(4, 2)
             .is_err());
         assert!(RotationCriterion::Bifactor.validate(4, 2).is_err());
+        assert!(RotationCriterion::BiGeomin { delta: 0.01 }
+            .validate(4, 2)
+            .is_err());
         assert!(RotationCriterion::LpWls { weights: vec![1.0] }
             .validate(4, 2)
             .is_err());
