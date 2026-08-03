@@ -1,8 +1,15 @@
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _distribution_version
 
 from .config import FitConfig as FitConfig, MLS2PLMConfig as MLS2PLMConfig, PenaltyConfig as PenaltyConfig
 from .diagnostics import align_latent_space as align_latent_space, dimensionality_diagnostics as dimensionality_diagnostics, fit_diagnostics as fit_diagnostics, fixed_item_calibration_diagnostics as fixed_item_calibration_diagnostics, predict_proba as predict_proba, recovery_report as recovery_report, response_process_dimensionality_diagnostics as response_process_dimensionality_diagnostics, response_process_fit_diagnostics as response_process_fit_diagnostics
 from .fit import fit as fit
+from .model_comparison import (
+    ComparisonStatus as ComparisonStatus,
+    ModelComparisonResult as ModelComparisonResult,
+    ModelRelation as ModelRelation,
+    compare_nonnested_models as compare_nonnested_models,
+)
 from .fitstats import (adjusted_chi2_pairs as adjusted_chi2_pairs,
                        benjamini_hochberg as benjamini_hochberg, chi2_sf as chi2_sf,
                        dif_analysis as dif_analysis,
@@ -94,6 +101,7 @@ from .ebdif import (
     EbDifResult as EbDifResult,
 )
 from .classification import (
+    ClassificationResult as ClassificationResult,
     rudner_classification as rudner_classification,
     lee_classification as lee_classification,
     livingston_lewis as livingston_lewis,
@@ -241,11 +249,11 @@ from .ata import (
 from .types import DimensionalityDiagnostics as DimensionalityDiagnostics, FitDiagnostics as FitDiagnostics, FitResult as FitResult, MLSIRMParams as MLSIRMParams, RecoveryReport as RecoveryReport, SimulationData as SimulationData
 
 try:
-    __version__ = version("fast-mlsirm")
-except PackageNotFoundError:
+    __version__ = _distribution_version("fast-mlsirm")
+except _PackageNotFoundError:
     __version__ = "0+unknown"
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     "__version__",
     "DimensionalityDiagnostics",
     "FitConfig",
@@ -284,6 +292,10 @@ __all__ = [
     "irtree_expand",
     "oakes_standard_errors",
     "validate_judge",
+    "ComparisonStatus",
+    "ModelComparisonResult",
+    "ModelRelation",
+    "compare_nonnested_models",
     "vuong_nonnested",
     "adjusted_chi2_pairs",
     "bank_information",

@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Keep one active CI run per PR while preserving independent push runs. A
+  # synchronized head cancels its queued/running predecessor instead of
+  # multiplying the hosted-runner backlog with stale evidence.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python:
     runs-on: ubuntu-latest

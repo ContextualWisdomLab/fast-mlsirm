@@ -1,4 +1,4 @@
-"""Adversarial Python-boundary contracts for bifactor scoreability."""
+"""Adversarial public Python-boundary contracts for bifactor scoreability."""
 
 from __future__ import annotations
 
@@ -6,6 +6,10 @@ import numpy as np
 import pytest
 
 from fast_mlsirm import bifactor_scoreability
+from fast_mlsirm.bifactor_scoreability import (
+    MAX_BIFACTOR_FACTORS,
+    MAX_BIFACTOR_WORK_UNITS,
+)
 
 
 def _loadings() -> np.ndarray:
@@ -47,7 +51,8 @@ def test_result_vectors_cannot_reenable_write_access():
 
 def test_oversized_object_ndarray_is_rejected_before_float_conversion():
     """Shape/work preflight runs before an untrusted ndarray dtype conversion."""
-    loadings = np.empty((12_208, 64), dtype=object)
-    uniquenesses = np.ones(12_208, dtype=np.float64)
+    n_items = MAX_BIFACTOR_WORK_UNITS // (MAX_BIFACTOR_FACTORS**2) + 1
+    loadings = np.empty((n_items, MAX_BIFACTOR_FACTORS), dtype=object)
+    uniquenesses = np.ones(n_items, dtype=np.float64)
     with pytest.raises(ValueError, match="work budget"):
         bifactor_scoreability(loadings, uniquenesses)

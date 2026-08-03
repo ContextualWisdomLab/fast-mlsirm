@@ -7,16 +7,13 @@ from importlib.metadata import version as _distribution_version
 
 from . import _legacy_init as _legacy_init
 
-# Copy established package-root attributes that actually exist. Importing with
-# ``from ._legacy_init import *`` dereferences every historical ``__all__``
-# entry and can make package import depend on an unrelated stale registry item.
-for _public_name, _public_value in vars(_legacy_init).items():
-    if not _public_name.startswith("_") or _public_name == "__version__":
-        globals()[_public_name] = _public_value
+# Copy only declared legacy exports that are currently defined. This preserves
+# the established package surface without leaking helper imports from the
+# compatibility module or making import depend on unrelated stale names.
+for _public_name in _legacy_init.__all__:
+    if hasattr(_legacy_init, _public_name):
+        globals()[_public_name] = getattr(_legacy_init, _public_name)
 
-# Repair the historical export declared by the legacy registry but omitted from
-# its import list, then compose both modular compiled feature surfaces.
-from .classification import ClassificationResult as ClassificationResult
 from .bifactor_scoreability import (
     BifactorScoreabilityResult as BifactorScoreabilityResult,
     bifactor_scoreability as bifactor_scoreability,
@@ -31,15 +28,14 @@ from .rotation import (
 )
 
 # Resolve distribution metadata at the package boundary on every reload. The
-# legacy module may remain cached, so copying its prior value alone would make
-# the documented source-checkout fallback impossible to exercise reliably.
+# compatibility module may remain cached, so its copied value is not sufficient
+# for reliable source-checkout fallback behavior.
 try:
     __version__ = _distribution_version("fast-mlsirm")
 except _PackageNotFoundError:
     __version__ = "0+unknown"
 
-__all__ = [
-    *_legacy_init.__all__,
+__all__ = list(_legacy_init.__all__) + [
     "BifactorScoreabilityResult",
     "bifactor_scoreability",
     "bifactor_scoreability_from_logit_slopes",
@@ -50,4 +46,4 @@ __all__ = [
     "rotation_criterion_value_gradient",
 ]
 
-del _PackageNotFoundError, _distribution_version, _public_name, _public_value
+del _PackageNotFoundError, _distribution_version, _public_name

@@ -11,7 +11,7 @@ interpretable. `fast-mlsirm` therefore keeps two decisions separate:
 
 All scoreability arithmetic is implemented in Rust. Python validates array
 shape, invokes the compiled kernel, and returns an immutable typed result.
-There is no NumPy formula fallback.
+There is no NumPy formula fallback for this post-fit diagnostic.
 
 ## Public Python API
 
@@ -62,9 +62,9 @@ The standardized-loading entry point requires:
 - every factor to have at least one active item loading; and
 - the itemwise standardized identity
 
-\[
+$$
 \sum_f \lambda_{if}^{2}+\psi_i=1
-\]
+$$
 
 within absolute tolerance `1e-8`.
 
@@ -81,9 +81,9 @@ bifactor solution under its declared general factor.
 This is a small post-fit diagnostic rather than an iterative estimator. In the
 most general cross-loaded pattern, its work is bounded by
 
-\[
+$$
 O(n_{items}n_{factors}^{2}).
-\]
+$$
 
 The Rust and Python boundaries both reject requests above
 `50,000,000` `items * factors^2` work units. The independent limits remain
@@ -102,7 +102,7 @@ scoreability kernel intentionally stays in Rust on the CPU.
 For item `i`, orthogonal logistic slopes `a_if`, and residual variance
 `pi^2 / 3`, the compiled conversion is
 
-\[
+$$
 \lambda_{if}
 =
 \frac{a_{if}}
@@ -112,7 +112,7 @@ For item `i`, orthogonal logistic slopes `a_if`, and residual variance
 =
 \frac{\pi^{2}/3}
 {\sum_h a_{ih}^{2}+\pi^{2}/3}.
-\]
+$$
 
 The returned omega values describe the standardized **continuous
 latent-response representation**. They are not categorical observed-score
@@ -145,35 +145,35 @@ than a non-strict PUC case.
 Let `g` be the declared general factor and `I_if` indicate that item `i` is
 structurally active on factor `f`.
 
-\[
+$$
 ECV_{SS,f}
 =
 \frac{\sum_i I_{if}\lambda_{if}^{2}}
 {\sum_i I_{if}\sum_h\lambda_{ih}^{2}},
-\]
+$$
 
-\[
+$$
 ECV_{SG,f}
 =
 \frac{\sum_i I_{if}\lambda_{if}^{2}}
 {\sum_i\sum_h\lambda_{ih}^{2}},
-\]
+$$
 
-\[
+$$
 ECV_{GS,f}
 =
 \frac{\sum_i I_{if}\lambda_{ig}^{2}}
 {\sum_i I_{if}\sum_h\lambda_{ih}^{2}},
-\]
+$$
 
 and
 
-\[
+$$
 I\text{-}ECV_i
 =
 \frac{\lambda_{ig}^{2}}
 {\sum_h\lambda_{ih}^{2}}.
-\]
+$$
 
 ## Percentage of uncontaminated correlations
 
@@ -181,48 +181,48 @@ PUC is defined only when every item has the declared general loading and at
 most one active specific-factor loading. If `n_f` items load on specific factor
 `f`,
 
-\[
+$$
 PUC
 =
 1-
 \frac{\sum_{f\ne g}\binom{n_f}{2}}
 {\binom{n_{items}}{2}}.
-\]
+$$
 
 ## Omega and construct replicability
 
 For the item domain associated with factor `f`, let
 
-\[
+$$
 S_{hf}=\sum_i I_{if}\lambda_{ih}.
-\]
+$$
 
 Then
 
-\[
+$$
 \omega_{total,f}
 =
 \frac{\sum_h S_{hf}^{2}}
 {\sum_h S_{hf}^{2}+\sum_i I_{if}\psi_i},
-\]
+$$
 
-\[
+$$
 \omega_{H,f}
 =
 \frac{S_{ff}^{2}}
 {\sum_h S_{hf}^{2}+\sum_i I_{if}\psi_i},
-\]
+$$
 
 and
 
-\[
+$$
 H_f
 =
 \frac{1}
 {1+\left(\sum_i
 \frac{\lambda_{if}^{2}}{1-\lambda_{if}^{2}}
 \right)^{-1}}.
-\]
+$$
 
 The kernel does not hard-code universal interpretation cutoffs. A deployment
 policy must also consider uncertainty, parameter recovery, predictive
@@ -258,16 +258,13 @@ from the complete CRAN `BifactorIndicesCalculator` 0.2.2 source files
 `R/ECV_Indices.R`, `R/Omega_Indices.R`, and `R/Other_Indices.R`. That package is
 used as the executable numerical oracle.
 
-Two peer-reviewed articles by Rodriguez, Reise, and Haviland identify omega,
-factor determinacy, construct replicability/reliability, explained common
-variance, and PUC as the relevant post-fit bifactor indices. Their bibliographic
-records and abstracts have been verified. The full equation-level text has not
-been obtained in this development environment, and the related Journal of
-Personality Assessment article has a published correction to Equations 1, 4,
-and 7. Accordingly, this PR does **not** claim primary-source page/equation
-verification and remains subject to the repository's primary-source release
-gate. The correction must be read together with the original article before
-that gate can be closed.
+The complete author-posted text of Rodriguez, Reise, and Haviland (2016a), its
+publisher correction, and the bibliographic record and abstract for Rodriguez,
+Reise, and Haviland (2016b) were reviewed. Corrected Equations 1, 4, and 7 and
+article Equations 3 and 6 are mapped to the Rust contracts in
+`docs/papers/bifactor-scoreability-primary-source-verification.md`. The 2016b
+article is cited only at the verified bibliographic/abstract level; this record
+does not claim that its full text was reviewed.
 
 Dueber, D. M. (2021). *BifactorIndicesCalculator: Bifactor indices calculator*
 (Version 0.2.2) [R package].

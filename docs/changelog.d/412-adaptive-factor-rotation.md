@@ -1,4 +1,6 @@
-### Added
+# Adaptive factor rotation and criterion selection
+
+## Added
 
 - Rust-native adaptive exploratory factor rotation with a broad criterion
   registry, orthogonal and oblique gradient-projection optimization,
@@ -18,7 +20,7 @@
   zero-or-one masks and the loss `sum(w * residual^2)`. Continuous weights are
   available only through the separately named `lp_wls` kernel.
 
-### Deferred
+## Deferred
 
 - Promax, Cubimax, iterative Lp/FSS orchestration, cluster/EIV/echelon
   procedures, user-defined compiled criteria, and a parity-verified wgpu batch

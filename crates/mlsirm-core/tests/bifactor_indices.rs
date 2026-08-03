@@ -266,7 +266,11 @@ fn numeric_input_guards_reject_undefined_indices() {
         (vec![0.7, 0.2, 0.8, 0.3], vec![-0.1, 0.3], "between zero and one"),
         (vec![0.7, 0.2, 0.8, 0.3], vec![1.1, 0.27], "between zero and one"),
         (vec![0.7, 0.2, 0.8, 0.3], vec![f64::INFINITY, 0.3], "finite"),
-        (vec![0.0, 0.0, 0.8, 0.3], vec![1.0, 0.27], "every item"),
+        (
+            vec![0.0, 0.0, 0.8, 0.3],
+            vec![1.0, 0.27],
+            "active loading on the declared general factor",
+        ),
         (vec![0.7, 0.0, 0.8, 0.0], vec![0.51, 0.36], "every factor"),
         (vec![1e-300, 0.2, 0.8, 0.3], vec![0.96, 0.27], "too small"),
         (vec![0.6, 0.2, 0.8, 0.3], vec![0.47, 0.27], "sum to one"),
@@ -287,6 +291,27 @@ fn numeric_input_guards_reject_undefined_indices() {
         .unwrap_err();
         assert!(error.contains("zero_tolerance"));
     }
+}
+
+#[test]
+fn factor_excluded_by_zero_tolerance_is_rejected_explicitly() {
+    let loadings = vec![0.7, 1e-4, 0.8, 0.0];
+    let uniqueness = uniquenesses(&loadings, 2, 2);
+    let error = bifactor_indices(
+        &loadings,
+        &uniqueness,
+        BifactorIndicesConfig {
+            n_items: 2,
+            n_factors: 2,
+            general_factor: 0,
+            zero_tolerance: 1e-3,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("at least one loading above zero_tolerance"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
