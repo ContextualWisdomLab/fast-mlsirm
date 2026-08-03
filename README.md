@@ -180,7 +180,7 @@ python scripts/sales_readiness.py \
   --check-import \
   --out acceptance_check/sales_readiness_manifest.json
 python scripts/build_buyer_packet.py \
-  --acceptance acceptance_check/sales_readiness_manifest.json \
+  --acceptance acceptance_check/acceptance_summary.json \
   --sales-readiness acceptance_check/sales_readiness_manifest.json \
   --dist dist \
   --benchmark-report acceptance_check/benchmark/benchmark_report.json \
