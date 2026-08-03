@@ -10,6 +10,7 @@ on:
       - .github/workflows/hourly-pr-governance.yml
       - scripts/build_pr_queue_governance.py
       - tests/test_hourly_pr_governance_workflow.py
+      - tests/test_pr_queue_governance.py
 
 permissions:
   contents: read
@@ -48,6 +49,7 @@ jobs:
               namespace[name]()
           PY
       - name: Build live PR queue governance evidence
+        id: governance
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -55,6 +57,7 @@ jobs:
           --repo ContextualWisdomLab/fast-mlsirm
           --out hourly-pr-queue-governance
       - name: Publish hourly governance evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: hourly-pr-queue-governance-${{ github.run_id }}
