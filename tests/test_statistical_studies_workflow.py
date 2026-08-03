@@ -9,6 +9,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _PR_CI = _ROOT / ".github" / "workflows" / "ci.yml"
 _STUDIES = _ROOT / ".github" / "workflows" / "statistical-studies.yml"
 _WORKSPACE = _ROOT / "Cargo.toml"
+_SHARD_RUNNER = _ROOT / "scripts" / "run_ignored_rust_shard.py"
 
 
 def test_pull_request_ci_keeps_exhaustive_studies_out_of_the_queue():
@@ -48,11 +49,12 @@ def test_general_and_pyo3_jobs_follow_the_declared_workspace_boundary():
     """The general inventory uses workspace metadata; excluded PyO3 is separate."""
     workflow = _STUDIES.read_text(encoding="utf-8")
     workspace = _WORKSPACE.read_text(encoding="utf-8")
+    runner = _SHARD_RUNNER.read_text(encoding="utf-8")
     assert 'members = ["crates/mlsirm-core"]' in workspace
     assert 'exclude = ["crates/fast-mlsirm-py"]' in workspace
-    assert "cargo metadata" in (
-        _ROOT / "scripts" / "run_ignored_rust_shard.py"
-    ).read_text(encoding="utf-8")
+    assert "cargo_metadata_command" in runner
+    assert '"metadata"' in runner
+    assert '"workspace_members"' in runner
     assert "--exclude-package" not in workflow
     assert (
         "cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml"
