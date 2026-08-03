@@ -59,14 +59,10 @@ print(selection.warning)
 A single-sample selection is labelled `single_sample_diagnostic`. Provide a
 `(replicates, variables, factors)` bootstrap-loading array to estimate
 signed-permutation-aligned Tucker congruence. Fewer than 20 replicates are
-labelled `bootstrap_exploratory`; 20 or more are
-`bootstrap_supported`. These labels describe evidence quantity, not universal
-truth.
+labelled `bootstrap_exploratory`; 20 or more are `bootstrap_supported`. These
+labels describe evidence quantity, not universal truth.
 
 ## Built-in criterion registry
-
-The first production slice covers the differentiable analytic catalogue needed
-for extensible gradient projection:
 
 | Family | Public criteria |
 |---|---|
@@ -74,9 +70,9 @@ for extensible gradient projection:
 | Crawford–Ferguson | continuous `crawford_ferguson`, `equamax`, `parsimax`, `factor_parsimony` |
 | Direct oblimin | continuous `oblimin`, `quartimin`, `biquartimin`, `covarimin` |
 | Geometric mean | `geomin` |
-| Target | complete/NaN-partial `target`, weighted `pst` |
+| Target | complete/NaN-partial `target`, binary-mask `pst` |
 | Information | `entropy`, `infomax`, `mccammon` |
-| Component loss | `simplimax`, `lp_wls` kernel |
+| Component loss | `simplimax`, continuous-weight `lp_wls` kernel |
 | Bifactor | `bifactor`, `bigeomin` |
 | Tandem | `tandem_i`, `tandem_ii` |
 | Invariant simplicity | `oblimax`, `bentler` |
@@ -86,11 +82,29 @@ Continuous parameters such as Crawford–Ferguson `kappa`, Orthomax/Oblimin
 `gamma`, and Geomin `delta` are part of the public API. A criterion can therefore
 be added to the Rust registry without duplicating the optimizer.
 
-The next catalogue expansion should add iterative/derivative-free wrappers such
-as Promax power targets, Cubimax, full Lp/forced-simple-structure iteration,
-cluster rotation, EIV/echelon analytic targets, and user-defined Rust/plugin
-criteria. Those methods are not falsely advertised as implemented by this
-slice.
+Promax, Cubimax, full iterative Lp/forced-simple-structure orchestration,
+cluster rotation, EIV/echelon analytic targets, and user-defined compiled
+criteria are not advertised by this slice.
+
+## Target and PST semantics
+
+A target matrix may use `NaN` for unspecified cells. `target`, `pst`, and the
+`partial_target` alias use an exact zero-or-one mask `w`, matching the
+GPArotation partially specified target contract:
+
+\[
+f(\Lambda)=\sum_{i,j}w_{ij}(\lambda_{ij}-h_{ij})^2,
+\]
+
+\[
+\frac{\partial f}{\partial\lambda_{ij}}
+=2w_{ij}(\lambda_{ij}-h_{ij}).
+\]
+
+Any target weight outside `{0, 1}` is rejected in both Python and Rust. This
+prevents an apparently continuous public weight from being squared implicitly
+and changing its documented meaning. Callers needing continuous non-negative
+weighted L2 loss must use the separately named `lp_wls` criterion.
 
 ## Optimization contract
 
@@ -113,8 +127,8 @@ and the structure matrix is
 \]
 
 The Rust core uses analytic loading-space gradients, Barzilai–Borwein step
-sizes, non-monotone Armijo line search, a Cayley orthogonal retraction, and unit-
-column oblique projection. Starts are generated deterministically from a
+sizes, non-monotone Armijo line search, a Cayley orthogonal retraction, and
+unit-column oblique projection. Starts are generated deterministically from a
 SplitMix64/Box–Muller Gaussian stream and solved in coarse CPU threads. This
 minimizes context switching while preserving exact reproducibility for a fixed
 seed and worker-independent start order.
@@ -124,6 +138,23 @@ of starts within the requested relative objective tolerance of the best
 observed value; `distinct_minima` counts observed objective basins. Increase
 `n_starts`, inspect basin support, and bootstrap the extraction before relying
 on a solution in high-stakes work.
+
+## Bentler positive-definite matrix contract
+
+The Bentler invariant-simplicity criterion requires the fourth-moment Gram
+matrix to be symmetric positive definite. The Rust matrix helper therefore
+uses Cholesky factorization for both log-determinant and inverse construction:
+
+\[
+\log\det(G)=2\sum_i\log L_{ii},
+\qquad G=LL^\top.
+\]
+
+It rejects asymmetric, indefinite, singular, and numerically non-positive
+inputs instead of using determinant sign from row-swap elimination. Regression
+tests include a positive-definite matrix that provokes a pivot swap under
+naive Gaussian elimination, a 3×3 known-inverse oracle, near-singular input,
+and rejection cases.
 
 ## Criterion-neutral selection metrics
 
