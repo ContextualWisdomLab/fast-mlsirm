@@ -81,15 +81,15 @@ def test_rubric_revision_requires_canonical_semantic_version(version):
         )
 
 
-def test_blueprint_exposes_full_sha256_fingerprint_in_addition_to_short_id():
-    """A display id never replaces the full audit identity."""
+def test_blueprint_exposes_full_sha256_fingerprint_and_128_bit_public_id():
+    """A public handle has 128-bit entropy and never replaces the full audit identity."""
     blueprint = _blueprint()
     assert re.fullmatch(r"[0-9a-f]{64}", blueprint.blueprint_fingerprint)
     assert blueprint.to_dict()["blueprint_fingerprint"] == (
         blueprint.blueprint_fingerprint
     )
     assert blueprint.blueprint_id == (
-        f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+        f"item_blueprint_{blueprint.blueprint_fingerprint[:32]}"
     )
 
 
@@ -100,7 +100,7 @@ def test_generation_contract_exposes_full_sha256_fingerprint():
     contract = build_generation_contract(rubric, blueprint)
     assert re.fullmatch(r"[0-9a-f]{64}", contract["contract_fingerprint"])
     assert contract["contract_id"] == (
-        f"generation_contract_{contract['contract_fingerprint'][:16]}"
+        f"generation_contract_{contract['contract_fingerprint'][:32]}"
     )
     assert contract["blueprint"]["blueprint_fingerprint"] == (
         blueprint.blueprint_fingerprint
@@ -113,6 +113,24 @@ def test_structured_output_schema_declares_json_schema_draft_2020_12():
     assert contract["output_schema"]["$schema"] == (
         "https://json-schema.org/draft/2020-12/schema"
     )
+
+
+def test_structured_output_echoes_immutable_rubric_and_blueprint_provenance():
+    """Wrong-blueprint replay fails structural validation before semantic checks."""
+    rubric = _rubric()
+    blueprint = compile_item_blueprints(rubric)[0]
+    schema = build_generation_contract(rubric, blueprint)["output_schema"]
+    required = set(schema["required"])
+    provenance = {
+        "blueprint_id": blueprint.blueprint_id,
+        "blueprint_fingerprint": blueprint.blueprint_fingerprint,
+        "rubric_id": rubric.rubric_id,
+        "rubric_version": rubric.rubric_version,
+        "rubric_fingerprint": rubric.fingerprint,
+    }
+    assert provenance.keys() <= required
+    for field, expected in provenance.items():
+        assert schema["properties"][field] == {"const": expected}
 
 
 @pytest.mark.parametrize(
