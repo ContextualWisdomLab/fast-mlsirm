@@ -86,7 +86,7 @@ def compile_item_blueprints(
                             provisional,
                             blueprint_id=(
                                 "item_blueprint_"
-                                f"{provisional.blueprint_fingerprint[:16]}"
+                                f"{provisional.blueprint_fingerprint[:32]}"
                             ),
                         )
                     )
