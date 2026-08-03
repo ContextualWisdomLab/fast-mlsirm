@@ -768,7 +768,9 @@ def fit_marginal_numpy(
                         deta_z = x_grid  # (Nx, K)
                     else:
                         diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
+                        # Optimized distance gradient calculation: replace np.sum(diff * diff, axis=1)
+                        # with np.einsum to avoid intermediate 2D array allocation.
+                        dist = np.sqrt(eps_distance + np.einsum('ij,ij->i', diff, diff))
                         deta_z = gamma * diff / dist[:, None]  # (Nx, K)
                     g_zeta = (
                         np.einsum("stx,xk->k", resid, deta_z, optimize=True)
@@ -868,8 +870,12 @@ def fit_marginal_numpy(
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                # Optimized pairwise distance calculation: replace O(N*J*D) 3D broadcast
+                # (e.g. diffz * diffz) with memory efficient O(N*J) 2D dot product.
+                z_sq = np.einsum("ij,ij->i", zeta, zeta)
+                x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+                dist_sq = z_sq[:, None] + x_sq[None, :] - 2 * np.dot(zeta, x_grid.T)
+                distz = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
