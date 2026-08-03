@@ -13,7 +13,7 @@ def test_constant_casewise_difference_returns_degenerate_decision_result():
     """Exact observational equivalence is a reportable status, not an exception."""
     result = compare_nonnested_models(
         [1.0, 1.5, 2.0, 2.5],
-        [0.8, 1.3, 1.8, 2.3],
+        [0.75, 1.25, 1.75, 2.25],
         2,
         2,
         model_a="distance",
@@ -22,7 +22,7 @@ def test_constant_casewise_difference_returns_degenerate_decision_result():
 
     assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
     assert result.preferred_model is None
-    assert result.raw_mean_loglik_difference == pytest.approx(0.2)
+    assert result.raw_mean_loglik_difference == pytest.approx(0.25)
     assert result.omega == pytest.approx(0.0)
     assert not result.variance_positive
     assert math.isnan(result.z)
