@@ -6,8 +6,8 @@
   parser-validated generated-item candidates and emits bounded redacted
   findings for instruction-override indicators, ambiguity-prone option or
   stem patterns, duplicate normalized option/evidence surfaces, overlapping
-  rubric indicators, non-atomic criterion indicators, near-duplicate source
-  attributions, declared safety notes, and excessive finding volume.
+  rubric indicators, non-atomic criterion indicators, normalized duplicate
+  source attributions, declared safety notes, and excessive finding volume.
 - An enforced `draft -> audited -> pilot` lifecycle: blocking or
   review-required findings retain the candidate in `draft`; only an exact
   candidate/audit fingerprint match may produce an immutable
@@ -17,6 +17,10 @@
   policy and compares the complete report fingerprint, preventing a caller
   from constructing a clean-looking report that bypasses real findings or
   relabeling the current implementation as an unsupported policy version.
+- The top-level public `PilotCandidateRecord` is factory-sealed against
+  ordinary direct construction. This is an API-governance boundary rather
+  than a cryptographic capability; downstream systems must verify the complete
+  candidate, audit-report, and pilot-record fingerprints.
 - The audit is a deterministic screening and governance boundary, not a
   semantic answerability, fairness, scoreability, psychometric validity, or
   operational-deployment declaration. Pilot observation conversion and
