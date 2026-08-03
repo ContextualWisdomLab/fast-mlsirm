@@ -328,6 +328,7 @@ td {
   border-bottom: 1px solid #e8edef;
   text-align: left;
   vertical-align: top;
+  font-variant-numeric: tabular-nums;
 }
 tbody tr {
   transition: background-color 0.15s ease-in-out;

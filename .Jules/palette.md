@@ -14,3 +14,6 @@
 ## 2025-02-12 - Native Dark Mode for Static Reports
 **Learning:** Hardcoded light colors in static HTML reports ignore OS-level theme preferences, leading to poor UX and increased eye strain for users who rely on dark mode in data-heavy environments.
 **Action:** Extract hardcoded hex colors into CSS variables and add a `@media (prefers-color-scheme: dark)` block to support native dark mode in Python-generated HTML report templates.
+## 2026-08-03 - [HTML Table Numeric Typography]
+**Learning:** For standalone HTML reports that display large volumes of numeric data (like metrics and diagnostic data), the default proportional fonts can cause the decimals and numbers to snake horizontally, hindering scan-ability.
+**Action:** When adding or styling tables with metrics or numeric values in HTML reports, inject the 'font-variant-numeric: tabular-nums;' CSS property into table cells ('th', 'td') to align numbers beautifully and enhance readability.

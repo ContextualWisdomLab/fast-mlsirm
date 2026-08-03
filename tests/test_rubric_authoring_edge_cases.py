@@ -214,7 +214,7 @@ def test_rubric_specification_failure_paths_are_complete():
             ("Quote source evidence.",),
             locale="bad_locale",
         )
-    with pytest.raises(ValueError, match="schema_version must be '1.0'"):
+    with pytest.raises(ValueError, match=r"schema_version must be '1\.0'"):
         RubricSpecification(
             "faithfulness_rubric",
             "evidence_grounding",
@@ -261,7 +261,7 @@ def test_blueprint_plan_failure_paths_are_complete():
         ("scoring_levels", (), "scoring_levels must contain at least 2"),
         ("scoring_levels", (0, 2), "scoring_levels must be contiguous"),
         ("evidence_requirements", (), "evidence_requirements must contain at least 1"),
-        ("schema_version", "2.0", "schema_version must be '1.0'"),
+        ("schema_version", "2.0", r"schema_version must be '1\.0'"),
     ],
 )
 def test_item_blueprint_failure_paths_are_complete(field, value, match):

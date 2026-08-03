@@ -25,6 +25,7 @@ _ALLOWED_SECTIONS = (
 )
 _UNRELEASED_HEADING = re.compile(r"^## Unreleased\s*$", re.MULTILINE)
 _NEXT_RELEASE_HEADING = re.compile(r"^## (?!Unreleased\s*$).+$", re.MULTILINE)
+_ATX_HEADING = re.compile(r"^#{1,6}(?:\s|$)")
 
 
 def fragment_paths(directory: Path = FRAGMENT_DIR) -> tuple[Path, ...]:
@@ -53,7 +54,7 @@ def parse_fragment(path: Path) -> tuple[str, dict[str, tuple[str, ...]]]:
             if active not in _ALLOWED_SECTIONS:
                 raise ValueError(f"{path}: unsupported section {active!r}")
             continue
-        if line.startswith("#"):
+        if _ATX_HEADING.match(line):
             raise ValueError(f"{path}: unsupported heading depth")
         if line.strip():
             if active is None:
@@ -131,7 +132,11 @@ def synchronize_text(changelog: str, rendered: str) -> str:
         replacement = section[:begin] + managed.rstrip("\n") + section[end:]
     else:
         prefix = section.rstrip()
-        replacement = f"{prefix}\n\n{managed}" if prefix else f"\n\n{managed}"
+        trailing = section[len(prefix) :]
+        if not trailing:
+            trailing = "\n\n" if next_release is not None else "\n"
+        body = managed.rstrip("\n") + trailing
+        replacement = f"{prefix}\n\n{body}" if prefix else f"\n\n{body}"
 
     return changelog[: heading.end()] + replacement + changelog[section_end:]
 

@@ -1,0 +1,8 @@
+# Keep CodeRabbit focused on review-ready snapshots rather than every intermediate push.
+# Draft pull requests are intentionally skipped, and later commits are reviewed only
+# when a maintainer explicitly requests `@coderabbitai review` after the branch is stable.
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: false
