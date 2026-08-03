@@ -4,9 +4,12 @@
 
 - Bounded source-document packets with exact-content SHA-256 provenance and redacted audit metadata.
 - Content-addressed generation requests that bind one rubric contract, blueprint, seed, and evidence-mode-valid source packet.
-- A runtime-checkable provider protocol and deterministic offline fixture provider without adding hosted SDK, credential, or network dependencies.
-- Strict provider-JSON decoding that rejects duplicate keys, non-finite numbers, oversized output, missing fields, and unknown fields.
-- Exact rubric-score coverage, response-format-specific structure, source-id resolution, and verbatim evidence-span validation.
-- Deterministic candidate and execution fingerprints plus provider-failure redaction that omits raw source and generated text.
+- A runtime-checkable provider protocol and deterministic offline fixture provider without hosted SDK, credential, or network dependencies.
+- Strict provider-JSON decoding that rejects duplicate keys, non-finite numbers, oversized output, excessive depth or node count, missing fields, and unknown fields.
+- Immutable rubric and blueprint replay protection across ids, 128-bit audit handles, full fingerprints, and governed rubric versions.
+- Exact ordered rubric-score coverage, response-format-specific typed answer keys, option/key consistency, source-id resolution, and verbatim evidence-span validation.
+- Explicit pairwise left/right/tie semantics with null-only tie preferences.
+- Deterministic candidate and execution provenance plus provider-failure redaction that omits raw source and generated text.
+- Public generation, candidate, answer-key, attribution, and execution APIs with complete package exports.
 
-This unreleased fragment will be folded into `CHANGELOG.md` after a real optional provider adapter, semantic screening, and Rust-backed calibration demonstration complete the end-to-end product path.
+Structural validation remains separate from semantic review, psychometric calibration, DIF, local-dependence, exposure, drift, and governed item-bank acceptance.
