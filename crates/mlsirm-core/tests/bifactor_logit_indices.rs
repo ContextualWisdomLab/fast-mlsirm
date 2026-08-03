@@ -1,7 +1,8 @@
-//! Contract for converting fitted logistic bifactor slopes to scoreability indices.
+//! Contract for converting fitted logistic bifactor slopes to latent-response indices.
 
 use mlsirm_core::bifactor_indices::{
-    bifactor_indices, bifactor_indices_from_logit_slopes, BifactorIndicesConfig,
+    bifactor_indices, bifactor_latent_response_indices_from_logit_slopes,
+    BifactorIndicesConfig,
 };
 
 fn standardized_example() -> Vec<f64> {
@@ -46,14 +47,15 @@ fn assert_vec_close(actual: &[f64], expected: &[f64]) {
 }
 
 #[test]
-fn logistic_slope_standardization_recovers_direct_loading_indices() {
+fn logistic_slope_standardization_recovers_direct_latent_response_indices() {
     let loadings = standardized_example();
     let uniqueness = uniquenesses(&loadings, 12, 4);
     let slopes = raw_logit_slopes(&loadings, &uniqueness, 4);
     let config = BifactorIndicesConfig::new(12, 4, 0);
 
     let direct = bifactor_indices(&loadings, &uniqueness, config).unwrap();
-    let converted = bifactor_indices_from_logit_slopes(&slopes, config).unwrap();
+    let converted =
+        bifactor_latent_response_indices_from_logit_slopes(&slopes, config).unwrap();
 
     assert_eq!(converted.factor_item_counts, direct.factor_item_counts);
     assert_eq!(converted.is_strict_bifactor, direct.is_strict_bifactor);
@@ -76,18 +78,28 @@ fn logistic_slope_standardization_recovers_direct_loading_indices() {
 #[test]
 fn logistic_conversion_rejects_malformed_or_nondegenerate_limits() {
     let config = BifactorIndicesConfig::new(2, 2, 0);
-    let error = bifactor_indices_from_logit_slopes(&[0.5, 0.2, 0.6], config).unwrap_err();
+    let error = bifactor_latent_response_indices_from_logit_slopes(
+        &[0.5, 0.2, 0.6],
+        config,
+    )
+    .unwrap_err();
     assert!(error.contains("logit slope matrix length"));
 
-    let error = bifactor_indices_from_logit_slopes(&[0.5, f64::NAN, 0.6, 0.2], config)
-        .unwrap_err();
+    let error = bifactor_latent_response_indices_from_logit_slopes(
+        &[0.5, f64::NAN, 0.6, 0.2],
+        config,
+    )
+    .unwrap_err();
     assert!(error.contains("finite"));
 
-    let error = bifactor_indices_from_logit_slopes(&[0.0, 0.0, 0.6, 0.2], config)
-        .unwrap_err();
+    let error = bifactor_latent_response_indices_from_logit_slopes(
+        &[0.0, 0.0, 0.6, 0.2],
+        config,
+    )
+    .unwrap_err();
     assert!(error.contains("every item"));
 
-    let error = bifactor_indices_from_logit_slopes(
+    let error = bifactor_latent_response_indices_from_logit_slopes(
         &[f64::MAX, 0.0, 0.6, 0.2],
         config,
     )
