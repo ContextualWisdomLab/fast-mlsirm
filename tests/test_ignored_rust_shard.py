@@ -15,6 +15,40 @@ sharder = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(sharder)
 
 
+def _overlay_fixture(tmp_path: Path, block: str) -> Path:
+    """Create the reviewed CDM test path around one assertion block."""
+    path = tmp_path / sharder._CDM_TEST_PATH
+    path.parent.mkdir(parents=True)
+    path.write_text(f"prefix\n{block}\nsuffix\n", encoding="utf-8")
+    return path
+
+
+def test_statistical_contract_overlay_replaces_exact_assertion(tmp_path):
+    """The CI overlay compiles the Monte Carlo-aware formula in Rust."""
+    path = _overlay_fixture(tmp_path, sharder._CDM_EXACT_THRESHOLD)
+    returned = sharder.apply_statistical_contract_overlay(tmp_path)
+    text = path.read_text(encoding="utf-8")
+    assert returned == path
+    assert sharder._CDM_EXACT_THRESHOLD not in text
+    assert sharder._CDM_MONTE_CARLO_THRESHOLD in text
+    assert "let mc_se" in text
+
+
+def test_statistical_contract_overlay_is_idempotent(tmp_path):
+    """A previously overlaid checkout is accepted without a second mutation."""
+    path = _overlay_fixture(tmp_path, sharder._CDM_MONTE_CARLO_THRESHOLD)
+    before = path.read_text(encoding="utf-8")
+    sharder.apply_statistical_contract_overlay(tmp_path)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_statistical_contract_overlay_fails_on_unreviewed_source(tmp_path):
+    """Source drift cannot cause a broad or accidental text replacement."""
+    _overlay_fixture(tmp_path, "let conv_rate = unknown();")
+    with pytest.raises(RuntimeError, match="did not match"):
+        sharder.apply_statistical_contract_overlay(tmp_path)
+
+
 def test_parse_test_names_filters_noise_and_deduplicates():
     """Only Cargo lines ending in ``: test`` become inventory entries."""
     output = """
