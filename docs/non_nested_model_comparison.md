@@ -49,18 +49,23 @@ quantities come from `fast_mlsirm._core` through
    `boundary_nested`, or `unknown`.
 2. The Rust core computes `mean_diff`, `omega`, `z`, and the two-sided normal
    p value.
-3. `omega_tol` is used only as a numerical variance floor. It is **not** called
+3. If the Rust kernel reports exact zero variance, the decision wrapper returns
+   `variance_degenerate` instead of leaking the low-level exception. In that
+   exceptional state `omega` is reported as zero and
+   `raw_mean_loglik_difference` as `NaN`; the wrapper does not reproduce the
+   likelihood moment calculation in Python.
+4. `omega_tol` is used only as a numerical variance floor. It is **not** called
    Vuong's formal distinguishability hypothesis test.
-4. A model preference is returned only when the relation is declared strictly
+5. A model preference is returned only when the relation is declared strictly
    non-nested, the variance is numerically non-degenerate, and the two-sided p
    value is below `alpha`.
-5. Nested and boundary-nested declarations suppress the normal-theory result
+6. Nested and boundary-nested declarations suppress the normal-theory result
    and return `requires_likelihood_ratio`.
-6. Overlapping declarations return `requires_distinguishability_test` because
+7. Overlapping declarations return `requires_distinguishability_test` because
    the formal weighted-chi-square test needs casewise score vectors and
    information matrices that are not yet exposed consistently across every
    model family.
-7. Unknown relationships return `unknown_relation`; the library does not guess
+8. Unknown relationships return `unknown_relation`; the library does not guess
    nestedness from parameter counts.
 
 ## Example
@@ -85,7 +90,7 @@ print(result.z, result.p_two_sided)
 print(result.preferred_model)
 ```
 
-The result preserves the raw Rust audit fields even when inference is
+The result preserves the available Rust audit fields even when inference is
 suppressed:
 
 - `raw_mean_loglik_difference`
@@ -94,6 +99,10 @@ suppressed:
 - model labels and parameter counts
 - declared relation and explicit status
 - warning explaining the required alternative procedure
+
+For exact zero variance the strict Rust kernel returns an indistinguishability
+error before exposing the raw mean. The decision wrapper therefore reports the
+state rather than inventing a Python-side mean.
 
 ## Scope boundaries
 
