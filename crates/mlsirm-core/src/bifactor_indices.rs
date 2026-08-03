@@ -25,7 +25,8 @@
 //! column. Structural membership is `|lambda_if| > zero_tolerance`; active
 //! loadings retain their original numerical values rather than being rounded.
 //! Each standardized item must satisfy `sum_h lambda_ih^2 + theta_i = 1`
-//! within numerical tolerance.
+//! within numerical tolerance, and every item must have an active loading on
+//! the declared general factor.
 //!
 //! For factor `f`, with membership indicator `I_if`:
 //!
@@ -39,10 +40,9 @@
 //!   for factor `f` alone, retaining the same denominator.
 //! - `H_f = 1 / (1 + 1 / sum_i[lambda_if^2/(1-lambda_if^2)])`.
 //!
-//! PUC is defined only when every item loads on the general factor and on at
-//! most one specific factor. For other loading patterns, the result returns
-//! `None` rather than silently applying a strict-bifactor formula to a
-//! two-tier or cross-loaded model.
+//! PUC is defined only when every item loads on at most one specific factor.
+//! Cross-loaded specific-factor patterns return `None`; a missing general
+//! loading is rejected rather than emitting bifactor-labelled diagnostics.
 //!
 //! # References (APA 7th ed.)
 //!
@@ -113,8 +113,9 @@ pub struct BifactorIndicesResult {
 /// `loadings` is row-major with shape `n_items x n_factors` and must contain
 /// finite standardized loadings with absolute value below one. `uniquenesses`
 /// contains one finite residual variance in `[0, 1]` per row, and each row's
-/// squared loadings plus uniqueness must sum to one within `1e-8`. The factors
-/// are assumed orthogonal; callers with logistic IRT slopes should use
+/// squared loadings plus uniqueness must sum to one within `1e-8`. Every item
+/// must load above `zero_tolerance` on `general_factor`. The factors are
+/// assumed orthogonal; callers with logistic IRT slopes should use
 /// [`bifactor_latent_response_indices_from_logit_slopes`].
 ///
 /// This function deliberately returns descriptive indices, not a pass/fail
@@ -138,6 +139,14 @@ pub fn bifactor_indices(
         .map(|loading| loading.abs() > zero_tolerance)
         .collect();
     let squared: Vec<f64> = loadings.iter().map(|loading| loading * loading).collect();
+
+    if let Some(item) =
+        (0..n_items).find(|item| !active[item * n_factors + general_factor])
+    {
+        return Err(format!(
+            "every item must have an active loading on the declared general factor; item {item} does not"
+        ));
+    }
 
     let mut factor_item_counts = vec![0usize; n_factors];
     let mut item_common_variance = vec![0.0_f64; n_items];
