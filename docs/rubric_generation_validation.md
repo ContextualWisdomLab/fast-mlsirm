@@ -62,7 +62,6 @@ rubric = RubricSpecification(
     locale="en-US",
     rubric_version="1.0.0",
 )
-
 blueprint = compile_item_blueprints(
     rubric,
     BlueprintPlan(
@@ -79,17 +78,14 @@ source = SourceDocument(
 )
 request = build_generation_request(rubric, blueprint, (source,))
 
-provenance = {
-    "blueprint_id": blueprint.blueprint_id,
-    "blueprint_handle": request.contract["blueprint"]["blueprint_handle"],
-    "blueprint_fingerprint": blueprint.blueprint_fingerprint,
-    "rubric_id": blueprint.rubric_id,
-    "rubric_version": blueprint.rubric_version,
-    "rubric_fingerprint": blueprint.rubric_fingerprint,
-}
 fixture_response = json.dumps(
     {
-        **provenance,
+        "blueprint_id": blueprint.blueprint_id,
+        "blueprint_handle": request.contract["blueprint"]["blueprint_handle"],
+        "blueprint_fingerprint": blueprint.blueprint_fingerprint,
+        "rubric_id": blueprint.rubric_id,
+        "rubric_version": blueprint.rubric_version,
+        "rubric_fingerprint": blueprint.rubric_fingerprint,
         "item_id": "generated_item_001",
         "stem": "Judge whether the response is supported by the source.",
         "stimulus": ["The response says that claims require evidence."],
@@ -125,6 +121,8 @@ provider = StaticFixtureProvider(
     response_text=fixture_response,
 )
 execution = execute_generation(provider, request)
+print(request.request_handle)
+print(execution.execution_handle)
 print(execution.candidate.candidate_fingerprint)
 ```
 
@@ -141,15 +139,14 @@ A `SourceDocument` preserves exact text for provider input and verbatim evidence
 | Aggregate source packet | 1,048,576 characters |
 | Raw provider JSON | 262,144 characters |
 | JSON nesting depth | 32 |
-| JSON values | 20,000 |
 | Candidate text field | 8,192 characters |
 | General candidate collection | 32 values |
 
-Evidence-mode source cardinality is checked before invocation: `closed_book` requires zero sources, `single_source` exactly one, `multi_source` and `adversarial_context` at least two, and `unanswerable` at least one.
+Evidence-mode source cardinality is checked in both the builder and direct dataclass construction. `closed_book` requires zero sources, `single_source` exactly one, `multi_source` and `adversarial_context` at least two, and `unanswerable` at least one.
 
 ## Immutable replay protection
 
-Every candidate must echo the exact constants from its request:
+Every provider result must echo the exact constants from its request:
 
 - `blueprint_id`;
 - `blueprint_handle`;
@@ -158,7 +155,7 @@ Every candidate must echo the exact constants from its request:
 - `rubric_version`; and
 - `rubric_fingerprint`.
 
-A mismatch returns the redacted `provenance_mismatch` code before candidate construction. These fields are included in `candidate_fingerprint`, so a candidate cannot be moved to another rubric revision or blueprint without changing its durable audit identity.
+A mismatch returns the redacted `provenance_mismatch` code before candidate construction. The normalized candidate also records the derived request and contract ids and full fingerprints, so its durable fingerprint binds the complete request lineage rather than only the authored text.
 
 ## JSON safety
 
@@ -166,7 +163,7 @@ The parser is stricter than Python's default decoder:
 
 - duplicate object member names are rejected at every nesting level;
 - `NaN` and infinities are rejected;
-- size, depth, and total-node budgets are enforced;
+- raw size and nesting-depth budgets are enforced;
 - the top-level value must be an object;
 - every required field must exist;
 - undeclared fields are rejected;
@@ -189,7 +186,7 @@ For pairwise items, `left_option` must identify the first option, `right_option`
 
 ## Source attribution contract
 
-For source-backed modes, at least one attribution is required. Every source id must occur in the request, every `(source_id, evidence_span)` pair must be unique, and each evidence span must occur verbatim in the referenced source. Closed-book candidates cannot claim source attribution. Exact substring validation does not establish semantic entailment; that remains a later screening task.
+For source-backed modes, at least one attribution is required. Every source id must occur in the request, every `(source_id, evidence_span)` pair must be unique, and each evidence span must occur verbatim in the referenced source. Single-source candidates must attribute exactly one supplied source; multi-source candidates must attribute at least two distinct supplied sources. Closed-book candidates cannot claim source attribution. Exact substring validation does not establish semantic entailment; that remains a later screening task.
 
 ## Provider failure boundary
 
@@ -198,9 +195,9 @@ A provider adapter exposes stable `provider_id`, `model_id`, and one synchronous
 ## Deterministic provenance
 
 - `SourceDocument.content_digest` hashes exact UTF-8 source content.
-- `GenerationRequest.request_id` binds the contract, blueprint, seed, and source metadata.
-- `GeneratedItemCandidate.candidate_fingerprint` hashes normalized candidate content, including immutable provenance.
-- `GenerationExecution.execution_id` binds the request, provider/model ids, candidate fingerprint, and raw-response digest.
+- `GenerationRequest.request_id` retains the legacy 64-bit display identifier; `request_handle` exposes a 128-bit audit handle and `request_fingerprint` the complete SHA-256 identity.
+- `GeneratedItemCandidate.candidate_fingerprint` hashes normalized candidate content and its request, contract, rubric, and blueprint lineage.
+- `GenerationExecution.execution_id` retains the display identifier; `execution_handle` and `execution_fingerprint` provide the stronger audit identities.
 
 No current time, process id, global random state, source text, or raw provider response is embedded in those identifiers.
 
