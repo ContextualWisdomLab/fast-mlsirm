@@ -2,7 +2,7 @@
 
 All statistical quantities are computed by
 :func:`fast_mlsirm.fitstats.vuong_nonnested`, whose implementation resides in
-the compiled Rust core.  This module adds model-relation metadata and a
+the compiled Rust core. This module adds model-relation metadata and a
 fail-closed interpretation layer so nested, boundary-nested, overlapping, and
 unknown relationships are not silently reported with an invalid normal-theory
 preference.
@@ -43,10 +43,14 @@ class ComparisonStatus(str, Enum):
 class ModelComparisonResult:
     """Auditable result of a pairwise likelihood comparison.
 
-    ``raw_mean_loglik_difference`` and ``omega`` are always the Rust-kernel
-    values.  ``z`` and ``p_two_sided`` are exposed only when the declared
+    ``raw_mean_loglik_difference`` and ``omega`` preserve Rust-kernel values
+    whenever the kernel can form them. For an exact zero-variance comparison,
+    the strict low-level Rust API reports its dedicated indistinguishability
+    error; the decision wrapper represents that state with ``omega = 0`` and
+    ``raw_mean_loglik_difference = NaN`` rather than reproducing the statistic
+    in Python. ``z`` and ``p_two_sided`` are exposed only when the declared
     relationship is strictly non-nested and the casewise difference variance
-    exceeds ``omega_tol``.  Positive differences favor ``model_a``.
+    exceeds ``omega_tol``. Positive differences favor ``model_a``.
     """
 
     model_a: str
@@ -128,15 +132,18 @@ def compare_nonnested_models(
 
     The Rust core computes the casewise log-likelihood-ratio mean, population
     standard deviation ``omega``, BIC-corrected or uncorrected Vuong z statistic,
-    and two-sided normal p value.  This wrapper interprets those values only for
-    a declared strictly non-nested comparison.  It deliberately does not label
-    ``omega > omega_tol`` as Vuong's formal distinguishability test.
+    and two-sided normal p value. This wrapper interprets those values only for
+    a declared strictly non-nested comparison. It deliberately does not label
+    ``omega > omega_tol`` as Vuong's formal distinguishability test. Exact
+    zero-variance comparisons are converted from the low-level Rust
+    indistinguishability error into a non-preference result rather than leaking
+    an exception through the decision API.
 
     Parameters
     ----------
     loglik_a, loglik_b:
         Paired casewise marginal log-likelihood contributions for models A and
-        B.  The low-level Rust-backed wrapper validates shape and finiteness.
+        B. The low-level Rust-backed wrapper validates shape and finiteness.
     k_a, k_b:
         Non-negative free-parameter counts.
     model_a, model_b:
@@ -149,7 +156,7 @@ def compare_nonnested_models(
     alpha:
         Two-sided preference threshold, strictly between zero and one.
     omega_tol:
-        Numerical variance floor.  This is a stability guard, not the formal
+        Numerical variance floor. This is a stability guard, not the formal
         distinguishability hypothesis test.
 
     Returns
@@ -182,17 +189,24 @@ def compare_nonnested_models(
 
     values_a = tuple(loglik_a)
     values_b = tuple(loglik_b)
-    statistic = vuong_nonnested(
-        values_a,
-        values_b,
-        k_a,
-        k_b,
-        bic_correction=bic_correction,
-    )
-    raw_mean = float(statistic["mean_diff"])
-    omega = float(statistic["omega"])
-    raw_z = float(statistic["z"])
-    raw_p = float(statistic["p_two_sided"])
+    try:
+        statistic = vuong_nonnested(
+            values_a,
+            values_b,
+            k_a,
+            k_b,
+            bic_correction=bic_correction,
+        )
+    except ValueError as exc:
+        if "omega^2 = 0" not in str(exc):
+            raise
+        raw_mean = raw_z = raw_p = float("nan")
+        omega = 0.0
+    else:
+        raw_mean = float(statistic["mean_diff"])
+        omega = float(statistic["omega"])
+        raw_z = float(statistic["z"])
+        raw_p = float(statistic["p_two_sided"])
     variance_positive = math.isfinite(omega) and omega > omega_tol
 
     unsupported = _unsupported_relation(relation_value)
