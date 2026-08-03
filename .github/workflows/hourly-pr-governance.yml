@@ -37,9 +37,15 @@ jobs:
           import runpy
 
           namespace = runpy.run_path("tests/test_hourly_pr_governance_workflow.py")
-          for name in sorted(namespace):
-              if name.startswith("test_hourly_governance_workflow_"):
-                  namespace[name]()
+          test_names = [
+              name
+              for name in sorted(namespace)
+              if name.startswith("test_hourly_governance_workflow_")
+          ]
+          if not test_names:
+              raise RuntimeError("no hourly governance contract tests were discovered")
+          for name in test_names:
+              namespace[name]()
           PY
       - name: Build live PR queue governance evidence
         env:
