@@ -100,6 +100,27 @@ def test_package_root_exports_the_public_bifactor_api():
     )
 
 
+def test_every_declared_package_export_exists():
+    """The modular root split cannot leave stale names in ``__all__``."""
+    missing = [name for name in fast_mlsirm.__all__ if not hasattr(fast_mlsirm, name)]
+    assert missing == []
+
+
+def test_result_vectors_are_immutable():
+    """Typed diagnostics cannot be silently altered after Rust validation."""
+    result = bifactor_scoreability(_loadings(), _uniquenesses())
+    for vector in (
+        result.ecv_ss,
+        result.ecv_sg,
+        result.ecv_gs,
+        result.item_ecv,
+        result.omega_total,
+        result.omega_hierarchical,
+        result.construct_replicability,
+    ):
+        assert vector.flags.writeable is False
+
+
 @pytest.mark.parametrize(
     ("loadings", "uniquenesses", "message"),
     [
@@ -121,6 +142,58 @@ def test_missing_general_factor_fails_through_rust():
     uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
     with pytest.raises(ValueError, match="general factor"):
         bifactor_scoreability(loadings, uniquenesses, general_factor=0)
+
+
+def test_nonfirst_general_factor_and_single_item_domain_reach_rust():
+    """Python preserves labelled factor columns and strict-pattern PUC."""
+    loadings = np.asarray(
+        [
+            [0.40, 0.70, 0.00],
+            [0.30, 0.70, 0.00],
+            [0.00, 0.70, 0.50],
+        ],
+        dtype=np.float64,
+    )
+    uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
+    result = bifactor_scoreability(loadings, uniquenesses, general_factor=1)
+
+    assert result.factor_item_counts == (2, 3, 1)
+    assert result.is_strict_bifactor is True
+    assert result.puc == pytest.approx(2.0 / 3.0)
+
+
+def test_cross_loaded_specific_pattern_is_descriptive_but_has_no_puc():
+    """Specific cross-loadings remain valid while strict-bifactor PUC fails closed."""
+    loadings = _loadings()
+    loadings[0, 2] = 0.10
+    uniquenesses = 1.0 - np.square(loadings).sum(axis=1)
+    result = bifactor_scoreability(loadings, uniquenesses)
+
+    assert result.is_strict_bifactor is False
+    assert result.puc is None
+
+
+def test_standardized_identity_accepts_roundoff_but_rejects_material_error():
+    """The public path preserves the documented Rust identity tolerance."""
+    loadings = np.asarray([[0.70, 0.20], [0.80, 0.30]], dtype=np.float64)
+    roundoff = np.asarray([0.47 + 5e-9, 0.27 - 5e-9], dtype=np.float64)
+    assert bifactor_scoreability(loadings, roundoff).factor_item_counts == (2, 2)
+
+    material = roundoff.copy()
+    material[0] += 1e-5
+    with pytest.raises(ValueError, match="sum to one"):
+        bifactor_scoreability(loadings, material)
+
+
+def test_sign_cancelled_composite_variance_is_rejected_by_rust():
+    """Perfect loading cancellation cannot produce a misleading zero omega."""
+    root_half = np.sqrt(0.5)
+    loadings = np.asarray(
+        [[root_half, root_half], [-root_half, -root_half]],
+        dtype=np.float64,
+    )
+    with pytest.raises(ValueError, match="omega denominator must be positive"):
+        bifactor_scoreability(loadings, np.zeros(2, dtype=np.float64))
 
 
 def test_loader_caches_the_secondary_extension_module():
