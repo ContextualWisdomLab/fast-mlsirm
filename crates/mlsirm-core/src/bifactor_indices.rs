@@ -9,14 +9,16 @@
 //!
 //! # Source governance
 //!
-//! Implementation formulas were independently transcribed and verified from
-//! the CRAN `BifactorIndicesCalculator` 0.2.2 source files
-//! `R/ECV_Indices.R`, `R/Omega_Indices.R`, and `R/Other_Indices.R` (read in
-//! full for the implemented continuous-indicator functions). Rodriguez,
-//! Reise, and Haviland (2016) is cited as the methodological origin described
-//! by that package; the article itself was not read in full for this change.
-//! The implementation uses formula facts only and does not copy expressive R
-//! source structure.
+//! The complete author-posted text of Rodriguez, Reise, and Haviland (2016a)
+//! and the publisher correction were reviewed for this implementation. The
+//! corrected forms of Equations 1, 4, and 7, together with article Equations 3
+//! and 6, are mapped to the Rust contracts in
+//! `docs/papers/bifactor-scoreability-primary-source-verification.md`.
+//! Extended ECV decompositions and item ECV were independently transcribed and
+//! verified against the complete CRAN `BifactorIndicesCalculator` 0.2.2 source
+//! files `R/ECV_Indices.R`, `R/Omega_Indices.R`, and `R/Other_Indices.R`.
+//! That implementation is used as a numerical oracle; the Rust code does not
+//! copy its expressive source structure.
 //!
 //! # Metric contract
 //!
@@ -59,9 +61,19 @@
 //! calculator* (Version 0.2.2) [R package].
 //! https://CRAN.R-project.org/package=BifactorIndicesCalculator
 //!
-//! Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016). Evaluating bifactor
+//! Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016a). Applying bifactor
+//! statistical indices in the evaluation of psychological measures. *Journal
+//! of Personality Assessment, 98*(3), 223-237.
+//! https://doi.org/10.1080/00223891.2015.1089249
+//!
+//! Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016b). Evaluating bifactor
 //! models: Calculating and interpreting statistical indices. *Psychological
 //! Methods, 21*(2), 137-150. https://doi.org/10.1037/met0000045
+//!
+//! Taylor & Francis. (2016). Correction to: Applying bifactor statistical
+//! indices in the evaluation of psychological measures. *Journal of
+//! Personality Assessment, 98*(4), 444.
+//! https://doi.org/10.1080/00223891.2015.1117928
 
 use crate::checked_mul_usize;
 
