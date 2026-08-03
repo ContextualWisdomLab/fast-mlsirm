@@ -42,6 +42,10 @@ from .generation import SourceDocument as SourceDocument
 from .generation import StaticFixtureProvider as StaticFixtureProvider
 from .generation import build_generation_request as build_generation_request
 from .generation import execute_generation as execute_generation
+from .gtheory_pilot import GTheoryPiPilotDesign as GTheoryPiPilotDesign
+from .gtheory_pilot import (
+    build_gtheory_pi_pilot_design as build_gtheory_pi_pilot_design,
+)
 from .models import BlueprintPlan as BlueprintPlan
 from .models import DifficultyBand as DifficultyBand
 from .models import EvidenceMode as EvidenceMode
