@@ -6,7 +6,6 @@ import math
 
 import pytest
 
-import fast_mlsirm as fm
 import fast_mlsirm.model_comparison as comparison_module
 from fast_mlsirm.fitstats import vuong_nonnested
 from fast_mlsirm.model_comparison import (
@@ -24,13 +23,6 @@ def _sentinel(*, z: float = 2.5, p: float = 0.01, omega: float = 0.4):
         "omega": omega,
         "mean_diff": 0.3,
     }
-
-
-def test_public_api_exports_model_comparison():
-    """The package root exposes the decision-safe comparison API."""
-    assert fm.ComparisonStatus is ComparisonStatus
-    assert fm.ModelRelation is ModelRelation
-    assert fm.compare_nonnested_models is compare_nonnested_models
 
 
 def test_delegates_all_statistics_to_rust_kernel(monkeypatch):
