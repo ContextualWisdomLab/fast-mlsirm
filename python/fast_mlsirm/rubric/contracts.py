@@ -201,6 +201,11 @@ def _answer_key_schema(rubric: RubricSpecification) -> dict[str, Any]:
     return schema
 
 
+def _blueprint_handle(blueprint: ItemBlueprint) -> str:
+    """Return a 128-bit public audit handle while retaining the legacy display id."""
+    return f"item_blueprint_{blueprint.blueprint_fingerprint[:32]}"
+
+
 def _output_schema(
     rubric: RubricSpecification,
     blueprint: ItemBlueprint,
@@ -212,20 +217,23 @@ def _output_schema(
     enum and a fixed array length would permit duplicate levels and omit others.
     Response formats also receive distinct option and answer-key contracts so a
     structurally impossible item cannot pass schema validation. Immutable rubric
-    and blueprint provenance is echoed as constants to reject wrong-contract
-    replay before downstream semantic validation.
+    and blueprint provenance is required through an ``allOf`` assertion while
+    the original top-level item-field contract remains stable for consumers.
     """
     level_scores = [level.score for level in rubric.levels]
+    provenance_fields = [
+        "blueprint_id",
+        "blueprint_handle",
+        "blueprint_fingerprint",
+        "rubric_id",
+        "rubric_version",
+        "rubric_fingerprint",
+    ]
     return {
         "$schema": _JSON_SCHEMA_DRAFT,
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "blueprint_id",
-            "blueprint_fingerprint",
-            "rubric_id",
-            "rubric_version",
-            "rubric_fingerprint",
             "item_id",
             "stem",
             "stimulus",
@@ -237,8 +245,10 @@ def _output_schema(
             "source_attributions",
             "safety_notes",
         ],
+        "allOf": [{"required": provenance_fields}],
         "properties": {
             "blueprint_id": {"const": blueprint.blueprint_id},
+            "blueprint_handle": {"const": _blueprint_handle(blueprint)},
             "blueprint_fingerprint": {"const": blueprint.blueprint_fingerprint},
             "rubric_id": {"const": rubric.rubric_id},
             "rubric_version": {"const": rubric.rubric_version},
@@ -312,11 +322,13 @@ def build_generation_contract(
 
     rubric_payload = rubric.to_dict()
     rubric_payload["fingerprint"] = rubric.fingerprint
+    blueprint_payload = blueprint.to_dict()
+    blueprint_payload["blueprint_handle"] = _blueprint_handle(blueprint)
     body = {
         "contract_schema_version": SCHEMA_VERSION,
         "operation": "generate_assessment_item",
         "rubric": rubric_payload,
-        "blueprint": blueprint.to_dict(),
+        "blueprint": blueprint_payload,
         "authoring_instructions": [
             "Create exactly one assessment item for the declared blueprint cell.",
             "Treat the rubric, evidence requirements, and prohibited patterns as authoritative constraints.",
@@ -332,9 +344,9 @@ def build_generation_contract(
         "output_schema": _output_schema(rubric, blueprint),
     }
     contract_fingerprint = _sha256_hex(body)
-    contract_id = f"generation_contract_{contract_fingerprint[:32]}"
     return {
-        "contract_id": contract_id,
+        "contract_id": f"generation_contract_{contract_fingerprint[:16]}",
+        "contract_handle": f"generation_contract_{contract_fingerprint[:32]}",
         "contract_fingerprint": contract_fingerprint,
         **body,
     }
