@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass
 
 from .audit import CandidateLifecycleState
 from .audit import PilotCandidateRecord as _CorePilotCandidateRecord
@@ -52,15 +52,11 @@ class PilotCandidateRecord:
     rubric_version: str
     lifecycle_state: CandidateLifecycleState = CandidateLifecycleState.PILOT
     schema_version: str = SCHEMA_VERSION
-    _admission_token: object | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
+    _admission_token: InitVar[object | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _admission_token: object | None) -> None:
         """Reject direct construction and normalize through the core contract."""
-        if self._admission_token is not _PILOT_ADMISSION_TOKEN:
+        if _admission_token is not _PILOT_ADMISSION_TOKEN:
             raise ValueError(
                 "PilotCandidateRecord must be created by "
                 "build_pilot_candidate_record"
