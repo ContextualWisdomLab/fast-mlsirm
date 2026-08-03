@@ -4,7 +4,7 @@
 
 - Versioned rubric and rubric-level schemas with explicit construct, observable evidence, task-family, response-format, locale, and prohibited-pattern contracts.
 - Deterministic bounded compilation across task family, difficulty band, evidence mode, and replicate cells.
-- Full SHA-256 rubric, blueprint, and generation-contract fingerprints plus 128-bit public blueprint and contract handles; 64-bit digest slices remain limited to deterministic generation seeds.
+- Full SHA-256 rubric, blueprint, and generation-contract fingerprints plus authoritative 128-bit public blueprint and contract handles; 64-bit convenience display identifiers remain explicitly non-authoritative, and 64-bit digest slices also seed deterministic generation.
 - A prompt-injection boundary and strict generated-item JSON Schema 2020-12 contract without adding a hosted-model SDK or network dependency.
 - Immutable rubric and blueprint provenance constants in generated-item schemas, preventing wrong-blueprint replay from passing structural validation.
 - Response-format-specific, closed, bounded answer-key contracts and ordered score-level schemas that require every rubric score exactly once.
