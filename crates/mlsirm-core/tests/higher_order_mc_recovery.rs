@@ -168,16 +168,17 @@ fn attribute_agreement(estimated_probability: &[f64], profiles: &[usize]) -> f64
     correct as f64 / (N_PERSONS * N_ATTRIBUTES) as f64
 }
 
-fn monte_carlo_floor(target: f64, replications: usize) -> f64 {
-    let standard_error = (target * (1.0 - target) / replications as f64).sqrt();
-    target - 2.0 * standard_error
+fn monte_carlo_floor(nominal_convergence: f64, replications: usize) -> f64 {
+    let monte_carlo_se =
+        (nominal_convergence * (1.0 - nominal_convergence) / replications as f64).sqrt();
+    nominal_convergence - 2.0 * monte_carlo_se
 }
 
 #[test]
 fn two_standard_error_floor_matches_the_registered_design() {
-    let floor = monte_carlo_floor(TARGET_CONVERGENCE_RATE, REPLICATIONS);
-    assert!((floor - 0.930_506_411_3).abs() < 1e-9);
-    assert!(474.0 / 500.0 >= floor);
+    let convergence_floor = monte_carlo_floor(TARGET_CONVERGENCE_RATE, REPLICATIONS);
+    assert!((convergence_floor - 0.930_506_411_3).abs() < 1e-9);
+    assert!(474.0 / 500.0 >= convergence_floor);
 }
 
 #[test]
@@ -190,7 +191,7 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
     let slip = [0.12; N_ITEMS];
     let guess = [0.12; N_ITEMS];
     let observed = vec![true; N_PERSONS * N_ITEMS];
-    let floor = monte_carlo_floor(TARGET_CONVERGENCE_RATE, REPLICATIONS);
+    let convergence_floor = monte_carlo_floor(TARGET_CONVERGENCE_RATE, REPLICATIONS);
 
     for skew in [false, true] {
         let mut slope_rmse = 0.0;
@@ -239,9 +240,9 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
 
         let convergence_rate = converged as f64 / REPLICATIONS as f64;
         assert!(
-            convergence_rate >= floor,
+            convergence_rate >= convergence_floor,
             "higher-order convergence rate {convergence_rate:.3} below the \
-             two-standard-error floor {floor:.3} for skew={skew}"
+             two-standard-error floor {convergence_floor:.3} for skew={skew}"
         );
         assert!(converged > 0);
         let denominator = converged as f64;
@@ -253,7 +254,7 @@ fn higher_order_dina_recovery_respects_monte_carlo_tolerance() {
 
         println!(
             "[HO-DINA MC skew={skew}] reps={REPLICATIONS} converged={converged} \
-             ({convergence_rate:.3}; floor={floor:.3}) RMSE(a)={slope_rmse:.3} \
+             ({convergence_rate:.3}; floor={convergence_floor:.3}) RMSE(a)={slope_rmse:.3} \
              RMSE(d)={intercept_rmse:.3} bias(a)={slope_bias:.3} \
              bias(d)={intercept_bias:.3} attr-agree={agreement:.3}"
         );
