@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+
+<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.2.0
+
+- Project version is bumped to 0.2.0 in `pyproject.toml`,
+  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated
+  `Unreleased` notes (bifactor scoreability indices, rubric blueprint
+  compiler, provider-generated item validation, adaptive exploratory factor
+  rotation and criterion selection, the Rust-only literature true-parameter
+  recovery gate, fail-closed Vuong selection summary, GPU-preferred serving
+  and information kernels, and CI queue governance) now form the
+  `[0.2.0] - 2026-08-03` release section.
+- Released authoritative fragments are removed from `docs/changelog.d`; the
+  directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+## [0.2.0] - 2026-08-03
+
+### Changed (serving and information kernels)
+
 - Fixed-bank item/test information and CAT information selection now default
   to a Rust wgpu kernel, retain an explicit Rust f64 CPU path, and accept the
   same `device="auto"|"gpu"|"cpu"` contract as EAP serving. Non-finite f32
@@ -11,27 +35,6 @@
   in Rust and prefer wgpu. Explicit CPU execution retains the f64 reference;
   unavailable or unsupported GPU work falls back to fixed contiguous Rust CPU
   workers instead of performing respondent score aggregation in Python.
-
-## [0.1.2] - 2026-07-31
-
-### Added
-- Full paired-comparison / rating / inter-rater stack on main (PR #374 integrating the #290–#328 seonghobae chain tip): Thurstone Case V, Bradley–Terry MM, LSR/I-LSR, Rank Centrality, Plackett–Luce rankings and top-1, Kendall circular triads / *u*, Elo / Glicko / Glicko-2 / Stephenson / multiplayer Elo / FIDE, prediction metrics, BRATT ties model, Fleiss/Light kappa, ICC, Krippendorff α, Finn, Maxwell RE, Robinson *A*, mean pairwise Pearson/Spearman, Stuart–Maxwell / Bhapkar marginal homogeneity, rater bias, and Cohen kappa sample-size helpers — Rust core + PyO3/Python API + unit/paper tests.
-- DeepWiki badge on the primary README docs surface (PR #373).
-
-### Changed
-- Stack features land without regressing the simple-structure MLS2PLM NLL path, coarse person-shard multithreading, or PRIMARY-only wgpu GPU init with soft f64 CPU fallback (preserved from v0.1.1 / PRs #371–#372).
-
-## [0.1.1] - 2026-07-31
-
-### Fixed
-- Coarse fixed-shard Rust multithreading for the JML `neg_loglik_and_grad` hot path (`thread::scope` person shards, N≥256) with bit-identical reduction vs single-thread (PR #371).
-- wgpu GPU init uses `Backends::PRIMARY` only (no GL/EGL), so sandboxes with broken `/dev/dri` soft-fail to the f64 CPU path instead of SIGSEGV (PR #371).
-- Paper-grounded simple-structure MLS2PLM formula contract reaffirmed (Kang & Jeon 2025; Jeon et al. 2021); no formula drift.
-
-### Changed
-- Unit test forces multi-worker NLL shards and compares all gradient blocks to the single-thread reference.
-
-## Unreleased
 
 ### Changed
 
@@ -2928,7 +2931,6 @@
   화면정의서, key screen, wireframe, and user stories for fixed-item
   calibration review.
 
-<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
 #### Rust-only literature true-parameter recovery gate
@@ -2982,6 +2984,19 @@
 - Formula-oracle, Rust/Python parity, structural, numerical-stability,
   logistic-conversion, and package-export tests plus buyer-facing
   interpretation boundaries.
+
+#### Governed rubric item generation
+
+- Bounded source-document packets with exact-content SHA-256 provenance and redacted audit metadata.
+- Content-addressed generation requests that bind one rubric contract, blueprint, seed, and evidence-mode-valid source packet.
+- A runtime-checkable provider protocol and deterministic offline fixture provider without hosted SDK, credential, or network dependencies.
+- Strict provider-JSON decoding that rejects duplicate keys, non-finite numbers, oversized output, excessive nesting depth, missing fields, and unknown fields.
+- Immutable rubric and blueprint replay protection across ids, 128-bit audit handles, full fingerprints, and governed rubric versions.
+- Exact ordered rubric-score coverage, response-format-specific typed answer keys, option/key consistency, source-id resolution, and verbatim evidence-span validation.
+- Explicit pairwise left/right/tie semantics with null-only tie preferences.
+- Deterministic request, candidate, and execution fingerprints plus provider-failure redaction that omits raw source and generated text.
+- Public generation, candidate, answer-key, attribution, and execution APIs with complete package exports.
+Structural validation remains separate from semantic review, psychometric calibration, DIF, local-dependence, exposure, drift, and governed item-bank acceptance.
 
 #### Adaptive factor rotation and criterion selection
 
@@ -3049,7 +3064,25 @@ No test, security, packaging, coverage, or merge requirement is weakened by thes
 - The API does not report a winning model until Vuong's formal first-stage distinguishability evidence is available from a common compiled score/information contract.
 - Numerical variance checks are not mislabeled as the formal weighted-chi-square distinguishability test.
 - Casewise inputs are bounded and normalized to finite floats before FFI; booleans, opaque values, non-finite values, conversion overflow, malformed labels, invalid parameter counts, and compiled-kernel rejections fail closed without leaking low-level exception text or reproducing statistical arithmetic in Python.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
+## [0.1.2] - 2026-07-31
+
+### Added
+- Full paired-comparison / rating / inter-rater stack on main (PR #374 integrating the #290–#328 seonghobae chain tip): Thurstone Case V, Bradley–Terry MM, LSR/I-LSR, Rank Centrality, Plackett–Luce rankings and top-1, Kendall circular triads / *u*, Elo / Glicko / Glicko-2 / Stephenson / multiplayer Elo / FIDE, prediction metrics, BRATT ties model, Fleiss/Light kappa, ICC, Krippendorff α, Finn, Maxwell RE, Robinson *A*, mean pairwise Pearson/Spearman, Stuart–Maxwell / Bhapkar marginal homogeneity, rater bias, and Cohen kappa sample-size helpers — Rust core + PyO3/Python API + unit/paper tests.
+- DeepWiki badge on the primary README docs surface (PR #373).
+
+### Changed
+- Stack features land without regressing the simple-structure MLS2PLM NLL path, coarse person-shard multithreading, or PRIMARY-only wgpu GPU init with soft f64 CPU fallback (preserved from v0.1.1 / PRs #371–#372).
+
+## [0.1.1] - 2026-07-31
+
+### Fixed
+- Coarse fixed-shard Rust multithreading for the JML `neg_loglik_and_grad` hot path (`thread::scope` person shards, N≥256) with bit-identical reduction vs single-thread (PR #371).
+- wgpu GPU init uses `Backends::PRIMARY` only (no GL/EGL), so sandboxes with broken `/dev/dri` soft-fail to the f64 CPU path instead of SIGSEGV (PR #371).
+- Paper-grounded simple-structure MLS2PLM formula contract reaffirmed (Kang & Jeon 2025; Jeon et al. 2021); no formula drift.
+
+### Changed
+- Unit test forces multi-worker NLL shards and compares all gradient blocks to the single-thread reference.
 
 ## 0.1.0 - 2026-07-02
 

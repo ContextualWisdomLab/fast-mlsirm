@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "render_changelog_fragments.py"
-RUBRIC_FRAGMENT = ROOT / "docs" / "changelog.d" / "394-rubric-blueprint-compiler.md"
+RELEASED_CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 def _module():
@@ -53,15 +53,15 @@ def test_fragment_renderer_is_deterministic_and_preserves_release_sections(tmp_p
     assert "### Fixed\n\n#### Second fix\n\n- Beta." in rendered
 
 
-def test_rubric_fragment_is_authoritative_and_renderable():
+def test_rubric_slice_is_release_noted_in_the_published_changelog():
     """The public rubric slice is release-noted now rather than deferred silently."""
-    module = _module()
-    source = RUBRIC_FRAGMENT.read_text(encoding="utf-8")
-    assert "will be folded" not in source
-    rendered = module.render_unreleased((RUBRIC_FRAGMENT,))
-    assert "#### Rubric blueprint compiler" in rendered
-    assert "SHA-256" in rendered
-    assert "JSON Schema 2020-12" in rendered
+    changelog = RELEASED_CHANGELOG.read_text(encoding="utf-8")
+    release_start = changelog.index("## [0.2.0] - 2026-08-03")
+    release_section = changelog[release_start : changelog.index("## [0.1.2]")]
+    assert "#### Rubric blueprint compiler" in release_section
+    assert "SHA-256" in release_section
+    assert "JSON Schema 2020-12" in release_section
+    assert "will be folded" not in release_section
 
 
 def test_every_repository_fragment_matches_the_authoritative_format():
