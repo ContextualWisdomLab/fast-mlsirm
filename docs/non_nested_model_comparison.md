@@ -11,7 +11,10 @@ default relation is `unknown`.
 
 ## Relation-first procedure routing
 
-Model relation is established before a normal-selection statistic is computed.
+The caller-declared model relation is routed before a normal-selection statistic
+is computed. The API does not infer or validate the mathematical relation;
+omitted metadata defaults to `unknown`. Incorrect relation metadata can route a
+comparison to the wrong statistical procedure.
 
 - `nested` and `boundary_nested` return `requires_likelihood_ratio` and do not
   invoke the non-nested kernel.
@@ -57,8 +60,12 @@ Z_{BIC}
 {\sqrt{N}\,\widehat{\omega}}.
 \]
 
-Positive raw values point toward model A and negative raw values toward model
-B. They are not, by themselves, permission to report a preference. The Python
+Positive `raw_mean_loglik_difference` values point toward model A and negative
+values toward model B. With `bic_correction=False`, `raw_z` has the same
+model-direction interpretation. With `bic_correction=True`, the BIC penalty can
+make the sign of `raw_z` differ from the sign of
+`raw_mean_loglik_difference`. `omega` and `raw_p_two_sided` are not directional.
+None of these fields, by itself, authorizes a model preference. The Python
 module performs no likelihood, variance, correction, standardization, or
 probability calculation; those quantities come from `fast_mlsirm._core`
 through `fast_mlsirm.fitstats.vuong_nonnested`.
