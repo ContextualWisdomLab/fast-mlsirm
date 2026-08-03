@@ -397,9 +397,14 @@ def _accumulate(
         pos = np.where(observed[sel], y[sel], 0.0)  # (Ps, I)
         miss = (~observed[sel]).astype(np.float64)
         dsel = wpost[sel][:, factor_id]  # (Ps, I, Qt, Nx)
-        rbar[s] += np.einsum("pi,piqx->iqx", pos, dsel, optimize=True)
+
+        # Optimization: Flatten last dimensions and use memory contiguous transposed matrix multiplication to avoid 5D einsum.
+        dsel_flat_T = np.ascontiguousarray(dsel.reshape(dsel.shape[0], dsel.shape[1], -1).transpose(1, 0, 2))
+        pos_reshaped = pos.T[:, np.newaxis, :]
+        rbar[s] += np.matmul(pos_reshaped, dsel_flat_T).reshape(dsel.shape[1], dsel.shape[2], dsel.shape[3])
         if miss.any():
-            mbar[s] += np.einsum("pi,piqx->iqx", miss, dsel, optimize=True)
+            miss_reshaped = miss.T[:, np.newaxis, :]
+            mbar[s] += np.matmul(miss_reshaped, dsel_flat_T).reshape(dsel.shape[1], dsel.shape[2], dsel.shape[3])
 
 
 def _item_q(
@@ -767,14 +772,14 @@ def fit_marginal_numpy(
                     if kind_i == "inner":
                         deta_z = x_grid  # (Nx, K)
                     else:
-                        diff = x_grid - zeta_i[None, :]
-                        dist = np.sqrt(eps_distance + np.sum(diff * diff, axis=1))
-                        deta_z = gamma * diff / dist[:, None]  # (Nx, K)
-                    g_zeta = (
-                        np.einsum("stx,xk->k", resid, deta_z, optimize=True)
-                        - pen["lambda_zeta"] * zeta_i
-                    )
-                    i_zeta = np.einsum("stx,xk->k", info, deta_z * deta_z, optimize=True)
+                        diff = x_grid - zeta_i
+                        # Optimized distance computation replacing sum(axis=1) with 2D einsum for memory efficiency
+                        dist = np.sqrt(eps_distance + np.einsum("ij,ij->i", diff, diff))
+                        deta_z = (gamma / dist[:, None]) * diff  # (Nx, K)
+
+                    # Optimization: Replace memory intensive 3D einsum dimension contraction with sum out and efficient 2D BLAS dot-product
+                    g_zeta = resid.sum(axis=(0, 1)) @ deta_z - pen["lambda_zeta"] * zeta_i
+                    i_zeta = info.sum(axis=(0, 1)) @ (deta_z * deta_z)
                 else:
                     g_zeta = np.zeros(latent_dim)
                     i_zeta = np.zeros(latent_dim)
@@ -868,8 +873,11 @@ def fit_marginal_numpy(
             n_all = nbar[:, factor_id] - mbar
             kind_i = _interaction_kind(model)
             if kind_i == "distance":
-                diffz = x_grid[None, :, :] - zeta[:, None, :]
-                distz = np.sqrt(eps_distance + np.sum(diffz * diffz, axis=2))  # (I, Nx)
+                # Optimization: replace O(N*J*D) 3D broadcast with O(N*J) 2D dot product
+                x_sq = np.einsum("ij,ij->i", x_grid, x_grid)
+                z_sq = np.einsum("ij,ij->i", zeta, zeta)
+                dist_sq = x_sq[None, :] + z_sq[:, None] - 2 * (zeta @ x_grid.T)
+                distz = np.sqrt(eps_distance + np.maximum(dist_sq, 0.0))  # (I, Nx)
                 interaction_term = -gamma * distz[None, :, None, :]
             elif kind_i == "inner":
                 interaction_term = (zeta @ x_grid.T)[None, :, None, :]
@@ -1014,8 +1022,11 @@ def fit_marginal_numpy(
         px = wpost.sum(axis=(1, 2)) / n_dims  # (P, Nx) — same for every d
         xi_eap[:] += px @ x_grid
         theta_s = ctx["shift"][s_all][:, :, None] + ctx["scale"][s_all][:, :, None] * t_nodes
-        theta_eap[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s, optimize=True)
-        theta_m2[:] += np.einsum("pdtx,pdt->pd", wpost, theta_s**2, optimize=True)
+
+        # Optimization: sum out X dimension early to avoid large 4D contractions. Then reshape to map to fast row-wise 2D einsums.
+        wpost_sum_x = wpost.sum(axis=3).reshape(-1, len(t_nodes))
+        theta_eap[:] += np.einsum("ij,ij->i", wpost_sum_x, theta_s.reshape(-1, len(t_nodes)), optimize=True).reshape(n_persons, n_dims)
+        theta_m2[:] += np.einsum("ij,ij->i", wpost_sum_x, (theta_s**2).reshape(-1, len(t_nodes)), optimize=True).reshape(n_persons, n_dims)
 
     if kind in {"single", "singlefree"}:
         eap_accumulate(np.zeros(n_persons, dtype=np.int64), np.ones(n_persons))

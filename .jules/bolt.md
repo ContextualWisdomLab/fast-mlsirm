@@ -40,3 +40,10 @@
 ## 2024-08-01 - Avoid allocating N x J arrays in axis reductions
 **Learning:** Operations like `(e * theta[:, factors]).sum(axis=0) * a` allocate a full N x J array just to compute the elementwise product before summing over the rows. Using dense matrix multiplication followed by integer indexing `(e.T @ theta)[np.arange(e.shape[1]), factors] * a` avoids the massive intermediate allocation and leverages highly optimized BLAS operations.
 **Action:** Replace `(A * B[:, factors]).sum(axis=0)` patterns with dense matrix multiplication `(A.T @ B)[np.arange(A.shape[1]), factors]` to improve speed and reduce memory overhead, specially when computing gradients for parameters across dimensions.
+## 2024-05-24 - [Avoid 4D/5D Tensor Contractions with np.einsum]
+**Learning:** `np.einsum` operations on highly-dimensional tensors (e.g., `pdtx,pdt->pd` or `stx,xk->k` with variables ranging in the thousands) can suffer from intense intermediate memory allocation and slow evaluation, even with `optimize=True`.
+**Action:** When computing batched reductions across dense multidimensional distributions in tight loops (like an MMLE EM-step), reshape the tensors into 2D matrices, utilize built-in `.sum()` across the reduction dimensions first, and use highly-optimized contiguous BLAS operations (`np.matmul` or `@`) to compute the final result.
+
+## 2024-05-24 - [Replace memory-intensive 3D broadcasts for Euclidean Distances]
+**Learning:** Broadcasting arrays directly into 3D (e.g., `x_grid[None, :, :] - zeta[:, None, :]`) to compute Euclidean distance requires an $O(N \times J \times K)$ intermediate matrix memory allocation, slowing performance and potentially causing Out Of Memory errors.
+**Action:** Replace 3D broadcasts with the expanded dot-product formulation (`np.einsum` squares plus `- 2 * (zeta @ x_grid.T)`) which computes the exact same distance entirely in $O(N \times J)$ matrix multiplications. Always remember to clip the result (`np.maximum(dist_sq, 0.0)`) before applying square root to avoid floating-point `NaN` errors.
