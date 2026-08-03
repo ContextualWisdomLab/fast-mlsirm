@@ -38,13 +38,12 @@ def _normalized_integer(value: Any, name: str, *, minimum: int, maximum: int) ->
 
 
 def _normalized_float(value: Any, name: str) -> float:
-    """Return one finite non-negative float while rejecting booleans."""
-    if isinstance(value, (bool, np.bool_)):
+    """Return one finite non-negative numeric scalar."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
         raise ValueError(f"{name} must be a finite non-negative number")
-    try:
-        normalized = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be a finite non-negative number") from exc
+    normalized = float(value)
     if not math.isfinite(normalized) or normalized < 0.0:
         raise ValueError(f"{name} must be a finite non-negative number")
     return normalized
