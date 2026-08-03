@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import _load_json_bounded
+from .report_exact_values import exact_value_disclosure
 
 
 def render_diagnostics_report(
@@ -230,7 +231,12 @@ def _metric_section(heading: str, metrics: dict[str, Any]) -> str | None:
 def _table_section(
     heading: str, rows: list[dict[str, Any]], *, chart_value: str | None = None
 ) -> str:
-    """Render a report section with an optional bar chart and a data table."""
+    """Render a report section with an optional bar chart and a data table.
+
+    Every section also carries the shared accessible exact-value disclosure,
+    so the complete untruncated full-precision source rows and their JSON and
+    CSV exports stay available without hover, JavaScript, or pointer input.
+    """
     chart = _bar_chart(rows, chart_value) if chart_value else ""
     heading_id = heading.lower().replace(" ", "-")
     return "\n".join(
@@ -239,6 +245,7 @@ def _table_section(
             f'<h2 id="{heading_id}">{escape(heading)}</h2>',
             chart,
             _table(rows, label=f"{heading} diagnostics table"),
+            exact_value_disclosure(rows, section_label=heading),
             "</section>",
         ]
     )
@@ -805,6 +812,47 @@ tbody:hover tr:not(:hover) {
   border: 1px dashed var(--line);
   border-radius: 8px;
   background: var(--hover-bg);
+}
+
+.exact-values {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 0 12px 12px;
+}
+
+.exact-values > summary,
+.export-block > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 600;
+}
+
+.exact-values > summary:focus-visible,
+.export-block > summary:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.exact-values-table {
+  margin-top: 4px;
+}
+
+.export-block {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.export-block pre {
+  margin: 0;
+  padding: 10px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--hover-bg);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
 }
 
 @media (prefers-reduced-motion: reduce) {
