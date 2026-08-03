@@ -94,9 +94,12 @@ def _render_html(
             '<main id="main-content" tabindex="-1">',
             '<section class="hero" aria-labelledby="hero-heading">',
             '<div class="hero-copy">',
-            "<p>fast-mlsirm diagnostics</p>",
+            '<p aria-hidden="true">fast-mlsirm diagnostics</p>',
             f'<h1 id="hero-heading">{escape(title)}</h1>',
-            f"<span>Source: {escape(source_name)}</span>",
+            '<dl class="hero-meta">',
+            "<dt>Source</dt>",
+            f"<dd>{escape(source_name)}</dd>",
+            "</dl>",
             "</div>",
             "</section>",
             *sections,
@@ -595,10 +598,27 @@ main:focus-visible {
 }
 
 .hero p,
-.hero span {
+.hero-meta {
   margin: 0;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.hero-meta {
+  display: flex;
+  gap: 4px;
+}
+
+.hero-meta dt {
+  font-weight: normal;
+}
+
+.hero-meta dt::after {
+  content: ":";
+}
+
+.hero-meta dd {
+  margin: 0;
 }
 
 .hero h1 {
