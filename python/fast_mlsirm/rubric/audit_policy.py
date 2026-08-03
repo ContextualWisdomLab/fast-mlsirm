@@ -42,6 +42,14 @@ def build_pilot_candidate_record(
         raise TypeError("candidate must be a GeneratedItemCandidate")
     if not isinstance(audit_report, CandidateAuditReport):
         raise TypeError("audit_report must be a CandidateAuditReport")
+
+    candidate_fingerprint = candidate.candidate_fingerprint
+    if audit_report.candidate_fingerprint != candidate_fingerprint:
+        raise PilotAdmissionError(
+            "candidate_report_mismatch",
+            "$.candidate_fingerprint",
+            "audit report does not bind the exact candidate",
+        )
     if (
         audit_report.audit_policy_id != AUDIT_POLICY_ID
         or audit_report.audit_policy_version != AUDIT_POLICY_VERSION
