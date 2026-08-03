@@ -74,8 +74,11 @@ fn logistic_slope_standardization_recovers_direct_loading_indices() {
 }
 
 #[test]
-fn logistic_conversion_rejects_nonfinite_or_nondegenerate_limits() {
+fn logistic_conversion_rejects_malformed_or_nondegenerate_limits() {
     let config = BifactorIndicesConfig::new(2, 2, 0);
+    let error = bifactor_indices_from_logit_slopes(&[0.5, 0.2, 0.6], config).unwrap_err();
+    assert!(error.contains("logit slope matrix length"));
+
     let error = bifactor_indices_from_logit_slopes(&[0.5, f64::NAN, 0.6, 0.2], config)
         .unwrap_err();
     assert!(error.contains("finite"));
