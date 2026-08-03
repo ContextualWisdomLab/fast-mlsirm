@@ -175,6 +175,15 @@ pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f
         }
     }
 
+    // Exact rank deficiency can leave a tiny positive Cholesky residual after
+    // floating-point cancellation. Scale the pivot floor to the matrix diagonal
+    // so singular Bentler fourth-moment matrices fail closed while genuinely
+    // near-singular positive-definite inputs remain supported.
+    let diagonal_scale = (0..n)
+        .map(|i| a[i * n + i].abs())
+        .fold(0.0_f64, f64::max);
+    let pivot_tolerance = 64.0 * f64::EPSILON * diagonal_scale.max(f64::MIN_POSITIVE);
+
     let mut lower = vec![0.0; n * n];
     for i in 0..n {
         for j in 0..=i {
@@ -183,7 +192,7 @@ pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f
                 residual -= lower[i * n + k] * lower[j * n + k];
             }
             if i == j {
-                if !residual.is_finite() || residual <= 0.0 {
+                if !residual.is_finite() || residual <= pivot_tolerance {
                     return Err("criterion matrix is not positive definite".into());
                 }
                 lower[i * n + j] = residual.sqrt();
@@ -308,7 +317,7 @@ pub(crate) fn orthonormalize_columns(a: &mut [f64], rows: usize, cols: usize) ->
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E3779B97F4A7C15);
     let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE6E93);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z ^ (z >> 31)
 }
@@ -446,6 +455,7 @@ mod tests {
             .zip(identity(3))
             .all(|(actual, expected)| (actual - expected).abs() < 1e-10));
 
+        assert!(positive_logdet_inverse(&[1.0, 1.0, 1.0, 1.0], 2).is_err());
         assert!(positive_logdet_inverse(&[1.0, 2.0, 2.0, 1.0], 2).is_err());
         assert!(positive_logdet_inverse(&[1.0, 0.0, 0.5, 1.0], 2).is_err());
         assert!(positive_logdet_inverse(&[f64::NAN, 0.0, 0.0, 1.0], 2).is_err());
