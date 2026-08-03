@@ -45,6 +45,7 @@ def compile_item_blueprints(
             f"MAX_BLUEPRINTS={MAX_BLUEPRINTS}"
         )
 
+    rubric_fingerprint = rubric.fingerprint
     scoring_levels = tuple(level.score for level in rubric.levels)
     compiled: list[ItemBlueprint] = []
     for task_family in rubric.task_families:
@@ -53,7 +54,7 @@ def compile_item_blueprints(
                 for replicate_index in range(resolved_plan.items_per_cell):
                     identity = {
                         "schema_version": rubric.schema_version,
-                        "rubric_fingerprint": rubric.fingerprint,
+                        "rubric_fingerprint": rubric_fingerprint,
                         "plan_seed": resolved_plan.seed,
                         "task_family": task_family,
                         "difficulty_band": difficulty_band.value,
@@ -65,7 +66,7 @@ def compile_item_blueprints(
                         ItemBlueprint(
                             blueprint_id=f"item_blueprint_{digest[:16]}",
                             rubric_id=rubric.rubric_id,
-                            rubric_fingerprint=rubric.fingerprint,
+                            rubric_fingerprint=rubric_fingerprint,
                             task_family=task_family,
                             difficulty_band=difficulty_band,
                             evidence_mode=evidence_mode,
