@@ -68,7 +68,7 @@ def test_rubric_revision_is_distinct_from_serialization_schema_version():
 @pytest.mark.parametrize("version", ["1", "1.2", "v1.2.3", "01.2.3", "1.02.3"])
 def test_rubric_revision_requires_canonical_semantic_version(version):
     """Rubric revisions reject ambiguous or non-canonical version strings."""
-    with pytest.raises(ValueError, match="rubric_version.*semantic version"):
+    with pytest.raises(ValueError, match=r"rubric_version.*semantic version"):
         RubricSpecification(
             rubric_id="faithfulness_rubric",
             construct_id="evidence_grounding",
