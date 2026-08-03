@@ -59,6 +59,8 @@ from .pilot_observations import build_facets_pilot_design as build_facets_pilot_
 from .pilot_observations import (
     build_pilot_observation_record as build_pilot_observation_record,
 )
+from .testlet_pilot import TestletPilotDesign as TestletPilotDesign
+from .testlet_pilot import build_testlet_pilot_design as build_testlet_pilot_design
 from .verified_pilot import PilotCandidateRecord as PilotCandidateRecord
 
 # Preserve the established star-import contract. Audit and pilot types remain
