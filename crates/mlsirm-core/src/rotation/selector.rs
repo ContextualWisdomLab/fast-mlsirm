@@ -167,7 +167,15 @@ pub fn select_rotation_criterion(
             factors,
         )?;
         let target_rmse = theory_target
-            .map(|target| aligned_target_rmse(&solution.pattern_matrix, target, rows, factors))
+            .map(|target| {
+                aligned_target_rmse(
+                    &solution.pattern_matrix,
+                    target,
+                    rows,
+                    factors,
+                    criterion.fixes_general_factor(),
+                )
+            })
             .transpose()?
             .unwrap_or(f64::NAN);
         evidence.push(RotationCandidateEvidence {
@@ -299,15 +307,22 @@ fn bootstrap_stability(
     Ok((mean_total / count, min_total / count))
 }
 
+/// Return sign/permutation-aligned RMSE over every specified target cell.
+///
+/// The Hungarian objective is the same total squared error used by the final
+/// cellwise RMSE. Dividing each pair cost by its number of observed cells would
+/// select a different permutation when target columns have unequal `NaN`
+/// coverage. Bifactor criteria additionally pin labelled general column zero to
+/// pattern column zero while retaining sign indeterminacy.
 fn aligned_target_rmse(
     pattern: &[f64],
     target: &[f64],
     rows: usize,
     factors: usize,
+    fixes_general: bool,
 ) -> Result<f64, String> {
     let mut costs = vec![0.0; factors * factors];
     let mut signs = vec![1.0; factors * factors];
-    let mut counts = vec![0_usize; factors * factors];
     for target_column in 0..factors {
         for pattern_column in 0..factors {
             let mut positive = 0.0;
@@ -330,15 +345,34 @@ fn aligned_target_rmse(
             }
             let index = target_column * factors + pattern_column;
             if negative < positive {
-                costs[index] = negative / count as f64;
+                costs[index] = negative;
                 signs[index] = -1.0;
             } else {
-                costs[index] = positive / count as f64;
+                costs[index] = positive;
             }
-            counts[index] = count;
         }
     }
-    let assignment = minimum_cost_assignment(&costs, factors)?;
+
+    let mut assignment = vec![usize::MAX; factors];
+    let first = usize::from(fixes_general);
+    if fixes_general {
+        assignment[0] = 0;
+    }
+    let active = factors - first;
+    if active > 0 {
+        let mut active_costs = vec![0.0; active * active];
+        for target_offset in 0..active {
+            for pattern_offset in 0..active {
+                active_costs[target_offset * active + pattern_offset] =
+                    costs[(first + target_offset) * factors + first + pattern_offset];
+            }
+        }
+        let active_assignment = minimum_cost_assignment(&active_costs, active)?;
+        for target_offset in 0..active {
+            assignment[first + target_offset] = first + active_assignment[target_offset];
+        }
+    }
+
     let mut sum = 0.0;
     let mut count = 0_usize;
     for target_column in 0..factors {
@@ -749,8 +783,39 @@ mod tests {
     fn partial_target_assignment_handles_nan_and_zero_only_columns() {
         let pattern = vec![0.8, 0.1, 0.7, 0.2, 0.1, 0.8, 0.2, 0.7];
         let target = vec![0.0, 0.8, 0.0, 0.7, f64::NAN, f64::NAN, 0.7, 0.0];
-        let rmse = aligned_target_rmse(&pattern, &target, 4, 2).unwrap();
+        let rmse = aligned_target_rmse(&pattern, &target, 4, 2, false).unwrap();
         assert!(rmse < 0.2);
+    }
+
+    #[test]
+    fn target_alignment_preserves_bifactor_general_column() {
+        let pattern = vec![
+            0.10, 0.80, 0.00, 0.10, 0.70, 0.00, 0.10, 0.00, 0.80, 0.10, 0.00, 0.70,
+        ];
+        let target = vec![
+            0.80, 0.10, 0.00, 0.70, 0.10, 0.00, 0.00, 0.10, 0.80, 0.00, 0.10, 0.70,
+        ];
+        let unrestricted = aligned_target_rmse(&pattern, &target, 4, 3, false).unwrap();
+        let labelled = aligned_target_rmse(&pattern, &target, 4, 3, true).unwrap();
+        assert!(unrestricted < 1e-12);
+        assert!(labelled > 0.30);
+    }
+
+    #[test]
+    fn partial_target_assignment_minimizes_final_cellwise_rmse() {
+        let pattern = vec![1.00, 0.00, 1.00, 0.00, 0.30, 0.30, -0.30, -0.30];
+        let target = vec![
+            1.00,
+            1.00,
+            1.00,
+            f64::NAN,
+            0.30,
+            f64::NAN,
+            -0.30,
+            f64::NAN,
+        ];
+        let rmse = aligned_target_rmse(&pattern, &target, 4, 2, false).unwrap();
+        assert!((rmse - (1.0_f64 / 5.0).sqrt()).abs() < 1e-12);
     }
 
     #[test]
