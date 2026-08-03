@@ -83,6 +83,14 @@ class ModelComparisonResult:
     warning: str
 
 
+def _is_boolean_like(value: Any) -> bool:
+    """Return whether ``value`` is a Python or NumPy boolean scalar."""
+    return isinstance(value, bool) or (
+        value.__class__.__module__.startswith("numpy")
+        and value.__class__.__name__ == "bool_"
+    )
+
+
 def _model_label(value: str, name: str) -> str:
     """Return a bounded printable model label suitable for audit output."""
     if not isinstance(value, str):
@@ -112,11 +120,7 @@ def _relation(value: ModelRelation | str) -> ModelRelation:
 
 def _parameter_count(value: Any, name: str) -> int:
     """Return a non-negative integer parameter count while rejecting booleans."""
-    is_numpy_boolean = (
-        value.__class__.__module__.startswith("numpy")
-        and value.__class__.__name__ == "bool_"
-    )
-    if isinstance(value, bool) or is_numpy_boolean:
+    if _is_boolean_like(value):
         raise ValueError(f"{name} must be a non-negative integer")
     try:
         normalized = operator.index(value)
@@ -125,6 +129,32 @@ def _parameter_count(value: Any, name: str) -> int:
     if normalized < 0:
         raise ValueError(f"{name} must be a non-negative integer")
     return int(normalized)
+
+
+def _alpha_value(value: Any) -> float:
+    """Return a finite probability threshold strictly between zero and one."""
+    if _is_boolean_like(value):
+        raise ValueError("alpha must be finite and in (0, 1)")
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("alpha must be finite and in (0, 1)") from exc
+    if not math.isfinite(normalized) or not 0.0 < normalized < 1.0:
+        raise ValueError("alpha must be finite and in (0, 1)")
+    return normalized
+
+
+def _omega_tolerance(value: Any) -> float:
+    """Return a finite non-negative numerical variance tolerance."""
+    if _is_boolean_like(value):
+        raise ValueError("omega_tol must be finite and non-negative")
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("omega_tol must be finite and non-negative") from exc
+    if not math.isfinite(normalized) or normalized < 0.0:
+        raise ValueError("omega_tol must be finite and non-negative")
+    return normalized
 
 
 def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
@@ -144,11 +174,7 @@ def _casewise_values(value: Any, name: str) -> tuple[float, ...]:
             raise ValueError(
                 f"{name} must contain at most {MAX_CASEWISE_VALUES} casewise values"
             )
-        is_numpy_boolean = (
-            item.__class__.__module__.startswith("numpy")
-            and item.__class__.__name__ == "bool_"
-        )
-        if isinstance(item, bool) or is_numpy_boolean:
+        if _is_boolean_like(item):
             raise ValueError(f"{name}[{index}] must be a finite number")
         try:
             numeric = float(item)
@@ -295,10 +321,8 @@ def compare_nonnested_models(
     count_b = _parameter_count(k_b, "k_b")
     if not isinstance(bic_correction, bool):
         raise ValueError("bic_correction must be boolean")
-    if not math.isfinite(alpha) or not 0.0 < alpha < 1.0:
-        raise ValueError("alpha must be finite and in (0, 1)")
-    if not math.isfinite(omega_tol) or omega_tol < 0.0:
-        raise ValueError("omega_tol must be finite and non-negative")
+    _alpha_value(alpha)
+    omega_tolerance = _omega_tolerance(omega_tol)
 
     values_a = _casewise_values(loglik_a, "loglik_a")
     values_b = _casewise_values(loglik_b, "loglik_b")
@@ -334,7 +358,7 @@ def compare_nonnested_models(
             omega = float(statistic["omega"])
             raw_z = float(statistic["z"])
             raw_p = float(statistic["p_two_sided"])
-            variance_positive = math.isfinite(omega) and omega > omega_tol
+            variance_positive = math.isfinite(omega) and omega > omega_tolerance
             if (
                 not math.isfinite(raw_mean)
                 or not variance_positive
