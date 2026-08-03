@@ -41,6 +41,9 @@ _ALLOWED_MEDIA_TYPES = frozenset(
     }
 )
 _DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_CONTRACT_IDENTITY_FIELDS = frozenset(
+    {"contract_id", "contract_handle", "contract_fingerprint"}
+)
 
 
 def _source_content(value: Any) -> str:
@@ -99,6 +102,45 @@ def _contract_string(contract: dict[str, Any], field: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"contract_json must contain a non-empty {field}")
     return value
+
+
+def _contract_body(contract: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical contract body whose digest defines its identity."""
+    return {
+        field_name: field_value
+        for field_name, field_value in contract.items()
+        if field_name not in _CONTRACT_IDENTITY_FIELDS
+    }
+
+
+def _validate_contract_identity(
+    contract: dict[str, Any],
+    expected_contract_id: str,
+) -> None:
+    """Recompute every contract identity field from the canonical body."""
+    contract_id = _identifier(
+        _contract_string(contract, "contract_id"),
+        "contract_id",
+    )
+    contract_handle = _identifier(
+        _contract_string(contract, "contract_handle"),
+        "contract_handle",
+    )
+    contract_fingerprint = _digest(
+        _contract_string(contract, "contract_fingerprint"),
+        "contract_fingerprint",
+    )
+    expected_fingerprint = _sha256_hex(_contract_body(contract))
+    if contract_fingerprint != expected_fingerprint:
+        raise ValueError(
+            "contract_fingerprint must match the canonical generation contract body"
+        )
+    derived_id = f"generation_contract_{expected_fingerprint[:16]}"
+    if contract_id != expected_contract_id or contract_id != derived_id:
+        raise ValueError("contract_id must match the generation contract fingerprint")
+    derived_handle = f"generation_contract_{expected_fingerprint[:32]}"
+    if contract_handle != derived_handle:
+        raise ValueError("contract_handle must match the generation contract fingerprint")
 
 
 def _validate_source_cardinality(
@@ -246,8 +288,6 @@ class GenerationRequest:
         contract = _contract_object(self.contract_json)
         if contract.get("contract_id") != self.contract_id:
             raise ValueError("contract_json contract_id must match contract_id")
-        _identifier(_contract_string(contract, "contract_handle"), "contract_handle")
-        _digest(_contract_string(contract, "contract_fingerprint"), "contract_fingerprint")
         if not isinstance(self.blueprint, ItemBlueprint):
             raise ValueError("blueprint must be an ItemBlueprint")
         blueprint_payload = contract.get("blueprint")
@@ -265,6 +305,7 @@ class GenerationRequest:
                 raise ValueError(
                     f"contract_json blueprint {field_name} must match blueprint"
                 )
+        _validate_contract_identity(contract, self.contract_id)
         sources = _normalize_sources(self.sources)
         _validate_source_cardinality(self.blueprint.evidence_mode, len(sources))
         object.__setattr__(self, "sources", sources)
@@ -444,10 +485,12 @@ class GenerationExecution:
     model_id: str
     candidate: GeneratedItemCandidate
     raw_response_digest: str
+    request_fingerprint: str = ""
+    contract_fingerprint: str = ""
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        """Validate execution identifiers, digest, candidate type, and schema."""
+        """Validate exact request, contract, candidate, digest, and schema provenance."""
         from .candidates import GeneratedItemCandidate
 
         object.__setattr__(
@@ -473,10 +516,29 @@ class GenerationExecution:
         object.__setattr__(self, "model_id", _identifier(self.model_id, "model_id"))
         if not isinstance(self.candidate, GeneratedItemCandidate):
             raise ValueError("candidate must be a GeneratedItemCandidate")
+        self.candidate._verify_validation_proof()
         if self.candidate.request_id != self.request_id:
             raise ValueError("candidate request_id must match execution request_id")
         if self.candidate.contract_id != self.contract_id:
             raise ValueError("candidate contract_id must match execution contract_id")
+        request_fingerprint = _digest(
+            self.request_fingerprint,
+            "request_fingerprint",
+        )
+        contract_fingerprint = _digest(
+            self.contract_fingerprint,
+            "contract_fingerprint",
+        )
+        if request_fingerprint != self.candidate.request_fingerprint:
+            raise ValueError(
+                "candidate request_fingerprint must match execution request_fingerprint"
+            )
+        if contract_fingerprint != self.candidate.contract_fingerprint:
+            raise ValueError(
+                "candidate contract_fingerprint must match execution contract_fingerprint"
+            )
+        object.__setattr__(self, "request_fingerprint", request_fingerprint)
+        object.__setattr__(self, "contract_fingerprint", contract_fingerprint)
         object.__setattr__(
             self,
             "raw_response_digest",
@@ -498,9 +560,9 @@ class GenerationExecution:
             {
                 "schema_version": self.schema_version,
                 "request_id": self.request_id,
-                "request_fingerprint": self.candidate.request_fingerprint,
+                "request_fingerprint": self.request_fingerprint,
                 "contract_id": self.contract_id,
-                "contract_fingerprint": self.candidate.contract_fingerprint,
+                "contract_fingerprint": self.contract_fingerprint,
                 "provider_id": self.provider_id,
                 "model_id": self.model_id,
                 "candidate_fingerprint": self.candidate.candidate_fingerprint,
@@ -515,15 +577,16 @@ class GenerationExecution:
 
     def to_dict(self) -> dict[str, Any]:
         """Return execution provenance without raw source or provider response text."""
+        self.candidate._verify_validation_proof()
         return {
             "schema_version": self.schema_version,
             "execution_id": self.execution_id,
             "execution_handle": self.execution_handle,
             "execution_fingerprint": self.execution_fingerprint,
             "request_id": self.request_id,
-            "request_fingerprint": self.candidate.request_fingerprint,
+            "request_fingerprint": self.request_fingerprint,
             "contract_id": self.contract_id,
-            "contract_fingerprint": self.candidate.contract_fingerprint,
+            "contract_fingerprint": self.contract_fingerprint,
             "provider_id": self.provider_id,
             "model_id": self.model_id,
             "candidate": self.candidate.to_dict(),
@@ -579,5 +642,7 @@ def execute_generation(
         model_id=model_id,
         candidate=candidate,
         raw_response_digest=raw_response_digest,
+        request_fingerprint=request.request_fingerprint,
+        contract_fingerprint=request.contract_fingerprint,
         schema_version=SCHEMA_VERSION,
     )
