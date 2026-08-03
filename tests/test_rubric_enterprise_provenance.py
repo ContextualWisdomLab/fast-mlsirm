@@ -27,7 +27,9 @@ def _levels() -> tuple[RubricLevel, ...]:
     )
 
 
-def _rubric(response_format: ResponseFormat = ResponseFormat.ORDINAL_RATING) -> RubricSpecification:
+def _rubric(
+    response_format: ResponseFormat = ResponseFormat.ORDINAL_RATING,
+) -> RubricSpecification:
     """Return a versioned enterprise rubric fixture."""
     return RubricSpecification(
         rubric_id="faithfulness_rubric",
@@ -83,8 +85,12 @@ def test_blueprint_exposes_full_sha256_fingerprint_in_addition_to_short_id():
     """A display id never replaces the full audit identity."""
     blueprint = _blueprint()
     assert re.fullmatch(r"[0-9a-f]{64}", blueprint.blueprint_fingerprint)
-    assert blueprint.to_dict()["blueprint_fingerprint"] == blueprint.blueprint_fingerprint
-    assert blueprint.blueprint_id == f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+    assert blueprint.to_dict()["blueprint_fingerprint"] == (
+        blueprint.blueprint_fingerprint
+    )
+    assert blueprint.blueprint_id == (
+        f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+    )
 
 
 def test_generation_contract_exposes_full_sha256_fingerprint():
@@ -110,51 +116,55 @@ def test_structured_output_schema_declares_json_schema_draft_2020_12():
 
 
 @pytest.mark.parametrize(
-    ("response_format", "expected"),
+    ("response_format", "key_field", "expected"),
     [
         (
             ResponseFormat.CONSTRUCTED_RESPONSE,
-            {
-                "oneOf": [
-                    {"type": "null"},
-                    {"type": "string", "minLength": 1},
-                ]
-            },
+            "reference_response",
+            {"type": "string", "minLength": 1, "maxLength": 8_192},
         ),
         (
             ResponseFormat.SELECTED_RESPONSE,
+            "option_ids",
             {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": 32,
                 "uniqueItems": True,
-                "items": {"type": "string", "minLength": 1},
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                },
             },
         ),
-        (ResponseFormat.BINARY_JUDGMENT, {"type": "boolean"}),
+        (ResponseFormat.BINARY_JUDGMENT, "value", {"type": "boolean"}),
         (
             ResponseFormat.ORDINAL_RATING,
+            "score",
             {"type": "integer", "enum": [0, 1, 2]},
         ),
         (
             ResponseFormat.PAIRWISE_COMPARISON,
-            {
-                "type": "string",
-                "enum": [
-                    "left_candidate",
-                    "right_candidate",
-                    "tie",
-                    "insufficient_evidence",
-                ],
-            },
+            "preferred_option_id",
+            {"type": "string", "minLength": 1, "maxLength": 128},
         ),
     ],
 )
 def test_answer_key_schema_is_closed_for_each_response_format(
     response_format,
+    key_field,
     expected,
 ):
-    """The strict output claim contains no unconstrained answer-key escape hatch."""
+    """Each typed key remains closed, bounded, and independently explainable."""
     rubric = _rubric(response_format)
     blueprint = _blueprint(response_format)
-    contract = build_generation_contract(rubric, blueprint)
-    assert contract["output_schema"]["properties"]["answer_key"] == expected
+    answer_key = build_generation_contract(rubric, blueprint)["output_schema"][
+        "properties"
+    ]["answer_key"]
+    assert answer_key["type"] == "object"
+    assert answer_key["additionalProperties"] is False
+    assert key_field in answer_key["required"]
+    assert "rationale" in answer_key["required"]
+    assert answer_key["properties"][key_field] == expected
+    assert answer_key["properties"]["rationale"]["maxLength"] == 8_192
