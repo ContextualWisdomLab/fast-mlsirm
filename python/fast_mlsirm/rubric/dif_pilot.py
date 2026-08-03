@@ -224,28 +224,23 @@ def build_dif_pilot_design(
     if reference == focal:
         raise ValueError("reference_group_id and focal_group_id must differ")
 
-    normalized_mapping: dict[str, str] = {}
-    for raw_respondent_id, raw_group_id in respondent_groups.items():
-        respondent_id = _identifier(raw_respondent_id, "respondent_groups key")
-        group_id = _identifier(
+    normalized_mapping = {
+        _identifier(raw_respondent_id, "respondent_groups key"): _identifier(
             raw_group_id,
-            f"respondent_groups[{respondent_id}]",
+            f"respondent_groups[{raw_respondent_id}]",
         )
-        if respondent_id in normalized_mapping:
-            raise ValueError("respondent_groups contains duplicate respondent identities")
-        normalized_mapping[respondent_id] = group_id
+        for raw_respondent_id, raw_group_id in respondent_groups.items()
+    }
 
     expected = set(binary_design.respondent_ids)
     supplied = set(normalized_mapping)
-    missing = sorted(expected - supplied)
-    if missing:
+    if expected - supplied:
         raise _error(
             "dif_missing_group_assignment",
             "$.respondent_groups",
             "every respondent must have one explicit reference or focal assignment",
         )
-    unknown = sorted(supplied - expected)
-    if unknown:
+    if supplied - expected:
         raise _error(
             "dif_unknown_respondent_assignment",
             "$.respondent_groups",
