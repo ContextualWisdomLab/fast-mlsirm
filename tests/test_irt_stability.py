@@ -2,7 +2,7 @@ import numpy as np
 
 from fast_mlsirm import FitConfig, MLS2PLMConfig, MLSIRMParams, PenaltyConfig, recovery_report, score_wle, simulate
 from fast_mlsirm.diagnostics import fit_diagnostics, predict_proba
-from fast_mlsirm.fit import fit
+from fast_mlsirm.fit import _pack, _unpack, fit
 from fast_mlsirm.inference import observed_information, second_order_test, standard_errors_from_vcov, vcov_from_hessian
 from fast_mlsirm.linking import link_fixed_item_parameters
 from fast_mlsirm.objective import neg_loglik_and_grad, prepare_response
@@ -355,6 +355,66 @@ def test_observed_information_se_chain_is_preserved_at_a_converged_mle():
     assert np.all(np.isfinite(standard_errors))
     assert np.all(standard_errors > 0.0)
     assert np.allclose(np.diag(vcov), standard_errors**2)
+
+
+def test_observed_information_equals_analytic_score_jacobian():
+    """The observed information must match the Jacobian of the analytic score.
+
+    ``test_observed_information_se_chain_is_preserved_at_a_converged_mle`` above
+    checks that the SE chain is *internally* consistent (``vcov`` inverts ``H``;
+    ``se == sqrt(diag(vcov))``), but that chain would still pass if the
+    finite-difference Hessian itself carried a sign or scaling error -- a
+    wrong-but-invertible ``H`` inverts just as cleanly. This pins the Hessian
+    against an *independent* route: the observed information is the Hessian of
+    the penalized negative log-likelihood, so it must equal the Jacobian of the
+    analytic gradient (score) that ``neg_loglik_and_grad`` returns and that the
+    estimator itself optimizes (Efron & Hinkley, 1978). A regression in either
+    the value-based curvature or the analytic score would break the identity.
+    Both routes use the NumPy reference backend so the check is independent of
+    the compiled Rust core.
+    """
+    params = MLSIRMParams(
+        theta=np.array([[-0.6], [0.2], [0.8]]),
+        alpha=np.array([0.1, -0.2]),
+        b=np.array([0.0, 0.4]),
+        xi=np.zeros((3, 1)),
+        zeta=np.zeros((2, 1)),
+        tau=-30.0,
+    )
+    responses = np.array([[0.0, 0.0], [1.0, 1.0], [1.0, 0.0]])
+    factor_id = np.zeros(2, dtype=int)
+    config = FitConfig(
+        model="MIRT",
+        max_iter=1,
+        penalty=PenaltyConfig(lambda_theta=1.0, lambda_b=1.0, lambda_alpha=1.0),
+    )
+    model = config.normalized_model()
+
+    hessian = observed_information(
+        responses, factor_id, params, config=config, backend="numpy", device=None, step=1e-4
+    )
+
+    reference = _pack(params, model)
+    n = reference.size
+
+    def _packed_score(point: np.ndarray) -> np.ndarray:
+        """Analytic gradient (score) of the penalized objective at ``point``."""
+        _, gradient_params, _ = neg_loglik_and_grad(
+            responses, factor_id, _unpack(point, params, model), config=config, backend="numpy"
+        )
+        return _pack(gradient_params, model)
+
+    step = 1e-5
+    score_jacobian = np.zeros((n, n), dtype=np.float64)
+    for column in range(n):
+        bump = np.zeros(n, dtype=np.float64)
+        bump[column] = step
+        score_jacobian[:, column] = (
+            _packed_score(reference + bump) - _packed_score(reference - bump)
+        ) / (2.0 * step)
+    score_jacobian = (score_jacobian + score_jacobian.T) / 2.0
+
+    assert np.allclose(hessian, score_jacobian, atol=1e-5, rtol=1e-4)
 
 
 def test_observed_information_defaults_rust_hessian_to_cpu_device(monkeypatch):
