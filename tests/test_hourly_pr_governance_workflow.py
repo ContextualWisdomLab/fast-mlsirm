@@ -40,3 +40,11 @@ def test_hourly_governance_workflow_builds_and_publishes_evidence():
     assert "pr_queue_governance_manifest.json" in text
     assert "pr_queue_governance_report.html" in text
     assert "actions/upload-artifact" in text
+
+
+def test_hourly_governance_workflow_fails_closed_when_no_tests_are_discovered():
+    """A renamed or removed test suite cannot make self-verification silently pass."""
+    text = _workflow_text()
+    assert "test_names = [" in text
+    assert "if not test_names:" in text
+    assert "no hourly governance contract tests were discovered" in text
