@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python:
     runs-on: ubuntu-latest
@@ -41,21 +45,40 @@ jobs:
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
   rust-ignored:
-    # Sweep every pre-existing ignored Rust study. The new CPU recovery and GPU
-    # recovery tests are excluded only here because dedicated jobs execute them
-    # explicitly; together the jobs leave no ignored path unexecuted.
+    # The repository contains more than one hundred literature-grade ignored
+    # studies, including 500-replication recovery experiments. A single serial
+    # job exceeds hosted-runner lifetime. Inventory once per shard and execute
+    # an exhaustive, non-overlapping round-robin partition by exact test name.
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run ignored Rust workspace shard ${{ matrix.shard }}
+        run: >-
+          python scripts/run_ignored_rust_shard.py
+          --shard ${{ matrix.shard }}
+          --shards 12
+          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
+          --skip gpu_recovery_matches_cpu_on_paper_design
+
+  rust-pyo3-ignored:
+    # The PyO3 crate is intentionally excluded from the Cargo workspace, so its
+    # ignored inventory must be executed independently.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Run remaining ignored Rust workspace studies
-        run: >-
-          cargo test --release --workspace -- --ignored --test-threads=2 --nocapture
-          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
-          --skip gpu_recovery_matches_cpu_on_paper_design
       - name: Run all ignored PyO3-crate studies
-        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=2 --nocapture
+        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
 
   rust-recovery:
     # Run the paper-design recovery sentinel independently from the large
