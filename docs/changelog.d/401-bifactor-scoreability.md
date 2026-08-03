@@ -1,4 +1,6 @@
-### Added
+# Rust bifactor scoreability indices
+
+## Added
 
 - Rust-native continuous-indicator bifactor scoreability diagnostics: ECV-SS,
   ECV-SG, ECV-GS, item ECV, strict-pattern PUC, omega total, omega
