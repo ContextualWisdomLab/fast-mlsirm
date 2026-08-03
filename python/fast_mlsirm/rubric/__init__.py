@@ -23,6 +23,10 @@ from .audit_policy import AUDIT_POLICY_ID as AUDIT_POLICY_ID
 from .audit_policy import AUDIT_POLICY_VERSION as AUDIT_POLICY_VERSION
 from .audit_policy import audit_generated_item_candidate as audit_generated_item_candidate
 from .audit_policy import build_pilot_candidate_record as build_pilot_candidate_record
+from .bifactor_pilot import BifactorPilotDesign as BifactorPilotDesign
+from .bifactor_pilot import (
+    build_bifactor_pilot_design as build_bifactor_pilot_design,
+)
 from .compiler import MAX_BLUEPRINTS as MAX_BLUEPRINTS
 from .compiler import compile_item_blueprints as compile_item_blueprints
 from .contracts import build_generation_contract as build_generation_contract
