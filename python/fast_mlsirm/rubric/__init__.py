@@ -19,7 +19,6 @@ from .audit import CandidateAuditFinding as CandidateAuditFinding
 from .audit import CandidateAuditReport as CandidateAuditReport
 from .audit import CandidateLifecycleState as CandidateLifecycleState
 from .audit import PilotAdmissionError as PilotAdmissionError
-from .audit import PilotCandidateRecord as PilotCandidateRecord
 from .audit_policy import AUDIT_POLICY_ID as AUDIT_POLICY_ID
 from .audit_policy import AUDIT_POLICY_VERSION as AUDIT_POLICY_VERSION
 from .audit_policy import audit_generated_item_candidate as audit_generated_item_candidate
@@ -44,6 +43,7 @@ from .models import ItemBlueprint as ItemBlueprint
 from .models import ResponseFormat as ResponseFormat
 from .models import RubricLevel as RubricLevel
 from .models import RubricSpecification as RubricSpecification
+from .verified_pilot import PilotCandidateRecord as PilotCandidateRecord
 
 # Preserve the established star-import contract. Audit and pilot types remain
 # explicit subpackage attributes and are imported by their documented names,
