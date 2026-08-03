@@ -124,9 +124,7 @@ def fit_mmle_2pl(
         a_new = a.copy()
         b_new = b.copy()
 
-        # Optimized M-step computation: vectorized Newton steps
-        # We process all active items simultaneously to skip Python loops over n_items.
-        # This gives ~50-60% overall speedup during MMLE iterations.
+        # Process active items together to remove the per-item Python control-flow loop.
         active = np.ones(n_items, dtype=bool)
 
         for _ in range(25):
