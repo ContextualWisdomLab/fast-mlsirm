@@ -788,11 +788,15 @@ tr:last-child td {
 }
 
 tbody tr {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s ease-in-out, opacity 0.2s ease;
 }
 
 tbody tr:hover {
   background: var(--hover-bg);
+}
+
+tbody:hover tr:not(:hover) {
+  opacity: 0.5;
 }
 
 .empty-state {

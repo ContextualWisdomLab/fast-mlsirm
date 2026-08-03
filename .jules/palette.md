@@ -35,3 +35,7 @@
 ## 2024-08-01 - Focus Visible Styles for Skip-to-Content Targets
 **Learning:** While `outline: none;` on a `<main>` container properly removes the visual artifact when users click inside the content area, it completely breaks keyboard accessibility for users navigating via the "Skip to main content" link because no focus indicator is shown when the target is focused.
 **Action:** When overriding the focus outline on semantic containers like `<main>`, always provide a `.element:focus-visible` rule (e.g., `outline: 3px solid var(--primary-color)`) after the `:focus { outline: none; }` rule to ensure keyboard navigation remains visibly accessible without disrupting mouse interactions.
+
+## 2025-02-12 - CSS Hover-Focus Isolation for Dense Visualizations
+**Learning:** Dense bar charts or lists can be difficult to visually parse. Highlighting the currently hovered row by dimming the surrounding rows greatly improves visual focus and UX.
+**Action:** Use a CSS pattern like `.container:hover .item:not(:hover) { opacity: 0.5; }` (along with `transition` properties on the item) to isolate visual focus during interaction with dense data visualizations.
