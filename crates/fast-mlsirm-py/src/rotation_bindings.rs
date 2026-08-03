@@ -3,9 +3,12 @@
 use mlsirm_core::rotation::{
     rotate_factor_loadings as core_rotate_factor_loadings,
     rotation_criterion_from_name as core_rotation_criterion_from_name,
-    select_rotation_criterion as core_select_rotation_criterion,
     RotationConfig as CoreRotationConfig, RotationMode as CoreRotationMode,
-    RotationSelectionPolicy as CoreRotationSelectionPolicy, RotationSolution as CoreRotationSolution,
+    RotationSolution as CoreRotationSolution,
+};
+use mlsirm_core::rotation_selection::{
+    select_rotation_criterion as core_select_rotation_criterion,
+    RotationSelectionPolicy as CoreRotationSelectionPolicy,
 };
 use numpy::{PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
@@ -16,9 +19,9 @@ use pyo3::wrap_pyfunction;
 fn optional_matrix_values(
     value: Option<PyReadonlyArray2<'_, f64>>,
 ) -> PyResult<Option<Vec<f64>>> {
-    value
+    Ok(value
         .map(|array| array.as_slice().map(|slice| slice.to_vec()))
-        .transpose()
+        .transpose()?)
 }
 
 fn rotation_solution_dict(
