@@ -2928,6 +2928,71 @@
   화면정의서, key screen, wireframe, and user stories for fixed-item
   calibration review.
 
+<!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Added
+
+#### Fail-closed Vuong selection summary
+
+- A bounded public `compare_nonnested_models` orchestration API that preserves Rust-computed casewise likelihood-ratio mean, variance scale, corrected selection statistic, and two-sided probability together with explicit model-relation metadata when the normal-selection kernel is applicable.
+- Auditable `ModelRelation`, `ComparisonStatus`, and immutable `ModelComparisonResult` contracts.
+- Relation-appropriate routing for nested, boundary-nested, overlapping, strictly non-nested, and unknown candidate pairs.
+
+#### Rubric blueprint compiler
+
+- Versioned rubric and rubric-level schemas with explicit construct, observable evidence, task-family, response-format, locale, and prohibited-pattern contracts.
+- Deterministic bounded compilation across task family, difficulty band, evidence mode, and replicate cells.
+- Full SHA-256 rubric, blueprint, and generation-contract fingerprints plus authoritative 128-bit public blueprint and contract handles; 64-bit convenience display identifiers remain explicitly non-authoritative, and 64-bit digest slices also seed deterministic generation.
+- A prompt-injection boundary and strict generated-item JSON Schema 2020-12 contract without adding a hosted-model SDK or network dependency.
+- Immutable rubric and blueprint provenance constants in generated-item schemas, preventing wrong-blueprint replay from passing structural validation.
+- Response-format-specific, closed, bounded answer-key contracts and ordered score-level schemas that require every rubric score exactly once.
+- Explicit text and collection bounds for model-generated content and provenance fields.
+- A deterministic standard-library changelog-fragment renderer; files in `docs/changelog.d` are authoritative `Unreleased` release notes and are validated as part of the repository test suite.
+- Evidence-Centered Design documentation and a production roadmap from provider adapters through Rust-backed calibration and governed item-bank lifecycle.
+
+#### Rust bifactor scoreability indices
+
+- Rust-native continuous-indicator bifactor scoreability diagnostics: ECV-SS,
+  ECV-SG, ECV-GS, item ECV, strict-pattern PUC, omega total, omega
+  hierarchical, and construct replicability H.
+- An explicitly named logistic latent-response conversion for fitted orthogonal
+  bifactor slopes. Its omega values are documented as continuous
+  latent-response coefficients, not categorical observed-score reliability.
+- A modular PyO3 `_bifactor_core` surface and immutable typed Python API:
+  `bifactor_scoreability`, `bifactor_scoreability_from_logit_slopes`, and
+  `BifactorScoreabilityResult`. Python validates shapes and marshals results;
+  all scoreability arithmetic remains in Rust.
+- Fail-closed structural validation requiring every item to load on the
+  declared general factor, uniquenesses in `[0, 1]`, and the standardized
+  identity `sum(lambda^2) + uniqueness = 1` within `1e-8`.
+- Formula-oracle, Rust/Python parity, structural, numerical-stability,
+  logistic-conversion, and package-export tests plus buyer-facing
+  interpretation boundaries.
+
+#### Hourly pull-request governance
+
+- A read-only hourly GitHub Actions loop that runs the existing pull-request queue governance evidence builder, publishes its JSON and accessible HTML audit artifacts, and retains native branch-protection and auto-merge gates instead of bypassing review or required checks.
+
+### Changed
+
+#### CI queue and review-governance hardening
+
+- Pull-request CI runs now share a PR-number-scoped concurrency group, so a newer head cancels superseded queued or running CI evidence instead of consuming capacity for an obsolete commit.
+- Push CI remains isolated by branch or ref and does not collide with pull-request validation.
+- Draft pull requests no longer consume automatic CodeRabbit reviews, and automatic incremental review-on-every-push is disabled; maintainers request a final review only after a stable head is ready.
+- The hourly read-only PR-governance workflow verifies its repository contract with the Python standard library, fails closed when no matching test is discovered, and no longer assumes that `pytest` is preinstalled on a fresh scheduled runner.
+No test, security, packaging, coverage, or merge requirement is weakened by these operational changes.
+
+### Security
+
+#### Fail-closed Vuong selection summary
+
+- Omitted relation metadata defaults to `unknown`.
+- Nested, boundary-nested, and unknown relations are routed before the non-nested normal-selection kernel is invoked, so a rejected or exact-zero non-applicable statistic cannot mask the required likelihood-ratio or relation-resolution procedure.
+- The API does not report a winning model until Vuong's formal first-stage distinguishability evidence is available from a common compiled score/information contract.
+- Numerical variance checks are not mislabeled as the formal weighted-chi-square distinguishability test.
+- Casewise inputs are bounded and normalized to finite floats before FFI; booleans, opaque values, non-finite values, conversion overflow, malformed labels, invalid parameter counts, and compiled-kernel rejections fail closed without leaking low-level exception text or reproducing statistical arithmetic in Python.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## 0.1.0 - 2026-07-02
 
 ### Added

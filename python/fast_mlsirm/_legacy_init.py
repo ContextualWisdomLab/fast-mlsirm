@@ -1,13 +1,6 @@
-"""Public package surface for fast-mlsirm."""
-
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
-from .bifactor_scoreability import (
-    BifactorScoreabilityResult as BifactorScoreabilityResult,
-    bifactor_scoreability as bifactor_scoreability,
-    bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
-)
 from .config import FitConfig as FitConfig, MLS2PLMConfig as MLS2PLMConfig, PenaltyConfig as PenaltyConfig
 from .diagnostics import align_latent_space as align_latent_space, dimensionality_diagnostics as dimensionality_diagnostics, fit_diagnostics as fit_diagnostics, fixed_item_calibration_diagnostics as fixed_item_calibration_diagnostics, predict_proba as predict_proba, recovery_report as recovery_report, response_process_dimensionality_diagnostics as response_process_dimensionality_diagnostics, response_process_fit_diagnostics as response_process_fit_diagnostics
 from .fit import fit as fit
@@ -262,9 +255,6 @@ except _PackageNotFoundError:
 
 __all__ = [  # noqa: RUF022
     "__version__",
-    "BifactorScoreabilityResult",
-    "bifactor_scoreability",
-    "bifactor_scoreability_from_logit_slopes",
     "DimensionalityDiagnostics",
     "FitConfig",
     "FitDiagnostics",
