@@ -333,6 +333,13 @@ def load_factor_csv(path: str | Path) -> np.ndarray:
     )
     if not content or content.isspace():
         raise ValueError("factor CSV is empty")
+    # NumPy's loadtxt tokenizer mishandles supplementary-plane characters:
+    # some segfault the process and others are silently converted to garbage
+    # integers, so they must never reach it.
+    if max(content) > "\uffff":
+        raise ValueError(
+            "factor CSV contains characters outside the Basic Multilingual Plane"
+        )
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

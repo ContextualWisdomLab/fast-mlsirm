@@ -172,6 +172,16 @@
   before dense construction, replacing repeated full scans with linear-time
   membership checks.
 
+#### Factor-CSV supplementary-plane input guard
+
+- `load_factor_csv` now rejects CSV content containing characters outside the
+  Unicode Basic Multilingual Plane with a benign `ValueError` before the text
+  reaches `numpy.loadtxt`. The coverage-guided fuzz harness found that NumPy's
+  loadtxt tokenizer crashes the process on some supplementary-plane characters
+  (for example U+109249) and silently converts others (for example U+10000)
+  into garbage integer factor ids; the crashing input is preserved as a fuzz
+  corpus regression seed alongside pytest reproducers.
+
 ## [0.2.0] - 2026-08-03
 
 ### Changed (serving and information kernels)
