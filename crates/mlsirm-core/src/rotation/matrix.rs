@@ -150,44 +150,92 @@ pub(crate) fn inverse(a: &[f64], n: usize) -> Result<Vec<f64>, String> {
     Ok(out)
 }
 
-/// Positive log determinant and inverse of a symmetric positive matrix.
+/// Log determinant and inverse of a symmetric positive-definite matrix.
+///
+/// A lower-triangular Cholesky factorization preserves the symmetry contract,
+/// avoids determinant-sign ambiguity from row pivoting, and permits stable
+/// inverse construction through forward and backward triangular solves.
 pub(crate) fn positive_logdet_inverse(a: &[f64], n: usize) -> Result<(f64, Vec<f64>), String> {
-    if a.len() != n * n {
+    if n == 0 || a.len() != n * n {
         return Err("log-determinant input has an invalid shape".into());
     }
-    let mut work = a.to_vec();
-    let mut logdet = 0.0;
-    for col in 0..n {
-        let mut pivot = col;
-        let mut best = work[col * n + col].abs();
-        for row in (col + 1)..n {
-            let candidate = work[row * n + col].abs();
-            if candidate > best {
-                best = candidate;
-                pivot = row;
-            }
-        }
-        if !best.is_finite() || best <= 1e-14 {
-            return Err("criterion matrix is singular".into());
-        }
-        if pivot != col {
-            for j in 0..n {
-                work.swap(col * n + j, pivot * n + j);
-            }
-        }
-        let diagonal = work[col * n + col];
-        if diagonal <= 0.0 || !diagonal.is_finite() {
-            return Err("criterion matrix is not positive definite".into());
-        }
-        logdet += diagonal.ln();
-        for row in (col + 1)..n {
-            let multiplier = work[row * n + col] / diagonal;
-            for j in col..n {
-                work[row * n + j] -= multiplier * work[col * n + j];
+    if a.iter().any(|value| !value.is_finite()) {
+        return Err("criterion matrix must contain only finite values".into());
+    }
+    let scale = a
+        .iter()
+        .map(|value| value.abs())
+        .fold(1.0_f64, f64::max);
+    let symmetry_tolerance = 1e-12 * scale;
+    for i in 0..n {
+        for j in 0..i {
+            if (a[i * n + j] - a[j * n + i]).abs() > symmetry_tolerance {
+                return Err("criterion matrix must be symmetric".into());
             }
         }
     }
-    Ok((logdet, inverse(a, n)?))
+
+    let mut lower = vec![0.0; n * n];
+    for i in 0..n {
+        for j in 0..=i {
+            let mut residual = a[i * n + j];
+            for k in 0..j {
+                residual -= lower[i * n + k] * lower[j * n + k];
+            }
+            if i == j {
+                if !residual.is_finite() || residual <= 0.0 {
+                    return Err("criterion matrix is not positive definite".into());
+                }
+                lower[i * n + j] = residual.sqrt();
+            } else {
+                let diagonal = lower[j * n + j];
+                let value = residual / diagonal;
+                if !value.is_finite() {
+                    return Err("criterion matrix is singular or ill-conditioned".into());
+                }
+                lower[i * n + j] = value;
+            }
+        }
+    }
+
+    let logdet = 2.0
+        * (0..n)
+            .map(|i| lower[i * n + i].ln())
+            .sum::<f64>();
+    if !logdet.is_finite() {
+        return Err("criterion matrix log determinant is non-finite".into());
+    }
+
+    let mut inverse_matrix = vec![0.0; n * n];
+    let mut forward = vec![0.0; n];
+    let mut solution = vec![0.0; n];
+    for column in 0..n {
+        for i in 0..n {
+            let mut rhs = if i == column { 1.0 } else { 0.0 };
+            for k in 0..i {
+                rhs -= lower[i * n + k] * forward[k];
+            }
+            forward[i] = rhs / lower[i * n + i];
+        }
+        for reverse in 0..n {
+            let i = n - 1 - reverse;
+            let mut rhs = forward[i];
+            for k in (i + 1)..n {
+                rhs -= lower[k * n + i] * solution[k];
+            }
+            solution[i] = rhs / lower[i * n + i];
+        }
+        for row in 0..n {
+            let value = solution[row];
+            if !value.is_finite() {
+                return Err("criterion matrix inverse is non-finite".into());
+            }
+            inverse_matrix[row * n + column] = value;
+        }
+        forward.fill(0.0);
+        solution.fill(0.0);
+    }
+    Ok((logdet, inverse_matrix))
 }
 
 /// Orthogonal Cayley retraction used by gradient projection.
@@ -260,7 +308,7 @@ pub(crate) fn orthonormalize_columns(a: &mut [f64], rows: usize, cols: usize) ->
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E3779B97F4A7C15);
     let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE6E93);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z ^ (z >> 31)
 }
@@ -331,6 +379,12 @@ pub(crate) fn factor_correlation(transform: &[f64], factors: usize) -> Vec<f64> 
 mod tests {
     use super::*;
 
+    fn determinant_3x3(a: &[f64]) -> f64 {
+        a[0] * (a[4] * a[8] - a[5] * a[7])
+            - a[1] * (a[3] * a[8] - a[5] * a[6])
+            + a[2] * (a[3] * a[7] - a[4] * a[6])
+    }
+
     #[test]
     fn matrix_primitives_cover_success_and_failure_paths() {
         let id = identity(2);
@@ -361,6 +415,41 @@ mod tests {
         normalize_columns(&mut columns, 2, 2).unwrap();
         assert!((columns[0] * columns[0] + columns[2] * columns[2] - 1.0).abs() < 1e-12);
         assert!(normalize_columns(&mut [0.0, 0.0, 0.0, 1.0], 2, 2).is_err());
+    }
+
+    #[test]
+    fn cholesky_logdet_and_inverse_cover_spd_edge_cases() {
+        let pivot_provoking = vec![1.0, 2.0, 2.0, 5.0];
+        let (logdet, inv) = positive_logdet_inverse(&pivot_provoking, 2).unwrap();
+        assert!(logdet.abs() < 1e-12);
+        let expected = [5.0, -2.0, -2.0, 1.0];
+        assert!(inv
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-10));
+
+        let epsilon = 1e-8;
+        let near_singular = vec![1.0, 1.0 - epsilon, 1.0 - epsilon, 1.0];
+        let (_, near_inverse) = positive_logdet_inverse(&near_singular, 2).unwrap();
+        let recovered = matmul(&near_singular, 2, 2, &near_inverse, 2);
+        assert!(recovered
+            .iter()
+            .zip(identity(2))
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-6));
+
+        let oracle = vec![4.0, 1.0, 1.0, 1.0, 3.0, 0.5, 1.0, 0.5, 2.0];
+        let (oracle_logdet, oracle_inverse) = positive_logdet_inverse(&oracle, 3).unwrap();
+        assert!((oracle_logdet - determinant_3x3(&oracle).ln()).abs() < 1e-12);
+        let recovered = matmul(&oracle, 3, 3, &oracle_inverse, 3);
+        assert!(recovered
+            .iter()
+            .zip(identity(3))
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-10));
+
+        assert!(positive_logdet_inverse(&[1.0, 2.0, 2.0, 1.0], 2).is_err());
+        assert!(positive_logdet_inverse(&[1.0, 0.0, 0.5, 1.0], 2).is_err());
+        assert!(positive_logdet_inverse(&[f64::NAN, 0.0, 0.0, 1.0], 2).is_err());
+        assert!(positive_logdet_inverse(&[], 0).is_err());
     }
 
     #[test]
