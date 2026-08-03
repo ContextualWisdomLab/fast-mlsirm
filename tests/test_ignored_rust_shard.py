@@ -36,22 +36,41 @@ zeta::two: test
     assert sharder.parse_test_names(output) == ["alpha::one", "zeta::two"]
 
 
-def test_round_robin_shards_are_exhaustive_and_disjoint():
-    """Every retained test belongs to exactly one stable shard."""
+def test_round_robin_shards_are_exhaustive_disjoint_and_nonempty():
+    """Every retained test belongs to exactly one stable nonempty shard."""
     names = [f"module::test_{index:02d}" for index in range(17)]
-    shards = [set(sharder.select_shard(names, index, 4)) for index in range(4)]
+    shards = [set(values) for values in sharder.partition_inventory(names, 4)]
     union = set().union(*shards)
     assert union == set(names)
+    assert all(shards)
     for left in range(len(shards)):
         for right in range(left + 1, len(shards)):
             assert shards[left].isdisjoint(shards[right])
 
 
-def test_skip_matches_exact_or_final_component():
-    """Dedicated tests can be excluded regardless of module qualification."""
-    names = ["a::keep", "a::dedicated", "dedicated", "b::keep"]
-    selected = sharder.select_shard(names, 0, 1, ["dedicated"])
-    assert selected == ["a::keep", "b::keep"]
+def test_skip_requires_an_exact_fully_qualified_inventory_name():
+    """A final path component cannot accidentally exclude multiple tests."""
+    names = ["a::dedicated", "b::dedicated", "b::keep"]
+    with pytest.raises(ValueError, match="not found by exact name: dedicated"):
+        sharder.select_shard(names, 0, 1, ["dedicated"])
+    selected = sharder.select_shard(names, 0, 1, ["a::dedicated"])
+    assert selected == ["b::dedicated", "b::keep"]
+
+
+def test_skip_names_are_unique_and_each_matches_one_inventory_entry():
+    """Duplicate or stale dedicated-test declarations fail before execution."""
+    names = ["module::one", "module::two"]
+    with pytest.raises(ValueError, match="must be unique"):
+        sharder.validated_skip_set(names, ["module::one", "module::one"])
+    with pytest.raises(ValueError, match="module::missing"):
+        sharder.validated_skip_set(names, ["module::missing"])
+    assert sharder.validated_skip_set(names, ["module::one"]) == {"module::one"}
+
+
+def test_partition_rejects_silently_empty_shards():
+    """Matrix drift cannot emit a green shard with no evidentiary test."""
+    with pytest.raises(ValueError, match="empty shards: 2, 3"):
+        sharder.partition_inventory(["a", "b"], 4)
 
 
 @pytest.mark.parametrize(
