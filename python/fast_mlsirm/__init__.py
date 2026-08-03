@@ -1,7 +1,24 @@
 """Public package surface for fast-mlsirm."""
 
-from ._legacy_init import *  # noqa: F403
-from ._legacy_init import __all__ as _legacy_all
+from __future__ import annotations
+
+from . import _legacy_init as _legacy_init
+
+# Copy established package-root attributes that actually exist. Importing with
+# ``from ._legacy_init import *`` dereferences every historical ``__all__``
+# entry and can make package import depend on an unrelated stale registry item.
+for _public_name, _public_value in vars(_legacy_init).items():
+    if not _public_name.startswith("_") or _public_name == "__version__":
+        globals()[_public_name] = _public_value
+
+# Repair the historical export declared by the legacy registry but omitted from
+# its import list, then compose both modular compiled feature surfaces.
+from .classification import ClassificationResult as ClassificationResult
+from .bifactor_scoreability import (
+    BifactorScoreabilityResult as BifactorScoreabilityResult,
+    bifactor_scoreability as bifactor_scoreability,
+    bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
+)
 from .rotation import (
     RotationCriterionInfo as RotationCriterionInfo,
     RotationSolution as RotationSolution,
@@ -11,10 +28,15 @@ from .rotation import (
 )
 
 __all__ = [
-    *_legacy_all,
+    *_legacy_init.__all__,
+    "BifactorScoreabilityResult",
+    "bifactor_scoreability",
+    "bifactor_scoreability_from_logit_slopes",
     "RotationCriterionInfo",
     "RotationSolution",
     "available_rotation_criteria",
     "rotate_factor_loadings",
     "rotation_criterion_value_gradient",
 ]
+
+del _public_name, _public_value
