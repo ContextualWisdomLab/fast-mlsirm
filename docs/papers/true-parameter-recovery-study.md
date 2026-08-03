@@ -79,15 +79,17 @@ sentinel records correlation and RMSE for invariant or identified quantities:
 - interaction-adjusted easiness
   `b_i - gamma E_xi[d(xi, zeta_i)]`,
 - EAP trait scores by dimension,
-- pairwise item-map distances, invariant to translation, rotation, and
+- pairwise person-map distances, invariant to translation, rotation, and
   reflection,
+- pairwise item-map distances with the same invariance,
 - the positive distance weight `gamma`,
 - monotonicity and finiteness of the marginal log-likelihood trace.
 
 The adjusted-easiness statistic is used because raw intercept and item-map
-radius are partially confounded in a distance model. Pairwise distances provide
-an orientation-free map metric; this serves the same identification purpose as
-the Procrustes alignment used in the source simulation study.
+radius are partially confounded in a distance model. Pairwise person and item
+distances provide orientation-free latent-map metrics; this serves the same
+identification purpose as the Procrustes alignment used in the source
+simulation study.
 
 ## Execution evidence
 

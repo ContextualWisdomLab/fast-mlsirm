@@ -65,6 +65,7 @@ struct StudyCell {
     a_true: Vec<f64>,
     b_true: Vec<f64>,
     theta_true: Vec<f64>,
+    xi_true: Vec<f64>,
     zeta_true: Vec<f64>,
 }
 
@@ -75,6 +76,7 @@ struct RecoveryMetrics {
     adjusted_b_corr: f64,
     adjusted_b_rmse: f64,
     theta_corr: f64,
+    xi_distance_corr: f64,
     zeta_distance_corr: f64,
     gamma: f64,
 }
@@ -145,6 +147,7 @@ fn simulate_paper_cell(n_persons: usize, seed: u64) -> StudyCell {
         a_true,
         b_true,
         theta_true,
+        xi_true,
         zeta_true,
     }
 }
@@ -299,6 +302,8 @@ fn recovery_metrics(cell: &StudyCell, result: &MarginalResult) -> RecoveryMetric
         result.tau.exp(),
         0xA11CE,
     );
+    let xi_truth_distance = pairwise_distances(&cell.xi_true, cell.n_persons);
+    let xi_estimated_distance = pairwise_distances(&result.xi_eap, cell.n_persons);
     let zeta_truth_distance = pairwise_distances(&cell.zeta_true, N_ITEMS);
     let zeta_estimated_distance = pairwise_distances(&result.zeta, N_ITEMS);
     RecoveryMetrics {
@@ -310,6 +315,7 @@ fn recovery_metrics(cell: &StudyCell, result: &MarginalResult) -> RecoveryMetric
             &standardized(&adjusted_estimate),
         ),
         theta_corr: theta_correlation(cell, result),
+        xi_distance_corr: pearson(&xi_truth_distance, &xi_estimated_distance),
         zeta_distance_corr: pearson(&zeta_truth_distance, &zeta_estimated_distance),
         gamma: result.tau.exp(),
     }
@@ -347,7 +353,7 @@ fn simple_structure_equation_matches_general_dot_product() {
 }
 
 #[test]
-#[ignore = "deterministic literature recovery study; executed by rust-statistical CI"]
+#[ignore = "deterministic literature recovery study; executed by rust-recovery CI"]
 fn kang_jeon_2025_minimum_cell_recovers_true_parameters() {
     let cell = simulate_paper_cell(500, 0x5EED_2025);
     let result = fit_cell(&cell, Device::Cpu, 150);
@@ -356,6 +362,7 @@ fn kang_jeon_2025_minimum_cell_recovers_true_parameters() {
     assert!(result.b.iter().all(|value| value.is_finite()));
     assert!(result.alpha.iter().all(|value| value.is_finite()));
     assert!(result.theta_eap.iter().all(|value| value.is_finite()));
+    assert!(result.xi_eap.iter().all(|value| value.is_finite()));
     assert!(result.zeta.iter().all(|value| value.is_finite()));
     assert!(
         metrics.adjusted_b_corr > 0.60,
@@ -376,6 +383,10 @@ fn kang_jeon_2025_minimum_cell_recovers_true_parameters() {
     assert!(
         metrics.theta_corr > 0.30,
         "trait-score correlation too low: {metrics:?}"
+    );
+    assert!(
+        metrics.xi_distance_corr > 0.00,
+        "person-map distance recovery is not positive: {metrics:?}"
     );
     assert!(
         metrics.zeta_distance_corr > 0.00,
@@ -403,6 +414,7 @@ fn gpu_recovery_matches_cpu_on_paper_design() {
     assert!(pearson(&cpu.b, &gpu.b) > 0.995);
     assert!(pearson(&cpu.alpha, &gpu.alpha) > 0.995);
     assert!(pearson(&cpu.theta_eap, &gpu.theta_eap) > 0.995);
+    assert!(pearson(&cpu.xi_eap, &gpu.xi_eap) > 0.990);
     assert!(pearson(&cpu.zeta, &gpu.zeta) > 0.990);
     assert!((cpu.tau.exp() - gpu.tau.exp()).abs() < 0.10);
 }

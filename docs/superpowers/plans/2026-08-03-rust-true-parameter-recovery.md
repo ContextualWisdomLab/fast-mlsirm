@@ -55,11 +55,11 @@ The first same-head CI attempt failed in the new equation fixture before the exp
 
 - [x] **Step 3: Implement all metric helpers in Rust**
 
-The integration test implements deterministic PRNG/normal generation, Pearson correlation, RMSE, interaction-adjusted easiness, pairwise item-map distances, and likelihood-trace checks. No NumPy or Python arithmetic is used.
+The integration test implements deterministic PRNG/normal generation, Pearson correlation, RMSE, interaction-adjusted easiness, pairwise person-map and item-map distances, and likelihood-trace checks. No NumPy or Python arithmetic is used.
 
 - [x] **Step 4: Add the explicit CPU/GPU parity recovery test**
 
-The GPU test calls `fit_marginal(..., Device::Gpu)` and compares the result to `Device::Cpu` with documented f32 tolerances.
+The GPU test calls `fit_marginal(..., Device::Gpu)` and compares item parameters, person trait EAPs, person interaction-position EAPs, item positions, the distance weight, and final likelihood to `Device::Cpu` with documented f32 tolerances.
 
 - [x] **Step 5: Delete the NumPy-only recovery test**
 
