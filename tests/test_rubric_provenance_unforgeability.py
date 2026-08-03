@@ -144,6 +144,12 @@ def test_execution_rejects_forged_candidate_even_with_recomputed_display_id():
         object.__setattr__(forged_candidate, field_name, field_value)
     object.__setattr__(forged_candidate, "request_fingerprint", "0" * 64)
 
+    with pytest.raises(ValueError, match="provenance does not match validated content"):
+        _ = forged_candidate.candidate_fingerprint
+
+    attacker_candidate_fingerprint = (
+        forged_candidate._computed_candidate_fingerprint()
+    )
     raw_response_digest = hashlib.sha256(b"provider response").hexdigest()
     execution_payload = {
         "schema_version": candidate.schema_version,
@@ -153,7 +159,7 @@ def test_execution_rejects_forged_candidate_even_with_recomputed_display_id():
         "contract_fingerprint": candidate.contract_fingerprint,
         "provider_id": "fixture_provider",
         "model_id": "fixture_model",
-        "candidate_fingerprint": forged_candidate.candidate_fingerprint,
+        "candidate_fingerprint": attacker_candidate_fingerprint,
         "raw_response_digest": raw_response_digest,
     }
     forged_execution_id = f"generation_execution_{_sha256_json(execution_payload)[:16]}"
