@@ -77,6 +77,7 @@ def test_numpy_integer_counts_are_retained_and_numpy_boolean_is_rejected(monkeyp
         [0.2, 0.3],
         np.int64(2),
         np.int64(1),
+        relation=ModelRelation.STRICTLY_NON_NESTED,
     )
     assert result.k_a == 2
     assert result.k_b == 1
@@ -87,11 +88,12 @@ def test_numpy_integer_counts_are_retained_and_numpy_boolean_is_rejected(monkeyp
             [0.2, 0.3],
             np.bool_(True),
             1,
+            relation=ModelRelation.STRICTLY_NON_NESTED,
         )
 
 
 def test_compiled_validation_text_is_redacted(monkeypatch):
-    """Kernel error wording is neither exposed nor used for classification."""
+    """Kernel error wording is neither exposed nor retained as an exception cause."""
     def invalid_kernel(*_args, **_kwargs):
         raise ValueError("some other low-level validation error")
 
@@ -105,22 +107,25 @@ def test_compiled_validation_text_is_redacted(monkeypatch):
             bic_correction=True,
         )
     assert "some other" not in str(error.value)
+    assert error.value.__cause__ is None
 
 
-def test_typed_kernel_error_records_no_raw_statistic(monkeypatch):
-    """A compiled rejection takes the dedicated fail-closed result path."""
-    def kernel_failure(*_args, **_kwargs):
-        raise VuongKernelError("compiled Vuong kernel rejected the supplied inputs")
+def test_missing_compiled_core_is_consumed_fail_closed(monkeypatch):
+    """A missing compiled core becomes a redacted non-decisional result."""
+    def missing_core(*_args, **_kwargs):
+        raise RuntimeError("vuong_nonnested requires the compiled Rust core")
 
-    monkeypatch.setattr(comparison_module, "_run_vuong", kernel_failure)
+    monkeypatch.setattr(comparison_module, "vuong_nonnested", missing_core)
     result = compare_nonnested_models(
         [0.0, 0.1],
         [0.2, 0.3],
         1,
         1,
-        relation=ModelRelation.OVERLAPPING,
+        relation=ModelRelation.STRICTLY_NON_NESTED,
     )
     assert result.status is ComparisonStatus.KERNEL_ERROR
+    assert math.isnan(result.raw_mean_loglik_difference)
     assert math.isnan(result.omega)
     assert math.isnan(result.raw_z)
     assert math.isnan(result.raw_p_two_sided)
+    assert result.preferred_model is None
