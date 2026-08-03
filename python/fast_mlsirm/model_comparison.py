@@ -213,10 +213,10 @@ def _run_vuong(
             k_b,
             bic_correction=bic_correction,
         )
-    except (ValueError, TypeError, OverflowError) as exc:
+    except (ValueError, TypeError, OverflowError, RuntimeError):
         raise VuongKernelError(
             "compiled Vuong kernel rejected the supplied inputs"
-        ) from exc
+        ) from None
 
 
 def _relation_requirement(
