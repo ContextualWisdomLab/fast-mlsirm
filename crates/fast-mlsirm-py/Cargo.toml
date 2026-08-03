@@ -10,7 +10,7 @@ documentation = "https://github.com/ContextualWisdomLab/fast-mlsirm/blob/main/RE
 
 [lib]
 name = "fast_mlsirm_core"
-path = "src/lib.rs"
+path = "src/entrypoint.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
