@@ -1,0 +1,43 @@
+name: Hourly PR Queue Governance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: hourly-pr-governance-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  governance-evidence:
+    name: Hourly PR queue governance evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Build live PR queue governance evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/build_pr_queue_governance.py
+          --repo ContextualWisdomLab/fast-mlsirm
+          --out hourly-pr-queue-governance
+      - name: Publish hourly governance evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hourly-pr-queue-governance-${{ github.run_id }}
+          path: |
+            hourly-pr-queue-governance/pr_queue_governance_manifest.json
+            hourly-pr-queue-governance/pr_queue_governance_report.html
+          if-no-files-found: error
+          retention-days: 30
