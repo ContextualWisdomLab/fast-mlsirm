@@ -82,19 +82,40 @@ def _blueprint() -> ItemBlueprint:
 
 
 def test_public_exports_are_explicit_and_complete():
-    """The subpackage exposes only its supported authoring surface."""
+    """The subpackage exposes its complete authoring and validation surface."""
     assert set(rubric_exports) == {
         "MAX_BLUEPRINTS",
+        "BinaryAnswerKey",
         "BlueprintPlan",
+        "CandidateValidationError",
+        "ConstructedAnswerKey",
         "DifficultyBand",
         "EvidenceMode",
+        "GeneratedAnswerKey",
+        "GeneratedItemCandidate",
+        "GeneratedOption",
+        "GenerationExecution",
+        "GenerationProviderError",
+        "GenerationRequest",
         "ItemBlueprint",
+        "ItemGenerationProvider",
+        "OrdinalAnswerKey",
+        "PairwiseAnswerKey",
         "ResponseFormat",
+        "RubricAlignmentEntry",
         "RubricLevel",
         "RubricSpecification",
+        "ScoreGuideEntry",
+        "SelectedAnswerKey",
+        "SourceAttribution",
+        "SourceDocument",
+        "StaticFixtureProvider",
         "build_generation_contract",
+        "build_generation_request",
         "canonical_generation_contract",
         "compile_item_blueprints",
+        "execute_generation",
+        "parse_generated_item_candidate",
         "render_generation_prompt",
     }
 
