@@ -17,6 +17,22 @@
   release section.
 - Released authoritative fragments are removed from `docs/changelog.d`;
   the directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Changelog render-parity gate and 0.4.0 note restoration
+
+- The `[0.4.0]` CHANGELOG section again carries the binary bifactor
+  pilot-calibration handoff, the vectorized NumPy MMLE fallback M-step, and
+  the accessible hero-metadata notes. Their authoritative fragments had been
+  merged without re-rendering the managed Unreleased block, so the 0.4.0
+  release cut inherited a stale block and the published immutable v0.4.0
+  GitHub release body silently omitted them; `CHANGELOG.md` is the
+  authoritative release record for v0.4.0.
+- A repository-level regression test now runs the fragment renderer's check
+  against the live `CHANGELOG.md` and `docs/changelog.d` tree, so a pull
+  request that adds or edits a fragment without rendering it fails CI before
+  any release cut can inherit a stale managed block.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.4.0] - 2026-08-03
 
@@ -45,7 +61,46 @@
   makes no scoreability, fit, or validity claim. BIFAC2PLM, testlet, DIF,
   and G-theory handoffs remain follow-up slices of issue #407.
 
+#### Pilot-observation handoff to binary bifactor calibration
+
+- A factory-sealed, content-addressed `BifactorPilotDesign` assembled by
+  `build_bifactor_pilot_design` from the existing replay-verified binary pilot
+  design. The artifact records one descriptive general-factor identity over
+  every item, preserves each item's governed `query_testlet_id` as its sole
+  specific-factor assignment, retains exact missingness and rater provenance,
+  and emits copied `responses`, `factor_id`, and `FitConfig` arguments accepted
+  directly by the Rust-backed `fast_mlsirm.fit` API.
+- The handoff pins `model="BIFAC2PLM"`, `estimator="mmle"`, and
+  `latent_dim=1`; caller-tuned numerical settings are accepted only when those
+  structural constraints remain intact. It reuses the binary MIRT assembler's
+  fail-closed provenance, duplicate-cell, category, observed-support, and dense
+  allocation contracts rather than introducing a weaker parallel parser.
+- Buyer documentation states the classical all-items general-factor plus
+  at-most-one-specific-factor pattern and the downstream identification,
+  model-comparison, scoreability, DIF/fairness, recovery, and validity gates.
+  A successful handoff is not a fit, scoreability, fairness, or deployment
+  claim. Testlet, DIF, and G-theory handoffs remain follow-up slices of issue
+  #407.
+
 ### Changed
+
+#### Accessible diagnostics-report hero metadata
+
+- Generated HTML diagnostics reports now expose the source filename as a
+  semantic description list and hide redundant decorative branding from the
+  accessibility tree.
+- Regression coverage pins the `aria-hidden`, `dl`, `dt`, and `dd` markup so
+  future template changes cannot silently remove the accessibility contract.
+
+#### Vectorized NumPy MMLE fallback M-step
+
+- The unidimensional 2PL NumPy fallback now updates active item parameters with
+  vectorized Newton operations instead of a per-item Python loop. The compiled
+  Rust MMLE path remains the preferred production implementation.
+- A deterministic missing-data regression fixture preserves discrimination,
+  intercept, EAP, and log-likelihood results within explicit floating-point
+  tolerances; no bitwise-equivalence or environment-independent speedup claim
+  is made.
 
 #### Release cut 0.3.0
 
