@@ -126,7 +126,9 @@ def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
             if not isinstance(raw_kinds, list) or not all(
                 isinstance(kind, str) for kind in raw_kinds
             ):
-                raise ValueError(f"Cargo target {package_name}/{target_name} has invalid kinds")
+                raise ValueError(
+                    f"Cargo target {package_name}/{target_name} has invalid kinds"
+                )
             kinds = set(raw_kinds)
             selector = _selector_for_target(kinds)
             if selector is None:
@@ -304,8 +306,18 @@ def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the sharding runner."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--shard", type=int, required=True, help="zero-based shard index")
-    parser.add_argument("--shards", type=int, required=True, help="total shard count")
+    parser.add_argument(
+        "--shard",
+        type=int,
+        required=True,
+        help="zero-based shard index",
+    )
+    parser.add_argument(
+        "--shards",
+        type=int,
+        required=True,
+        help="total shard count",
+    )
     parser.add_argument(
         "--skip",
         action="append",
