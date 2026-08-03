@@ -260,11 +260,13 @@ fn numeric_input_guards_reject_undefined_indices() {
     for (loadings, uniquenesses, message) in [
         (vec![f64::NAN, 0.2, 0.8, 0.3], vec![0.4, 0.3], "finite"),
         (vec![1.0, 0.0, 0.8, 0.3], vec![0.0, 0.3], "absolute value below 1"),
-        (vec![0.7, 0.2, 0.8, 0.3], vec![-0.1, 0.3], "non-negative"),
+        (vec![0.7, 0.2, 0.8, 0.3], vec![-0.1, 0.3], "between zero and one"),
+        (vec![0.7, 0.2, 0.8, 0.3], vec![1.1, 0.27], "between zero and one"),
         (vec![0.7, 0.2, 0.8, 0.3], vec![f64::INFINITY, 0.3], "finite"),
-        (vec![0.0, 0.0, 0.8, 0.3], vec![1.0, 0.3], "every item"),
-        (vec![0.7, 0.0, 0.8, 0.0], vec![0.5, 0.3], "every factor"),
-        (vec![1e-300, 0.2, 0.8, 0.3], vec![0.4, 0.3], "too small"),
+        (vec![0.0, 0.0, 0.8, 0.3], vec![1.0, 0.27], "every item"),
+        (vec![0.7, 0.0, 0.8, 0.0], vec![0.51, 0.36], "every factor"),
+        (vec![1e-300, 0.2, 0.8, 0.3], vec![0.96, 0.27], "too small"),
+        (vec![0.6, 0.2, 0.8, 0.3], vec![0.47, 0.27], "sum to one"),
     ] {
         let error = bifactor_indices(&loadings, &uniquenesses, config).unwrap_err();
         assert!(error.contains(message), "unexpected error: {error}");
@@ -273,7 +275,7 @@ fn numeric_input_guards_reject_undefined_indices() {
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
         let error = bifactor_indices(
             &[0.7, 0.2, 0.8, 0.3],
-            &[0.4, 0.3],
+            &[0.47, 0.27],
             BifactorIndicesConfig {
                 zero_tolerance: tolerance,
                 ..config
@@ -286,8 +288,9 @@ fn numeric_input_guards_reject_undefined_indices() {
 
 #[test]
 fn omega_rejects_zero_variance_composites_created_by_sign_cancellation() {
+    let root_half = 0.5_f64.sqrt();
     let error = bifactor_indices(
-        &[0.5, 0.5, -0.5, -0.5],
+        &[root_half, root_half, -root_half, -root_half],
         &[0.0, 0.0],
         BifactorIndicesConfig::new(2, 2, 0),
     )
