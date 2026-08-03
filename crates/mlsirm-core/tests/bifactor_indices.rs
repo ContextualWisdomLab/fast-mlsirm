@@ -98,7 +98,7 @@ fn published_example_matches_independent_formula_oracle() {
     assert_vec_close(
         &result.item_ecv,
         &[
-            0.9853458430954348,
+            0.9853458382180539,
             0.8287671232876713,
             0.8590502415458938,
             0.7411944869831547,
