@@ -1,11 +1,9 @@
 """Criterion-neutral empirical selection of exploratory rotations.
 
-Rotation objective values are criterion-specific and therefore cannot be
-compared directly. This module delegates all scoring and bootstrap alignment to
-the Rust core, then exposes the policy-conditional evidence as immutable Python
-objects. The selected criterion is conditional on the candidate set, extraction
-model, bootstrap design, and declared policy; it is never described as a
-universally optimal rotation.
+Criterion objectives have incompatible scales. The selector therefore compares
+solutions through common diagnostics and an explicit decision policy. Its
+choice is conditional on the candidate set, extraction model, bootstrap design,
+and policy, never a universally optimal criterion claim.
 """
 
 from __future__ import annotations
@@ -15,7 +13,15 @@ from typing import Sequence
 
 import numpy as np
 
-from .rotation import RotationSolution, _matrix, _method_name, _mode_name
+from ._rotation_core_loader import rotation_core
+from .rotation import (
+    RotationSolution,
+    _matrix,
+    _method_name,
+    _mode_name,
+    _optional_matrix,
+    _solution_from_core,
+)
 
 
 @dataclass(frozen=True)
@@ -92,17 +98,16 @@ def _candidate_names(values: Sequence[str]) -> tuple[str, ...]:
     return normalized
 
 
-def _bootstrap_array(
-    value: np.ndarray | None,
-    shape: tuple[int, int],
-) -> np.ndarray | None:
+def _bootstrap_array(value: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray | None:
     """Validate optional ``(replicates, rows, factors)`` loading matrices."""
 
     if value is None:
         return None
     array = np.ascontiguousarray(np.asarray(value, dtype=np.float64))
     if array.ndim != 3 or tuple(array.shape[1:]) != shape:
-        raise ValueError(f"bootstrap_loadings must have shape (replicates, {shape[0]}, {shape[1]})")
+        raise ValueError(
+            f"bootstrap_loadings must have shape (replicates, {shape[0]}, {shape[1]})"
+        )
     if array.shape[0] == 0:
         raise ValueError("bootstrap_loadings must contain at least one replicate")
     if not np.all(np.isfinite(array)):
@@ -125,44 +130,14 @@ def _theory_target(value: np.ndarray | None, shape: tuple[int, int]) -> np.ndarr
     return target
 
 
-def _solution_from_dict(value: dict) -> RotationSolution:
-    """Build a public solution from one Rust candidate dictionary."""
-
-    rows = int(value["n_rows"])
-    factors = int(value["n_factors"])
-    return RotationSolution(
-        pattern_matrix=np.asarray(value["pattern_matrix"], dtype=np.float64).reshape(rows, factors),
-        structure_matrix=np.asarray(value["structure_matrix"], dtype=np.float64).reshape(rows, factors),
-        factor_correlation=np.asarray(value["factor_correlation"], dtype=np.float64).reshape(factors, factors),
-        transform_matrix=np.asarray(value["transform_matrix"], dtype=np.float64).reshape(factors, factors),
-        criterion=str(value["criterion"]),
-        mode=str(value["mode"]),
-        criterion_value=float(value["criterion_value"]),
-        gradient_norm=float(value["gradient_norm"]),
-        iterations=int(value["iterations"]),
-        converged=bool(value["converged"]),
-        termination_reason=str(value["termination_reason"]),
-        best_start_index=int(value["best_start_index"]),
-        n_starts=int(value["n_starts"]),
-        converged_starts=int(value["converged_starts"]),
-        basin_support=int(value["basin_support"]),
-        distinct_minima=int(value["distinct_minima"]),
-        start_values=np.asarray(value["start_values"], dtype=np.float64),
-        start_converged=np.asarray(value["start_converged"], dtype=np.bool_),
-        max_factor_correlation=float(value["max_factor_correlation"]),
-        normalized=bool(value["normalized"]),
-        worker_count=int(value["worker_count"]),
-        backend=str(value["backend"]),
-    )
-
-
-def _result_from_core(value: dict) -> RotationSelectionResult:
+def _result_from_core(value: dict[str, object]) -> RotationSelectionResult:
     """Convert the Rust selection dictionary into immutable evidence objects."""
 
+    raw_candidates = value["candidates"]
     candidates = tuple(
         RotationCandidateEvidence(
             criterion=str(candidate["criterion"]),
-            solution=_solution_from_dict(candidate["solution"]),
+            solution=_solution_from_core(candidate["solution"]),
             row_complexity=float(candidate["row_complexity"]),
             factor_balance=float(candidate["factor_balance"]),
             max_factor_correlation=float(candidate["max_factor_correlation"]),
@@ -174,7 +149,7 @@ def _result_from_core(value: dict) -> RotationSelectionResult:
             policy_score=float(candidate["policy_score"]),
             pareto_optimal=bool(candidate["pareto_optimal"]),
         )
-        for candidate in value["candidates"]
+        for candidate in raw_candidates
     )
     return RotationSelectionResult(
         selected_index=int(value["selected_index"]),
@@ -211,17 +186,12 @@ def select_rotation_criterion(
     target: np.ndarray | None = None,
     weights: np.ndarray | None = None,
 ) -> RotationSelectionResult:
-    """Select a rotation criterion using neutral, policy-weighted evidence.
+    """Select a criterion using neutral, policy-weighted empirical evidence.
 
-    Candidate objective values are never compared directly. Each candidate is
-    optimized independently, then ranked on common structure, degeneracy,
-    convergence, basin, optional bootstrap-congruence, and optional target-
-    recovery metrics. At least 20 bootstrap loading matrices produce the
-    ``bootstrap_supported`` evidence grade; fewer are explicitly exploratory.
+    Candidate objective values are never compared directly. At least 20
+    bootstrap loading matrices receive the ``bootstrap_supported`` evidence
+    grade; fewer are explicitly exploratory.
     """
-
-    from . import _core
-    from .rotation import _optional_matrix
 
     matrix = _matrix(loadings, "loadings")
     names = _candidate_names(candidates)
@@ -233,7 +203,7 @@ def select_rotation_criterion(
     if weight_matrix is not None and np.any(weight_matrix < 0.0):
         raise ValueError("weights must be non-negative")
     theory = _theory_target(theory_target, matrix.shape)
-    result = _core.select_rotation_criterion(
+    result = rotation_core().select_rotation_criterion(
         matrix,
         list(names),
         resolved_mode,
