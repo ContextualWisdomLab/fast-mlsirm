@@ -29,9 +29,9 @@ Factors are assumed orthogonal. Every item and factor must have at least one
 structurally non-zero loading. Standardized loadings must be finite and have
 absolute value below one; uniquenesses must be finite and non-negative.
 
-For fitted logistic-IRT slopes, use
-`bifactor_indices_from_logit_slopes`. With unit-variance orthogonal factors and
-logistic residual variance `pi^2 / 3`, it computes
+For fitted logistic-IRT slopes, use the explicitly named
+`bifactor_latent_response_indices_from_logit_slopes`. With unit-variance
+orthogonal factors and logistic residual variance `pi^2 / 3`, it computes
 
 \[
 \lambda_{if}
@@ -48,6 +48,21 @@ logistic residual variance `pi^2 / 3`, it computes
 The implementation performs this normalization in scaled coordinates to avoid
 intermediate overflow for large finite slopes. This conversion is specific to
 the logistic link and must not be applied to probit or other links.
+
+### Logistic latent-response boundary
+
+The slope conversion produces a standardized **continuous latent-response**
+loading solution. Consequently, `omega_total` and `omega_hierarchical` returned
+by this entry point are continuous latent-response coefficients. They are not
+Green-Yang categorical omega coefficients for an observed binary or ordinal sum
+score, because category thresholds and observed-score covariance are not inputs
+to the function. Operational categorical-score reliability requires a separate
+threshold-aware implementation and must not be inferred from these values.
+
+ECV, item ECV, PUC, and `H` likewise describe the transformed loading solution;
+they do not by themselves validate an operational score or decision rule. The
+long function name is intentional so the scale convention remains visible at
+every call site.
 
 ## Returned indices
 
@@ -160,21 +175,25 @@ validity, invariance, or predictive evidence.
 
 ## Structural-zero policy
 
-`zero_tolerance` affects factor-membership logic only. Numerical sums retain the
-original loading values. This prevents a tiny estimation artifact from turning
-a strict bifactor pattern into a cross-loaded pattern while avoiding hidden
-rounding of the actual indices.
+`zero_tolerance` controls the `I_if` membership indicators. Loadings treated as
+active retain their original numerical values rather than being rounded to a
+threshold value; values below the threshold can still contribute where a
+formula sums the full loading row rather than the target-factor membership
+term. This prevents a tiny estimation artifact from turning a strict bifactor
+pattern into a cross-loaded pattern without silently rewriting the supplied
+loading matrix.
 
 The default constructor uses exact zeroes:
 
 ```rust
 use mlsirm_core::bifactor_indices::{
-    bifactor_indices_from_logit_slopes,
+    bifactor_latent_response_indices_from_logit_slopes,
     BifactorIndicesConfig,
 };
 
 let config = BifactorIndicesConfig::new(n_items, n_factors, general_factor);
-let diagnostics = bifactor_indices_from_logit_slopes(&logit_slopes, config)?;
+let diagnostics =
+    bifactor_latent_response_indices_from_logit_slopes(&logit_slopes, config)?;
 ```
 
 Use a non-zero tolerance only when the estimation and sparsity procedure has an
@@ -211,7 +230,7 @@ The integration tests reproduce the 12-item, four-factor example distributed by
 Additional tests cover non-first general-factor placement, single-item specific
 factors, cross-loadings, missing general loadings, structural-zero tolerance,
 malformed matrices, non-finite inputs, numerical underflow, sign-cancelled
-zero-variance composites, and logistic-slope standardization.
+zero-variance composites, and logistic latent-response standardization.
 
 ## Source governance and references
 
