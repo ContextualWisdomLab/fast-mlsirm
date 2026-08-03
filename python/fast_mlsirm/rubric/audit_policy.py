@@ -5,11 +5,12 @@ from __future__ import annotations
 from .audit import (
     CandidateAuditReport,
     PilotAdmissionError,
-    PilotCandidateRecord,
     audit_generated_item_candidate as _audit_generated_item_candidate,
     build_pilot_candidate_record as _build_pilot_candidate_record,
 )
 from .candidates import GeneratedItemCandidate
+from .verified_pilot import PilotCandidateRecord
+from .verified_pilot import _from_verified_core
 
 AUDIT_POLICY_ID = "generated_item_audit"
 AUDIT_POLICY_VERSION = "1.0.0"
@@ -59,7 +60,7 @@ def build_pilot_candidate_record(
             "audit report does not match a replay of the current policy",
         )
 
-    return _build_pilot_candidate_record(
+    core_record = _build_pilot_candidate_record(
         candidate,
         audit_report,
         pilot_study_id=pilot_study_id,
@@ -68,3 +69,4 @@ def build_pilot_candidate_record(
         judge_policy_id=judge_policy_id,
         occasion_id=occasion_id,
     )
+    return _from_verified_core(core_record)
