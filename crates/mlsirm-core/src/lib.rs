@@ -587,5 +587,9 @@ mod additional_tests;
 mod marginal_recovery_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/marginal_distance_tests.rs"]
+mod marginal_distance_tests;
+
+#[cfg(test)]
 #[path = "../../../tests/unit/proptest_neg_loglik_tests.rs"]
 mod proptest_neg_loglik_tests;

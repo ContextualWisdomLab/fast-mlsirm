@@ -226,7 +226,7 @@ pub struct MarginalResult {
 }
 
 #[inline]
-fn log_sigmoid(x: f64) -> f64 {
+pub(crate) fn log_sigmoid(x: f64) -> f64 {
     if x >= 0.0 {
         -(-x).exp().ln_1p()
     } else {
@@ -358,6 +358,90 @@ pub(crate) fn eta_at_kind(
     eta
 }
 
+/// Per-(item, quadrature-node) Euclidean interaction distances.
+///
+/// Entry `(i, x)` is `sqrt(eps_distance + ||x_grid[x] - zeta_i||^2)`,
+/// accumulated in the same coordinate order as the scalar reference in
+/// [`eta_at_kind`], so downstream reuse is bit-identical to recomputing the
+/// distance per quadrature cell. The distance depends only on the item
+/// position and the latent node — never on the population context or the
+/// trait node — so the marginal hot paths compute this `n_items * n_x` table
+/// once instead of once per `(context, trait-node)` cell.
+pub(crate) fn distance_value_table(
+    zeta: &[f64],
+    latent_dim: usize,
+    eps_distance: f64,
+    n_items: usize,
+    x_grid: &[f64],
+    n_x: usize,
+) -> Vec<f64> {
+    let mut distance_values = vec![0.0_f64; n_items * n_x];
+    for i in 0..n_items {
+        let zeta_i = &zeta[i * latent_dim..(i + 1) * latent_dim];
+        for x in 0..n_x {
+            let x_node = &x_grid[x * latent_dim..(x + 1) * latent_dim];
+            let mut dist2 = eps_distance;
+            for k in 0..latent_dim {
+                let diff = x_node[k] - zeta_i[k];
+                dist2 += diff * diff;
+            }
+            distance_values[i * n_x + x] = dist2.sqrt();
+        }
+    }
+    distance_values
+}
+
+/// Per-(item, quadrature-node) additive latent interaction term of `eta`.
+///
+/// For [`InteractionKind::Distance`] entry `(i, x)` is
+/// `-(exp(tau) * sqrt(eps_distance + ||x_grid[x] - zeta_i||^2))`, so adding it
+/// to the linear predictor is bit-identical to the scalar reference's
+/// subtraction (IEEE-754 `a - b == a + (-b)`). For
+/// [`InteractionKind::Inner`] it is the dot product
+/// `sum_k zeta[i, k] * x_grid[x, k]`, which reassociates the reference's
+/// per-coordinate accumulation and therefore agrees to floating-point
+/// round-off rather than bit-identically. [`InteractionKind::None`] yields
+/// zeros.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn latent_interaction_table(
+    zeta: &[f64],
+    tau: f64,
+    kind: InteractionKind,
+    latent_dim: usize,
+    eps_distance: f64,
+    n_items: usize,
+    x_grid: &[f64],
+    n_x: usize,
+) -> Vec<f64> {
+    match kind {
+        InteractionKind::None => vec![0.0_f64; n_items * n_x],
+        InteractionKind::Distance => {
+            let gamma_weight = tau.exp();
+            let mut interaction_terms =
+                distance_value_table(zeta, latent_dim, eps_distance, n_items, x_grid, n_x);
+            for term in &mut interaction_terms {
+                *term = -(gamma_weight * *term);
+            }
+            interaction_terms
+        }
+        InteractionKind::Inner => {
+            let mut interaction_terms = vec![0.0_f64; n_items * n_x];
+            for i in 0..n_items {
+                let zeta_i = &zeta[i * latent_dim..(i + 1) * latent_dim];
+                for x in 0..n_x {
+                    let x_node = &x_grid[x * latent_dim..(x + 1) * latent_dim];
+                    let mut dot_sum = 0.0_f64;
+                    for k in 0..latent_dim {
+                        dot_sum += zeta_i[k] * x_node[k];
+                    }
+                    interaction_terms[i * n_x + x] = dot_sum;
+                }
+            }
+            interaction_terms
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_tables(
     alpha: &[f64],
@@ -372,8 +456,70 @@ pub(crate) fn build_tables(
     build_tables_offset(alpha, b, zeta, tau, config, factor_id, ctx, grids, None)
 }
 
+/// Fill the marginal probability tables for one contiguous context range.
+///
+/// The slices are the sub-tables owned by contexts `[ctx_start, ctx_end)`;
+/// indexing inside them is relative to `ctx_start`. Keeping the
+/// `context -> item -> trait-node -> latent-node` fill order of the scalar
+/// reference preserves the `c0` accumulation order, so sharded execution is
+/// bit-identical to the serial fill.
+#[allow(clippy::too_many_arguments)]
+fn fill_tables_context_range(
+    logp1_part: &mut [f64],
+    logp0_part: &mut [f64],
+    c0_part: &mut [f64],
+    ctx_range: (usize, usize),
+    alpha_scales: &[f64],
+    b: &[f64],
+    interaction_terms: &[f64],
+    factor_id: &[usize],
+    ctx: &Contexts,
+    grids: &Grids,
+    n_items: usize,
+    n_dims: usize,
+    offset: Option<&[f64]>,
+) {
+    let (ctx_start, ctx_end) = ctx_range;
+    let n_x = grids.n_x;
+    let cell = grids.q_t * n_x;
+    for s in ctx_start..ctx_end {
+        let local_s = s - ctx_start;
+        for i in 0..n_items {
+            let d = factor_id[i];
+            let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
+            let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
+            let a = alpha_scales[i];
+            let b_i = b[i];
+            let item_terms = &interaction_terms[i * n_x..(i + 1) * n_x];
+            for (t, &node_t) in grids.t_nodes.iter().enumerate() {
+                let theta = shift + scale * node_t;
+                for (x, &interaction_term) in item_terms.iter().enumerate() {
+                    let eta = off + (a * theta + b_i + interaction_term);
+                    let idx = (local_s * n_items + i) * cell + t * n_x + x;
+                    logp1_part[idx] = log_sigmoid(eta);
+                    logp0_part[idx] = log_sigmoid(-eta);
+                    c0_part[(local_s * n_dims + d) * cell + t * n_x + x] += logp0_part[idx];
+                }
+            }
+        }
+    }
+}
+
+/// Minimum total table cells before [`build_tables_offset`] shards contexts
+/// across coarse worker threads; smaller problems stay serial because thread
+/// startup would dominate the fill itself.
+const MARGINAL_MT_CELL_FLOOR: usize = 1 << 16;
+
 /// [`build_tables`] with an optional per-(context, item) additive offset on
 /// the linear predictor (the covariate term `delta * w[s, i]`).
+///
+/// The latent interaction term of `eta` depends only on `(item, latent
+/// node)`, so it is precomputed once via [`latent_interaction_table`] instead
+/// of once per `(context, item, trait-node, latent-node)` cell, and the fill
+/// is sharded over contexts with the crate's coarse fixed-shard threading
+/// pattern. Distance-kind tables are bit-identical to the scalar reference;
+/// inner-product tables agree to floating-point round-off (see
+/// [`latent_interaction_table`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_tables_offset(
     alpha: &[f64],
@@ -386,6 +532,38 @@ pub(crate) fn build_tables_offset(
     grids: &Grids,
     offset: Option<&[f64]>,
 ) -> Tables {
+    let worker_count = std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1);
+    build_tables_offset_with_workers(
+        alpha,
+        b,
+        zeta,
+        tau,
+        config,
+        factor_id,
+        ctx,
+        grids,
+        offset,
+        worker_count,
+    )
+}
+
+/// [`build_tables_offset`] with an explicit coarse worker count (tests force
+/// both the serial and the sharded path deterministically through this seam).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_tables_offset_with_workers(
+    alpha: &[f64],
+    b: &[f64],
+    zeta: &[f64],
+    tau: f64,
+    config: &ModelConfig,
+    factor_id: &[usize],
+    ctx: &Contexts,
+    grids: &Grids,
+    offset: Option<&[f64]>,
+    worker_count: usize,
+) -> Tables {
     let (free_alpha, _uses_space) = model_exec_flags(config.model_type);
     let kind = interaction_kind(config.model_type);
     let (n_items, n_dims, latent_dim) = (config.n_items, config.n_dims, config.latent_dim);
@@ -394,36 +572,83 @@ pub(crate) fn build_tables_offset(
     let mut logp1 = vec![0.0_f64; ctx.n_ctx * n_items * cell];
     let mut logp0 = vec![0.0_f64; ctx.n_ctx * n_items * cell];
     let mut c0 = vec![0.0_f64; ctx.n_ctx * n_dims * cell];
-    for s in 0..ctx.n_ctx {
-        for i in 0..n_items {
-            let d = factor_id[i];
-            let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
-            let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
-            for (t, &node_t) in grids.t_nodes.iter().enumerate() {
-                let theta = shift + scale * node_t;
-                for x in 0..n_x {
-                    let eta = off
-                        + eta_at_kind(
-                            alpha,
-                            b,
-                            zeta,
-                            tau,
-                            free_alpha,
-                            kind,
-                            latent_dim,
-                            config.eps_distance,
-                            i,
-                            theta,
-                            &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
-                        );
-                    let idx = (s * n_items + i) * cell + t * n_x + x;
-                    logp1[idx] = log_sigmoid(eta);
-                    logp0[idx] = log_sigmoid(-eta);
-                    c0[(s * n_dims + d) * cell + t * n_x + x] += logp0[idx];
-                }
-            }
-        }
+
+    let alpha_scales: Vec<f64> = (0..n_items)
+        .map(|i| if free_alpha { alpha[i].exp() } else { 1.0 })
+        .collect();
+    let interaction_terms = latent_interaction_table(
+        zeta,
+        tau,
+        kind,
+        latent_dim,
+        config.eps_distance,
+        n_items,
+        &grids.x_grid,
+        n_x,
+    );
+
+    let total_cells = ctx.n_ctx * n_items * cell;
+    let workers = worker_count.max(1).min(ctx.n_ctx.max(1));
+    if workers <= 1 || total_cells < MARGINAL_MT_CELL_FLOOR {
+        fill_tables_context_range(
+            &mut logp1,
+            &mut logp0,
+            &mut c0,
+            (0, ctx.n_ctx),
+            &alpha_scales,
+            b,
+            &interaction_terms,
+            factor_id,
+            ctx,
+            grids,
+            n_items,
+            n_dims,
+            offset,
+        );
+        return Tables { logp1, logp0, c0 };
     }
+
+    let chunk = ctx.n_ctx.div_ceil(workers);
+    std::thread::scope(|scope| {
+        let mut logp1_rest = logp1.as_mut_slice();
+        let mut logp0_rest = logp0.as_mut_slice();
+        let mut c0_rest = c0.as_mut_slice();
+        let mut handles = Vec::with_capacity(workers);
+        let mut ctx_start = 0_usize;
+        while ctx_start < ctx.n_ctx {
+            let ctx_end = (ctx_start + chunk).min(ctx.n_ctx);
+            let span = ctx_end - ctx_start;
+            let (logp1_part, next_logp1) = logp1_rest.split_at_mut(span * n_items * cell);
+            let (logp0_part, next_logp0) = logp0_rest.split_at_mut(span * n_items * cell);
+            let (c0_part, next_c0) = c0_rest.split_at_mut(span * n_dims * cell);
+            logp1_rest = next_logp1;
+            logp0_rest = next_logp0;
+            c0_rest = next_c0;
+            let alpha_scales_ref = &alpha_scales;
+            let interaction_terms_ref = &interaction_terms;
+            handles.push(scope.spawn(move || {
+                fill_tables_context_range(
+                    logp1_part,
+                    logp0_part,
+                    c0_part,
+                    (ctx_start, ctx_end),
+                    alpha_scales_ref,
+                    b,
+                    interaction_terms_ref,
+                    factor_id,
+                    ctx,
+                    grids,
+                    n_items,
+                    n_dims,
+                    offset,
+                );
+            }));
+            ctx_start = ctx_end;
+        }
+        for handle in handles {
+            handle.join().expect("marginal table worker panicked");
+        }
+    });
     Tables { logp1, logp0, c0 }
 }
 
@@ -1216,13 +1441,27 @@ fn item_q(
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
     let d = factor_id[i];
+    // The candidate item's interaction term depends only on the latent node,
+    // so the M-step line search precomputes it once per objective evaluation
+    // instead of once per (context, trait-node, latent-node) cell.
+    let a = if free_alpha { alpha_i.exp() } else { 1.0 };
+    let interaction_terms = latent_interaction_table(
+        zeta_i,
+        tau,
+        kind,
+        latent_dim,
+        config.eps_distance,
+        1,
+        &grids.x_grid,
+        n_x,
+    );
     let mut q = 0.0;
     for s in 0..ctx.n_ctx {
         let off = offset.map(|o| o[s * n_items + i]).unwrap_or(0.0);
         let (shift, scale) = (ctx.shift[s * n_dims + d], ctx.scale[s * n_dims + d]);
         for (t, &node_t) in grids.t_nodes.iter().enumerate() {
             let theta = shift + scale * node_t;
-            for x in 0..n_x {
+            for (x, &interaction_term) in interaction_terms.iter().enumerate() {
                 let idx = t * n_x + x;
                 let n = estep.nbar[(s * n_dims + d) * cell + idx]
                     - estep.mbar[(s * n_items + i) * cell + idx];
@@ -1230,20 +1469,7 @@ fn item_q(
                 if n <= 0.0 && r <= 0.0 {
                     continue;
                 }
-                let eta = off
-                    + eta_at_kind(
-                        &[alpha_i],
-                        &[b_i],
-                        zeta_i,
-                        tau,
-                        free_alpha,
-                        kind,
-                        latent_dim,
-                        config.eps_distance,
-                        0,
-                        theta,
-                        &grids.x_grid[x * latent_dim..(x + 1) * latent_dim],
-                    );
+                let eta = off + (a * theta + b_i + interaction_term);
                 q += r * log_sigmoid(eta) + (n - r) * log_sigmoid(-eta);
             }
         }
@@ -1300,6 +1526,41 @@ fn m_step_items(
             // preconditioner — plain gradient steps scale poorly across the
             // mixed (alpha, b, zeta) curvature and stall the slope updates.
             let a = if free_alpha { alpha[i].exp() } else { 1.0 };
+            // The candidate position's distances and interaction terms depend
+            // only on the latent node, so each gradient evaluation computes
+            // them once instead of once per (context, trait-node) pair. The
+            // gradient itself still needs the raw distance for `d eta / d
+            // zeta`, so the Distance kind keeps both tables.
+            let (dist_values, interaction_terms) = match kind {
+                InteractionKind::Distance => {
+                    let dist_values = distance_value_table(
+                        &zeta_i,
+                        latent_dim,
+                        config.eps_distance,
+                        1,
+                        &grids.x_grid,
+                        n_x,
+                    );
+                    let interaction_terms: Vec<f64> = dist_values
+                        .iter()
+                        .map(|&dist_value| -(gamma * dist_value))
+                        .collect();
+                    (dist_values, interaction_terms)
+                }
+                _ => (
+                    vec![1.0_f64; n_x],
+                    latent_interaction_table(
+                        &zeta_i,
+                        tau,
+                        kind,
+                        latent_dim,
+                        config.eps_distance,
+                        1,
+                        &grids.x_grid,
+                        n_x,
+                    ),
+                ),
+            };
             let (mut g_alpha, mut g_b) = (0.0_f64, 0.0_f64);
             let mut g_zeta = vec![0.0_f64; latent_dim];
             let (mut i_alpha, mut i_b) = (0.0_f64, 0.0_f64);
@@ -1318,28 +1579,8 @@ fn m_step_items(
                             continue;
                         }
                         let x_node = &grids.x_grid[x * latent_dim..(x + 1) * latent_dim];
-                        let mut dist = 1.0;
-                        let eta = {
-                            let mut e = off + a * theta + b[i];
-                            match kind {
-                                InteractionKind::None => {}
-                                InteractionKind::Distance => {
-                                    let mut dist2 = config.eps_distance;
-                                    for k in 0..latent_dim {
-                                        let diff = x_node[k] - zeta_i[k];
-                                        dist2 += diff * diff;
-                                    }
-                                    dist = dist2.sqrt();
-                                    e -= gamma * dist;
-                                }
-                                InteractionKind::Inner => {
-                                    for k in 0..latent_dim {
-                                        e += zeta_i[k] * x_node[k];
-                                    }
-                                }
-                            }
-                            e
-                        };
+                        let dist = dist_values[x];
+                        let eta = off + a * theta + b[i] + interaction_terms[x];
                         let prob = sigmoid(eta);
                         let resid = r - n * prob;
                         let info = (n * prob * (1.0 - prob)).max(0.0);
@@ -1472,6 +1713,17 @@ fn m_step_tau(
     let (q_t, n_x) = (grids.q_t, grids.n_x);
     let cell = q_t * n_x;
     let gamma = tau.exp();
+    // The item-to-node distances do not depend on tau, the context, or the
+    // trait node, so the tau gradient computes the full (item, latent-node)
+    // distance table once instead of once per quadrature cell.
+    let dist_values = distance_value_table(
+        zeta,
+        latent_dim,
+        config.eps_distance,
+        n_items,
+        &grids.x_grid,
+        n_x,
+    );
     let (mut grad, mut info) = (0.0_f64, 0.0_f64);
     for i in 0..n_items {
         let d = factor_id[i];
@@ -1489,13 +1741,7 @@ fn m_step_tau(
                     if n <= 0.0 && r <= 0.0 {
                         continue;
                     }
-                    let x_node = &grids.x_grid[x * latent_dim..(x + 1) * latent_dim];
-                    let mut dist2 = config.eps_distance;
-                    for k in 0..latent_dim {
-                        let diff = x_node[k] - zeta[i * latent_dim + k];
-                        dist2 += diff * diff;
-                    }
-                    let dist = dist2.sqrt();
+                    let dist = dist_values[i * n_x + x];
                     let eta = off + a * theta + b[i] - gamma * dist;
                     let prob = sigmoid(eta);
                     let resid = r - n * prob;
