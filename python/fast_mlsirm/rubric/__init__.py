@@ -43,15 +43,13 @@ from .models import ResponseFormat as ResponseFormat
 from .models import RubricLevel as RubricLevel
 from .models import RubricSpecification as RubricSpecification
 
+# Preserve the established star-import contract. Audit and pilot types remain
+# explicit subpackage attributes and are imported by their documented names,
+# but are not added to ``__all__`` until the next public-surface version bump.
 __all__ = [
-    "MAX_AUDIT_FINDINGS",
     "MAX_BLUEPRINTS",
-    "AuditSeverity",
     "BinaryAnswerKey",
     "BlueprintPlan",
-    "CandidateAuditFinding",
-    "CandidateAuditReport",
-    "CandidateLifecycleState",
     "CandidateValidationError",
     "ConstructedAnswerKey",
     "DifficultyBand",
@@ -66,8 +64,6 @@ __all__ = [
     "ItemGenerationProvider",
     "OrdinalAnswerKey",
     "PairwiseAnswerKey",
-    "PilotAdmissionError",
-    "PilotCandidateRecord",
     "ResponseFormat",
     "RubricAlignmentEntry",
     "RubricLevel",
@@ -77,10 +73,8 @@ __all__ = [
     "SourceAttribution",
     "SourceDocument",
     "StaticFixtureProvider",
-    "audit_generated_item_candidate",
     "build_generation_contract",
     "build_generation_request",
-    "build_pilot_candidate_record",
     "canonical_generation_contract",
     "compile_item_blueprints",
     "execute_generation",
