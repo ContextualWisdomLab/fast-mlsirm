@@ -27,17 +27,21 @@ def _sentinel() -> dict[str, float]:
 
 
 def test_default_relation_is_unknown_and_never_selects(monkeypatch):
-    """Omitting mathematical relation metadata must fail closed."""
+    """Omitting mathematical relation metadata must fail closed before kernel use."""
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
-        lambda *_args, **_kwargs: _sentinel(),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("unknown relation reached the non-nested kernel")
+        ),
     )
     result = compare_nonnested_models([1.0, 2.0], [0.0, 1.0], 2, 2)
 
     assert result.relation is ModelRelation.UNKNOWN
     assert result.status is ComparisonStatus.UNKNOWN_RELATION
     assert result.preferred_model is None
+    assert math.isnan(result.raw_z)
+    assert math.isnan(result.raw_p_two_sided)
 
 
 def test_strict_nonnested_requires_formal_distinguishability(monkeypatch):
@@ -61,6 +65,33 @@ def test_strict_nonnested_requires_formal_distinguishability(monkeypatch):
     assert math.isnan(result.p_two_sided)
     assert result.raw_z == pytest.approx(2.5)
     assert result.raw_p_two_sided == pytest.approx(0.01)
+
+
+def test_relation_inapplicable_paths_do_not_call_vuong_kernel(monkeypatch):
+    """Nested, boundary, and unknown relations retain their required procedure."""
+    monkeypatch.setattr(
+        comparison_module,
+        "vuong_nonnested",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("relation-inapplicable comparison reached kernel")
+        ),
+    )
+    for relation, expected in [
+        (ModelRelation.NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
+        (ModelRelation.BOUNDARY_NESTED, ComparisonStatus.REQUIRES_LIKELIHOOD_RATIO),
+        (ModelRelation.UNKNOWN, ComparisonStatus.UNKNOWN_RELATION),
+    ]:
+        result = compare_nonnested_models(
+            [1.0, 1.5],
+            [0.5, 1.0],
+            2,
+            1,
+            relation=relation,
+        )
+        assert result.status is expected
+        assert result.preferred_model is None
+        assert math.isnan(result.raw_mean_loglik_difference)
+        assert math.isnan(result.omega)
 
 
 def test_casewise_iterables_are_bounded(monkeypatch):
@@ -109,17 +140,19 @@ def test_parameter_counts_reject_booleans_and_fractional_values(parameter_count)
 
 
 @pytest.mark.parametrize(
-    "message",
+    ("exception_type", "message"),
     [
-        "models are indistinguishable on this sample",
-        "translated wording without omega notation",
-        "future compiled validation text",
+        (ValueError, "models are indistinguishable on this sample"),
+        (TypeError, "translated marshalling type error"),
+        (OverflowError, "integer conversion overflow"),
     ],
 )
-def test_kernel_errors_become_one_typed_redacted_boundary(monkeypatch, message):
-    """Classification never depends on human-readable Rust exception wording."""
+def test_kernel_errors_become_one_typed_redacted_boundary(
+    monkeypatch, exception_type, message
+):
+    """Classification never depends on compiled or marshalling exception wording."""
     def legacy_kernel(*_args, **_kwargs):
-        raise ValueError(message)
+        raise exception_type(message)
 
     monkeypatch.setattr(comparison_module, "vuong_nonnested", legacy_kernel)
     with pytest.raises(VuongKernelError, match="compiled Vuong kernel rejected") as error:
@@ -131,6 +164,20 @@ def test_kernel_errors_become_one_typed_redacted_boundary(monkeypatch, message):
             bic_correction=True,
         )
     assert message not in str(error.value)
+
+
+def test_untrusted_numeric_values_fail_with_stable_public_errors():
+    """Opaque values, booleans, non-finite values, and huge integers fail before FFI."""
+    bad_values = [object(), True, float("nan"), 10**10_000]
+    for value in bad_values:
+        with pytest.raises(ValueError, match="loglik_a"):
+            compare_nonnested_models(
+                [value, 1.0],
+                [0.0, 1.0],
+                1,
+                1,
+                relation=ModelRelation.STRICTLY_NON_NESTED,
+            )
 
 
 def test_typed_kernel_failure_is_consumed_fail_closed(monkeypatch):
