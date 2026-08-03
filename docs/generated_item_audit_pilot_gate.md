@@ -13,7 +13,7 @@ generation contract
   -> strict provider-output parser
   -> immutable GeneratedItemCandidate
   -> deterministic CandidateAuditReport
-  -> explicit pilot admission
+  -> replay-verified pilot admission
   -> immutable PilotCandidateRecord
 ```
 
@@ -29,8 +29,12 @@ Generated content may occupy only these states in this slice:
    candidate/audit fingerprint binding.
 
 An audit report cannot assign `pilot` directly. `build_pilot_candidate_record`
-rejects a stale report, a changed candidate, or any report that remains in
-`draft`. The pilot record requires descriptive nonnumeric identifiers for the
+rejects a stale report, a changed candidate, any report that remains in
+`draft`, or a report labelled with an audit policy not implemented by the
+installed package. Before admission, it reruns the named package policy over
+the exact candidate and requires the complete report fingerprint to match.
+This prevents callers from constructing a clean-looking report that hides real
+findings. The pilot record requires descriptive nonnumeric identifiers for the
 pilot study, query/testlet, generator family, judge policy, occasion, item,
 blueprint, and rubric.
 
@@ -50,7 +54,9 @@ The current policy emits bounded, redacted findings for:
 Finding messages never copy candidate or source text. Audit output is
 content-addressed with a complete SHA-256 fingerprint and a descriptive
 128-bit public handle. Identical candidates and policy versions produce
-identical reports.
+identical reports. The public policy identity and version are fixed constants
+for the installed package so policy labels cannot drift independently of the
+implemented logic.
 
 ## Scientific and product boundary
 
