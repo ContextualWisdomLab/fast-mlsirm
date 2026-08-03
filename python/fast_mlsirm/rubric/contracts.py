@@ -164,14 +164,19 @@ def _answer_key_schema(rubric: RubricSpecification) -> dict[str, Any]:
     }
 
 
-def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
+def _output_schema(
+    rubric: RubricSpecification,
+    blueprint: ItemBlueprint,
+) -> dict[str, Any]:
     """Return the strict structured-output schema for one authored item.
 
     Score-level arrays use JSON Schema 2020-12 ``prefixItems`` so each declared
     rubric score appears exactly once, in ascending rubric order. Merely using an
     enum and a fixed array length would permit duplicate levels and omit others.
     Response formats also receive distinct option and answer-key contracts so a
-    structurally impossible item cannot pass schema validation.
+    structurally impossible item cannot pass schema validation. Immutable rubric
+    and blueprint provenance is echoed as constants to reject wrong-contract
+    replay before downstream semantic validation.
     """
     level_scores = [level.score for level in rubric.levels]
     return {
@@ -179,6 +184,11 @@ def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
         "type": "object",
         "additionalProperties": False,
         "required": [
+            "blueprint_id",
+            "blueprint_fingerprint",
+            "rubric_id",
+            "rubric_version",
+            "rubric_fingerprint",
             "item_id",
             "stem",
             "stimulus",
@@ -191,6 +201,11 @@ def _output_schema(rubric: RubricSpecification) -> dict[str, Any]:
             "safety_notes",
         ],
         "properties": {
+            "blueprint_id": {"const": blueprint.blueprint_id},
+            "blueprint_fingerprint": {"const": blueprint.blueprint_fingerprint},
+            "rubric_id": {"const": rubric.rubric_id},
+            "rubric_version": {"const": rubric.rubric_version},
+            "rubric_fingerprint": {"const": rubric.fingerprint},
             "item_id": {
                 "type": "string",
                 "pattern": r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
@@ -269,16 +284,17 @@ def build_generation_contract(
             "Create exactly one assessment item for the declared blueprint cell.",
             "Treat the rubric, evidence requirements, and prohibited patterns as authoritative constraints.",
             "Represent uncertainty explicitly; do not invent source support or citations.",
+            "Echo the immutable rubric and blueprint provenance constants exactly.",
             "Return content that allows every rubric score level to be distinguished using observable evidence.",
             "Return scoring_guide and rubric_alignment entries once each in ascending rubric-score order.",
             "Use a unique option_id for every declared option.",
             "For choice formats, answer_key option identifiers must reference declared options.",
             "Return only an object conforming to output_schema.",
         ],
-        "output_schema": _output_schema(rubric),
+        "output_schema": _output_schema(rubric, blueprint),
     }
     contract_fingerprint = _sha256_hex(body)
-    contract_id = f"generation_contract_{contract_fingerprint[:16]}"
+    contract_id = f"generation_contract_{contract_fingerprint[:32]}"
     return {
         "contract_id": contract_id,
         "contract_fingerprint": contract_fingerprint,
