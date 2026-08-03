@@ -108,22 +108,22 @@ def test_raw_nonsignificance_or_directionlessness_is_audit_only(monkeypatch, z):
 
 
 @pytest.mark.parametrize(
-    ("kernel_result", "omega_tol"),
+    ("kernel_factory", "omega_tol"),
     [
-        (_sentinel(omega=0.0), 1e-12),
-        (_sentinel(omega=1e-14), 1e-12),
-        (_sentinel(z=float("nan")), 0.0),
-        (_sentinel(p=float("nan")), 0.0),
+        (lambda: _sentinel(omega=0.0), 1e-12),
+        (lambda: _sentinel(omega=1e-14), 1e-12),
+        (lambda: _sentinel(z=float("nan")), 0.0),
+        (lambda: _sentinel(p=float("nan")), 0.0),
     ],
 )
 def test_degenerate_variance_or_nonfinite_inference_fails_closed(
-    monkeypatch, kernel_result, omega_tol
+    monkeypatch, kernel_factory, omega_tol
 ):
     """Undefined normal inference never produces a model preference."""
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
-        lambda *_args, **_kwargs: kernel_result,
+        lambda *_args, **_kwargs: kernel_factory(),
     )
     result = compare_nonnested_models(
         [0.0, 0.1],
