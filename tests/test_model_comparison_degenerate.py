@@ -10,7 +10,7 @@ from fast_mlsirm.model_comparison import ComparisonStatus, compare_nonnested_mod
 
 
 def test_constant_casewise_difference_returns_degenerate_decision_result():
-    """Degenerate inference preserves descriptive Rust statistics for audit."""
+    """Exact observational equivalence is a reportable status, not an exception."""
     result = compare_nonnested_models(
         [1.0, 1.5, 2.0, 2.5],
         [0.75, 1.25, 1.75, 2.25],
@@ -22,7 +22,7 @@ def test_constant_casewise_difference_returns_degenerate_decision_result():
 
     assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
     assert result.preferred_model is None
-    assert result.raw_mean_loglik_difference == pytest.approx(0.25)
+    assert math.isnan(result.raw_mean_loglik_difference)
     assert result.omega == pytest.approx(0.0)
     assert not result.variance_positive
     assert math.isnan(result.z)
