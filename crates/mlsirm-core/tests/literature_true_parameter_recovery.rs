@@ -331,12 +331,12 @@ fn assert_likelihood_trace(trace: &[f64]) {
 #[test]
 fn simple_structure_equation_matches_general_dot_product() {
     let alpha = 1.25_f64.ln();
-    let theta = [0.40, -0.70];
+    let theta: [f64; 2] = [0.40, -0.70];
     let factor = 1;
     let intercept = 0.80;
     let tau = 1.50_f64.ln();
-    let xi = [0.25, -0.10];
-    let zeta = [-0.35, 0.65];
+    let xi: [f64; 2] = [0.25, -0.10];
+    let zeta: [f64; 2] = [-0.35, 0.65];
     let distance = ((xi[0] - zeta[0]).powi(2) + (xi[1] - zeta[1]).powi(2)).sqrt();
     let simple = alpha.exp() * theta[factor] + intercept - tau.exp() * distance;
     let discrimination = [0.0, alpha.exp()];
