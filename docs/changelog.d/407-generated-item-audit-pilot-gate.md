@@ -13,6 +13,10 @@
   candidate/audit fingerprint match may produce an immutable
   `PilotCandidateRecord` with explicit pilot-study, query/testlet, generator,
   judge-policy, occasion, rubric, blueprint, and item provenance.
+- Public pilot admission replays the package's exact named and versioned audit
+  policy and compares the complete report fingerprint, preventing a caller
+  from constructing a clean-looking report that bypasses real findings or
+  relabeling the current implementation as an unsupported policy version.
 - The audit is a deterministic screening and governance boundary, not a
   semantic answerability, fairness, scoreability, psychometric validity, or
   operational-deployment declaration. Pilot observation conversion and
