@@ -1,11 +1,15 @@
-# Decision-safe non-nested model comparison
+# Fail-closed Vuong selection-statistic summary
 
-`fast_mlsirm.model_comparison.compare_nonnested_models` converts the existing
-Rust-backed Vuong statistic into an auditable, fail-closed model-selection
-result. The API is intended for paired **casewise marginal log-likelihood**
-contributions from two models fitted to the same observations.
+`fast_mlsirm.model_comparison.compare_nonnested_models` provides an auditable,
+resource-bounded wrapper around the existing Rust-backed Vuong **selection
+statistic**. It does not declare a winning model before the mathematically
+required first-stage distinguishability test has been supplied.
 
-## Verified statistic
+The API accepts paired **casewise marginal log-likelihood** contributions from
+two models fitted to the same independent sampling units. The fail-closed
+default relation is `unknown`.
+
+## Rust-computed statistic
 
 For case `i`, define
 
@@ -22,7 +26,7 @@ and
 = \frac{1}{N}\sum_{i=1}^{N}(m_i-\bar m)^2.
 \]
 
-For a declared strictly non-nested comparison, the uncorrected statistic is
+The uncorrected normal selection statistic is
 
 \[
 Z = \frac{\sum_i m_i}{\sqrt{N}\,\widehat{\omega}}.
@@ -37,36 +41,51 @@ Z_{BIC}
 {\sqrt{N}\,\widehat{\omega}}.
 \]
 
-Positive values favor model A. The Python module performs no likelihood,
-variance, correction, standardization, or probability calculation; those
-quantities come from `fast_mlsirm._core` through
-`fast_mlsirm.fitstats.vuong_nonnested`.
+Positive raw values point toward model A and negative raw values toward model
+B. They are not, by themselves, permission to report a preference. The Python
+module performs no likelihood, variance, correction, standardization, or
+probability calculation; those quantities come from `fast_mlsirm._core`
+through `fast_mlsirm.fitstats.vuong_nonnested`.
 
-## Fail-closed decision sequence
+## Two-stage inference contract
 
-1. Supply distinct, auditable model labels and declare the mathematical
-   relationship: `strictly_non_nested`, `overlapping`, `nested`,
-   `boundary_nested`, or `unknown`.
-2. The Rust core computes `mean_diff`, `omega`, `z`, and the two-sided normal
+Vuong model selection requires two distinct questions.
+
+1. **Are the fitted models distinguishable in the population?** The formal
+   null of observational equivalence uses a weighted chi-square distribution
+   for `N * omega_hat^2`. Its weights depend on casewise score vectors and
+   information matrices.
+2. **If distinguishable, which model is closer in expected log likelihood?**
+   The normal `Z` statistic above addresses this second question.
+
+The repository currently implements the second statistic but does not yet
+expose the score-vector and information-matrix inputs required for the formal
+first stage across every model family. Therefore this release never converts a
+raw `Z` value into `MODEL_A_PREFERRED` or `MODEL_B_PREFERRED`.
+
+## Fail-closed status sequence
+
+1. Model labels are trimmed, limited to 128 printable characters, and must be
+   distinct.
+2. Each casewise iterable is consumed only up to the documented maximum of
+   1,000,000 values; oversized and non-terminating iterables fail before an
+   unbounded allocation.
+3. Parameter counts must be non-negative integers; booleans and fractional
+   values are rejected.
+4. The Rust core computes `mean_diff`, `omega`, `z`, and the two-sided normal
    p value.
-3. If the Rust kernel reports exact zero variance, the decision wrapper returns
-   `variance_degenerate` instead of leaking the low-level exception. In that
-   exceptional state `omega` is reported as zero and
-   `raw_mean_loglik_difference` as `NaN`; the wrapper does not reproduce the
-   likelihood moment calculation in Python.
-4. `omega_tol` is used only as a numerical variance floor. It is **not** called
-   Vuong's formal distinguishability hypothesis test.
-5. A model preference is returned only when the relation is declared strictly
-   non-nested, the variance is numerically non-degenerate, and the two-sided p
-   value is below `alpha`.
-6. Nested and boundary-nested declarations suppress the normal-theory result
-   and return `requires_likelihood_ratio`.
-7. Overlapping declarations return `requires_distinguishability_test` because
-   the formal weighted-chi-square test needs casewise score vectors and
-   information matrices that are not yet exposed consistently across every
-   model family.
-8. Unknown relationships return `unknown_relation`; the library does not guess
-   nestedness from parameter counts.
+5. Exact zero variance is translated into the typed
+   `VuongVarianceDegenerateError` boundary signal and returned as
+   `variance_degenerate`.
+6. `omega_tol` is a numerical stability floor only. It is **not** Vuong's
+   formal distinguishability test.
+7. `strictly_non_nested` and `overlapping` relations return
+   `requires_distinguishability_test`.
+8. `nested` and `boundary_nested` relations return
+   `requires_likelihood_ratio` because an ordinary, mixture, or parametric
+   bootstrap reference distribution is required.
+9. `unknown` returns `unknown_relation`; the library does not infer nestedness
+   from parameter counts.
 
 ## Example
 
@@ -82,48 +101,44 @@ result = compare_nonnested_models(
     model_b="BIFAC2PLM",
     relation="strictly_non_nested",
     bic_correction=True,
-    alpha=0.05,
 )
 
 print(result.status)
-print(result.z, result.p_two_sided)
+# ComparisonStatus.REQUIRES_DISTINGUISHABILITY_TEST
+
+print(result.raw_z, result.raw_p_two_sided)
+# Auditable Rust selection statistic; not yet a model preference.
+
 print(result.preferred_model)
+# None
 ```
 
-The result preserves the available Rust audit fields even when inference is
-suppressed:
+The result preserves these audit fields:
 
 - `raw_mean_loglik_difference`
 - `omega`
 - `variance_positive`
+- `raw_z`
+- `raw_p_two_sided`
 - model labels and parameter counts
 - declared relation and explicit status
-- warning explaining the required alternative procedure
+- warning explaining the required next procedure
 
-For exact zero variance the strict Rust kernel returns an indistinguishability
-error before exposing the raw mean. The decision wrapper therefore reports the
-state rather than inventing a Python-side mean.
+The interpreted `z` and `p_two_sided` fields remain `NaN`, and
+`preferred_model` remains `None`, until a future typed formal-
+distinguishability result is integrated.
 
 ## Scope boundaries
 
 ### Independent observations
 
-The current normal calibration assumes the supplied casewise contributions are
+The normal calibration assumes the supplied casewise contributions are
 independent sampling units. Repeated claims, judges, prompt variants, or turns
 from the same query must not be passed as independent cases without a justified
 sampling model. Cluster aggregation and bootstrap resampling are intentionally
-absent from this API rather than being implemented ad hoc in Python. A future
-cluster-robust extension must be a Rust kernel with a documented asymptotic
-contract and recovery study.
-
-### Formal distinguishability
-
-The condition `omega > omega_tol` is a numerical guard only. Vuong's formal
-null of observational equivalence uses a weighted chi-square distribution for
-`N * omega_hat^2`; the weights depend on model score and information matrices.
-Schneider et al. show why this step matters in IRT model selection. Until those
-inputs are available for all candidate families, overlapping-model preference
-is suppressed.
+absent rather than being implemented ad hoc in Python. A future cluster-robust
+extension must be a Rust kernel with a documented asymptotic contract and
+recovery study.
 
 ### Nested and boundary cases
 
@@ -132,15 +147,29 @@ distribution. Parameters on a boundary, such as a variance fixed at zero, can
 require a mixture distribution or parametric bootstrap. The API reports this
 state instead of applying the non-nested normal reference distribution.
 
+### Required follow-up
+
+A complete decision API requires all supported fit families to expose, on one
+common case unit:
+
+- casewise score vectors;
+- observed and expected information matrices;
+- parameter-order metadata;
+- nestedness and boundary metadata; and
+- cluster identifiers where independence is not justified.
+
+Those inputs must feed a Rust weighted-chi-square distinguishability kernel and
+a recovery study before a public model-preference status is enabled.
+
 ## References
 
 - Vuong, Q. H. (1989). Likelihood ratio tests for model selection and
-  non-nested hypotheses. *Econometrica, 57*(2), 307-333.
+  non-nested hypotheses. *Econometrica, 57*(2), 307–333.
   https://doi.org/10.2307/1912557
 - Schneider, L., Chalmers, R. P., Debelak, R., & Merkle, E. C. (2020). Model
   selection of nested and non-nested item response models using Vuong tests.
-  *Multivariate Behavioral Research, 55*(5), 664-684.
+  *Multivariate Behavioral Research, 55*(5), 664–684.
   https://doi.org/10.1080/00273171.2019.1664280
 - Merkle, E. C., You, D., & Preacher, K. J. (2016). Testing nonnested
-  structural equation models. *Psychological Methods, 21*(2), 151-163.
+  structural equation models. *Psychological Methods, 21*(2), 151–163.
   https://doi.org/10.1037/met0000038
