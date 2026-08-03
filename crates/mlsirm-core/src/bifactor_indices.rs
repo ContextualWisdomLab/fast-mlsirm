@@ -140,6 +140,11 @@ pub fn bifactor_indices(
     for item in 0..n_items {
         for factor in 0..n_factors {
             let index = item * n_factors + factor;
+            if active[index] && squared[index] == 0.0 {
+                return Err(format!(
+                    "loading magnitude is too small for stable squaring at item {item}, factor {factor}"
+                ));
+            }
             item_common_variance[item] += squared[index];
             if active[index] {
                 factor_item_counts[factor] += 1;
@@ -161,10 +166,6 @@ pub fn bifactor_indices(
     }
 
     let total_common_variance: f64 = item_common_variance.iter().sum();
-    if !(total_common_variance.is_finite() && total_common_variance > 0.0) {
-        return Err("total common variance must be finite and positive".into());
-    }
-
     let mut ecv_ss = Vec::with_capacity(n_factors);
     let mut ecv_sg = Vec::with_capacity(n_factors);
     let mut ecv_gs = Vec::with_capacity(n_factors);
@@ -182,7 +183,6 @@ pub fn bifactor_indices(
 
         for item in 0..n_items {
             let factor_index = item * n_factors + factor;
-            let target_loading = loadings[factor_index];
             let target_squared = squared[factor_index];
             h_information += target_squared / (1.0 - target_squared);
 
@@ -204,19 +204,13 @@ pub fn bifactor_indices(
 
         let common_sum_variance: f64 = column_sums.iter().map(|sum| sum * sum).sum();
         let omega_denominator = common_sum_variance + uniqueness_sum;
-        if !(omega_denominator.is_finite() && omega_denominator > 0.0) {
+        if omega_denominator <= 0.0 {
             return Err(format!(
-                "omega denominator must be finite and positive for factor {factor}"
+                "omega denominator must be positive for factor {factor}"
             ));
         }
         omega_total.push(common_sum_variance / omega_denominator);
         omega_hierarchical.push(column_sums[factor].powi(2) / omega_denominator);
-
-        if !(h_information.is_finite() && h_information > 0.0) {
-            return Err(format!(
-                "construct replicability is undefined for factor {factor}"
-            ));
-        }
         construct_replicability.push(1.0 / (1.0 + 1.0 / h_information));
     }
 
@@ -234,15 +228,9 @@ pub fn bifactor_indices(
             .count();
         general_active && specific_count <= 1
     });
-    let puc = if is_strict_bifactor {
-        Some(strict_bifactor_puc(
-            &factor_item_counts,
-            n_items,
-            general_factor,
-        )?)
-    } else {
-        None
-    };
+    let puc = is_strict_bifactor.then(|| {
+        strict_bifactor_puc(&factor_item_counts, n_items, general_factor)
+    });
 
     Ok(BifactorIndicesResult {
         factor_item_counts,
@@ -315,29 +303,21 @@ fn strict_bifactor_puc(
     factor_item_counts: &[usize],
     n_items: usize,
     general_factor: usize,
-) -> Result<f64, String> {
-    let total_pairs = choose_two(n_items)?;
-    if total_pairs == 0 {
-        return Err("PUC requires at least one item pair".into());
-    }
-    let mut contaminated_pairs = 0usize;
-    for (factor, &count) in factor_item_counts.iter().enumerate() {
-        if factor == general_factor {
-            continue;
-        }
-        contaminated_pairs = contaminated_pairs
-            .checked_add(choose_two(count)?)
-            .ok_or_else(|| "contaminated pair count overflows usize".to_string())?;
-    }
-    Ok(1.0 - contaminated_pairs as f64 / total_pairs as f64)
+) -> f64 {
+    let total_pairs = pair_count(n_items);
+    let contaminated_pairs: f64 = factor_item_counts
+        .iter()
+        .enumerate()
+        .filter(|(factor, _count)| *factor != general_factor)
+        .map(|(_factor, &count)| pair_count(count))
+        .sum();
+    1.0 - contaminated_pairs / total_pairs
 }
 
-fn choose_two(value: usize) -> Result<usize, String> {
+fn pair_count(value: usize) -> f64 {
     if value < 2 {
-        return Ok(0);
+        0.0
+    } else {
+        value as f64 * (value - 1) as f64 / 2.0
     }
-    value
-        .checked_mul(value - 1)
-        .map(|product| product / 2)
-        .ok_or_else(|| "item-pair count overflows usize".to_string())
 }
