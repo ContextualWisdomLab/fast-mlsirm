@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import math
 
-from fast_mlsirm.model_comparison import ComparisonStatus, compare_nonnested_models
+from fast_mlsirm.model_comparison import (
+    ComparisonStatus,
+    ModelRelation,
+    compare_nonnested_models,
+)
 
 
 def test_constant_casewise_difference_returns_redacted_kernel_error_result():
@@ -16,6 +20,7 @@ def test_constant_casewise_difference_returns_redacted_kernel_error_result():
         2,
         model_a="distance",
         model_b="bifactor",
+        relation=ModelRelation.STRICTLY_NON_NESTED,
     )
 
     assert result.status is ComparisonStatus.KERNEL_ERROR
