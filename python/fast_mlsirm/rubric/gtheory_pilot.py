@@ -40,9 +40,7 @@ def _positive_design_size(value: Any, name: str) -> int:
     except TypeError as exc:
         raise ValueError(f"{name} must be an integer") from exc
     if not 1 <= normalized <= MAX_GTHEORY_PRIME_SIZE:
-        raise ValueError(
-            f"{name} must be between 1 and {MAX_GTHEORY_PRIME_SIZE}"
-        )
+        raise ValueError(f"{name} must be between 1 and {MAX_GTHEORY_PRIME_SIZE}")
     return int(normalized)
 
 
@@ -176,10 +174,7 @@ class GTheoryPiPilotDesign:
     def scores(self) -> tuple[tuple[int, ...], ...]:
         """Return the complete immutable persons-by-items integer score matrix."""
         return tuple(
-            tuple(
-                int(item_values[0])
-                for item_values in person_values
-            )
+            tuple(int(item_values[0]) for item_values in person_values)
             for person_values in self.facets_design.responses
         )
 
