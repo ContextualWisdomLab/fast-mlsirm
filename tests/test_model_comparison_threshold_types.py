@@ -10,9 +10,9 @@ from fast_mlsirm.model_comparison import compare_nonnested_models
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"alpha": "0.05"}, "alpha must be finite and in"),
+        ({"alpha": "not-a-number"}, "alpha must be finite and in"),
         ({"alpha": object()}, "alpha must be finite and in"),
-        ({"omega_tol": "1e-12"}, "omega_tol must be finite and non-negative"),
+        ({"omega_tol": "not-a-number"}, "omega_tol must be finite and non-negative"),
         ({"omega_tol": object()}, "omega_tol must be finite and non-negative"),
     ],
 )
