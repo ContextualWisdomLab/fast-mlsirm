@@ -91,7 +91,7 @@ class TestletPilotDesign:
             self.binary_design.item_factor_ids.count(testlet_position)
             for testlet_position in range(len(self.binary_design.factor_testlet_ids))
         ]
-        if not testlet_counts or max(testlet_counts) < 2:
+        if max(testlet_counts) < 2:
             raise ValueError(
                 "testlet design requires at least one query testlet with two or more items"
             )
