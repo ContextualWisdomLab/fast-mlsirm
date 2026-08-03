@@ -1,4 +1,4 @@
-"""Tests for the decision-safe Rust-backed model-comparison wrapper."""
+"""Tests for the fail-closed Rust-backed model-selection summary."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ def test_delegates_all_statistics_to_rust_kernel(monkeypatch):
         2,
         model_a="MLS2PLM",
         model_b="MIRT",
+        relation=ModelRelation.STRICTLY_NON_NESTED,
         bic_correction=False,
     )
 
@@ -51,39 +52,59 @@ def test_delegates_all_statistics_to_rust_kernel(monkeypatch):
         "k_b": 2,
         "bic": False,
     }
-    assert result.status is ComparisonStatus.MODEL_A_PREFERRED
-    assert result.preferred_model == "MLS2PLM"
+    assert result.status is ComparisonStatus.REQUIRES_DISTINGUISHABILITY_TEST
+    assert result.preferred_model is None
     assert result.raw_mean_loglik_difference == pytest.approx(0.3)
     assert result.omega == pytest.approx(0.4)
+    assert result.raw_z == pytest.approx(2.5)
+    assert result.raw_p_two_sided == pytest.approx(0.01)
+    assert math.isnan(result.z)
+    assert math.isnan(result.p_two_sided)
 
 
-def test_negative_sign_prefers_model_b(monkeypatch):
-    """A significant negative Rust z value selects the supplied B label."""
+def test_negative_selection_signal_never_bypasses_first_stage(monkeypatch):
+    """A significant negative raw z remains non-decisional without first-stage evidence."""
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
         lambda *_args, **_kwargs: _sentinel(z=-3.0, p=0.002),
     )
     result = compare_nonnested_models(
-        [0.0, 0.1], [0.2, 0.3], 1, 1, model_a="spatial", model_b="bifactor"
+        [0.0, 0.1],
+        [0.2, 0.3],
+        1,
+        1,
+        model_a="spatial",
+        model_b="bifactor",
+        relation=ModelRelation.STRICTLY_NON_NESTED,
     )
-    assert result.status is ComparisonStatus.MODEL_B_PREFERRED
-    assert result.preferred_model == "bifactor"
+    assert result.status is ComparisonStatus.REQUIRES_DISTINGUISHABILITY_TEST
+    assert result.preferred_model is None
+    assert result.raw_z == pytest.approx(-3.0)
+    assert result.raw_p_two_sided == pytest.approx(0.002)
 
 
 @pytest.mark.parametrize("z", [0.0, 1.0])
-def test_no_preference_when_not_significant_or_directionless(monkeypatch, z):
-    """Non-significance and a zero direction both remain indeterminate."""
+def test_raw_nonsignificance_or_directionlessness_is_audit_only(monkeypatch, z):
+    """Raw normal-selection output is preserved but never interpreted early."""
     p_value = 0.001 if z == 0.0 else 0.2
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
         lambda *_args, **_kwargs: _sentinel(z=z, p=p_value),
     )
-    result = compare_nonnested_models([0.0, 0.1], [0.2, 0.3], 1, 1)
-    assert result.status is ComparisonStatus.NO_SIGNIFICANT_DIFFERENCE
+    result = compare_nonnested_models(
+        [0.0, 0.1],
+        [0.2, 0.3],
+        1,
+        1,
+        relation=ModelRelation.STRICTLY_NON_NESTED,
+    )
+    assert result.status is ComparisonStatus.REQUIRES_DISTINGUISHABILITY_TEST
     assert result.preferred_model is None
-    assert result.warning is None
+    assert result.raw_z == pytest.approx(z)
+    assert result.raw_p_two_sided == pytest.approx(p_value)
+    assert "formal weighted-chi-square" in result.warning
 
 
 @pytest.mark.parametrize(
@@ -105,7 +126,12 @@ def test_degenerate_variance_or_nonfinite_inference_fails_closed(
         lambda *_args, **_kwargs: kernel_result,
     )
     result = compare_nonnested_models(
-        [0.0, 0.1], [0.2, 0.3], 1, 1, omega_tol=omega_tol
+        [0.0, 0.1],
+        [0.2, 0.3],
+        1,
+        1,
+        relation=ModelRelation.STRICTLY_NON_NESTED,
+        omega_tol=omega_tol,
     )
     assert result.status is ComparisonStatus.VARIANCE_DEGENERATE
     assert result.preferred_model is None
@@ -134,7 +160,11 @@ def test_nested_relations_require_likelihood_ratio(monkeypatch, relation):
     assert "likelihood-ratio" in result.warning
 
 
-def test_overlapping_relation_requires_formal_distinguishability(monkeypatch):
+@pytest.mark.parametrize(
+    "relation",
+    [ModelRelation.STRICTLY_NON_NESTED, ModelRelation.OVERLAPPING],
+)
+def test_nonnested_relations_require_formal_distinguishability(monkeypatch, relation):
     """A numerical omega floor is not mislabeled as Vuong's formal test."""
     monkeypatch.setattr(
         comparison_module,
@@ -146,23 +176,22 @@ def test_overlapping_relation_requires_formal_distinguishability(monkeypatch):
         [0.2, 0.3],
         1,
         1,
-        relation=ModelRelation.OVERLAPPING,
+        relation=relation,
     )
     assert result.status is ComparisonStatus.REQUIRES_DISTINGUISHABILITY_TEST
     assert result.preferred_model is None
     assert "weighted-chi-square" in result.warning
 
 
-def test_unknown_relation_fails_closed(monkeypatch):
-    """Unknown nestedness is preserved as an explicit unresolved state."""
+def test_unknown_relation_is_the_fail_closed_default(monkeypatch):
+    """Omitted nestedness is preserved as an explicit unresolved state."""
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
         lambda *_args, **_kwargs: _sentinel(),
     )
-    result = compare_nonnested_models(
-        [0.0, 0.1], [0.2, 0.3], 1, 1, relation=ModelRelation.UNKNOWN
-    )
+    result = compare_nonnested_models([0.0, 0.1], [0.2, 0.3], 1, 1)
+    assert result.relation is ModelRelation.UNKNOWN
     assert result.status is ComparisonStatus.UNKNOWN_RELATION
     assert result.preferred_model is None
     assert "establish nestedness" in result.warning
@@ -188,6 +217,7 @@ def test_model_labels_are_trimmed_and_auditable(monkeypatch):
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
+        ({"model_a": 3, "model_b": "B"}, "model_a"),
         ({"model_a": "", "model_b": "B"}, "model_a"),
         ({"model_a": "A", "model_b": "   "}, "model_b"),
         ({"model_a": "same", "model_b": "same"}, "distinct"),
@@ -201,7 +231,7 @@ def test_model_labels_are_trimmed_and_auditable(monkeypatch):
     ],
 )
 def test_orchestration_validation_guards(monkeypatch, kwargs, message):
-    """Metadata and decision thresholds are validated before kernel use."""
+    """Metadata and thresholds are validated before kernel use."""
     monkeypatch.setattr(
         comparison_module,
         "vuong_nonnested",
@@ -238,8 +268,8 @@ def test_low_level_input_validation_is_preserved():
         compare_nonnested_models([1.0, 2.0], [0.9, 1.8], -1, 1)
 
 
-def test_public_wrapper_matches_rust_backed_low_level_result():
-    """The public decision object preserves every exposed Rust statistic."""
+def test_public_wrapper_preserves_rust_backed_low_level_statistics():
+    """The public summary preserves every exposed Rust selection statistic."""
     a = [-1.0, -1.2, -0.8, -1.4, -0.9, -1.1]
     b = [-1.5, -1.0, -1.4, -1.1, -1.3, -1.2]
     low_level = vuong_nonnested(a, b, 3, 2, bic_correction=True)
@@ -250,10 +280,12 @@ def test_public_wrapper_matches_rust_backed_low_level_result():
         2,
         model_a="MLS2PLM",
         model_b="BIFAC2PLM",
+        relation=ModelRelation.STRICTLY_NON_NESTED,
         bic_correction=True,
     )
     assert result.raw_mean_loglik_difference == pytest.approx(low_level["mean_diff"])
     assert result.omega == pytest.approx(low_level["omega"])
-    if result.variance_positive:
-        assert result.z == pytest.approx(low_level["z"])
-        assert result.p_two_sided == pytest.approx(low_level["p_two_sided"])
+    assert result.raw_z == pytest.approx(low_level["z"])
+    assert result.raw_p_two_sided == pytest.approx(low_level["p_two_sided"])
+    assert math.isnan(result.z)
+    assert math.isnan(result.p_two_sided)
