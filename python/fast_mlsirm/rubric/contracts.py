@@ -23,13 +23,20 @@ def _require_compatible(
     rubric: RubricSpecification,
     blueprint: ItemBlueprint,
 ) -> None:
-    """Reject reuse of a blueprint under any changed rubric contract."""
+    """Reject reuse or direct forgery of a blueprint under a rubric contract."""
     if rubric.rubric_id != blueprint.rubric_id:
         raise ValueError("blueprint rubric_id does not match rubric")
     if rubric.rubric_version != blueprint.rubric_version:
         raise ValueError("blueprint rubric_version does not match rubric")
     if rubric.fingerprint != blueprint.rubric_fingerprint:
         raise ValueError("blueprint rubric_fingerprint does not match rubric")
+    if blueprint.task_family not in rubric.task_families:
+        raise ValueError("blueprint task_family is not declared by rubric")
+    expected_blueprint_id = (
+        f"item_blueprint_{blueprint.blueprint_fingerprint[:16]}"
+    )
+    if blueprint.blueprint_id != expected_blueprint_id:
+        raise ValueError("blueprint_id must match blueprint_fingerprint")
     if rubric.response_format is not blueprint.response_format:
         raise ValueError("blueprint response_format does not match rubric")
     if tuple(level.score for level in rubric.levels) != blueprint.scoring_levels:
