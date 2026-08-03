@@ -76,6 +76,27 @@ An incomplete declared general-factor column is rejected. The library does not
 emit bifactor-labelled ECV or item-ECV values for a matrix that is not a
 bifactor solution under its declared general factor.
 
+## Bounded CPU execution
+
+This is a small post-fit diagnostic rather than an iterative estimator. In the
+most general cross-loaded pattern, its work is bounded by
+
+\[
+O(n_{items}n_{factors}^{2}).
+\]
+
+The Rust and Python boundaries both reject requests above
+`50,000,000` `items * factors^2` work units. The independent limits remain
+1,000,000 items and 64 factors. Work-budget validation occurs before Rust
+input-length checks and before extension dispatch in the Python wrapper.
+
+The accepted operation is a deterministic CPU reduction over a loading matrix.
+At this scale, GPU buffer transfer, dispatch, and synchronization would dominate
+the arithmetic and add a second numerical execution path without buyer value.
+GPU and CPU-multithread acceleration remain mandatory for the estimation layers
+where repeated likelihood and gradient work amortizes those costs; this bounded
+scoreability kernel intentionally stays in Rust on the CPU.
+
 ## Logistic latent-response conversion
 
 For item `i`, orthogonal logistic slopes `a_if`, and residual variance
@@ -221,11 +242,13 @@ covers:
 - rejection of an incomplete general-factor column;
 - standardized-identity roundoff and material violations;
 - uniqueness bounds, malformed dimensions, non-finite values, underflow,
-  overflow, and sign-cancelled zero-variance composites; and
+  overflow, and sign-cancelled zero-variance composites;
+- the deterministic CPU work budget; and
 - logistic latent-response conversion.
 
 Python tests compare every typed result field directly with the secondary
-PyO3 `_bifactor_core` module and verify package-root exports. They do not use an
+PyO3 `_bifactor_core` module, verify package-root exports and immutable result
+vectors, and enforce the same pre-dispatch work budget. They do not use an
 independent Python implementation of the formulas.
 
 ## Source governance
@@ -233,14 +256,32 @@ independent Python implementation of the formulas.
 The implemented continuous-indicator formulas were independently transcribed
 from the complete CRAN `BifactorIndicesCalculator` 0.2.2 source files
 `R/ECV_Indices.R`, `R/Omega_Indices.R`, and `R/Other_Indices.R`. That package is
-used as a numerical implementation oracle. Full primary-source equation and
-scope verification remains a release-review requirement and is not replaced by
-package parity.
+used as the executable numerical oracle.
+
+Two peer-reviewed articles by Rodriguez, Reise, and Haviland identify omega,
+factor determinacy, construct replicability/reliability, explained common
+variance, and PUC as the relevant post-fit bifactor indices. Their bibliographic
+records and abstracts have been verified. The full equation-level text has not
+been obtained in this development environment, and the related Journal of
+Personality Assessment article has a published correction to Equations 1, 4,
+and 7. Accordingly, this PR does **not** claim primary-source page/equation
+verification and remains subject to the repository's primary-source release
+gate. The correction must be read together with the original article before
+that gate can be closed.
 
 Dueber, D. M. (2021). *BifactorIndicesCalculator: Bifactor indices calculator*
 (Version 0.2.2) [R package].
 https://CRAN.R-project.org/package=BifactorIndicesCalculator
 
-Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016). Evaluating bifactor
+Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016a). Applying bifactor
+statistical indices in the evaluation of psychological measures. *Journal of
+Personality Assessment, 98*(3), 223–237.
+https://doi.org/10.1080/00223891.2015.1089249
+
+Rodriguez, A., Reise, S. P., & Haviland, M. G. (2016b). Evaluating bifactor
 models: Calculating and interpreting statistical indices. *Psychological
 Methods, 21*(2), 137–150. https://doi.org/10.1037/met0000045
+
+Taylor & Francis. (2016). Correction to: Applying bifactor statistical indices
+in the evaluation of psychological measures. *Journal of Personality
+Assessment, 98*(4), 444. https://doi.org/10.1080/00223891.2015.1117928
