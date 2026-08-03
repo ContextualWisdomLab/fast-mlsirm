@@ -19,6 +19,7 @@ MAX_CANDIDATE_TEXT_CHARACTERS = 8_192
 MAX_CANDIDATE_COLLECTION_VALUES = 32
 MAX_OPTIONS = MAX_CANDIDATE_COLLECTION_VALUES
 MAX_JSON_DEPTH = 32
+MAX_JSON_NODES = 50_000
 _MAX_OPTION_ID_LENGTH = 128
 
 _PROVENANCE_FIELDS = frozenset(
@@ -88,10 +89,18 @@ def _reject_nonfinite(_value: str) -> None:
 
 
 def _validate_json_depth(value: Any) -> None:
-    """Reject provider JSON whose container nesting exceeds a fixed budget."""
+    """Reject provider JSON whose container nesting or node count exceeds a budget."""
     stack: list[tuple[Any, int]] = [(value, 1)]
+    node_count = 0
     while stack:
         current, depth = stack.pop()
+        node_count += 1
+        if node_count > MAX_JSON_NODES:
+            raise _error(
+                "json_node_budget",
+                "$",
+                f"JSON node count exceeds the maximum of {MAX_JSON_NODES}",
+            )
         if depth > MAX_JSON_DEPTH:
             raise _error(
                 "json_too_deep",
