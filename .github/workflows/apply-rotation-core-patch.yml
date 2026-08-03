@@ -3,13 +3,16 @@ name: Apply adaptive factor rotation integration
 on:
   push:
     branches: [feat/adaptive-factor-rotation-core]
-    paths: [.github/workflows/apply-rotation-core-patch.yml]
+    paths:
+      - .github/workflows/apply-rotation-core-patch.yml
+      - scripts/fix_rotation_math_contract.py
   pull_request:
     branches: [main]
     paths:
       - crates/mlsirm-core/src/rotation/**
       - python/fast_mlsirm/rotation*.py
       - tests/test_rotation*.py
+      - scripts/fix_rotation_math_contract.py
   workflow_dispatch:
 
 permissions:
@@ -25,6 +28,8 @@ jobs:
         with:
           ref: feat/adaptive-factor-rotation-core
           fetch-depth: 0
+      - name: Apply exact mathematical corrections
+        run: python scripts/fix_rotation_math_contract.py
       - name: Apply exact-marker integration
         run: python scripts/apply_rotation_core_patch.py
       - name: Format Rust workspace
@@ -36,6 +41,7 @@ jobs:
       - name: Remove one-shot patch machinery
         run: |
           rm scripts/apply_rotation_core_patch.py
+          rm scripts/fix_rotation_math_contract.py
           rm .github/workflows/apply-rotation-core-patch.yml
       - name: Commit reviewed integration
         run: |
@@ -48,6 +54,7 @@ jobs:
             python/fast_mlsirm/factor.py \
             README.md CHANGELOG.md \
             scripts/apply_rotation_core_patch.py \
+            scripts/fix_rotation_math_contract.py \
             .github/workflows/apply-rotation-core-patch.yml
           git commit -m "feat: integrate adaptive factor rotation API"
           git push origin HEAD:feat/adaptive-factor-rotation-core
