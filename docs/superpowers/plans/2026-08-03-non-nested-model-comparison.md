@@ -11,10 +11,10 @@ required model-relation and formal-distinguishability stages.
 **Architecture:** Keep likelihood means, variance, BIC correction, z
 standardization, and normal p-value calculation in the compiled Rust kernel
 exposed through `fitstats.vuong_nonnested`. The Python module owns bounded input
-marshalling, audit metadata, relation classification, typed boundary errors,
-and fail-closed procedure routing. It does not implement cluster aggregation,
-bootstrap resampling, or the weighted-chi-square distinguishability statistic
-in Python.
+marshalling, audit metadata, relation classification, redacted typed boundary
+errors, and fail-closed procedure routing. It does not implement cluster
+aggregation, bootstrap resampling, or the weighted-chi-square
+distinguishability statistic in Python.
 
 **Tech Stack:** Python 3.10+, existing Rust/PyO3 Vuong kernel, pytest.
 
@@ -29,6 +29,7 @@ in Python.
   evidence exists.
 - Bound casewise materialization and audit-label size.
 - Reject control characters, booleans, and fractional parameter counts.
+- Never inspect or expose human-readable compiled exception wording.
 - Preserve cluster-dependence limitations rather than adding ad hoc Python
   pseudo-replication fixes.
 - Maintain complete public docstrings and branch-focused tests.
@@ -47,7 +48,8 @@ in Python.
 - [x] Bound oversized and non-terminating casewise iterables.
 - [x] Bound model labels and reject control-character injection.
 - [x] Reject boolean and fractional parameter counts.
-- [x] Define and consume a typed zero-variance boundary signal.
+- [x] Prove arbitrary compiled error wording maps to one stable redacted
+  boundary.
 
 ### Task 2: Fail-closed selection-statistic API
 
@@ -56,16 +58,17 @@ in Python.
 
 **Interfaces:**
 - Produces: `ModelRelation`, `ComparisonStatus`, `ModelComparisonResult`,
-  `VuongVarianceDegenerateError`, and `compare_nonnested_models`.
+  `VuongKernelError`, and `compare_nonnested_models`.
 
 - [x] Delegate every statistical quantity to the compiled Rust kernel.
-- [x] Preserve raw mean, omega, z, and p-value fields for auditability.
+- [x] Preserve raw mean, omega, z, and p-value fields on successful calls.
 - [x] Keep interpreted z/p unavailable and `preferred_model=None`.
 - [x] Return `requires_distinguishability_test` for strictly non-nested and
   overlapping relations.
 - [x] Return relation-appropriate likelihood-ratio requirements for nested and
   boundary-nested models.
-- [x] Translate the legacy exact-zero Rust error into a typed adapter signal.
+- [x] Convert any compiled rejection to `kernel_error` without message parsing,
+  subtype guessing, or Python moment calculations.
 - [x] Add bounded, printable model-label validation.
 - [x] Add bounded casewise iterable consumption.
 
@@ -78,6 +81,7 @@ in Python.
 - [x] Explain the two-stage distinguishability-then-selection contract.
 - [x] State that the current API produces no winner.
 - [x] Explain required procedures for nested and boundary cases.
+- [x] Explain the redacted `kernel_error` compatibility boundary.
 - [x] Explicitly exclude ad hoc Python clustering and bootstrap calculations.
 - [x] Cite Vuong (1989), Schneider et al. (2020), and Merkle et al. (2016).
 
@@ -93,6 +97,8 @@ in Python.
 - [ ] Weighted-chi-square distinguishability kernel and recovery simulations.
 - [ ] Typed evidence object that can unlock model-preference statuses only after
   successful first-stage verification.
+- [ ] Optional compiled structured error codes that can safely refine the
+  current generic `kernel_error` state.
 
 ### Task 5: Same-head verification and merge
 
