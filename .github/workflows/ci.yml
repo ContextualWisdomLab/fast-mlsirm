@@ -35,22 +35,44 @@ jobs:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
       # `cargo test --workspace` also runs the proptest fuzz harness in
-      # crates/mlsirm-core/tests/proptest_neg_loglik.rs.
+      # crates/mlsirm-core/tests/proptest_neg_loglik.rs and the explicit
+      # coarse-shard CPU multithreading parity test.
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/fast-mlsirm-py/Cargo.toml
 
-  rust-statistical:
-    # Every repository-owned ignored statistical study is executable evidence,
-    # not dead test code. Release optimization keeps the recovery suite bounded.
+  rust-ignored:
+    # Sweep every pre-existing ignored Rust study. The new CPU recovery and GPU
+    # recovery tests are excluded only here because dedicated jobs execute them
+    # explicitly; together the jobs leave no ignored path unexecuted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Run remaining ignored Rust workspace studies
+        run: >-
+          cargo test --release --workspace -- --ignored --test-threads=2 --nocapture
+          --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
+          --skip gpu_recovery_matches_cpu_on_paper_design
+      - name: Run all ignored PyO3-crate studies
+        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=2 --nocapture
+
+  rust-recovery:
+    # Run the paper-design recovery sentinel independently from the large
+    # ignored-test sweep so its runtime and failure are directly observable.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-      - name: Run all ignored Rust workspace studies
-        run: cargo test --release --workspace -- --ignored --test-threads=1 --nocapture
-      - name: Run all ignored PyO3-crate studies
-        run: cargo test --release --manifest-path crates/fast-mlsirm-py/Cargo.toml -- --ignored --test-threads=1 --nocapture
+      - name: Exercise the explicit four-worker Rust CPU path
+        run: cargo test -p mlsirm-core coarse_shard_multithread_matches_single_thread_on_all_blocks -- --nocapture
+      - name: Run literature true-parameter recovery on the Rust CPU backend
+        run: >-
+          cargo test --release -p mlsirm-core
+          --test literature_true_parameter_recovery
+          kang_jeon_2025_minimum_cell_recovers_true_parameters
+          -- --ignored --exact --nocapture
 
   gpu-software:
     # Mesa Lavapipe supplies a deterministic Vulkan compute adapter on the
