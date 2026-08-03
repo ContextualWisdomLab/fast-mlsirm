@@ -44,7 +44,14 @@ creating a persons-by-items-by-raters tensor:
 - declared or inferable ordered category count within package limits;
 - at least one observed response for every indexed respondent, item, and
   rater, matching the requirements of `fit_facets`;
+- no more than 1,000,000 cells in the complete dense
+  persons-by-items-by-raters cross-product, checked before allocation so a
+  sparse record collection cannot amplify into an unbounded tensor;
 - deterministic lexicographic index order independent of record order.
+
+Observed-support validation uses precomputed respondent, item, and rater sets,
+so it remains linear in supplied records and indexed facets rather than
+rescanning all observations for every facet.
 
 The numeric tensor maps every non-observed state to `NaN`, as required by the
 existing many-facet fitting API, while the content-addressed design retains the

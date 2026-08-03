@@ -23,6 +23,11 @@ from .models import (
 from .verified_pilot import PilotCandidateRecord
 
 MAX_PILOT_OBSERVATIONS = 100_000
+# The handoff materializes both Python tuple tensors and a float64 NumPy tensor.
+# Bound the full persons-by-items-by-raters cross-product, not only supplied
+# sparse records, so untrusted identifiers cannot amplify a bounded input into
+# an unbounded dense allocation.
+MAX_FACETS_PILOT_CELLS = 1_000_000
 _OBSERVATION_TOKEN = object()
 _DESIGN_TOKEN = object()
 
@@ -369,7 +374,8 @@ def build_facets_pilot_design(
     Absent cells and explicit ``missing`` records become ``NaN`` for
     ``fit_facets``. ``not_applicable`` and ``insufficient_evidence`` also remain
     ``NaN`` numerically, but their exact states are retained in
-    ``response_states`` and in the content-addressed design artifact.
+    ``response_states`` and in the content-addressed design artifact. The full
+    dense persons-by-items-by-raters design is bounded before allocation.
     """
     materialized = _bounded_values(
         records,
@@ -385,6 +391,9 @@ def build_facets_pilot_design(
     item_metadata: dict[str, PilotItemProvenance] = {}
     cells: dict[tuple[str, str, str], PilotObservationRecord] = {}
     observed_categories: list[int] = []
+    observed_respondent_ids: set[str] = set()
+    observed_item_ids: set[str] = set()
+    observed_rater_ids: set[str] = set()
     for index, record in enumerate(materialized):
         if record.pilot_study_id != pilot_study_id:
             raise _error(
@@ -413,11 +422,46 @@ def build_facets_pilot_design(
             if record.category is None:  # pragma: no cover - guaranteed by record
                 raise RuntimeError("observed response category is unavailable")
             observed_categories.append(record.category)
+            observed_respondent_ids.add(record.respondent_id)
+            observed_item_ids.add(record.item_id)
+            observed_rater_ids.add(record.rater_id)
 
     category_count = _normalized_n_cat(n_cat, tuple(observed_categories))
     respondent_ids = tuple(sorted({record.respondent_id for record in materialized}))
     item_ids = tuple(sorted(item_metadata))
     rater_ids = tuple(sorted({record.rater_id for record in materialized}))
+
+    for respondent_id in respondent_ids:
+        if respondent_id not in observed_respondent_ids:
+            raise _error(
+                "unobserved_respondent",
+                "$.records",
+                "every respondent must have at least one observed response",
+            )
+    for item_id in item_ids:
+        if item_id not in observed_item_ids:
+            raise _error(
+                "unobserved_item",
+                "$.records",
+                "every item must have at least one observed response",
+            )
+    for rater_id in rater_ids:
+        if rater_id not in observed_rater_ids:
+            raise _error(
+                "unobserved_rater",
+                "$.records",
+                "every rater must have at least one observed response",
+            )
+
+    dense_cell_count = len(respondent_ids) * len(item_ids) * len(rater_ids)
+    if dense_cell_count > MAX_FACETS_PILOT_CELLS:
+        raise _error(
+            "facets_design_cell_budget_exceeded",
+            "$.records",
+            f"dense facets design requires {dense_cell_count} cells; "
+            f"maximum is {MAX_FACETS_PILOT_CELLS}",
+        )
+
     respondent_index = {value: index for index, value in enumerate(respondent_ids)}
     item_index = {value: index for index, value in enumerate(item_ids)}
     rater_index = {value: index for index, value in enumerate(rater_ids)}
@@ -439,33 +483,6 @@ def build_facets_pilot_design(
         rater_position = rater_index[record.rater_id]
         states[person_position][item_position][rater_position] = record.response_state
         responses[person_position][item_position][rater_position] = record.category
-
-    observed_cells = {
-        cell
-        for cell, record in cells.items()
-        if record.response_state is PilotResponseState.OBSERVED
-    }
-    for respondent_id in respondent_ids:
-        if not any(cell[0] == respondent_id for cell in observed_cells):
-            raise _error(
-                "unobserved_respondent",
-                "$.records",
-                "every respondent must have at least one observed response",
-            )
-    for item_id in item_ids:
-        if not any(cell[1] == item_id for cell in observed_cells):
-            raise _error(
-                "unobserved_item",
-                "$.records",
-                "every item must have at least one observed response",
-            )
-    for rater_id in rater_ids:
-        if not any(cell[2] == rater_id for cell in observed_cells):
-            raise _error(
-                "unobserved_rater",
-                "$.records",
-                "every rater must have at least one observed response",
-            )
 
     return FacetsPilotDesign(
         pilot_study_id=pilot_study_id,
