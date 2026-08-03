@@ -68,17 +68,42 @@ def test_constructed_response_answer_key_is_bounded():
     assert answer_key["properties"]["accepted_variants"]["maxItems"] == 32
 
 
-def test_choice_answer_keys_reference_option_ids():
-    """Selected and pairwise items use explicit option identifiers."""
+def test_selected_answer_key_references_option_ids():
+    """Selected items use bounded explicit option identifiers."""
     selected = _properties(ResponseFormat.SELECTED_RESPONSE)["answer_key"]
     option_ids = selected["properties"]["option_ids"]
     assert option_ids["minItems"] == 1
     assert option_ids["maxItems"] == 32
     assert option_ids["uniqueItems"] is True
 
+
+def test_pairwise_answer_key_distinguishes_winners_from_ties():
+    """Pairwise contracts represent either ordered winner or explicit tie."""
     pairwise = _properties(ResponseFormat.PAIRWISE_COMPARISON)["answer_key"]
-    assert pairwise["required"] == ["preferred_option_id", "rationale"]
-    assert pairwise["properties"]["preferred_option_id"]["maxLength"] == 128
+    assert pairwise["required"] == [
+        "outcome",
+        "preferred_option_id",
+        "rationale",
+    ]
+    assert pairwise["properties"]["outcome"] == {
+        "type": "string",
+        "enum": ["left_option", "right_option", "tie"],
+    }
+    preferred = pairwise["properties"]["preferred_option_id"]
+    assert preferred["oneOf"][0]["maxLength"] == 128
+    assert preferred["oneOf"][1] == {"type": "null"}
+    assert len(pairwise["allOf"]) == 2
+    tie_rule, winner_rule = pairwise["allOf"]
+    assert tie_rule["if"]["properties"]["outcome"] == {"const": "tie"}
+    assert tie_rule["then"]["properties"]["preferred_option_id"] == {
+        "type": "null"
+    }
+    assert winner_rule["if"]["properties"]["outcome"] == {
+        "enum": ["left_option", "right_option"]
+    }
+    assert winner_rule["then"]["properties"]["preferred_option_id"][
+        "maxLength"
+    ] == 128
 
 
 def test_binary_and_ordinal_answer_keys_have_typed_values():
