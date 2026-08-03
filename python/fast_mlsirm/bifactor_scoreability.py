@@ -115,7 +115,9 @@ def _uniqueness_vector(value: Any, n_items: int) -> np.ndarray:
             dimensions = tuple(advertised_shape)
         except TypeError as exc:
             raise ValueError("uniquenesses must be a 1-D item vector") from exc
-        if dimensions != (n_items,):
+        if len(dimensions) != 1:
+            raise ValueError("uniquenesses must be a 1-D item vector")
+        if dimensions[0] != n_items:
             raise ValueError(
                 f"uniquenesses length must equal the loading row count ({n_items})"
             )
