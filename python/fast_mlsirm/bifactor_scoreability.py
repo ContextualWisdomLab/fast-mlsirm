@@ -109,6 +109,16 @@ def _matrix(value: Any, name: str) -> np.ndarray:
 
 def _uniqueness_vector(value: Any, n_items: int) -> np.ndarray:
     """Return a contiguous uniqueness vector with the required item count."""
+    advertised_shape = getattr(value, "shape", None)
+    if advertised_shape is not None:
+        try:
+            dimensions = tuple(advertised_shape)
+        except TypeError as exc:
+            raise ValueError("uniquenesses must be a 1-D item vector") from exc
+        if dimensions != (n_items,):
+            raise ValueError(
+                f"uniquenesses length must equal the loading row count ({n_items})"
+            )
     vector = np.asarray(value, dtype=np.float64)
     if vector.ndim != 1:
         raise ValueError("uniquenesses must be a 1-D item vector")
@@ -130,23 +140,32 @@ def _readonly_vector(value: Any, name: str) -> np.ndarray:
 
 def _result_from_mapping(raw: dict[str, Any]) -> BifactorScoreabilityResult:
     """Build the typed immutable result without reproducing any formulas."""
-    puc_value = raw["puc"]
-    return BifactorScoreabilityResult(
-        factor_item_counts=tuple(int(value) for value in raw["factor_item_counts"]),
-        is_strict_bifactor=bool(raw["is_strict_bifactor"]),
-        puc=None if puc_value is None else float(puc_value),
-        ecv_ss=_readonly_vector(raw["ecv_ss"], "ecv_ss"),
-        ecv_sg=_readonly_vector(raw["ecv_sg"], "ecv_sg"),
-        ecv_gs=_readonly_vector(raw["ecv_gs"], "ecv_gs"),
-        item_ecv=_readonly_vector(raw["item_ecv"], "item_ecv"),
-        omega_total=_readonly_vector(raw["omega_total"], "omega_total"),
-        omega_hierarchical=_readonly_vector(
-            raw["omega_hierarchical"], "omega_hierarchical"
-        ),
-        construct_replicability=_readonly_vector(
-            raw["construct_replicability"], "construct_replicability"
-        ),
-    )
+    try:
+        puc_value = raw["puc"]
+        return BifactorScoreabilityResult(
+            factor_item_counts=tuple(
+                int(value) for value in raw["factor_item_counts"]
+            ),
+            is_strict_bifactor=bool(raw["is_strict_bifactor"]),
+            puc=None if puc_value is None else float(puc_value),
+            ecv_ss=_readonly_vector(raw["ecv_ss"], "ecv_ss"),
+            ecv_sg=_readonly_vector(raw["ecv_sg"], "ecv_sg"),
+            ecv_gs=_readonly_vector(raw["ecv_gs"], "ecv_gs"),
+            item_ecv=_readonly_vector(raw["item_ecv"], "item_ecv"),
+            omega_total=_readonly_vector(raw["omega_total"], "omega_total"),
+            omega_hierarchical=_readonly_vector(
+                raw["omega_hierarchical"], "omega_hierarchical"
+            ),
+            construct_replicability=_readonly_vector(
+                raw["construct_replicability"], "construct_replicability"
+            ),
+        )
+    except KeyError as exc:
+        missing_field = str(exc.args[0])
+        raise RuntimeError(
+            "compiled bifactor result field contract is missing "
+            f"{missing_field!r}"
+        ) from exc
 
 
 def bifactor_scoreability(
