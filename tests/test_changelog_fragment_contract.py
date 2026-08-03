@@ -75,6 +75,18 @@ def test_every_repository_fragment_matches_the_authoritative_format():
         assert f"#### {title}" in rendered
 
 
+def test_fragment_parser_allows_issue_reference_text_starting_with_hash(tmp_path):
+    """An issue reference at line start is body text, not an ATX heading."""
+    module = _module()
+    fragment = tmp_path / "100-issue-reference.md"
+    fragment.write_text(
+        "# First feature\n\n## Fixed\n\n#394 fixed the contract.\n",
+        encoding="utf-8",
+    )
+    _, sections = module.parse_fragment(fragment)
+    assert sections["Fixed"] == ("#394 fixed the contract.",)
+
+
 def test_changelog_check_update_round_trip_preserves_manual_notes_and_history(
     tmp_path,
 ):
@@ -94,6 +106,7 @@ def test_changelog_check_update_round_trip_preserves_manual_notes_and_history(
     assert "- Manual note." in updated
     assert module.BEGIN_MARKER in updated
     assert "#### First feature\n\n- Alpha." in updated
+    assert f"{module.END_MARKER}\n\n## [1.0.0]" in updated
     assert updated.split("## [1.0.0]", 1)[1] == historical
 
     _fragment(fragment, "Changed fragment.")
@@ -104,6 +117,7 @@ def test_changelog_check_update_round_trip_preserves_manual_notes_and_history(
     rewritten = changelog.read_text(encoding="utf-8")
     assert "Changed fragment." in rewritten
     assert "- Alpha." not in rewritten
+    assert f"{module.END_MARKER}\n\n## [1.0.0]" in rewritten
 
 
 def test_changelog_sync_rejects_ambiguous_headings_and_markers(tmp_path):
