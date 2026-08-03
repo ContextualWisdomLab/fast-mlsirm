@@ -3,6 +3,12 @@ from importlib.metadata import PackageNotFoundError, version
 from .config import FitConfig as FitConfig, MLS2PLMConfig as MLS2PLMConfig, PenaltyConfig as PenaltyConfig
 from .diagnostics import align_latent_space as align_latent_space, dimensionality_diagnostics as dimensionality_diagnostics, fit_diagnostics as fit_diagnostics, fixed_item_calibration_diagnostics as fixed_item_calibration_diagnostics, predict_proba as predict_proba, recovery_report as recovery_report, response_process_dimensionality_diagnostics as response_process_dimensionality_diagnostics, response_process_fit_diagnostics as response_process_fit_diagnostics
 from .fit import fit as fit
+from .model_comparison import (
+    ComparisonStatus as ComparisonStatus,
+    ModelComparisonResult as ModelComparisonResult,
+    ModelRelation as ModelRelation,
+    compare_nonnested_models as compare_nonnested_models,
+)
 from .fitstats import (adjusted_chi2_pairs as adjusted_chi2_pairs,
                        benjamini_hochberg as benjamini_hochberg, chi2_sf as chi2_sf,
                        dif_analysis as dif_analysis,
@@ -284,6 +290,10 @@ __all__ = [
     "irtree_expand",
     "oakes_standard_errors",
     "validate_judge",
+    "ComparisonStatus",
+    "ModelComparisonResult",
+    "ModelRelation",
+    "compare_nonnested_models",
     "vuong_nonnested",
     "adjusted_chi2_pairs",
     "bank_information",
