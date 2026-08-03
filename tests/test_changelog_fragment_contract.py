@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "render_changelog_fragments.py"
 RUBRIC_FRAGMENT = ROOT / "docs" / "changelog.d" / "394-rubric-blueprint-compiler.md"
@@ -19,11 +21,29 @@ def _module():
     return module
 
 
+def _fragment(path: Path, note: str = "Alpha.") -> Path:
+    """Write one valid deterministic test fragment."""
+    path.write_text(f"# First feature\n\n## Added\n\n- {note}\n", encoding="utf-8")
+    return path
+
+
+def _changelog() -> str:
+    """Return a changelog with manual Unreleased notes and immutable history."""
+    return (
+        "# Changelog\n\n"
+        "## Unreleased\n\n"
+        "### Changed\n\n"
+        "- Manual note.\n\n"
+        "## [1.0.0] - 2026-08-01\n\n"
+        "### Added\n\n"
+        "- Historical note.\n"
+    )
+
+
 def test_fragment_renderer_is_deterministic_and_preserves_release_sections(tmp_path):
     """Stable rendering groups fragments under the canonical Unreleased sections."""
-    first = tmp_path / "100-first.md"
+    first = _fragment(tmp_path / "100-first.md")
     second = tmp_path / "200-second.md"
-    first.write_text("# First feature\n\n## Added\n\n- Alpha.\n", encoding="utf-8")
     second.write_text("# Second fix\n\n## Fixed\n\n- Beta.\n", encoding="utf-8")
     module = _module()
     rendered = module.render_unreleased((first, second))
@@ -53,3 +73,88 @@ def test_every_repository_fragment_matches_the_authoritative_format():
     for path in paths:
         title, _ = module.parse_fragment(path)
         assert f"#### {title}" in rendered
+
+
+def test_changelog_check_update_round_trip_preserves_manual_notes_and_history(
+    tmp_path,
+):
+    """Update only the managed block; check fails closed before and after drift."""
+    module = _module()
+    changelog = tmp_path / "CHANGELOG.md"
+    fragment = _fragment(tmp_path / "100-first.md")
+    changelog.write_text(_changelog(), encoding="utf-8")
+    historical = _changelog().split("## [1.0.0]", 1)[1]
+
+    with pytest.raises(ValueError, match="stale"):
+        module.check_changelog(changelog, (fragment,))
+    module.update_changelog(changelog, (fragment,))
+    module.check_changelog(changelog, (fragment,))
+
+    updated = changelog.read_text(encoding="utf-8")
+    assert "- Manual note." in updated
+    assert module.BEGIN_MARKER in updated
+    assert "#### First feature\n\n- Alpha." in updated
+    assert updated.split("## [1.0.0]", 1)[1] == historical
+
+    _fragment(fragment, "Changed fragment.")
+    with pytest.raises(ValueError, match="stale"):
+        module.check_changelog(changelog, (fragment,))
+    module.update_changelog(changelog, (fragment,))
+    module.check_changelog(changelog, (fragment,))
+    rewritten = changelog.read_text(encoding="utf-8")
+    assert "Changed fragment." in rewritten
+    assert "- Alpha." not in rewritten
+
+
+def test_changelog_sync_rejects_ambiguous_headings_and_markers(tmp_path):
+    """Duplicate headings, incomplete markers, and out-of-section markers fail."""
+    module = _module()
+    fragment = _fragment(tmp_path / "100-first.md")
+    rendered = module.render_unreleased((fragment,))
+
+    with pytest.raises(ValueError, match="exactly one"):
+        module.synchronize_text("# Changelog\n", rendered)
+    with pytest.raises(ValueError, match="exactly one"):
+        module.synchronize_text(
+            "# Changelog\n\n## Unreleased\n\n## Unreleased\n", rendered
+        )
+    with pytest.raises(ValueError, match="marker pair"):
+        module.synchronize_text(
+            f"# Changelog\n\n## Unreleased\n\n{module.BEGIN_MARKER}\n", rendered
+        )
+    with pytest.raises(ValueError, match="only inside"):
+        module.synchronize_text(
+            f"# Changelog\n{module.BEGIN_MARKER}\n\n## Unreleased\n", rendered
+        )
+
+
+def test_cli_check_and_update_modes_are_fail_closed(tmp_path, capsys):
+    """The release command returns failure on drift and success after update."""
+    module = _module()
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(_changelog(), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as failure:
+        module.main(["--check", str(changelog)])
+    assert failure.value.code == 1
+    assert "stale" in capsys.readouterr().err
+
+    assert module.main(["--update", str(changelog)]) == 0
+    assert module.main(["--check", str(changelog)]) == 0
+
+
+def test_render_contract_rejects_empty_and_malformed_fragments(tmp_path):
+    """Malformed or empty fragment inventories cannot produce release evidence."""
+    module = _module()
+    with pytest.raises(ValueError, match="at least one"):
+        module.render_unreleased(())
+
+    malformed = tmp_path / "bad.md"
+    malformed.write_text("not a title\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="level-one title"):
+        module.parse_fragment(malformed)
+
+    unsupported = tmp_path / "unsupported.md"
+    unsupported.write_text("# Bad\n\n## Other\n\n- Note.\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="unsupported section"):
+        module.parse_fragment(unsupported)
