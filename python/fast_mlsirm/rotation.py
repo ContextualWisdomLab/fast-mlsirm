@@ -1,10 +1,8 @@
 """Exploratory factor rotation backed entirely by the Rust numerical core.
 
-The API deliberately distinguishes a *rotation criterion* from an *observed
-multi-start solution*.  Rotation objectives are usually non-convex, so
-``rotate_factor_loadings`` reports basin support and every start-level objective
-instead of claiming that the best finite-start result is a proven global
-minimum.
+The API distinguishes a rotation criterion from an observed multi-start
+solution. Rotation objectives are usually non-convex, so results report basin
+support and every start value instead of claiming a proven global optimum.
 
 References
 ----------
@@ -25,6 +23,8 @@ from typing import Final
 
 import numpy as np
 
+from ._rotation_core_loader import rotation_core
+
 
 @dataclass(frozen=True)
 class RotationCriterionInfo:
@@ -40,14 +40,7 @@ class RotationCriterionInfo:
 
 @dataclass(frozen=True)
 class RotationSolution:
-    """Auditable best-observed solution from deterministic multi-start GPA.
-
-    ``pattern_matrix`` contains regression-pattern loadings. For oblique
-    rotation, ``structure_matrix`` equals ``pattern_matrix @
-    factor_correlation``. ``basin_support`` counts starts whose objective lies
-    within the configured relative tolerance of the selected value, while
-    ``distinct_minima`` counts the observed objective basins.
-    """
+    """Auditable best-observed solution from deterministic multi-start GPA."""
 
     pattern_matrix: np.ndarray
     structure_matrix: np.ndarray
@@ -174,35 +167,34 @@ def _optional_matrix(
     return matrix
 
 
-def _solution_from_core(result: tuple[dict, dict, dict, dict, dict]) -> RotationSolution:
-    """Convert the Rust core's typed maps into a public immutable result."""
+def _solution_from_core(result: dict[str, object]) -> RotationSolution:
+    """Convert the Rust core dictionary into a public immutable result."""
 
-    arrays, floats, integers, booleans, strings = result
-    rows = int(integers["n_rows"])
-    factors = int(integers["n_factors"])
+    rows = int(result["n_rows"])
+    factors = int(result["n_factors"])
     return RotationSolution(
-        pattern_matrix=np.asarray(arrays["pattern_matrix"], dtype=np.float64).reshape(rows, factors),
-        structure_matrix=np.asarray(arrays["structure_matrix"], dtype=np.float64).reshape(rows, factors),
-        factor_correlation=np.asarray(arrays["factor_correlation"], dtype=np.float64).reshape(factors, factors),
-        transform_matrix=np.asarray(arrays["transform_matrix"], dtype=np.float64).reshape(factors, factors),
-        criterion=strings["criterion"],
-        mode=strings["mode"],
-        criterion_value=float(floats["criterion_value"]),
-        gradient_norm=float(floats["gradient_norm"]),
-        iterations=int(integers["iterations"]),
-        converged=bool(booleans["converged"]),
-        termination_reason=strings["termination_reason"],
-        best_start_index=int(integers["best_start_index"]),
-        n_starts=int(integers["n_starts"]),
-        converged_starts=int(integers["converged_starts"]),
-        basin_support=int(integers["basin_support"]),
-        distinct_minima=int(integers["distinct_minima"]),
-        start_values=np.asarray(arrays["start_values"], dtype=np.float64),
-        start_converged=np.asarray(arrays["start_converged"], dtype=np.float64).astype(bool),
-        max_factor_correlation=float(floats["max_factor_correlation"]),
-        normalized=bool(booleans["normalized"]),
-        worker_count=int(integers["worker_count"]),
-        backend=strings["backend"],
+        pattern_matrix=np.asarray(result["pattern_matrix"], dtype=np.float64).reshape(rows, factors),
+        structure_matrix=np.asarray(result["structure_matrix"], dtype=np.float64).reshape(rows, factors),
+        factor_correlation=np.asarray(result["factor_correlation"], dtype=np.float64).reshape(factors, factors),
+        transform_matrix=np.asarray(result["transform_matrix"], dtype=np.float64).reshape(factors, factors),
+        criterion=str(result["criterion"]),
+        mode=str(result["mode"]),
+        criterion_value=float(result["criterion_value"]),
+        gradient_norm=float(result["gradient_norm"]),
+        iterations=int(result["iterations"]),
+        converged=bool(result["converged"]),
+        termination_reason=str(result["termination_reason"]),
+        best_start_index=int(result["best_start_index"]),
+        n_starts=int(result["n_starts"]),
+        converged_starts=int(result["converged_starts"]),
+        basin_support=int(result["basin_support"]),
+        distinct_minima=int(result["distinct_minima"]),
+        start_values=np.asarray(result["start_values"], dtype=np.float64),
+        start_converged=np.asarray(result["start_converged"], dtype=np.bool_),
+        max_factor_correlation=float(result["max_factor_correlation"]),
+        normalized=bool(result["normalized"]),
+        worker_count=int(result["worker_count"]),
+        backend=str(result["backend"]),
     )
 
 
@@ -229,42 +221,19 @@ def rotate_factor_loadings(
 ) -> RotationSolution:
     """Rotate an unrotated loading matrix with deterministic multi-start GPA.
 
-    Parameters
-    ----------
-    loadings:
-        Finite ``(variables, factors)`` unrotated loading matrix.
-    criterion:
-        A name from :func:`available_rotation_criteria`.
-    mode:
-        ``"orthogonal"`` or ``"oblique"``. When omitted, criteria with only
-        one supported manifold use it; criteria supporting both default to
-        oblique rotation.
-    normalize:
-        Apply and later undo Kaiser row normalization.
-    n_starts:
-        Total deterministic starts including identity. More starts reduce, but
-        never eliminate, local-minimum risk.
-    target, weights:
-        Target may contain ``NaN`` for unspecified cells. ``pst`` requires both
-        target and non-negative weights.
-
-    Returns
-    -------
-    RotationSolution
-        The best observed solution and local-minimum diagnostics.
+    More starts reduce, but never eliminate, local-minimum risk. Target matrices
+    may contain ``NaN`` in unspecified cells; ``pst`` additionally requires
+    non-negative weights.
     """
 
-    from . import _core
-
     matrix = _matrix(loadings, "loadings")
-    rows, factors = map(int, matrix.shape)
     method = _method_name(criterion)
     resolved_mode = _mode_name(method, mode)
     target_matrix = _optional_matrix(target, "target", matrix.shape, allow_nan=True)
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     if weight_matrix is not None and np.any(weight_matrix < 0.0):
         raise ValueError("weights must be non-negative")
-    result = _core.rotate_factor_loadings(
+    result = rotation_core().rotate_factor_loadings(
         matrix,
         method,
         resolved_mode,
@@ -298,13 +267,7 @@ def rotation_criterion_value_gradient(
     target: np.ndarray | None = None,
     weights: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray]:
-    """Return a built-in criterion value and analytic loading-space gradient.
-
-    This diagnostic endpoint is useful for parity tests and criterion research;
-    optimization remains in :func:`rotate_factor_loadings`.
-    """
-
-    from . import _core
+    """Return a built-in criterion value and analytic loading-space gradient."""
 
     matrix = _matrix(loadings, "loadings")
     method = _method_name(criterion)
@@ -312,7 +275,7 @@ def rotation_criterion_value_gradient(
     weight_matrix = _optional_matrix(weights, "weights", matrix.shape)
     if weight_matrix is not None and np.any(weight_matrix < 0.0):
         raise ValueError("weights must be non-negative")
-    value, gradient = _core.rotation_criterion_value_gradient(
+    value, gradient = rotation_core().rotation_criterion_value_gradient(
         matrix,
         method,
         kappa,
