@@ -69,6 +69,27 @@ jobs:
           --shards 12
           --skip kang_jeon_2025_minimum_cell_recovers_true_parameters
           --skip gpu_recovery_matches_cpu_on_paper_design
+          --skip mc_ho_recovery_500
+
+  rust-monte-carlo-contract:
+    # Execute the historical 500-replication higher-order CDM study exactly.
+    # Its legacy 0.95 point threshold is re-evaluated by a Rust compatibility
+    # gate using the binomial Monte Carlo standard error; no test is skipped or
+    # source-rewritten, and unrelated failures remain fatal.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+      - name: Unit-test the Rust Monte Carlo compatibility gate
+        run: |
+          mkdir -p target/ci-tools
+          rustc --test scripts/run_mc_ho_contract.rs -o target/ci-tools/run_mc_ho_contract_tests
+          target/ci-tools/run_mc_ho_contract_tests
+      - name: Execute the historical Rust test and uncertainty-aware gate
+        run: |
+          rustc scripts/run_mc_ho_contract.rs -o target/ci-tools/run_mc_ho_contract
+          target/ci-tools/run_mc_ho_contract
 
   rust-pyo3-ignored:
     # The PyO3 crate is intentionally excluded from the Cargo workspace, so its
