@@ -106,8 +106,10 @@ contract = build_generation_contract(rubric, first)
 print(rubric.rubric_version)
 print(rubric.fingerprint)
 print(first.blueprint_id)
+print(contract["blueprint"]["blueprint_handle"])
 print(first.blueprint_fingerprint)
 print(contract["contract_id"])
+print(contract["contract_handle"])
 print(contract["contract_fingerprint"])
 print(first.generation_seed)
 print(canonical_generation_contract(rubric, first))
@@ -147,14 +149,20 @@ Faithfulness_Rubric         invalid
 faithfulness-rubric         invalid
 ```
 
-Human-readable content-addressed identifiers use a 16-hex prefix:
+Three provenance identity layers are deliberately distinct:
+
+- `blueprint_id` and `contract_id` are 16-hex, 64-bit convenience display identifiers retained for compatibility and human-readable logs;
+- `blueprint_handle` and `contract_handle` are authoritative 32-hex, 128-bit public handles used across service and audit boundaries; and
+- `blueprint_fingerprint` and `contract_fingerprint` are the complete 64-character SHA-256 digests and remain the ultimate content identities stored in durable provenance records.
 
 ```text
-item_blueprint_6b95a4d2d45a0b42
-generation_contract_d835e4b5c76210ad
+item_blueprint_6b95a4d2d45a0b42                  convenience id
+item_blueprint_6b95a4d2d45a0b42e14a9c77d4b8f3c1  public handle
+generation_contract_d835e4b5c76210ad              convenience id
+generation_contract_d835e4b5c76210ad146c2f8e55a92d73  public handle
 ```
 
-They are convenience identifiers, not the complete audit identity. `blueprint_fingerprint` and `contract_fingerprint` retain the full 64-character SHA-256 digest and must be stored in durable provenance records.
+The 64-bit identifiers must never substitute for the public handles or full fingerprints in durable provenance, authorization, deduplication, or replay decisions.
 
 ## Blueprint matrix
 
@@ -187,10 +195,11 @@ Repeating the same normalized input yields byte-identical canonical contract JSO
 `build_generation_contract` returns a JSON-compatible dictionary containing:
 
 - the complete rubric, governance version, and rubric fingerprint;
-- the complete blueprint and full blueprint fingerprint;
+- the complete blueprint, its 128-bit `blueprint_handle`, and full blueprint fingerprint;
 - non-negotiable authoring instructions;
 - a strict JSON Schema Draft 2020-12 output contract;
-- a short `contract_id`; and
+- the 64-bit convenience `contract_id`;
+- the authoritative 128-bit `contract_handle`; and
 - the full `contract_fingerprint`.
 
 The generated item schema requires:
