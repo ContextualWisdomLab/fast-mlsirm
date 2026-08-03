@@ -42,9 +42,12 @@ def test_hourly_governance_workflow_builds_and_publishes_evidence():
     assert "actions/upload-artifact" in text
 
 
-def test_hourly_governance_workflow_fails_closed_when_no_tests_are_discovered():
+def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
     """A renamed or removed test suite cannot make self-verification silently pass."""
     text = _workflow_text()
     assert "test_names = [" in text
     assert "if not test_names:" in text
-    assert "no hourly governance contract tests were discovered" in text
+    guard = 'raise RuntimeError("no hourly governance contract tests were discovered")'
+    assert guard in text
+    assert text.index("if not test_names:") < text.index(guard)
+    assert text.index(guard) < text.index("for name in test_names:")
