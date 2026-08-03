@@ -40,6 +40,15 @@ def test_hourly_governance_workflow_builds_and_publishes_evidence():
     assert "pr_queue_governance_manifest.json" in text
     assert "pr_queue_governance_report.html" in text
     assert "actions/upload-artifact" in text
+    assert "if: always()" in text
+
+
+def test_hourly_governance_workflow_tracks_implementation_and_contract_tests():
+    """Changes to duplicate-claim governance trigger the evidence workflow."""
+    text = _workflow_text()
+    assert "scripts/build_pr_queue_governance.py" in text
+    assert "tests/test_pr_queue_governance.py" in text
+    assert "tests/test_hourly_pr_governance_workflow.py" in text
 
 
 def test_governance_workflow_fails_closed_when_no_tests_are_discovered():
