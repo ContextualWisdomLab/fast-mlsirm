@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _distribution_version
+
 from . import _legacy_init as _legacy_init
 
 # Copy the established package-root attributes that actually exist. Importing
@@ -23,6 +26,14 @@ from .bifactor_scoreability import (
     bifactor_scoreability_from_logit_slopes as bifactor_scoreability_from_logit_slopes,
 )
 
+# Resolve distribution metadata at the package boundary on every reload. The
+# legacy module may remain cached, so copying its prior value alone would make
+# the documented source-checkout fallback impossible to exercise reliably.
+try:
+    __version__ = _distribution_version("fast-mlsirm")
+except _PackageNotFoundError:
+    __version__ = "0+unknown"
+
 __all__ = [
     *_legacy_init.__all__,
     "BifactorScoreabilityResult",
@@ -30,4 +41,4 @@ __all__ = [
     "bifactor_scoreability_from_logit_slopes",
 ]
 
-del _public_name, _public_value
+del _PackageNotFoundError, _distribution_version, _public_name, _public_value
