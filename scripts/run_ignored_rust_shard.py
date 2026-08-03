@@ -3,14 +3,15 @@
 
 Cargo's test harness lists test names only within one compiled target. Flattening
 ``cargo test --workspace -- --list`` output loses that target identity, so two
-same-named tests in different crates or integration binaries can be collapsed or
-executed twice. This helper inventories each workspace target independently,
-qualifies every test as ``package/selector/target::test_name``, validates exact
-dedicated-test exclusions, and invokes the matching Cargo target with
-``--ignored --exact``.
+same-named tests in different libraries or integration binaries can be collapsed
+or invoked ambiguously. This helper inventories each default-tested workspace
+target independently, qualifies every test as
+``package/selector/target::test_name``, validates exact dedicated-test
+exclusions, and invokes the matching Cargo target with ``--ignored --exact``.
 
-The runner is source-read-only and deliberately excludes separately governed
-packages from the general shard inventory.
+The runner is source-read-only. Its package scope comes exclusively from
+Cargo's ``workspace_members`` metadata, matching the former ``--workspace``
+command and leaving explicitly excluded packages to their dedicated workflows.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 
 _TEST_LINE = re.compile(r"^(?P<name>.+): test$")
 _SUPPORTED_SELECTORS = frozenset({"lib", "bin", "test", "example", "doc"})
+_NON_DEFAULT_TARGET_KINDS = frozenset({"bench", "custom-build"})
 
 
 @dataclass(frozen=True, order=True)
@@ -82,52 +84,64 @@ def _selector_for_target(kinds: set[str]) -> str | None:
     return None
 
 
-def parse_workspace_targets(
-    metadata_output: str,
-    excluded_packages: Iterable[str] = (),
-) -> list[CargoTarget]:
-    """Return exact test-bearing targets for workspace packages not excluded."""
+def parse_workspace_targets(metadata_output: str) -> list[CargoTarget]:
+    """Return exact default-tested targets for Cargo workspace members."""
     metadata = json.loads(metadata_output)
+    if not isinstance(metadata, dict):
+        raise ValueError("Cargo metadata root must be an object")
     packages = metadata.get("packages")
     workspace_members = set(metadata.get("workspace_members", ()))
     if not isinstance(packages, list) or not workspace_members:
         raise ValueError("Cargo metadata did not contain a workspace package inventory")
 
-    requested_exclusions = tuple(excluded_packages)
-    if len(set(requested_exclusions)) != len(requested_exclusions):
-        raise ValueError("excluded package names must be unique")
-
-    workspace_packages = {
-        package["name"]: package
-        for package in packages
-        if package.get("id") in workspace_members
-    }
-    missing_exclusions = sorted(set(requested_exclusions) - set(workspace_packages))
-    if missing_exclusions:
-        raise ValueError(
-            "excluded packages were not found in the workspace: "
-            + ", ".join(missing_exclusions)
-        )
+    workspace_packages: dict[str, dict[str, object]] = {}
+    for package in packages:
+        if not isinstance(package, dict):
+            raise ValueError("Cargo metadata package entries must be objects")
+        if package.get("id") not in workspace_members:
+            continue
+        package_name = package.get("name")
+        if not isinstance(package_name, str) or not package_name:
+            raise ValueError("Cargo workspace package has no valid name")
+        if package_name in workspace_packages:
+            raise ValueError(f"duplicate Cargo workspace package name: {package_name}")
+        workspace_packages[package_name] = package
+    if not workspace_packages:
+        raise ValueError("Cargo metadata resolved no workspace member packages")
 
     targets: set[CargoTarget] = set()
     for package_name, package in workspace_packages.items():
-        if package_name in requested_exclusions:
-            continue
-        for target in package.get("targets", ()):
+        raw_targets = package.get("targets", ())
+        if not isinstance(raw_targets, list):
+            raise ValueError(f"Cargo package {package_name} has no valid target list")
+        for target in raw_targets:
+            if not isinstance(target, dict):
+                raise ValueError(f"Cargo target in {package_name} must be an object")
             if not target.get("test", False):
                 continue
             target_name = target.get("name")
-            kinds = set(target.get("kind", ()))
-            if not isinstance(target_name, str):
+            raw_kinds = target.get("kind", ())
+            if not isinstance(target_name, str) or not target_name:
                 raise ValueError(f"Cargo target in {package_name} has no valid name")
+            if not isinstance(raw_kinds, list) or not all(
+                isinstance(kind, str) for kind in raw_kinds
+            ):
+                raise ValueError(f"Cargo target {package_name}/{target_name} has invalid kinds")
+            kinds = set(raw_kinds)
             selector = _selector_for_target(kinds)
             if selector is None:
-                continue
+                if kinds and kinds <= _NON_DEFAULT_TARGET_KINDS:
+                    continue
+                rendered_kinds = ", ".join(sorted(kinds)) or "<empty>"
+                raise ValueError(
+                    f"unsupported default-tested Cargo target {package_name}/{target_name}: "
+                    f"{rendered_kinds}"
+                )
             targets.add(CargoTarget(package_name, selector, target_name))
             if selector == "lib" and target.get("doctest", False):
                 targets.add(CargoTarget(package_name, "doc", target_name))
     if not targets:
-        raise ValueError("Cargo metadata did not expose any test-bearing targets")
+        raise ValueError("Cargo metadata did not expose any default-tested targets")
     return sorted(targets)
 
 
@@ -252,12 +266,7 @@ def select_shard(
     return list(partition_inventory(identifiers, shard_count, skipped)[shard])
 
 
-def run_shard(
-    shard: int,
-    shard_count: int,
-    skipped: Sequence[str],
-    excluded_packages: Sequence[str],
-) -> int:
+def run_shard(shard: int, shard_count: int, skipped: Sequence[str]) -> int:
     """Run one target-qualified ignored-test shard and return its process code."""
     metadata = subprocess.run(
         cargo_metadata_command(),
@@ -265,7 +274,7 @@ def run_shard(
         capture_output=True,
         text=True,
     )
-    targets = parse_workspace_targets(metadata.stdout, excluded_packages)
+    targets = parse_workspace_targets(metadata.stdout)
     inventory = inventory_ignored_tests(targets)
     if not inventory:
         raise RuntimeError("Cargo did not report any ignored workspace tests")
@@ -306,12 +315,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "a dedicated job"
         ),
     )
-    parser.add_argument(
-        "--exclude-package",
-        action="append",
-        default=[],
-        help="exact workspace package governed by a separate evidence job",
-    )
     args = parser.parse_args(argv)
     if args.shards < 1:
         parser.error("--shards must be at least 1")
@@ -323,12 +326,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     """Execute the requested ignored-test shard."""
     args = parse_args(argv)
-    return run_shard(
-        args.shard,
-        args.shards,
-        args.skip,
-        args.exclude_package,
-    )
+    return run_shard(args.shard, args.shards, args.skip)
 
 
 if __name__ == "__main__":
