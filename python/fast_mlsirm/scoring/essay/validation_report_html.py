@@ -16,7 +16,10 @@ from pathlib import Path
 from .._validation import assessment_error
 from . import validation_reporting
 from .report_html import _content_security_policy, _css, _definition_rows, _table
-from .validation_reporting import EssayValidationEvidenceReport
+from .validation_reporting import (
+    EssayValidationEvidenceReport,
+    EssayValidationMetric,
+)
 
 _DEFAULT_TITLE = "Governed Automated-Essay Validation Evidence Report"
 _VALIDITY_NOTICE = (
@@ -25,6 +28,18 @@ _VALIDITY_NOTICE = (
     "interchangeability, model preference, causal utility, or authorization "
     "for consequential deployment."
 )
+
+
+def _replay_metric(metric: EssayValidationMetric, index: int) -> EssayValidationMetric:
+    """Rebuild one sealed metric or report a structured identity failure."""
+    try:
+        return validation_reporting._metric(metric.metric_id, metric.value)
+    except KeyError:
+        raise assessment_error(
+            "unknown_essay_validation_metric",
+            f"$.report.metrics[{index}].metric_id",
+            "report contains an unsupported validation metric identity",
+        ) from None
 
 
 def _validated_report(
@@ -59,8 +74,8 @@ def _validated_report(
         category_count=report.category_count,
         paired_observation_count=report.paired_observation_count,
         metrics=tuple(
-            validation_reporting._metric(metric.metric_id, metric.value)
-            for metric in report.metrics
+            _replay_metric(metric, index)
+            for index, metric in enumerate(report.metrics)
         ),
         review_trigger_ids=report.review_trigger_ids,
         metadata=report.metadata,
