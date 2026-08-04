@@ -12,6 +12,7 @@ import pytest
 
 import fast_mlsirm.scoring as scoring
 from fast_mlsirm.scoring import (
+    ASSESSMENT_SCHEMA_VERSION,
     MAX_METADATA_COLLECTION_VALUES,
     MAX_METADATA_DEPTH,
     MAX_METADATA_NODES,
@@ -59,6 +60,7 @@ def test_assessment_spec_is_deterministic_content_addressed_and_deeply_immutable
     )
 
     assert first == second
+    assert first.schema_version == ASSESSMENT_SCHEMA_VERSION
     assert first.construct_ids == ("argument_quality", "evidence_use")
     assert first.rubric_fingerprints == tuple(sorted(first.rubric_fingerprints))
     assert len(first.assessment_fingerprint) == 64
@@ -231,6 +233,7 @@ def test_assessment_is_factory_sealed():
 def test_scoring_contract_public_exports_and_docstrings_are_complete():
     """The namespace exposes only the documented provider-neutral contract surface."""
     expected = {
+        "ASSESSMENT_SCHEMA_VERSION",
         "MAX_METADATA_COLLECTION_VALUES",
         "MAX_METADATA_DEPTH",
         "MAX_METADATA_NODES",
@@ -255,6 +258,7 @@ def test_scoring_contract_public_exports_and_docstrings_are_complete():
         if callable(value):
             assert inspect.getdoc(value)
 
+    assert ASSESSMENT_SCHEMA_VERSION == "1.0"
     assert MAX_METADATA_COLLECTION_VALUES == 64
     assert MAX_METADATA_DEPTH == 8
     assert MAX_METADATA_NODES == 1_024
