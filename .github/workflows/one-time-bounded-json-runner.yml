@@ -1,0 +1,126 @@
+name: One-time descriptor-safe bounded JSON runner
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [main]
+    paths:
+      - .github/workflows/one-time-bounded-json-runner.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-bounded-json-runner-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.head_ref == 'sentinel-json-dos-scripts-17708564860587448239'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: sentinel-json-dos-scripts-17708564860587448239
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Apply and validate exact hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+          python scripts/_apply_bounded_json_hardening.py
+          python - <<'PY'
+          from pathlib import Path
+          import runpy
+
+          patcher = runpy.run_path(
+              "scripts/_apply_bounded_json_hardening.py",
+              run_name="bounded_json_patcher",
+          )
+          patcher["patch_reader"](Path("scripts/build_pr_queue_governance.py"))
+
+          generated_paths = (
+              Path("scripts/_bounded_json.py"),
+              Path("tests/test_bounded_json_scripts.py"),
+              Path("docs/bounded_json_input_security.md"),
+              Path("docs/changelog.d/bounded-json-input-hardening.md"),
+          )
+          for generated_path in generated_paths:
+              generated_text = generated_path.read_text(encoding="utf-8").lstrip("\\\n")
+              if generated_path.suffix == ".py":
+                  generated_text = generated_text.replace(r'\"', '"')
+              generated_path.write_text(generated_text, encoding="utf-8")
+
+          test_path = Path("tests/test_bounded_json_scripts.py")
+          test_lines = test_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          for line_index, test_line in enumerate(test_lines):
+              if '"text": "[{}]' in test_line:
+                  test_lines[line_index] = r'            "text": "[{}] \\ slash",' + "\n"
+                  break
+          else:
+              raise RuntimeError("bounded JSON string-escape fixture was not found")
+          test_text = "".join(test_lines)
+          invalid_utf8_fixture = (
+              '    invalid_utf8 = _write(tmp_path / "invalid-utf8.json", '
+              'b\'{"value":"\\\\xff"}\')\n'
+          )
+          actual_invalid_utf8_fixture = (
+              '    invalid_utf8 = _write(tmp_path / "invalid-utf8.json", '
+              'b\'{"value":"\' + bytes([0xFF]) + b\'"}\')\n'
+          )
+          if test_text.count(invalid_utf8_fixture) != 1:
+              raise RuntimeError("invalid UTF-8 fixture anchor was not found")
+          test_text = test_text.replace(
+              invalid_utf8_fixture,
+              actual_invalid_utf8_fixture,
+          )
+          module_anchor = '    "scripts.build_figma_evidence_sync",\n'
+          module_entry = '    "scripts.build_pr_queue_governance",\n'
+          if module_entry not in test_text:
+              if test_text.count(module_anchor) != 1:
+                  raise RuntimeError("governed module insertion anchor was not found")
+              test_text = test_text.replace(
+                  module_anchor,
+                  module_anchor + module_entry,
+              )
+          test_path.write_text(test_text, encoding="utf-8")
+          PY
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install "pytest-cov==7.1.0" "ruff==0.15.22"
+          python -m pip install --no-deps --no-build-isolation -e .
+          ruff format scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          ruff check --fix scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          ruff check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          python -m pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
+            --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
+          rm scripts/_apply_bounded_json_hardening.py
+          rm .github/workflows/one-time-bounded-json-hardening.yml
+          rm .github/workflows/one-time-bounded-json-runner.yml
+          git diff --check
+      - name: Commit exact hardening
+        run: |
+          git add -A
+          git commit -m "fix(security): harden bounded JSON file handling"
+          git push origin "HEAD:sentinel-json-dos-scripts-17708564860587448239"
