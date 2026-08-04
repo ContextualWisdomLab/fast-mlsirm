@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 import runpy
 
@@ -13,6 +14,30 @@ _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("scoring_contract_fixtures.py"))
 )
 assessment = _FIXTURES["assessment"]
+
+
+class _ExplodingMapping(Mapping):
+    """Mapping sentinel that reveals whether an out-of-budget child is visited."""
+
+    def __iter__(self):
+        """Raise caller-controlled text that the collection guard must pre-empt."""
+        raise RuntimeError("private out-of-budget mapping payload")
+
+    def __len__(self) -> int:
+        """Advertise one mapping entry."""
+        return 1
+
+    def __getitem__(self, key):
+        """Return an inert value if unexpectedly indexed."""
+        return "value"
+
+
+class _DishonestLengthList(list):
+    """List fixture whose reported length is smaller than its iterator output."""
+
+    def __len__(self) -> int:
+        """Under-report the collection size to exercise the iteration-time guard."""
+        return 1
 
 
 def test_cyclic_mapping_metadata_fails_without_recursion_or_value_reflection() -> None:
@@ -63,3 +88,15 @@ def test_preflight_applies_collection_limit_before_copying_sequence_entries() ->
 
     assert captured.value.code == "metadata_collection_too_large"
     assert captured.value.path == "$.metadata.values[0]"
+
+
+def test_preflight_does_not_trust_a_sequence_subclass_length() -> None:
+    """Iteration-time bounds pre-empt a deceptive length and untrusted child."""
+    deceptive = _DishonestLengthList([None] * 64 + [_ExplodingMapping()])
+
+    with pytest.raises(AssessmentSpecError) as captured:
+        assessment(metadata={"deceptive_values": deceptive})
+
+    assert captured.value.code == "metadata_collection_too_large"
+    assert captured.value.path == "$.metadata.values[0]"
+    assert "private out-of-budget mapping payload" not in str(captured.value)
