@@ -138,6 +138,7 @@ def build_scoring_request(
     respondent_id: str,
     response_id: str,
     task_id: str,
+    task_revision_fingerprint: str,
     task_family_id: str,
     occasion_id: str,
     criterion_ids: Iterable[str] = (),
@@ -146,7 +147,7 @@ def build_scoring_request(
     response_unit_count: int,
     metadata: Mapping[str, Any] | None = None,
 ) -> ScoringRequest:
-    """Build a request carrying the exact assessment engine-policy projection."""
+    """Build a request carrying policy and exact task-revision provenance."""
     if not isinstance(assessment, AssessmentSpec):
         raise assessment_error(
             "invalid_assessment_spec",
@@ -161,6 +162,7 @@ def build_scoring_request(
         respondent_id=respondent_id,
         response_id=response_id,
         task_id=task_id,
+        task_revision_fingerprint=task_revision_fingerprint,
         task_family_id=task_family_id,
         occasion_id=occasion_id,
         criterion_ids=criterion_ids,
