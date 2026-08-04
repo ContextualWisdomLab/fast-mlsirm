@@ -108,8 +108,8 @@ def test_sparse_declared_categories_build_but_fail_before_rust_fitting(
     )
 
 
-def test_disconnected_error_precedes_sparse_category_fit_gate() -> None:
-    """Connectivity fails first unless diagnostic disconnected fitting is enabled."""
+def test_disconnected_error_precedes_every_estimator_gate() -> None:
+    """A disconnected audit artifact never reaches category or Rust fit gates."""
     records = tuple(
         replace(
             record,
@@ -125,17 +125,16 @@ def test_disconnected_error_precedes_sparse_category_fit_gate() -> None:
 
     for design in bundle.designs:
         assert not design.connected
-        assert_error(
-            "disconnected_facets_design",
-            lambda design=design: fit_scoring_facets_design(design),
-        )
-        assert_error(
-            "unobserved_facets_category",
-            lambda design=design: fit_scoring_facets_design(
-                design,
-                allow_disconnected=True,
-            ),
-        )
+        for allow_disconnected in (False, True):
+            assert_error(
+                "disconnected_facets_design",
+                lambda design=design, allow_disconnected=allow_disconnected: (
+                    fit_scoring_facets_design(
+                        design,
+                        allow_disconnected=allow_disconnected,
+                    )
+                ),
+            )
 
 
 def test_rating_fingerprint_tracks_current_normalized_content() -> None:
@@ -219,7 +218,7 @@ def test_all_terminal_states_do_not_satisfy_category_observation() -> None:
     """Abstained, failed, and excluded records provide no threshold evidence."""
     terminal_by_index = {
         0: ObservationStatus.ABSTAINED,
-        3: ObservationStatus.FAILED,
+        2: ObservationStatus.FAILED,
         4: ObservationStatus.EXCLUDED,
     }
     counters: dict[str, int] = {}
