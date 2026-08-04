@@ -6,6 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 import runpy
 
+import pytest
+
 import fast_mlsirm.scoring.calibration as calibration
 from fast_mlsirm.scoring import (
     ObservationStatus,
@@ -20,7 +22,28 @@ _BASE = runpy.run_path(
 )
 assert_error = _BASE["assert_error"]
 connected_records = _BASE["connected_records"]
+disconnected_records = _BASE["disconnected_records"]
 execution = _BASE["execution"]
+
+
+def _four_category_records(
+    observed_scores: tuple[int, ...],
+) -> tuple[calibration.ScoringFacetsRatingRecord, ...]:
+    """Return a connected four-category pilot with selected scored categories."""
+    counters: dict[str, int] = {}
+    output = []
+    for record in connected_records():
+        index = counters.get(record.criterion_id, 0)
+        counters[record.criterion_id] = index + 1
+        output.append(
+            replace(
+                record,
+                score_category=observed_scores[index % len(observed_scores)],
+                allowed_scores=(0, 1, 2, 3),
+                _rating_token=calibration._RATING_TOKEN,
+            )
+        )
+    return tuple(output)
 
 
 def test_bundle_fit_forwards_bundle_specific_tuning_values(monkeypatch) -> None:
@@ -50,20 +73,27 @@ def test_bundle_fit_forwards_bundle_specific_tuning_values(monkeypatch) -> None:
     assert len(set(response_objects)) == len(response_objects)
 
 
-def test_all_declared_categories_must_be_observed_before_fitting() -> None:
-    """Auditable sparse designs remain buildable but cannot fit empty thresholds."""
-    records = tuple(
-        replace(
-            record,
-            allowed_scores=(0, 1, 2, 3),
-            _rating_token=calibration._RATING_TOKEN,
-        )
-        for record in connected_records()
+@pytest.mark.parametrize("observed_scores", [(0, 1), (0, 1, 2)])
+def test_sparse_declared_categories_build_but_fail_before_rust_fitting(
+    observed_scores: tuple[int, ...],
+    monkeypatch,
+) -> None:
+    """Two- and three-category pilots remain auditable but not estimable."""
+    bundle = build_scoring_facets_calibration_bundle(
+        _four_category_records(observed_scores)
     )
-    bundle = build_scoring_facets_calibration_bundle(records)
 
+    def unexpected_fit_facets(**_kwargs):
+        raise AssertionError("Rust estimator delegation must not occur")
+
+    monkeypatch.setattr("fast_mlsirm.facets.fit_facets", unexpected_fit_facets)
     for design in bundle.designs:
         assert design.category_values == (0, 1, 2, 3)
+        assert {
+            record.score_category
+            for record in design.rating_records
+            if record.status is ObservationStatus.SCORED
+        } == set(observed_scores)
         assert_error(
             "unobserved_facets_category",
             design.to_fit_facets_kwargs,
@@ -71,6 +101,40 @@ def test_all_declared_categories_must_be_observed_before_fitting() -> None:
         assert_error(
             "unobserved_facets_category",
             lambda design=design: fit_scoring_facets_design(design),
+        )
+    assert_error(
+        "unobserved_facets_category",
+        lambda: fit_scoring_facets_bundle(bundle),
+    )
+
+
+def test_disconnected_error_precedes_sparse_category_fit_gate() -> None:
+    """Connectivity fails first unless diagnostic disconnected fitting is enabled."""
+    records = tuple(
+        replace(
+            record,
+            allowed_scores=(0, 1, 2, 3),
+            _rating_token=calibration._RATING_TOKEN,
+        )
+        for record in disconnected_records()
+    )
+    bundle = build_scoring_facets_calibration_bundle(
+        records,
+        require_connected=False,
+    )
+
+    for design in bundle.designs:
+        assert not design.connected
+        assert_error(
+            "disconnected_facets_design",
+            lambda design=design: fit_scoring_facets_design(design),
+        )
+        assert_error(
+            "unobserved_facets_category",
+            lambda design=design: fit_scoring_facets_design(
+                design,
+                allow_disconnected=True,
+            ),
         )
 
 
@@ -151,24 +215,49 @@ def test_bundle_rejects_cross_criterion_rater_provenance_conflict() -> None:
     )
 
 
-def test_terminal_records_do_not_satisfy_category_observation() -> None:
-    """A terminal state cannot make an unobserved score category identifiable."""
+def test_all_terminal_states_do_not_satisfy_category_observation() -> None:
+    """Abstained, failed, and excluded records provide no threshold evidence."""
+    terminal_by_index = {
+        0: ObservationStatus.ABSTAINED,
+        3: ObservationStatus.FAILED,
+        4: ObservationStatus.EXCLUDED,
+    }
+    counters: dict[str, int] = {}
     records = []
-    for record in connected_records():
-        if record.score_category == 2:
+    for record in _four_category_records((0, 1, 2)):
+        index = counters.get(record.criterion_id, 0)
+        counters[record.criterion_id] = index + 1
+        status = terminal_by_index.get(index)
+        if status is None:
+            records.append(record)
+        else:
             records.append(
                 replace(
                     record,
-                    status=ObservationStatus.ABSTAINED,
+                    status=status,
                     score_category=None,
                     _rating_token=calibration._RATING_TOKEN,
                 )
             )
-        else:
-            records.append(record)
     bundle = build_scoring_facets_calibration_bundle(records)
 
+    terminal_records = [
+        record
+        for record in records
+        if record.status is not ObservationStatus.SCORED
+    ]
+    assert {record.status for record in terminal_records} == {
+        ObservationStatus.ABSTAINED,
+        ObservationStatus.FAILED,
+        ObservationStatus.EXCLUDED,
+    }
+    assert all(record.score_category is None for record in terminal_records)
     for design in bundle.designs:
+        assert {
+            record.score_category
+            for record in design.rating_records
+            if record.status is ObservationStatus.SCORED
+        } == {0, 1, 2}
         assert_error(
             "unobserved_facets_category",
             design.to_fit_facets_kwargs,
