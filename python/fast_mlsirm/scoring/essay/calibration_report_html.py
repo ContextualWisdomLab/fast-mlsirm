@@ -2,7 +2,7 @@
 
 The renderer emits a source-text-free, script-free audit artifact from one exact
 :class:`~fast_mlsirm.scoring.essay.calibration_reporting.EssayFacetsCalibrationReport`.
-It displays criterion-specific Rust estimator output and provenance without
+It displays criterion-specific calibration output and provenance without
 claiming model adequacy, global optimality, reliability, fairness, validity,
 score interchangeability, or authorization for consequential deployment.
 """
@@ -187,7 +187,7 @@ def _validated_report(
         raise assessment_error(
             "facets_parameter_count_mismatch",
             "$.report.n_parameters",
-            "n_parameters does not match the Rust facets model contract",
+            "n_parameters does not match the facets model contract",
         )
     converged = calibration_reporting.strict_boolean(report.converged, "converged")
     design_connected = calibration_reporting.strict_boolean(
@@ -248,7 +248,7 @@ def _validated_report(
 def _identifier_list(identifiers: tuple[str, ...], *, empty_message: str) -> str:
     """Render identifier evidence as a semantic list or explicit empty state."""
     if not identifiers:
-        return f'<p class="empty-state">{escape(empty_message)}</p>'
+        return f'<div class="empty-state" role="status">{escape(empty_message)}</div>'
     items = "".join(
         f"<li><code>{escape(identifier)}</code></li>" for identifier in identifiers
     )
@@ -322,7 +322,7 @@ def _threshold_rows(
 def _trace_rows(
     report: EssayFacetsCalibrationReport,
 ) -> tuple[tuple[object | None, ...], ...]:
-    """Return the exact Rust log-likelihood trace without optimality claims."""
+    """Return the exact reported log-likelihood trace without optimality claims."""
     return tuple(enumerate(report.loglik_trace, start=1))
 
 
@@ -363,7 +363,6 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             ("Fit connected", report.fit_connected),
             ("Iterations", report.n_iter),
             ("Parameter count", report.n_parameters),
-            ("Rust backend", "mlsirm_core_facets_fit_facets"),
         )
     )
     tasks = _table(
@@ -391,7 +390,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
         empty_message="No threshold estimates are available.",
     )
     trace = _table(
-        caption="Rust estimator log-likelihood trace",
+        caption="Estimator log-likelihood trace",
         headers=("Iteration", "Log likelihood"),
         rows=_trace_rows(report),
         empty_message="No likelihood trace is available.",
@@ -417,7 +416,7 @@ def _render_html(report: EssayFacetsCalibrationReport, title: str) -> str:
             '<main id="main-content" tabindex="-1">',
             '<header class="hero">',
             f"<h1>{escape(title)}</h1>",
-            '<p class="subtitle">Exact criterion-specific Rust facets output with source-text-free audit provenance.</p>',
+            '<p class="subtitle">Exact criterion-specific facets calibration output with source-text-free audit provenance.</p>',
             "</header>",
             f'<section class="{review_class}" aria-labelledby="review-heading">',
             '<h2 id="review-heading">Review routing and interpretation</h2>',
@@ -475,7 +474,8 @@ def render_essay_facets_calibration_report_html(
     occasion, criterion, respondent, task revision, rater engine, category,
     estimate, convergence, connectedness, and iteration provenance. It contains
     no source text and makes no model-fit, validity, fairness, scoreability,
-    global-optimum, or deployment claim.
+    global-optimum, or deployment claim. It does not invent an unsealed backend
+    implementation identity.
     """
     validated = _validated_report(report)
     output = Path(output_path)
