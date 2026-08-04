@@ -4,6 +4,22 @@
 
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.6.0
+
+- Project version is bumped to 0.6.0 in `pyproject.toml`,
+  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated
+  `Unreleased` notes (the shared provider-neutral assessment and policy
+  contracts with their fail-closed canonicalization and callback-redaction
+  hardening, and the governed scoring observations with the
+  runtime-checkable engine protocol and authoritative assessment replay)
+  now form the `[0.6.0] - 2026-08-04` release section.
+- Released authoritative fragments are removed from `docs/changelog.d`;
+  the directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.6.0] - 2026-08-04
+
 ### Added
 
 #### Shared automated-scoring assessment contracts
@@ -11,6 +27,12 @@
 - Added the provider-neutral `fast_mlsirm.scoring` namespace with immutable construct, engine, calibration, validation, adjudication, monitoring, reporting, and factory-built assessment contracts.
 - Assessment artifacts bind exact `RubricSpecification` fingerprints without duplicating rubric levels, own an independent scoring wire-schema version, and expose deterministic full SHA-256 fingerprints plus descriptive 128-bit public handles.
 - Bounded canonical metadata is deeply immutable, normalizes equivalent floating values, rejects response or source content, and returns structured non-reflective validation errors. This contract layer performs no psychometric arithmetic and does not itself establish scoring accuracy, reliability, fairness, scoreability, or validity.
+
+#### Governed scoring observations and engine protocol
+
+- The provider-neutral `fast_mlsirm.scoring` core now defines content-addressed human and automated `EngineDescriptor` values, exact `ScoringRequest` bindings, source-text-free `EvidenceReference` provenance, scored/abstained/failed/excluded `ScoreObservation` states, complete `ScoringResult` execution records, and a runtime-checkable `ScoringEngine` protocol.
+- Requests bind exact assessment and rubric fingerprints, declared task families, response granularity, criterion sets, allowed rubric scores, response-content digests, and bounded content statistics without retaining raw response text. Results fail closed on missing or duplicate criterion coverage, request/engine mismatches, fabricated scores, missing terminal reasons, duplicate evidence, and mixed holistic/criterion observations.
+- A deterministic offline `StaticFixtureEngine` exercises the same public contracts for tests and documentation only. The shared core adds no hosted-provider SDK, network call, credential handling, scoring inference, psychometric arithmetic, or claim of reliability, fairness, model fit, scoreability, or validity.
 
 ### Changed
 
@@ -24,7 +46,7 @@
   release notes) now form the `[0.5.0] - 2026-08-03` release section.
 - Released authoritative fragments are removed from `docs/changelog.d`;
   the directory again holds only genuinely unreleased notes.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.5.0] - 2026-08-03
 
 ### Added
