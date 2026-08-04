@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from . import calibration as _base
@@ -15,6 +16,7 @@ from .execution import (
     ScoreObservation,
     ScoringRequest,
     ScoringResult,
+    build_scoring_result,
 )
 
 _ORIGINAL_BUILD_RECORDS = _base.build_scoring_facets_rating_records
@@ -145,6 +147,53 @@ def _validate_result_observations(
     return tuple(validated)
 
 
+def _replay_result(
+    *,
+    request: ScoringRequest,
+    result: ScoringResult,
+    engine: EngineDescriptor,
+    observations: tuple[ScoreObservation, ...],
+) -> ScoringResult:
+    """Rebuild one result without mutating the caller-owned artifact."""
+    rebuilt = build_scoring_result(
+        result_id=result.result_id,
+        request=request,
+        engine=engine,
+        observations=observations,
+        execution_attempt=result.execution_attempt,
+        diagnostics=result.diagnostics,
+    )
+    actual_fields = (
+        result.schema_version,
+        result.result_id,
+        result.request_fingerprint,
+        result.engine_fingerprint,
+        result.granularity,
+        result.requested_criterion_ids,
+        tuple(value.observation_fingerprint for value in observations),
+        result.execution_attempt,
+        result.diagnostics,
+    )
+    rebuilt_fields = (
+        rebuilt.schema_version,
+        rebuilt.result_id,
+        rebuilt.request_fingerprint,
+        rebuilt.engine_fingerprint,
+        rebuilt.granularity,
+        rebuilt.requested_criterion_ids,
+        tuple(value.observation_fingerprint for value in rebuilt.observations),
+        rebuilt.execution_attempt,
+        rebuilt.diagnostics,
+    )
+    if not _same_value(actual_fields, rebuilt_fields):
+        raise assessment_error(
+            "scoring_result_replay_mismatch",
+            "$.result",
+            "result no longer matches its normalized factory contract",
+        )
+    return rebuilt
+
+
 def build_scoring_facets_rating_records(
     *,
     request: ScoringRequest,
@@ -199,10 +248,15 @@ def build_scoring_facets_rating_records(
         result=result,
         engine=engine,
     )
-    object.__setattr__(result, "observations", observations)
-    return _ORIGINAL_BUILD_RECORDS(
+    replayed_result = _replay_result(
         request=request,
         result=result,
+        engine=engine,
+        observations=observations,
+    )
+    return _ORIGINAL_BUILD_RECORDS(
+        request=request,
+        result=replayed_result,
         engine=engine,
     )
 
@@ -247,7 +301,7 @@ def _replay_rating_record(
             path,
             "rating record no longer matches its normalized factory contract",
         )
-    return value
+    return rebuilt
 
 
 def build_scoring_facets_calibration_bundle(
@@ -272,7 +326,11 @@ def build_scoring_facets_calibration_bundle(
     )
 
 
-def _design_fields(design: _base.ScoringFacetsDesign) -> tuple[Any, ...]:
+def _design_fields(
+    design: _base.ScoringFacetsDesign,
+    *,
+    rating_fingerprints: tuple[str, ...],
+) -> tuple[Any, ...]:
     """Return the complete normalized design identity without derived handles."""
     return (
         design.schema_version,
@@ -291,7 +349,7 @@ def _design_fields(design: _base.ScoringFacetsDesign) -> tuple[Any, ...]:
         design.rater_engine_ids,
         design.rater_engine_family_ids,
         design.rater_engine_fingerprints,
-        tuple(record.rating_fingerprint for record in design.rating_records),
+        rating_fingerprints,
         design.respondent_task_connected,
         design.task_rater_connected,
         design.connected,
@@ -306,6 +364,12 @@ def _replay_design(value: Any) -> _base.ScoringFacetsDesign:
             "$.design",
             "design must be an exact ScoringFacetsDesign",
         )
+    if type(value.rating_records) is not tuple:
+        raise assessment_error(
+            "facets_design_replay_mismatch",
+            "$.design.rating_records",
+            "design rating records must retain their factory tuple representation",
+        )
     raw = bounded_values(
         value.rating_records,
         "rating_records",
@@ -317,13 +381,40 @@ def _replay_design(value: Any) -> _base.ScoringFacetsDesign:
         for index, record in enumerate(raw)
     )
     rebuilt = _base._build_criterion_design(records, require_connected=True)
-    if not _same_value(_design_fields(value), _design_fields(rebuilt)):
+    actual_fields = _design_fields(
+        value,
+        rating_fingerprints=tuple(record.rating_fingerprint for record in records),
+    )
+    rebuilt_fields = _design_fields(
+        rebuilt,
+        rating_fingerprints=tuple(
+            record.rating_fingerprint for record in rebuilt.rating_records
+        ),
+    )
+    if not _same_value(actual_fields, rebuilt_fields):
         raise assessment_error(
             "facets_design_replay_mismatch",
             "$.design",
             "design no longer matches its replayed rating collection",
         )
     return rebuilt
+
+
+def _bounded_bundle_records(
+    designs: Iterable[_base.ScoringFacetsDesign],
+) -> tuple[_base.ScoringFacetsRatingRecord, ...]:
+    """Flatten design records without materializing beyond the global cap."""
+    output: list[_base.ScoringFacetsRatingRecord] = []
+    for design in designs:
+        for record in design.rating_records:
+            if len(output) >= _base.MAX_SCORING_FACETS_RATINGS:
+                raise assessment_error(
+                    "invalid_records",
+                    "$.bundle.designs",
+                    "bundle contains more rating records than the configured maximum",
+                )
+            output.append(record)
+    return tuple(output)
 
 
 def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
@@ -333,6 +424,12 @@ def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
             "invalid_facets_bundle",
             "$.bundle",
             "bundle must be an exact ScoringFacetsCalibrationBundle",
+        )
+    if type(value.designs) is not tuple:
+        raise assessment_error(
+            "facets_bundle_replay_mismatch",
+            "$.bundle.designs",
+            "bundle designs must retain their factory tuple representation",
         )
     raw = bounded_values(
         value.designs,
@@ -355,11 +452,7 @@ def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
             "each criterion may appear only once in a calibration bundle",
         )
     designs = tuple(_replay_design(design) for design in raw)
-    all_records = tuple(
-        record
-        for design in designs
-        for record in design.rating_records
-    )
+    all_records = _bounded_bundle_records(designs)
     rebuilt = _ORIGINAL_BUILD_BUNDLE(all_records, require_connected=True)
     actual_fields = (
         value.schema_version,
@@ -369,7 +462,7 @@ def _replay_bundle(value: Any) -> _base.ScoringFacetsCalibrationBundle:
         value.occasion_id,
         value.category_values,
         value.criterion_ids,
-        tuple(design.design_fingerprint for design in value.designs),
+        tuple(design.design_fingerprint for design in raw),
     )
     rebuilt_fields = (
         rebuilt.schema_version,
