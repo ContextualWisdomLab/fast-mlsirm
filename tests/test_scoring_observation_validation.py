@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import math
 from pathlib import Path
 import runpy
@@ -27,7 +28,43 @@ argument_rubric = _FIXTURES["argument_rubric"]
 assessment_spec = _FIXTURES["assessment_spec"]
 
 
-def _engine(*, rater_kind: RaterKind = RaterKind.AUTOMATED, engine_id: str = "fixture_engine"):
+class _RuntimeIndex:
+    """Integer-like value whose callback fails with caller-controlled text."""
+
+    def __index__(self) -> int:
+        """Raise text that must not cross the structured error boundary."""
+        raise RuntimeError("private index callback")
+
+
+class _BooleanIndex:
+    """Integer-like value returning a Boolean rather than an integer."""
+
+    def __index__(self) -> bool:
+        """Return an invalid Boolean index result."""
+        return True
+
+
+class _RuntimeFloat:
+    """Float-like value whose callback fails with caller-controlled text."""
+
+    def __float__(self) -> float:
+        """Raise text that must not cross the structured error boundary."""
+        raise RuntimeError("private float callback")
+
+
+class _RuntimeIterable(Iterable[object]):
+    """Iterable whose iterator creation fails unexpectedly."""
+
+    def __iter__(self):
+        """Raise text that must become a stable evidence collection error."""
+        raise RuntimeError("private iterator callback")
+
+
+def _engine(
+    *,
+    rater_kind: RaterKind = RaterKind.AUTOMATED,
+    engine_id: str = "fixture_engine",
+) -> EngineDescriptor:
     """Return one scorer descriptor for validation tests."""
     return EngineDescriptor(
         engine_id=engine_id,
@@ -49,13 +86,15 @@ def _build(**overrides):
         "rubrics": (rubric,),
         "engine": _engine(),
         "response_id": "essay_response",
+        "response_fingerprint": "b" * 64,
         "task_id": "essay_prompt",
+        "task_fingerprint": "a" * 64,
         "rater_id": "automated_rater",
         "occasion_id": "scoring_occasion",
         "construct_id": "argument_quality",
         "rubric_fingerprint": rubric.fingerprint,
         "status": ObservationStatus.SCORED,
-        "score_category": 2,
+        "score_category": 1,
         "confidence": 0.75,
         "reason_code": None,
         "evidence_spans": (),
@@ -77,7 +116,9 @@ def test_engine_policy_controls_human_and_automated_descriptors():
         _build(engine=_engine(engine_id="unknown_engine"))
     assert engine_unknown.value.code == "unknown_engine_id"
 
-    human = _build(engine=_engine(rater_kind=RaterKind.HUMAN, engine_id="human_adapter"))
+    human = _build(
+        engine=_engine(rater_kind=RaterKind.HUMAN, engine_id="human_adapter")
+    )
     assert human.engine.rater_kind is RaterKind.HUMAN
 
     with pytest.raises(AssessmentSpecError) as human_disabled:
@@ -110,8 +151,8 @@ def test_observation_requires_exact_assessment_construct_and_rubric_graph():
         _build(rubrics=(argument_rubric(), other_rubric))
     assert registry_error.value.code == "unused_observation_rubric"
 
+    rubric = argument_rubric()
     with pytest.raises(AssessmentSpecError) as duplicate_error:
-        rubric = argument_rubric()
         _build(rubrics=(rubric, rubric))
     assert duplicate_error.value.code == "duplicate_observation_rubric"
 
@@ -127,12 +168,14 @@ def test_observation_status_score_and_reason_contracts_are_exclusive():
     assert scored_reason.value.code == "scored_reason_forbidden"
 
     with pytest.raises(AssessmentSpecError) as invalid_score:
-        _build(score_category=1)
+        _build(score_category=3)
     assert invalid_score.value.code == "invalid_score_category"
 
-    with pytest.raises(AssessmentSpecError) as boolean_score:
-        _build(score_category=True)
-    assert boolean_score.value.code == "invalid_score_category"
+    for invalid in (True, _BooleanIndex(), _RuntimeIndex()):
+        with pytest.raises(AssessmentSpecError) as boolean_score:
+            _build(score_category=invalid)
+        assert boolean_score.value.code == "invalid_score_category"
+        assert "private index callback" not in str(boolean_score.value)
 
     for status in (
         ObservationStatus.ABSTAINED,
@@ -140,7 +183,7 @@ def test_observation_status_score_and_reason_contracts_are_exclusive():
         ObservationStatus.EXCLUDED,
     ):
         with pytest.raises(AssessmentSpecError) as score_forbidden:
-            _build(status=status, score_category=2, reason_code="review_reason")
+            _build(status=status, score_category=1, reason_code="review_reason")
         assert score_forbidden.value.code == "non_scored_category_forbidden"
 
         with pytest.raises(AssessmentSpecError) as reason_missing:
@@ -148,13 +191,24 @@ def test_observation_status_score_and_reason_contracts_are_exclusive():
         assert reason_missing.value.code == "missing_reason_code"
 
 
-def test_confidence_is_optional_finite_numeric_probability_not_boolean():
-    """Confidence has one portable bounded representation without numeric coercion."""
+def test_confidence_is_optional_finite_probability_and_callback_safe():
+    """Confidence has one portable bounded representation without error reflection."""
     assert _build(confidence=None).confidence is None
-    for value in (True, -0.1, 1.1, math.nan, math.inf, "high"):
+    for value in (True, -0.1, 1.1, math.nan, math.inf, "high", _RuntimeFloat()):
         with pytest.raises(AssessmentSpecError) as captured:
             _build(confidence=value)
         assert captured.value.code == "invalid_observation_confidence"
+        assert "private float callback" not in str(captured.value)
+
+
+def test_response_task_fingerprints_and_observation_identifiers_fail_closed():
+    """Exact artifact identities and descriptive labels cannot be forged or omitted."""
+    for field_name in ("response_fingerprint", "task_fingerprint"):
+        with pytest.raises(AssessmentSpecError):
+            _build(**{field_name: "bad"})
+    for field_name in ("response_id", "task_id", "rater_id", "occasion_id"):
+        with pytest.raises(AssessmentSpecError):
+            _build(**{field_name: "invalid"})
 
 
 def test_evidence_span_rejects_invalid_identifiers_digests_and_offsets():
@@ -167,14 +221,16 @@ def test_evidence_span_rejects_invalid_identifiers_digests_and_offsets():
         {"source_kind": EvidenceSourceKind.RESPONSE, "source_id": "essay_response", "content_digest": "a" * 64, "start_offset": 1, "end_offset": 1},
         {"source_kind": EvidenceSourceKind.RESPONSE, "source_id": "essay_response", "content_digest": "a" * 64, "start_offset": True, "end_offset": 1},
         {"source_kind": EvidenceSourceKind.RESPONSE, "source_id": "essay_response", "content_digest": "a" * 64, "start_offset": 0, "end_offset": 1 << 63},
+        {"source_kind": EvidenceSourceKind.RESPONSE, "source_id": "essay_response", "content_digest": "a" * 64, "start_offset": _RuntimeIndex(), "end_offset": 1},
     )
     for values in invalid_cases:
-        with pytest.raises(AssessmentSpecError):
+        with pytest.raises(AssessmentSpecError) as captured:
             EvidenceSpan(**values)
+        assert "private index callback" not in str(captured.value)
 
 
-def test_observation_rejects_duplicate_or_oversized_evidence_spans():
-    """Evidence lists are bounded and each exact span appears at most once."""
+def test_observation_rejects_duplicate_oversized_and_hostile_evidence_iterables():
+    """Evidence lists are bounded, callback-safe, and contain each exact span once."""
     span = EvidenceSpan(
         source_kind=EvidenceSourceKind.RESPONSE,
         source_id="essay_response",
@@ -200,9 +256,14 @@ def test_observation_rejects_duplicate_or_oversized_evidence_spans():
         _build(evidence_spans=spans)
     assert oversized.value.code == "invalid_evidence_spans"
 
+    with pytest.raises(AssessmentSpecError) as callback_failure:
+        _build(evidence_spans=_RuntimeIterable())
+    assert callback_failure.value.code == "invalid_evidence_spans"
+    assert "private iterator callback" not in str(callback_failure.value)
 
-def test_engine_and_observation_identifiers_versions_enums_and_metadata_fail_closed():
-    """Public values use stable descriptive identities and bounded metadata."""
+
+def test_engine_and_observation_versions_enums_metadata_and_types_fail_closed():
+    """Public values use stable identities, exact types, and bounded metadata."""
     with pytest.raises(AssessmentSpecError):
         _engine(engine_id="invalid")
     with pytest.raises(AssessmentSpecError):
@@ -226,13 +287,8 @@ def test_engine_and_observation_identifiers_versions_enums_and_metadata_fail_clo
     with pytest.raises(AssessmentSpecError):
         _build(status="unknown")
     with pytest.raises(AssessmentSpecError):
-        _build(response_id="invalid")
-    with pytest.raises(AssessmentSpecError):
         _build(metadata={"response_text": "secret"})
 
-
-def test_observation_factory_validates_owned_component_types_and_schema_version():
-    """Parallel contract implementations and incompatible schema versions are rejected."""
     with pytest.raises(AssessmentSpecError) as assessment_error:
         _build(assessment=object())
     assert assessment_error.value.code == "invalid_observation_assessment"
@@ -247,7 +303,9 @@ def test_observation_factory_validates_owned_component_types_and_schema_version(
             assessment_fingerprint=valid.assessment_fingerprint,
             engine=valid.engine,
             response_id=valid.response_id,
+            response_fingerprint=valid.response_fingerprint,
             task_id=valid.task_id,
+            task_fingerprint=valid.task_fingerprint,
             rater_id=valid.rater_id,
             occasion_id=valid.occasion_id,
             construct_id=valid.construct_id,
