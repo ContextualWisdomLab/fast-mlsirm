@@ -171,6 +171,15 @@ def _validate_report_binding(
                 f"{path}.granularity",
                 "observation granularity does not match the essay request",
             )
+        if (
+            observation.status is not ObservationStatus.SCORED
+            and observation.reason_code is None
+        ):
+            raise assessment_error(
+                "essay_report_missing_reason_code",
+                f"{path}.reason_code",
+                "non-scored observations require a transparent review reason",
+            )
     _replay_scoring_result(shared_request, result, engine)
 
 
@@ -183,17 +192,11 @@ def _mandatory_review_triggers(
     review_flags = request.scoring_request.metadata.get("essay_review_flags", ())
     for review_flag in review_flags:
         triggers.add(f"submission_{review_flag}")
-    for index, observation in enumerate(result.observations):
+    for observation in result.observations:
         if observation.status is ObservationStatus.SCORED:
             if not observation.evidence_references:
                 triggers.add("observation_missing_evidence")
             continue
-        if observation.reason_code is None:
-            raise assessment_error(
-                "essay_report_missing_reason_code",
-                f"$.result.observations[{index}].reason_code",
-                "non-scored observations require a transparent review reason",
-            )
         triggers.add(
             f"observation_{observation.status.value}_{observation.reason_code}"
         )
