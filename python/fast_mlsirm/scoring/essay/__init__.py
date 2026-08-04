@@ -1,5 +1,17 @@
 """Essay-specific adapters for the shared provider-neutral scoring contracts."""
 
+from .calibration_reporting import (
+    MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
+)
+from .calibration_reporting import (
+    EssayFacetsCalibrationReport as EssayFacetsCalibrationReport,
+)
+from .calibration_reporting import (
+    build_essay_facets_calibration_report as build_essay_facets_calibration_report,
+)
+from .calibration_reporting import (
+    fit_essay_facets_calibration_report as fit_essay_facets_calibration_report,
+)
 from .contracts import EssayEvidenceKind as EssayEvidenceKind
 from .contracts import EssayPrompt as EssayPrompt
 from .contracts import EssayResponseEvidence as EssayResponseEvidence
@@ -29,21 +41,25 @@ from .reporting import build_essay_score_report as build_essay_score_report
 
 __all__ = [
     "MAX_ESSAY_EVIDENCE_REFERENCES",
+    "MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS",
     "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",
     "MAX_ESSAY_RESPONSE_CHARACTERS",
     "MAX_ESSAY_RESPONSE_UNITS",
     "MAX_ESSAY_REVIEW_FLAGS",
     "EssayEvidenceKind",
+    "EssayFacetsCalibrationReport",
     "EssayPrompt",
     "EssayResponseEvidence",
     "EssayReviewFlag",
     "EssayScoreReport",
     "EssayScoringRequest",
     "EssaySubmission",
+    "build_essay_facets_calibration_report",
     "build_essay_prompt",
     "build_essay_response_evidence",
     "build_essay_score_report",
     "build_essay_scoring_request",
     "build_essay_submission",
+    "fit_essay_facets_calibration_report",
     "score_essay_request",
 ]
