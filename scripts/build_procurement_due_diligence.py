@@ -15,6 +15,11 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 POLICY_FILES = [
     "README.md",
@@ -39,11 +44,8 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as fh:
-        payload = json.load(fh)
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _resolve_path(value: str | Path, *, base: Path) -> Path:
@@ -55,7 +57,10 @@ def _resolve_path(value: str | Path, *, base: Path) -> Path:
 
 def _metadata_dict(text: str) -> dict[str, str]:
     parsed = Parser().parsestr(text)
-    return {key: parsed.get(key, "") for key in ["Name", "Version", "License", "Requires-Python"]}
+    return {
+        key: parsed.get(key, "")
+        for key in ["Name", "Version", "License", "Requires-Python"]
+    }
 
 
 def parse_wheel(path: Path) -> dict[str, Any]:
@@ -63,7 +68,12 @@ def parse_wheel(path: Path) -> dict[str, Any]:
     metadata: dict[str, str] = {}
     members: list[str] = []
     if not path.exists():
-        return {"ok": False, "path": str(path), "missing": sorted(required), "metadata": metadata}
+        return {
+            "ok": False,
+            "path": str(path),
+            "missing": sorted(required),
+            "metadata": metadata,
+        }
     with zipfile.ZipFile(path) as archive:
         members = archive.namelist()
         for name in members:
@@ -71,7 +81,9 @@ def parse_wheel(path: Path) -> dict[str, Any]:
                 if name.endswith(f".dist-info/{required_name}"):
                     required[required_name] = name
         if required["METADATA"] is not None:
-            metadata = _metadata_dict(archive.read(required["METADATA"]).decode("utf-8", errors="replace"))
+            metadata = _metadata_dict(
+                archive.read(required["METADATA"]).decode("utf-8", errors="replace")
+            )
     missing = sorted(name for name, member in required.items() if member is None)
     return {
         "ok": not missing,
@@ -90,14 +102,21 @@ def parse_sdist(path: Path) -> dict[str, Any]:
     metadata: dict[str, str] = {}
     pkg_info_name = None
     if not path.exists():
-        return {"ok": False, "path": str(path), "missing": ["PKG-INFO"], "metadata": metadata}
+        return {
+            "ok": False,
+            "path": str(path),
+            "missing": ["PKG-INFO"],
+            "metadata": metadata,
+        }
     with tarfile.open(path, "r:gz") as archive:
         for member in archive.getmembers():
             if member.name.endswith("PKG-INFO"):
                 pkg_info_name = member.name
                 fh = archive.extractfile(member)
                 if fh is not None:
-                    metadata = _metadata_dict(fh.read().decode("utf-8", errors="replace"))
+                    metadata = _metadata_dict(
+                        fh.read().decode("utf-8", errors="replace")
+                    )
                 break
     return {
         "ok": pkg_info_name is not None,
@@ -161,8 +180,15 @@ def _source_commit(repo_root: Path) -> str:
     return completed.stdout.strip() or "unknown"
 
 
-def _check(name: str, category: str, ok: bool, detail: str, **metadata: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {"name": name, "category": category, "ok": ok, "detail": detail}
+def _check(
+    name: str, category: str, ok: bool, detail: str, **metadata: Any
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": name,
+        "category": category,
+        "ok": ok,
+        "detail": detail,
+    }
     payload.update(metadata)
     return payload
 
@@ -181,13 +207,30 @@ def _policy_checks(repo_root: Path) -> list[dict[str, Any]]:
             )
         )
     workflow = repo_root / ".github" / "workflows" / "ci.yml"
-    checks.append(_check("workflow:ci", "github", workflow.exists(), "CI workflow file exists", path=str(workflow)))
+    checks.append(
+        _check(
+            "workflow:ci",
+            "github",
+            workflow.exists(),
+            "CI workflow file exists",
+            path=str(workflow),
+        )
+    )
     return checks
 
 
-def _commercial_checks(path: Path, *, contract_value_krw: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _commercial_checks(
+    path: Path, *, contract_value_krw: int
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not path.exists():
-        return {}, [_check("commercial_release:manifest", "commercial_release", False, f"missing manifest: {path}")]
+        return {}, [
+            _check(
+                "commercial_release:manifest",
+                "commercial_release",
+                False,
+                f"missing manifest: {path}",
+            )
+        ]
     payload = _read_json(path)
     checks = [
         _check(
@@ -210,7 +253,11 @@ def _commercial_checks(path: Path, *, contract_value_krw: int) -> tuple[dict[str
     if isinstance(artifacts, dict):
         for name in ["wheel", "sdist", "final_sales_readiness"]:
             artifact = artifacts.get(name, {})
-            ok = isinstance(artifact, dict) and artifact.get("exists") is True and isinstance(artifact.get("sha256"), str)
+            ok = (
+                isinstance(artifact, dict)
+                and artifact.get("exists") is True
+                and isinstance(artifact.get("sha256"), str)
+            )
             checks.append(
                 _check(
                     f"commercial_release:artifact:{name}",
@@ -228,7 +275,14 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         return {"mode": "offline", "repo": repo, "checks": {"snapshot_recorded": True}}
     snapshot: dict[str, Any] = {"mode": "live", "repo": repo}
     commands = {
-        "repo": ["gh", "repo", "view", repo, "--json", "nameWithOwner,defaultBranchRef,visibility,isArchived,pushedAt,updatedAt,url"],
+        "repo": [
+            "gh",
+            "repo",
+            "view",
+            repo,
+            "--json",
+            "nameWithOwner,defaultBranchRef,visibility,isArchived,pushedAt,updatedAt,url",
+        ],
         "open_prs": [
             "gh",
             "pr",
@@ -248,10 +302,16 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
         snapshot[name] = {
             "ok": completed.returncode == 0,
             "returncode": completed.returncode,
-            "data": json.loads(completed.stdout) if completed.returncode == 0 and completed.stdout.strip() else None,
+            "data": json.loads(completed.stdout)
+            if completed.returncode == 0 and completed.stdout.strip()
+            else None,
             "stderr": completed.stderr.strip(),
         }
-    release = subprocess.run(["gh", "release", "list", "--repo", repo, "--limit", "20"], capture_output=True, text=True)
+    release = subprocess.run(
+        ["gh", "release", "list", "--repo", repo, "--limit", "20"],
+        capture_output=True,
+        text=True,
+    )
     snapshot["releases"] = {
         "ok": release.returncode == 0,
         "returncode": release.returncode,
@@ -263,20 +323,44 @@ def _github_snapshot(repo: str, *, offline: bool) -> dict[str, Any]:
 
 def _github_checks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     if snapshot.get("mode") == "offline":
-        return [_check("github:snapshot", "github", True, "GitHub snapshot intentionally recorded in offline mode")]
+        return [
+            _check(
+                "github:snapshot",
+                "github",
+                True,
+                "GitHub snapshot intentionally recorded in offline mode",
+            )
+        ]
     repo_data = snapshot.get("repo", {})
     repo_payload = repo_data.get("data", {}) if isinstance(repo_data, dict) else {}
     checks = [
-        _check("github:repo_snapshot", "github", bool(repo_data.get("ok")), "GitHub repository metadata was read"),
+        _check(
+            "github:repo_snapshot",
+            "github",
+            bool(repo_data.get("ok")),
+            "GitHub repository metadata was read",
+        ),
         _check(
             "github:not_archived",
             "github",
             isinstance(repo_payload, dict) and repo_payload.get("isArchived") is False,
             "GitHub repository is not archived",
-            actual=repo_payload.get("isArchived") if isinstance(repo_payload, dict) else None,
+            actual=repo_payload.get("isArchived")
+            if isinstance(repo_payload, dict)
+            else None,
         ),
-        _check("github:open_pr_snapshot", "github", bool(snapshot.get("open_prs", {}).get("ok")), "Open PR state was recorded"),
-        _check("github:release_snapshot", "github", bool(snapshot.get("releases", {}).get("ok")), "Release list state was recorded"),
+        _check(
+            "github:open_pr_snapshot",
+            "github",
+            bool(snapshot.get("open_prs", {}).get("ok")),
+            "Open PR state was recorded",
+        ),
+        _check(
+            "github:release_snapshot",
+            "github",
+            bool(snapshot.get("releases", {}).get("ok")),
+            "Release list state was recorded",
+        ),
     ]
     return checks
 
@@ -346,7 +430,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             continue
         rows.append(
             "<tr>"
-            f"<th scope=\"row\">{escape(str(check.get('name', '')))}</th>"
+            f'<th scope="row">{escape(str(check.get("name", "")))}</th>'
             f"<td>{escape(str(check.get('category', '')))}</td>"
             f"<td>{escape('go' if check.get('ok') else 'failed')}</td>"
             f"<td>{escape(str(check.get('detail', '')))}</td>"
@@ -354,14 +438,25 @@ def _render_report(manifest: dict[str, Any]) -> str:
         )
     cards = [
         ("Status", manifest.get("status", "")),
-        ("Contract Value", f"KRW {manifest.get('contract_value_krw', ''):,}" if isinstance(manifest.get("contract_value_krw"), int) else ""),
+        (
+            "Contract Value",
+            f"KRW {manifest.get('contract_value_krw', ''):,}"
+            if isinstance(manifest.get("contract_value_krw"), int)
+            else "",
+        ),
         ("Project Version", manifest.get("project", {}).get("version", "")),
         ("Source Commit", manifest.get("source_commit", "")),
         ("Checks", len(checks) if isinstance(checks, list) else ""),
-        ("Failed", len(manifest.get("failed_checks", [])) if isinstance(manifest.get("failed_checks"), list) else ""),
+        (
+            "Failed",
+            len(manifest.get("failed_checks", []))
+            if isinstance(manifest.get("failed_checks"), list)
+            else "",
+        ),
     ]
     card_markup = [
-        "<article class=\"metric-card\">" f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
+        '<article class="metric-card">'
+        f"<span>{escape(label)}</span><strong>{escape(str(value))}</strong></article>"
         for label, value in cards
     ]
     return "\n".join(
@@ -386,7 +481,7 @@ def _render_report(manifest: dict[str, Any]) -> str:
             '<section class="report-section"><h2>Due-Diligence Checks</h2>',
             '<div class="table-wrap" role="region" aria-label="Procurement due diligence check table" tabindex="0">',
             "<table><caption>Procurement due diligence check table</caption>",
-            "<thead><tr><th scope=\"col\">Check</th><th scope=\"col\">Category</th><th scope=\"col\">Status</th><th scope=\"col\">Detail</th></tr></thead><tbody>",
+            '<thead><tr><th scope="col">Check</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Detail</th></tr></thead><tbody>',
             *rows,
             "</tbody></table></div>",
             '<p class="note">This report records procurement evidence only. It is not a valuation guarantee or regulated-use approval.</p>',
@@ -398,24 +493,62 @@ def _render_report(manifest: dict[str, Any]) -> str:
 def build_procurement_due_diligence(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = Path(args.repo_root).resolve()
     dist_dir = _resolve_path(args.dist, base=repo_root).resolve()
-    commercial_path = _resolve_path(args.commercial_release_manifest, base=repo_root).resolve()
+    commercial_path = _resolve_path(
+        args.commercial_release_manifest, base=repo_root
+    ).resolve()
     out_dir = _resolve_path(args.out, base=repo_root).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     project = _project_metadata(repo_root)
     wheels = sorted(dist_dir.glob("*.whl"))
     sdists = sorted(dist_dir.glob("*.tar.gz"))
-    wheel = parse_wheel(wheels[0]) if wheels else {"ok": False, "missing": ["wheel"], "metadata": {}}
-    sdist = parse_sdist(sdists[0]) if sdists else {"ok": False, "missing": ["sdist"], "metadata": {}}
-    commercial, checks = _commercial_checks(commercial_path, contract_value_krw=args.contract_value_krw)
+    wheel = (
+        parse_wheel(wheels[0])
+        if wheels
+        else {"ok": False, "missing": ["wheel"], "metadata": {}}
+    )
+    sdist = (
+        parse_sdist(sdists[0])
+        if sdists
+        else {"ok": False, "missing": ["sdist"], "metadata": {}}
+    )
+    commercial, checks = _commercial_checks(
+        commercial_path, contract_value_krw=args.contract_value_krw
+    )
     checks = [
-        _check("dist:wheel", "package", bool(wheels), "wheel artifact exists", count=len(wheels)),
-        _check("dist:sdist", "package", bool(sdists), "source distribution artifact exists", count=len(sdists)),
-        _check("wheel:metadata", "package", bool(wheel.get("ok")), "wheel contains METADATA, WHEEL, and RECORD", missing=wheel.get("missing")),
-        _check("sdist:metadata", "package", bool(sdist.get("ok")), "source distribution contains PKG-INFO", missing=sdist.get("missing")),
+        _check(
+            "dist:wheel",
+            "package",
+            bool(wheels),
+            "wheel artifact exists",
+            count=len(wheels),
+        ),
+        _check(
+            "dist:sdist",
+            "package",
+            bool(sdists),
+            "source distribution artifact exists",
+            count=len(sdists),
+        ),
+        _check(
+            "wheel:metadata",
+            "package",
+            bool(wheel.get("ok")),
+            "wheel contains METADATA, WHEEL, and RECORD",
+            missing=wheel.get("missing"),
+        ),
+        _check(
+            "sdist:metadata",
+            "package",
+            bool(sdist.get("ok")),
+            "source distribution contains PKG-INFO",
+            missing=sdist.get("missing"),
+        ),
         _check(
             "package:version",
             "package",
-            project.get("version") == wheel.get("metadata", {}).get("Version") == sdist.get("metadata", {}).get("Version"),
+            project.get("version")
+            == wheel.get("metadata", {}).get("Version")
+            == sdist.get("metadata", {}).get("Version"),
             "pyproject, wheel, and source distribution versions match",
             pyproject=project.get("version"),
             wheel=wheel.get("metadata", {}).get("Version"),
@@ -447,23 +580,44 @@ def build_procurement_due_diligence(args: argparse.Namespace) -> dict[str, Any]:
     html_path.write_text(_render_report(manifest), encoding="utf-8")
     manifest["html_report_file"] = str(html_path)
     manifest["html_report_sha256"] = _sha256(html_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build procurement due-diligence evidence for fast-mlsirm.")
+    parser = argparse.ArgumentParser(
+        description="Build procurement due-diligence evidence for fast-mlsirm."
+    )
     parser.add_argument("--repo-root", default=".", help="Repository root.")
-    parser.add_argument("--dist", default="dist", help="Directory containing wheel and sdist artifacts.")
+    parser.add_argument(
+        "--dist", default="dist", help="Directory containing wheel and sdist artifacts."
+    )
     parser.add_argument(
         "--commercial-release-manifest",
         default="commercial-release/commercial_release_manifest.json",
         help="Path to commercial_release_manifest.json.",
     )
-    parser.add_argument("--out", default="procurement-due-diligence", help="Output directory.")
-    parser.add_argument("--repo", default="ContextualWisdomLab/fast-mlsirm", help="GitHub repository name.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
-    parser.add_argument("--offline-github", action="store_true", help="Record an offline GitHub snapshot instead of calling gh.")
+    parser.add_argument(
+        "--out", default="procurement-due-diligence", help="Output directory."
+    )
+    parser.add_argument(
+        "--repo",
+        default="ContextualWisdomLab/fast-mlsirm",
+        help="GitHub repository name.",
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
+    parser.add_argument(
+        "--offline-github",
+        action="store_true",
+        help="Record an offline GitHub snapshot instead of calling gh.",
+    )
     return parser
 
 
@@ -480,7 +634,9 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
-                "manifest": str(Path(args.out).resolve() / "procurement_due_diligence_manifest.json"),
+                "manifest": str(
+                    Path(args.out).resolve() / "procurement_due_diligence_manifest.json"
+                ),
                 "html": manifest["html_report_file"],
                 "failed_checks": len(manifest["failed_checks"]),
             },
