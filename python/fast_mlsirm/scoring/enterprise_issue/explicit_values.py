@@ -91,6 +91,12 @@ def _calendar_date(value: str, path: str) -> str:
 
 def _decimal_amount(value: str, path: str) -> str:
     """Return exact finite nonnegative decimal text without float conversion."""
+    if type(value) is not str:
+        raise assessment_error(
+            "invalid_decimal_amount",
+            path,
+            "decimal amount must use the accepted nonnegative decimal grammar",
+        )
     try:
         amount = Decimal(value.replace(",", ""))
     except (InvalidOperation, ValueError):
