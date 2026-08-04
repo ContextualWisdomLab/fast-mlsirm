@@ -7,11 +7,6 @@ on:
       - feat/essay-validation-report-html
     paths:
       - .github/workflows/one-time-essay-public-surface-fix.yml
-  pull_request:
-    branches:
-      - main
-    types:
-      - synchronize
 
 permissions: {}
 
@@ -42,21 +37,18 @@ jobs:
           from pathlib import Path
 
           path = Path("tests/test_scoring_essay_contracts.py")
-          content = path.read_text(encoding="utf-8")
-          old = '''        "render_essay_score_report_html",
-              "score_essay_request",
-          '''
-          new = '''        "render_essay_score_report_html",
-              "render_essay_validation_evidence_report_html",
-              "score_essay_request",
-          '''
-          if content.count(old) == 1 and new not in content:
-              content = content.replace(old, new)
-          elif content.count(new) == 1 and old not in content:
-              pass
-          else:
-              raise RuntimeError("public-surface contract is not in an expected state")
-          path.write_text(content, encoding="utf-8")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          target = '        "render_essay_score_report_html",'
+          addition = '        "render_essay_validation_evidence_report_html",'
+          target_indexes = [index for index, line in enumerate(lines) if line == target]
+          addition_count = lines.count(addition)
+          if addition_count == 0:
+              if len(target_indexes) != 1:
+                  raise RuntimeError("expected one public-surface insertion anchor")
+              lines.insert(target_indexes[0] + 1, addition)
+          elif addition_count != 1:
+              raise RuntimeError("duplicate validation HTML public export expectation")
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
       - name: Install package and CI dependencies
         run: |
