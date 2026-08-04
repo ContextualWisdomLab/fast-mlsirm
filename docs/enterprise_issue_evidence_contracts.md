@@ -3,8 +3,8 @@
 `fast_mlsirm.scoring.enterprise_issue` provides the first provider-neutral domain
 boundary for issue #404. The module stores content identities, exact source-span
 offsets, epistemic roles, stakeholder perspectives, candidate-intervention
-provenance, and criterion-level request provenance without retaining raw
-enterprise text.
+provenance, deterministic explicit values, and criterion-level request provenance
+without retaining raw enterprise text.
 
 ## Contract boundary
 
@@ -27,6 +27,51 @@ customer names, or proposed-action text. Callers retain those values in an
 authorized source system and pass SHA-256 content fingerprints plus offsets.
 Sensitive metadata fields already prohibited by the shared scoring contract are
 rejected here as well.
+
+## Deterministic explicit-value parser
+
+`DeterministicExplicitValueParser` adds a narrow auditable boundary for values
+that are already explicit in authorized source text. Its first grammar recognizes:
+
+- Gregorian calendar dates in extended `YYYY-MM-DD` form;
+- deadlines marked by `due`, `deadline`, `by`, or `no later than`;
+- exact nonnegative decimal amounts preceded by a caller-allowlisted uppercase
+  three-letter currency code;
+- positive recurrence counts per day, week, month, quarter, or year; and
+- customer or account identifiers introduced by an explicit identifier label.
+
+The parser verifies the transient text against the exact
+`EnterpriseSourceRecord.source_content_fingerprint` and Python string character
+count before extraction. Match offsets are Python Unicode-code-point indices,
+which are appropriate for replaying slices of the same Python `str`; they are not
+UTF-8 byte offsets or user-perceived grapheme-cluster positions. Every persisted
+span also carries SHA-256 over the exact UTF-8 bytes of the matched slice.
+
+Deadline matches supersede the calendar-date match embedded inside the same
+marked deadline. Any other accepted overlap fails closed rather than multiplying
+one occurrence into several evidence records. Output order and parser revision
+identity are deterministic and independent of caller currency-code ordering.
+
+Money normalization constructs `Decimal` directly from accepted text after
+removing validated grouping commas; it never passes through binary floating
+point. Calendar dates are validated with `date.fromisoformat()` only after the
+strict extended-date grammar has matched. Currency membership remains a caller
+governance responsibility: an uppercase three-letter token is accepted only when
+it occurs in the parser's explicit allowlist, and the parser does not claim that a
+caller-supplied list is complete or current.
+
+Clear-text customer and account identifiers are replaced with SHA-256 before a
+public record is constructed. Raw source text and clear-text identifiers are not
+retained in `ExplicitValueRecord`, its evidence projection, or serialized output.
+`ExplicitValueRecord.to_evidence_span()` marks an exact occurrence as a directly
+stated fact. This means only that the matched text was present in the verified
+source revision; it does not establish that the value is true, current, material,
+probable, decision-relevant, or causally related to an outcome.
+
+The parser is deliberately not a semantic issue extractor. It performs no
+sentiment analysis, inference, scoring, calibration, ranking, utility arithmetic,
+causal estimation, or queue routing. Semantic assertions remain behind a separate
+provider-neutral, human-validated boundary.
 
 ## Replay and provenance
 
@@ -89,9 +134,13 @@ Human review remains necessary wherever source meaning, organizational values,
 legal rights, or material consequences are in dispute. A candidate intervention
 is a caller-supplied hypothesis, not evidence of an identified causal effect.
 
-ISO/IEC 42001:2023 remains published as Edition 1. NIST reports that AI RMF 1.0
-is under revision as of August 2026, so this module cites the current published
-framework without assuming that its terminology or profiles are frozen.
+ISO/IEC 42001:2023 remains published as Edition 1. ISO 8601-1:2019 and ISO
+4217:2015 are the published standards used to describe the accepted date and
+currency-code forms; later amendments, maintenance updates, or replacement
+editions must be evaluated before changing the parser grammar or allowlists. NIST
+reports that AI RMF 1.0 is under revision as of August 2026, so this module cites
+the current published framework without assuming that its terminology or
+profiles are frozen.
 
 ## References
 
@@ -100,6 +149,14 @@ P., & Roberts, K. (2024). *Artificial intelligence risk management framework:
 Generative artificial intelligence profile* (NIST AI 600-1). National Institute
 of Standards and Technology. https://doi.org/10.6028/NIST.AI.600-1
 
+International Organization for Standardization. (2015). *Codes for the
+representation of currencies* (ISO Standard No. 4217:2015).
+https://www.iso.org/standard/64758.html
+
+International Organization for Standardization. (2019). *Date and time—
+Representations for information interchange—Part 1: Basic rules* (ISO Standard
+No. 8601-1:2019). https://www.iso.org/standard/70907.html
+
 International Organization for Standardization. (2023). *Information
 technology—Artificial intelligence—Management system* (ISO/IEC Standard No.
 42001:2023). https://www.iso.org/standard/81230.html
@@ -107,3 +164,9 @@ technology—Artificial intelligence—Management system* (ISO/IEC Standard No.
 National Institute of Standards and Technology. (2023). *Artificial intelligence
 risk management framework (AI RMF 1.0)* (NIST AI 100-1).
 https://doi.org/10.6028/NIST.AI.100-1
+
+Python Software Foundation. (2025). *Python 3.13 standard library: `datetime`,
+`decimal`, `hashlib`, `re`, and `typing`*. https://docs.python.org/3.13/
+
+The Unicode Consortium. (2025). *Unicode text segmentation* (Unicode Standard
+Annex No. 29, Revision 47). https://www.unicode.org/reports/tr29/
