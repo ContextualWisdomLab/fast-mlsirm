@@ -21,10 +21,18 @@ many-facet model:
 
 The governed axes are:
 
-- person: one exact `response_id` (with `respondent_id` retained as provenance);
+- person: one exact response performance, identified by `response_id` and bound
+  to its complete `response_content_fingerprint` (with `respondent_id` retained
+  as provenance);
 - item: one exact `task_id`, such as an essay prompt revision;
 - rater: one full `EngineDescriptor.engine_fingerprint`;
 - category: the ordered rubric score scale.
+
+A logical `response_id` cannot be reused for changed response content. The
+assembler rejects conflicting content fingerprints before design allocation,
+and response-revision changes propagate through rating, design, and bundle
+identities. This prevents two materially different performances from being
+silently pooled as one estimator person.
 
 In scoring wire schema 1.0, `task_id` is the estimator item identity. Callers must
 therefore issue a new descriptive task identifier when task content changes;
@@ -35,6 +43,15 @@ merged, the automated-essay vertical is not release-ready for cross-revision
 calibration, even though each request still retains the exact prompt fingerprint
 for audit. Linking changed revisions requires governed anchors and invariance/DIF
 evidence rather than silent pooling.
+
+The response-level person axis is intentionally not a respondent-level
+longitudinal hierarchy. Multiple responses carrying the same `respondent_id` are
+modeled as separate performances. Consequently, task difficulty is identified
+under the common response-proficiency population and ignorable task-assignment
+assumptions of this baseline, not from repeated observations of one modeled
+respondent across tasks. Task/population confounding, repeated-response
+clustering, and respondent-level generalization must be assessed explicitly in
+validation or handled by a future respondent/run hierarchy.
 
 The full engine fingerprint is used as the rater identity. A changed model,
 prompt template, provider, version, or engine metadata therefore becomes a new
@@ -77,6 +94,8 @@ Before dense allocation, the assembler:
 - requires at least two responses, two raters, and two observed categories per
   criterion;
 - rejects duplicate response-task-rater cells;
+- binds each logical response to one respondent, task, and exact content
+  revision across all criteria and raters;
 - bounds the complete response-by-task-by-rater cross-product;
 - verifies one assessment, rubric, construct, occasion, and score scale; and
 - checks the observed task-rater bipartite graph for connectedness.
@@ -89,9 +108,12 @@ reported as interchangeable rater or task effects.
 
 ## Interpretation boundary
 
-This first baseline estimates response proficiency, task difficulty, common
-category thresholds, and rater severity *within each criterion*. It deliberately
-does not average analytic criteria or assert a general writing-quality factor.
+This first baseline estimates response-level proficiency, task difficulty,
+common category thresholds, and rater severity *within each criterion*. It
+deliberately does not average analytic criteria or assert a general
+writing-quality factor. Response-level proficiency must not be relabeled as
+stable respondent ability when respondents contribute repeated performances;
+clustered validation or a respondent/run hierarchy is required for that claim.
 It also does not yet estimate criterion-specific rater discrimination, range
 restriction, rater drift, subgroup DIF, correlated dimensions, bifactor
 structure, testlet effects, or latent-space residual interactions.
@@ -101,7 +123,8 @@ It does not establish convergence, adequate fit, score reliability, human/AI
 interchangeability, fairness, scoreability, construct validity, causal utility,
 or readiness for consequential automation. Those claims require recovery,
 connected-design evidence, residual diagnostics, held-out prediction, human
-anchors, subgroup analysis, drift monitoring, and an approved decision policy.
+anchors, subgroup analysis, drift monitoring, transparent task-assignment and
+clustering analysis, and an approved decision policy.
 
 ## Example
 
