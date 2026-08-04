@@ -24,6 +24,9 @@
 - Added package-managed exact provenance for source revisions, evidence spans,
   epistemic assertion kinds, perspectives, interventions, task revision, rubric,
   assessment, and engine authorization without retaining raw enterprise text.
+- Preserved the existing `ScoringEngine`, `ScoreObservation`, and
+  `ScoringResult` execution boundaries without adding a parallel result schema
+  or sentiment, calibration, ranking, utility, causal, or routing arithmetic.
 - Added fail-closed duplicate-evidence, cross-issue replay, unbound perspective
   source, reserved metadata, sensitive-content, ordering-invariance, and shared
   contract delegation tests for issue #404.
