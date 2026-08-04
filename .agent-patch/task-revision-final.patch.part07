@@ -1,0 +1,152 @@
++    ).hexdigest()
++    assert migrated_metadata["allow_human_raters"] is True
++    assert migrated_metadata["allow_automated_raters"] is True
++    assert migrated_metadata["permitted_engine_ids"] == [
++        "alternate_engine",
++        "fixture_engine",
++    ]
+     _assert_error(
+         "invalid_task_revision_fingerprint",
+         lambda: migrate_scoring_request_v1(
+@@ -196,6 +316,45 @@ def test_legacy_request_migration_requires_an_explicit_revision() -> None:
+             task_revision_fingerprint="missing_revision",
+         ),
+     )
++    caught = _assert_error(
++        "invalid_task_revision_fingerprint",
++        lambda: migrate_scoring_request_v1(
++            artifact,
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint=None,
++        ),
++    )
++    assert caught.path == "$.task_revision_fingerprint"
++    assert "None" not in str(caught)
++
++
++def test_legacy_migration_preserves_caller_metadata_and_replays_authorization() -> None:
++    """Migration retains caller metadata while rebuilding trusted policy fields."""
++    selected_assessment = assessment()
++    artifact = _legacy_request_artifact(
++        metadata={
++            "language_code": "ko",
++            "customer_trace_id": "trace_record",
++        }
++    )
++
++    migrated = migrate_scoring_request_v1(
++        artifact,
++        assessment=selected_assessment,
++        rubric=rubric(),
++        task_revision_fingerprint="e" * 64,
++    )
++
++    metadata = migrated.to_dict()["metadata"]
++    assert metadata["language_code"] == "ko"
++    assert metadata["customer_trace_id"] == "trace_record"
++    assert metadata["engine_policy_fingerprint"]
++    assert metadata["allow_human_raters"] is True
++    assert metadata["allow_automated_raters"] is True
++    assert metadata["permitted_engine_ids"] == list(
++        selected_assessment.engine_policy.engine_ids
++    )
+ 
+ 
+ def test_legacy_request_migration_rejects_payload_and_identity_tampering() -> None:
+@@ -250,3 +409,95 @@ def test_legacy_migration_rejects_unknown_or_incomplete_artifact_shapes() -> Non
+             task_revision_fingerprint="e" * 64,
+         ),
+     )
++
++
++def test_legacy_migration_rejects_invalid_boundary_types_and_schema() -> None:
++    """Migration accepts only the exact legacy mapping, version, and metadata shape."""
++    _assert_error(
++        "invalid_legacy_scoring_request",
++        lambda: migrate_scoring_request_v1(
++            object(),
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++
++    wrong_schema = _legacy_request_artifact()
++    wrong_schema["schema_version"] = "0.9"
++    schema_error = _assert_error(
++        "invalid_legacy_scoring_request",
++        lambda: migrate_scoring_request_v1(
++            wrong_schema,
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++    assert schema_error.path == "$.schema_version"
++
++    invalid_metadata = _legacy_request_artifact()
++    invalid_metadata["metadata"] = []
++    metadata_error = _assert_error(
++        "invalid_legacy_scoring_request",
++        lambda: migrate_scoring_request_v1(
++            invalid_metadata,
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++    assert metadata_error.path == "$.metadata"
++
++
++def test_legacy_migration_rejects_invalid_authorities_and_projection() -> None:
++    """Only typed authorities and their exact engine-policy projection may migrate."""
++    artifact = _legacy_request_artifact()
++    _assert_error(
++        "invalid_assessment_spec",
++        lambda: migrate_scoring_request_v1(
++            artifact,
++            assessment=object(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++    _assert_error(
++        "invalid_rubric",
++        lambda: migrate_scoring_request_v1(
++            artifact,
++            assessment=assessment(),
++            rubric=object(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++
++    forged_projection = _legacy_request_artifact()
++    forged_projection["metadata"]["engine_policy_fingerprint"] = "f" * 64
++    projection_error = _assert_error(
++        "legacy_authorization_mismatch",
++        lambda: migrate_scoring_request_v1(
++            forged_projection,
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++    assert projection_error.path == "$.metadata"
++
++
++def test_legacy_migration_rejects_noncanonical_but_parseable_content() -> None:
++    """Parseable legacy values must already match their normalized wire form."""
++    artifact = _legacy_request_artifact()
++    artifact["criterion_ids"] = list(reversed(artifact["criterion_ids"]))
++
++    error = _assert_error(
++        "legacy_request_normalization_mismatch",
++        lambda: migrate_scoring_request_v1(
++            artifact,
++            assessment=assessment(),
++            rubric=rubric(),
++            task_revision_fingerprint="e" * 64,
++        ),
++    )
++    assert error.path == "$"
