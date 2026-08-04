@@ -84,6 +84,10 @@ Reject:
 Private normalization helpers must route non-string decimal payloads through the
 same redacted `invalid_decimal_amount` assessment error used for malformed text;
 they must not leak implementation-specific `AttributeError` exceptions.
+Kind-specific normalized payloads must first be mappings. Non-mapping containers
+and non-string frequency periods must fail through the structured
+`invalid_normalized_payload` boundary rather than leaking unhashable-container or
+membership-operation exceptions.
 
 All public identifiers must remain descriptive, nonnumeric, and at least two
 snake-case tokens. Public docstrings and statement/branch coverage for added code
