@@ -1,5 +1,6 @@
 """Provider-neutral automated-scoring contracts and policy specifications."""
 
+from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from .contracts import (
     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
 )
@@ -20,6 +21,7 @@ from .contracts import build_assessment_spec as build_assessment_spec
 from .contracts import canonical_json as canonical_json
 
 __all__ = [
+    "ASSESSMENT_SCHEMA_VERSION",
     "MAX_METADATA_COLLECTION_VALUES",
     "MAX_METADATA_DEPTH",
     "MAX_METADATA_NODES",
