@@ -445,6 +445,8 @@ def test_essay_request_rejects_replay_unknown_family_and_duplicates() -> None:
     other_prompt = prompt(prompt_content_fingerprint="8" * 64)
     other_submission = submission(other_prompt)
     other_evidence = essay_evidence(other_prompt, other_submission)
+    second_submission = submission(prompt_record, response_id="other_response")
+    second_evidence = essay_evidence(prompt_record, second_submission)
 
     assert_error(
         "submission_prompt_mismatch",
@@ -472,17 +474,15 @@ def test_essay_request_rejects_replay_unknown_family_and_duplicates() -> None:
             essay_evidence=(other_evidence,),
         ),
     )
-    replayed = EssayResponseEvidence(
-        evidence_reference=evidence_record.evidence_reference,
-        prompt_fingerprint=prompt_record.prompt_fingerprint,
-        submission_fingerprint=other_submission.submission_fingerprint,
-        evidence_kind=evidence_record.evidence_kind,
-        start_offset=evidence_record.start_offset,
-        end_offset=evidence_record.end_offset,
-        metadata={},
-        _evidence_token=object(),
+    assert_error(
+        "essay_evidence_submission_mismatch",
+        lambda: essay_request(
+            prompt=prompt_record,
+            submission=submission_record,
+            evidence_record=evidence_record,
+            essay_evidence=(second_evidence,),
+        ),
     )
-    del replayed
 
 
 def test_direct_essay_request_construction_is_rejected() -> None:
@@ -534,9 +534,12 @@ def test_score_adapter_rejects_invalid_engine_request_and_result_contracts() -> 
         lambda: score_essay_request(InvalidResultEngine(), request),
     )
 
+    other_prompt = prompt(prompt_content_fingerprint="7" * 64)
+    other_submission = submission(other_prompt, response_id="other_response")
     other_request = essay_request(
         request_id="other_scoring_request",
-        submission=submission(prompt(), response_id="other_response"),
+        prompt=other_prompt,
+        submission=other_submission,
     )
     other_engine = fixture_engine(other_request)
 
