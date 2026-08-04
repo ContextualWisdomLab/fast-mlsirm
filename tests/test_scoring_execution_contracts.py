@@ -297,6 +297,7 @@ def test_request_rejects_unsafe_collections_and_direct_construction() -> None:
             respondent_id=request.respondent_id,
             response_id=request.response_id,
             task_id=request.task_id,
+            task_revision_fingerprint=request.task_revision_fingerprint,
             task_family_id=request.task_family_id,
             occasion_id=request.occasion_id,
             criterion_ids=request.criterion_ids,

@@ -43,6 +43,11 @@ def _project_rows(rows, *, rater_selector=None):
                         response_id=response_id,
                         respondent_id=respondent_id,
                         task_id=task_id,
+                        task_revision_fingerprint=(
+                            "1" * 64
+                            if task_id == "prompt_alpha"
+                            else "2" * 64
+                        ),
                         engine=engine,
                         claim_score=(base_score + rater_index) % 3,
                         source_score=(2 - base_score + rater_index) % 3,
@@ -119,6 +124,7 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
             == {
                 "respondent_id",
                 "task_id",
+                "task_revision_fingerprint",
                 "response_id",
                 "response_content_fingerprint",
             }
