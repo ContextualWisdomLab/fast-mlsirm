@@ -175,7 +175,7 @@ def test_engine_kind_permissions_fail_closed() -> None:
 
 
 def test_authorized_human_and_automated_engines_reach_result_validation() -> None:
-    """Permitted engine kinds pass authorization before ordinary coverage checks."""
+    """Permitted engine kinds pass authorization before coverage checks."""
     request = criterion_request(assessment=assessment_with_engine_policy())
     for engine in (automated_engine(), human_engine()):
         with pytest.raises(AssessmentSpecError) as captured:
@@ -189,7 +189,7 @@ def test_authorized_human_and_automated_engines_reach_result_validation() -> Non
 
 
 def test_public_result_rejects_unprojected_or_malformed_authorization() -> None:
-    """Requests built outside the public boundary cannot finalize a governed result."""
+    """Requests below the public boundary cannot finalize a governed result."""
     selected_assessment = assessment_with_engine_policy()
     values: dict[str, Any] = {
         "request_id": "scoring_request",
@@ -199,6 +199,7 @@ def test_public_result_rejects_unprojected_or_malformed_authorization() -> None:
         "respondent_id": "sample_respondent",
         "response_id": "sample_response",
         "task_id": "sample_task",
+        "task_revision_fingerprint": "d" * 64,
         "task_family_id": "evidence_review",
         "occasion_id": "initial_occasion",
         "criterion_ids": ("claim_support", "source_alignment"),
@@ -253,6 +254,7 @@ def test_public_factories_reject_invalid_request_and_engine_types() -> None:
             respondent_id="sample_respondent",
             response_id="sample_response",
             task_id="sample_task",
+            task_revision_fingerprint="d" * 64,
             task_family_id="evidence_review",
             occasion_id="initial_occasion",
             criterion_ids=("claim_support",),
@@ -277,7 +279,7 @@ def test_public_factories_reject_invalid_request_and_engine_types() -> None:
 
 
 def test_public_fixture_engine_enforces_authorization_and_request_type() -> None:
-    """Offline fixture execution cannot bypass the assessment engine policy."""
+    """Offline fixture execution cannot bypass assessment engine policy."""
     selected_fixture = fixture_engine()
     with pytest.raises(AssessmentSpecError, match="invalid_scoring_request"):
         selected_fixture.score(object())  # type: ignore[arg-type]
