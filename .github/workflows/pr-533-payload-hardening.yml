@@ -6,11 +6,13 @@ on:
       - feat/enterprise-explicit-value-parser
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   harden:
     if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -42,6 +44,12 @@ jobs:
                       self._payload_error("normalized_payload must be a mapping")
                   if self.value_kind in {
           '''
+          before = before.replace("                  ", "        ", 1)
+          after = after.replace("                  ", "        ", 1).replace(
+              "                  if type", "        if type", 1
+          ).replace("                      self._payload_error", "            self._payload_error", 1).replace(
+              "                  if self.value_kind", "        if self.value_kind", 1
+          )
           if before not in text:
               raise SystemExit("normalized payload insertion point not found")
           text = text.replace(before, after, 1)
@@ -67,7 +75,8 @@ jobs:
           '''
           if before not in text:
               raise SystemExit("frequency period validation block not found")
-          implementation.write_text(text.replace(before, after, 1), encoding="utf-8")
+          text = text.replace(before, after, 1)
+          implementation.write_text(text, encoding="utf-8")
 
           tests = Path("tests/test_scoring_enterprise_explicit_values.py")
           test_text = tests.read_text(encoding="utf-8")
@@ -80,6 +89,8 @@ jobs:
                   (ExplicitValueKind.CALENDAR_DATE, {}),
                   (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
           '''
+          before = before.replace("                  (", "        (", 2)
+          after = after.replace("                  (", "        (", 3)
           if before not in test_text:
               raise SystemExit("payload case insertion point not found")
           test_text = test_text.replace(before, after, 1)
@@ -106,6 +117,8 @@ jobs:
           after = '''    payload: Any,
           ) -> None:
           '''
+          before = before.replace("          )", ")", 1)
+          after = after.replace("          )", ")", 1)
           if before not in test_text:
               raise SystemExit("payload annotation not found")
           tests.write_text(test_text.replace(before, after, 1), encoding="utf-8")
@@ -122,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ruff format --check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          ruff format python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
           ruff check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
           pytest tests/test_scoring_enterprise_explicit_values.py
 
