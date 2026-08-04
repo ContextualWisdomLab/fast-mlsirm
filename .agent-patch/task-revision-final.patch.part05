@@ -1,0 +1,210 @@
+             "occasion_id": self.occasion_id,
+             "criterion_ids": list(self.criterion_ids),
+@@ -832,6 +856,7 @@ def build_scoring_request(
+     respondent_id: str,
+     response_id: str,
+     task_id: str,
++    task_revision_fingerprint: str,
+     task_family_id: str,
+     occasion_id: str,
+     criterion_ids: Iterable[str] = (),
+@@ -915,6 +940,7 @@ def build_scoring_request(
+         respondent_id=respondent_id,
+         response_id=response_id,
+         task_id=task_id,
++        task_revision_fingerprint=task_revision_fingerprint,
+         task_family_id=normalized_task_family,
+         occasion_id=occasion_id,
+         criterion_ids=criteria,
+@@ -1302,6 +1328,7 @@ __all__ = [
+     "EvidenceReference",
+     "EvidenceRole",
+     "FixtureOutcome",
++    "LEGACY_SCORING_REQUEST_SCHEMA_VERSION",
+     "MAX_EVIDENCE_REFERENCES",
+     "MAX_EXECUTION_ATTEMPT",
+     "MAX_REQUEST_CRITERIA",
+@@ -1311,6 +1338,7 @@ __all__ = [
+     "ScoringEngine",
+     "ScoringRequest",
+     "ScoringResult",
++    "SCORING_REQUEST_SCHEMA_VERSION",
+     "StaticFixtureEngine",
+     "build_engine_descriptor",
+     "build_score_observation",
+diff --git a/tests/scoring_execution_fixtures.py b/tests/scoring_execution_fixtures.py
+index 37c67aa..a21809a 100644
+--- a/tests/scoring_execution_fixtures.py
++++ b/tests/scoring_execution_fixtures.py
+@@ -173,6 +173,7 @@ def criterion_request(**overrides: Any):
+         "respondent_id": "sample_respondent",
+         "response_id": "sample_response",
+         "task_id": "sample_task",
++        "task_revision_fingerprint": "d" * 64,
+         "task_family_id": "evidence_review",
+         "occasion_id": "initial_occasion",
+         "criterion_ids": ("claim_support", "source_alignment"),
+@@ -195,6 +196,7 @@ def holistic_request(**overrides: Any):
+         "respondent_id": "sample_respondent",
+         "response_id": "sample_response",
+         "task_id": "sample_task",
++        "task_revision_fingerprint": "d" * 64,
+         "task_family_id": "evidence_review",
+         "occasion_id": "initial_occasion",
+         "criterion_ids": (),
+diff --git a/tests/test_scoring_execution_authorization.py b/tests/test_scoring_execution_authorization.py
+index 4cfd3f1..71696c4 100644
+--- a/tests/test_scoring_execution_authorization.py
++++ b/tests/test_scoring_execution_authorization.py
+@@ -199,6 +199,7 @@ def test_public_result_rejects_unprojected_or_malformed_authorization() -> None:
+         "respondent_id": "sample_respondent",
+         "response_id": "sample_response",
+         "task_id": "sample_task",
++        "task_revision_fingerprint": "d" * 64,
+         "task_family_id": "evidence_review",
+         "occasion_id": "initial_occasion",
+         "criterion_ids": ("claim_support", "source_alignment"),
+@@ -253,6 +254,7 @@ def test_public_factories_reject_invalid_request_and_engine_types() -> None:
+             respondent_id="sample_respondent",
+             response_id="sample_response",
+             task_id="sample_task",
++            task_revision_fingerprint="d" * 64,
+             task_family_id="evidence_review",
+             occasion_id="initial_occasion",
+             criterion_ids=("claim_support",),
+diff --git a/tests/test_scoring_execution_authorization_integrity.py b/tests/test_scoring_execution_authorization_integrity.py
+index 73c0a1e..1727015 100644
+--- a/tests/test_scoring_execution_authorization_integrity.py
++++ b/tests/test_scoring_execution_authorization_integrity.py
+@@ -38,6 +38,7 @@ def _unprojected_request(*, metadata):
+         respondent_id="sample_respondent",
+         response_id="sample_response",
+         task_id="sample_task",
++        task_revision_fingerprint="d" * 64,
+         task_family_id="evidence_review",
+         occasion_id="initial_occasion",
+         criterion_ids=("claim_support", "source_alignment"),
+@@ -147,6 +148,7 @@ def test_result_factory_accepts_an_exact_authoritative_assessment_replay() -> No
+         respondent_id="sample_respondent",
+         response_id="sample_response",
+         task_id="sample_task",
++        task_revision_fingerprint="d" * 64,
+         task_family_id="evidence_review",
+         occasion_id="initial_occasion",
+         criterion_ids=("claim_support", "source_alignment"),
+diff --git a/tests/test_scoring_execution_contracts.py b/tests/test_scoring_execution_contracts.py
+index acab0c2..c6e85c9 100644
+--- a/tests/test_scoring_execution_contracts.py
++++ b/tests/test_scoring_execution_contracts.py
+@@ -297,6 +297,7 @@ def test_request_rejects_unsafe_collections_and_direct_construction() -> None:
+             respondent_id=request.respondent_id,
+             response_id=request.response_id,
+             task_id=request.task_id,
++            task_revision_fingerprint=request.task_revision_fingerprint,
+             task_family_id=request.task_family_id,
+             occasion_id=request.occasion_id,
+             criterion_ids=request.criterion_ids,
+diff --git a/tests/test_scoring_facets_calibration.py b/tests/test_scoring_facets_calibration.py
+index 38ae5f1..b5bc02a 100644
+--- a/tests/test_scoring_facets_calibration.py
++++ b/tests/test_scoring_facets_calibration.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ from dataclasses import replace
++import hashlib
+ from pathlib import Path
+ import runpy
+ from typing import Any
+@@ -45,6 +46,7 @@ def execution(
+     response_id: str,
+     respondent_id: str,
+     task_id: str,
++    task_revision_fingerprint: str | None = None,
+     engine,
+     claim_score: int | None,
+     source_score: int | None,
+@@ -53,11 +55,17 @@ def execution(
+     occasion_id: str = "initial_occasion",
+ ):
+     """Return one deterministic governed scoring execution."""
++    revision = (
++        hashlib.sha256(f"{task_id}_revision".encode("utf-8")).hexdigest()
++        if task_revision_fingerprint is None
++        else task_revision_fingerprint
++    )
+     request = criterion_request(
+         request_id=request_id,
+         response_id=response_id,
+         respondent_id=respondent_id,
+         task_id=task_id,
++        task_revision_fingerprint=revision,
+         occasion_id=occasion_id,
+     )
+     outcomes = tuple(
+@@ -90,8 +98,8 @@ def project(execution_value) -> tuple[calibration.ScoringFacetsRatingRecord, ...
+     )
+ 
+ 
+-def connected_records(*, terminal: bool = False):
+-    """Return a sparse connected two-respondent, two-task, two-rater design."""
++def connected_records(*, terminal: bool = False, shared_task_id: bool = False):
++    """Return a sparse connected two-respondent, two-revision, two-rater design."""
+     records = []
+     engines = (automated_engine(), human_engine())
+     cells = (
+@@ -118,7 +126,14 @@ def connected_records(*, terminal: bool = False):
+                         ),
+                         response_id=f"response_{respondent_name}_{task_name}",
+                         respondent_id=f"respondent_{respondent_name}",
+-                        task_id=f"prompt_{task_name}",
++                        task_id=(
++                            "shared_prompt"
++                            if shared_task_id
++                            else f"prompt_{task_name}"
++                        ),
++                        task_revision_fingerprint=hashlib.sha256(
++                            f"prompt_{task_name}_revision".encode("utf-8")
++                        ).hexdigest(),
+                         engine=engine,
+                         claim_score=claim_score,
+                         source_score=(2 - base_score + 2 * engine_index) % 3,
+@@ -146,6 +161,9 @@ def disconnected_records():
+                         response_id=f"response_{respondent_name}_{task_name}",
+                         respondent_id=f"respondent_{respondent_name}",
+                         task_id=f"prompt_{task_name}",
++                        task_revision_fingerprint=hashlib.sha256(
++                            f"prompt_{task_name}_revision".encode("utf-8")
++                        ).hexdigest(),
+                         engine=engine,
+                         claim_score=(base_score + engine_index) % 3,
+                         source_score=(2 - base_score + engine_index) % 3,
+@@ -169,6 +187,8 @@ def record_values(source=None) -> dict[str, Any]:
+         "response_id": source.response_id,
+         "response_content_fingerprint": source.response_content_fingerprint,
+         "task_id": source.task_id,
++        "task_revision_fingerprint": source.task_revision_fingerprint,
++        "task_family_id": source.task_family_id,
+         "occasion_id": source.occasion_id,
+         "criterion_id": source.criterion_id,
+         "engine_id": source.engine_id,
+diff --git a/tests/test_scoring_facets_respondent_indexing.py b/tests/test_scoring_facets_respondent_indexing.py
+index d2511fa..b942070 100644
+--- a/tests/test_scoring_facets_respondent_indexing.py
++++ b/tests/test_scoring_facets_respondent_indexing.py
+@@ -119,6 +119,7 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
+             == {
+                 "respondent_id",
+                 "task_id",
++                "task_revision_fingerprint",
+                 "response_id",
+                 "response_content_fingerprint",
+             }
+diff --git a/tests/test_scoring_task_revision_identity.py b/tests/test_scoring_task_revision_identity.py
+index d0b902e..add4322 100644
+--- a/tests/test_scoring_task_revision_identity.py
++++ b/tests/test_scoring_task_revision_identity.py
+@@ -2,14 +2,17 @@
+ 
+ from __future__ import annotations
+ 
