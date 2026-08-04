@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import runpy
 
@@ -18,11 +17,6 @@ _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("test_scoring_essay_validation_reporting.py"))
 )
 build_report = _FIXTURES["build_report"]
-_AUTOMATED = _FIXTURES["_AUTOMATED"]
-_REFERENCE = _FIXTURES["_REFERENCE"]
-_HUMAN_A = _FIXTURES["_HUMAN_A"]
-_HUMAN_B = _FIXTURES["_HUMAN_B"]
-_SUBGROUP = _FIXTURES["_SUBGROUP"]
 
 
 def test_renderer_surface_is_explicit_and_documented() -> None:
@@ -65,23 +59,13 @@ def test_report_renders_deterministic_accessible_exact_evidence(tmp_path: Path) 
     assert "human_validation_required" in first
     assert "do not establish construct validity" in first
     assert "&quot;report_fingerprint&quot;" in first
+    assert "automated_labels" not in first
+    assert "reference_labels" not in first
+    assert "human_human_labels" not in first
+    assert "subgroup_labels" not in first
+    assert "&quot;threshold&quot;" not in first
+    assert "&quot;pass&quot;" not in first
     assert "<script" not in first.lower()
-    assert "threshold" not in json.loads(
-        first.split(
-            '<pre tabindex="0" role="region" '
-            'aria-label="Canonical essay validation evidence JSON">',
-            maxsplit=1,
-        )[0]
-    ) if False else True
-
-    for label_vector in (
-        _AUTOMATED,
-        _REFERENCE,
-        _HUMAN_A,
-        _HUMAN_B,
-        _SUBGROUP,
-    ):
-        assert json.dumps(label_vector.tolist()) not in first
 
 
 def test_custom_title_and_identifiers_are_escaped(tmp_path: Path) -> None:
