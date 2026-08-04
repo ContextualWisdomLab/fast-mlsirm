@@ -255,6 +255,8 @@ class ScoringFacetsDesign(CanonicalContract):
     rater_engine_family_ids: tuple[str, ...]
     rater_engine_fingerprints: tuple[str, ...]
     rating_records: tuple[ScoringFacetsRatingRecord, ...]
+    respondent_task_connected: bool
+    task_rater_connected: bool
     connected: bool
     schema_version: str = ASSESSMENT_SCHEMA_VERSION
     _design_token: InitVar[object | None] = None
@@ -275,6 +277,21 @@ class ScoringFacetsDesign(CanonicalContract):
 
     def _content_dict(self) -> dict[str, Any]:
         """Return canonical sparse design content without dense arrays."""
+        respondent_task_responses = [
+            {
+                "respondent_id": respondent_id,
+                "task_id": task_id,
+                "response_id": response_id,
+                "response_content_fingerprint": response_content_fingerprint,
+            }
+            for respondent_id, task_id, response_id, response_content_fingerprint in zip(
+                self.response_respondent_ids,
+                self.response_task_ids,
+                self.response_ids,
+                self.response_content_fingerprints,
+                strict=True,
+            )
+        ]
         return {
             "schema_version": self.schema_version,
             "assessment_fingerprint": self.assessment_fingerprint,
@@ -291,12 +308,15 @@ class ScoringFacetsDesign(CanonicalContract):
             "response_content_fingerprints": list(
                 self.response_content_fingerprints
             ),
+            "respondent_task_responses": respondent_task_responses,
             "rater_engine_ids": list(self.rater_engine_ids),
             "rater_engine_family_ids": list(self.rater_engine_family_ids),
             "rater_engine_fingerprints": list(self.rater_engine_fingerprints),
             "rating_fingerprints": [
                 record.rating_fingerprint for record in self.rating_records
             ],
+            "respondent_task_connected": self.respondent_task_connected,
+            "task_rater_connected": self.task_rater_connected,
             "connected": self.connected,
         }
 
@@ -701,7 +721,7 @@ def _identity_provenance(
                 else "response_content_fingerprint"
             )
             raise assessment_error(
-                "respondent_task_provenance_conflict",
+                "respondent_task_response_conflict",
                 f"$.records[{index}].{conflict_field}",
                 "one respondent-task cell has conflicting response provenance",
             )
@@ -753,8 +773,8 @@ def _design_connected(
     task_ids: tuple[str, ...],
     rater_fingerprints: tuple[str, ...],
     records: tuple[ScoringFacetsRatingRecord, ...],
-) -> bool:
-    """Return joint respondent-task and task-rater identification connectedness."""
+) -> tuple[bool, bool]:
+    """Return respondent-task and task-rater identification connectedness."""
     scored = tuple(
         record for record in records if record.status is ObservationStatus.SCORED
     )
@@ -764,15 +784,17 @@ def _design_connected(
     task_rater_edges = {
         (record.task_id, record.engine_fingerprint) for record in scored
     }
-    return _bipartite_connected(
+    respondent_task_connected = _bipartite_connected(
         left_ids=respondent_ids,
         right_ids=task_ids,
         edges=respondent_task_edges,
-    ) and _bipartite_connected(
+    )
+    task_rater_connected = _bipartite_connected(
         left_ids=task_ids,
         right_ids=rater_fingerprints,
         edges=task_rater_edges,
     )
+    return respondent_task_connected, task_rater_connected
 
 
 def _build_criterion_design(
@@ -853,17 +875,23 @@ def _build_criterion_design(
             "dense respondent-task-rater allocation exceeds the configured cell budget",
         )
 
-    connected = _design_connected(
+    respondent_task_connected, task_rater_connected = _design_connected(
         respondent_ids=respondent_ids,
         task_ids=task_ids,
         rater_fingerprints=rater_fingerprints,
         records=records,
     )
-    if require_connected and not connected:
+    if require_connected and not respondent_task_connected:
         raise assessment_error(
-            "disconnected_facets_design",
+            "unidentified_respondent_task_design",
             "$.records",
-            "scored respondent-task and task-rater graphs must both be connected",
+            "scored respondent-task graph must be connected",
+        )
+    if require_connected and not task_rater_connected:
+        raise assessment_error(
+            "disconnected_task_rater_design",
+            "$.records",
+            "scored task-rater graph must be connected",
         )
 
     response_ids = tuple(sorted(response_contracts))
@@ -894,7 +922,9 @@ def _build_criterion_design(
         ),
         rater_engine_fingerprints=rater_fingerprints,
         rating_records=records,
-        connected=connected,
+        respondent_task_connected=respondent_task_connected,
+        task_rater_connected=task_rater_connected,
+        connected=respondent_task_connected and task_rater_connected,
         _design_token=_DESIGN_TOKEN,
     )
 
@@ -997,11 +1027,17 @@ def fit_scoring_facets_design(
             "design must be a ScoringFacetsDesign",
         )
     strict_boolean(allow_disconnected, "allow_disconnected")
-    if not design.connected:
+    if not design.respondent_task_connected:
         raise assessment_error(
-            "disconnected_facets_design",
-            "$.design.connected",
-            "disconnected designs cannot enter the facets estimator",
+            "unidentified_respondent_task_design",
+            "$.design.respondent_task_connected",
+            "respondent-task design is not identified",
+        )
+    if not design.task_rater_connected:
+        raise assessment_error(
+            "disconnected_task_rater_design",
+            "$.design.task_rater_connected",
+            "task-rater design is disconnected",
         )
     from fast_mlsirm.facets import fit_facets
 
