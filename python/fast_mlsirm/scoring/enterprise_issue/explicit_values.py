@@ -220,24 +220,24 @@ class ExplicitValueRecord(CanonicalContract):
             "normalized_payload",
             self._normalized_payload(self.normalized_payload),
         )
-metadata = freeze_metadata(self.metadata)
-unexpected_metadata = set(metadata) - {"offset_unit"}
-if unexpected_metadata:
-    raise assessment_error(
-        "unexpected_explicit_value_metadata",
-        "$.metadata",
-        "explicit value metadata may contain only offset_unit",
-    )
-if (
-    "offset_unit" in metadata
-    and metadata["offset_unit"] != "python_unicode_code_point"
-):
-    raise assessment_error(
-        "invalid_offset_unit",
-        "$.metadata.offset_unit",
-        "offset_unit must be python_unicode_code_point",
-    )
-object.__setattr__(self, "metadata", metadata)
+        metadata = freeze_metadata(self.metadata)
+        unexpected_metadata = set(metadata) - {"offset_unit"}
+        if unexpected_metadata:
+            raise assessment_error(
+                "unexpected_explicit_value_metadata",
+                "$.metadata",
+                "explicit value metadata may contain only offset_unit",
+            )
+        if (
+            "offset_unit" in metadata
+            and metadata["offset_unit"] != "python_unicode_code_point"
+        ):
+            raise assessment_error(
+                "invalid_offset_unit",
+                "$.metadata.offset_unit",
+                "offset_unit must be python_unicode_code_point",
+            )
+        object.__setattr__(self, "metadata", metadata)
         object.__setattr__(
             self,
             "schema_version",
