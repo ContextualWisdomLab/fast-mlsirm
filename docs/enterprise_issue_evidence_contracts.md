@@ -80,6 +80,10 @@ high-stakes deployment readiness. The request compiler performs no sentiment
 analysis, latent measurement, calibration, comparative ranking, expected utility,
 value-of-information, intervention-effect, or queue-routing arithmetic.
 
+Successful compilation confirms only schema and provenance consistency. It does
+not produce a score, determine evidence sufficiency, recommend an intervention,
+or complete human review.
+
 Human review remains necessary wherever source meaning, organizational values,
 legal rights, or material consequences are in dispute. A candidate intervention
 is a caller-supplied hypothesis, not evidence of an identified causal effect.
