@@ -30,7 +30,7 @@ Report construction rejects:
 - a parameter count that differs from the Rust model contract;
 - connectedness that differs between the source design and returned fit.
 
-These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use.
+These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
 
 ## Human-review routing
 
