@@ -49,12 +49,6 @@ def _validated_result_observations(
             "result observations must retain their factory tuple representation",
         )
     observations = result.observations
-    if len(observations) != len(request.criterion_ids):
-        raise assessment_error(
-            "calibration_observation_coverage_mismatch",
-            "$.result.observations",
-            "observations must cover every requested criterion exactly once",
-        )
     if len(observations) > MAX_REQUEST_CRITERIA:
         raise assessment_error(
             "invalid_observations",
@@ -100,7 +94,10 @@ def _validated_result_observations(
             "$.result.requested_criterion_ids",
             "result criterion scope does not match the supplied scoring request",
         )
-    if tuple(sorted(criterion_ids)) != request.criterion_ids:
+    if (
+        len(observations) != len(request.criterion_ids)
+        or tuple(sorted(criterion_ids)) != request.criterion_ids
+    ):
         raise assessment_error(
             "calibration_observation_coverage_mismatch",
             "$.result.observations",
