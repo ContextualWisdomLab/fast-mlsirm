@@ -125,3 +125,65 @@ def test_projection_rejects_mutated_result_observation_coverage() -> None:
 
     assert caught.value.code == "calibration_observation_coverage_mismatch"
     assert caught.value.path.endswith(".observations")
+
+
+def test_projection_rejects_duplicate_observation_criterion() -> None:
+    """Duplicate criterion coverage remains distinct from simple omission."""
+    request, result, engine = replay_execution()
+    object.__setattr__(
+        result,
+        "observations",
+        (*result.observations, result.observations[1]),
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "duplicate_observation_criterion"
+    assert caught.value.path.endswith(".observations")
+
+
+def test_projection_rejects_duplicate_observation_identity() -> None:
+    """Distinct criteria cannot reuse one observation identity after mutation."""
+    request, result, engine = replay_execution()
+    object.__setattr__(
+        result.observations[1],
+        "observation_id",
+        result.observations[0].observation_id,
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "duplicate_observation_id"
+    assert caught.value.path.endswith(".observations")
+
+
+def test_projection_rejects_untyped_observation_entry() -> None:
+    """A privately replaced child cannot escape as an AttributeError."""
+    request, result, engine = replay_execution()
+    private_value = object()
+    object.__setattr__(
+        result,
+        "observations",
+        (result.observations[0], private_value),
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "invalid_score_observation"
+    assert caught.value.path.endswith(".observations[1]")
+    assert str(private_value) not in str(caught.value)
