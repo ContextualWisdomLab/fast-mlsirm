@@ -1,0 +1,78 @@
+name: Apply task revision validation fix
+
+on:
+  push:
+    branches:
+      - feat/task-revision-calibration-identity-reviewed
+    paths:
+      - .github/workflows/apply-task-revision-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact-head fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement target, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          execution = Path("tests/test_scoring_execution_contracts.py")
+          replace_once(
+              execution,
+              "            task_id=request.task_id,\n            task_family_id=request.task_family_id,\n",
+              "            task_id=request.task_id,\n"
+              "            task_revision_fingerprint=request.task_revision_fingerprint,\n"
+              "            task_family_id=request.task_family_id,\n",
+          )
+
+          facets = Path("tests/test_scoring_facets_respondent_indexing.py")
+          replace_once(
+              facets,
+              "                        task_id=task_id,\n                        engine=engine,\n",
+              "                        task_id=task_id,\n"
+              "                        task_revision_fingerprint=(\n"
+              "                            \"1\" * 64\n"
+              "                            if task_id == \"prompt_alpha\"\n"
+              "                            else \"2\" * 64\n"
+              "                        ),\n"
+              "                        engine=engine,\n",
+          )
+          replace_once(
+              facets,
+              "                \"task_id\",\n                \"response_id\",\n",
+              "                \"task_id\",\n"
+              "                \"task_revision_fingerprint\",\n"
+              "                \"response_id\",\n",
+          )
+
+          subprocess.run(
+              ["python", "scripts/render_changelog_fragments.py", "--update", "CHANGELOG.md"],
+              check=True,
+          )
+          PY
+
+          git rm .github/workflows/apply-task-revision-fix.yml
+          git diff --check
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md tests/test_scoring_execution_contracts.py tests/test_scoring_facets_respondent_indexing.py
+          git commit -m "fix(scoring): align task revision validation fixtures"
+          git push origin HEAD:feat/task-revision-calibration-identity-reviewed
