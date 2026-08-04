@@ -20,6 +20,11 @@ _FIXTURES = runpy.run_path(
 )
 rubric = _FIXTURES["rubric"]
 policies = _FIXTURES["policies"]
+_SENTINEL_ERROR = AssessmentSpecError(
+    "sentinel_callback_error",
+    "$.sentinel",
+    "sentinel callback error",
+)
 
 
 class _RuntimeString(str):
@@ -44,6 +49,38 @@ class _RuntimeEquality:
     def __eq__(self, other):
         """Raise an arbitrary comparison failure that must be redacted."""
         raise RuntimeError("private enum comparison payload")
+
+
+class _DomainErrorString(str):
+    """String fixture that raises an existing package-owned domain error."""
+
+    def strip(self, chars=None):
+        """Raise the shared sentinel domain error unchanged."""
+        raise _SENTINEL_ERROR
+
+
+class _DomainErrorInteger:
+    """Integer-like fixture that raises an existing package-owned domain error."""
+
+    def __index__(self):
+        """Raise the shared sentinel domain error unchanged."""
+        raise _SENTINEL_ERROR
+
+
+class _KeyboardString(str):
+    """String fixture proving BaseException is outside the redaction boundary."""
+
+    def strip(self, chars=None):
+        """Raise KeyboardInterrupt rather than an ordinary Exception."""
+        raise KeyboardInterrupt
+
+
+class _KeyboardIterable:
+    """Iterable fixture proving BaseException is not swallowed."""
+
+    def __iter__(self):
+        """Raise KeyboardInterrupt during iterator creation."""
+        raise KeyboardInterrupt
 
 
 def _single_construct_inputs():
@@ -172,3 +209,40 @@ def test_response_type_equality_callback_failure_is_redacted() -> None:
     assert captured.value.code == "invalid_response_type"
     assert captured.value.path == "$.response_type"
     assert "private enum comparison payload" not in str(captured.value)
+
+
+def test_package_owned_callback_errors_are_preserved_unchanged() -> None:
+    """The public boundary re-raises an existing AssessmentSpecError object."""
+    with pytest.raises(AssessmentSpecError) as text_error:
+        ConstructSpec(
+            construct_id=_DomainErrorString("argument_quality"),
+            construct_definition="Definition.",
+            rubric_fingerprints=("a" * 64,),
+        )
+    assert text_error.value is _SENTINEL_ERROR
+
+    with pytest.raises(AssessmentSpecError) as integer_error:
+        EnginePolicy(
+            policy_id="engine_policy",
+            engine_ids=(),
+            allow_human_raters=True,
+            allow_automated_raters=False,
+            minimum_raters_per_response=_DomainErrorInteger(),  # type: ignore[arg-type]
+        )
+    assert integer_error.value is _SENTINEL_ERROR
+
+
+def test_base_exceptions_are_not_swallowed_by_callback_redaction() -> None:
+    """KeyboardInterrupt propagates through text and collection boundaries."""
+    with pytest.raises(KeyboardInterrupt):
+        ConstructSpec(
+            construct_id=_KeyboardString("argument_quality"),
+            construct_definition="Definition.",
+            rubric_fingerprints=("a" * 64,),
+        )
+    with pytest.raises(KeyboardInterrupt):
+        ConstructSpec(
+            construct_id="argument_quality",
+            construct_definition="Definition.",
+            rubric_fingerprints=_KeyboardIterable(),  # type: ignore[arg-type]
+        )
