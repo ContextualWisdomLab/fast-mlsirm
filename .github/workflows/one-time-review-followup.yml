@@ -1,21 +1,21 @@
 name: One-time exact-head review follow-up
 
 on:
-  pull_request:
-    types: [synchronize]
-    branches: [main]
+  push:
+    branches:
+      - sentinel-json-dos-scripts-17708564860587448239
     paths:
       - .github/workflows/one-time-review-followup.yml
 
 permissions: {}
 
 concurrency:
-  group: one-time-review-followup-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: one-time-review-followup-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   apply:
-    if: github.head_ref == 'sentinel-json-dos-scripts-17708564860587448239'
+    if: github.ref_name == 'sentinel-json-dos-scripts-17708564860587448239'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
