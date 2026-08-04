@@ -1,16 +1,16 @@
-"""Immutable policy contracts for the automated-scoring lifecycle."""
+"""Immutable fail-closed policy contracts for the scoring lifecycle."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from fast_mlsirm.rubric.models import _identifier
-
 from ._validation import (
     MAX_RATERS_PER_RESPONSE,
     CanonicalContract,
+    assessment_error,
     bounded_positive_integer,
+    descriptive_identifier,
     sorted_identifiers,
     strict_boolean,
 )
@@ -28,7 +28,11 @@ class EnginePolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize engine identities and reject contradictory rater policies."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
         engines = sorted_identifiers(self.engine_ids, "engine_ids", minimum=0)
         object.__setattr__(self, "engine_ids", engines)
         human = strict_boolean(self.allow_human_raters, "allow_human_raters")
@@ -48,11 +52,23 @@ class EnginePolicy(CanonicalContract):
             ),
         )
         if not human and not automated:
-            raise ValueError("engine policy must allow at least one rater kind")
+            raise assessment_error(
+                "no_available_rater_kind",
+                "$",
+                "engine policy must allow at least one rater kind",
+            )
         if automated and not engines:
-            raise ValueError("automated scoring requires at least one engine")
+            raise assessment_error(
+                "missing_automated_engine",
+                "$.engine_ids",
+                "automated scoring requires at least one engine",
+            )
         if not automated and engines:
-            raise ValueError("engine_ids must be empty when automated raters are disabled")
+            raise assessment_error(
+                "disabled_automated_engine",
+                "$.engine_ids",
+                "engine_ids must be empty when automated raters are disabled",
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Return the canonical JSON-compatible engine policy."""
@@ -69,7 +85,7 @@ class EnginePolicy(CanonicalContract):
 
 @dataclass(frozen=True)
 class CalibrationPolicy(CanonicalContract):
-    """Declared calibration model and the constructs included in that model."""
+    """Declared calibration model and constructs included in that model."""
 
     policy_id: str
     model_id: str
@@ -77,8 +93,16 @@ class CalibrationPolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize calibration-model and construct references."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
-        object.__setattr__(self, "model_id", _identifier(self.model_id, "model_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
+        object.__setattr__(
+            self,
+            "model_id",
+            descriptive_identifier(self.model_id, "model_id"),
+        )
         object.__setattr__(
             self,
             "construct_ids",
@@ -106,7 +130,11 @@ class ValidationPolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize metric and construct references."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
         object.__setattr__(
             self,
             "metric_ids",
@@ -139,7 +167,11 @@ class AdjudicationPolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize adjudication-trigger and construct references."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
         object.__setattr__(
             self,
             "trigger_ids",
@@ -172,7 +204,11 @@ class MonitoringPolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize monitoring-metric and construct references."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
         object.__setattr__(
             self,
             "metric_ids",
@@ -206,7 +242,11 @@ class ReportingPolicy(CanonicalContract):
 
     def __post_init__(self) -> None:
         """Normalize report formats, construct references, and disclosure policy."""
-        object.__setattr__(self, "policy_id", _identifier(self.policy_id, "policy_id"))
+        object.__setattr__(
+            self,
+            "policy_id",
+            descriptive_identifier(self.policy_id, "policy_id"),
+        )
         object.__setattr__(
             self,
             "format_ids",
