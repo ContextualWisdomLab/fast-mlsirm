@@ -25,6 +25,12 @@
   now form the `[0.6.0] - 2026-08-04` release section.
 - Released authoritative fragments are removed from `docs/changelog.d`;
   the directory again holds only genuinely unreleased notes.
+
+### Fixed
+
+#### Scrollable Export Accessibility
+
+- Added keyboard navigation (`tabindex="0"`, `role="region"`) and visual focus styling (`:focus-visible`) to scrollable exact-value export `<pre>` regions in standalone HTML diagnostics reports.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.6.0] - 2026-08-04
 

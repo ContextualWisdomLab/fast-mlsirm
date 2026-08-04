@@ -188,11 +188,11 @@ def exact_value_disclosure(
             "</div>",
             '<details class="export-block">',
             f"<summary>JSON export: {escaped_label}</summary>",
-            f"<pre>{escape(exact_value_json(source_rows))}</pre>",
+            f'<pre role="region" aria-label="JSON export for {escaped_label}" tabindex="0">{escape(exact_value_json(source_rows))}</pre>',
             "</details>",
             '<details class="export-block">',
             f"<summary>CSV export: {escaped_label}</summary>",
-            f"<pre>{escape(exact_value_csv(source_rows))}</pre>",
+            f'<pre role="region" aria-label="CSV export for {escaped_label}" tabindex="0">{escape(exact_value_csv(source_rows))}</pre>',
             "</details>",
             "</details>",
         ]
