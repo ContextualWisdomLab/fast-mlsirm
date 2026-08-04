@@ -1,0 +1,82 @@
+# This workflow removes itself after synchronizing generated repository artifacts.
+name: One-time essay facets report synchronization
+
+on:
+  push:
+    branches:
+      - feat/essay-facets-calibration-report
+    paths:
+      - .github/workflows/one-time-essay-facets-sync.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-essay-facets-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synchronize-contracts:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/essay-facets-calibration-report
+          fetch-depth: 0
+      - name: Synchronize changelog and public-surface contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          fragment_path = Path("docs/changelog.d/essay-facets-calibration-report.md")
+          fragment = fragment_path.read_text(encoding="utf-8")
+          title = "# Governed essay many-facet calibration reports\n\n"
+          if fragment.startswith("### Added"):
+              fragment_path.write_text(title + fragment, encoding="utf-8")
+          elif not fragment.startswith("# Governed essay many-facet calibration reports\n"):
+              raise RuntimeError("unexpected essay facets changelog fragment title")
+
+          path = Path("tests/test_scoring_essay_contracts.py")
+          content = path.read_text(encoding="utf-8")
+          replacements = (
+              (
+                  '        "EssayEvidenceKind",\n        "EssayPrompt",',
+                  '        "EssayEvidenceKind",\n        "EssayFacetsCalibrationReport",\n        "EssayPrompt",',
+              ),
+              (
+                  '        "MAX_ESSAY_EVIDENCE_REFERENCES",\n        "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",',
+                  '        "MAX_ESSAY_EVIDENCE_REFERENCES",\n        "MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS",\n        "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",',
+              ),
+              (
+                  '        "build_essay_prompt",',
+                  '        "build_essay_facets_calibration_report",\n        "build_essay_prompt",',
+              ),
+              (
+                  '        "build_essay_submission",\n        "score_essay_request",',
+                  '        "build_essay_submission",\n        "fit_essay_facets_calibration_report",\n        "score_essay_request",',
+              ),
+          )
+          for old, new in replacements:
+              if new in content:
+                  continue
+              if content.count(old) != 1:
+                  raise RuntimeError(f"expected exactly one public-surface anchor: {old!r}")
+              content = content.replace(old, new)
+          path.write_text(content, encoding="utf-8")
+          PY
+      - name: Render and verify authoritative changelog
+        run: |
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Commit synchronization and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-essay-facets-sync.yml
+          git add docs/changelog.d/essay-facets-calibration-report.md tests/test_scoring_essay_contracts.py CHANGELOG.md
+          git commit -m "test(essay): synchronize facets report contracts"
+          git push origin "HEAD:feat/essay-facets-calibration-report"
