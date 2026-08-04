@@ -685,12 +685,6 @@ def _build_criterion_design(
             "$.records",
             "each criterion must observe at least two score categories",
         )
-    if observed_categories != set(first.allowed_scores):
-        raise assessment_error(
-            "unobserved_facets_category",
-            "$.records",
-            "every declared score category must be observed for each criterion",
-        )
 
     dense_cell_count = len(response_ids) * len(task_ids) * len(rater_fingerprints)
     if dense_cell_count > MAX_SCORING_FACETS_CELLS:
