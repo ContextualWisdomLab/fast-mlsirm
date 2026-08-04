@@ -574,10 +574,9 @@ def _identity_provenance(
         )
         previous_response = response_contracts.get(record.response_id)
         if previous_response is not None and previous_response != response_contract:
+            identity_changed = previous_response[:2] != response_contract[:2]
             conflict_field = (
-                "response_content_fingerprint"
-                if previous_response[2] != response_contract[2]
-                else "response_id"
+                "response_id" if identity_changed else "response_content_fingerprint"
             )
             raise assessment_error(
                 "response_provenance_conflict",
