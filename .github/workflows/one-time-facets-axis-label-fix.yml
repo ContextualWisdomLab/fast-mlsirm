@@ -7,6 +7,11 @@ on:
       - feat/essay-facets-report-html
     paths:
       - .github/workflows/one-time-facets-axis-label-fix.yml
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
 
 permissions: {}
 
