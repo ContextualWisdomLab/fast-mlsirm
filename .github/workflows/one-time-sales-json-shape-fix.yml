@@ -1,21 +1,21 @@
 name: One-time sales JSON shape compatibility fix
 
 on:
-  push:
-    branches:
-      - sentinel-json-dos-scripts-17708564860587448239
+  pull_request:
+    types: [synchronize]
+    branches: [main]
     paths:
       - .github/workflows/one-time-sales-json-shape-fix.yml
 
 permissions: {}
 
 concurrency:
-  group: one-time-sales-json-shape-fix-${{ github.ref }}
+  group: one-time-sales-json-shape-fix-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'sentinel-json-dos-scripts-17708564860587448239'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
