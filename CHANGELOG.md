@@ -16,6 +16,7 @@
 
 - Added `render_essay_score_report_html`, which replay-verifies one governed `EssayScoreReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
 - The artifact exposes exact report, assessment, rubric, task-revision, engine, request, result, observation, criterion, trigger, and evidence-reference identities through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
+- Empty states use explicit status semantics, numeric table cells use tabular numerals, skip links remain visible for any received focus, and motion-sensitive users receive a reduced-motion override without dimming non-hovered report rows.
 - A restrictive meta-delivered Content Security Policy and output encoding reduce content-injection impact. Review routing remains an audit signal only and does not establish scoring validity, fairness, reliability, interchangeability, accessibility conformance, security certification, or authorization for consequential deployment.
 
 #### Provenance-bound essay score reports
@@ -23,6 +24,12 @@
 - Added a provider-neutral, content-addressed `EssayScoreReport` adapter over the existing governed essay request, shared scoring result, and engine descriptor.
 - Report construction replays exact request, engine, assessment, rubric, construct, granularity, and criterion provenance before emission.
 - Submission review flags, terminal observations, and scored observations without evidence now produce non-suppressible transparent human-review triggers. The report preserves criteria separately and explicitly does not treat absence of a trigger as validity or deployment evidence.
+
+#### Accessible standalone essay validation evidence artifacts
+
+- Added `render_essay_validation_evidence_report_html`, which revalidates one governed `EssayValidationEvidenceReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
+- The artifact exposes exact report, assessment, construct, rubric, validation-dataset, automated-engine, human-reference, metric, review-trigger, and interpretation-boundary values through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
+- A restrictive meta-delivered Content Security Policy and output encoding reduce injection impact; the artifact deliberately excludes score-label vectors, universal thresholds, Boolean pass fields, validity, fairness, model-selection claims, and deployment authorization.
 
 #### Governed automated-essay validation evidence reports
 
