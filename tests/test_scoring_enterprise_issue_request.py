@@ -182,6 +182,7 @@ def _intervention(
 def _request(issue: AtomicIssueRecord | None = None, **overrides: Any) -> ScoringRequest:
     """Compile one deterministic criterion-level enterprise request."""
     issue_record = _issue() if issue is None else issue
+    is_valid_issue = isinstance(issue_record, AtomicIssueRecord)
     values: dict[str, Any] = {
         "request_id": "enterprise_issue_request",
         "assessment": assessment(),
@@ -195,8 +196,12 @@ def _request(issue: AtomicIssueRecord | None = None, **overrides: Any) -> Scorin
         "criterion_ids": ("claim_support", "source_alignment"),
         "response_character_count": 128,
         "response_unit_count": 8,
-        "stakeholder_perspectives": (_perspective(issue_record),),
-        "candidate_interventions": (_intervention(issue_record),),
+        "stakeholder_perspectives": (
+            (_perspective(issue_record),) if is_valid_issue else ()
+        ),
+        "candidate_interventions": (
+            (_intervention(issue_record),) if is_valid_issue else ()
+        ),
         "metadata": {"deployment_stage": "offline_fixture"},
     }
     values.update(overrides)
