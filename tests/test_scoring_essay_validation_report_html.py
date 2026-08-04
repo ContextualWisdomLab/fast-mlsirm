@@ -137,3 +137,19 @@ def test_renderer_rejects_post_construction_metric_mutation(tmp_path: Path) -> N
             tmp_path / "mutated.html",
         )
     assert caught.value.code == "essay_validation_evidence_report_replay_mismatch"
+
+
+def test_renderer_rejects_mutated_metric_identity_with_structured_error(
+    tmp_path: Path,
+) -> None:
+    """An unsupported post-construction metric identity fails closed cleanly."""
+    report = build_report()
+    object.__setattr__(report.metrics[0], "metric_id", "forged_metric")
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        render_essay_validation_evidence_report_html(
+            report,
+            tmp_path / "mutated-metric.html",
+        )
+    assert caught.value.code == "unknown_essay_validation_metric"
+    assert caught.value.path == "$.report.metrics[0].metric_id"
