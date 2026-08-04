@@ -5,12 +5,15 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts import _bounded_json
-from scripts._bounded_json import read_json_object
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPOSITORY_ROOT))
+_bounded_json = importlib.import_module("scripts._bounded_json")
+read_json_object = _bounded_json.read_json_object
 
 _SCRIPT_MODULES = (
     "scripts.build_benchmark_report",
