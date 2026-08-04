@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from enum import Enum
+from typing import Any, TypeVar
 import hashlib
 import json
 
@@ -23,6 +24,100 @@ _SENSITIVE_METADATA_FIELDS = frozenset(
         "source_text",
     }
 )
+
+EnumValue = TypeVar("EnumValue", bound=Enum)
+
+
+def descriptive_identifier(
+    value: Any,
+    name: str,
+    path: str | None = None,
+) -> str:
+    """Translate arbitrary identifier-normalization failures into a domain error."""
+    resolved_path = path or f"$.{name}"
+    try:
+        return base.descriptive_identifier(value, name, resolved_path)
+    except base.AssessmentSpecError:
+        raise
+    except Exception:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must use two-or-more-token lower snake_case",
+        ) from None
+
+
+def bounded_text(
+    value: Any,
+    name: str,
+    *,
+    maximum: int = base.MAX_METADATA_TEXT_LENGTH,
+    path: str | None = None,
+) -> str:
+    """Translate arbitrary text-normalization failures into a domain error."""
+    resolved_path = path or f"$.{name}"
+    try:
+        return base.bounded_text(
+            value,
+            name,
+            maximum=maximum,
+            path=resolved_path,
+        )
+    except base.AssessmentSpecError:
+        raise
+    except Exception:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be non-empty text containing at most {maximum} characters",
+        ) from None
+
+
+def semantic_version(
+    value: Any,
+    name: str,
+    path: str | None = None,
+) -> str:
+    """Translate arbitrary semantic-version callback failures safely."""
+    resolved_path = path or f"$.{name}"
+    try:
+        return base.semantic_version(value, name, resolved_path)
+    except base.AssessmentSpecError:
+        raise
+    except Exception:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be a canonical semantic version",
+        ) from None
+
+
+def enum_value(
+    value: Any,
+    enum_type: type[EnumValue],
+    name: str,
+    path: str | None = None,
+) -> EnumValue:
+    """Accept enum members or exact built-in strings without invoking alien equality."""
+    resolved_path = path or f"$.{name}"
+    if isinstance(value, enum_type):
+        return value
+    if type(value) is not str:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be one of the supported values",
+        )
+    try:
+        return base.enum_value(value, enum_type, name, resolved_path)
+    except base.AssessmentSpecError:
+        raise
+    except Exception:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be one of the supported values",
+        ) from None
 
 
 def bounded_positive_integer(
@@ -78,7 +173,7 @@ def sorted_identifiers(
     minimum: int,
     maximum: int = base.MAX_POLICY_REFERENCES,
 ) -> tuple[str, ...]:
-    """Return safe sorted identifiers using the callback-hardened materializer."""
+    """Return safe sorted identifiers using callback-hardened public boundaries."""
     raw = bounded_values(
         values,
         name,
@@ -86,13 +181,49 @@ def sorted_identifiers(
         maximum=maximum,
     )
     normalized = tuple(
-        base.descriptive_identifier(
+        descriptive_identifier(
             value,
             name,
             f"$.{name}[{index}]",
         )
         for index, value in enumerate(raw)
     )
+    if len(set(normalized)) != len(normalized):
+        raise base.assessment_error(
+            f"duplicate_{name}",
+            f"$.{name}",
+            f"{name} must not contain duplicates",
+        )
+    return tuple(sorted(normalized))
+
+
+def sorted_fingerprints(
+    values: Any,
+    name: str,
+    *,
+    minimum: int,
+    maximum: int = base.MAX_ASSESSMENT_RUBRICS,
+) -> tuple[str, ...]:
+    """Return safe sorted SHA-256 identities from a bounded collection."""
+    raw = bounded_values(
+        values,
+        name,
+        minimum=minimum,
+        maximum=maximum,
+    )
+    normalized: list[str] = []
+    for index, value in enumerate(raw):
+        path = f"$.{name}[{index}]"
+        try:
+            normalized.append(base.fingerprint(value, name, path))
+        except base.AssessmentSpecError:
+            raise
+        except Exception:
+            raise base.assessment_error(
+                f"invalid_{name}",
+                path,
+                f"{name} must contain 64-character lower hexadecimal digests",
+            ) from None
     if len(set(normalized)) != len(normalized):
         raise base.assessment_error(
             f"duplicate_{name}",
