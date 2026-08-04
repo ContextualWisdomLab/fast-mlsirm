@@ -16,6 +16,18 @@
 - Added fail-closed provenance, source-revision, sensitive-metadata, and ordering
   tests for the first issue #404 domain-adapter slice.
 
+#### Enterprise issue scoring request compiler
+
+- Added deterministic compilation from accepted enterprise issue, evidence,
+  counterevidence, stakeholder-perspective, and candidate-intervention records
+  into the existing shared criterion-level `ScoringRequest` contract.
+- Added package-managed exact provenance for source revisions, evidence spans,
+  epistemic assertion kinds, perspectives, interventions, task revision, rubric,
+  assessment, and engine authorization without retaining raw enterprise text.
+- Added fail-closed duplicate-evidence, cross-issue replay, unbound perspective
+  source, reserved metadata, sensitive-content, ordering-invariance, and shared
+  contract delegation tests for issue #404.
+
 #### Accessible standalone essay facets-calibration artifacts
 
 - Added `render_essay_facets_calibration_report_html`, which replay-verifies one governed `EssayFacetsCalibrationReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
