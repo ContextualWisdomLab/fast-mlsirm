@@ -48,6 +48,8 @@ def execution(
     engine,
     claim_score: int | None,
     source_score: int | None,
+    task_revision_fingerprint: str = "d" * 64,
+    task_family_id: str = "evidence_review",
     claim_status: ObservationStatus = ObservationStatus.SCORED,
     source_status: ObservationStatus = ObservationStatus.SCORED,
     occasion_id: str = "initial_occasion",
@@ -58,6 +60,8 @@ def execution(
         response_id=response_id,
         respondent_id=respondent_id,
         task_id=task_id,
+        task_revision_fingerprint=task_revision_fingerprint,
+        task_family_id=task_family_id,
         occasion_id=occasion_id,
     )
     outcomes = tuple(
@@ -90,19 +94,23 @@ def project(execution_value) -> tuple[calibration.ScoringFacetsRatingRecord, ...
     )
 
 
-def connected_records(*, terminal: bool = False):
-    """Return a sparse connected two-respondent, two-task, two-rater design."""
+def connected_records(*, terminal: bool = False, shared_task_id: bool = False):
+    """Return a sparse connected respondent-revision-rater design."""
     records = []
     engines = (automated_engine(), human_engine())
     cells = (
-        ("alpha", "alpha", 0, (0, 1)),
-        ("alpha", "beta", 2, (0,)),
-        ("beta", "alpha", 1, (1,)),
-        ("beta", "beta", 0, (0, 1)),
+        ("alpha", "alpha", "1" * 64, 0, (0, 1)),
+        ("alpha", "beta", "2" * 64, 2, (0,)),
+        ("beta", "alpha", "1" * 64, 1, (1,)),
+        ("beta", "beta", "2" * 64, 0, (0, 1)),
     )
-    for cell_index, (respondent_name, task_name, base_score, rater_indexes) in enumerate(
-        cells
-    ):
+    for cell_index, (
+        respondent_name,
+        task_name,
+        task_revision_fingerprint,
+        base_score,
+        rater_indexes,
+    ) in enumerate(cells):
         for engine_index in rater_indexes:
             engine = engines[engine_index]
             claim_status = ObservationStatus.SCORED
@@ -110,6 +118,7 @@ def connected_records(*, terminal: bool = False):
             if terminal and cell_index == 0 and engine_index == 0:
                 claim_status = ObservationStatus.ABSTAINED
                 claim_score = None
+            task_id = "shared_prompt" if shared_task_id else f"prompt_{task_name}"
             records.extend(
                 project(
                     execution(
@@ -118,7 +127,8 @@ def connected_records(*, terminal: bool = False):
                         ),
                         response_id=f"response_{respondent_name}_{task_name}",
                         respondent_id=f"respondent_{respondent_name}",
-                        task_id=f"prompt_{task_name}",
+                        task_id=task_id,
+                        task_revision_fingerprint=task_revision_fingerprint,
                         engine=engine,
                         claim_score=claim_score,
                         source_score=(2 - base_score + 2 * engine_index) % 3,
@@ -130,11 +140,11 @@ def connected_records(*, terminal: bool = False):
 
 
 def disconnected_records():
-    """Return an auditable but respondent-task-disconnected design."""
+    """Return an auditable but respondent-revision-disconnected design."""
     records = []
-    for respondent_name, task_name, base_score in (
-        ("component_one", "component_one", 0),
-        ("component_two", "component_two", 2),
+    for respondent_name, task_name, revision, base_score in (
+        ("component_one", "component_one", "3" * 64, 0),
+        ("component_two", "component_two", "4" * 64, 2),
     ):
         for engine_index, engine in enumerate((automated_engine(), human_engine())):
             records.extend(
@@ -146,6 +156,7 @@ def disconnected_records():
                         response_id=f"response_{respondent_name}_{task_name}",
                         respondent_id=f"respondent_{respondent_name}",
                         task_id=f"prompt_{task_name}",
+                        task_revision_fingerprint=revision,
                         engine=engine,
                         claim_score=(base_score + engine_index) % 3,
                         source_score=(2 - base_score + engine_index) % 3,
@@ -169,6 +180,8 @@ def record_values(source=None) -> dict[str, Any]:
         "response_id": source.response_id,
         "response_content_fingerprint": source.response_content_fingerprint,
         "task_id": source.task_id,
+        "task_revision_fingerprint": source.task_revision_fingerprint,
+        "task_family_id": source.task_family_id,
         "occasion_id": source.occasion_id,
         "criterion_id": source.criterion_id,
         "engine_id": source.engine_id,
@@ -219,6 +232,7 @@ def test_projection_retains_exact_provenance_and_terminal_states() -> None:
         response_id="projection_response",
         respondent_id="projection_respondent",
         task_id="projection_prompt",
+        task_revision_fingerprint="9" * 64,
         engine=automated_engine(),
         claim_score=2,
         source_score=None,
@@ -242,6 +256,8 @@ def test_projection_retains_exact_provenance_and_terminal_states() -> None:
     assert scored.result_fingerprint == result.result_fingerprint
     assert scored.engine_fingerprint == engine.engine_fingerprint
     assert scored.response_content_fingerprint == request.response_content_fingerprint
+    assert scored.task_revision_fingerprint == request.task_revision_fingerprint
+    assert scored.task_family_id == request.task_family_id
     assert scored.rating_handle == f"scoring_facets_rating_{scored.rating_fingerprint[:32]}"
     assert scored.to_dict()["allowed_scores"] == [0, 1, 2]
 
@@ -367,6 +383,7 @@ def test_projection_rejects_types_granularity_and_mismatches() -> None:
         response_id="validation_response",
         respondent_id="validation_respondent",
         task_id="validation_prompt",
+        task_revision_fingerprint="7" * 64,
         engine=automated_engine(),
         claim_score=0,
         source_score=1,
@@ -395,6 +412,7 @@ def test_projection_rejects_types_granularity_and_mismatches() -> None:
         response_id="holistic_validation_response",
         respondent_id="holistic_validation_respondent",
         task_id="holistic_validation_prompt",
+        task_revision_fingerprint="8" * 64,
     )
     holistic_result = StaticFixtureEngine(
         descriptor=engine,
@@ -424,6 +442,7 @@ def test_projection_rejects_types_granularity_and_mismatches() -> None:
         response_id="other_validation_response",
         respondent_id="other_validation_respondent",
         task_id="other_validation_prompt",
+        task_revision_fingerprint="6" * 64,
         engine=engine,
         claim_score=1,
         source_score=2,
@@ -517,6 +536,8 @@ def test_design_rejects_duplicate_response_and_rater_provenance() -> None:
         response_id=first.response_id,
         respondent_id=first.respondent_id,
         task_id=first.task_id,
+        task_revision_fingerprint=first.task_revision_fingerprint,
+        task_family_id=first.task_family_id,
         response_content_fingerprint=first.response_content_fingerprint,
         engine_id=first.engine_id,
         engine_family_id=first.engine_family_id,
@@ -572,7 +593,11 @@ def test_design_rejects_insufficient_support_and_dense_amplification(monkeypatch
         ),
     )
 
-    one_task = tuple(record for record in group if record.task_id == group[0].task_id)
+    one_task = tuple(
+        record
+        for record in group
+        if record.task_revision_fingerprint == group[0].task_revision_fingerprint
+    )
     assert_error(
         "insufficient_facets_tasks",
         lambda: calibration._build_criterion_design(
