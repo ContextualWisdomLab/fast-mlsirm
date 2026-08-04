@@ -51,6 +51,16 @@ jobs:
               if generated_path.suffix == ".py":
                   generated_text = generated_text.replace(r'\"', '"')
               generated_path.write_text(generated_text, encoding="utf-8")
+
+          test_path = Path("tests/test_bounded_json_scripts.py")
+          test_lines = test_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          for line_index, test_line in enumerate(test_lines):
+              if '"text": "[{}]' in test_line:
+                  test_lines[line_index] = r'            "text": "[{}] \\ slash",' + "\n"
+                  break
+          else:
+              raise RuntimeError("bounded JSON string-escape fixture was not found")
+          test_path.write_text("".join(test_lines), encoding="utf-8")
           PY
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
