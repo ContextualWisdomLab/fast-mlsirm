@@ -9,20 +9,18 @@ from typing import Any
 
 from fast_mlsirm.rubric.models import RubricSpecification
 
+from ._contract_safety import artifact_digest, bounded_values, freeze_metadata
 from ._validation import (
     ASSESSMENT_SCHEMA_VERSION,
     MAX_ASSESSMENT_CONSTRUCTS,
     MAX_ASSESSMENT_RUBRICS,
     AssessmentSpecError as AssessmentSpecError,
     CanonicalContract,
-    artifact_digest,
     assessment_error,
     assessment_schema_version,
     bounded_text,
-    bounded_values,
     descriptive_identifier,
     enum_value,
-    freeze_metadata,
     semantic_version,
     sorted_fingerprints,
     thaw_json_value,
@@ -239,7 +237,7 @@ def _materialize_rubrics(
             )
         try:
             rubric_fingerprint = rubric.fingerprint
-        except (TypeError, ValueError, OverflowError) as exc:
+        except Exception:
             raise assessment_error(
                 "invalid_rubric_fingerprint",
                 f"$.rubrics[{index}]",
