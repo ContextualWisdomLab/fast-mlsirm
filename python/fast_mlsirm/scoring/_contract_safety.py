@@ -227,6 +227,15 @@ def _preflight_metadata(
             try:
                 iterator = iter(value)
                 for index, child in enumerate(iterator):
+                    if index >= base.MAX_METADATA_COLLECTION_VALUES:
+                        raise base.assessment_error(
+                            "metadata_collection_too_large",
+                            path,
+                            (
+                                "metadata collections must contain at most "
+                                f"{base.MAX_METADATA_COLLECTION_VALUES} values"
+                            ),
+                        )
                     output.append(
                         _preflight_metadata(
                             child,
