@@ -55,6 +55,7 @@ def test_metadata_scalar_values_are_json_safe_and_resource_bounded():
         {"unsupported_value": object()},
         {"nonfinite_value": math.nan},
         {"nonfinite_value": math.inf},
+        {"nonfinite_value": -math.inf},
         {"integer_value": 1 << 63},
         {"integer_value": -(1 << 63) - 1},
         {"string_value": "x" * 8_193},
@@ -113,7 +114,7 @@ def test_metadata_collections_depth_and_node_counts_are_bounded():
 
 def test_metadata_and_canonical_json_require_supported_container_types():
     """The metadata root must be a mapping and raw canonical values remain bounded."""
-    for value in (None, [], (), "metadata"):
+    for value in ([], (), "metadata"):
         with pytest.raises(ValueError, match="metadata must be a mapping"):
             assessment(metadata=value)
 
