@@ -83,6 +83,10 @@ def fit_mmle_2pl(
     nodes, weights = gauss_hermite_nodes(n_nodes)  # (Q,), (Q,)
     log_weights = np.log(weights)
 
+    # Optimization: define matrix multipliers to avoid .sum(axis=1) intermediate overheads
+    ones_1d = np.ones(n_nodes, dtype=np.float64)
+    ones_2d = ones_1d[:, None]
+
     rng = np.random.default_rng(seed)
     # Init: a=1, b from observed item log-odds of endorsement.
     p_item = (y_filled * obs_f).sum(0) / np.clip(obs_f.sum(0), 1.0, None)
@@ -109,7 +113,7 @@ def fit_mmle_2pl(
         # Normalize across nodes (log-sum-exp)
         max_lj = log_joint.max(axis=1, keepdims=True)
         stab = np.exp(log_joint - max_lj)
-        denom = stab.sum(axis=1, keepdims=True)
+        denom = stab @ ones_2d
         posterior = stab / denom  # (n_persons, Q)
         person_loglik = max_lj[:, 0] + np.log(denom[:, 0])
         total_loglik = float(person_loglik.sum())
@@ -144,10 +148,10 @@ def fit_mmle_2pl(
             # Optimization: Replace element-wise multiply and axis reduction with dense matrix multiplication
             # to avoid large intermediate array allocations
             g_a = resid @ nodes - ridge_a * ai
-            g_b = resid.sum(axis=1) - ridge_b * bi
+            g_b = (resid @ ones_1d) - ridge_b * bi
 
             h_aa = -(w @ nodes_sq) - ridge_a
-            h_bb = -w.sum(axis=1) - ridge_b
+            h_bb = -(w @ ones_1d) - ridge_b
             h_ab = -(w @ nodes)
 
             det = h_aa * h_bb - h_ab * h_ab
