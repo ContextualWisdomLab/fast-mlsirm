@@ -5,12 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ._contract_safety import bounded_positive_integer, sorted_identifiers
+from ._contract_safety import (
+    bounded_positive_integer,
+    descriptive_identifier,
+    sorted_identifiers,
+)
 from ._validation import (
     MAX_RATERS_PER_RESPONSE,
     CanonicalContract,
     assessment_error,
-    descriptive_identifier,
     strict_boolean,
 )
 
