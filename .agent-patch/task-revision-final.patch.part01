@@ -1,0 +1,210 @@
++Zou, Y., Kannan, S., & Sidhu, G. K. (2024). Influence of task complexity on text
++features and writing scores: Evidence from college students in Southern China.
++*SAGE Open, 14*(3). https://doi.org/10.1177/21582440241284186
+diff --git a/python/fast_mlsirm/scoring/__init__.py b/python/fast_mlsirm/scoring/__init__.py
+index 61f51a1..6668dc3 100644
+--- a/python/fast_mlsirm/scoring/__init__.py
++++ b/python/fast_mlsirm/scoring/__init__.py
+@@ -21,6 +21,12 @@ from .calibration import (
+ from .calibration import fit_scoring_facets_bundle as fit_scoring_facets_bundle
+ from .calibration import fit_scoring_facets_design as fit_scoring_facets_design
+ from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
++from .contracts import (
++    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
++)
++from .contracts import (
++    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,
++)
+ from .contracts import (
+     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
+ )
+@@ -55,6 +61,7 @@ from .contracts import build_score_observation as build_score_observation
+ from .contracts import build_scoring_request as build_scoring_request
+ from .contracts import build_scoring_result as build_scoring_result
+ from .contracts import canonical_json as canonical_json
++from .contracts import migrate_scoring_request_v1 as migrate_scoring_request_v1
+ 
+ # Preserve the pinned star-import contract. Execution, authorization, and
+ # calibration contracts remain explicit package attributes imported by their
+diff --git a/python/fast_mlsirm/scoring/_calibration_validation.py b/python/fast_mlsirm/scoring/_calibration_validation.py
+index c918310..9e5b095 100644
+--- a/python/fast_mlsirm/scoring/_calibration_validation.py
++++ b/python/fast_mlsirm/scoring/_calibration_validation.py
+@@ -294,6 +294,8 @@ def _replay_rating_record(
+         response_id=value.response_id,
+         response_content_fingerprint=value.response_content_fingerprint,
+         task_id=value.task_id,
++        task_revision_fingerprint=value.task_revision_fingerprint,
++        task_family_id=value.task_family_id,
+         occasion_id=value.occasion_id,
+         criterion_id=value.criterion_id,
+         engine_id=value.engine_id,
+@@ -351,10 +353,13 @@ def _design_fields(
+         design.criterion_id,
+         design.category_values,
+         design.respondent_ids,
++        design.task_revision_fingerprints,
+         design.task_ids,
++        design.task_family_ids,
+         design.response_ids,
+         design.response_respondent_ids,
+         design.response_task_ids,
++        design.response_task_revision_fingerprints,
+         design.response_content_fingerprints,
+         design.rater_engine_ids,
+         design.rater_engine_family_ids,
+diff --git a/python/fast_mlsirm/scoring/authorization.py b/python/fast_mlsirm/scoring/authorization.py
+index 23831a7..3041897 100644
+--- a/python/fast_mlsirm/scoring/authorization.py
++++ b/python/fast_mlsirm/scoring/authorization.py
+@@ -138,6 +138,7 @@ def build_scoring_request(
+     respondent_id: str,
+     response_id: str,
+     task_id: str,
++    task_revision_fingerprint: str,
+     task_family_id: str,
+     occasion_id: str,
+     criterion_ids: Iterable[str] = (),
+@@ -161,6 +162,7 @@ def build_scoring_request(
+         respondent_id=respondent_id,
+         response_id=response_id,
+         task_id=task_id,
++        task_revision_fingerprint=task_revision_fingerprint,
+         task_family_id=task_family_id,
+         occasion_id=occasion_id,
+         criterion_ids=criterion_ids,
+diff --git a/python/fast_mlsirm/scoring/calibration.py b/python/fast_mlsirm/scoring/calibration.py
+index b2478a3..3ddc905 100644
+--- a/python/fast_mlsirm/scoring/calibration.py
++++ b/python/fast_mlsirm/scoring/calibration.py
+@@ -99,7 +99,7 @@ def _score_for_status(
+ 
+ @dataclass(frozen=True)
+ class ScoringFacetsRatingRecord(CanonicalContract):
+-    """One criterion rating bound to exact request, result, and engine artifacts."""
++    """One criterion rating bound to an exact governed task revision."""
+ 
+     assessment_fingerprint: str
+     rubric_fingerprint: str
+@@ -111,6 +111,8 @@ class ScoringFacetsRatingRecord(CanonicalContract):
+     response_id: str
+     response_content_fingerprint: str
+     task_id: str
++    task_revision_fingerprint: str
++    task_family_id: str
+     occasion_id: str
+     criterion_id: str
+     engine_id: str
+@@ -137,6 +139,7 @@ class ScoringFacetsRatingRecord(CanonicalContract):
+             "result_fingerprint",
+             "observation_fingerprint",
+             "response_content_fingerprint",
++            "task_revision_fingerprint",
+             "engine_fingerprint",
+         ):
+             object.__setattr__(
+@@ -149,6 +152,7 @@ class ScoringFacetsRatingRecord(CanonicalContract):
+             "respondent_id",
+             "response_id",
+             "task_id",
++            "task_family_id",
+             "occasion_id",
+             "criterion_id",
+             "engine_id",
+@@ -199,6 +203,8 @@ class ScoringFacetsRatingRecord(CanonicalContract):
+             "response_id": self.response_id,
+             "response_content_fingerprint": self.response_content_fingerprint,
+             "task_id": self.task_id,
++            "task_revision_fingerprint": self.task_revision_fingerprint,
++            "task_family_id": self.task_family_id,
+             "occasion_id": self.occasion_id,
+             "criterion_id": self.criterion_id,
+             "engine_id": self.engine_id,
+@@ -230,13 +236,11 @@ class ScoringFacetsRatingRecord(CanonicalContract):
+ 
+ @dataclass(frozen=True)
+ class ScoringFacetsDesign(CanonicalContract):
+-    """One criterion-specific respondent-indexed Rust facets design.
++    """One criterion-specific respondent-by-revision Rust facets design.
+ 
+-    ``respondent_id`` forms the person axis, ``task_id`` forms the item axis,
+-    and the exact engine fingerprint forms the rater axis. Response identifiers
+-    and content fingerprints remain cell-level audit provenance. Original rubric
+-    labels remain in ``category_values`` and are mapped to zero-based categories
+-    only when an estimator tensor is requested.
++    ``respondent_id`` forms the person axis, exact task-revision fingerprints
++    form the item axis, and exact engine fingerprints form the rater axis.
++    Logical task and family identifiers remain aligned audit labels only.
+     """
+ 
+     assessment_fingerprint: str
+@@ -246,10 +250,13 @@ class ScoringFacetsDesign(CanonicalContract):
+     criterion_id: str
+     category_values: tuple[int, ...]
+     respondent_ids: tuple[str, ...]
++    task_revision_fingerprints: tuple[str, ...]
+     task_ids: tuple[str, ...]
++    task_family_ids: tuple[str, ...]
+     response_ids: tuple[str, ...]
+     response_respondent_ids: tuple[str, ...]
+     response_task_ids: tuple[str, ...]
++    response_task_revision_fingerprints: tuple[str, ...]
+     response_content_fingerprints: tuple[str, ...]
+     rater_engine_ids: tuple[str, ...]
+     rater_engine_family_ids: tuple[str, ...]
+@@ -262,13 +269,48 @@ class ScoringFacetsDesign(CanonicalContract):
+     _design_token: InitVar[object | None] = None
+ 
+     def __post_init__(self, _design_token: object | None) -> None:
+-        """Reject direct construction outside the validated assembler."""
++        """Reject direct construction and validate aligned revision audit axes."""
+         if _design_token is not _DESIGN_TOKEN:
+             raise assessment_error(
+                 "unverified_facets_design",
+                 "$",
+                 "use build_scoring_facets_calibration_bundle",
+             )
++        revisions = tuple(
++            fingerprint(value, "task_revision_fingerprint")
++            for value in self.task_revision_fingerprints
++        )
++        families = tuple(
++            descriptive_identifier(value, "task_family_id")
++            for value in self.task_family_ids
++        )
++        response_revisions = tuple(
++            fingerprint(value, "task_revision_fingerprint")
++            for value in self.response_task_revision_fingerprints
++        )
++        if not (len(revisions) == len(self.task_ids) == len(families)):
++            raise assessment_error(
++                "invalid_task_revision_axis",
++                "$.task_revision_fingerprints",
++                "task revision, logical task, and task-family axes must align",
++            )
++        if not (
++            len(self.response_ids)
++            == len(self.response_respondent_ids)
++            == len(self.response_task_ids)
++            == len(response_revisions)
++            == len(self.response_content_fingerprints)
++        ):
++            raise assessment_error(
++                "invalid_response_task_revision_axis",
++                "$.response_task_revision_fingerprints",
++                "response provenance axes must align",
++            )
++        object.__setattr__(self, "task_revision_fingerprints", revisions)
++        object.__setattr__(self, "task_family_ids", families)
++        object.__setattr__(
++            self, "response_task_revision_fingerprints", response_revisions
++        )
+         object.__setattr__(
+             self,
+             "schema_version",
+@@ -277,16 +319,37 @@ class ScoringFacetsDesign(CanonicalContract):
+ 
+     def _content_dict(self) -> dict[str, Any]:
+         """Return canonical sparse design content without dense arrays."""
++        task_revisions = [
++            {
