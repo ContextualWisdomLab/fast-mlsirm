@@ -1,6 +1,6 @@
-### Added
+# Accessible standalone essay score report artifacts
 
-#### Accessible standalone essay score report artifacts
+## Added
 
 - Added `render_essay_score_report_html`, which replay-verifies one governed `EssayScoreReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
 - The artifact exposes exact report, assessment, rubric, task-revision, engine, request, result, observation, criterion, trigger, and evidence-reference identities through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
