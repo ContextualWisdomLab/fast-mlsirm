@@ -1,8 +1,8 @@
 """Governed criterion-level many-facet calibration handoff.
 
 The module projects already governed scoring requests, results, observations,
-and engine descriptors into deterministic criterion-specific ``persons x tasks
-x raters`` tensors accepted by the existing Rust-backed
+and engine descriptors into deterministic criterion-specific
+``respondents x tasks x raters`` tensors accepted by the existing Rust-backed
 :func:`fast_mlsirm.fit_facets` estimator. Python validates, preserves provenance,
 and marshals data only; it implements no psychometric likelihood, gradient,
 quadrature, optimization, or uncertainty arithmetic.
@@ -30,15 +30,16 @@ from .execution import (
     EngineDescriptor,
     ObservationGranularity,
     ObservationStatus,
+    ScoreObservation,
     ScoringRequest,
     ScoringResult,
 )
 
 MAX_SCORING_FACETS_RATINGS = 100_000
 # ``fit_facets`` currently consumes a dense persons-by-items-by-raters tensor.
-# Structurally missing response-task combinations therefore still occupy memory,
-# so this guard intentionally bounds the actual allocation rather than only the
-# number of cells that can contain observed ratings.
+# Structurally missing respondent-task combinations therefore still occupy
+# memory, so this guard intentionally bounds the actual allocation rather than
+# only the number of cells that can contain observed ratings.
 MAX_SCORING_FACETS_CELLS = 1_000_000
 MAX_SCORING_SCORE_CATEGORIES = 64
 
@@ -229,12 +230,13 @@ class ScoringFacetsRatingRecord(CanonicalContract):
 
 @dataclass(frozen=True)
 class ScoringFacetsDesign(CanonicalContract):
-    """One criterion-specific sparse design for the Rust facets estimator.
+    """One criterion-specific respondent-indexed Rust facets design.
 
-    ``response_id`` forms the person axis, ``task_id`` forms the item axis, and
-    the exact engine fingerprint forms the rater axis. Original rubric labels
-    remain in ``category_values`` and are mapped to zero-based categories only
-    when an estimator tensor is requested.
+    ``respondent_id`` forms the person axis, ``task_id`` forms the item axis,
+    and the exact engine fingerprint forms the rater axis. Response identifiers
+    and content fingerprints remain cell-level audit provenance. Original rubric
+    labels remain in ``category_values`` and are mapped to zero-based categories
+    only when an estimator tensor is requested.
     """
 
     assessment_fingerprint: str
@@ -243,10 +245,12 @@ class ScoringFacetsDesign(CanonicalContract):
     occasion_id: str
     criterion_id: str
     category_values: tuple[int, ...]
-    response_ids: tuple[str, ...]
     respondent_ids: tuple[str, ...]
-    response_task_ids: tuple[str, ...]
     task_ids: tuple[str, ...]
+    response_ids: tuple[str, ...]
+    response_respondent_ids: tuple[str, ...]
+    response_task_ids: tuple[str, ...]
+    response_content_fingerprints: tuple[str, ...]
     rater_engine_ids: tuple[str, ...]
     rater_engine_family_ids: tuple[str, ...]
     rater_engine_fingerprints: tuple[str, ...]
@@ -279,10 +283,14 @@ class ScoringFacetsDesign(CanonicalContract):
             "occasion_id": self.occasion_id,
             "criterion_id": self.criterion_id,
             "category_values": list(self.category_values),
-            "response_ids": list(self.response_ids),
             "respondent_ids": list(self.respondent_ids),
-            "response_task_ids": list(self.response_task_ids),
             "task_ids": list(self.task_ids),
+            "response_ids": list(self.response_ids),
+            "response_respondent_ids": list(self.response_respondent_ids),
+            "response_task_ids": list(self.response_task_ids),
+            "response_content_fingerprints": list(
+                self.response_content_fingerprints
+            ),
             "rater_engine_ids": list(self.rater_engine_ids),
             "rater_engine_family_ids": list(self.rater_engine_family_ids),
             "rater_engine_fingerprints": list(self.rater_engine_fingerprints),
@@ -303,9 +311,9 @@ class ScoringFacetsDesign(CanonicalContract):
         return f"scoring_facets_design_{self.design_fingerprint[:32]}"
 
     def _indexes(self) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
-        """Return deterministic response, task, and rater index maps."""
+        """Return deterministic respondent, task, and rater index maps."""
         return (
-            {value: index for index, value in enumerate(self.response_ids)},
+            {value: index for index, value in enumerate(self.respondent_ids)},
             {value: index for index, value in enumerate(self.task_ids)},
             {
                 value: index
@@ -314,17 +322,17 @@ class ScoringFacetsDesign(CanonicalContract):
         )
 
     def _dense_array(self, *, zero_based: bool) -> np.ndarray:
-        """Materialize one fresh dense tensor on the requested score scale."""
+        """Materialize one fresh respondent-task-rater tensor."""
         output = np.full(
             (
-                len(self.response_ids),
+                len(self.respondent_ids),
                 len(self.task_ids),
                 len(self.rater_engine_fingerprints),
             ),
             np.nan,
             dtype=np.float64,
         )
-        response_index, task_index, rater_index = self._indexes()
+        respondent_index, task_index, rater_index = self._indexes()
         category_index = {
             value: index for index, value in enumerate(self.category_values)
         }
@@ -335,7 +343,7 @@ class ScoringFacetsDesign(CanonicalContract):
             if score is None:  # pragma: no cover - guaranteed by rating record
                 raise RuntimeError("scored rating category is unavailable")
             output[
-                response_index[record.response_id],
+                respondent_index[record.respondent_id],
                 task_index[record.task_id],
                 rater_index[record.engine_fingerprint],
             ] = category_index[score] if zero_based else score
@@ -358,11 +366,11 @@ class ScoringFacetsDesign(CanonicalContract):
                 [None for _rater in self.rater_engine_fingerprints]
                 for _task in self.task_ids
             ]
-            for _response in self.response_ids
+            for _respondent in self.respondent_ids
         ]
-        response_index, task_index, rater_index = self._indexes()
+        respondent_index, task_index, rater_index = self._indexes()
         for record in self.rating_records:
-            states[response_index[record.response_id]][task_index[record.task_id]][
+            states[respondent_index[record.respondent_id]][task_index[record.task_id]][
                 rater_index[record.engine_fingerprint]
             ] = record.status
         return tuple(
@@ -467,6 +475,61 @@ class ScoringFacetsCalibrationBundle(CanonicalContract):
         }
 
 
+def _validated_result_observations(
+    *,
+    request: ScoringRequest,
+    result: ScoringResult,
+) -> tuple[ScoreObservation, ...]:
+    """Validate result-owned observation types, identities, and criterion scope."""
+    observations = tuple(result.observations)
+    for index, observation in enumerate(observations):
+        if not isinstance(observation, ScoreObservation):
+            raise assessment_error(
+                "invalid_score_observation",
+                f"$.result.observations[{index}]",
+                "result observations must be ScoreObservation values",
+            )
+        if observation.criterion_id is None:
+            raise assessment_error(
+                "missing_observation_criterion",
+                f"$.result.observations[{index}].criterion_id",
+                "criterion-level observations require a criterion identifier",
+            )
+        if observation.criterion_id not in request.criterion_ids:
+            raise assessment_error(
+                "calibration_observation_criterion_mismatch",
+                f"$.result.observations[{index}].criterion_id",
+                "observation criterion is not declared by the scoring request",
+            )
+    criterion_ids = tuple(observation.criterion_id for observation in observations)
+    if len(set(criterion_ids)) != len(criterion_ids):
+        raise assessment_error(
+            "duplicate_observation_criterion",
+            "$.result.observations",
+            "criterion-level observations must be unique",
+        )
+    observation_ids = tuple(observation.observation_id for observation in observations)
+    if len(set(observation_ids)) != len(observation_ids):
+        raise assessment_error(
+            "duplicate_observation_id",
+            "$.result.observations",
+            "observation identifiers must be unique",
+        )
+    if result.requested_criterion_ids != request.criterion_ids:
+        raise assessment_error(
+            "calibration_result_criteria_mismatch",
+            "$.result.requested_criterion_ids",
+            "result criterion scope does not match the supplied scoring request",
+        )
+    if tuple(sorted(criterion_ids)) != request.criterion_ids:
+        raise assessment_error(
+            "calibration_observation_coverage_mismatch",
+            "$.result.observations",
+            "observations must cover every requested criterion exactly once",
+        )
+    return observations
+
+
 def build_scoring_facets_rating_records(
     *,
     request: ScoringRequest,
@@ -516,6 +579,7 @@ def build_scoring_facets_rating_records(
             "$.result.engine_fingerprint",
             "result is not bound to the supplied engine descriptor",
         )
+    observations = _validated_result_observations(request=request, result=result)
     expected_observation_fields = (
         (
             "request_fingerprint",
@@ -548,7 +612,7 @@ def build_scoring_facets_rating_records(
             "calibration_observation_granularity_mismatch",
         ),
     )
-    for index, observation in enumerate(result.observations):
+    for index, observation in enumerate(observations):
         observation_path = f"$.result.observations[{index}]"
         for field_name, expected_value, error_code in expected_observation_fields:
             if getattr(observation, field_name) != expected_value:
@@ -557,18 +621,6 @@ def build_scoring_facets_rating_records(
                     f"{observation_path}.{field_name}",
                     "observation provenance does not match the supplied execution",
                 )
-        if observation.criterion_id is None:
-            raise assessment_error(
-                "missing_observation_criterion",
-                f"{observation_path}.criterion_id",
-                "criterion-level observations require a criterion identifier",
-            )
-        if observation.criterion_id not in request.criterion_ids:
-            raise assessment_error(
-                "calibration_observation_criterion_mismatch",
-                f"{observation_path}.criterion_id",
-                "observation criterion is not declared by the scoring request",
-            )
 
     records = tuple(
         ScoringFacetsRatingRecord(
@@ -592,7 +644,7 @@ def build_scoring_facets_rating_records(
             allowed_scores=request.allowed_scores,
             _rating_token=_RATING_TOKEN,
         )
-        for observation in result.observations
+        for observation in observations
     )
     keyed_records = [
         (
@@ -608,9 +660,14 @@ def build_scoring_facets_rating_records(
 
 def _identity_provenance(
     records: tuple[ScoringFacetsRatingRecord, ...],
-) -> tuple[dict[str, tuple[str, str, str]], dict[str, tuple[str, str]]]:
-    """Validate response and rater identities across one record collection."""
+) -> tuple[
+    dict[str, tuple[str, str, str]],
+    dict[tuple[str, str], tuple[str, str]],
+    dict[str, tuple[str, str]],
+]:
+    """Validate response, respondent-task, and rater identities."""
     response_contracts: dict[str, tuple[str, str, str]] = {}
+    respondent_task_contracts: dict[tuple[str, str], tuple[str, str]] = {}
     rater_contracts: dict[str, tuple[str, str]] = {}
     for index, record in enumerate(records):
         response_contract = (
@@ -631,6 +688,25 @@ def _identity_provenance(
             )
         response_contracts[record.response_id] = response_contract
 
+        respondent_task_key = (record.respondent_id, record.task_id)
+        respondent_task_contract = (
+            record.response_id,
+            record.response_content_fingerprint,
+        )
+        previous_cell = respondent_task_contracts.get(respondent_task_key)
+        if previous_cell is not None and previous_cell != respondent_task_contract:
+            conflict_field = (
+                "response_id"
+                if previous_cell[0] != respondent_task_contract[0]
+                else "response_content_fingerprint"
+            )
+            raise assessment_error(
+                "respondent_task_provenance_conflict",
+                f"$.records[{index}].{conflict_field}",
+                "one respondent-task cell has conflicting response provenance",
+            )
+        respondent_task_contracts[respondent_task_key] = respondent_task_contract
+
         rater_contract = (record.engine_id, record.engine_family_id)
         previous_rater = rater_contracts.get(record.engine_fingerprint)
         if previous_rater is not None and previous_rater != rater_contract:
@@ -640,27 +716,27 @@ def _identity_provenance(
                 "one engine fingerprint has conflicting rater provenance",
             )
         rater_contracts[record.engine_fingerprint] = rater_contract
-    return response_contracts, rater_contracts
+    return response_contracts, respondent_task_contracts, rater_contracts
 
 
-def _design_connected(
-    task_ids: tuple[str, ...],
-    rater_fingerprints: tuple[str, ...],
-    records: tuple[ScoringFacetsRatingRecord, ...],
+def _bipartite_connected(
+    *,
+    left_ids: tuple[str, ...],
+    right_ids: tuple[str, ...],
+    edges: set[tuple[str, str]],
 ) -> bool:
-    """Return connectedness of the observed task-rater bipartite graph."""
-    task_nodes = tuple(f"task:{value}" for value in task_ids)
-    rater_nodes = tuple(f"rater:{value}" for value in rater_fingerprints)
+    """Return whether one bounded bipartite incidence graph is connected."""
+    left_nodes = tuple(f"left:{value}" for value in left_ids)
+    right_nodes = tuple(f"right:{value}" for value in right_ids)
     adjacency: dict[str, set[str]] = {
-        value: set() for value in (*task_nodes, *rater_nodes)
+        value: set() for value in (*left_nodes, *right_nodes)
     }
-    for record in records:
-        if record.status is ObservationStatus.SCORED:
-            task_node = f"task:{record.task_id}"
-            rater_node = f"rater:{record.engine_fingerprint}"
-            adjacency[task_node].add(rater_node)
-            adjacency[rater_node].add(task_node)
-    pending = [task_nodes[0]]
+    for left_value, right_value in edges:
+        left_node = f"left:{left_value}"
+        right_node = f"right:{right_value}"
+        adjacency[left_node].add(right_node)
+        adjacency[right_node].add(left_node)
+    pending = [left_nodes[0]]
     visited: set[str] = set()
     while pending:
         node = pending.pop()
@@ -671,46 +747,80 @@ def _design_connected(
     return len(visited) == len(adjacency)
 
 
+def _design_connected(
+    *,
+    respondent_ids: tuple[str, ...],
+    task_ids: tuple[str, ...],
+    rater_fingerprints: tuple[str, ...],
+    records: tuple[ScoringFacetsRatingRecord, ...],
+) -> bool:
+    """Return joint respondent-task and task-rater identification connectedness."""
+    scored = tuple(
+        record for record in records if record.status is ObservationStatus.SCORED
+    )
+    respondent_task_edges = {
+        (record.respondent_id, record.task_id) for record in scored
+    }
+    task_rater_edges = {
+        (record.task_id, record.engine_fingerprint) for record in scored
+    }
+    return _bipartite_connected(
+        left_ids=respondent_ids,
+        right_ids=task_ids,
+        edges=respondent_task_edges,
+    ) and _bipartite_connected(
+        left_ids=task_ids,
+        right_ids=rater_fingerprints,
+        edges=task_rater_edges,
+    )
+
+
 def _build_criterion_design(
     records: tuple[ScoringFacetsRatingRecord, ...],
     *,
     require_connected: bool,
 ) -> ScoringFacetsDesign:
-    """Build one bounded criterion-specific calibration design."""
+    """Build one bounded criterion-specific respondent-indexed design."""
     first = records[0]
-    response_contracts, rater_contracts = _identity_provenance(records)
+    response_contracts, _, rater_contracts = _identity_provenance(records)
     cells: set[tuple[str, str, str]] = set()
-    observed_responses: set[str] = set()
+    observed_respondents: set[str] = set()
     observed_tasks: set[str] = set()
     observed_raters: set[str] = set()
     observed_categories: set[int] = set()
 
     for index, record in enumerate(records):
-        cell = (record.response_id, record.task_id, record.engine_fingerprint)
+        cell = (record.respondent_id, record.task_id, record.engine_fingerprint)
         if cell in cells:
             raise assessment_error(
                 "duplicate_facets_rating_cell",
                 f"$.records[{index}]",
-                "each response-task-rater cell may occur once per criterion",
+                "each respondent-task-rater cell may occur once per criterion",
             )
         cells.add(cell)
         if record.status is ObservationStatus.SCORED:
             score = record.score_category
             if score is None:  # pragma: no cover - guaranteed by rating record
                 raise RuntimeError("scored rating category is unavailable")
-            observed_responses.add(record.response_id)
+            observed_respondents.add(record.respondent_id)
             observed_tasks.add(record.task_id)
             observed_raters.add(record.engine_fingerprint)
             observed_categories.add(score)
 
-    response_ids = tuple(sorted(response_contracts))
+    respondent_ids = tuple(sorted({record.respondent_id for record in records}))
     task_ids = tuple(sorted({record.task_id for record in records}))
     rater_fingerprints = tuple(sorted(rater_contracts))
-    if len(response_ids) < 2:
+    if len(respondent_ids) < 2:
         raise assessment_error(
-            "insufficient_facets_responses",
+            "insufficient_facets_respondents",
             "$.records",
-            "facets calibration requires at least two responses",
+            "facets calibration requires at least two respondents",
+        )
+    if len(task_ids) < 2:
+        raise assessment_error(
+            "insufficient_facets_tasks",
+            "$.records",
+            "facets calibration requires at least two tasks",
         )
     if len(rater_fingerprints) < 2:
         raise assessment_error(
@@ -719,14 +829,14 @@ def _build_criterion_design(
             "facets calibration requires at least two raters",
         )
     if (
-        observed_responses != set(response_ids)
+        observed_respondents != set(respondent_ids)
         or observed_tasks != set(task_ids)
         or observed_raters != set(rater_fingerprints)
     ):
         raise assessment_error(
             "unobserved_facets_level",
             "$.records",
-            "every response, task, and rater must have a scored rating",
+            "every respondent, task, and rater must have a scored rating",
         )
     if len(observed_categories) < 2:
         raise assessment_error(
@@ -735,28 +845,28 @@ def _build_criterion_design(
             "each criterion must observe at least two score categories",
         )
 
-    dense_cell_count = len(response_ids) * len(task_ids) * len(rater_fingerprints)
+    dense_cell_count = len(respondent_ids) * len(task_ids) * len(rater_fingerprints)
     if dense_cell_count > MAX_SCORING_FACETS_CELLS:
         raise assessment_error(
             "facets_cell_budget_exceeded",
             "$.records",
-            "dense response-task-rater allocation exceeds the configured cell budget",
+            "dense respondent-task-rater allocation exceeds the configured cell budget",
         )
 
-    connected = _design_connected(task_ids, rater_fingerprints, records)
+    connected = _design_connected(
+        respondent_ids=respondent_ids,
+        task_ids=task_ids,
+        rater_fingerprints=rater_fingerprints,
+        records=records,
+    )
     if require_connected and not connected:
         raise assessment_error(
             "disconnected_facets_design",
             "$.records",
-            "observed task-rater graph is disconnected",
+            "scored respondent-task and task-rater graphs must both be connected",
         )
 
-    respondent_ids = tuple(
-        response_contracts[response_id][0] for response_id in response_ids
-    )
-    response_task_ids = tuple(
-        response_contracts[response_id][1] for response_id in response_ids
-    )
+    response_ids = tuple(sorted(response_contracts))
     return ScoringFacetsDesign(
         assessment_fingerprint=first.assessment_fingerprint,
         rubric_fingerprint=first.rubric_fingerprint,
@@ -764,10 +874,18 @@ def _build_criterion_design(
         occasion_id=first.occasion_id,
         criterion_id=first.criterion_id,
         category_values=first.allowed_scores,
-        response_ids=response_ids,
         respondent_ids=respondent_ids,
-        response_task_ids=response_task_ids,
         task_ids=task_ids,
+        response_ids=response_ids,
+        response_respondent_ids=tuple(
+            response_contracts[value][0] for value in response_ids
+        ),
+        response_task_ids=tuple(
+            response_contracts[value][1] for value in response_ids
+        ),
+        response_content_fingerprints=tuple(
+            response_contracts[value][2] for value in response_ids
+        ),
         rater_engine_ids=tuple(
             rater_contracts[value][0] for value in rater_fingerprints
         ),
@@ -871,22 +989,19 @@ def fit_scoring_facets_design(
     tol: float = 1e-6,
     allow_disconnected: bool = False,
 ):
-    """Fit one design by delegating every numeric operation to ``fit_facets``."""
+    """Fit one identified design by delegating arithmetic to ``fit_facets``."""
     if not isinstance(design, ScoringFacetsDesign):
         raise assessment_error(
             "invalid_facets_design",
             "$.design",
             "design must be a ScoringFacetsDesign",
         )
-    disconnected_allowed = strict_boolean(
-        allow_disconnected,
-        "allow_disconnected",
-    )
-    if not design.connected and not disconnected_allowed:
+    strict_boolean(allow_disconnected, "allow_disconnected")
+    if not design.connected:
         raise assessment_error(
             "disconnected_facets_design",
             "$.design.connected",
-            "disconnected designs require explicit diagnostic opt-in",
+            "disconnected designs cannot enter the facets estimator",
         )
     from fast_mlsirm.facets import fit_facets
 
