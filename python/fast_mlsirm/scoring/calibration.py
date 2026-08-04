@@ -516,12 +516,58 @@ def build_scoring_facets_rating_records(
             "$.result.engine_fingerprint",
             "result is not bound to the supplied engine descriptor",
         )
+    expected_observation_fields = (
+        (
+            "request_fingerprint",
+            request.request_fingerprint,
+            "calibration_observation_request_mismatch",
+        ),
+        (
+            "engine_fingerprint",
+            engine.engine_fingerprint,
+            "calibration_observation_engine_mismatch",
+        ),
+        (
+            "assessment_fingerprint",
+            request.assessment_fingerprint,
+            "calibration_observation_assessment_mismatch",
+        ),
+        (
+            "rubric_fingerprint",
+            request.rubric_fingerprint,
+            "calibration_observation_rubric_mismatch",
+        ),
+        (
+            "construct_id",
+            request.construct_id,
+            "calibration_observation_construct_mismatch",
+        ),
+        (
+            "granularity",
+            request.granularity,
+            "calibration_observation_granularity_mismatch",
+        ),
+    )
     for index, observation in enumerate(result.observations):
+        observation_path = f"$.result.observations[{index}]"
+        for field_name, expected_value, error_code in expected_observation_fields:
+            if getattr(observation, field_name) != expected_value:
+                raise assessment_error(
+                    error_code,
+                    f"{observation_path}.{field_name}",
+                    "observation provenance does not match the supplied execution",
+                )
         if observation.criterion_id is None:
             raise assessment_error(
                 "missing_observation_criterion",
-                f"$.result.observations[{index}].criterion_id",
+                f"{observation_path}.criterion_id",
                 "criterion-level observations require a criterion identifier",
+            )
+        if observation.criterion_id not in request.criterion_ids:
+            raise assessment_error(
+                "calibration_observation_criterion_mismatch",
+                f"{observation_path}.criterion_id",
+                "observation criterion is not declared by the scoring request",
             )
 
     records = tuple(
