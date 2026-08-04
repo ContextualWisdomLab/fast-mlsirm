@@ -141,12 +141,14 @@ def fit_mmle_2pl(
             w = n_iq_active * p_m * (1.0 - p_m)
             resid = r_iq_active - n_iq_active * p_m
 
-            g_a = (resid * nodes[None, :]).sum(axis=1) - ridge_a * ai
+            # Optimization: Replace element-wise multiply and axis reduction with dense matrix multiplication
+            # to avoid large intermediate array allocations
+            g_a = resid @ nodes - ridge_a * ai
             g_b = resid.sum(axis=1) - ridge_b * bi
 
-            h_aa = -(w * nodes_sq[None, :]).sum(axis=1) - ridge_a
+            h_aa = -(w @ nodes_sq) - ridge_a
             h_bb = -w.sum(axis=1) - ridge_b
-            h_ab = -(w * nodes[None, :]).sum(axis=1)
+            h_ab = -(w @ nodes)
 
             det = h_aa * h_bb - h_ab * h_ab
 
