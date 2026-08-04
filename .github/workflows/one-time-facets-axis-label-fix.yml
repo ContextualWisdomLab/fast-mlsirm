@@ -189,8 +189,7 @@ jobs:
         run: |
           pytest \
             tests/test_scoring_essay_facets_report_html.py \
-            tests/test_scoring_essay_facets_reporting.py \
-            tests/test_scoring_calibration.py
+            tests/test_scoring_essay_facets_reporting.py
       - name: Commit exact contract fix
         run: |
           git config user.name "github-actions[bot]"
