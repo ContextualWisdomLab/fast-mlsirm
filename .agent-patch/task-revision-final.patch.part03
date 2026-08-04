@@ -1,0 +1,210 @@
++            )
++        task_revision_contracts[record.task_revision_fingerprint] = revision_contract
++
++    for index, record in enumerate(records):
++        previous_response_revision = response_revision_contracts.get(record.response_id)
++        if (
++            previous_response_revision is not None
++            and previous_response_revision != record.task_revision_fingerprint
++        ):
++            raise assessment_error(
++                "response_provenance_conflict",
++                f"$.records[{index}].task_revision_fingerprint",
++                "one response identity has conflicting governed provenance",
+             )
+-        response_contracts[record.response_id] = response_contract
++        response_revision_contracts[record.response_id] = (
++            record.task_revision_fingerprint
++        )
++        response_contracts[record.response_id] = (
++            record.respondent_id,
++            record.task_id,
++            record.task_revision_fingerprint,
++            record.task_family_id,
++            record.response_content_fingerprint,
++        )
+ 
+-        respondent_task_key = (record.respondent_id, record.task_id)
+-        respondent_task_contract = (
++        respondent_revision_key = (
++            record.respondent_id,
++            record.task_revision_fingerprint,
++        )
++        respondent_revision_contract = (
+             record.response_id,
+             record.response_content_fingerprint,
+         )
+-        previous_cell = respondent_task_contracts.get(respondent_task_key)
+-        if previous_cell is not None and previous_cell != respondent_task_contract:
++        previous_cell = respondent_revision_contracts.get(respondent_revision_key)
++        if previous_cell is not None and previous_cell != respondent_revision_contract:
+             conflict_field = (
+                 "response_id"
+-                if previous_cell[0] != respondent_task_contract[0]
++                if previous_cell[0] != respondent_revision_contract[0]
+                 else "response_content_fingerprint"
+             )
+             raise assessment_error(
+                 "respondent_task_response_conflict",
+                 f"$.records[{index}].{conflict_field}",
+-                "one respondent-task cell has conflicting response provenance",
++                "one respondent-task-revision cell has conflicting response provenance",
+             )
+-        respondent_task_contracts[respondent_task_key] = respondent_task_contract
++        respondent_revision_contracts[respondent_revision_key] = (
++            respondent_revision_contract
++        )
+ 
+         rater_contract = (record.engine_id, record.engine_family_id)
+         previous_rater = rater_contracts.get(record.engine_fingerprint)
+@@ -738,7 +874,12 @@ def _identity_provenance(
+                 "one engine fingerprint has conflicting rater provenance",
+             )
+         rater_contracts[record.engine_fingerprint] = rater_contract
+-    return response_contracts, respondent_task_contracts, rater_contracts
++    return (
++        response_contracts,
++        respondent_revision_contracts,
++        task_revision_contracts,
++        rater_contracts,
++    )
+ 
+ 
+ def _bipartite_connected(
+@@ -772,29 +913,31 @@ def _bipartite_connected(
+ def _design_connected(
+     *,
+     respondent_ids: tuple[str, ...],
+-    task_ids: tuple[str, ...],
++    task_revision_fingerprints: tuple[str, ...],
+     rater_fingerprints: tuple[str, ...],
+     records: tuple[ScoringFacetsRatingRecord, ...],
+ ) -> tuple[bool, bool]:
+-    """Return respondent-task and task-rater identification connectedness."""
++    """Return respondent-revision and revision-rater connectedness."""
+     scored = tuple(
+         record for record in records if record.status is ObservationStatus.SCORED
+     )
+-    respondent_task_edges = {
+-        (record.respondent_id, record.task_id) for record in scored
++    respondent_revision_edges = {
++        (record.respondent_id, record.task_revision_fingerprint)
++        for record in scored
+     }
+-    task_rater_edges = {
+-        (record.task_id, record.engine_fingerprint) for record in scored
++    revision_rater_edges = {
++        (record.task_revision_fingerprint, record.engine_fingerprint)
++        for record in scored
+     }
+     respondent_task_connected = _bipartite_connected(
+         left_ids=respondent_ids,
+-        right_ids=task_ids,
+-        edges=respondent_task_edges,
++        right_ids=task_revision_fingerprints,
++        edges=respondent_revision_edges,
+     )
+     task_rater_connected = _bipartite_connected(
+-        left_ids=task_ids,
++        left_ids=task_revision_fingerprints,
+         right_ids=rater_fingerprints,
+-        edges=task_rater_edges,
++        edges=revision_rater_edges,
+     )
+     return respondent_task_connected, task_rater_connected
+ 
+@@ -804,22 +947,31 @@ def _build_criterion_design(
+     *,
+     require_connected: bool,
+ ) -> ScoringFacetsDesign:
+-    """Build one bounded criterion-specific respondent-indexed design."""
++    """Build one bounded criterion-specific revision-indexed design."""
+     first = records[0]
+-    response_contracts, _, rater_contracts = _identity_provenance(records)
++    (
++        response_contracts,
++        _,
++        task_revision_contracts,
++        rater_contracts,
++    ) = _identity_provenance(records)
+     cells: set[tuple[str, str, str]] = set()
+     observed_respondents: set[str] = set()
+-    observed_tasks: set[str] = set()
++    observed_revisions: set[str] = set()
+     observed_raters: set[str] = set()
+     observed_categories: set[int] = set()
+ 
+     for index, record in enumerate(records):
+-        cell = (record.respondent_id, record.task_id, record.engine_fingerprint)
++        cell = (
++            record.respondent_id,
++            record.task_revision_fingerprint,
++            record.engine_fingerprint,
++        )
+         if cell in cells:
+             raise assessment_error(
+                 "duplicate_facets_rating_cell",
+                 f"$.records[{index}]",
+-                "each respondent-task-rater cell may occur once per criterion",
++                "each respondent-revision-rater cell may occur once per criterion",
+             )
+         cells.add(cell)
+         if record.status is ObservationStatus.SCORED:
+@@ -827,12 +979,29 @@ def _build_criterion_design(
+             if score is None:  # pragma: no cover - guaranteed by rating record
+                 raise RuntimeError("scored rating category is unavailable")
+             observed_respondents.add(record.respondent_id)
+-            observed_tasks.add(record.task_id)
++            observed_revisions.add(record.task_revision_fingerprint)
+             observed_raters.add(record.engine_fingerprint)
+             observed_categories.add(score)
+ 
+     respondent_ids = tuple(sorted({record.respondent_id for record in records}))
+-    task_ids = tuple(sorted({record.task_id for record in records}))
++    task_revision_fingerprints = tuple(
++        sorted(
++            task_revision_contracts,
++            key=lambda revision: (
++                task_revision_contracts[revision][0],
++                task_revision_contracts[revision][1],
++                revision,
++            ),
++        )
++    )
++    task_ids = tuple(
++        task_revision_contracts[revision][0]
++        for revision in task_revision_fingerprints
++    )
++    task_family_ids = tuple(
++        task_revision_contracts[revision][1]
++        for revision in task_revision_fingerprints
++    )
+     rater_fingerprints = tuple(sorted(rater_contracts))
+     if len(respondent_ids) < 2:
+         raise assessment_error(
+@@ -840,11 +1009,11 @@ def _build_criterion_design(
+             "$.records",
+             "facets calibration requires at least two respondents",
+         )
+-    if len(task_ids) < 2:
++    if len(task_revision_fingerprints) < 2:
+         raise assessment_error(
+             "insufficient_facets_tasks",
+             "$.records",
+-            "facets calibration requires at least two tasks",
++            "facets calibration requires at least two exact task revisions",
+         )
+     if len(rater_fingerprints) < 2:
+         raise assessment_error(
+@@ -854,13 +1023,13 @@ def _build_criterion_design(
+         )
+     if (
+         observed_respondents != set(respondent_ids)
+-        or observed_tasks != set(task_ids)
++        or observed_revisions != set(task_revision_fingerprints)
+         or observed_raters != set(rater_fingerprints)
+     ):
+         raise assessment_error(
+             "unobserved_facets_level",
+             "$.records",
+-            "every respondent, task, and rater must have a scored rating",
