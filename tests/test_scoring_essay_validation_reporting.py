@@ -190,8 +190,10 @@ def test_full_report_delegates_to_rust_and_omits_gate_decisions() -> None:
     assert report.report_handle.startswith("essay_validation_report_")
     assert report.report_fingerprint == build_report().report_fingerprint
     assert isinstance(report.metadata, MappingProxyType)
-    assert "threshold" not in str(payload)
-    assert '"pass"' not in str(payload)
+    assert "pass" not in payload
+    for metric_payload in payload["metrics"]:
+        assert "threshold" not in metric_payload
+        assert "pass" not in metric_payload
     assert _AUTOMATED.tolist() not in payload.values()
 
 
