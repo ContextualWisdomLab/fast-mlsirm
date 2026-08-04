@@ -6,7 +6,7 @@
 
 Agreement coefficients, correlations, standardized mean differences, and human–machine degradation summaries answer different questions and depend on the score scale, population, sampling design, rubric, task distribution, rater design, and intended use. A fixed threshold cannot establish construct validity or responsible use across contexts. Pearson correlation is retained only as a descriptive association statistic; it cannot substitute for agreement, calibration, subgroup analysis, evidence about construct representation, or consequences of use.
 
-The legacy `fast_mlsirm.validation.validate_judge` API retains historical conjunctive gate fields for backward compatibility. The governed report deliberately copies only Rust-computed metric values and discards every legacy threshold and Boolean pass field.
+The legacy `fast_mlsirm.validation.validate_judge` API retains historical conjunctive gate fields for backward compatibility. The governed report deliberately copies only Rust-computed metric values and discards every legacy threshold and Boolean pass field. Interpretation-boundary identifiers may discuss why universal thresholds are invalid, but metric records and the report root contain no threshold or pass decision fields.
 
 ## Exact governed binding
 
