@@ -39,6 +39,13 @@ jobs:
           python scripts/_apply_bounded_json_hardening.py
           python - <<'PY'
           from pathlib import Path
+          import runpy
+
+          patcher = runpy.run_path(
+              "scripts/_apply_bounded_json_hardening.py",
+              run_name="bounded_json_patcher",
+          )
+          patcher["patch_reader"](Path("scripts/build_pr_queue_governance.py"))
 
           generated_paths = (
               Path("scripts/_bounded_json.py"),
@@ -60,7 +67,17 @@ jobs:
                   break
           else:
               raise RuntimeError("bounded JSON string-escape fixture was not found")
-          test_path.write_text("".join(test_lines), encoding="utf-8")
+          test_text = "".join(test_lines)
+          module_anchor = '    "scripts.build_figma_evidence_sync",\n'
+          module_entry = '    "scripts.build_pr_queue_governance",\n'
+          if module_entry not in test_text:
+              if test_text.count(module_anchor) != 1:
+                  raise RuntimeError("governed module insertion anchor was not found")
+              test_text = test_text.replace(
+                  module_anchor,
+                  module_anchor + module_entry,
+              )
+          test_path.write_text(test_text, encoding="utf-8")
           PY
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
