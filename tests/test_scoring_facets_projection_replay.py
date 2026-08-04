@@ -10,7 +10,6 @@ import pytest
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
     EvidenceReference,
-    MAX_REQUEST_CRITERIA,
     ObservationGranularity,
     ObservationStatus,
     build_scoring_facets_rating_records,
@@ -146,7 +145,7 @@ def test_projection_rejects_duplicate_observation_criterion() -> None:
             engine=engine,
         )
 
-    assert caught.value.code == "duplicate_observation_criterion"
+    assert caught.value.code == "calibration_observation_coverage_mismatch"
     assert caught.value.path.endswith(".observations")
 
 
@@ -192,23 +191,17 @@ def test_projection_rejects_untyped_observation_entry() -> None:
     assert str(private_value) not in str(caught.value)
 
 
-def test_projection_bounds_post_construction_observation_iterables() -> None:
-    """Mutated result iterables stop at the wire maximum before child replay."""
+def test_projection_rejects_hostile_observation_container_without_iteration() -> None:
+    """A package-owned result container is rejected before hostile iteration."""
     request, result, engine = replay_execution()
 
-    class OversizedObservations:
-        """Yield one more entry than the governed request maximum."""
-
-        def __init__(self) -> None:
-            self.yield_count = 0
+    class HostileObservations:
+        """Raise if the calibration boundary attempts to iterate this object."""
 
         def __iter__(self):
-            for _index in range(MAX_REQUEST_CRITERIA + 1):
-                self.yield_count += 1
-                yield result.observations[0]
+            raise AssertionError("hostile observations must not be iterated")
 
-    hostile = OversizedObservations()
-    object.__setattr__(result, "observations", hostile)
+    object.__setattr__(result, "observations", HostileObservations())
 
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_rating_records(
@@ -219,7 +212,23 @@ def test_projection_bounds_post_construction_observation_iterables() -> None:
 
     assert caught.value.code == "invalid_observations"
     assert caught.value.path == "$.observations"
-    assert hostile.yield_count == MAX_REQUEST_CRITERIA + 1
+
+
+def test_projection_does_not_mutate_a_valid_result() -> None:
+    """Validation and projection leave the caller-owned frozen result untouched."""
+    request, result, engine = replay_execution()
+    observations = result.observations
+    fingerprint = result.result_fingerprint
+
+    records = build_scoring_facets_rating_records(
+        request=request,
+        result=result,
+        engine=engine,
+    )
+
+    assert records
+    assert result.observations is observations
+    assert result.result_fingerprint == fingerprint
 
 
 def test_projection_replays_nested_evidence_reference_types() -> None:
