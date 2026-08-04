@@ -229,6 +229,8 @@ class ExplicitValueRecord(CanonicalContract):
     def _normalized_payload(self, value: Any) -> Mapping[str, Any]:
         """Return an exact kind-specific normalized payload."""
         payload = thaw_json_value(freeze_metadata(value))
+        if type(payload) is not dict:
+            self._payload_error("normalized_payload must be a mapping")
         if self.value_kind in {
             ExplicitValueKind.CALENDAR_DATE,
             ExplicitValueKind.DEADLINE_DATE,
@@ -260,7 +262,8 @@ class ExplicitValueRecord(CanonicalContract):
             if isinstance(count, bool) or not isinstance(count, int):
                 self._payload_error("frequency_count must be a positive integer")
             _positive_count(str(count), "$.normalized_payload")
-            if payload["frequency_period"] not in {
+            period = payload["frequency_period"]
+            if type(period) is not str or period not in {
                 "day",
                 "week",
                 "month",

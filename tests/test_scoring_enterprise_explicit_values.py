@@ -313,6 +313,7 @@ def test_manual_records_are_immutable_and_round_trip(kind: ExplicitValueKind) ->
 @pytest.mark.parametrize(
     ("kind", "payload"),
     (
+        (ExplicitValueKind.CALENDAR_DATE, []),
         (ExplicitValueKind.CALENDAR_DATE, {}),
         (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
         (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": "2026-02-30"}),
@@ -346,6 +347,10 @@ def test_manual_records_are_immutable_and_round_trip(kind: ExplicitValueKind) ->
         ),
         (
             ExplicitValueKind.FREQUENCY_COUNT,
+            {"frequency_count": 1, "frequency_period": []},
+        ),
+        (
+            ExplicitValueKind.FREQUENCY_COUNT,
             {"frequency_count": 1, "frequency_period": "decade"},
         ),
         (ExplicitValueKind.CUSTOMER_IDENTIFIER, {}),
@@ -357,7 +362,7 @@ def test_manual_records_are_immutable_and_round_trip(kind: ExplicitValueKind) ->
 )
 def test_kind_specific_payloads_fail_closed(
     kind: ExplicitValueKind,
-    payload: dict[str, Any],
+    payload: Any,
 ) -> None:
     """Noncanonical and cross-kind payloads are rejected with stable errors."""
     with pytest.raises(AssessmentSpecError):
