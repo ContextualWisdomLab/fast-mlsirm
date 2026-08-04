@@ -309,6 +309,12 @@ def render_essay_score_report_html(
         not isinstance(title, str) or not title.strip()
     ):
         raise ValueError("essay score report title must be a non-empty string")
+    if title is not None and (
+        not isinstance(title, str) or not title.strip()
+    ):
+        raise ValueError(
+            "essay score report title must be a non-empty string"
+        )
     resolved_title = _DEFAULT_TITLE if title is None else title
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_render_html(validated, resolved_title), encoding="utf-8")

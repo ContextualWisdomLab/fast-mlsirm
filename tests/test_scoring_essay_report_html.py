@@ -152,7 +152,9 @@ def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
     assert caught.value.code == "invalid_essay_score_report"
 
     with pytest.raises(ValueError, match=r"must end with \.html"):
-        render_essay_score_report_html(clean_report(), tmp_path / "invalid.txt")
+        render_essay_score_report_html(
+            clean_report(), tmp_path / "invalid.txt"
+        )
 
 
 @pytest.mark.parametrize("title", ("", "   ", 3))
