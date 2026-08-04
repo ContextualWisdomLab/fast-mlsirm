@@ -4,6 +4,21 @@
 
 
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
+### Changed
+
+#### Release cut 0.7.0
+
+- Project version is bumped to 0.7.0 in `pyproject.toml`,
+  `crates/mlsirm-core`, and `crates/fast-mlsirm-py`, and the accumulated
+  `Unreleased` notes (the governed automated-essay-scoring adapters, the
+  governed criterion facets calibration handoff into the Rust-backed
+  many-facet estimator, and the keyboard-scrollable report export
+  accessibility fix) now form the `[0.7.0] - 2026-08-04` release section.
+- Released authoritative fragments are removed from `docs/changelog.d`;
+  the directory again holds only genuinely unreleased notes.
+<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+## [0.7.0] - 2026-08-04
+
 ### Added
 
 #### Governed automated-essay scoring adapters
@@ -37,7 +52,7 @@
 #### Scrollable Export Accessibility
 
 - Added keyboard navigation (`tabindex="0"`, `role="region"`) and visual focus styling (`:focus-visible`) to scrollable exact-value export `<pre>` regions in standalone HTML diagnostics reports.
-<!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
+
 ## [0.6.0] - 2026-08-04
 
 ### Added
