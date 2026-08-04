@@ -763,14 +763,15 @@ def build_scoring_facets_calibration_bundle(
                 f"$.records[{index}]",
                 "records must contain ScoringFacetsRatingRecord values",
             )
-    keyed = sorted(
+    keyed = [
         (
             record.criterion_id,
             record.rating_fingerprint,
             record,
         )
         for record in raw
-    )
+    ]
+    keyed.sort(key=lambda item: (item[0], item[1]))
     ordered = tuple(item[2] for item in keyed)
     if len({item[1] for item in keyed}) != len(keyed):
         raise assessment_error(
