@@ -847,6 +847,12 @@ tbody:hover tr:not(:hover) {
   cursor: pointer;
   padding: 10px 0;
   font-weight: 600;
+  transition: color 0.15s ease-in-out;
+}
+
+.exact-values > summary:hover,
+.export-block > summary:hover {
+  color: var(--teal);
 }
 
 .exact-values > summary:focus-visible,
@@ -873,6 +879,11 @@ tbody:hover tr:not(:hover) {
   background: var(--hover-bg);
   font-variant-numeric: tabular-nums;
   white-space: pre;
+}
+
+.export-block pre:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
