@@ -45,7 +45,7 @@ Callers may add organization-specific policy triggers. The absence of a trigger 
 
 The current Rust many-facet baseline estimates respondent proficiency, task-revision difficulty, common category thresholds, and rater severity within one criterion. Criteria remain separate. The report does not emit a holistic score, severity ordering, difficulty ordering, discrimination estimate, range-compression diagnosis, drift estimate, fairness conclusion, DIF result, or model preference.
 
-The model uses marginal maximum likelihood with a fixed standard-normal trait distribution. It is not Linacre's joint maximum likelihood implementation, so estimates are comparable to Facets output only subject to estimator differences. Connectedness is required for design-based comparisons of item difficulty and rater severity; a shared population distribution alone does not make disconnected components interchangeable.
+The model uses marginal maximum likelihood with a fixed standard-normal trait distribution. It is not Linacre's joint maximum likelihood implementation. Numerical agreement with FACETS software is therefore not asserted: any comparison requires matched identification constraints, estimator, quadrature, convergence rules, missing-data handling, and category treatment. Connectedness is required for design-based comparisons of item difficulty and rater severity; a shared population distribution alone does not make disconnected components interchangeable.
 
 ## Example
 
