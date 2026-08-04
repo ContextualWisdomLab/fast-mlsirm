@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import re
 import runpy
 
 import pytest
@@ -66,12 +67,25 @@ def test_same_response_id_with_changed_content_fails_closed() -> None:
         build_scoring_facets_calibration_bundle(records)
 
     assert caught.value.code == "response_provenance_conflict"
-    assert caught.value.path.endswith(".response_content_fingerprint")
+    assert re.fullmatch(
+        r"\$\.records\[\d+\]\.response_content_fingerprint",
+        caught.value.path,
+    )
     assert private_digest not in str(caught.value)
 
 
-def test_response_identity_conflicts_precede_content_revision_conflicts() -> None:
-    """Respondent or task rebinding retains the established response-ID path."""
+@pytest.mark.parametrize(
+    ("field_name", "private_value"),
+    (
+        ("respondent_id", "conflicting_respondent"),
+        ("task_id", "conflicting_task"),
+    ),
+)
+def test_response_identity_conflict_reports_the_changed_field(
+    field_name: str,
+    private_value: str,
+) -> None:
+    """Respondent and task rebinding identify the exact conflicting field."""
     records = list(connected_records())
     target = records[0]
     conflicting_index = next(
@@ -83,16 +97,22 @@ def test_response_identity_conflicts_precede_content_revision_conflicts() -> Non
     private_digest = "d" * 64
     records[conflicting_index] = replace(
         records[conflicting_index],
-        respondent_id="conflicting_respondent",
-        response_content_fingerprint=private_digest,
-        _rating_token=calibration._RATING_TOKEN,
+        **{
+            field_name: private_value,
+            "response_content_fingerprint": private_digest,
+            "_rating_token": calibration._RATING_TOKEN,
+        },
     )
 
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
     assert caught.value.code == "response_provenance_conflict"
-    assert caught.value.path.endswith(".response_id")
+    assert re.fullmatch(
+        rf"\$\.records\[\d+\]\.{field_name}",
+        caught.value.path,
+    )
+    assert private_value not in str(caught.value)
     assert private_digest not in str(caught.value)
 
 
