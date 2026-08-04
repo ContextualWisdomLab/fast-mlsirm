@@ -14,3 +14,14 @@ def test_repeatable_aligned_audit_labels_are_preserved() -> None:
         "task_ids",
         require_unique=False,
     ) == repeated
+
+
+def test_unique_identifier_axis_preserves_declared_order() -> None:
+    """Unique governed axes retain their exact deterministic order."""
+    identifiers = ("first_respondent", "second_respondent")
+
+    assert report_html._identifier_axis(
+        identifiers,
+        "respondent_ids",
+        require_unique=True,
+    ) == identifiers
