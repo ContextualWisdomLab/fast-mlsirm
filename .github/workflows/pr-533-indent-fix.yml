@@ -1,0 +1,74 @@
+name: PR 533 indentation fix
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Restore method indentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          path = Path("python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py")
+          text = path.read_text(encoding="utf-8")
+          block = '''metadata = freeze_metadata(self.metadata)
+          unexpected_metadata = set(metadata) - {"offset_unit"}
+          if unexpected_metadata:
+              raise assessment_error(
+                  "unexpected_explicit_value_metadata",
+                  "$.metadata",
+                  "explicit value metadata may contain only offset_unit",
+              )
+          if (
+              "offset_unit" in metadata
+              and metadata["offset_unit"] != "python_unicode_code_point"
+          ):
+              raise assessment_error(
+                  "invalid_offset_unit",
+                  "$.metadata.offset_unit",
+                  "offset_unit must be python_unicode_code_point",
+              )
+          object.__setattr__(self, "metadata", metadata)'''
+          if block not in text:
+              raise SystemExit("unindented metadata block not found")
+          path.write_text(
+              text.replace(block, textwrap.indent(block, "        "), 1),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Commit fix and remove temporary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-indent-fix.yml
+          if [[ -f .github/pr-533-provider-trigger.txt ]]; then
+            git rm .github/pr-533-provider-trigger.txt
+          fi
+          git add python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py
+          git diff --cached --check
+          git commit -m "fix(enterprise): restore metadata validation indentation"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
