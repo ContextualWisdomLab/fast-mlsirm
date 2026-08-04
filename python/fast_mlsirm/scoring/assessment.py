@@ -7,22 +7,23 @@ from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any
 
-from fast_mlsirm.rubric.models import (
-    SCHEMA_VERSION,
-    RubricSpecification,
-    _bounded_values,
-    _identifier,
-    _schema_version,
-    _semantic_version,
-    _text,
-)
+from fast_mlsirm.rubric.models import RubricSpecification
 
 from ._validation import (
+    ASSESSMENT_SCHEMA_VERSION,
     MAX_ASSESSMENT_CONSTRUCTS,
     MAX_ASSESSMENT_RUBRICS,
+    AssessmentSpecError as AssessmentSpecError,
     CanonicalContract,
     artifact_digest,
+    assessment_error,
+    assessment_schema_version,
+    bounded_text,
+    bounded_values,
+    descriptive_identifier,
+    enum_value,
     freeze_metadata,
+    semantic_version,
     sorted_fingerprints,
     thaw_json_value,
 )
@@ -38,17 +39,6 @@ from .policies import (
 _ASSESSMENT_SPEC_TOKEN = object()
 
 
-class AssessmentSpecError(ValueError):
-    """Structured fail-closed assessment-graph validation error."""
-
-    def __init__(self, code: str, path: str, message: str) -> None:
-        """Store stable error metadata without embedding caller content."""
-        self.code = code
-        self.path = path
-        self.message = message
-        super().__init__(f"{code} at {path}: {message}")
-
-
 class AssessmentResponseType(str, Enum):
     """Granularity at which one assessment records scoring observations."""
 
@@ -59,18 +49,12 @@ class AssessmentResponseType(str, Enum):
 
 def _response_type(value: AssessmentResponseType | str) -> AssessmentResponseType:
     """Normalize one supported assessment-response representation."""
-    if isinstance(value, AssessmentResponseType):
-        return value
-    try:
-        return AssessmentResponseType(value)
-    except (TypeError, ValueError) as exc:
-        choices = [member.value for member in AssessmentResponseType]
-        raise ValueError(f"response_type must be one of {choices}") from exc
+    return enum_value(value, AssessmentResponseType, "response_type")
 
 
 @dataclass(frozen=True)
 class ConstructSpec(CanonicalContract):
-    """One declared construct and the exact rubrics that operationalize it."""
+    """One declared construct and exact rubric fingerprints operationalizing it."""
 
     construct_id: str
     construct_definition: str
@@ -81,12 +65,16 @@ class ConstructSpec(CanonicalContract):
         object.__setattr__(
             self,
             "construct_id",
-            _identifier(self.construct_id, "construct_id"),
+            descriptive_identifier(self.construct_id, "construct_id"),
         )
         object.__setattr__(
             self,
             "construct_definition",
-            _text(self.construct_definition, "construct_definition"),
+            bounded_text(
+                self.construct_definition,
+                "construct_definition",
+                maximum=8_192,
+            ),
         )
         object.__setattr__(
             self,
@@ -125,22 +113,26 @@ class AssessmentSpec(CanonicalContract):
     monitoring_policy: MonitoringPolicy
     reporting_policy: ReportingPolicy
     metadata: Mapping[str, Any]
-    schema_version: str = SCHEMA_VERSION
+    schema_version: str = ASSESSMENT_SCHEMA_VERSION
     _assessment_token: InitVar[object | None] = None
 
     def __post_init__(self, _assessment_token: object | None) -> None:
         """Reject direct construction and normalize the immutable public artifact."""
         if _assessment_token is not _ASSESSMENT_SPEC_TOKEN:
-            raise ValueError("AssessmentSpec must be created by build_assessment_spec")
+            raise assessment_error(
+                "unverified_assessment_spec",
+                "$",
+                "AssessmentSpec must be created by build_assessment_spec",
+            )
         object.__setattr__(
             self,
             "assessment_id",
-            _identifier(self.assessment_id, "assessment_id"),
+            descriptive_identifier(self.assessment_id, "assessment_id"),
         )
         object.__setattr__(
             self,
             "assessment_version",
-            _semantic_version(self.assessment_version, "assessment_version"),
+            semantic_version(self.assessment_version, "assessment_version"),
         )
         object.__setattr__(self, "response_type", _response_type(self.response_type))
         object.__setattr__(
@@ -153,7 +145,11 @@ class AssessmentSpec(CanonicalContract):
             ),
         )
         object.__setattr__(self, "metadata", freeze_metadata(self.metadata))
-        object.__setattr__(self, "schema_version", _schema_version(self.schema_version))
+        object.__setattr__(
+            self,
+            "schema_version",
+            assessment_schema_version(self.schema_version),
+        )
 
     @property
     def construct_ids(self) -> tuple[str, ...]:
@@ -199,7 +195,7 @@ class AssessmentSpec(CanonicalContract):
 
 def _materialize_constructs(values: Iterable[Any]) -> tuple[ConstructSpec, ...]:
     """Return bounded typed constructs in deterministic identifier order."""
-    raw = _bounded_values(
+    raw = bounded_values(
         values,
         "constructs",
         minimum=1,
@@ -207,11 +203,15 @@ def _materialize_constructs(values: Iterable[Any]) -> tuple[ConstructSpec, ...]:
     )
     for index, construct in enumerate(raw):
         if not isinstance(construct, ConstructSpec):
-            raise TypeError(f"constructs[{index}] must be a ConstructSpec")
+            raise assessment_error(
+                "invalid_construct",
+                f"$.constructs[{index}]",
+                "construct entries must be ConstructSpec values",
+            )
     constructs = tuple(sorted(raw, key=lambda entry: entry.construct_id))
     ids = tuple(construct.construct_id for construct in constructs)
     if len(set(ids)) != len(ids):
-        raise AssessmentSpecError(
+        raise assessment_error(
             "duplicate_construct_id",
             "$.constructs",
             "construct identifiers must be unique",
@@ -219,9 +219,11 @@ def _materialize_constructs(values: Iterable[Any]) -> tuple[ConstructSpec, ...]:
     return constructs
 
 
-def _materialize_rubrics(values: Iterable[Any]) -> tuple[tuple[str, RubricSpecification], ...]:
+def _materialize_rubrics(
+    values: Iterable[Any],
+) -> tuple[tuple[str, RubricSpecification], ...]:
     """Return bounded typed rubrics with each fingerprint computed exactly once."""
-    raw = _bounded_values(
+    raw = bounded_values(
         values,
         "rubrics",
         minimum=1,
@@ -230,8 +232,20 @@ def _materialize_rubrics(values: Iterable[Any]) -> tuple[tuple[str, RubricSpecif
     keyed: list[tuple[str, RubricSpecification]] = []
     for index, rubric in enumerate(raw):
         if not isinstance(rubric, RubricSpecification):
-            raise TypeError(f"rubrics[{index}] must be a RubricSpecification")
-        keyed.append((rubric.fingerprint, rubric))
+            raise assessment_error(
+                "invalid_rubric",
+                f"$.rubrics[{index}]",
+                "rubric entries must be RubricSpecification values",
+            )
+        try:
+            rubric_fingerprint = rubric.fingerprint
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise assessment_error(
+                "invalid_rubric_fingerprint",
+                f"$.rubrics[{index}]",
+                "rubric fingerprint could not be computed safely",
+            ) from None
+        keyed.append((rubric_fingerprint, rubric))
     return tuple(sorted(keyed, key=lambda entry: entry[0]))
 
 
@@ -254,7 +268,11 @@ def _validate_policy_types(
     )
     for name, value, expected_type in expected:
         if not isinstance(value, expected_type):
-            raise TypeError(f"{name} must be a {expected_type.__name__}")
+            raise assessment_error(
+                f"invalid_{name}",
+                f"$.{name}",
+                f"{name} must use the package-owned policy contract",
+            )
 
 
 def _validate_policy_constructs(
@@ -266,7 +284,7 @@ def _validate_policy_constructs(
     known = set(construct_ids)
     for index, construct_id in enumerate(policy_construct_ids):
         if construct_id not in known:
-            raise AssessmentSpecError(
+            raise assessment_error(
                 "unknown_policy_construct",
                 f"$.{policy_name}.construct_ids[{index}]",
                 "policy construct reference is not declared by the assessment",
@@ -303,22 +321,22 @@ def build_assessment_spec(
 
     rubrics_by_fingerprint: dict[str, RubricSpecification] = {}
     fingerprints_by_id: dict[str, str] = {}
-    for fingerprint, rubric in normalized_rubrics:
-        if fingerprint in rubrics_by_fingerprint:
-            raise AssessmentSpecError(
+    for fingerprint_value, rubric in normalized_rubrics:
+        if fingerprint_value in rubrics_by_fingerprint:
+            raise assessment_error(
                 "duplicate_rubric_fingerprint",
                 "$.rubrics",
                 "rubric fingerprints must be unique",
             )
         prior = fingerprints_by_id.get(rubric.rubric_id)
-        if prior is not None and prior != fingerprint:
-            raise AssessmentSpecError(
+        if prior is not None and prior != fingerprint_value:
+            raise assessment_error(
                 "duplicate_rubric_id",
                 "$.rubrics",
                 "one rubric identifier cannot name multiple fingerprints",
             )
-        rubrics_by_fingerprint[fingerprint] = rubric
-        fingerprints_by_id[rubric.rubric_id] = fingerprint
+        rubrics_by_fingerprint[fingerprint_value] = rubric
+        fingerprints_by_id[rubric.rubric_id] = fingerprint_value
 
     referenced: set[str] = set()
     for construct_index, construct in enumerate(normalized_constructs):
@@ -331,13 +349,13 @@ def build_assessment_spec(
             )
             rubric = rubrics_by_fingerprint.get(rubric_fingerprint)
             if rubric is None:
-                raise AssessmentSpecError(
+                raise assessment_error(
                     "unknown_rubric_fingerprint",
                     path,
                     "rubric fingerprint is absent from the supplied registry",
                 )
             if rubric.construct_id != construct.construct_id:
-                raise AssessmentSpecError(
+                raise assessment_error(
                     "rubric_construct_mismatch",
                     path,
                     "rubric construct does not match the declared construct",
@@ -345,7 +363,7 @@ def build_assessment_spec(
             referenced.add(rubric_fingerprint)
 
     if set(rubrics_by_fingerprint).difference(referenced):
-        raise AssessmentSpecError(
+        raise assessment_error(
             "unused_rubric_fingerprint",
             "$.rubrics",
             "every supplied rubric must be bound to one declared construct",
@@ -391,6 +409,6 @@ def build_assessment_spec(
         monitoring_policy=monitoring_policy,
         reporting_policy=reporting_policy,
         metadata={} if metadata is None else metadata,
-        schema_version=SCHEMA_VERSION,
+        schema_version=ASSESSMENT_SCHEMA_VERSION,
         _assessment_token=_ASSESSMENT_SPEC_TOKEN,
     )
