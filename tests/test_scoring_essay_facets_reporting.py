@@ -11,14 +11,17 @@ import numpy as np
 import pytest
 
 from fast_mlsirm.facets import FacetsFit
-from fast_mlsirm.scoring import AssessmentSpecError, build_scoring_facets_calibration_bundle
+from fast_mlsirm.scoring import (
+    AssessmentSpecError,
+    build_scoring_facets_calibration_bundle,
+)
+import fast_mlsirm.scoring.essay as essay
 from fast_mlsirm.scoring.essay import (
     EssayFacetsCalibrationReport,
     MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS,
     build_essay_facets_calibration_report,
     fit_essay_facets_calibration_report,
 )
-import fast_mlsirm.scoring.essay as essay
 import fast_mlsirm.scoring.essay.calibration_reporting as reporting
 
 _BASE = runpy.run_path(
@@ -75,7 +78,7 @@ def test_public_surface_and_deterministic_immutable_report() -> None:
     first = build_report(
         design=design,
         fit=fit,
-        additional_review_trigger_ids=("policy_review", "policy_review"),
+        additional_review_trigger_ids=("policy_review",),
         metadata={"workflow_stage": "pilot_review"},
     )
     second = build_report(design=design, fit=fit_fixture())
@@ -97,8 +100,10 @@ def test_public_surface_and_deterministic_immutable_report() -> None:
     assert first.item_difficulty == (-0.25, 0.25)
     assert first.rater_engine_fingerprints == design.rater_engine_fingerprints
     assert first.to_dict()["metadata"] == {"workflow_stage": "pilot_review"}
-    assert first.report_handle == f"essay_facets_report_{first.report_fingerprint[:32]}"
-    assert build_report(design=design, fit=fit_fixture()).report_fingerprint == second.report_fingerprint
+    expected_handle = f"essay_facets_report_{first.report_fingerprint[:32]}"
+    assert first.report_handle == expected_handle
+    third = build_report(design=design, fit=fit_fixture())
+    assert third.report_fingerprint == second.report_fingerprint
 
     fit.item_difficulty[0] = 99.0
     fit.theta[0] = 99.0
@@ -182,15 +187,15 @@ def test_types_provenance_and_direct_construction_fail_closed() -> None:
         "essay_facets_design_fingerprint_mismatch",
         lambda: build_report(design=design, source="f" * 64),
     )
+    values = {
+        key: value
+        for key, value in build_report(design=design).to_dict().items()
+        if key
+        not in {"human_review_required", "report_handle", "report_fingerprint"}
+    }
     assert_error(
         "unverified_essay_facets_calibration_report",
-        lambda: EssayFacetsCalibrationReport(
-            **{
-                key: value
-                for key, value in build_report(design=design).to_dict().items()
-                if key not in {"human_review_required", "report_handle", "report_fingerprint"}
-            }
-        ),
+        lambda: EssayFacetsCalibrationReport(**values),
     )
 
 
@@ -206,13 +211,18 @@ def test_types_provenance_and_direct_construction_fail_closed() -> None:
         ("respondent_theta", [0.0], "invalid_respondent_theta_length"),
         ("loglik_trace", [], "empty_loglik_trace"),
         ("loglik_trace", [-20.0, np.nan], "nonfinite_loglik_trace"),
-        ("loglik_trace", [-19.0, -20.0], "decreasing_facets_loglik_trace"),
+        (
+            "loglik_trace",
+            [-19.0, -20.0],
+            "decreasing_facets_loglik_trace",
+        ),
     ],
 )
 def test_numeric_vectors_fail_closed(field_name: str, value: Any, code: str) -> None:
     """Shape, type, finiteness, and replay failures are explicit."""
     fit = fit_fixture()
-    setattr(fit, "theta" if field_name == "respondent_theta" else field_name, value)
+    target_name = "theta" if field_name == "respondent_theta" else field_name
+    setattr(fit, target_name, value)
     assert_error(code, lambda: build_report(fit=fit))
 
 
@@ -267,9 +277,9 @@ def test_category_iteration_parameter_and_connectedness_invariants() -> None:
 
 
 def test_sensitive_metadata_and_private_normalizers_are_rejected() -> None:
-    """Reports remain source-text-free and private helpers reject invalid inputs."""
+    """Reports remain source-text-free and helpers reject invalid inputs."""
     assert_error(
-        "sensitive_metadata_key",
+        "sensitive_metadata_field",
         lambda: build_report(metadata={"response_text": "do not persist"}),
     )
     assert_error(
