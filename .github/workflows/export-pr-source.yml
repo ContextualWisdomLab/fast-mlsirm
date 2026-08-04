@@ -1,0 +1,38 @@
+name: Export PR Source Snapshot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-pr-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export-source:
+    name: Export reviewed PR source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Build immutable source snapshot
+        run: |
+          git rev-parse HEAD > source-head-sha.txt
+          git archive --format=tar.gz --output=pr-source.tar.gz HEAD
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr-source-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            pr-source.tar.gz
+            source-head-sha.txt
+          if-no-files-found: error
+          retention-days: 1
