@@ -75,15 +75,24 @@ def test_same_response_id_with_changed_content_fails_closed() -> None:
 
 
 @pytest.mark.parametrize(
-    ("field_name", "private_value"),
+    ("field_name", "private_value", "expected_code"),
     (
-        ("respondent_id", "conflicting_respondent"),
-        ("task_id", "conflicting_task"),
+        (
+            "respondent_id",
+            "conflicting_respondent",
+            "response_provenance_conflict",
+        ),
+        (
+            "task_id",
+            "conflicting_task",
+            "task_revision_provenance_conflict",
+        ),
     ),
 )
 def test_response_identity_conflict_reports_the_changed_field(
     field_name: str,
     private_value: str,
+    expected_code: str,
 ) -> None:
     """Respondent and task rebinding identify the exact conflicting field."""
     records = list(connected_records())
@@ -107,7 +116,7 @@ def test_response_identity_conflict_reports_the_changed_field(
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "response_provenance_conflict"
+    assert caught.value.code == expected_code
     assert re.fullmatch(
         rf"\$\.records\[\d+\]\.{field_name}",
         caught.value.path,
