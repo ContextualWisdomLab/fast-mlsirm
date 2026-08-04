@@ -5,6 +5,8 @@ assessment-graph modules. This file preserves one stable internal import surface
 for the package namespace and future scoring components.
 """
 
+from ._contract_safety import artifact_digest as artifact_digest
+from ._contract_safety import canonical_json as canonical_json
 from ._validation import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from ._validation import (
     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
@@ -12,8 +14,6 @@ from ._validation import (
 from ._validation import MAX_METADATA_DEPTH as MAX_METADATA_DEPTH
 from ._validation import MAX_METADATA_NODES as MAX_METADATA_NODES
 from ._validation import AssessmentSpecError as AssessmentSpecError
-from ._validation import artifact_digest as artifact_digest
-from ._validation import canonical_json as canonical_json
 from .assessment import AssessmentResponseType as AssessmentResponseType
 from .assessment import AssessmentSpec as AssessmentSpec
 from .assessment import ConstructSpec as ConstructSpec
