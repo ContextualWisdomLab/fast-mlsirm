@@ -1,0 +1,30 @@
+name: Agent Source Snapshot
+
+on:
+  push:
+    branches:
+      - agent/source-snapshot-504
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-source-snapshot-504
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Create permission-preserving archive
+        run: tar --exclude=.git -cf fast-mlsirm-source.tar .
+      - name: Upload source archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: fast-mlsirm-source.tar
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
