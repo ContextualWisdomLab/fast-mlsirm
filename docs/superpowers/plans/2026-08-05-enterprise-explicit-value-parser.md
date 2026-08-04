@@ -81,6 +81,10 @@ Reject:
 - record counts above the bounded parser limit;
 - caller metadata containing raw/sensitive source fields.
 
+Private normalization helpers must route non-string decimal payloads through the
+same redacted `invalid_decimal_amount` assessment error used for malformed text;
+they must not leak implementation-specific `AttributeError` exceptions.
+
 All public identifiers must remain descriptive, nonnumeric, and at least two
 snake-case tokens. Public docstrings and statement/branch coverage for added code
 must be complete.
