@@ -333,7 +333,7 @@ def test_disconnected_design_requires_assembly_and_rejects_fit() -> None:
     """Disconnected designs may be audited but never enter the estimator."""
     records = disconnected_records()
     assert_error(
-        "disconnected_facets_design",
+        "unidentified_respondent_task_design",
         lambda: build_scoring_facets_calibration_bundle(records),
     )
     bundle = build_scoring_facets_calibration_bundle(
@@ -343,7 +343,7 @@ def test_disconnected_design_requires_assembly_and_rejects_fit() -> None:
     assert all(not design.connected for design in bundle.designs)
     for allow_disconnected in (False, True):
         assert_error(
-            "disconnected_facets_design",
+            "unidentified_respondent_task_design",
             lambda allow_disconnected=allow_disconnected: fit_scoring_facets_design(
                 bundle.designs[0], allow_disconnected=allow_disconnected
             ),
