@@ -1,0 +1,40 @@
+name: Render Scoring Facets Changelog Artifact
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/render-scoring-facets-changelog-artifact.yml
+      - CHANGELOG.md
+      - docs/changelog.d/**
+      - scripts/render_changelog_fragments.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-scoring-facets-changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Render and verify authoritative changelog
+        run: |
+          set -euo pipefail
+          python3 scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python3 scripts/render_changelog_fragments.py --check CHANGELOG.md
+      - name: Publish rendered changelog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rendered-scoring-facets-changelog-${{ github.event.pull_request.head.sha }}
+          path: CHANGELOG.md
+          if-no-files-found: error
+          retention-days: 1
