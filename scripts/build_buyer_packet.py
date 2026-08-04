@@ -13,6 +13,11 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 PRODUCT_DOCS = [
     "README.md",
@@ -48,11 +53,8 @@ def _sha256(path: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as fh:
-        payload = json.load(fh)
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _source_commit(repo_root: Path) -> str:
@@ -111,7 +113,11 @@ def _collect_files(
         benchmark_report = _read_json(benchmark_report_path)
         _add_file(files, "benchmark/benchmark_report.json", benchmark_report_path)
         html_report_file = benchmark_report.get("html_report_file")
-        html_report_path = Path(str(html_report_file)) if isinstance(html_report_file, str) and html_report_file else None
+        html_report_path = (
+            Path(str(html_report_file))
+            if isinstance(html_report_file, str) and html_report_file
+            else None
+        )
         if html_report_path is not None and not html_report_path.is_absolute():
             html_report_path = benchmark_report_path.parent / html_report_path
         if html_report_path is None:
@@ -120,9 +126,15 @@ def _collect_files(
 
     if release_evidence_index_path is not None:
         release_index = _read_json(release_evidence_index_path)
-        _add_file(files, "release/release_evidence_index.json", release_evidence_index_path)
+        _add_file(
+            files, "release/release_evidence_index.json", release_evidence_index_path
+        )
         html_report_file = release_index.get("html_report_file")
-        html_report_path = Path(str(html_report_file)) if isinstance(html_report_file, str) and html_report_file else None
+        html_report_path = (
+            Path(str(html_report_file))
+            if isinstance(html_report_file, str) and html_report_file
+            else None
+        )
         if html_report_path is not None and not html_report_path.is_absolute():
             html_report_path = release_evidence_index_path.parent / html_report_path
         if html_report_path is None:
@@ -157,15 +169,23 @@ def _coverage(files: dict[str, Path]) -> dict[str, bool]:
     return {
         "acceptance_summary": "acceptance/acceptance_summary.json" in files,
         "sales_readiness_manifest": "sales/sales_readiness_manifest.json" in files,
-        "wheel": any(path.startswith("dist/") and path.endswith(".whl") for path in files),
-        "sdist": any(path.startswith("dist/") and path.endswith(".tar.gz") for path in files),
+        "wheel": any(
+            path.startswith("dist/") and path.endswith(".whl") for path in files
+        ),
+        "sdist": any(
+            path.startswith("dist/") and path.endswith(".tar.gz") for path in files
+        ),
         "product_docs": all(relative in files for relative in PRODUCT_DOCS),
         "product_manifests": all(relative in files for relative in PRODUCT_MANIFESTS),
-        "acceptance_artifacts": any(path.startswith("acceptance/artifacts/") for path in files),
+        "acceptance_artifacts": any(
+            path.startswith("acceptance/artifacts/") for path in files
+        ),
         "html_report": "buyer_evidence_report.html" in files,
-        "benchmark_report": "benchmark/benchmark_report.json" in files and "benchmark/benchmark_report.html" in files,
+        "benchmark_report": "benchmark/benchmark_report.json" in files
+        and "benchmark/benchmark_report.html" in files,
         "release_evidence_index": (
-            "release/release_evidence_index.json" in files and "release/release_evidence_index.html" in files
+            "release/release_evidence_index.json" in files
+            and "release/release_evidence_index.html" in files
         ),
     }
 
@@ -191,7 +211,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
                 "\n".join(
                     [
                         "<tr>",
-                        f"<th scope=\"row\">{escape(name.replace('_', ' ').title())}</th>",
+                        f'<th scope="row">{escape(name.replace("_", " ").title())}</th>',
                         f"<td>{escape(_format_value(ok))}</td>",
                         "</tr>",
                     ]
@@ -207,7 +227,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
                 "\n".join(
                     [
                         "<tr>",
-                        f"<th scope=\"row\">{escape(str(item.get('archive_path', '')))}</th>",
+                        f'<th scope="row">{escape(str(item.get("archive_path", "")))}</th>',
                         f"<td>{escape(str(item.get('size_bytes', '')))}</td>",
                         f"<td><code>{escape(str(item.get('sha256', '')))}</code></td>",
                         "</tr>",
@@ -225,7 +245,10 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
         ("Contract Value", contract_value_display),
         ("Artifact Count", manifest.get("artifact_count", "")),
         ("Source Commit", manifest.get("source_commit", "")),
-        ("Packet ZIP SHA256", manifest.get("zip_sha256", "calculated after archive write")),
+        (
+            "Packet ZIP SHA256",
+            manifest.get("zip_sha256", "calculated after archive write"),
+        ),
     ]
     card_markup = [
         "\n".join(
@@ -269,7 +292,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Required evidence coverage table" tabindex="0">',
             "<table>",
             "<caption>Required evidence coverage table</caption>",
-            "<thead><tr><th scope=\"col\">Evidence</th><th scope=\"col\">Status</th></tr></thead>",
+            '<thead><tr><th scope="col">Evidence</th><th scope="col">Status</th></tr></thead>',
             "<tbody>",
             *coverage_rows,
             "</tbody>",
@@ -281,7 +304,7 @@ def _render_report_html(manifest: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Artifact digest table" tabindex="0">',
             "<table>",
             "<caption>Artifact digest table</caption>",
-            "<thead><tr><th scope=\"col\">Archive Path</th><th scope=\"col\">Bytes</th><th scope=\"col\">SHA256</th></tr></thead>",
+            '<thead><tr><th scope="col">Archive Path</th><th scope="col">Bytes</th><th scope="col">SHA256</th></tr></thead>',
             "<tbody>",
             *file_rows,
             "</tbody>",
@@ -462,9 +485,13 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
         acceptance_path=Path(args.acceptance).resolve(),
         sales_readiness_path=Path(args.sales_readiness).resolve(),
         dist_dir=Path(args.dist).resolve(),
-        benchmark_report_path=Path(args.benchmark_report).resolve() if getattr(args, "benchmark_report", None) else None,
+        benchmark_report_path=Path(args.benchmark_report).resolve()
+        if getattr(args, "benchmark_report", None)
+        else None,
         release_evidence_index_path=(
-            Path(args.release_evidence_index).resolve() if getattr(args, "release_evidence_index", None) else None
+            Path(args.release_evidence_index).resolve()
+            if getattr(args, "release_evidence_index", None)
+            else None
         ),
     )
     file_entries = [
@@ -500,16 +527,22 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
     ]
     coverage = _coverage(files)
     optional_coverage = {"benchmark_report", "release_evidence_index"}
-    required_coverage = {name: ok for name, ok in coverage.items() if name not in optional_coverage}
+    required_coverage = {
+        name: ok for name, ok in coverage.items() if name not in optional_coverage
+    }
     if not all(required_coverage.values()):
         missing = [name for name, ok in required_coverage.items() if not ok]
-        raise RuntimeError(f"buyer evidence packet is missing required coverage: {missing}")
+        raise RuntimeError(
+            f"buyer evidence packet is missing required coverage: {missing}"
+        )
     manifest["coverage"] = coverage
     manifest["artifact_count"] = len(file_entries)
     manifest["files"] = file_entries
     manifest["report_file"] = str(report_path)
     manifest["report_sha256"] = _sha256(report_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as packet:
         for archive_path, path in sorted(files.items()):
@@ -520,20 +553,51 @@ def build_packet(args: argparse.Namespace) -> dict[str, Any]:
     manifest["zip_sha256"] = _sha256(zip_path)
     report_path.write_text(_render_report_html(manifest), encoding="utf-8")
     manifest["report_sha256"] = _sha256(report_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     return manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build a portable fast-mlsirm buyer evidence packet.")
-    parser.add_argument("--repo-root", default=".", help="Repository root containing docs and demo manifests.")
-    parser.add_argument("--acceptance", required=True, help="Path to acceptance_summary.json.")
-    parser.add_argument("--sales-readiness", required=True, help="Path to sales_readiness_manifest.json.")
-    parser.add_argument("--dist", required=True, help="Directory containing the built wheel and sdist.")
-    parser.add_argument("--out", default="buyer-evidence-packet", help="Output directory for packet files.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
-    parser.add_argument("--benchmark-report", help="Optional benchmark_report.json to include in the packet.")
-    parser.add_argument("--release-evidence-index", help="Optional release_evidence_index.json to include in the packet.")
+    parser = argparse.ArgumentParser(
+        description="Build a portable fast-mlsirm buyer evidence packet."
+    )
+    parser.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root containing docs and demo manifests.",
+    )
+    parser.add_argument(
+        "--acceptance", required=True, help="Path to acceptance_summary.json."
+    )
+    parser.add_argument(
+        "--sales-readiness",
+        required=True,
+        help="Path to sales_readiness_manifest.json.",
+    )
+    parser.add_argument(
+        "--dist", required=True, help="Directory containing the built wheel and sdist."
+    )
+    parser.add_argument(
+        "--out",
+        default="buyer-evidence-packet",
+        help="Output directory for packet files.",
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
+    parser.add_argument(
+        "--benchmark-report",
+        help="Optional benchmark_report.json to include in the packet.",
+    )
+    parser.add_argument(
+        "--release-evidence-index",
+        help="Optional release_evidence_index.json to include in the packet.",
+    )
     return parser
 
 
@@ -550,7 +614,9 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": manifest["status"],
                 "out": str(Path(args.out).resolve()),
-                "manifest": str(Path(args.out).resolve() / "buyer_evidence_manifest.json"),
+                "manifest": str(
+                    Path(args.out).resolve() / "buyer_evidence_manifest.json"
+                ),
                 "report": str(Path(args.out).resolve() / "buyer_evidence_report.html"),
                 "zip": manifest["zip_file"],
             },

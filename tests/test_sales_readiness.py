@@ -6,8 +6,10 @@ import zipfile
 from pathlib import Path
 
 
+import sys
 def _load_sales_readiness():
     script = Path(__file__).resolve().parents[1] / "scripts" / "sales_readiness.py"
+    sys.path.insert(0, str(script.parent.parent))
     spec = importlib.util.spec_from_file_location("sales_readiness", script)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)

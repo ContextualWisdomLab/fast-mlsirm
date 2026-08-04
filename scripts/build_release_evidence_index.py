@@ -12,6 +12,11 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts._bounded_json import read_json_object
+except ModuleNotFoundError:
+    from _bounded_json import read_json_object
+
 
 REQUIRED_COVERAGE = {
     "acceptance_summary",
@@ -27,11 +32,8 @@ REQUIRED_COVERAGE = {
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as fh:
-        payload = json.load(fh)
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"JSON artifact must be an object: {path}")
-    return payload
+    """Read one descriptor-safe bounded JSON object from disk."""
+    return read_json_object(path)
 
 
 def _sha256(path: Path) -> str:
@@ -127,14 +129,16 @@ def _format_value(value: Any) -> str:
     return str(value)
 
 
-def _render_rows(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> list[str]:
+def _render_rows(
+    rows: list[dict[str, Any]], columns: list[tuple[str, str]]
+) -> list[str]:
     rendered = []
     for row in rows:
         cells = []
         for key, _label in columns:
             value = escape(_format_value(row.get(key)))
             if not cells:
-                cells.append(f"<th scope=\"row\">{value}</th>")
+                cells.append(f'<th scope="row">{value}</th>')
             else:
                 cells.append(f"<td>{value}</td>")
         rendered.append("<tr>" + "".join(cells) + "</tr>")
@@ -148,7 +152,7 @@ def _render_report_html(index: dict[str, Any]) -> str:
         for name, ok in sorted(coverage.items()):
             coverage_rows.append(
                 "<tr>"
-                f"<th scope=\"row\">{escape(name.replace('_', ' ').title())}</th>"
+                f'<th scope="row">{escape(name.replace("_", " ").title())}</th>'
                 f"<td>{escape(_format_value(ok))}</td>"
                 "</tr>"
             )
@@ -164,11 +168,26 @@ def _render_report_html(index: dict[str, Any]) -> str:
     )
     cards = [
         ("Status", index.get("status", "")),
-        ("Contract Value", f"KRW {index.get('contract_value_krw', ''):,}" if isinstance(index.get("contract_value_krw"), int) else ""),
+        (
+            "Contract Value",
+            f"KRW {index.get('contract_value_krw', ''):,}"
+            if isinstance(index.get("contract_value_krw"), int)
+            else "",
+        ),
         ("Version", index.get("project_version", "")),
         ("Source Commit", index.get("source_commit", "")),
-        ("Dist Artifacts", len(index.get("dist", {}).get("artifacts", [])) if isinstance(index.get("dist"), dict) else ""),
-        ("Failed Checks", len(index.get("failures", [])) if isinstance(index.get("failures"), list) else ""),
+        (
+            "Dist Artifacts",
+            len(index.get("dist", {}).get("artifacts", []))
+            if isinstance(index.get("dist"), dict)
+            else "",
+        ),
+        (
+            "Failed Checks",
+            len(index.get("failures", []))
+            if isinstance(index.get("failures"), list)
+            else "",
+        ),
     ]
     card_markup = [
         "\n".join(
@@ -216,7 +235,7 @@ def _render_report_html(index: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Required evidence coverage table" tabindex="0">',
             "<table>",
             "<caption>Required evidence coverage table</caption>",
-            "<thead><tr><th scope=\"col\">Evidence</th><th scope=\"col\">Status</th></tr></thead>",
+            '<thead><tr><th scope="col">Evidence</th><th scope="col">Status</th></tr></thead>',
             "<tbody>",
             *coverage_rows,
             "</tbody>",
@@ -228,7 +247,7 @@ def _render_report_html(index: dict[str, Any]) -> str:
             '<div class="table-wrap" role="region" aria-label="Release artifact digest table" tabindex="0">',
             "<table>",
             "<caption>Release artifact digest table</caption>",
-            "<thead><tr><th scope=\"col\">Role</th><th scope=\"col\">Name</th><th scope=\"col\">Bytes</th><th scope=\"col\">SHA256</th></tr></thead>",
+            '<thead><tr><th scope="col">Role</th><th scope="col">Name</th><th scope="col">Bytes</th><th scope="col">SHA256</th></tr></thead>',
             "<tbody>",
             *file_rows,
             "</tbody>",
@@ -417,9 +436,15 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
     benchmark = _read_json(benchmark_path)
     buyer_packet = _read_json(buyer_packet_path)
 
-    benchmark_html = _resolve_artifact_path(benchmark.get("html_report_file"), base=benchmark_path.parent)
-    buyer_zip = _resolve_artifact_path(buyer_packet.get("zip_file"), base=buyer_packet_path.parent)
-    buyer_html = _resolve_artifact_path(buyer_packet.get("report_file"), base=buyer_packet_path.parent)
+    benchmark_html = _resolve_artifact_path(
+        benchmark.get("html_report_file"), base=benchmark_path.parent
+    )
+    buyer_zip = _resolve_artifact_path(
+        buyer_packet.get("zip_file"), base=buyer_packet_path.parent
+    )
+    buyer_html = _resolve_artifact_path(
+        buyer_packet.get("report_file"), base=buyer_packet_path.parent
+    )
     dist_artifacts = _dist_entries(dist_dir)
 
     files: list[dict[str, Any]] = []
@@ -449,23 +474,46 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
         "acceptance_summary": acceptance_path.exists() and acceptance_path.is_file(),
         "sales_readiness_manifest": sales_path.exists() and sales_path.is_file(),
         "benchmark_report": benchmark_path.exists() and benchmark_path.is_file(),
-        "benchmark_html_report": benchmark_html is not None and benchmark_html.exists() and benchmark_html.is_file(),
-        "buyer_packet_manifest": buyer_packet_path.exists() and buyer_packet_path.is_file(),
-        "buyer_packet_zip": buyer_zip is not None and buyer_zip.exists() and buyer_zip.is_file(),
-        "buyer_packet_html_report": buyer_html is not None and buyer_html.exists() and buyer_html.is_file(),
+        "benchmark_html_report": benchmark_html is not None
+        and benchmark_html.exists()
+        and benchmark_html.is_file(),
+        "buyer_packet_manifest": buyer_packet_path.exists()
+        and buyer_packet_path.is_file(),
+        "buyer_packet_zip": buyer_zip is not None
+        and buyer_zip.exists()
+        and buyer_zip.is_file(),
+        "buyer_packet_html_report": buyer_html is not None
+        and buyer_html.exists()
+        and buyer_html.is_file(),
         "wheel": any(entry.get("kind") == "wheel" for entry in dist_artifacts),
         "sdist": any(entry.get("kind") == "sdist" for entry in dist_artifacts),
     }
 
-    benchmark_html_sha = _sha256(benchmark_html) if coverage["benchmark_html_report"] and benchmark_html is not None else None
+    benchmark_html_sha = (
+        _sha256(benchmark_html)
+        if coverage["benchmark_html_report"] and benchmark_html is not None
+        else None
+    )
     if benchmark_html_sha != benchmark.get("html_report_sha256"):
         failures.append("benchmark HTML SHA256 does not match benchmark_report.json")
-    buyer_zip_sha = _sha256(buyer_zip) if coverage["buyer_packet_zip"] and buyer_zip is not None else None
+    buyer_zip_sha = (
+        _sha256(buyer_zip)
+        if coverage["buyer_packet_zip"] and buyer_zip is not None
+        else None
+    )
     if buyer_zip_sha != buyer_packet.get("zip_sha256"):
-        failures.append("buyer packet ZIP SHA256 does not match buyer_evidence_manifest.json")
-    buyer_html_sha = _sha256(buyer_html) if coverage["buyer_packet_html_report"] and buyer_html is not None else None
+        failures.append(
+            "buyer packet ZIP SHA256 does not match buyer_evidence_manifest.json"
+        )
+    buyer_html_sha = (
+        _sha256(buyer_html)
+        if coverage["buyer_packet_html_report"] and buyer_html is not None
+        else None
+    )
     if buyer_html_sha != buyer_packet.get("report_sha256"):
-        failures.append("buyer packet HTML SHA256 does not match buyer_evidence_manifest.json")
+        failures.append(
+            "buyer packet HTML SHA256 does not match buyer_evidence_manifest.json"
+        )
 
     if acceptance.get("status") != "ok":
         failures.append("acceptance_summary.json status is not ok")
@@ -475,9 +523,13 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
         failures.append("benchmark_report.json status or budget is not ok")
     if buyer_packet.get("status") != "ok":
         failures.append("buyer_evidence_manifest.json status is not ok")
-    missing_coverage = [name for name in sorted(REQUIRED_COVERAGE) if coverage.get(name) is not True]
+    missing_coverage = [
+        name for name in sorted(REQUIRED_COVERAGE) if coverage.get(name) is not True
+    ]
     if missing_coverage:
-        failures.append(f"missing required release evidence coverage: {missing_coverage}")
+        failures.append(
+            f"missing required release evidence coverage: {missing_coverage}"
+        )
 
     index: dict[str, Any] = {
         "command": "build_release_evidence_index",
@@ -490,20 +542,28 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
         "coverage": coverage,
         "dist": {
             "directory": str(dist_dir),
-            "wheel_count": sum(1 for entry in dist_artifacts if entry.get("kind") == "wheel"),
-            "sdist_count": sum(1 for entry in dist_artifacts if entry.get("kind") == "sdist"),
+            "wheel_count": sum(
+                1 for entry in dist_artifacts if entry.get("kind") == "wheel"
+            ),
+            "sdist_count": sum(
+                1 for entry in dist_artifacts if entry.get("kind") == "sdist"
+            ),
             "artifacts": dist_artifacts,
         },
         "acceptance": {
             "file": str(acceptance_path),
             "status": acceptance.get("status"),
             "total_duration_seconds": acceptance.get("total_duration_seconds"),
-            "command_count": len([step for step in acceptance.get("steps", []) if isinstance(step, dict)]),
+            "command_count": len(
+                [step for step in acceptance.get("steps", []) if isinstance(step, dict)]
+            ),
         },
         "sales_readiness": {
             "file": str(sales_path),
             "status": sales.get("status"),
-            "failed_check_count": len(sales.get("failed_checks", [])) if isinstance(sales.get("failed_checks"), list) else None,
+            "failed_check_count": len(sales.get("failed_checks", []))
+            if isinstance(sales.get("failed_checks"), list)
+            else None,
             "require_20b_product": sales.get("require_20b_product"),
             "require_buyer_packet": sales.get("require_buyer_packet"),
             "require_benchmark_report": sales.get("require_benchmark_report"),
@@ -514,7 +574,9 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
             "budget_ok": benchmark.get("budget_ok"),
             "runtime_budget_seconds": benchmark.get("runtime_budget_seconds"),
             "total_duration_seconds": benchmark.get("total_duration_seconds"),
-            "html_report_file": str(benchmark_html) if benchmark_html is not None else None,
+            "html_report_file": str(benchmark_html)
+            if benchmark_html is not None
+            else None,
             "html_report_sha256": benchmark.get("html_report_sha256"),
         },
         "buyer_packet": {
@@ -526,11 +588,16 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
             "report_file": str(buyer_html) if buyer_html is not None else None,
             "report_sha256": buyer_packet.get("report_sha256"),
         },
-        "files": sorted(files, key=lambda item: (str(item.get("role", "")), str(item.get("name", "")))),
+        "files": sorted(
+            files,
+            key=lambda item: (str(item.get("role", "")), str(item.get("name", ""))),
+        ),
         "failures": sorted(set(failures)),
         "html_report_file": str(html_path),
     }
-    index["status"] = "ok" if not index["failures"] and all(index["coverage"].values()) else "failed"
+    index["status"] = (
+        "ok" if not index["failures"] and all(index["coverage"].values()) else "failed"
+    )
     html_path.write_text(_render_report_html(index), encoding="utf-8")
     index["html_report_sha256"] = _sha256(html_path)
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
@@ -538,15 +605,46 @@ def build_index(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build a release evidence index for fast-mlsirm.")
-    parser.add_argument("--repo-root", default=".", help="Repository root used to record source commit and version.")
-    parser.add_argument("--acceptance", required=True, help="Path to acceptance_summary.json.")
-    parser.add_argument("--sales-readiness", required=True, help="Path to sales_readiness_manifest.json.")
-    parser.add_argument("--benchmark-report", required=True, help="Path to benchmark_report.json.")
-    parser.add_argument("--buyer-packet-manifest", required=True, help="Path to buyer_evidence_manifest.json.")
-    parser.add_argument("--dist", required=True, help="Directory containing release wheel and sdist artifacts.")
-    parser.add_argument("--out", default="release-evidence-index", help="Output directory for release evidence index files.")
-    parser.add_argument("--contract-value-krw", type=int, default=2_000_000_000, help="Target contract value.")
+    parser = argparse.ArgumentParser(
+        description="Build a release evidence index for fast-mlsirm."
+    )
+    parser.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root used to record source commit and version.",
+    )
+    parser.add_argument(
+        "--acceptance", required=True, help="Path to acceptance_summary.json."
+    )
+    parser.add_argument(
+        "--sales-readiness",
+        required=True,
+        help="Path to sales_readiness_manifest.json.",
+    )
+    parser.add_argument(
+        "--benchmark-report", required=True, help="Path to benchmark_report.json."
+    )
+    parser.add_argument(
+        "--buyer-packet-manifest",
+        required=True,
+        help="Path to buyer_evidence_manifest.json.",
+    )
+    parser.add_argument(
+        "--dist",
+        required=True,
+        help="Directory containing release wheel and sdist artifacts.",
+    )
+    parser.add_argument(
+        "--out",
+        default="release-evidence-index",
+        help="Output directory for release evidence index files.",
+    )
+    parser.add_argument(
+        "--contract-value-krw",
+        type=int,
+        default=2_000_000_000,
+        help="Target contract value.",
+    )
     return parser
 
 

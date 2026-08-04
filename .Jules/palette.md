@@ -20,3 +20,6 @@
 ## 2026-08-04 - Focus Visible For Scrollable Code Blocks
 **Learning:** Code blocks (`<pre>`) that contain wide text (like JSON or CSV exports) require horizontal scrolling, but by default they cannot receive keyboard focus, locking keyboard-only users out of viewing the full content.
 **Action:** Always add `tabindex="0"`, `role="region"`, `aria-label`, and a `:focus-visible` outline to scrollable `<pre>` or code containers to ensure full keyboard navigability and clear visual focus feedback.
+## 2026-08-04 - Status Semantics and Numeric Alignment for Reports
+**Learning:** Explicit status semantics can make conditionally rendered empty states easier to discover with assistive technology, while tabular numerals improve visual comparison of metric columns. Focus-reveal behavior must not depend only on `:focus-visible`, and hover styling must not reduce the contrast of unrelated rows.
+**Action:** Use `role="status"` for genuine conditionally rendered status messages, apply `font-variant-numeric: tabular-nums` to numeric report tables, reveal skip links on `:focus`, retain a visible `:focus-visible` indicator, and avoid opacity-based dimming of non-hovered content.

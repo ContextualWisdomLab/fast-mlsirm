@@ -6,6 +6,12 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Accessible standalone essay facets-calibration artifacts
+
+- Added `render_essay_facets_calibration_report_html`, which replay-verifies one governed `EssayFacetsCalibrationReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
+- The artifact exposes exact report, design, assessment, rubric, construct, occasion, criterion, respondent, task-revision, rater-engine, category, estimate, convergence, connectedness, iteration, and review-trigger evidence through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
+- A restrictive meta-delivered Content Security Policy and output encoding reduce injection impact; convergence and connectedness remain integrity prerequisites and do not establish model fit, reliability, fairness, scorer interchangeability, construct validity, global optimality, or deployment authorization.
+
 #### Governed essay many-facet calibration reports
 
 - Added source-text-free, provenance-bound essay many-facet calibration reports that preserve exact criterion, respondent, task-revision, engine, category, Rust-fit, convergence, connectedness, and iteration evidence without cross-criterion averaging or validity claims.
@@ -16,6 +22,7 @@
 
 - Added `render_essay_score_report_html`, which replay-verifies one governed `EssayScoreReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
 - The artifact exposes exact report, assessment, rubric, task-revision, engine, request, result, observation, criterion, trigger, and evidence-reference identities through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
+- Empty states use explicit status semantics, numeric table cells use tabular numerals, skip links remain visible for any received focus, and motion-sensitive users receive a reduced-motion override without dimming non-hovered report rows.
 - A restrictive meta-delivered Content Security Policy and output encoding reduce content-injection impact. Review routing remains an audit signal only and does not establish scoring validity, fairness, reliability, interchangeability, accessibility conformance, security certification, or authorization for consequential deployment.
 
 #### Provenance-bound essay score reports
@@ -23,6 +30,12 @@
 - Added a provider-neutral, content-addressed `EssayScoreReport` adapter over the existing governed essay request, shared scoring result, and engine descriptor.
 - Report construction replays exact request, engine, assessment, rubric, construct, granularity, and criterion provenance before emission.
 - Submission review flags, terminal observations, and scored observations without evidence now produce non-suppressible transparent human-review triggers. The report preserves criteria separately and explicitly does not treat absence of a trigger as validity or deployment evidence.
+
+#### Accessible standalone essay validation evidence artifacts
+
+- Added `render_essay_validation_evidence_report_html`, which revalidates one governed `EssayValidationEvidenceReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
+- The artifact exposes exact report, assessment, construct, rubric, validation-dataset, automated-engine, human-reference, metric, review-trigger, and interpretation-boundary values through semantic landmarks, keyboard-accessible exact-value tables, and canonical JSON.
+- A restrictive meta-delivered Content Security Policy and output encoding reduce injection impact; the artifact deliberately excludes score-label vectors, universal thresholds, Boolean pass fields, validity, fairness, model-selection claims, and deployment authorization.
 
 #### Governed automated-essay validation evidence reports
 
@@ -48,6 +61,17 @@
 - Scoring-request wire schema `1.1` now requires an exact provider-neutral `task_revision_fingerprint` in addition to the logical task identifier. The fingerprint participates in request identity, is propagated by the essay adapter from the complete prompt fingerprint, and prevents changed task content from being silently pooled under one request or calibration item.
 - Criterion-level many-facet handoffs now use exact task revisions as the Rust estimator item axis while retaining aligned logical task and task-family labels for audit. Duplicate cells, support, resource bounds, respondent–item connectedness, item–rater connectedness, and response provenance are all revision-indexed; one revision cannot be rebound to a different logical task or family.
 - Added an explicit, fail-closed schema-`1.0` request migration that verifies canonical content, fingerprint, public handle, and the authoritative engine-policy projection; requires a caller-supplied task revision; preserves normalized caller metadata; and intentionally does not migrate legacy observations or results. Content identity prevents accidental pooling but does not establish cross-revision comparability, which still requires anchors, invariance/DIF, drift, and recovery evidence.
+
+### Security
+
+#### Descriptor-safe bounded JSON input for automation scripts
+
+- Consolidated governed automation JSON readers behind a descriptor-safe shared
+  loader with a 32 MiB inclusive byte bound and a non-recursive 128-level depth
+  bound.
+- Rejected symbolic links, FIFOs, directories, path replacement, invalid UTF-8,
+  malformed JSON, non-object roots, oversized input, and excessive nesting with
+  deterministic tests.
 <!-- END AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ## [0.7.0] - 2026-08-04
 

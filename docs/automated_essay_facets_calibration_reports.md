@@ -16,7 +16,7 @@ The report retains:
 - the complete finite log-likelihood trace, iteration count, convergence flag, connectedness flags, and parameter count;
 - deterministic report fingerprints, public handles, policy metadata, and review-trigger identifiers.
 
-No prompt text, response text, evidence text, or source content is persisted. The shared metadata safety boundary rejects sensitive content keys.
+Respondent identifiers and exact task-revision and engine fingerprints are unique axes. Logical task, task-family, engine, and engine-family labels may repeat when several exact revisions or engines share the same governed identity. No prompt text, response text, evidence text, or source content is persisted. The shared metadata safety boundary rejects sensitive content keys.
 
 ## Fail-closed replay checks
 
@@ -30,7 +30,7 @@ Report construction rejects:
 - a parameter count that differs from the Rust model contract;
 - connectedness that differs between the source design and returned fit.
 
-These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
+The standalone HTML renderer repeats the numeric, axis, identity, parameter-count, iteration, monotonic-trace, and connectedness checks before serialization. This guards against post-construction mutation or malformed deserialization. These are integrity and replay checks. A monotone trace or converged optimizer does not establish a global optimum, model fit, score reliability, construct validity, fairness, rater interchangeability, or appropriate operational use. Quadrature size, iteration limits, and numerical tolerances are estimator controls rather than evidence of solution uniqueness or global optimality.
 
 ## Human-review routing
 
@@ -41,6 +41,20 @@ The following structural triggers are mandatory and cannot be removed by callers
 
 Callers may add organization-specific policy triggers. The absence of a trigger is not evidence that an automated essay score is valid or safe for consequential decisions.
 
+## Standalone HTML audit artifact
+
+`render_essay_facets_calibration_report_html` writes a deterministic standalone artifact containing exact report, design, assessment, rubric, construct, occasion, criterion, respondent, task-revision, rater-engine, category, estimate, convergence, connectedness, iteration, and review-trigger evidence. It intentionally excludes source text and does not produce fit, reliability, fairness, scoreability, global-optimum, or deployment decisions. The renderer does not invent a backend implementation identifier: backend provenance must be established by the governed fit path and deployment evidence rather than inferred from a report payload.
+
+The artifact is designed for audit review rather than interactive decision automation:
+
+- no JavaScript or external network resource is loaded;
+- a restrictive meta-delivered Content Security Policy permits only inline styling and data images;
+- caller-controlled titles and report values are HTML-escaped;
+- semantic headings, definition lists, captions, column headers, a skip link, keyboard-focusable overflow regions, and exact visible values support accessible review;
+- canonical deterministic JSON is embedded for reconstruction without hover interactions.
+
+A meta-delivered policy is defense in depth, not a substitute for output encoding or safe hosting controls. When the artifact is served over HTTP, operators should also set an equivalent or stricter `Content-Security-Policy` response header.
+
 ## Interpretation boundary
 
 The current Rust many-facet baseline estimates respondent proficiency, task-revision difficulty, common category thresholds, and rater severity within one criterion. Criteria remain separate. The report does not emit a holistic score, severity ordering, difficulty ordering, discrimination estimate, range-compression diagnosis, drift estimate, fairness conclusion, DIF result, or model preference.
@@ -50,7 +64,10 @@ The model uses marginal maximum likelihood with a fixed standard-normal trait di
 ## Example
 
 ```python
-from fast_mlsirm.scoring.essay import fit_essay_facets_calibration_report
+from fast_mlsirm.scoring.essay import (
+    fit_essay_facets_calibration_report,
+    render_essay_facets_calibration_report_html,
+)
 
 report = fit_essay_facets_calibration_report(
     report_id="claim_support_calibration_report",
@@ -63,6 +80,11 @@ report = fit_essay_facets_calibration_report(
 
 payload = report.to_dict()
 assert payload["criterion_id"] == criterion_design.criterion_id
+
+render_essay_facets_calibration_report_html(
+    report,
+    "artifacts/claim_support_calibration_report.html",
+)
 ```
 
 ## Equation-to-source traceability
@@ -87,3 +109,7 @@ Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation of item
 Eckes, T. (2015). *Introduction to many-facet Rasch measurement* (2nd ed.). Peter Lang. https://doi.org/10.3726/978-3-653-04844-5
 
 Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
+
+World Wide Web Consortium. (2024, December 12). *Web Content Accessibility Guidelines (WCAG) 2.2* (W3C Recommendation). https://www.w3.org/TR/WCAG22/
+
+World Wide Web Consortium. (2026, May 5). *Content Security Policy Level 3* (W3C Working Draft). https://www.w3.org/TR/CSP3/
