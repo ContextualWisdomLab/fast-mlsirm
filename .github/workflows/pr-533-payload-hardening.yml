@@ -1,0 +1,139 @@
+name: PR 533 payload hardening
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Configure Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Harden payload validation and add regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          implementation = Path("python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py")
+          text = implementation.read_text(encoding="utf-8")
+          before = '''        payload = thaw_json_value(freeze_metadata(value))
+                  if self.value_kind in {
+          '''
+          after = '''        payload = thaw_json_value(freeze_metadata(value))
+                  if type(payload) is not dict:
+                      self._payload_error("normalized_payload must be a mapping")
+                  if self.value_kind in {
+          '''
+          if before not in text:
+              raise SystemExit("normalized payload insertion point not found")
+          text = text.replace(before, after, 1)
+
+          before = '''            if payload["frequency_period"] not in {
+                      "day",
+                      "week",
+                      "month",
+                      "quarter",
+                      "year",
+                  }:
+                      self._payload_error("frequency_period must be supported")
+          '''
+          after = '''            period = payload["frequency_period"]
+                  if type(period) is not str or period not in {
+                      "day",
+                      "week",
+                      "month",
+                      "quarter",
+                      "year",
+                  }:
+                      self._payload_error("frequency_period must be supported")
+          '''
+          if before not in text:
+              raise SystemExit("frequency period validation block not found")
+          implementation.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+          tests = Path("tests/test_scoring_enterprise_explicit_values.py")
+          test_text = tests.read_text(encoding="utf-8")
+          before = '''    (
+                  (ExplicitValueKind.CALENDAR_DATE, {}),
+                  (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
+          '''
+          after = '''    (
+                  (ExplicitValueKind.CALENDAR_DATE, []),
+                  (ExplicitValueKind.CALENDAR_DATE, {}),
+                  (ExplicitValueKind.CALENDAR_DATE, {"calendar_date": 1}),
+          '''
+          if before not in test_text:
+              raise SystemExit("payload case insertion point not found")
+          test_text = test_text.replace(before, after, 1)
+          before = '''        (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": "decade"},
+                  ),
+          '''
+          after = '''        (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": []},
+                  ),
+                  (
+                      ExplicitValueKind.FREQUENCY_COUNT,
+                      {"frequency_count": 1, "frequency_period": "decade"},
+                  ),
+          '''
+          if before not in test_text:
+              raise SystemExit("frequency payload case insertion point not found")
+          test_text = test_text.replace(before, after, 1)
+          before = '''    payload: dict[str, Any],
+          ) -> None:
+          '''
+          after = '''    payload: Any,
+          ) -> None:
+          '''
+          if before not in test_text:
+              raise SystemExit("payload annotation not found")
+          tests.write_text(test_text.replace(before, after, 1), encoding="utf-8")
+          PY
+
+      - name: Install focused dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Verify payload regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff format --check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          ruff check python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          pytest tests/test_scoring_enterprise_explicit_values.py
+
+      - name: Commit hardening and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-payload-hardening.yml
+          git add python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          git diff --cached --check
+          git commit -m "fix(enterprise): harden explicit payload validation"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
