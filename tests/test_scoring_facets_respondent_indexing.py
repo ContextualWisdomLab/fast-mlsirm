@@ -43,6 +43,11 @@ def _project_rows(rows, *, rater_selector=None):
                         response_id=response_id,
                         respondent_id=respondent_id,
                         task_id=task_id,
+                        task_revision_fingerprint=(
+                            "1" * 64
+                            if task_id == "prompt_alpha"
+                            else "2" * 64
+                        ),
                         engine=engine,
                         claim_score=(base_score + rater_index) % 3,
                         source_score=(2 - base_score + rater_index) % 3,
@@ -119,6 +124,7 @@ def test_person_axis_is_unique_respondent_not_response_identity() -> None:
             == {
                 "respondent_id",
                 "task_id",
+                "task_revision_fingerprint",
                 "response_id",
                 "response_content_fingerprint",
             }
@@ -203,7 +209,7 @@ def test_one_task_with_multiple_respondents_is_not_an_identified_task_design() -
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "insufficient_facets_tasks"
+    assert caught.value.code == "insufficient_facets_task_revisions"
     assert caught.value.path == "$.records"
 
 
@@ -292,7 +298,7 @@ def test_respondent_task_cell_binds_one_response_revision() -> None:
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "respondent_task_response_conflict"
+    assert caught.value.code == "respondent_task_revision_response_conflict"
     assert caught.value.path.endswith(".response_id")
     assert private_digest not in str(caught.value)
 
