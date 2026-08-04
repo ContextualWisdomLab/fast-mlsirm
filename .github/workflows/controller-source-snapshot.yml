@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - controller-source-snapshot
+  pull_request:
+    paths:
+      - .github/workflows/controller-source-snapshot.yml
 
 permissions:
   contents: read
