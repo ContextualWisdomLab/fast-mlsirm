@@ -1,0 +1,388 @@
+name: PR 533 provider hardening
+
+on:
+  push:
+    branches:
+      - feat/enterprise-explicit-value-parser
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    if: github.repository == 'ContextualWisdomLab/fast-mlsirm'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-explicit-value-parser
+          fetch-depth: 0
+
+      - name: Apply provider-boundary and metadata hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          implementation = Path("python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py")
+          text = implementation.read_text(encoding="utf-8")
+          before = "    ASSESSMENT_SCHEMA_VERSION,\n    CanonicalContract,"
+          after = "    ASSESSMENT_SCHEMA_VERSION,\n    AssessmentSpecError,\n    CanonicalContract,"
+          if before not in text:
+              raise SystemExit("validation import insertion point not found")
+          text = text.replace(before, after, 1)
+
+          before = '        object.__setattr__(self, "metadata", freeze_metadata(self.metadata))'
+          after = '''        metadata = freeze_metadata(self.metadata)
+          unexpected_metadata = set(metadata) - {"offset_unit"}
+          if unexpected_metadata:
+              raise assessment_error(
+                  "unexpected_explicit_value_metadata",
+                  "$.metadata",
+                  "explicit value metadata may contain only offset_unit",
+              )
+          if (
+              "offset_unit" in metadata
+              and metadata["offset_unit"] != "python_unicode_code_point"
+          ):
+              raise assessment_error(
+                  "invalid_offset_unit",
+                  "$.metadata.offset_unit",
+                  "offset_unit must be python_unicode_code_point",
+              )
+          object.__setattr__(self, "metadata", metadata)'''
+          if before not in text:
+              raise SystemExit("metadata validation insertion point not found")
+          text = text.replace(before, after, 1)
+
+          before = '''def parse_enterprise_explicit_values(
+              source_record: EnterpriseSourceRecord,
+              source_text: str,
+              *,
+              parser: EnterpriseExplicitValueParser | None = None,
+          ) -> tuple[ExplicitValueRecord, ...]:
+              """Parse verified text through the provider-neutral parser boundary."""
+              resolved = DeterministicExplicitValueParser() if parser is None else parser
+              if not isinstance(resolved, EnterpriseExplicitValueParser):
+                  raise assessment_error(
+                      "invalid_explicit_value_parser",
+                      "$.parser",
+                      "parser must implement EnterpriseExplicitValueParser",
+                  )
+              return resolved.parse(source_record, source_text)'''
+          before = "\n".join(line[10:] if line.startswith("          ") else line for line in before.splitlines())
+          after = '''def _validated_parser_records(
+              source_record: EnterpriseSourceRecord,
+              source_text: str,
+              values: Any,
+          ) -> tuple[ExplicitValueRecord, ...]:
+              """Validate provider output against the exact verified source revision."""
+              raw = bounded_values(
+                  values,
+                  "explicit_value_records",
+                  minimum=0,
+                  maximum=MAX_EXPLICIT_VALUE_RECORDS,
+              )
+              records: list[ExplicitValueRecord] = []
+              for index, value in enumerate(raw):
+                  path = f"$.explicit_value_records[{index}]"
+                  if not isinstance(value, ExplicitValueRecord):
+                      raise assessment_error(
+                          "invalid_explicit_value_record",
+                          path,
+                          "parser output entries must be ExplicitValueRecord values",
+                      )
+                  if value.source_id != source_record.source_id:
+                      raise assessment_error(
+                          "explicit_value_source_id_mismatch",
+                          f"{path}.source_id",
+                          "parser output source_id must match the verified source",
+                      )
+                  if (
+                      value.source_record_fingerprint
+                      != source_record.source_record_fingerprint
+                  ):
+                      raise assessment_error(
+                          "explicit_value_source_revision_mismatch",
+                          f"{path}.source_record_fingerprint",
+                          "parser output must reference the verified source revision",
+                      )
+                  if value.end_offset > len(source_text):
+                      raise assessment_error(
+                          "explicit_value_offset_out_of_bounds",
+                          f"{path}.end_offset",
+                          "parser output offsets must remain within the verified source",
+                      )
+                  expected_span = hashlib.sha256(
+                      source_text[value.start_offset : value.end_offset].encode("utf-8")
+                  ).hexdigest()
+                  if value.span_content_fingerprint != expected_span:
+                      raise assessment_error(
+                          "explicit_value_span_fingerprint_mismatch",
+                          f"{path}.span_content_fingerprint",
+                          "parser output span fingerprint must match the verified source slice",
+                      )
+                  records.append(value)
+              ordered = tuple(
+                  sorted(
+                      records,
+                      key=lambda item: (
+                          item.start_offset,
+                          item.end_offset,
+                          item.value_kind.value,
+                          item.explicit_value_fingerprint,
+                      ),
+                  )
+              )
+              record_fingerprints = tuple(
+                  item.explicit_value_fingerprint for item in ordered
+              )
+              if len(set(record_fingerprints)) != len(record_fingerprints):
+                  raise assessment_error(
+                      "duplicate_explicit_value_record",
+                      "$.explicit_value_records",
+                      "parser output records must be unique",
+                  )
+              for previous, current in zip(ordered, ordered[1:]):
+                  if current.start_offset < previous.end_offset:
+                      raise assessment_error(
+                          "overlapping_explicit_values",
+                          "$.explicit_value_records",
+                          "parser output records must not overlap",
+                      )
+              return ordered
+
+
+          def parse_enterprise_explicit_values(
+              source_record: EnterpriseSourceRecord,
+              source_text: str,
+              *,
+              parser: EnterpriseExplicitValueParser | None = None,
+          ) -> tuple[ExplicitValueRecord, ...]:
+              """Parse verified text and revalidate provider output before return."""
+              resolved = DeterministicExplicitValueParser() if parser is None else parser
+              if not isinstance(resolved, EnterpriseExplicitValueParser):
+                  raise assessment_error(
+                      "invalid_explicit_value_parser",
+                      "$.parser",
+                      "parser must implement EnterpriseExplicitValueParser",
+                  )
+              DeterministicExplicitValueParser._validate_source(
+                  source_record,
+                  source_text,
+              )
+              try:
+                  values = resolved.parse(source_record, source_text)
+              except AssessmentSpecError:
+                  raise
+              except Exception:
+                  raise assessment_error(
+                      "explicit_value_parser_failure",
+                      "$.parser",
+                      "parser failed before returning validated explicit values",
+                  ) from None
+              return _validated_parser_records(source_record, source_text, values)'''
+          after = "\n".join(line[10:] if line.startswith("          ") else line for line in after.splitlines())
+          if before not in text:
+              raise SystemExit("provider boundary replacement point not found")
+          implementation.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+          tests = Path("tests/test_scoring_enterprise_explicit_values.py")
+          test_text = tests.read_text(encoding="utf-8")
+          before = "from dataclasses import FrozenInstanceError"
+          after = "from dataclasses import FrozenInstanceError, replace"
+          if before not in test_text:
+              raise SystemExit("dataclasses import point not found")
+          test_text = test_text.replace(before, after, 1)
+          addition = r'''
+
+          def test_custom_parser_output_is_sorted_and_rebound_to_verified_source() -> None:
+              """Provider output is canonicalized only after exact source replay checks."""
+              text = "2026-01-01 and 2026-01-02"
+              source = _source(text)
+              records = DeterministicExplicitValueParser().parse(source, text)
+
+              class ReverseParser:
+                  """Return valid records in deliberately noncanonical order."""
+
+                  def parse(
+                      self,
+                      source_record: EnterpriseSourceRecord,
+                      source_text: str,
+                  ) -> tuple[ExplicitValueRecord, ...]:
+                      """Return the captured records in reverse order."""
+                      assert source_record is source
+                      assert source_text == text
+                      return tuple(reversed(records))
+
+              assert parse_enterprise_explicit_values(
+                  source,
+                  text,
+                  parser=ReverseParser(),
+              ) == records
+
+
+          @pytest.mark.parametrize(
+              ("values_factory", "error"),
+              (
+                  (lambda records, text: object(), "invalid_explicit_value_records"),
+                  (lambda records, text: (object(),), "invalid_explicit_value_record"),
+                  (
+                      lambda records, text: (
+                          replace(records[0], source_id="other_source"),
+                      ),
+                      "explicit_value_source_id_mismatch",
+                  ),
+                  (
+                      lambda records, text: (
+                          replace(records[0], source_record_fingerprint=FP_C),
+                      ),
+                      "explicit_value_source_revision_mismatch",
+                  ),
+                  (
+                      lambda records, text: (
+                          replace(
+                              records[0],
+                              start_offset=len(text),
+                              end_offset=len(text) + 1,
+                          ),
+                      ),
+                      "explicit_value_offset_out_of_bounds",
+                  ),
+                  (
+                      lambda records, text: (
+                          replace(records[0], span_content_fingerprint=FP_B),
+                      ),
+                      "explicit_value_span_fingerprint_mismatch",
+                  ),
+                  (
+                      lambda records, text: (records[0], records[0]),
+                      "duplicate_explicit_value_record",
+                  ),
+                  (
+                      lambda records, text: (
+                          records[0],
+                          replace(
+                              records[0],
+                              start_offset=1,
+                              end_offset=11,
+                              span_content_fingerprint=hashlib.sha256(
+                                  text[1:11].encode("utf-8")
+                              ).hexdigest(),
+                          ),
+                      ),
+                      "overlapping_explicit_values",
+                  ),
+              ),
+          )
+          def test_custom_parser_output_fails_closed(
+              values_factory: Any,
+              error: str,
+          ) -> None:
+              """Malformed, mismatched, duplicate, and overlapping outputs are rejected."""
+              text = "2026-01-01 and 2026-01-02"
+              source = _source(text)
+              records = DeterministicExplicitValueParser().parse(source, text)
+              values = values_factory(records, text)
+
+              class ReturningParser:
+                  """Return one deliberately supplied provider result."""
+
+                  def parse(
+                      self,
+                      source_record: EnterpriseSourceRecord,
+                      source_text: str,
+                  ) -> Any:
+                      """Return the captured value without modification."""
+                      assert source_record is source
+                      assert source_text == text
+                      return values
+
+              with pytest.raises(AssessmentSpecError, match=error):
+                  parse_enterprise_explicit_values(
+                      source,
+                      text,
+                      parser=ReturningParser(),
+                  )
+
+
+          def test_custom_parser_callback_failures_are_redacted() -> None:
+              """Arbitrary provider exceptions do not cross the public boundary."""
+              text = "No explicit values."
+              source = _source(text)
+
+              class FailingParser:
+                  """Raise a non-domain exception from the provider callback."""
+
+                  def parse(
+                      self,
+                      source_record: EnterpriseSourceRecord,
+                      source_text: str,
+                  ) -> tuple[ExplicitValueRecord, ...]:
+                      """Raise one private provider failure."""
+                      raise RuntimeError("private provider detail")
+
+              with pytest.raises(
+                  AssessmentSpecError,
+                  match="explicit_value_parser_failure",
+              ) as captured:
+                  parse_enterprise_explicit_values(
+                      source,
+                      text,
+                      parser=FailingParser(),
+                  )
+              assert "private provider detail" not in str(captured.value)
+
+
+          @pytest.mark.parametrize(
+              ("metadata", "error"),
+              (
+                  ({"customer_id": "ACCT-77"}, "unexpected_explicit_value_metadata"),
+                  ({"offset_unit": "utf8_byte"}, "invalid_offset_unit"),
+              ),
+          )
+          def test_explicit_value_metadata_is_strictly_allowlisted(
+              metadata: dict[str, Any],
+              error: str,
+          ) -> None:
+              """Caller metadata cannot retain identifiers or change offset semantics."""
+              with pytest.raises(AssessmentSpecError, match=error):
+                  _record(metadata=metadata)
+          '''
+          addition = "\n".join(line[10:] if line.startswith("          ") else line for line in addition.splitlines())
+          tests.write_text(test_text + addition, encoding="utf-8")
+
+          docs = Path("docs/enterprise_issue_evidence_contracts.md")
+          doc_text = docs.read_text(encoding="utf-8")
+          before = "Semantic assertions remain behind a separate\nprovider-neutral, human-validated boundary."
+          after = "Semantic assertions remain behind a separate\nprovider-neutral, human-validated boundary. Custom parser output is bounded,\ncanonicalized, and rebound to the exact verified source revision and span bytes\nbefore it can cross the public API. Arbitrary provider exceptions are redacted.\nExplicit-value caller metadata is restricted to the declared offset unit."
+          if before not in doc_text:
+              raise SystemExit("documentation insertion point not found")
+          docs.write_text(doc_text.replace(before, after, 1), encoding="utf-8")
+
+          fragment = Path("docs/changelog.d/enterprise-explicit-value-parser.md")
+          fragment_text = fragment.read_text(encoding="utf-8")
+          before = "  clear-text customer identifiers.\n"
+          after = "  clear-text customer identifiers.\n- Added fail-closed custom-parser output rebinding, callback redaction, exact span\n  verification, duplicate/overlap rejection, and strict explicit-value metadata.\n"
+          if before not in fragment_text:
+              raise SystemExit("changelog insertion point not found")
+          fragment.write_text(fragment_text.replace(before, after, 1), encoding="utf-8")
+          PY
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+
+      - name: Commit hardening and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr-533-provider-hardening.yml
+          git add CHANGELOG.md docs/changelog.d/enterprise-explicit-value-parser.md docs/enterprise_issue_evidence_contracts.md python/fast_mlsirm/scoring/enterprise_issue/explicit_values.py tests/test_scoring_enterprise_explicit_values.py
+          git diff --cached --check
+          git commit -m "fix(enterprise): validate provider parser output"
+          git push origin HEAD:feat/enterprise-explicit-value-parser
