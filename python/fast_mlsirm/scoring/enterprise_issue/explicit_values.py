@@ -610,6 +610,87 @@ class DeterministicExplicitValueParser:
             )
 
 
+def _validated_parser_output(
+    source_record: EnterpriseSourceRecord,
+    source_text: str,
+    values: Any,
+) -> tuple[ExplicitValueRecord, ...]:
+    """Return exact, ordered, non-overlapping records from one provider."""
+    if type(values) is not tuple:
+        raise assessment_error(
+            "invalid_explicit_value_parser_output",
+            "$.parser_output",
+            "parser output must be a tuple of ExplicitValueRecord values",
+        )
+    if len(values) > MAX_EXPLICIT_VALUE_RECORDS:
+        raise assessment_error(
+            "explicit_value_record_limit",
+            "$.parser_output",
+            "parser output exceeds the bounded explicit-value record limit",
+        )
+    previous_key: tuple[int, int, str, str] | None = None
+    previous_end = 0
+    for index, item in enumerate(values):
+        path = f"$.parser_output[{index}]"
+        if not isinstance(item, ExplicitValueRecord):
+            raise assessment_error(
+                "invalid_explicit_value_parser_output",
+                path,
+                "parser output must contain only ExplicitValueRecord values",
+            )
+        if item.source_id != source_record.source_id:
+            raise assessment_error(
+                "parser_output_source_mismatch",
+                path,
+                "parser output source_id does not match source_record",
+            )
+        if (
+            item.source_record_fingerprint
+            != source_record.source_record_fingerprint
+        ):
+            raise assessment_error(
+                "parser_output_source_mismatch",
+                path,
+                "parser output source fingerprint does not match source_record",
+            )
+        if item.end_offset > len(source_text):
+            raise assessment_error(
+                "parser_output_span_out_of_bounds",
+                path,
+                "parser output span exceeds verified source text",
+            )
+        expected_span = hashlib.sha256(
+            source_text[item.start_offset : item.end_offset].encode("utf-8")
+        ).hexdigest()
+        if item.span_content_fingerprint != expected_span:
+            raise assessment_error(
+                "parser_output_span_mismatch",
+                path,
+                "parser output span fingerprint does not match verified source text",
+            )
+        key = (
+            item.start_offset,
+            item.end_offset,
+            item.value_kind.value,
+            item.explicit_value_fingerprint,
+        )
+        if previous_key is not None and key < previous_key:
+            raise assessment_error(
+                "parser_output_order_mismatch",
+                path,
+                "parser output must use canonical deterministic ordering",
+            )
+        if previous_key is not None and item.start_offset < previous_end:
+            raise assessment_error(
+                "overlapping_explicit_values",
+                path,
+                "parser output records must not overlap",
+            )
+        previous_key = key
+        previous_end = item.end_offset
+    return values
+
+
 def parse_enterprise_explicit_values(
     source_record: EnterpriseSourceRecord,
     source_text: str,
@@ -624,4 +705,9 @@ def parse_enterprise_explicit_values(
             "$.parser",
             "parser must implement EnterpriseExplicitValueParser",
         )
-    return resolved.parse(source_record, source_text)
+    DeterministicExplicitValueParser._validate_source(source_record, source_text)
+    return _validated_parser_output(
+        source_record,
+        source_text,
+        resolved.parse(source_record, source_text),
+    )

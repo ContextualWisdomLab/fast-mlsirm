@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 import hashlib
 from typing import Any
 
@@ -414,3 +414,111 @@ def test_private_normalizers_cover_nonpublic_exception_boundaries() -> None:
     with pytest.raises(AssessmentSpecError, match="invalid_frequency_count"):
         parser_module._positive_count(object(), "$.count")  # type: ignore[arg-type]
     assert parser_module._offset(0, "start_offset") == 0
+
+def test_provider_output_is_revalidated_against_verified_source() -> None:
+    """Custom providers cannot return stale, forged, unordered, or broad output."""
+    text = "event 2026-09-30 then 2026-10-01"
+    source = _source(text)
+    records = DeterministicExplicitValueParser().parse(source, text)
+
+    class StaticParser:
+        """Return one configured object through the provider protocol."""
+
+        def __init__(self, output: Any) -> None:
+  """Store output for one deterministic boundary invocation."""
+  self.output = output
+
+        def parse(
+  self,
+  source_record: EnterpriseSourceRecord,
+  source_text: str,
+        ) -> Any:
+  """Return configured output after observing exact inputs."""
+  assert source_record is source
+  assert source_text == text
+  return self.output
+
+    assert parse_enterprise_explicit_values(
+        source, text, parser=StaticParser(records)
+    ) == records
+
+    invalid_outputs = (
+        (list(records), "invalid_explicit_value_parser_output"),
+        ((object(),), "invalid_explicit_value_parser_output"),
+        (
+  (replace(records[0], source_id="other_source"),),
+  "parser_output_source_mismatch",
+        ),
+        (
+  (replace(records[0], source_record_fingerprint=FP_A),),
+  "parser_output_source_mismatch",
+        ),
+        (
+  (
+      replace(
+          records[0],
+          end_offset=len(text) + 1,
+          span_content_fingerprint=FP_B,
+      ),
+  ),
+  "parser_output_span_out_of_bounds",
+        ),
+        (
+  (replace(records[0], span_content_fingerprint=FP_B),),
+  "parser_output_span_mismatch",
+        ),
+        (tuple(reversed(records)), "parser_output_order_mismatch"),
+    )
+    for output, error in invalid_outputs:
+        with pytest.raises(AssessmentSpecError, match=error):
+  parse_enterprise_explicit_values(
+      source, text, parser=StaticParser(output)
+  )
+
+    overlap_start = records[0].start_offset + 1
+    overlap_end = records[0].end_offset
+    overlap = replace(
+        records[1],
+        start_offset=overlap_start,
+        end_offset=overlap_end,
+        span_content_fingerprint=hashlib.sha256(
+  text[overlap_start:overlap_end].encode("utf-8")
+        ).hexdigest(),
+    )
+    with pytest.raises(AssessmentSpecError, match="overlapping_explicit_values"):
+        parse_enterprise_explicit_values(
+  source, text, parser=StaticParser((records[0], overlap))
+        )
+
+    with pytest.raises(AssessmentSpecError, match="explicit_value_record_limit"):
+        parse_enterprise_explicit_values(
+  source,
+  text,
+  parser=StaticParser((records[0],) * 129),
+        )
+
+
+def test_custom_provider_cannot_bypass_source_replay_validation() -> None:
+    """The stable boundary validates source replay before invoking a provider."""
+    text = "event 2026-09-30"
+    source = _source(text, fingerprint_text="different")
+
+    class NeverParser:
+        """Protocol parser that must not observe an invalid source replay."""
+
+        def parse(
+  self,
+  source_record: EnterpriseSourceRecord,
+  source_text: str,
+        ) -> tuple[ExplicitValueRecord, ...]:
+  """Fail if source validation does not precede provider execution."""
+  raise AssertionError("provider must not run")
+
+    with pytest.raises(
+        AssessmentSpecError, match="source_content_fingerprint_mismatch"
+    ):
+        parse_enterprise_explicit_values(
+  source,
+  text,
+  parser=NeverParser(),
+        )
