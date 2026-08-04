@@ -7,6 +7,11 @@ on:
       - feat/essay-score-report-html
     paths:
       - .github/workflows/one-time-essay-report-html-sync.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-essay-report-html-sync.yml
 
 permissions:
   contents: write
@@ -24,7 +29,7 @@ jobs:
       - name: Check out exact feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.ref_name }}
+          ref: feat/essay-score-report-html
           fetch-depth: 0
       - name: Synchronize the established public-surface contract
         run: |
@@ -53,4 +58,4 @@ jobs:
           git rm .github/workflows/one-time-essay-report-html-sync.yml
           git add tests/test_scoring_essay_contracts.py CHANGELOG.md
           git commit -m "test(essay): synchronize report HTML public surface"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:feat/essay-score-report-html"
