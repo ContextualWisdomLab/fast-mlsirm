@@ -164,6 +164,7 @@ def record_values(source=None) -> dict[str, Any]:
         "observation_fingerprint": source.observation_fingerprint,
         "respondent_id": source.respondent_id,
         "response_id": source.response_id,
+        "response_content_fingerprint": source.response_content_fingerprint,
         "task_id": source.task_id,
         "occasion_id": source.occasion_id,
         "criterion_id": source.criterion_id,
@@ -237,6 +238,7 @@ def test_projection_retains_exact_provenance_and_terminal_states() -> None:
     assert scored.request_fingerprint == request.request_fingerprint
     assert scored.result_fingerprint == result.result_fingerprint
     assert scored.engine_fingerprint == engine.engine_fingerprint
+    assert scored.response_content_fingerprint == request.response_content_fingerprint
     assert scored.rating_handle == f"scoring_facets_rating_{scored.rating_fingerprint[:32]}"
     assert scored.to_dict()["allowed_scores"] == [0, 1, 2]
 
@@ -516,6 +518,7 @@ def test_design_rejects_duplicate_response_and_rater_provenance() -> None:
         response_id=first.response_id,
         respondent_id=first.respondent_id,
         task_id=first.task_id,
+        response_content_fingerprint=first.response_content_fingerprint,
         engine_id=first.engine_id,
         engine_family_id=first.engine_family_id,
         engine_fingerprint=first.engine_fingerprint,
@@ -532,6 +535,7 @@ def test_design_rejects_duplicate_response_and_rater_provenance() -> None:
         second,
         response_id=first.response_id,
         respondent_id="conflicting_respondent",
+        response_content_fingerprint=first.response_content_fingerprint,
         _rating_token=calibration._RATING_TOKEN,
     )
     assert_error(
