@@ -16,7 +16,7 @@ The report retains:
 - the complete finite log-likelihood trace, iteration count, convergence flag, connectedness flags, and parameter count;
 - deterministic report fingerprints, public handles, policy metadata, and review-trigger identifiers.
 
-No prompt text, response text, evidence text, or source content is persisted. The shared metadata safety boundary rejects sensitive content keys.
+Respondent identifiers and exact task-revision and engine fingerprints are unique axes. Logical task, task-family, engine, and engine-family labels may repeat when several exact revisions or engines share the same governed identity. No prompt text, response text, evidence text, or source content is persisted. The shared metadata safety boundary rejects sensitive content keys.
 
 ## Fail-closed replay checks
 
@@ -112,4 +112,4 @@ Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
 
 World Wide Web Consortium. (2024, December 12). *Web Content Accessibility Guidelines (WCAG) 2.2* (W3C Recommendation). https://www.w3.org/TR/WCAG22/
 
-World Wide Web Consortium. (2026, May 5). *Content Security Policy Level 3* (W3C Working Draft). https://www.w3.org/TR/CSP3/
+World Wide Web Consortium. (2026, July 29). *Content Security Policy Level 3* (W3C Working Draft). https://www.w3.org/TR/CSP3/
