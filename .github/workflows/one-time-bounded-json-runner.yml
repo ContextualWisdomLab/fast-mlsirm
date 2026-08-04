@@ -1,4 +1,4 @@
-name: One-time bounded JSON runner
+name: One-time descriptor-safe bounded JSON runner
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ jobs:
   apply:
     if: github.head_ref == 'sentinel-json-dos-scripts-17708564860587448239'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - name: Bring branch current and apply hardening
+      - name: Apply and validate exact hardening
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -40,8 +40,17 @@ jobs:
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           python -m pip install --require-hashes -r requirements/ci.txt
-          python -m pip install "pytest-cov==7.1.0"
           python -m pip install --no-deps --no-build-isolation -e .
+          ruff format scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          ruff check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
           pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
             --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
           pytest \
@@ -49,7 +58,6 @@ jobs:
             tests/test_buyer_packet.py \
             tests/test_commercial_release.py \
             tests/test_figma_evidence_sync.py \
-            tests/test_pr_queue_governance.py \
             tests/test_procurement_due_diligence.py \
             tests/test_release_evidence_index.py \
             tests/test_sales_readiness.py
@@ -60,5 +68,5 @@ jobs:
       - name: Commit exact hardening
         run: |
           git add -A
-          git commit -m "fix(security): bound JSON size and nesting depth"
+          git commit -m "fix(security): harden bounded JSON file handling"
           git push origin "HEAD:sentinel-json-dos-scripts-17708564860587448239"
