@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import runpy
+from pathlib import Path
 
 import pytest
 
-from fast_mlsirm.scoring import AssessmentSpecError
-from fast_mlsirm.scoring.essay import render_essay_facets_calibration_report_html
 import fast_mlsirm.scoring.essay.calibration_report_html as report_html
 import fast_mlsirm.scoring.essay.calibration_reporting as calibration_reporting
+from fast_mlsirm.scoring import AssessmentSpecError
+from fast_mlsirm.scoring.essay import render_essay_facets_calibration_report_html
 
 _FIXTURES = runpy.run_path(
     str(Path(__file__).with_name("test_scoring_essay_facets_reporting.py"))
@@ -66,7 +66,9 @@ def test_renderer_writes_deterministic_accessible_source_text_free_artifact(
     assert "-0.1" in first
     assert "-0.3" in first
     assert "-20.0" in first
-    assert "mlsirm_core_facets_fit_facets" in first
+    assert "Estimator log-likelihood trace" in first
+    assert "mlsirm_core_facets_fit_facets" not in first
+    assert 'class="empty-state" role="status"' in first
     assert "global optimality" in first
     assert "Canonical essay facets calibration JSON" in first
     assert "workflow_stage" in first
@@ -102,7 +104,10 @@ def test_renderer_shows_explicit_empty_review_state(tmp_path: Path) -> None:
 
     assert '<section class="review-clear"' in html
     assert "No structural trigger" in html
-    assert "No structural review trigger was emitted." in html
+    assert (
+        '<div class="empty-state" role="status">'
+        "No structural review trigger was emitted.</div>"
+    ) in html
     assert "not evidence of" in html.lower()
 
 
@@ -237,7 +242,7 @@ def test_numeric_and_model_integrity_replay_failures(
     code: str,
     tmp_path: Path,
 ) -> None:
-    """Rust-shaped estimates and model metadata are replay-verified."""
+    """Estimator-shaped values and model metadata are replay-verified."""
     report = mutate(build_report(), field_name, value)
     assert_error(
         code,
@@ -263,5 +268,5 @@ def test_replay_identity_mismatch_and_private_empty_renderer(
         ),
     )
     assert report_html._identifier_list((), empty_message="Nothing declared.") == (
-        '<p class="empty-state">Nothing declared.</p>'
+        '<div class="empty-state" role="status">Nothing declared.</div>'
     )
