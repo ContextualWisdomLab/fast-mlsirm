@@ -52,7 +52,7 @@ def test_bundle_fit_forwards_bundle_specific_tuning_values(monkeypatch) -> None:
 
 
 def test_all_declared_categories_must_be_observed_before_fitting() -> None:
-    """Unused threshold categories cannot enter the Rust rating-scale model."""
+    """Auditable sparse designs remain buildable but cannot fit empty thresholds."""
     records = tuple(
         replace(
             record,
@@ -61,10 +61,13 @@ def test_all_declared_categories_must_be_observed_before_fitting() -> None:
         )
         for record in connected_records()
     )
-    assert_error(
-        "unobserved_facets_category",
-        lambda: build_scoring_facets_calibration_bundle(records),
-    )
+    bundle = build_scoring_facets_calibration_bundle(records)
+
+    for design in bundle.designs:
+        assert_error(
+            "unobserved_facets_category",
+            design.to_fit_facets_kwargs,
+        )
 
 
 def test_rating_fingerprint_is_cached_after_normalization(monkeypatch) -> None:
@@ -161,7 +164,10 @@ def test_terminal_records_do_not_satisfy_category_observation() -> None:
             )
         else:
             records.append(record)
-    assert_error(
-        "unobserved_facets_category",
-        lambda: build_scoring_facets_calibration_bundle(records),
-    )
+    bundle = build_scoring_facets_calibration_bundle(records)
+
+    for design in bundle.designs:
+        assert_error(
+            "unobserved_facets_category",
+            design.to_fit_facets_kwargs,
+        )
