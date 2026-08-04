@@ -11,7 +11,6 @@ from __future__ import annotations
 from html import escape
 import json
 from pathlib import Path
-from typing import Any
 
 from .._validation import assessment_error
 from .reporting import EssayScoreReport, build_essay_score_report
