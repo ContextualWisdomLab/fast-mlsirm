@@ -170,6 +170,7 @@ def test_public_surface_is_explicit_and_documented() -> None:
     """The essay namespace exports only the reviewed adapter surface."""
     expected = {
         "EssayEvidenceKind",
+        "EssayFacetsCalibrationReport",
         "EssayPrompt",
         "EssayResponseEvidence",
         "EssayReviewFlag",
@@ -177,15 +178,18 @@ def test_public_surface_is_explicit_and_documented() -> None:
         "EssayScoreReport",
         "EssaySubmission",
         "MAX_ESSAY_EVIDENCE_REFERENCES",
+        "MAX_ESSAY_FACETS_REPORT_REVIEW_TRIGGERS",
         "MAX_ESSAY_REPORT_REVIEW_TRIGGERS",
         "MAX_ESSAY_RESPONSE_CHARACTERS",
         "MAX_ESSAY_RESPONSE_UNITS",
         "MAX_ESSAY_REVIEW_FLAGS",
+        "build_essay_facets_calibration_report",
         "build_essay_prompt",
         "build_essay_response_evidence",
         "build_essay_score_report",
         "build_essay_scoring_request",
         "build_essay_submission",
+        "fit_essay_facets_calibration_report",
         "score_essay_request",
     }
     assert set(essay.__all__) == expected
