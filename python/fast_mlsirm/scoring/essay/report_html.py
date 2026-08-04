@@ -308,10 +308,6 @@ def render_essay_score_report_html(
     if title is not None and (
         not isinstance(title, str) or not title.strip()
     ):
-        raise ValueError("essay score report title must be a non-empty string")
-    if title is not None and (
-        not isinstance(title, str) or not title.strip()
-    ):
         raise ValueError(
             "essay score report title must be a non-empty string"
         )
