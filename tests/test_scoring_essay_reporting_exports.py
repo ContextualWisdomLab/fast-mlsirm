@@ -21,3 +21,5 @@ def test_score_reporting_symbols_are_exported_from_essay_package() -> None:
         == reporting.MAX_ESSAY_REPORT_REVIEW_TRIGGERS
     )
     assert essay.build_essay_score_report is reporting.build_essay_score_report
+    assert essay.EssayScoreReport.__doc__
+    assert essay.build_essay_score_report.__doc__
