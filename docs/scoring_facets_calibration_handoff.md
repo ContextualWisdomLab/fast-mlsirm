@@ -47,6 +47,15 @@ order-preservingly to `(0, 1, 2)`, which is the category convention accepted by
 model operates on ordered categories and does not interpret the numeric labels
 as interval distances.
 
+Construction and fitting use separate identification gates. A sparse pilot
+design may be assembled and audited after at least two categories are observed
+among `scored` records. Construction does not authorize fitting:
+`to_fit_facets_kwargs()`, `fit_scoring_facets_design()`, and bundle fitting
+require every declared category to be observed among `scored` records before
+delegating to the Rust estimator, because an unobserved category leaves a
+rating-scale threshold unidentified. `abstained`, `failed`, `excluded`, and
+unassigned cells do not count as category observations.
+
 ## Missingness and terminal states
 
 `scored`, `abstained`, `failed`, and `excluded` observations remain distinct in
