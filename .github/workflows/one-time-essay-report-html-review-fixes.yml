@@ -7,6 +7,11 @@ on:
       - feat/essay-score-report-html
     paths:
       - .github/workflows/one-time-essay-report-html-review-fixes.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-essay-report-html-review-fixes.yml
 
 permissions: {}
 
