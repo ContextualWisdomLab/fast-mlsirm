@@ -121,7 +121,7 @@ def connected_records(*, terminal: bool = False):
                         task_id=f"prompt_{task_name}",
                         engine=engine,
                         claim_score=claim_score,
-                        source_score=(2 - base_score + engine_index) % 3,
+                        source_score=(2 - base_score + 2 * engine_index) % 3,
                         claim_status=claim_status,
                     )
                 )

@@ -319,7 +319,7 @@ def test_respondent_task_cell_rejects_changed_content_with_same_response_id() ->
     with pytest.raises(AssessmentSpecError) as caught:
         build_scoring_facets_calibration_bundle(records)
 
-    assert caught.value.code == "respondent_task_response_conflict"
+    assert caught.value.code == "response_provenance_conflict"
     assert caught.value.path.endswith(".response_content_fingerprint")
     assert private_digest not in str(caught.value)
 
