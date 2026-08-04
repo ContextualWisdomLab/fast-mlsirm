@@ -405,9 +405,7 @@ class EssayResponseEvidence(CanonicalContract):
                 MAX_ESSAY_RESPONSE_CHARACTERS,
             ),
         )
-        if (
-            self.end_offset <= self.start_offset
-        ):  # pragma: no cover - guaranteed by build_essay_response_evidence
+        if self.end_offset <= self.start_offset:
             raise assessment_error(
                 "invalid_evidence_offsets",
                 "$.end_offset",
@@ -471,9 +469,7 @@ class EssayScoringRequest(CanonicalContract):
                 "$",
                 "use build_essay_scoring_request",
             )
-        if not isinstance(
-            self.scoring_request, ScoringRequest
-        ):  # pragma: no cover - guaranteed by build_essay_scoring_request
+        if not isinstance(self.scoring_request, ScoringRequest):
             raise assessment_error(
                 "invalid_scoring_request",
                 "$.scoring_request",
@@ -764,6 +760,7 @@ def build_essay_scoring_request(
         respondent_id=submission.respondent_id,
         response_id=submission.response_id,
         task_id=prompt.prompt_id,
+        task_revision_fingerprint=prompt.prompt_fingerprint,
         task_family_id=prompt.task_family_id,
         occasion_id=occasion_id,
         criterion_ids=criterion_ids,
