@@ -30,6 +30,11 @@ bounded JSON metadata, and exposes deterministic `canonical_json()`,
 `artifact_digest()`, and `assessment_handle` values. A digest is a content
 identity, not an authentication, authorization, or signature mechanism.
 
+`ASSESSMENT_SCHEMA_VERSION` owns the assessment wire format independently from
+the rubric wire schema. Rubric artifacts remain linked by their exact content
+fingerprints, so either schema may evolve under an explicit compatibility
+contract without silently changing the other artifact family.
+
 ## Policy boundary
 
 The first slice records policy; it does not execute scoring, calibration,
