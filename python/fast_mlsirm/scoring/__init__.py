@@ -1,5 +1,10 @@
 """Provider-neutral automated-scoring contracts and policy specifications."""
 
+from . import calibration as _calibration
+from ._calibration_validation import install as _install_calibration_validation
+
+_install_calibration_validation(_calibration)
+
 from .calibration import MAX_SCORING_FACETS_CELLS as MAX_SCORING_FACETS_CELLS
 from .calibration import MAX_SCORING_FACETS_RATINGS as MAX_SCORING_FACETS_RATINGS
 from .calibration import (
