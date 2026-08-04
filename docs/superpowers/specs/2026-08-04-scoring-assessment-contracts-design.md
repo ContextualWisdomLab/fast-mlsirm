@@ -63,4 +63,4 @@ The module requires 100% statement and branch coverage. Tests cover deterministi
 
 ## Documentation and release governance
 
-The feature is documented for standalone and later MSA use. An authoritative changelog fragment is rendered into `CHANGELOG.md` on the same branch. A version bump is deferred until the shared scoring core has at least the observation and engine protocol slices needed for a coherent public release.
+The feature is documented for standalone and later MSA use. A standalone version bump is intentionally deferred: an assessment contract without observation and scoring-engine protocol slices is not a coherent public scoring release. The first shared-scoring-core release will add one authoritative changelog entry covering the complete initial workflow rather than presenting this foundation as a finished scoring product.
