@@ -6,14 +6,13 @@ from dataclasses import replace
 from pathlib import Path
 import runpy
 
-import pytest
-
 import fast_mlsirm.scoring.calibration as calibration
 from fast_mlsirm.scoring import (
     ObservationStatus,
     build_scoring_facets_calibration_bundle,
     build_scoring_facets_rating_records,
     fit_scoring_facets_bundle,
+    fit_scoring_facets_design,
 )
 
 _BASE = runpy.run_path(
@@ -64,9 +63,14 @@ def test_all_declared_categories_must_be_observed_before_fitting() -> None:
     bundle = build_scoring_facets_calibration_bundle(records)
 
     for design in bundle.designs:
+        assert design.category_values == (0, 1, 2, 3)
         assert_error(
             "unobserved_facets_category",
             design.to_fit_facets_kwargs,
+        )
+        assert_error(
+            "unobserved_facets_category",
+            lambda design=design: fit_scoring_facets_design(design),
         )
 
 
@@ -168,4 +172,8 @@ def test_terminal_records_do_not_satisfy_category_observation() -> None:
         assert_error(
             "unobserved_facets_category",
             design.to_fit_facets_kwargs,
+        )
+        assert_error(
+            "unobserved_facets_category",
+            lambda design=design: fit_scoring_facets_design(design),
         )
