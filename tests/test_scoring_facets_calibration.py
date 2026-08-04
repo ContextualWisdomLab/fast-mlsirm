@@ -125,7 +125,7 @@ def connected_records(*, terminal: bool = False):
 
 
 def disconnected_records():
-    """Return two observed task-rater components without a linking edge."""
+    """Return two estimable task-rater components without a linking edge."""
     return (
         *project(
             execution(
@@ -136,6 +136,17 @@ def disconnected_records():
                 engine=automated_engine(),
                 claim_score=0,
                 source_score=0,
+            )
+        ),
+        *project(
+            execution(
+                request_id="request_component_one_b",
+                response_id="response_component_one_b",
+                respondent_id="respondent_component_one_b",
+                task_id="prompt_component_one",
+                engine=automated_engine(),
+                claim_score=1,
+                source_score=1,
             )
         ),
         *project(
@@ -348,7 +359,7 @@ def test_disconnected_design_requires_assembly_and_fit_opt_in(monkeypatch) -> No
     )
     assert fit_scoring_facets_design(
         bundle.designs[0], allow_disconnected=True
-    ) == (2, 2, 2)
+    ) == (3, 2, 2)
     assert_error(
         "invalid_require_connected",
         lambda: build_scoring_facets_calibration_bundle(records, require_connected=1),
