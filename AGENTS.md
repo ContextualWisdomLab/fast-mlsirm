@@ -154,7 +154,7 @@ that must ALSO work as a git submodule** (grown separately and together):
 **pg-erd-cloud** (ERD tool), **contextual-orchestrator** (LLM cost/perf/upstream-LB
 gateway beyond LiteLLM), **codec-carver** (STT/omni-modal speech-video codec),
 **fast-mlsirm** (this repo — LLM-as-a-Judge calibration + evaluation-item quality
-via aFIPC FIPC + kaefa item-fit), **feelanet-adfs** (passwordless SSO —
+via aFIPC FIPC + kaefa item-fit), **keyverse** (passwordless SSO —
 OIDC/SCIM/ADFS/LDAP/FIDO2/OAuth2.1, eliminate passwords), **newsdom-api**
 (PDF→DOM sidecar), and **semantic-data-portal** (upper-ontology/catalog/governance
 plane with its own graph engine).
