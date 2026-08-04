@@ -1,0 +1,90 @@
+# This workflow removes itself after applying validated review findings.
+name: One-time essay report HTML review fixes
+
+on:
+  push:
+    branches:
+      - feat/essay-score-report-html
+    paths:
+      - .github/workflows/one-time-essay-report-html-review-fixes.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-essay-report-html-review-fixes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply-review-fixes:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/essay-score-report-html
+          fetch-depth: 0
+      - name: Apply validated review findings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          renderer_path = Path("python/fast_mlsirm/scoring/essay/report_html.py")
+          renderer = renderer_path.read_text(encoding="utf-8")
+          old_renderer = """    resolved_title = _DEFAULT_TITLE if title is None else title
+              output.parent.mkdir(parents=True, exist_ok=True)
+          """
+          new_renderer = """    if title is not None and (
+                  not isinstance(title, str) or not title.strip()
+              ):
+                  raise ValueError("essay score report title must be a non-empty string")
+              resolved_title = _DEFAULT_TITLE if title is None else title
+              output.parent.mkdir(parents=True, exist_ok=True)
+          """
+          if new_renderer not in renderer:
+              if renderer.count(old_renderer) != 1:
+                  raise RuntimeError("expected exactly one report title rendering anchor")
+              renderer = renderer.replace(old_renderer, new_renderer)
+          renderer_path.write_text(renderer, encoding="utf-8")
+
+          tests_path = Path("tests/test_scoring_essay_report_html.py")
+          tests = tests_path.read_text(encoding="utf-8")
+          tests = tests.replace(
+              'match="must end with .html"',
+              'match=r"must end with \\.html"',
+          )
+          title_test = '''
+
+          @pytest.mark.parametrize("title", ("", "   ", 3))
+          def test_renderer_rejects_invalid_custom_title(tmp_path: Path, title: object) -> None:
+              """Blank and non-string titles fail before any artifact is written."""
+              output = tmp_path / "invalid-title.html"
+              with pytest.raises(ValueError, match="title must be a non-empty string"):
+                  render_essay_score_report_html(clean_report(), output, title=title)  # type: ignore[arg-type]
+              assert not output.exists()
+          '''
+          anchor = '''    with pytest.raises(ValueError, match=r"must end with \\.html"):
+                  render_essay_score_report_html(clean_report(), tmp_path / "invalid.txt")
+          '''
+          if "def test_renderer_rejects_invalid_custom_title" not in tests:
+              if tests.count(anchor) != 1:
+                  raise RuntimeError("expected exactly one invalid output suffix test anchor")
+              tests = tests.replace(anchor, anchor + title_test)
+          tests_path.write_text(tests, encoding="utf-8")
+          PY
+      - name: Run focused validation
+        run: |
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+          pytest tests/test_scoring_essay_report_html.py tests/test_scoring_essay_reporting_exports.py
+      - name: Commit fixes and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-essay-report-html-review-fixes.yml
+          git add python/fast_mlsirm/scoring/essay/report_html.py tests/test_scoring_essay_report_html.py
+          git commit -m "fix(essay): validate standalone report titles"
+          git push origin "HEAD:feat/essay-score-report-html"
