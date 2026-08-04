@@ -18,6 +18,8 @@ _SENSITIVE_METADATA_FIELDS = frozenset(
         "answer_text",
         "essay_text",
         "prompt_text",
+        "provider_output",
+        "provider_response",
         "raw_response",
         "response_content",
         "response_text",
