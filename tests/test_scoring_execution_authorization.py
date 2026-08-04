@@ -32,6 +32,7 @@ criterion_request = _FIXTURES["criterion_request"]
 fixture_engine = _FIXTURES["fixture_engine"]
 human_engine = _FIXTURES["human_engine"]
 rubric = _FIXTURES["rubric"]
+_TASK_REVISION_FINGERPRINT = "d" * 64
 
 
 def assessment_with_engine_policy(
@@ -199,6 +200,7 @@ def test_public_result_rejects_unprojected_or_malformed_authorization() -> None:
         "respondent_id": "sample_respondent",
         "response_id": "sample_response",
         "task_id": "sample_task",
+        "task_revision_fingerprint": _TASK_REVISION_FINGERPRINT,
         "task_family_id": "evidence_review",
         "occasion_id": "initial_occasion",
         "criterion_ids": ("claim_support", "source_alignment"),
@@ -253,6 +255,7 @@ def test_public_factories_reject_invalid_request_and_engine_types() -> None:
             respondent_id="sample_respondent",
             response_id="sample_response",
             task_id="sample_task",
+            task_revision_fingerprint=_TASK_REVISION_FINGERPRINT,
             task_family_id="evidence_review",
             occasion_id="initial_occasion",
             criterion_ids=("claim_support",),
