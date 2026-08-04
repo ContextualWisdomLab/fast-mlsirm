@@ -1,0 +1,96 @@
+name: One-time sales JSON shape compatibility fix
+
+on:
+  push:
+    branches:
+      - sentinel-json-dos-scripts-17708564860587448239
+    paths:
+      - .github/workflows/one-time-sales-json-shape-fix.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-sales-json-shape-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: sentinel-json-dos-scripts-17708564860587448239
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Preserve JSON shape failure classification
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/sales_readiness.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''\
+                  try:
+                      payload = _read_json(path)
+                  except Exception as exc:
+                      checks.append(
+                          _check(
+                              f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"
+                          )
+                      )
+                      continue
+                  if not isinstance(payload, dict):
+                      checks.append(
+                          _check(
+                              f"20b:json_shape:{relative}",
+                              False,
+                              "manifest must be a JSON object",
+                              actual_type=type(payload).__name__,
+                          )
+                      )
+                      continue
+          '''
+          new = '''\
+                  try:
+                      payload = _read_json(path)
+                  except RuntimeError:
+                      checks.append(
+                          _check(
+                              f"20b:json_shape:{relative}",
+                              False,
+                              "manifest must be a JSON object",
+                          )
+                      )
+                      continue
+                  except Exception as exc:
+                      checks.append(
+                          _check(
+                              f"20b:json:{relative}", False, f"manifest is not valid JSON: {exc}"
+                          )
+                      )
+                      continue
+          '''
+          if text.count(old) != 1:
+              raise RuntimeError("sales JSON shape compatibility anchor was not found exactly once")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+          rm .github/workflows/one-time-sales-json-shape-fix.yml
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+          python -m pytest tests/test_sales_readiness.py tests/test_bounded_json_scripts.py
+          git diff --check
+      - name: Commit compatibility fix
+        run: |
+          git add -A
+          git commit -m "fix(security): preserve JSON shape failure classification"
+          git push origin "HEAD:sentinel-json-dos-scripts-17708564860587448239"
