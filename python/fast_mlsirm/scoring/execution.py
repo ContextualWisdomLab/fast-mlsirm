@@ -37,6 +37,8 @@ from ._validation import (
 )
 from .assessment import AssessmentResponseType, AssessmentSpec
 
+LEGACY_SCORING_REQUEST_SCHEMA_VERSION = ASSESSMENT_SCHEMA_VERSION
+SCORING_REQUEST_SCHEMA_VERSION = "1.1"
 MAX_REQUEST_CRITERIA = 32
 MAX_EVIDENCE_REFERENCES = 64
 MAX_RESPONSE_CHARACTER_COUNT = 100_000_000
@@ -92,6 +94,17 @@ def _optional_fingerprint(value: Any, name: str) -> str | None:
     if value is None:
         return None
     return fingerprint(value, name)
+
+
+def _scoring_request_schema_version(value: Any) -> str:
+    """Return the sole supported scoring-request wire-schema version."""
+    if value != SCORING_REQUEST_SCHEMA_VERSION:
+        raise assessment_error(
+            "invalid_schema_version",
+            "$.schema_version",
+            "scoring request schema_version must be '1.1'",
+        )
+    return SCORING_REQUEST_SCHEMA_VERSION
 
 
 def _nonnegative_integer(value: Any, name: str, maximum: int) -> int:
@@ -400,7 +413,7 @@ class EvidenceReference(CanonicalContract):
 
 @dataclass(frozen=True)
 class ScoringRequest(CanonicalContract):
-    """Factory-sealed request bound to exact assessment and rubric revisions."""
+    """Factory-sealed request bound to exact assessment, rubric, and task revisions."""
 
     request_id: str
     assessment_fingerprint: str
@@ -412,6 +425,7 @@ class ScoringRequest(CanonicalContract):
     respondent_id: str
     response_id: str
     task_id: str
+    task_revision_fingerprint: str
     task_family_id: str
     occasion_id: str
     criterion_ids: tuple[str, ...]
@@ -420,7 +434,7 @@ class ScoringRequest(CanonicalContract):
     response_character_count: int
     response_unit_count: int
     metadata: Mapping[str, Any]
-    schema_version: str = ASSESSMENT_SCHEMA_VERSION
+    schema_version: str = SCORING_REQUEST_SCHEMA_VERSION
     _request_token: InitVar[object | None] = None
 
     def __post_init__(self, _request_token: object | None) -> None:
@@ -455,6 +469,15 @@ class ScoringRequest(CanonicalContract):
             self,
             "rubric_fingerprint",
             fingerprint(self.rubric_fingerprint, "rubric_fingerprint"),
+        )
+        object.__setattr__(
+            self,
+            "task_revision_fingerprint",
+            fingerprint(
+                self.task_revision_fingerprint,
+                "task_revision_fingerprint",
+                "$.task_revision_fingerprint",
+            ),
         )
         if not isinstance(self.response_format, ResponseFormat):
             try:
@@ -515,7 +538,7 @@ class ScoringRequest(CanonicalContract):
         object.__setattr__(
             self,
             "schema_version",
-            assessment_schema_version(self.schema_version),
+            _scoring_request_schema_version(self.schema_version),
         )
         if self.granularity is ObservationGranularity.CRITERION_LEVEL and not criteria:
             raise assessment_error(
@@ -544,6 +567,7 @@ class ScoringRequest(CanonicalContract):
             "respondent_id": self.respondent_id,
             "response_id": self.response_id,
             "task_id": self.task_id,
+            "task_revision_fingerprint": self.task_revision_fingerprint,
             "task_family_id": self.task_family_id,
             "occasion_id": self.occasion_id,
             "criterion_ids": list(self.criterion_ids),
@@ -832,6 +856,7 @@ def build_scoring_request(
     respondent_id: str,
     response_id: str,
     task_id: str,
+    task_revision_fingerprint: str,
     task_family_id: str,
     occasion_id: str,
     criterion_ids: Iterable[str] = (),
@@ -840,7 +865,7 @@ def build_scoring_request(
     response_unit_count: int,
     metadata: Mapping[str, Any] | None = None,
 ) -> ScoringRequest:
-    """Build one request bound to exact assessment and rubric graph identities."""
+    """Build one request bound to exact assessment, rubric, and task revisions."""
     if not isinstance(assessment, AssessmentSpec):
         raise assessment_error(
             "invalid_assessment_spec",
@@ -915,6 +940,7 @@ def build_scoring_request(
         respondent_id=respondent_id,
         response_id=response_id,
         task_id=task_id,
+        task_revision_fingerprint=task_revision_fingerprint,
         task_family_id=normalized_task_family,
         occasion_id=occasion_id,
         criterion_ids=criteria,
@@ -1297,6 +1323,8 @@ class StaticFixtureEngine:
 
 
 __all__ = [
+    "LEGACY_SCORING_REQUEST_SCHEMA_VERSION",
+    "SCORING_REQUEST_SCHEMA_VERSION",
     "EngineDescriptor",
     "EngineKind",
     "EvidenceReference",

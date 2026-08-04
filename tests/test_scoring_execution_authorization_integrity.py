@@ -26,6 +26,7 @@ _FIXTURES = runpy.run_path(
 assessment = _FIXTURES["assessment"]
 automated_engine = _FIXTURES["automated_engine"]
 rubric = _FIXTURES["rubric"]
+_TASK_REVISION_FINGERPRINT = "d" * 64
 
 
 def _unprojected_request(*, metadata):
@@ -38,6 +39,7 @@ def _unprojected_request(*, metadata):
         respondent_id="sample_respondent",
         response_id="sample_response",
         task_id="sample_task",
+        task_revision_fingerprint=_TASK_REVISION_FINGERPRINT,
         task_family_id="evidence_review",
         occasion_id="initial_occasion",
         criterion_ids=("claim_support", "source_alignment"),
@@ -147,6 +149,7 @@ def test_result_factory_accepts_an_exact_authoritative_assessment_replay() -> No
         respondent_id="sample_respondent",
         response_id="sample_response",
         task_id="sample_task",
+        task_revision_fingerprint=_TASK_REVISION_FINGERPRINT,
         task_family_id="evidence_review",
         occasion_id="initial_occasion",
         criterion_ids=("claim_support", "source_alignment"),

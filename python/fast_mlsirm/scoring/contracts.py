@@ -22,6 +22,12 @@ from .assessment import build_assessment_spec as build_assessment_spec
 from .authorization import StaticFixtureEngine as StaticFixtureEngine
 from .authorization import build_scoring_request as build_scoring_request
 from .authorization import build_scoring_result as build_scoring_result
+from .execution import (
+    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
+)
+from .execution import (
+    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,
+)
 from .execution import EngineDescriptor as EngineDescriptor
 from .execution import EngineKind as EngineKind
 from .execution import EvidenceReference as EvidenceReference
@@ -35,6 +41,7 @@ from .execution import ScoringRequest as ScoringRequest
 from .execution import ScoringResult as ScoringResult
 from .execution import build_engine_descriptor as build_engine_descriptor
 from .execution import build_score_observation as build_score_observation
+from .migrations import migrate_scoring_request_v1 as migrate_scoring_request_v1
 from .policies import AdjudicationPolicy as AdjudicationPolicy
 from .policies import CalibrationPolicy as CalibrationPolicy
 from .policies import EnginePolicy as EnginePolicy
