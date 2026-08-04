@@ -24,6 +24,12 @@
 - Report construction replays exact request, engine, assessment, rubric, construct, granularity, and criterion provenance before emission.
 - Submission review flags, terminal observations, and scored observations without evidence now produce non-suppressible transparent human-review triggers. The report preserves criteria separately and explicitly does not treat absence of a trigger as validity or deployment evidence.
 
+#### Governed automated-essay validation evidence reports
+
+- Added factory-sealed, criterion-specific automated-essay validation evidence reports that bind exact shared assessment, construct, rubric, validation-policy, dataset, automated-engine, and human-reference identities.
+- Reused the existing Rust agreement kernel for quadratic-weighted kappa, exact/adjacent agreement, descriptive Pearson association, standardized mean difference, optional human–human degradation, and optional subgroup evidence while deliberately discarding legacy threshold and pass fields.
+- Added non-suppressible human-validation and interpretation boundaries, missing-comparator review routing, source-text-free deterministic reports, complete public documentation, APA 7th equation-to-source traceability, Rust-delegation tests, and statement/branch coverage.
+
 ### Changed
 
 #### Release cut 0.7.0

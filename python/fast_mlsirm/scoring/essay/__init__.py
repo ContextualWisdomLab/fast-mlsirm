@@ -41,6 +41,16 @@ from .reporting import (
     MAX_ESSAY_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_REPORT_REVIEW_TRIGGERS,
 )
 from .reporting import build_essay_score_report as build_essay_score_report
+from .validation_reporting import (
+    MAX_ESSAY_VALIDATION_REVIEW_TRIGGERS as MAX_ESSAY_VALIDATION_REVIEW_TRIGGERS,
+)
+from .validation_reporting import (
+    EssayValidationEvidenceReport as EssayValidationEvidenceReport,
+)
+from .validation_reporting import EssayValidationMetric as EssayValidationMetric
+from .validation_reporting import (
+    build_essay_validation_evidence_report as build_essay_validation_evidence_report,
+)
 
 __all__ = [
     "MAX_ESSAY_EVIDENCE_REFERENCES",
@@ -49,6 +59,7 @@ __all__ = [
     "MAX_ESSAY_RESPONSE_CHARACTERS",
     "MAX_ESSAY_RESPONSE_UNITS",
     "MAX_ESSAY_REVIEW_FLAGS",
+    "MAX_ESSAY_VALIDATION_REVIEW_TRIGGERS",
     "EssayEvidenceKind",
     "EssayFacetsCalibrationReport",
     "EssayPrompt",
@@ -57,12 +68,15 @@ __all__ = [
     "EssayScoreReport",
     "EssayScoringRequest",
     "EssaySubmission",
+    "EssayValidationEvidenceReport",
+    "EssayValidationMetric",
     "build_essay_facets_calibration_report",
     "build_essay_prompt",
     "build_essay_response_evidence",
     "build_essay_score_report",
     "build_essay_scoring_request",
     "build_essay_submission",
+    "build_essay_validation_evidence_report",
     "fit_essay_facets_calibration_report",
     "render_essay_score_report_html",
     "score_essay_request",
