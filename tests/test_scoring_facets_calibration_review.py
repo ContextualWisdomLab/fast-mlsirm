@@ -155,6 +155,7 @@ def test_missing_criterion_has_a_specific_fail_closed_error() -> None:
         response_id="missing_criterion_response",
         respondent_id="missing_criterion_respondent",
         task_id="missing_criterion_prompt",
+        task_revision_fingerprint="d" * 64,
         engine=_BASE["automated_engine"](),
         claim_score=0,
         source_score=1,
