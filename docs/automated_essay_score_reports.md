@@ -51,9 +51,11 @@ evidence that an automated score is interchangeable with a human score.
 
 ## Replay and privacy boundary
 
-Before report construction, the adapter replays request, engine, assessment,
+Before report construction, the adapter validates request, engine, assessment,
 rubric, construct, granularity, and criterion provenance for the result and every
-observation. A post-construction mismatch fails before a report is emitted.
+observation. It rebuilds nested observations and the scoring result through the
+shared governed factories; provenance mismatches, invalid nested state, and
+canonical replay differences fail before a report is emitted.
 
 The report stores fingerprints, bounded identifiers, counts, evidence references,
 and normalized metadata. It does not store prompt text, response text, or source
