@@ -6,6 +6,16 @@
 <!-- BEGIN AUTHORITATIVE CHANGELOG FRAGMENTS -->
 ### Added
 
+#### Enterprise issue evidence contracts
+
+- Added immutable content-addressed enterprise source, evidence-span, atomic-issue,
+  counterevidence, stakeholder-perspective, and candidate-intervention contracts.
+- Added deterministic compilation into the shared scoring `EvidenceReference`
+  boundary while preserving facts, inferences, counterevidence, ambiguities, and
+  stakeholder value judgments as distinct epistemic roles.
+- Added fail-closed provenance, source-revision, sensitive-metadata, and ordering
+  tests for the first issue #404 domain-adapter slice.
+
 #### Accessible standalone essay facets-calibration artifacts
 
 - Added `render_essay_facets_calibration_report_html`, which replay-verifies one governed `EssayFacetsCalibrationReport` and emits a deterministic, source-text-free, script-free standalone HTML audit artifact.
