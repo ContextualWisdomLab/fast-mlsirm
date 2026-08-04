@@ -83,6 +83,7 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "default-src &#x27;none&#x27;" in first
     assert "script-src" not in first
     assert "No structural review trigger was emitted." in first
+    assert 'class="empty-state" role="status"' in first
     assert "No structural trigger" in first
     assert report.report_fingerprint in first
     assert report.engine_descriptor.engine_fingerprint in first
@@ -93,6 +94,17 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "Not applicable" in first
     assert "Absence of a trigger is not evidence" in first
     assert "&quot;report_fingerprint&quot;" in first
+    assert ".skip-link:focus { top: 8px; }" in first
+    assert (
+        ".skip-link:focus-visible { outline: 3px solid Highlight; "
+        "outline-offset: 2px; }"
+    ) in first
+    assert "main:focus-visible" in first
+    assert "main:focus { outline: none; }" not in first
+    assert "font-variant-numeric: tabular-nums;" in first
+    assert "@media (prefers-reduced-motion: reduce)" in first
+    assert "transition-duration: 0.01ms !important;" in first
+    assert "tbody:hover tr:not(:hover)" not in first
     assert "<script" not in first.lower()
 
 
@@ -139,7 +151,7 @@ def test_empty_table_renders_an_explicit_empty_state() -> None:
         rows=(),
         empty_message="No evidence is available.",
     )
-    assert rendered == '<p class="empty-state">No evidence is available.</p>'
+    assert rendered == '<div class="empty-state" role="status">No evidence is available.</div>'
 
 
 def test_renderer_rejects_wrong_type_and_wrong_suffix(tmp_path: Path) -> None:
