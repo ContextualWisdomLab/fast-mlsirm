@@ -38,6 +38,7 @@ def test_exact_size_depth_strings_escapes_and_unicode(tmp_path: Path) -> None:
     content = json.dumps(
         {
             "text": "[{}] \\ slash",
+            "escaped_quote": 'quote: " and delimiters: {[]}',
             "nested": {"items": ["한글"]},
         },
         ensure_ascii=False,
