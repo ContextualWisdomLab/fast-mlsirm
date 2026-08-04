@@ -93,7 +93,7 @@ def _require_utf8(value: str, path: str) -> str:
     """Reject lone surrogates before serialization or digest encoding."""
     try:
         value.encode("utf-8")
-    except UnicodeEncodeError as exc:
+    except UnicodeEncodeError:
         raise assessment_error(
             "invalid_utf8_text",
             path,
@@ -107,7 +107,7 @@ def descriptive_identifier(value: Any, name: str, path: str | None = None) -> st
     resolved_path = path or f"$.{name}"
     try:
         normalized = _identifier(value, name)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -127,7 +127,7 @@ def bounded_text(
     resolved_path = path or f"$.{name}"
     try:
         normalized = _text(value, name, maximum=maximum)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -141,7 +141,7 @@ def semantic_version(value: Any, name: str, path: str | None = None) -> str:
     resolved_path = path or f"$.{name}"
     try:
         return _semantic_version(value, name)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -171,7 +171,7 @@ def enum_value(
         return value
     try:
         return enum_type(value)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except (TypeError, ValueError, OverflowError):
         raise assessment_error(
             f"invalid_{name}",
             path or f"$.{name}",
@@ -206,7 +206,7 @@ def bounded_positive_integer(
         )
     try:
         normalized = operator.index(value)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except Exception:  # noqa: BLE001 - user-defined numeric callback boundary
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -239,7 +239,7 @@ def bounded_values(
         )
     try:
         iterator = iter(values)
-    except (TypeError, ValueError, OverflowError) as exc:
+    except Exception:  # noqa: BLE001 - user-defined iterator callback boundary
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -257,7 +257,7 @@ def bounded_values(
             output.append(value)
     except AssessmentSpecError:
         raise
-    except (TypeError, ValueError, OverflowError) as exc:
+    except Exception:  # noqa: BLE001 - user-defined iterator callback boundary
         raise assessment_error(
             f"invalid_{name}",
             resolved_path,
@@ -387,7 +387,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
     seen: set[str] = set()
     try:
         iterator = iter(value.items())
-    except (TypeError, ValueError, OverflowError) as exc:
+    except Exception:  # noqa: BLE001 - user-defined mapping callback boundary
         raise assessment_error(
             "invalid_metadata_mapping",
             path,
@@ -406,7 +406,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
                 )
             try:
                 raw_key, child = entry
-            except (TypeError, ValueError, OverflowError) as exc:
+            except Exception:  # noqa: BLE001 - user-defined entry callback boundary
                 raise assessment_error(
                     "invalid_metadata_mapping",
                     f"{path}.entries[{index}]",
@@ -423,7 +423,7 @@ def _mapping_entries(value: Mapping[Any, Any], path: str) -> tuple[tuple[str, An
             entries.append((key, child))
     except AssessmentSpecError:
         raise
-    except (TypeError, ValueError, OverflowError) as exc:
+    except Exception:  # noqa: BLE001 - user-defined mapping callback boundary
         raise assessment_error(
             "invalid_metadata_mapping",
             path,
