@@ -403,14 +403,14 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False))
         return 1
+    repo_root = Path(args.repo_root).resolve()
+    out_dir = _resolve_path(args.out, base=repo_root).resolve()
     print(
         json.dumps(
             {
                 "status": manifest["status"],
-                "out": str(Path(args.out).resolve()),
-                "manifest": str(
-                    Path(args.out).resolve() / "figma_evidence_sync_manifest.json"
-                ),
+                "out": str(out_dir),
+                "manifest": str(out_dir / "figma_evidence_sync_manifest.json"),
                 "html": manifest["html_report_file"],
                 "failed_checks": len(manifest["failed_checks"]),
             },
