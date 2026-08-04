@@ -127,7 +127,7 @@ def test_disconnected_error_precedes_every_estimator_gate() -> None:
         assert not design.connected
         for allow_disconnected in (False, True):
             assert_error(
-                "disconnected_facets_design",
+                "unidentified_respondent_task_design",
                 lambda design=design, allow_disconnected=allow_disconnected: (
                     fit_scoring_facets_design(
                         design,
@@ -218,8 +218,8 @@ def test_all_terminal_states_do_not_satisfy_category_observation() -> None:
     """Abstained, failed, and excluded records provide no threshold evidence."""
     terminal_by_index = {
         0: ObservationStatus.ABSTAINED,
-        2: ObservationStatus.FAILED,
-        4: ObservationStatus.EXCLUDED,
+        1: ObservationStatus.FAILED,
+        5: ObservationStatus.EXCLUDED,
     }
     counters: dict[str, int] = {}
     records = []
