@@ -89,6 +89,11 @@ jobs:
             scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
             scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
             scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          ruff check --fix scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
           ruff check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
             scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
             scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
