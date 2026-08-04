@@ -190,6 +190,7 @@ def test_public_surface_is_explicit_and_documented() -> None:
         "build_essay_scoring_request",
         "build_essay_submission",
         "fit_essay_facets_calibration_report",
+        "render_essay_score_report_html",
         "score_essay_request",
     }
     assert set(essay.__all__) == expected

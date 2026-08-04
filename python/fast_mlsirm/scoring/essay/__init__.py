@@ -33,6 +33,9 @@ from .contracts import (
 from .contracts import build_essay_scoring_request as build_essay_scoring_request
 from .contracts import build_essay_submission as build_essay_submission
 from .contracts import score_essay_request as score_essay_request
+from .report_html import (
+    render_essay_score_report_html as render_essay_score_report_html,
+)
 from .reporting import EssayScoreReport as EssayScoreReport
 from .reporting import (
     MAX_ESSAY_REPORT_REVIEW_TRIGGERS as MAX_ESSAY_REPORT_REVIEW_TRIGGERS,
@@ -61,5 +64,6 @@ __all__ = [
     "build_essay_scoring_request",
     "build_essay_submission",
     "fit_essay_facets_calibration_report",
+    "render_essay_score_report_html",
     "score_essay_request",
 ]
