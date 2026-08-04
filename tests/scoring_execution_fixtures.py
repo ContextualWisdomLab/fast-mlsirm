@@ -164,7 +164,7 @@ def evidence(
 
 
 def criterion_request(**overrides: Any):
-    """Return one two-criterion request bound to the fixture assessment."""
+    """Return one two-criterion request with explicit task-content identity."""
     values: dict[str, Any] = {
         "request_id": "scoring_request",
         "assessment": assessment(),
@@ -173,6 +173,7 @@ def criterion_request(**overrides: Any):
         "respondent_id": "sample_respondent",
         "response_id": "sample_response",
         "task_id": "sample_task",
+        "task_revision_fingerprint": "d" * 64,
         "task_family_id": "evidence_review",
         "occasion_id": "initial_occasion",
         "criterion_ids": ("claim_support", "source_alignment"),
@@ -186,7 +187,7 @@ def criterion_request(**overrides: Any):
 
 
 def holistic_request(**overrides: Any):
-    """Return one holistic request bound to the fixture assessment."""
+    """Return one holistic request with explicit task-content identity."""
     values: dict[str, Any] = {
         "request_id": "holistic_request",
         "assessment": assessment(),
@@ -195,6 +196,7 @@ def holistic_request(**overrides: Any):
         "respondent_id": "sample_respondent",
         "response_id": "sample_response",
         "task_id": "sample_task",
+        "task_revision_fingerprint": "d" * 64,
         "task_family_id": "evidence_review",
         "occasion_id": "initial_occasion",
         "criterion_ids": (),
