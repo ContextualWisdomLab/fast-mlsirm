@@ -22,6 +22,12 @@ from .calibration import fit_scoring_facets_bundle as fit_scoring_facets_bundle
 from .calibration import fit_scoring_facets_design as fit_scoring_facets_design
 from .contracts import ASSESSMENT_SCHEMA_VERSION as ASSESSMENT_SCHEMA_VERSION
 from .contracts import (
+    LEGACY_SCORING_REQUEST_SCHEMA_VERSION as LEGACY_SCORING_REQUEST_SCHEMA_VERSION,
+)
+from .contracts import (
+    SCORING_REQUEST_SCHEMA_VERSION as SCORING_REQUEST_SCHEMA_VERSION,
+)
+from .contracts import (
     MAX_METADATA_COLLECTION_VALUES as MAX_METADATA_COLLECTION_VALUES,
 )
 from .contracts import MAX_METADATA_DEPTH as MAX_METADATA_DEPTH
@@ -55,6 +61,7 @@ from .contracts import build_score_observation as build_score_observation
 from .contracts import build_scoring_request as build_scoring_request
 from .contracts import build_scoring_result as build_scoring_result
 from .contracts import canonical_json as canonical_json
+from .contracts import migrate_scoring_request_v1 as migrate_scoring_request_v1
 
 # Preserve the pinned star-import contract. Execution, authorization, and
 # calibration contracts remain explicit package attributes imported by their
