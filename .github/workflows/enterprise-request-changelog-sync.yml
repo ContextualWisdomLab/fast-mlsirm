@@ -1,0 +1,45 @@
+name: Enterprise request changelog one-time sync
+
+on:
+  push:
+    branches:
+      - feat/enterprise-issue-scoring-request
+    paths:
+      - .github/workflows/enterprise-request-changelog-sync.yml
+      - docs/changelog.d/enterprise-issue-scoring-request.md
+
+permissions:
+  contents: write
+
+concurrency:
+  group: enterprise-request-changelog-one-time-sync
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    if: >-
+      github.ref == 'refs/heads/feat/enterprise-issue-scoring-request' &&
+      !contains(github.event.head_commit.message, 'render enterprise request changelog')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/enterprise-issue-scoring-request
+          fetch-depth: 0
+      - name: Render and verify authoritative changelog
+        run: |
+          python scripts/render_changelog_fragments.py --update CHANGELOG.md
+          python scripts/render_changelog_fragments.py --check CHANGELOG.md
+          rm .github/workflows/enterprise-request-changelog-sync.yml
+          git diff --check
+      - name: Commit synchronized changelog
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md .github/workflows/enterprise-request-changelog-sync.yml
+          git commit -m 'docs(changelog): render enterprise request changelog'
+          git fetch origin feat/enterprise-issue-scoring-request
+          git rebase origin/feat/enterprise-issue-scoring-request
+          git push origin HEAD:feat/enterprise-issue-scoring-request
