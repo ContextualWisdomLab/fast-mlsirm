@@ -1,4 +1,3 @@
-# Temporary workflow; it removes itself after applying and validating the fix.
 name: One-time bounded JSON hardening
 
 on:
@@ -9,7 +8,6 @@ on:
       - .github/workflows/one-time-bounded-json-hardening.yml
 
 permissions: {}
-
 concurrency:
   group: one-time-bounded-json-hardening-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +20,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out exact security branch
+      - name: Check out exact feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: sentinel-json-dos-scripts-17708564860587448239
@@ -31,18 +29,15 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - name: Bring branch current with main
+      - name: Apply bounded JSON contract
         run: |
           git fetch origin main
           git merge --no-edit origin/main
-      - name: Add shared bounded JSON contract
-        run: |
           cat > scripts/_bounded_json.py <<'PY'
           """Bounded JSON input helpers for repository automation scripts.
 
-          The helpers cap both bytes read and structural nesting before invoking
-          Python's recursive JSON decoder. Brackets inside strings and escaped
-          characters do not contribute to the structural depth count.
+          The helpers cap bytes and structural nesting before invoking Python's
+          recursive JSON decoder. Delimiters inside strings are ignored.
           """
 
           from __future__ import annotations
@@ -68,13 +63,7 @@ jobs:
               path: Path,
               max_depth: int,
           ) -> None:
-              """Reject JSON whose object/array nesting exceeds ``max_depth``.
-
-              This scanner is deliberately non-recursive and tracks JSON string
-              and escape state so structural delimiters embedded in strings do
-              not affect the depth count. Full syntax validation remains the
-              responsibility of :func:`json.loads`.
-              """
+              """Reject JSON whose object or array nesting exceeds ``max_depth``."""
               depth = 0
               in_string = False
               escaped = False
@@ -93,7 +82,7 @@ jobs:
                       depth += 1
                       if depth > max_depth:
                           raise ValueError(
-                              f"JSON nesting exceeds maximum allowed depth "
+                              "JSON nesting exceeds maximum allowed depth "
                               f"{max_depth}: {path}"
                           )
                   elif byte in (0x5D, 0x7D) and depth:
@@ -106,30 +95,18 @@ jobs:
               max_bytes: int = MAX_JSON_BYTES,
               max_depth: int = MAX_JSON_DEPTH,
           ) -> dict[str, Any]:
-              """Read one bounded UTF-8 JSON object from ``path``.
-
-              At most ``max_bytes + 1`` bytes are read, allowing deterministic
-              oversized-input rejection without loading an unbounded file. A
-              non-recursive pre-scan rejects excessive object/array nesting
-              before the standard-library decoder can exhaust the Python stack.
-              """
-              resolved_max_bytes = _positive_limit(max_bytes, "max_bytes")
-              resolved_max_depth = _positive_limit(max_depth, "max_depth")
+              """Read one size- and depth-bounded UTF-8 JSON object from ``path``."""
+              byte_limit = _positive_limit(max_bytes, "max_bytes")
+              depth_limit = _positive_limit(max_depth, "max_depth")
               with path.open("rb") as handle:
-                  content = handle.read(resolved_max_bytes + 1)
-              if len(content) > resolved_max_bytes:
+                  content = handle.read(byte_limit + 1)
+              if len(content) > byte_limit:
                   raise ValueError(
-                      f"JSON file exceeds maximum allowed size "
-                      f"{resolved_max_bytes} bytes: {path}"
+                      f"JSON file exceeds maximum allowed size {byte_limit} bytes: {path}"
                   )
-              text = content.decode("utf-8")
-              _validate_json_depth(
-                  content,
-                  path=path,
-                  max_depth=resolved_max_depth,
-              )
+              _validate_json_depth(content, path=path, max_depth=depth_limit)
               try:
-                  payload = json.loads(text)
+                  payload = json.loads(content.decode("utf-8"))
               except RecursionError as exc:
                   raise ValueError(
                       f"JSON nesting exceeds decoder recursion capacity: {path}"
@@ -139,29 +116,26 @@ jobs:
               return payload
 
 
-          __all__ = [
-              "MAX_JSON_BYTES",
-              "MAX_JSON_DEPTH",
-              "read_json_object",
-          ]
+          __all__ = ["MAX_JSON_BYTES", "MAX_JSON_DEPTH", "read_json_object"]
           PY
-      - name: Delegate all repository automation readers
-        run: |
           python - <<'PY'
           from __future__ import annotations
 
           import ast
           from pathlib import Path
 
-          files = (
-              "scripts/build_benchmark_report.py",
-              "scripts/build_buyer_packet.py",
-              "scripts/build_commercial_release.py",
-              "scripts/build_figma_evidence_sync.py",
-              "scripts/build_pr_queue_governance.py",
-              "scripts/build_procurement_due_diligence.py",
-              "scripts/build_release_evidence_index.py",
-              "scripts/sales_readiness.py",
+          paths = tuple(
+              Path("scripts") / name
+              for name in (
+                  "build_benchmark_report.py",
+                  "build_buyer_packet.py",
+                  "build_commercial_release.py",
+                  "build_figma_evidence_sync.py",
+                  "build_pr_queue_governance.py",
+                  "build_procurement_due_diligence.py",
+                  "build_release_evidence_index.py",
+                  "sales_readiness.py",
+              )
           )
           import_block = (
               "\ntry:\n"
@@ -175,35 +149,33 @@ jobs:
               "    return read_json_object(path)\n"
           )
 
-          for raw_path in files:
-              path = Path(raw_path)
+          for path in paths:
               text = path.read_text(encoding="utf-8")
+              tree = ast.parse(text)
+              target = next(
+                  node
+                  for node in tree.body
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and node.name == "_read_json"
+              )
+              lines = text.splitlines(keepends=True)
+              lines[target.lineno - 1 : target.end_lineno] = [replacement]
+              text = "".join(lines)
+              text = text.replace("import json\n", "")
+              text = text.replace("_MAX_JSON_BYTES = 32 * 1024 * 1024\n", "")
               if "from scripts._bounded_json import read_json_object" not in text:
                   tree = ast.parse(text)
-                  import_ends = [
+                  import_end = max(
                       node.end_lineno
                       for node in tree.body
                       if isinstance(node, (ast.Import, ast.ImportFrom))
                       and node.end_lineno is not None
-                  ]
-                  if not import_ends:
-                      raise RuntimeError(f"no import anchor found in {path}")
+                  )
                   lines = text.splitlines(keepends=True)
-                  insert_at = max(import_ends)
-                  lines.insert(insert_at, import_block)
+                  lines.insert(import_end, import_block)
                   text = "".join(lines)
-
-              start = text.find("def _read_json(path: Path) -> dict[str, Any]:")
-              if start < 0:
-                  raise RuntimeError(f"_read_json contract missing in {path}")
-              next_definition = text.find("\n\ndef ", start + 1)
-              if next_definition < 0:
-                  raise RuntimeError(f"next function anchor missing in {path}")
-              text = text[:start] + replacement + text[next_definition + 2 :]
               path.write_text(text, encoding="utf-8")
           PY
-      - name: Add deterministic security and delegation tests
-        run: |
           cat > tests/test_bounded_json_scripts.py <<'PY'
           """Security and delegation tests for bounded script JSON readers."""
 
@@ -236,19 +208,15 @@ jobs:
               return path
 
 
-          def test_valid_object_preserves_string_delimiters_and_exact_limit(
+          def test_valid_object_preserves_delimiters_escapes_and_boundary(
               tmp_path: Path,
           ) -> None:
-              """Strings, escapes, Unicode, and an exact byte limit parse normally."""
+              """String delimiters, escapes, Unicode, and exact limits remain valid."""
               content = json.dumps(
-                  {
-                      "text": "[{}] \\\"quoted\\\" \\\\ slash",
-                      "nested": {"items": ["한글", 2]},
-                  },
+                  {"text": "[{}] \\\"quoted\\\" \\\\ slash", "nested": {"items": ["한글"]}},
                   ensure_ascii=False,
               ).encode("utf-8")
               path = _write(tmp_path / "valid.json", content)
-
               assert read_json_object(
                   path,
                   max_bytes=len(content),
@@ -256,33 +224,26 @@ jobs:
               ) == json.loads(content)
 
 
-          def test_depth_limit_accepts_boundary_and_rejects_next_level(
-              tmp_path: Path,
-          ) -> None:
-              """The structural scanner fails before decoder recursion is reachable."""
+          def test_depth_boundary_and_excessive_nesting(tmp_path: Path) -> None:
+              """Depth scanning accepts the boundary and rejects the next level."""
               boundary = _write(tmp_path / "boundary.json", b'{"a":{"b":0}}')
               excessive = _write(tmp_path / "excessive.json", b'{"a":{"b":[]}}')
-
               assert read_json_object(boundary, max_depth=2) == {"a": {"b": 0}}
               with pytest.raises(ValueError, match="maximum allowed depth 2"):
                   read_json_object(excessive, max_depth=2)
 
 
-          def test_malformed_closer_is_left_to_json_syntax_validation(
-              tmp_path: Path,
-          ) -> None:
-              """An unmatched closer cannot corrupt the non-recursive depth counter."""
+          def test_malformed_closer_remains_a_json_syntax_error(tmp_path: Path) -> None:
+              """An unmatched closer cannot corrupt the depth counter."""
               path = _write(tmp_path / "malformed.json", b'}{"value": 1}')
-
               with pytest.raises(json.JSONDecodeError):
                   read_json_object(path)
 
 
-          def test_size_limit_rejects_only_oversized_content(tmp_path: Path) -> None:
+          def test_size_boundary_and_oversized_rejection(tmp_path: Path) -> None:
               """The bounded read admits the exact limit and rejects one extra byte."""
               exact = _write(tmp_path / "exact.json", b'{"a":1}')
               oversized = _write(tmp_path / "oversized.json", b'{"a":1} ')
-
               assert read_json_object(exact, max_bytes=7) == {"a": 1}
               with pytest.raises(ValueError, match="maximum allowed size 7 bytes"):
                   read_json_object(oversized, max_bytes=7)
@@ -290,25 +251,30 @@ jobs:
 
           @pytest.mark.parametrize(
               ("keyword", "value"),
-              (("max_bytes", 0), ("max_bytes", True), ("max_depth", 0), ("max_depth", True)),
+              (
+                  ("max_bytes", 0),
+                  ("max_bytes", True),
+                  ("max_bytes", "7"),
+                  ("max_depth", -1),
+                  ("max_depth", True),
+                  ("max_depth", 1.5),
+              ),
           )
           def test_limits_require_positive_non_boolean_integers(
               tmp_path: Path,
               keyword: str,
               value: object,
           ) -> None:
-              """Configuration mistakes fail before file parsing."""
+              """Invalid resource-limit configuration fails before decoding."""
               path = _write(tmp_path / "value.json", b"{}")
-
               with pytest.raises(ValueError, match=f"{keyword} must be a positive integer"):
                   read_json_object(path, **{keyword: value})
 
 
           def test_invalid_utf8_and_non_object_roots_fail_closed(tmp_path: Path) -> None:
-              """Readers retain the UTF-8 and object-root contracts."""
-              invalid_utf8 = _write(tmp_path / "invalid_utf8.json", b'{"x":"\xff"}')
+              """UTF-8 and object-root contracts remain strict."""
+              invalid_utf8 = _write(tmp_path / "invalid.json", b'{"x":"\xff"}')
               array_root = _write(tmp_path / "array.json", b"[]")
-
               with pytest.raises(UnicodeDecodeError):
                   read_json_object(invalid_utf8)
               with pytest.raises(RuntimeError, match="must be an object"):
@@ -319,7 +285,7 @@ jobs:
               monkeypatch: pytest.MonkeyPatch,
               tmp_path: Path,
           ) -> None:
-              """Decoder-level recursion remains a deterministic validation failure."""
+              """Decoder recursion remains a deterministic validation error."""
               path = _write(tmp_path / "object.json", b"{}")
 
               def raise_recursion(_: str) -> object:
@@ -336,10 +302,10 @@ jobs:
               monkeypatch: pytest.MonkeyPatch,
               tmp_path: Path,
           ) -> None:
-              """Every governed automation script uses the same bounded reader."""
+              """Every governed script delegates to the same bounded reader."""
               module = importlib.import_module(module_name)
-              marker = {"bounded": True}
               requested = tmp_path / "artifact.json"
+              marker = {"bounded": True}
               observed: list[Path] = []
 
               def fake_reader(path: Path) -> dict[str, bool]:
@@ -347,23 +313,15 @@ jobs:
                   return marker
 
               monkeypatch.setattr(module, "read_json_object", fake_reader)
-
               assert module._read_json(requested) is marker
               assert observed == [requested]
           PY
-      - name: Add security documentation and changelog fragment
-        run: |
           cat > docs/bounded_json_input_security.md <<'MD'
           # Bounded JSON input security
 
-          Repository automation scripts treat JSON artifacts as untrusted input. Every governed reader delegates to `scripts._bounded_json.read_json_object`, which enforces two independent availability controls before decoding:
+          Repository automation scripts treat JSON artifacts as untrusted input. Every governed reader delegates to `scripts._bounded_json.read_json_object`, which enforces a bounded 32 MiB read and a non-recursive maximum structural depth of 128 before decoding. The scanner tracks string and escape state, so brackets inside JSON strings do not affect depth.
 
-          - a 32 MiB maximum read, implemented as a bounded `limit + 1` binary read;
-          - a maximum object/array nesting depth of 128, checked by a non-recursive scanner that ignores brackets in JSON strings and honors escape state.
-
-          The standard-library decoder remains authoritative for JSON syntax. UTF-8 decoding, object-root validation, and deterministic error handling are preserved. The depth scan is an availability guard rather than a replacement parser.
-
-          Python's JSON documentation recommends limiting the size of untrusted JSON because malicious input can consume substantial CPU and memory. MITRE classifies missing recursion controls as CWE-674 and recommends a depth end condition that rejects excessive recursion. The repository therefore applies both byte and depth bounds and tests exact-limit, over-limit, escaped-string, malformed-input, invalid-UTF-8, non-object-root, and decoder-recursion behavior.
+          The standard-library decoder remains authoritative for syntax. Strict UTF-8 decoding and object-root validation are preserved. These controls limit availability risk; they do not make arbitrary JSON trustworthy.
 
           ## References
 
@@ -376,27 +334,18 @@ jobs:
 
           ## Security
 
-          - Consolidated repository automation JSON reads behind one documented helper with a 32 MiB byte limit, a non-recursive 128-level structural depth limit, strict UTF-8 decoding, and object-root validation.
-          - Added deterministic tests for exact and oversized inputs, excessive nesting, delimiters and escapes inside strings, malformed syntax, decoder recursion, and delegation by every affected automation script.
+          - Consolidated automation JSON reads behind a shared helper with a 32 MiB byte limit, a non-recursive 128-level depth limit, strict UTF-8 decoding, and object-root validation.
+          - Added deterministic boundary, malformed-input, recursion, and delegation coverage for every affected automation script.
           MD
           python scripts/render_changelog_fragments.py --update CHANGELOG.md
           python scripts/render_changelog_fragments.py --check CHANGELOG.md
           rm .github/workflows/one-time-bounded-json-hardening.yml
-      - name: Install package and CI dependencies
+      - name: Validate focused contracts
         run: |
           python -m pip install --require-hashes -r requirements/ci.txt
           python -m pip install --no-deps --no-build-isolation -e .
-      - name: Run focused security validation
-        run: |
-          pytest \
-            tests/test_bounded_json_scripts.py \
-            tests/test_changelog_fragment_contract.py \
-            --cov=scripts._bounded_json \
-            --cov-branch \
-            --cov-report=term-missing \
-            --cov-fail-under=100
-      - name: Run repository validation affected by script imports
-        run: |
+          pytest tests/test_bounded_json_scripts.py tests/test_changelog_fragment_contract.py \
+            --cov=scripts._bounded_json --cov-branch --cov-report=term-missing --cov-fail-under=100
           pytest \
             tests/test_benchmark_report.py \
             tests/test_buyer_packet.py \
@@ -406,11 +355,21 @@ jobs:
             tests/test_procurement_due_diligence.py \
             tests/test_release_evidence_index.py \
             tests/test_sales_readiness.py
-      - name: Commit hardened readers
+          ruff check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          ruff format --check scripts/_bounded_json.py tests/test_bounded_json_scripts.py \
+            scripts/build_benchmark_report.py scripts/build_buyer_packet.py \
+            scripts/build_commercial_release.py scripts/build_figma_evidence_sync.py \
+            scripts/build_pr_queue_governance.py scripts/build_procurement_due_diligence.py \
+            scripts/build_release_evidence_index.py scripts/sales_readiness.py
+          git diff --check
+      - name: Commit exact hardening
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --check
           git commit -m "fix(security): bound JSON size and nesting depth"
           git push origin "HEAD:sentinel-json-dos-scripts-17708564860587448239"
