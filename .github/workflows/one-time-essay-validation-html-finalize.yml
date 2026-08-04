@@ -7,6 +7,13 @@ on:
       - feat/essay-validation-report-html
     paths:
       - .github/workflows/one-time-essay-validation-html-finalize.yml
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions: {}
 
