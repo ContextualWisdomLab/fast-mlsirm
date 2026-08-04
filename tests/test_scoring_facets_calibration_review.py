@@ -70,17 +70,15 @@ def test_all_declared_categories_must_be_observed_before_fitting() -> None:
         )
 
 
-def test_rating_fingerprint_is_cached_after_normalization(monkeypatch) -> None:
-    """Repeated audit and sorting access does not reserialize rating content."""
+def test_rating_fingerprint_tracks_current_normalized_content() -> None:
+    """In-process content mutation cannot leave a stale provenance fingerprint."""
     record = connected_records()[0]
-    expected = record.rating_fingerprint
+    original = record.rating_fingerprint
 
-    def fail_digest(_value):
-        raise AssertionError("rating digest was recomputed")
+    object.__setattr__(record, "task_id", "mutated_task")
 
-    monkeypatch.setattr(calibration, "artifact_digest", fail_digest)
-    assert record.rating_fingerprint == expected
-    assert record.to_dict()["rating_fingerprint"] == expected
+    assert record.rating_fingerprint != original
+    assert record.to_dict()["rating_fingerprint"] == record.rating_fingerprint
 
 
 def test_missing_criterion_has_a_specific_fail_closed_error() -> None:
