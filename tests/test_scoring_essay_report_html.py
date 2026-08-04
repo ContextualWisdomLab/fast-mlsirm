@@ -95,6 +95,10 @@ def test_clean_report_renders_deterministic_accessible_exact_values(
     assert "Absence of a trigger is not evidence" in first
     assert "&quot;report_fingerprint&quot;" in first
     assert ".skip-link:focus { top: 8px; }" in first
+    assert (
+        ".skip-link:focus-visible { outline: 3px solid Highlight; "
+        "outline-offset: 2px; }"
+    ) in first
     assert "main:focus-visible" in first
     assert "main:focus { outline: none; }" not in first
     assert "font-variant-numeric: tabular-nums;" in first
