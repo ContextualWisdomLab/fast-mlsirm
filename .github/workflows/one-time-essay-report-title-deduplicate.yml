@@ -1,0 +1,79 @@
+# This workflow removes itself after repairing a concurrent duplicate edit.
+name: One-time essay report title validation deduplication
+
+on:
+  push:
+    branches:
+      - feat/essay-score-report-html
+    paths:
+      - .github/workflows/one-time-essay-report-title-deduplicate.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-essay-report-title-deduplicate.yml
+
+permissions: {}
+
+concurrency:
+  group: one-time-essay-report-title-deduplicate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deduplicate-validation:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/essay-score-report-html
+          fetch-depth: 0
+      - name: Deduplicate title validation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("python/fast_mlsirm/scoring/essay/report_html.py")
+          content = path.read_text(encoding="utf-8")
+          duplicated = '''    if title is not None and (
+              not isinstance(title, str) or not title.strip()
+          ):
+              raise ValueError("essay score report title must be a non-empty string")
+          if title is not None and (
+              not isinstance(title, str) or not title.strip()
+          ):
+              raise ValueError(
+                  "essay score report title must be a non-empty string"
+              )
+          '''
+          canonical = '''    if title is not None and (
+              not isinstance(title, str) or not title.strip()
+          ):
+              raise ValueError(
+                  "essay score report title must be a non-empty string"
+              )
+          '''
+          if duplicated in content:
+              content = content.replace(duplicated, canonical, 1)
+          elif content.count(canonical) != 1:
+              raise RuntimeError("unexpected essay report title validation state")
+          path.write_text(content, encoding="utf-8")
+          PY
+      - name: Run focused validation
+        run: |
+          python -m pip install --require-hashes -r requirements/ci.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+          pytest tests/test_scoring_essay_report_html.py tests/test_scoring_essay_reporting_exports.py
+      - name: Commit repair and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-time-essay-report-title-deduplicate.yml
+          git add python/fast_mlsirm/scoring/essay/report_html.py
+          git commit -m "fix(essay): deduplicate report title validation"
+          git pull --rebase origin feat/essay-score-report-html
+          git push origin "HEAD:feat/essay-score-report-html"
