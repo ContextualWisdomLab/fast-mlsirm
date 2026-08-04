@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import Enum
-from typing import Any, TypeVar
 import hashlib
 import json
+import operator
+from typing import Any, TypeVar
+
+from fast_mlsirm.rubric.models import _identifier, _semantic_version, _text
 
 from . import _validation as base
 
@@ -31,10 +34,10 @@ def descriptive_identifier(
     name: str,
     path: str | None = None,
 ) -> str:
-    """Translate arbitrary identifier-normalization failures into a domain error."""
+    """Normalize one identifier while preserving package-owned domain errors."""
     resolved_path = path or f"$.{name}"
     try:
-        return base.descriptive_identifier(value, name, resolved_path)
+        normalized = _identifier(value, name)
     except base.AssessmentSpecError:
         raise
     except Exception:
@@ -43,6 +46,7 @@ def descriptive_identifier(
             resolved_path,
             f"{name} must use two-or-more-token lower snake_case",
         ) from None
+    return base._require_utf8(normalized, resolved_path)
 
 
 def bounded_text(
@@ -52,15 +56,10 @@ def bounded_text(
     maximum: int = base.MAX_METADATA_TEXT_LENGTH,
     path: str | None = None,
 ) -> str:
-    """Translate arbitrary text-normalization failures into a domain error."""
+    """Normalize bounded text while preserving package-owned domain errors."""
     resolved_path = path or f"$.{name}"
     try:
-        return base.bounded_text(
-            value,
-            name,
-            maximum=maximum,
-            path=resolved_path,
-        )
+        normalized = _text(value, name, maximum=maximum)
     except base.AssessmentSpecError:
         raise
     except Exception:
@@ -69,6 +68,7 @@ def bounded_text(
             resolved_path,
             f"{name} must be non-empty text containing at most {maximum} characters",
         ) from None
+    return base._require_utf8(normalized, resolved_path)
 
 
 def semantic_version(
@@ -76,10 +76,10 @@ def semantic_version(
     name: str,
     path: str | None = None,
 ) -> str:
-    """Translate arbitrary semantic-version callback failures safely."""
+    """Normalize a semantic version while preserving package-owned errors."""
     resolved_path = path or f"$.{name}"
     try:
-        return base.semantic_version(value, name, resolved_path)
+        normalized = _semantic_version(value, name)
     except base.AssessmentSpecError:
         raise
     except Exception:
@@ -88,6 +88,7 @@ def semantic_version(
             resolved_path,
             f"{name} must be a canonical semantic version",
         ) from None
+    return base._require_utf8(normalized, resolved_path)
 
 
 def enum_value(
@@ -96,7 +97,7 @@ def enum_value(
     name: str,
     path: str | None = None,
 ) -> EnumValue:
-    """Accept enum members or exact built-in strings without invoking alien equality."""
+    """Accept enum members or exact built-in strings without alien equality."""
     resolved_path = path or f"$.{name}"
     if isinstance(value, enum_type):
         return value
@@ -107,7 +108,7 @@ def enum_value(
             f"{name} must be one of the supported values",
         )
     try:
-        return base.enum_value(value, enum_type, name, resolved_path)
+        return enum_type(value)
     except base.AssessmentSpecError:
         raise
     except Exception:
@@ -124,17 +125,31 @@ def bounded_positive_integer(
     maximum: int,
     path: str | None = None,
 ) -> int:
-    """Translate arbitrary numeric callback failures into the stable domain error."""
+    """Normalize one positive integer without leaking numeric callbacks."""
+    resolved_path = path or f"$.{name}"
+    if isinstance(value, bool):
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be an integer between 1 and {maximum}",
+        )
     try:
-        return base.bounded_positive_integer(value, name, maximum, path)
+        normalized = operator.index(value)
     except base.AssessmentSpecError:
         raise
     except Exception:
         raise base.assessment_error(
             f"invalid_{name}",
-            path or f"$.{name}",
+            resolved_path,
             f"{name} must be an integer between 1 and {maximum}",
         ) from None
+    if isinstance(normalized, bool) or not 1 <= normalized <= maximum:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be between 1 and {maximum}",
+        )
+    return int(normalized)
 
 
 def bounded_values(
@@ -145,23 +160,49 @@ def bounded_values(
     maximum: int,
     path: str | None = None,
 ) -> tuple[Any, ...]:
-    """Translate arbitrary iterable callback failures into a stable collection error."""
-    try:
-        return base.bounded_values(
-            values,
-            name,
-            minimum=minimum,
-            maximum=maximum,
-            path=path,
+    """Materialize a bounded iterable through the structured error boundary."""
+    resolved_path = path or f"$.{name}"
+    if isinstance(values, (str, bytes, bytearray)):
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must be a collection",
         )
+    try:
+        iterator = iter(values)
     except base.AssessmentSpecError:
         raise
     except Exception:
         raise base.assessment_error(
             f"invalid_{name}",
-            path or f"$.{name}",
+            resolved_path,
+            f"{name} must be a collection",
+        ) from None
+    output: list[Any] = []
+    try:
+        for index, value in enumerate(iterator):
+            if index >= maximum:
+                raise base.assessment_error(
+                    f"invalid_{name}",
+                    resolved_path,
+                    f"{name} must contain at most {maximum} values",
+                )
+            output.append(value)
+    except base.AssessmentSpecError:
+        raise
+    except Exception:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
             f"{name} could not be materialized safely",
         ) from None
+    if len(output) < minimum:
+        raise base.assessment_error(
+            f"invalid_{name}",
+            resolved_path,
+            f"{name} must contain at least {minimum} value",
+        )
+    return tuple(output)
 
 
 def sorted_identifiers(
@@ -171,7 +212,7 @@ def sorted_identifiers(
     minimum: int,
     maximum: int = base.MAX_POLICY_REFERENCES,
 ) -> tuple[str, ...]:
-    """Return safe sorted identifiers using callback-hardened public boundaries."""
+    """Return safe sorted identifiers using callback-hardened boundaries."""
     raw = bounded_values(
         values,
         name,
