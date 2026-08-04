@@ -9,7 +9,10 @@ import pytest
 
 from fast_mlsirm.scoring import (
     AssessmentSpecError,
+    EvidenceReference,
+    MAX_REQUEST_CRITERIA,
     ObservationGranularity,
+    ObservationStatus,
     build_scoring_facets_rating_records,
 )
 
@@ -187,3 +190,116 @@ def test_projection_rejects_untyped_observation_entry() -> None:
     assert caught.value.code == "invalid_score_observation"
     assert caught.value.path.endswith(".observations[1]")
     assert str(private_value) not in str(caught.value)
+
+
+def test_projection_bounds_post_construction_observation_iterables() -> None:
+    """Mutated result iterables stop at the wire maximum before child replay."""
+    request, result, engine = replay_execution()
+
+    class OversizedObservations:
+        """Yield one more entry than the governed request maximum."""
+
+        def __init__(self) -> None:
+            self.yield_count = 0
+
+        def __iter__(self):
+            for _index in range(MAX_REQUEST_CRITERIA + 1):
+                self.yield_count += 1
+                yield result.observations[0]
+
+    hostile = OversizedObservations()
+    object.__setattr__(result, "observations", hostile)
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "invalid_observations"
+    assert caught.value.path == "$.observations"
+    assert hostile.yield_count == MAX_REQUEST_CRITERIA + 1
+
+
+def test_projection_replays_nested_evidence_reference_types() -> None:
+    """An untyped nested evidence child fails before canonical serialization."""
+    request, result, engine = replay_execution()
+    private_value = object()
+    object.__setattr__(
+        result.observations[0],
+        "evidence_references",
+        (private_value,),
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "invalid_evidence_reference"
+    assert str(private_value) not in str(caught.value)
+
+
+def test_projection_bounds_nested_evidence_collections() -> None:
+    """Oversized evidence collections fail before fingerprint computation."""
+    request, result, engine = replay_execution()
+    evidence = EvidenceReference(
+        source_id="source_record",
+        span_id="source_span",
+        content_fingerprint="e" * 64,
+    )
+    object.__setattr__(
+        result.observations[0],
+        "evidence_references",
+        tuple(evidence for _index in range(65)),
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "invalid_evidence_references"
+    assert caught.value.path == "$.evidence_references"
+
+
+def test_projection_replays_observation_status_score_relationship() -> None:
+    """Post-construction status mutation cannot bypass observation semantics."""
+    request, result, engine = replay_execution()
+    object.__setattr__(result.observations[0], "status", ObservationStatus.ABSTAINED)
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "unexpected_score_category"
+    assert caught.value.path == "$.score_category"
+
+
+def test_projection_replays_confidence_metadata_safety() -> None:
+    """Sensitive response content cannot enter mutated observation metadata."""
+    request, result, engine = replay_execution()
+    secret = "private_response_payload"
+    object.__setattr__(
+        result.observations[0],
+        "confidence_metadata",
+        {"response_text": secret},
+    )
+
+    with pytest.raises(AssessmentSpecError) as caught:
+        build_scoring_facets_rating_records(
+            request=request,
+            result=result,
+            engine=engine,
+        )
+
+    assert caught.value.code == "sensitive_metadata_field"
+    assert secret not in str(caught.value)
