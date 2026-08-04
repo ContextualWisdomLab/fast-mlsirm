@@ -54,8 +54,9 @@ Those claims require an identified validation design, representative data, uncer
 ## Example
 
 ```python
-from fast_mlsirm.scoring.essay.validation_reporting import (
+from fast_mlsirm.scoring.essay import (
     build_essay_validation_evidence_report,
+    render_essay_validation_evidence_report_html,
 )
 
 report = build_essay_validation_evidence_report(
@@ -78,7 +79,26 @@ report = build_essay_validation_evidence_report(
 payload = report.to_dict()
 assert "pass" not in payload
 assert payload["human_review_required"] is True
+
+render_essay_validation_evidence_report_html(
+    report,
+    "artifacts/claim_support_validation_report.html",
+)
 ```
+
+## Standalone HTML audit artifact
+
+`render_essay_validation_evidence_report_html` writes a deterministic standalone artifact containing exact report, assessment, construct, rubric, dataset, engine, metric, review-trigger, and interpretation-boundary provenance. It intentionally excludes source text, score-label vectors, thresholds, and Boolean pass decisions.
+
+The artifact is designed for audit review rather than interactive decision automation:
+
+- no JavaScript or external network resources are loaded;
+- a restrictive meta-delivered Content Security Policy permits only inline styling and data images;
+- caller-controlled titles and all report values are HTML-escaped;
+- semantic headings, definition lists, captions, column headers, a skip link, keyboard-focusable overflow regions, and exact visible values support accessible review;
+- canonical deterministic JSON is embedded for reconstruction without requiring hover interactions.
+
+A meta-delivered policy is defense in depth, not a substitute for output encoding or safe hosting controls. When the artifact is served over HTTP, operators should also set an equivalent or stricter `Content-Security-Policy` response header.
 
 ## Equation-to-source traceability
 
@@ -99,3 +119,7 @@ American Educational Research Association, American Psychological Association, &
 Fleiss, J. L., & Cohen, J. (1973). The equivalence of weighted kappa and the intraclass correlation coefficient as measures of reliability. *Educational and Psychological Measurement, 33*(3), 613–619. https://doi.org/10.1177/001316447303300309
 
 Williamson, D. M., Xi, X., & Breyer, F. J. (2012). A framework for evaluation and use of automated scoring. *Educational Measurement: Issues and Practice, 31*(1), 2–13. https://doi.org/10.1111/j.1745-3992.2011.00223.x
+
+World Wide Web Consortium. (2024, December 12). *Web Content Accessibility Guidelines (WCAG) 2.2* (W3C Recommendation). https://www.w3.org/TR/WCAG22/
+
+World Wide Web Consortium. (2026, May 5). *Content Security Policy Level 3* (W3C Working Draft). https://www.w3.org/TR/CSP3/
