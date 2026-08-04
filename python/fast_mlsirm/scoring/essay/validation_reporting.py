@@ -467,7 +467,7 @@ def build_essay_validation_evidence_report(
     normalized_rubric = fingerprint(rubric_fingerprint, "rubric_fingerprint")
     _validate_scope(assessment, normalized_construct, normalized_rubric)
     _validate_engines(assessment, automated_engine, reference_engine)
-    if type(category_count) is not int:
+    if type(category_count) is not int or not 2 <= category_count <= 1_000:
         raise assessment_error(
             "invalid_essay_validation_category_count",
             "$.category_count",

@@ -238,6 +238,8 @@ def test_empty_validation_policy_scope_covers_the_construct() -> None:
         ("automated_engine", object(), "invalid_essay_validation_automated_engine"),
         ("reference_engine", object(), "invalid_essay_validation_reference_engine"),
         ("category_count", True, "invalid_essay_validation_category_count"),
+        ("category_count", 1, "invalid_essay_validation_category_count"),
+        ("category_count", 1_001, "invalid_essay_validation_category_count"),
     ),
 )
 def test_factory_rejects_wrong_top_level_types(
