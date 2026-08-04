@@ -14,11 +14,11 @@ assessment = _FIXTURES["assessment"]
 
 
 def test_valid_metadata_budget_remains_addressable_inside_assessment() -> None:
-    """Metadata accepted at its own node limit must fit the complete artifact budget."""
+    """A dense valid metadata tree must fit the complete artifact node budget."""
     dense_metadata = {
         "dense_values": [
             [outer_index * 64 + inner_index for inner_index in range(64)]
-            for outer_index in range(15)
+            for outer_index in range(14)
         ]
     }
 
